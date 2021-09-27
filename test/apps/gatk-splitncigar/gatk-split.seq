@@ -1,0 +1,448 @@
+# Implementation of SplitNCigarReads.java in Seq
+# Haley Greenyer
+import sys
+import bio
+import time
+from collections import deque
+from sortedlist import SortedList
+
+# function to soft clip reads with left overhang
+def isLO(r, ref_seq, pos_list):
+    mismatch = False
+    max_bases = False
+    lo = False
+
+    s_cig = str(r.cigar)
+    read_pos = 0
+    ref_pos = r.pos
+    cig_pos = 0
+    trim_cig = []
+    split = []
+
+    # binary search for left overhang
+    mid = 0
+
+    if not pos_list or r.pos < pos_list[0][0]:
+        return False, "", r.pos
+
+    l, rt = 0, len(pos_list)
+    # print f'l/BS from {l} to {rt}...'
+    while l < rt:
+        mid = (l + rt) // 2
+        if r.pos >= pos_list[mid][0] and r.pos <= pos_list[mid][1]:
+            lo = True
+            # soft clip read
+            for c in r.cigar:
+                cig_pos += 1
+                count = 0
+                if c[1] == "M" or c[1] == "=" or c[1] == "X":
+                    for n in range(c[0]):
+                        count += 1
+                        if r.read[read_pos] != ref_seq[ref_pos]:
+                            mismatch = True
+                        # boundary met?
+                        if ref_pos >= pos_list[mid][1]:
+                            if count < c[0]:
+                                split.append(str(c[0]) + c[1])
+                            break
+                        read_pos += 1
+                        ref_pos += 1
+                if c[1] == "I" or c[1] == "S":
+                    read_pos += 1
+                if c[1] == "D":
+                    ref_pos += c[0]
+            # CIGAR to be returned
+            trim_cig.append(str(read_pos))
+            trim_cig.append("S")
+            trim_cig += split
+            # append end of original CIGAR
+            j = 0
+            for c in r.cigar:
+                j += 1
+                if j > cig_pos:
+                    trim_cig.append(str(c[0]) + c[1])
+            break
+        elif r.pos > pos_list[mid][1]:
+            l = mid + 1
+        else:
+            rt = mid
+
+    return lo, "".join(trim_cig), ref_pos
+
+
+def isRO(r, ref_seq, pos_list):
+    mismatch = False
+    max_bases = 40
+    ro = False
+
+    # get ref end position of the read
+    end_pos = r.pos
+    cig = []
+    for c in r.cigar:
+        cig.append((c[0], c[1]))
+        if c[1] == "M" or c[1] == "=" or c[1] == "X" or c[1] == "D":
+            end_pos += c[0]
+
+    rev_cig = cig[::-1]
+    c_len = len(r.cigar)
+    trim_cig = []
+    read_pos = len(r.read) - 1
+    ref_pos = end_pos
+    soft_clip = 0
+    split = []
+    cig_pos = 0
+    # binary search
+    mid = 0
+
+    l, rt = 0, len(pos_list)
+    if not pos_list or r.pos > pos_list[-1][1]:
+        return False, ""
+    # print f'l/BS from {l} to {rt}...'
+    while l < rt:
+        mid = (l + rt) // 2
+        if end_pos >= pos_list[mid][0] and end_pos <= pos_list[mid][1]:
+            ro = True
+            for c in rev_cig:
+                cig_pos += 1
+                count = 0
+                if c[1] == "M" or c[1] == "=" or c[1] == "X":
+                    for n in range(c[0]):
+                        count += 1
+                        soft_clip += 1
+                        if ref_pos >= len(ref_seq):
+                            break
+                        if r.read[read_pos] != ref_seq[ref_pos]:
+                            mismatch = True
+                        if ref_pos <= pos_list[mid][0]:
+                            if count < c[0]:
+                                split.append(str(c[0] - count) + c[1])
+                            break
+
+                        ref_pos -= 1
+                        read_pos -= 1
+                if c[1] == "I" or c[1] == "S":
+                    read_pos -= c[0]
+                    soft_clip += 1
+                if c[1] == "D":
+                    ref_pos -= c[0]
+            # soft clip
+            j = 0
+            for c in r.cigar:
+                if j < c_len - cig_pos:
+                    trim_cig.append(str(c[0]) + c[1])
+                else:
+                    break
+            trim_cig += split
+            trim_cig.append(str(soft_clip))
+            trim_cig.append("S")
+            break
+        elif end_pos > pos_list[mid][1]:
+            l = mid + 1
+        else:
+            rt = mid
+
+    return ro, "".join(trim_cig)
+
+
+# function to get new flag for split read
+def getNewFlag(r, split_count):
+    # if first split return flag
+    if split_count == 0:
+        return str(r._htsr.flag)
+    else:
+        # if new split flag as supplementary
+        return str(r._htsr.flag + 2048)
+
+
+# function to refactor cigar strings with NDN to one N element
+def refactorCigar(cigar):
+    rc = []
+    j = 0
+    num = 0
+    nDn = False
+    for i in range(len(cigar) - 2):
+        if cigar[i][1] == "N" and cigar[i + 1][1] == "D" and cigar[i + 2][1] == "N":
+            nDn = True
+            num = cigar[i][0] + cigar[i + 1][0] + cigar[i + 2][0]
+            rc += [str(num), "N"]
+            j += 3
+        else:
+            rc += [str(cigar[j][0]), cigar[j][1]]
+            j += 1
+    if nDn == False:
+        return cigar
+    else:
+        return bio.CIGAR("".join(rc))
+
+
+# SAM file fields for split read
+def getFileLine(r, read, sec_cig, sec_pos, qual_ref, flag, bam):
+    mate_tid = str(bam.contig(r.mate_tid))
+    mate_pos = r.mate_pos
+    insert_size = r.insert_size
+    cig = str(sec_cig)
+    # checks
+    if r.mate_pos == -1:
+        mate_pos = 0
+    if r.insert_size == -1:
+        insert_size = 0
+    if len(sec_cig) < 1:
+        cig = "*"
+    if r.mate_unmapped:
+        mate_tid = "*"
+    if str(bam.contig(r.tid)) == mate_tid:
+        mate_tid = "="
+
+    # write to file
+    return '\t'.join([
+        r.name,
+        flag,
+        str(bam.contig(r.tid)),
+        str(sec_pos + 1),
+        "60" if qual_ref and r.mapq == 255 else str(r.mapq),
+        str(cig),
+        str(mate_tid),
+        str(mate_pos),
+        str(insert_size),
+        str(read),
+        r.qual,
+    ])
+
+
+# function to store N element locations for overhang trimming
+def getIntronPos(bam_file, region):
+    # intron start, end, and contig
+    pos_list = []
+    # check for repeats
+    temp_list = set()
+    for r in bio.BAM(bam_file, region=region):
+        n_pos = r.pos
+        # loop through CIGAR
+        for c in r.cigar:
+            if c[1] == "M" or c[1] == "=" or c[1] == "X" or c[1] == "D":
+                n_pos += c[0]
+            # intronic region
+            if c[1] == "N":
+                end_pos = n_pos + c[0]
+                if (n_pos, end_pos) not in temp_list:
+                    temp_list.add((n_pos, end_pos))
+                    pos_list.append((n_pos, end_pos))
+    return pos_list
+
+
+# function to split cigar/reads at N elements with soft clipping
+def SeqNSplit(bam_file, ref_file, output_sam, qual_ref, ndn, trim_overhang):
+    ti = time.time()
+
+    # extract reference sequences
+    ref = bio.FASTA(ref_file)
+    ref_seq = s""
+
+    # queues for writing to file in correct order
+    line_queue = deque()
+    split_queue = SortedList()
+
+    # input BAM file
+    bam = bio.BAM(bam_file)
+    curr_contig = -1
+    curr_contig_name = "*"
+    # output SAM file
+    f = open(output_sam, "w")
+    for c in bam._contigs:
+        print(f"@SQ\tSN:{c}\tLN:{c.len}", file=f)
+
+    # loop through reads
+    print "Parsing BAM..."
+    tx = time.time()
+    mb = 0
+    pos_list = []
+    for r in bam:
+        line = ""
+        # read on new contig? Empty queues
+        if r.tid != curr_contig:
+            # print 'here'
+            for _, l in line_queue:
+                print(l, file=f)
+            line_queue.clear()
+            for _, l in split_queue:
+                print(l, file=f)
+            split_queue.clear()
+            # print 'here2'
+            # set new contig
+            if curr_contig != -1:
+                print f"{curr_contig_name}/2 took", time.time() - ti
+            ti = time.time()
+            curr_contig = r.tid
+            # print 'heeeere', r.name, r.tid
+            # print curr_contig, bam._contigs
+            curr_contig_name = str(bam.contig(curr_contig))
+            # print 'here3'
+            if trim_overhang:
+                # print 'trim'
+                with time.timing(f"{curr_contig_name}/1"):
+                    ref_seq = ref[curr_contig_name]
+                    pos_list = getIntronPos(bam_file, curr_contig_name)
+                # print 'trim end'
+            tx = time.time()
+            mb = 0
+
+        # N in CIGAR?
+        if "N" in str(r.cigar):
+            cig = r.cigar
+            # refactor NDN elements?
+            if ndn == True:
+                cig = refactorCigar(r.cigar)
+
+            # initialize section variables
+            split_count = 0
+            pos_read = 0
+            pos_ref = r.pos
+            sec_read_s = 0
+            sec_ref_s = r.pos
+            r_length = len(r.read)
+            temp_cig = []
+            section_cig = []
+
+            # maintain hard clipped ends
+            hard_clip_s = False
+            hard_clip_e = False
+
+            if str(r.cigar)[1] == "H":
+                hard_clip_s = True
+            if str(r.cigar)[len(str(r.cigar)) - 1] == "H":
+                hard_clip_e = True
+
+            # loop through CIGAR
+            for c in cig:
+                if c[1] == "M" or c[1] == "=" or c[1] == "X":
+                    # add to section cigar
+                    temp_cig += [str(c[0]), c[1]]
+                    # update read/ref positions
+                    pos_ref += c[0]
+                    pos_read += c[0]
+                if c[1] == "I" or c[1] == "S":
+                    temp_cig += [str(c[0]), c[1]]
+                    pos_read += c[0]
+                if c[1] == "D":
+                    temp_cig += [str(c[0]), c[1]]
+                    pos_ref += c[0]
+
+                # create new split read
+                if c[1] == "N":
+                    # check for D element at start/end of split section and remove
+                    if temp_cig[1] == "D":
+                        sec_ref_s += int(temp_cig[0])
+                        temp_cig = temp_cig[2:]
+                    if temp_cig[-1] == "D":
+                        temp_cig = temp_cig[:-2]
+
+                    # first split?
+                    if split_count == 0:
+                        section_cig += temp_cig
+                        section_cig += [str(r_length - pos_read), "S"]
+                    else:
+                        # check for hard clip st
+                        if hard_clip_s == True:
+                            section_cig += [str(r.cigar[0][0]), r.cigar[0][1]]
+                        section_cig += [str(sec_read_s), "S"]
+                        section_cig += temp_cig
+                        section_cig += [str(r_length - pos_read), "S"]
+
+                    # check for hard clipped end
+                    if hard_clip_e == True:
+                        section_cig += [
+                            str(r.cigar[len(r.cigar) - 1][0]),
+                            r.cigar[len(r.cigar) - 1][1],
+                        ]
+
+                    # get flag for split read
+                    flag = getNewFlag(r, split_count)
+
+                    # get line to write to file
+                    line = getFileLine(r, r.read, "".join(section_cig), sec_ref_s, qual_ref, flag, bam)
+
+                    # add to queues in order of reference position
+                    if split_count == 0:
+                        line_queue.append((sec_ref_s, line))
+                    else:
+                        split_queue.add((sec_ref_s, line))
+                    # update section variables
+                    pos_ref += c[0]
+                    sec_read_s = pos_read
+                    sec_ref_s = pos_ref
+                    temp_cig.clear()
+                    section_cig.clear()
+                    split_count += 1
+
+                # end of the read/last split section?
+                if pos_read == r_length:
+                    if hard_clip_s == True:
+                        section_cig += [str(r.cigar[0][0]), r.cigar[0][1]]
+
+                    section_cig += [str(sec_read_s), "S"]
+                    section_cig += temp_cig
+
+                    flag = getNewFlag(r, split_count)
+                    line = getFileLine(r, str(r.read), "".join(section_cig), sec_ref_s, qual_ref, flag, bam)
+                    split_queue.add((sec_ref_s, line))
+
+        else:
+            # check for overhang
+            final_pos = r.pos
+            if trim_overhang == True:
+                lo, lo_cig, lo_pos = isLO(r, ref_seq, pos_list)
+                ro, ro_cig = isRO(r, ref_seq, pos_list)
+                if lo:
+                    line = getFileLine(r, str(r.read), lo_cig, lo_pos, qual_ref, str(r._htsr.flag), bam)
+                    final_pos = lo_pos
+                if ro:
+                    line = getFileLine(r, str(r.read), ro_cig, r.pos, qual_ref, str(r._htsr.flag), bam)
+            else:
+                line = getFileLine(r, str(r.read), r.cigar, r.pos, qual_ref, str(r._htsr.flag), bam)
+            line_queue.append((final_pos, line))
+
+        if len(line_queue) >= 2:
+            l = line_queue.popleft()
+            print(l[1], file=f)
+        while split_queue and split_queue.left[0] < line_queue.left[0]:
+            print(split_queue.left[1], file=f)
+            split_queue._delete(0, 0)
+
+    # empty queues
+    while split_queue and split_queue.left[0] < line_queue.left[0]:
+        print(split_queue.left[1], file=f)
+        split_queue._delete(0, 0)
+    for _, l in line_queue:
+        print(l, file=f)
+    for _, l in split_queue:
+        print(l, file=f)
+
+    f.close()
+
+
+print "GATK-SplitNCIGAR"
+t = time.time()
+
+# command line arguments
+# option to skip transformation of quality scores from 255 to 60
+qual_ref = True
+# option to refactor NDN elements to N element
+ndn = False
+# option to skip overhang trim
+trim_overhang = True
+
+if "-TQ" in sys.argv:
+    qual_ref = False
+if "-RC" in sys.argv:
+    ndn = True
+# trim overhang by default
+if "-TO" in sys.argv:
+    trim_overhang = False
+    print "No overhang trimming"
+
+print sys.argv
+SeqNSplit(
+    sys.argv[1], sys.argv[2], sys.argv[3], qual_ref, ndn, trim_overhang,
+)
+
+print f'Done in {time.time()-t}s'

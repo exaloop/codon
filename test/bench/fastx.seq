@@ -1,0 +1,74 @@
+############################
+# Format parsing benchmark #
+############################
+from sys import argv
+from time import timing
+from bio import *
+n, m = 0, 0
+
+def test_fasta_options(path):
+    def process(rec):
+        global n
+        n += len(rec.name) + len(rec.seq)
+    global n, m
+    m = 0
+    opts4 = [(a,b,c,d) for a in (True, False)
+                       for b in (True, False)
+                       for c in (True, False)
+                       for d in (True, False)]
+    for validate, gzip, copy, fai in opts4:
+        n = 0
+        with timing(f'validate={validate} gzip={gzip} copy={copy} fai={fai}'):
+            FASTA(path, validate=validate, gzip=gzip, copy=copy, fai=fai) |> iter |> process
+        if m == 0:
+            m = n
+        else:
+            assert m == n
+
+def test_fastq_options(path):
+    def process(rec):
+        global n
+        n += len(rec.name) + len(rec.seq) + len(rec.qual)
+    global n, m
+    m = 0
+    opts2 = [(a,b) for a in (True, False)
+                   for b in (True, False)]
+    for validate, gzip in opts2:
+        n = 0
+        with timing(f'validate={validate} gzip={gzip}'):
+            FASTQ(path, validate=validate, gzip=gzip, copy=True) |> iter |> process
+        if m == 0:
+            m = n
+        else:
+            assert m == n
+
+def test_seqs_options(path):
+    def process(rec):
+        global n
+        n += len(rec)
+    global n, m
+    m = 0
+    opts3 = [(a,b,c) for a in (True, False)
+                     for b in (True, False)
+                     for c in (True, False)]
+    for validate, gzip, copy in opts3:
+        n = 0
+        with timing(f'validate={validate} gzip={gzip} copy={copy}'):
+            Seqs(path, validate=validate, gzip=gzip, copy=copy) |> iter |> process
+        if m == 0:
+            m = n
+            print m
+        else:
+            print m, n
+            assert m == n
+
+for path in argv[1:]:
+    if path.endswith('.fa') or path.endswith('.fasta'):
+        print 'Testing as FASTA'
+        test_fasta_options(path)
+    elif path.endswith('.fq') or path.endswith('.fastq'):
+        print 'Testing as FASTQ'
+        test_fastq_options(path)
+    else:
+        print 'Testing as TXT'
+        test_seqs_options(path)

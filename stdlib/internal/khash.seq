@@ -1,0 +1,23 @@
+def __ac_isempty(flag: Ptr[u32], i: int):
+    return int(flag[i >> 4] >> u32((i & 0xf) << 1)) & 2
+
+def __ac_isdel(flag: Ptr[u32], i: int):
+    return int(flag[i >> 4] >> u32((i & 0xf) << 1)) & 1
+
+def __ac_iseither(flag: Ptr[u32], i: int):
+    return int(flag[i >> 4] >> u32((i & 0xf) << 1)) & 3
+
+def __ac_set_isdel_false(flag: Ptr[u32], i: int):
+    flag[i >> 4] &= u32(~(1 << ((i & 0xf) << 1)))
+
+def __ac_set_isempty_false(flag: Ptr[u32], i: int):
+    flag[i >> 4] &= u32(~(2 << ((i & 0xf) << 1)))
+
+def __ac_set_isboth_false(flag: Ptr[u32], i: int):
+    flag[i >> 4] &= u32(~(3 << ((i & 0xf) << 1)))
+
+def __ac_set_isdel_true(flag: Ptr[u32], i: int):
+    flag[i >> 4] |= u32(1 << ((i & 0xf) << 1))
+
+def __ac_fsize(m):
+    return 1 if m < 16 else m >> 4

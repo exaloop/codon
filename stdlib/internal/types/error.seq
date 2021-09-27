@@ -1,0 +1,206 @@
+# Warning(!): This type must be consistent with the exception
+# header type defined in runtime/exc.cpp.
+@tuple
+class ExcHeader:
+    typename: str
+    msg: str
+    func: str
+    file: str
+    line: int
+    col: int
+
+class OSError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('OSError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('OSError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class IOError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('IOError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('IOError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class ValueError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('ValueError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('ValueError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class IndexError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('IndexError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('IndexError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class KeyError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('KeyError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('KeyError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class CError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('CError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('CError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class PyError:
+    _hdr: ExcHeader
+    pytype: str
+
+    def __init__(self, message: str, pytype: str):
+        self._hdr = ('PyError', message, '', '', 0, 0)
+        self.pytype = pytype
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class TypeError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('TypeError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('TypeError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class ZeroDivisionError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('ZeroDivisionError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('ZeroDivisionError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class AttributeError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('AttributeError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('AttributeError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class NotImplementedError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('NotImplementedError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('NotImplementedError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class StopIteration:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('StopIteration', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('StopIteration', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class AssertionError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('AssertionError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('AssertionError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+class SystemExit:
+    _hdr: ExcHeader
+    _status: int
+
+    def __init__(self):
+        self._hdr = ('SystemExit', '', '', '', 0, 0)
+        self._status = 0
+
+    def __init__(self, status: int):
+        self._hdr = ('SystemExit', '', '', '', 0, 0)
+        self._status = status
+
+    def __init__(self, message: str):
+        self._hdr = ('SystemExit', message, '', '', 0, 0)
+        self._status = 0
+
+    def __init__(self, message: str, status: int):
+        self._hdr = ('SystemExit', message, '', '', 0, 0)
+        self._status = status
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+    @property
+    def status(self):
+        return self._status

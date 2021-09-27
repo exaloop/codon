@@ -1,0 +1,177 @@
+import sys
+import bio.align
+import bio.bwt
+import time
+import bio
+import bio.fmindex
+import itertools
+
+@tuple
+class Segment:
+  xs: int
+  ys: int
+  xe: int
+  ye: int
+  aln: bio.Alignment
+  anchor: bool
+
+@dataclass(init=False)
+class LCPNode:
+  lcp: int
+  start: int
+  end: int
+  children: List[LCPNode]
+  data: List[List[int]]
+
+  def __init__(self, lcp, start, end):
+    self.lcp, self.start, self.end = lcp, start, end
+    self.children = []
+    self.data = [[] for i in range(5)]
+
+def get_mems(n, s, sa, lcp, min_size, anchors):
+  """ Find MEMs """
+  i, ci = n.start, 0
+  while i < n.end:
+    d = [[] for i in range(5)]
+    if ci < len(n.children) and i == n.children[ci].start:
+      i = n.children[ci].end
+      d = n.children[ci].data
+      # TODO: clear d
+      ci += 1
+    else:
+      d[bio.fmindex._enc(s._at(sa[i] - 1)) if sa[i] else 4].append(i)
+      i += 1
+    if n.lcp >= min_size:
+      for a, ap in itertools.product(range(5), range(5)):
+        if a == ap:
+          continue
+        for posp, pos in itertools.product(d[a], n.data[ap]):
+          a, b = sa[posp], sa[pos]
+          if a > b: a, b = b, a
+          anchors.append((a, b, n.lcp))
+    for a in range(5):
+      n.data[a].extend(d[a])
+
+def lcp_bottom_up(self, sa, lcp, min_size, anchors: List[Tuple[int,int,int]]):
+  """ Reconstruct suffix tree from SA and find all MEMs whose length is >= min_size """
+  interval = None
+  stack = [LCPNode(0, 0, -1)]
+  for i in range(1, len(lcp)):
+    start = i - 1
+    # assert len(stack)>0
+    while lcp[i] < stack[-1].lcp:
+      interval = stack.pop()
+      # assert len(stack)>0
+      interval.end = i # [start, end)
+      get_mems(interval, self, sa, lcp, min_size, anchors)
+      start = interval.start
+      if lcp[i] <= stack[-1].lcp:
+        stack[-1].children.append(interval)
+        interval = None
+    if lcp[i] > stack[-1].lcp:
+      stack.append(LCPNode(lcp[i], start, -1))
+      if interval:
+        stack[-1].children.append(interval)
+        interval = None
+
+def anchor(x, y, sa, lcp, anchors, xs, xe, ys, ye, depth = 0):
+  # AVID only uses MEMs for sequences >= 4 KB
+  if xe - xs <= 4 * 1024 and ye - ys <= 4 * 1024:
+    yield Segment(xs, ys, xe, ye, x[xs:xe] @ y[ys:ye], False)
+    return
+
+  an = []
+  max_l = 2
+  # Find anchor matches
+  for sa, sb, l in anchors:
+    sb -= len(x) + 1
+    if l >= max_l // 2 and xs <= sa and sa + l < xe and ys <= sb and sb + l < ye:
+      max_l = max(max_l, l)
+      # TODO SEQ BUG: seq negative index out of range works ... s[-5:1]
+      aln1 = x[max(0, sa - 10):sa] @ y[max(0, sb - 10):sb]
+      aln2 = x[sa + l:sa + l + 10] @ y[sb + l:sb + l + 10]
+      an.append(Segment(sa, sb, sa + l, sb + l, bio.Alignment(f'{l}M', l*10 + aln1.score + aln2.score), True))
+  # Use only large anchors
+  an = [a for a in an if a.xe - a.xs >= max_l // 2]
+
+  # No anchors: low-quality alignment, use gaps to cover it
+  if not an:
+    c = (f'{xe - xs}I' if xs < xe else '') + (f'{ye - ys}D' if ys < ye else '')
+    yield Segment(xs, ys, xe, ye, bio.Alignment(c, -1), False)
+    return
+
+  # Run LIS on anchor list
+  an.sort()
+  best = 0
+  scores = [(an[0].aln.score, -1)]
+  for i in range(1, len(an)):
+    scores.append((-100000000, -1))
+    for j in range(0, i):
+      if an[j].xe <= an[i].xs and an[j].ye <= an[i].ys and scores[j][0] + an[j].aln.score > scores[i][0]:
+        scores[i] = (scores[j][0] + an[j].aln.score, j)
+    if scores[i] > scores[best]:
+      best = i
+  selected = []
+  while best != -1:
+    selected.append(best)
+    best = scores[best][1]
+
+  # Recursively align the remaining gaps
+  px, py = xs, ys
+  for si in range(len(selected) - 1, -1, -1):
+    i = selected[si]
+    if (px, py) != (an[i].xs, an[i].ys):
+      yield from anchor(x, y, sa, lcp, anchors, px, an[i].xs, py, an[i].ys, depth+1)
+    yield an[i]
+    # TODO SEQ BUG: px, py = 1, py, 2 works! and gives wrong number!
+    px, py = an[i].xe, an[i].ye
+  if (px, py) != (xe, ye):
+    yield from anchor(x, y, sa, lcp, anchors, px, xe, py, ye, depth+1)
+
+def avid(x, y):
+  # Construct SA & LCP
+  t = time.time()
+  s = bio.seq(f'{x}X{y}')
+  sa = s.suffix_array()
+  lcp = s.lcp(sa)
+  print(f'LCP & SA done... {time.time()-t}')
+
+  # Get all MEMs
+  t = time.time()
+  anchors = []
+  lcp_bottom_up(s, sa, lcp, 10, anchors)
+  print(f'MEMs done, found {len(anchors)} MEMs... {time.time()-t}')
+
+  # Get all anchors
+  yield from anchor(x, y, sa, lcp, anchors, 0, len(x), 0, len(y))
+
+# Read sequences
+t = time.time()
+l, r = sys.argv[1:3]
+x = next(bio.seqs(bio.FASTA(l, fai=False)))
+y = next(bio.seqs(bio.FASTA(r, fai=False)))
+
+# Run AVID & print alignment
+anchors = avid(x, y)
+mat, mis, ind, nind = 0, 0, 0, 0
+xi, yi = 0, 0
+with open(f'{sys.argv[1]}_{sys.argv[2]}.out', 'w') as fo:
+  for a in anchors:
+    fo.write(str(a.aln.cigar))
+    for sz, op in a.aln.cigar:
+      if op == 'I':
+        ind += sz; xi += sz; nind += 1
+      elif op == 'D':
+        ind += sz; yi += sz; nind += 1
+      elif op == 'M':
+        for i in range(sz):
+          if x[xi + i] == y[yi + i]:
+            mat += 1
+          else:
+            mis += 1
+        xi += sz; yi += sz
+      else:
+        assert False
+  fo.write(f'\n{mat} {mis} {ind} {nind}\n')
+
+print 'AVID is done.', time.time() - t

@@ -1,0 +1,112 @@
+from bio import *
+from bio.fmindex import FMIndex, FMDIndex
+import gzip
+import pickle
+
+Q,T = ['test/data/' + a for a in ('MT-orang.fa','MT-human.fa')]
+
+def suffix_array_slow[T](s: T):
+    return [i for _, i in sorted([(s, i) for i in range(len(s))], key=lambda t: t[0][t[1]:])]
+
+def bwt_slow[T](s: T):
+    t = str(s) + '$'
+    n = len(t)
+    m = sorted([t[i:n]+t[0:i] for i in range(n)])
+    return ''.join([q[-1] for q in m])
+
+@test
+def test_suffix_array():
+    assert len(s''.suffix_array()) == 0
+    assert s'A'.suffix_array() == [0]
+
+    for s in list(seqs(FASTA(Q))) + list(seqs(FASTA(T))):
+        SA = s.suffix_array()
+        assert SA == suffix_array_slow(s)
+        s = ~s
+        SA = s.suffix_array()
+        assert SA == suffix_array_slow(s)
+
+@test
+def test_bwt():
+    assert s''.bwt() == s'$'
+    assert s'A'.bwt() == s'A$'
+
+    for s in list(seqs(FASTA(Q))) + list(seqs(FASTA(T))):
+        b = str(s.bwt())
+        assert b == bwt_slow(s)
+        s = ~s
+        b = str(s.bwt())
+        assert b == bwt_slow(s)
+
+@test
+def test_fmindex(FMD: bool):
+    # sequence-based
+    if not FMD:
+        fmi = FMIndex(s'TAACGAGGCGGCTCGTAGTATAAACGCTTTGGACTAGACTCGATACCTAG')
+        assert fmi.count(s'TA') == 7
+        assert fmi.count(s'TAA') == 2
+        assert fmi.count(s'TATT') == 0
+        assert sorted(list(fmi[s'TAA'])) == sorted(list(fmi[~s'TTA'])) == [0, 20]
+        assert len(list(fmi[s'TATT'])) == 0
+
+    # FASTA-based
+    fmi = FMIndex('test/data/seqs.fasta', FMD=FMD)
+    with gzip.open('build/fmi.bin', 'wb') as jar:
+        pickle.dump(fmi, jar)
+
+    with gzip.open('build/fmi.bin', 'rb') as jar:
+        fmi = pickle.load(jar, FMIndex)
+
+    assert fmi.sequence(1, 20, rid=0) == fmi.sequence(1, 20, name='chrA') == s'CCTCCCCGTTCGCTGGACC'
+    assert fmi.sequence(1, 20, rid=3) == fmi.sequence(1, 20, name='chrD') == s'GCCGTGACCACCCCGCGAG'
+    assert [(a.tid, a.name, a.len) for a in fmi.contigs()] == [(0, 'chrA', 460), (1, 'chrB', 489), (2, 'chrC', 500), (3, 'chrD', 49)]
+    if not FMD:
+        assert fmi.count(s'TATA') == 6  # note TATATA in chrC
+        assert fmi.count(s'TATAC') == 0
+    assert sorted(list(fmi.locate(s'TATAA'))) == [(1, 'chrB', 168), (2, 'chrC', 275), (2, 'chrC', 485)]
+    assert sorted(list(fmi.loci(fmi._get_interval(s'TATAA')))) == [Locus(tid=1, pos=168), Locus(tid=2, pos=275), Locus(tid=2, pos=485)]
+
+@test
+def test_fmdindex():
+    # FASTA-based
+    fmi = FMDIndex('test/data/seqs.fasta')
+    with gzip.open('build/fmi.bin', 'wb') as jar:
+        pickle.dump(fmi, jar)
+
+    with gzip.open('build/fmi.bin', 'rb') as jar:
+        fmi = pickle.load(jar, FMDIndex)
+
+    assert fmi.sequence(1, 20, rid=0) == fmi.sequence(1, 20, name='chrA') == s'CCTCCCCGTTCGCTGGACC'
+    assert fmi.sequence(1, 20, rid=3) == fmi.sequence(1, 20, name='chrD') == s'GCCGTGACCACCCCGCGAG'
+    assert [(a.tid, a.name, a.len) for a in fmi.contigs()] == [(0, 'chrA', 460), (1, 'chrB', 489), (2, 'chrC', 500), (3, 'chrD', 49)]
+    assert sorted(list(fmi.locate(s'TATAA'))) == [(1, 'chrB', 168, False), (2, 'chrC', 275, False), (2, 'chrC', 485, False)]
+    assert sorted(list(fmi.locate(s'CAGGG', both_strands=True))) == [(0, 'chrA', 214, False), (0, 'chrA', 226, False), (0, 'chrA', 338, True), (0, 'chrA', 381, False), (2, 'chrC', 448, False)]
+    assert sorted(list(fmi.loci(fmi._get_interval(s'CAGGG')))) == [Locus(tid=0, pos=214), Locus(tid=0, pos=226), Locus(tid=0, pos=-338), Locus(tid=0, pos=381), Locus(tid=2, pos=448)]
+
+@test
+def test_smems[FM](fmi: FM, path: str):
+    # FASTA-based
+    ref = [rec for rec in FASTA(path)]
+    with gzip.open('build/fmi.bin', 'wb') as jar:
+        pickle.dump(fmi, jar)
+
+    with gzip.open('build/fmi.bin', 'rb') as jar:
+        fmi = pickle.load(jar, FM)
+
+    q = s'ACCAAACCCAGCTACGCAAAATCTTAGCATACTCCTCAATTACCCACATAGGATGAATAA'
+    v = [[(name, pos, is_rev, ref[rid].seq[pos:pos + len(smem)]) for rid, name, pos, is_rev in fmi.biresults(smem)] for smem in fmi.smems(q, x=20, min_intv=1)[1]]
+    assert v == [[('chrC', 61, True, s'TATTCATCCTATGTGGGTAATTGAGGAGTATGCTAAGATTTTGCGTAGC'), ('chrC', 10, False, s'GCTACGCAAAATCTTAGCATACTCCTCAATTACCCACATAGGATGAATA')]]
+
+    q = s'CTTAA'
+    v = [[(name, pos, is_rev, ref[rid].seq[pos:pos + len(smem)]) for rid, name, pos, is_rev in fmi.biresults(smem)] for smem in fmi.smems(q, x=1, min_intv=1)[1]]
+    assert v == [[('chrA', 2, False, s'CTTAA')]]
+
+test_suffix_array()
+test_bwt()
+test_fmindex(FMD=True)
+test_fmindex(FMD=False)
+test_fmdindex()
+
+path = 'test/data/seqs2.fasta'
+test_smems(FMIndex(path, FMD=True), path)
+test_smems(FMDIndex(path), path)

@@ -1,0 +1,140 @@
+# FASTQ format parser
+# https://en.wikipedia.org/wiki/FASTQ_format
+from bio.seq import seq
+
+@tuple
+class FASTQRecord:
+    _header: str
+    _read: seq
+    _qual: str
+
+    @property
+    def header(self):
+        return self._header
+
+    @property
+    def name(self):
+        from bio.builtin import _split_header_on_space
+        return _split_header_on_space(self.header)[0]
+
+    @property
+    def comment(self):
+        from bio.builtin import _split_header_on_space
+        return _split_header_on_space(self.header)[1]
+
+    @property
+    def read(self):
+        return self._read
+
+    # FASTA compatibility
+    @property
+    def seq(self):
+        return self._read
+
+    @property
+    def qual(self):
+        return self._qual
+
+@tuple
+class FASTQReader:
+    _file: cobj
+    validate: bool
+    gzip: bool
+    copy: bool
+
+    def __new__(path: str, validate: bool, gzip: bool, copy: bool) -> FASTQReader:
+        return (gzopen(path, "r").__raw__() if gzip else open(path, "r").__raw__(), validate, gzip, copy)
+
+    @property
+    def file(self):
+        assert not self.gzip
+        p = __array__[cobj](1)
+        p.ptr[0] = self._file
+        return Ptr[File](p.ptr.as_byte())[0]
+
+    @property
+    def gzfile(self):
+        assert self.gzip
+        p = __array__[cobj](1)
+        p.ptr[0] = self._file
+        return Ptr[gzFile](p.ptr.as_byte())[0]
+
+    def _preprocess_read(self, a: str):
+        from bio.builtin import _validate_str_as_seq
+        if self.validate:
+            return _validate_str_as_seq(a, self.copy)
+        else:
+            return copy(seq(a.ptr, a.len)) if self.copy else seq(a.ptr, a.len)
+
+    def _preprocess_qual(self, a: str):
+        from bio.builtin import _validate_str_as_qual
+        if self.validate:
+            return _validate_str_as_qual(a, self.copy)
+        else:
+            return copy(a) if self.copy else a
+
+    def _iter_core(self, file, seqs: bool) -> Generator[FASTQRecord]:
+        line = 0
+        name, read, qual = "", s"", ""
+        for a in file._iter_trim_newline():
+            x = line % 4
+            if x == 0:
+                if self.validate and a[0] != "@":
+                    raise ValueError(f"sequence name on line {line + 1} of FASTQ does not begin with '@'")
+                name = copy(a[1:]) if self.copy else a[1:]
+            elif x == 1:
+                read = self._preprocess_read(a)
+                if seqs:
+                    yield ("", read, "")
+            elif x == 2:
+                if self.validate and a[0] != "+":
+                    raise ValueError(f"invalid separator on line {line + 1} of FASTQ")
+            elif x == 3:
+                if self.validate and len(a) != len(read):
+                    raise ValueError(f"quality and sequence length mismatch on line {line + 1} of FASTQ")
+                qual = self._preprocess_qual(a)
+                assert read.len >= 0
+                if not seqs:
+                    yield (name, read, qual)
+            else:
+                assert False
+            line += 1
+
+    def __seqs__(self):
+        if self.gzip:
+            for rec in self._iter_core(self.gzfile, seqs=True):
+                yield rec.seq
+        else:
+            for rec in self._iter_core(self.file, seqs=True):
+                yield rec.seq
+        self.close()
+
+    def __iter__(self):
+        if not self.copy:
+            raise ValueError("cannot iterate over FASTQ records with copy=False")
+        if self.gzip:
+            yield from self._iter_core(self.gzfile, seqs=False)
+        else:
+            yield from self._iter_core(self.file, seqs=False)
+        self.close()
+
+    def __blocks__(self, size: int):
+        from bio.block import _blocks
+        if not self.copy:
+            raise ValueError("cannot read sequences in blocks with copy=False")
+        return _blocks(self.__iter__(), size)
+
+    def close(self):
+        if self.gzip:
+            self.gzfile.close()
+        else:
+            self.file.close()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        self.close()
+
+def FASTQ(path: str, validate: bool = True, gzip: bool = True, copy: bool = True):
+    return FASTQReader(path=path, validate=validate, gzip=gzip, copy=copy)

@@ -1,0 +1,608 @@
+OP_COUNT = 0
+
+@llvm
+def inc(a: int) -> int:
+    %tmp = add i64 %a, 1
+    ret i64 %tmp
+
+class I:
+    @llvm
+    def __float__(self: int) -> float:
+        %tmp = sitofp i64 %self to double
+        ret double %tmp
+    @llvm
+    def __bool__(self: int) -> bool:
+        %0 = icmp ne i64 %self, 0
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+    def __pos__(self: int) -> int:
+        return self
+    def __neg__(self: int) -> int:
+        return I.__sub__(0, self)
+    @llvm
+    def __abs__(self: int) -> int:
+        %0 = icmp sgt i64 %self, 0
+        %1 = sub i64 0, %self
+        %2 = select i1 %0, i64 %self, i64 %1
+        ret i64 %2
+    @llvm
+    def __lshift__(self: int, other: int) -> int:
+        %0 = shl i64 %self, %other
+        ret i64 %0
+    @llvm
+    def __rshift__(self: int, other: int) -> int:
+        %0 = ashr i64 %self, %other
+        ret i64 %0
+    @llvm
+    def __add__(self: int, b: int) -> int:
+        %tmp = add i64 %self, %b
+        ret i64 %tmp
+    @llvm
+    def __add__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = fadd double %0, %other
+        ret double %1
+    @llvm
+    def __sub__(self: int, b: int) -> int:
+        %tmp = sub i64 %self, %b
+        ret i64 %tmp
+    @llvm
+    def __sub__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = fsub double %0, %other
+        ret double %1
+    @llvm
+    def __mul__(self: int, b: int) -> int:
+        %tmp = mul i64 %self, %b
+        ret i64 %tmp
+    @llvm
+    def __mul__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = fmul double %0, %other
+        ret double %1
+    @llvm
+    def __floordiv__(self: int, b: int) -> int:
+        %tmp = sdiv i64 %self, %b
+        ret i64 %tmp
+    @llvm
+    def __floordiv__(self: int, other: float) -> float:
+        declare double @llvm.floor.f64(double)
+        %0 = sitofp i64 %self to double
+        %1 = fdiv double %0, %other
+        %2 = call double @llvm.floor.f64(double %1)
+        ret double %2
+    @llvm
+    def __truediv__(self: int, other: int) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = sitofp i64 %other to double
+        %2 = fdiv double %0, %1
+        ret double %2
+    @llvm
+    def __truediv__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = fdiv double %0, %other
+        ret double %1
+    @llvm
+    def __mod__(a: int, b: int) -> int:
+        %tmp = srem i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __mod__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = frem double %0, %other
+        ret double %1
+    @llvm
+    def __invert__(a: int) -> int:
+        %tmp = xor i64 %a, -1
+        ret i64 %tmp
+    @llvm
+    def __and__(a: int, b: int) -> int:
+        %tmp = and i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __or__(a: int, b: int) -> int:
+        %tmp = or i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __xor__(a: int, b: int) -> int:
+        %tmp = xor i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __shr__(a: int, b: int) -> int:
+        %tmp = ashr i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __shl__(a: int, b: int) -> int:
+        %tmp = shl i64 %a, %b
+        ret i64 %tmp
+    @llvm
+    def __bitreverse__(a: int) -> int:
+        declare i64 @llvm.bitreverse.i64(i64 %a)
+        %tmp = call i64 @llvm.bitreverse.i64(i64 %a)
+        ret i64 %tmp
+    @llvm
+    def __bswap__(a: int) -> int:
+        declare i64 @llvm.bswap.i64(i64 %a)
+        %tmp = call i64 @llvm.bswap.i64(i64 %a)
+        ret i64 %tmp
+    @llvm
+    def __ctpop__(a: int) -> int:
+        declare i64 @llvm.ctpop.i64(i64 %a)
+        %tmp = call i64 @llvm.ctpop.i64(i64 %a)
+        ret i64 %tmp
+    @llvm
+    def __ctlz__(a: int) -> int:
+        declare i64 @llvm.ctlz.i64(i64 %a, i1 %is_zero_undef)
+        %tmp = call i64 @llvm.ctlz.i64(i64 %a, i1 false)
+        ret i64 %tmp
+    @llvm
+    def __cttz__(a: int) -> int:
+        declare i64 @llvm.cttz.i64(i64 %a, i1 %is_zero_undef)
+        %tmp = call i64 @llvm.cttz.i64(i64 %a, i1 false)
+        ret i64 %tmp
+    @llvm
+    def __eq__(a: int, b: int) -> bool:
+        %tmp = icmp eq i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __eq__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp oeq double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    @llvm
+    def __ne__(a: int, b: int) -> bool:
+        %tmp = icmp ne i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __ne__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp one double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    @llvm
+    def __lt__(a: int, b: int) -> bool:
+        %tmp = icmp slt i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __lt__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp olt double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    @llvm
+    def __gt__(a: int, b: int) -> bool:
+        %tmp = icmp sgt i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __gt__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp ogt double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    @llvm
+    def __le__(a: int, b: int) -> bool:
+        %tmp = icmp sle i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __le__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp ole double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    @llvm
+    def __ge__(a: int, b: int) -> bool:
+        %tmp = icmp sge i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    @llvm
+    def __ge__(self: int, b: float) -> bool:
+        %0 = sitofp i64 %self to double
+        %1 = fcmp oge double %0, %b
+        %2 = zext i1 %1 to i8
+        ret i8 %2
+    def __pow__(self: int, exp: int):
+        if exp < 0:
+            return 0
+        result = 1
+        while True:
+            if exp & 1:
+                result *= self
+            exp >>= 1
+            if not exp:
+                break
+            self *= self
+        return result
+    def __pow__(self: int, exp: float):
+        return float(self) ** exp
+
+@extend
+class int:
+    def __int__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return self
+    def __float__(self) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__float__(self)
+    def __bool__(self) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__bool__(self)
+    def __pos__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return self
+    def __neg__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__neg__(self)
+    def __lshift__(self, other: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__lshift__(self, other)
+    def __rshift__(self, other: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__rshift__(self, other)
+    def __add__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__add__(self, b)
+    def __add__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__add__(self, other)
+    def __sub__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__sub__(self, b)
+    def __sub__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__sub__(self, other)
+    def __mul__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mul__(self, b)
+    def __mul__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mul__(self, other)
+    def __floordiv__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__floordiv__(self, b)
+    def __floordiv__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__floordiv__(self, other)
+    def __truediv__(self, other: int) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__truediv__(self, other)
+    def __truediv__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__truediv__(self, other)
+    def __mod__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mod__(self, b)
+    def __mod__(self, other: float) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mod__(self, other)
+    def __invert__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__invert__(self)
+    def __and__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__and__(self, b)
+    def __or__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__or__(self, b)
+    def __xor__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__xor__(self, b)
+    def __eq__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__eq__(self, b)
+    def __eq__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__eq__(self, b)
+    def __ne__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__ne__(self, b)
+    def __ne__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__ne__(self, b)
+    def __lt__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__lt__(self, b)
+    def __lt__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__lt__(self, b)
+    def __gt__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__gt__(self, b)
+    def __gt__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__gt__(self, b)
+    def __le__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__le__(self, b)
+    def __le__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__le__(self, b)
+    def __ge__(self, b: int) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__ge__(self, b)
+    def __ge__(self, b: float) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__ge__(self, b)
+    def __pow__(self, exp: int):
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__pow__(self, exp)
+    def __pow__(self, exp: float):
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__pow__(self, exp)
+
+class F:
+    @llvm
+    def __int__(self: float) -> int:
+        %0 = fptosi double %self to i64
+        ret i64 %0
+    def __float__(self: float):
+        return self
+    @llvm
+    def __bool__(self: float) -> bool:
+        %0 = fcmp one double %self, 0.000000e+00
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+@extend
+class float:
+    def __int__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return F.__int__(self)
+    def __float__(self) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return self
+    def __bool__(self) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return F.__bool__(self)
+
+@extend
+class bool:
+    def __int__(self) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return 1 if self else 0
+    def __float__(self) -> float:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return 1. if self else 0.
+    def __bool__(self) -> bool:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return self
+
+def eq(a: int, b: int) -> bool:
+    return I.__eq__(a, b)
+
+@noinline
+def foo(x):
+  return x
+
+@test
+def test_int_simple_fold():
+    op_count = OP_COUNT
+    x = 1
+    y = x + 2
+    z = x + 3
+    assert eq(foo(x + 1), 2)
+    assert eq(foo(y * 2), 6)
+    assert eq(foo(z // 3), 1)
+    assert eq(foo(x >> 2), 0)
+    assert eq(foo(x << y), 8)
+    assert eq(foo(x | y), 3)
+    assert eq(foo(z & z), 4)
+    assert not foo(x > y)
+    assert foo(y < z)
+    assert not foo(x >= z)
+    assert foo(x <= 2)
+    assert foo(x == 1)
+    assert foo(x != 2)
+    assert eq(foo(y ** 3), 27)
+    assert eq(foo(y ** 0), 1)
+    assert eq(foo(y ** -1), 0)
+    assert eq(op_count, OP_COUNT)
+test_int_simple_fold()
+
+@test
+def test_ternary_fold():
+    op_count = OP_COUNT
+    x = 1
+    y = x * 2
+    assert (x + 1 if x != 0 else -1) > 0
+    assert (x + 1 if x == 0 else -1) < 0
+    assert eq(op_count, OP_COUNT)
+test_ternary_fold()
+
+@test
+def test_try_catch_fold():
+    op_count = OP_COUNT
+    x = 0
+    y = x + 1
+    try:
+        x = 1
+    finally:
+        x = 4
+    assert x == 4
+    assert eq(op_count, OP_COUNT)
+test_try_catch_fold()
+
+@test
+def test_while_fold():
+    op_count = OP_COUNT
+    x = 0
+    y = 1
+    while (x != 0):
+        y = 2
+    assert y + 1 == 2
+    assert eq(op_count, OP_COUNT)
+test_while_fold()
+
+@test
+def test_imperative_for_fold():
+    op_count = OP_COUNT
+    foo = 2
+    y = 1
+    for i in range(foo, 2):
+        y = foo - 1
+    assert y == 1
+    assert eq(op_count, OP_COUNT)
+test_imperative_for_fold()
+
+@test
+def test_long_fold():
+    op_count = OP_COUNT
+    x = 3
+    assert eq(foo(x + x + x + x + x + x + x + x + x + x + x + x), 36)
+    assert eq(op_count, OP_COUNT)
+test_long_fold()
+
+@test
+def test_conversions():
+    op_count = OP_COUNT
+    n = 42
+    b = True
+    x = 3.14
+
+    assert eq(foo(n.__int__()), n)
+    assert foo(n.__float__()) == 42.0
+    assert foo(n.__bool__())
+
+    assert eq(foo(b.__int__()), 1)
+    assert foo(b.__float__()) == 1.0
+    assert foo(b.__bool__())
+
+    assert eq(foo(x.__int__()), 3)
+    assert foo(x.__float__()) == x
+    assert foo(x.__bool__())
+    assert eq(op_count, OP_COUNT)
+test_conversions()
+
+@test
+def test_no_ops():
+    def v(): return 42
+    op_count = OP_COUNT
+    n = v()
+    assert eq(+n, n)
+    assert eq(-(-n), n)
+    assert eq(~(~n), n)
+    assert eq(op_count, OP_COUNT)
+test_no_ops()
+
+@test
+def test_algebraic_simplification():
+    def v(): return 42
+    op_count = OP_COUNT
+    n = v()
+    assert eq(0*n, 0)
+    assert eq(n*0, 0)
+    assert eq(n*1, n)
+    assert eq(1*n, n)
+    assert eq(n+0, n)
+    assert eq(0+n, n)
+    assert eq(n-0, n)
+    assert eq(0//n, 0)
+    assert eq(op_count, OP_COUNT)
+test_algebraic_simplification()
+
+n = 42
+@test
+def test_global_fold():
+    op_count = OP_COUNT
+    m = 1
+    assert eq(n + m, 43)
+    assert eq(op_count, OP_COUNT)
+test_global_fold()
+
+# make sure globals fold properly with demotion
+op_count1 = OP_COUNT
+a = foo(42)
+a = 42
+b = a + 10
+c = b
+op_count2 = OP_COUNT
+
+@test
+def test_global_fold_non_const():
+    op_count = OP_COUNT
+    assert c == 52
+    assert op_count1 == op_count2
+test_global_fold_non_const()
+
+some_global = 42
+@test
+def test_side_effect_analysis():
+    @pure
+    @test
+    def foo():
+        assert False
+        return some_global
+
+    def bar():
+        a = 1
+        b = 2
+        c = 3
+        return foo()
+
+    def baz():
+        global some_global
+        some_global += 1
+        return some_global
+
+    def fab():
+        return baz()
+
+    foo()
+    x = foo()
+    bar()
+    y = bar()
+    assert baz() == 43
+    baz()
+    assert some_global == 44
+    assert fab() == 45
+    fab()
+    assert some_global == 46
+test_side_effect_analysis()

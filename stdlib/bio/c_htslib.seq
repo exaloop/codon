@@ -1,0 +1,98 @@
+# <htslib.h>
+from C import hts_open(cobj, cobj) -> cobj
+from C import hts_set_threads(cobj, i32) -> i32
+from C import hts_close(cobj)
+from C import hts_idx_destroy(cobj)
+from C import hts_itr_destroy(cobj)
+from C import hts_itr_destroy(cobj)
+from C import hts_itr_next(cobj, cobj, cobj, cobj) -> i32
+from C import sam_index_load(cobj, cobj) -> cobj
+from C import sam_hdr_read(cobj) -> cobj
+from C import sam_itr_querys(cobj, cobj, cobj) -> cobj
+from C import sam_read1(cobj, cobj, cobj) -> i32
+from C import bam_read1(cobj, cobj) -> i32
+from C import bam_init1() -> cobj
+@pure
+@C
+def bam_cigar2qlen(a: int, b: Ptr[u32]) -> int: pass
+@pure
+@C
+def bam_cigar2rlen(a: int, b: Ptr[u32]) -> int: pass
+@pure
+@C
+def bam_aux_get(a: cobj, b: Ptr[byte]) -> Ptr[u8]: pass
+@pure
+@C
+def bam_aux2i(a: Ptr[u8]) -> int: pass
+@pure
+@C
+def bam_aux2f(a: Ptr[u8]) -> float: pass
+@pure
+@C
+def bam_aux2A(a: Ptr[u8]) -> byte: pass
+@pure
+@C
+def bam_aux2Z(a: Ptr[u8]) -> Ptr[byte]: pass
+@pure
+@C
+def bam_auxB_len(a: Ptr[u8]) -> u32: pass
+@pure
+@C
+def bam_auxB2i(a: Ptr[u8], b: u32) -> int: pass
+@pure
+@C
+def bam_auxB2f(a: Ptr[u8], b: u32) -> float: pass
+@pure
+@C
+def bam_endpos(a: cobj) -> int: pass
+from C import sam_hdr_destroy(cobj)
+from C import bam_destroy1(cobj)
+
+from C import bcf_hdr_read(cobj) -> cobj
+from C import bcf_read(cobj, cobj, cobj) -> i32
+from C import bcf_unpack(cobj, i32) -> i32
+from C import bcf_hdr_destroy(cobj)
+from C import bcf_init() -> cobj
+from C import bcf_destroy(cobj)
+from C import bcf_get_variant_types(cobj) -> i32
+from C import bcf_get_variant_type(cobj, i32) -> i32
+from C import bcf_is_snp(cobj) -> i32
+from C import bcf_has_filter(cobj, cobj, cobj) -> i32
+from C import bcf_get_fmt(cobj, cobj, cobj) -> cobj
+from C import bcf_get_info(cobj, cobj, cobj) -> cobj
+from C import bcf_get_fmt_id(cobj, i32) -> cobj
+from C import bcf_get_info_id(cobj, i32) -> cobj
+from C import bcf_get_format_values(cobj, cobj, cobj, cobj, cobj, i32) -> i32
+from C import bcf_hdr_id2int(cobj, i32, cobj) -> i32
+from C import bcf_has_filter(cobj, cobj, cobj) -> i32
+from C import bcf_hrec_format(cobj, cobj)
+from C import bcf_clear(cobj)
+from C import bcf_empty(cobj)
+from C import bcf_dup(cobj) -> cobj
+from C import bcf_get_info_values(cobj, cobj, Ptr[byte], Ptr[cobj], Ptr[i32], i32) -> i32
+
+@pure
+@C
+def hts_version() -> cobj: pass
+
+@pure
+@C
+def seq_get_htsfile_fp(a: cobj) -> cobj: pass
+@pure
+@C
+def seq_is_htsfile_cram(a: cobj) -> bool: pass
+@pure
+@C
+def seq_is_htsfile_bgzf(a: cobj) -> bool: pass
+
+# Seq HTSlib
+def sam_itr_next(file: cobj, itr: cobj, r: cobj) -> int:
+    is_cram = seq_is_htsfile_cram(file)
+    is_bgzf = seq_is_htsfile_bgzf(file)
+    if not is_cram and not is_bgzf:
+        raise ValueError('not BGZF compressed')
+    if not itr:
+        raise ValueError('null iterator')
+    return int(hts_itr_next(
+        seq_get_htsfile_fp(file) if is_bgzf else cobj(),
+        itr, r, file))

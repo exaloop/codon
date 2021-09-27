@@ -1,0 +1,12 @@
+# Implementation of https://github.com/lh3/bwa/blob/master/example.c
+
+from sys import argv
+from bio import FASTQ
+from bio.bwa import BWA
+
+bwa = BWA(argv[1])
+for read in FASTQ(argv[2]):
+    for reg in bwa.align(read.read):
+        if reg.secondary >= 0: continue
+        aln = bwa.reg2aln(read.read, reg)
+        print read.name, '-' if aln.rev else '+', bwa.name(aln), aln.pos, aln.mapq, aln.cigar, aln.NM

@@ -1,0 +1,37 @@
+################################
+# Reverse complement benchmark #
+################################
+from sys import argv
+from time import timing
+from bio import *
+from internal.gc import alloc_atomic, free
+
+def test_slow(s):
+    n = len(s)
+    p = alloc_atomic(n)
+    for i in range(n):
+        p[n - i - 1] = s[i].ptr[0].comp()
+    r = seq(p, n)
+    b = s > r
+    free(p)
+    return b
+
+def test_fast(s: seq):
+    return s > ~s
+
+def test(sublen, use_slow_test):
+    n = 0
+    with timing(f'{sublen=} ({use_slow_test=})'):
+        for s in FASTA(argv[1]) |> seqs:
+            for sub in s |> split(sublen, 1):
+                b = False
+                if use_slow_test:
+                    b = test_slow(sub)
+                else:
+                    b = test_fast(sub)
+                n += 1 if b else 0
+    print n
+
+for i in range(1, 32 + 1):
+    test(i, True)
+    test(i, False)

@@ -1,0 +1,253 @@
+# cgranges implementation adapted from
+# https://github.com/lh3/cgranges
+
+from internal.gc import sizeof, realloc
+
+@tuple
+class Interval:
+    st: int
+    en: int
+    max: int
+    chrom_id: int
+
+    def __new__(st: int, en: int, chrom_id: int) -> Interval:
+        return (st, en, en, chrom_id)
+
+    def with_max(self, max: int) -> Interval:
+        return (self.st, self.en, max, self.chrom_id)
+
+    @property
+    def start(self):
+        return int(self.st)
+
+    @property
+    def end(self):
+        return int(self.en)
+
+    def __len__(self):
+        return self.end - self.start
+
+    def __bool__(self):
+        return len(self) > 0
+
+@tuple
+class _StackCell:
+    _x: int
+    _k: i32
+    _w: i32
+
+    def __new__(k: int, x: int, w: int) -> _StackCell:
+        return (x, i32(k), i32(w))
+
+    @property
+    def k(self):
+        return int(self._k)
+
+    @property
+    def x(self):
+        return int(self._x)
+
+    @property
+    def w(self):
+        return int(self._w)
+
+@tuple
+class _Contig:
+    name: str
+    len: int
+    root_k: int
+    n: int
+    off: int
+
+class IntervalTree:
+    '''
+    Interval tree data structure.
+    Adapted from [cgranges](https://github.com/lh3/cgranges).
+    '''
+
+    a: Ptr[Interval]
+    n: int
+    m: int
+    contigs: List[_Contig]
+    hc: Dict[str, int]
+
+    def __init__(self):
+        M = 32
+        self.a = Ptr[Interval](M)
+        self.n = 0
+        self.m = M
+        self.contigs = List[_Contig]()
+        self.hc = Dict[str, int]()
+        self.hc.resize(1024)
+
+    def _chrom_id(self, chrom: str, end: int):
+        contigs = self.contigs
+        idx = self.hc.get(chrom, -1)
+        if idx == -1:
+            idx = len(contigs)
+            contigs.append(_Contig(chrom, end, 0, 0, -1))
+            self.hc[chrom] = idx
+        else:
+            contig = contigs[idx]
+            if contig.len < end:
+                contigs[idx] = _Contig(contig.name, end, contig.root_k, contig.n, contig.off)
+        return idx
+
+    def _append(self, intv: Interval):
+        if self.n >= self.m:
+            m = (3 * self.m)//2 + 1
+            self.a = Ptr[Interval](realloc(self.a.as_byte(), m * sizeof(Interval)))
+            self.m = m
+        self.a[self.n] = intv
+        self.n += 1
+
+    def _is_sorted(self):
+        i = 1
+        while i < self.n:
+            if self.a[i - 1].start > self.a[i].start:
+                break
+            i += 1
+        return i == self.n
+
+    def _sort(self):
+        from algorithms.pdqsort import pdq_sort_array
+        a = self.a
+        n = self.n
+        def key(intv: Interval) -> Tuple[int,int]: return (intv.chrom_id, intv.start)
+        pdq_sort_array(Array[Interval](a, n), n, key)
+
+    def _index_prepare(self):
+        if not self._is_sorted(): self._sort()
+        p = self.a
+        n = self.n
+        contigs = self.contigs
+        st = 0
+        i = 1
+        while i <= n:
+            if i == n or p[i].chrom_id != p[st].chrom_id:
+                ctg = p[st].chrom_id
+                contig = contigs[ctg]
+                contigs[ctg] = _Contig(contig.name, contig.len, contig.root_k, i - st, st)
+                st = i
+            i += 1
+
+    def _index_core(a: Ptr[Interval], n: int):
+        if not a or n <= 0:
+            return -1
+        i = 0
+        last_i = 0  # last_i points to the rightmost node in the tree
+        last = 0    # last is the max value at node last_i
+        while i < n:  # leaves (i.e. at level 0)
+            last_i = i
+            ai = a[i]
+            last = ai.en
+            a[i] = ai.with_max(last)
+            i += 2
+
+        k = 1
+        while (1 << k) <= n:
+            x = 1 << (k - 1)
+            i0 = (x << 1) - 1
+            step = x << 2
+
+            i = i0
+            while i < n:  # traverse all nodes at level k
+                el = a[i - x].max  # max value of left child
+                er = a[i + x].max if i + x < n else last  # of the right child
+                e = a[i].en
+                e = e if e > el else el
+                e = e if e > er else er
+                a[i] = a[i].with_max(e)  # set the max value for node i
+                i += step
+
+            last_i = last_i - x if last_i >> k & 1 else  last_i + x  # last_i now points to the parent of the original last_i
+            if last_i < n and a[last_i].max > last:  # update last accordingly
+                last = a[last_i].max
+            k += 1
+        return k - 1
+
+    def add(self, chrom: str, start: int, end: int):
+        '''
+        Adds an interval to the tree. An interval is a chromosome name `chrom` and
+        0-based `start` and `end` (non-inclusive) positions.
+        '''
+        chrom_id = self._chrom_id(chrom, end)
+        self._append(Interval(start, end, chrom_id))
+
+    def index(self):
+        '''
+        Indexes the tree for querying.
+        '''
+        self._index_prepare()
+        i = 0
+        n = len(self.contigs)
+        while i < n:
+            contig = self.contigs[i]
+            root_k = IntervalTree._index_core(self.a + contig.off, contig.n)
+            contig = _Contig(contig.name, contig.len, root_k, contig.n, contig.off)
+            self.contigs[i] = contig
+            i += 1
+
+    def overlap(self, chrom: str, start: int, end: int):
+        '''
+        Yields all `Interval`s overlapping the argument interval.
+        '''
+        chrom_id = self.hc.get(chrom, -1)
+        if chrom_id == -1:
+            return
+        contig = self.contigs[chrom_id]
+        a = self.a + contig.off
+        n = contig.n
+        st = start
+        en = end
+        stack = __array__[_StackCell](64)
+        t = 0
+
+        k = contig.root_k
+        stack[t] = _StackCell(k, (1 << k) - 1, 0)  # push the root; this is a top down traversal
+        t += 1
+
+        while t:  # the following guarantees that numbers in out[] are always sorted
+            t -= 1
+            z = stack[t]
+            if z.k <= 3:  # we are in a small subtree; traverse every node in this subtree
+                i0 = z.x >> z.k << z.k
+                i1 = i0 + (1 << (z.k + 1)) - 1
+                if i1 >= n:
+                    i1 = n
+                i = i0
+                while i < i1 and a[i].st < en:
+                    if st < a[i].en:  # if overlap, append to out[]
+                        yield a[i]
+                    i += 1
+            elif z.w == 0:  # if left child not processed
+                y = z.x - (1 << (z.k - 1))  # the left child of z.x; NB: y may be out of range (i.e. y>=a.size())
+                stack[t] = _StackCell(z.k, z.x, 1)  # re-add node z.x, but mark the left child having been processed
+                t += 1
+                if y >= n or a[y].max > st:  # push the left child if y is out of range or may overlap with the query
+                    stack[t] = _StackCell(z.k - 1, y, 0)
+                    t += 1
+            elif z.x < n and a[z.x].st < en:  # need to push the right child
+                if st < a[z.x].en:  # test if z.x overlaps the query; if yes, append to out[]
+                    yield a[z.x]
+                stack[t] = _StackCell(z.k - 1, z.x + (1 << (z.k - 1)), 0)  # push the right child
+                t += 1
+
+    def __len__(self):
+        return self.n
+
+    def __bool__(self):
+        return len(self) > 0
+
+    def __contains__(self, chrom: str):
+        return chrom in self.hc
+
+    def __iter__(self):
+        '''
+        Iterator over all intervals in the tree
+        '''
+        i = 0
+        n = self.n
+        while i < n:
+            yield self.a[i]
+            i += 1

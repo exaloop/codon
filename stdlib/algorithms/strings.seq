@@ -1,0 +1,203 @@
+def filter_overlaps(v: Generator[int], n: int):
+    prev = -1
+    for pos in v:
+        if prev < 0 or pos - prev >= n:
+            prev = pos
+            yield pos
+
+def rfilter_overlaps(v: Generator[int], n: int):
+    prev = -1
+    for pos in v:
+        if prev < 0 or prev - pos >= n:
+            prev = pos
+            yield pos
+
+def string_search_slow(text: str, pattern: str):
+    """
+    Return a list containing the non-overlapping position of each index
+    the pattern is found.
+    """
+
+    if pattern == '':
+        for i in range(len(text) + 1):
+            yield i
+        return
+
+    for i in range(len(text) - len(pattern) + 1):
+        if text[i:i + len(pattern)] == pattern:
+            yield i
+
+def rstring_search_slow(text: str, pattern: str):
+    """
+    Return a list containing the non-overlapping position of each index
+    the pattern is found from right to left.
+    """
+
+    if pattern == '':
+        for i in range(len(text), -1, -1):
+            yield i
+        return
+
+    for i in range(len(text), len(pattern) - 1, -1):
+        if text[i-len(pattern):i] == pattern:
+            yield i - len(pattern)
+
+def string_search_rabin_karp(text: str, pattern: str, prime: int = 645419):
+    """
+    Return a list containing the position of each index
+    the pattern is found.
+    """
+    BASE = 256
+
+    # hash formula
+    hash = 1
+    for i in range(len(pattern) - 1):
+        hash = (hash * BASE) % prime
+
+    # calculate hash value of the pattern and the hash value of the
+    # first section of text
+    p, t = 0, 0
+    for i in range(len(pattern)):
+        p = (BASE * p + ord(pattern[i])) % prime
+        t = (BASE * t + ord(text[i])) % prime
+
+    # shift pattern over text one bye one
+    for i in range(len(text) - len(pattern)):
+        # check the hash values of current position of text and
+        # pattern if the hash values are equal then compare
+        # characters one by one
+        if p == t and text[i:i + len(pattern)] == pattern:
+            yield i
+
+        # calculate hash value for next position of text.
+        # the leading digit is removed while trailing digit is added
+        t = BASE * (t - (ord(text[i]) * hash) % prime + prime) % prime
+        t = (t + ord(text[i + len(pattern)])) % prime
+
+    if p == t and text[-len(pattern):] == pattern:
+        yield len(text) - len(pattern)
+
+def computeLPArray(pattern: str, len_pat: int) -> List[int]:
+    """
+    Return a list containing the length of the maximum matching
+    proper prefix of the pattern[0, 1, ..., i]
+    """
+    len = 0 # length of the previous longest prefix
+    lp = List[int]()    # longest proper prefix will hold the longest prefix values for pattern
+    lp.append(0)
+    i = 1
+
+    while i < len_pat:
+        if pattern[i] == pattern[len]:
+            len += 1
+            lp.append(len)
+            i += 1
+        else:
+            if len != 0:
+                len = lp[len-1]
+            else:
+                lp.append(0)
+                i += 1
+    return lp
+
+def string_search_KMP(text: str, pattern: str):
+    """
+    Knuth-Morris-Pratt algorithm
+    Return a list containing the position of each index
+    the pattern is found.
+    """
+    if not pattern:
+        for i in range(len(text) + 1):
+            yield i
+        return
+
+    lp_array = computeLPArray(pattern, len(pattern))
+    i, j = 0, 0   # indices for text and pattern
+    while i < len(text):
+        if pattern[j] == text[i]:
+            i += 1
+            j += 1
+        if j == len(pattern):
+            yield i-j
+            j = lp_array[j-1]
+        # mismatch after j matches
+        elif i < len(text) and pattern[j] != text[i]:
+            # do not match lp[0...lp[j-1]] characters,
+            # they will match anyways
+            if j != 0:
+                j = lp_array[j-1]
+            else:
+                i += 1
+
+def replace_interleave(self, new: str, maxcount: int) -> str:
+    """
+    Returns a string inserting the 'new' string everywhere.
+    """
+
+    j = 0
+    res = List[str]()
+    # insert the new string for maxcount <= len(self) times.
+    for i in range(len(self)):
+        if i+1 > maxcount:
+            break
+        res.append(new)
+        res.append(self[i])
+        j = i
+    if maxcount-1 == len(self) or maxcount > len(self) or maxcount < 0:
+        res.append(new)
+    else:
+        res.append(self[j+1:])
+    return str.cat(res)
+
+def replace_delete_substring(self, old: str, new: str, maxcount: int) -> str:
+    """
+    Returns a string deleting any instances of the 'old' string in self and
+    replaceing it with the 'new' string.
+    """
+    li = list(string_search_KMP(self, old))
+
+    # no matches
+    if len(li) == 0:
+        return self
+
+    # when the whole string is replaced by ''
+    if len(li)*len(old) == len(self) and maxcount >= len(self):
+        return ''
+
+    if maxcount > len(li):
+        maxcount = len(li)
+
+    result_len = len(self) - (maxcount * len(old))
+    assert result_len >= 0
+
+    j = li[0]
+    res = List[str]()
+    res.append(self[0:j])
+
+    # replace the old substring with the new substring
+    for i in range(1, maxcount):
+        res.append(new)
+        res.append(self[j+len(old): li[i]])
+        j = li[i]
+    res.append(new)
+    res.append(self[j+len(old):])
+    return str.cat(res)
+
+# # should get [2]
+# print rstring_search_slow('abbbc', 'bb')
+# print string_search_slow('abbba', 'bb')
+
+# # should get [0, 9, 11, 14]
+# print string_search_slow('1214313141212 12', '12')
+# print string_search_rabin_karp('1214313141212 12', '12', 1001)
+# print string_search_KMP('1214313141212 12', '12')
+# #
+# # # should get [0, 9]
+# print string_search_slow('AABAACAADAABAABA', 'AABA')
+# print string_search_rabin_karp('AABAACAADAABAABA', 'AABA', 1001)
+# print string_search_KMP('AABAACAADAABAABA', 'AABA')
+# #
+# # # should get [10]
+# print string_search_slow('ABABDABACDABABCABAB', 'ABABCABAB')
+# print string_search_rabin_karp('ABABDABACDABABCABAB', 'ABABCABAB', 101)
+# print string_search_KMP('ABABDABACDABABCABAB', 'ABABCABAB')

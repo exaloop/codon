@@ -1,0 +1,46 @@
+@test
+def test_basic():
+    from python import mymodule
+    assert str(mymodule.multiply(3, 4)) == '12'
+test_basic()
+
+@test
+def test_pybridge():
+    @python
+    def test_pydef(n: int) -> str:
+        return ''.join(map(str, range(n)))
+    assert test_pydef(5) == '01234'
+test_pybridge()
+
+from python import mymodule
+@test
+def test_conversions():
+    T = tuple[dict[str,float],tuple[int,float]]
+    t = mymodule.print_args(
+        (4,5),
+        {'a': 3.14, 'b': 2.123},
+        True,
+        {s'ACGT'},
+        [['abc'], ['1.1', '2.2'], list[str]()]
+    )
+    assert T.__from_py__(t) == ({'a': 3.14, 'b': 2.123}, (222, 3.14))
+test_conversions()
+
+@test
+def test_pythrow():
+    from python import mymodule.throw_exc() -> void as te
+    try:
+        te()
+    except PyError as e:
+        assert e.pytype + ":" + e.message == "ValueError:foo"
+        return
+    assert False
+test_pythrow()
+
+@test
+def test_pyargs():
+    from python import mymodule
+    assert str(mymodule.print_args_var(1, 2, 3)) == "a=1, b=2, c=3, args=(), kwargs={}"
+    assert str(mymodule.print_args_var(1, z=5, b=2)) == "a=1, b=2, c=1, args=(), kwargs={'z': 5}"
+    assert str(mymodule.print_args_var(1, *(1,2,3,4,5), z=5)) == "a=1, b=1, c=2, args=(3, 4, 5), kwargs={'z': 5}"
+test_pyargs()

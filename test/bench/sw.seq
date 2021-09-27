@@ -1,0 +1,52 @@
+######################################
+# Inter-sequence alignment benchmark #
+######################################
+from sys import argv
+from time import timing
+from bio import *
+
+prefix = argv[1]
+checksum = 0
+
+@inter_align
+def process_inter(t):
+    global checksum
+    query, target = t
+    score = query.align(target,
+                        a=1,
+                        b=2,
+                        ambig=0,
+                        gapo=2,
+                        gape=1,
+                        zdrop=100,
+                        bandwidth=100,
+                        end_bonus=5).score
+    checksum += score
+
+def process_intra(t):
+    global checksum
+    query, target = t
+    score = query.align(target,
+                        a=1,
+                        b=2,
+                        ambig=0,
+                        gapo=2,
+                        gape=1,
+                        zdrop=100,
+                        bandwidth=100,
+                        end_bonus=5).score
+    checksum += score
+
+for m in range(30, 125, 5):
+    in1 = f'{prefix}.max_{m}.1.txt'
+    in2 = f'{prefix}.max_{m}.2.txt'
+
+    checksum = 0
+    with timing(f'intra ({m=})'):
+        zip(seqs(in1), seqs(in2)) |> process_intra
+    print checksum
+
+    checksum = 0
+    with timing(f'inter ({m=})'):
+        zip(seqs(in1), seqs(in2)) |> process_inter
+    print checksum

@@ -1,0 +1,301 @@
+from bio import *
+
+class Pair[T]:
+    a: T
+    b: T
+
+    def sum(self, c):
+        return self.a + self.b + c
+
+    def dump(self):
+        print 'Pair:', self.a, self.b
+
+    def swap(self):
+        tmp = self.a
+        self.a = self.b
+        self.b = tmp
+
+    def iter(self):
+        yield self.a
+        yield self.b
+
+class X[T]:
+    t: T
+
+    def main[S](args: S):
+        def f(s: seq):
+            v = array[seq](s.len//32)
+            i = 0
+            for t in s.split(32, 32):
+                v[i] = t
+                i += 1
+            return v
+
+        def myiter(a):
+            i = 0
+            while i < a.len:
+                yield a[i]
+                i += 1
+
+        farr = array[function[[seq], array[seq]]](1)
+        farr[0] = f
+
+        def ident(s):
+            return s
+
+        a = array[seq](2)
+        a[0] = s'ACGT'
+        a[1] = s'NANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANA'
+        for i in enumerate(myiter(a)):
+            print i[0], i[1]
+
+        y = f(a[1])
+        print y.len
+        for i in enumerate(myiter(y)):
+            print i[0], i[1]
+
+        def process_input(input: seq):
+            v = f(input)
+            for r in enumerate(myiter(v)):
+                print r[0], r[1]
+            print input
+            print ident(input)
+            print v.len
+
+            print v[0]
+            match v[0]:
+                case 'A*':
+                    print 'caught'
+                case _:
+                    print 'default'
+
+            for v1 in input.split(64,64):
+                print v1
+                for v2 in v1.split(32, 32):
+                    for v3 in v2.split(16, 16):
+                        print v3
+                    print v2
+                print v1
+            print ident(input)
+            print v[1]
+            b = (v[1], ((v)[2]), (v[1], 4.2))
+            print b[2][1]
+        myiter(args) |> process_input
+
+    def main2():
+        def hello():
+            return "hello world"
+
+        def hello2():
+            print "hello again"
+
+        print hello()
+        hello2()
+        print 42 + 2.2
+        print -13
+        x = 4.2
+        print x
+        x = .42
+        print -x if x < 1 else +x
+        b = (True, not True)
+        print b[0]
+        b = (b[0], not not False)
+        print b[1]
+
+        def fib(n: int) -> int:
+            @tuple
+            class F:
+                f: function[[int], int]
+                x: int
+            def apply(f, x):
+                return f(x)
+            def rec(pair: F):
+                return apply(pair.f, pair.x - 1) + apply(pair.f, pair.x - 2)
+            return n if n <= 1 else rec(F(fib, n))
+
+        def fib2(n) -> int:
+            return n if n <= 1 else fib2(n-1) + fib2(n-2)
+
+        print fib(10), fib2(10)
+
+        for i in range(1 if b[0] else 2, 5 + 5):
+            if i == 3: continue
+            elif i >= 7:
+                break
+            else:
+                for z in range(i, i + 1): print z
+
+        @tuple
+        class Person:
+            name: str
+            age: int
+
+        def whois(person: Person):
+            print person.name, person.age
+
+        def birthday(person: Person):
+            return Person(person.name, person.age + 1)
+
+        joe = Person("Joe", 42)
+        whois(joe)
+        joe = birthday(joe)
+        whois(joe)
+
+        p = Pair[int](42, 19)
+        print p.sum(100.1)  # 42 + 19 + 100 = 161
+        print p.sum(100)
+        p.dump()  # 42,19
+        p.swap()
+        for a in p.iter(): print a  # 19,42
+
+        q = Pair(4.2, 1.9)
+        print q.sum(10.0)
+        for a in q.iter(): print a
+        q.swap()
+        Pair[float].dump(q)
+
+        def add[T](a: T, b: T, c: T):
+            return a + b + c
+
+        add_one = add(1, ...)
+        add_two = add(3, c=-1, ...)
+        print add(1, 2, 3)
+        print add_one(5, 0)
+        print 42 |> add_two
+
+args = array[seq](1)
+args[0] = s'ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT'
+X[str].main(args)
+X[seq].main(args)
+X[str].main2()
+X[float].main2()
+
+# main():
+# EXPECT: 0 ACGT
+# EXPECT: 1 NANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANA
+# EXPECT: 2
+# EXPECT: 0 NANANANANANANANANANANANANANANANA
+# EXPECT: 1 NANANANANANANANANANANANANANANANA
+# EXPECT: 0 ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: 1 AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: 2 CTCCTAAGCTCAAACCTAATGTGGCTAACTCC
+# EXPECT: 3 CCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: 4
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: caught
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: ACATACCGGCCAATCG
+# EXPECT: CGACAACGCAACAGAG
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: AAAGAACTAGACGCTT
+# EXPECT: GCTACATTATCGTTAA
+# EXPECT: AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: CTCCTAAGCTCAAACC
+# EXPECT: TAATGTGGCTAACTCC
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCC
+# EXPECT: CCTTGGCCGGAACATA
+# EXPECT: AGCCAAATCGTACGGC
+# EXPECT: CCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: 4.2
+
+# main():
+# EXPECT: 0 ACGT
+# EXPECT: 1 NANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANANA
+# EXPECT: 2
+# EXPECT: 0 NANANANANANANANANANANANANANANANA
+# EXPECT: 1 NANANANANANANANANANANANANANANANA
+# EXPECT: 0 ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: 1 AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: 2 CTCCTAAGCTCAAACCTAATGTGGCTAACTCC
+# EXPECT: 3 CCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: 4
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: caught
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: ACATACCGGCCAATCG
+# EXPECT: CGACAACGCAACAGAG
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAG
+# EXPECT: AAAGAACTAGACGCTT
+# EXPECT: GCTACATTATCGTTAA
+# EXPECT: AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: CTCCTAAGCTCAAACC
+# EXPECT: TAATGTGGCTAACTCC
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCC
+# EXPECT: CCTTGGCCGGAACATA
+# EXPECT: AGCCAAATCGTACGGC
+# EXPECT: CCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: CTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGC
+# EXPECT: ACATACCGGCCAATCGCGACAACGCAACAGAGAAAGAACTAGACGCTTGCTACATTATCGTTAACTCCTAAGCTCAAACCTAATGTGGCTAACTCCCCTTGGCCGGAACATAAGCCAAATCGTACGGCGACACGATACACGGCGGAGGACT
+# EXPECT: AAAGAACTAGACGCTTGCTACATTATCGTTAA
+# EXPECT: 4.2
+
+# main2():
+# EXPECT: hello world
+# EXPECT: hello again
+# EXPECT: 44.2
+# EXPECT: -13
+# EXPECT: 4.2
+# EXPECT: -0.42
+# EXPECT: True
+# EXPECT: False
+# EXPECT: 55 55
+# EXPECT: 1
+# EXPECT: 2
+# EXPECT: 4
+# EXPECT: 5
+# EXPECT: 6
+# EXPECT: Joe 42
+# EXPECT: Joe 43
+# EXPECT: 161.1
+# EXPECT: 161
+# EXPECT: Pair: 42 19
+# EXPECT: 19
+# EXPECT: 42
+# EXPECT: 16.1
+# EXPECT: 4.2
+# EXPECT: 1.9
+# EXPECT: Pair: 1.9 4.2
+# EXPECT: 6
+# EXPECT: 6
+# EXPECT: 44
+
+# main2():
+# EXPECT: hello world
+# EXPECT: hello again
+# EXPECT: 44.2
+# EXPECT: -13
+# EXPECT: 4.2
+# EXPECT: -0.42
+# EXPECT: True
+# EXPECT: False
+# EXPECT: 55 55
+# EXPECT: 1
+# EXPECT: 2
+# EXPECT: 4
+# EXPECT: 5
+# EXPECT: 6
+# EXPECT: Joe 42
+# EXPECT: Joe 43
+# EXPECT: 161.1
+# EXPECT: 161
+# EXPECT: Pair: 42 19
+# EXPECT: 19
+# EXPECT: 42
+# EXPECT: 16.1
+# EXPECT: 4.2
+# EXPECT: 1.9
+# EXPECT: Pair: 1.9 4.2
+# EXPECT: 6
+# EXPECT: 6
+# EXPECT: 44

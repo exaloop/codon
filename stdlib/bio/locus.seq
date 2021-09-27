@@ -1,0 +1,103 @@
+@tuple
+class Contig:
+    '''
+    Representation of a contig, consisting of an ID, name and length.
+    '''
+
+    _tid: u32
+    _name: str
+    _len: int
+
+    def __new__(tid: int, name: str, len: int) -> Contig:
+        return (u32(tid), name, len)
+
+    @property
+    def tid(self):
+        return int(self._tid)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def len(self):
+        return self._len
+
+    def __str__(self):
+        return self.name
+
+    def __len__(self):
+        return self.len
+
+    def __eq__(self, other: Contig):
+        return self.tid == other.tid
+
+    def __ne__(self, other: Contig):
+        return self.tid != other.tid
+
+    def __lt__(self, other: Contig):
+        return self.tid < other.tid
+
+    def __gt__(self, other: Contig):
+        return self.tid > other.tid
+
+    def __le__(self, other: Contig):
+        return self.tid <= other.tid
+
+    def __ge__(self, other: Contig):
+        return self.tid >= other.tid
+
+    def __hash__(self):
+        return self.tid
+
+@tuple
+class Locus:
+    '''
+    Representation of a locus, consisting of a contig ID and 0-based position.
+    '''
+
+    _tid: u32
+    _pos: u32
+
+    def __new__(tid: int, pos: int) -> Locus:
+        '''
+        Constructs a `Locus` with specified contig ID and 0-based position.
+        Negative positions indicate loci on the reverse strand.
+        '''
+        return (u32(tid), u32(pos))
+
+    def __lt__(self, other: Locus):
+        return (self.tid, self.pos) < (other.tid, other.pos)
+
+    def __gt__(self, other: Locus):
+        return (self.tid, self.pos) > (other.tid, other.pos)
+
+    def __le__(self, other: Locus):
+        return (self.tid, self.pos) <= (other.tid, other.pos)
+
+    def __ge__(self, other: Locus):
+        return (self.tid, self.pos) >= (other.tid, other.pos)
+
+    @property
+    def tid(self):
+        return int(self._tid)
+
+    @property
+    def pos(self):
+        return abs(int(i32(int(self._pos))))
+
+    @property
+    def reversed(self):
+        '''
+        Whether this locus is on the reverse strand
+        '''
+        return i32(int(self._pos)) < i32(0)
+
+    def __invert__(self):
+        '''
+        Returns the corresponding `Locus` on the reverse strand
+        '''
+        return Locus(self.tid, self.pos if self.reversed else -self.pos)
+
+    def __str__(self):
+        return f"Locus(tid={self.tid}, pos={self.pos}, reversed={self.reversed})"

@@ -1,0 +1,15 @@
+PROJECT_NAME      = "seq"
+XML_OUTPUT        = xml
+INPUT             = ../../compiler/include ../../compiler/lang ../../compiler/types ../../compiler/util
+STRIP_FROM_PATH   = ../..
+GENERATE_LATEX    = NO
+GENERATE_MAN      = NO
+GENERATE_RTF      = NO
+CASE_SENSE_NAMES  = NO
+GENERATE_XML      = YES
+GENERATE_HTML     = YES
+RECURSIVE         = YES
+QUIET             = YES
+JAVADOC_AUTOBRIEF = YES
+WARN_IF_UNDOCUMENTED = NO
+

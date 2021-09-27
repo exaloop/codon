@@ -1,0 +1,110 @@
+@pure
+@C
+def strlen(a: cobj) -> int: pass
+
+@extend
+class str:
+    @__internal__
+    def __new__(l: int, p: Ptr[byte]) -> str:
+        pass
+    def __new__(p: Ptr[byte], l: int) -> str:
+        return str(l, p)
+    def __new__() -> str:
+        return str(Ptr[byte](), 0)
+    def __new__[T](what: T) -> str: # lowest priority!
+        return what.__str__()
+    def __str__(what: str) -> str:
+        return what
+    def __len__(self) -> int:
+        return self.len
+    def __bool__(self) -> bool:
+        return self.len != 0
+    def __copy__(self) -> str:
+        return self
+    @llvm
+    def memcpy(dest: Ptr[byte], src: Ptr[byte], len: int) -> void:
+        declare void @llvm.memcpy.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 0, i1 false)
+        ret void
+    @llvm
+    def memmove(dest: Ptr[byte], src: Ptr[byte], len: int) -> void:
+        declare void @llvm.memmove.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memmove.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 0, i1 false)
+        ret void
+    @llvm
+    def memset(dest: Ptr[byte], val: byte, len: int) -> void:
+        declare void @llvm.memset.p0i8.i64(i8* %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memset.p0i8.i64(i8* %dest, i8 %val, i64 %len, i32 0, i1 false)
+        ret void
+    def __add__(self, other: str) -> str:
+        len1 = self.len
+        len2 = other.len
+        len3 = len1 + len2
+        p = Ptr[byte](len3)
+        str.memcpy(p, self.ptr, len1)
+        str.memcpy(p + len1, other.ptr, len2)
+        return str(p, len3)
+    def c_str(self):
+        n = self.__len__()
+        p = cobj(n + 1)
+        str.memcpy(p, self.ptr, n)
+        p[n] = byte(0)
+        return p
+    def from_ptr(t: cobj) -> str:
+        n = strlen(t)
+        p = Ptr[byte](n)
+        str.memcpy(p, t, n)
+        return str(p, n)
+    def __eq__(self, other: str):
+        if self.len != other.len:
+            return False
+        i = 0
+        while i < self.len:
+            if self.ptr[i] != other.ptr[i]:
+                return False
+            i += 1
+        return True
+    def __match__(self, other: str):
+        return self.__eq__(other)
+    def __ne__(self, other: str):
+        return not self.__eq__(other)
+    def cat(*args):
+        total = 0
+        if staticlen(args) == 1 and hasattr(args[0], "__iter__") and hasattr(args[0], "__len__"):
+            for s in args[0]:
+                if not isinstance(s, str):
+                    compile_error("not a string")
+                total += s.len
+            p = cobj(total)
+            n = 0
+            for s in args[0]:
+                str.memcpy(p + n, s.ptr, s.len)
+                n += s.len
+            return str(p, total)
+        elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+            sz = 10
+            p = cobj(sz)
+            n = 0
+            for s in args[0]:
+                if not isinstance(s, str):
+                    compile_error("not a string")
+                if n + s.len > sz:
+                    sz = 1 + 3 * (n + s.len) // 2
+                    pp = cobj(sz)
+                    str.memcpy(pp, p, n)
+                    p = pp
+                str.memcpy(p + n, s.ptr, s.len)
+                n += s.len
+            return str(p, n)
+        else:
+            total = 0
+            for i in args:
+                if not isinstance(i, str):
+                    compile_error("not a string")
+                total += i.len
+            p = cobj(total)
+            n = 0
+            for i in args:
+                str.memcpy(p + n, i.ptr, i.len)
+                n += i.len
+            return str(p, total)

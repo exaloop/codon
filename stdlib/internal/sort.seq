@@ -1,0 +1,51 @@
+from algorithms.timsort import tim_sort_inplace
+from algorithms.pdqsort import pdq_sort_inplace
+from algorithms.insertionsort import insertion_sort_inplace
+from algorithms.heapsort import heap_sort_inplace
+from algorithms.qsort import qsort_inplace
+
+def sorted[T](
+    v: Generator[T],
+    key = Optional[int](),
+    algorithm: Optional[str] = None,
+    reverse: bool = False
+):
+    """
+    Return a sorted list of the elements in v
+    """
+    newlist = [a for a in v]
+    if not isinstance(key, Optional):
+        newlist.sort(key, algorithm, reverse)
+    else:
+        newlist.sort(algorithm=algorithm, reverse=reverse)
+    return newlist
+
+def _sort_list(self, key, algorithm: str):
+    if algorithm == 'pdq':
+        pdq_sort_inplace(self, key)
+    elif algorithm == 'insertion':
+        insertion_sort_inplace(self, key)
+    elif algorithm == 'heap':
+        heap_sort_inplace(self, key)
+        #case 'tim':
+        #    tim_sort_inplace(self, key)
+    elif algorithm == 'quick':
+        qsort_inplace(self, key)
+    else:
+        raise ValueError("Algorithm '" + algorithm + "' does not exist")
+
+@extend
+class List:
+    def sort(
+        self,
+        key = Optional[int](),
+        algorithm: Optional[str] = None,
+        reverse: bool = False
+    ):
+        alg = ~algorithm if algorithm else 'pdq'
+        if isinstance(key, Optional):
+            _sort_list(self, lambda x: x, alg)
+        else:
+            _sort_list(self, key, alg)
+        if reverse:
+            self.reverse()

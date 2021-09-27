@@ -1,0 +1,171 @@
+@test
+def t1():
+    def baz(x, y, z = 3):
+        return x, y, z
+    assert baz(1, 2, 3) == (1, 2, 3)
+    assert baz(1, 3) == (1, 3, 3)
+    assert baz(z = 'z', y = 'y', x = 'x') == ('x', 'y', 'z')
+    assert baz(y = 'y', x = 'x') == ('x', 'y', 3)
+    assert baz('x', y = 'y') == ('x', 'y', 3)
+t1()
+
+class A:
+    def foo(self: A, x = 3, y = 'hello'):
+        return x, y
+
+@test
+def t2():
+    assert A().foo(y = 3.14, x = 42) == (42, 3.14)
+t2()
+
+def g[T](a: T, b: optional[T] = None):
+    b_ = ~b if b else T()
+    return a, b_
+
+@test
+def t3():
+    assert g(99, 4242) == (99, 4242)
+    assert g(99) == (99, 0)
+    assert (None |> g(a=1, b=...)) == (1, 0)
+t3()
+
+def _unwrap(opt):
+    return ~opt
+
+def foo(x: int, y: int, z: optional[list[float]]):
+    xs = str(x)
+    ys = str(y)
+    zs = str(_unwrap(z)) if z else 'None'
+    return xs, ys, zs
+
+@test
+def t4():
+    assert foo(1, 2, [3.14]) == ('1', '2', '[3.14]')
+    assert foo(77, 99, None) == ('77', '99', 'None')
+t4()
+
+class A:
+    def __init__(self: A):
+        pass
+
+    def foo(x: int, y: int, z: optional[list[float]]):
+        xs = str(x)
+        ys = str(y)
+        zs = str(_unwrap(z)) if z else 'None'
+        return xs, ys, zs
+
+    # TODO: def bar[S](self: A, x: S, y: S, z: optional[type(S() + 0.0)] = None)
+    def bar[S](self: A, x: S, y: S, z: optional[S] = None):
+        xs = str(x)
+        ys = str(y)
+        zs = str(_unwrap(z)) if z else 'None'
+        return xs, ys, zs
+
+@test
+def t5():
+    assert A.foo(1, 2, [3.14]) == ('1', '2', '[3.14]')
+    assert A.foo(77, 99, None) == ('77', '99', 'None')
+
+    assert A().bar(1.0, 2.0, 3.14) == ('1', '2', '3.14')
+    assert A().bar(77, 99, None) == ('77', '99', 'None')
+    assert A().bar(77, 99) == ('77', '99', 'None')
+
+    assert (1 |> foo(2, [3.14])) == ('1', '2', '[3.14]')
+    assert (1 |> foo(77, ..., None)) == ('77', '1', 'None')
+    assert (None |> foo(-5, -1, ...)) == ('-5', '-1', 'None')
+    assert ([1.23] |> foo(-5, -1, ...)) == ('-5', '-1', '[1.23]')
+t5()
+
+# test auto-iter
+@test
+def t6():
+    assert list('abc') == ['a', 'b', 'c']
+
+    def it1[T](v: generator[T]):
+        return list(v)
+
+    def it2[T](v: T):
+        return list(v)
+
+    def it3[T](v: generator[T] = 'xyz'):
+        return list(v)
+
+    assert it1([1, 2, 3]) == [1, 2, 3]
+    assert it2(iter([1.1, 2.2, 3.3])) == [1.1, 2.2, 3.3]
+    assert it3() == ['x', 'y', 'z']
+t6()
+
+class B[T]:
+    a: T
+    b: tuple[int,int,int]
+
+    def __init__(self: B[T], y: T):
+        self.a = y
+        self.b = 0, 0, 0
+
+    def __init__(self: B[T], y: T, foo: int):
+        self.a = y
+        self.b = foo, 1, 0
+
+    def __init__(self: B[T], x: list[T], a: int, b: int, c: int):
+        self.a = x[0]
+        self.b = a, b, c
+
+    def __init__(self: B[T], a: T, b: T):
+        self.a, self.b = a + b, (-1, -1, -1)
+
+    @property
+    def val(self: B[T]):
+        return self.a, self.b
+
+@test
+def test_named_construct1(_):
+    assert B(10).val == (10, (0, 0, 0))
+    assert B(y=-10).val == (-10, (0, 0, 0))
+    assert B[bool](y=False).val == (False, (0, 0, 0))
+    assert B(b=2, x=[3.14], c=3, a=1).val == (3.14, (1, 2, 3))
+    assert B(x=[3.14], b=2, c=3, a=1).val == (3.14, (1, 2, 3))
+    assert B([3.14], b=2, c=3, a=1).val == (3.14, (1, 2, 3))
+    assert B([3.14], 1, b=2, c=3).val == (3.14, (1, 2, 3))
+    assert B[float]([3.14], 1, b=2, c=3).val == (3.14, (1, 2, 3))
+    assert B([3.14], 1, 2, c=3).val == (3.14, (1, 2, 3))
+    assert B(foo=42, y='hello').val == ('hello', (42, 1, 0))
+    assert B(a='a', b='b').val == ('ab', (-1, -1, -1))
+    assert B(b='b', a='a').val == ('ab', (-1, -1, -1))
+test_named_construct1(0)
+
+@tuple
+class C:
+    a: float
+    b: tuple[int,int,int]
+
+    def __new__(y: float) -> C:
+        return (y, (0, 0, 0))
+
+    def __new__(y: float, foo: int) -> C:
+        return (y, (foo, 1, 0))
+
+    def __new__(x: list[float], a: int, b: int, c: int) -> C:
+        return (x[0], (a, b, c))
+
+    def __new__(a: int, b: int):
+        return (a, b)
+
+    @property
+    def val(self: C):
+        return self.a, self.b
+
+@test
+def test_named_construct2(_):
+    assert C(10.0).val == (10.0, (0, 0, 0))
+    assert C(y=-10.0).val == (-10.0, (0, 0, 0))
+    assert C(b=2, x=[3.14], c=3, a=1).val == (3.14, (1, 2, 3))
+    assert C(x=[3.14], b=2, c=3, a=1).val == (3.14, (1, 2, 3))
+    assert C([3.14], b=2, c=3, a=1).val == (3.14, (1, 2, 3))
+    assert C([3.14], 1, b=2, c=3).val == (3.14, (1, 2, 3))
+    assert C([3.14], 1, b=2, c=3).val == (3.14, (1, 2, 3))
+    assert C([3.14], 1, 2, c=3).val == (3.14, (1, 2, 3))
+    assert C(foo=42, y=-4.2).val == (-4.2, (42, 1, 0))
+    assert C(a=111, b=222) == (111, 222)
+    assert C(b=222, a=111) == (111, 222)
+test_named_construct2(0)

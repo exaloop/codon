@@ -1,0 +1,44 @@
+import random as R
+import time
+import sys
+
+seed = int(time.time())
+# sys.stderr.write('seed: ' + str(seed) + '\n')
+R.seed(seed)
+
+@test
+def test_rnd_result(name, results, invariant):
+    print name
+    for a in results:
+        assert invariant(a)
+
+test_rnd_result('randrange', [R.randrange(10) for _ in range(100)], range(10).__contains__)
+test_rnd_result('randrange', [R.randrange(5, 20) for _ in range(100)], range(5, 20).__contains__)
+test_rnd_result('randrange', [R.randrange(9, 99, 3) for _ in range(100)], range(9, 99, 3).__contains__)
+test_rnd_result('randint', [R.randint(5, 20) for _ in range(100)], range(5, 20 + 1).__contains__)
+
+population = list('ABCDEFGHIJKLMNOP')
+test_rnd_result('choice', [R.choice(population) for _ in range(100)], population.__contains__)
+test_rnd_result('choice', [R.choice(population) for _ in range(100)], population.__contains__)
+test_rnd_result('choices', R.choices(population), population.__contains__)
+test_rnd_result('choices', R.choices(population, k=100), population.__contains__)
+
+@test
+def test_shuffle(v):
+    s = copy(v)
+    R.shuffle(s)
+    assert sorted(v) == sorted(s)
+
+test_shuffle(list(range(100)))
+
+@test
+def test_sample(n: int, k: int):
+    s = R.sample(list(range(n)), k=k)
+    assert len(s) == k
+    assert len(set(s)) == len(s)
+    for a in s:
+        assert a in range(n)
+
+test_sample(100, 5)
+test_sample(100, 100)
+test_sample(100, 0)

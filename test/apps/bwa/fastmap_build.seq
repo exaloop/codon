@@ -1,0 +1,124 @@
+from sys import argv, stderr, exit
+from time import timing
+from bio import FASTQ, FASTA
+from bio.fmindex import FMIndex, SMEM
+
+min_seed   = 17
+min_iwidth = 20
+min_intv   = 1
+
+def open_index_file(basename, mode):
+    import gzip
+    return gzip.open(f'{basename}.fastmap.idx', mode)
+
+def index_load(basename):
+    from pickle import load
+    with open_index_file(basename, 'rb') as jar:
+        return load(jar, FMIndex)
+
+#@prefetch
+def fastmap(rec, fmi, out):
+    prev, curr, mems = [], [], []
+    q = rec.seq
+    l = len(q)
+
+    start = 0
+    while True:
+        while start < l and q[start].N():
+            start += 1
+        if start >= l:
+            break
+
+        mems.clear()
+        prev.clear()
+        curr.clear()
+        x = start
+
+        if q[x].N():
+            return
+
+        ik = SMEM(fmi.biinterval(q[x]), start=x, stop=x+1)
+
+        # forward search
+        i = x + 1
+        while i < l:
+            if not q[i].N():  # an A/C/G/T base
+                ok = ~fmi[~(ik.interval), ~q[i]]
+                if len(ok) != len(ik.interval):  # change of the interval size
+                    curr.append(ik)
+                    if len(ok) < min_intv:
+                        break  # the interval size is too small to be extended further
+                ik = SMEM(ok, start=x, stop=i+1)
+            else:  # an ambiguous base
+                curr.append(ik)
+                break
+            i += 1
+
+        if i == l:
+            curr.append(ik)
+        curr.reverse()
+        ret = curr[0].stop
+        prev, curr = curr, prev
+
+        # backward search for MEMs
+        i = x - 1
+        while i >= -1:
+            c = i >= 0 and not q[i].N()
+            curr.clear()
+            for p in prev:
+                ok = None
+                if c:
+                    ok = fmi[p.interval, q[i]]
+                if not c or len(ok) < min_intv:
+                    if len(curr) == 0:
+                        if len(mems) == 0 or i + 1 < mems[-1].start:
+                            if len(ik := SMEM(p.interval, start=i+1, stop=p.stop)) >= min_seed:
+                                mems.append(ik)
+                elif len(curr) == 0 or len(ok) != len(curr[-1].interval):
+                    curr.append(SMEM(ok, start=p.start, stop=p.stop))
+            if len(curr) == 0:
+                break
+            prev, curr = curr, prev
+            i -= 1
+
+        mems.reverse()  # s.t. sorted by the start coordinate
+        start = ret
+
+        for mem in mems:
+            intv = mem.interval
+            offset = mem.start
+            match_size = len(mem)
+
+            print(f'{rec.name}\tEM\t{offset}\t{offset+match_size}\t{len(intv)}', end='', file=out)
+            if len(intv) <= min_iwidth:
+                for rid, name, pos, is_rev in fmi.biresults(mem):
+                    print(f"\t{name}:{'-' if is_rev else '+'}{pos+1}", end='', file=out)
+            else:
+                print("\t*", file=out)
+            print("", file=out)
+
+def main_index(path):
+    from pickle import dump
+    print('building FM-index...', file=stderr)
+    fmi = FMIndex(path, FMD=True)
+    print('writing to disk...', file=stderr)
+    with open_index_file(path, 'wb0') as jar:
+        dump(fmi, jar)
+
+def main_search(index, fastq, result):
+    print('loading index...', file=stderr)
+    fmi = None
+    with timing('load'):
+        fmi = FMIndex(index, FMD=True)
+    print('running alignment pipeline...', file=stderr)
+    with open(result, 'w') as out, timing('fastmap'):
+        FASTQ(fastq) |> iter |> fastmap(fmi, out)
+
+match argv[1:]:
+    case ['index', path]:
+        main_index(path)
+    case ['search', index, fastq, result]:
+        main_search(index, fastq, result)
+    case _:
+        print("error: unknown mode: valid modes are 'index' and 'search'", file=stderr)
+        exit(1)

@@ -1,0 +1,106 @@
+@test
+def t1():
+    assert 2 + 2 == 4
+    assert 3.14 * 2 == 6.28
+    assert 2 + 3*2 == 8
+    assert 1.0/0 == float('inf')
+    assert str(0.0/0) == 'nan'
+
+    assert 5 // 2 == 2
+    assert 5 / 2 == 2.5
+    assert 5.0 // 2.0 == 2
+    assert 5.0 / 2.0 == 2.5
+    assert 5 // 2.0 == 2
+    assert 5 / 2.0 == 2.5
+    assert 5.0 // 2 == 2
+    assert 5.0 / 2 == 2.5
+    assert int(Int[128](5) // Int[128](2)) == 2
+    assert Int[128](5) / Int[128](2) == 2.5
+t1()
+
+@test
+def test_popcnt():
+    assert (42).popcnt() == 3
+    assert (123).popcnt() == 6
+    assert (0).popcnt() == 0
+    assert int.popcnt(-1) == 64
+    assert u8(-1).popcnt() == 8
+    assert (UInt[1024](0xfffffffffffffff3) * UInt[1024](0xfffffffffffffff3)).popcnt() == 65
+test_popcnt()
+
+@test
+def test_conversions():
+    # int -> int, float, bool, str
+    assert int(-42) == -42
+    assert float(-42) == -42.0
+    assert bool(0) == False
+    assert bool(-1) == bool(1) == True
+    assert str(-42) == '-42'
+
+    # float -> int, float, bool, str
+    assert int(-4.2) == -4
+    assert int(4.2) == 4
+    assert float(-4.2) == -4.2
+    assert bool(0.0) == False
+    assert bool(-0.1) == bool(0.1) == True
+    assert str(-4.2) == '-4.2'
+
+    # bool -> int, float, bool, str
+    assert int(False) == 0
+    assert int(True) == 1
+    assert float(False) == 0.0
+    assert float(True) == 1.0
+    assert bool(False) == False
+    assert bool(True) == True
+    assert str(False) == 'False'
+    assert str(True) == 'True'
+
+    # byte -> int, float, bool, str
+    assert int(byte(42)) == 42
+    assert float(byte(42)) == 42.0
+    assert bool(byte(0)) == False
+    assert bool(byte(42)) == True
+    assert str(byte(42)) == '*'
+
+    # intN -> int, float, bool, str | N < 64
+    assert int(i32(-42)) == -42
+    assert float(i32(-42)) == -42.0
+    assert bool(i32(0)) == False
+    assert bool(i32(-1)) == bool(i32(1)) == True
+    assert str(i32(-42)) == '-42'
+
+    # intN -> int, float, bool, str | N == 64
+    assert int(Int[64](-42)) == -42
+    assert float(Int[64](-42)) == -42.0
+    assert bool(Int[64](0)) == False
+    assert bool(Int[64](-1)) == bool(Int[64](1)) == True
+    assert str(Int[64](-42)) == '-42'
+
+    # intN -> int, float, bool, str | N > 64
+    assert int(Int[80](-42)) == -42
+    assert float(Int[80](-42)) == -42.0
+    assert bool(Int[80](0)) == False
+    assert bool(Int[80](-1)) == bool(Int[80](1)) == True
+    assert str(Int[80](-42)) == '-42'
+
+    # uintN -> int, float, bool, str | N < 64
+    assert int(u32(42)) == 42
+    assert float(u32(42)) == 42.0
+    assert bool(u32(0)) == False
+    assert bool(u32(42)) == True
+    assert str(u32(42)) == '42'
+
+    # uintN -> int, float, bool, str | N == 64
+    assert int(UInt[64](42)) == 42
+    assert float(UInt[64](42)) == 42.0
+    assert bool(UInt[64](0)) == False
+    assert bool(UInt[64](42)) == True
+    assert str(UInt[64](42)) == '42'
+
+    # uintN -> int, float, bool, str | N > 64
+    assert int(UInt[80](42)) == 42
+    assert float(UInt[80](42)) == 42.0
+    assert bool(UInt[80](0)) == False
+    assert bool(Int[80](42)) == True
+    assert str(Int[80](42)) == '42'
+test_conversions()

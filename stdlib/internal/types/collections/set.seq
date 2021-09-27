@@ -1,0 +1,403 @@
+# set implementation based on klib's khash
+
+from internal.attributes import commutative, associative
+import internal.khash as khash
+import internal.gc as gc
+
+def _set_hash(key):
+    k = key.__hash__()
+    return (k >> 33) ^ k ^ (k << 11)
+
+class Set[K]:
+    _n_buckets: int
+    _size: int
+    _n_occupied: int
+    _upper_bound: int
+
+    _flags: Ptr[u32]
+    _keys: Ptr[K]
+
+# Magic methods
+    def _init(self):
+        self._n_buckets = 0
+        self._size = 0
+        self._n_occupied = 0
+        self._upper_bound = 0
+        self._flags = Ptr[u32]()
+        self._keys = Ptr[K]()
+
+    def __init__(self):
+        self._init()
+
+    def __init__(self, g: Generator[K]):
+        self._init()
+        for a in g:
+            self.add(a)
+
+    def __sub__(self, other: Set[K]):
+        return self.difference(other)
+
+    def __isub__(self, other: Set[K]):
+        self.difference_update(other)
+        return self
+
+    @commutative
+    @associative
+    def __and__(self, other: Set[K]):
+        return self.intersection(other)
+
+    def __iand__(self, other: Set[K]):
+        self.intersection_update(other)
+        return self
+
+    @commutative
+    @associative
+    def __or__(self, other: Set[K]):
+        return self.union(other)
+
+    def __ior__(self, other: Set[K]):
+        for a in other:
+            self.add(a)
+        return self
+
+    @commutative
+    @associative
+    def __xor__(self, other: Set[K]):
+        return self.symmetric_difference(other)
+
+    def __ixor__(self, other: Set[K]):
+        self.symmetric_difference_update(other)
+        return self
+
+    def __contains__(self, key: K):
+        return self._kh_get(key) != self._kh_end()
+
+    def __eq__(self, other: Set[K]):
+        if self.__len__() != other.__len__():
+            return False
+        for k in self:
+            if k not in other:
+                return False
+        return True
+
+    def __ne__(self, other: Set[K]):
+        return not (self == other)
+
+    def __le__(self, other: Set[K]):
+        return self.issubset(other)
+
+    def __ge__(self, other: Set[K]):
+        return self.issuperset(other)
+
+    def __lt__(self, other: Set[K]):
+        return self != other and self <= other
+
+    def __gt__(self, other: Set[K]):
+        return self != other and self >= other
+
+    def __iter__(self):
+        i = self._kh_begin()
+        while i < self._kh_end():
+            if self._kh_exist(i):
+                yield self._keys[i]
+            i += 1
+
+    def __len__(self):
+        return self._size
+
+    def __bool__(self):
+        return self.__len__() != 0
+
+    def __copy__(self):
+        if self.__len__() == 0:
+            return Set[K]()
+        n = self._n_buckets
+        f = khash.__ac_fsize(n)
+        flags_copy = Ptr[u32](f)
+        keys_copy = Ptr[K](n)
+        str.memcpy(flags_copy.as_byte(), self._flags.as_byte(), f * gc.sizeof(u32))
+        str.memcpy(keys_copy.as_byte(), self._keys.as_byte(), n * gc.sizeof(K))
+        return Set[K](n, self._size, self._n_occupied, self._upper_bound, flags_copy, keys_copy)
+
+    def __str__(self):
+        n = self.__len__()
+        if n == 0:
+            return "{}"
+        else:
+            lst = List[str]()
+            lst.append("{")
+            first = True
+            for k in self:
+                if not first:
+                    lst.append(", ")
+                else:
+                    first = False
+                lst.append(str(k))
+            lst.append("}")
+            return str.cat(lst)
+
+
+# Helper methods
+
+    def resize(self, new_n_buckets: int):
+        self._kh_resize(new_n_buckets)
+
+    def add(self, key: K):
+        self._kh_put(key)
+
+    def update(self, other: Set[K]):
+        for k in other:
+            self.add(k)
+
+    def remove(self, key: K):
+        x = self._kh_get(key)
+        if x != self._kh_end():
+            self._kh_del(x)
+        else:
+            raise KeyError(str(key))
+
+    def pop(self):
+        if self.__len__() == 0:
+            raise ValueError("empty set")
+        for a in self:
+            self.remove(a)
+            return a
+
+    def discard(self, key: K):
+        x = self._kh_get(key)
+        if x != self._kh_end():
+            self._kh_del(x)
+
+    def difference(self, other: Set[K]):
+        s = Set[K]()
+        for a in self:
+            if a not in other:
+                s.add(a)
+        return s
+
+    def difference_update(self, other: Set[K]):
+        for a in other:
+            self.discard(a)
+
+    def intersection(self, other: Set[K]):
+        if other.__len__() < self.__len__():
+            self, other = other, self
+        s = Set[K]()
+        for a in self:
+            if a in other:
+                s.add(a)
+        return s
+
+    def intersection_update(self, other: Set[K]):
+        for a in self:
+            if a not in other:
+                self.discard(a)
+
+    def symmetric_difference(self, other: Set[K]):
+        s = Set[K]()
+        for a in self:
+            if a not in other:
+                s.add(a)
+        for a in other:
+            if a not in self:
+                s.add(a)
+        return s
+
+    def symmetric_difference_update(self, other: Set[K]):
+        for a in other:
+            if a in self:
+                self.discard(a)
+        for a in self:
+            if a in other:
+                self.discard(a)
+
+    def union(self, other: Set[K]):
+        s = Set[K]()
+        s.resize(self._n_buckets if self._n_buckets >= other._n_buckets else other._n_buckets)
+        for a in self:
+            s.add(a)
+        for a in other:
+            s.add(a)
+        return s
+
+    def isdisjoint(self, other: Set[K]):
+        if other.__len__() < self.__len__():
+            self, other = other, self
+        for a in self:
+            if a in other:
+                return False
+        return True
+
+    def issubset(self, other: Set[K]):
+        if other.__len__() < self.__len__():
+            return False
+        for a in self:
+            if a not in other:
+                return False
+        return True
+
+    def issuperset(self, other: Set[K]):
+        return other.issubset(self)
+
+    def clear(self):
+        self._kh_clear()
+
+    def copy(self):
+        return self.__copy__()
+
+
+# Internal helpers
+
+    def _kh_clear(self):
+        if self._flags:
+            i = 0
+            n = khash.__ac_fsize(self._n_buckets)
+            while i < n:
+                self._flags[i] = u32(0xaaaaaaaa)
+                i += 1
+            self._size = 0
+            self._n_occupied = 0
+
+    def _kh_get(self, key: K):
+        if self._n_buckets:
+            step = 0
+            mask = self._n_buckets - 1
+            k = _set_hash(key)
+            i = k & mask
+            last = i
+            while not khash.__ac_isempty(self._flags, i) and (khash.__ac_isdel(self._flags, i) or self._keys[i] != key):
+                step += 1
+                i = (i + step) & mask
+                if i == last:
+                    return self._n_buckets
+            return self._n_buckets if khash.__ac_iseither(self._flags, i) else i
+        else:
+            return 0
+
+    def _kh_resize(self, new_n_buckets: int):
+        HASH_UPPER = 0.77
+        new_flags = Ptr[u32]()
+        j = 1
+
+        # round up to next power of 2
+        new_n_buckets -= 1
+        new_n_buckets |= new_n_buckets >> 1
+        new_n_buckets |= new_n_buckets >> 2
+        new_n_buckets |= new_n_buckets >> 4
+        new_n_buckets |= new_n_buckets >> 8
+        new_n_buckets |= new_n_buckets >> 16
+        new_n_buckets |= new_n_buckets >> 32
+        new_n_buckets += 1
+
+        if new_n_buckets < 4:
+            new_n_buckets = 4
+
+        if self._size >= int(new_n_buckets*HASH_UPPER + 0.5):
+            j = 0
+        else:
+            fsize = khash.__ac_fsize(new_n_buckets)
+            new_flags = Ptr[u32](fsize)
+            i = 0
+            while i < fsize:
+                new_flags[i] = u32(0xaaaaaaaa)
+                i += 1
+
+            if self._n_buckets < new_n_buckets:
+                self._keys = Ptr[K](gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K)))
+
+        if j:
+            j = 0
+            while j != self._n_buckets:
+                if khash.__ac_iseither(self._flags, j) == 0:
+                    key = self._keys[j]
+                    new_mask = new_n_buckets - 1
+                    khash.__ac_set_isdel_true(self._flags, j)
+
+                    while True:
+                        step = 0
+                        k = _set_hash(key)
+                        i = k & new_mask
+
+                        while not khash.__ac_isempty(new_flags, i):
+                            step += 1
+                            i = (i + step) & new_mask
+
+                        khash.__ac_set_isempty_false(new_flags, i)
+                        if i < self._n_buckets and khash.__ac_iseither(self._flags, i) == 0:
+                            self._keys[i], key = key, self._keys[i]
+                            khash.__ac_set_isdel_true(self._flags, i)
+                        else:
+                            self._keys[i] = key
+                            break
+                j += 1
+
+            if self._n_buckets > new_n_buckets:
+                self._keys = Ptr[K](gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K)))
+
+            self._flags = new_flags
+            self._n_buckets = new_n_buckets
+            self._n_occupied = self._size
+            self._upper_bound = int(self._n_buckets*HASH_UPPER + 0.5)
+
+    def _kh_put(self, key: K):
+        if self._n_occupied >= self._upper_bound:
+            if self._n_buckets > (self._size << 1):
+                self._kh_resize(self._n_buckets - 1)
+            else:
+                self._kh_resize(self._n_buckets + 1)
+
+        mask = self._n_buckets - 1
+        step = 0
+        site = self._n_buckets
+        x = site
+        k = _set_hash(key)
+        i = k & mask
+        if khash.__ac_isempty(self._flags, i):
+            x = i
+        else:
+            last = i
+            while not khash.__ac_isempty(self._flags, i) and (khash.__ac_isdel(self._flags, i) or self._keys[i] != key):
+                if khash.__ac_isdel(self._flags, i):
+                    site = i
+                step += 1
+                i = (i + step) & mask
+                if i == last:
+                    x = site
+                    break
+
+            if x == self._n_buckets:
+                if khash.__ac_isempty(self._flags, i) and site != self._n_buckets:
+                    x = site
+                else:
+                    x = i
+
+        ret = 0
+        if khash.__ac_isempty(self._flags, x):
+            self._keys[x] = key
+            khash.__ac_set_isboth_false(self._flags, x)
+            self._size += 1
+            self._n_occupied += 1
+            ret = 1
+        elif khash.__ac_isdel(self._flags, x):
+            self._keys[x] = key
+            khash.__ac_set_isboth_false(self._flags, x)
+            self._size += 1
+            ret = 2
+
+        return (ret, x)
+
+    def _kh_del(self, x: int):
+        if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
+            khash.__ac_set_isdel_true(self._flags, x)
+            self._size -= 1
+
+    def _kh_begin(self):
+        return 0
+
+    def _kh_end(self):
+        return self._n_buckets
+
+    def _kh_exist(self, x: int):
+        return not khash.__ac_iseither(self._flags, x)
+
+set = Set

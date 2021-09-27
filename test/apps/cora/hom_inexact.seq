@@ -1,0 +1,138 @@
+# Implementation of CORA's inexact homology table construction
+# https://github.com/denizy/cora/blob/master/homTable_setup.cpp
+
+# Usage: seqc hom_inexact.seq <input_ref.fa> <num_mismatches> <output_prefix>
+# Output format (gzip'd; 100 output files):
+#   Repeated:
+#     - Locus 1 [Locus]
+#     - Locus 2 [Locus]
+#     - MAX_MISMATCHES times:
+#       - 0-based error offset, or 255 if none [byte]
+
+from sys import argv, stderr, exit
+from pickle import dump, load
+from util import K, BitSet
+from bio import FASTA, Locus, Kmer
+import gzip, itertools
+
+MAX_MISMATCHES = 3
+
+if len(argv) != 4:
+    print(f'usage: {argv[0]} <input_ref.fa> <num_mismatches> <output_prefix>', file=stderr)
+    exit(1)
+
+ref = [rec for rec in FASTA(argv[1])]
+num_mismatches = int(argv[2])
+
+if not (1 <= num_mismatches <= MAX_MISMATCHES):
+    print(f'error: num_mismatches argument must be between 1 and {MAX_MISMATCHES}', file=stderr)
+    exit(1)
+
+num_seeds = num_mismatches + 1
+bitsets = None
+with gzip.open(argv[3] + '.reps_bitsets', 'rb') as reps:
+    bitsets = load(reps, List[BitSet])
+
+class MapSegment[K]:
+    locus: Locus
+    next: Optional[MapSegment[K]]
+
+    @property
+    def kmer(self):
+        k = K(ref[self.locus.tid].seq[self.locus.pos:self.locus.pos + K.len()])
+        return ~k if self.locus.reversed else k
+
+def segment_code(seed_no, kmer):
+    assert 0 <= seed_no < num_seeds
+    k = len(kmer)
+    h = 0
+    for i in range(0, k // 2 - num_seeds + 1, num_seeds):
+        h <<= 2
+        h |= int(kmer[i + seed_no].as_int())
+        h <<= 2
+        h |= int(kmer[k - 1 - i - seed_no].as_int())
+    return h
+
+def gen_signals():
+    t = (k'A', k'C', k'G', k'T')
+    for a, b in itertools.product(t, t):
+        x, y = (a, b), (~b, ~a)
+        if x <= y:
+            yield (x, y)
+
+def extract_signal(seed_no, kmer):
+    assert 0 <= seed_no < num_seeds
+    k = len(kmer)
+    a1 = kmer[seed_no]
+    a2 = kmer[seed_no + num_seeds]
+    a3 = kmer[seed_no + 2*num_seeds]
+    b1 = kmer[k - 1 - 2*num_seeds - seed_no]
+    b2 = kmer[k - 1 - num_seeds - seed_no]
+    b3 = kmer[k - 1 - seed_no]
+    return ((a1, b3), (a2, b2), (a3, b1))
+
+def signal_match(signal, target1, target2):
+    return signal[0] in target1[0] and signal[1] in target1[1] and signal[2] in target2
+
+def compare_and_report(seg1, seg2, seed_no, precompact):
+    k1, k2 = seg1.kmer, seg2.kmer
+    if any(segment_code(i, k1) == segment_code(i, k2) for i in range(seed_no)):
+        return  # homology was reported by an earlier seed match
+
+    hamming_dist = abs(k1 - k2)
+    if hamming_dist <= num_mismatches:
+        dump(seg1.locus, precompact)
+        dump(seg2.locus, precompact)
+        for i in range(len(k1)):
+            if k1[i] != k2[i]:
+                dump(byte(i), precompact)
+        for _ in range(MAX_MISMATCHES - hamming_dist):
+            dump(byte(-1), precompact)  # pad to MAX_MISMATCHES
+
+signals1 = [(a,b) for a in gen_signals() for b in gen_signals()]
+signals2 = [a for a in gen_signals()]
+basename = f'{argv[3]}.hom_inexact.precompact'
+
+def process_signal(t):
+    idx, signal1 = t
+    print 'signal: ', signal1
+    d = {}
+    d.resize(10000000)
+    with gzip.open(basename + '.' + str(idx), 'wb0') as precompact:
+        for signal2 in signals2:
+            for seed_no in range(num_seeds):
+                d.clear()
+                for tid, rec in enumerate(ref):
+                    for pos, kmer in rec.seq.kmers_with_pos(1, K):
+                        if not (bitsets[tid][pos] and
+                                signal_match(extract_signal(seed_no, kmer), signal1, signal2)):
+                            continue
+
+                        kmer_rev = ~kmer
+                        add_pal = (kmer == kmer_rev)
+                        if kmer_rev < kmer:
+                            kmer = kmer_rev
+                            pos = -pos
+
+                        s = segment_code(seed_no, kmer)
+                        m: Optional = MapSegment[Kmer[K]](Locus(tid, pos))
+                        p = d.setdefault(s, m)
+
+                        if m is not p:
+                            target = p
+                            while target is not None:
+                                compare_and_report(m, target, seed_no, precompact)
+                                target = target.next
+                            m.next = p
+                        d[s] = m
+
+                        if add_pal:
+                            m_rev = MapSegment[Kmer[K]](Locus(tid, -pos))
+                            target = m.next  # don't compare with m, since m == ~m_rev
+                            while target is not None:
+                                compare_and_report(m_rev, target, seed_no, precompact)
+                                target = target.next
+                            m_rev.next = m
+                            d[s] = m_rev
+
+signals1 |> enumerate ||> process_signal

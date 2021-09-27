@@ -1,0 +1,67 @@
+######################
+# Pipeline benchmark #
+######################
+from sys import argv
+from time import timing
+from bio import *
+
+n = 0
+def update(kmer):
+    global n
+    x = type(kmer)() |> base(len(kmer) // 2, k'T')
+    if kmer > x:
+        n += 1
+
+def test_fast(K: Static[int]):
+    global n
+    n = 0
+    with timing(f'{K}-mer (fast)'):
+        FASTA(argv[1]) |> seqs |> kmers(step=1, k=K) |> revcomp |> update
+    print n
+
+
+def test_slow(K: Static[int]):
+    global n
+    n = 0
+    with timing(f'{K}-mer (slow)'):
+        for a in seqs(FASTA(argv[1])):
+            for b in kmers(a, step=1, k=K):
+                c = revcomp(b)
+                update(c)
+    print n
+
+def test_super_slow(K: Static[int]):
+    global n
+    n = 0
+    with timing(f'{K}-mer (super slow)'):
+        for a in seqs(FASTA(argv[1])):
+            for b in split(a, K, step=1):
+                if not b.N():
+                    c = K(b)
+                    d = revcomp(c)
+                    update(d)
+    print n
+
+test_fast(4)
+test_slow(4)
+test_super_slow(4)
+
+test_fast(8)
+test_slow(8)
+test_super_slow(8)
+
+test_fast(16)
+test_slow(16)
+test_super_slow(16)
+
+test_fast(32)
+test_slow(32)
+test_super_slow(32)
+
+test_fast(64)
+test_slow(64)
+test_super_slow(64)
+
+test_fast(128)
+test_slow(128)
+test_super_slow(128)

@@ -1,0 +1,58 @@
+@tuple
+class Block[T]:
+    '''
+    Represents a block of data; useful in parallelization to batch data
+    '''
+    _data: Ptr[T]
+    _size: int
+
+    def __new__(size: int):
+        return Block[T](Ptr[T](size), 0)
+
+    def __iter__(self):
+        data = self._data
+        size = self._size
+        i = 0
+        while i < size:
+            yield data[i]
+            i += 1
+
+    def __getitem__(self, idx: int):
+        if not (0 <= idx < len(self)):
+            raise ValueError("block index out of range")
+        return self._data[idx]
+
+    def __len__(self):
+        return self._size
+
+    def __bool__(self):
+        return len(self) != 0
+
+    def __str__(self):
+        return f'<block of size {self._size}>'
+
+    def _add(self, elem: T):
+        self._data[self._size] = elem
+        return Block[T](self._data, self._size + 1)
+
+def _blocks[T](g: Generator[T], size: int):
+    b = Block[T](size)
+    for a in g:
+        if len(b) == size:
+            yield b
+            b = Block[T](size)
+        b = b._add(a)
+    if b:
+        yield b
+
+def blocks(x, size: int):
+    '''
+    Partitions the given object into blocks of the specified size
+    by calling the `__blocks__` magic method.
+    '''
+    if size <= 0:
+        raise ValueError(f"invalid block size: {size}")
+    if isinstance(x, Generator):
+        return _blocks(x, size)
+    else:
+        return x.__blocks__(size)

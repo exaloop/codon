@@ -1,0 +1,15 @@
+# FASTQ counter benchmark from https://github.com/lh3/biofast
+from sys import argv, exit, stderr
+from bio import *
+
+if len(argv) != 2:
+    stderr.write("Usage: fqcnt.py <in.fq.gz>\n")
+    exit(1)
+
+n, slen, qlen = 0, 0, 0
+for r in FASTQ(argv[1], validate=False):
+    n += 1
+    slen += len(r.read)
+    qlen += len(r.qual)
+
+print n, slen, qlen

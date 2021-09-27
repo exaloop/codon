@@ -1,0 +1,44 @@
+@tuple
+class Slice:
+    start: Optional[int]
+    stop: Optional[int]
+    step: Optional[int]
+
+    def adjust_indices(self, length: int):
+        stepx = ~self.step if self.step else 1
+        startx = 0
+        stopx = 0
+        if stepx == 0:
+            raise ValueError("slice step cannot be zero")
+        if stepx > 0:
+            startx = ~self.start if self.start else 0
+            stopx = ~self.stop if self.stop else length
+        else:
+            startx = ~self.start if self.start else length - 1
+            stopx = ~self.stop if self.stop else -(length + 1)
+        return Slice.adjust_indices_helper(length, startx, stopx, stepx)
+
+    def adjust_indices_helper(length: int, start: int, stop: int, step: int):
+        if start < 0:
+            start += length
+            if start < 0:
+                start = -1 if step < 0 else 0
+        elif start >= length:
+            start = length - 1 if step < 0 else length
+
+        if stop < 0:
+            stop += length
+            if stop < 0:
+                stop = -1 if step < 0 else 0
+        elif stop >= length:
+            stop = length - 1 if step < 0 else length
+
+        if step < 0:
+            if stop < start:
+                return start, stop, step, (start - stop - 1) // (-step) + 1
+        else:
+            if start < stop:
+                return start, stop, step, (stop - start - 1) // step + 1
+
+        return start, stop, step, 0
+slice = Slice

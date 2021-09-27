@@ -1,0 +1,40 @@
+@__attribute__
+def test():
+    pass
+
+@__attribute__
+def export():
+    pass
+
+@__attribute__
+def inline():
+    pass
+
+@__attribute__
+def noinline():
+    pass
+
+@__attribute__
+def pure():
+    pass
+
+@__attribute__
+def nonpure():
+    pass
+
+@__attribute__
+def commutative():
+    pass
+
+@__attribute__
+def associative():
+    pass
+
+@__attribute__
+def distributive():
+    pass
+
+@__attribute__
+def C():
+    pass
+

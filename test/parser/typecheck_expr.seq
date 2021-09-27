@@ -1,0 +1,615 @@
+#%% bool,barebones
+a = True
+print a.__class__ #: bool
+
+#%% int,barebones
+i = 15
+print i.__class__ #: int
+
+#%% float,barebones
+a = 1.11
+print a.__class__ #: float
+
+#%% str,barebones
+a = 'hi'
+print a.__class__ #: str
+
+#%% none_unbound,barebones
+a = None
+
+#%% list_unbound,barebones
+a = []
+#! cannot typecheck the program
+
+
+#%% id_static,barebones
+def foo[N: Static[int]]():
+    print N
+foo(5) #: 5
+
+def fox(N: Static[int]):
+    print N
+fox(6) #: 6
+
+#%% if,barebones
+y = 1 if True else 2
+print y.__class__ #: int
+
+a = None
+b = 5
+z = a if bool(True) else b # needs bool to prevent static evaluation
+print z, z.__class__ #: None Optional[int]
+
+zz = 1.11 if True else None
+print zz, zz.__class__ #: 1.11 float
+
+#%% binary,barebones
+@extend
+class float:
+    def __add__(self, i: int): print 'add'; return 0
+    def __sub__(self, i: int): print 'sub'; return 0
+    def __mul__(self, i: int): print 'mul'; return 0
+    def __pow__(self, i: int): print 'pow'; return 0
+    def __truediv__(self, i: int): print 'truediv'; return 0
+    def __floordiv__(self, i: int): print 'div'; return 0
+    def __matmul__(self, i: int): print 'matmul'; return 0
+    def __mod__(self, i: int): print 'mod'; return 0
+    def __lt__(self, i: int): print 'lt'; return 0
+    def __le__(self, i: int): print 'le'; return 0
+    def __gt__(self, i: int): print 'gt'; return 0
+    def __ge__(self, i: int): print 'ge'; return 0
+    def __eq__(self, i: int): print 'eq'; return 0
+    def __ne__(self, i: int): print 'ne'; return 0
+    def __lshift__(self, i: int): print 'lshift'; return 0
+    def __rshift__(self, i: int): print 'rshift'; return 0
+    def __and__(self, i: int): print 'and'; return 0
+    def __or__(self, i: int): print 'or'; return 0
+    def __xor__(self, i: int): print 'xor'; return 0
+# double assignment to disable propagation
+def f(x): return x
+a = f(1.0)
+a = f(5.0)
+a + f(1) #: add
+# wrap in function to disable canonicalization
+a - f(1) #: sub
+a * f(2) #: mul
+a ** f(2) #: pow
+a // f(2) #: div
+a / f(2) #: truediv
+a @ f(1) #: matmul
+a % f(1) #: mod
+a < f(1) #: lt
+a <= f(1) #: le
+a > f(1) #: gt
+a >= f(1) #: ge
+a == f(1) #: eq
+a != f(1) #: ne
+a << f(1) #: lshift
+a >> f(1) #: rshift
+a & f(1) #: and
+a | f(1) #: or
+a ^ f(1) #: xor
+
+#%% binary_rmagic,barebones
+class Foo[T]:
+    def __add__(self, other: T):
+        print 'add'
+        return self
+    def __radd__(self, other: T):
+        print 'radd'
+        return self
+foo = Foo[int]()
+foo + 1 #: add
+1 + foo #: radd
+
+#%% binary_short_circuit,barebones
+def moo():
+    print 'moo'
+    return True
+print True or moo() #: True
+print moo() or True #: moo
+#: True
+print False and moo() #: False
+print moo() and False #: moo
+#: False
+
+#%% binary_is,barebones
+print 5 is None #: False
+print None is None #: True
+print (None if bool(True) else 1) is None #: True
+print (None if bool(False) else 1) is None #: False
+
+print 5 is 5.0 #: False
+print 5 is 6 #: False
+print 5 is 5 #: True
+print 5 is 1.12 #: False
+class Foo:
+    a: int
+x = Foo(1)
+y = Foo(1)
+z = x
+print x is x, x is y, x is z, z is x, z is y #: True False True True False
+
+a, b, c, d = Optional(5), Optional[int](), Optional(5), Optional(4)
+print a is a, a is b, b is b, a is c, a is d #: True False True True False
+aa, bb, cc, dd = Optional(Foo(1)), Optional[Foo](), Optional(Foo(1)), Optional(Foo(2))
+print aa is aa, aa is bb, bb is bb, aa is cc, aa is dd #: True False True False False
+
+
+#%% pipe,barebones
+def foo(a, b):
+    return a+b
+bar = lambda c, d: c+d
+def hai(e):
+    while e > 0:
+        yield e
+        e -= 2
+def echo(s):
+    print s
+foo(1,2) |> bar(4) |> echo  #: 7
+foo(1,2) |> bar(4) |> hai |> echo
+#: 7
+#: 5
+#: 3
+#: 1
+
+#%% pipe_prepend,barebones
+def foo(a: Optional[int]):
+    print a
+    return 1
+5 |> foo #: 5
+None |> foo #: None
+print (None |> foo).__class__ #: int
+
+def foo2(a: int):
+    print a
+    return 1
+Optional(5) |> foo2 #: 5
+try:
+    Optional[int]() |> foo2
+except ValueError as e:
+    print e.message #: optional is None
+
+#%% pipe_prepend_error,barebones
+def foo2(a: int):
+    print a
+    return 1
+try:
+    None |> foo2
+except ValueError:
+    print 'exception' #: exception
+# Explanation: None can also be Optional[Generator[int]]
+# We cannot decide if this is a generator to be unrolled in a pipe,
+# or just an argument to be passed to a function.
+# So this will default to NoneType at the end.
+
+#%% instantiate_err,barebones
+def foo[N]():
+    return N()
+foo(int, float)  #! too many arguments
+
+#%% instantiate_err_2,barebones
+def foo[N, T]():
+    return N()
+foo(int)  #! cannot typecheck the program
+
+#%% instantiate_err_3,barebones
+Ptr[int, float]()  #! expected 1 generics
+
+#%% slice,barebones
+z = [1, 2, 3, 4, 5]
+y = (1, 'foo', True)
+print z[2], y[1]  #: 3 foo
+print z[:1], z[1:], z[1:3], z[:4:2], z[::-1]  #: [1] [2, 3, 4, 5] [2, 3] [1, 3] [5, 4, 3, 2, 1]
+
+#%% static_index,barebones
+a = (1, '2s', 3.3)
+print a[1] #: 2s
+print a[0:2], a[:2], a[1:] #: (1, 2s) (1, 2s) (2s, 3.3)
+print a[0:3:2], a[-1:] #: (1, 3.3) (3.3)
+
+#%% static_index_lenient,barebones
+a = (1, 2)
+print a[3:5] #: ()
+
+#%% static_index_err,barebones
+a = (1, 2)
+a[5] #! tuple index 5 out of bounds (len: 2)
+
+#%% static_index_err_2,barebones
+a = (1, 2)
+a[-3] #! tuple index -1 out of bounds (len: 2)
+
+#%% index_func_instantiate,barebones
+class X:
+    def foo[T](self, x: T):
+        print x.__class__, x
+x = X()
+x.foo(5, int) #: int 5
+
+#%% index,barebones
+l = [1, 2, 3]
+print l[2] #: 3
+
+#%% index_two_rounds,barebones
+l = []
+print l[::-1] #: []
+l.append(('str', 1, True, 5.15))
+print l, l.__class__ #: [(str, 1, True, 5.15)] List[Tuple[str,int,bool,float]]
+
+#%% dot_case_1,barebones
+a = []
+print a[0].loop()  #! cannot find 'loop' in int
+a.append(5)
+
+#%% dot_case_2,barebones
+a = Optional(0)
+print a.__bool__() #: True
+print a.__add__(1) #: 1
+
+#%% dot_case_4,barebones
+a = [5]
+print a.len #: 1
+
+#%% dot_case_4_err,barebones
+a = [5]
+a.foo #! cannot find 'foo' in List[int]
+
+#%% dot_case_6,barebones
+class Foo:
+    def bar(self, a: int):
+        print 'normal', a
+    def bar(self, a: Optional[int]):
+        print 'optional', a
+    def bar[T](self, a: Optional[T]):
+        print 'optional generic', a, a.__class__
+    def bar(self, a):
+        print 'generic', a, a.__class__
+f = Foo()
+f.bar(1) #: normal 1
+f.bar(Optional(1)) #: optional 1
+f.bar(Optional('s')) #: optional generic s Optional[str]
+f.bar('hehe') #: generic hehe str
+
+#%% dot_case_6b,barebones
+class Foo:
+    def bar(self, a, b):
+        print '1', a, b
+    def bar(self, a, b: str):
+        print '2', a, b
+    def bar(self, a: str, b):
+        print '3', a, b
+f = Foo()
+# Take the newest highest scoring method
+f.bar('s', 't') #: 3 s t
+f.bar(1, 't') #: 2 1 t
+f.bar('s', 1) #: 3 s 1
+f.bar(1, 2) #: 1 1 2
+
+#%% dot,barebones
+class Foo:
+    def clsmethod():
+        print 'foo'
+    def method(self, a):
+        print a
+Foo.clsmethod() #: foo
+Foo.method(Foo(), 1) #: 1
+m1 = Foo.method
+m1(Foo(), 's') #: s
+m2 = Foo().method
+m2(1.1) #: 1.1
+
+#%% dot_error_static,barebones
+class Foo:
+    def clsmethod():
+        print 'foo'
+    def method(self, a):
+        print a
+Foo().clsmethod() #! too many arguments for Foo.clsmethod (expected maximum 0, got 1)
+
+#%% call,barebones
+def foo(a, b, c='hi'):
+    print 'foo', a, b, c
+    return 1
+class Foo:
+    def __init__(self):
+        print 'Foo.__init__'
+    def foo(self, a):
+        print 'Foo.foo', a
+        return 's'
+    def bar[T](self, a: T):
+        print 'Foo.bar', a
+        return a.__class__
+    def __call__(self, y):
+        print 'Foo.__call__'
+        return foo(2, y)
+
+foo(1, 2.2, True) #: foo 1 2.2 True
+foo(1, 2.2) #: foo 1 2.2 hi
+foo(b=2.2, a=1) #: foo 1 2.2 hi
+foo(b=2.2, c=12u, a=1) #: foo 1 2.2 12
+
+f = Foo() #: Foo.__init__
+print f.foo(a=5) #: Foo.foo 5
+#: s
+print f.bar(a=1, T=int) #: Foo.bar 1
+#: int
+print Foo.bar(Foo(), 1.1, T=float) #: Foo.__init__
+#: Foo.bar 1.1
+#: float
+print Foo.bar(Foo(), 's') #: Foo.__init__
+#: Foo.bar s
+#: str
+print f('hahaha') #: Foo.__call__
+#: foo 2 hahaha hi
+#: 1
+
+@tuple
+class Moo:
+    moo: int
+    def __new__(i: int) -> Moo:
+        print 'Moo.__new__'
+        return (i,)
+print Moo(1) #: Moo.__new__
+#: (moo: 1)
+
+#%% call_err_2,barebones
+class A:
+    a: A
+a = A() #! recursive default arguments
+
+#%% call_err_3,barebones
+class G[T]:
+    t: T
+class A:
+    ga: G[A]
+a = A() #! recursive default arguments
+
+#%% call_err_4,barebones
+seq_print(1, name="56", name=2) #! repeated named argument 'name'
+
+#%% call_partial,barebones
+def foo(i, j, k):
+    return i + j + k
+print foo(1.1, 2.2, 3.3)  #: 6.6
+p = foo(6, ...)
+print p.__class__ #: foo[int,...,...]
+print p(2, 1)  #: 9
+print p(k=3, j=6) #: 15
+q = p(k=1, ...)
+print q(3)  #: 10
+qq = q(2, ...)
+print qq()  #: 9
+#
+add_two = foo(3, k=-1, ...)
+print add_two(42)  #: 44
+print 3 |> foo(1, 2)  #: 6
+print 42 |> add_two  #: 44
+#
+def moo(a, b, c=3):
+    print a, b, c
+m = moo(b=2, ...)
+print m.__class__ #: moo[...,int,...]
+m('s', 1.1) #: s 2 1.1
+# #
+n = m(c=2.2, ...)
+print n.__class__ #: moo[...,int,float]
+n('x') #: x 2 2.2
+print n('y').__class__ #: void
+
+def ff(a, b, c):
+    return a, b, c
+print ff(1.1, 2, True).__class__ #: Tuple[float,int,bool]
+print ff(1.1, ...)(2, True).__class__ #: Tuple[float,int,bool]
+y = ff(1.1, ...)(c=True, ...)
+print y.__class__ #: ff[float,...,bool]
+print ff(1.1, ...)(2, ...)(True).__class__ #: Tuple[float,int,bool]
+print y('hei').__class__ #: Tuple[float,str,bool]
+z = ff(1.1, ...)(c='s', ...)
+print z.__class__ #: ff[float,...,str]
+
+#%% call_arguments_partial,barebones
+def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
+    print R.__class__, T.__class__
+    print a.__class__[:8], b.__class__
+    for i in b:
+        print a(i)
+    print c, c.__class__
+    print d, d.__class__
+
+l = [1, 2, 3]
+doo(b=l, d=Optional(5), c=l[0], a=lambda x: x+1)
+#: int int
+#: ._lambda Generator[int]
+#: 2
+#: 3
+#: 4
+#: 1 Optional[int]
+#: 5 int
+
+l = [1]
+def adder(a, b): return a+b
+doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
+#: int int
+#: adder[.. Generator[int]
+#: 5
+#: 1 Optional[int]
+#: 5 int
+
+#%% call_partial_star,barebones
+def foo(x, *args, **kwargs):
+    print x, args, kwargs
+p = foo(...)
+p(1, z=5) #: 1 () (z: 5)
+q = p(zh=43, ...)
+q(1) #: 1 () (zh: 43)
+r = q(5, 38, ...)
+r() #: 5 (38) (zh: 43)
+
+#%% call_partial_star_error,barebones
+def foo(x, *args, **kwargs):
+    print x, args, kwargs
+p = foo(...)
+p(1, z=5)
+q = p(zh=43, ...)
+q(1)
+r = q(5, 38, ...)
+r(1, a=1) #! too many arguments for foo[T1,T2,T3] (expected maximum 3, got 2)
+
+#%% call_kwargs,barebones
+def kwhatever(**kwargs):
+    print 'k', kwargs
+def whatever(*args):
+    print 'a', args
+def foo(a, b, c=1, *args, **kwargs):
+    print a, b, c, args, kwargs
+    whatever(a, b, *args, c)
+    kwhatever(x=1, **kwargs)
+foo(1, 2, 3, 4, 5, arg1='s', kwa=2)
+#: 1 2 3 (4, 5) (arg1: s, kwa: 2)
+#: a (1, 2, 4, 5, 3)
+#: k (arg1: s, kwa: 2, x: 1)
+foo(1, 2)
+#: 1 2 1 () ()
+#: a (1, 2, 1)
+#: k (x: 1)
+foo(1, 2, 3)
+#: 1 2 3 () ()
+#: a (1, 2, 3)
+#: k (x: 1)
+foo(1, 2, 3, 4)
+#: 1 2 3 (4) ()
+#: a (1, 2, 4, 3)
+#: k (x: 1)
+foo(1, 2, zamboni=3)
+#: 1 2 1 () (zamboni: 3)
+#: a (1, 2, 1)
+#: k (x: 1, zamboni: 3)
+
+#%% call_unpack,barebones
+def foo(*args, **kwargs):
+    print args, kwargs
+
+@tuple
+class Foo:
+    x: int = 5
+    y: bool = True
+
+t = (1, 's')
+f = Foo(6)
+foo(*t, **f) #: (1, s) (x: 6, y: True)
+foo(*(1,2)) #: (1, 2) ()
+foo(3, f) #: (3, (x: 6, y: True)) ()
+foo(k = 3, **f) #: () (k: 3, x: 6, y: True)
+
+#%% call_static,barebones
+print isinstance(1, int), isinstance(2.2, float), isinstance(3, bool)
+#: True True False
+print isinstance((1, 2), Tuple), isinstance((1, 2), Tuple[int, int]), isinstance((1, 2), Tuple[float, int])
+#: True True False
+print isinstance([1, 2], List), isinstance([1, 2], List[int]), isinstance([1, 2], List[float])
+#: True True False
+print isinstance({1, 2}, List), isinstance({1, 2}, Set[float])
+#: False False
+print isinstance(Optional(5), Optional[int]), isinstance(Optional(), Optional)
+#: True True
+print isinstance(Optional(), Optional[int]), isinstance(Optional('s'), Optional[int])
+#: False False
+print isinstance(None, Optional), isinstance(None, Optional[int])
+#: True False
+print isinstance(None, Optional[NoneType])
+#: True
+print isinstance({1, 2}, List)
+#: False
+
+print staticlen((1, 2, 3)), staticlen((1, )), staticlen('hehe')
+#: 3 1 2
+
+print hasattr([1, 2], "__getitem__")
+#: True
+print hasattr(type([1, 2]), "__getitem__")
+#: True
+print hasattr(int, "__getitem__")
+#: False
+print hasattr([1, 2], "__getitem__", str)
+#: False
+
+#%% staticlen_err,barebones
+print staticlen([1, 2]) #! List[int] is not a tuple type
+
+#%% compile_error,barebones
+compile_error("woo-hoo") #! custom error: woo-hoo
+
+#%% stack_alloc,barebones
+a = __array__[int](2)
+print a.__class__ #: Array[int]
+
+#%% typeof,barebones
+a = 5
+z = List[type(a)]()
+z.append(6)
+print z.__class__, z, type(1.1).__class__  #: List[int] [6] float
+
+#%% ptr,barebones
+v = 5
+c = __ptr__(v)
+print c.__class__ #: Ptr[int]
+
+#%% yieldexpr,barebones
+def mysum(start):
+    m = start
+    while True:
+        a = (yield)
+        print a.__class__ #: int
+        if a == -1:
+            break
+        m += a
+    yield m
+iadder = mysum(0)
+next(iadder)
+for i in range(10):
+    iadder.send(i)
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+print iadder.send(-1)  #: 45
+
+#%% function_typecheck_level,barebones
+def foo(x):
+    def bar(z):  # bar has a parent foo(), however its unbounds must not be generalized!
+        print z
+    bar(x)
+    bar('x')
+foo(1)
+#: 1
+#: x
+foo('s')
+#: s
+#: x
+
+#%% tuple_generator,barebones
+a = (1, 2)
+b = ('f', 'g')
+print a, b #: (1, 2) (f, g)
+c = (*a, True, *b)
+print c #: (1, 2, True, f, g)
+print a + b + c #: (1, 2, f, g, 1, 2, True, f, g)
+print () + (1, ) + ('a', 'b') #: (1, a, b)
+
+t = tuple(i+1 for i in (1,2,3))
+print t #: (2, 3, 4)
+print tuple((j, i) for i, j in ((1, 'a'), (2, 'b'), (3, 'c')))
+#: ((a, 1), (b, 2), (c, 3))
+
+#%% static_unify,barebones
+def foo(x: Callable[[1,2], 3]): pass  #! unexpected static type
+
+#%% static_unify_2,barebones
+def foo(x: List[1]): pass  #! cannot unify T and 1

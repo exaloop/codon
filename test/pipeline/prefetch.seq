@@ -1,0 +1,115 @@
+from bio import *
+
+class MyIndex[K]:
+    special: K
+    getitem_calls: int
+    prefetch_calls: int
+
+    def __init__(self, special: K):
+        self.special = special
+        self.getitem_calls = 0
+        self.prefetch_calls = 0
+
+    def __getitem__(self, k: K):
+        self.getitem_calls += 1
+        return 1 if k == self.special else 0
+
+    def __prefetch__(self, k: K):
+        self.prefetch_calls += 1
+
+def lookup1[K](kmer: K, idx: MyIndex[K]):
+    return (kmer, idx[kmer])
+
+@prefetch
+def lookup2[K](kmer: K, idx: MyIndex[K]):
+    return (kmer, idx[kmer])
+
+@prefetch
+def lookup3[K](kmer: K, idx: MyIndex[K]):
+    try:
+        idx[kmer]   # issues prefetch
+        idx[~kmer]  # issues prefetch
+        return (kmer, -99999999)
+    finally:
+        idx[kmer]   # issues prefetch
+        idx[~kmer]  # issues prefetch
+        return (kmer, idx[kmer])
+
+@prefetch
+def lookup4(kmer, idx, v):
+    v.append((kmer, idx[kmer]))
+
+@prefetch
+def lookup5(kmer, idx, v):
+    v.append((kmer, idx[kmer]))
+    return 0
+
+K: Static[int] = 3
+
+@test
+def test_prefetch_transformation(s):
+    idx1 = MyIndex(Kmer[K]())
+    idx2 = MyIndex(Kmer[K]())
+    idx3 = MyIndex(Kmer[K]())
+    idx4 = MyIndex(Kmer[K]())
+    idx5 = MyIndex(Kmer[K]())
+    idx6 = MyIndex(Kmer[K]())
+    v1 = []
+    v2 = []
+    v3 = []
+    v4: List[Tuple[Kmer[K], int]] = []
+    v5: List[Tuple[Kmer[K], int]] = []
+    v6: List[Tuple[Kmer[K], int]] = []
+    s = s'ACGTACGTAAAACGTACGTAAAACGTACGT'
+
+    def my_kmers(s):
+        return s.kmers(1, K)
+
+    s |> kmers(1, K) |> lookup1(idx1) |> v1.append
+    s |> kmers(1, K) |> lookup2(idx2) |> v2.append
+    s |> kmers(1, K) |> lookup3(idx3) |> v3.append
+    my_kmers(s) |> lookup4(idx4, v4)
+    s |> kmers(1, K) |> lookup5(idx5, v5)
+
+    def pass_prefetch_func_by_arg(s, lookup, idx, v):
+        s |> kmers(1, K) |> lookup(idx) |> v.append
+
+    pass_prefetch_func_by_arg(s, lookup3, idx6, v6)
+
+    assert set(v1) == set(v2)
+    assert set(v1) == set(v3)
+    assert set(v1) == set(v4)
+    assert set(v1) == set(v5)
+    assert set(v1) == set(v6)
+    assert idx1.getitem_calls == len(s) - (K - 1)
+    assert idx1.prefetch_calls == 0
+    assert idx1.getitem_calls == idx2.getitem_calls
+    assert idx3.getitem_calls == 5 * idx1.getitem_calls
+    assert idx2.prefetch_calls == idx2.getitem_calls
+    assert idx3.prefetch_calls == 5 * idx2.prefetch_calls
+    assert idx4.getitem_calls == idx2.getitem_calls
+    assert idx4.prefetch_calls == idx2.prefetch_calls
+    assert idx5.getitem_calls == idx4.getitem_calls
+    assert idx5.prefetch_calls == idx4.prefetch_calls
+    assert idx6.getitem_calls == idx3.getitem_calls
+    assert idx6.prefetch_calls == idx3.prefetch_calls
+
+test_prefetch_transformation(s'')
+test_prefetch_transformation(s'A')
+test_prefetch_transformation(s'ACG')
+test_prefetch_transformation(s'ACGTA')
+test_prefetch_transformation(s'ACGTACGTAAAACGTACGTAAAACGTACGT')
+test_prefetch_transformation(s'ACGTACGTAAAACGTACGTAAAACGTACGTACGTACGTAAAACGTACGTAAAACGTACGTACGTACGTAAAACGTACGTAAAACGTACGTACGTACGTAAAACGTACGTAAAACGTACGT')
+
+@test
+def test_list_prefetch():
+    v = [0]
+    v.prefetch(0)
+test_list_prefetch()
+
+@test
+def test_dict_prefetch():
+    d = {0:1}
+    d.prefetch(0)
+    d.prefetch(42)
+test_dict_prefetch()

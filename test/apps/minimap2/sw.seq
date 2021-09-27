@@ -1,0 +1,66 @@
+# Smith-Waterman alignment from minimap2 implemented using Seq's inter-sequence alignment
+# https://github.com/lh3/minimap2
+# https://github.com/lh3/ksw2
+# Usage: seqc sw.seq <queries> <targets>
+# <queries> and <targets> are text files of the same length with one sequence per line.
+from time import TimeInterval
+from sys import argv
+from bio import seqs, inter_align
+from math import sqrt
+from statistics import mean, stdev
+queries = argv[1]
+targets = argv[2]
+
+total, num = 0, 0
+score = True  # must be global
+
+@inter_align
+def process_inter(t):
+    global total, num
+    query, target = t
+    inter_score = query.align(target, a=1, b=2, ambig=0, gapo=4, gape=2, zdrop=400, bandwidth=751, ext_only=False, score_only=score).score
+    total += inter_score
+    num += 1
+
+def process_intra(t):
+    global total, num
+    query, target = t
+    inter_score = query.align(target, a=1, b=2, ambig=0, gapo=4, gape=2, zdrop=400, bandwidth=751, ext_only=False, score_only=score).score
+    total += inter_score
+    num += 1
+
+def run(queries, targets, msg, f, filter=False):
+    global num, total, score
+    def filter_len(t):
+        query, target = t
+        if len(query) <= 512 and len(target) <= 512:
+            yield query, target
+
+    for s in [False, True]:
+        times = []
+        for i in range(3):
+            num, total = 0, 0
+            t = TimeInterval()
+            score = s
+            if filter:
+                zip(seqs(queries), seqs(targets)) |> filter_len |> f
+            else:
+                zip(seqs(queries), seqs(targets)) |> f
+            times.append(t.elapsed())
+            # print '-', i, num, total, times[-1]
+        m = mean(times)
+        print f'{msg}: seq-{msg} {int(score)} {m} {sqrt(sum((i - m)**2 for i in times) / len(times))}'
+    # print stdev(times) # broken
+
+from C import seq_get_interaln_simd() -> str
+from C import seq_set_sw_maxsimd(int)
+
+run(queries, targets, 'intra', process_intra)
+run(queries, targets, 'intra-512', process_intra, True)
+
+for simd in [0x20, 0x80, 0x100]:
+    seq_set_sw_maxsimd(simd)
+    print seq_get_interaln_simd()
+    run(queries, targets, 'inter', process_inter)
+    run(queries, targets, 'inter-512', process_inter, True)
+

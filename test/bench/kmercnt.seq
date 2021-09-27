@@ -1,0 +1,17 @@
+# Implementation of benchmark at https://github.com/lh3/kmer-cnt
+# Usage: seqc kmercnt.seq <input.fastq>
+from sys import argv
+from time import timing
+from bio import *
+
+def print_hist(h, N = 256):
+    cnt = [0 for _ in range(N)]
+    for v in h.values():
+        cnt[min(v, N - 1)] += 1
+    for i in range(1, N):
+        print f'{i}\t{cnt[i]}'
+
+with timing('k-mer counting'), FASTQ(argv[1], copy=False, validate=False) as fastq:
+    h = {}
+    fastq |> seqs |> kmers(step=1, k=31) |> canonical |> h.increment
+    print_hist(h)

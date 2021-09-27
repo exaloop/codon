@@ -1,0 +1,574 @@
+from operator import *
+import operator
+
+def apply1(f, x, expected):
+    return f(x) == expected
+
+def apply2(f, lhs, rhs, expected):
+    return f(lhs, rhs) == expected
+
+n_eq = 0
+n_ne = 0
+n_lt = 0
+n_le = 0
+n_gt = 0
+n_ge = 0
+
+n_len = 0
+n_bool = 0
+
+n_abs = 0
+n_pos = 0
+n_neg = 0
+n_inv = 0
+n_index = 0
+
+n_add = 0
+n_sub = 0
+n_mul = 0
+n_matmul = 0
+n_truediv = 0
+n_floordiv = 0
+n_mod = 0
+n_pow = 0
+n_and = 0
+n_or = 0
+n_xor = 0
+n_lshift = 0
+n_rshift = 0
+
+n_iadd = 0
+n_isub = 0
+n_imul = 0
+n_imatmul = 0
+n_itruediv = 0
+n_ifloordiv = 0
+n_imod = 0
+n_ipow = 0
+n_iand = 0
+n_ior = 0
+n_ixor = 0
+n_ilshift = 0
+n_irshift = 0
+
+class C:
+    def __eq__(self, other: C):
+        global n_eq
+        n_eq += 1
+        return False
+
+    def __ne__(self, other: C):
+        global n_ne
+        n_ne += 1
+        return False
+
+    def __lt__(self, other: C):
+        global n_lt
+        n_lt += 1
+        return False
+
+    def __le__(self, other: C):
+        global n_le
+        n_le += 1
+        return False
+
+    def __gt__(self, other: C):
+        global n_gt
+        n_gt += 1
+        return False
+
+    def __ge__(self, other: C):
+        global n_ge
+        n_ge += 1
+        return False
+
+    def __len__(self):
+        global n_len
+        n_len += 1
+        return 42
+
+    def __bool__(self):
+        global n_bool
+        n_bool += 1
+        return True
+
+    def __abs__(self):
+        global n_abs
+        n_abs += 1
+        return 'abs'
+
+    def __pos__(self):
+        global n_pos
+        n_pos += 1
+        return 'pos'
+
+    def __neg__(self):
+        global n_neg
+        n_neg += 1
+        return 'neg'
+
+    def __invert__(self):
+        global n_inv
+        n_inv += 1
+        return 'inv'
+
+    def __index__(self):
+        global n_index
+        n_index += 1
+        return 'index'
+
+    def __add__(self, other: C):
+        global n_add
+        n_add += 1
+        return 'add'
+
+    def __sub__(self, other: C):
+        global n_sub
+        n_sub += 1
+        return 'sub'
+
+    def __mul__(self, other: C):
+        global n_mul
+        n_mul += 1
+        return 'mul'
+
+    def __matmul__(self, other: C):
+        global n_matmul
+        n_matmul += 1
+        return 'matmul'
+
+    def __truediv__(self, other: C):
+        global n_truediv
+        n_truediv += 1
+        return 'truediv'
+
+    def __floordiv__(self, other: C):
+        global n_floordiv
+        n_floordiv += 1
+        return 'floordiv'
+
+    def __mod__(self, other: C):
+        global n_mod
+        n_mod += 1
+        return 'mod'
+
+    def __pow__(self, other: C):
+        global n_pow
+        n_pow += 1
+        return 'pow'
+
+    def __and__(self, other: C):
+        global n_and
+        n_and += 1
+        return 'and'
+
+    def __or__(self, other: C):
+        global n_or
+        n_or += 1
+        return 'or'
+
+    def __xor__(self, other: C):
+        global n_xor
+        n_xor += 1
+        return 'xor'
+
+    def __lshift__(self, other: C):
+        global n_lshift
+        n_lshift += 1
+        return 'lshift'
+
+    def __rshift__(self, other: C):
+        global n_rshift
+        n_rshift += 1
+        return 'rshift'
+
+    def __iadd__(self, other: C):
+        global n_iadd
+        n_iadd += 1
+        return self
+
+    def __isub__(self, other: C):
+        global n_isub
+        n_isub += 1
+        return self
+
+    def __imul__(self, other: C):
+        global n_imul
+        n_imul += 1
+        return self
+
+    def __imatmul__(self, other: C):
+        global n_imatmul
+        n_imatmul += 1
+        return self
+
+    def __itruediv__(self, other: C):
+        global n_itruediv
+        n_itruediv += 1
+        return self
+
+    def __ifloordiv__(self, other: C):
+        global n_ifloordiv
+        n_ifloordiv += 1
+        return self
+
+    def __imod__(self, other: C):
+        global n_imod
+        n_imod += 1
+        return self
+
+    def __ipow__(self, other: C):
+        global n_ipow
+        n_ipow += 1
+        return self
+
+    def __iand__(self, other: C):
+        global n_iand
+        n_iand += 1
+        return self
+
+    def __ior__(self, other: C):
+        global n_ior
+        n_ior += 1
+        return self
+
+    def __ixor__(self, other: C):
+        global n_ixor
+        n_ixor += 1
+        return self
+
+    def __ilshift__(self, other: C):
+        global n_ilshift
+        n_ilshift += 1
+        return self
+
+    def __irshift__(self, other: C):
+        global n_irshift
+        n_irshift += 1
+        return 'rshift'
+
+@test
+def test_comparisons():
+    assert apply2(eq, 1, 2, False)
+    assert apply2(eq, 2, 1, False)
+    assert apply2(eq, 1, 1, True)
+    assert apply2(eq, 1, 1.1, False)
+
+    assert apply2(operator.__eq__, 1, 2, False)
+    assert apply2(operator.__eq__, 2, 1, False)
+    assert apply2(operator.__eq__, 1, 1, True)
+    assert apply2(operator.__eq__, 1, 1.1, False)
+
+    assert apply2(ne, 1, 2, True)
+    assert apply2(ne, 2, 1, True)
+    assert apply2(ne, 1, 1, False)
+    assert apply2(ne, 1, 1.1, True)
+
+    assert apply2(operator.__ne__, 1, 2, True)
+    assert apply2(operator.__ne__, 2, 1, True)
+    assert apply2(operator.__ne__, 1, 1, False)
+    assert apply2(operator.__ne__, 1, 1.1, True)
+
+    assert apply2(lt, 1, 2, True)
+    assert apply2(lt, 2, 1, False)
+    assert apply2(lt, 1, 1, False)
+    assert apply2(lt, 1, 1.1, True)
+
+    assert apply2(operator.__lt__, 1, 2, True)
+    assert apply2(operator.__lt__, 2, 1, False)
+    assert apply2(operator.__lt__, 1, 1, False)
+    assert apply2(operator.__lt__, 1, 1.1, True)
+
+    assert apply2(le, 1, 2, True)
+    assert apply2(le, 2, 1, False)
+    assert apply2(le, 1, 1, True)
+    assert apply2(le, 1, 1.1, True)
+
+    assert apply2(operator.__le__, 1, 2, True)
+    assert apply2(operator.__le__, 2, 1, False)
+    assert apply2(operator.__le__, 1, 1, True)
+    assert apply2(operator.__le__, 1, 1.1, True)
+
+    assert apply2(gt, 1, 2, False)
+    assert apply2(gt, 2, 1, True)
+    assert apply2(gt, 1, 1, False)
+    assert apply2(gt, 1, 1.1, False)
+
+    assert apply2(operator.__gt__, 1, 2, False)
+    assert apply2(operator.__gt__, 2, 1, True)
+    assert apply2(operator.__gt__, 1, 1, False)
+    assert apply2(operator.__gt__, 1, 1.1, False)
+
+    assert apply2(ge, 1, 2, False)
+    assert apply2(ge, 2, 1, True)
+    assert apply2(ge, 1, 1, True)
+    assert apply2(ge, 1, 1.1, False)
+
+    assert apply2(operator.__ge__, 1, 2, False)
+    assert apply2(operator.__ge__, 2, 1, True)
+    assert apply2(operator.__ge__, 1, 1, True)
+    assert apply2(operator.__ge__, 1, 1.1, False)
+
+    assert apply2(eq, C(), C(), False)
+    assert n_eq == 1
+    assert apply2(ne, C(), C(), False)
+    assert n_ne == 1
+    assert apply2(lt, C(), C(), False)
+    assert n_lt == 1
+    assert apply2(le, C(), C(), False)
+    assert n_le == 1
+    assert apply2(gt, C(), C(), False)
+    assert n_gt == 1
+    assert apply2(ge, C(), C(), False)
+    assert n_ge == 1
+
+    assert apply2(operator.__eq__, C(), C(), False)
+    assert n_eq == 2
+    assert apply2(operator.__ne__, C(), C(), False)
+    assert n_ne == 2
+    assert apply2(operator.__lt__, C(), C(), False)
+    assert n_lt == 2
+    assert apply2(operator.__le__, C(), C(), False)
+    assert n_le == 2
+    assert apply2(operator.__gt__, C(), C(), False)
+    assert n_gt == 2
+    assert apply2(operator.__ge__, C(), C(), False)
+    assert n_ge == 2
+test_comparisons()
+
+class A1:
+    def __bool__(self):
+        return True
+
+    def __len__(self):
+        return 0
+
+class A2:
+    def __len__(self):
+        return 42
+
+@test
+def test_truthiness():
+    assert truth(1)
+    assert not truth(0)
+    assert not_(False)
+    assert not not_(True)
+    assert not not_(A1())
+    assert not not_(A2())
+
+    a = A1()
+    b = A1()
+
+    assert is_(a, a)
+    assert not is_(a, b)
+    assert is_not(a, b)
+    assert not is_not(a, a)
+
+    assert truth(C())
+    assert n_bool == 1
+test_truthiness()
+
+@test
+def test_ops():
+    x = C()
+    y = C()
+
+    assert abs(x) == 'abs'
+    assert n_abs == 1
+    assert operator.__abs__(x) == 'abs'
+    assert n_abs == 2
+
+    assert pos(x) == 'pos'
+    assert n_pos == 1
+    assert operator.__pos__(x) == 'pos'
+    assert n_pos == 2
+
+    assert neg(x) == 'neg'
+    assert n_neg == 1
+    assert operator.__neg__(x) == 'neg'
+    assert n_neg == 2
+
+    assert inv(x) == 'inv'
+    assert n_inv == 1
+    assert operator.__inv__(x) == 'inv'
+    assert n_inv == 2
+    assert invert(x) == 'inv'
+    assert n_inv == 3
+    assert operator.__invert__(x) == 'inv'
+    assert n_inv == 4
+
+    assert index(x) == 'index'
+    assert n_index == 1
+    assert operator.__index__(x) == 'index'
+    assert n_index == 2
+
+    assert add(x, y) == 'add'
+    assert n_add == 1
+    assert operator.__add__(x, y) == 'add'
+    assert n_add == 2
+
+    assert iadd(x, y) is x
+    assert n_iadd == 1
+    assert operator.__iadd__(x, y) is x
+    assert n_iadd == 2
+
+    assert sub(x, y) == 'sub'
+    assert n_sub == 1
+    assert operator.__sub__(x, y) == 'sub'
+    assert n_sub == 2
+
+    assert isub(x, y) is x
+    assert n_isub == 1
+    assert operator.__isub__(x, y) is x
+    assert n_isub == 2
+
+    assert mul(x, y) == 'mul'
+    assert n_mul == 1
+    assert operator.__mul__(x, y) == 'mul'
+    assert n_mul == 2
+
+    assert imul(x, y) is x
+    assert n_imul == 1
+    assert operator.__imul__(x, y) is x
+    assert n_imul == 2
+
+    assert matmul(x, y) == 'matmul'
+    assert n_matmul == 1
+    assert operator.__matmul__(x, y) == 'matmul'
+    assert n_matmul == 2
+
+    assert imatmul(x, y) is x
+    assert n_imatmul == 1
+    assert operator.__imatmul__(x, y) is x
+    assert n_imatmul == 2
+
+    assert truediv(x, y) == 'truediv'
+    assert n_truediv == 1
+    assert operator.__truediv__(x, y) == 'truediv'
+    assert n_truediv == 2
+
+    assert itruediv(x, y) is x
+    assert n_itruediv == 1
+    assert operator.__itruediv__(x, y) is x
+    assert n_itruediv == 2
+
+    assert floordiv(x, y) == 'floordiv'
+    assert n_floordiv == 1
+    assert operator.__floordiv__(x, y) == 'floordiv'
+    assert n_floordiv == 2
+
+    assert ifloordiv(x, y) is x
+    assert n_ifloordiv == 1
+    assert operator.__ifloordiv__(x, y) is x
+    assert n_ifloordiv == 2
+
+    assert mod(x, y) == 'mod'
+    assert n_mod == 1
+    assert operator.__mod__(x, y) == 'mod'
+    assert n_mod == 2
+
+    assert imod(x, y) is x
+    assert n_imod == 1
+    assert operator.__imod__(x, y) is x
+    assert n_imod == 2
+
+    assert pow(x, y) == 'pow'
+    assert n_pow == 1
+    assert operator.__pow__(x, y) == 'pow'
+    assert n_pow == 2
+
+    assert ipow(x, y) is x
+    assert n_ipow == 1
+    assert operator.__ipow__(x, y) is x
+    assert n_ipow == 2
+
+    assert and_(x, y) == 'and'
+    assert n_and == 1
+    assert operator.__and__(x, y) == 'and'
+    assert n_and == 2
+
+    assert iand(x, y) is x
+    assert n_iand == 1
+    assert operator.__iand__(x, y) is x
+    assert n_iand == 2
+
+    assert or_(x, y) == 'or'
+    assert n_or == 1
+    assert operator.__or__(x, y) == 'or'
+    assert n_or == 2
+
+    assert ior(x, y) is x
+    assert n_ior == 1
+    assert operator.__ior__(x, y) is x
+    assert n_ior == 2
+
+    assert xor(x, y) == 'xor'
+    assert n_xor == 1
+    assert operator.__xor__(x, y) == 'xor'
+    assert n_xor == 2
+
+    assert ixor(x, y) is x
+    assert n_ixor == 1
+    assert operator.__ixor__(x, y) is x
+    assert n_ixor == 2
+
+    assert lshift(x, y) == 'lshift'
+    assert n_lshift == 1
+    assert operator.__lshift__(x, y) == 'lshift'
+    assert n_lshift == 2
+
+    assert ilshift(x, y) is x
+    assert n_ilshift == 1
+    assert operator.__ilshift__(x, y) is x
+    assert n_ilshift == 2
+
+    assert rshift(x, y) == 'rshift'
+    assert n_rshift == 1
+    assert operator.__rshift__(x, y) == 'rshift'
+    assert n_rshift == 2
+
+    assert irshift(x, y) is x
+    assert n_irshift == 1
+    assert operator.__irshift__(x, y) is x
+    assert n_irshift == 2
+test_ops()
+
+class B1:
+    def __length_hint__(self):
+        return 101
+
+class B2:
+    def __length_hint__(self):
+        return 202
+
+    def __len__(self):
+        return 303
+
+class B3:
+    pass
+
+@test
+def test_sequence_ops():
+    assert concat([1,2], [3,4]) == [1,2,3,4]
+    assert operator.__concat__([1,2], [3,4]) == [1,2,3,4]
+    assert contains([1,2,3], 2)
+    assert not contains([1,2,3], 0)
+    assert operator.__contains__([1,2,3], 2)
+    assert not operator.__contains__([1,2,3], 0)
+    assert countOf([1,2,1,1], 1) == 3
+
+    v = [1,2,3]
+    assert getitem(v, 1) == 2
+    delitem(v, 1)
+    assert v == [1, 3]
+    setitem(v, 1, 99)
+    assert v == [1, 99]
+
+    assert length_hint(B1()) == 101
+    assert length_hint(B2()) == 303
+    assert length_hint(B3()) == 0
+    assert length_hint(B3(), default=404) == 404
+
+    assert itemgetter(-1)([11,22,33]) == 33
+    assert itemgetter(-1,-2,-3)([11,22,33]) == (33,22,11)
+test_sequence_ops()

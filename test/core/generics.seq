@@ -1,0 +1,104 @@
+class A[TA,TB,TC]:
+    a: TA
+    b: TB
+    c: TC
+
+    def dump(a, b, c):
+        print a, b, c
+
+    # non-generic method:
+    def m0(self: A[TA,TB,TC], a: int):
+        print a
+
+    # basic generics:
+    def m1[X](self: A[TA,TB,TC], other: A[X,X,X]):
+        print other.a, other.b, other.c
+
+    # non-generic method referencing outer generics:
+    def m2(a: TA, b: TB, c: TC):
+        A.dump(a, b, c)
+
+    # generic args:
+    def m3(self, other):
+        return self.a
+
+    # lots of nesting:
+    def m4[TD](self: A[TA,TB,TC], d: TD):
+        def m5[TA,TB,TC,TD,TE](a: TA, b: TB, c: TC, d: TD, e: TE):
+            print a, b, c, d, e
+        m5(self.a, self.b, self.c, d, d)
+
+    # instantiating the type:
+    def m5(self):
+        x = A(self.a, self.b, self.c)
+        A.dump(x.a, x.b, x.c)
+
+    # deeply nested generic type:
+    def m6[T](v: array[array[array[T]]]):
+        return v[0][0][0]
+
+# explicit realization:
+def m7[T,S]():
+    print "works"
+
+class B1[T]:
+    a: T
+    def foo[S](self: S) -> B1[int]:
+        return B1[int](111)
+
+class B2[T]:
+    a: T
+    def foo[S](self: B2[S]):
+        return B2[int](222)
+
+a1 = A(42, 3.14, "hello")
+a2 = A(1, 2, 3)
+b1 = B1[bool](True).foo()
+b2 = B2[str]("x").foo()
+
+v1 = array[array[array[str]]](1)
+v2 = array[array[str]](1)
+v3 = array[str](1)
+v1[0] = v2
+v2[0] = v3
+v3[0] = "world"
+f = a2.m0
+
+a1.m1(a2)                           # EXPECT: 1 2 3
+A[int,float,str].m2(1, 1.0, "one")  # EXPECT: 1 1 one
+A[int,int,int].m2(11, 22, 33)       # EXPECT: 11 22 33
+print a1.m3(a2)                     # EXPECT: 42
+print a1.m3(a2)                     # EXPECT: 42
+print a2.m3(a1)                     # EXPECT: 1
+a1.m4(True)                         # EXPECT: 42 3.14 hello True True
+a1.m4([1])                          # EXPECT: 42 3.14 hello [1] [1]
+a2.m4("x")                          # EXPECT: 1 2 3 x x
+a1.m5()                             # EXPECT: 42 3.14 hello
+a2.m5()                             # EXPECT: 1 2 3
+print A.m6(v1)                      # EXPECT: world
+m7(str,float)                       # EXPECT: works
+m7(str,float)                       # EXPECT: works
+m7(float,str)                       # EXPECT: works
+f(99)                               # EXPECT: 99
+print b1.foo().a                    # EXPECT: 111
+print b2.foo().a                    # EXPECT: 222
+
+
+# recursive generics with different inner type parameter
+def foo(a):
+    if not a:
+        foo(True)
+    print a
+# EXPECT: True
+# EXPECT: 0
+foo(0)
+
+def bar(a):
+    def baz(x):
+        if not x:
+            bar(True)
+        print(x)
+    baz(a)
+# EXPECT: True
+# EXPECT: 0
+bar(0)

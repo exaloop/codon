@@ -1,0 +1,15 @@
+K: Static[int] = 64
+
+@tuple
+class BitSet:
+    v: List[int]
+
+    def __new__(n: int) -> BitSet:
+        return ([0 for _ in range((n // 64) + 1)],)
+    def __getitem__(self, idx: int):
+        return (self.v[idx // 64] & (1 << (idx % 64))) != 0
+    def __setitem__(self, idx: int, b: bool):
+        if b:
+            self.v[idx // 64] |= (1 << (idx % 64))
+        else:
+            self.v[idx // 64] &= ~(1 << (idx % 64))

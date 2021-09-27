@@ -1,0 +1,52 @@
+@tuple
+class Lock:
+    p: cobj
+
+    def __new__() -> Lock:
+        return (_C.seq_lock_new(),)
+
+    def acquire(self, block: bool = True, timeout: float = -1.0):
+        if timeout >= 0.0 and not block:
+            raise ValueError("can't specify a timeout for a non-blocking call")
+        return _C.seq_lock_acquire(self.p, block, timeout)
+
+    def release(self):
+        _C.seq_lock_release(self.p)
+
+    def __enter__(self):
+        self.acquire()
+
+    def __exit__(self):
+        self.release()
+
+@tuple
+class RLock:
+    p: cobj
+
+    def __new__() -> RLock:
+        return (_C.seq_rlock_new(),)
+
+    def acquire(self, block: bool = True, timeout: float = -1.0):
+        if timeout >= 0.0 and not block:
+            raise ValueError("can't specify a timeout for a non-blocking call")
+        return _C.seq_rlock_acquire(self.p, block, timeout)
+
+    def release(self):
+        _C.seq_rlock_release(self.p)
+
+    def __enter__(self):
+        self.acquire()
+
+    def __exit__(self):
+        self.release()
+
+def active_count():
+    from openmp import get_num_threads
+    return get_num_threads()
+
+def get_native_id():
+    from openmp import get_thread_num
+    return get_thread_num()
+
+def get_ident():
+    return get_native_id() + 1

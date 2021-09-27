@@ -1,0 +1,84 @@
+# Implementation of barcode whitelisting from UMI tools
+# https://github.com/CGATOxford/UMI-tools/blob/master/umi_tools/whitelist.py
+# Assumes 16bp barcode at the start of the read
+# Usage: seqc whitelist.seq <input fastq>
+
+from sys import argv
+from time import timing
+from bio import *
+
+BARCODE_LEN = 16
+
+def get_knee_estimate_distance(cell_barcode_counts):
+    def get_knee_distance(values):
+        from math import sqrt
+        a = (values[-1] - values[0]) / (len(values) - 1)
+        b = -1
+        c = values[0]
+        h = sqrt(a**2 + b**2)
+        dist = lambda x,y: abs(a*x + b*y + c)/h
+        dist_to_line = [dist(x, y) for x, y in enumerate(values)]
+        best_idx = max((y, x) for x, y in enumerate(dist_to_line))[1]
+        return (dist_to_line, best_idx)
+
+    def cumsum(values):
+        total = values[0]
+        for i in range(1, len(values)):
+            total += values[i]
+            values[i] = total
+        return values
+
+    bc = [(count, barcode) for barcode,count in cell_barcode_counts.items()]
+    bc.sort(reverse=True)
+    counts = [count for count,barcode in bc]
+    values = cumsum(counts)
+    prev_idx_of_best_point = 0
+    dist_to_line, idx_of_best_point = get_knee_distance(values)
+
+    max_iterations = 100
+    iterations = 0
+    while idx_of_best_point - prev_idx_of_best_point != 0:
+        prev_idx_of_best_point = idx_of_best_point
+        iterations += 1
+        if iterations >= max_iterations:
+            break
+        dist_to_line, idx_of_best_point = get_knee_distance(values[:idx_of_best_point*3])
+
+    knee_final_barcodes = [x[1] for x in bc[:idx_of_best_point+1]]
+    return knee_final_barcodes
+
+def get_error_correct_mapping(cell_barcodes, whitelist):
+    def neighbors(barcode):
+        for i in range(len(barcode)):
+            for b in (s'A', s'C', s'G', s'T'):
+                if barcode[i] != b:
+                    s = str(barcode)
+                    yield seq(''.join((s[:i], str(b), s[i+1:])))
+
+    true_to_false = {}
+    whitelist_set = set(whitelist)
+    for cell_barcode in cell_barcodes:
+        if cell_barcode in whitelist_set:
+            continue
+        candidates = [neighbor for neighbor in neighbors(cell_barcode) if neighbor in whitelist_set]
+        if len(candidates) == 1:
+            true_to_false.setdefault(candidates[0], []).append(cell_barcode)
+    return true_to_false
+
+def get_cell_whitelist(cell_barcode_counts):
+    cell_whitelist = get_knee_estimate_distance(cell_barcode_counts)
+    true_to_false_map = get_error_correct_mapping(cell_barcode_counts.keys(), cell_whitelist)
+    return cell_whitelist, true_to_false_map
+
+with timing('whitelist construction'):
+    cell_barcode_counts = Dict[seq, int]()
+    FASTQ(argv[1]) |> seqs |> (lambda read: read[:BARCODE_LEN]) |> cell_barcode_counts.increment
+    cell_whitelist, true_to_false_map = get_cell_whitelist(cell_barcode_counts)
+
+    for barcode in sorted(cell_whitelist):
+        corrected_barcodes, corrected_barcode_counts = "", ""
+        if barcode in true_to_false_map:
+            corrected_barcodes = ",".join([str(k) for k in sorted(true_to_false_map[barcode])])
+            corrected_barcode_counts = ",".join([str(cell_barcode_counts[x]) for x in sorted(true_to_false_map[barcode])])
+
+        print(f'{barcode}\t{corrected_barcodes}\t{cell_barcode_counts[barcode]}\t{corrected_barcode_counts}')

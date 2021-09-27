@@ -1,0 +1,23 @@
+from internal.gc import sizeof
+
+@extend
+class Array:
+    def __new__(ptr: Ptr[T], sz: int) -> Array[T]:
+        return (sz, ptr)
+    def __new__(sz: int) -> Array[T]:
+        return (sz, Ptr[T](sz))
+    def __copy__(self) -> Array[T]:
+        p = Ptr[T](self.len)
+        str.memcpy(p.as_byte(), self.ptr.as_byte(), self.len * sizeof(T))
+        return (self.len, p)
+    def __len__(self) -> int:
+        return self.len
+    def __bool__(self) -> bool:
+        return bool(self.len)
+    def __getitem__(self, index: int) -> T:
+        return self.ptr[index]
+    def __setitem__(self, index: int, what: T):
+        self.ptr[index] = what
+    def slice(self, s: int, e: int) -> Array[T]:
+        return (e - s, self.ptr + s)
+array = Array

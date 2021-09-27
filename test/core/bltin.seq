@@ -1,0 +1,90 @@
+@test
+def test_min_max():
+    assert max(2, 1, 1, 1, 1) == 2
+    assert max(1, 2, 1, 1, 1) == 2
+    assert max(1, 1, 2, 1, 1) == 2
+    assert max(1, 1, 1, 2, 1) == 2
+    assert max(1, 1, 1, 1, 2) == 2
+    assert max(2, 1, 1, 1) == 2
+    assert max(1, 2, 1, 1) == 2
+    assert max(1, 1, 2, 1) == 2
+    assert max(1, 1, 1, 2) == 2
+    assert max(2, 1, 1) == 2
+    assert max(1, 2, 1) == 2
+    assert max(1, 1, 2) == 2
+    assert max(2, 1) == 2
+    assert max(1, 2) == 2
+
+    assert min(2, 1, 1, 1, 1) == 1
+    assert min(1, 2, 1, 1, 1) == 1
+    assert min(1, 1, 2, 1, 1) == 1
+    assert min(1, 1, 1, 2, 1) == 1
+    assert min(1, 1, 1, 1, 2) == 1
+    assert min(2, 1, 1, 1) == 1
+    assert min(1, 2, 1, 1) == 1
+    assert min(1, 1, 2, 1) == 1
+    assert min(1, 1, 1, 2) == 1
+    assert min(2, 1, 1) == 1
+    assert min(1, 2, 1) == 1
+    assert min(1, 1, 2) == 1
+    assert min(2, 1) == 1
+    assert min(1, 2) == 1
+
+    assert max(0, 1, 1, 1, 1) == 1
+    assert max(1, 0, 1, 1, 1) == 1
+    assert max(1, 1, 0, 1, 1) == 1
+    assert max(1, 1, 1, 0, 1) == 1
+    assert max(1, 1, 1, 1, 0) == 1
+    assert max(0, 1, 1, 1) == 1
+    assert max(1, 0, 1, 1) == 1
+    assert max(1, 1, 0, 1) == 1
+    assert max(1, 1, 1, 0) == 1
+    assert max(0, 1, 1) == 1
+    assert max(1, 0, 1) == 1
+    assert max(1, 1, 0) == 1
+    assert max(0, 1) == 1
+    assert max(1, 0) == 1
+
+    assert min(0, 1, 1, 1, 1) == 0
+    assert min(1, 0, 1, 1, 1) == 0
+    assert min(1, 1, 0, 1, 1) == 0
+    assert min(1, 1, 1, 0, 1) == 0
+    assert min(1, 1, 1, 1, 0) == 0
+    assert min(0, 1, 1, 1) == 0
+    assert min(1, 0, 1, 1) == 0
+    assert min(1, 1, 0, 1) == 0
+    assert min(1, 1, 1, 0) == 0
+    assert min(0, 1, 1) == 0
+    assert min(1, 0, 1) == 0
+    assert min(1, 1, 0) == 0
+    assert min(0, 1) == 0
+    assert min(1, 0) == 0
+
+    assert min(a*a for a in range(3)) == 0
+    assert max(a*a for a in range(3)) == 4
+    assert min([0, 2, -1]) == -1
+    assert max([0, 2, -1]) == 2
+
+@test
+def test_map_filter():
+    assert list(map(lambda i: i+1, (i*2 for i in range(5)))) == [1, 3, 5, 7, 9]
+    assert list(map(lambda i: i+1, (i*2 for i in range(0)))) == []
+    assert list(map(lambda i: i//2, map(lambda i: i-1, map(lambda i: i+1, (i*2 for i in range(5)))))) == [0, 1, 2, 3, 4]
+    def f(x: int) -> int:
+        return x - 1
+    def g(x: int) -> int:
+        return x + 1
+    assert list(map(f, map(g, (i*2 for i in range(5))))) == [0, 2, 4, 6, 8]
+
+    def h(x: list[int]):
+        return x
+    assert h(list(map(lambda i: i-1, map(lambda i: i+1, range(5))))) == [0, 1, 2, 3, 4]
+
+    assert list(filter(lambda i: i % 2 == 0, range(5))) == [0, 2, 4]
+    assert list(filter(lambda i: i % 2 == 1, filter(lambda i: i % 2 == 0, range(5)))) == []
+
+    assert list(filter(lambda i: i%2 == 0, map(lambda i: i*i, range(10)))) == [0, 4, 16, 36, 64]
+
+test_min_max()
+test_map_filter()
+

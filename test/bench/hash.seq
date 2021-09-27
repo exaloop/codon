@@ -1,0 +1,26 @@
+##############################
+# Test k-mer hash collisions #
+##############################
+from sys import argv
+from bio import *
+d = {}
+#d.resize(1 << 32)
+
+def test(use_bad_hash: bool, K: Static[int]):
+    def update(kmer, use_bad_hash, seen):
+        if kmer not in seen:
+            h = int(kmer.as_int()) if use_bad_hash else hash(kmer)
+            d[h] = d.get(h, 0) + 1
+            seen.add(kmer)
+
+    seen: Set[Kmer[K]] = set()
+    #seen.resize(1 << 32)
+    FASTA(argv[1]) |> seqs |> kmers(1, K) |> update(use_bad_hash, seen)
+    m = max((v, k) for k,v in d.items())[0]
+    a = sum(v for v in d.values()) / len(d)
+    print f'{K}-mer ({use_bad_hash=}):\tmax={m}, avg={a}'
+    d.clear()
+
+print 'start'
+test(False, 64)
+test(True, 64)

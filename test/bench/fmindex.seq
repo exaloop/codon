@@ -1,0 +1,35 @@
+######################
+# Prefetch benchmark #
+######################
+from sys import argv
+from bio import *
+from bio.fmindex import FMIndex
+from time import timing
+from pickle import load
+import gzip
+
+fmi = None
+with gzip.open(argv[1], 'rb') as jar:
+    fmi = load(jar, FMIndex)
+
+step = 20
+n = 0
+
+def update(count):
+    global n
+    n += count
+
+@prefetch
+def find(s, fmi):
+    intv = fmi.interval(s[-1])
+    s = s[:-1]
+    while s and intv:
+        intv = fmi[intv, s[-1]]
+        s = s[:-1]
+    return len(intv)
+
+for k in (10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32):
+    n = 0
+    with timing(f'{k=}'):
+        FASTQ(argv[2]) |> seqs |> split(k, step=step) |> find(fmi) |> update
+    print n

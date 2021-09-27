@@ -1,0 +1,92 @@
+@tuple
+class range:
+    start: int
+    stop: int
+    step: int
+
+# Magic methods
+
+    def __new__(start: int, stop: int, step: int) -> range:
+        if step == 0:
+            raise ValueError("range() step argument must not be zero")
+        return (start, stop, step)
+
+    def __new__(start: int, stop: int) -> range:
+        return (start, stop, 1)
+
+    def __new__(stop: int) -> range:
+        return (0, stop, 1)
+
+    def _get(self, idx: int):
+        return self.start + (idx * self.step)
+
+    def __getitem__(self, idx: int):
+        n = self.__len__()
+        if idx < 0:
+            idx += n
+        if idx < 0 or idx >= n:
+            raise IndexError("range object index out of range")
+        return self._get(idx)
+
+    def __getitem__(self, s: Slice):
+        if s.start is None and s.stop is None and s.step is None:
+            return self
+        else:
+            start, stop, step, length = s.adjust_indices(self.__len__())
+            substep = self.step * step
+            substart = self._get(start)
+            substop = self._get(stop)
+            return range(substart, substop, substep)
+
+    def __contains__(self, idx: int):
+        start, stop, step = self.start, self.stop, self.step
+        if (step > 0 and not (start <= idx < stop)) or (step < 0 and not (stop < idx <= start)):
+            return False
+        return (idx - start) % step == 0
+
+    def _index(self, n: int):
+        return (n - self.start) // self.step
+
+    def index(self, n: int):
+        if n in self:
+            return self._index(n)
+        else:
+            raise ValueError(str(n) + ' is not in range')
+
+    def count(self, n: int):
+        return int(n in self)
+
+    def __iter__(self):
+        start, stop, step = self.start, self.stop, self.step
+        i = start
+        if step > 0:
+            while i < stop:
+                yield i
+                i += step
+        else:
+            while i > stop:
+                yield i
+                i += step
+
+    def __len__(self):
+        start, stop, step = self.start, self.stop, self.step
+        if step > 0 and start < stop:
+            return 1 + (stop - 1 - start) // step
+        elif step < 0 and start > stop:
+            return 1 + (start - 1 - stop) // (-step)
+        else:
+            return 0
+
+    def __bool__(self):
+        return self.__len__() > 0
+
+    def __reversed__(self):
+        start, stop, step = self.start, self.stop, self.step
+        n = self.__len__()
+        return range(start + (n - 1)*step, start - step, -step).__iter__()
+
+    def __str__(self):
+        if self.step == 1:
+            return 'range(' + str(self.start) + ', ' + str(self.stop) + ')'
+        else:
+            return 'range(' + str(self.start) + ', ' + str(self.stop) + ', ' + str(self.step) + ')'

@@ -1,0 +1,423 @@
+e = 2.718281828459045
+pi = 3.141592653589793
+tau = 6.283185307179586
+
+inf = float('inf')
+nan = float('nan')
+
+def factorial(x: int) -> int:
+    _F = (1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880,  3628800,  39916800,  479001600,  6227020800,  87178291200,  1307674368000,  20922789888000,  355687428096000,  6402373705728000,  121645100408832000,  2432902008176640000)
+    if not (0 <= x < len(_F)):
+        raise ValueError("Factorials only supported for 0 <= x < " + str(len(_F)))
+    return _F[x]
+
+def isnan(x: float) -> bool:
+    """
+    isnan(float) -> bool
+
+    Return True if float arg is a NaN, else False.
+    """
+    test = x == x
+    # if it is true then it is a number
+    if test:
+        return False
+    return True
+
+def isinf(x: float) -> bool:
+    """
+    isinf(float) -> bool:
+
+    Return True if float arg is an INF, else False.
+    """
+    return x == inf or x == -inf
+
+def isfinite(x: float) -> bool:
+    """
+    isfinite(float) -> bool
+
+    Return True if x is neither an infinity nor a NaN,
+    and False otherwise.
+    """
+    if isnan(x) or isinf(x):
+        return False
+    return True
+
+def ceil(x: float) -> float:
+    """
+    ceil(float) -> float
+
+    Return the ceiling of x as an Integral.
+    This is the smallest integer >= x.
+    """
+    return _C.ceil(x)
+
+def floor(x: float) -> float:
+    """
+    floor(float) -> float
+
+    Return the floor of x as an Integral.
+    This is the largest integer <= x.
+    """
+    return _C.floor(x)
+
+def fabs(x: float) -> float:
+    """
+    fabs(float) -> float
+
+    Returns the absolute value of a floating point number.
+    """
+    return _C.fabs(x)
+
+def fmod(x: float, y: float) -> float:
+    """
+    fmod(float, float) -> float
+
+    Returns the remainder of x divided by y.
+    """
+    return _C.fmod(x, y)
+
+def exp(x: float) -> float:
+    """
+    exp(float) -> float
+
+    Returns the value of e raised to the xth power.
+    """
+    return _C.exp(x)
+
+def expm1(x: float) -> float:
+    """
+    expm1(float) -> float
+
+    Return e raised to the power x, minus 1. expm1 provides
+    a way to compute this quantity to full precision.
+    """
+    return _C.expm1(x)
+
+def ldexp(x: float, i: int) -> float:
+    """
+    ldexp(float, int) -> float
+
+    Returns x multiplied by 2 raised to the power of exponent.
+    """
+    return _C.ldexp(x, i)
+
+def log(x: float) -> float:
+    """
+    log(float) -> float
+
+    Returns the natural logarithm (base-e logarithm) of x.
+    """
+    return _C.log(x)
+
+def log2(x: float) -> float:
+    """
+    log2(float) -> float
+
+    Return the base-2 logarithm of x.
+    """
+    return _C.log2(x)
+
+def log10(x: float) -> float:
+    """
+    log10(float) -> float
+
+    Returns the common logarithm (base-10 logarithm) of x.
+    """
+    return _C.log10(x)
+
+def degrees(x: float) -> float:
+    """
+    degrees(float) -> float
+
+    Convert angle x from radians to degrees.
+    """
+    radToDeg = 180.0/pi
+    return x * radToDeg
+
+def radians(x: float) -> float:
+    """
+    radians(float) -> float
+
+    Convert angle x from degrees to radians.
+    """
+    degToRad = pi/180.0
+    return x * degToRad
+
+def sqrt(x: float) -> float:
+    """
+    sqrt(float) -> float
+
+    Returns the square root of x.
+    """
+    return _C.sqrt(x)
+
+def pow(x: float, y: float) -> float:
+    """
+    pow(float, float) -> float
+
+    Returns x raised to the power of y.
+    """
+    return _C.pow(x, y)
+
+def acos(x: float) -> float:
+    """
+    acos(float) -> float
+
+    Returns the arc cosine of x in radians.
+    """
+    return _C.acos(x)
+
+def asin(x: float) -> float:
+    """
+    asin(float) -> float
+
+    Returns the arc sine of x in radians.
+    """
+    return _C.asin(x)
+
+def atan(x: float) -> float:
+    """
+    atan(float) -> float
+
+    Returns the arc tangent of x in radians.
+    """
+    return _C.atan(x)
+
+def atan2(y: float, x: float) -> float:
+    """
+    atan2(float, float) -> float
+
+    Returns the arc tangent in radians of y/x based
+    on the signs of both values to determine the
+    correct quadrant.
+    """
+    return _C.atan2(y, x)
+
+def cos(x: float) -> float:
+    """
+    cos(float) -> float
+
+    Returns the cosine of a radian angle x.
+    """
+    return _C.cos(x)
+
+def sin(x: float) -> float:
+    """
+    sin(float) -> float
+
+    Returns the sine of a radian angle x.
+    """
+    return _C.sin(x)
+
+def hypot(x: float, y: float) -> float:
+    """
+    hypot(float, float) -> float
+
+    Return the Euclidean norm.
+    This is the length of the vector from the
+    origin to point (x, y).
+    """
+    return sqrt(x*x + y*y)
+
+def tan(x: float) -> float:
+    """
+    tan(float) -> float
+
+    Return the tangent of a radian angle x.
+    """
+    return _C.tan(x)
+
+def cosh(x: float) -> float:
+    """
+    cosh(float) -> float
+
+    Returns the hyperbolic cosine of x.
+    """
+    return _C.cosh(x)
+
+def sinh(x: float) -> float:
+    """
+    sinh(float) -> float
+
+    Returns the hyperbolic sine of x.
+    """
+    return _C.sinh(x)
+
+def tanh(x: float) -> float:
+    """
+    tanh(float) -> float
+
+    Returns the hyperbolic tangent of x.
+    """
+    return _C.tanh(x)
+
+def acosh(x: float) -> float:
+    """
+    acosh(float) -> float
+
+    Return the inverse hyperbolic cosine of x.
+    """
+    return _C.acosh(x)
+
+def asinh(x: float) -> float:
+    """
+    asinh(float) -> float
+
+    Return the inverse hyperbolic sine of x.
+    """
+    return _C.asinh(x)
+
+def atanh(x: float) -> float:
+    """
+    atanh(float) -> float
+
+    Return the inverse hyperbolic tangent of x.
+    """
+    return _C.atanh(x)
+
+def copysign(x: float, y: float) -> float:
+    """
+    copysign(float, float) -> float
+
+    Return a float with the magnitude (absolute value) of
+    x but the sign of y.
+    """
+    return _C.copysign(x, y)
+
+def log1p(x: float) -> float:
+    """
+    log1p(float) -> float
+
+    Return the natural logarithm of 1+x (base e).
+    """
+    return _C.log1p(x)
+
+def trunc(x: float) -> float:
+    """
+    trunc(float) -> float
+
+    Return the Real value x truncated to an Integral
+    (usually an integer).
+    """
+    return _C.trunc(x)
+
+def erf(x: float) -> float:
+    """
+    erf(float) -> float
+
+    Return the error function at x.
+    """
+    return _C.erf(x)
+
+def erfc(x: float) -> float:
+    """
+    erfc(float) -> float
+
+    Return the complementary error function at x.
+    """
+    return _C.erfc(x)
+
+def gamma(x: float) -> float:
+    """
+    gamma(float) -> float
+
+    Return the Gamma function at x.
+    """
+    return _C.tgamma(x)
+
+def lgamma(x: float) -> float:
+    """
+    lgamma(float) -> float
+
+    Return the natural logarithm of
+    the absolute value of the Gamma function at x.
+    """
+    return _C.lgamma(x)
+
+def remainder(x: float, y: float) -> float:
+    """
+    remainder(float, float) -> float
+
+    Return the IEEE 754-style remainder of x with respect to y.
+    For finite x and finite nonzero y, this is the difference
+    x - n*y, where n is the closest integer to the exact value
+    of the quotient x / y. If x / y is exactly halfway between
+    two consecutive integers, the nearest even integer is used
+    for n.
+    """
+    return _C.remainder(x, y)
+
+def gcd(a: float, b: float) -> float:
+    """
+    gcd(float, float) -> float
+
+    returns greatest common divisor of x and y.
+    """
+    a = abs(a)
+    b = abs(b)
+    while a:
+        a, b = b%a, a
+    return b
+
+@pure
+def frexp(x: float) -> Tuple[float, int]:
+    """
+    frexp(float) -> Tuple[float, int]
+
+    The returned value is the mantissa and the integer pointed
+    to by exponent is the exponent. The resultant value is
+    x = mantissa * 2 ^ exponent.
+    """
+    tmp = i32(0)
+    res = _C.frexp(float(x), __ptr__(tmp))
+    return (res, int(tmp))
+
+@pure
+def modf(x: float) -> Tuple[float, float]:
+    """
+    modf(float) -> Tuple[float, float]
+
+    The returned value is the fraction component (part after
+    the decimal), and sets integer to the integer component.
+    """
+    tmp = 0.0
+    res = _C.modf(float(x), __ptr__(tmp))
+    return (res, tmp)
+
+def isclose(a: float, b: float) -> bool:
+    """
+    isclose(float, float) -> bool
+
+    Return True if a is close in value to b, and False otherwise.
+    For the values to be considered close, the difference between them
+    must be smaller than at least one of the tolerances.
+
+    Unlike python, rel_tol and abs_tol are set to default for now.
+    """
+    rel_tol = 1e-09
+    abs_tol = 0.0
+
+    # short circuit exact equality -- needed to catch two
+    # infinities of the same sign. And perhaps speeds things
+    # up a bit sometimes.
+    if a == b:
+        return True
+
+    # This catches the case of two infinities of opposite sign, or
+    # one infinity and one finite number. Two infinities of opposite
+    # sign would otherwise have an infinite relative tolerance.
+    # Two infinities of the same sign are caught by the equality check
+    # above.
+    if a == inf or b == inf:
+        return False
+
+    # NAN is not close to anything, not even itself
+    if a == nan or b == nan:
+        return False
+
+    # regular computation
+    diff = fabs(b - a)
+
+    return (((diff <= fabs(rel_tol * b)) or
+            (diff <= fabs(rel_tol * a))) or
+            (diff <= abs_tol))

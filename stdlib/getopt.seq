@@ -1,0 +1,170 @@
+"""
+Parser for command line options.
+
+This module helps scripts to parse the command line arguments in
+sys.argv.  It supports the same conventions as the Unix getopt()
+function (including the special meanings of arguments of the form `-'
+and `--').  Long options similar to those supported by GNU software
+may be used as well via an optional third argument.  This module
+provides two functions and an exception:
+
+getopt() -- Parse command line options
+gnu_getopt() -- Like getopt(), but allow option and non-option arguments
+to be intermixed.
+GetoptError -- exception (class) raised with 'opt' attribute, which is the
+option involved with the exception.
+
+Adapted from https://raw.githubusercontent.com/python/cpython/2.7/Lib/getopt.py
+"""
+
+import os
+
+
+class GetoptError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('GetoptError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('GetoptError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
+
+# Return:
+#   has_arg?
+#   full option name
+def long_has_args(opt: str, longopts: List[str]):
+    possibilities = [o for o in longopts if o.startswith(opt)]
+    if not possibilities:
+        raise GetoptError(f'option --{opt} not recognized')
+    # Is there an exact match?
+    if opt in possibilities:
+        return False, opt
+    elif opt + '=' in possibilities:
+        return True, opt
+    # No exact match, so better be unique.
+    if len(possibilities) > 1:
+        # XXX since possibilities contains all valid continuations, might be
+        # nice to work them into the error msg
+        raise GetoptError(f'option --{opt} not a unique prefix')
+    assert len(possibilities) == 1
+    unique_match = possibilities[0]
+    has_arg = unique_match.endswith('=')
+    if has_arg:
+        unique_match = unique_match[:-1]
+    return has_arg, unique_match
+
+
+def do_longs(opts: List[Tuple[str, str]], opt: str, longopts: List[str], args: List[str]):
+    optarg = ""
+    try:
+        i = opt.index('=')
+        opt, optarg = opt[:i], opt[i+1:]
+    except ValueError:
+        pass
+
+    has_arg, opt = long_has_args(opt, longopts)
+    if has_arg:
+        if optarg == "":
+            if not args:
+                raise GetoptError(f'option --{opt} requires argument')
+            optarg, args = args[0], args[1:]
+    elif optarg != "":
+        raise GetoptError(f'option --{opt} must not have an argument')
+    opts.append(('--' + opt, optarg))
+    return opts, args
+
+
+def short_has_arg(opt: str, shortopts: str):
+    for i in range(len(shortopts)):
+        if opt == shortopts[i] != ':':
+            return shortopts.startswith(':', i+1)
+    raise GetoptError(f'option -{opt} not recognized')
+
+
+def do_shorts(opts: List[Tuple[str, str]], optstring: str, shortopts: str, args: List[str]):
+    while optstring != '':
+        opt, optstring = optstring[0], optstring[1:]
+        optarg = ''
+        if short_has_arg(opt, shortopts):
+            if optstring == '':
+                if not args:
+                    raise GetoptError(f'option -{opt} requires argument')
+                optstring, args = args[0], args[1:]
+            optarg, optstring = optstring, ''
+        opts.append(('-' + opt, optarg))
+    return opts, args
+
+
+def getopt(
+    args: List[str],
+    shortopts: str,
+    longopts: List[str] = []
+):
+    """
+    Parses command line options and parameter list.  args is the
+    argument list to be parsed, without the leading reference to the
+    running program.  Typically, this means "sys.argv[1:]".  shortopts
+    is the string of option letters that the script wants to
+    recognize, with options that require an argument followed by a
+    colon (i.e., the same format that Unix getopt() uses).  If
+    specified, longopts is a list of strings with the names of the
+    long options which should be supported.  The leading '--'
+    characters should not be included in the option name.  Options
+    which require an argument should be followed by an equal sign
+    ('=').
+
+    The return value consists of two elements: the first is a list of
+    (option, value) pairs; the second is the list of program arguments
+    left after the option list was stripped (this is a trailing slice
+    of the first argument).  Each option-and-value pair returned has
+    the option as its first element, prefixed with a hyphen (e.g.,
+    '-x'), and the option argument as its second element, or an empty
+    string if the option has no argument.  The options occur in the
+    list in the same order in which they were found, thus allowing
+    multiple occurrences.  Long and short options may be mixed.
+
+    NOTES:
+    This function works like the above-mentioned getopt(), except that GNU style scanning
+    mode is used by default. This means that option and non-option
+    arguments may be intermixed. The getopt() function stops
+    processing options as soon as a non-option argument is
+    encountered.
+    If the first character of the option string is `+', or if the
+    environment variable POSIXLY_CORRECT is set, then option
+    processing stops as soon as a non-option argument is encountered.
+    """
+
+    opts = []
+    prog_args = []
+
+    # Allow options after non-option arguments?
+    all_options_first = False
+    if shortopts.startswith('+'):
+        shortopts = shortopts[1:]
+        all_options_first = True
+    elif "POSIXLY_CORRECT" in os.environ:
+        all_options_first = True
+
+    while args:
+        if args[0] == '--':
+            prog_args += args[1:]
+            break
+
+        if args[0][:2] == '--':
+            opts, args = do_longs(opts, args[0][2:], longopts, args[1:])
+        elif args[0][:1] == '-' and args[0] != '-':
+            opts, args = do_shorts(opts, args[0][1:], shortopts, args[1:])
+        else:
+            if all_options_first:
+                prog_args += args
+                break
+            else:
+                prog_args.append(args[0])
+                args = args[1:]
+
+    return opts, prog_args

@@ -1,0 +1,46 @@
+from sys import stderr
+
+def time():
+    return _C.seq_time() / 1e9
+
+class TimeInterval:
+    """
+    Utility class for timing Seq code
+    """
+    start: int
+    msg: str
+
+    def __init__(self):
+        self.start = _C.seq_time()
+        self.msg = ''
+
+    def __enter__(self):
+        self.start = _C.seq_time()
+
+    def __exit__(self):
+        print(self.report(self.msg), file=stderr)
+
+    def report(self, msg='', memory=False):
+        msg = f"{'Block' if not self.msg else self.msg} took {self.elapsed()}s"
+        # if memory:
+            # msg = f'{msg} ({_C.memory()} MB)'
+        return msg
+
+    def elapsed(self):
+        return float(_C.seq_time() - self.start) / 1e9
+
+    def tick(self, msg, memory=False):
+        ret = self.report(msg)
+        self.start = _C.seq_time()
+
+def timing(msg: str = ""):
+    """
+    Example usage:
+
+    .. code-block:: seq
+
+        from time import timing
+        with timing('foo function'):
+            foo()  # prints runtime of foo
+    """
+    return TimeInterval(0, msg)

@@ -1,0 +1,327 @@
+from internal.attributes import commutative
+from internal.gc import alloc_atomic, free
+
+@pure
+@C
+def seq_str_float(a: float) -> str: pass
+
+@extend
+class float:
+    def __new__() -> float:
+        return 0.0
+    def __new__[T](what: T):
+        return what.__float__()
+    def __str__(self) -> str:
+        s = seq_str_float(self)
+        return s if s != "-nan" else "nan"
+    def __copy__(self) -> float:
+        return self
+    @pure
+    @llvm
+    def __int__(self) -> int:
+        %0 = fptosi double %self to i64
+        ret i64 %0
+    def __float__(self):
+        return self
+    @pure
+    @llvm
+    def __bool__(self) -> bool:
+        %0 = fcmp one double %self, 0.000000e+00
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+    def __pos__(self) -> float:
+        return self
+    def __neg__(self) -> float:
+        return 0.0 - self
+    @pure
+    @commutative
+    @llvm
+    def __add__(a: float, b: float) -> float:
+        %tmp = fadd double %a, %b
+        ret double %tmp
+    @commutative
+    def __add__(self, other: int) -> float:
+        return self.__add__(float(other))
+    @pure
+    @llvm
+    def __sub__(a: float, b: float) -> float:
+        %tmp = fsub double %a, %b
+        ret double %tmp
+    def __sub__(self, other: int) -> float:
+        return self.__sub__(float(other))
+    @pure
+    @commutative
+    @llvm
+    def __mul__(a: float, b: float) -> float:
+        %tmp = fmul double %a, %b
+        ret double %tmp
+    @commutative
+    def __mul__(self, other: int) -> float:
+        return self.__mul__(float(other))
+    def __floordiv__(self, other: float) -> float:
+        return self.__truediv__(other).__floor__()
+    def __floordiv__(self, other: int) -> float:
+        return self.__floordiv__(float(other))
+    @pure
+    @llvm
+    def __truediv__(a: float, b: float) -> float:
+        %tmp = fdiv double %a, %b
+        ret double %tmp
+    def __truediv__(self, other: int) -> float:
+        return self.__truediv__(float(other))
+    @pure
+    @llvm
+    def __mod__(a: float, b: float) -> float:
+        %tmp = frem double %a, %b
+        ret double %tmp
+    def __mod__(self, other: int) -> float:
+        return self.__mod__(float(other))
+    @pure
+    @llvm
+    def __eq__(a: float, b: float) -> bool:
+        %tmp = fcmp oeq double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    def __eq__(self, other: int) -> bool:
+        return self.__eq__(float(other))
+    @pure
+    @llvm
+    def __ne__(a: float, b: float) -> bool:
+        entry:
+            %tmp = fcmp one double %a, %b
+            %res = zext i1 %tmp to i8
+            ret i8 %res
+    def __ne__(self, other: int) -> bool:
+        return self.__ne__(float(other))
+    @pure
+    @llvm
+    def __lt__(a: float, b: float) -> bool:
+        %tmp = fcmp olt double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    def __lt__(self, other: int) -> bool:
+        return self.__lt__(float(other))
+    @pure
+    @llvm
+    def __gt__(a: float, b: float) -> bool:
+        %tmp = fcmp ogt double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    def __gt__(self, other: int) -> bool:
+        return self.__gt__(float(other))
+    @pure
+    @llvm
+    def __le__(a: float, b: float) -> bool:
+        %tmp = fcmp ole double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    def __le__(self, other: int) -> bool:
+        return self.__le__(float(other))
+    @pure
+    @llvm
+    def __ge__(a: float, b: float) -> bool:
+        %tmp = fcmp oge double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+    def __ge__(self, other: int) -> bool:
+        return self.__ge__(float(other))
+    @pure
+    @llvm
+    def sqrt(a: float) -> float:
+        declare double @llvm.sqrt.f64(double %a)
+        %tmp = call double @llvm.sqrt.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def sin(a: float) -> float:
+        declare double @llvm.sin.f64(double %a)
+        %tmp = call double @llvm.sin.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def cos(a: float) -> float:
+        declare double @llvm.cos.f64(double %a)
+        %tmp = call double @llvm.cos.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def exp(a: float) -> float:
+        declare double @llvm.exp.f64(double %a)
+        %tmp = call double @llvm.exp.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def exp2(a: float) -> float:
+        declare double @llvm.exp2.f64(double %a)
+        %tmp = call double @llvm.exp2.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def log(a: float) -> float:
+        declare double @llvm.log.f64(double %a)
+        %tmp = call double @llvm.log.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def log10(a: float) -> float:
+        declare double @llvm.log10.f64(double %a)
+        %tmp = call double @llvm.log10.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def log2(a: float) -> float:
+        declare double @llvm.log2.f64(double %a)
+        %tmp = call double @llvm.log2.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __abs__(a: float) -> float:
+        declare double @llvm.fabs.f64(double %a)
+        %tmp = call double @llvm.fabs.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __floor__(a: float) -> float:
+        declare double @llvm.floor.f64(double %a)
+        %tmp = call double @llvm.floor.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __ceil__(a: float) -> float:
+        declare double @llvm.ceil.f64(double %a)
+        %tmp = call double @llvm.ceil.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __trunc__(a: float) -> float:
+        declare double @llvm.trunc.f64(double %a)
+        %tmp = call double @llvm.trunc.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def rint(a: float) -> float:
+        declare double @llvm.rint.f64(double %a)
+        %tmp = call double @llvm.rint.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def nearbyint(a: float) -> float:
+        declare double @llvm.nearbyint.f64(double %a)
+        %tmp = call double @llvm.nearbyint.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __round__(a: float) -> float:
+        declare double @llvm.round.f64(double %a)
+        %tmp = call double @llvm.round.f64(double %a)
+        ret double %tmp
+    @pure
+    @llvm
+    def __pow__(a: float, b: float) -> float:
+        declare double @llvm.pow.f64(double %a, double %b)
+        %tmp = call double @llvm.pow.f64(double %a, double %b)
+        ret double %tmp
+    def __pow__(self, other: int) -> float:
+        return self.__pow__(float(other))
+    @pure
+    @llvm
+    def min(a: float, b: float) -> float:
+        declare double @llvm.minnum.f64(double %a, double %b)
+        %tmp = call double @llvm.minnum.f64(double %a, double %b)
+        ret double %tmp
+    @pure
+    @llvm
+    def max(a: float, b: float) -> float:
+        declare double @llvm.maxnum.f64(double %a, double %b)
+        %tmp = call double @llvm.maxnum.f64(double %a, double %b)
+        ret double %tmp
+    @pure
+    @llvm
+    def copysign(a: float, b: float) -> float:
+        declare double @llvm.copysign.f64(double %a, double %b)
+        %tmp = call double @llvm.copysign.f64(double %a, double %b)
+        ret double %tmp
+    @pure
+    @llvm
+    def fma(a: float, b: float, c: float) -> float:
+        declare double @llvm.fma.f64(double %a, double %b, double %c)
+        %tmp = call double @llvm.fma.f64(double %a, double %b, double %c)
+        ret double %tmp
+    @llvm
+    def __atomic_xchg__(d: Ptr[float], b: float) -> void:
+        %tmp = atomicrmw xchg double* %d, double %b seq_cst
+        ret void
+    @llvm
+    def __atomic_add__(d: Ptr[float], b: float) -> float:
+        %tmp = atomicrmw fadd double* %d, double %b seq_cst
+        ret double %tmp
+    @llvm
+    def __atomic_sub__(d: Ptr[float], b: float) -> float:
+        %tmp = atomicrmw fsub double* %d, double %b seq_cst
+        ret double %tmp
+    def __hash__(self):
+        from C import frexp(float, Ptr[Int[32]]) -> float
+
+        HASH_BITS = 61
+        HASH_MODULUS = (1 << HASH_BITS) - 1
+        HASH_INF = 314159
+        HASH_NAN = 0
+        INF = 1.0 / 0.0
+        NAN = 0.0 / 0.0
+        v = self
+
+        if v == INF or v == -INF:
+            return HASH_INF if v > 0 else -HASH_INF
+        if v == NAN:
+            return HASH_NAN
+
+        _e = i32(0)
+        m = frexp(v, __ptr__(_e))
+        e = int(_e)
+
+        sign = 1
+        if m < 0:
+            sign = -1
+            m = -m
+
+        x = 0
+        while m:
+            x = ((x << 28) & HASH_MODULUS) | x >> (HASH_BITS - 28)
+            m *= 268435456.0  # 2**28
+            e -= 28
+            y = int(m)
+            m -= y
+            x += y
+            if x >= HASH_MODULUS:
+                x -= HASH_MODULUS
+
+        e = e % HASH_BITS if e >= 0 else HASH_BITS - 1 - ((-1-e) % HASH_BITS)
+        x = ((x << e) & HASH_MODULUS) | x >> (HASH_BITS - e)
+
+        x = x * sign
+        if x == -1:
+            x = -2
+        return x
+
+    def __new__(s: str) -> float:
+        from C import strtod(cobj, Ptr[cobj]) -> float
+        buf = __array__[byte](32)
+        n = s.__len__()
+        need_dyn_alloc = (n >= buf.__len__())
+
+        p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
+        str.memcpy(p, s.ptr, n)
+        p[n] = byte(0)
+
+        end = cobj()
+        result = strtod(p, __ptr__(end))
+
+        if need_dyn_alloc:
+            free(p)
+
+        if end != p + n:
+            raise ValueError("could not convert string to float: " + s)
+
+        return result
+    def __match__(self, i: float):
+        return self == i

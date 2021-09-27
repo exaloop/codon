@@ -1,0 +1,131 @@
+# Implementation of CORA's exact homology table construction
+# https://github.com/denizy/cora/blob/master/homTable_setup.cpp
+
+# Usage: seqc hom_exact.seq <input_ref.fa> <output_prefix>
+# Output format (gzip'd):
+#   - N = total records [i64]
+#   - N times:
+#     - block size [i64]
+#     - C = count [i64]
+#     - C times:
+#       - Chromosome index [i64]
+#       - Chromosome position (0-based) [i64]
+#       - Reverse complemented? [i8]
+
+from sys import argv, stderr, exit
+from pickle import dump
+from util import K, BitSet
+from bio import FASTA, Locus
+import gzip
+
+if len(argv) != 3:
+    print(f'usage: {argv[0]} <input_ref.fa> <output_prefix>', file=stderr)
+    exit(1)
+
+path = argv[1]
+num_kmers = sum(2 if kmer == ~kmer else 1  # palindromes added twice
+                for rec in FASTA(path) for kmer in rec.seq.kmers(1, K))
+print 'num_kmers:', num_kmers
+kmer_list = List(num_kmers)
+
+@tuple
+class EqClass:
+    idx: int
+    count: int
+
+    def __getitem__(self, idx: int):
+        return kmer_list[self.idx + idx][1]
+
+bitsets = []  # markers for equivalence class representatives
+for tid, rec in enumerate(FASTA(path)):
+    print 'processing', rec.name
+    bitsets.append(BitSet(len(rec.seq)))
+    for pos, kmer in rec.seq.kmers_with_pos(1, K):
+        kmer_rev = ~kmer
+        add_pal = (kmer == kmer_rev)
+        if kmer_rev < kmer:
+            kmer = kmer_rev
+            pos = -pos
+        kmer_list.append((kmer, Locus(tid, pos)))
+        if add_pal:  # add palindrome again
+            kmer_list.append((kmer, Locus(tid, -pos)))
+
+print 'sorting kmer_list...'
+kmer_list.sort()
+print 'done'
+
+num_classes = 0
+i = 0
+while i < len(kmer_list):
+    j = i + 1
+    while j < len(kmer_list) and kmer_list[i][0] == kmer_list[j][0]:
+        j += 1
+    if j - i > 1:
+        num_classes += 1
+    i = j
+
+print 'num_classes:', num_classes
+eq_set = List(num_classes)
+i = 0
+while i < len(kmer_list):
+    j = i + 1
+    while j < len(kmer_list) and kmer_list[i][0] == kmer_list[j][0]:
+        j += 1
+    count = j - i
+    if count > 1:
+        eq_set.append(EqClass(i, count))
+        # make sure representative is always forward-facing
+        if kmer_list[i][1].reversed:
+            for k in range(count):
+                kmer_list[i + k] = (kmer_list[i + k][0], ~kmer_list[i + k][1])
+    bitsets[kmer_list[i][1].tid][kmer_list[i][1].pos] = True
+    i = j
+
+print 'sorting eq_set...'
+eq_set.sort(key=lambda x: (x[0].tid, x[0].pos))
+print 'done'
+
+def find_block_size(start: int, eq_set: list[EqClass]):
+    base_idx = eq_set[start].idx
+    base_len = eq_set[start].count
+    dist = 1
+    while (start + dist < len(eq_set) and
+           eq_set[start][0].tid == eq_set[start + dist][0].tid and
+           eq_set[start][0].pos + dist == eq_set[start + dist][0].pos):
+        comp_len = eq_set[start + dist].count
+
+        if comp_len != base_len:
+            return dist
+
+        for k in range(1, base_len):
+            if (eq_set[start][k].reversed != eq_set[start + dist][k].reversed or
+                eq_set[start][k].tid != eq_set[start + dist][k].tid):
+                return dist
+
+            offset = -dist if eq_set[start][k].reversed else dist
+            if eq_set[start][k].pos + offset != eq_set[start + dist][k].pos:
+                return dist
+
+        dist += 1
+    return dist
+
+total = 0
+i = 0
+while i < len(eq_set):
+    total += 1
+    i += find_block_size(i, eq_set)
+
+with gzip.open(argv[2] + '.hom_exact', 'wb') as out, gzip.open(argv[2] + '.reps_bitsets', 'wb') as reps:
+    dump(total, out)
+    i = 0
+    while i < len(eq_set):
+        block_size = find_block_size(i, eq_set)
+        count = eq_set[i].count
+        dump(block_size, out)
+        dump(count, out)
+        for k in range(count):
+            dump(eq_set[i][k].tid, out)
+            dump(eq_set[i][k].pos, out)
+            dump(eq_set[i][k].reversed, out)
+        i += block_size
+    dump(bitsets, reps)

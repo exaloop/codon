@@ -1,0 +1,64 @@
+# Implementation of SNAP aligner's genome index
+# https://github.com/amplab/snap/blob/master/SNAPLib/GenomeIndex.{cpp,h}
+
+# Need the following hooks linked to convert C++ GenomeIndex to Seq object:
+# snap_index_from_dir(Ptr[byte]) -> Ptr[byte]     --  read object from specified directory
+# snap_index_ht_count(Ptr[byte]) -> int           --  extract hash table count
+# snap_index_ht_get(Ptr[byte], int) -> Ptr[byte]  --  extract specified (0-indexed) hash table
+# snap_index_overflow_ptr(Ptr[byte]) -> Ptr[u32]  --  extract overflow table pointer
+# snap_index_overflow_len(Ptr[byte]) -> int       --  extract overflow table length
+# snap_index_count_of_bases(Ptr[byte]) -> int     --  extract count of genome bases
+
+from hashtable import SNAPHashTable
+from bio import Kmer
+
+class GenomeIndex[K]:
+    hash_tables: Array[SNAPHashTable[Kmer[16],u32]]
+    overflow_table: Array[u32]
+    count_of_bases: int
+
+    def _partition(k: K):
+        n = int(k.as_int())
+        return (Kmer[16](n & ((1 << 32) - 1)), n >> 32)
+
+    def __init__(self, dir: str):
+        assert Kmer[16].len() <= K.len() <= Kmer[32].len()
+        from C import snap_index_from_dir(Ptr[byte]) -> Ptr[byte]
+        from C import snap_index_ht_count(Ptr[byte]) -> int
+        from C import snap_index_ht_get(Ptr[byte], int) -> Ptr[byte]
+        from C import snap_index_overflow_ptr(Ptr[byte]) -> Ptr[u32]
+        from C import snap_index_overflow_len(Ptr[byte]) -> int
+        from C import snap_index_count_of_bases(Ptr[byte]) -> int
+
+        p = snap_index_from_dir(dir.c_str())
+        assert p
+        hash_tables = Array[SNAPHashTable[Kmer[16],u32]](snap_index_ht_count(p))
+        for i in range(len(hash_tables)):
+            hash_tables[i] = SNAPHashTable[Kmer[16],u32](snap_index_ht_get(p, i))
+
+        self.hash_tables = hash_tables
+        self.overflow_table = Array[u32](snap_index_overflow_ptr(p), snap_index_overflow_len(p))
+        self.count_of_bases = snap_index_count_of_bases(p)
+
+    def __getitem__(self, seed: K):
+        kmer, which = GenomeIndex[K]._partition(seed)
+        table = self.hash_tables[which]
+        value_ptr = table.get_value_ptr_for_key(kmer)
+
+        if not value_ptr or value_ptr[0] == table.invalid_val:
+            return Array[u32](value_ptr, 0)
+
+        value = value_ptr[0]
+
+        if int(value) < self.count_of_bases:
+            return Array[u32](value_ptr, 1)
+        else:
+            overflow_table_offset = int(value) - self.count_of_bases
+            hit_count = int(self.overflow_table[overflow_table_offset])
+            return Array[u32](self.overflow_table.ptr + overflow_table_offset + 1, hit_count)
+
+    def __prefetch__(self, seed: K):
+        kmer, which = GenomeIndex[K]._partition(seed)
+        table = self.hash_tables[which]
+        table.__prefetch__(kmer)
+

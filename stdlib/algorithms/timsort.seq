@@ -1,0 +1,320 @@
+BLOCK_SIZE = 64
+CACHELINE_SIZE = 64
+MIN_GALLOP = 7
+
+from algorithms.insertionsort import _insertion_sort
+
+def _count_run[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]) -> Tuple[int,int]:
+    """
+        Returns the # of elements in the next run and if the run is "inorder" or "reversed"
+    """
+    inorder = 1
+
+    if end - begin == 1:
+        return 1, inorder
+
+    n = 2
+    i = begin + 1
+    if keyf(arr[i - 1]) >= keyf(arr[i]):
+        inorder = 0
+        i += 1
+        while i < end:
+            if keyf(arr[i - 1]) < keyf(arr[i]):
+                break
+            i += 1
+            n += 1
+
+    else:
+        i += 1
+        while i < end:
+            if keyf(arr[i - 1]) >= keyf(arr[i]):
+                break
+            i += 1
+            n += 1
+
+    return n, inorder
+
+def _merge_compute_minrun(n: int) -> int:
+    """
+        Computes the minrun for Timsort
+    """
+    r = 0
+    while n >= 64:
+        r |= n & 1
+        n >>=1
+    return n + r
+
+def _reverse_sortslice[T](arr: Array[T], begin: int, end: int):
+    if end - begin < 2:
+        return
+    arr[begin], arr[end - 1] = arr[end - 1], arr[begin]
+    _reverse_sortslice(arr, begin + 1, end - 1)
+
+def _modified_comp[S,T](a: T, b: T, keyf: Callable[[T], S], left: bool) -> bool:
+    """
+        Abstracts the left or right compare in gallop
+    """
+    if left:
+        return keyf(b) >= keyf(a)
+    else:
+        return keyf(a) < keyf(b)
+
+def _gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S], hint: int, left: bool) -> int:
+    """
+        Gallop for Timsort
+    """
+
+    key = arr[0] # just to initialize k
+    if left:
+        key = arr[b[0] + b[1] - 1]
+    else:
+        key = arr[b[0]]
+
+    curr = a[0] + hint
+    ofs, lastofs = 1, 0
+
+    if _modified_comp(key, arr[curr], keyf, left):
+        # Gallop left
+        maxofs = hint + 1
+
+        while (ofs < maxofs):
+            if _modified_comp(key, arr[curr - ofs], keyf, left):
+                lastofs = ofs
+                ofs = (ofs << 1) + 1
+            else:
+                break
+
+        if ofs > maxofs:
+            ofs = maxofs
+
+        ofs, lastofs = hint - lastofs, hint - ofs
+
+    else:
+        # Gallop right
+        maxofs = a[1] - hint
+
+        while ofs < maxofs:
+            if _modified_comp(key, arr[curr + ofs], keyf, left):
+                break
+            lastofs = ofs
+            ofs = (ofs << 1) + 1
+
+        if ofs > maxofs:
+            ofs = maxofs
+
+        lastofs += hint
+        ofs += hint
+
+    lastofs += 1
+    while lastofs < ofs:
+        m = lastofs + ((ofs - lastofs) >> 1)
+        if _modified_comp(key, arr[a[0] + m], keyf, left):
+            ofs = m
+        else:
+            lastofs = m + 1
+
+    return ofs
+
+def _merge_with_gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S]):
+    min_gallop = MIN_GALLOP
+
+    combined = Array[T](a[1] + b[1])
+    a_copy = combined.slice(0, a[1])
+    b_copy = combined.slice(a[1], len(combined))
+
+    j = 0
+    for i in range(a[0], a[0] + a[1]):
+        combined[j] = arr[i]
+        j += 1
+    for i in range(b[0], b[0] + b[1]):
+        combined[j] = arr[i]
+        j += 1
+
+    i, j, k = 0, 0, a[0]
+
+    while i < len(a_copy) and j < len(b_copy):
+        acount, bcount = 0, 0
+
+        while i < len(a_copy) and j < len(b_copy):
+            if keyf(b_copy[j]) < keyf(a_copy[i]):
+                arr[k] = b_copy[j]
+                acount = 0
+                bcount += 1
+                j += 1
+                k += 1
+                if bcount >= min_gallop:
+                    break
+            else:
+                arr[k] = a_copy[i]
+                acount += 1
+                bcount = 0
+                i += 1
+                k += 1
+                if acount >= min_gallop:
+                    break
+
+        if i == len(a_copy) or j == len(b_copy):
+            break
+
+        min_gallop += 1
+
+        while i < len(a_copy) and j < len(b_copy):
+            if min_gallop > 1:
+                min_gallop -= 1
+
+            acount = _gallop(combined, (0, len(a_copy)), (len(a_copy), len(b_copy)), keyf, i, False)
+            if acount:
+                while i < acount:
+                    arr[k] = a_copy[i]
+                    i += 1
+                    k += 1
+                arr[k] = b_copy[j]
+                j += 1
+                k += 1
+
+            if i == len(a_copy) or j == len(b_copy):
+                break
+
+            b_end = _gallop(combined, (len(a_copy), len(b_copy)), (0, len(a_copy)), keyf, j, True)
+            bcount = len(b_copy) - b_end
+            if bcount:
+                while j < b_end:
+                    arr[k] = b_copy[j]
+                    j += 1
+                    k += 1
+                arr[k] = a_copy[i]
+                i += 1
+                k += 1
+
+            if acount < MIN_GALLOP and bcount < MIN_GALLOP:
+                break
+
+        min_gallop += 1
+
+    while i < len(a_copy):
+        arr[k] = a_copy[i]
+        i += 1
+        k += 1
+
+    while j < len(b_copy):
+        arr[k] = b_copy[j]
+        j += 1
+        k += 1
+
+def _merge_at[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S]):
+    start_a, len_a = a
+    start_b, len_b = b
+
+    # Where does b start in a?
+    k = _gallop(arr, a, b, keyf, 0, False)
+    start_a, len_a = start_a + k, len_a - k
+    if len_a == 0:
+        return
+
+    # Where does a end in b?
+    len_b = _gallop(arr, b, a, keyf, len_b-1, True)
+    if len_b == 0:
+        return
+
+    _merge_with_gallop(arr, (start_a, len_a), (start_b, len_b), keyf)
+
+def _merge_collapse[S,T](arr: Array[T], stack: List[Tuple[int,int]], keyf: Callable[[T], S]):
+    if len(stack) <= 1:
+        return
+
+    while len(stack) > 2:
+        X = stack[-3]
+        Y = stack[-2]
+        Z = stack[-1]
+
+        if X[1] > Y[1] + Z[1] and Y[1] > Z[1]:
+            break
+
+        C = stack.pop()
+        B = stack.pop()
+        A = stack.pop()
+
+        if A[1] <= B[1] + C[1]:
+            if A[1] < C[1]:
+                _merge_at(arr, A, B, keyf)
+                stack.append((A[0], A[1] + B[1]))
+                stack.append(C)
+            else:
+                _merge_at(arr, B, C, keyf)
+                stack.append(A)
+                stack.append((B[0], B[1] + C[1]))
+
+        else:
+            _merge_at(arr, B, C, keyf)
+            stack.append(A)
+            stack.append((B[0], B[1] + C[1]))
+
+    if len(stack) == 2:
+        X = stack[-2]
+        Y = stack[-1]
+
+        if X[1] <= Y[1]:
+            C = stack.pop()
+            B = stack.pop()
+            _merge_at(arr, B, C, keyf)
+            stack.append((B[0], B[1] + C[1]))
+            return
+
+def _final_merge[S,T](arr: Array[T], stack: List[Tuple[int,int]], keyf: Callable[[T], S]):
+    while len(stack) > 1:
+        C = stack.pop()
+        B = stack.pop()
+        _merge_at(arr, B, C, keyf)
+        stack.append((B[0], B[1] + C[1]))
+
+def _tim_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
+    if end - begin < 2:
+        return
+
+    merge_pending = List[Tuple[int,int]]()
+    minrun = _merge_compute_minrun(end - begin)
+    i = begin
+    while i < end:
+        n, inorder = _count_run(arr, i, end, keyf)
+        if not inorder:
+            _reverse_sortslice(arr, i, i + n)
+
+        if n < minrun:
+            force = min(minrun, end)
+            _insertion_sort(arr, i, i + force, keyf)
+            n = force
+
+        merge_pending.append((i, n))
+        _merge_collapse(arr, merge_pending, keyf)
+        i += n
+
+    _final_merge(arr, merge_pending, keyf)
+
+def tim_sort_array[S,T](collection: Array[T], size: int, keyf: Callable[[T], S]):
+    """
+        Timsort
+        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+        Sorts the array inplace.
+    """
+    _tim_sort(collection, 0, size, keyf)
+
+def tim_sort_inplace[S,T](collection: List[T], keyf: Callable[[T], S]):
+    """
+        Timsort
+        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+        Sorts the list inplace.
+    """
+    tim_sort_array(collection.arr, collection.len, keyf)
+
+def tim_sort[S,T](collection: List[T], keyf: Callable[[T], S]) -> List[T]:
+    """
+        Timsort
+        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+        Returns a sorted list.
+    """
+    newlst = list(collection)
+    tim_sort_inplace(newlst, keyf)
+    return newlst

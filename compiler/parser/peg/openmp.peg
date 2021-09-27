@@ -1,0 +1,45 @@
+# OpenMP PEG grammar
+
+%preamble {
+  #include "parser/peg/rules.h"
+  #include <any>
+  using namespace std;
+  using namespace seq::ast;
+
+  #define V0 VS[0]
+  #define V1 VS[1]
+  #define ac std::any_cast
+}
+
+pragma <- "omp"? _ "parallel"? _ (clause _)* {
+  vector<CallExpr::Arg> v;
+  for (auto &i: VS) {
+    auto vi = ac<vector<CallExpr::Arg>>(i);
+    v.insert(v.end(), vi.begin(), vi.end());
+  }
+  return v;
+}
+clause <-
+  / "schedule" _ "(" _ schedule_kind (_ "," _ int)? _ ")" {
+    vector<CallExpr::Arg> v{{"schedule", make_shared<StringExpr>(ac<string>(V0))}};
+    if (VS.size() > 1)
+      v.push_back({"chunk_size", make_shared<IntExpr>(ac<int>(V1))});
+    return v;
+  }
+  / "num_threads" _ "(" _ int _ ")" {
+    return vector<CallExpr::Arg>{{"num_threads", make_shared<IntExpr>(ac<int>(V0))}};
+  }
+   / "ordered" {
+    return vector<CallExpr::Arg>{{"ordered", make_shared<BoolExpr>(true)}};
+  }
+schedule_kind <- ("static" / "dynamic" / "guided" / "auto" / "runtime") {
+  return VS.token_to_string();
+}
+int <- [1-9] [0-9]* {
+  return stoi(VS.token_to_string());
+}
+# ident <- [a-zA-Z_] [a-zA-Z_0-9]* {
+#   return make_shared<ast::IdExpr>(VS.token_to_string());
+# }
+~SPACE <- [ \t]+
+~_ <- SPACE*

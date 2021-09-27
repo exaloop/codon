@@ -1,0 +1,34 @@
+@inline
+def _dynamic_coroutine_scheduler[A,B,T,C](value: A, coro: B, states: Array[Generator[T]], I: Ptr[int], N: Ptr[int], M: int, args: C):
+    n = N[0]
+    if n < M:
+        states[n] = coro(value, *args)
+        N[0] = n + 1
+    else:
+        i = I[0]
+        while True:
+            g = states[i]
+            if g.done():
+                if not isinstance(T, void):
+                    yield g.next()
+                g.destroy()
+                states[i] = coro(value, *args)
+                break
+            i = (i + 1) & (M - 1)
+        I[0] = i
+
+@inline
+def _dynamic_coroutine_scheduler_drain[T](states: Array[Generator[T]], N: int):
+    i = 0
+    while i < N:
+        g = states[i]
+        while not g.done():
+            g.next()
+        if not isinstance(T, void):
+            yield g.next()
+        g.destroy()
+        i += 1
+
+@inline
+def _dummy_prefetch_terminal_stage(x):
+    pass

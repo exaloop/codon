@@ -1,0 +1,192 @@
+from bio.seq import seq
+from bio.kmer import Kmer
+
+@tuple
+class pseq:
+    '''
+    Amino acid sequence
+    '''
+    len: int
+    ptr: cobj
+
+    def __new__(p: cobj, n: int) -> pseq:
+        return (n, p)
+
+    def __new__(s: str) -> pseq:
+        return (s.len, s.ptr)
+
+    def __eq__(self, other: pseq):
+        n = len(self)
+        if n != len(other):
+            return False
+        i = 0
+        while i < n:
+            if self._at(i) != other._at(i):
+                return False
+            i += 1
+        return True
+
+    def __ne__(self, other: pseq):
+        return not (self == other)
+
+    def _cmp(self, other: pseq):
+        self_len = len(self)
+        other_len = len(other)
+        n = min(self_len, other_len)
+        i = 0
+        while i < n:
+            c1 = self._at(i)
+            c2 = other._at(i)
+            if c1 != c2:
+                return int(c1) - int(c2)
+            i += 1
+        return self_len - other_len
+
+    def __lt__(self, other: pseq):
+        return self._cmp(other) < 0
+
+    def __le__(self, other: pseq):
+        return self._cmp(other) <= 0
+
+    def __gt__(self, other: pseq):
+        return self._cmp(other) > 0
+
+    def __ge__(self, other: pseq):
+        return self._cmp(other) >= 0
+
+    def __str__(self):
+        return str(self.ptr, self.len)
+
+    def __len__(self):
+        return self.len
+
+    def __bool__(self):
+        return self.len != 0
+
+    def __hash__(self):
+        h = 0
+        for i in range(len(self)):
+            h = 31*h + int(self._at(i))
+        return h
+
+    def __getitem__(self, idx: int):
+        n = len(self)
+        if idx < 0:
+            idx += n
+        if not (0 <= idx < n):
+            raise IndexError("pseq index out of range")
+        return pseq(self.ptr + idx, 1)
+
+    def _at(self, idx: int):
+        return self.ptr[idx]
+
+    def _slice_direct(self, a: int, b: int):
+        return pseq(self.ptr + a, b - a)
+
+    def __getitem__(self, s: Slice):
+        assert s.step is None
+        if s.start is None and s.stop is None and s.step is None:
+            return self.__copy__()
+        elif s.start is None:
+            b = ~s.stop
+            n = len(self)
+            if b < 0: b += n
+            if b > n: b = n
+            return pseq(self.ptr, b)
+        elif s.stop is None:
+            a = ~s.start
+            n = len(self)
+            if a < 0: a += n
+            if a > n: a = n
+            return pseq(self.ptr + a, n - a)
+        else:
+            a, b = ~s.start, ~s.stop
+            n = len(self)
+            if a < 0: a += n
+            if b < 0: b += n
+            if a > n: a = n
+            if b > n: b = n
+            return self._slice_direct(a, b)
+
+    def _copy_to(self, p: cobj):
+        str.memcpy(p, self.ptr, self.len)
+
+    def __copy__(self):
+        n = len(self)
+        p = cobj(n)
+        self._copy_to(p)
+        return pseq(p, n)
+
+    def split(self, k: int, step: int):
+        '''
+        Iterator over length-`k` subsequences of the given sequence
+        with the specified step size.
+        '''
+        i = 0
+        while i + k <= len(self):
+            yield self._slice_direct(i,i+k)
+            i += step
+
+    def __iter__(self):
+        return self.split(1, 1)
+
+    def __reversed__(self):
+        i = len(self) - 1
+        while i >= 0:
+            yield self._slice_direct(i,i+1)
+            i -= 1
+
+def translate(s: seq, table: Optional[Dict[seq, pseq]] = None):
+    '''
+    Performs DNA to amino acid translation. An optional mapping from
+    length-3 DNA sequences to amino acids can be given via `table`,
+    otherwise the standard mapping is assumed.
+    '''
+    def encode_triple(s: seq):
+        if s.N():
+            raise ValueError("codon '{s}' contains an ambiguous base")
+        K1 = Kmer[1]
+        a, b, c = K1(s[0]), K1(s[1]), K1(s[2])
+        n = (int(c.as_int())       |
+            (int(b.as_int()) << 2) |
+            (int(a.as_int()) << 4))
+        return n
+
+    def translate_encoded(n: int):
+        # Note(!) this table must be consistent with k-mer encoding
+        table = 'KNKNTTTTRSRSIIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVV*Y*YSSSS*CWCLFLF'
+        return table.ptr[n]
+
+    if table is not None:
+        for k,v in table.items():
+            if len(k) != 3:
+                raise ValueError("translation table key does not have length 3")
+            if k.N():
+                raise ValueError("ambiguous base in translation table key '{k}'")
+            if len(v) != 1:
+                raise ValueError("translation table value does not have length 1")
+
+    n = len(s)
+    m = n // 3
+    p = cobj(m)
+    i = 0
+    j = 0
+    while i < n:
+        codon = s._slice_direct(i, i + 3)
+        if table is None:
+            p[j] = translate_encoded(encode_triple(codon))
+        else:
+            p[j] = table.get(codon, p'X').ptr[0]
+        i += 3
+        j += 1
+    return pseq(p, m)
+
+@extend
+class seq:
+    def translate(self):
+        return translate(self)
+
+@extend
+class str:
+    def __prefix_p__(s: str, N: Static[int] = 0) -> pseq:
+        return pseq(s)

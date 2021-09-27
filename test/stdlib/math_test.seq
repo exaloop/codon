@@ -1,0 +1,461 @@
+import math
+
+NAN = math.nan
+INF = math.inf
+NINF = -math.inf
+
+def close(a: float, b: float, epsilon: float = 1e-7):
+    return abs(a - b) <= epsilon
+
+@test
+def test_isnan():
+    assert math.isnan(float('nan')) == True
+    assert math.isnan(4.0) == False
+
+@test
+def test_isinf():
+    assert math.isinf(float('inf')) == True
+    assert math.isinf(7.0) == False
+
+@test
+def test_isfinite():
+    assert math.isfinite(1.4) == True
+    assert math.isfinite(0.0) == True
+    assert math.isfinite(NAN) == False
+    assert math.isfinite(INF) == False
+    assert math.isfinite(NINF) == False
+
+@test
+def test_ceil():
+    assert math.ceil(3.3) == 4
+    assert math.ceil(0.5) == 1
+    assert math.ceil(1.0) == 1
+    assert math.ceil(1.5) == 2
+    assert math.ceil(-0.5) == 0
+    assert math.ceil(-1.0) == -1
+    assert math.ceil(-1.5) == -1
+
+@test
+def test_floor():
+    assert math.floor(3.3) == 3
+    assert math.floor(0.5) == 0
+    assert math.floor(1.0) == 1
+    assert math.floor(1.5) == 1
+    assert math.floor(-0.5) == -1
+    assert math.floor(-1.0) == -1
+    assert math.floor(-1.5) == -2
+
+@test
+def test_fabs():
+    assert math.fabs(-1.0) == 1
+    assert math.fabs(0.0) == 0
+    assert math.fabs(1.0) == 1
+
+@test
+def test_fmod():
+    assert math.fmod(10.0, 1.0) == 0.0
+    assert math.fmod(10.0, 0.5) == 0.0
+    assert math.fmod(10.0, 1.5) == 1.0
+    assert math.fmod(-10.0, 1.0) == -0.0
+    assert math.fmod(-10.0, 0.5) == -0.0
+    assert math.fmod(-10.0, 1.5) == -1.0
+
+@test
+def test_exp():
+    assert math.exp(0.0) == 1
+    assert math.exp(-1.0) == 1/math.e
+    assert math.exp(1.0) == math.e
+
+@test
+def test_expm1():
+    assert math.expm1(0.0) == 0
+    assert close(math.expm1(1.0), 1.7182818284590453)
+    assert close(math.expm1(3.0), 19.085536923187668)
+    assert close(math.expm1(5.0), 147.4131591025766)
+    assert math.expm1(INF) == INF
+    assert math.expm1(NINF) == -1
+    assert math.isnan(math.expm1(NAN)) == True
+
+@test
+def test_ldexp():
+    assert math.ldexp(0.0, 1) == 0.0
+    assert math.ldexp(1.0, 1) == 2.0
+    assert math.ldexp(1.0, -1) == 0.5
+    assert math.ldexp(-1.0, 1) == -2.0
+    assert math.ldexp(0.0, 1) == 0.0
+    assert math.ldexp(1.0, -1000000) == 0.0
+    assert math.ldexp(-1.0, -1000000) == -0.0
+    assert math.ldexp(INF, 30) == INF
+    assert math.ldexp(NINF, -213) == NINF
+    assert math.isnan(math.ldexp(NAN, 0)) == True
+
+@test
+def test_log():
+    assert math.log(1.0/math.e) == -1
+    assert math.log(1.0) == 0
+    assert math.log(math.e) == 1
+
+@test
+def test_log2():
+    assert math.log2(1.0) == 0.0
+    assert math.log2(2.0) == 1.0
+    assert math.log2(4.0) == 2.0
+    assert math.log2(2.0**1023) == 1023.0
+    assert math.isnan(math.log2(-1.5)) == True
+    assert math.isnan(math.log2(NINF)) == True
+    assert math.isnan(math.log2(NAN)) == True
+
+@test
+def test_log10():
+    assert math.log10(0.1) == -1
+    assert math.log10(1.0) == 0
+    assert math.log10(10.0) == 1
+    assert math.log10(10000.0) == 4
+
+@test
+def test_degrees():
+    assert math.degrees(math.pi) == 180.0
+    assert math.degrees(math.pi/2) == 90.0
+    assert math.degrees(-math.pi/4) == -45.0
+    assert math.degrees(0.0) == 0.0
+
+@test
+def test_radians():
+    assert math.radians(180.0) == math.pi
+    assert math.radians(90.0) == math.pi/2
+    assert math.radians(-45.0) == -math.pi/4
+    assert math.radians(0.0) == 0.0
+
+@test
+def test_sqrt():
+    assert math.sqrt(4.0) == 2
+    assert math.sqrt(0.0) == 0
+    assert math.sqrt(1.0) == 1
+    assert math.isnan(math.sqrt(-1.0)) == True
+
+@test
+def test_pow():
+    assert math.pow(0.0, 1.0) == 0
+    assert math.pow(1.0, 0.0) == 1
+    assert math.pow(2.0, 1.0) == 2
+    assert math.pow(2.0, -1.0) == 0.5
+    assert math.pow(-0.0, 3.0) == -0.0
+    assert math.pow(-0.0, 2.3) == 0.0
+    assert math.pow(-0.0, 0.0) == 1
+    assert math.pow(-0.0, -0.0) == 1
+    assert math.pow(-2.0, 2.0) == 4.0
+    assert math.pow(-2.0, 3.0) == -8.0
+    assert math.pow(-2.0, -3.0) == -0.125
+    assert math.pow(INF, 1.0) == INF
+    assert math.pow(NINF, 1.0) == NINF
+    assert math.pow(1.0, INF) == 1
+    assert math.pow(1.0, NINF) == 1
+    assert math.isnan(math.pow(NAN, 1.0)) == True
+    assert math.isnan(math.pow(2.0, NAN)) == True
+    assert math.isnan(math.pow(0.0, NAN)) == True
+    assert math.pow(1.0, NAN) == 1
+
+@test
+def test_acos():
+    assert math.acos(-1.0) == math.pi
+    assert math.acos(0.0) == math.pi/2
+    assert math.acos(1.0) == 0
+    assert math.isnan(math.acos(NAN)) == True
+
+@test
+def test_asin():
+    assert math.asin(-1.0) == -math.pi/2
+    assert math.asin(0.0) == 0
+    assert math.asin(1.0) == math.pi/2
+    assert math.isnan(math.asin(NAN)) == True
+
+@test
+def test_atan():
+    assert math.atan(-1.0) == -math.pi/4
+    assert math.atan(0.0) == 0
+    assert math.atan(1.0) == math.pi/4
+    assert math.atan(INF) == math.pi/2
+    assert math.atan(NINF) == -math.pi/2
+    assert math.isnan(math.atan(NAN)) == True
+
+@test
+def test_atan2():
+    assert math.atan2(-1.0, 0.0) == -math.pi/2
+    assert math.atan2(-1.0,1.0) == -math.pi/4
+    assert math.atan2(0.0, 1.0) == 0
+    assert math.atan2(1.0, 1.0) == math.pi/4
+    assert math.atan2(1.0, 0.0) == math.pi/2
+    assert math.atan2(-0.0, 0.0) == -0
+    assert math.atan2(-0.0, 2.3) == -0
+    assert math.atan2(0.0, -2.3) == math.pi
+    assert math.atan2(INF, NINF) == math.pi*3/4
+    assert math.atan2(INF, 2.3) == math.pi/2
+    assert math.isnan(math.atan2(NAN, 0.0)) == True
+
+@test
+def test_cos():
+    assert math.cos(0.0) == 1
+    assert close(math.cos(math.pi/2), 6.123233995736766e-17)
+    assert close(math.cos(-math.pi/2), 6.123233995736766e-17)
+    assert math.cos(math.pi) == -1
+    assert math.isnan(math.cos(INF)) == True
+    assert math.isnan(math.cos(NINF)) == True
+    assert math.isnan(math.cos(NAN)) == True
+
+@test
+def test_sin():
+    assert math.sin(0.0) == 0
+    assert math.sin(math.pi/2) == 1
+    assert math.sin(-math.pi/2) == -1
+    assert math.isnan(math.sin(INF)) == True
+    assert math.isnan(math.sin(NINF)) == True
+    assert math.isnan(math.sin(NAN)) == True
+
+@test
+def test_hypot():
+    assert math.hypot(12.0, 5.0) == 13
+    assert math.hypot(12.0/32.0, 5.0/32) == 13/32
+    assert math.hypot(0.0, 0.0) == 0
+    assert math.hypot(-3.0, 4.0) == 5
+    assert math.hypot(3.0, 4.0) == 5
+
+@test
+def test_tan():
+    assert math.tan(0.0) == 0
+    assert close(math.tan(math.pi/4), 0.9999999999999999)
+    assert close(math.tan(-math.pi/4), -0.9999999999999999)
+    assert math.isnan(math.tan(INF)) == True
+    assert math.isnan(math.tan(NINF)) == True
+    assert math.isnan(math.tan(NAN)) == True
+
+@test
+def test_cosh():
+    assert math.cosh(0.0) == 1
+    assert math.cosh(2.0)-2*math.cosh(1.0)**2 == -1
+    assert math.cosh(INF) == INF
+    assert math.cosh(NINF) == INF
+    assert math.isnan(math.cosh(NAN)) == True
+
+@test
+def test_sinh():
+    assert math.sinh(0.0) == 0
+    assert math.sinh(1.0) + math.sinh(-1.0) == 0
+    assert math.sinh(INF) == INF
+    assert math.sinh(NINF) == NINF
+    assert math.isnan(math.sinh(NAN)) == True
+
+@test
+def test_tanh():
+    assert math.tanh(0.0) == 0
+    assert math.tanh(1.0) + math.tanh(-1.0) == 0
+    assert math.tanh(INF) == 1
+    assert math.tanh(NINF) == -1
+    assert math.isnan(math.tanh(NAN)) == True
+
+@test
+def test_acosh():
+    assert math.acosh(1.0) == 0
+    assert close(math.acosh(2.0), 1.3169578969248166)
+    assert math.acosh(INF) == INF
+    assert math.isnan(math.acosh(NAN)) == True
+    assert math.isnan(math.acosh(-1.0)) == True
+
+@test
+def test_asinh():
+    assert math.asinh(0.0) == 0
+    assert close(math.asinh(1.0), 0.881373587019543)
+    assert close(math.asinh(-1.0), -0.881373587019543)
+    assert math.asinh(INF) == INF
+    assert math.isnan(math.asinh(NAN)) == True
+    assert math.asinh(NINF) == NINF
+
+@test
+def test_atanh():
+    assert math.atanh(0.0) == 0
+    assert close(math.atanh(0.5), 0.5493061443340549)
+    assert close(math.atanh(-0.5), -0.5493061443340549)
+    assert math.isnan(math.atanh(INF)) == True
+    assert math.isnan(math.atanh(NAN)) == True
+    assert math.isnan(math.atanh(NINF)) == True
+
+@test
+def test_copysign():
+    assert math.copysign(1.0, -0.0) == -1
+    assert math.copysign(1.0, 42.0) == 1
+    assert math.copysign(1.0, -42.0) == -1
+    assert math.copysign(3.0, 0.0) == 3
+    assert math.copysign(INF, 0.0) == INF
+    assert math.copysign(INF, -0.0) == NINF
+    assert math.copysign(NINF, 0.0) == INF
+    assert math.copysign(NINF, -0.0) == NINF
+    assert math.copysign(1.0, INF) == 1
+    assert math.copysign(1.0, NINF) == -1
+    assert math.copysign(INF, INF) == INF
+    assert math.copysign(INF, NINF) == NINF
+    assert math.copysign(NINF, INF) == INF
+    assert math.copysign(NINF, NINF) == NINF
+    assert math.isnan(math.copysign(NAN, 1.0)) == True
+    assert math.isnan(math.copysign(NAN, INF)) == True
+    assert math.isnan(math.copysign(NAN, NINF)) == True
+    assert math.isnan(math.copysign(NAN, NAN)) == True
+
+@test
+def test_log1p():
+    assert close(math.log1p(2.0), 1.0986122886681098)
+    assert close(math.log1p(2.0**90), 62.383246250395075)
+    assert close(math.log1p(2.0**300), 207.94415416798358)
+    assert math.log1p(INF) == INF
+    assert math.log1p(-1.0) == NINF
+
+@test
+def test_trunc():
+    assert math.trunc(1.0) == 1
+    assert math.trunc(-1.0) == -1
+    assert math.trunc(1.5) == 1
+    assert math.trunc(-1.5) == -1
+    assert math.trunc(1.99999999) == 1
+    assert math.trunc(-1.99999999) == -1
+    assert math.trunc(0.99999999) == 0
+    assert math.trunc(-100.999) == -100
+
+@test
+def test_erf():
+    assert close(math.erf(1.0), 0.8427007929497148)
+    assert math.erf(0.0) == 0
+    assert close(math.erf(3.0), 0.9999779095030015)
+    assert math.erf(256.0) == 1.0
+    assert math.erf(INF) == 1.0
+    assert math.erf(NINF) == -1.0
+    assert math.isnan(math.erf(NAN)) == True
+
+@test
+def test_erfc():
+    assert math.erfc(0.0) == 1.0
+    assert close(math.erfc(1.0), 0.15729920705028516)
+    assert close(math.erfc(2.0), 0.0046777349810472645)
+    assert close(math.erfc(-1.0), 1.8427007929497148)
+    assert math.erfc(INF) == 0.0
+    assert math.erfc(NINF) == 2.0
+    assert math.isnan(math.erfc(NAN)) == True
+
+@test
+def test_gamma():
+    assert close(math.gamma(6.0), 120.0)
+    assert close(math.gamma(1.0), 1.0)
+    assert close(math.gamma(2.0), 1.0)
+    assert close(math.gamma(3.0), 2.0)
+    assert math.isnan(math.gamma(-1.0)) == True
+    assert math.gamma(INF) == INF
+    assert math.isnan(math.gamma(NINF)) == True
+    assert math.isnan(math.gamma(NAN)) == True
+
+@test
+def test_lgamma():
+    assert math.lgamma(1.0) == 0.0
+    assert math.lgamma(2.0) == 0.0
+    assert math.lgamma(-1.0) == INF
+    assert math.lgamma(INF) == INF
+    assert math.lgamma(NINF) == INF
+    assert math.isnan(math.lgamma(NAN)) == True
+
+@test
+def test_remainder():
+    assert math.remainder(2.0, 2.0) == 0.0
+    assert math.remainder(-4.0, 1.0) == -0.0
+    assert close(math.remainder(-3.8, 1.0), 0.20000000000000018)
+    assert close(math.remainder(3.8, 1.0), -0.20000000000000018)
+    assert math.isnan(math.remainder(INF, 1.0)) == True
+    assert math.isnan(math.remainder(NINF, 1.0)) == True
+    assert math.isnan(math.remainder(NAN, 1.0)) == True
+
+@test
+def test_gcd():
+    assert math.gcd(0.0, 0.0) == 0
+    assert math.gcd(1.0, 0.0) == 1
+    assert math.gcd(-1.0, 0.0) == 1
+    assert math.gcd(0.0, -1.0) == 1
+    assert math.gcd(0.0, 1.0) == 1
+    assert math.gcd(7.0, 1.0) == 1
+    assert math.gcd(7.0, -1.0) == 1
+    assert math.gcd(-23.0, 15.0) == 1
+    assert math.gcd(120.0, 84.0) == 12
+    assert math.gcd(84.0, -120.0) == 12
+
+@test
+def test_frexp():
+    assert math.frexp(-2.0) == (-0.5, 2)
+    assert math.frexp(-1.0) == (-0.5, 1)
+    assert math.frexp(0.0) == (0.0, 0)
+    assert math.frexp(1.0) == (0.5, 1)
+    assert math.frexp(2.0) == (0.5, 2)
+    assert math.frexp(INF)[0] == INF
+    assert math.frexp(NINF)[0] == NINF
+    assert math.isnan(math.frexp(NAN)[0]) == True
+
+@test
+def test_modf():
+    assert math.modf(1.5) == (0.5, 1.0)
+    assert math.modf(-1.5) == (-0.5, -1.0)
+    assert math.modf(math.inf) == (0.0, INF)
+    assert math.modf(-math.inf) == (-0.0, NINF)
+    modf_nan = math.modf(NAN)
+    assert math.isnan(modf_nan[0]) == True
+    assert math.isnan(modf_nan[1]) == True
+
+@test
+def test_isclose():
+    assert math.isclose(1.0+1.0, 1.000000000001+1.0) == True
+    assert math.isclose(2.90909324093284, 2.909093240932844234234234234) == True
+    assert math.isclose(2.90909324093284, 2.9) == False
+    assert math.isclose(2.90909324093284, 2.90909324) == True
+    assert math.isclose(2.90909324, 2.90909325) == False
+    assert math.isclose(NAN, 2.9) == False
+    assert math.isclose(2.9, NAN) == False
+    assert math.isclose(INF, INF) == True
+    assert math.isclose(NINF, NINF) == True
+    assert math.isclose(NINF, INF) == False
+    assert math.isclose(INF, NINF) == False
+
+test_isnan()
+test_isinf()
+test_isfinite()
+test_ceil()
+test_floor()
+test_fabs()
+test_fmod()
+test_exp()
+test_expm1()
+test_ldexp()
+test_log()
+test_log2()
+test_log10()
+test_degrees()
+test_radians()
+test_sqrt()
+test_pow()
+test_acos()
+test_asin()
+test_atan()
+test_atan2()
+test_cos()
+test_sin()
+test_hypot()
+test_tan()
+test_cosh()
+test_sinh()
+test_tanh()
+test_acosh()
+test_asinh()
+test_atanh()
+test_copysign()
+test_log1p()
+test_trunc()
+test_erf()
+test_erfc()
+test_gamma()
+test_lgamma()
+test_remainder()
+test_gcd()
+test_frexp()
+test_modf()
+test_isclose()

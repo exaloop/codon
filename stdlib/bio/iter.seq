@@ -1,0 +1,83 @@
+from bio.seq import seq
+
+# Sequence reader in text, line-by-line format.
+@tuple
+class SeqReader:
+    '''
+    Parser for a plain txt-based sequence format, with one sequence per line.
+
+    '''
+    _file: cobj
+    validate: bool
+    gzip: bool
+    copy: bool
+
+    def __new__(path: str, validate: bool, gzip: bool, copy: bool) -> SeqReader:
+        return (gzopen(path, "r").__raw__() if gzip else open(path, "r").__raw__(), validate, gzip, copy)
+
+    @property
+    def file(self):
+        assert not self.gzip
+        p = __array__[cobj](1)
+        p.ptr[0] = self._file
+        return Ptr[File](p.ptr.as_byte())[0]
+
+    @property
+    def gzfile(self):
+        assert self.gzip
+        p = __array__[cobj](1)
+        p.ptr[0] = self._file
+        return Ptr[gzFile](p.ptr.as_byte())[0]
+
+    def _preprocess(self, a: str):
+        from bio.builtin import _validate_str_as_seq
+        if self.validate:
+            return _validate_str_as_seq(a, self.copy)
+        else:
+            return copy(seq(a.ptr, a.len)) if self.copy else seq(a.ptr, a.len)
+
+    def __seqs__(self):
+        return self.__iter__()
+
+    def __iter__(self):
+        if self.gzip:
+            for a in self.gzfile._iter_trim_newline():
+                s = self._preprocess(a)
+                assert s.len >= 0
+                yield s
+        else:
+            for a in self.file._iter_trim_newline():
+                s = self._preprocess(a)
+                assert s.len >= 0
+                yield s
+        self.close()
+
+    def __blocks__(self, size: int):
+        from bio.block import _blocks
+        if not self.copy:
+            raise ValueError("cannot read sequences in blocks with copy=False")
+        return _blocks(self.__iter__(), size)
+
+    def close(self):
+        if self.gzip:
+            self.gzfile.close()
+        else:
+            self.file.close()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        self.close()
+
+def Seqs(path: str, validate: bool = True, gzip: bool = True, copy: bool = True):
+    return SeqReader(path=path, validate=validate, gzip=gzip, copy=copy)
+
+@extend
+class str:
+    def __seqs__(self):
+        return iter(Seqs(self))
+
+    def __blocks__(self, size: int):
+        from bio.block import _blocks
+        return _blocks(self.__seqs__(), size)

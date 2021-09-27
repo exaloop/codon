@@ -1,0 +1,59 @@
+def _heapify[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
+    """
+        Makes the array a heap from [begin, end).
+    """
+    root = begin
+    left = 2 * begin + 1
+    right = 2 * begin + 2
+
+    if left < end and keyf(arr[root]) < keyf(arr[left]):
+        root = left
+
+    if right < end and keyf(arr[root]) < keyf(arr[right]):
+        root = right
+
+    if root != begin:
+        arr[begin], arr[root] = arr[root], arr[begin]
+        _heapify(arr, root, end, keyf)
+
+def _heap_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
+    if end - begin < 2:
+        return
+
+    arr = arr.slice(begin, end)
+    end -= begin
+    begin = 0
+
+    i = end // 2 - 1
+    while i >= 0:
+        _heapify(arr, i, end, keyf)
+        i -= 1
+
+    i = end - 1
+    while i >= 0:
+        arr[i], arr[0] = arr[0], arr[i]
+        _heapify(arr, 0, i, keyf)
+        i -= 1
+
+def heap_sort_array[S,T](collection: Array[T], size: int, keyf: Callable[[T], S]):
+    """
+        Heap Sort
+        Sorts the array inplace.
+    """
+    _heap_sort(collection, 0, size, keyf)
+
+def heap_sort_inplace[S,T](collection: List[T], keyf: Callable[[T], S]):
+    """
+        Heap Sort
+        Sorts the list inplace.
+    """
+    heap_sort_array(collection.arr, collection.len, keyf)
+
+def heap_sort[S,T](collection: List[T], keyf: Callable[[T], S]) -> List[T]:
+    """
+        Heap Sort
+        Returns a sorted list.
+    """
+    newlst = copy(collection)
+    heap_sort_inplace(newlst, keyf)
+    return newlst

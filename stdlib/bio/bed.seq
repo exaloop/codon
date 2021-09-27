@@ -1,0 +1,240 @@
+@tuple
+class BEDRecord:
+    _chrom: str
+    _chromStart: int
+    _chromEnd: int
+    _name: str
+    _score: float
+    _strand: str
+    _thickStart: int
+    _thickEnd: int
+    _itemRgb: Tuple[int, int, int]
+    _blockCount: int
+    _blockSizes: Optional[List[int]]
+    _blockStarts: Optional[List[int]]
+    numCols: int
+
+    @property
+    def chrom(self):
+        return self._chrom
+
+    @property
+    def chrom_start(self):
+        return self._chromStart
+
+    @property
+    def chrom_end(self):
+        return self._chromEnd
+
+    @property
+    def misc(self):
+        return self._name
+
+    @property
+    def score(self):
+        return self._score
+
+    @property
+    def strand(self):
+        return self._strand
+
+    @property
+    def thick_start(self):
+        return self._thickStart
+
+    @property
+    def thick_end(self):
+        return self._thickEnd
+
+    @property
+    def item_rgb(self):
+        return self._itemRgb
+
+    @property
+    def block_count(self):
+        return self._blockCount
+
+    @property
+    def block_sizes(self):
+        return self._blockSizes
+
+    @property
+    def block_starts(self):
+        return self._blockStarts
+
+    @property
+    def num_cols(self):
+        return self._numCols
+
+    @property
+    def __len__(self):
+        return self.num_cols
+
+@tuple
+class BEDReader:
+    _file: gzFile
+    _header: List[str]
+    validate: bool
+    copy: bool
+
+    def __new__(path: str, validate: bool, copy: bool) -> BEDReader:
+        return (gzopen(path, "r"), BEDReader.init_header(path), validate, copy)
+
+    @property
+    def file(self):
+        return self._file
+
+    @property
+    def header(self) -> List[str]:
+        return self._header
+
+    def init_header(path: str):
+        # store header as a list of str
+        h = List[str]()
+        with gzopen(path, "r") as file:
+            for a in file._iter_trim_newline():
+                if BEDReader.is_line_header(a):
+                    h_line = copy(a)
+                    h.append(h_line)
+                else:
+                    break
+        return h
+
+    def is_line_header(line: str) -> bool:
+        # a line is a header if it starts with #, browser or track
+        return line[0] == "#" or line.startswith("browser") or line.startswith("track")
+
+    def __iter__(self):
+        i = 0
+        buf = List[str](capacity=12)
+        for line in self.file._iter_trim_newline():
+            if i < len(self.header):
+                i += 1
+                continue
+            rec = self._BEDRecord_from_str(line, i + 1, buf)
+            i += 1
+            yield rec
+        self.close()
+
+    def _split_line(s: str, l: List[str]):
+        l.clear()
+        str_len = len(s)
+        i = 0
+        j = 0
+        while True:
+            while i < str_len and str._isspace(s.ptr[i]):
+                i += 1
+            if i == str_len:
+                break
+            j = i
+            i += 1
+            while i < str_len and not str._isspace(s.ptr[i]):
+                i += 1
+            l.append(s._slice(j, i))
+
+        if i < str_len:
+            while i < str_len and str._isspace(s.ptr[i]):
+                i += 1
+            if i != str_len:
+                l.append(s._slice(i, str_len))
+
+    def _BEDRecord_from_str(self, s: str, lnum: int, a: List[str]) -> BEDRecord:
+        BEDReader._split_line(s, a)
+        n = len(a)
+        if n < 3:
+            raise ValueError(f"Each line in BED file must have at least 3 columns, line: {lnum}")
+
+        chrom = ""
+        chrom_start = 0
+        chrom_end = 0
+        name: str = ""
+        score: float = 0.
+        strand: str = ""
+        thick_start: int = 0
+        thick_end: int = 0
+        item_rgb: Tuple[int, int, int] = (0, 0, 0)
+        block_count: int = 0
+        block_sizes = None
+        block_starts = None
+
+        chrom = a[0]
+        if self.copy: chrom = copy(chrom)
+        chrom_start = self._get_int_from_bed(a[1], "chromStart", lnum)
+        chrom_end = self._get_int_from_bed(a[2], "chromEnd", lnum)
+        if n >= 4:
+            name = a[3]
+            if self.copy: name = copy(name)
+        if n >= 5: score = self._get_score_from_bed(a[4], "score", lnum)
+        if n >= 6:
+            strand = a[5]
+            if strand != '+' and strand != '-':
+                raise ValueError(f"Strand must be '+'' or '-'; got {strand}, line: {lnum}")
+            if self.copy: strand = copy(strand)
+        if n >= 7: thick_start = self._get_int_from_bed(a[6], "thickStart", lnum)
+        if n >= 8: thick_end = self._get_int_from_bed(a[7], "thickEnd", lnum)
+        if n >= 9:
+            rgb_vals = a[8].split(",")
+            if len(rgb_vals) != 3:
+                raise ValueError(f"itemRgb, must be 3 comma separated values, line: {lnum}")
+            rgb0 = self._get_int_from_bed(rgb_vals[0], "itemRgb", lnum)
+            rgb1 = self._get_int_from_bed(rgb_vals[1], "itemRgb", lnum)
+            rgb2 = self._get_int_from_bed(rgb_vals[2], "itemRgb", lnum)
+            item_rgb = (rgb0, rgb1, rgb2)
+        if n >= 10:
+            block_count = self._get_int_from_bed(a[9], "blockCount", lnum)
+        if n >= 11:
+            block_sizes = self._get_block_vals_from_bed(a[10], block_count, "blockSizes", lnum)
+        if n >= 12:
+            block_starts = self._get_block_vals_from_bed(a[11], block_count, "blockStarts", lnum)
+
+        return BEDRecord(chrom, chrom_start, chrom_end, name, score, strand,
+                         thick_start, thick_end, item_rgb, block_count,
+                         block_sizes, block_starts, n)
+
+    def _get_int_from_bed(self, val: str, col_name: str, lnum: int) -> int:
+        if self.validate:
+            try:
+                return int(val)
+            except:
+                raise ValueError(f"{col_name}, must be integer, line: {lnum}")
+        return int(val)
+
+    def _get_score_from_bed(self, val: str, col_name: str, lnum: int) -> float:
+        if self.validate:
+            f = 0.
+            try:
+                f = float(val)
+            except:
+                raise ValueError(f"{col_name}, must be float or integer, line: {lnum}")
+            if f < 0 or f > 1000:
+                raise ValueError(f"{col_name}, must be float or integer between 0 and 1000, line {lnum}")
+        return float(val)
+
+    def _get_block_vals_from_bed(self, val: str, blockCount: int, col_name: str, lnum: int) -> List[int]:
+        # blockCount specifies how many values we should expect in the val str
+        # block_vals are a comma separated sequence of integers, found in the val str
+        block_vals = val.split(",")
+        block_list = List[int]()
+        if self.validate and len(block_vals) != blockCount:
+            raise ValueError(f"{col_name}, must have the same number of values as blockCount specifies {blockCount}, line: {lnum}")
+        for v in block_vals:
+            if self.validate:
+                try:
+                    block_list.append(int(v))
+                except:
+                    raise ValueError(f"{col_name}, must be a comma separated list of integer values, line: {lnum}")
+            else:
+                block_list.append(int(v))
+        return block_list
+
+    def close(self):
+        self.file.close()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        self.close()
+
+def BED(path: str, validate: bool = True, copy: bool = True) -> BEDReader:
+    return BEDReader(path=path, validate=validate, copy=copy)

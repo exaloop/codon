@@ -1,0 +1,131 @@
+######################################
+# k-mer reverse complement benchmark #
+######################################
+from sys import argv
+from time import timing
+from bio import *
+
+print 'loading ref...'
+ref = [a.seq for a in FASTA(argv[1])]
+print 'done.'
+
+def test_slow(kmer):
+    rc = type(kmer).as_int()
+    I = type(rc)
+
+    for i in range(len(kmer)):
+        b = I(int((~kmer[i]).as_int()))
+        b <<= I(2*i)
+        rc |= b
+    return kmer > type(kmer)(rc)
+
+def test_lookup(K: Static[int]):
+    n = 0
+    with timing(f'{K=} (lookup)'):
+        for s in ref:
+            for kmer in s |> kmers(1, K):
+                b = kmer > kmer.__rc_lookup__()
+                n += 1 if b else 0
+    print n
+
+def test_bitwise(K: Static[int]):
+    n = 0
+    with timing(f'{K=} (bitwise)'):
+        for s in ref:
+            for kmer in s |> kmers(1, K):
+                b = kmer > kmer.__rc_bitwise__()
+                n += 1 if b else 0
+    print n
+
+def test_simd(K: Static[int]):
+    n = 0
+    with timing(f'{K=} (SIMD)'):
+        for s in ref:
+            for kmer in s |> kmers(1, K):
+                b = kmer > kmer.__rc_simd__()
+                n += 1 if b else 0
+    print n
+
+test_lookup(3)
+test_bitwise(3)
+test_simd(3)
+
+test_lookup(4)
+test_bitwise(4)
+test_simd(4)
+
+test_lookup(5)
+test_bitwise(5)
+test_simd(5)
+
+test_lookup(7)
+test_bitwise(7)
+test_simd(7)
+
+test_lookup(8)
+test_bitwise(8)
+test_simd(8)
+
+test_lookup(9)
+test_bitwise(9)
+test_simd(9)
+
+test_lookup(15)
+test_bitwise(15)
+test_simd(15)
+
+test_lookup(16)
+test_bitwise(16)
+test_simd(16)
+
+test_lookup(17)
+test_bitwise(17)
+test_simd(17)
+
+test_lookup(31)
+test_bitwise(31)
+test_simd(31)
+
+test_lookup(32)
+test_bitwise(32)
+test_simd(32)
+
+test_lookup(33)
+test_bitwise(33)
+test_simd(33)
+
+test_lookup(63)
+test_bitwise(63)
+test_simd(63)
+
+test_lookup(64)
+test_bitwise(64)
+test_simd(64)
+
+test_lookup(65)
+test_bitwise(65)
+test_simd(65)
+
+test_lookup(127)
+test_bitwise(127)
+test_simd(127)
+
+test_lookup(128)
+test_bitwise(128)
+test_simd(128)
+
+test_lookup(129)
+test_bitwise(129)
+test_simd(129)
+
+test_lookup(255)
+test_bitwise(255)
+test_simd(255)
+
+test_lookup(256)
+test_bitwise(256)
+test_simd(256)
+
+test_lookup(257)
+test_bitwise(257)
+test_simd(257)

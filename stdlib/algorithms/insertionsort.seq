@@ -1,0 +1,33 @@
+def _insertion_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
+    i = begin + 1
+    while i < end:
+        x = arr[i]
+        j = i - 1
+        while j >= begin and keyf(x) < keyf(arr[j]):
+            arr[j+1] = arr[j]
+            j -= 1
+        arr[j+1] = x
+        i += 1
+
+def insertion_sort_array[S,T](collection: Array[T], size: int, keyf: Callable[[T], S]):
+    """
+        Insertion Sort
+        Sorts the array inplace.
+    """
+    _insertion_sort(collection, 0, size, keyf)
+
+def insertion_sort_inplace[S,T](collection: List[T], keyf: Callable[[T], S]):
+    """
+        Insertion Sort
+        Sorts the list inplace.
+    """
+    insertion_sort_array(collection.arr, collection.len, keyf)
+
+def insertion_sort[S,T](collection: List[T], keyf: Callable[[T], S]) -> List[T]:
+    """
+        Insertion Sort
+        Returns the sorted list.
+    """
+    newlst = copy(collection)
+    insertion_sort_inplace(newlst, keyf)
+    return newlst

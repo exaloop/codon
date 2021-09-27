@@ -1,0 +1,35 @@
+# BED coverage benchmark from https://github.com/lh3/biofast
+from sys import argv
+from time import timing
+from bio import *
+from bio.intervals import IntervalTree
+
+with timing('bed coverage (total)'):
+    interval_tree = IntervalTree()
+
+    with timing('reading first BED file'):
+        for record in BED(argv[1], copy=True, validate=False):
+            interval_tree.add(record.chrom, record.chrom_start, record.chrom_end)
+
+    with timing('indexing'):
+        interval_tree.index()
+
+    with timing('querying second BED file'):
+        for record in BED(argv[2], copy=False, validate=False):
+            cov, cov_st, cov_en, n = 0, 0, 0, 0
+            st1, en1 = record.chrom_start, record.chrom_end
+            for item in interval_tree.overlap(record.chrom, st1, en1):
+                n += 1
+                # calcualte overlap length/coverage
+                st0, en0 = item.start, item.end
+                if st0 < st1: st0 = st1
+                if en0 > en1: en0 = en1
+                if st0 > cov_en:  # no overlap with previous found intervals
+                    # set coverage to current interval
+                    cov += cov_en - cov_st
+                    cov_st, cov_en = st0, en0
+                elif cov_en < en0:
+                    cov_en = en0  # overlap with previous found intervals
+            cov += cov_en - cov_st
+            # print chrom, start, end, count, # of coverage nt
+            print f'{record.chrom}\t{record.chrom_start}\t{record.chrom_end}\t{n}\t{cov}'

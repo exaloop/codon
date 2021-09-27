@@ -1,0 +1,119 @@
+from bio import *
+
+Q,T = ['test/data/' + a for a in ('MT-orang.fa','MT-human.fa')]
+
+def normal_align(query: seq,
+                target: seq,
+                a: int = 2,
+                b: int = 4,
+                ambig: int = 0,
+                gapo: int = 4,
+                gape: int = 2,
+                bandwidth: int = -1,
+                zdrop: int = -1,
+                end_bonus: int = 0,
+                ext_only: bool = False,
+                score_only: bool = False,
+                rev_cigar: bool = False):
+    return query.align(target, a=a, b=b, ambig=ambig, gapo=gapo, gape=gape, bandwidth=bandwidth, zdrop=zdrop,
+                       end_bonus=end_bonus, ext_only=ext_only, score_only=score_only, rev_cigar=rev_cigar)
+
+@inter_align
+@test
+def aln1(t):
+    query, target = t
+    score = query.align(target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=5, score_only=True).score
+    score_exp = normal_align(query, target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=5, score_only=True).score
+    assert score == score_exp
+
+rev_cigar = True
+ext_only = True
+
+def walk_cigar(query, target, cigar):
+    a=1
+    b=2
+    ambig=0
+    gapo=2
+    gape=1
+
+    i, j = 0, 0
+    score = 0
+    for n, op in cigar:
+        match op:
+            case 'M':
+                for k in range(n):
+                    q = query[i + k]
+                    t = target[j + k]
+                    if q.N() or t.N():
+                        score += ambig
+                    elif q.__int__() == t.__int__():
+                        score += a
+                    else:
+                        score -= b
+                i += n
+                j += n
+            case 'I':
+                score -= (gapo + n*gape)
+                i += n
+            case 'D':
+                score -= (gapo + n*gape)
+                j += n
+            case _:
+                assert False
+    return score
+
+@inter_align
+@test
+def aln2(t):
+    query, target = t
+    my_ext_only = ext_only
+    inter = query.align(target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=0, ext_only=my_ext_only, score_only=False)
+    intra = normal_align(query, target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=0, ext_only=my_ext_only, score_only=False)
+    assert inter.score == intra.score
+    assert walk_cigar(query, target, inter.cigar) == inter.score
+    assert walk_cigar(query, target, intra.cigar) == intra.score
+    assert inter.score == query.align(target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=0, ext_only=my_ext_only).score
+
+a = 1
+b = 2
+ambig = 0
+gapo = 2
+gape = 1
+zdrop = 100
+bandwidth = 100
+end_bonus = 5
+
+@inter_align
+@test
+def aln3(t):
+    query, target = t
+    if query[0] == target[0]:
+        score = query.align(target, a=a, b=b, ambig=ambig, gapo=gapo, gape=1, zdrop=100, bandwidth=100, end_bonus=5).score
+        score_exp = normal_align(query, target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=5).score
+        assert score == score_exp
+        score2 = query.align(target, a=1, b=2, ambig=0, gapo=2, gape=gape, zdrop=zdrop, bandwidth=bandwidth, end_bonus=end_bonus).score
+        assert score == score2
+
+@inter_align
+@test
+def aln4(t):
+    # tests intra-alignment demotion
+    for i in range(2):
+        query, target = t
+        query = ~query
+        target = ~target
+        score = query.align(target, a=a, b=b, ambig=ambig, gapo=gapo, gape=1, zdrop=100, bandwidth=100, end_bonus=5).score
+        score_exp = normal_align(query, target, a=1, b=2, ambig=0, gapo=2, gape=1, zdrop=100, bandwidth=100, end_bonus=5).score
+        assert score == score_exp
+        query = query[:len(query)//2]
+        target = target[:len(target)//2]
+
+def subs(path: str, n: int = 20):
+    for a in seqs(FASTA(path)):
+        for b in a.split(n, 1):
+            yield b
+
+zip(subs(Q), subs(T)) |> aln1
+zip(subs(Q), subs(T)) |> aln2
+zip(subs(Q), subs(T)) |> aln3
+zip(subs(Q, 1024), subs(T, 1024)) |> aln4

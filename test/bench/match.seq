@@ -1,0 +1,128 @@
+######################
+# Matching benchmark #
+######################
+from sys import argv
+from time import timing
+from bio import *
+
+def match_fast1(k):
+    match k:
+        case 'T_T_T_T_T_T_T_T_T_T_T_T_T_T_T_T_..._A_A_A_A_A_A_A_A_A_A_A_A_A_A_A_A':
+            return True
+        case _:
+            return False
+
+def match_slow1(k):
+    for i in range(0, 32, 2):
+        if k[i] != k'T':
+            return False
+    for i in range(0, 32, 2):
+        if k[len(k) - 1 - i] != k'A':
+            return False
+    return True
+
+def test1(use_slow_match, K: Static[int]):
+    n = 0
+    with timing(f'{K}-mer ({use_slow_match=})'):
+        for s in FASTA(argv[1]) |> seqs:
+            for kmer in s |> kmers(1, K):
+                b = False
+                if use_slow_match:
+                    b = match_slow1(kmer)
+                else:
+                    b = match_fast1(kmer)
+                n += 1 if b else 0
+    print n
+
+def match_fast2(k):
+    match k:
+        case 'T_T_..._A_A':
+            return True
+        case _:
+            return False
+
+def match_slow2(k):
+    for i in range(0, 4, 2):
+        if k[i] != k'T':
+            return False
+    for i in range(0, 4, 2):
+        if k[len(k) - 1 - i] != k'A':
+            return False
+    return True
+
+def test2(use_slow_match, K: Static[int]):
+    n = 0
+    with timing(f'{K}-mer ({use_slow_match=})'):
+        for s in FASTA(argv[1]) |> seqs:
+            for kmer in s |> kmers(1, K):
+                b = False
+                if use_slow_match:
+                    b = match_slow2(kmer)
+                else:
+                    b = match_fast2(kmer)
+                n += 1 if b else 0
+    print n
+
+print 'TEST1:'
+test1(False, 64)
+test1(True, 64)
+test1(False, 96)
+test1(True, 96)
+test1(False, 128)
+test1(True, 128)
+test1(False, 160)
+test1(True, 160)
+test1(False, 192)
+test1(True, 192)
+test1(False, 224)
+test1(True, 224)
+test1(False, 256)
+test1(True, 256)
+test1(False, 288)
+test1(True, 288)
+test1(False, 320)
+test1(True, 320)
+test1(False, 352)
+test1(True, 352)
+test1(False, 384)
+test1(True, 384)
+test1(False, 416)
+test1(True, 416)
+test1(False, 448)
+test1(True, 448)
+test1(False, 480)
+test1(True, 480)
+test1(False, 512)
+test1(True, 512)
+
+print 'TEST2:'
+test2(False, 64)
+test2(True, 64)
+test2(False, 96)
+test2(True, 96)
+test2(False, 128)
+test2(True, 128)
+test2(False, 160)
+test2(True, 160)
+test2(False, 192)
+test2(True, 192)
+test2(False, 224)
+test2(True, 224)
+test2(False, 256)
+test2(True, 256)
+test2(False, 288)
+test2(True, 288)
+test2(False, 320)
+test2(True, 320)
+test2(False, 352)
+test2(True, 352)
+test2(False, 384)
+test2(True, 384)
+test2(False, 416)
+test2(True, 416)
+test2(False, 448)
+test2(True, 448)
+test2(False, 480)
+test2(True, 480)
+test2(False, 512)
+test2(True, 512)

@@ -1,0 +1,134 @@
+from bisect import bisect_right, bisect_left, insort
+from collections import deque
+
+
+DEFAULT_LOAD_FACTOR = 1000
+class SortedList[T]:
+    _len: int
+    _load: int
+    _lists: List[List[T]]
+    _maxes: List[T]
+    _offset: int
+    # _index:
+
+    def __init__(self):
+        self._len = 0
+        self._load = DEFAULT_LOAD_FACTOR
+        self._lists = List[List[T]]()
+        self._maxes = List[T]()
+        # self._index = []
+        self._offset = 0
+
+    def clear(self):
+        """
+        Remove all values from sorted list.
+        Runtime complexity: `O(n)`
+        """
+        self._len = 0
+        self._lists.clear()
+        self._maxes.clear()
+        self._offset = 0
+        # self._index.clear()
+
+    @property
+    def left(self):
+        if not self._lists:
+            raise IndexError("list index out of range")
+        return self._lists[0][0]
+
+    def add(self, value: T):
+        """
+        Add `value` to sorted list.
+        Runtime complexity: `O(log(n))` -- approximate.
+        >>> sl = SortedList()
+        >>> sl.add(3)
+        >>> sl.add(1)
+        >>> sl.add(2)
+        >>> sl
+        SortedList([1, 2, 3])
+        :param value: value to add to sorted list
+        """
+        if self._maxes:
+            pos = bisect_right(self._maxes, value)
+            if pos == len(self._maxes):
+                pos -= 1
+                self._lists[pos].append(value)
+                self._maxes[pos] = value
+            else:
+                insort(self._lists[pos], value)
+            self._expand(pos)
+        else:
+            self._lists.append([value])
+            self._maxes.append(value)
+        self._len += 1
+
+
+    def _expand(self, pos: int):
+        """
+        Split sublists with length greater than double the load-factor.
+        Updates the index when the sublist length is less than double the load
+        level. This requires incrementing the nodes in a traversal from the
+        leaf node to the root. For an example traversal see
+        ``SortedList._loc``.
+        """
+        if len(self._lists[pos]) > (self._load << 1):
+            _maxes = self._maxes
+
+            _lists_pos = self._lists[pos]
+            half = _lists_pos[self._load:]
+            del _lists_pos[self._load:]
+            _maxes[pos] = _lists_pos[-1]
+
+            self._lists.insert(pos + 1, half)
+            _maxes.insert(pos + 1, half[-1])
+
+
+    def _delete(self, pos: int, idx: int):
+        """
+        Delete value at the given `(pos, idx)`.
+        Combines lists that are less than half the load level.
+        Updates the index when the sublist length is more than half the load
+        level. This requires decrementing the nodes in a traversal from the
+        leaf node to the root. For an example traversal see
+        ``SortedList._loc``.
+        :param int pos: lists index
+        :param int idx: sublist index
+        """
+        _lists_pos = self._lists[pos]
+        del _lists_pos[idx]
+        self._len -= 1
+
+        len_lists_pos = len(_lists_pos)
+
+        if len_lists_pos > (self._load >> 1):
+            self._maxes[pos] = _lists_pos[-1]
+        elif len(self._lists) > 1:
+            if not pos:
+                pos += 1
+
+            prev = pos - 1
+            self._lists[prev].extend(self._lists[pos])
+            self._maxes[prev] = self._lists[prev][-1]
+
+            del self._lists[pos]
+            del self._maxes[pos]
+
+            self._expand(prev)
+        elif len_lists_pos:
+            self._maxes[pos] = _lists_pos[-1]
+        else:
+            del self._lists[pos]
+            del self._maxes[pos]
+
+
+    def __iter__(self):
+        for l in self._lists:
+            yield from l
+
+
+    def __len__(self):
+        return self._len
+
+
+    def __bool__(self):
+        return self._len > 0

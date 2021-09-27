@@ -1,0 +1,523 @@
+import openmp as omp
+import threading as thr
+
+lock = thr.Lock()
+
+@tuple
+class A:
+    n: int
+
+    def __new__() -> A:
+        return A(0)
+
+    def __add__(self, other: A):
+        return A(self.n + other.n)
+
+    def __atomic_add__(a: Ptr[A], other: A):
+        with lock:
+            a[0] = A(a[0].n + other.n)
+
+@test
+def test_omp_api():
+    thr.active_count()
+    thr.get_native_id()
+    omp.set_num_threads(4)
+    omp.get_num_threads()
+    omp.get_max_threads()
+    omp.get_thread_num()
+    omp.get_num_procs()
+    omp.in_parallel()
+    omp.set_dynamic(False)
+    omp.get_dynamic()
+    omp.get_cancellation()
+    omp.set_schedule('static', 10)
+    omp.get_schedule()
+    omp.get_thread_limit()
+    omp.set_max_active_levels(1)
+    omp.get_max_active_levels()
+    omp.get_level()
+    omp.get_ancestor_thread_num(0)
+    omp.get_team_size(0)
+    omp.get_active_level()
+    omp.in_final()
+    omp.get_proc_bind()
+    omp.set_default_device(0)
+    omp.get_default_device()
+    omp.get_num_devices()
+    omp.get_num_teams()
+    omp.get_team_num()
+    omp.is_initial_device()
+    omp.get_wtime()
+    omp.get_wtick()
+
+@test
+def test_omp_schedules():
+    omp.set_num_threads(4)
+    N = 10001
+
+    x = list(range(N))
+    y = [0] * N
+    @par
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='static')
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='static', chunk_size=1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    chunk = 13
+    @par(schedule='static', chunk_size=chunk)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='static', chunk_size=N-1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='static', chunk_size=N)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='static', chunk_size=N+1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='dynamic')
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='dynamic', chunk_size=1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    chunk = 17
+    @par(schedule='dynamic', chunk_size=chunk)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='dynamic', chunk_size=N-1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='dynamic', chunk_size=N)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+    x = list(range(N))
+    y = [0] * N
+    @par(schedule='dynamic', chunk_size=N+1)
+    for i in range(N):
+        y[i] = x[i] ** 2
+    assert all(y[i] == x[i]**2 for i in range(N))
+
+@test
+def test_omp_ranges():
+    nt = 4
+    lock = thr.Lock()
+    seen = set()
+
+    @omp.critical
+    def add(seen, i):
+        seen.add(i)
+
+    @par
+    for i in range(3, 123, 7):
+        add(seen, i)
+    assert seen == set(range(3, 123, 7))
+    seen.clear()
+
+    @par
+    for i in range(-3, -123, 7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(-3, -123, 7))
+    seen.clear()
+
+    @par(num_threads=nt)
+    for i in range(-3, -123, -7):
+        add(seen, i)
+    assert seen == set(range(-3, -123, -7))
+    seen.clear()
+
+    @par(chunk_size=12)
+    for i in range(3, 123, 7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(3, 123, 7))
+    seen.clear()
+
+    @par(chunk_size=12)
+    for i in range(-3, -123, 7):
+        add(seen, i)
+    assert seen == set(range(-3, -123, 7))
+    seen.clear()
+
+    @par(chunk_size=12, num_threads=nt)
+    for i in range(-3, -123, -7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(-3, -123, -7))
+    seen.clear()
+
+    @par(chunk_size=10000)
+    for i in range(3, 123, 7):
+        add(seen, i)
+    assert seen == set(range(3, 123, 7))
+    seen.clear()
+
+    @par(chunk_size=10000)
+    for i in range(-3, -123, 7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(-3, -123, 7))
+    seen.clear()
+
+    @par(chunk_size=10000, num_threads=nt)
+    for i in range(-3, -123, -7):
+        add(seen, i)
+    assert seen == set(range(-3, -123, -7))
+    seen.clear()
+
+    @par(schedule='dynamic', num_threads=nt)
+    for i in range(-3, -123, -7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(-3, -123, -7))
+    seen.clear()
+
+    @par(schedule='dynamic', chunk_size=12)
+    for i in range(3, 123, 7):
+        add(seen, i)
+    assert seen == set(range(3, 123, 7))
+    seen.clear()
+
+    @par(schedule='dynamic', chunk_size=12)
+    for i in range(-3, -123, 7):
+        with lock:
+            seen.add(i)
+    assert seen == set(range(-3, -123, 7))
+    seen.clear()
+
+    @par(schedule='dynamic', chunk_size=12, num_threads=nt)
+    for i in range(-3, -123, -7):
+        add(seen, i)
+    assert seen == set(range(-3, -123, -7))
+    seen.clear()
+
+my_global = 42
+
+@test
+def test_omp_reductions():
+    def expected(N, a, op):
+        for i in range(N):
+            a = op(a, type(a)(i))
+        return a
+
+    omp.set_num_threads(4)
+    N = 10001
+    L = list(range(N))
+
+    # static
+    a = 0
+    @par
+    for i in L:
+        a += i
+    assert a == expected(N, 0, int.__add__)
+
+    a = 0
+    @par
+    for i in L:
+        a |= i
+    assert a == expected(N, 0, int.__or__)
+
+    a = 0
+    @par
+    for i in L:
+        a ^= i
+    assert a == expected(N, 0, int.__xor__)
+
+    a = 0xffffffff
+    @par
+    for i in L:
+        a &= i
+    assert a == expected(N, 0xffffffff, int.__and__)
+
+    a = 1
+    @par
+    for i in L:
+        a *= i
+    assert a == expected(N, 1, int.__mul__)
+
+    a = 0
+    @par
+    for i in L:
+        b = N+1 if i == N//2 else i
+        a = max(a, b)
+    assert a == N+1
+
+    a = 0
+    @par
+    for i in L:
+        b = -1 if i == N//2 else i
+        a = min(a, b)
+    assert a == -1
+
+    x = A(0)
+    @par
+    for i in L:
+        x += A(i)
+    assert x.n == expected(N, 0, int.__add__)
+
+    # static chunked
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        a += i
+    assert a == expected(N, 0, int.__add__)
+
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        a |= i
+    assert a == expected(N, 0, int.__or__)
+
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        a ^= i
+    assert a == expected(N, 0, int.__xor__)
+
+    a = 0xffffffff
+    @par(chunk_size=3)
+    for i in L:
+        a &= i
+    assert a == expected(N, 0xffffffff, int.__and__)
+
+    a = 1
+    @par(chunk_size=3)
+    for i in L[1:10]:
+        a *= i
+    assert a == 1*2*3*4*5*6*7*8*9
+
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        b = N+1 if i == N//2 else i
+        a = max(a, b)
+    assert a == N+1
+
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        b = -1 if i == N//2 else i
+        a = min(a, b)
+    assert a == -1
+
+    x = A(0)
+    @par(chunk_size=3)
+    for i in L:
+        x += A(i)
+    assert x.n == expected(N, 0, int.__add__)
+
+    # dynamic
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
+        a += i
+    assert a == expected(N, 0, int.__add__)
+
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
+        a |= i
+    assert a == expected(N, 0, int.__or__)
+
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
+        a ^= i
+    assert a == expected(N, 0, int.__xor__)
+
+    a = 0xffffffff
+    @par(schedule='dynamic')
+    for i in L:
+        a &= i
+    assert a == expected(N, 0xffffffff, int.__and__)
+
+    a = 1
+    @par(schedule='dynamic')
+    for i in L[1:10]:
+        a *= i
+    assert a == 1*2*3*4*5*6*7*8*9
+
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
+        b = N+1 if i == N//2 else i
+        a = max(a, b)
+    assert a == N+1
+
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
+        b = -1 if i == N//2 else i
+        a = min(a, b)
+    assert a == -1
+
+    x = A(0)
+    @par(schedule='dynamic')
+    for i in L:
+        x += A(i)
+    assert x.n == expected(N, 0, int.__add__)
+
+    # floats
+    c = 0.
+    @par
+    for i in L:
+        c += float(i)
+    assert c == expected(N, 0., float.__add__)
+
+    c = 1.
+    @par
+    for i in L[1:10]:
+        c *= float(i)
+    assert c == float(1*2*3*4*5*6*7*8*9)
+
+    c = 0.
+    @par
+    for i in L:
+        b = float(N+1 if i == N//2 else i)
+        c = max(b, c)
+    assert c == float(N+1)
+
+    c = 0.
+    @par
+    for i in L:
+        b = float(-1 if i == N//2 else i)
+        c = min(b, c)
+    assert c == -1.
+
+    # multiple reductions
+    global my_global
+    g = my_global
+    a = 0
+    b = 0
+    @par(schedule='dynamic', num_threads=3)
+    for i in L:
+        a += i
+        b ^= i
+        my_global += i
+    assert a == expected(N, 0, int.__add__)
+    assert b == expected(N, 0, int.__xor__)
+    assert my_global == g + expected(N, 0, int.__add__)
+
+another_global = 0
+@test
+def test_omp_critical():
+    @omp.critical
+    def foo(i):
+        global another_global
+        another_global += i
+
+    @omp.critical
+    def bar(i):
+        global another_global
+        another_global += i
+
+    global another_global
+    for n in (99999, 100000, 100001):
+        another_global = 0
+        @par(schedule='dynamic')
+        for i in range(n):
+            foo(i)
+            bar(i)
+        assert another_global == 2*sum(range(n))
+
+@test
+def test_omp_non_imperative():
+    def squares(N):
+        for i in range(N):
+            yield i*i
+
+    N = 10001
+    v = [0] * N
+
+    @par
+    for i,s in enumerate(squares(N)):
+        v[i] = s
+
+    assert all(s == i*i for i,s in enumerate(v))
+
+@test
+def test_omp_transform(a, b, c):
+    a0, b0, c0 = a, b, c
+    d = a + b + c
+    v = list(range(int(d*d)))
+    ids = set()
+
+    @par('schedule(static, 5) num_threads(3) ordered')
+    for i in v:
+        a += type(a)(i)
+        z = i * i
+        c = type(c)(z)
+        b += type(b)(z)
+        with lock:
+            ids.add(omp.get_thread_num())
+
+    for i in v:
+        a0 += type(a0)(i)
+        z = i * i
+        c0 = type(c0)(z)
+        b0 += type(b0)(z)
+
+    assert ids == {0, 1, 2}
+    assert int(a) == int(a0)
+    assert abs(b - b0) < b/1e6
+    assert c == v[-1] ** 2
+
+test_omp_api()
+test_omp_schedules()
+test_omp_ranges()
+test_omp_reductions()
+test_omp_critical()
+test_omp_non_imperative()
+test_omp_transform(111, 222, 333)
+test_omp_transform(111.1, 222.2, 333.3)

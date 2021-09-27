@@ -1,0 +1,18 @@
+# SeqMap
+# Seq workshop -- Section 2
+# Reads and constructs a hash table index from an input
+# FASTA file.
+# Usage: seqc run section2.seq <FASTA path>
+from sys import argv
+from bio import *
+import pickle
+import gzip
+
+index = {}
+
+for record in FASTA(argv[1]):
+    for pos,kmer in record.seq.kmers_with_pos(k=32, step=1):
+        index[min(kmer, ~kmer)] = pos
+
+with gzip.open(argv[1] + '.index', 'wb') as jar:
+    pickle.dump(index, jar)

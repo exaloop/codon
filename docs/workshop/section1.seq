@@ -1,0 +1,8 @@
+# SeqMap
+# Seq workshop -- Section 1
+# Reads and prints a FASTQ file.
+# Usage: seqc run section1.seq <FASTQ path>
+from sys import argv
+from bio import *
+for record in FASTQ(argv[1]):
+    print(record.name, record.seq)

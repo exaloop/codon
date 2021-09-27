@@ -1,0 +1,33 @@
+from sys import argv
+from bio import FASTQ
+from genomeindex import *
+K: Static[int] = 20
+
+def update(counts, pos, max_pos, max_count):
+    count = counts.get(pos, 0) + 1
+    counts[pos] = count
+    return (pos, count) if count > max_count else (max_pos, max_count)
+
+def main(args):
+    index = GenomeIndex[Kmer[K]](args[0])
+    for read in FASTQ(args[1]):
+        counts: Dict[int, int] = {}
+        max_pos, max_count = 0, 0
+
+        for i,kmer in enumerate(read.seq.kmers(K, K)):
+            offset = i * K
+            hits = index[kmer]
+            hits_rev = index[~kmer]
+
+            for i in range(len(hits)):
+                pos = int(hits[i]) - offset
+                max_pos, max_count = update(counts, pos, max_pos, max_count)
+
+            for i in range(len(hits_rev)):
+                pos = int(hits_rev[i]) - offset
+                max_pos, max_count = update(counts, pos, max_pos, max_count)
+
+        print read, max_pos
+
+if len(argv) > 0:
+    main(argv)

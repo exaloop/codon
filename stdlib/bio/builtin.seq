@@ -1,0 +1,193 @@
+from bio.seq import seq
+from bio.kmer import Kmer
+
+@__attribute__
+def prefetch():
+    pass
+
+@__attribute__
+def inter_align():
+    pass
+
+def seqs(x):
+    '''
+    Returns an iterator over sequences from the specified
+    object by invoking the `__seqs__` magic method.
+
+    `__seqs__` is defined for most common formats, like
+    FASTA, FASTQ, SAM and BAM.
+    '''
+    return x.__seqs__()
+
+def split(self: seq, k: int, step: int):
+    '''
+    Iterator over length-`k` subsequences of the given sequence
+    with the specified step size.
+    '''
+    return self.split(k, step)
+
+def kmers(self: seq, step: int, k: Static[int]):
+    '''
+    Iterator over k-mers (size `k`) of the given sequence
+    with the specified step size. Note that k-mers spanning
+    ambiguous bases will be skipped.
+    '''
+    return self.kmers(step, k)
+
+def kmers_with_pos(self: seq, step: int, k: Static[int]):
+    '''
+    Iterator over (0-based index, k-mer) tuples of the given
+    sequence with the specified step size. Note that k-mers
+    spanning ambiguous bases will be skipped.
+    '''
+    return self.kmers_with_pos(step, k)
+
+def revcomp(s):
+    '''
+    Returns the reverse complement of the argument sequence or k-mer.
+    '''
+    return ~s
+
+def revcomp_with_pos(t):
+    '''
+    Returns the reverse complement of the argument sequence or k-mer,
+    where the argument also contains a position (e.g. as yielded by
+    `kmers_with_pos`).
+    '''
+    return (t[0], ~t[1])
+
+def _kmers_revcomp_with_pos[K](self: seq, step: int):
+    return self._kmers_revcomp_with_pos(step, K.k)
+
+def _kmers_revcomp[K](self: seq, step: int):
+    return self._kmers_revcomp(step, K.k)
+
+def canonical(k):
+    '''
+    Returns the minimum of a sequence / k-mer and its reverse complement.
+    '''
+    kr = ~k
+    return k if k < kr else kr
+
+def canonical_with_pos(t):
+    '''
+    Returns the minimum of a sequence / k-mer and its reverse complement,
+    where the argument also contains a position (e.g. as yielded by
+    `kmers_with_pos`).
+    '''
+    return (t[0], canonical(t[1]))
+
+def _kmers_canonical[K](self: seq):
+    return self.kmers_canonical(K.k)
+
+def _kmers_canonical_with_pos[K](self: seq):
+    return self.kmers_canonical_with_pos(K.k)
+
+def base[K,T](kmer: K, idx: int, b: T):
+    '''
+    Returns a new k-mer equal to `K` but with the base at index `idx` set to `b`
+    '''
+    U = type(kmer.as_int())
+    if idx < 0:
+        idx += len(kmer)
+    idx = K.len() - idx - 1
+    n = U(int(Kmer[1](b).as_int()))
+    k = kmer.as_int() & ~(U(3) << U(2*idx))
+    k |= n << U(2*idx)
+    return K(k)
+
+@__force__
+def _is_iupac_nt(b: byte) -> bool:
+    iupac = ('\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x01\x01\x01\x01\x00\x00\x01\x01\x00\x00\x01\x00\x01\x01\x00'
+             '\x00\x00\x01\x01\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00'
+             '\x00\x01\x01\x01\x01\x00\x00\x01\x01\x00\x00\x01\x00\x01\x01\x00'
+             '\x00\x00\x01\x01\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+    return bool(iupac.ptr[int(b)])
+
+@__force__
+def _is_iupac_aa(b: byte) -> bool:
+    iupac = ('\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x01\x00\x01\x01\x01\x01\x01\x01\x01\x00\x01\x01\x01\x01\x00'
+             '\x01\x01\x01\x01\x01\x00\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+             '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+    return bool(iupac.ptr[int(b)])
+
+@__force__
+def _validate_str_as_seq(s: str, copy: bool = False):
+    def ensure_valid(b: byte, i: int):
+        if not _is_iupac_nt(b):
+            raise ValueError(f"invalid base {repr(b)} at position {i} of sequence")
+    p = s.ptr
+    n = s.len
+    i = 0
+    if copy:
+        q = Ptr[byte](n)
+        while i < n:
+            b = p[i]
+            ensure_valid(b, i)
+            q[i] = b
+            i += 1
+        return seq(q, n)
+    else:
+        while i < n:
+            ensure_valid(p[i], i)
+            i += 1
+        return seq(p, n)
+
+@__force__
+def _validate_str_as_qual(s: str, copy: bool = False):
+    def ensure_valid(b: byte, i: int):
+        if not (byte(0x21) <= b <= byte(0x7e)):
+            raise ValueError(f"invalid quality score {repr(b)} at position {i} of quality score string")
+    p = s.ptr
+    n = s.len
+    i = 0
+    if copy:
+        q = Ptr[byte](n)
+        while i < n:
+            b = p[i]
+            ensure_valid(b, i)
+            q[i] = b
+            i += 1
+        return str(q, n)
+    else:
+        while i < n:
+            ensure_valid(p[i], i)
+            i += 1
+        return str(p, n)
+
+@__force__
+def _split_header_on_space(s: str):
+    a = 0
+    while a < len(s) and not s[a].isspace():
+        a += 1
+
+    b = a
+    while b < len(s) and s[b].isspace():
+        b += 1
+
+    return s[:a], s[b:]
