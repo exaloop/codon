@@ -27,7 +27,7 @@
 
 > **A strongly-typed and statically-compiled high-performance Pythonic language!**
 
-Codon is a programming language for computationaly intensive workloads. With a Python-compatible syntax and a host of domain-specific features and optimizations, Codon makes writing high-performance software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
+Codon is a programming language for computationally intensive workloads. With a Python-compatible syntax and a host of domain-specific features and optimizations, Codon makes writing high-performance software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
 
 **Think of Codon as a strongly-typed and statically-compiled Python: all the bells and whistles of Python, boosted with a strong type system, without any performance overhead.**
 
