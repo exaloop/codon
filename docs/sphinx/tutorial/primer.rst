@@ -68,11 +68,6 @@ expression must have a type that can be inferred at the compile-time.
     #   \\, \', \", \a, \b, \f, \n, \r, \t, \v,
     #   \xHHH (HHH is hex code), \OOO (OOO is octal code)
 
-    # Sequence types
-    dna = s"ACGT"  # type: seq. These are DNA sequences.
-    prt = p"MYX"  # type: bio.pseq. These are protein sequences.
-    kmer = k"ACGT"  # type: Kmer[4]. Note that Kmer[5] is different than Kmer[12].
-
 Tuples
 ~~~~~~
 
@@ -178,7 +173,6 @@ Operator Magic method     Description
 ``**``   ``__pow__``      exponentiation
 ``%``    ``__mod__``      modulo
 ``@``    ``__matmul__``   matrix multiplication;
-                                  sequence alignment
 ``&``    ``__and__``      bitwise and
 ``|``    ``__or__``       bitwise or
 ``^``    ``__xor__``      bitwise xor
@@ -299,12 +293,6 @@ inspired by Rust's:
             ...
         case [...]:  # any other list
             ...
-
-    match sequence:  # of type seq
-        case 'ACGT': ...
-        case 'AC_T': ...  # _ is a wildcard character and it can be anything
-        case 'A_C_T_': ...  # a spaced k-mer AxCxTx
-        case 'AC*T': ...  # matches a sequence that starts with AC and ends with T
 
 You can mix, match and chain match rules as long as the match type
 matches the expression type.
