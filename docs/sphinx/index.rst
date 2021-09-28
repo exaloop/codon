@@ -58,7 +58,7 @@ One of the main focuses of Codon is to bridge the gap between usability and perf
 
     *Why do we need a whole new language? Why not a library?*
 
-A new language and compiler allows us to provide the programmer with higher-level contructs that are paired with optimizations, e.g. `@par` with :ref:`parallelism`. This type of pairing is difficult to replicate in a library alone, as it often involves large-scale program transformations/optimizations. We can also explore different backends like GPU, TPU or FPGA in a systematic way, in conjunction with these various constructs/optimizations, which is ongoing work.
+A new language and compiler allow us to provide the programmer with higher-level constructs that are paired with optimizations, e.g. `@par` with :ref:`parallelism`. This type of pairing is difficult to replicate in a library alone, as it often involves large-scale program transformations/optimizations. We can also explore different backends like GPU, TPU or FPGA in a systematic way, in conjunction with these various constructs/optimizations, which is ongoing work.
 
 Our goal is 
 
