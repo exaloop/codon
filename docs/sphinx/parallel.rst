@@ -1,7 +1,9 @@
+.. _parallelism:
+
 Parallelism and Multithreading
 ==============================
 
-Seq supports parallelism and multithreading via OpenMP out of the box. Here's an example:
+Codon supports parallelism and multithreading via OpenMP out of the box. Here's an example:
 
 .. code-block:: seq
 
@@ -84,13 +86,13 @@ applies to *imperative* for-loops of the form ``for i in range(a, b, c)`` (where
 For general parallel for-loops of the form ``for i in some_generator()``, a task-based approach is
 used instead, where each loop iteration is executed as an independent task.
 
-The Seq compiler also converts iterations over lists (``for a in some_list``) to imperative
+The Codon compiler also converts iterations over lists (``for a in some_list``) to imperative
 for-loops, meaning these loops can be executed using OpenMP's loop parallelism.
 
 Custom reductions
 -----------------
 
-Seq can automatically generate efficient reductions for ``int`` and ``float`` values. For other
+Codon can automatically generate efficient reductions for ``int`` and ``float`` values. For other
 data types, user-defined reductions can be specified. A class that supports reductions must
 include:
 
@@ -121,7 +123,7 @@ Here is an example for reducing a new ``Vector`` type:
 OpenMP constructs
 -----------------
 
-All of OpenMP's API functions are accessible directly in Seq. For example:
+All of OpenMP's API functions are accessible directly in Codon. For example:
 
 .. code-block:: seq
 

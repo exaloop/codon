@@ -1,10 +1,10 @@
-Calling Python from Seq
-=======================
+Calling Python from Codon
+=========================
 
-Calling Python from Seq is possible in two ways:
+Calling Python from Codon is possible in two ways:
 
 - ``from python import`` allows importing and calling Python functions from existing Python modules.
-- ``@python`` allows writing Python code directly in Seq.
+- ``@python`` allows writing Python code directly in Codon.
 
 In order to use these features, the ``SEQ_PYTHON`` environment variable must be set to the appropriate
 Python shared library:
@@ -31,7 +31,7 @@ Let's say we have a Python function defined in *mymodule.py*:
     def multiply(a, b):
         return a * b
 
-We can call this function in Seq using ``from python import`` and indicating the appropriate
+We can call this function in Codon using ``from python import`` and indicating the appropriate
 call and return types:
 
 .. code-block:: seq
@@ -44,7 +44,7 @@ call and return types:
 ``@python``
 -----------
 
-Seq programs can contain functions that will be executed by Python via ``pydef``:
+Codon programs can contain functions that will be executed by Python via ``pydef``:
 
 .. code-block:: seq
 

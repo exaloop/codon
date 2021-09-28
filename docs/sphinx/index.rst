@@ -1,7 +1,7 @@
-**Seq** — a Python implementation for bioinformatics
-====================================================
+**Codon**
+=========
 
-Seq is a Pythonic language for computational genomics and bioinformatics. With a Python-compatible syntax and a host of domain-specific features and optimizations, Seq makes writing high-performance genomics software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
+With a Python-compatible syntax and a host of domain-specific features and optimizations, Codon makes writing high-performance software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
 
 Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_.
 
@@ -29,7 +29,6 @@ Version 0.11 again includes a number of upgrades to the parser, type system and 
 - New PEG parser
 - Improved compile-time static evaluation
 - Upgrade to LLVM 12 (from LLVM 6)
-- A few changes to the ``bio`` module, particularly with ``seq.kmers()``, which now takes a length argument as in ``s.kmers(k=12, step=1)``
 
 What's new in 0.10?
 ^^^^^^^^^^^^^^^^^^^
@@ -44,30 +43,32 @@ Version 0.10 brings a slew of improvements to the language and compiler, includi
 - Numerous standard library improvements
 
 .. caution::
-    The default compilation and execution mode is now "debug", which disables most optimizations. Pass the ``-release`` argument to ``seqc`` to enable optimizations.
+    The default compilation and execution mode is now "debug", which disables most optimizations. Pass the ``-release`` argument to ``codon`` to enable optimizations.
 
 Frequently Asked Questions
 --------------------------
 
-    *Can I use Seq for general-purpose computing?*
+    *Can I use Codon for general-purpose computing?*
 
-Yes! While the Seq project started with a narrow focus on bioinformatics, it has grown to encompass much of Python's syntax, semantics and modules, making it a useful tool beyond just bioinformatics, particularly when large datasets need to be processed with Python.
+Yes! While the Codon project was inspired by computational challenges in bioinformatics, it has grown to encompass much of Python's syntax, semantics and modules, making it a useful tool beyond just bioinformatics, particularly when large datasets need to be processed with Python.
 
-    *What is the goal of Seq?*
+    *What is the goal of Codon?*
 
-One of the main focuses of Seq is to bridge the gap between usability and performance in the fields of bioinformatics and computational genomics, which have an unfortunate reputation for hard-to-use, buggy or generally poorly-written software. Seq aims to make writing high-performance genomics or bioinformatics software substantially easier, and to provide a common, unified framework for the development of such software.
+One of the main focuses of Codon is to bridge the gap between usability and performance. Codon aims to make writing high-performance software substantially easier, and to provide a common, unified framework for the development of such software.
 
     *Why do we need a whole new language? Why not a library?*
 
-There are many great bioinformatics libraries on the market today, including `Biopython <https://biopython.org>`_ for Python, `SeqAn <https://www.seqan.de>`_ for C++ and `BioJulia <https://biojulia.net>`_ for Julia. In fact, Seq offers a lot of the same functionality found in these libraries. The advantages of having a domain-specific language and compiler, however, are the higher-level constructs and optimizations like :ref:`pipeline`, :ref:`match`, :ref:`interalign` and :ref:`prefetch`, which are difficult to replicate in a library, as they often involve large-scale program transformations/optimizations. A domain-specific language also allows us to explore different backends like GPU, TPU or FPGA in a systematic way, in conjunction with these various constructs/optimizations, which is ongoing work.
+A new language and compiler allows us to provide the programmer with higher-level contructs that are paired with optimizations, e.g. `@par` with :ref:`parallelism`. This type of pairing is difficult to replicate in a library alone, as it often involves large-scale program transformations/optimizations. We can also explore different backends like GPU, TPU or FPGA in a systematic way, in conjunction with these various constructs/optimizations, which is ongoing work.
+
+Our goal is 
 
     *What about interoperability with other languages and frameworks?*
 
-Interoperability is and will continue to be a priority for the Seq project. We don't want using Seq to render you unable to use all the other great frameworks and libraries that exist. Seq already supports interoperability with C/C++ and Python (see :ref:`interop`).
+Interoperability is and will continue to be a priority for the Codon project. We don't want using Codon to render you unable to use all the other great frameworks and libraries that exist. Codon already supports interoperability with C/C++ and Python (see :ref:`interop`).
 
    *I want to contribute! How do I get started?*
 
-Great! Check out our `contribution guidelines <https://github.com/seq-lang/seq/blob/master/CONTRIBUTING.md>`_ and `open issues <https://github.com/seq-lang/seq/issues>`_ to get started. Also don't hesitate to drop by our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_ if you have any questions.
+Great! Check out our `contribution guidelines <https://github.com/exaloop/codon/blob/master/CONTRIBUTING.md>`_ and `open issues <https://github.com/exaloop/codon/issues>`_ to get started. Also don't hesitate to drop by our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_ if you have any questions.
 
    *What is planned for the future?*
 
