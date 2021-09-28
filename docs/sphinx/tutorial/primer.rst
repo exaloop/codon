@@ -623,52 +623,6 @@ receives a value, as in Python.
         iadder.send(i)  # send a value to coroutine
     print(iadder.send(-1))  # prints 45
 
-Pipelines
-~~~~~~~~~
-
-Codon extends the core Python language with a pipe operator, which is
-similar to bash pipes (or F#'s ``|>`` operator). You can chain multiple
-functions and generators to form a pipeline:
-
-.. code:: seq
-
-    def add1(x):
-        return x + 1
-
-    2 |> add1  # 3; equivalent to add1(2)
-
-    def calc(x, y):
-        return x + y**2
-    2 |> calc(3)  # 11; equivalent to calc(2, 3)
-    2 |> calc(..., 3)  # 11; equivalent to calc(2, 3)
-    2 |> calc(3, ...)  # 7; equivalent to calc(3, 2)
-
-    def gen(i):
-        for i in range(i):
-            yield i
-    5 |> gen |> print # prints 0 1 2 3 4 separated by newline
-    range(1, 4) |> iter |> gen |> print(end=' ')  # prints 0 0 1 0 1 2 without newline
-    [1, 2, 3] |> print   # prints [1, 2, 3]
-    range(100000000) |> print  # prints range(0, 100000000)
-    range(100000000) |> iter |> print  # not only prints all those numbers, but it uses almost no memory at all
-
-Codon will chain anything that implements ``__iter__``; however, use
-generators as much as possible because the compiler will optimize out
-generators whenever possible. Combinations of pipes and generators can be
-used to implement efficient streaming pipelines.
-
-Codon can also execute pipelines in parallel via the parallel pipe (``||>``)
-operator:
-
-.. code:: seq
-
-    range(100000) |> iter ||> print  # prints all these numbers, probably in random order
-    range(100000) |> iter ||> process ||> clean  # runs process in parallel, and then cleans data in parallel
-
-In the last example, Codon will automatically schedule the ``process`` and
-``clean`` functions to execute as soon as possible. You can control the
-number of threads via the ``OMP_NUM_THREADS`` environment variable.
-
 .. _interop:
 
 Foreign function interface (FFI)
