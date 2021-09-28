@@ -1,7 +1,16 @@
 **Codon**
 =========
 
-With a Python-compatible syntax and a host of domain-specific features and optimizations, Codon makes writing high-performance software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
+Codon is a high-performance Python implementation that compiles Python code to native machine code without any runtime overhead.
+The Codon framework grew out of the `Seq <https://seq-lang.org>`_ project; while Seq focuses on genomics and bioinformatics, Codon
+can be applied in a number of different areas and is extensible via a plugin system.
+
+Typical speedups over Python are on the order of 10-100x or more, on a single thread. Codon supports native multithreading which can lead
+to speedups many times higher still.
+
+While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large programs might require modifications
+to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
+dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
 
 Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_.
 
@@ -17,50 +26,17 @@ Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.i
    build
    stdlib/index
 
-News
-----
-
-What's new in 0.11?
-^^^^^^^^^^^^^^^^^^^
-
-Version 0.11 again includes a number of upgrades to the parser, type system and compiler backend:
-
-- Parallelism and multithreading support with OpenMP (e.g. ``@par for i in range(10): ...``)
-- New PEG parser
-- Improved compile-time static evaluation
-- Upgrade to LLVM 12 (from LLVM 6)
-
-What's new in 0.10?
-^^^^^^^^^^^^^^^^^^^
-
-Version 0.10 brings a slew of improvements to the language and compiler, including:
-
-- Nearly all of Python's syntax is now supported, including empty collections (``[]``, ``{}``), lambda functions (``lambda``), ``*args``/``**kwargs``, ``None`` and much more
-- Compiler error messages now pinpoint exactly where an error occurred with compile-time backtraces
-- Runtime exceptions now include backtraces with file names and line numbers in debug mode
-- GDB and LLDB support
-- Various syntax updates to further close the gap with Python
-- Numerous standard library improvements
-
-.. caution::
-    The default compilation and execution mode is now "debug", which disables most optimizations. Pass the ``-release`` argument to ``codon`` to enable optimizations.
 
 Frequently Asked Questions
 --------------------------
 
-    *Can I use Codon for general-purpose computing?*
-
-Yes! While the Codon project was inspired by computational challenges in bioinformatics, it has grown to encompass much of Python's syntax, semantics and modules, making it a useful tool beyond just bioinformatics, particularly when large datasets need to be processed with Python.
-
     *What is the goal of Codon?*
 
-One of the main focuses of Codon is to bridge the gap between usability and performance. Codon aims to make writing high-performance software substantially easier, and to provide a common, unified framework for the development of such software.
+One of the main focuses of Codon is to bridge the gap between usability and performance. Codon aims to make writing high-performance software substantially easier, and to provide a common, unified framework for the development of such software across a range of domains.
 
-    *Why do we need a whole new language? Why not a library?*
+    *How does Codon compare to other Python implementations?*
 
-A new language and compiler allow us to provide the programmer with higher-level constructs that are paired with optimizations, e.g. `@par` with :ref:`parallelism`. This type of pairing is difficult to replicate in a library alone, as it often involves large-scale program transformations/optimizations. We can also explore different backends like GPU, TPU or FPGA in a systematic way, in conjunction with these various constructs/optimizations, which is ongoing work.
-
-Our goal is 
+Unlike other performance-oriented Python implementations, such as PyPy or Numba, Codon is a standalone system implemented entirely independently of regular Python. Since it does not need to interoperate with CPython's runtime, Codon has far greater flexibility to generate optimized code. In fact, Codon will frequently generate the same code as that from an equivalent C or C++ program. This design choice also allows Codon to circumvent issues like Python's global interpretter lock, and thereby to take full advantage of parallelism and multithreading.
 
     *What about interoperability with other languages and frameworks?*
 
@@ -72,4 +48,4 @@ Great! Check out our `contribution guidelines <https://github.com/exaloop/codon/
 
    *What is planned for the future?*
 
-See the `roadmap <https://github.com/seq-lang/seq/wiki/Roadmap>`_ for information about this.
+See the `roadmap <https://github.com/exaloop/codon/wiki/Roadmap>`_ for information about this.
