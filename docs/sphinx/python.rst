@@ -6,12 +6,12 @@ Calling Python from Codon is possible in two ways:
 - ``from python import`` allows importing and calling Python functions from existing Python modules.
 - ``@python`` allows writing Python code directly in Codon.
 
-In order to use these features, the ``SEQ_PYTHON`` environment variable must be set to the appropriate
+In order to use these features, the ``CODON_PYTHON`` environment variable must be set to the appropriate
 Python shared library:
 
 .. code-block:: bash
 
-    export SEQ_PYTHON=/path/to/libpython.X.Y.so
+    export CODON_PYTHON=/path/to/libpython.X.Y.so
 
 For example, with a ``brew``-installed Python 3.9 on macOS, this might be
 
