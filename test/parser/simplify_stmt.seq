@@ -380,7 +380,7 @@ print log(5.5)  #: 1.70475
 
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
-RT = "./libseqrt." + dlext()
+RT = "./libcodonrt." + dlext()
 from C import RT.seq_str_int(int) -> str as sp
 print sp(65)  #: 65
 
