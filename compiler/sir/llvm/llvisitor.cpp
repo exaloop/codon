@@ -14,7 +14,7 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 #define SEQ_VERSION_STRING()                                                           \
-  ("codon version " STR(SEQ_VERSION_MAJOR) "." STR(SEQ_VERSION_MINOR) "." STR(          \
+  ("codon version " STR(SEQ_VERSION_MAJOR) "." STR(SEQ_VERSION_MINOR) "." STR(         \
       SEQ_VERSION_PATCH))
 
 extern "C" void seq_gc_add_roots(void *start, void *end);
@@ -486,8 +486,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     command.push_back("-l" + lib);
   }
   std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
-                                        "-lz",     "-lm",   "-lc",       "-o",
-                                        filename,  objFile};
+                                        "-lz",       "-lm",   "-lc",       "-o",
+                                        filename,    objFile};
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
   }
