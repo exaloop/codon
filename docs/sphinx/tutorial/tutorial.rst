@@ -6,7 +6,7 @@ Type extensions
 
 Codon provides an ``@extend`` annotation that allows programmers to add and modify methods of various types at compile time, including built-in types like ``int`` or ``str``. This allows much of the functionality of built-in types to be implemented in Codon as type extensions in the standard library. Here is an example where the ``int`` type is extended to include a ``to`` method that generates integers in a specified range, as well as to override the ``__mul__`` magic method to "intercept" integer multiplications:
 
-.. code-block:: seq
+.. code-block:: codon
 
     @extend
     class int:

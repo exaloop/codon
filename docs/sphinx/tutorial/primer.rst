@@ -8,7 +8,7 @@ programming language (QBASIC doesn't count).
 Printing
 --------
 
-.. code:: seq
+.. code:: codon
 
     print('hello world')
 
@@ -18,7 +18,7 @@ Printing
 Comments
 --------
 
-.. code:: seq
+.. code:: codon
 
     # Codon comments start with "# 'and go until the end of the line
 
@@ -33,7 +33,7 @@ Literals
 Codon is a strongly typed language like C++, Java, or C#. That means each
 expression must have a type that can be inferred at the compile-time.
 
-.. code:: seq
+.. code:: codon
 
     # Booleans
     True  # type: bool
@@ -71,7 +71,7 @@ expression must have a type that can be inferred at the compile-time.
 Tuples
 ~~~~~~
 
-.. code:: seq
+.. code:: codon
 
     # Tuples
     t = (1, 2.3, 'hi')  # type: Tuple[int, float, str].
@@ -85,7 +85,7 @@ of the index is known at compile-time.
 You can, however, iterate over heterogenous tuples in Codon. This is achieved
 by unrolling the loop to accommodate the different types.
 
-.. code:: seq
+.. code:: codon
 
     t = (1, 2.3, 'hi')
     t[1]  # works because 1 is a constant int
@@ -111,7 +111,7 @@ by unrolling the loop to accommodate the different types.
 Containers
 ~~~~~~~~~~
 
-.. code:: seq
+.. code:: codon
 
     l = [1, 2, 3]  # type: List[int]; a list of integers
     s = {1.1, 3.3, 2.2, 3.3}  # type: Set[float]; a set of floats
@@ -124,7 +124,7 @@ Containers
 
 Because Codon is strongly typed, these won't compile:
 
-.. code:: seq
+.. code:: codon
 
     l = [1, 's']  # is it a List[int] or List[str]? you cannot mix-and-match types
     d = {1: 'hi'}
@@ -137,7 +137,7 @@ Because Codon is strongly typed, these won't compile:
 
 This will work, though:
 
-.. code:: seq
+.. code:: codon
 
     u = (1, 2, 3)
     lu = list(u)  # works: u is homogenous
@@ -151,7 +151,7 @@ This will work, though:
 Assignments and operators
 -------------------------
 
-.. code:: seq
+.. code:: codon
 
     a = 1 + 2  # this is 3
     a = (1).__add__(2)  # you can use a function call instead of an operator; this is also 3
@@ -207,7 +207,7 @@ Tuple unpacking
 
 Codon supports most of Python's tuple unpacking syntax:
 
-.. code:: seq
+.. code:: codon
 
     x, y = 1, 2  # x is 1, y is 2
     (x, (y, z)) = 1, (2, 3)  # x is 1, y is 2, z is 3
@@ -236,7 +236,7 @@ Conditionals
 
 Codon supports the standard Python conditional syntax:
 
-.. code:: seq
+.. code:: codon
 
     if a or b or some_cond():
         print(1)
@@ -252,7 +252,7 @@ Codon supports the standard Python conditional syntax:
 Codon extends the Python conditional syntax with a ``match`` statement, which is 
 inspired by Rust's:
 
-.. code:: seq
+.. code:: codon
 
     match a + some_heavy_expr():  # assuming that the type of this expression is int
         case 1:  # is it 1?
@@ -302,7 +302,7 @@ Loops
 
 Standard fare:
 
-.. code:: seq
+.. code:: codon
 
     a = 10
     while a > 0:  # prints even numbers from 9 to 1
@@ -328,7 +328,7 @@ Comprehensions
 Technically, comprehensions are not statements (they are expressions).
 Comprehensions are a nifty, Pythonic way to create collections:
 
-.. code:: seq
+.. code:: codon
 
     l = [i for i in range(5)]  # type: List[int]; l is [0, 1, 2, 3, 4]
     l = [i for i in range(15) if i % 2 == 1 if i > 10]  # type: List[int]; l is [11, 13]
@@ -340,7 +340,7 @@ Comprehensions are a nifty, Pythonic way to create collections:
 You can also use collections to create generators (more about them later
 on):
 
-.. code:: seq
+.. code:: codon
 
     g = (i for i in range(10))
     print(list(g))  # prints number from 0 to 9, inclusive
@@ -351,7 +351,7 @@ Exception handling
 Again, if you know how to do this in Python, you know how to do it in
 Codon:
 
-.. code:: seq
+.. code:: codon
 
     def throwable():
          raise ValueError("doom and gloom")
@@ -373,7 +373,7 @@ If you have an object that implements ``__enter__`` and ``__exit__``
 methods to manage its lifetime (say, a ``File``), you can use a ``with``
 statement to make your life easy:
 
-.. code:: seq
+.. code:: codon
 
     with open('foo.txt') as f, open('foo_copy.txt', 'w') as fo:
         for l in f:
@@ -395,7 +395,7 @@ variable's own block.
 
 That means that the following Pythonic pattern won't compile:
 
-.. code:: seq
+.. code:: codon
 
     if cond():
          x = 1
@@ -409,7 +409,7 @@ That means that the following Pythonic pattern won't compile:
 
 In Codon, you can rewrite that as:
 
-.. code:: seq
+.. code:: codon
 
     x = 2
     if cond():
@@ -423,7 +423,7 @@ In Codon, you can rewrite that as:
 Another important difference between Codon and Python is that, in Codon, variables
 cannot change types. So this won't compile:
 
-.. code:: seq
+.. code:: codon
 
     a = 's'
     a = 1  # error: expected string, but got int
@@ -432,7 +432,7 @@ A note about function scoping: functions cannot modify variables that
 are not defined within the function block. You need to use ``global`` to
 modify such variables:
 
-.. code:: seq
+.. code:: codon
 
     g = 5
     def foo():
@@ -458,7 +458,7 @@ Imports
 
 You can import functions and classes from another Codon module by doing:
 
-.. code:: seq
+.. code:: codon
 
     # Create foo.codon with a bunch of useful methods
     import foo
@@ -481,7 +481,7 @@ Functions
 
 Functions are defined as follows:
 
-.. code:: seq
+.. code:: codon
 
     def foo(a, b, c):
         return a + b + c
@@ -489,7 +489,7 @@ Functions are defined as follows:
 
 How about procedures? Well, don't return anything meaningful:
 
-.. code:: seq
+.. code:: codon
 
     def proc(a, b):
         print(a, 'followed by', b)
@@ -505,7 +505,7 @@ How about procedures? Well, don't return anything meaningful:
 Codon is a strongly-typed language, so you can restrict argument and
 return types:
 
-.. code:: seq
+.. code:: codon
 
     def fn(a: int, b: float):
         return a + b  # this works because int implements __add__(float)
@@ -526,7 +526,7 @@ return types:
 
 Default arguments? Named arguments? You bet:
 
-.. code:: seq
+.. code:: codon
 
     def foo(a, b: int, c: float = 1.0, d: str = 'hi'):
         print(a, b, c, d)
@@ -535,7 +535,7 @@ Default arguments? Named arguments? You bet:
 
 How about optional arguments? We support that too:
 
-.. code:: seq
+.. code:: codon
 
     # type of b promoted to Optional[int]
     def foo(a, b: int = None):
@@ -557,7 +557,7 @@ without a type definition, Codon will consider it a *generic* function,
 and will generate different functions for each invocation of
 that generic function:
 
-.. code:: seq
+.. code:: codon
 
     def foo(x):
         print(x)  # print relies on typeof(x).__str__(x) method to print the representation of x
@@ -569,7 +569,7 @@ But what if you need to mix type definitions and generic types? Say, your
 function can take a list of *anything*? Well, you can use generic
 specifiers:
 
-.. code:: seq
+.. code:: codon
 
     def foo(x: List[T], T: type):
         print(x)
@@ -594,7 +594,7 @@ Generators
 
 Codon supports generators, and they are fast! Really, really fast!
 
-.. code:: seq
+.. code:: codon
 
     def gen(i):
         while i < 10:
@@ -607,7 +607,7 @@ You can also use ``yield`` to implement coroutines: ``yield``
 suspends the function, while ``(yield)`` (yes, parentheses are required)
 receives a value, as in Python.
 
-.. code:: seq
+.. code:: codon
 
     def mysum[T](start: T):
         m = start
@@ -632,7 +632,7 @@ Codon can easily call functions from C and Python.
 
 Let's import some C functions:
 
-.. code:: seq
+.. code:: codon
 
     from C import pow(float) -> float
     pow(2.0)  # 4.0
@@ -648,7 +648,7 @@ by running ``codon run -l path/to/dynamic/library.so ...``.
 
 Hate linking? You can also use dyld library loading as follows:
 
-.. code:: seq
+.. code:: codon
 
 
     LIBRARY = "mycoollib.so"
@@ -664,7 +664,7 @@ Hate linking? You can also use dyld library loading as follows:
 How about Python? If you have set the ``CODON_PYTHON`` environment variable as
 described in the first section, you can do:
 
-.. code:: seq
+.. code:: codon
 
     from python import mymodule.myfunction(str) -> int as foo
     print(foo("bar"))
@@ -672,7 +672,7 @@ described in the first section, you can do:
 Often you want to execute more complex Python code within Codon. To that
 end, you can use Codon's ``@python`` annotation:
 
-.. code:: seq
+.. code:: codon
 
     @python
     def scipy_here_i_come(i: List[List[float]]) -> List[float]:
@@ -696,7 +696,7 @@ Of course, Codon supports classes! However, you must declare class members
 and their types in the preamble of each class (like you would do with
 Python's dataclasses).
 
-.. code:: seq
+.. code:: codon
 
     class Foo:
         x: int
@@ -716,7 +716,7 @@ Python's dataclasses).
 
 Unlike Python, Codon supports method overloading:
 
-.. code:: seq
+.. code:: codon
 
     class Foo:
         x: int
@@ -741,7 +741,7 @@ Unlike Python, Codon supports method overloading:
 
 Classes can also be generic:
 
-.. code:: seq
+.. code:: codon
 
     class Container[T]:
         l: List[T]
@@ -751,7 +751,7 @@ Classes can also be generic:
 
 Classes create objects that are passed by reference:
 
-.. code:: seq
+.. code:: codon
 
     class Point:
         x: int
@@ -768,7 +768,7 @@ method and use ``q = copy(p)`` instead.
 
 Codon also supports pass-by-value types via the ``@tuple`` annotation:
 
-.. code:: seq
+.. code:: codon
 
     @tuple
     class Point:
@@ -782,7 +782,7 @@ Codon also supports pass-by-value types via the ``@tuple`` annotation:
 However, **by-value objects are immutable!**. The following code will
 not compile:
 
-.. code:: seq
+.. code:: codon
 
     p = Point(1, 2)
     p.x = 2  # error! immutable type
@@ -792,7 +792,7 @@ Under the hood, types are basically named tuples (equivalent to Python's
 
 You can also add methods to types:
 
-.. code:: seq
+.. code:: codon
 
     @tuple
     class Point:
@@ -814,7 +814,7 @@ Type extensions
 Suppose you have a class that lacks a method or an operator that might
 be really useful. You can extend that class and add the method at compile time:
 
-.. code:: seq
+.. code:: codon
 
     class Foo:
         ...
@@ -863,7 +863,7 @@ LLVM functions
 In certain cases, you might want to use LLVM features that are not directly
 accessible with Codon. This can be done with the ``@llvm`` attribute:
 
-.. code:: seq
+.. code:: codon
 
     @llvm
     def llvm_add[T](a: T, b: T) -> T:

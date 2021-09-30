@@ -6,7 +6,7 @@ Cookbook
 Subsequence extraction
 ----------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     myseq  = s'CAATAGAGACTAAGCATTAT'
     sublen = 5
@@ -22,7 +22,7 @@ Subsequence extraction
 k-mer extraction
 ----------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     myseq = s'CAATAGAGACTAAGCATTAT'
     stride = 2
@@ -37,7 +37,7 @@ k-mer extraction
 Reverse complementation
 -----------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     # sequences
     s = s'GGATC'
@@ -50,7 +50,7 @@ Reverse complementation
 k-mer Hamming distance
 ----------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     k1 = k'ACGTC'
     k2 = k'ACTTA'
@@ -60,7 +60,7 @@ k-mer Hamming distance
 k-mer Hamming neighbors
 -----------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def neighbors(kmer):
         for i in range(len(kmer)):
@@ -73,7 +73,7 @@ k-mer Hamming neighbors
 k-mer minimizer
 ---------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def minimizer(s, k: Static[int]):
         assert len(s) >= k
@@ -88,7 +88,7 @@ k-mer minimizer
 de Bruijn edge
 --------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def de_bruijn_edge(a, b):
         a = a |> base(0, k'A')  # reset first base: [T]GAG -> [A]GAG
@@ -101,7 +101,7 @@ de Bruijn edge
 Count bases
 -----------
 
-.. code-block:: seq
+.. code-block:: codon
 
     @tuple
     class BaseCount:
@@ -128,7 +128,7 @@ Count bases
 Spaced seed search
 ------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def has_spaced_acgt(s):
         match s:
@@ -145,7 +145,7 @@ Spaced seed search
 Reverse-complement palindrome
 -----------------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def is_own_revcomp(s):
         match s:
@@ -162,7 +162,7 @@ Reverse-complement palindrome
 Sequence alignment
 ------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     # default parameters
     s1 = s'CGCGAGTCTT'
@@ -178,7 +178,7 @@ Sequence alignment
 Reading FASTA/FASTQ
 -------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     # iterate over everything
     for r in FASTA('genome.fa'):
@@ -202,7 +202,7 @@ Reading FASTA/FASTQ
 Reading paired-end FASTQ
 ------------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     for r1, r2 in zip(FASTQ('reads_1.fq'), FASTQ('reads_2.fq')):
         print(r1.name, r2.name)
@@ -212,7 +212,7 @@ Reading paired-end FASTQ
 Parallel FASTQ processing
 -------------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     def process(s: seq):
         ...
@@ -227,7 +227,7 @@ Parallel FASTQ processing
 Reading SAM/BAM/CRAM
 --------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     # iterate over everything
     for r in SAM('alignments.sam'):
@@ -258,7 +258,7 @@ Reading SAM/BAM/CRAM
 DNA to protein translation
 --------------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     dna = s'AGGTCTAACGGC'
     protein = dna |> translate
@@ -267,7 +267,7 @@ DNA to protein translation
 Reading protein sequences from FASTA
 ------------------------------------
 
-.. code-block:: seq
+.. code-block:: codon
 
     for s in pFASTA('seqs.fasta') |> seqs:
         print(s)

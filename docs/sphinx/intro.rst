@@ -70,7 +70,7 @@ Compile-time definitions
 
 ``codon`` allows for compile-time definitions via the ``-D`` flag. For example, in the following code:
 
-.. code-block:: seq
+.. code-block:: codon
 
     from bio import *
     print(Kmer[SEED_LEN]())
