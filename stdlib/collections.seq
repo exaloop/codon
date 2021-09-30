@@ -338,7 +338,7 @@ class Counter[T](Dict[T,int]):
 
 @extend
 class Dict:
-    def __init__(self, other: Counter[K]):
+    def __init__(self: Dict[K,int], other: Counter[K]):
         self._init_from(other)
 
 def namedtuple():  # internal
