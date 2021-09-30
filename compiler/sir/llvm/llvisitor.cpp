@@ -14,7 +14,7 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 #define SEQ_VERSION_STRING()                                                           \
-  ("seqc version " STR(SEQ_VERSION_MAJOR) "." STR(SEQ_VERSION_MINOR) "." STR(          \
+  ("codon version " STR(SEQ_VERSION_MAJOR) "." STR(SEQ_VERSION_MINOR) "." STR(          \
       SEQ_VERSION_PATCH))
 
 extern "C" void seq_gc_add_roots(void *start, void *end);
@@ -485,7 +485,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   for (const auto &lib : libs) {
     command.push_back("-l" + lib);
   }
-  std::vector<std::string> extraArgs = {"-lseqrt", "-lomp", "-lpthread", "-ldl",
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
                                         "-lz",     "-lm",   "-lc",       "-o",
                                         filename,  objFile};
   for (const auto &arg : extraArgs) {
@@ -518,14 +518,6 @@ void LLVMVisitor::compile(const std::string &filename,
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
-
-  std::vector<std::string> functionNames;
-  if (db.debug) {
-    for (auto &f : *module) {
-      functionNames.push_back(f.getName().str());
-    }
-  }
-
   llvm::Function *main = module->getFunction("main");
   llvm::EngineBuilder EB(std::move(module));
   EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
@@ -685,7 +677,7 @@ LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatchBeforeLoop() {
  */
 
 void LLVMVisitor::visit(const Module *x) {
-  module = std::make_unique<llvm::Module>("seq", context);
+  module = std::make_unique<llvm::Module>("codon", context);
   module->setTargetTriple(
       llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
   module->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
@@ -834,7 +826,7 @@ void LLVMVisitor::visit(const Module *x) {
   {
     auto *proxyMainTy = llvm::FunctionType::get(builder.getVoidTy(), {}, false);
     auto *proxyMain = llvm::cast<llvm::Function>(
-        module->getOrInsertFunction("seq.proxy_main", proxyMainTy).getCallee());
+        module->getOrInsertFunction("codon.proxy_main", proxyMainTy).getCallee());
     proxyMain->setLinkage(llvm::GlobalValue::PrivateLinkage);
     proxyMain->setPersonalityFn(
         llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
@@ -2054,7 +2046,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   builder.SetInsertPoint(externalExcBlock);
   builder.CreateUnreachable();
 
-  // reroute Seq exceptions
+  // reroute Codon exceptions
   builder.SetInsertPoint(tc.exceptionRouteBlock);
   unwindException = builder.CreateExtractValue(builder.CreateLoad(tc.catchStore), 0);
   llvm::Value *excVal = builder.CreatePointerCast(

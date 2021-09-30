@@ -14,7 +14,6 @@
 
 #include "parser/common.h"
 #include "parser/parser.h"
-#include "seq/seq.h"
 #include "sir/llvm/llvisitor.h"
 #include "sir/transform/manager.h"
 #include "sir/transform/pass.h"
@@ -187,8 +186,6 @@ public:
         exit(EXIT_FAILURE);
 
       ir::transform::PassManager pm;
-      Seq seqDSL;
-      seqDSL.addIRPasses(&pm, /*debug=*/false); // always add all passes
       pm.registerPass(std::make_unique<TestOutliner>());
       pm.registerPass(std::make_unique<TestInliner>());
       pm.run(module);
@@ -315,44 +312,20 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Combine(
       testing::Values(
         "core/helloworld.seq",
-        // "core/llvmops.seq",
         "core/arithmetic.seq",
         "core/parser.seq",
         "core/generics.seq",
         "core/generators.seq",
         "core/exceptions.seq",
-        "core/big.seq",
         "core/containers.seq",
         "core/trees.seq",
         "core/range.seq",
         "core/bltin.seq",
         "core/arguments.seq",
         "core/match.seq",
-        "core/kmers.seq",
-        "core/formats.seq",
-        "core/proteins.seq",
-        "core/align.seq",
         "core/serialization.seq",
-        "core/bwtsa.seq",
+        "core/pipeline.seq",
         "core/empty.seq"
-      ),
-      testing::Values(true, false),
-      testing::Values(""),
-      testing::Values(""),
-      testing::Values(0),
-      testing::Values(false)
-    ),
-    getTestNameFromParam);
-
-INSTANTIATE_TEST_SUITE_P(
-    PipelineTests, SeqTest,
-    testing::Combine(
-      testing::Values(
-        "pipeline/parallel.seq",
-        "pipeline/prefetch.seq",
-        "pipeline/revcomp_opt.seq",
-        "pipeline/canonical_opt.seq",
-        "pipeline/interalign.seq"
       ),
       testing::Values(true, false),
       testing::Values(""),

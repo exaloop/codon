@@ -1,5 +1,4 @@
 from internal.file import _gz_errcheck
-from bio.seq import seq
 from internal.gc import sizeof, atomic
 
 def pickle[T](x: T, jar: Jar):
@@ -91,19 +90,6 @@ class str:
         p = Ptr[byte](n)
         _read_raw(jar, p, n)
         return str(p, n)
-
-@extend
-class seq:
-    def __pickle__(self, jar: Jar):
-        _write(jar, self.len)
-        _write_raw(jar, self.ptr, abs(self.len))
-
-    def __unpickle__(jar: Jar):
-        n = _read(jar, int)
-        m = abs(n)
-        p = Ptr[byte](m)
-        _read_raw(jar, p, m)
-        return seq(p, n)
 
 @extend
 class List:

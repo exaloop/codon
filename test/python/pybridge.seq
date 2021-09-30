@@ -20,7 +20,7 @@ def test_conversions():
         (4,5),
         {'a': 3.14, 'b': 2.123},
         True,
-        {s'ACGT'},
+        {'ACGT'},
         [['abc'], ['1.1', '2.2'], list[str]()]
     )
     assert T.__from_py__(t) == ({'a': 3.14, 'b': 2.123}, (222, 3.14))

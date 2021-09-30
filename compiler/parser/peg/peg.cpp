@@ -32,8 +32,8 @@ static shared_ptr<peg::Grammar> ompGrammar(nullptr);
 
 shared_ptr<peg::Grammar> initParser() {
   auto g = make_shared<peg::Grammar>();
-  init_seq_rules(*g);
-  init_seq_actions(*g);
+  init_codon_rules(*g);
+  init_codon_actions(*g);
   ~(*g)["NLP"] <= peg::usr([](const char *s, size_t n, peg::SemanticValues &, any &dt) {
     return any_cast<ParseContext &>(dt).parens ? 0 : (n >= 1 && s[0] == '\\' ? 1 : -1);
   });

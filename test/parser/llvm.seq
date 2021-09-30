@@ -167,8 +167,6 @@ print z.__lt__(byte(5)) #: False
 print z.__gt__(byte(5)) #: True
 print z.__le__(byte(5)) #: False
 print z.__ge__(byte(5)) #: True
-from bio.types import *
-print z.comp() #: T
 
 #%% array,barebones
 a = Array[float](5)

@@ -77,10 +77,6 @@ class str:
         return 'PXF ' + s + " " + str(N)
 print pxf'HELLO' #: PXF HELLO 5
 
-#%% seq
-a = s'ACGT'
-print a #: ACGT
-
 #%% raw_str,barebones
 print 'a\\b' #: a\b
 print r'a\tb' #: a\tb

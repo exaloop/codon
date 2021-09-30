@@ -1,6 +1,5 @@
 #include "dsl/plugins.h"
 #include "parser/parser.h"
-#include "seq/seq.h"
 #include "sir/llvm/llvisitor.h"
 #include "sir/transform/manager.h"
 #include "sir/transform/pass.h"
@@ -118,10 +117,6 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   std::vector<std::string> disabledOptsVec(disabledOpts);
   seq::ir::transform::PassManager pm(isDebug, disabledOptsVec);
   seq::PluginManager plm(&pm, isDebug);
-
-  // load Seq
-  seq::Seq seqDSL;
-  plm.load(&seqDSL);
 
   LOG_TIME("[T] ir-setup = {:.1f}",
            std::chrono::duration_cast<std::chrono::milliseconds>(

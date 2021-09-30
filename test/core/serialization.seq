@@ -1,4 +1,3 @@
-from bio import *
 import pickle
 
 @tuple
@@ -91,7 +90,6 @@ def test_non_atomic_set_pickle(x: set[A]):
 
     assert y == copy
 
-K = Kmer[8]
 test_pickle(42)
 test_pickle(3.14)
 test_pickle(True)
@@ -103,22 +101,19 @@ test_pickle({11, 22, 33, 44})
 test_pickle({11: 1.1, 22: 2.2, 33: 3.3, 44: 4.4})
 test_pickle('hello world')
 test_pickle('')
-test_pickle(s'ACGTAAGG')
-test_pickle(~s'ACGTAAGG')
-test_pickle(K(s'ACGTAAGG'))
 test_pickle(MyType(i32(-1001), 'xyz', 5.55))
 test_pickle((A(1, ['x', 'abc', '1.1.1.1']), 42, A(1000, ['foo'])))
-test_pickle([K(s'ACGTAAGG'), K(s'TATCTGTT')])
-test_pickle(list[K]())
-test_pickle({K(s'ACGTAAGG'), K(s'CATTTTTA')})
-test_pickle({~s'ACGTAAGG'})
-test_pickle({K(s'ACGTAAGG'), K(s'TTTTGGTT')})
-test_pickle(set[K]())
-test_pickle({K(s'ACGTAAGG'): 99, K(s'TTATTCTT'): 42})
-test_pickle(dict[K,K]())
-test_pickle({~s'ACGTAAGG': ~s'ACGTAAGG'})
-test_pickle((42, 3.14, True, byte(90), s'ACGTAAGG', K(s'ACGTAAGG')))
-test_pickle({i32(42): [[{s'ACG', s'ACGTAGCG', ~s'ACGTAGCG'}, {s'ACG', s'ACGTAGCG', ~s'ACGTAGCG'}], list[set[seq]](), [set[seq]()], [{~s''}, {s'', s'GCGC'}]]})
+test_pickle(['ACGTAAGG', 'TATCTGTT'])
+test_pickle(list[Int[8]]())
+test_pickle({'ACGTAAGG', 'CATTTTTA'})
+test_pickle({'ACGTAAGG'})
+test_pickle({'ACGTAAGG', 'TTTTGGTT'})
+test_pickle(set[Int[8]]())
+test_pickle({'ACGTAAGG': 99, 'TTATTCTT': 42})
+test_pickle(dict[Int[8],Int[8]]())
+test_pickle({'ACGTAAGG': 'ACGTAAGG'})
+test_pickle((42, 3.14, True, byte(90), 'ACGTAAGG', 'ACGTAAGG'))
+test_pickle({i32(42): [[{'ACG', 'ACGTAGCG', 'ACGTAGCG'}, {'ACG', 'ACGTAGCG', 'ACGTAGCG'}], list[set[str]](), [set[str]()], [{''}, {'', 'GCGC'}]]})
 
 test_non_atomic_list_pickle([[3,2,1], [-1,-2,-3], [111,999,888,777], list[int]()])
 test_non_atomic_dict_pickle({'first': [3,2,1], 'second': [-1,-2,-3], 'third': [111,999,888,777], 'fourth:': list[int]()})
