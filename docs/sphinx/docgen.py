@@ -17,23 +17,23 @@ root=os.path.abspath(sys.argv[1])
 print(f"Generating documentation for {root}...")
 
 
-# 1. Call seqc -docstr and get a documentation in JSON format
+# 1. Call codon -docstr and get a documentation in JSON format
 def load_json(directory):
-    # Get all seq files in the directory
+    # Get all codon files in the directory
     files=[]
     for root,_,items in os.walk(directory):
         for f in items:
-            if f.endswith('.seq'):
+            if f.endswith('.codon'):
                 files.append(os.path.abspath(os.path.join(root,f)))
     files='\n'.join(files)
-    s=sp.run(['../../build/seqc','doc'],stdout=sp.PIPE,input=files.encode('utf-8'))
+    s=sp.run(['../../build/codon','doc'],stdout=sp.PIPE,input=files.encode('utf-8'))
     if s.returncode!=0:
-        raise ValueError('seqc failed')
+        raise ValueError('codon failed')
     return json.loads(s.stdout.decode('utf-8'))
 
 
 j=load_json(root)
-print(f" - Done with seqc")
+print(f" - Done with codon")
 # with open('x.json','w') as f:
 #     json.dump(j,f,indent=2)
 
@@ -48,7 +48,7 @@ for mid,module in modules.items():
         print(root,mid,module)
         directory=os.path.relpath(directory,root)  # remove the prefix
         os.makedirs(f"stdlib/{directory}",exist_ok=True)
-        if name.endswith('.seq'):
+        if name.endswith('.codon'):
             name=name[:-4]
         if name!='__init__':
             parsed_modules[directory].add((name,mid))
@@ -57,7 +57,7 @@ for directory,modules in parsed_modules.items():
     module=directory.replace('/','.')
     with open(f'stdlib/{directory}/index.rst','w') as f:
         if module!='.':
-            print(f".. seq:module:: {module}\n",file=f)
+            print(f".. codon:module:: {module}\n",file=f)
             print(f"{module}",file=f)
         else:
             print("Standard Library Reference",file=f)
@@ -143,11 +143,11 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
     if name=='__init__':
         file,mode=f'stdlib/{directory}/index.rst','a'
     with open(file,mode) as f:
-        print(f".. seq:module:: {module}\n",file=f)
-        print(f":seq:mod:`{module}`",file=f)
+        print(f".. codon:module:: {module}\n",file=f)
+        print(f":codon:mod:`{module}`",file=f)
         print("-"*(len(module)+11)+"\n",file=f)
         directory_prefix=directory+'/' if directory!='.' else ''
-        print(f"Source code: `{directory_prefix}{name}.seq <https://github.com/seq-lang/seq/blob/master/stdlib/{directory}/{name}.seq>`_\n",file=f)
+        print(f"Source code: `{directory_prefix}{name}.codon <https://github.com/exaloop.io/codon/blob/master/stdlib/{directory}/{name}.codon>`_\n",file=f)
         if 'doc' in j[mid]:
             print(parse_docstr(j[mid]['doc']),file=f)
 
@@ -162,13 +162,13 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
             if v['kind']=='class':
                 if v['name'].endswith('Error'):
                     v["type"]="exception"
-                f.write(f'.. seq:{v["type"]}:: {v["name"]}')
+                f.write(f'.. codon:{v["type"]}:: {v["name"]}')
                 if 'generics' in v and v['generics']:
                     f.write(f'[{",".join(v["generics"])}]')
             elif v['kind']=='function':
-                f.write(f'.. seq:function:: {v["name"]}{parse_fn(v)}')
+                f.write(f'.. codon:function:: {v["name"]}{parse_fn(v)}')
             elif v['kind']=='variable':
-                f.write(f'.. seq:data:: {v["name"]}')
+                f.write(f'.. codon:data:: {v["name"]}')
             # if v['kind'] == 'class' and v['type'] == 'extension':
             #     f.write(f'**`{getLink(v["parent"])}`**')
             # else:
@@ -202,7 +202,7 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
                     print('   **Properties:**\n',file=f)
                     for c in props:
                         v=j[c]
-                        f.write(f'      .. seq:attribute:: {v["name"]}\n')
+                        f.write(f'      .. codon:attribute:: {v["name"]}\n')
                         if 'doc' in v:
                             f.write("\n"+parse_docstr(v['doc'],4)+"\n\n")
                         f.write("\n")
@@ -212,7 +212,7 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
                     print('   **Magic methods:**\n',file=f)
                     for c in magics:
                         v=j[c]
-                        f.write(f'      .. seq:method:: {v["name"]}{parse_fn(v,True)}\n')
+                        f.write(f'      .. codon:method:: {v["name"]}{parse_fn(v,True)}\n')
                         f.write('         :noindex:\n')
                         if 'doc' in v:
                             f.write("\n"+parse_docstr(v['doc'],4)+"\n\n")
@@ -222,7 +222,7 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
                     print('   **Methods:**\n',file=f)
                     for c in methods:
                         v=j[c]
-                        f.write(f'      .. seq:method:: {v["name"]}{parse_fn(v,True)}\n')
+                        f.write(f'      .. codon:method:: {v["name"]}{parse_fn(v,True)}\n')
                         if 'doc' in v:
                             f.write("\n"+parse_docstr(v['doc'],4)+"\n\n")
                         f.write("\n")

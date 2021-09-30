@@ -432,7 +432,7 @@ ambiguous base (``N``) match score, ``gapo`` is the gap open cost and ``gape``
 the gap extension cost (i.e. a gap of length ``k`` costs ``gapo + (k * gape)``).
 There are many more parameters as well, controlling factors like alignment bandwidth,
 Z-drop, global/extension alignment and more; check the
-`standard library reference <https://docs.seq-lang.org/stdlib/bio/align.html#bio.align.seq.align>`_
+`standard library reference <https://docs.exaloop.io/stdlib/bio/align.html#bio.align.seq.align>`_
 for further details.
 
 For now, we'll use a simple ``query.align(target)``:

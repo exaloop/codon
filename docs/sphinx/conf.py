@@ -18,15 +18,15 @@ import sys
 sys.path.insert(0, os.path.abspath("./_ext"))
 def setup(sphinx):
     sys.path.insert(0, os.path.abspath('.'))
-    from seqlex import SeqLexer
-    sphinx.add_lexer("seq", SeqLexer)
+    from codonlex import CodonLexer
+    sphinx.add_lexer("codon", CodonLexer)
 
 
 # -- Project information -----------------------------------------------------
 
-project = u'Seq'
-copyright = u'2019-2021, seq-lang'
-author = u'seq-lang'
+project = u'Codon'
+copyright = u'2019-2021, codon'
+author = u'codon'
 
 # The short X.Y version
 version = u'0.11'
@@ -51,6 +51,7 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.intersphinx',
     'seq'
+    'codon'
     # 'breathe',
     # 'exhale'
 ]
@@ -95,7 +96,7 @@ html_theme = 'sphinx_book_theme'
 # documentation.
 #
 html_theme_options = {
-    "repository_url": "https://github.com/seq-lang/seq",
+    "repository_url": "https://github.com/exaloop/codon",
     "repository_branch": "develop",
     "path_to_docs": "docs/sphinx/",
     "use_repository_button": True,
@@ -120,7 +121,7 @@ html_sidebars = { '**': ['globaltoc.html', 'relations.html', 'searchbox.html'], 
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'seqdoc'
+htmlhelp_basename = 'codondoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -147,7 +148,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'seq.tex', u'seq Documentation',
+    (master_doc, 'codon.tex', u'Codon Documentation',
      u'arshajii', 'manual'),
 ]
 
@@ -157,7 +158,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'seq', u'Seq Documentation',
+    (master_doc, 'codon', u'Codon Documentation',
      [author], 1)
 ]
 
@@ -168,18 +169,18 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'seq', u'Seq Documentation',
-     author, 'seq', 'a language for bioinformatics',
+    (master_doc, 'codon', u'Codon Documentation',
+     author, 'codon', 'a language for bioinformatics',
      'Miscellaneous'),
 ]
 
 
 # -- Extension configuration -------------------------------------------------
 breathe_projects = {
-    'Seq': '../doxygen/xml'
+    'Codon': '../doxygen/xml'
 }
 
-breathe_default_project = 'Seq'
+breathe_default_project = 'Codon'
 
 exhale_args = {
     # These arguments are required
