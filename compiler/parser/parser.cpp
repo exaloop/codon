@@ -38,7 +38,7 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
                   bool isCode, int isTest, int startLine,
                   const std::unordered_map<std::string, std::string> &defines) {
   try {
-    auto d = getenv("SEQ_DEBUG");
+    auto d = getenv("CODON_DEBUG");
     if (d) {
       auto s = string(d);
       _dbg_level |= s.find('t') != string::npos ? (1 << 0) : 0; // time

@@ -14,8 +14,8 @@
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
-  out << "Seq " << SEQ_VERSION_MAJOR << "." << SEQ_VERSION_MINOR << "."
-      << SEQ_VERSION_PATCH << "\n";
+  out << CODON_VERSION_MAJOR << "." << CODON_VERSION_MINOR << "." << CODON_VERSION_PATCH
+      << "\n";
 }
 
 const std::vector<std::string> &supportedExtensions() {
