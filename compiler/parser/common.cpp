@@ -236,9 +236,9 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
       }
     if (!isStdLib && startswith(s, module0Root))
       root = module0Root;
-    seqassert(startswith(s, root) && endswith(s, ".seq"),
+    seqassert(startswith(s, root) && endswith(s, ".codon"),
               "bad path substitution: {}, {}", s, root);
-    auto module = s.substr(root.size() + 1, s.size() - root.size() - 5);
+    auto module = s.substr(root.size() + 1, s.size() - root.size() - 7);
     std::replace(module.begin(), module.end(), '/', '.');
     return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
                                                          : ImportFile::STDLIB,
@@ -249,12 +249,12 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
   if (!forceStdlib) {
     realpath(relativeTo.c_str(), abs);
     auto parent = dirname(abs);
-    paths.push_back(format("{}/{}.seq", parent, what));
-    paths.push_back(format("{}/{}/__init__.seq", parent, what));
+    paths.push_back(format("{}/{}.codon", parent, what));
+    paths.push_back(format("{}/{}/__init__.codon", parent, what));
   }
   for (auto &p : getStdLibPaths(argv0)) {
-    paths.push_back(format("{}/{}.seq", p, what));
-    paths.push_back(format("{}/{}/__init__.seq", p, what));
+    paths.push_back(format("{}/{}.codon", p, what));
+    paths.push_back(format("{}/{}/__init__.codon", p, what));
   }
   for (auto &p : paths) {
     if (!realpath(p.c_str(), abs))

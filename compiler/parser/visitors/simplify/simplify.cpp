@@ -49,11 +49,11 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
     auto stdlibPath =
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     if (!stdlibPath ||
-        stdlibPath->path.substr(stdlibPath->path.size() - 12) != "__init__.seq")
+        stdlibPath->path.substr(stdlibPath->path.size() - 14) != "__init__.codon")
       ast::error("cannot load standard library");
     if (barebones)
       stdlibPath->path =
-          stdlibPath->path.substr(0, stdlibPath->path.size() - 5) + "test__.seq";
+          stdlibPath->path.substr(0, stdlibPath->path.size() - 7) + "test__.codon";
     stdlib->setFilename(stdlibPath->path);
     cache->imports[STDLIB_IMPORT] = {stdlibPath->path, stdlib};
 

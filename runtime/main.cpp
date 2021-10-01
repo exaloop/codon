@@ -19,7 +19,7 @@ void versMsg(llvm::raw_ostream &out) {
 }
 
 const std::vector<std::string> &supportedExtensions() {
-  static const std::vector<std::string> extensions = {".seq", ".py"};
+  static const std::vector<std::string> extensions = {".codon", ".py"};
   return extensions;
 }
 
@@ -85,7 +85,7 @@ ProcessResult processSource(const std::vector<const char *> &args) {
                         return hasExtension(input, ext);
                       }) == exts.end())
     seq::compilationError(
-        "input file is expected to be a .seq/.py file, or '-' for stdin");
+        "input file is expected to be a .codon/.py file, or '-' for stdin");
 
   std::unordered_map<std::string, std::string> defmap;
   for (const auto &define : defines) {
