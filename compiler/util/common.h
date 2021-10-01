@@ -1,8 +1,8 @@
 #pragma once
 
-#define SEQ_VERSION_MAJOR 0
-#define SEQ_VERSION_MINOR 11
-#define SEQ_VERSION_PATCH 0
+#define CODON_VERSION_MAJOR 0
+#define CODON_VERSION_MINOR 11
+#define CODON_VERSION_PATCH 0
 
 #include <cassert>
 #include <climits>

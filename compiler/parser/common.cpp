@@ -209,12 +209,12 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
   auto getStdLibPaths = [](const string &argv0) {
     vector<string> paths;
     char abs[PATH_MAX + 1];
-    if (auto c = getenv("SEQ_PATH")) {
+    if (auto c = getenv("CODON_PATH")) {
       if (realpath(c, abs))
         paths.push_back(abs);
     }
     if (!argv0.empty())
-      for (auto loci : {"../lib/seq/stdlib", "../stdlib", "stdlib"}) {
+      for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
         strncpy(abs, executable_path(argv0.c_str()).c_str(), PATH_MAX);
         if (realpath(format("{}/{}", dirname(abs), loci).c_str(), abs))
           paths.push_back(abs);

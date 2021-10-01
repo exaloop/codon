@@ -17,14 +17,6 @@ CPMAddPackage(
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL ON)
 CPMAddPackage(
-    NAME xz
-    GIT_REPOSITORY "https://git.tukaani.org/xz.git"
-    VERSION 5.2.5
-    OPTIONS "BUILD_SHARED_LIBS OFF"
-            "CMAKE_POSITION_INDEPENDENT_CODE ON")
-set_target_properties(xz PROPERTIES EXCLUDE_FROM_ALL ON)
-set_target_properties(xzdec PROPERTIES EXCLUDE_FROM_ALL ON)
-CPMAddPackage(
     NAME bdwgc
     GITHUB_REPOSITORY "ivmai/bdwgc"
     VERSION 8.0.5
@@ -84,90 +76,4 @@ if(backtrace_ADDED)
     set_target_properties(backtrace PROPERTIES
         COMPILE_FLAGS "-funwind-tables -D_GNU_SOURCE"
         POSITION_INDEPENDENT_CODE ON)
-endif()
-CPMAddPackage(
-    NAME bz2
-    URL "https://www.sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
-    DOWNLOAD_ONLY YES)
-if(bz2_ADDED)
-    add_library(bz2 STATIC
-        "${bz2_SOURCE_DIR}/blocksort.c"
-        "${bz2_SOURCE_DIR}/huffman.c"
-        "${bz2_SOURCE_DIR}/crctable.c"
-        "${bz2_SOURCE_DIR}/randtable.c"
-        "${bz2_SOURCE_DIR}/compress.c"
-        "${bz2_SOURCE_DIR}/decompress.c"
-        "${bz2_SOURCE_DIR}/bzlib.c"
-        "${bz2_SOURCE_DIR}/libbz2.def")
-    set_target_properties(bz2 PROPERTIES
-        COMPILE_FLAGS "-D_FILE_OFFSET_BITS=64"
-        POSITION_INDEPENDENT_CODE ON)
-endif()
-CPMAddPackage(
-    NAME htslib
-    VERSION 1.13
-    URL "https://github.com/samtools/htslib/releases/download/1.13/htslib-1.13.tar.bz2"
-    DOWNLOAD_ONLY YES)
-if(htslib_ADDED)
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/scripts/htslib-config.h.cmake
-        ${htslib_SOURCE_DIR}/config.h
-        COPYONLY)
-    write_file(${htslib_SOURCE_DIR}/version.h
-        "#define HTS_VERSION_TEXT \"${CPM_PACKAGE_htslib_VERSION}\"")
-    write_file(${htslib_SOURCE_DIR}/config_vars.h
-        "#define HTS_CC \"\"\n"
-        "#define HTS_CPPFLAGS \"\"\n"
-        "#define HTS_CFLAGS \"\"\n"
-        "#define HTS_LDFLAGS \"\"\n"
-        "#define HTS_LIBS \"\"\n")
-    add_library(htslib STATIC
-        "${htslib_SOURCE_DIR}/kfunc.c"
-        "${htslib_SOURCE_DIR}/kstring.c"
-        "${htslib_SOURCE_DIR}/bcf_sr_sort.c"
-        "${htslib_SOURCE_DIR}/bgzf.c"
-        "${htslib_SOURCE_DIR}/errmod.c"
-        "${htslib_SOURCE_DIR}/faidx.c"
-        "${htslib_SOURCE_DIR}/header.c"
-        "${htslib_SOURCE_DIR}/hfile.c"
-        "${htslib_SOURCE_DIR}/hts.c"
-        "${htslib_SOURCE_DIR}/hts_expr.c"
-        "${htslib_SOURCE_DIR}/hts_os.c"
-        "${htslib_SOURCE_DIR}/md5.c"
-        "${htslib_SOURCE_DIR}/multipart.c"
-        "${htslib_SOURCE_DIR}/probaln.c"
-        "${htslib_SOURCE_DIR}/realn.c"
-        "${htslib_SOURCE_DIR}/regidx.c"
-        "${htslib_SOURCE_DIR}/region.c"
-        "${htslib_SOURCE_DIR}/sam.c"
-        "${htslib_SOURCE_DIR}/synced_bcf_reader.c"
-        "${htslib_SOURCE_DIR}/vcf_sweep.c"
-        "${htslib_SOURCE_DIR}/tbx.c"
-        "${htslib_SOURCE_DIR}/textutils.c"
-        "${htslib_SOURCE_DIR}/thread_pool.c"
-        "${htslib_SOURCE_DIR}/vcf.c"
-        "${htslib_SOURCE_DIR}/vcfutils.c"
-        "${htslib_SOURCE_DIR}/cram/cram_codecs.c"
-        "${htslib_SOURCE_DIR}/cram/cram_decode.c"
-        "${htslib_SOURCE_DIR}/cram/cram_encode.c"
-        "${htslib_SOURCE_DIR}/cram/cram_external.c"
-        "${htslib_SOURCE_DIR}/cram/cram_index.c"
-        "${htslib_SOURCE_DIR}/cram/cram_io.c"
-        "${htslib_SOURCE_DIR}/cram/cram_stats.c"
-        "${htslib_SOURCE_DIR}/cram/mFILE.c"
-        "${htslib_SOURCE_DIR}/cram/open_trace_file.c"
-        "${htslib_SOURCE_DIR}/cram/pooled_alloc.c"
-        "${htslib_SOURCE_DIR}/cram/string_alloc.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/arith_dynamic.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/fqzcomp_qual.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/htscodecs.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/pack.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/rANS_static4x16pr.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/rANS_static.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/rle.c"
-        "${htslib_SOURCE_DIR}/htscodecs/htscodecs/tokenise_name3.c")
-    target_include_directories(htslib BEFORE PRIVATE "${htslib_SOURCE_DIR}" "${bz2_SOURCE_DIR}" "${xz_SOURCE_DIR}/src/liblzma/api")
-    set_target_properties(htslib PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
-        VISIBILITY_INLINES_HIDDEN ON)
 endif()

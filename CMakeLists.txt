@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(Seq)
+project(Codon)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
@@ -21,10 +21,10 @@ include(${CMAKE_SOURCE_DIR}/scripts/deps.cmake)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
-    set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/seq")
+    set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
     set(STATIC_LIBCPP "")
 else()
-    set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/seq")
+    set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
     set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
@@ -32,55 +32,41 @@ add_executable(peg2cpp compiler/util/peg2cpp.cpp compiler/util/peglib.h)
 target_link_libraries(peg2cpp Threads::Threads)
 add_custom_command(
     OUTPUT  seq_rules.cpp
-    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/compiler/parser/peg/grammar.peg seq_rules.cpp seq
+    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/compiler/parser/peg/grammar.peg seq_rules.cpp codon
     DEPENDS peg2cpp compiler/parser/peg/grammar.peg)
 add_custom_command(
     OUTPUT  omp_rules.cpp
     COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/compiler/parser/peg/openmp.peg omp_rules.cpp omp
     DEPENDS peg2cpp compiler/parser/peg/openmp.peg)
 
-# Seq runtime library
-set(SEQRT_FILES
+# Codon runtime library
+set(CODONRT_FILES
     runtime/lib.h
     runtime/lib.cpp
-    runtime/exc.cpp
-    runtime/sw/ksw2.h
-    runtime/sw/ksw2_extd2_sse.cpp
-    runtime/sw/ksw2_exts2_sse.cpp
-    runtime/sw/ksw2_extz2_sse.cpp
-    runtime/sw/ksw2_gg2_sse.cpp
-    runtime/sw/intersw.h
-    runtime/sw/intersw.cpp)
-add_library(seqrt SHARED ${SEQRT_FILES})
-add_dependencies(seqrt bz2 liblzma zlibstatic gc htslib backtrace)
-set_source_files_properties(runtime/sw/intersw.cpp PROPERTIES COMPILE_FLAGS -mavx)
-target_include_directories(seqrt PRIVATE ${backtrace_SOURCE_DIR} "${gc_SOURCE_DIR}/include" runtime)
-target_link_libraries(seqrt PRIVATE omp backtrace ${STATIC_LIBCPP} LLVMSupport)
+    runtime/exc.cpp)
+add_library(codonrt SHARED ${CODONRT_FILES})
+add_dependencies(codonrt zlibstatic gc backtrace)
+target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR} "${gc_SOURCE_DIR}/include" runtime)
+target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP} LLVMSupport)
 if(APPLE)
-    target_link_libraries(seqrt PRIVATE
-        -Wl,-force_load,$<TARGET_FILE:bz2>
-        -Wl,-force_load,$<TARGET_FILE:liblzma>
+    target_link_libraries(codonrt PRIVATE
         -Wl,-force_load,$<TARGET_FILE:zlibstatic>
-        -Wl,-force_load,$<TARGET_FILE:gc>
-        -Wl,-force_load,$<TARGET_FILE:htslib> )
+        -Wl,-force_load,$<TARGET_FILE:gc> )
 else()
-    target_link_libraries(seqrt PRIVATE
+    target_link_libraries(codonrt PRIVATE
         -Wl,--whole-archive
-        $<TARGET_FILE:bz2>
-        $<TARGET_FILE:liblzma>
         $<TARGET_FILE:zlibstatic>
         $<TARGET_FILE:gc>
-        $<TARGET_FILE:htslib>
         -Wl,--no-whole-archive)
 endif()
-add_custom_command(TARGET seqrt POST_BUILD
+add_custom_command(TARGET codonrt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp> ${CMAKE_BINARY_DIR})
 
-# Seq compiler library
+# Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
-set(SEQ_HPPFILES
+set(CODON_HPPFILES
     compiler/dsl/dsl.h
     compiler/dsl/plugins.h
     compiler/parser/ast.h
@@ -102,9 +88,6 @@ set(SEQ_HPPFILES
     compiler/parser/visitors/typecheck/typecheck.h
     compiler/parser/visitors/typecheck/typecheck_ctx.h
     compiler/parser/visitors/visitor.h
-    compiler/seq/pipeline.h
-    compiler/seq/revcomp.h
-    compiler/seq/seq.h
     compiler/sir/analyze/analysis.h
     compiler/sir/analyze/dataflow/cfg.h
     compiler/sir/analyze/dataflow/dominator.h
@@ -175,7 +158,7 @@ set(SEQ_HPPFILES
     compiler/util/fmt/posix.h
     compiler/util/fmt/printf.h
     compiler/util/fmt/ranges.h)
-set(SEQ_CPPFILES
+set(CODON_CPPFILES
     compiler/dsl/plugins.cpp
     compiler/parser/ast/expr.cpp
     compiler/parser/ast/stmt.cpp
@@ -198,9 +181,6 @@ set(SEQ_CPPFILES
     compiler/parser/visitors/typecheck/typecheck_infer.cpp
     compiler/parser/visitors/typecheck/typecheck_stmt.cpp
     compiler/parser/visitors/visitor.cpp
-    compiler/seq/pipeline.cpp
-    compiler/seq/revcomp.cpp
-    compiler/seq/seq.cpp
     compiler/sir/attribute.cpp
     compiler/sir/analyze/analysis.cpp
     compiler/sir/analyze/dataflow/cfg.cpp
@@ -250,8 +230,8 @@ set(SEQ_CPPFILES
     compiler/sir/var.cpp
     compiler/util/common.cpp
     compiler/util/fmt/format.cpp)
-add_library(seq SHARED ${SEQ_HPPFILES})
-target_sources(seq PRIVATE ${SEQ_CPPFILES} seq_rules.cpp omp_rules.cpp)
+add_library(codonc SHARED ${CODON_HPPFILES})
+target_sources(codonc PRIVATE ${CODON_CPPFILES} seq_rules.cpp omp_rules.cpp)
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     set_source_files_properties(seq_rules.cpp compiler/parser/peg/peg.cpp PROPERTIES COMPILE_FLAGS "-O2")
 endif()
@@ -283,16 +263,16 @@ llvm_map_components_to_libnames(LLVM_LIBS
     Vectorize
     Passes)
 if(APPLE)
-    target_link_libraries(seq PRIVATE ${LLVM_LIBS} dl seqrt)
+    target_link_libraries(codonc PRIVATE ${LLVM_LIBS} dl codonrt)
 else()
-    target_link_libraries(seq PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl seqrt)
+    target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt)
 endif()
 
-# Seq command-line tool
-add_executable(seqc runtime/main.cpp)
-target_link_libraries(seqc ${STATIC_LIBCPP} seq Threads::Threads)
+# Codon command-line tool
+add_executable(codon runtime/main.cpp)
+target_link_libraries(codon ${STATIC_LIBCPP} codonc Threads::Threads)
 
-# Seq test
+# Codon test
 # Download and unpack googletest at configure time
 include(FetchContent)
 FetchContent_Declare(googletest
@@ -301,7 +281,7 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
-set(SEQ_TEST_CPPFILES
+set(CODON_TEST_CPPFILES
     test/main.cpp
     test/sir/analyze/dominator.cpp
     test/sir/analyze/reaching.cpp
@@ -317,11 +297,7 @@ set(SEQ_TEST_CPPFILES
     test/sir/value.cpp
     test/sir/var.cpp
     test/types.cpp)
-add_executable(seqtest ${SEQ_TEST_CPPFILES})
-target_include_directories(seqtest PRIVATE test/sir "${gc_SOURCE_DIR}/include")
-target_link_libraries(seqtest seq seqrt gtest_main)
-target_compile_definitions(seqtest PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
-
-include(GoogleTest)
-gtest_discover_tests(seqtest)
-enable_testing()
+add_executable(codon_test ${CODON_TEST_CPPFILES})
+target_include_directories(codon_test PRIVATE test/sir "${gc_SOURCE_DIR}/include")
+target_link_libraries(codon_test codonc codonrt gtest_main)
+target_compile_definitions(codon_test PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")

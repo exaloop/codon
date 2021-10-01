@@ -236,15 +236,12 @@ else:
     print 'nope'
 
 #%% match
-from bio import *
 def foo(x):
     match x:
         case 1:
             print 'int'
         case 2 ... 10:
             print 'range'
-        case 'AC_T':
-            print 'seq'
         case 'ACGT':
             print 'string'
         case (a, 1):
@@ -259,15 +256,13 @@ def foo(x):
             print 'list 3', z
         case [1, _, ..., zz] | (1, zz):
             print 'list 4', zz
-        case (1 ... 10, s := ('AC_T', 1 ... 4)):
+        case (1 ... 10, s := ('ACGT', 1 ... 4)):
             print 'complex', s
         case _:
             print 'else'
 foo(1) #: int
 foo(5) #: range
 foo('ACGT') #: string
-foo(s'ACGT') #: seq
-foo(k'ACGT') #: seq
 foo((9, 1)) #: tuple_wild 9
 foo(List[int]()) #: list
 foo([List[int]()]) #: list list
@@ -276,7 +271,7 @@ foo([1, 3]) #: list 3 3
 foo([1, 5]) #: else
 foo([1, 5, 10]) #: list 4 10
 foo((1, 33)) #: list 4 33
-foo((9, (k'ACGT', 3))) #: complex (ACGT, 3)
+foo((9, ('ACGT', 3))) #: complex (ACGT, 3)
 foo(range(10)) #: else
 
 #%% match_err_1,barebones
@@ -385,7 +380,7 @@ print log(5.5)  #: 1.70475
 
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
-RT = "./libseqrt." + dlext()
+RT = "./libcodonrt." + dlext()
 from C import RT.seq_str_int(int) -> str as sp
 print sp(65)  #: 65
 

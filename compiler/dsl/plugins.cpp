@@ -25,8 +25,8 @@ PluginManager::Error PluginManager::load(const std::string &path) {
 }
 
 PluginManager::Error PluginManager::load(DSL *dsl) {
-  if (!dsl ||
-      !dsl->isVersionSupported(SEQ_VERSION_MAJOR, SEQ_VERSION_MINOR, SEQ_VERSION_PATCH))
+  if (!dsl || !dsl->isVersionSupported(CODON_VERSION_MAJOR, CODON_VERSION_MINOR,
+                                       CODON_VERSION_PATCH))
     return Error::UNSUPPORTED_VERSION;
 
   dsl->addIRPasses(pm, debug);

@@ -633,20 +633,3 @@ def test_counter():
             got = [v for k,v in d.most_common()]
             assert exp == got
 test_counter()
-
-@test
-def test_interval_tree():
-    from bio.intervals import IntervalTree
-    t = IntervalTree()
-    t.add("chr1", 20, 30)
-    t.add("chr2", 10, 30)
-    t.add("chr1", 10, 25)
-    t.index()
-    overlaps = {(a.start, a.end) for a in t.overlap("chr1", 15, 22)}
-    assert overlaps == {(20, 30), (10, 25)}
-    assert "chr1" in t
-    assert "chr2" in t
-    assert "chr3" not in t
-    assert {(a.start, a.end) for a in t} == {(20, 30), (10, 30), (10, 25)}
-    assert len(t) == 3
-test_interval_tree()

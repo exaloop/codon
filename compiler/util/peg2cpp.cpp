@@ -1000,7 +1000,7 @@ int main(int argc, char **argv) {
 
   string start;
   peg::Rules dummy = {};
-  if (string(argv[3]) == "seq")
+  if (string(argv[3]) == "codon")
     dummy["NLP"] = peg::usr([](const char *, size_t, peg::SemanticValues &,
                                any &) -> size_t { return -1; });
   bool enablePackratParsing;
