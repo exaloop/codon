@@ -81,7 +81,7 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
         auto fo = fopen("_dump_simplify.sexp", "w");
         fmt::print(fo, "{}\n", transformed->toString(0));
         fclose(fo);
-        fo = fopen("_dump_simplify.seq", "w");
+        fo = fopen("_dump_simplify.codon", "w");
         fmt::print(fo, "{}", ast::FormatVisitor::apply(transformed, cache));
         fclose(fo);
       }
@@ -94,7 +94,7 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
                duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
                    1000.0);
       if (_dbg_level) {
-        auto fo = fopen("_dump_typecheck.seq", "w");
+        auto fo = fopen("_dump_typecheck.codon", "w");
         fmt::print(fo, "{}", ast::FormatVisitor::apply(typechecked, cache));
         fclose(fo);
         fo = fopen("_dump_typecheck.sexp", "w");

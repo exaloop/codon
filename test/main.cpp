@@ -298,12 +298,12 @@ auto getTypeTests(const vector<string> &files) {
 INSTANTIATE_TEST_SUITE_P(
     TypeTests, SeqTest,
     testing::ValuesIn(getTypeTests({
-      "parser/simplify_expr.seq",
-      "parser/simplify_stmt.seq",
-      "parser/typecheck_expr.seq",
-      "parser/typecheck_stmt.seq",
-      "parser/types.seq",
-      "parser/llvm.seq"
+      "parser/simplify_expr.codon",
+      "parser/simplify_stmt.codon",
+      "parser/typecheck_expr.codon",
+      "parser/typecheck_stmt.codon",
+      "parser/types.codon",
+      "parser/llvm.codon"
     })),
     getTypeTestNameFromParam);
 
@@ -311,21 +311,21 @@ INSTANTIATE_TEST_SUITE_P(
     CoreTests, SeqTest,
     testing::Combine(
       testing::Values(
-        "core/helloworld.seq",
-        "core/arithmetic.seq",
-        "core/parser.seq",
-        "core/generics.seq",
-        "core/generators.seq",
-        "core/exceptions.seq",
-        "core/containers.seq",
-        "core/trees.seq",
-        "core/range.seq",
-        "core/bltin.seq",
-        "core/arguments.seq",
-        "core/match.seq",
-        "core/serialization.seq",
-        "core/pipeline.seq",
-        "core/empty.seq"
+        "core/helloworld.codon",
+        "core/arithmetic.codon",
+        "core/parser.codon",
+        "core/generics.codon",
+        "core/generators.codon",
+        "core/exceptions.codon",
+        "core/containers.codon",
+        "core/trees.codon",
+        "core/range.codon",
+        "core/bltin.codon",
+        "core/arguments.codon",
+        "core/match.codon",
+        "core/serialization.codon",
+        "core/pipeline.codon",
+        "core/empty.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -339,16 +339,16 @@ INSTANTIATE_TEST_SUITE_P(
     StdlibTests, SeqTest,
     testing::Combine(
       testing::Values(
-        "stdlib/str_test.seq",
-        "stdlib/math_test.seq",
-        "stdlib/itertools_test.seq",
-        "stdlib/bisect_test.seq",
-        "stdlib/random_test.seq",
-        "stdlib/statistics_test.seq",
-        "stdlib/sort_test.seq",
-        "stdlib/heapq_test.seq",
-        "stdlib/operator_test.seq",
-        "python/pybridge.seq"
+        "stdlib/str_test.codon",
+        "stdlib/math_test.codon",
+        "stdlib/itertools_test.codon",
+        "stdlib/bisect_test.codon",
+        "stdlib/random_test.codon",
+        "stdlib/statistics_test.codon",
+        "stdlib/sort_test.codon",
+        "stdlib/heapq_test.codon",
+        "stdlib/operator_test.codon",
+        "python/pybridge.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -362,15 +362,15 @@ INSTANTIATE_TEST_SUITE_P(
     OptTests, SeqTest,
     testing::Combine(
         testing::Values(
-            "transform/canonical.seq",
-            "transform/dict_opt.seq",
-            "transform/folding.seq",
-            "transform/for_lowering.seq",
-            "transform/io_opt.seq",
-            "transform/inlining.seq",
-            "transform/omp.seq",
-            "transform/outlining.seq",
-            "transform/str_opt.seq"
+            "transform/canonical.codon",
+            "transform/dict_opt.codon",
+            "transform/folding.codon",
+            "transform/for_lowering.codon",
+            "transform/io_opt.codon",
+            "transform/inlining.codon",
+            "transform/omp.codon",
+            "transform/outlining.codon",
+            "transform/str_opt.codon"
         ),
         testing::Values(true, false),
         testing::Values(""),

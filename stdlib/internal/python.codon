@@ -44,7 +44,7 @@ def init():
     if _PY_INITIALIZED:
         return
 
-    LD = os.getenv('SEQ_PYTHON', default='libpython.' + dlext())
+    LD = os.getenv('CODON_PYTHON', default='libpython.' + dlext())
 
     global PyUnicode_AsEncodedString
     PyUnicode_AsEncodedString = _dlsym(LD, "PyUnicode_AsEncodedString")
