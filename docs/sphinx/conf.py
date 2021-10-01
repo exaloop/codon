@@ -16,10 +16,6 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("./_ext"))
-def setup(sphinx):
-    sys.path.insert(0, os.path.abspath('.'))
-    from codonlex import CodonLexer
-    sphinx.add_lexer("codon", CodonLexer)
 
 
 # -- Project information -----------------------------------------------------
@@ -50,8 +46,6 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.githubpages',
     'sphinx.ext.intersphinx',
-    'seq'
-    'codon'
     # 'breathe',
     # 'exhale'
 ]

@@ -34,7 +34,7 @@ Let's say we have a Python function defined in *mymodule.py*:
 We can call this function in Codon using ``from python import`` and indicating the appropriate
 call and return types:
 
-.. code-block:: codon
+.. code-block:: python
 
     from python import mymodule.multiply(int, int) -> int
     print(multiply(3, 4))  # 12
@@ -46,7 +46,7 @@ call and return types:
 
 Codon programs can contain functions that will be executed by Python via ``pydef``:
 
-.. code-block:: codon
+.. code-block:: python
 
     @python
     def multiply(a: int, b: int) -> int:
@@ -56,7 +56,7 @@ Codon programs can contain functions that will be executed by Python via ``pydef
 
 This makes calling Python modules like NumPy very easy:
 
-.. code-block:: codon
+.. code-block:: python
 
     @python
     def myrange(n: int) -> List[int]:

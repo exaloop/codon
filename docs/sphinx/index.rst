@@ -28,7 +28,6 @@ Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.i
    parallel
    python
    embed
-   cookbook
    build
    stdlib/index
 

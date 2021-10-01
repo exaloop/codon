@@ -5,7 +5,7 @@ Parallelism and Multithreading
 
 Codon supports parallelism and multithreading via OpenMP out of the box. Here's an example:
 
-.. code-block:: codon
+.. code-block:: python
 
     @par
     for i in range(10):
@@ -16,7 +16,7 @@ By default, parallel loops will use all available threads, or use the number of 
 specified by the ``OMP_NUM_THREADS`` environment variable. A specific thread number can
 be given directly on the ``@par`` line as well:
 
-.. code-block:: codon
+.. code-block:: python
 
     @par(num_threads=5)
     for i in range(10):
@@ -33,7 +33,7 @@ be given directly on the ``@par`` line as well:
 Other OpenMP parameters like ``private``, ``shared`` or ``reduction``, are inferred
 automatically by the compiler. For example, the following loop
 
-.. code-block:: codon
+.. code-block:: python
 
     total = 0
     @par
@@ -45,7 +45,7 @@ will automatically generate a reduction for variable ``a``.
 Here is an example that finds the sum of prime numbers up to a user-defined limit, using
 a parallel loop on 16 threads with a dynamic schedule and chunk size of 100:
 
-.. code-block:: codon
+.. code-block:: python
 
     from sys import argv
 
@@ -73,7 +73,7 @@ the factors of an integer takes more time for larger integers, we use a dynamic 
 ``@par`` also supports C/C++ OpenMP pragma strings. For example, the ``@par`` line in the
 above example can also be written as:
 
-.. code-block:: codon
+.. code-block:: python
 
     # same as: @par(schedule='dynamic', chunk_size=100, num_threads=16)
     @par('schedule(dynamic, 100) num_threads(16)')
@@ -101,7 +101,7 @@ include:
 
 Here is an example for reducing a new ``Vector`` type:
 
-.. code-block:: codon
+.. code-block:: python
 
     @tuple
     class Vector:
@@ -125,7 +125,7 @@ OpenMP constructs
 
 All of OpenMP's API functions are accessible directly in Codon. For example:
 
-.. code-block:: codon
+.. code-block:: python
 
     import openmp as omp
     print(omp.get_num_threads())
@@ -134,7 +134,7 @@ All of OpenMP's API functions are accessible directly in Codon. For example:
 OpenMP's *critical*, *master*, *single* and *ordered* constructs can be applied via the
 corresponding decorators:
 
-.. code-block:: codon
+.. code-block:: python
 
     import openmp as omp
 
@@ -163,7 +163,7 @@ corresponding decorators:
 
 For finer-grained locking, consider using the locks from the ``threading`` module:
 
-.. code-block:: codon
+.. code-block:: python
 
     from threading import Lock
     lock = Lock()  # or RLock for re-entrant lock

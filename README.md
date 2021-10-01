@@ -33,7 +33,7 @@ Codon is a programming language for computationally intensive workloads. With a 
 
 Codon is able to outperform Python code by up to 160x. Codon can further beat equivalent C/C++ code by up to 2x without any manual interventions, and also natively supports parallelism out of the box. Implementation details and benchmarks are discussed [in our paper](https://dl.acm.org/citation.cfm?id=3360551).
 
-Learn more by following the [tutorial](https://docs.exaloop.io/tutorial) or from the [cookbook](https://docs.exaloop.io/cookbook).
+Learn more by following the [tutorial](https://docs.exaloop.io/tutorial).
 
 ## Examples
 

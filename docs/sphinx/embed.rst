@@ -3,7 +3,7 @@ Calling Codon from C/C++
 
 Calling C/C++ from Codon is quite easy with ``from C import``, but Codon can also be called from C/C++ code. To make a Codon function externally visible, simply annotate it with ``@export``:
 
-.. code-block:: codon
+.. code-block:: python
 
     @export
     def foo(n: int):
@@ -54,7 +54,6 @@ The following table shows the conversions between Codon and C/C++ types:
 ``bool``      ``bool``
 ``byte``      ``int8_t``
 ``str``       ``{int64_t, char*}``
-``seq``       ``{int64_t, char*}``
 ``class``     Pointer to corresponding tuple
 ``@tuple``    Struct of fields
 ============  ============

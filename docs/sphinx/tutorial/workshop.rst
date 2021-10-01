@@ -133,7 +133,7 @@ SAM, BAM, etc.
 Let's write a program to read our FASTQ file and print each record's name and sequence
 on a single line:
 
-.. code:: seq
+.. code:: python
 
     from sys import argv
     from bio import *
@@ -174,7 +174,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section1.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 1
@@ -197,7 +197,7 @@ the mapping process.
 Let's build a dictionary that maps each k-mer to its position ("locus") on the
 reference sequence:
 
-.. code:: seq
+.. code:: python
 
     from sys import argv
     from bio import *
@@ -216,7 +216,7 @@ let's build our index in such a way that a k-mer is considered "equal" to its
 reverse complement. One easy way to do this is by using "canonical" k-mers, i.e.
 the minimum of a k-mer and its reverse complement:
 
-.. code:: seq
+.. code:: python
 
     from sys import argv
     from bio import *
@@ -233,7 +233,7 @@ each time we perform read mapping, since it only depends on the (fixed) referenc
 sequence. So, as a last step, let's dump the index to a file using the ``pickle``
 module:
 
-.. code:: seq
+.. code:: python
 
     import pickle
     import gzip
@@ -259,7 +259,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section2.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 2
@@ -292,7 +292,7 @@ k-mers support a particular locus.
 
 The first step is to load the index:
 
-.. code:: seq
+.. code:: python
 
     from sys import argv
     from bio import *
@@ -315,7 +315,7 @@ Then, we just iterate over ``candidates`` and output positions supported by
 2 or more k-mers. Finally, we clear ``candidates`` before processing the next
 read:
 
-.. code:: seq
+.. code:: python
 
     candidates = {}  # position -> count mapping
     for record in FASTQ(argv[2]):
@@ -366,7 +366,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section3.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 3
@@ -409,7 +409,7 @@ mismatches, insertions and deletions.
 Luckily, Seq makes sequence alignment easy: to align sequence ``q``
 against sequence ``t``, you can just do:
 
-.. code:: seq
+.. code:: python
 
     aln = q @ t
 
@@ -423,7 +423,7 @@ By default, `Levenshtein distance <https://en.wikipedia.org/wiki/Levenshtein_dis
 used, meaning mismatch and gap costs are both 1, while match costs are zero. More
 control over alignment parameters can be achieved using the ``align`` method:
 
-.. code:: seq
+.. code:: python
 
     aln = q.align(t, a=2, b=4, ambig=0, gapo=4, gape=2)
 
@@ -437,7 +437,7 @@ for further details.
 
 For now, we'll use a simple ``query.align(target)``:
 
-.. code:: seq
+.. code:: python
 
     candidates = {}  # position -> count mapping
     for record in FASTQ(argv[2]):
@@ -497,7 +497,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section4.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 4
@@ -550,7 +550,7 @@ a pipeline with the following stages:
 
 We can write this as a pipeline in Seq as follows:
 
-.. code:: seq
+.. code:: python
 
     def find_candidates(record):
         candidates = {}  # position -> count mapping
@@ -581,14 +581,14 @@ domain-specific optimizations on pipelines, one of which we focus on in the next
 Parallelism can be achieved using the parallel pipe operator, ``||>``, which
 tells the compiler that all subsequent stages can be executed in parallel:
 
-.. code:: seq
+.. code:: python
 
     FASTQ(argv[2]) |> iter ||> find_candidates |> align_and_output
 
 Since the full program also involves loading the index, let's time the main
 pipeline using the ``timing`` module:
 
-.. code:: seq
+.. code:: python
 
     import timing
     with timing('mapping'):
@@ -610,7 +610,7 @@ Often, batching reads into larger blocks and processing those blocks in parallel
 yield better performance, especially if each read is quick to process. This is also
 very easy to do in Seq:
 
-.. code:: seq
+.. code:: python
 
     def process_block(block):
         block |> iter |> find_candidates |> align_and_output
@@ -637,7 +637,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section5.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 5
@@ -695,7 +695,7 @@ optimized alignment kernel.
 In Seq, we just need one additional function annotation to tell the compiler
 to perform this optimization:
 
-.. code:: seq
+.. code:: python
 
     @inter_align
     def align_and_output(t):
@@ -703,7 +703,7 @@ to perform this optimization:
 
 Let's run the program with and without this optimization:
 
-.. code:: seq
+.. code:: python
 
     # without @inter_align
     seqc run section5.seq data/chr22.fa data/reads.fq > out.txt
@@ -723,7 +723,7 @@ Full code listing
 
 :download:`click to download <../../workshop/section6.seq>`
 
-.. code:: seq
+.. code:: python
 
     # SeqMap
     # Seq workshop -- Section 6

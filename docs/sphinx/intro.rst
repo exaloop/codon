@@ -70,9 +70,8 @@ Compile-time definitions
 
 ``codon`` allows for compile-time definitions via the ``-D`` flag. For example, in the following code:
 
-.. code-block:: codon
+.. code-block:: python
 
-    from bio import *
-    print(Kmer[SEED_LEN]())
+    print(Int[BIT_WIDTH]())
 
-``SEED_LEN`` can be specified on the command line as such: ``codon run -DSEED_LEN=10 myprogram.codon``.
+``BIT_WIDTH`` can be specified on the command line as such: ``codon run -DBIT_WIDTH=10 myprogram.codon``.
