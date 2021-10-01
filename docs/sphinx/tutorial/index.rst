@@ -6,4 +6,4 @@ Tutorial
 
    setup
    primer
-   workshop
+   pipelines
