@@ -41,4 +41,4 @@ download and build several smaller dependencies.
     cmake --build build --config Release
 
 This should produce the ``codon`` executable in the ``build`` directory, as well as
-``codontest`` which runs the test suite.
+``codon_test`` which runs the test suite.
