@@ -163,12 +163,12 @@ assert True, "blah"
 try:
     assert False
 except AssertionError as e:
-    print e.message[:15], e.message[-22:] #: Assert failed ( simplify_stmt.seq:164)
+    print e.message[:15], e.message[-24:] #: Assert failed ( simplify_stmt.codon:164)
 
 try:
     assert False, f"hehe {1}"
 except AssertionError as e:
-    print e.message[:23], e.message[-22:] #: Assert failed: hehe 1 ( simplify_stmt.seq:169)
+    print e.message[:23], e.message[-24:] #: Assert failed: hehe 1 ( simplify_stmt.codon:169)
 
 #%% print,barebones
 print 1,
@@ -399,7 +399,7 @@ from a import foo, bar as b
 foo() #: a.foo
 b() #: a.bar
 
-print str(a)[:9], str(a)[-16:] #: <module ' a/__init__.seq'>
+print str(a)[:9], str(a)[-18:] #: <module ' a/__init__.codon'>
 
 import a.b
 print a.b.c #: a.b.c
@@ -408,7 +408,7 @@ a.b.har() #: a.b.har a.b.__init__ a.b.c
 print a.b.A.B.b_foo().__add__(1) #: a.b.A.B.b_foo()
 #: 2
 
-print str(a.b)[:9], str(a.b)[-18:] #: <module ' a/b/__init__.seq'>
+print str(a.b)[:9], str(a.b)[-20:] #: <module ' a/b/__init__.codon'>
 
 from a.b import *
 har() #: a.b.har a.b.__init__ a.b.c
