@@ -6,7 +6,7 @@
 
 #include "module.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 int findAndReplace(id_t id, seq::ir::Value *newVal,
@@ -303,4 +303,4 @@ int PipelineFlow::doReplaceUsedValue(id_t id, Value *newValue) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

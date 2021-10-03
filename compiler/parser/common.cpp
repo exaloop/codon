@@ -13,7 +13,7 @@
 #include "parser/common.h"
 #include "util/fmt/format.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /// String and collection utilities
@@ -268,4 +268,4 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

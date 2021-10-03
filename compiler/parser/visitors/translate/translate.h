@@ -21,7 +21,7 @@
 #include "parser/visitors/visitor.h"
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
@@ -84,4 +84,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

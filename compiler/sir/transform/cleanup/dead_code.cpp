@@ -3,7 +3,7 @@
 #include "sir/analyze/module/side_effect.h"
 #include "sir/util/cloning.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace cleanup {
@@ -104,4 +104,4 @@ void DeadCodeCleanupPass::doReplacement(Value *og, Value *v) {
 } // namespace cleanup
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

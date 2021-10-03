@@ -16,7 +16,7 @@
 
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 struct Expr;
@@ -417,4 +417,4 @@ public:
 
 } // namespace types
 } // namespace ast
-} // namespace seq
+} // namespace codon

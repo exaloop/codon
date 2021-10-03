@@ -8,7 +8,7 @@
 #include "irtools.h"
 #include "operator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 namespace {
@@ -393,4 +393,4 @@ OutlineResult outlineRegion(BodiedFunc *parent, SeriesFlow *series, bool allowOu
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

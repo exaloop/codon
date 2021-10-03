@@ -8,7 +8,7 @@
 #include "value.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 /// Base for flows, which represent control flow.
@@ -608,7 +608,7 @@ protected:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {

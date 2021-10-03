@@ -6,7 +6,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/operator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -132,4 +132,4 @@ InlineResult inlineCall(CallInstr *v, bool aggressive) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

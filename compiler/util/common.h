@@ -61,7 +61,7 @@ extern int _level;
 void _seqassert(const char *expr_str, const char *file, int line,
                 const std::string &msg);
 
-namespace seq {
+namespace codon {
 struct SrcInfo {
   std::string file;
   int line;
@@ -104,4 +104,4 @@ void compilationError(const std::string &msg, const std::string &file = "",
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
                         int line = 0, int col = 0, bool terminate = false);
-} // namespace seq
+} // namespace codon

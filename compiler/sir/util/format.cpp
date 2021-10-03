@@ -8,7 +8,7 @@
 #include "util/fmt/ostream.h"
 #include "visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -443,7 +443,7 @@ std::ostream &format(std::ostream &os, const Node *node) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {

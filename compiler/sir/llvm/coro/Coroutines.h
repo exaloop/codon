@@ -5,7 +5,7 @@ class Pass;
 class PassManagerBuilder;
 } // namespace llvm
 
-namespace seq {
+namespace codon {
 namespace coro {
 
 /// Add all coroutine passes to appropriate extension points.
@@ -25,4 +25,4 @@ llvm::Pass *createCoroElideLegacyPass();
 llvm::Pass *createCoroCleanupLegacyPass();
 
 } // namespace coro
-} // namespace seq
+} // namespace codon

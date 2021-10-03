@@ -3,7 +3,7 @@
 #include "const_fold.h"
 #include "const_prop.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
@@ -40,4 +40,4 @@ bool FoldingPassGroup::shouldRepeat() const {
 } // namespace folding
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

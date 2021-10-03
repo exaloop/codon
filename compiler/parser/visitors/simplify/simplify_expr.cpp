@@ -19,7 +19,7 @@
 
 using fmt::format;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 ExprPtr SimplifyVisitor::transform(const ExprPtr &expr) {
@@ -792,4 +792,4 @@ ExprPtr SimplifyVisitor::makeAnonFn(vector<StmtPtr> stmts,
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -2,7 +2,7 @@
 
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -122,4 +122,4 @@ void ConstVisitor::visit(const dsl::types::CustomType *x) { defaultVisit(x); }
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

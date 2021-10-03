@@ -44,7 +44,7 @@
 #define FLAG_ATOMIC 2
 #define FLAG_TEST 4
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /// Forward declarations
@@ -245,4 +245,4 @@ public:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -15,7 +15,7 @@
 #include "value.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 
 namespace ast {
 struct Cache;
@@ -415,4 +415,4 @@ private:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

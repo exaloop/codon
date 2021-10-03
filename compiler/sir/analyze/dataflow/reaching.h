@@ -5,7 +5,7 @@
 #include "sir/analyze/analysis.h"
 #include "sir/analyze/dataflow/cfg.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace dataflow {
@@ -77,4 +77,4 @@ public:
 } // namespace dataflow
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

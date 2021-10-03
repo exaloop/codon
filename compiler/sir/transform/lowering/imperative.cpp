@@ -6,7 +6,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/matching.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace lowering {
@@ -140,4 +140,4 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
 } // namespace lowering
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

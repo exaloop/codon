@@ -13,7 +13,7 @@
 #include "sir/util/visitor.h"
 #include "sir/value.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace types {
 namespace {
@@ -205,4 +205,4 @@ std::string IntNType::getInstanceName(unsigned int len, bool sign) {
 
 } // namespace types
 } // namespace ir
-} // namespace seq
+} // namespace codon

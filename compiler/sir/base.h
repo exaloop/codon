@@ -14,7 +14,7 @@
 #include "util/fmt/format.h"
 #include "util/fmt/ostream.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 using id_t = std::int64_t;
@@ -330,7 +330,7 @@ template <typename Desired> bool isA(const Node *other) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {

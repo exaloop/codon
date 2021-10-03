@@ -9,7 +9,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/outlining.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace parallel {
@@ -970,4 +970,4 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 } // namespace parallel
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -18,7 +18,7 @@
 #include "sir/sir.h"
 #include "sir/types/types.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /**
@@ -77,4 +77,4 @@ public:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

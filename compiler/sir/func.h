@@ -4,7 +4,7 @@
 #include "util/iterators.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 /// SIR function
@@ -224,4 +224,4 @@ protected:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

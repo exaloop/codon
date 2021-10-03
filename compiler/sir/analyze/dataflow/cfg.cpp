@@ -5,7 +5,7 @@
 #include "sir/dsl/codegen.h"
 #include "sir/dsl/nodes.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace dataflow {
@@ -465,6 +465,6 @@ CFVisitor::Loop &CFVisitor::findLoop(id_t id) {
 } // namespace dataflow
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef DEFAULT_VISIT

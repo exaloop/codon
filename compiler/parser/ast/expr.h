@@ -17,7 +17,7 @@
 #include "parser/ast/types.h"
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 #define ACCEPT(X)                                                                      \
@@ -675,4 +675,4 @@ struct StackAllocExpr : Expr {
 #undef ACCEPT
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

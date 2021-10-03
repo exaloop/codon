@@ -10,7 +10,7 @@
 #define UNOP(o)                                                                        \
   [](auto x) -> auto { return o x; }
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
@@ -352,7 +352,7 @@ void FoldingPass::registerStandardRules(Module *m) {
 } // namespace folding
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef BINOP
 #undef UNOP

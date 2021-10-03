@@ -12,7 +12,7 @@
 #include "util/common.h"
 #include "value.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 class Func;
@@ -156,7 +156,7 @@ private:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {

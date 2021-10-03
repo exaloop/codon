@@ -24,7 +24,7 @@ extern "C" uint64_t seq_exc_class();
 
 static llvm::codegen::RegisterCodeGenFlags CFG;
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 std::string getNameForFunction(const Func *x) {
@@ -2474,4 +2474,4 @@ void LLVMVisitor::visit(const dsl::CustomInstr *x) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

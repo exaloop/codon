@@ -4,7 +4,7 @@
 
 #include "sir/analyze/analysis.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace module {
@@ -42,4 +42,4 @@ public:
 } // namespace module
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -22,7 +22,7 @@ using std::move;
 
 const int INDENT_SIZE = 2;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 Stmt::Stmt() : done(false), age(-1) {}
@@ -419,4 +419,4 @@ string UpdateStmt::toString(int) const {
 ACCEPT_IMPL(UpdateStmt, ASTVisitor);
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

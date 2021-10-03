@@ -25,7 +25,7 @@ using std::ostream;
 using std::stack;
 using std::static_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -573,4 +573,4 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

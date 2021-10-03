@@ -3,7 +3,7 @@
 #include "sir/transform/pass.h"
 #include "sir/util/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 
@@ -70,4 +70,4 @@ public:
 
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

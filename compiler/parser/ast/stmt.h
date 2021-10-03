@@ -17,7 +17,7 @@
 #include "parser/ast/types.h"
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 #define ACCEPT(X)                                                                      \
@@ -561,4 +561,4 @@ struct UpdateStmt : public Stmt {
 #undef ACCEPT
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

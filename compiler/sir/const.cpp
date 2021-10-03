@@ -1,6 +1,6 @@
 #include "const.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 const char Const::NodeId = 0;
@@ -16,4 +16,4 @@ int Const::doReplaceUsedType(const std::string &name, types::Type *newType) {
 const char TemplatedConst<std::string>::NodeId = 0;
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

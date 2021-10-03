@@ -19,7 +19,7 @@ using fmt::format;
 using std::dynamic_pointer_cast;
 using std::stack;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 TypeContext::TypeContext(shared_ptr<Cache> cache)
@@ -400,4 +400,4 @@ void TypeContext::dump(int pad) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

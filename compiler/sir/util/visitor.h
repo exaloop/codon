@@ -7,7 +7,7 @@
 #define VISIT(x) virtual void visit(seq::ir::x *)
 #define CONST_VISIT(x) virtual void visit(const seq::ir::x *)
 
-namespace seq {
+namespace codon {
 namespace ir {
 class Node;
 
@@ -235,7 +235,7 @@ public:
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef VISIT
 #undef CONST_VISIT

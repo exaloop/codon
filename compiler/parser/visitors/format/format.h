@@ -17,7 +17,7 @@
 #include "parser/common.h"
 #include "parser/visitors/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 class FormatVisitor : public CallbackASTVisitor<string, string> {
@@ -140,4 +140,4 @@ public:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

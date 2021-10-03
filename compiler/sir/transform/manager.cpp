@@ -21,7 +21,7 @@
 #include "sir/transform/pythonic/str.h"
 #include "util/common.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 
@@ -186,4 +186,4 @@ void PassManager::registerStandardPasses(bool debug) {
 
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

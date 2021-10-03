@@ -27,7 +27,7 @@ using std::ostream;
 using std::pair;
 using std::stack;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -187,4 +187,4 @@ SimplifyVisitor::SimplifyVisitor(shared_ptr<SimplifyContext> ctx,
     : ctx(move(ctx)), preamble(move(preamble)) {}
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

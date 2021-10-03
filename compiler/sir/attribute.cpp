@@ -2,7 +2,7 @@
 
 #include "util/fmt/ostream.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 const std::string KeyValueAttribute::AttributeName = "kvAttribute";
@@ -37,4 +37,4 @@ std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
 const std::string SrcInfoAttribute::AttributeName = "srcInfoAttribute";
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

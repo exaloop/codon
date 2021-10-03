@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -30,4 +30,4 @@ void stripPack(std::vector<Desired *> &dst, Desired &first, Args &&...args) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

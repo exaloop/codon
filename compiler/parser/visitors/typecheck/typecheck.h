@@ -21,7 +21,7 @@
 #include "parser/visitors/typecheck/typecheck_ctx.h"
 #include "parser/visitors/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
@@ -306,4 +306,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -14,7 +14,7 @@
 #include "parser/visitors/translate/translate_ctx.h"
 #include "parser/visitors/typecheck/typecheck_ctx.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 TranslateContext::TranslateContext(shared_ptr<Cache> cache, seq::ir::SeriesFlow *series,
@@ -72,4 +72,4 @@ seq::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
 seq::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

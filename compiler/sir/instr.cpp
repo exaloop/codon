@@ -3,7 +3,7 @@
 #include "module.h"
 #include "util/iterators.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 int findAndReplace(id_t id, seq::ir::Value *newVal,
@@ -262,4 +262,4 @@ int FlowInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

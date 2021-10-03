@@ -6,7 +6,7 @@
 #include "sir/value.h"
 #include "sir/var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace cleanup {
@@ -136,4 +136,4 @@ void ReplaceCleanupPass::run(Module *module) {
 } // namespace cleanup
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

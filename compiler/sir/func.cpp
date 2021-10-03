@@ -11,7 +11,7 @@
 #include "module.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 int findAndReplace(id_t id, seq::ir::Var *newVal, std::list<seq::ir::Var *> &values) {
@@ -130,4 +130,4 @@ int LLVMFunc::doReplaceUsedType(const std::string &name, types::Type *newType) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

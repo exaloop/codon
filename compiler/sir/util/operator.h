@@ -18,7 +18,7 @@
       processChildren(v);                                                              \
   }
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -199,6 +199,6 @@ private:
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef LAMBDA_VISIT

@@ -5,7 +5,7 @@
 #include "value.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 id_t IdMixin::currentId = 0;
@@ -31,4 +31,4 @@ int Node::replaceUsedVariable(Var *old, Var *newVar) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

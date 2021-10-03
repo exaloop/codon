@@ -14,7 +14,7 @@
 #include "parser/ast.h"
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /**
@@ -215,4 +215,4 @@ struct ReplaceASTVisitor : public ASTVisitor {
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

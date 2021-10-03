@@ -4,7 +4,7 @@
 #include "sir/analyze/module/global_vars.h"
 #include "sir/util/cloning.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
@@ -74,4 +74,4 @@ void ConstPropPass::handle(VarValue *v) {
 } // namespace folding
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

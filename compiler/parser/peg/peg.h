@@ -16,7 +16,7 @@
 #include "parser/cache.h"
 #include "util/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /// Parse a Seq code block with the appropriate file and position offsets.
@@ -33,4 +33,4 @@ vector<CallExpr::Arg> parseOpenMP(const shared_ptr<Cache> &cache, const string &
                                   const seq::SrcInfo &loc);
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

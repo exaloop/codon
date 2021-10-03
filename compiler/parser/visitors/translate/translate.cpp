@@ -29,7 +29,7 @@ using std::shared_ptr;
 using std::stack;
 using std::vector;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 TranslateVisitor::TranslateVisitor(shared_ptr<TranslateContext> ctx)
@@ -523,4 +523,4 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -20,7 +20,7 @@
 #include "parser/ctx.h"
 #include "parser/visitors/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 struct json {
@@ -89,4 +89,4 @@ public:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

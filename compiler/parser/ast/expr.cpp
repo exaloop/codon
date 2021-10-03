@@ -21,7 +21,7 @@
 using fmt::format;
 using std::move;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 Expr::Expr()
@@ -441,4 +441,4 @@ string StackAllocExpr::toString() const {
 ACCEPT_IMPL(StackAllocExpr, ASTVisitor);
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

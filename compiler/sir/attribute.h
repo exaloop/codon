@@ -12,7 +12,7 @@
 #include "util/fmt/format.h"
 #include "util/fmt/ostream.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 /// Base for SIR attributes.
@@ -103,4 +103,4 @@ private:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

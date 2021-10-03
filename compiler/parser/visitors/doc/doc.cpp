@@ -24,7 +24,7 @@ using std::ostream;
 using std::stack;
 using std::to_string;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 // clang-format off
@@ -449,4 +449,4 @@ void DocVisitor::visit(AssignStmt *stmt) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

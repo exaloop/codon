@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace seq {
+namespace codon {
 
 /// Base class for DSL plugins. Plugins will return an instance of
 /// a child of this class, which defines various characteristics of
@@ -69,4 +69,4 @@ public:
   virtual std::vector<BinaryKeyword> getBinaryKeywords() { return {}; }
 };
 
-} // namespace seq
+} // namespace codon

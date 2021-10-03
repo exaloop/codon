@@ -2,7 +2,7 @@
 
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -33,4 +33,4 @@ InlineResult inlineCall(CallInstr *v, bool aggressive = false);
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

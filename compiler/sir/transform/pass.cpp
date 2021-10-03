@@ -2,7 +2,7 @@
 
 #include "manager.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 
@@ -23,4 +23,4 @@ void PassGroup::setManager(PassManager *mng) {
 
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

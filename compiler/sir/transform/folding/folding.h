@@ -6,7 +6,7 @@
 #include "sir/transform/cleanup/dead_code.h"
 #include "sir/transform/cleanup/global_demote.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
@@ -38,4 +38,4 @@ public:
 } // namespace folding
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

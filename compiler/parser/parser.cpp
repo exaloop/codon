@@ -32,7 +32,7 @@ int _level = 0;
 int _dbg_level = 0;
 bool _isTest = false;
 
-namespace seq {
+namespace codon {
 
 ir::Module *parse(const string &argv0, const string &file, const string &code,
                   bool isCode, int isTest, int startLine,
@@ -156,4 +156,4 @@ void generateDocstr(const string &argv0) {
   }
 }
 
-} // namespace seq
+} // namespace codon

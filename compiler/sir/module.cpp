@@ -7,7 +7,7 @@
 
 #include "func.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 std::vector<seq::ast::types::TypePtr>
@@ -326,4 +326,4 @@ types::Type *Module::unsafeGetIntNType(unsigned int len, bool sign) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon
