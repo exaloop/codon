@@ -9,12 +9,13 @@
 *.dll
 *.exe
 *.o
+*.a
 *.obj
 *.so
+*.dylib
 *.pyc
 build/
 build_*/
-deps/
 
 # Packages #
 ############
@@ -49,23 +50,3 @@ Thumbs.db
 .idea
 .mypy_cache
 .vscode
-
-# Doxygen #
-###########
-dox
-
-# Ocaml #
-#########
-*.cm[iot]
-*.byte
-*.native
-*.dSYM
-*.conflicts
-.merlin
-
-# Testing playground #
-######################
-scratch.seq
-tmp
-_*
-gtest_parallel.py
