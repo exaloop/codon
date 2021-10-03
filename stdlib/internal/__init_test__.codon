@@ -1,0 +1,107 @@
+# Core library
+
+from internal.attributes import *
+from internal.types.ptr import *
+from internal.types.str import *
+from internal.types.int import *
+from internal.types.bool import *
+from internal.types.array import *
+from internal.types.error import *
+from internal.types.intn import *
+from internal.types.float import *
+from internal.types.byte import *
+from internal.types.generator import *
+from internal.types.optional import *
+from internal.types.slice import *
+from internal.types.range import *
+from internal.internal import *
+from internal.types.collections.list import *
+import internal.c_stubs as _C
+
+def next[T](g: Generator[T], default: Optional[T] = None):
+    if g.done():
+        if default:
+            return ~default
+        else:
+            raise StopIteration()
+    return g.next()
+
+from C import seq_print_full(str, cobj)
+
+class Set[T]:
+    items: List[T]
+    def __init__(self):
+        self.items = List[T]()
+    def __iter__(self):
+        yield from self.items
+    def add(self, what: T):
+        if what not in self.items:
+            self.items.append(what)
+    def __str__(self) -> str:
+        s = self.items.__str__()
+        s.ptr[0] = '{'.ptr[0]
+        s.ptr[s.len - 1] = '}'.ptr[0]
+        return s
+class Dict[K, V]:
+    keys: List[K]
+    values: List[V]
+    def __init__(self):
+        self.keys = List[K]()
+        self.values = List[V]()
+    def __iter__(self):
+        yield from self.keys
+    def items(self):
+        for i in range(self.keys.len):
+            yield (self.keys[i], self.values[i])
+    def __contains__(self, key: K):
+        return self.keys.index(key) != -1
+    def __getitem__(self, key: K):
+        i = self.keys.index(key)
+        return self.values[i]
+    def __setitem__(self, key: K, val: V):
+        i = self.keys.index(key)
+        if i != -1:
+            self.values[i] = val
+        else:
+            self.keys.append(key)
+            self.values.append(val)
+    def __len__(self):
+        return self.keys.len
+    def __str__(self):
+        n = self.__len__()
+        if n == 0:
+            return "{}"
+        else:
+            lst = List[str]()
+            lst.append("{")
+            first = True
+            for k, v in self.items():
+                if not first: lst.append(", ")
+                else: first = False
+                lst.append(str(k))
+                lst.append(": ")
+                lst.append(str(v))
+            lst.append("}")
+            return str.cat(lst)
+@extend
+class str:
+    def __getitem__(self, idx: int):
+        if idx < 0:
+            idx += self.len
+        if not (0 <= idx < self.len):
+            raise IndexError("string index out of range")
+        return str(self.ptr + idx, 1)
+    def __getitem__(self, s: Slice):
+        if s.start is None and s.stop is None and s.step is None:
+            return self.__copy__()
+        elif s.step is None:
+            start, stop, step, length = s.adjust_indices(self.len)
+            return str(self.ptr + start, length)
+        else:
+            raise ValueError("nope")
+
+
+from internal.builtin import *
+
+from openmp import Ident as __OMPIdent, for_par
+from internal.dlopen import dlsym as _dlsym

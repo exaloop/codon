@@ -252,8 +252,8 @@ try:
 except MyError:
     print "my"
 except OSError as o:
-    print "os", o._hdr[0], len(o._hdr[1]), o._hdr[3][-18:], o._hdr[4]
-    #: os std.internal.types.error.OSError 9 typecheck_stmt.seq 249
+    print "os", o._hdr[0], len(o._hdr[1]), o._hdr[3][-20:], o._hdr[4]
+    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 249
 finally:
     print "whoa"  #: whoa
 
