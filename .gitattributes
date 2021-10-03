@@ -1,3 +1,5 @@
+*.codon linguist-language=Python
+
 *.png binary
 *.jpg binary
 *.jpeg binary
