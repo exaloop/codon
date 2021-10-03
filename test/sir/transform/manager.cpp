@@ -3,7 +3,7 @@
 #include "sir/transform/manager.h"
 #include "sir/transform/pass.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 std::string ANALYSIS_KEY = "**test_analysis**";
 std::string PASS_KEY = "**test_pass**";

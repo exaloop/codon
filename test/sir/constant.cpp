@@ -4,7 +4,7 @@
 
 #include "util/fmt/format.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, ConstTypeQueryAndReplace) {
   auto *node = module->Nr<IntConst>(1, module->getIntType());

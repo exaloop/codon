@@ -23,7 +23,7 @@
 #include "util/common.h"
 #include "gtest/gtest.h"
 
-using namespace seq;
+using namespace codon;
 using namespace std;
 
 class TestOutliner : public ir::transform::OperatorPass {

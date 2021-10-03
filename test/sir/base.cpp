@@ -17,7 +17,7 @@ public:
 
 } // namespace
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, NodeNoReplacementRTTI) {
   auto *derived = module->Nr<IntConst>(1, module->getIntType());

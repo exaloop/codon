@@ -3,7 +3,7 @@
 #include "sir/analyze/dataflow/cfg.h"
 #include "sir/analyze/dataflow/reaching.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, RDAnalysisSimple) {
   auto *f = module->Nr<BodiedFunc>("test_f");

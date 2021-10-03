@@ -7,7 +7,7 @@
   #include "parser/peg/rules.h"
   #include <any>
   using namespace std;
-  using namespace seq::ast;
+  using namespace codon::ast;
 
   #define V0 VS[0]
   #define V1 VS[1]
