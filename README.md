@@ -5,20 +5,20 @@
 <h1 align="center"> Codon</h1>
 
 <p align="center">
-  <a href="https://github.com/seq-lang/seq/actions?query=branch%3Adevelop">
-    <img src="https://github.com/seq-lang/seq/workflows/Seq%20CI/badge.svg?branch=develop"
+  <a href="https://github.com/exaloop.io/codon/actions?query=branch%3Adevelop">
+    <img src="https://github.com/exaloop.io/codon/workflows/Codon%20CI/badge.svg?branch=develop"
          alt="Build Status">
   </a>
   <a href="https://gitter.im/seq-lang/seq?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge">
     <img src="https://badges.gitter.im/Join%20Chat.svg"
          alt="Gitter">
   </a>
-  <a href="https://github.com/seq-lang/seq/releases/latest">
-    <img src="https://img.shields.io/github/v/release/seq-lang/seq?sort=semver"
+  <a href="https://github.com/exaloop.io/codon/releases/latest">
+    <img src="https://img.shields.io/github/v/release/exaloop.io/codon?sort=semver"
          alt="Version">
   </a>
-  <a href="https://github.com/seq-lang/seq/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/seq-lang/seq"
+  <a href="https://github.com/exaloop.io/codon/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/exaloop.io/codon"
          alt="License">
   </a>
 </p>
