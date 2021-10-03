@@ -612,7 +612,7 @@ protected:
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {
-using seq::ir::Flow;
+using codon::ir::Flow;
 
 template <typename Char>
 struct formatter<Flow, Char> : fmt::v6::internal::fallback_formatter<Flow, Char> {};

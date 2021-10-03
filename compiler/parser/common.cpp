@@ -136,7 +136,7 @@ bool isdigit(const string &str) {
 /// AST utilities
 
 void error(const char *format) { throw exc::ParserException(format); }
-void error(const ::seq::SrcInfo &info, const char *format) {
+void error(const ::codon::SrcInfo &info, const char *format) {
   throw exc::ParserException(format, info);
 }
 

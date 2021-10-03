@@ -167,13 +167,13 @@ public:
 
   /// Helper to add source information.
   /// @param the source information
-  void setSrcInfo(seq::SrcInfo s) {
+  void setSrcInfo(codon::SrcInfo s) {
     setAttribute(std::make_unique<SrcInfoAttribute>(std::move(s)));
   }
   /// @return the src info
-  seq::SrcInfo getSrcInfo() const {
+  codon::SrcInfo getSrcInfo() const {
     return getAttribute<SrcInfoAttribute>() ? getAttribute<SrcInfoAttribute>()->info
-                                            : seq::SrcInfo();
+                                            : codon::SrcInfo();
   }
 
   /// @return a text representation of a reference to the object
@@ -334,7 +334,7 @@ template <typename Desired> bool isA(const Node *other) {
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {
-using seq::ir::Node;
+using codon::ir::Node;
 
 template <typename Char>
 struct formatter<Node, Char> : fmt::v6::internal::fallback_formatter<Node, Char> {};

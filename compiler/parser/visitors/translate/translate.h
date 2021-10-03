@@ -30,7 +30,7 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 
 public:
   explicit TranslateVisitor(shared_ptr<TranslateContext> ctx);
-  static seq::ir::Module *apply(shared_ptr<Cache> cache, StmtPtr stmts);
+  static codon::ir::Module *apply(shared_ptr<Cache> cache, StmtPtr stmts);
 
   ir::Value *transform(const ExprPtr &expr) override;
   ir::Value *transform(const StmtPtr &stmt) override;

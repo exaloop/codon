@@ -68,7 +68,7 @@ public:
 } // namespace
 
 InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressive,
-                            seq::SrcInfo info) {
+                            codon::SrcInfo info) {
   auto *bodied = cast<BodiedFunc>(func);
   if (!bodied)
     return {nullptr, {}};

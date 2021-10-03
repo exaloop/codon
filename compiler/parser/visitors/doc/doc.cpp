@@ -350,7 +350,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   resultStmt = to_string(id);
 }
 
-shared_ptr<json> DocVisitor::jsonify(const seq::SrcInfo &s) {
+shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
   return make_shared<json>(vector<string>{to_string(s.line), to_string(s.len)});
 }
 

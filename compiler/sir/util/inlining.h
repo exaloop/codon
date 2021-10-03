@@ -23,7 +23,7 @@ struct InlineResult {
 /// @param aggressive true if should inline complex functions
 /// @return the inlined result, nullptr if unsuccessful
 InlineResult inlineFunction(Func *func, std::vector<Value *> args,
-                            bool aggressive = false, seq::SrcInfo callInfo = {});
+                            bool aggressive = false, codon::SrcInfo callInfo = {});
 
 /// Inline the given call.
 /// @param v the instruction

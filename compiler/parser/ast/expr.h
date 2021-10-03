@@ -62,7 +62,7 @@ struct StaticValue {
  * A Seq AST expression.
  * Each AST expression is intended to be instantiated as a shared_ptr.
  */
-struct Expr : public seq::SrcObject {
+struct Expr : public codon::SrcObject {
   typedef Expr base_type;
 
   // private:
@@ -139,7 +139,7 @@ protected:
 using ExprPtr = shared_ptr<Expr>;
 
 /// Function signature parameter helper node (name: type = deflt).
-struct Param : public seq::SrcObject {
+struct Param : public codon::SrcObject {
   string name;
   ExprPtr type;
   ExprPtr deflt;

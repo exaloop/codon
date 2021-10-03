@@ -120,7 +120,7 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
   /// Convenience method that constructs a node.
   /// @param s source location.
   template <typename Tn, typename... Ts>
-  auto Nx(const seq::SrcObject *s, Ts &&...args) {
+  auto Nx(const codon::SrcObject *s, Ts &&...args) {
     auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(s->getSrcInfo());
     return t;

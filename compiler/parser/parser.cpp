@@ -115,7 +115,7 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
                duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
                    1000.0);
     if (_dbg_level) {
-      auto out = seq::ir::util::format(module);
+      auto out = codon::ir::util::format(module);
       std::ofstream os("_dump_sir.lisp");
       os << out;
       os.close();

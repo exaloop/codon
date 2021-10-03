@@ -448,6 +448,6 @@ std::ostream &format(std::ostream &os, const Node *node) {
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {
 template <typename Char>
-struct formatter<seq::ir::util::NodeFormatter, Char>
-    : fmt::v6::internal::fallback_formatter<seq::ir::util::NodeFormatter, Char> {};
+struct formatter<codon::ir::util::NodeFormatter, Char>
+    : fmt::v6::internal::fallback_formatter<codon::ir::util::NodeFormatter, Char> {};
 } // namespace fmt

@@ -42,12 +42,12 @@ struct SrcInfoAttribute : public Attribute {
   static const std::string AttributeName;
 
   /// source info
-  seq::SrcInfo info;
+  codon::SrcInfo info;
 
   SrcInfoAttribute() = default;
   /// Constructs a SrcInfoAttribute.
   /// @param info the source info
-  explicit SrcInfoAttribute(seq::SrcInfo info) : info(std::move(info)) {}
+  explicit SrcInfoAttribute(codon::SrcInfo info) : info(std::move(info)) {}
 
 private:
   std::ostream &doFormat(std::ostream &os) const override { return os << info; }

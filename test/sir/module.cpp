@@ -15,7 +15,7 @@ TEST_F(SIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
     ASSERT_EQ(numTypes - 1, std::distance(module->types_begin(), module->types_end()));
   }
   {
-    auto n1 = module->N<IntConst>(seq::SrcInfo{}, 1, module->getIntType());
+    auto n1 = module->N<IntConst>(codon::SrcInfo{}, 1, module->getIntType());
     ASSERT_EQ(n1->getModule(), module.get());
     auto numVals = std::distance(module->values_begin(), module->values_end());
     ASSERT_TRUE(std::find(module->values_begin(), module->values_end(), n1) !=

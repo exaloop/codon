@@ -74,7 +74,7 @@ struct SrcInfo {
     id = _id++;
   };
   SrcInfo() : SrcInfo("", 0, 0, 0){};
-  friend std::ostream &operator<<(std::ostream &out, const seq::SrcInfo &c) {
+  friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &c) {
     char buf[PATH_MAX + 1];
     strncpy(buf, c.file.c_str(), PATH_MAX);
     auto f = basename(buf);

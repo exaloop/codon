@@ -75,7 +75,7 @@ public:
   string transform(const StmtPtr &e) override;
 
   void transformModule(StmtPtr stmt);
-  shared_ptr<json> jsonify(const seq::SrcInfo &s);
+  shared_ptr<json> jsonify(const codon::SrcInfo &s);
   vector<StmtPtr> flatten(StmtPtr stmt, string *docstr = nullptr, bool deep = true);
 
 public:

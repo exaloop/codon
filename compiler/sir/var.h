@@ -160,7 +160,7 @@ private:
 
 // See https://github.com/fmtlib/fmt/issues/1283.
 namespace fmt {
-using seq::ir::Var;
+using codon::ir::Var;
 
 template <typename Char>
 struct formatter<Var, Char> : fmt::v6::internal::fallback_formatter<Var, Char> {};

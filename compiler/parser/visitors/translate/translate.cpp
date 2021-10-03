@@ -19,8 +19,8 @@
 #include "sir/util/cloning.h"
 
 using fmt::format;
-using seq::ir::cast;
-using seq::ir::transform::parallel::OMPSched;
+using codon::ir::cast;
+using codon::ir::transform::parallel::OMPSched;
 using std::function;
 using std::get;
 using std::make_shared;
@@ -394,7 +394,7 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 /************************************************************************************/
 
-seq::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
+codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
   seqassert(t && t->getClass(), "{} is not a class", t ? t->toString() : "-");
   string name = t->getClass()->realizedTypeName();
   auto i = ctx->find(name);
@@ -407,7 +407,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   vector<string> names;
   vector<int> indices;
   vector<SrcInfo> srcInfos;
-  vector<seq::ir::types::Type *> types;
+  vector<codon::ir::types::Type *> types;
   for (int i = 0, j = 1; i < ast->args.size(); i++)
     if (!ast->args[i].generic) {
       if (!type->args[j]->getFunc()) {
@@ -456,7 +456,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
 void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
                                              ir::Func *func) {
   vector<string> names;
-  vector<seq::ir::types::Type *> types;
+  vector<codon::ir::types::Type *> types;
   vector<int> indices;
   for (int i = 0, j = 1; i < ast->args.size(); i++)
     if (!ast->args[i].generic) {

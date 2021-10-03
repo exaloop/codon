@@ -17,8 +17,8 @@
 namespace codon {
 namespace ast {
 
-TranslateContext::TranslateContext(shared_ptr<Cache> cache, seq::ir::SeriesFlow *series,
-                                   seq::ir::BodiedFunc *base)
+TranslateContext::TranslateContext(shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
+                                   codon::ir::BodiedFunc *base)
     : Context<TranslateItem>(""), cache(std::move(cache)) {
   stack.push_front(vector<string>());
   bases.push_back(base);
@@ -62,14 +62,14 @@ shared_ptr<TranslateItem> TranslateContext::add(TranslateItem::Kind kind,
   return it;
 }
 
-void TranslateContext::addSeries(seq::ir::SeriesFlow *s) { series.push_back(s); }
+void TranslateContext::addSeries(codon::ir::SeriesFlow *s) { series.push_back(s); }
 void TranslateContext::popSeries() { series.pop_back(); }
 
-seq::ir::Module *TranslateContext::getModule() const {
-  return dynamic_cast<seq::ir::Module *>(bases[0]->getModule());
+codon::ir::Module *TranslateContext::getModule() const {
+  return dynamic_cast<codon::ir::Module *>(bases[0]->getModule());
 }
-seq::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
-seq::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
+codon::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
+codon::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
 
 } // namespace ast
 } // namespace codon
