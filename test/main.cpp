@@ -341,6 +341,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "stdlib/str_test.codon",
         "stdlib/math_test.codon",
+        "stdlib/cmath_test.codon",
         "stdlib/itertools_test.codon",
         "stdlib/bisect_test.codon",
         "stdlib/random_test.codon",

@@ -1,0 +1,95 @@
+import math
+import cmath
+
+def check(exp, got, flags):
+    def close(a, b):
+        if math.isnan(a):
+            return math.isnan(b)
+        elif math.isnan(b):
+            return math.isnan(a)
+        return math.isclose(a, b, rel_tol = 1e-10, abs_tol=1e-15)
+
+    x1 = exp.real
+    y1 = exp.imag
+
+    x2 = got.real
+    y2 = got.imag
+
+    if 'ignore-real-sign' in flags:
+        x1 = math.fabs(x1)
+        x2 = math.fabs(x2)
+
+    if 'ignore-imag-sign' in flags:
+        y1 = math.fabs(y1)
+        y2 = math.fabs(y2)
+
+    return close(x1, x2) and close(y1, y2)
+
+@test
+def test_cmath_testcases():
+    def run_test(test):
+        v = test.split()
+        if not v:
+            return True
+        name = v[0]
+        func = v[1]
+        inp = complex(float(v[2]), float(v[3]))
+        exp = complex(float(v[5]), float(v[6]))
+        flags = v[7:]
+
+        got = complex()
+        if func == 'rect':
+            got = cmath.rect(inp.real, inp.imag)
+        elif func == 'polar':
+            got = complex(*cmath.polar(inp))
+        elif func == 'exp':
+            got = cmath.exp(inp)
+        elif func == 'log':
+            got = cmath.log(inp)
+        elif func == 'log10':
+            got = cmath.log10(inp)
+        elif func == 'sqrt':
+            got = cmath.sqrt(inp)
+        elif func == 'acos':
+            got = cmath.acos(inp)
+        elif func == 'asin':
+            got = cmath.asin(inp)
+        elif func == 'atan':
+            got = cmath.atan(inp)
+        elif func == 'cos':
+            got = cmath.cos(inp)
+        elif func == 'sin':
+            got = cmath.sin(inp)
+        elif func == 'tan':
+            got = cmath.tan(inp)
+        elif func == 'acosh':
+            got = cmath.acosh(inp)
+        elif func == 'asinh':
+            got = cmath.asinh(inp)
+        elif func == 'atanh':
+            got = cmath.atanh(inp)
+        elif func == 'cosh':
+            got = cmath.cosh(inp)
+        elif func == 'sinh':
+            got = cmath.sinh(inp)
+        elif func == 'tanh':
+            got = cmath.tanh(inp)
+        else:
+            assert False, f'ERROR: unknown function: {func}'
+
+        if not check(exp, got, flags):
+            print(f'{name} {func} {inp=} {got=} {exp=} {flags=}')
+            return False
+        return True
+
+    tests = []
+    with open('test/stdlib/cmath_testcases.txt') as f:
+        for line in f:
+            line = line.strip()
+            if not line.startswith('--'):
+                tests.append(line)
+
+    for test in tests:
+        assert run_test(test)
+
+test_cmath_testcases()
