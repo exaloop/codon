@@ -1,0 +1,175 @@
+@tuple
+class complex:
+    real: float
+    imag: float
+
+    def __new__():
+        return complex(0.0, 0.0)
+
+    def __new__(real: int, imag: int):
+        return complex(float(real), float(imag))
+
+    def __new__(real: float, imag: int):
+        return complex(real, float(imag))
+
+    def __new__(real: int, imag: float):
+        return complex(float(real), imag)
+
+    def __new__(other):
+        return other.__complex__()
+
+    def __complex__(self):
+        return self
+
+    def __bool__(self):
+        return self.real != 0.0 and self.imag != 0.0
+
+    def __pos__(self):
+        return self
+
+    def __neg__(self):
+        return complex(-self.real, -self.imag)
+
+    def __abs__(self):
+        @pure
+        @C
+        def hypot(a: float, b: float) -> float: pass
+        return hypot(self.real, self.imag)
+
+    def __copy__(self):
+        return self
+
+    def __hash__(self):
+        # TODO
+        return self.real.__hash__() ^ self.imag.__hash__()
+
+    def __add__(self, other: complex):
+        return complex(self.real + other.real, self.imag + other.imag)
+
+    def __sub__(self, other: complex):
+        return complex(self.real - other.real, self.imag - other.imag)
+
+    def __mul__(self, other: complex):
+        a = (self.real * other.real) - (self.imag * other.imag)
+        b = (self.real * other.imag) + (self.imag * other.real)
+        return complex(a, b)
+
+    def __truediv__(self, other: complex):
+        h = (other.real * other.real) + (other.imag * other.imag)
+        a = ((self.real * other.real) + (self.imag * other.imag)) / h
+        b = ((self.imag * other.real) - (self.real * other.imag)) / h
+        return complex(a, b)
+
+    def __eq__(self, other: complex):
+        return self.real == other.real and self.imag == other.imag
+
+    def __ne__(self, other: complex):
+        return not (self == other)
+
+    def __pow__(self, other: complex):
+        x = other.real
+        y = other.imag
+        absa = self.__abs__()
+        if absa == 0.0:
+            return complex(0.0, 0.0)
+        arga = self._phase()
+        r = absa ** x
+        theta = x * arga
+        if y != 0.0:
+            r = r * complex._exp(-y * arga)
+            theta = theta + y*complex._log(absa)
+        w = complex(r * complex._cos(theta), r * complex._sin(theta))
+        return w
+
+    def __add__(self, other):
+        return self + complex(other)
+
+    def __sub__(self, other):
+        return self - complex(other)
+
+    def __mul__(self, other):
+        return self * complex(other)
+
+    def __truediv__(self, other):
+        return self / complex(other)
+
+    def __eq__(self, other):
+        return self == complex(other)
+
+    def __ne__(self, other):
+        return self != complex(other)
+
+    def __pow__(self, other):
+        return self ** complex(other)
+
+    def __radd__(self, other):
+        return complex(other) + self
+
+    def __rsub__(self, other):
+        return complex(other) - self
+
+    def __rmul__(self, other):
+        return complex(other) * self
+
+    def __rtruediv__(self, other):
+        return complex(other) / self
+
+    def __rpow__(self, other):
+        return complex(other) ** self
+
+    def __str__(self):
+        if self.real == 0.0:
+            return f'{self.imag}j'
+        else:
+            if self.imag >= 0:
+                return f'{self.real}+{self.imag}j'
+            else:
+                return f'{self.real}-{-self.imag}j'
+
+    def conjugate(self):
+        return complex(self.real, -self.imag)
+
+    # helpers
+    def _phase(self):
+        @pure
+        @C
+        def atan2(a: float, b: float) -> float: pass
+        return atan2(self.imag, self.real)
+
+    def _polar(self):
+        return (self.__abs__(), self._phase())
+
+    @pure
+    @llvm
+    def _exp(x: float) -> float:
+        declare double @llvm.exp.f64(double)
+        %y = call double @llvm.exp.f64(double %x)
+        ret double %y
+
+    @pure
+    @llvm
+    def _sqrt(x: float) -> float:
+        declare double @llvm.sqrt.f64(double)
+        %y = call double @llvm.sqrt.f64(double %x)
+        ret double %y
+
+    @pure
+    @llvm
+    def _cos(x: float) -> float:
+        declare double @llvm.cos.f64(double)
+        %y = call double @llvm.cos.f64(double %x)
+        ret double %y
+
+    @pure
+    @llvm
+    def _sin(x: float) -> float:
+        declare double @llvm.sin.f64(double)
+        %y = call double @llvm.sin.f64(double %x)
+        ret double %y
+
+    @pure
+    @llvm
+    def _log(x: float) -> float:
+        declare double @llvm.log.f64(double)
+        %y = call double @llvm.log.f64(double %x)
+        ret double %y

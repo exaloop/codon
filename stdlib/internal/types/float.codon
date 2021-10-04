@@ -1,5 +1,6 @@
 from internal.attributes import commutative
 from internal.gc import alloc_atomic, free
+from internal.types.complex import complex
 
 @pure
 @C
@@ -29,10 +30,15 @@ class float:
         %0 = fcmp one double %self, 0.000000e+00
         %1 = zext i1 %0 to i8
         ret i8 %1
+    def __complex__(self):
+        return complex(self, 0.0)
     def __pos__(self) -> float:
         return self
+    @pure
+    @llvm
     def __neg__(self) -> float:
-        return 0.0 - self
+        %0 = fneg double %self
+        ret double %0
     @pure
     @commutative
     @llvm
@@ -325,3 +331,5 @@ class float:
         return result
     def __match__(self, i: float):
         return self == i
+    def __suffix_j__(s: str):
+        return complex(0.0, float(s))
