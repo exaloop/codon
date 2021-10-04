@@ -245,15 +245,15 @@ def _rect_special():
          C(INF,-0.), C(INF,0.), C(U,U), C(INF,N), C(INF,N), C(N,N), C(N,N), C(N,0.), C(N,0.), C(N,N), C(N,N), C(N,N))
     return v
 
-def _is_special(z: complex):
+def _is_special(z):
     return (not math.isfinite(z.real)) or (not math.isfinite(z.imag))
 
-def _special_get(z: complex, table):
+def _special_get(z, table):
     t1 = _special_type(z.real)
     t2 = _special_type(z.imag)
     return table[7*t1 + t2]
 
-def _sqrt_impl(z: complex):
+def _sqrt_impl(z):
     if _is_special(z):
         return _special_get(z, _sqrt_special())
 
@@ -285,7 +285,7 @@ def _sqrt_impl(z: complex):
     # errno = 0
     return complex(r_real, r_imag)
 
-def _acos_impl(z: complex):
+def _acos_impl(z):
     if _is_special(z):
         return _special_get(z, _acos_special())
 
@@ -307,7 +307,7 @@ def _acos_impl(z: complex):
         r_imag = math.asinh(s2.real*s1.imag - s2.imag*s1.real)
     return complex(r_real, r_imag)
 
-def _acosh_impl(z: complex):
+def _acosh_impl(z):
     if _is_special(z):
         return _special_get(z, _acosh_special())
 
@@ -324,7 +324,7 @@ def _acosh_impl(z: complex):
         r_imag = 2.*math.atan2(s1.imag, s2.real)
     return complex(r_real, r_imag)
 
-def _asinh_impl(z: complex):
+def _asinh_impl(z):
     if _is_special(z):
         return _special_get(z, _asinh_special())
 
@@ -343,13 +343,13 @@ def _asinh_impl(z: complex):
         r_imag = math.atan2(z.imag, s1.real*s2.real - s1.imag*s2.imag)
     return complex(r_real, r_imag)
 
-def _asin_impl(z: complex):
+def _asin_impl(z):
     s = _asinh_impl(complex(-z.imag, z.real))
     r_real = s.imag
     r_imag = -s.real
     return complex(r_real, r_imag)
 
-def _atanh_impl(z: complex):
+def _atanh_impl(z):
     if _is_special(z):
         return _special_get(z, _atanh_special())
 
@@ -388,13 +388,13 @@ def _atanh_impl(z: complex):
         # errno = 0
     return complex(r_real, r_imag)
 
-def _atan_impl(z: complex):
+def _atan_impl(z):
     s = _atanh_impl(complex(-z.imag, z.real))
     r_real = s.imag
     r_imag = -s.real
     return complex(r_real, r_imag)
 
-def _cosh_impl(z: complex):
+def _cosh_impl(z):
     r_real = 0.
     r_imag = 0.
     # special treatment for cosh(+/-inf + iy) if y is not a NaN
@@ -438,11 +438,11 @@ def _cosh_impl(z: complex):
     '''
     return complex(r_real, r_imag)
 
-def _cos_impl(z: complex):
+def _cos_impl(z):
     r = _cosh_impl(complex(-z.imag, z.real))
     return r
 
-def _exp_impl(z: complex):
+def _exp_impl(z):
     r_real = 0.
     r_imag = 0.
     if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
@@ -486,7 +486,7 @@ def _exp_impl(z: complex):
     '''
     return complex(r_real, r_imag)
 
-def _c_log(z: complex):
+def _c_log(z):
     if _is_special(z):
         return _special_get(z, _log_special())
 
@@ -519,11 +519,11 @@ def _c_log(z: complex):
     # errno = 0
     return complex(r_real, r_imag)
 
-def _log10_impl(z: complex):
+def _log10_impl(z):
     s = _c_log(z)
     return complex(s.real / _M_LN10, s.imag / _M_LN10)
 
-def _sinh_impl(z: complex):
+def _sinh_impl(z):
     r_real = 0.
     r_imag = 0.
     if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
@@ -564,12 +564,12 @@ def _sinh_impl(z: complex):
     '''
     return complex(r_real, r_imag)
 
-def _sin_impl(z: complex):
+def _sin_impl(z):
     s = _sinh_impl(complex(-z.imag, z.real))
     r = complex(s.imag, -s.real)
     return r
 
-def _tanh_impl(z: complex):
+def _tanh_impl(z):
     r_real = 0.
     r_imag = 0.
     # special treatment for tanh(+/-inf + iy) if y is finite and
@@ -611,16 +611,10 @@ def _tanh_impl(z: complex):
     # errno = 0
     return complex(r_real, r_imag)
 
-def _tan_impl(z: complex):
+def _tan_impl(z):
     s = _tanh_impl(complex(-z.imag, z.real))
     r = complex(s.imag, -s.real)
     return r
-
-def _log_impl(x: complex, y: complex):
-    x = _c_log(x)
-    y = _c_log(y)
-    x /= y
-    return x
 
 def phase(x):
     z = complex(x)
@@ -672,10 +666,14 @@ def exp(x):
     z = complex(x)
     return _exp_impl(z)
 
-def log(x):
-    # TODO: base
+def log(x, base = e):
     z = complex(x)
-    return _c_log(z)
+    y = complex(base)
+    r = _c_log(z)
+    if y == complex(e, 0.0):
+        return r
+    else:
+        return r/_c_log(y)
 
 def log10(x):
     z = complex(x)
@@ -683,7 +681,7 @@ def log10(x):
 
 def sqrt(x):
     z = complex(x)
-    return _sqrt_impl(x)
+    return _sqrt_impl(z)
 
 def asin(x):
     z = complex(x)
