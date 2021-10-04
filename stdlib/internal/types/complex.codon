@@ -40,8 +40,7 @@ class complex:
         return self
 
     def __hash__(self):
-        # TODO
-        return self.real.__hash__() ^ self.imag.__hash__()
+        return self.real.__hash__() + self.imag.__hash__()*1000003
 
     def __add__(self, other: complex):
         return complex(self.real + other.real, self.imag + other.imag)
@@ -55,10 +54,29 @@ class complex:
         return complex(a, b)
 
     def __truediv__(self, other: complex):
-        h = (other.real * other.real) + (other.imag * other.imag)
-        a = ((self.real * other.real) + (self.imag * other.imag)) / h
-        b = ((self.imag * other.real) - (self.real * other.imag)) / h
-        return complex(a, b)
+        a = self
+        b = other
+        abs_breal = (-b.real) if b.real < 0 else b.real
+        abs_bimag = (-b.imag) if b.imag < 0 else b.imag
+
+        if abs_breal >= abs_bimag:
+            # divide tops and bottom by b.real
+            if abs_breal == 0.0:
+                # errno = EDOM
+                return complex(0.0, 0.0)
+            else:
+                ratio = b.imag / b.real
+                denom = b.real + b.imag*ratio
+                return complex((a.real + a.imag*ratio)/denom, (a.imag - a.real*ratio)/denom)
+        elif abs_bimag >= abs_breal:
+            # divide tops and bottom by b.imag
+            ratio = b.real / b.imag
+            denom = b.real*ratio + b.imag
+            # assert b.imag != 0.0
+            return complex((a.real*ratio + a.imag)/denom, (a.imag*ratio - a.real)/denom)
+        else:
+            nan = 0./0.
+            return complex(nan, nan)
 
     def __eq__(self, other: complex):
         return self.real == other.real and self.imag == other.imag
@@ -66,20 +84,81 @@ class complex:
     def __ne__(self, other: complex):
         return not (self == other)
 
+    def __pow__(self, other: int):
+        def powu(x: complex, n: int):
+            mask = 1
+            r = complex(1.0, 0.0)
+            p = x
+            while mask > 0 and n >= mask:
+                if n & mask:
+                    r = r*p
+                mask <<= 1
+                p = p*p
+            return r
+
+        if other > 0:
+            return powu(self, other)
+        else:
+            return complex(1.0, 0.0) / powu(self, -other)
+
     def __pow__(self, other: complex):
-        x = other.real
-        y = other.imag
-        absa = self.__abs__()
-        if absa == 0.0:
-            return complex(0.0, 0.0)
-        arga = self._phase()
-        r = absa ** x
-        theta = x * arga
-        if y != 0.0:
-            r = r * complex._exp(-y * arga)
-            theta = theta + y*complex._log(absa)
-        w = complex(r * complex._cos(theta), r * complex._sin(theta))
-        return w
+        @pure
+        @C
+        def hypot(a: float, b: float) -> float: pass
+
+        @pure
+        @C
+        def atan2(a: float, b: float) -> float: pass
+
+        @pure
+        @llvm
+        def exp(x: float) -> float:
+            declare double @llvm.exp.f64(double)
+            %y = call double @llvm.exp.f64(double %x)
+            ret double %y
+
+        @pure
+        @llvm
+        def pow(x: float, y: float) -> float:
+            declare double @llvm.pow.f64(double, double)
+            %z = call double @llvm.pow.f64(double %x, double %y)
+            ret double %z
+
+        @pure
+        @llvm
+        def log(x: float) -> float:
+            declare double @llvm.log.f64(double)
+            %y = call double @llvm.log.f64(double %x)
+            ret double %y
+
+        @pure
+        @llvm
+        def sin(x: float) -> float:
+            declare double @llvm.sin.f64(double)
+            %y = call double @llvm.sin.f64(double %x)
+            ret double %y
+
+        @pure
+        @llvm
+        def cos(x: float) -> float:
+            declare double @llvm.cos.f64(double)
+            %y = call double @llvm.cos.f64(double %x)
+            ret double %y
+
+        if other.real == 0. and other.imag == 0.:
+            return complex(1., 0.)
+        elif self.real == 0. and self.imag == 0.:
+            # if other.imag != 0. or other.real < 0.: errno = EDOM
+            return complex(0., 0.)
+        else:
+            vabs = hypot(self.real, self.imag)
+            len = pow(vabs, other.real)
+            at = atan2(self.imag, self.real)
+            phase = at * other.real
+            if other.imag != 0.:
+                len /= exp(at * other.imag)
+                phase += other.imag * log(vabs)
+            return complex(len * cos(phase), len * sin(phase))
 
     def __add__(self, other):
         return self + complex(other)
@@ -118,13 +197,27 @@ class complex:
         return complex(other) ** self
 
     def __str__(self):
-        if self.real == 0.0:
+        @pure
+        @llvm
+        def copysign(x: float, y: float) -> float:
+            declare double @llvm.copysign.f64(double, double)
+            %z = call double @llvm.copysign.f64(double %x, double %y)
+            ret double %z
+
+        @pure
+        @llvm
+        def fabs(x: float) -> float:
+            declare double @llvm.fabs.f64(double)
+            %y = call double @llvm.fabs.f64(double %x)
+            ret double %y
+
+        if self.real == 0.0 and copysign(1., self.real) == 1.:
             return f'{self.imag}j'
         else:
-            if self.imag >= 0:
-                return f'{self.real}+{self.imag}j'
-            else:
-                return f'{self.real}-{-self.imag}j'
+            sign = '+'
+            if self.imag < 0.0 or (self.imag == 0.0 and copysign(1., self.imag) == -1.):
+                sign = '-'
+            return f'({self.real}{sign}{fabs(self.imag)}j)'
 
     def conjugate(self):
         return complex(self.real, -self.imag)
