@@ -135,7 +135,7 @@ def ldexp(x: float, i: int) -> float:
     """
     return _C.ldexp(x, i)
 
-def log(x: float) -> float:
+def log(x: float, base: float = e) -> float:
     """
     log(float) -> float
 
@@ -148,7 +148,10 @@ def log(x: float) -> float:
         %y = call double @llvm.log.f64(double %x)
         ret double %y
 
-    return f(x)
+    if base == e:
+        return f(x)
+    else:
+        return f(x)/f(base)
 
 def log2(x: float) -> float:
     """

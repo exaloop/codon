@@ -329,5 +329,9 @@ class int:
         ret i64 %tmp
     def __match__(self, i: int):
         return self == i
-    def __suffix_j__(s: str):
-        return complex(0, int(s))
+    @property
+    def real(self):
+        return self
+    @property
+    def imag(self):
+        return 0
