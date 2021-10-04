@@ -20,7 +20,7 @@
 #include "parser/common.h"
 #include "parser/ctx.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /**
@@ -129,4 +129,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

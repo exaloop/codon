@@ -27,7 +27,7 @@ using std::ostream;
 using std::pair;
 using std::stack;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -40,7 +40,7 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
   auto preamble = make_shared<Preamble>();
 
   if (!cache->module)
-    cache->module = new seq::ir::Module("", cache);
+    cache->module = new codon::ir::Module("", cache);
 
   // Load standard library if it has not been loaded.
   if (!in(cache->imports, STDLIB_IMPORT)) {
@@ -187,4 +187,4 @@ SimplifyVisitor::SimplifyVisitor(shared_ptr<SimplifyContext> ctx,
     : ctx(move(ctx)), preamble(move(preamble)) {}
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

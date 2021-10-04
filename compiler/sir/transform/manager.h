@@ -11,7 +11,7 @@
 #include "sir/analyze/analysis.h"
 #include "sir/module.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 
@@ -163,4 +163,4 @@ private:
 
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

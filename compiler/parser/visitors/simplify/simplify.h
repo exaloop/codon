@@ -17,7 +17,7 @@
 #include "parser/visitors/simplify/simplify_ctx.h"
 #include "parser/visitors/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /**
@@ -492,4 +492,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

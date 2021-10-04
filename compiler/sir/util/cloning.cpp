@@ -1,6 +1,6 @@
 #include "cloning.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -260,4 +260,4 @@ void CloneVisitor::visit(const dsl::CustomInstr *v) { result = v->doClone(*this)
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

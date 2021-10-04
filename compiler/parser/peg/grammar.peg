@@ -7,7 +7,7 @@
   #include "parser/peg/rules.h"
   #include <any>
   using namespace std;
-  using namespace seq::ast;
+  using namespace codon::ast;
 
   #define V0 VS[0]
   #define V1 VS[1]
@@ -25,13 +25,13 @@
     t->setSrcInfo(s);
     return std::static_pointer_cast<typename Tn::base_type>(t);
   }
-  auto chain(peg::SemanticValues &VS, const seq::SrcInfo &LOC) {
+  auto chain(peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
     auto b = ac_expr(V0);
     for (int i = 1; i < VS.size(); i++)
       b = ast<BinaryExpr>(LOC, b, VS.token_to_string(i - 1), ac_expr(VS[i]));
     return b;
   }
-  auto wrap_tuple(peg::SemanticValues &VS, const seq::SrcInfo &LOC) {
+  auto wrap_tuple(peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
     if (VS.size() == 1 && VS.tokens.empty())
       return ac_expr(V0);
     return ast<TupleExpr>(LOC, VS.transform<ExprPtr>());

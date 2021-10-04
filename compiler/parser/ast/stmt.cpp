@@ -22,11 +22,11 @@ using std::move;
 
 const int INDENT_SIZE = 2;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 Stmt::Stmt() : done(false), age(-1) {}
-Stmt::Stmt(const seq::SrcInfo &s) : done(false) { setSrcInfo(s); }
+Stmt::Stmt(const codon::SrcInfo &s) : done(false) { setSrcInfo(s); }
 string Stmt::toString() const { return toString(-1); }
 
 SuiteStmt::SuiteStmt(vector<StmtPtr> stmts, bool ownBlock)
@@ -419,4 +419,4 @@ string UpdateStmt::toString(int) const {
 ACCEPT_IMPL(UpdateStmt, ASTVisitor);
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

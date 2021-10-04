@@ -1,6 +1,6 @@
 #include "global_demote.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace cleanup {
@@ -60,4 +60,4 @@ void GlobalDemotionPass::run(Module *M) {
 } // namespace cleanup
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

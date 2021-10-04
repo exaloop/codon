@@ -15,7 +15,7 @@
 #include "sir/util/packs.h"
 #include "sir/util/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 class Value;
@@ -460,4 +460,4 @@ private:
 
 } // namespace types
 } // namespace ir
-} // namespace seq
+} // namespace codon

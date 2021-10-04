@@ -145,4 +145,4 @@ char CoroCleanupLegacy::ID = 0;
 INITIALIZE_PASS(CoroCleanupLegacy, "coro-cleanup",
                 "Lower all coroutine related intrinsics", false, false)
 
-Pass *seq::coro::createCoroCleanupLegacyPass() { return new CoroCleanupLegacy(); }
+Pass *codon::coro::createCoroCleanupLegacyPass() { return new CoroCleanupLegacy(); }

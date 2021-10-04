@@ -4,7 +4,7 @@
 
 #include "sir/analyze/analysis.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace module {
@@ -25,4 +25,4 @@ class GlobalVarsAnalyses : public Analysis {
 } // namespace module
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

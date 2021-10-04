@@ -9,7 +9,7 @@
 #include "value.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 /// SIR object representing an "instruction," or discrete operation in the context of a
@@ -572,4 +572,4 @@ protected:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

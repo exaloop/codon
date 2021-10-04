@@ -6,7 +6,7 @@
 
 #include "sir/llvm/llvm.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 namespace analyze {
@@ -56,4 +56,4 @@ struct CFBuilder {
 } // namespace codegen
 } // namespace dsl
 } // namespace ir
-} // namespace seq
+} // namespace codon

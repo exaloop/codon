@@ -3,7 +3,7 @@
 #include "sir/analyze/dataflow/cfg.h"
 #include "sir/analyze/dataflow/dominator.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, DominatorAnalysisSimple) {
   auto *f = module->Nr<BodiedFunc>("test_f");

@@ -6,7 +6,7 @@
 
 using fmt::format;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 FormatVisitor::FormatVisitor(bool html, shared_ptr<Cache> cache)
@@ -438,4 +438,4 @@ void FormatVisitor::visit(YieldFromStmt *stmt) {
 void FormatVisitor::visit(WithStmt *stmt) {}
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

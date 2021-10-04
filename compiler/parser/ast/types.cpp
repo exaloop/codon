@@ -19,7 +19,7 @@ using std::dynamic_pointer_cast;
 using std::min;
 using std::static_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 namespace types {
 
@@ -810,4 +810,4 @@ string CallableTrait::debugString(bool debug) const {
 
 } // namespace types
 } // namespace ast
-} // namespace seq
+} // namespace codon

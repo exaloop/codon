@@ -28,7 +28,7 @@ using std::ostream;
 using std::stack;
 using std::static_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -150,7 +150,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     while (ctx->bases.size() > depth)
       ctx->bases.pop_back();
     if (ctx->realizationDepth > 500)
-      seq::compilationError(
+      codon::compilationError(
           "maximum realization depth exceeded (recursive static function?)",
           getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
 
@@ -355,14 +355,14 @@ pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
           }
         }
         if (!fixed) {
-          map<int, pair<seq::SrcInfo, string>> v;
+          map<int, pair<codon::SrcInfo, string>> v;
           for (auto &ub : ctx->activeUnbounds)
             if (ub.first->getLink()->id >= minUnbound) {
               v[ub.first->getLink()->id] = {ub.first->getSrcInfo(), ub.second};
               LOG_TYPECHECK("dangling ?{} ({})", ub.first->getLink()->id, minUnbound);
             }
           for (auto &ub : v) {
-            seq::compilationError(
+            codon::compilationError(
                 format("cannot infer the type of {}", ub.second.second),
                 ub.second.first.file, ub.second.first.line, ub.second.first.col,
                 /*terminate=*/false);
@@ -467,7 +467,7 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   }
   handle->setSrcInfo(t->getSrcInfo());
   handle->setAstType(
-      std::const_pointer_cast<seq::ast::types::Type>(t->shared_from_this()));
+      std::const_pointer_cast<codon::ast::types::Type>(t->shared_from_this()));
   // Not needed for classes, I guess
   //  if (auto &ast = ctx->cache->classes[t->name].ast)
   //    handle->setAttribute(std::make_unique<ir::KeyValueAttribute>(ast->attributes));
@@ -475,4 +475,4 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

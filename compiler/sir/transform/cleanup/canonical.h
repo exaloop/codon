@@ -3,7 +3,7 @@
 #include "sir/transform/pass.h"
 #include "sir/transform/rewrite.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace cleanup {
@@ -34,4 +34,4 @@ private:
 } // namespace cleanup
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

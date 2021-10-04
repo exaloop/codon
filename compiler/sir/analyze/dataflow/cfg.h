@@ -13,7 +13,7 @@
 #define DEFAULT_VISIT(x)                                                               \
   void visit(const x *v) override { defaultInsert(v); }
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace dataflow {
@@ -497,6 +497,6 @@ private:
 } // namespace dataflow
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef DEFAULT_VISIT

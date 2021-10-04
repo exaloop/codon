@@ -49,34 +49,34 @@ void llvm::initializeCoroutines(PassRegistry &Registry) {
 
 static void addCoroutineOpt0Passes(const PassManagerBuilder &Builder,
                                    legacy::PassManagerBase &PM) {
-  PM.add(seq::coro::createCoroSplitLegacyPass());
-  PM.add(seq::coro::createCoroElideLegacyPass());
+  PM.add(codon::coro::createCoroSplitLegacyPass());
+  PM.add(codon::coro::createCoroElideLegacyPass());
 
   PM.add(createBarrierNoopPass());
-  PM.add(seq::coro::createCoroCleanupLegacyPass());
+  PM.add(codon::coro::createCoroCleanupLegacyPass());
 }
 
 static void addCoroutineEarlyPasses(const PassManagerBuilder &Builder,
                                     legacy::PassManagerBase &PM) {
-  PM.add(seq::coro::createCoroEarlyLegacyPass());
+  PM.add(codon::coro::createCoroEarlyLegacyPass());
 }
 
 static void addCoroutineScalarOptimizerPasses(const PassManagerBuilder &Builder,
                                               legacy::PassManagerBase &PM) {
-  PM.add(seq::coro::createCoroElideLegacyPass());
+  PM.add(codon::coro::createCoroElideLegacyPass());
 }
 
 static void addCoroutineSCCPasses(const PassManagerBuilder &Builder,
                                   legacy::PassManagerBase &PM) {
-  PM.add(seq::coro::createCoroSplitLegacyPass(Builder.OptLevel != 0));
+  PM.add(codon::coro::createCoroSplitLegacyPass(Builder.OptLevel != 0));
 }
 
 static void addCoroutineOptimizerLastPasses(const PassManagerBuilder &Builder,
                                             legacy::PassManagerBase &PM) {
-  PM.add(seq::coro::createCoroCleanupLegacyPass());
+  PM.add(codon::coro::createCoroCleanupLegacyPass());
 }
 
-void seq::coro::addCoroutinePassesToExtensionPoints(PassManagerBuilder &Builder) {
+void codon::coro::addCoroutinePassesToExtensionPoints(PassManagerBuilder &Builder) {
   Builder.addExtension(PassManagerBuilder::EP_EarlyAsPossible, addCoroutineEarlyPasses);
   Builder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                        addCoroutineOpt0Passes);

@@ -15,7 +15,7 @@
 #include "value.h"
 #include "var.h"
 
-namespace seq {
+namespace codon {
 
 namespace ast {
 struct Cache;
@@ -228,7 +228,7 @@ public:
   /// @param args the arguments
   /// @return the new node
   template <typename DesiredType, typename... Args>
-  DesiredType *N(seq::SrcInfo s, Args &&...args) {
+  DesiredType *N(codon::SrcInfo s, Args &&...args) {
     auto *ret = new DesiredType(std::forward<Args>(args)...);
     ret->setModule(this);
     ret->setSrcInfo(s);
@@ -241,7 +241,7 @@ public:
   /// @param args the arguments
   /// @return the new node
   template <typename DesiredType, typename... Args>
-  DesiredType *N(const seq::SrcObject *s, Args &&...args) {
+  DesiredType *N(const codon::SrcObject *s, Args &&...args) {
     return N<DesiredType>(s->getSrcInfo(), std::forward<Args>(args)...);
   }
   /// Constructs and registers an IR node with provided source node.
@@ -256,7 +256,7 @@ public:
   /// @param args the arguments
   /// @return the new node
   template <typename DesiredType, typename... Args> DesiredType *Nr(Args &&...args) {
-    return N<DesiredType>(seq::SrcInfo(), std::forward<Args>(args)...);
+    return N<DesiredType>(codon::SrcInfo(), std::forward<Args>(args)...);
   }
 
   /// @return the type-checker cache
@@ -415,4 +415,4 @@ private:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

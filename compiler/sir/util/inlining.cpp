@@ -6,7 +6,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/operator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -68,7 +68,7 @@ public:
 } // namespace
 
 InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressive,
-                            seq::SrcInfo info) {
+                            codon::SrcInfo info) {
   auto *bodied = cast<BodiedFunc>(func);
   if (!bodied)
     return {nullptr, {}};
@@ -132,4 +132,4 @@ InlineResult inlineCall(CallInstr *v, bool aggressive) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -1,6 +1,6 @@
 #include "test.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, ValueQueryMethodsDelegate) {
   Value *original = module->Nr<IntConst>(1, module->getIntType(), "foo");

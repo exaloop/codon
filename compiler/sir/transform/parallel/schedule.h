@@ -2,7 +2,7 @@
 
 #include "sir/value.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 class Value;
@@ -32,4 +32,4 @@ struct OMPSched {
 } // namespace parallel
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

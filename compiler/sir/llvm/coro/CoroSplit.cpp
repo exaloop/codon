@@ -2150,6 +2150,6 @@ INITIALIZE_PASS_END(CoroSplitLegacy, "coro-split",
                     "Split coroutine into a set of functions driving its state machine",
                     false, false)
 
-Pass *seq::coro::createCoroSplitLegacyPass(bool ReuseFrameSlot) {
+Pass *codon::coro::createCoroSplitLegacyPass(bool ReuseFrameSlot) {
   return new CoroSplitLegacy(ReuseFrameSlot);
 }

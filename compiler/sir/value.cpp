@@ -3,7 +3,7 @@
 #include "instr.h"
 #include "module.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 const char Value::NodeId = 0;
@@ -144,4 +144,4 @@ Value *Value::doCall(const std::vector<Value *> &args) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

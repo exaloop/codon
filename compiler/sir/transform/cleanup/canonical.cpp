@@ -10,7 +10,7 @@
 #include "sir/transform/rewrite.h"
 #include "sir/util/irtools.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace cleanup {
@@ -338,4 +338,4 @@ void CanonicalizationPass::registerStandardRules(Module *m) {
 } // namespace cleanup
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

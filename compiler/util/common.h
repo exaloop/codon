@@ -61,7 +61,7 @@ extern int _level;
 void _seqassert(const char *expr_str, const char *file, int line,
                 const std::string &msg);
 
-namespace seq {
+namespace codon {
 struct SrcInfo {
   std::string file;
   int line;
@@ -74,7 +74,7 @@ struct SrcInfo {
     id = _id++;
   };
   SrcInfo() : SrcInfo("", 0, 0, 0){};
-  friend std::ostream &operator<<(std::ostream &out, const seq::SrcInfo &c) {
+  friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &c) {
     char buf[PATH_MAX + 1];
     strncpy(buf, c.file.c_str(), PATH_MAX);
     auto f = basename(buf);
@@ -104,4 +104,4 @@ void compilationError(const std::string &msg, const std::string &file = "",
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
                         int line = 0, int col = 0, bool terminate = false);
-} // namespace seq
+} // namespace codon

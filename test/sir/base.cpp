@@ -3,21 +3,21 @@
 #include <algorithm>
 
 namespace {
-class TestVisitor : public seq::ir::util::Visitor {
+class TestVisitor : public codon::ir::util::Visitor {
 public:
-  void visit(seq::ir::IntConst *) override { FAIL(); }
-  void visit(seq::ir::BoolConst *) override {}
+  void visit(codon::ir::IntConst *) override { FAIL(); }
+  void visit(codon::ir::BoolConst *) override {}
 };
 
-class ConstTestVisitor : public seq::ir::util::ConstVisitor {
+class ConstTestVisitor : public codon::ir::util::ConstVisitor {
 public:
-  void visit(const seq::ir::IntConst *) override { FAIL(); }
-  void visit(const seq::ir::BoolConst *) override {}
+  void visit(const codon::ir::IntConst *) override { FAIL(); }
+  void visit(const codon::ir::BoolConst *) override {}
 };
 
 } // namespace
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, NodeNoReplacementRTTI) {
   auto *derived = module->Nr<IntConst>(1, module->getIntType());

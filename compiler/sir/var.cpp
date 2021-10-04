@@ -2,7 +2,7 @@
 
 #include "module.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 const char Var::NodeId = 0;
@@ -40,4 +40,4 @@ int PointerValue::doReplaceUsedVariable(id_t id, Var *newVar) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

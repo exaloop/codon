@@ -4,7 +4,7 @@
 
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -21,4 +21,4 @@ std::ostream &format(std::ostream &os, const Node *node);
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

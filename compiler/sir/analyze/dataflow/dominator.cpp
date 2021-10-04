@@ -1,6 +1,6 @@
 #include "dominator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace dataflow {
@@ -69,4 +69,4 @@ std::unique_ptr<Result> DominatorAnalysis::run(const Module *m) {
 } // namespace dataflow
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -26,7 +26,7 @@ using std::ostream;
 using std::stack;
 using std::static_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -1674,4 +1674,4 @@ int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

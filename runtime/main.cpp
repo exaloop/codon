@@ -49,14 +49,14 @@ std::string makeOutputFilename(const std::string &filename,
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
 struct ProcessResult {
-  std::unique_ptr<seq::ir::LLVMVisitor> visitor;
+  std::unique_ptr<codon::ir::LLVMVisitor> visitor;
   std::string input;
 };
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  seq::generateDocstr(argv0);
+  codon::generateDocstr(argv0);
   return EXIT_SUCCESS;
 }
 
@@ -84,14 +84,14 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
                         return hasExtension(input, ext);
                       }) == exts.end())
-    seq::compilationError(
+    codon::compilationError(
         "input file is expected to be a .codon/.py file, or '-' for stdin");
 
   std::unordered_map<std::string, std::string> defmap;
   for (const auto &define : defines) {
     auto eq = define.find('=');
     if (eq == std::string::npos || !eq) {
-      seq::compilationWarning("ignoring malformed definition: " + define);
+      codon::compilationWarning("ignoring malformed definition: " + define);
       continue;
     }
 
@@ -99,15 +99,15 @@ ProcessResult processSource(const std::vector<const char *> &args) {
     auto value = define.substr(eq + 1);
 
     if (defmap.find(name) != defmap.end()) {
-      seq::compilationWarning("ignoring duplicate definition: " + define);
+      codon::compilationWarning("ignoring duplicate definition: " + define);
       continue;
     }
 
     defmap.emplace(name, value);
   }
 
-  auto *module = seq::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
-                            /*isTest=*/false, /*startLine=*/0, defmap);
+  auto *module = codon::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
+                              /*isTest=*/false, /*startLine=*/0, defmap);
   if (!module)
     return {{}, {}};
 
@@ -115,8 +115,8 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   auto t = std::chrono::high_resolution_clock::now();
 
   std::vector<std::string> disabledOptsVec(disabledOpts);
-  seq::ir::transform::PassManager pm(isDebug, disabledOptsVec);
-  seq::PluginManager plm(&pm, isDebug);
+  codon::ir::transform::PassManager pm(isDebug, disabledOptsVec);
+  codon::PluginManager plm(&pm, isDebug);
 
   LOG_TIME("[T] ir-setup = {:.1f}",
            std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -128,16 +128,16 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   for (const auto &dsl : dsls) {
     auto result = plm.load(dsl);
     switch (result) {
-    case seq::PluginManager::NONE:
+    case codon::PluginManager::NONE:
       break;
-    case seq::PluginManager::NOT_FOUND:
-      seq::compilationError("DSL '" + dsl + "' not found");
+    case codon::PluginManager::NOT_FOUND:
+      codon::compilationError("DSL '" + dsl + "' not found");
       break;
-    case seq::PluginManager::NO_ENTRYPOINT:
-      seq::compilationError("DSL '" + dsl + "' has no entry point");
+    case codon::PluginManager::NO_ENTRYPOINT:
+      codon::compilationError("DSL '" + dsl + "' has no entry point");
       break;
-    case seq::PluginManager::UNSUPPORTED_VERSION:
-      seq::compilationError("DSL '" + dsl + "' version incompatible");
+    case codon::PluginManager::UNSUPPORTED_VERSION:
+      codon::compilationError("DSL '" + dsl + "' version incompatible");
       break;
     default:
       break;
@@ -151,7 +151,7 @@ ProcessResult processSource(const std::vector<const char *> &args) {
                                       1000.0);
 
   t = std::chrono::high_resolution_clock::now();
-  auto visitor = std::make_unique<seq::ir::LLVMVisitor>(isDebug);
+  auto visitor = std::make_unique<codon::ir::LLVMVisitor>(isDebug);
   visitor->visit(module);
   LOG_TIME("[T] ir-visitor = {:.1f}",
            std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -208,7 +208,7 @@ int buildMode(const std::vector<const char *> &args) {
   std::vector<std::string> libsVec(libs);
 
   if (output.empty() && result.input == "-")
-    seq::compilationError("output file must be specified when reading from stdin");
+    codon::compilationError("output file must be specified when reading from stdin");
   std::string extension;
   switch (buildKind) {
   case BuildKind::LLVM:
@@ -253,7 +253,7 @@ int buildMode(const std::vector<const char *> &args) {
 }
 
 void showCommandsAndExit() {
-  seq::compilationError("Available commands: seqc <run|build|doc>");
+  codon::compilationError("Available commands: seqc <run|build|doc>");
 }
 
 int otherMode(const std::vector<const char *> &args) {

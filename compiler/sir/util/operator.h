@@ -7,8 +7,8 @@
 #include "visitor.h"
 
 #define LAMBDA_VISIT(x)                                                                \
-  virtual void handle(seq::ir::x *v) {}                                                \
-  void visit(seq::ir::x *v) override {                                                 \
+  virtual void handle(codon::ir::x *v) {}                                              \
+  void visit(codon::ir::x *v) override {                                               \
     if (childrenFirst)                                                                 \
       processChildren(v);                                                              \
     preHook(v);                                                                        \
@@ -18,7 +18,7 @@
       processChildren(v);                                                              \
   }
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -76,7 +76,7 @@ public:
   LAMBDA_VISIT(VarValue);
   LAMBDA_VISIT(PointerValue);
 
-  void visit(seq::ir::SeriesFlow *v) override {
+  void visit(codon::ir::SeriesFlow *v) override {
     if (childrenFirst)
       processSeriesFlowChildren(v);
     preHook(v);
@@ -86,7 +86,7 @@ public:
       processSeriesFlowChildren(v);
   }
 
-  virtual void handle(seq::ir::SeriesFlow *v) {}
+  virtual void handle(codon::ir::SeriesFlow *v) {}
   LAMBDA_VISIT(IfFlow);
   LAMBDA_VISIT(WhileFlow);
   LAMBDA_VISIT(ForFlow);
@@ -186,7 +186,7 @@ private:
     nodeStack.pop_back();
   }
 
-  void processSeriesFlowChildren(seq::ir::SeriesFlow *v) {
+  void processSeriesFlowChildren(codon::ir::SeriesFlow *v) {
     nodeStack.push_back(v);
     for (auto it = v->begin(); it != v->end(); ++it) {
       itStack.push_back(it);
@@ -199,6 +199,6 @@ private:
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef LAMBDA_VISIT

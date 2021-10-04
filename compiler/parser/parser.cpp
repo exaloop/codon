@@ -32,7 +32,7 @@ int _level = 0;
 int _dbg_level = 0;
 bool _isTest = false;
 
-namespace seq {
+namespace codon {
 
 ir::Module *parse(const string &argv0, const string &file, const string &code,
                   bool isCode, int isTest, int startLine,
@@ -115,7 +115,7 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
                duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
                    1000.0);
     if (_dbg_level) {
-      auto out = seq::ir::util::format(module);
+      auto out = codon::ir::util::format(module);
       std::ofstream os("_dump_sir.lisp");
       os << out;
       os.close();
@@ -156,4 +156,4 @@ void generateDocstr(const string &argv0) {
   }
 }
 
-} // namespace seq
+} // namespace codon

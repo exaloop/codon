@@ -5,7 +5,7 @@
 #include "sir/module.h"
 #include "sir/transform/pass.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 
@@ -45,4 +45,4 @@ private:
 
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -44,7 +44,7 @@
 #define FLAG_ATOMIC 2
 #define FLAG_TEST 4
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /// Forward declarations
@@ -98,7 +98,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Absolute path of the entry-point module (if available).
   string module0;
   /// LLVM module.
-  seq::ir::Module *module = nullptr;
+  codon::ir::Module *module = nullptr;
 
   /// Table of imported files that maps an absolute filename to a Import structure.
   /// By convention, the key of Seq standard library is "".
@@ -147,7 +147,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       /// A list of field names and realization's realized field types.
       vector<std::pair<string, types::TypePtr>> fields;
       /// IR type pointer.
-      seq::ir::types::Type *ir;
+      codon::ir::types::Type *ir;
     };
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
@@ -245,4 +245,4 @@ public:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

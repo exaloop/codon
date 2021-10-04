@@ -21,7 +21,7 @@
 #include "parser/common.h"
 #include "util/peglib.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 struct ParseContext {
@@ -46,7 +46,7 @@ struct ParseContext {
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon
 
 void init_codon_rules(peg::Grammar &);
 void init_codon_actions(peg::Grammar &);

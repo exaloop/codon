@@ -16,7 +16,7 @@
 #include "parser/visitors/typecheck/typecheck.h"
 #include "parser/visitors/typecheck/typecheck_ctx.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 Cache::Cache(string argv0)
@@ -142,4 +142,4 @@ ir::types::Type *Cache::makeFunction(const vector<types::TypePtr> &types) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

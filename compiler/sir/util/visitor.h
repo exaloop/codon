@@ -4,10 +4,10 @@
 #include <stdexcept>
 #include <string>
 
-#define VISIT(x) virtual void visit(seq::ir::x *)
-#define CONST_VISIT(x) virtual void visit(const seq::ir::x *)
+#define VISIT(x) virtual void visit(codon::ir::x *)
+#define CONST_VISIT(x) virtual void visit(const codon::ir::x *)
 
-namespace seq {
+namespace codon {
 namespace ir {
 class Node;
 
@@ -87,7 +87,7 @@ namespace util {
 /// Base for SIR visitors
 class Visitor {
 protected:
-  virtual void defaultVisit(seq::ir::Node *) {
+  virtual void defaultVisit(codon::ir::Node *) {
     throw std::runtime_error("cannot visit node");
   }
 
@@ -161,7 +161,7 @@ public:
 
 class ConstVisitor {
 protected:
-  virtual void defaultVisit(const seq::ir::Node *) {
+  virtual void defaultVisit(const codon::ir::Node *) {
     throw std::runtime_error("cannot visit const node");
   }
 
@@ -235,7 +235,7 @@ public:
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef VISIT
 #undef CONST_VISIT

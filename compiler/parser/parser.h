@@ -15,14 +15,14 @@
 #include "sir/sir.h"
 #include "util/common.h"
 
-namespace seq {
+namespace codon {
 
-seq::ir::Module *parse(const std::string &argv0, const std::string &file,
-                       const std::string &code = "", bool isCode = false,
-                       int isTest = 0, int startLine = 0,
-                       const std::unordered_map<std::string, std::string> &defines =
-                           std::unordered_map<std::string, std::string>{});
+codon::ir::Module *parse(const std::string &argv0, const std::string &file,
+                         const std::string &code = "", bool isCode = false,
+                         int isTest = 0, int startLine = 0,
+                         const std::unordered_map<std::string, std::string> &defines =
+                             std::unordered_map<std::string, std::string>{});
 
 void generateDocstr(const std::string &argv0);
 
-} // namespace seq
+} // namespace codon
