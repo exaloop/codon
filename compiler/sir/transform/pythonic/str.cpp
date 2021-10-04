@@ -5,7 +5,7 @@
 #include "sir/util/cloning.h"
 #include "sir/util/irtools.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace pythonic {
@@ -72,4 +72,4 @@ void StrAdditionOptimization::handle(CallInstr *v) {
 } // namespace pythonic
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

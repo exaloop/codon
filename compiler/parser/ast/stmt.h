@@ -17,7 +17,7 @@
 #include "parser/ast/types.h"
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 #define ACCEPT(X)                                                                      \
@@ -37,7 +37,7 @@ struct FunctionStmt;
  * A Seq AST statement.
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
-struct Stmt : public seq::SrcObject {
+struct Stmt : public codon::SrcObject {
   typedef Stmt base_type;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
@@ -49,7 +49,7 @@ struct Stmt : public seq::SrcObject {
 public:
   Stmt();
   Stmt(const Stmt &s) = default;
-  explicit Stmt(const seq::SrcInfo &s);
+  explicit Stmt(const codon::SrcInfo &s);
 
   /// Convert a node to an S-expression.
   string toString() const;
@@ -561,4 +561,4 @@ struct UpdateStmt : public Stmt {
 #undef ACCEPT
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

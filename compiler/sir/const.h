@@ -3,7 +3,7 @@
 #include "module.h"
 #include "value.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 /// SIR constant base. Once created, constants are immutable.
@@ -78,4 +78,4 @@ public:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

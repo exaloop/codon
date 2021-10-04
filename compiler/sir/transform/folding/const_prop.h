@@ -2,7 +2,7 @@
 
 #include "sir/transform/pass.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
@@ -30,4 +30,4 @@ public:
 } // namespace folding
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

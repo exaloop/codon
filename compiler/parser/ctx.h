@@ -19,7 +19,7 @@
 #include "parser/ast.h"
 #include "parser/common.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 /**
@@ -139,4 +139,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

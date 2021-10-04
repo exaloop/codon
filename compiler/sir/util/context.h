@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -33,4 +33,4 @@ public:
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

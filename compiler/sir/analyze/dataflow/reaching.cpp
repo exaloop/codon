@@ -1,6 +1,6 @@
 #include "reaching.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
 id_t getKilled(const Value *val) {
@@ -148,4 +148,4 @@ std::unique_ptr<Result> RDAnalysis::run(const Module *m) {
 } // namespace dataflow
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

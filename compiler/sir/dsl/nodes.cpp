@@ -1,6 +1,6 @@
 #include "nodes.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace dsl {
 
@@ -16,4 +16,4 @@ const char CustomInstr::NodeId = 0;
 
 } // namespace dsl
 } // namespace ir
-} // namespace seq
+} // namespace codon

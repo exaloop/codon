@@ -1015,7 +1015,7 @@ int main(int argc, char **argv) {
   string rules, actions;
   string action_preamble = "  auto &CTX = any_cast<ParseContext &>(DT);\n";
   string loc_preamble = "  auto LI = VS.line_info();\n"
-                        "  auto LOC = seq::SrcInfo(\n"
+                        "  auto LOC = codon::SrcInfo(\n"
                         "    VS.path, LI.first + CTX.line_offset,\n"
                         "    LI.second + CTX.col_offset,\n"
                         "    VS.sv().size());\n";

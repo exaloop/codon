@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace seq {
+namespace codon {
 
 /// Plugin metadata
 struct Plugin {
@@ -47,4 +47,4 @@ public:
   Error load(DSL *dsl);
 };
 
-} // namespace seq
+} // namespace codon

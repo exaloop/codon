@@ -13,13 +13,13 @@
 #include "sir/util/visitor.h"
 #include "sir/value.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace types {
 namespace {
-std::vector<seq::ast::types::TypePtr>
-extractTypes(const std::vector<seq::ast::types::ClassType::Generic> &gens) {
-  std::vector<seq::ast::types::TypePtr> ret;
+std::vector<codon::ast::types::TypePtr>
+extractTypes(const std::vector<codon::ast::types::ClassType::Generic> &gens) {
+  std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : gens)
     ret.push_back(g.type);
   return ret;
@@ -205,4 +205,4 @@ std::string IntNType::getInstanceName(unsigned int len, bool sign) {
 
 } // namespace types
 } // namespace ir
-} // namespace seq
+} // namespace codon

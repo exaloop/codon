@@ -2,7 +2,7 @@
 
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -70,4 +70,4 @@ OutlineResult outlineRegion(BodiedFunc *parent, SeriesFlow *series,
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -9,7 +9,7 @@
 #include "parser/visitors/visitor.h"
 #include "parser/ast.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 void ASTVisitor::defaultVisit(Expr *expr) {}
@@ -290,4 +290,4 @@ void ReplaceASTVisitor::visit(CustomStmt *stmt) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -2,7 +2,7 @@
 
 #include "sir/transform/manager.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 
@@ -12,4 +12,4 @@ const Result *Analysis::doGetAnalysis(const std::string &key) {
 
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

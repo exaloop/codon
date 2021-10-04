@@ -6,7 +6,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace parallel {
@@ -84,4 +84,4 @@ int OMPSched::replaceUsedValue(id_t id, Value *newValue) {
 } // namespace parallel
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

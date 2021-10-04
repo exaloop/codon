@@ -20,7 +20,7 @@
 using fmt::format;
 using std::dynamic_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 struct ReplacementVisitor : ReplaceASTVisitor {
@@ -1747,4 +1747,4 @@ vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

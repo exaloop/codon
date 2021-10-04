@@ -26,7 +26,7 @@ using std::ostream;
 using std::stack;
 using std::static_pointer_cast;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 using namespace types;
@@ -60,4 +60,4 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

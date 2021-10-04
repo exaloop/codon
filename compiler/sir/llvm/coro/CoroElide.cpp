@@ -432,4 +432,4 @@ INITIALIZE_PASS_END(CoroElideLegacy, "coro-elide",
                     "Coroutine frame allocation elision and indirect calls replacement",
                     false, false)
 
-Pass *seq::coro::createCoroElideLegacyPass() { return new CoroElideLegacy(); }
+Pass *codon::coro::createCoroElideLegacyPass() { return new CoroElideLegacy(); }

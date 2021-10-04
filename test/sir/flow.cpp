@@ -5,7 +5,7 @@
 
 #include "sir/util/matching.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, FlowTypeIsVoid) {
   auto *f = module->Nr<SeriesFlow>();

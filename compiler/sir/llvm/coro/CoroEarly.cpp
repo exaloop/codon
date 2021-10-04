@@ -274,4 +274,4 @@ char CoroEarlyLegacy::ID = 0;
 INITIALIZE_PASS(CoroEarlyLegacy, "coro-early", "Lower early coroutine intrinsics",
                 false, false)
 
-Pass *seq::coro::createCoroEarlyLegacyPass() { return new CoroEarlyLegacy(); }
+Pass *codon::coro::createCoroEarlyLegacyPass() { return new CoroEarlyLegacy(); }

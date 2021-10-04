@@ -1,6 +1,6 @@
 #include "test.h"
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, VarQueryMethodsDelegate) {
   Var *original = module->Nr<Var>(module->getIntType());

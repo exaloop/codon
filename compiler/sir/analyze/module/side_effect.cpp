@@ -3,7 +3,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/operator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace analyze {
 namespace module {
@@ -277,4 +277,4 @@ std::unique_ptr<Result> SideEffectAnalysis::run(const Module *m) {
 } // namespace module
 } // namespace analyze
 } // namespace ir
-} // namespace seq
+} // namespace codon

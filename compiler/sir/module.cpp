@@ -7,24 +7,24 @@
 
 #include "func.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace {
-std::vector<seq::ast::types::TypePtr>
+std::vector<codon::ast::types::TypePtr>
 translateGenerics(std::vector<types::Generic> &generics) {
-  std::vector<seq::ast::types::TypePtr> ret;
+  std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : generics) {
     seqassert(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
-    ret.push_back(std::make_shared<seq::ast::types::LinkType>(
-        g.isStatic() ? std::make_shared<seq::ast::types::StaticType>(g.getStaticValue())
+    ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+        g.isStatic() ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
                      : g.getTypeValue()->getAstType()));
   }
   return ret;
 }
 
-std::vector<std::pair<std::string, seq::ast::types::TypePtr>>
+std::vector<std::pair<std::string, codon::ast::types::TypePtr>>
 generateDummyNames(std::vector<types::Type *> &types) {
-  std::vector<std::pair<std::string, seq::ast::types::TypePtr>> ret;
+  std::vector<std::pair<std::string, codon::ast::types::TypePtr>> ret;
   for (auto *t : types) {
     seqassert(t->getAstType(), "{} must have an ast type", *t);
     ret.emplace_back("", t->getAstType());
@@ -32,16 +32,16 @@ generateDummyNames(std::vector<types::Type *> &types) {
   return ret;
 }
 
-std::vector<seq::ast::types::TypePtr> translateArgs(std::vector<types::Type *> &types) {
-  std::vector<seq::ast::types::TypePtr> ret = {
-      std::make_shared<seq::ast::types::LinkType>(
-          seq::ast::types::LinkType::Kind::Unbound, 0)};
+std::vector<codon::ast::types::TypePtr> translateArgs(std::vector<types::Type *> &types) {
+  std::vector<codon::ast::types::TypePtr> ret = {
+      std::make_shared<codon::ast::types::LinkType>(
+          codon::ast::types::LinkType::Kind::Unbound, 0)};
   for (auto *t : types) {
     seqassert(t->getAstType(), "{} must have an ast type", *t);
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
-      ret.push_back(std::make_shared<seq::ast::types::PartialType>(
+      ret.push_back(std::make_shared<codon::ast::types::PartialType>(
           t->getAstType()->getRecord(), f, mask));
     } else {
       ret.push_back(t->getAstType());
@@ -220,7 +220,7 @@ types::Type *Module::getOptionalType(types::Type *base) {
 types::Type *Module::getFuncType(types::Type *rType,
                                  std::vector<types::Type *> argTypes, bool variadic) {
   auto args = translateArgs(argTypes);
-  args[0] = std::make_shared<seq::ast::types::LinkType>(rType->getAstType());
+  args[0] = std::make_shared<codon::ast::types::LinkType>(rType->getAstType());
   auto *result = cache->makeFunction(args);
   if (variadic) {
     // Type checker types have no concept of variadic functions, so we will
@@ -326,4 +326,4 @@ types::Type *Module::unsafeGetIntNType(unsigned int len, bool sign) {
 }
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

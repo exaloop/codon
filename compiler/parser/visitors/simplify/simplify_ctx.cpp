@@ -19,7 +19,7 @@ using fmt::format;
 using std::dynamic_pointer_cast;
 using std::stack;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 SimplifyItem::SimplifyItem(Kind k, string base, string canonicalName, bool global)
@@ -101,4 +101,4 @@ void SimplifyContext::dump(int pad) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

@@ -24,7 +24,7 @@
 extern int _ocaml_time;
 
 using namespace std;
-namespace seq {
+namespace codon {
 namespace ast {
 
 static shared_ptr<peg::Grammar> grammar(nullptr);
@@ -93,7 +93,7 @@ StmtPtr parseCode(const shared_ptr<Cache> &cache, const string &file,
 }
 
 ExprPtr parseExpr(const shared_ptr<Cache> &cache, const string &code,
-                  const seq::SrcInfo &offset) {
+                  const codon::SrcInfo &offset) {
   return parseCode<ExprPtr>(cache, offset.file, code, offset.line, offset.col,
                             "fstring");
 }
@@ -138,7 +138,7 @@ shared_ptr<peg::Grammar> initOpenMPParser() {
 }
 
 vector<CallExpr::Arg> parseOpenMP(const shared_ptr<Cache> &cache, const string &code,
-                                  const seq::SrcInfo &loc) {
+                                  const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
 
@@ -162,4 +162,4 @@ vector<CallExpr::Arg> parseOpenMP(const shared_ptr<Cache> &cache, const string &
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

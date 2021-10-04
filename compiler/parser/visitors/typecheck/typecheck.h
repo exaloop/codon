@@ -21,7 +21,7 @@
 #include "parser/visitors/typecheck/typecheck_ctx.h"
 #include "parser/visitors/visitor.h"
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
@@ -294,7 +294,7 @@ private:
   types::TypePtr realizeType(types::ClassType *typ);
   types::TypePtr realizeFunc(types::FuncType *typ);
   std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast, const string &name);
-  seq::ir::types::Type *getLLVMType(const types::ClassType *t);
+  codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
                 const types::FuncTypePtr &callee);
@@ -306,4 +306,4 @@ private:
 };
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

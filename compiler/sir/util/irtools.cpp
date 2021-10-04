@@ -2,7 +2,7 @@
 
 #include <iterator>
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -248,4 +248,4 @@ void setReturnType(Func *func, types::Type *rType) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

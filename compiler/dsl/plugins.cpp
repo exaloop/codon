@@ -2,7 +2,7 @@
 #include "util/common.h"
 #include <dlfcn.h>
 
-namespace seq {
+namespace codon {
 
 PluginManager::~PluginManager() {
   for (auto &plugin : plugins) {
@@ -35,4 +35,4 @@ PluginManager::Error PluginManager::load(DSL *dsl) {
   return Error::NONE;
 }
 
-} // namespace seq
+} // namespace codon

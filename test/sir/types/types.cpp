@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-using namespace seq::ir;
+using namespace codon::ir;
 
 TEST_F(SIRCoreTest, RecordTypeQuery) {
   auto MEMBER_NAME = "1";

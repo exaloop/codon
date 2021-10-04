@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 class LLVMVisitor : public util::ConstVisitor {
@@ -293,4 +293,4 @@ public:
 };
 
 } // namespace ir
-} // namespace seq
+} // namespace codon

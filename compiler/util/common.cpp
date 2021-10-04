@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
-namespace seq {
+namespace codon {
 namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
                         const std::string &file, int line, int col) {
@@ -34,7 +34,7 @@ void compilationWarning(const std::string &msg, const std::string &file, int lin
   if (terminate)
     exit(EXIT_FAILURE);
 }
-} // namespace seq
+} // namespace codon
 
 void _seqassert(const char *expr_str, const char *file, int line,
                 const std::string &msg) {

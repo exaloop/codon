@@ -24,7 +24,7 @@ using std::ostream;
 using std::stack;
 using std::to_string;
 
-namespace seq {
+namespace codon {
 namespace ast {
 
 // clang-format off
@@ -350,7 +350,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   resultStmt = to_string(id);
 }
 
-shared_ptr<json> DocVisitor::jsonify(const seq::SrcInfo &s) {
+shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
   return make_shared<json>(vector<string>{to_string(s.line), to_string(s.len)});
 }
 
@@ -449,4 +449,4 @@ void DocVisitor::visit(AssignStmt *stmt) {
 }
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

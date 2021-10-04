@@ -37,7 +37,7 @@ using std::vector;
 #include "compiler/util/fmt/format.h"
 #include "compiler/util/fmt/ostream.h"
 
-namespace seq {
+namespace codon {
 
 namespace exc {
 
@@ -203,4 +203,4 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
                                      const string &module0 = "");
 
 } // namespace ast
-} // namespace seq
+} // namespace codon

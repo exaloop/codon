@@ -21,7 +21,7 @@
       handle(v, static_cast<const x *>(other));                                        \
   }
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 namespace {
@@ -326,6 +326,6 @@ bool match(Node *a, Node *b, bool checkNames, bool varIdMatch) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon
 
 #undef VISIT

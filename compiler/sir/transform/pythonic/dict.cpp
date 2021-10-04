@@ -6,7 +6,7 @@
 #include "sir/util/irtools.h"
 #include "sir/util/matching.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace transform {
 namespace pythonic {
@@ -144,4 +144,4 @@ void DictArithmeticOptimization::handle(CallInstr *v) {
 } // namespace pythonic
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon

@@ -4,7 +4,7 @@
 #include <memory>
 #include <type_traits>
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -106,4 +106,4 @@ template <typename It> auto const_map_key_adaptor(It it) {
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

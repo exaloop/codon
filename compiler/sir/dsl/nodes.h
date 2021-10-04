@@ -6,7 +6,7 @@
 #include "sir/const.h"
 #include "sir/instr.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 namespace util {
@@ -124,4 +124,4 @@ public:
 
 } // namespace dsl
 } // namespace ir
-} // namespace seq
+} // namespace codon

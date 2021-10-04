@@ -2,7 +2,7 @@
 
 #include "sir/sir.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 namespace util {
 
@@ -62,4 +62,4 @@ bool match(Node *a, Node *b, bool checkNames = false, bool varIdMatch = false);
 
 } // namespace util
 } // namespace ir
-} // namespace seq
+} // namespace codon

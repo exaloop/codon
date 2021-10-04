@@ -3,7 +3,7 @@
 #include "sir/module.h"
 #include "sir/util/operator.h"
 
-namespace seq {
+namespace codon {
 namespace ir {
 
 namespace analyze {
@@ -78,4 +78,4 @@ public:
 
 } // namespace transform
 } // namespace ir
-} // namespace seq
+} // namespace codon
