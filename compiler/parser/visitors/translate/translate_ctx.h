@@ -41,7 +41,9 @@ struct TranslateItem {
       : kind(k), handle{nullptr}, base(base) {}
   const codon::ir::BodiedFunc *getBase() const { return base; }
   codon::ir::Func *getFunc() const { return kind == Func ? handle.func : nullptr; }
-  codon::ir::types::Type *getType() const { return kind == Type ? handle.type : nullptr; }
+  codon::ir::types::Type *getType() const {
+    return kind == Type ? handle.type : nullptr;
+  }
   codon::ir::Var *getVar() const { return kind == Var ? handle.var : nullptr; }
 };
 

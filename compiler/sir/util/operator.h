@@ -7,8 +7,8 @@
 #include "visitor.h"
 
 #define LAMBDA_VISIT(x)                                                                \
-  virtual void handle(codon::ir::x *v) {}                                                \
-  void visit(codon::ir::x *v) override {                                                 \
+  virtual void handle(codon::ir::x *v) {}                                              \
+  void visit(codon::ir::x *v) override {                                               \
     if (childrenFirst)                                                                 \
       processChildren(v);                                                              \
     preHook(v);                                                                        \

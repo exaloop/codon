@@ -17,7 +17,8 @@
 namespace codon {
 namespace ast {
 
-TranslateContext::TranslateContext(shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
+TranslateContext::TranslateContext(shared_ptr<Cache> cache,
+                                   codon::ir::SeriesFlow *series,
                                    codon::ir::BodiedFunc *base)
     : Context<TranslateItem>(""), cache(std::move(cache)) {
   stack.push_front(vector<string>());

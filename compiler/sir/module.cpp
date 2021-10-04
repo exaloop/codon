@@ -16,8 +16,9 @@ translateGenerics(std::vector<types::Generic> &generics) {
   for (auto &g : generics) {
     seqassert(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
     ret.push_back(std::make_shared<codon::ast::types::LinkType>(
-        g.isStatic() ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
-                     : g.getTypeValue()->getAstType()));
+        g.isStatic()
+            ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
+            : g.getTypeValue()->getAstType()));
   }
   return ret;
 }
@@ -32,7 +33,8 @@ generateDummyNames(std::vector<types::Type *> &types) {
   return ret;
 }
 
-std::vector<codon::ast::types::TypePtr> translateArgs(std::vector<types::Type *> &types) {
+std::vector<codon::ast::types::TypePtr>
+translateArgs(std::vector<types::Type *> &types) {
   std::vector<codon::ast::types::TypePtr> ret = {
       std::make_shared<codon::ast::types::LinkType>(
           codon::ast::types::LinkType::Kind::Unbound, 0)};

@@ -14,7 +14,8 @@
 namespace codon {
 namespace ir {
 namespace {
-int findAndReplace(id_t id, codon::ir::Var *newVal, std::list<codon::ir::Var *> &values) {
+int findAndReplace(id_t id, codon::ir::Var *newVal,
+                   std::list<codon::ir::Var *> &values) {
   auto replacements = 0;
   for (auto &value : values) {
     if (value->getId() == id) {

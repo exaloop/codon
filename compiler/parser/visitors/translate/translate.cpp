@@ -18,9 +18,9 @@
 #include "sir/transform/parallel/schedule.h"
 #include "sir/util/cloning.h"
 
-using fmt::format;
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
+using fmt::format;
 using std::function;
 using std::get;
 using std::make_shared;
