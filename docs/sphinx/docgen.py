@@ -49,7 +49,7 @@ for mid,module in modules.items():
         directory=os.path.relpath(directory,root)  # remove the prefix
         os.makedirs(f"stdlib/{directory}",exist_ok=True)
         if name.endswith('.codon'):
-            name=name[:-4]
+            name=name[:-6] # drop suffix
         if name!='__init__':
             parsed_modules[directory].add((name,mid))
         module=os.path.split(module)[0]
