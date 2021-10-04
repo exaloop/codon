@@ -47,7 +47,8 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.intersphinx',
     # 'breathe',
-    # 'exhale'
+    # 'exhale',
+    'codon',
 ]
 
 # Add any paths that contain templates here, relative to this directory.

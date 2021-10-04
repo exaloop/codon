@@ -145,7 +145,7 @@ for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in m
     with open(file,mode) as f:
         print(f".. codon:module:: {module}\n",file=f)
         print(f":codon:mod:`{module}`",file=f)
-        print("-"*(len(module)+11)+"\n",file=f)
+        print("-"*(len(module)+13)+"\n",file=f)
         directory_prefix=directory+'/' if directory!='.' else ''
         print(f"Source code: `{directory_prefix}{name}.codon <https://github.com/exaloop.io/codon/blob/master/stdlib/{directory}/{name}.codon>`_\n",file=f)
         if 'doc' in j[mid]:
