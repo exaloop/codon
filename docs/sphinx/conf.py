@@ -164,7 +164,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     (master_doc, 'codon', u'Codon Documentation',
-     author, 'codon', 'a language for bioinformatics',
+     author, 'codon', 'a high-performance language',
      'Miscellaneous'),
 ]
 
