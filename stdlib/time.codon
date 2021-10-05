@@ -37,7 +37,7 @@ def timing(msg: str = ""):
     """
     Example usage:
 
-    .. code-block:: seq
+    .. code-block:: python
 
         from time import timing
         with timing('foo function'):

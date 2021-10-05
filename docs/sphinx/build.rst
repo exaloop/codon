@@ -1,13 +1,13 @@
 Building from Source
 ====================
 
-Unless you really need to build Seq for whatever reason, we strongly
+Unless you really need to build Codon for whatever reason, we strongly
 recommend using pre-built binaries if possible.
 
 Dependencies
 ------------
 
-Seq depends on LLVM 12, which can be installed via most package managers. To
+Codon depends on LLVM 12, which can be installed via most package managers. To
 build LLVM 12 yourself, you can do the following:
 
 .. code-block:: bash
@@ -28,7 +28,7 @@ build LLVM 12 yourself, you can do the following:
 Build
 -----
 
-The following can generally be used to build Seq. The build process will automatically
+The following can generally be used to build Codon. The build process will automatically
 download and build several smaller dependencies.
 
 .. code-block:: bash
@@ -40,5 +40,5 @@ download and build several smaller dependencies.
                           -DCMAKE_CXX_COMPILER=clang++)
     cmake --build build --config Release
 
-This should produce the ``seqc`` executable in the ``build`` directory, as well as
-``seqtest`` which runs the test suite.
+This should produce the ``codon`` executable in the ``build`` directory, as well as
+``codon_test`` which runs the test suite.

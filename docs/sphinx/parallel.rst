@@ -1,9 +1,11 @@
+.. _parallelism:
+
 Parallelism and Multithreading
 ==============================
 
-Seq supports parallelism and multithreading via OpenMP out of the box. Here's an example:
+Codon supports parallelism and multithreading via OpenMP out of the box. Here's an example:
 
-.. code-block:: seq
+.. code-block:: python
 
     @par
     for i in range(10):
@@ -14,7 +16,7 @@ By default, parallel loops will use all available threads, or use the number of 
 specified by the ``OMP_NUM_THREADS`` environment variable. A specific thread number can
 be given directly on the ``@par`` line as well:
 
-.. code-block:: seq
+.. code-block:: python
 
     @par(num_threads=5)
     for i in range(10):
@@ -31,7 +33,7 @@ be given directly on the ``@par`` line as well:
 Other OpenMP parameters like ``private``, ``shared`` or ``reduction``, are inferred
 automatically by the compiler. For example, the following loop
 
-.. code-block:: seq
+.. code-block:: python
 
     total = 0
     @par
@@ -43,7 +45,7 @@ will automatically generate a reduction for variable ``a``.
 Here is an example that finds the sum of prime numbers up to a user-defined limit, using
 a parallel loop on 16 threads with a dynamic schedule and chunk size of 100:
 
-.. code-block:: seq
+.. code-block:: python
 
     from sys import argv
 
@@ -71,7 +73,7 @@ the factors of an integer takes more time for larger integers, we use a dynamic 
 ``@par`` also supports C/C++ OpenMP pragma strings. For example, the ``@par`` line in the
 above example can also be written as:
 
-.. code-block:: seq
+.. code-block:: python
 
     # same as: @par(schedule='dynamic', chunk_size=100, num_threads=16)
     @par('schedule(dynamic, 100) num_threads(16)')
@@ -84,13 +86,13 @@ applies to *imperative* for-loops of the form ``for i in range(a, b, c)`` (where
 For general parallel for-loops of the form ``for i in some_generator()``, a task-based approach is
 used instead, where each loop iteration is executed as an independent task.
 
-The Seq compiler also converts iterations over lists (``for a in some_list``) to imperative
+The Codon compiler also converts iterations over lists (``for a in some_list``) to imperative
 for-loops, meaning these loops can be executed using OpenMP's loop parallelism.
 
 Custom reductions
 -----------------
 
-Seq can automatically generate efficient reductions for ``int`` and ``float`` values. For other
+Codon can automatically generate efficient reductions for ``int`` and ``float`` values. For other
 data types, user-defined reductions can be specified. A class that supports reductions must
 include:
 
@@ -99,7 +101,7 @@ include:
 
 Here is an example for reducing a new ``Vector`` type:
 
-.. code-block:: seq
+.. code-block:: python
 
     @tuple
     class Vector:
@@ -121,9 +123,9 @@ Here is an example for reducing a new ``Vector`` type:
 OpenMP constructs
 -----------------
 
-All of OpenMP's API functions are accessible directly in Seq. For example:
+All of OpenMP's API functions are accessible directly in Codon. For example:
 
-.. code-block:: seq
+.. code-block:: python
 
     import openmp as omp
     print(omp.get_num_threads())
@@ -132,7 +134,7 @@ All of OpenMP's API functions are accessible directly in Seq. For example:
 OpenMP's *critical*, *master*, *single* and *ordered* constructs can be applied via the
 corresponding decorators:
 
-.. code-block:: seq
+.. code-block:: python
 
     import openmp as omp
 
@@ -161,7 +163,7 @@ corresponding decorators:
 
 For finer-grained locking, consider using the locks from the ``threading`` module:
 
-.. code-block:: seq
+.. code-block:: python
 
     from threading import Lock
     lock = Lock()  # or RLock for re-entrant lock

@@ -1,14 +1,14 @@
 Language Primer
 ===============
 
-If you know Python, you already know 95% of Seq. The following primer
+If you know Python, you already know 95% of Codon. The following primer
 assumes some familiarity with Python or at least one "modern"
 programming language (QBASIC doesn't count).
 
 Printing
 --------
 
-.. code:: seq
+.. code:: python
 
     print('hello world')
 
@@ -18,9 +18,9 @@ Printing
 Comments
 --------
 
-.. code:: seq
+.. code:: python
 
-    # Seq comments start with "# 'and go until the end of the line
+    # Codon comments start with "# 'and go until the end of the line
 
     """
     There are no multi-line comments. You can (ab)use the docstring operator (''')
@@ -30,10 +30,10 @@ Comments
 Literals
 --------
 
-Seq is a strongly typed language like C++, Java, or C#. That means each
+Codon is a strongly typed language like C++, Java, or C#. That means each
 expression must have a type that can be inferred at the compile-time.
 
-.. code:: seq
+.. code:: python
 
     # Booleans
     True  # type: bool
@@ -41,7 +41,7 @@ expression must have a type that can be inferred at the compile-time.
 
     # Numbers
     a = 1  # type: int. It's 64-bit signed integer.
-    b = 1.12  # type: float. Seq's float is identical to C's double.
+    b = 1.12  # type: float. Codon's float is identical to C's double.
     c = 5u  # type: int, but unsigned
     d = Int[8](12)  # 8-bit signed integer; you can go all the way to Int[2048]
     e = UInt[8](200)  # 8-bit unsigned integer
@@ -68,15 +68,10 @@ expression must have a type that can be inferred at the compile-time.
     #   \\, \', \", \a, \b, \f, \n, \r, \t, \v,
     #   \xHHH (HHH is hex code), \OOO (OOO is octal code)
 
-    # Sequence types
-    dna = s"ACGT"  # type: seq. These are DNA sequences.
-    prt = p"MYX"  # type: bio.pseq. These are protein sequences.
-    kmer = k"ACGT"  # type: Kmer[4]. Note that Kmer[5] is different than Kmer[12].
-
 Tuples
 ~~~~~~
 
-.. code:: seq
+.. code:: python
 
     # Tuples
     t = (1, 2.3, 'hi')  # type: Tuple[int, float, str].
@@ -87,10 +82,10 @@ As all types must be known at compile time, tuple indexing works
 only if a tuple is homogenous (all types are the same) or if the value
 of the index is known at compile-time.
 
-You can, however, iterate over heterogenous tuples in Seq. This is achieved
+You can, however, iterate over heterogenous tuples in Codon. This is achieved
 by unrolling the loop to accommodate the different types.
 
-.. code:: seq
+.. code:: python
 
     t = (1, 2.3, 'hi')
     t[1]  # works because 1 is a constant int
@@ -116,7 +111,7 @@ by unrolling the loop to accommodate the different types.
 Containers
 ~~~~~~~~~~
 
-.. code:: seq
+.. code:: python
 
     l = [1, 2, 3]  # type: List[int]; a list of integers
     s = {1.1, 3.3, 2.2, 3.3}  # type: Set[float]; a set of floats
@@ -127,9 +122,9 @@ Containers
     dn = {}  # an empty dict whose type is inferred based on usage
     dn = Dict[int, float]()  # an empty dictionary with explicit element types
 
-Because Seq is strongly typed, these won't compile:
+Because Codon is strongly typed, these won't compile:
 
-.. code:: seq
+.. code:: python
 
     l = [1, 's']  # is it a List[int] or List[str]? you cannot mix-and-match types
     d = {1: 'hi'}
@@ -138,11 +133,11 @@ Because Seq is strongly typed, these won't compile:
     t = (1, 2.2)  # Tuple[int, float]
     lt = list(t)  # compile error: t is not homogenous
 
-    lp = [1, 2.1, 3, 5]  # compile error: Seq will not automatically cast a float to an int
+    lp = [1, 2.1, 3, 5]  # compile error: Codon will not automatically cast a float to an int
 
 This will work, though:
 
-.. code:: seq
+.. code:: python
 
     u = (1, 2, 3)
     lu = list(u)  # works: u is homogenous
@@ -156,7 +151,7 @@ This will work, though:
 Assignments and operators
 -------------------------
 
-.. code:: seq
+.. code:: python
 
     a = 1 + 2  # this is 3
     a = (1).__add__(2)  # you can use a function call instead of an operator; this is also 3
@@ -178,7 +173,6 @@ Operator Magic method     Description
 ``**``   ``__pow__``      exponentiation
 ``%``    ``__mod__``      modulo
 ``@``    ``__matmul__``   matrix multiplication;
-                                  sequence alignment
 ``&``    ``__and__``      bitwise and
 ``|``    ``__or__``       bitwise or
 ``^``    ``__xor__``      bitwise xor
@@ -195,7 +189,7 @@ Operator Magic method     Description
 ``or``   none             boolean or (short-circuits)
 ======== ================ ==================================================
 
-Seq also has the following unary operators:
+Codon also has the following unary operators:
 
 ======== ================ =============================
 Operator Magic method     Description
@@ -211,9 +205,9 @@ Operator Magic method     Description
 Tuple unpacking
 ~~~~~~~~~~~~~~~
 
-Seq supports most of Python's tuple unpacking syntax:
+Codon supports most of Python's tuple unpacking syntax:
 
-.. code:: seq
+.. code:: python
 
     x, y = 1, 2  # x is 1, y is 2
     (x, (y, z)) = 1, (2, 3)  # x is 1, y is 2, z is 3
@@ -240,9 +234,9 @@ Control flow
 Conditionals
 ~~~~~~~~~~~~
 
-Seq supports the standard Python conditional syntax:
+Codon supports the standard Python conditional syntax:
 
-.. code:: seq
+.. code:: python
 
     if a or b or some_cond():
         print(1)
@@ -255,10 +249,10 @@ Seq supports the standard Python conditional syntax:
 
     a = b if sth() else c  # ternary conditional operator
 
-Seq extends the Python conditional syntax with a ``match`` statement, which is 
+Codon extends the Python conditional syntax with a ``match`` statement, which is 
 inspired by Rust's:
 
-.. code:: seq
+.. code:: python
 
     match a + some_heavy_expr():  # assuming that the type of this expression is int
         case 1:  # is it 1?
@@ -300,12 +294,6 @@ inspired by Rust's:
         case [...]:  # any other list
             ...
 
-    match sequence:  # of type seq
-        case 'ACGT': ...
-        case 'AC_T': ...  # _ is a wildcard character and it can be anything
-        case 'A_C_T_': ...  # a spaced k-mer AxCxTx
-        case 'AC*T': ...  # matches a sequence that starts with AC and ends with T
-
 You can mix, match and chain match rules as long as the match type
 matches the expression type.
 
@@ -314,7 +302,7 @@ Loops
 
 Standard fare:
 
-.. code:: seq
+.. code:: python
 
     a = 10
     while a > 0:  # prints even numbers from 9 to 1
@@ -340,7 +328,7 @@ Comprehensions
 Technically, comprehensions are not statements (they are expressions).
 Comprehensions are a nifty, Pythonic way to create collections:
 
-.. code:: seq
+.. code:: python
 
     l = [i for i in range(5)]  # type: List[int]; l is [0, 1, 2, 3, 4]
     l = [i for i in range(15) if i % 2 == 1 if i > 10]  # type: List[int]; l is [11, 13]
@@ -352,7 +340,7 @@ Comprehensions are a nifty, Pythonic way to create collections:
 You can also use collections to create generators (more about them later
 on):
 
-.. code:: seq
+.. code:: python
 
     g = (i for i in range(10))
     print(list(g))  # prints number from 0 to 9, inclusive
@@ -361,9 +349,9 @@ Exception handling
 ~~~~~~~~~~~~~~~~~~
 
 Again, if you know how to do this in Python, you know how to do it in
-Seq:
+Codon:
 
-.. code:: seq
+.. code:: python
 
     def throwable():
          raise ValueError("doom and gloom")
@@ -378,14 +366,14 @@ Seq:
         print("whatever, it's done")
 
 .. note::
-    Right now, Seq cannot catch multiple exceptions in one
+    Right now, Codon cannot catch multiple exceptions in one
     statement. Thus ``catch (Exc1, Exc2, Exc3) as var`` will not compile.
 
 If you have an object that implements ``__enter__`` and ``__exit__``
 methods to manage its lifetime (say, a ``File``), you can use a ``with``
 statement to make your life easy:
 
-.. code:: seq
+.. code:: python
 
     with open('foo.txt') as f, open('foo_copy.txt', 'w') as fo:
         for l in f:
@@ -394,20 +382,20 @@ statement to make your life easy:
 Variables and scoping
 ---------------------
 
-You have probably noticed by now that blocks in Seq are defined by their
+You have probably noticed by now that blocks in Codon are defined by their
 indentation level (as in Python). We recommend using 2 or 4 spaces to
 indent blocks. Do not mix indentation levels, and do not mix tabs and spaces;
 stick to any *consistent* way of indenting your code.
 
-One of the major differences between Seq and Python lies in variable
-scoping rules. Seq variables cannot *leak* to outer blocks. Every
+One of the major differences between Codon and Python lies in variable
+scoping rules. Codon variables cannot *leak* to outer blocks. Every
 variable is accessible only within its own block (after the variable is
 defined, of course), and within any block that is nested within the
 variable's own block.
 
 That means that the following Pythonic pattern won't compile:
 
-.. code:: seq
+.. code:: python
 
     if cond():
          x = 1
@@ -419,9 +407,9 @@ That means that the following Pythonic pattern won't compile:
          ...
     print(i)  # error: i is only accessible within the for loop block
 
-In Seq, you can rewrite that as:
+In Codon, you can rewrite that as:
 
-.. code:: seq
+.. code:: python
 
     x = 2
     if cond():
@@ -432,10 +420,10 @@ In Seq, you can rewrite that as:
 
     print(x)
 
-Another important difference between Seq and Python is that, in Seq, variables
+Another important difference between Codon and Python is that, in Codon, variables
 cannot change types. So this won't compile:
 
-.. code:: seq
+.. code:: python
 
     a = 's'
     a = 1  # error: expected string, but got int
@@ -444,7 +432,7 @@ A note about function scoping: functions cannot modify variables that
 are not defined within the function block. You need to use ``global`` to
 modify such variables:
 
-.. code:: seq
+.. code:: python
 
     g = 5
     def foo():
@@ -468,24 +456,24 @@ are not defined within the function.
 Imports
 -------
 
-You can import functions and classes from another Seq module by doing:
+You can import functions and classes from another Codon module by doing:
 
-.. code:: seq
+.. code:: python
 
-    # Create foo.seq with a bunch of useful methods
+    # Create foo.codon with a bunch of useful methods
     import foo
 
     foo.useful1()
     p = foo.FooType()
 
-    # Create bar.seq with a bunch of useful methods
+    # Create bar.codon with a bunch of useful methods
     from bar import x, y
     x(y)
 
     from bar import z as bar_z
     bar_z()
 
-``import foo`` looks for ``foo.seq`` or ``foo/__init__.seq`` in the
+``import foo`` looks for ``foo.codon`` or ``foo/__init__.codon`` in the
 current directory.
 
 Functions
@@ -493,7 +481,7 @@ Functions
 
 Functions are defined as follows:
 
-.. code:: seq
+.. code:: python
 
     def foo(a, b, c):
         return a + b + c
@@ -501,7 +489,7 @@ Functions are defined as follows:
 
 How about procedures? Well, don't return anything meaningful:
 
-.. code:: seq
+.. code:: python
 
     def proc(a, b):
         print(a, 'followed by', b)
@@ -514,10 +502,10 @@ How about procedures? Well, don't return anything meaningful:
     proc2(1, 's')
     proc2(5, 's')  # this prints nothing
 
-Seq is a strongly-typed language, so you can restrict argument and
+Codon is a strongly-typed language, so you can restrict argument and
 return types:
 
-.. code:: seq
+.. code:: python
 
     def fn(a: int, b: float):
         return a + b  # this works because int implements __add__(float)
@@ -538,7 +526,7 @@ return types:
 
 Default arguments? Named arguments? You bet:
 
-.. code:: seq
+.. code:: python
 
     def foo(a, b: int, c: float = 1.0, d: str = 'hi'):
         print(a, b, c, d)
@@ -547,7 +535,7 @@ Default arguments? Named arguments? You bet:
 
 How about optional arguments? We support that too:
 
-.. code:: seq
+.. code:: python
 
     # type of b promoted to Optional[int]
     def foo(a, b: int = None):
@@ -559,29 +547,29 @@ How about optional arguments? We support that too:
 Generics
 ~~~~~~~~
 
-As we've said several times: Seq is a strongly typed language. As
+As we've said several times: Codon is a strongly typed language. As
 such, it is not as flexible as Python when it comes to types (e.g. you
 can't have lists with elements of different types). However,
-Seq tries to mimic Python's *"I don't care about types until I do"*
+Codon tries to mimic Python's *"I don't care about types until I do"*
 attitude as much as possible by utilizing a technique known as
 *monomorphization*. If there is a function that has an argument
-without a type definition, Seq will consider it a *generic* function,
+without a type definition, Codon will consider it a *generic* function,
 and will generate different functions for each invocation of
 that generic function:
 
-.. code:: seq
+.. code:: python
 
     def foo(x):
         print(x)  # print relies on typeof(x).__str__(x) method to print the representation of x
-    foo(1)  # Seq automatically generates foo(x: int) and calls int.__str__ when needed
-    foo('s')  # Seq automatically generates foo(x: str) and calls str.__str__ when needed
-    foo([1, 2])  # Seq automatically generates foo(x: List[int]) and calls List[int].__str__ when needed
+    foo(1)  # Codon automatically generates foo(x: int) and calls int.__str__ when needed
+    foo('s')  # Codon automatically generates foo(x: str) and calls str.__str__ when needed
+    foo([1, 2])  # Codon automatically generates foo(x: List[int]) and calls List[int].__str__ when needed
 
 But what if you need to mix type definitions and generic types? Say, your
 function can take a list of *anything*? Well, you can use generic
 specifiers:
 
-.. code:: seq
+.. code:: python
 
     def foo(x: List[T], T: type):
         print(x)
@@ -604,9 +592,9 @@ specifiers:
 Generators
 ~~~~~~~~~~
 
-Seq supports generators, and they are fast! Really, really fast!
+Codon supports generators, and they are fast! Really, really fast!
 
-.. code:: seq
+.. code:: python
 
     def gen(i):
         while i < 10:
@@ -619,7 +607,7 @@ You can also use ``yield`` to implement coroutines: ``yield``
 suspends the function, while ``(yield)`` (yes, parentheses are required)
 receives a value, as in Python.
 
-.. code:: seq
+.. code:: python
 
     def mysum[T](start: T):
         m = start
@@ -635,62 +623,16 @@ receives a value, as in Python.
         iadder.send(i)  # send a value to coroutine
     print(iadder.send(-1))  # prints 45
 
-Pipelines
-~~~~~~~~~
-
-Seq extends the core Python language with a pipe operator, which is
-similar to bash pipes (or F#'s ``|>`` operator). You can chain multiple
-functions and generators to form a pipeline:
-
-.. code:: seq
-
-    def add1(x):
-        return x + 1
-
-    2 |> add1  # 3; equivalent to add1(2)
-
-    def calc(x, y):
-        return x + y**2
-    2 |> calc(3)  # 11; equivalent to calc(2, 3)
-    2 |> calc(..., 3)  # 11; equivalent to calc(2, 3)
-    2 |> calc(3, ...)  # 7; equivalent to calc(3, 2)
-
-    def gen(i):
-        for i in range(i):
-            yield i
-    5 |> gen |> print # prints 0 1 2 3 4 separated by newline
-    range(1, 4) |> iter |> gen |> print(end=' ')  # prints 0 0 1 0 1 2 without newline
-    [1, 2, 3] |> print   # prints [1, 2, 3]
-    range(100000000) |> print  # prints range(0, 100000000)
-    range(100000000) |> iter |> print  # not only prints all those numbers, but it uses almost no memory at all
-
-Seq will chain anything that implements ``__iter__``; however, use
-generators as much as possible because the compiler will optimize out
-generators whenever possible. Combinations of pipes and generators can be
-used to implement efficient streaming pipelines.
-
-Seq can also execute pipelines in parallel via the parallel pipe (``||>``)
-operator:
-
-.. code:: seq
-
-    range(100000) |> iter ||> print  # prints all these numbers, probably in random order
-    range(100000) |> iter ||> process ||> clean  # runs process in parallel, and then cleans data in parallel
-
-In the last example, Seq will automatically schedule the ``process`` and
-``clean`` functions to execute as soon as possible. You can control the
-number of threads via the ``OMP_NUM_THREADS`` environment variable.
-
 .. _interop:
 
 Foreign function interface (FFI)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Seq can easily call functions from C and Python.
+Codon can easily call functions from C and Python.
 
 Let's import some C functions:
 
-.. code:: seq
+.. code:: python
 
     from C import pow(float) -> float
     pow(2.0)  # 4.0
@@ -698,15 +640,15 @@ Let's import some C functions:
     # Import and rename function
     from C import puts(cobj) -> void as print_line  # type cobj is C's pointer (void*, char*, etc.)
     print_line("hi!".c_str())  # prints "hi!".
-                               # Note .ptr at the end of string--- needed to cast Seq's string to char*.
+                               # Note .ptr at the end of string--- needed to cast Codon's string to char*.
 
 ``from C import`` only works if the symbol is available to the program. If you
-are running your programs via ``seqc``, you can link dynamic libraries
-by running ``seqc run -l path/to/dynamic/library.so ...``.
+are running your programs via ``codon``, you can link dynamic libraries
+by running ``codon run -l path/to/dynamic/library.so ...``.
 
 Hate linking? You can also use dyld library loading as follows:
 
-.. code:: seq
+.. code:: python
 
 
     LIBRARY = "mycoollib.so"
@@ -716,21 +658,21 @@ Hate linking? You can also use dyld library loading as follows:
     foo2 = my2(4, 3.2)
 
 .. note::
-    When importing external non-Seq functions, you must explicitly specify
+    When importing external non-Codon functions, you must explicitly specify
     argument and return types.
 
-How about Python? If you have set the ``SEQ_PYTHON`` environment variable as
+How about Python? If you have set the ``CODON_PYTHON`` environment variable as
 described in the first section, you can do:
 
-.. code:: seq
+.. code:: python
 
     from python import mymodule.myfunction(str) -> int as foo
     print(foo("bar"))
 
-Often you want to execute more complex Python code within Seq. To that
-end, you can use Seq's ``@python`` annotation:
+Often you want to execute more complex Python code within Codon. To that
+end, you can use Codon's ``@python`` annotation:
 
-.. code:: seq
+.. code:: python
 
     @python
     def scipy_here_i_come(i: List[List[float]]) -> List[float]:
@@ -743,18 +685,18 @@ end, you can use Seq's ``@python`` annotation:
         return list(eigenvalues)
     print(scipy_here_i_come([[1.0, 2.0], [3.0, 4.0]]))  # [-0.372281, 5.37228] with some warnings...
 
-Seq will automatically bridge any object that implements the ``__to_py__``
-and ``__from_py__`` magic methods. All standard Seq types already
+Codon will automatically bridge any object that implements the ``__to_py__``
+and ``__from_py__`` magic methods. All standard Codon types already
 implement these methods.
 
 Classes and types
 -----------------
 
-Of course, Seq supports classes! However, you must declare class members
+Of course, Codon supports classes! However, you must declare class members
 and their types in the preamble of each class (like you would do with
 Python's dataclasses).
 
-.. code:: seq
+.. code:: python
 
     class Foo:
         x: int
@@ -770,11 +712,11 @@ Python's dataclasses).
     f.method()  # prints "1 2"
 
 .. note::
-    Seq does not (yet!) support inheritance and polymorphism.
+    Codon does not (yet!) support inheritance and polymorphism.
 
-Unlike Python, Seq supports method overloading:
+Unlike Python, Codon supports method overloading:
 
-.. code:: seq
+.. code:: python
 
     class Foo:
         x: int
@@ -799,7 +741,7 @@ Unlike Python, Seq supports method overloading:
 
 Classes can also be generic:
 
-.. code:: seq
+.. code:: python
 
     class Container[T]:
         l: List[T]
@@ -809,7 +751,7 @@ Classes can also be generic:
 
 Classes create objects that are passed by reference:
 
-.. code:: seq
+.. code:: python
 
     class Point:
         x: int
@@ -824,9 +766,9 @@ Classes create objects that are passed by reference:
 If you need to copy an object's contents, implement the ``__copy__`` magic
 method and use ``q = copy(p)`` instead.
 
-Seq also supports pass-by-value types via the ``@tuple`` annotation:
+Codon also supports pass-by-value types via the ``@tuple`` annotation:
 
-.. code:: seq
+.. code:: python
 
     @tuple
     class Point:
@@ -840,7 +782,7 @@ Seq also supports pass-by-value types via the ``@tuple`` annotation:
 However, **by-value objects are immutable!**. The following code will
 not compile:
 
-.. code:: seq
+.. code:: python
 
     p = Point(1, 2)
     p.x = 2  # error! immutable type
@@ -850,7 +792,7 @@ Under the hood, types are basically named tuples (equivalent to Python's
 
 You can also add methods to types:
 
-.. code:: seq
+.. code:: python
 
     @tuple
     class Point:
@@ -869,17 +811,16 @@ You can also add methods to types:
 Type extensions
 ~~~~~~~~~~~~~~~
 
-Suppose you have a class that lacks a method or an operator that might
-be really useful. You can extend that class and add the method at compile time:
+Suppose you have a class that lacks a method or an operator that might be really useful. Codon provides an ``@extend`` annotation that allows you to add and modify methods of various types at compile time, including built-in types like ``int`` or ``str``. This allows much of the functionality of built-in types to be implemented in Codon as type extensions in the standard library.
 
-.. code:: seq
+.. code:: python
 
     class Foo:
         ...
 
     f = Foo(...)
 
-    # we need foo.cool() but it does not exist... not a problem for Seq
+    # We need foo.cool() but it does not exist... not a problem for Codon
     @extend
     class Foo:
         def cool(self: Foo):
@@ -887,13 +828,15 @@ be really useful. You can extend that class and add the method at compile time:
 
     f.cool()  # works!
 
-    # how about we add support for adding integers and strings?
+    # How about we add support for adding integers and strings:
     @extend
     class int:
-        def __add__(self: int, other: str) -> int:
+        def __add__(self: int, other: str):
             return self + int(other)
 
     print(5 + '4')  # 9
+
+Note that all type extensions are performed strictly at compile time and incur no runtime overhead.
 
 Magic methods
 ~~~~~~~~~~~~~
@@ -915,13 +858,22 @@ operators        overload unary and binary operators (see :ref:`operators`)
 ``__str__``      support printing and ``str`` method
 ================ =============================================
 
+Other types
+~~~~~~~~~~~
+
+Codon provides arbitrary-width signed and unsigned integers, e.g. ``Int[32]`` is a signed 32-bit integer while ``UInt[128]`` is an unsigned 128-bit integer, respectively (note that ``int`` is an ``Int[64]``). Typedefs for common bit widths are provided in the standard library, such as ``i8``, ``i16``, ``u32``, ``u64`` etc.
+
+The ``Ptr[T]`` type in Codon also corresponds to a raw C pointer (e.g. ``Ptr[byte]`` is equivalent to ``char*`` in C). The ``Array[T]`` type represents a fixed-length array (essentially a pointer with a length).
+
+Codon also provides ``__ptr__`` for obtaining a pointer to a variable (as in ``__ptr__(myvar)``) and ``__array__`` for declaring stack-allocated arrays (as in ``__array__[int](10)``).
+
 LLVM functions
 ~~~~~~~~~~~~~~
 
 In certain cases, you might want to use LLVM features that are not directly
-accessible with Seq. This can be done with the ``@llvm`` attribute:
+accessible with Codon. This can be done with the ``@llvm`` attribute:
 
-.. code:: seq
+.. code:: python
 
     @llvm
     def llvm_add[T](a: T, b: T) -> T:
@@ -933,4 +885,4 @@ accessible with Seq. This can be done with the ``@llvm`` attribute:
 
 --------------
 
-Issues, feedback, or comments regarding this tutorial? Let us know `on GitHub <https://github.com/seq-lang/seq>`__.
+Issues, feedback, or comments regarding this tutorial? Let us know `on GitHub <https://github.com/exaloop/codon>`__.

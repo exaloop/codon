@@ -1,4 +1,4 @@
-PROJECT_NAME      = "seq"
+PROJECT_NAME      = "codon"
 XML_OUTPUT        = xml
 INPUT             = ../../compiler/include ../../compiler/lang ../../compiler/types ../../compiler/util
 STRIP_FROM_PATH   = ../..
