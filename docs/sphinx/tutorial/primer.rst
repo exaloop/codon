@@ -249,7 +249,7 @@ Codon supports the standard Python conditional syntax:
 
     a = b if sth() else c  # ternary conditional operator
 
-Codon extends the Python conditional syntax with a ``match`` statement, which is 
+Codon extends the Python conditional syntax with a ``match`` statement, which is
 inspired by Rust's:
 
 .. code:: python

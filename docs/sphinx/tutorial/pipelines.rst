@@ -22,7 +22,7 @@ Codon extends the core Python language with a pipe operator. You can chain multi
     def gen(i):
         for i in range(i):
             yield i
-            
+
     5 |> gen |> print # prints 0 1 2 3 4 separated by newline
     range(1, 4) |> iter |> gen |> print(end=' ')  # prints 0 0 1 0 1 2 without newline
     [1, 2, 3] |> print   # prints [1, 2, 3]
