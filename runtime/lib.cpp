@@ -179,7 +179,7 @@ SEQ_FUNC seq_str_t seq_str_int(seq_int_t n) { return string_conv("%ld", 22, n); 
 
 SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n) { return string_conv("%lu", 22, n); }
 
-SEQ_FUNC seq_str_t seq_str_float(double f) { return string_conv("%g", 16, f); }
+SEQ_FUNC seq_str_t seq_str_float(double f) { return string_conv("%.17g", 16, f); }
 
 SEQ_FUNC seq_str_t seq_str_bool(bool b) {
   return string_conv("%s", 6, b ? "True" : "False");
