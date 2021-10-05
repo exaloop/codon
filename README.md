@@ -3,20 +3,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/exaloop.io/codon/actions?query=branch%3Adevelop">
-    <img src="https://github.com/exaloop.io/codon/workflows/Codon%20CI/badge.svg?branch=develop"
+  <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
+    <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
          alt="Build Status">
   </a>
   <a href="https://gitter.im/seq-lang/seq?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge">
     <img src="https://badges.gitter.im/Join%20Chat.svg"
          alt="Gitter">
   </a>
-  <a href="https://github.com/exaloop.io/codon/releases/latest">
-    <img src="https://img.shields.io/github/v/release/exaloop.io/codon?sort=semver"
+  <a href="https://github.com/exaloop/codon/releases/latest">
+    <img src="https://img.shields.io/github/v/release/exaloop/codon?sort=semver"
          alt="Version">
   </a>
-  <a href="https://github.com/exaloop.io/codon/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/exaloop.io/codon"
+  <a href="https://github.com/exaloop/codon/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/exaloop/codon"
          alt="License">
   </a>
 </p>
@@ -112,4 +112,4 @@ See [Building from Source](docs/sphinx/build.rst).
 
 ## Documentation
 
-Please check [docs.exaloop.io](https://docs.exaloop.io) for in-depth documentation.
+Please check [docs.codon.dev](https://docs.codon.dev) for in-depth documentation.

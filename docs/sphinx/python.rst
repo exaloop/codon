@@ -21,8 +21,8 @@ For example, with a ``brew``-installed Python 3.9 on macOS, this might be
 
 Note that only Python versions 3.6 and later are supported.
 
-from python import
-------------------
+``from python import``
+----------------------
 
 Let's say we have a Python function defined in *mymodule.py*:
 
@@ -41,8 +41,8 @@ call and return types:
 
 (Be sure the ``PYTHONPATH`` environment variable includes the path of *mymodule.py*!)
 
-@python
--------
+``@python``
+-----------
 
 Codon programs can contain functions that will be executed by Python via ``pydef``:
 

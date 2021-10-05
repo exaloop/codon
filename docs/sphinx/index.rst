@@ -1,10 +1,10 @@
-**Codon** - a high-performance Python implementation
-====================================================
+**Codon** - a high-performance Python compiler
+==============================================
 
 What is Codon?
 --------------
 
-Codon is a high-performance Python implementation that compiles Python code to native machine code without any runtime overhead.
+Codon is a high-performance Python compiler that compiles Python code to native machine code without any runtime overhead.
 The Codon framework grew out of the `Seq <https://seq-lang.org>`_ project; while Seq focuses on genomics and bioinformatics, Codon
 can be applied in a number of different areas and is extensible via a plugin system.
 
@@ -24,8 +24,9 @@ Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.i
    :maxdepth: 1
 
    intro
-   tutorial/index
+   primer
    parallel
+   pipelines
    python
    embed
    build

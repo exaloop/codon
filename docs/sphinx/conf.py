@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.abspath("./_ext"))
 # -- Project information -----------------------------------------------------
 
 project = u'Codon'
-copyright = u'2019-2021, codon'
-author = u'codon'
+copyright = u'2019-2021, Exaloop, Inc.'
+author = u'exaloop'
 
 # The short X.Y version
 version = u'0.11'

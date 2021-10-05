@@ -1,7 +1,7 @@
 Language Primer
 ===============
 
-If you know Python, you already know 95% of Codon. The following primer
+If you know Python, you already know 99% of Codon. The following primer
 assumes some familiarity with Python or at least one "modern"
 programming language (QBASIC doesn't count).
 

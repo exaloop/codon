@@ -11,7 +11,7 @@ Pre-built binaries for Linux and macOS on x86_64 are available alongside `each r
 
 .. code-block:: bash
 
-    /bin/bash -c "$(curl -fsSL https://seq-lang.org/install.sh)"
+    /bin/bash -c "$(curl -fsSL https://codon.dev/install.sh)"
 
 This will install Codon in a new ``.codon`` directory within your home directory.
 
