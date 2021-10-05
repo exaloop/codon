@@ -748,6 +748,6 @@ CHAR <- ('\\' . / .) { return string(VS.sv()); }
 ~keyword <- <
   'False' / 'else' / 'import' / 'pass' / 'None' / 'break' / 'except' / 'in' / 'raise' /
   'True' / 'class' / 'finally' / 'is' / 'return' / 'and' / 'continue' / 'for' / 'as'  /
-  'lambda' / 'try' / 'def' / 'from' / 'while' 'assert' / 'del' / 'global' / 'not' /
+  'lambda' / 'try' / 'def' / 'from' / 'while' / 'assert' / 'del' / 'global' / 'not' /
   'with' / 'elif' / 'if' / 'or' / 'yield'
 >
