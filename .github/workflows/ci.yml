@@ -154,7 +154,6 @@ jobs:
       - name: Test
         run: |
           echo $CODON_PYTHON
-          ls -lah test/data/
           ln -s build/libcodonrt.${LIBEXT} .
           build/codon_test
           build/codon run test/core/helloworld.codon
