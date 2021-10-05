@@ -1,0 +1,222 @@
+name: Codon CI
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check
+        if: contains(github.ref, 'tags/v')
+        id: check
+        run: echo "::set-output name=MAKE_RELEASE::true"
+
+      - name: Create Release
+        id: create_release
+        if: steps.check.outputs.MAKE_RELEASE
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Output Release URL File
+        if: steps.check.outputs.MAKE_RELEASE
+        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
+
+      - name: Save Release URL File for Publish
+        if: steps.check.outputs.MAKE_RELEASE
+        uses: actions/upload-artifact@v1
+        with:
+          name: release_url
+          path: release_url.txt
+
+  manylinux:
+    runs-on: ubuntu-latest
+    name: Codon CI (manylinux)
+    needs: [ release ]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v2
+        with:
+          path: llvm
+          key: manylinux-llvm
+
+      - name: Main
+        uses: ./.github/actions/build-manylinux
+
+      - name: Load Release URL File
+        if: contains(github.ref, 'tags/v')
+        uses: actions/download-artifact@v1
+        with:
+          name: release_url
+
+      - name: Get Release URL
+        id: get_release_url
+        if: contains(github.ref, 'tags/v')
+        run: |
+          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
+
+      - name: Upload Release Asset
+        if: contains(github.ref, 'tags/v')
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          asset_path: ./codon-linux-x86_64.tar.gz
+          asset_name: codon-linux-x86_64.tar.gz
+          asset_content_type: application/gzip
+
+  main:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    name: Codon CI
+    needs: [ release ]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Linux Setup
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          echo "LIBEXT=so" >> $GITHUB_ENV
+          echo "OS_NAME=linux" >> $GITHUB_ENV
+
+      - name: macOS Setup
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install automake
+          echo "LIBEXT=dylib" >> $GITHUB_ENV
+          echo "OS_NAME=osx" >> $GITHUB_ENV
+
+      - name: Set up Python
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install numpy
+          which python
+          which pip
+          echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
+
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v2
+        with:
+          path: llvm
+          key: ${{ runner.os }}-llvm
+
+      - name: Build Dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: ./scripts/deps.sh 2
+        env:
+          CC: clang
+          CXX: clang++
+
+      - name: Build
+        run: |
+          mkdir build
+          export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
+          (cd build && cmake .. -DCMAKE_BUILD_TYPE=Release \
+                                -DCMAKE_C_COMPILER=${CC} \
+                                -DCMAKE_CXX_COMPILER=${CXX})
+          cmake --build build --config Release -- VERBOSE=1
+        env:
+          CC: clang
+          CXX: clang++
+
+      - name: Test
+        run: |
+          echo $CODON_PYTHON
+          ls -lah test/data/
+          ln -s build/libcodonrt.${LIBEXT} .
+          build/codon_test
+          build/codon run test/core/helloworld.codon
+          build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+        env:
+          CODON_PATH: ./stdlib
+          PYTHONPATH: ./test/python
+
+      - name: Build Documentation
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel sphinx sphinxcontrib-napoleon sphinx-book-theme breathe exhale
+          (cd docs/sphinx && python docgen.py ../../stdlib)
+          make -C docs/sphinx html
+
+      #- name: Deploy Documentation
+      #  if: github.ref == 'refs/heads/master'
+      #  uses: peaceiris/actions-gh-pages@v3
+      #  with:
+      #    github_token: ${{ secrets.GITHUB_TOKEN }}
+      #    publish_dir: ./docs/sphinx/_build/html
+      #    cname: docs.codon.dev
+      #    force_orphan: true
+
+      - name: Artifact Environment
+        run: |
+          echo "CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz" >> $GITHUB_ENV
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p codon-deploy/bin codon-deploy/lib/codon
+          cp build/codon codon-deploy/bin/
+          cp build/libcodon*.${LIBEXT} codon-deploy/lib/codon/
+          cp build/libomp.${LIBEXT} codon-deploy/lib/codon/
+          cp -r stdlib codon-deploy/lib/codon/
+          tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
+          du -sh codon-deploy
+
+      - name: Load Release URL File
+        if: contains(github.ref, 'tags/v')
+        uses: actions/download-artifact@v1
+        with:
+          name: release_url
+
+      - name: Get Release URL
+        id: get_release_url
+        if: contains(github.ref, 'tags/v')
+        run: |
+          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
+
+      - name: Upload Release Asset
+        if: contains(github.ref, 'tags/v') && startsWith(matrix.os, 'macos')
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          asset_path: ./codon-darwin-x86_64.tar.gz
+          asset_name: codon-darwin-x86_64.tar.gz
+          asset_content_type: application/gzip

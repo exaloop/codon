@@ -1,0 +1,5 @@
+name: manylinux build
+description: Builds Codon on manylinux
+runs:
+  using: docker
+  image: Dockerfile
