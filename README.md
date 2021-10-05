@@ -1,8 +1,6 @@
 <p align="center">
- <img src="docs/sphinx/logo.png?raw=true" width="200" alt="Codon"/>
+ <img src="docs/sphinx/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
-
-<h1 align="center"> Codon</h1>
 
 <p align="center">
   <a href="https://github.com/exaloop.io/codon/actions?query=branch%3Adevelop">
@@ -23,21 +21,44 @@
   </a>
 </p>
 
-## Introduction
+## What is Codon?
 
-> **A strongly-typed and statically-compiled high-performance Pythonic language!**
+> *Think of Codon as a strongly-typed and statically-compiled Python: all the bells and whistles of Python,
+   boosted with a strong type system, without any performance overhead.*
 
-Codon is a programming language for computationally intensive workloads. With a Python-compatible syntax and a host of domain-specific features and optimizations, Codon makes writing high-performance software as easy as writing Python code, and achieves performance comparable to (and in many cases better than) C/C++.
+Codon is a high-performance Python compiler that compiles Python code to native machine code without any runtime overhead.
+Typical speedups over Python are on the order of 10-100x or more, on a single thread. Codon's performance is typically on par with
+(and in many cases better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
+times higher still.
 
-**Think of Codon as a strongly-typed and statically-compiled Python: all the bells and whistles of Python, boosted with a strong type system, without any performance overhead.**
+Codon is extensible via a plugin infrastructure. For example, [Seq](https://github.com/seq-lang/seq) is a domain-specific
+language for genomics and bioinformatics, built on Codon, that can outperform hand-optimized C code by 2-10x (more details in
+the [Seq paper](https://www.nature.com/articles/s41587-021-00985-6)).
 
-Codon is able to outperform Python code by up to 160x. Codon can further beat equivalent C/C++ code by up to 2x without any manual interventions, and also natively supports parallelism out of the box. Implementation details and benchmarks are discussed [in our paper](https://dl.acm.org/citation.cfm?id=3360551).
+## What isn't Codon?
 
-Learn more by following the [tutorial](https://docs.exaloop.io/tutorial).
+While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large codebases might require modifications
+to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
+dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
+
+Codon supports seamless Python interoperability to handle cases where specific Python libraries or dynamism are required:
+
+```python
+@python
+def hello():
+    import sys
+    print('Hello from Python!')
+    print('The version is', sys.version)
+
+hello()
+# Hello from Python!
+# The version is 3.9.6 (default, Jun 29 2021, 06:20:32)
+# [Clang 12.0.0 (clang-1200.0.32.29)]
+```
 
 ## Examples
 
-Codon is a Python-compatible language, and many Python programs should work with few if any modifications:
+Codon is a Python-compatible language, and many Python programs will work with few if any modifications:
 
 ```python
 def fib(n):
@@ -49,7 +70,9 @@ def fib(n):
 fib(1000)
 ```
 
-This prime counting example showcases Codon's [OpenMP](https://www.openmp.org/) support, enabled with the addition of one line. The `@par` annotation tells the compiler to parallelize the following for-loop, in this case using a dynamic schedule, chunk size of 100, and 16 threads.
+This prime counting example showcases Codon's [OpenMP](https://www.openmp.org/) support, enabled with the addition of one line.
+The `@par` annotation tells the compiler to parallelize the following `for`-loop, in this case using a dynamic schedule, chunk size
+of 100, and 16 threads.
 
 ```python
 from sys import argv
@@ -76,10 +99,11 @@ print(total)
 
 ### Pre-built binaries
 
-Pre-built binaries for Linux and macOS on x86_64 are available alongside [each release](https://github.com/exaloop/codon/releases). We also have a script for downloading and installing pre-built versions:
+Pre-built binaries for Linux and macOS on x86_64 are available alongside [each release](https://github.com/exaloop/codon/releases).
+We also have a script for downloading and installing pre-built versions:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://seq-lang.org/install.sh)"
+/bin/bash -c "$(curl -fsSL https://codon.dev/install.sh)"
 ```
 
 ### Build from source
