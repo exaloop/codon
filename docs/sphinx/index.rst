@@ -18,7 +18,7 @@ While Codon supports nearly all of Python's syntax, it is not a drop-in replacem
 to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
 dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
 
-Questions, comments or suggestions? Visit our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_.
+Questions, comments or suggestions? Visit our `Discord server <https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect>`_.
 
 .. toctree::
    :maxdepth: 1
@@ -56,7 +56,7 @@ frameworks and libraries that exist. Codon already supports interoperability wit
    *I want to contribute! How do I get started?*
 
 Great! Check out our `contribution guidelines <https://github.com/exaloop/codon/blob/master/CONTRIBUTING.md>`_ and `open issues <https://github.com/exaloop/codon/issues>`_
-to get started. Also don't hesitate to drop by our `Gitter chatroom <https://gitter.im/seq-lang/Seq?utm_source=share-link&utm_medium=link&utm_campaign=share-link>`_
+to get started. Also don't hesitate to drop by our `Discord server <https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect>`_
 if you have any questions.
 
    *What is planned for the future?*

@@ -7,9 +7,9 @@
     <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
          alt="Build Status">
   </a>
-  <a href="https://gitter.im/seq-lang/seq?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge">
-    <img src="https://badges.gitter.im/Join%20Chat.svg"
-         alt="Gitter">
+  <a href="https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect">
+    <img src="https://img.shields.io/discord/895056805846192139.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2"
+         alt="Discord">
   </a>
   <a href="https://github.com/exaloop/codon/releases/latest">
     <img src="https://img.shields.io/github/v/release/exaloop/codon?sort=semver"
