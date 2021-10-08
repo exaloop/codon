@@ -85,6 +85,72 @@ def test_map_filter():
 
     assert list(filter(lambda i: i%2 == 0, map(lambda i: i*i, range(10)))) == [0, 4, 16, 36, 64]
 
+@test
+def test_int_format():
+    n = 0
+    assert (str(n), bin(n), oct(n), hex(n)) == ('0', '0b0', '0o0', '0x0')
+
+    n = -1
+    assert (str(n), bin(n), oct(n), hex(n)) == ('-1', '-0b1', '-0o1', '-0x1')
+
+    n = 12345
+    assert (str(n), bin(n), oct(n), hex(n)) == ('12345', '0b11000000111001', '0o30071', '0x3039')
+
+    n = -12345
+    assert (str(n), bin(n), oct(n), hex(n)) == ('-12345', '-0b11000000111001', '-0o30071', '-0x3039')
+
+    # this one is different than Python due to 64-bit ints
+    n = 0x8000000000000000
+    assert (str(n), bin(n), oct(n), hex(n)) == ('-9223372036854775808', '-0b1000000000000000000000000000000000000000000000000000000000000000', '-0o1000000000000000000000', '-0x8000000000000000')
+
+    n = 0x7fffffffffffffff
+    assert (str(n), bin(n), oct(n), hex(n)) == ('9223372036854775807', '0b111111111111111111111111111111111111111111111111111111111111111', '0o777777777777777777777', '0x7fffffffffffffff')
+
+    m = i32(0)
+    assert (str(m), bin(m), oct(m), hex(m)) == ('0', '0b0', '0o0', '0x0')
+
+    m = i32(-1)
+    assert (str(m), bin(m), oct(m), hex(m)) == ('-1', '-0b1', '-0o1', '-0x1')
+
+    m = i32(12345)
+    assert (str(m), bin(m), oct(m), hex(m)) == ('12345', '0b11000000111001', '0o30071', '0x3039')
+
+    m = i32(-12345)
+    assert (str(m), bin(m), oct(m), hex(m)) == ('-12345', '-0b11000000111001', '-0o30071', '-0x3039')
+
+    k = Int[128](0)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('0', '0b0', '0o0', '0x0')
+
+    k = Int[128](-1)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('-1', '-0b1', '-0o1', '-0x1')
+
+    k = Int[128](12345)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('12345', '0b11000000111001', '0o30071', '0x3039')
+
+    k = Int[128](-12345)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('-12345', '-0b11000000111001', '-0o30071', '-0x3039')
+
+    # this one is different than Python due to 64-bit ints
+    k = Int[128](0x8000000000000000)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('-9223372036854775808', '-0b1000000000000000000000000000000000000000000000000000000000000000', '-0o1000000000000000000000', '-0x8000000000000000')
+
+    k = Int[128](0x7fffffffffffffff)
+    assert (str(k), bin(k), oct(k), hex(k)) == ('9223372036854775807', '0b111111111111111111111111111111111111111111111111111111111111111', '0o777777777777777777777', '0x7fffffffffffffff')
+
+class A:
+    def __len__(self):
+        return 42
+    def __getitem__(self, idx):
+        return idx
+
+@test
+def test_reversed():
+    assert list(reversed([1,2,3])) == [3,2,1]
+    assert list(reversed('abc')) == ['c','b','a']
+    assert list(reversed('')) == []
+    assert list(reversed(A())) == list(reversed(range(42)))
+
 test_min_max()
 test_map_filter()
-
+test_int_format()
+test_reversed()

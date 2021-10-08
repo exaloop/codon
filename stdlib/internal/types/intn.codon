@@ -46,6 +46,8 @@ class Int:
             return self
         else:
             return __internal__.int_sext(self, N, 64)
+    def __index__(self):
+        return int(self)
     def __copy__(self) -> Int[N]:
         return self
     def __hash__(self) -> int:
@@ -240,6 +242,8 @@ class UInt:
             return Int[64](self)
         else:
             return __internal__.int_zext(self, N, 64)
+    def __index__(self):
+        return int(self)
     def __copy__(self) -> UInt[N]:
         return self
     def __hash__(self) -> int:

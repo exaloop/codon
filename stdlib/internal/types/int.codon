@@ -25,6 +25,8 @@ class int:
         ret double %tmp
     def __complex__(self):
         return complex(float(self), 0.0)
+    def __index__(self):
+        return self
     def __str__(self) -> str:
         return seq_str_int(self)
     def __copy__(self) -> int:

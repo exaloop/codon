@@ -218,7 +218,13 @@ def reversed(x):
     """
     Return an iterator that accesses x in the reverse order
     """
-    return x.__reversed__()
+    if hasattr(x, "__reversed__"):
+        return x.__reversed__()
+    else:
+        i = x.__len__() - 1
+        while i >= 0:
+            yield x[i]
+            i -= 1
 
 def round(x, n) -> float:
     """
@@ -246,6 +252,51 @@ def repr(x):
     """    Return the string representation of x
     """
     return x.__repr__()
+
+def _int_format(a: int, base: int, prefix: str = ''):
+    assert base == 2 or base == 8 or base == 10 or base == 16
+    chars = '0123456789abcdef-'
+
+    b = a
+    digits = 0
+    while b != 0:
+        digits += 1
+        b //= base
+
+    sz = digits + (1 if a <= 0 else 0) + len(prefix)
+    p = Ptr[byte](sz)
+    q = p
+
+    if a < 0:
+        q[0] = chars[-1].ptr[0]
+        q += 1
+
+    if prefix:
+        str.memcpy(q, prefix.ptr, len(prefix))
+        q += len(prefix)
+
+    if digits != 0:
+        b = a
+        q += digits - 1
+        i = 1
+        while b != 0:
+            i += 1
+            q[0] = chars.ptr[abs(b % base)]
+            q += -1
+            b //= base
+    else:
+        q[0] = chars.ptr[0]
+
+    return str(p, sz)
+
+def bin(n):
+    return _int_format(n.__index__(), 2, '0b')
+
+def oct(n):
+    return _int_format(n.__index__(), 8, '0o')
+
+def hex(n):
+    return _int_format(n.__index__(), 16, '0x')
 
 @extend
 class int:
