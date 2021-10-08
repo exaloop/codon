@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dsl/plugins.h"
 #include "llvm.h"
 #include "sir/sir.h"
 #include <string>
@@ -129,6 +130,8 @@ private:
   DebugInfo db;
   /// LLVM target machine
   std::unique_ptr<llvm::TargetMachine> machine;
+  /// Plugin manager
+  PluginManager *plugins;
 
   llvm::DIType *
   getDITypeHelper(types::Type *t,
@@ -240,16 +243,24 @@ public:
            const std::vector<std::string> &libs = {},
            const char *const *envp = nullptr);
 
-  /// Get LLVM type from IR type
+  /// Gets LLVM type from IR type
   /// @param t the IR type
   /// @return corresponding LLVM type
   llvm::Type *getLLVMType(types::Type *t);
-  /// Get the LLVM debug info type from the IR type
+  /// Gets the LLVM debug info type from the IR type
   /// @param t the IR type
   /// @return corresponding LLVM DI type
   llvm::DIType *getDIType(types::Type *t);
-
+  /// Gets loop data for a given loop id
+  /// @param loopId the IR id of the loop
+  /// @return the loop's datas
   LoopData *getLoopData(id_t loopId);
+
+  /// Sets the plugin manager
+  /// @param p the plugin manager
+  void setPluginManager(PluginManager *p) { plugins = p; }
+  /// @return the plugin manager
+  PluginManager *getPluginManager() { return plugins; }
 
   void visit(const Module *) override;
   void visit(const BodiedFunc *) override;

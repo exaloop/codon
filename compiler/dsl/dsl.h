@@ -3,6 +3,7 @@
 #include "sir/sir.h"
 #include "sir/transform/manager.h"
 #include "sir/transform/pass.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -52,6 +53,11 @@ public:
   /// @param pm the pass manager to add the passes to
   /// @param debug true if compiling in debug mode
   virtual void addIRPasses(ir::transform::PassManager *pm, bool debug) {}
+
+  /// Registers this DSL's LLVM passes with the given pass manager builder.
+  /// @param pmb the pass manager builder to add the passes to
+  /// @param debug true if compining in debug mode
+  virtual void addLLVMPasses(llvm::PassManagerBuilder *pmb, bool debug) {}
 
   /// Returns a vector of "expression keywords", defined as keywords of
   /// the form "keyword <expr1> ... <exprN>".

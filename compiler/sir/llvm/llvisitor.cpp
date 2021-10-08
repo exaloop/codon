@@ -210,7 +210,7 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 LLVMVisitor::LLVMVisitor(bool debug, const std::string &flags)
     : util::ConstVisitor(), context(), builder(context), module(), func(nullptr),
       block(nullptr), value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
-      db(debug, flags), machine() {
+      db(debug, flags), machine(), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -358,6 +358,12 @@ void LLVMVisitor::runLLVMOptimizationPasses() {
   if (!db.debug) {
     pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
                      addCoroutineBranchSimplifier);
+  }
+
+  if (plugins) {
+    for (auto *plugin : *plugins) {
+      plugin->dsl->addLLVMPasses(&pmb, db.debug);
+    }
   }
 
   pmb.populateModulePassManager(*pm);

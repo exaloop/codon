@@ -6,7 +6,7 @@ namespace codon {
 
 PluginManager::~PluginManager() {
   for (auto &plugin : plugins) {
-    dlclose(plugin.handle);
+    dlclose(plugin->handle);
   }
 }
 
@@ -20,8 +20,8 @@ PluginManager::Error PluginManager::load(const std::string &path) {
     return Error::NO_ENTRYPOINT;
 
   auto dsl = (*entry)();
-  plugins.push_back({std::move(dsl), path, handle});
-  return load(plugins.back().dsl.get());
+  plugins.push_back(std::make_unique<Plugin>(std::move(dsl), path, handle));
+  return load(plugins.back()->dsl.get());
 }
 
 PluginManager::Error PluginManager::load(DSL *dsl) {
