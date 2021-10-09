@@ -82,6 +82,27 @@ class float:
         ret double %tmp
     def __mod__(self, other: int) -> float:
         return self.__mod__(float(other))
+    def __divmod__(self, other: float):
+        mod = self % other
+        div = (self - mod) / other
+        if mod:
+            if (other < 0) != (mod < 0):
+                mod += other
+                div -= 1.0
+        else:
+            mod = (0.0).copysign(other)
+
+        floordiv = 0.0
+        if div:
+            floordiv = div.__floor__()
+            if div - floordiv > 0.5:
+                floordiv += 1.0
+        else:
+            floordiv = (0.0).copysign(self / other)
+
+        return (floordiv, mod)
+    def __divmod__(self, other: int):
+        return self.__divmod__(float(other))
     @pure
     @llvm
     def __eq__(a: float, b: float) -> bool:

@@ -150,7 +150,52 @@ def test_reversed():
     assert list(reversed('')) == []
     assert list(reversed(A())) == list(reversed(range(42)))
 
+@test
+def test_divmod():
+    import sys, math
+    assert divmod(12, 7) == (1, 5)
+    assert divmod(-12, 7) == (-2, 2)
+    assert divmod(12, -7) == (-2, -2)
+    assert divmod(-12, -7) == (1, -5)
+
+    assert divmod(i32(12), i32(7)) == (i32(1), i32(5))
+    assert divmod(i32(-12), i32(7)) == (i32(-2), i32(2))
+    assert divmod(i32(12), i32(-7)) == (i32(-2), i32(-2))
+    assert divmod(i32(-12), i32(-7)) == (i32(1), i32(-5))
+
+    assert divmod(u32(12), u32(7)) == (u32(1), u32(5))
+
+    i128 = Int[128]
+    assert divmod(i128(12), i128(7)) == (i128(1), i128(5))
+    assert divmod(i128(-12), i128(7)) == (i128(-2), i128(2))
+    assert divmod(i128(12), i128(-7)) == (i128(-2), i128(-2))
+    assert divmod(i128(-12), i128(-7)) == (i128(1), i128(-5))
+
+    class X:
+        n: int
+        def __floordiv__(self, other: X):
+            return X(self.n // other.n)
+        def __mod__(self, other: X):
+            return X(self.n % other.n)
+        def __eq__(self, other: X):
+            return self.n == other.n
+        def __nq__(self, other: X):
+            return self.n != other.n
+    assert divmod(X(12), X(7)) == (X(1), X(5))
+
+    # following is invalid in our case due to 64-bit ints
+    # print divmod(-sys.maxsize-1, -1), (sys.maxsize+1, 0)
+
+    for num, denom, exp_result in [ (3.25, 1.0, (3.0, 0.25)),
+                                    (-3.25, 1.0, (-4.0, 0.75)),
+                                    (3.25, -1.0, (-4.0, -0.75)),
+                                    (-3.25, -1.0, (3.0, -0.25))]:
+        result = divmod(num, denom)
+        assert math.isclose(result[0], exp_result[0])
+        assert math.isclose(result[1], exp_result[1])
+
 test_min_max()
 test_map_filter()
 test_int_format()
 test_reversed()
+test_divmod()

@@ -112,6 +112,13 @@ class Int:
     def __mod__(self, other: Int[N]) -> Int[N]:
         %0 = srem i{=N} %self, %other
         ret i{=N} %0
+    def __divmod__(self, other: Int[N]):
+        d = self // other
+        m = self - d*other
+        if m and ((other ^ m) < Int[N](0)):
+            m += other
+            d -= Int[N](1)
+        return (d, m)
     @pure
     @llvm
     def __lshift__(self, other: Int[N]) -> Int[N]:
@@ -308,6 +315,8 @@ class UInt:
     def __mod__(self, other: UInt[N]) -> UInt[N]:
         %0 = urem i{=N} %self, %other
         ret i{=N} %0
+    def __divmod__(self, other: UInt[N]):
+        return (self // other, self % other)
     @pure
     @llvm
     def __lshift__(self, other: UInt[N]) -> UInt[N]:

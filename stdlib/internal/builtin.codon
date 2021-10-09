@@ -117,6 +117,12 @@ def ord(s: str):
         raise TypeError("ord() expected a character, but string of length " + str(len(s)) + " found")
     return int(s.ptr[0])
 
+def divmod(a, b):
+    if hasattr(a, "__divmod__"):
+        return a.__divmod__(b)
+    else:
+        return (a // b, a % b)
+
 def chr(i: int):
     """
     Return a string representing a character whose Unicode

@@ -137,6 +137,13 @@ class int:
         %0 = sitofp i64 %self to double
         %1 = frem double %0, %other
         ret double %1
+    def __divmod__(self, other: int):
+        d = self // other
+        m = self - d*other
+        if m and ((other ^ m) < 0):
+            m += other
+            d -= 1
+        return (d, m)
     @pure
     @llvm
     def __invert__(a: int) -> int:
