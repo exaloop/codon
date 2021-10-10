@@ -1,6 +1,6 @@
 #include "test.h"
 
-#include "sir/util/matching.h"
+#include "codon/sir/util/matching.h"
 
 using namespace codon::ir;
 

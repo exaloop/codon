@@ -1,7 +1,7 @@
 #include "test.h"
 
-#include "sir/analyze/dataflow/cfg.h"
-#include "sir/analyze/dataflow/reaching.h"
+#include "codon/sir/analyze/dataflow/cfg.h"
+#include "codon/sir/analyze/dataflow/reaching.h"
 
 using namespace codon::ir;
 

@@ -12,15 +12,15 @@
 #include <unistd.h>
 #include <vector>
 
-#include "parser/common.h"
-#include "parser/parser.h"
-#include "sir/llvm/llvisitor.h"
-#include "sir/transform/manager.h"
-#include "sir/transform/pass.h"
-#include "sir/util/inlining.h"
-#include "sir/util/irtools.h"
-#include "sir/util/outlining.h"
-#include "util/common.h"
+#include "codon/parser/common.h"
+#include "codon/parser/parser.h"
+#include "codon/sir/llvm/llvisitor.h"
+#include "codon/sir/transform/manager.h"
+#include "codon/sir/transform/pass.h"
+#include "codon/sir/util/inlining.h"
+#include "codon/sir/util/irtools.h"
+#include "codon/sir/util/outlining.h"
+#include "codon/util/common.h"
 #include "gtest/gtest.h"
 
 using namespace codon;

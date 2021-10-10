@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-#include "util/fmt/format.h"
+#include "codon/util/fmt/format.h"
 
 using namespace codon::ir;
 

@@ -1,7 +1,7 @@
 #include <algorithm>
 
-#include "sir/sir.h"
-#include "sir/util/cloning.h"
+#include "codon/sir/sir.h"
+#include "codon/sir/util/cloning.h"
 #include "gtest/gtest.h"
 
 class SIRCoreTest : public testing::Test {

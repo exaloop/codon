@@ -3,7 +3,7 @@ project(Codon VERSION "0.11.1"
               HOMEPAGE_URL "https://github.com/exaloop/codon"
               DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
-               "${PROJECT_SOURCE_DIR}/compiler/config/config.h")
+               "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
@@ -12,7 +12,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -W
 set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-limit-debug-info")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
-include_directories(compiler)
 
 if(ASAN)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
@@ -36,22 +35,22 @@ else()
     set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
-add_executable(peg2cpp compiler/util/peg2cpp.cpp compiler/util/peglib.h)
+add_executable(peg2cpp codon/util/peg2cpp.cpp codon/util/peglib.h)
 target_link_libraries(peg2cpp Threads::Threads)
 add_custom_command(
-    OUTPUT  seq_rules.cpp
-    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/compiler/parser/peg/grammar.peg seq_rules.cpp codon
-    DEPENDS peg2cpp compiler/parser/peg/grammar.peg)
+    OUTPUT  codon_rules.cpp
+    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/grammar.peg codon_rules.cpp codon
+    DEPENDS peg2cpp codon/parser/peg/grammar.peg)
 add_custom_command(
     OUTPUT  omp_rules.cpp
-    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/compiler/parser/peg/openmp.peg omp_rules.cpp omp
-    DEPENDS peg2cpp compiler/parser/peg/openmp.peg)
+    COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/openmp.peg omp_rules.cpp omp
+    DEPENDS peg2cpp codon/parser/peg/openmp.peg)
 
 # Codon runtime library
 set(CODONRT_FILES
-    runtime/lib.h
-    runtime/lib.cpp
-    runtime/exc.cpp)
+    codon/runtime/lib.h
+    codon/runtime/lib.cpp
+    codon/runtime/exc.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma)
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR} "${gc_SOURCE_DIR}/include" runtime)
@@ -79,173 +78,173 @@ include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 set(CODON_HPPFILES
-    compiler/dsl/dsl.h
-    compiler/dsl/plugins.h
-    compiler/parser/ast.h
-    compiler/parser/ast/expr.h
-    compiler/parser/ast/stmt.h
-    compiler/parser/ast/types.h
-    compiler/parser/cache.h
-    compiler/parser/common.h
-    compiler/parser/ctx.h
-    compiler/parser/peg/peg.h
-    compiler/parser/peg/rules.h
-    compiler/parser/parser.h
-    compiler/parser/visitors/doc/doc.h
-    compiler/parser/visitors/format/format.h
-    compiler/parser/visitors/simplify/simplify.h
-    compiler/parser/visitors/simplify/simplify_ctx.h
-    compiler/parser/visitors/translate/translate.h
-    compiler/parser/visitors/translate/translate_ctx.h
-    compiler/parser/visitors/typecheck/typecheck.h
-    compiler/parser/visitors/typecheck/typecheck_ctx.h
-    compiler/parser/visitors/visitor.h
-    compiler/sir/analyze/analysis.h
-    compiler/sir/analyze/dataflow/cfg.h
-    compiler/sir/analyze/dataflow/dominator.h
-    compiler/sir/analyze/dataflow/reaching.h
-    compiler/sir/analyze/module/global_vars.h
-    compiler/sir/analyze/module/side_effect.h
-    compiler/sir/attribute.h
-    compiler/sir/base.h
-    compiler/sir/const.h
-    compiler/sir/dsl/codegen.h
-    compiler/sir/dsl/nodes.h
-    compiler/sir/flow.h
-    compiler/sir/func.h
-    compiler/sir/instr.h
-    compiler/sir/llvm/coro/CoroCleanup.h
-    compiler/sir/llvm/coro/CoroEarly.h
-    compiler/sir/llvm/coro/CoroElide.h
-    compiler/sir/llvm/coro/CoroInstr.h
-    compiler/sir/llvm/coro/CoroInternal.h
-    compiler/sir/llvm/coro/CoroSplit.h
-    compiler/sir/llvm/coro/Coroutines.h
-    compiler/sir/llvm/llvisitor.h
-    compiler/sir/llvm/llvm.h
-    compiler/sir/module.h
-    compiler/sir/sir.h
-    compiler/sir/transform/cleanup/canonical.h
-    compiler/sir/transform/cleanup/dead_code.h
-    compiler/sir/transform/cleanup/global_demote.h
-    compiler/sir/transform/cleanup/replacer.h
-    compiler/sir/transform/folding/const_fold.h
-    compiler/sir/transform/folding/const_prop.h
-    compiler/sir/transform/folding/folding.h
-    compiler/sir/transform/folding/rule.h
-    compiler/sir/transform/lowering/imperative.h
-    compiler/sir/transform/lowering/pipeline.h
-    compiler/sir/transform/manager.h
-    compiler/sir/transform/parallel/openmp.h
-    compiler/sir/transform/parallel/schedule.h
-    compiler/sir/transform/pass.h
-    compiler/sir/transform/pythonic/dict.h
-    compiler/sir/transform/pythonic/io.h
-    compiler/sir/transform/pythonic/str.h
-    compiler/sir/transform/rewrite.h
-    compiler/sir/types/types.h
-    compiler/sir/util/cloning.h
-    compiler/sir/util/context.h
-    compiler/sir/util/format.h
-    compiler/sir/util/inlining.h
-    compiler/sir/util/irtools.h
-    compiler/sir/util/iterators.h
-    compiler/sir/util/matching.h
-    compiler/sir/util/operator.h
-    compiler/sir/util/outlining.h
-    compiler/sir/util/packs.h
-    compiler/sir/util/visitor.h
-    compiler/sir/value.h
-    compiler/sir/var.h
-    compiler/util/common.h
-    compiler/util/peglib.h
-    compiler/util/fmt/chrono.h
-    compiler/util/fmt/color.h
-    compiler/util/fmt/compile.h
-    compiler/util/fmt/core.h
-    compiler/util/fmt/format-inl.h
-    compiler/util/fmt/format.h
-    compiler/util/fmt/locale.h
-    compiler/util/fmt/ostream.h
-    compiler/util/fmt/posix.h
-    compiler/util/fmt/printf.h
-    compiler/util/fmt/ranges.h)
+    codon/dsl/dsl.h
+    codon/dsl/plugins.h
+    codon/parser/ast.h
+    codon/parser/ast/expr.h
+    codon/parser/ast/stmt.h
+    codon/parser/ast/types.h
+    codon/parser/cache.h
+    codon/parser/common.h
+    codon/parser/ctx.h
+    codon/parser/peg/peg.h
+    codon/parser/peg/rules.h
+    codon/parser/parser.h
+    codon/parser/visitors/doc/doc.h
+    codon/parser/visitors/format/format.h
+    codon/parser/visitors/simplify/simplify.h
+    codon/parser/visitors/simplify/simplify_ctx.h
+    codon/parser/visitors/translate/translate.h
+    codon/parser/visitors/translate/translate_ctx.h
+    codon/parser/visitors/typecheck/typecheck.h
+    codon/parser/visitors/typecheck/typecheck_ctx.h
+    codon/parser/visitors/visitor.h
+    codon/sir/analyze/analysis.h
+    codon/sir/analyze/dataflow/cfg.h
+    codon/sir/analyze/dataflow/dominator.h
+    codon/sir/analyze/dataflow/reaching.h
+    codon/sir/analyze/module/global_vars.h
+    codon/sir/analyze/module/side_effect.h
+    codon/sir/attribute.h
+    codon/sir/base.h
+    codon/sir/const.h
+    codon/sir/dsl/codegen.h
+    codon/sir/dsl/nodes.h
+    codon/sir/flow.h
+    codon/sir/func.h
+    codon/sir/instr.h
+    codon/sir/llvm/coro/CoroCleanup.h
+    codon/sir/llvm/coro/CoroEarly.h
+    codon/sir/llvm/coro/CoroElide.h
+    codon/sir/llvm/coro/CoroInstr.h
+    codon/sir/llvm/coro/CoroInternal.h
+    codon/sir/llvm/coro/CoroSplit.h
+    codon/sir/llvm/coro/Coroutines.h
+    codon/sir/llvm/llvisitor.h
+    codon/sir/llvm/llvm.h
+    codon/sir/module.h
+    codon/sir/sir.h
+    codon/sir/transform/cleanup/canonical.h
+    codon/sir/transform/cleanup/dead_code.h
+    codon/sir/transform/cleanup/global_demote.h
+    codon/sir/transform/cleanup/replacer.h
+    codon/sir/transform/folding/const_fold.h
+    codon/sir/transform/folding/const_prop.h
+    codon/sir/transform/folding/folding.h
+    codon/sir/transform/folding/rule.h
+    codon/sir/transform/lowering/imperative.h
+    codon/sir/transform/lowering/pipeline.h
+    codon/sir/transform/manager.h
+    codon/sir/transform/parallel/openmp.h
+    codon/sir/transform/parallel/schedule.h
+    codon/sir/transform/pass.h
+    codon/sir/transform/pythonic/dict.h
+    codon/sir/transform/pythonic/io.h
+    codon/sir/transform/pythonic/str.h
+    codon/sir/transform/rewrite.h
+    codon/sir/types/types.h
+    codon/sir/util/cloning.h
+    codon/sir/util/context.h
+    codon/sir/util/format.h
+    codon/sir/util/inlining.h
+    codon/sir/util/irtools.h
+    codon/sir/util/iterators.h
+    codon/sir/util/matching.h
+    codon/sir/util/operator.h
+    codon/sir/util/outlining.h
+    codon/sir/util/packs.h
+    codon/sir/util/visitor.h
+    codon/sir/value.h
+    codon/sir/var.h
+    codon/util/common.h
+    codon/util/peglib.h
+    codon/util/fmt/chrono.h
+    codon/util/fmt/color.h
+    codon/util/fmt/compile.h
+    codon/util/fmt/core.h
+    codon/util/fmt/format-inl.h
+    codon/util/fmt/format.h
+    codon/util/fmt/locale.h
+    codon/util/fmt/ostream.h
+    codon/util/fmt/posix.h
+    codon/util/fmt/printf.h
+    codon/util/fmt/ranges.h)
 set(CODON_CPPFILES
-    compiler/dsl/plugins.cpp
-    compiler/parser/ast/expr.cpp
-    compiler/parser/ast/stmt.cpp
-    compiler/parser/ast/types.cpp
-    compiler/parser/cache.cpp
-    compiler/parser/common.cpp
-    compiler/parser/peg/peg.cpp
-    compiler/parser/parser.cpp
-    compiler/parser/visitors/doc/doc.cpp
-    compiler/parser/visitors/format/format.cpp
-    compiler/parser/visitors/simplify/simplify.cpp
-    compiler/parser/visitors/simplify/simplify_ctx.cpp
-    compiler/parser/visitors/simplify/simplify_expr.cpp
-    compiler/parser/visitors/simplify/simplify_stmt.cpp
-    compiler/parser/visitors/translate/translate.cpp
-    compiler/parser/visitors/translate/translate_ctx.cpp
-    compiler/parser/visitors/typecheck/typecheck.cpp
-    compiler/parser/visitors/typecheck/typecheck_ctx.cpp
-    compiler/parser/visitors/typecheck/typecheck_expr.cpp
-    compiler/parser/visitors/typecheck/typecheck_infer.cpp
-    compiler/parser/visitors/typecheck/typecheck_stmt.cpp
-    compiler/parser/visitors/visitor.cpp
-    compiler/sir/attribute.cpp
-    compiler/sir/analyze/analysis.cpp
-    compiler/sir/analyze/dataflow/cfg.cpp
-    compiler/sir/analyze/dataflow/dominator.cpp
-    compiler/sir/analyze/dataflow/reaching.cpp
-    compiler/sir/analyze/module/global_vars.cpp
-    compiler/sir/analyze/module/side_effect.cpp
-    compiler/sir/base.cpp
-    compiler/sir/const.cpp
-    compiler/sir/dsl/nodes.cpp
-    compiler/sir/flow.cpp
-    compiler/sir/func.cpp
-    compiler/sir/instr.cpp
-    compiler/sir/llvm/coro/CoroCleanup.cpp
-    compiler/sir/llvm/coro/CoroEarly.cpp
-    compiler/sir/llvm/coro/CoroElide.cpp
-    compiler/sir/llvm/coro/CoroFrame.cpp
-    compiler/sir/llvm/coro/CoroSplit.cpp
-    compiler/sir/llvm/coro/Coroutines.cpp
-    compiler/sir/llvm/llvisitor.cpp
-    compiler/sir/module.cpp
-    compiler/sir/transform/cleanup/canonical.cpp
-    compiler/sir/transform/cleanup/dead_code.cpp
-    compiler/sir/transform/cleanup/global_demote.cpp
-    compiler/sir/transform/cleanup/replacer.cpp
-    compiler/sir/transform/folding/const_fold.cpp
-    compiler/sir/transform/folding/const_prop.cpp
-    compiler/sir/transform/folding/folding.cpp
-    compiler/sir/transform/lowering/imperative.cpp
-    compiler/sir/transform/lowering/pipeline.cpp
-    compiler/sir/transform/manager.cpp
-    compiler/sir/transform/parallel/openmp.cpp
-    compiler/sir/transform/parallel/schedule.cpp
-    compiler/sir/transform/pass.cpp
-    compiler/sir/transform/pythonic/dict.cpp
-    compiler/sir/transform/pythonic/io.cpp
-    compiler/sir/transform/pythonic/str.cpp
-    compiler/sir/types/types.cpp
-    compiler/sir/util/cloning.cpp
-    compiler/sir/util/format.cpp
-    compiler/sir/util/inlining.cpp
-    compiler/sir/util/irtools.cpp
-    compiler/sir/util/matching.cpp
-    compiler/sir/util/outlining.cpp
-    compiler/sir/util/visitor.cpp
-    compiler/sir/value.cpp
-    compiler/sir/var.cpp
-    compiler/util/common.cpp
-    compiler/util/fmt/format.cpp)
+    codon/dsl/plugins.cpp
+    codon/parser/ast/expr.cpp
+    codon/parser/ast/stmt.cpp
+    codon/parser/ast/types.cpp
+    codon/parser/cache.cpp
+    codon/parser/common.cpp
+    codon/parser/peg/peg.cpp
+    codon/parser/parser.cpp
+    codon/parser/visitors/doc/doc.cpp
+    codon/parser/visitors/format/format.cpp
+    codon/parser/visitors/simplify/simplify.cpp
+    codon/parser/visitors/simplify/simplify_ctx.cpp
+    codon/parser/visitors/simplify/simplify_expr.cpp
+    codon/parser/visitors/simplify/simplify_stmt.cpp
+    codon/parser/visitors/translate/translate.cpp
+    codon/parser/visitors/translate/translate_ctx.cpp
+    codon/parser/visitors/typecheck/typecheck.cpp
+    codon/parser/visitors/typecheck/typecheck_ctx.cpp
+    codon/parser/visitors/typecheck/typecheck_expr.cpp
+    codon/parser/visitors/typecheck/typecheck_infer.cpp
+    codon/parser/visitors/typecheck/typecheck_stmt.cpp
+    codon/parser/visitors/visitor.cpp
+    codon/sir/attribute.cpp
+    codon/sir/analyze/analysis.cpp
+    codon/sir/analyze/dataflow/cfg.cpp
+    codon/sir/analyze/dataflow/dominator.cpp
+    codon/sir/analyze/dataflow/reaching.cpp
+    codon/sir/analyze/module/global_vars.cpp
+    codon/sir/analyze/module/side_effect.cpp
+    codon/sir/base.cpp
+    codon/sir/const.cpp
+    codon/sir/dsl/nodes.cpp
+    codon/sir/flow.cpp
+    codon/sir/func.cpp
+    codon/sir/instr.cpp
+    codon/sir/llvm/coro/CoroCleanup.cpp
+    codon/sir/llvm/coro/CoroEarly.cpp
+    codon/sir/llvm/coro/CoroElide.cpp
+    codon/sir/llvm/coro/CoroFrame.cpp
+    codon/sir/llvm/coro/CoroSplit.cpp
+    codon/sir/llvm/coro/Coroutines.cpp
+    codon/sir/llvm/llvisitor.cpp
+    codon/sir/module.cpp
+    codon/sir/transform/cleanup/canonical.cpp
+    codon/sir/transform/cleanup/dead_code.cpp
+    codon/sir/transform/cleanup/global_demote.cpp
+    codon/sir/transform/cleanup/replacer.cpp
+    codon/sir/transform/folding/const_fold.cpp
+    codon/sir/transform/folding/const_prop.cpp
+    codon/sir/transform/folding/folding.cpp
+    codon/sir/transform/lowering/imperative.cpp
+    codon/sir/transform/lowering/pipeline.cpp
+    codon/sir/transform/manager.cpp
+    codon/sir/transform/parallel/openmp.cpp
+    codon/sir/transform/parallel/schedule.cpp
+    codon/sir/transform/pass.cpp
+    codon/sir/transform/pythonic/dict.cpp
+    codon/sir/transform/pythonic/io.cpp
+    codon/sir/transform/pythonic/str.cpp
+    codon/sir/types/types.cpp
+    codon/sir/util/cloning.cpp
+    codon/sir/util/format.cpp
+    codon/sir/util/inlining.cpp
+    codon/sir/util/irtools.cpp
+    codon/sir/util/matching.cpp
+    codon/sir/util/outlining.cpp
+    codon/sir/util/visitor.cpp
+    codon/sir/value.cpp
+    codon/sir/var.cpp
+    codon/util/common.cpp
+    codon/util/fmt/format.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
-target_sources(codonc PRIVATE ${CODON_CPPFILES} seq_rules.cpp omp_rules.cpp)
+target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CMAKE_BUILD_TYPE MATCHES Debug)
-    set_source_files_properties(seq_rules.cpp compiler/parser/peg/peg.cpp PROPERTIES COMPILE_FLAGS "-O2")
+    set_source_files_properties(codon_rules.cpp codon/parser/peg/peg.cpp PROPERTIES COMPILE_FLAGS "-O2")
 endif()
 llvm_map_components_to_libnames(LLVM_LIBS
     AllTargetsAsmParsers
@@ -288,19 +287,15 @@ add_custom_target(
     BYPRODUCTS "${CMAKE_BINARY_DIR}/include"
     VERBATIM
     COMMAND ${CMAKE_COMMAND} -E make_directory
-        "${CMAKE_BINARY_DIR}/include/codon/compiler"
+        "${CMAKE_BINARY_DIR}/include/codon"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/compiler" "${CMAKE_BINARY_DIR}/include/codon/compiler"
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "${CMAKE_BINARY_DIR}/include/codon/runtime"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/runtime" "${CMAKE_BINARY_DIR}/include/codon/runtime"
+        "${CMAKE_SOURCE_DIR}/codon" "${CMAKE_BINARY_DIR}/include/codon"
     COMMAND find "${CMAKE_BINARY_DIR}/include" -type f ! -name "*.h" -exec rm {} \\;
 )
 add_dependencies(headers codonrt codonc)
 
 # Codon command-line tool
-add_executable(codon runtime/main.cpp)
+add_executable(codon codon/app/main.cpp)
 target_link_libraries(codon ${STATIC_LIBCPP} codonc Threads::Threads)
 
 # Codon test

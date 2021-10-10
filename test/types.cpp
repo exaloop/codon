@@ -12,9 +12,9 @@
 #include <unistd.h>
 #include <vector>
 
-#include "parser/common.h"
-#include "parser/parser.h"
-#include "util/common.h"
+#include "codon/parser/common.h"
+#include "codon/parser/parser.h"
+#include "codon/util/common.h"
 #include "gtest/gtest.h"
 
 TEST(TypeCoreTest, TestName) { ; }
