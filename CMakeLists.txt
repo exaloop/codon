@@ -53,18 +53,22 @@ set(CODONRT_FILES
     runtime/lib.cpp
     runtime/exc.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace)
+add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma)
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR} "${gc_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP} LLVMSupport)
 if(APPLE)
     target_link_libraries(codonrt PRIVATE
         -Wl,-force_load,$<TARGET_FILE:zlibstatic>
-        -Wl,-force_load,$<TARGET_FILE:gc> )
+        -Wl,-force_load,$<TARGET_FILE:gc>
+        -Wl,-force_load,$<TARGET_FILE:bz2>
+        -Wl,-force_load,$<TARGET_FILE:liblzma> )
 else()
     target_link_libraries(codonrt PRIVATE
         -Wl,--whole-archive
         $<TARGET_FILE:zlibstatic>
         $<TARGET_FILE:gc>
+        $<TARGET_FILE:bz2>
+        $<TARGET_FILE:liblzma>
         -Wl,--no-whole-archive)
 endif()
 add_custom_command(TARGET codonrt POST_BUILD
