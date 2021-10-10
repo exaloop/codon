@@ -280,6 +280,25 @@ else()
     target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt)
 endif()
 
+# Gather headers
+add_custom_target(
+    headers
+    ALL
+    COMMENT "Collecting headers"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/include"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_BINARY_DIR}/include/codon/compiler"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/compiler" "${CMAKE_BINARY_DIR}/include/codon/compiler"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_BINARY_DIR}/include/codon/runtime"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/runtime" "${CMAKE_BINARY_DIR}/include/codon/runtime"
+    COMMAND find "${CMAKE_BINARY_DIR}/include" -type f ! -name "*.h" -exec rm {} \\;
+)
+add_dependencies(headers codonrt codonc)
+
 # Codon command-line tool
 add_executable(codon runtime/main.cpp)
 target_link_libraries(codon ${STATIC_LIBCPP} codonc Threads::Threads)

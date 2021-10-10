@@ -38,6 +38,7 @@ mkdir -p codon-deploy/bin codon-deploy/lib/codon
 cp build/codon codon-deploy/bin/
 cp build/libcodon*.so codon-deploy/lib/codon/
 cp build/libomp.so codon-deploy/lib/codon/
+cp -r build/include codon-deploy/
 cp -r stdlib codon-deploy/lib/codon/
 tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
 du -sh codon-deploy
