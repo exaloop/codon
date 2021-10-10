@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.14)
-project(Codon)
+project(Codon VERSION "0.11.1"
+              HOMEPAGE_URL "https://github.com/exaloop/codon"
+              DESCRIPTION "high-performance, extensible Python compiler")
+configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
+               "${PROJECT_SOURCE_DIR}/compiler/config/config.h")
+configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
+               "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
@@ -8,8 +14,10 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 include_directories(compiler)
 
-# set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-# set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+if(ASAN)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+endif()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -17,7 +25,7 @@ find_package(LLVM REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-include(${CMAKE_SOURCE_DIR}/scripts/deps.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)

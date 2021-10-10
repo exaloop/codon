@@ -15,7 +15,41 @@ CPMAddPackage(
             "ZLIB_COMPAT ON"
             "ZLIB_ENABLE_TESTS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
-set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL ON)
+if(zlibng_ADDED)
+    set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
+
+CPMAddPackage(
+    NAME xz
+    GITHUB_REPOSITORY "xz-mirror/xz"
+    VERSION 5.2.5
+    GIT_TAG e7da44d5151e21f153925781ad29334ae0786101
+    OPTIONS "BUILD_SHARED_LIBS OFF"
+            "CMAKE_POSITION_INDEPENDENT_CODE ON")
+if(xz_ADDED)
+    set_target_properties(xz PROPERTIES EXCLUDE_FROM_ALL ON)
+    set_target_properties(xzdec PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
+
+CPMAddPackage(
+    NAME bz2
+    URL "https://www.sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+    DOWNLOAD_ONLY YES)
+if(bz2_ADDED)
+    add_library(bz2 STATIC
+        "${bz2_SOURCE_DIR}/blocksort.c"
+        "${bz2_SOURCE_DIR}/huffman.c"
+        "${bz2_SOURCE_DIR}/crctable.c"
+        "${bz2_SOURCE_DIR}/randtable.c"
+        "${bz2_SOURCE_DIR}/compress.c"
+        "${bz2_SOURCE_DIR}/decompress.c"
+        "${bz2_SOURCE_DIR}/bzlib.c"
+        "${bz2_SOURCE_DIR}/libbz2.def")
+    set_target_properties(bz2 PROPERTIES
+        COMPILE_FLAGS "-D_FILE_OFFSET_BITS=64"
+        POSITION_INDEPENDENT_CODE ON)
+endif()
+
 CPMAddPackage(
     NAME bdwgc
     GITHUB_REPOSITORY "ivmai/bdwgc"
@@ -27,7 +61,10 @@ CPMAddPackage(
             "enable_large_config ON"
             "enable_thread_local_alloc ON"
             "enable_handle_fork ON")
-set_target_properties(cord PROPERTIES EXCLUDE_FROM_ALL ON)
+if(bdwgc_ADDED)
+    set_target_properties(cord PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
+
 CPMAddPackage(
     NAME openmp
     GITHUB_REPOSITORY "llvm-mirror/openmp"
@@ -35,6 +72,7 @@ CPMAddPackage(
     GIT_TAG release_90
     OPTIONS "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
+
 CPMAddPackage(
     NAME backtrace
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
@@ -54,10 +92,10 @@ if(backtrace_ADDED)
     endif()
     # Generate backtrace-supported.h based on the above.
     configure_file(
-        ${CMAKE_SOURCE_DIR}/scripts/backtrace-supported.h.cmake
+        ${CMAKE_SOURCE_DIR}/cmake/backtrace-supported.h.in
         ${backtrace_SOURCE_DIR}/backtrace-supported.h)
     configure_file(
-        ${CMAKE_SOURCE_DIR}/scripts/backtrace-config.h.cmake
+        ${CMAKE_SOURCE_DIR}/cmake/backtrace-config.h.in
         ${backtrace_SOURCE_DIR}/config.h)
     add_library(backtrace STATIC
         "${backtrace_SOURCE_DIR}/atomic.c"

@@ -15,19 +15,23 @@
 import os
 import sys
 
+sys.path.insert(0, os.path.abspath("./config"))
 sys.path.insert(0, os.path.abspath("./_ext"))
-
 
 # -- Project information -----------------------------------------------------
 
-project = u'Codon'
-copyright = u'2019-2021, Exaloop, Inc.'
-author = u'exaloop'
+project = 'Codon'
+copyright = '2019-2021, Exaloop, Inc.'
+author = 'exaloop'
 
+from config import CODON_VERSION_MAJOR, CODON_VERSION_MINOR, CODON_VERSION_PATCH
+ver_major = CODON_VERSION_MAJOR
+ver_minor = CODON_VERSION_MINOR
+ver_patch = CODON_VERSION_PATCH
 # The short X.Y version
-version = u'0.11'
+version = '%d.%d' % (ver_major, ver_minor)
 # The full version, including alpha/beta/rc tags
-release = u'0.11.0'
+release = '%d.%d.%d' % (ver_major, ver_minor, ver_patch)
 
 # Logo path
 html_logo = 'logo.png'

@@ -1,9 +1,5 @@
 #pragma once
 
-#define CODON_VERSION_MAJOR 0
-#define CODON_VERSION_MINOR 11
-#define CODON_VERSION_PATCH 0
-
 #include <cassert>
 #include <climits>
 #include <cstdint>
@@ -13,6 +9,7 @@
 #include <stdexcept>
 #include <sys/stat.h>
 
+#include "config/config.h"
 #include "util/fmt/format.h"
 #include "util/fmt/ostream.h"
 
