@@ -127,7 +127,7 @@ static void seq_delete_exc(_Unwind_Exception *expToDelete) {
   if (!expToDelete || expToDelete->exception_class != ourBaseExceptionClass)
     return;
   auto *exc = (OurException *)((char *)expToDelete + ourBaseFromUnwindOffset);
-  if (debug) {
+  if (seq_debug) {
     exc->bt.free();
   }
   seq_free(exc);
@@ -148,7 +148,7 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   e->obj = obj;
   e->unwindException.exception_class = ourBaseExceptionClass;
   e->unwindException.exception_cleanup = seq_delete_unwind_exc;
-  if (debug) {
+  if (seq_debug) {
     e->bt.frames = nullptr;
     e->bt.count = 0;
     if (!state)
@@ -208,7 +208,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
   fprintf(stderr, "\n");
 
-  if (debug) {
+  if (seq_debug) {
     auto *bt = &base->bt;
     if (bt->count > 0) {
       fprintf(stderr, "\n\033[1mBacktrace:\033[0m\n");

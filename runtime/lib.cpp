@@ -45,7 +45,7 @@ static void register_thread(kmp_int32 *global_tid, kmp_int32 *bound_tid) {
 
 void seq_exc_init();
 
-int debug;
+int seq_debug;
 
 SEQ_FUNC void seq_init(int d) {
   GC_INIT();
@@ -54,7 +54,7 @@ SEQ_FUNC void seq_init(int d) {
   // equivalent to: #pragma omp parallel { register_thread }
   __kmpc_fork_call(&dummy_loc, 0, (kmpc_micro)register_thread);
   seq_exc_init();
-  debug = d;
+  seq_debug = d;
 }
 
 SEQ_FUNC bool seq_is_macos() {
@@ -174,6 +174,17 @@ SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end) {
 /*
  * String conversion
  */
+template <typename T>
+static seq_str_t string_conv(const char *fmt, const size_t size, T t) {
+  auto *p = (char *)seq_alloc_atomic(size);
+  int n = snprintf(p, size, fmt, t);
+  if (n >= size) {
+    auto n2 = (size_t)n + 1;
+    p = (char *)seq_realloc((void *)p, n2);
+    n = snprintf(p, n2, fmt, t);
+  }
+  return {(seq_int_t)n, p};
+}
 
 SEQ_FUNC seq_str_t seq_str_int(seq_int_t n) { return string_conv("%ld", 22, n); }
 
