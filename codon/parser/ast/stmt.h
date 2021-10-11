@@ -70,7 +70,7 @@ public:
 using StmtPtr = shared_ptr<Stmt>;
 
 /// Suite (block of statements) statement (stmt...).
-/// @example a = 5; foo(1)
+/// @li a = 5; foo(1)
 struct SuiteStmt : public Stmt {
   using Stmt::Stmt;
 
@@ -99,7 +99,7 @@ struct SuiteStmt : public Stmt {
 };
 
 /// Break statement.
-/// @example break
+/// @li break
 struct BreakStmt : public Stmt {
   BreakStmt() = default;
   BreakStmt(const BreakStmt &stmt) = default;
@@ -109,7 +109,7 @@ struct BreakStmt : public Stmt {
 };
 
 /// Continue statement.
-/// @example continue
+/// @li continue
 struct ContinueStmt : public Stmt {
   ContinueStmt() = default;
   ContinueStmt(const ContinueStmt &stmt) = default;
@@ -119,7 +119,7 @@ struct ContinueStmt : public Stmt {
 };
 
 /// Expression statement (expr).
-/// @example 3 + foo()
+/// @li 3 + foo()
 struct ExprStmt : public Stmt {
   ExprPtr expr;
 
@@ -133,9 +133,9 @@ struct ExprStmt : public Stmt {
 };
 
 /// Assignment statement (lhs: type = rhs).
-/// @example a = 5
-/// @example a: Optional[int] = 5
-/// @example a, b, c = 5, *z
+/// @li a = 5
+/// @li a: Optional[int] = 5
+/// @li a, b, c = 5, *z
 struct AssignStmt : public Stmt {
   ExprPtr lhs, rhs, type;
   /// True if assignment always shadows existing variables. For internal use (e.g.
@@ -152,8 +152,8 @@ struct AssignStmt : public Stmt {
 };
 
 /// Deletion statement (del expr).
-/// @example del a
-/// @example del a[5]
+/// @li del a
+/// @li del a[5]
 struct DelStmt : public Stmt {
   ExprPtr expr;
 
@@ -165,7 +165,7 @@ struct DelStmt : public Stmt {
 };
 
 /// Print statement (print expr).
-/// @example print a, b
+/// @li print a, b
 struct PrintStmt : public Stmt {
   vector<ExprPtr> items;
   /// True if there is a dangling comma after print: print a,
@@ -179,8 +179,8 @@ struct PrintStmt : public Stmt {
 };
 
 /// Return statement (return expr).
-/// @example return
-/// @example return a
+/// @li return
+/// @li return a
 struct ReturnStmt : public Stmt {
   /// nullptr if this is an empty return/yield statements.
   ExprPtr expr;
@@ -193,8 +193,8 @@ struct ReturnStmt : public Stmt {
 };
 
 /// Yield statement (yield expr).
-/// @example yield
-/// @example yield a
+/// @li yield
+/// @li yield a
 struct YieldStmt : public Stmt {
   /// nullptr if this is an empty return/yield statements.
   ExprPtr expr;
@@ -207,8 +207,8 @@ struct YieldStmt : public Stmt {
 };
 
 /// Assert statement (assert expr).
-/// @example assert a
-/// @example assert a, "Message"
+/// @li assert a
+/// @li assert a, "Message"
 struct AssertStmt : public Stmt {
   ExprPtr expr;
   /// nullptr if there is no message.
@@ -222,8 +222,8 @@ struct AssertStmt : public Stmt {
 };
 
 /// While loop statement (while cond: suite; else: elseSuite).
-/// @example while True: print
-/// @example while True: break
+/// @li while True: print
+/// @li while True: break
 ///          else: print
 struct WhileStmt : public Stmt {
   ExprPtr cond;
@@ -239,8 +239,8 @@ struct WhileStmt : public Stmt {
 };
 
 /// For loop statement (for var in iter: suite; else elseSuite).
-/// @example for a, b in c: print
-/// @example for i in j: break
+/// @li for a, b in c: print
+/// @li for i in j: break
 ///          else: print
 struct ForStmt : public Stmt {
   ExprPtr var;
@@ -262,10 +262,10 @@ struct ForStmt : public Stmt {
 };
 
 /// If block statement (if cond: suite; (elif cond: suite)...).
-/// @example if a: foo()
-/// @example if a: foo()
+/// @li if a: foo()
+/// @li if a: foo()
 ///          elif b: bar()
-/// @example if a: foo()
+/// @li if a: foo()
 ///          elif b: bar()
 ///          else: baz()
 struct IfStmt : public Stmt {
@@ -281,7 +281,7 @@ struct IfStmt : public Stmt {
 };
 
 /// Match statement (match what: (case pattern: case)...).
-/// @example match a:
+/// @li match a:
 ///          case 1: print
 ///          case _: pass
 struct MatchStmt : public Stmt {
@@ -308,12 +308,12 @@ struct MatchStmt : public Stmt {
 ///  - import what (as as)
 ///  - from c import what(args...) (-> ret) (as as)
 ///  - from .(dots...)from import what (as as)
-/// @example import a
-/// @example from b import a
-/// @example from ...b import a as ai
-/// @example from c import foo(int) -> int as bar
-/// @example from python.numpy import array
-/// @example from python import numpy.array(int) -> int as na
+/// @li import a
+/// @li from b import a
+/// @li from ...b import a as ai
+/// @li from c import foo(int) -> int as bar
+/// @li from python.numpy import array
+/// @li from python import numpy.array(int) -> int as na
 struct ImportStmt : public Stmt {
   ExprPtr from, what;
   string as;
@@ -333,7 +333,7 @@ struct ImportStmt : public Stmt {
 };
 
 /// Try-catch statement (try: suite; (catch var (as exc): suite)...; finally: finally).
-/// @example: try: a
+/// @li: try: a
 ///           catch e: pass
 ///           catch e as Exc: pass
 ///           catch: pass
@@ -362,7 +362,7 @@ struct TryStmt : public Stmt {
 };
 
 /// Throw statement (raise expr).
-/// @example: raise a
+/// @li: raise a
 struct ThrowStmt : public Stmt {
   ExprPtr expr;
   // True if a statement was transformed during type-checking stage
@@ -377,7 +377,7 @@ struct ThrowStmt : public Stmt {
 };
 
 /// Global variable statement (global var).
-/// @example: global a
+/// @li: global a
 struct GlobalStmt : public Stmt {
   string var;
 
@@ -423,7 +423,7 @@ struct Attr {
 };
 
 /// Function statement (@(attributes...) def name[funcs...](args...) -> ret: suite).
-/// @example: @decorator
+/// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
 struct FunctionStmt : public Stmt {
   string name;
@@ -443,7 +443,7 @@ struct FunctionStmt : public Stmt {
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.
-  /// @example (T U (int 0))
+  /// @li (T U (int 0))
   string signature() const;
   bool hasAttr(const string &attr) const;
 
@@ -451,7 +451,7 @@ struct FunctionStmt : public Stmt {
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
-/// @example: @type
+/// @li: @type
 ///           class F[T]:
 ///              m: T
 ///              def __new__() -> F[T]: ...
@@ -478,7 +478,7 @@ struct ClassStmt : public Stmt {
 };
 
 /// Yield-from statement (yield from expr).
-/// @example: yield from it
+/// @li: yield from it
 struct YieldFromStmt : public Stmt {
   ExprPtr expr;
 
@@ -490,7 +490,7 @@ struct YieldFromStmt : public Stmt {
 };
 
 /// With statement (with (item as var)...: suite).
-/// @example: with foo(), bar() as b: pass
+/// @li: with foo(), bar() as b: pass
 struct WithStmt : public Stmt {
   vector<ExprPtr> items;
   /// empty string if a corresponding item is unnamed
@@ -506,7 +506,7 @@ struct WithStmt : public Stmt {
 };
 
 /// Custom block statement (foo: ...).
-/// @example: pt_tree: pass
+/// @li: pt_tree: pass
 struct CustomStmt : public Stmt {
   string keyword;
   ExprPtr expr;
@@ -522,7 +522,7 @@ struct CustomStmt : public Stmt {
 /// The following nodes are created after the simplify stage.
 
 /// Member assignment statement (lhs.member = rhs).
-/// @example: a.x = b
+/// @li: a.x = b
 struct AssignMemberStmt : public Stmt {
   ExprPtr lhs;
   string member;
@@ -537,7 +537,7 @@ struct AssignMemberStmt : public Stmt {
 
 /// Update assignment statement (lhs = rhs).
 /// Only valid if lhs exists.
-/// @example: lhs = rhs
+/// @li: lhs = rhs
 struct UpdateStmt : public Stmt {
   ExprPtr lhs, rhs;
   /// True if this is an atomic update.

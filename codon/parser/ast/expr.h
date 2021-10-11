@@ -145,7 +145,7 @@ struct Param : public codon::SrcObject {
 };
 
 /// None expression.
-/// @example None
+/// @li None
 struct NoneExpr : public Expr {
   NoneExpr();
   NoneExpr(const NoneExpr &expr) = default;
@@ -157,7 +157,7 @@ struct NoneExpr : public Expr {
 };
 
 /// Bool expression (value).
-/// @example True
+/// @li True
 struct BoolExpr : public Expr {
   bool value;
 
@@ -169,9 +169,9 @@ struct BoolExpr : public Expr {
 };
 
 /// Int expression (value.suffix).
-/// @example 12
-/// @example 13u
-/// @example 000_010b
+/// @li 12
+/// @li 13u
+/// @li 000_010b
 struct IntExpr : public Expr {
   /// Expression value is stored as a string that is parsed during the simplify stage.
   string value;
@@ -192,9 +192,9 @@ struct IntExpr : public Expr {
 };
 
 /// Float expression (value.suffix).
-/// @example 12.1
-/// @example 13.15z
-/// @example e-12
+/// @li 12.1
+/// @li 13.15z
+/// @li e-12
 struct FloatExpr : public Expr {
   /// Expression value is stored as a string that is parsed during the simplify stage.
   string value;
@@ -213,8 +213,8 @@ struct FloatExpr : public Expr {
 };
 
 /// String expression (prefix"value").
-/// @example s'ACGT'
-/// @example "fff"
+/// @li s'ACGT'
+/// @li "fff"
 struct StringExpr : public Expr {
   // Vector of {value, prefix} strings.
   vector<pair<string, string>> strings;
@@ -245,7 +245,7 @@ struct IdExpr : public Expr {
 };
 
 /// Star (unpacking) expression (*what).
-/// @example *args
+/// @li *args
 struct StarExpr : public Expr {
   ExprPtr what;
 
@@ -259,7 +259,7 @@ struct StarExpr : public Expr {
 };
 
 /// KeywordStar (unpacking) expression (**what).
-/// @example **kwargs
+/// @li **kwargs
 struct KeywordStarExpr : public Expr {
   ExprPtr what;
 
@@ -271,7 +271,7 @@ struct KeywordStarExpr : public Expr {
 };
 
 /// Tuple expression ((items...)).
-/// @example (1, a)
+/// @li (1, a)
 struct TupleExpr : public Expr {
   vector<ExprPtr> items;
 
@@ -285,7 +285,7 @@ struct TupleExpr : public Expr {
 };
 
 /// List expression ([items...]).
-/// @example [1, 2]
+/// @li [1, 2]
 struct ListExpr : public Expr {
   vector<ExprPtr> items;
 
@@ -299,7 +299,7 @@ struct ListExpr : public Expr {
 };
 
 /// Set expression ({items...}).
-/// @example {1, 2}
+/// @li {1, 2}
 struct SetExpr : public Expr {
   vector<ExprPtr> items;
 
@@ -311,7 +311,7 @@ struct SetExpr : public Expr {
 };
 
 /// Dictionary expression ({(key: value)...}).
-/// @example {'s': 1, 't': 2}
+/// @li {'s': 1, 't': 2}
 struct DictExpr : public Expr {
   struct DictItem {
     ExprPtr key, value;
@@ -328,7 +328,7 @@ struct DictExpr : public Expr {
 };
 
 /// Generator body node helper [for vars in gen (if conds)...].
-/// @example for i in lst if a if b
+/// @li for i in lst if a if b
 struct GeneratorBody {
   ExprPtr vars;
   ExprPtr gen;
@@ -338,8 +338,8 @@ struct GeneratorBody {
 };
 
 /// Generator or comprehension expression [(expr (loops...))].
-/// @example [i for i in j]
-/// @example (f + 1 for j in k if j for f in j)
+/// @li [i for i in j]
+/// @li (f + 1 for j in k if j for f in j)
 struct GeneratorExpr : public Expr {
   /// Generator kind: normal generator, list comprehension, set comprehension.
   enum GeneratorKind { Generator, ListGenerator, SetGenerator };
@@ -356,7 +356,7 @@ struct GeneratorExpr : public Expr {
 };
 
 /// Dictionary comprehension expression [{key: expr (loops...)}].
-/// @example {i: j for i, j in z.items()}
+/// @li {i: j for i, j in z.items()}
 struct DictGeneratorExpr : public Expr {
   ExprPtr key, expr;
   vector<GeneratorBody> loops;
@@ -369,7 +369,7 @@ struct DictGeneratorExpr : public Expr {
 };
 
 /// Conditional expression [cond if ifexpr else elsexpr].
-/// @example 1 if a else 2
+/// @li 1 if a else 2
 struct IfExpr : public Expr {
   ExprPtr cond, ifexpr, elsexpr;
 
@@ -383,7 +383,7 @@ struct IfExpr : public Expr {
 };
 
 /// Unary expression [op expr].
-/// @example -56
+/// @li -56
 struct UnaryExpr : public Expr {
   string op;
   ExprPtr expr;
@@ -398,8 +398,8 @@ struct UnaryExpr : public Expr {
 };
 
 /// Binary expression [lexpr op rexpr].
-/// @example 1 + 2
-/// @example 3 or 4
+/// @li 1 + 2
+/// @li 3 or 4
 struct BinaryExpr : public Expr {
   string op;
   ExprPtr lexpr, rexpr;
@@ -417,7 +417,7 @@ struct BinaryExpr : public Expr {
 };
 
 /// Chained binary expression.
-/// @example 1 <= x <= 2
+/// @li 1 <= x <= 2
 struct ChainBinaryExpr : public Expr {
   vector<std::pair<string, ExprPtr>> exprs;
 
@@ -430,7 +430,7 @@ struct ChainBinaryExpr : public Expr {
 
 /// Pipe expression [(op expr)...].
 /// op is either "" (only the first item), "|>" or "||>".
-/// @example a |> b ||> c
+/// @li a |> b ||> c
 struct PipeExpr : public Expr {
   struct Pipe {
     string op;
@@ -452,7 +452,7 @@ struct PipeExpr : public Expr {
 };
 
 /// Index expression (expr[index]).
-/// @example a[5]
+/// @li a[5]
 struct IndexExpr : public Expr {
   ExprPtr expr, index;
 
@@ -466,7 +466,7 @@ struct IndexExpr : public Expr {
 };
 
 /// Call expression (expr((name=value)...)).
-/// @example a(1, b=2)
+/// @li a(1, b=2)
 struct CallExpr : public Expr {
   /// Each argument can have a name (e.g. foo(1, b=5))
   struct Arg {
@@ -496,7 +496,7 @@ struct CallExpr : public Expr {
 };
 
 /// Dot (access) expression (expr.member).
-/// @example a.b
+/// @li a.b
 struct DotExpr : public Expr {
   ExprPtr expr;
   string member;
@@ -513,9 +513,9 @@ struct DotExpr : public Expr {
 };
 
 /// Slice expression (st:stop:step).
-/// @example 1:10:3
-/// @example s::-1
-/// @example :::
+/// @li 1:10:3
+/// @li s::-1
+/// @li :::
 struct SliceExpr : public Expr {
   /// Any of these can be nullptr to account for partial slices.
   ExprPtr start, stop, step;
@@ -528,7 +528,7 @@ struct SliceExpr : public Expr {
 };
 
 /// Ellipsis expression.
-/// @example ...
+/// @li ...
 struct EllipsisExpr : public Expr {
   /// True if this is a target partial argument within a PipeExpr.
   /// If true, this node will be handled differently during the type-checking stage.
@@ -544,7 +544,7 @@ struct EllipsisExpr : public Expr {
 };
 
 /// Lambda expression (lambda (vars)...: expr).
-/// @example lambda a, b: a + b
+/// @li lambda a, b: a + b
 struct LambdaExpr : public Expr {
   vector<string> vars;
   ExprPtr expr;
@@ -557,7 +557,7 @@ struct LambdaExpr : public Expr {
 };
 
 /// Yield (send to generator) expression.
-/// @example (yield)
+/// @li (yield)
 struct YieldExpr : public Expr {
   YieldExpr();
   YieldExpr(const YieldExpr &expr) = default;
@@ -567,7 +567,7 @@ struct YieldExpr : public Expr {
 };
 
 /// Assignment (walrus) expression (var := expr).
-/// @example a := 5 + 3
+/// @li a := 5 + 3
 struct AssignExpr : public Expr {
   ExprPtr var, expr;
 
@@ -580,7 +580,7 @@ struct AssignExpr : public Expr {
 
 /// Range expression (start ... end).
 /// Used only in match-case statements.
-/// @example 1 ... 2
+/// @li 1 ... 2
 struct RangeExpr : public Expr {
   ExprPtr start, stop;
 
@@ -596,7 +596,7 @@ struct RangeExpr : public Expr {
 /// Statement expression (stmts...; expr).
 /// Statements are evaluated only if the expression is evaluated
 /// (to support short-circuiting).
-/// @example (a = 1; b = 2; a + b)
+/// @li (a = 1; b = 2; a + b)
 struct StmtExpr : public Expr {
   vector<shared_ptr<Stmt>> stmts;
   ExprPtr expr;
@@ -613,7 +613,7 @@ struct StmtExpr : public Expr {
 };
 
 /// Pointer expression (__ptr__(expr)).
-/// @example __ptr__(a)
+/// @li __ptr__(a)
 struct PtrExpr : public Expr {
   ExprPtr expr;
 
@@ -625,7 +625,7 @@ struct PtrExpr : public Expr {
 };
 
 /// Static tuple indexing expression (expr[index]).
-/// @example (1, 2, 3)[2]
+/// @li (1, 2, 3)[2]
 struct TupleIndexExpr : Expr {
   ExprPtr expr;
   int index;
@@ -638,7 +638,7 @@ struct TupleIndexExpr : Expr {
 };
 
 /// Static tuple indexing expression (expr[index]).
-/// @example (1, 2, 3)[2]
+/// @li (1, 2, 3)[2]
 struct InstantiateExpr : Expr {
   ExprPtr typeExpr;
   vector<ExprPtr> typeParams;
@@ -653,7 +653,7 @@ struct InstantiateExpr : Expr {
 };
 
 /// Stack allocation expression (__array__[type](expr)).
-/// @example __array__[int](5)
+/// @li __array__[int](5)
 struct StackAllocExpr : Expr {
   ExprPtr typeExpr, expr;
 

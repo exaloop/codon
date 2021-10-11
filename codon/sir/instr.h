@@ -318,7 +318,7 @@ public:
 
   /// Constructs a yield in instruction.
   /// @param type the type of the value being yielded in
-  /// @param supsend whether to suspend
+  /// @param suspend whether to suspend
   /// @param name the instruction's name
   explicit YieldInInstr(types::Type *type, bool suspend = true, std::string name = "")
       : AcceptorExtend(std::move(name)), type(type), suspend(suspend) {}

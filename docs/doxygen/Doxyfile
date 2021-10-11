@@ -1,6 +1,7 @@
-PROJECT_NAME      = "codon"
+PROJECT_NAME      = "Codon"
 XML_OUTPUT        = xml
-INPUT             = ../../compiler/include ../../compiler/lang ../../compiler/types ../../compiler/util
+INPUT             = ../../codon
+EXCLUDE_PATTERNS  = */codon/util/fmt/* */codon/sir/llvm/coro/*
 STRIP_FROM_PATH   = ../..
 GENERATE_LATEX    = NO
 GENERATE_MAN      = NO
@@ -12,4 +13,3 @@ RECURSIVE         = YES
 QUIET             = YES
 JAVADOC_AUTOBRIEF = YES
 WARN_IF_UNDOCUMENTED = NO
-

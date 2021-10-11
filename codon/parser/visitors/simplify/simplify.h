@@ -348,10 +348,10 @@ private:
   /// Converts a Python-like F-string (f"foo {x+1} bar") to a concatenation:
   ///   str.cat("foo ", str(x + 1), " bar").
   /// Also supports "{x=}" specifier (that prints the raw expression as well).
-  /// @example f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
+  /// @li f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
   ExprPtr transformFString(string value);
   /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
-  /// @example (for i in j if a for k in i if a if b) becomes:
+  /// @li (for i in j if a for k in i if a if b) becomes:
   ///          for i in j: if a: for k in i: if a: if b: <prev>
   /// @param prev (out-argument) A pointer to the innermost block (suite) where a
   /// comprehension (or generator) expression should reside.
@@ -361,7 +361,7 @@ private:
   /// If the statements refer to outer variables, those variables will be captured and
   /// added to the list of arguments. Returns a call expression that calls this
   /// function with captured variables.
-  /// @example Given a statement a+b and argument names a, this generates
+  /// @li Given a statement a+b and argument names a, this generates
   ///            def _lambda(a, b): return a+b
   ///          and returns
   ///            _lambda(b).

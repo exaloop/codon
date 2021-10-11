@@ -55,7 +55,7 @@ struct function_iterator_adaptor {
 };
 
 /// Creates an adaptor that dereferences values.
-/// @param the internal iterator
+/// @param it the internal iterator
 /// @return the adaptor
 template <typename It> auto dereference_adaptor(It it) {
   auto f = [](const auto &v) -> auto & { return *v; };
@@ -65,7 +65,7 @@ template <typename It> auto dereference_adaptor(It it) {
 }
 
 /// Creates an adaptor that gets the address of its values.
-/// @param the internal iterator
+/// @param it the internal iterator
 /// @return the adaptor
 template <typename It> auto raw_ptr_adaptor(It it) {
   auto f = [](auto &v) -> auto * { return v.get(); };
@@ -75,7 +75,7 @@ template <typename It> auto raw_ptr_adaptor(It it) {
 }
 
 /// Creates an adaptor that gets the const address of its values.
-/// @param the internal iterator
+/// @param it the internal iterator
 /// @return the adaptor
 template <typename It> auto const_raw_ptr_adaptor(It it) {
   auto f = [](auto &v) -> const auto * { return v.get(); };
@@ -85,7 +85,7 @@ template <typename It> auto const_raw_ptr_adaptor(It it) {
 }
 
 /// Creates an adaptor that gets the keys of its values.
-/// @param the internal iterator
+/// @param it the internal iterator
 /// @return the adaptor
 template <typename It> auto map_key_adaptor(It it) {
   auto f = [](auto &v) -> auto & { return v.first; };
@@ -95,7 +95,7 @@ template <typename It> auto map_key_adaptor(It it) {
 }
 
 /// Creates an adaptor that gets the const keys of its values.
-/// @param the internal iterator
+/// @param it the internal iterator
 /// @return the adaptor
 template <typename It> auto const_map_key_adaptor(It it) {
   auto f = [](auto &v) -> const auto & { return v.first; };
