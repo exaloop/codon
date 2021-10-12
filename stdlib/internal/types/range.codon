@@ -85,7 +85,7 @@ class range:
         n = self.__len__()
         return range(start + (n - 1)*step, start - step, -step).__iter__()
 
-    def __str__(self):
+    def __repr__(self):
         if self.step == 1:
             return 'range(' + str(self.start) + ', ' + str(self.stop) + ')'
         else:

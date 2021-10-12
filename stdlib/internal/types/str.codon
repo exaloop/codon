@@ -12,7 +12,10 @@ class str:
     def __new__() -> str:
         return str(Ptr[byte](), 0)
     def __new__[T](what: T) -> str: # lowest priority!
-        return what.__str__()
+        if hasattr(what, "__str__"):
+            return what.__str__()
+        else:
+            return what.__repr__()
     def __str__(what: str) -> str:
         return what
     def __len__(self) -> int:

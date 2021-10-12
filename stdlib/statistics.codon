@@ -700,5 +700,5 @@ class NormalDist:
     def __hash__(self):
         return hash((self._mu, self._sigma))
 
-    def __str__(self):
+    def __repr__(self):
         return f'NormalDist(mu={self._mu}, sigma={self._sigma})'

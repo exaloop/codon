@@ -911,7 +911,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         for (auto &i : {"pickle", "unpickle"})
           magics.emplace_back(i);
       if (hasMagic[Repr])
-        magics.emplace_back("str");
+        magics.emplace_back("repr");
       if (hasMagic[Container])
         for (auto &i : {"iter", "getitem"})
           magics.emplace_back(i);
@@ -1657,11 +1657,11 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
           N<CallExpr>(N<DotExpr>(clone(args[i].type), "__from_py__"),
                       N<CallExpr>(N<DotExpr>(I("src"), "_tuple_get"), N<IntExpr>(i))));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
-  } else if (op == "str") {
-    // def __str__(self: T) -> str:
+  } else if (op == "repr") {
+    // def __repr__(self: T) -> str:
     //   a = __array__[str](N)  (number of args)
     //   n = __array__[str](N)  (number of args)
-    //   a.__setitem__(0, self.arg1.__str__()) ...
+    //   a.__setitem__(0, self.arg1.__repr__()) ...
     //   n.__setitem__(0, "arg1") ...  (if not a Tuple.N; otherwise "")
     //   return __internal__.tuple_str(a.ptr, n.ptr, N)
     fargs.emplace_back(Param{"self", typExpr->clone()});
@@ -1676,7 +1676,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
       for (int i = 0; i < args.size(); i++) {
         stmts.push_back(N<ExprStmt>(N<CallExpr>(
             N<DotExpr>(I("a"), "__setitem__"), N<IntExpr>(i),
-            N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__str__")))));
+            N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__repr__")))));
 
         auto name = typExpr->getIndex() ? typExpr->getIndex()->expr->getId() : nullptr;
         stmts.push_back(N<ExprStmt>(N<CallExpr>(

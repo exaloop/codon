@@ -278,7 +278,7 @@ class Test:
     value: int
     def __init__(self, value: int):
         self.value = value
-    def __str__(self):
+    def __repr__(self):
         return str(self.value)
 def key_func(k: Test):
     return k.value
@@ -351,7 +351,7 @@ print y.a, y.__class__, y.a.__class__ #: [10] XX[5] Num[10]
 class FooBar[N: Static[int]]:
     x: Int[N]
 z = FooBar(i32(5))
-print z, z.__class__, z.x.__class__ #: (x: 5) FooBar[32] Int[32]
+print z, z.__class__, z.x.__class__ #: (x: Int[32](5)) FooBar[32] Int[32]
 
 @tuple
 class Foo[N: Static[int]]:
@@ -517,9 +517,9 @@ class A[T]:
 
 print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
-print A.B.C.foo('x', 'x', 'x', 'x') #: (x, x, x, x)
-print A.B.C.foo('x', 'x', 'x', 'x') #: (x, x, x, x)
-print A.B.C.foo('x', 'x', 'x', 'x') #: (x, x, x, x)
+print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
+print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
+print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 
 x = A.B.C[bool]()
 print x.__class__ #: A.B.C[bool]
@@ -746,7 +746,7 @@ y = X[X[int]]()
 print y.__class__ #: X[X[int]]
 print X[float].foo(U=int, ...).__class__ #: X.foo[X[float],float,int,int]
 # print y.foo[float].__class__
-print X[int]().foo(1, 's') #: (2, ss)
+print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
 class X[T]:
@@ -809,7 +809,7 @@ def retfn(a):
     return inner(15, ...)
 f = retfn(1)
 print f.__class__ #: retfn.inner[int,...,int,...]
-f(2,3,foo='bar') #: 1 15 (2, 3) (foo: bar)
+f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
 def foo(x, *args, **kwargs):
@@ -818,12 +818,12 @@ def foo(x, *args, **kwargs):
 def dec(fn, a):
     print 'decorating', fn.__class__ #: decorating foo[...,...,...]
     def inner(*args, **kwargs):
-        print 'decorator', args, kwargs #: decorator (5.5, s) (z: True)
+        print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
     return inner(...)
 ff = dec(foo(...), 10)
 print ff(5.5, 's', z=True)
-#: 10 (5.5, s) (z: True)
+#: 10 (5.5, 's') (z: True)
 #: 1
 
 
@@ -840,8 +840,8 @@ def dec(fn, a):
 ff = dec(foo, 10)
 print ff(5.5, 's', z=True)
 #: decorating foo[...,...,...]
-#: decorator (5.5, s) (z: True)
-#: 10 (5.5, s) (z: True)
+#: decorator (5.5, 's') (z: True)
+#: 10 (5.5, 's') (z: True)
 #: 1
 
 @dec(a=5)
@@ -852,7 +852,7 @@ print zoo('s', 3)
 #: decorating zoo[...,...,...]
 #: decorator (2, 3) ()
 #: zoo: 5, 2, (3)
-#: decorator (s, 3) ()
+#: decorator ('s', 3) ()
 #: zoo: 5, s, (3)
 
 def mydecorator(func):
@@ -1026,7 +1026,7 @@ iter(range(4)) |> print('x', ..., 1)
 
 #%% type_arg_transform,barebones
 print list(map(str, range(5)))
-#: [0, 1, 2, 3, 4]
+#: ['0', '1', '2', '3', '4']
 
 
 #%% traits,barebones

@@ -206,6 +206,8 @@ class Int:
         %2 = call i32 @gzread(i8* %src, i8* %1, i32 %szi)
         %3 = load i{=N}, i{=N}* %0
         ret i{=N} %3
+    def __repr__(self) -> str:
+        return str.cat(('Int[', seq_str_int(N), '](', seq_str_int(int(self)), ')'))
     def __str__(self) -> str:
         return seq_str_int(int(self))
     @pure
@@ -404,6 +406,8 @@ class UInt:
         %2 = call i32 @gzread(i8* %src, i8* %1, i32 %szi)
         %3 = load i{=N}, i{=N}* %0
         ret i{=N} %3
+    def __repr__(self) -> str:
+        return str.cat(('UInt[', seq_str_int(N), '](', seq_str_uint(int(self)), ')'))
     def __str__(self) -> str:
         return seq_str_uint(int(self))
     def popcnt(self):

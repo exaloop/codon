@@ -15,7 +15,7 @@ class byte:
     def __new__(i: int) -> byte:
         %0 = trunc i64 %i to i8
         ret i8 %0
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return seq_str_byte(self)
     def __copy__(self) -> byte:
         return self

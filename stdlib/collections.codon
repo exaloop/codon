@@ -110,8 +110,8 @@ class deque[T]:
     def copy(self):
         return self.__copy__()
 
-    def __str__(self):
-        return str(List[T](iter(self)))
+    def __repr__(self):
+        return repr(List[T](iter(self)))
 
     def _idx_check(self, idx: int, msg: str):
         if self._head == self._tail or idx >= len(self) or idx < 0:

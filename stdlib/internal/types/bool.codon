@@ -6,7 +6,7 @@ class bool:
         return False
     def __new__[T](what: T) -> bool: # lowest priority!
         return what.__bool__()
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return "True" if self else "False"
     def __copy__(self) -> bool:
         return self

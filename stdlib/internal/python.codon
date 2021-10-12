@@ -152,6 +152,9 @@ class pyobj:
     def __str__(self):
         return str.__from_py__(self._getattr("__str__").__call__())
 
+    def __repr__(self):
+        return str.__from_py__(self._getattr("__repr__").__call__())
+
     def __iter__(self):
         it = PyObject_GetIter(self.p)
         if not it:

@@ -62,6 +62,7 @@ public:
   static const std::string FLOAT_MAGIC_NAME;
   static const std::string BOOL_MAGIC_NAME;
   static const std::string STR_MAGIC_NAME;
+  static const std::string REPR_MAGIC_NAME;
 
   static const std::string GETITEM_MAGIC_NAME;
   static const std::string SETITEM_MAGIC_NAME;

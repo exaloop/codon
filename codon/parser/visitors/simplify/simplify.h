@@ -471,7 +471,7 @@ private:
   /// args.
   /// Currently able to generate:
   ///   Constructors: __new__, __init__
-  ///   Utilities: __raw__, __hash__, __str__
+  ///   Utilities: __raw__, __hash__, __repr__
   ///   Iteration: __iter__, __getitem__, __len__, __contains__
   //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
   //    Pickling: __pickle__, __unpickle__

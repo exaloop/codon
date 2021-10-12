@@ -196,7 +196,7 @@ class complex:
     def __rpow__(self, other):
         return complex(other) ** self
 
-    def __str__(self):
+    def __repr__(self):
         @pure
         @llvm
         def copysign(x: float, y: float) -> float:

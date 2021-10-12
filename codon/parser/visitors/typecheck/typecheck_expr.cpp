@@ -1480,14 +1480,14 @@ string TypecheckVisitor::generateFunctionStub(int n) {
         N<SuiteStmt>(stmts)));
     params.clear();
     stmts.clear();
-    // def __str__(self: Function.N[TR, T1, ..., TN]) -> str:
+    // def __repr__(self: Function.N[TR, T1, ..., TN]) -> str:
     //   return __internal__.raw_type_str(self.__raw__(), "function")
     params.emplace_back(Param{"self", clone(type)});
     stmts.push_back(N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>("__internal__", "raw_type_str"),
         N<CallExpr>(N<DotExpr>("self", "__raw__")), N<StringExpr>("function"))));
     fns.emplace_back(
-        N<FunctionStmt>("__str__", N<IdExpr>("str"), params, N<SuiteStmt>(stmts)));
+        N<FunctionStmt>("__repr__", N<IdExpr>("str"), params, N<SuiteStmt>(stmts)));
     params.clear();
     stmts.clear();
     // class Function.N[TR, T1, ..., TN]

@@ -242,15 +242,15 @@ class List:
         self.len = new_cap
         return self
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         n = self.__len__()
         if n == 0:
             return "[]"
         else:
-            y = ["[", str(self[0])]
+            y = ["[", self[0].__repr__()]
             for i in range(1, n):
                 y.append(", ")
-                y.append(str(self[i]))
+                y.append(self[i].__repr__())
             y.append("]")
             return str.cat(y)
 

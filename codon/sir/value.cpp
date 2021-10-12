@@ -108,7 +108,7 @@ Value *Value::toFloat() { return doUnaryOp(Module::FLOAT_MAGIC_NAME); }
 
 Value *Value::toBool() { return doUnaryOp(Module::BOOL_MAGIC_NAME); }
 
-Value *Value::toStr() { return doUnaryOp(Module::STR_MAGIC_NAME); }
+Value *Value::toStr() { return doUnaryOp(Module::REPR_MAGIC_NAME); }
 
 Value *Value::len() { return doUnaryOp(Module::LEN_MAGIC_NAME); }
 

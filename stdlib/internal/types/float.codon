@@ -12,7 +12,7 @@ class float:
         return 0.0
     def __new__[T](what: T):
         return what.__float__()
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         s = seq_str_float(self)
         return s if s != "-nan" else "nan"
     def __copy__(self) -> float:

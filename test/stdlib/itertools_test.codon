@@ -568,8 +568,8 @@ def test_ziplongest_from_cpython():
         target2 = [[(-999 if e is None else ~e) for e in t] for t in target]   # Replace None fills with 'X'
         assert list(zip_longest(*args, fillvalue=-999)) == target2
 
-    assert str(list(zip_longest('abc', range(6)))) == "[(a, 0), (b, 1), (c, 2), (None, 3), (None, 4), (None, 5)]"
-    assert str(list(zip_longest(range(6), 'abc'))) == "[(0, a), (1, b), (2, c), (3, None), (4, None), (5, None)]"
+    assert str(list(zip_longest('abc', range(6)))) == "[('a', 0), ('b', 1), ('c', 2), (None, 3), (None, 4), (None, 5)]"
+    assert str(list(zip_longest(range(6), 'abc'))) == "[(0, 'a'), (1, 'b'), (2, 'c'), (3, None), (4, None), (5, None)]"
 test_ziplongest_from_cpython()
 
 @test

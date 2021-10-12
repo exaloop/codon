@@ -2,7 +2,7 @@ from internal.gc import alloc_atomic, free
 
 @tuple
 class object:
-    def __str__(self):
+    def __repr__(self):
         return '<object>'
 
 def id(x):

@@ -119,7 +119,7 @@ class Set[K]:
         str.memcpy(keys_copy.as_byte(), self._keys.as_byte(), n * gc.sizeof(K))
         return Set[K](n, self._size, self._n_occupied, self._upper_bound, flags_copy, keys_copy)
 
-    def __str__(self):
+    def __repr__(self):
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -132,7 +132,7 @@ class Set[K]:
                     lst.append(", ")
                 else:
                     first = False
-                lst.append(str(k))
+                lst.append(k.__repr__())
             lst.append("}")
             return str.cat(lst)
 

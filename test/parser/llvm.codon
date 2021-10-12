@@ -47,7 +47,7 @@ c = int(True)
 d = int(byte(1))
 e = int(1.1)
 print a, b, c, d, e #: 0 5 1 1 1
-print a.__str__() #: 0
+print a.__repr__() #: 0
 print b.__copy__() #: 5
 print b.__hash__() #: 5
 print a.__bool__(), b.__bool__() #: False True
@@ -124,7 +124,7 @@ print UInt[66](112) #: 112
 #%% float,barebones
 z = float.__new__()
 z = 5.5
-print z.__str__() #: 5.5
+print z.__repr__() #: 5.5
 print z.__copy__() #: 5.5
 print z.__bool__(), z.__pos__(), z.__neg__() #: True 5.5 -5.5
 f = 1.3
@@ -145,7 +145,7 @@ print z.__ge__(2) #: True
 
 #%% bool,barebones
 z = bool.__new__()
-print z.__str__() #: False
+print z.__repr__() #: False
 print z.__copy__() #: False
 print z.__bool__(), z.__invert__() #: False True
 print z.__eq__(True) #: False
@@ -159,7 +159,7 @@ print z.__and__(True), z.__or__(True), z.__xor__(True) #: False True True
 #%% byte,barebones
 z = byte.__new__()
 z = byte(65)
-print z.__str__() #: A
+print z.__repr__() #: 'A'
 print z.__bool__() #: True
 print z.__eq__(byte(5)) #: False
 print z.__ne__(byte(5)) #: True
@@ -198,7 +198,7 @@ print str(y.__raw__())[:2] #: 0x
 print y.__done__() #: False
 print y.__promise__()[0] #: 0
 y.__resume__()
-print y.__str__()[:16] #: <generator at 0x
+print y.__repr__()[:16] #: <generator at 0x
 print y.next() #: 1
 print y.done() #: False
 y.send(1)

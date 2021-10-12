@@ -113,7 +113,7 @@ class Dict[K,V]:
         str.memcpy(vals_copy.as_byte(), self._vals.as_byte(), n * gc.sizeof(V))
         return Dict[K,V](n, self._size, self._n_occupied, self._upper_bound, flags_copy, keys_copy, vals_copy)
 
-    def __str__(self):
+    def __repr__(self):
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -126,9 +126,9 @@ class Dict[K,V]:
                     lst.append(", ")
                 else:
                     first = False
-                lst.append(str(k))
+                lst.append(k.__repr__())
                 lst.append(": ")
-                lst.append(str(v))
+                lst.append(v.__repr__())
             lst.append("}")
             return str.cat(lst)
 

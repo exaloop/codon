@@ -20,7 +20,7 @@ L = Dict[int, str]
 l = L()
 print l #: {}
 l[5] = 'haha'
-print l #: {5: haha}
+print l #: {5: 'haha'}
 
 #%% assign_type_annotation,barebones
 a: List[int] = []

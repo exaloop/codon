@@ -90,7 +90,7 @@ except IndexError:
 #%% assign_comprehension,barebones
 g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])
 x, *q, y = list(g) # TODO: auto-unroll as in Python
-print x, y, q #: (B, A, C) (HGI, F, J) [(EEEE, D, F)]
+print x, y, q #: ('B', 'A', 'C') ('HGI', 'F', 'J') [('EEEE', 'D', 'F')]
 
 #%% assign_shadow,barebones
 a = 5
@@ -271,7 +271,7 @@ foo([1, 3]) #: list 3 3
 foo([1, 5]) #: else
 foo([1, 5, 10]) #: list 4 10
 foo((1, 33)) #: list 4 33
-foo((9, ('ACGT', 3))) #: complex (ACGT, 3)
+foo((9, ('ACGT', 3))) #: complex ('ACGT', 3)
 foo(range(10)) #: else
 
 #%% match_err_1,barebones
@@ -853,7 +853,7 @@ print n[0], n[0][0] + 1 #: [1 2] 2
 
 #%% python_import_fn
 from python import re.split(str, str) -> List[str] as rs
-print rs(r'\W+', 'Words, words, words.')  #: [Words, words, words, ]
+print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
 #%% python_import_void
 from python import os.system(str) -> void
@@ -917,9 +917,9 @@ z = defdict({'ha':1}, lambda: -1)
 print z
 print z['he']
 print z
-#: {ha: 1}
+#: {'ha': 1}
 #: -1
-#: {ha: 1, he: -1}
+#: {'ha': 1, 'he': -1}
 
 class Foo:
     x: int

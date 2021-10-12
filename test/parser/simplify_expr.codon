@@ -1,8 +1,10 @@
 #%% none,barebones
 @extend
 class Optional:
+    def __repr__(self):
+        return 'OPTIONAL: ' + ('-' if not self else self.__invert__().__repr__())
     def __str__(self):
-        return 'OPTIONAL: ' + ('-' if not self else self.__invert__().__str__())
+        return 'OPTIONAL: ' + ('-' if not self else self.__invert__().__repr__())
 
 a = None
 print a #: OPTIONAL: -
@@ -105,7 +107,7 @@ def fox():
 fox()()
 print z
 #: 5
-#: {x: y}
+#: {'x': 'y'}
 
 
 #%% star_err,barebones
@@ -132,13 +134,13 @@ gd = {1: 'jedan', 2: 'dva', 2: 'two', 3: 'tri'}
 fd = {}
 fd['jedan'] = 1
 fd['dva'] = 2
-print gd, fd #: {1: jedan, 2: two, 3: tri} {jedan: 1, dva: 2}
+print gd, fd #: {1: 'jedan', 2: 'two', 3: 'tri'} {'jedan': 1, 'dva': 2}
 
 #%% comprehension,barebones
 l = [(i, j, f'i{i}/{j}')
      for i in range(50) if i % 2 == 0 if i % 3 == 0
      for j in range(2) if j == 1]
-print l #: [(0, 1, i0/1), (6, 1, i6/1), (12, 1, i12/1), (18, 1, i18/1), (24, 1, i24/1), (30, 1, i30/1), (36, 1, i36/1), (42, 1, i42/1), (48, 1, i48/1)]
+print l #: [(0, 1, 'i0/1'), (6, 1, 'i6/1'), (12, 1, 'i12/1'), (18, 1, 'i18/1'), (24, 1, 'i24/1'), (30, 1, 'i30/1'), (36, 1, 'i36/1'), (42, 1, 'i42/1'), (48, 1, 'i48/1')]
 
 s = {i%3 for i in range(20)}
 print s #: {0, 1, 2}
@@ -321,7 +323,7 @@ print f #: (x: 1, y: 2)
 
 ee = nt('FooX', [('x', str), 'y'])
 fd = ee('s', 2)
-print fd #: (x: s, y: 2)
+print fd #: (x: 's', y: 2)
 
 #%% call_partial_functools
 from functools import partial

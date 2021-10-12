@@ -37,8 +37,8 @@ class Set[T]:
     def add(self, what: T):
         if what not in self.items:
             self.items.append(what)
-    def __str__(self) -> str:
-        s = self.items.__str__()
+    def __repr__(self) -> str:
+        s = self.items.__repr__()
         s.ptr[0] = '{'.ptr[0]
         s.ptr[s.len - 1] = '}'.ptr[0]
         return s
@@ -67,7 +67,7 @@ class Dict[K, V]:
             self.values.append(val)
     def __len__(self):
         return self.keys.len
-    def __str__(self):
+    def __repr__(self):
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -78,9 +78,9 @@ class Dict[K, V]:
             for k, v in self.items():
                 if not first: lst.append(", ")
                 else: first = False
-                lst.append(str(k))
+                lst.append(k.__repr__())
                 lst.append(": ")
-                lst.append(str(v))
+                lst.append(v.__repr__())
             lst.append("}")
             return str.cat(lst)
 @extend
@@ -99,7 +99,8 @@ class str:
             return str(self.ptr + start, length)
         else:
             raise ValueError("nope")
-
+    def __repr__(self):
+        return "'" + self + "'"
 
 from internal.builtin import *
 

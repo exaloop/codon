@@ -37,9 +37,9 @@ class EnvMap:
         self._init_if_needed()
         return self._map[key]
 
-    def __str__(self):
+    def __repr__(self):
         self._init_if_needed()
-        return str(self._map)
+        return repr(self._map)
 
     def __contains__(self, key: str):
         self._init_if_needed()

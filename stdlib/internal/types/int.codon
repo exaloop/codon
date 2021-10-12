@@ -27,7 +27,7 @@ class int:
         return complex(float(self), 0.0)
     def __index__(self):
         return self
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return seq_str_int(self)
     def __copy__(self) -> int:
         return self

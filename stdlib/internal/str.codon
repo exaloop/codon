@@ -25,21 +25,38 @@ class str:
 
     def __repr__(self):
         v = List[str](len(self) + 2)
-        v.append("'")
+
+        q, qe = "'", "\\'"
+        found_single = False
+        found_double = False
+        for c in self:
+            if c == "'":
+                found_single = True
+            elif c == '"':
+                found_double = True
+
+        if found_single and not found_double:
+            q, qe = '"', '\\"'
+
+        v.append(q)
         for c in self:
             d = c
-            if c == '\a': d = "\\a"
-            elif c == '\b': d = "\\b"
-            elif c == '\f': d = "\\f"
-            elif c == '\n': d = "\\n"
+            if c == '\n': d = "\\n"
             elif c == '\r': d = "\\r"
             elif c == '\t': d = "\\t"
-            elif c == '\v': d = "\\v"
             elif c == '\\': d = "\\\\"
-            elif c == '\'': d = "\\'"
-            elif c == '\?': d = "\\\?"
-            v.append(d)
-        v.append("'")
+            elif c == q: d = qe
+            else:
+                b = int(c.ptr[0])
+                if not (32 <= b <= 126):
+                    h = '0123456789abcdef'
+                    v.append("\\x")
+                    v.append(h[b // 16])
+                    v.append(h[b % 16])
+                    d = ''
+            if d:
+                v.append(d)
+        v.append(q)
         return str.cat(v)
 
     def __getitem__(self, idx: int):

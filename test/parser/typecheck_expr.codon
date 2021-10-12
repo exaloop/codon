@@ -205,7 +205,7 @@ print z[:1], z[1:], z[1:3], z[:4:2], z[::-1]  #: [1] [2, 3, 4, 5] [2, 3] [1, 3] 
 #%% static_index,barebones
 a = (1, '2s', 3.3)
 print a[1] #: 2s
-print a[0:2], a[:2], a[1:] #: (1, 2s) (1, 2s) (2s, 3.3)
+print a[0:2], a[:2], a[1:] #: (1, '2s') (1, '2s') ('2s', 3.3)
 print a[0:3:2], a[-1:] #: (1, 3.3) (3.3)
 
 #%% static_index_lenient,barebones
@@ -235,7 +235,7 @@ print l[2] #: 3
 l = []
 print l[::-1] #: []
 l.append(('str', 1, True, 5.15))
-print l, l.__class__ #: [(str, 1, True, 5.15)] List[Tuple[str,int,bool,float]]
+print l, l.__class__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
 
 #%% dot_case_1,barebones
 a = []
@@ -466,9 +466,9 @@ def foo(a, b, c=1, *args, **kwargs):
     whatever(a, b, *args, c)
     kwhatever(x=1, **kwargs)
 foo(1, 2, 3, 4, 5, arg1='s', kwa=2)
-#: 1 2 3 (4, 5) (arg1: s, kwa: 2)
+#: 1 2 3 (4, 5) (arg1: 's', kwa: 2)
 #: a (1, 2, 4, 5, 3)
-#: k (arg1: s, kwa: 2, x: 1)
+#: k (arg1: 's', kwa: 2, x: 1)
 foo(1, 2)
 #: 1 2 1 () ()
 #: a (1, 2, 1)
@@ -497,7 +497,7 @@ class Foo:
 
 t = (1, 's')
 f = Foo(6)
-foo(*t, **f) #: (1, s) (x: 6, y: True)
+foo(*t, **f) #: (1, 's') (x: 6, y: True)
 foo(*(1,2)) #: (1, 2) ()
 foo(3, f) #: (3, (x: 6, y: True)) ()
 foo(k = 3, **f) #: () (k: 3, x: 6, y: True)
@@ -597,16 +597,16 @@ foo('s')
 #%% tuple_generator,barebones
 a = (1, 2)
 b = ('f', 'g')
-print a, b #: (1, 2) (f, g)
+print a, b #: (1, 2) ('f', 'g')
 c = (*a, True, *b)
-print c #: (1, 2, True, f, g)
-print a + b + c #: (1, 2, f, g, 1, 2, True, f, g)
-print () + (1, ) + ('a', 'b') #: (1, a, b)
+print c #: (1, 2, True, 'f', 'g')
+print a + b + c #: (1, 2, 'f', 'g', 1, 2, True, 'f', 'g')
+print () + (1, ) + ('a', 'b') #: (1, 'a', 'b')
 
 t = tuple(i+1 for i in (1,2,3))
 print t #: (2, 3, 4)
 print tuple((j, i) for i, j in ((1, 'a'), (2, 'b'), (3, 'c')))
-#: ((a, 1), (b, 2), (c, 3))
+#: (('a', 1), ('b', 2), ('c', 3))
 
 #%% static_unify,barebones
 def foo(x: Callable[[1,2], 3]): pass  #! unexpected static type
