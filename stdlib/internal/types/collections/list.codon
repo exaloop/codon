@@ -328,6 +328,9 @@ class List:
             self[j] = x
             i += 1
 
+    def copy(self):
+        return self.__copy__()
+
 # Internal helpers
 
     def _idx_check(self, idx: int, msg: str):
