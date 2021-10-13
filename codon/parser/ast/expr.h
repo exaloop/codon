@@ -36,18 +36,18 @@ struct UnaryExpr;
 struct Stmt;
 
 struct StaticValue {
-  std::variant<int64_t, string> value;
+  std::variant<int64_t, std::string> value;
   enum Type { NOT_STATIC = 0, STRING = 1, INT = 2 } type;
   bool evaluated;
 
   explicit StaticValue(Type);
   // Static(bool);
   explicit StaticValue(int64_t);
-  explicit StaticValue(string);
+  explicit StaticValue(std::string);
   bool operator==(const StaticValue &s) const;
-  string toString() const;
+  std::string toString() const;
   int64_t getInt() const;
-  string getString() const;
+  std::string getString() const;
 };
 
 /**
@@ -83,9 +83,9 @@ public:
   Expr(const Expr &expr) = default;
 
   /// Convert a node to an S-expression.
-  virtual string toString() const = 0;
+  virtual std::string toString() const = 0;
   /// Deep copy a node.
-  virtual shared_ptr<Expr> clone() const = 0;
+  virtual std::shared_ptr<Expr> clone() const = 0;
   /// Accept an AST visitor.
   virtual void accept(ASTVisitor &visitor) = 0;
 
@@ -107,7 +107,7 @@ public:
   }
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual bool isId(const string &val) const { return false; }
+  virtual bool isId(const std::string &val) const { return false; }
   virtual const BinaryExpr *getBinary() const { return nullptr; }
   virtual const CallExpr *getCall() const { return nullptr; }
   virtual const DotExpr *getDot() const { return nullptr; }
@@ -126,21 +126,21 @@ public:
 
 protected:
   /// Add a type to S-expression string.
-  string wrapType(const string &sexpr) const;
+  std::string wrapType(const std::string &sexpr) const;
 };
-using ExprPtr = shared_ptr<Expr>;
+using ExprPtr = std::shared_ptr<Expr>;
 
 /// Function signature parameter helper node (name: type = deflt).
 struct Param : public codon::SrcObject {
-  string name;
+  std::string name;
   ExprPtr type;
   ExprPtr deflt;
   bool generic;
 
-  explicit Param(string name = "", ExprPtr type = nullptr, ExprPtr deflt = nullptr,
+  explicit Param(std::string name = "", ExprPtr type = nullptr, ExprPtr deflt = nullptr,
                  bool generic = false);
 
-  string toString() const;
+  std::string toString() const;
   Param clone() const;
 };
 
@@ -150,7 +150,7 @@ struct NoneExpr : public Expr {
   NoneExpr();
   NoneExpr(const NoneExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const NoneExpr *getNone() const override { return this; }
@@ -164,7 +164,7 @@ struct BoolExpr : public Expr {
   explicit BoolExpr(bool value);
   BoolExpr(const BoolExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -173,19 +173,20 @@ struct BoolExpr : public Expr {
 /// @li 13u
 /// @li 000_010b
 struct IntExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify stage.
-  string value;
+  /// Expression value is stored as a string that is parsed during the simplify
+  /// stage.
+  std::string value;
   /// Number suffix (e.g. "u" for "123u").
-  string suffix;
+  std::string suffix;
 
   /// Parsed value and sign for "normal" 64-bit integers.
   int64_t intValue;
 
   explicit IntExpr(int64_t intValue);
-  explicit IntExpr(const string &value, string suffix = "");
+  explicit IntExpr(const std::string &value, std::string suffix = "");
   IntExpr(const IntExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const IntExpr *getInt() const override { return this; }
@@ -196,19 +197,20 @@ struct IntExpr : public Expr {
 /// @li 13.15z
 /// @li e-12
 struct FloatExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify stage.
-  string value;
+  /// Expression value is stored as a string that is parsed during the simplify
+  /// stage.
+  std::string value;
   /// Number suffix (e.g. "u" for "123u").
-  string suffix;
+  std::string suffix;
 
   /// Parsed value for 64-bit floats.
   double floatValue;
 
   explicit FloatExpr(double floatValue);
-  explicit FloatExpr(const string &value, string suffix = "");
+  explicit FloatExpr(const std::string &value, std::string suffix = "");
   FloatExpr(const FloatExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -217,30 +219,30 @@ struct FloatExpr : public Expr {
 /// @li "fff"
 struct StringExpr : public Expr {
   // Vector of {value, prefix} strings.
-  vector<pair<string, string>> strings;
+  std::vector<std::pair<std::string, std::string>> strings;
 
-  explicit StringExpr(string value, string prefix = "");
-  explicit StringExpr(vector<pair<string, string>> strings);
+  explicit StringExpr(std::string value, std::string prefix = "");
+  explicit StringExpr(std::vector<std::pair<std::string, std::string>> strings);
   StringExpr(const StringExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const StringExpr *getString() const override { return this; }
-  string getValue() const;
+  std::string getValue() const;
 };
 
 /// Identifier expression (value).
 struct IdExpr : public Expr {
-  string value;
+  std::string value;
 
-  explicit IdExpr(string value);
+  explicit IdExpr(std::string value);
   IdExpr(const IdExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  bool isId(const string &val) const override { return this->value == val; }
+  bool isId(const std::string &val) const override { return this->value == val; }
   const IdExpr *getId() const override { return this; }
 };
 
@@ -252,7 +254,7 @@ struct StarExpr : public Expr {
   explicit StarExpr(ExprPtr what);
   StarExpr(const StarExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const StarExpr *getStar() const override { return this; }
@@ -266,19 +268,19 @@ struct KeywordStarExpr : public Expr {
   explicit KeywordStarExpr(ExprPtr what);
   KeywordStarExpr(const KeywordStarExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
 /// Tuple expression ((items...)).
 /// @li (1, a)
 struct TupleExpr : public Expr {
-  vector<ExprPtr> items;
+  std::vector<ExprPtr> items;
 
-  explicit TupleExpr(vector<ExprPtr> items);
+  explicit TupleExpr(std::vector<ExprPtr> items);
   TupleExpr(const TupleExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const TupleExpr *getTuple() const override { return this; }
@@ -287,12 +289,12 @@ struct TupleExpr : public Expr {
 /// List expression ([items...]).
 /// @li [1, 2]
 struct ListExpr : public Expr {
-  vector<ExprPtr> items;
+  std::vector<ExprPtr> items;
 
-  explicit ListExpr(vector<ExprPtr> items);
+  explicit ListExpr(std::vector<ExprPtr> items);
   ListExpr(const ListExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const ListExpr *getList() const override { return this; }
@@ -301,12 +303,12 @@ struct ListExpr : public Expr {
 /// Set expression ({items...}).
 /// @li {1, 2}
 struct SetExpr : public Expr {
-  vector<ExprPtr> items;
+  std::vector<ExprPtr> items;
 
-  explicit SetExpr(vector<ExprPtr> items);
+  explicit SetExpr(std::vector<ExprPtr> items);
   SetExpr(const SetExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -318,12 +320,12 @@ struct DictExpr : public Expr {
 
     DictItem clone() const;
   };
-  vector<DictItem> items;
+  std::vector<DictItem> items;
 
-  explicit DictExpr(vector<DictItem> items);
+  explicit DictExpr(std::vector<DictItem> items);
   DictExpr(const DictExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -332,7 +334,7 @@ struct DictExpr : public Expr {
 struct GeneratorBody {
   ExprPtr vars;
   ExprPtr gen;
-  vector<ExprPtr> conds;
+  std::vector<ExprPtr> conds;
 
   GeneratorBody clone() const;
 };
@@ -346,12 +348,12 @@ struct GeneratorExpr : public Expr {
 
   GeneratorKind kind;
   ExprPtr expr;
-  vector<GeneratorBody> loops;
+  std::vector<GeneratorBody> loops;
 
-  GeneratorExpr(GeneratorKind kind, ExprPtr expr, vector<GeneratorBody> loops);
+  GeneratorExpr(GeneratorKind kind, ExprPtr expr, std::vector<GeneratorBody> loops);
   GeneratorExpr(const GeneratorExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -359,12 +361,12 @@ struct GeneratorExpr : public Expr {
 /// @li {i: j for i, j in z.items()}
 struct DictGeneratorExpr : public Expr {
   ExprPtr key, expr;
-  vector<GeneratorBody> loops;
+  std::vector<GeneratorBody> loops;
 
-  DictGeneratorExpr(ExprPtr key, ExprPtr expr, vector<GeneratorBody> loops);
+  DictGeneratorExpr(ExprPtr key, ExprPtr expr, std::vector<GeneratorBody> loops);
   DictGeneratorExpr(const DictGeneratorExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -376,7 +378,7 @@ struct IfExpr : public Expr {
   IfExpr(ExprPtr cond, ExprPtr ifexpr, ExprPtr elsexpr);
   IfExpr(const IfExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const IfExpr *getIf() const override { return this; }
@@ -385,13 +387,13 @@ struct IfExpr : public Expr {
 /// Unary expression [op expr].
 /// @li -56
 struct UnaryExpr : public Expr {
-  string op;
+  std::string op;
   ExprPtr expr;
 
-  UnaryExpr(string op, ExprPtr expr);
+  UnaryExpr(std::string op, ExprPtr expr);
   UnaryExpr(const UnaryExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const UnaryExpr *getUnary() const override { return this; }
@@ -401,16 +403,16 @@ struct UnaryExpr : public Expr {
 /// @li 1 + 2
 /// @li 3 or 4
 struct BinaryExpr : public Expr {
-  string op;
+  std::string op;
   ExprPtr lexpr, rexpr;
 
   /// True if an expression modifies lhs in-place (e.g. a += b).
   bool inPlace;
 
-  BinaryExpr(ExprPtr lexpr, string op, ExprPtr rexpr, bool inPlace = false);
+  BinaryExpr(ExprPtr lexpr, std::string op, ExprPtr rexpr, bool inPlace = false);
   BinaryExpr(const BinaryExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const BinaryExpr *getBinary() const override { return this; }
@@ -419,12 +421,12 @@ struct BinaryExpr : public Expr {
 /// Chained binary expression.
 /// @li 1 <= x <= 2
 struct ChainBinaryExpr : public Expr {
-  vector<std::pair<string, ExprPtr>> exprs;
+  std::vector<std::pair<std::string, ExprPtr>> exprs;
 
-  ChainBinaryExpr(vector<std::pair<string, ExprPtr>> exprs);
+  ChainBinaryExpr(std::vector<std::pair<std::string, ExprPtr>> exprs);
   ChainBinaryExpr(const ChainBinaryExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -433,21 +435,21 @@ struct ChainBinaryExpr : public Expr {
 /// @li a |> b ||> c
 struct PipeExpr : public Expr {
   struct Pipe {
-    string op;
+    std::string op;
     ExprPtr expr;
 
     Pipe clone() const;
   };
 
-  vector<Pipe> items;
+  std::vector<Pipe> items;
   /// Output type of a "prefix" pipe ending at the index position.
   /// Example: for a |> b |> c, inTypes[1] is typeof(a |> b).
-  vector<types::TypePtr> inTypes;
+  std::vector<types::TypePtr> inTypes;
 
-  explicit PipeExpr(vector<Pipe> items);
+  explicit PipeExpr(std::vector<Pipe> items);
   PipeExpr(const PipeExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -459,7 +461,7 @@ struct IndexExpr : public Expr {
   IndexExpr(ExprPtr expr, ExprPtr index);
   IndexExpr(const IndexExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const IndexExpr *getIndex() const override { return this; }
@@ -470,26 +472,26 @@ struct IndexExpr : public Expr {
 struct CallExpr : public Expr {
   /// Each argument can have a name (e.g. foo(1, b=5))
   struct Arg {
-    string name;
+    std::string name;
     ExprPtr value;
 
     Arg clone() const;
   };
 
   ExprPtr expr;
-  vector<Arg> args;
+  std::vector<Arg> args;
   /// True if type-checker has processed and re-ordered args.
   bool ordered;
 
-  CallExpr(ExprPtr expr, vector<Arg> args = {});
+  CallExpr(ExprPtr expr, std::vector<Arg> args = {});
   /// Convenience constructors
-  CallExpr(ExprPtr expr, vector<ExprPtr> args);
+  CallExpr(ExprPtr expr, std::vector<ExprPtr> args);
   template <typename... Ts>
   CallExpr(ExprPtr expr, ExprPtr arg, Ts... args)
-      : CallExpr(expr, vector<ExprPtr>{arg, args...}) {}
+      : CallExpr(expr, std::vector<ExprPtr>{arg, args...}) {}
   CallExpr(const CallExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const CallExpr *getCall() const override { return this; }
@@ -499,14 +501,14 @@ struct CallExpr : public Expr {
 /// @li a.b
 struct DotExpr : public Expr {
   ExprPtr expr;
-  string member;
+  std::string member;
 
-  DotExpr(ExprPtr expr, string member);
+  DotExpr(ExprPtr expr, std::string member);
   /// Convenience constructor.
-  DotExpr(string left, string member);
+  DotExpr(std::string left, std::string member);
   DotExpr(const DotExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const DotExpr *getDot() const override { return this; }
@@ -523,7 +525,7 @@ struct SliceExpr : public Expr {
   SliceExpr(ExprPtr start, ExprPtr stop, ExprPtr step);
   SliceExpr(const SliceExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -537,7 +539,7 @@ struct EllipsisExpr : public Expr {
   explicit EllipsisExpr(bool isPipeArg = false);
   EllipsisExpr(const EllipsisExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const EllipsisExpr *getEllipsis() const override { return this; }
@@ -546,13 +548,13 @@ struct EllipsisExpr : public Expr {
 /// Lambda expression (lambda (vars)...: expr).
 /// @li lambda a, b: a + b
 struct LambdaExpr : public Expr {
-  vector<string> vars;
+  std::vector<std::string> vars;
   ExprPtr expr;
 
-  LambdaExpr(vector<string> vars, ExprPtr expr);
+  LambdaExpr(std::vector<std::string> vars, ExprPtr expr);
   LambdaExpr(const LambdaExpr &);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -562,7 +564,7 @@ struct YieldExpr : public Expr {
   YieldExpr();
   YieldExpr(const YieldExpr &expr) = default;
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -574,7 +576,7 @@ struct AssignExpr : public Expr {
   AssignExpr(ExprPtr var, ExprPtr expr);
   AssignExpr(const AssignExpr &);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -587,7 +589,7 @@ struct RangeExpr : public Expr {
   RangeExpr(ExprPtr start, ExprPtr stop);
   RangeExpr(const RangeExpr &);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -598,15 +600,15 @@ struct RangeExpr : public Expr {
 /// (to support short-circuiting).
 /// @li (a = 1; b = 2; a + b)
 struct StmtExpr : public Expr {
-  vector<shared_ptr<Stmt>> stmts;
+  std::vector<std::shared_ptr<Stmt>> stmts;
   ExprPtr expr;
 
-  StmtExpr(vector<shared_ptr<Stmt>> stmts, ExprPtr expr);
-  StmtExpr(shared_ptr<Stmt> stmt, ExprPtr expr);
-  StmtExpr(shared_ptr<Stmt> stmt, shared_ptr<Stmt> stmt2, ExprPtr expr);
+  StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr);
+  StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr);
+  StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2, ExprPtr expr);
   StmtExpr(const StmtExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 
   const StmtExpr *getStmtExpr() const override { return this; }
@@ -620,7 +622,7 @@ struct PtrExpr : public Expr {
   explicit PtrExpr(ExprPtr expr);
   PtrExpr(const PtrExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -633,7 +635,7 @@ struct TupleIndexExpr : Expr {
   TupleIndexExpr(ExprPtr expr, int index);
   TupleIndexExpr(const TupleIndexExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -641,14 +643,14 @@ struct TupleIndexExpr : Expr {
 /// @li (1, 2, 3)[2]
 struct InstantiateExpr : Expr {
   ExprPtr typeExpr;
-  vector<ExprPtr> typeParams;
+  std::vector<ExprPtr> typeParams;
 
-  InstantiateExpr(ExprPtr typeExpr, vector<ExprPtr> typeParams);
+  InstantiateExpr(ExprPtr typeExpr, std::vector<ExprPtr> typeParams);
   /// Convenience constructor for a single type parameter.
   InstantiateExpr(ExprPtr typeExpr, ExprPtr typeParam);
   InstantiateExpr(const InstantiateExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -660,7 +662,7 @@ struct StackAllocExpr : Expr {
   StackAllocExpr(ExprPtr typeExpr, ExprPtr expr);
   StackAllocExpr(const StackAllocExpr &expr);
 
-  string toString() const override;
+  std::string toString() const override;
   ACCEPT(ASTVisitor);
 };
 

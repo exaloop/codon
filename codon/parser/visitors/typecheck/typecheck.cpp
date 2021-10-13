@@ -11,31 +11,24 @@
 #include "codon/util/fmt/format.h"
 
 using fmt::format;
-using std::deque;
-using std::dynamic_pointer_cast;
-using std::get;
-using std::move;
-using std::ostream;
-using std::stack;
-using std::static_pointer_cast;
 
 namespace codon {
 namespace ast {
 
 using namespace types;
 
-TypecheckVisitor::TypecheckVisitor(shared_ptr<TypeContext> ctx,
-                                   const shared_ptr<vector<StmtPtr>> &stmts)
-    : ctx(move(ctx)), allowVoidExpr(false) {
-  prependStmts = stmts ? stmts : make_shared<vector<StmtPtr>>();
+TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
+                                   const std::shared_ptr<std::vector<StmtPtr>> &stmts)
+    : ctx(std::move(ctx)), allowVoidExpr(false) {
+  prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }
 
-StmtPtr TypecheckVisitor::apply(shared_ptr<Cache> cache, StmtPtr stmts) {
-  auto ctx = make_shared<TypeContext>(cache);
+StmtPtr TypecheckVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
+  auto ctx = std::make_shared<TypeContext>(cache);
   cache->typeCtx = ctx;
   TypecheckVisitor v(ctx);
   auto infer = v.inferTypes(stmts->clone(), true, "<top>");
-  return move(infer.second);
+  return std::move(infer.second);
 }
 
 TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {

@@ -21,7 +21,9 @@ namespace ast {
  */
 template <typename T> class Context : public std::enable_shared_from_this<Context<T>> {
 protected:
-  typedef unordered_map<string, std::deque<std::pair<int, shared_ptr<T>>>> Map;
+  typedef std::unordered_map<std::string,
+                             std::deque<std::pair<int, std::shared_ptr<T>>>>
+      Map;
   /// Maps a identifier to a stack of objects that share the same identifier.
   /// Each object is represented by a nesting level and a pointer to that object.
   /// Top of the stack is the current block; the bottom is the outer-most block.
@@ -30,29 +32,29 @@ protected:
   Map map;
   /// Stack of blocks and their corresponding identifiers. Top of the stack is the
   /// current block.
-  std::deque<vector<string>> stack;
+  std::deque<std::vector<std::string>> stack;
 
 private:
   /// Set of current context flags.
-  unordered_set<string> flags;
+  std::unordered_set<std::string> flags;
   /// The absolute path of the current module.
-  string filename;
+  std::string filename;
 
 public:
-  explicit Context(string filename) : filename(move(filename)) {
+  explicit Context(std::string filename) : filename(move(filename)) {
     /// Add a top-level block to the stack.
-    stack.push_front(vector<string>());
+    stack.push_front(std::vector<std::string>());
   }
   virtual ~Context() = default;
 
   /// Add an object to the top of the stack.
-  void add(const string &name, shared_ptr<T> var) {
+  void add(const std::string &name, std::shared_ptr<T> var) {
     seqassert(!name.empty(), "adding an empty identifier");
     map[name].push_front({stack.size(), move(var)});
     stack.front().push_back(name);
   }
   /// Add an object to the top of the previous block.
-  void addPrevBlock(const string &name, shared_ptr<T> var) {
+  void addPrevBlock(const std::string &name, std::shared_ptr<T> var) {
     seqassert(!name.empty(), "adding an empty identifier");
     seqassert(stack.size() > 1, "adding an empty identifier");
     auto &m = map[name];
@@ -66,7 +68,7 @@ public:
     stack[1].push_back(name);
   }
   /// Add an object to the top-level (bottom of the stack).
-  void addToplevel(const string &name, shared_ptr<T> var) {
+  void addToplevel(const std::string &name, std::shared_ptr<T> var) {
     seqassert(!name.empty(), "adding an empty identifier");
     auto &m = map[name];
     int pos = m.size();
@@ -79,7 +81,7 @@ public:
     stack.back().push_back(name); // add to the latest "level"
   }
   /// Remove the top-most object with a given identifier.
-  void remove(const string &name) {
+  void remove(const std::string &name) {
     removeFromMap(name);
     for (auto &s : stack) {
       auto i = std::find(s.begin(), s.end(), name);
@@ -91,12 +93,12 @@ public:
     seqassert(false, "cannot find {} in the stack", name);
   }
   /// Return a top-most object with a given identifier or nullptr if it does not exist.
-  virtual shared_ptr<T> find(const string &name) const {
+  virtual std::shared_ptr<T> find(const std::string &name) const {
     auto it = map.find(name);
     return it != map.end() ? it->second.front().second : nullptr;
   }
   /// Add a new block (i.e. adds a stack level).
-  void addBlock() { stack.push_front(vector<string>()); }
+  void addBlock() { stack.push_front(std::vector<std::string>()); }
   /// Remove the top-most block and all variables it holds.
   void popBlock() {
     for (auto &name : stack.front())
@@ -107,9 +109,9 @@ public:
   /// True if only the top-level block is present.
   bool isToplevel() const { return stack.size() == 1; }
   /// The absolute path of a current module.
-  string getFilename() const { return filename; }
+  std::string getFilename() const { return filename; }
   /// Sets the absolute path of a current module.
-  void setFilename(string file) { filename = move(file); }
+  void setFilename(std::string file) { filename = move(file); }
 
   /// Convenience functions to allow range-based for loops over a context.
   typename Map::iterator begin() { return map.begin(); }
@@ -120,7 +122,7 @@ public:
 
 private:
   /// Remove an identifier from the map only.
-  void removeFromMap(const string &name) {
+  void removeFromMap(const std::string &name) {
     auto i = map.find(name);
     seqassert(!(i == map.end() || !i->second.size()),
               "identifier {} not found in the map", name);

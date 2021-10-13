@@ -25,26 +25,27 @@ bool _isTest = false;
 
 namespace codon {
 
-ir::Module *parse(const string &argv0, const string &file, const string &code,
-                  bool isCode, int isTest, int startLine,
+ir::Module *parse(const std::string &argv0, const std::string &file,
+                  const std::string &code, bool isCode, int isTest, int startLine,
                   const std::unordered_map<std::string, std::string> &defines) {
   try {
     auto d = getenv("CODON_DEBUG");
     if (d) {
-      auto s = string(d);
-      _dbg_level |= s.find('t') != string::npos ? (1 << 0) : 0; // time
-      _dbg_level |= s.find('r') != string::npos ? (1 << 2) : 0; // realize
-      _dbg_level |= s.find('T') != string::npos ? (1 << 4) : 0; // type-check
-      _dbg_level |= s.find('L') != string::npos ? (1 << 5) : 0; // lexer
-      _dbg_level |= s.find('i') != string::npos ? (1 << 6) : 0; // IR
-      _dbg_level |= s.find('l') != string::npos ? (1 << 7) : 0; // User-level debugging
+      auto s = std::string(d);
+      _dbg_level |= s.find('t') != std::string::npos ? (1 << 0) : 0; // time
+      _dbg_level |= s.find('r') != std::string::npos ? (1 << 2) : 0; // realize
+      _dbg_level |= s.find('T') != std::string::npos ? (1 << 4) : 0; // type-check
+      _dbg_level |= s.find('L') != std::string::npos ? (1 << 5) : 0; // lexer
+      _dbg_level |= s.find('i') != std::string::npos ? (1 << 6) : 0; // IR
+      _dbg_level |=
+          s.find('l') != std::string::npos ? (1 << 7) : 0; // User-level debugging
     }
 
     char abs[PATH_MAX + 1] = {'-', 0};
     if (file != "-")
       realpath(file.c_str(), abs);
 
-    auto cache = make_shared<ast::Cache>(argv0);
+    auto cache = std::make_shared<ast::Cache>(argv0);
     ast::StmtPtr codeStmt = isCode ? ast::parseCode(cache, abs, code, startLine)
                                    : ast::parseFile(cache, abs);
     if (_dbg_level) {
@@ -130,9 +131,9 @@ ir::Module *parse(const string &argv0, const string &file, const string &code,
   }
 }
 
-void generateDocstr(const string &argv0) {
-  vector<string> files;
-  string s;
+void generateDocstr(const std::string &argv0) {
+  std::vector<std::string> files;
+  std::string s;
   while (std::getline(std::cin, s))
     files.push_back(s);
   try {

@@ -10,43 +10,42 @@
 #include "codon/parser/visitors/format/format.h"
 
 using fmt::format;
-using std::dynamic_pointer_cast;
-using std::stack;
 
 namespace codon {
 namespace ast {
 
-TypeContext::TypeContext(shared_ptr<Cache> cache)
+TypeContext::TypeContext(std::shared_ptr<Cache> cache)
     : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0),
       allowActivation(true), age(0), realizationDepth(0) {
-  stack.push_front(vector<string>());
+  stack.push_front(std::vector<std::string>());
   bases.push_back({"", nullptr, nullptr});
 }
 
-shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind, const string &name,
-                                           types::TypePtr type) {
-  auto t = make_shared<TypecheckItem>(kind, type);
+std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
+                                                const std::string &name,
+                                                types::TypePtr type) {
+  auto t = std::make_shared<TypecheckItem>(kind, type);
   add(name, t);
   return t;
 }
 
-shared_ptr<TypecheckItem> TypeContext::find(const string &name) const {
+std::shared_ptr<TypecheckItem> TypeContext::find(const std::string &name) const {
   if (auto t = Context<TypecheckItem>::find(name))
     return t;
   auto tt = findInVisited(name);
   if (tt.second)
-    return make_shared<TypecheckItem>(tt.first, tt.second);
+    return std::make_shared<TypecheckItem>(tt.first, tt.second);
   return nullptr;
 }
 
-types::TypePtr TypeContext::findInternal(const string &name) const {
+types::TypePtr TypeContext::findInternal(const std::string &name) const {
   auto t = find(name);
   seqassert(t, "cannot find '{}'", name);
   return t->type;
 }
 
-pair<TypecheckItem::Kind, types::TypePtr>
-TypeContext::findInVisited(const string &name) const {
+std::pair<TypecheckItem::Kind, types::TypePtr>
+TypeContext::findInVisited(const std::string &name) const {
   for (int bi = int(bases.size()) - 1; bi >= 0; bi--) {
     auto t = bases[bi].visitedAsts.find(name);
     if (t == bases[bi].visitedAsts.end())
@@ -56,7 +55,7 @@ TypeContext::findInVisited(const string &name) const {
   return {TypecheckItem::Var, nullptr};
 }
 
-int TypeContext::findBase(const string &b) {
+int TypeContext::findBase(const std::string &b) {
   for (int i = int(bases.size()) - 1; i >= 0; i--)
     if (b == bases[i].name)
       return i;
@@ -64,20 +63,20 @@ int TypeContext::findBase(const string &b) {
   return -1;
 }
 
-string TypeContext::getBase() const {
+std::string TypeContext::getBase() const {
   if (bases.empty())
     return "";
-  vector<string> s;
+  std::vector<std::string> s;
   for (auto &b : bases)
     if (b.type)
       s.push_back(b.type->realizedName());
   return join(s, ":");
 }
 
-shared_ptr<types::LinkType> TypeContext::addUnbound(const Expr *expr, int level,
-                                                    bool setActive, char staticType) {
-  auto t = make_shared<types::LinkType>(types::LinkType::Unbound, cache->unboundCount++,
-                                        level, nullptr, staticType);
+std::shared_ptr<types::LinkType>
+TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) {
+  auto t = std::make_shared<types::LinkType>(
+      types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
   // if (t->id == 7815)
   // LOG("debug");
   t->setSrcInfo(expr->getSrcInfo());
@@ -91,7 +90,7 @@ shared_ptr<types::LinkType> TypeContext::addUnbound(const Expr *expr, int level,
 types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
                                         types::ClassType *generics, bool activate) {
   assert(type);
-  unordered_map<int, types::TypePtr> genericCache;
+  std::unordered_map<int, types::TypePtr> genericCache;
   if (generics)
     for (auto &g : generics->generics)
       if (g.type &&
@@ -119,11 +118,12 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
   return t;
 }
 
-types::TypePtr TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
-                                               const vector<types::TypePtr> &generics) {
+types::TypePtr
+TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
+                                const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   assert(c);
-  auto g = make_shared<types::ClassType>("", ""); // dummy generic type
+  auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
   if (generics.size() != c->generics.size())
     error(expr->getSrcInfo(), "generics do not match");
   for (int i = 0; i < c->generics.size(); i++) {
@@ -134,14 +134,14 @@ types::TypePtr TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr 
   return instantiate(expr, root, g.get());
 }
 
-vector<types::FuncTypePtr> TypeContext::findMethod(const string &typeName,
-                                                   const string &method) const {
+std::vector<types::FuncTypePtr>
+TypeContext::findMethod(const std::string &typeName, const std::string &method) const {
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
     if (t != m->second.methods.end()) {
-      unordered_map<string, int> signatureLoci;
-      vector<types::FuncTypePtr> vv;
+      std::unordered_map<std::string, int> signatureLoci;
+      std::vector<types::FuncTypePtr> vv;
       for (auto &mt : t->second) {
         // LOG("{}::{} @ {} vs. {}", typeName, method, age, mt.age);
         if (mt.age <= age) {
@@ -161,8 +161,8 @@ vector<types::FuncTypePtr> TypeContext::findMethod(const string &typeName,
   return {};
 }
 
-types::TypePtr TypeContext::findMember(const string &typeName,
-                                       const string &member) const {
+types::TypePtr TypeContext::findMember(const std::string &typeName,
+                                       const std::string &member) const {
   if (member == "__elemsize__")
     return findInternal("int");
   if (member == "__atomic__")
@@ -176,10 +176,9 @@ types::TypePtr TypeContext::findMember(const string &typeName,
   return nullptr;
 }
 
-types::FuncTypePtr
-TypeContext::findBestMethod(const Expr *expr, const string &member,
-                            const vector<pair<string, types::TypePtr>> &args,
-                            bool checkSingle) {
+types::FuncTypePtr TypeContext::findBestMethod(
+    const Expr *expr, const std::string &member,
+    const std::vector<std::pair<std::string, types::TypePtr>> &args, bool checkSingle) {
   auto typ = expr->getType()->getClass();
   seqassert(typ, "not a class");
   auto methods = findMethod(typ->name, member);
@@ -190,18 +189,18 @@ TypeContext::findBestMethod(const Expr *expr, const string &member,
 
   // Calculate the unification score for each available methods and pick the one with
   // highest score.
-  vector<pair<int, int>> scores;
+  std::vector<std::pair<int, int>> scores;
   for (int mi = 0; mi < methods.size(); mi++) {
     auto method = instantiate(expr, methods[mi], typ.get(), false)->getFunc();
-    vector<types::TypePtr> reordered;
-    vector<CallExpr::Arg> callArgs;
+    std::vector<types::TypePtr> reordered;
+    std::vector<CallExpr::Arg> callArgs;
     for (auto &a : args) {
-      callArgs.push_back({a.first, make_shared<NoneExpr>()}); // dummy expression
+      callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
       callArgs.back().value->setType(a.second);
     }
     auto score = reorderNamedArgs(
         method.get(), callArgs,
-        [&](int s, int k, const vector<vector<int>> &slots, bool _) {
+        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
             // Ignore *args, *kwargs and default arguments
             reordered.emplace_back(si == s || si == k || slots[si].size() != 1
@@ -210,7 +209,7 @@ TypeContext::findBestMethod(const Expr *expr, const string &member,
           }
           return 0;
         },
-        [](const string &) { return -1; });
+        [](const std::string &) { return -1; });
     if (score == -1)
       continue;
     // Scoring system for each argument:
@@ -273,7 +272,7 @@ TypeContext::findBestMethod(const Expr *expr, const string &member,
   // Get the best score.
   sort(scores.begin(), scores.end(), std::greater<>());
   // LOG("Method: {}", methods[scores[0].second]->toString());
-  // string x;
+  // std::string x;
   // for (auto &a : args)
   //   x += format("{}{},", a.first.empty() ? "" : a.first + ": ",
   //   a.second->toString());
@@ -282,9 +281,9 @@ TypeContext::findBestMethod(const Expr *expr, const string &member,
 }
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,
-                                  const vector<CallExpr::Arg> &args,
+                                  const std::vector<CallExpr::Arg> &args,
                                   ReorderDoneFn onDone, ReorderErrorFn onError,
-                                  const vector<char> &known) {
+                                  const std::vector<char> &known) {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:
   //  - +1 for each matched argument
@@ -312,11 +311,12 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   // 1. Assign positional arguments to slots
   // Each slot contains a list of arg's indices
-  vector<vector<int>> slots(func->ast->args.size());
+  std::vector<std::vector<int>> slots(func->ast->args.size());
   seqassert(known.empty() || func->ast->args.size() == known.size(),
             "bad 'known' string");
-  vector<int> extra;
-  std::map<string, int> namedArgs, extraNamedArgs; // keep the map--- we need it sorted!
+  std::vector<int> extra;
+  std::map<std::string, int> namedArgs,
+      extraNamedArgs; // keep the std::map--- we need it sorted!
   for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
     if (args[ai].name.empty()) {
       while (!known.empty() && si < slots.size() && known[si])
@@ -331,8 +331,8 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   }
   score += 2 * int(slots.size() - func->funcGenerics.size());
 
-  for (auto ai : vector<int>{std::max(starArgIndex, kwstarArgIndex),
-                             std::min(starArgIndex, kwstarArgIndex)})
+  for (auto ai : std::vector<int>{std::max(starArgIndex, kwstarArgIndex),
+                                  std::min(starArgIndex, kwstarArgIndex)})
     if (ai != -1 && !slots[ai].empty()) {
       extra.insert(extra.begin(), ai);
       slots[ai].clear();
@@ -340,7 +340,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   // 2. Assign named arguments to slots
   if (!namedArgs.empty()) {
-    std::map<string, int> slotNames;
+    std::map<std::string, int> slotNames;
     for (int i = 0; i < func->ast->args.size(); i++)
       if (known.empty() || !known[i]) {
         slotNames[cache->reverseIdentifierLookup[func->ast->args[i].name]] = i;
@@ -384,12 +384,13 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 }
 
 void TypeContext::dump(int pad) {
-  auto ordered = std::map<string, decltype(map)::mapped_type>(map.begin(), map.end());
+  auto ordered =
+      std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
   LOG("base: {}", getBase());
   for (auto &i : ordered) {
-    string s;
+    std::string s;
     auto t = i.second.front().second;
-    LOG("{}{:.<25} {}", string(pad * 2, ' '), i.first, t->type->toString());
+    LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type->toString());
   }
 }
 

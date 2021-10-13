@@ -10,13 +10,12 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
-using std::dynamic_pointer_cast;
 
 namespace codon {
 namespace ast {
 
 struct ReplacementVisitor : ReplaceASTVisitor {
-  const unordered_map<string, ExprPtr> *table;
+  const std::unordered_map<std::string, ExprPtr> *table;
   void transform(ExprPtr &e) override {
     if (!e)
       return;
@@ -37,7 +36,8 @@ struct ReplacementVisitor : ReplaceASTVisitor {
     e->accept(v);
   }
 };
-template <typename T> T replace(const T &e, const unordered_map<string, ExprPtr> &s) {
+template <typename T>
+T replace(const T &e, const std::unordered_map<std::string, ExprPtr> &s) {
   ReplacementVisitor v;
   v.table = &s;
   auto ep = clone(e);
@@ -62,7 +62,7 @@ void SimplifyVisitor::defaultVisit(Stmt *s) { resultStmt = s->clone(); }
 /**************************************************************************************/
 
 void SimplifyVisitor::visit(SuiteStmt *stmt) {
-  vector<StmtPtr> r;
+  std::vector<StmtPtr> r;
   // Make sure to add context blocks if this suite requires it...
   if (stmt->ownBlock)
     ctx->addBlock();
@@ -97,7 +97,7 @@ void SimplifyVisitor::visit(ExprStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(AssignStmt *stmt) {
-  vector<StmtPtr> stmts;
+  std::vector<StmtPtr> stmts;
   if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
     /// Case 1: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
@@ -126,7 +126,7 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(PrintStmt *stmt) {
-  vector<CallExpr::Arg> args;
+  std::vector<CallExpr::Arg> args;
   for (auto &i : stmt->items)
     args.emplace_back(CallExpr::Arg{"", transform(i)});
   if (stmt->isInline)
@@ -172,7 +172,7 @@ void SimplifyVisitor::visit(AssertStmt *stmt) {
 
 void SimplifyVisitor::visit(WhileStmt *stmt) {
   ExprPtr cond = N<CallExpr>(N<DotExpr>(clone(stmt->cond), "__bool__"));
-  string breakVar;
+  std::string breakVar;
   StmtPtr assign = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     breakVar = ctx->cache->getTemporaryVar("no_break");
@@ -193,7 +193,7 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(ForStmt *stmt) {
-  vector<CallExpr::Arg> ompArgs;
+  std::vector<CallExpr::Arg> ompArgs;
   ExprPtr decorator = clone(stmt->decorator);
   if (decorator) {
     ExprPtr callee = decorator;
@@ -201,9 +201,9 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
       callee = c->expr;
     if (!callee || !callee->isId("par"))
       error("for loop can only take parallel decorator");
-    vector<CallExpr::Arg> args;
-    string openmp;
-    vector<CallExpr::Arg> omp;
+    std::vector<CallExpr::Arg> args;
+    std::string openmp;
+    std::vector<CallExpr::Arg> omp;
     if (auto c = decorator->getCall())
       for (auto &a : c->args) {
         if (a.name == "openmp" ||
@@ -219,7 +219,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     decorator = N<CallExpr>(transform(N<IdExpr>("for_par")), args);
   }
 
-  string breakVar;
+  std::string breakVar;
   auto iter = transform(stmt->iter); // needs in-advance transformation to prevent
                                      // name clashes with the iterator variable
   StmtPtr assign = nullptr, forStmt = nullptr;
@@ -235,10 +235,10 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     forStmt = N<ForStmt>(transform(stmt->var), clone(iter), transform(stmt->suite),
                          nullptr, decorator, ompArgs);
   } else {
-    string varName = ctx->cache->getTemporaryVar("for");
+    std::string varName = ctx->cache->getTemporaryVar("for");
     ctx->add(SimplifyItem::Var, varName, varName);
     auto var = N<IdExpr>(varName);
-    vector<StmtPtr> stmts;
+    std::vector<StmtPtr> stmts;
     stmts.push_back(N<AssignStmt>(clone(stmt->var), clone(var), nullptr, true));
     stmts.push_back(clone(stmt->suite));
     forStmt = N<ForStmt>(clone(var), clone(iter), transform(N<SuiteStmt>(stmts)),
@@ -281,7 +281,7 @@ void SimplifyVisitor::visit(MatchStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(TryStmt *stmt) {
-  vector<TryStmt::Catch> catches;
+  std::vector<TryStmt::Catch> catches;
   auto suite = transform(stmt->suite);
   for (auto &ctch : stmt->catches) {
     ctx->addBlock();
@@ -302,16 +302,16 @@ void SimplifyVisitor::visit(ThrowStmt *stmt) {
 
 void SimplifyVisitor::visit(WithStmt *stmt) {
   assert(stmt->items.size());
-  vector<StmtPtr> content;
+  std::vector<StmtPtr> content;
   for (int i = int(stmt->items.size()) - 1; i >= 0; i--) {
-    string var =
+    std::string var =
         stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
-    content = vector<StmtPtr>{
+    content = std::vector<StmtPtr>{
         N<AssignStmt>(N<IdExpr>(var), clone(stmt->items[i]), nullptr, true),
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__enter__"))),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content, true) : clone(stmt->suite),
-                   vector<TryStmt::Catch>{},
-                   N<SuiteStmt>(vector<StmtPtr>{N<ExprStmt>(
+                   std::vector<TryStmt::Catch>{},
+                   N<SuiteStmt>(std::vector<StmtPtr>{N<ExprStmt>(
                                     N<CallExpr>(N<DotExpr>(var, "__exit__")))},
                                 true))};
   }
@@ -352,7 +352,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   }
 
   // Transform import a.b.c.d to "a/b/c/d".
-  vector<string> dirs; // Path components
+  std::vector<std::string> dirs; // Path components
   if (stmt->from) {
     Expr *e = stmt->from.get();
     while (auto d = e->getDot()) {
@@ -368,7 +368,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
   for (int i = 0; i < stmt->dots - 1; i++)
     dirs.emplace_back("..");
-  string path;
+  std::string path;
   for (int i = int(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
@@ -381,13 +381,13 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   if (ctx->cache->imports.find(file->path) == ctx->cache->imports.end())
     transformNewImport(*file);
   const auto &import = ctx->cache->imports[file->path];
-  string importVar = import.importVar;
-  string importDoneVar = importVar + "_done";
+  std::string importVar = import.importVar;
+  std::string importDoneVar = importVar + "_done";
 
   // Import variable is empty if it has already been loaded during the standard library
   // initialization.
   if (!ctx->isStdlibLoading && !importVar.empty()) {
-    vector<StmtPtr> ifSuite;
+    std::vector<StmtPtr> ifSuite;
     ifSuite.emplace_back(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))));
     ifSuite.emplace_back(N<UpdateStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true)));
     resultStmt = N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
@@ -429,7 +429,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(FunctionStmt *stmt) {
-  vector<ExprPtr> decorators;
+  std::vector<ExprPtr> decorators;
   Attr attr = stmt->attributes;
   for (auto &d : stmt->decorators) {
     if (d->isId("__attribute__")) {
@@ -479,7 +479,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     error("builtins must be defined at the toplevel");
 
   auto oldBases = move(ctx->bases);
-  ctx->bases = vector<SimplifyContext::Base>();
+  ctx->bases = std::vector<SimplifyContext::Base>();
   if (!isClassMember)
     // Class members are added to class' method table
     ctx->add(SimplifyItem::Func, stmt->name, canonicalName, ctx->isToplevel());
@@ -493,9 +493,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (attr.has(Attr::Test))
     ctx->bases.back().attributes |= FLAG_TEST;
   // Add generic identifiers to the context
-  unordered_set<string> seenArgs;
+  std::unordered_set<std::string> seenArgs;
   // Parse function arguments and add them to the context.
-  vector<Param> args;
+  std::vector<Param> args;
   bool defaultsStarted = false, hasStarArg = false, hasKwArg = false;
   // Add generics first
   for (int ia = 0; ia < stmt->args.size(); ia++) {
@@ -504,7 +504,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
                    (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))))
       a.generic = true;
-    string varName = a.name;
+    std::string varName = a.name;
     int stars = trimStars(varName);
     if (stars == 2) {
       if (hasKwArg || a.deflt || ia != stmt->args.size() - 1)
@@ -539,7 +539,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
     // First add all generics!
     auto name = ctx->generateCanonicalName(varName);
-    args.emplace_back(Param{string(stars, '*') + name, typeAst, a.deflt, a.generic});
+    args.emplace_back(
+        Param{std::string(stars, '*') + name, typeAst, a.deflt, a.generic});
     if (a.generic) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
         ctx->add(SimplifyItem::Var, varName, name);
@@ -554,7 +555,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // Delay adding to context to prevent "def foo(a, b=a)"
   for (auto &a : args) {
     if (!a.generic) {
-      string canName = a.name;
+      std::string canName = a.name;
       trimStars(canName);
       ctx->add(SimplifyItem::Var, ctx->cache->reverseIdentifierLookup[canName],
                canName);
@@ -566,7 +567,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   auto ret = transformType(stmt->ret, false);
   // Parse function body.
   StmtPtr suite = nullptr;
-  std::map<string, string> captures;
+  std::map<std::string, std::string> captures;
   if (!attr.has(Attr::Internal) && !attr.has(Attr::C)) {
     ctx->addBlock();
     if (attr.has(Attr::LLVM)) {
@@ -575,7 +576,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       ;
     } else {
       if ((isEnclosedFunc || attr.has(Attr::Capture)) && !isClassMember)
-        ctx->captures.emplace_back(std::map<string, string>{});
+        ctx->captures.emplace_back(std::map<std::string, std::string>{});
       suite = SimplifyVisitor(ctx, preamble).transform(stmt->suite);
       if ((isEnclosedFunc || attr.has(Attr::Capture)) && !isClassMember) {
         captures = ctx->captures.back();
@@ -611,7 +612,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       attr.set(Attr::Method);
   }
 
-  vector<CallExpr::Arg> partialArgs;
+  std::vector<CallExpr::Arg> partialArgs;
   if (!captures.empty()) {
     Param kw;
     if (hasKwArg) {
@@ -655,7 +656,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 void SimplifyVisitor::visit(ClassStmt *stmt) {
   enum Magic { Init, Repr, Eq, Order, Hash, Pickle, Container, Python };
   Attr attr = stmt->attributes;
-  vector<char> hasMagic(10, 2);
+  std::vector<char> hasMagic(10, 2);
   hasMagic[Init] = hasMagic[Pickle] = 1;
   // @tuple(init=, repr=, eq=, order=, hash=, pickle=, container=, python=, add=,
   // internal=...)
@@ -717,19 +718,19 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   bool isRecord = attr.has(Attr::Tuple); // does it have @tuple attribute
 
   // Special name handling is needed because of nested classes.
-  string name = stmt->name;
+  std::string name = stmt->name;
   if (!ctx->bases.empty() && ctx->bases.back().isType()) {
     const auto &a = ctx->bases.back().ast;
-    string parentName =
+    std::string parentName =
         a->getId() ? a->getId()->value : a->getIndex()->expr->getId()->value;
     name = parentName + "." + name;
   }
 
   // Generate/find class' canonical name (unique ID) and AST
-  string canonicalName;
+  std::string canonicalName;
   ClassStmt *originalAST = nullptr;
   auto classItem =
-      make_shared<SimplifyItem>(SimplifyItem::Type, "", "", ctx->isToplevel());
+      std::make_shared<SimplifyItem>(SimplifyItem::Type, "", "", ctx->isToplevel());
   if (!extension) {
     classItem->canonicalName = canonicalName =
         ctx->generateCanonicalName(name, !attr.has(Attr::Internal));
@@ -757,27 +758,27 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
   // Add the class base.
   auto oldBases = move(ctx->bases);
-  ctx->bases = vector<SimplifyContext::Base>();
+  ctx->bases = std::vector<SimplifyContext::Base>();
   ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
-  ctx->bases.back().ast = make_shared<IdExpr>(name);
+  ctx->bases.back().ast = std::make_shared<IdExpr>(name);
 
   if (extension && !stmt->baseClasses.empty())
     error("extensions cannot inherit other classes");
-  vector<ClassStmt *> baseASTs;
-  vector<Param> args;
-  vector<unordered_map<string, ExprPtr>> substitutions;
-  vector<int> argSubstitutions;
-  unordered_set<string> seenMembers;
+  std::vector<ClassStmt *> baseASTs;
+  std::vector<Param> args;
+  std::vector<std::unordered_map<std::string, ExprPtr>> substitutions;
+  std::vector<int> argSubstitutions;
+  std::unordered_set<std::string> seenMembers;
   for (auto &baseClass : stmt->baseClasses) {
-    string bcName;
-    vector<ExprPtr> subs;
+    std::string bcName;
+    std::vector<ExprPtr> subs;
     if (auto i = baseClass->getId())
       bcName = i->value;
     else if (auto e = baseClass->getIndex()) {
       if (auto i = e->expr->getId()) {
         bcName = i->value;
         subs = e->index->getTuple() ? e->index->getTuple()->items
-                                    : vector<ExprPtr>{e->index};
+                                    : std::vector<ExprPtr>{e->index};
       }
     }
     bcName = transformType(N<IdExpr>(bcName))->getId()->value;
@@ -812,7 +813,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
   // Add generics, if any, to the context.
   ctx->addBlock();
-  vector<ExprPtr> genAst;
+  std::vector<ExprPtr> genAst;
   substitutions.push_back({});
   for (auto &a : (extension ? originalAST : stmt)->args) {
     seqassert(a.type, "no type provided for '{}'", a.name);
@@ -840,15 +841,15 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   }
   if (!genAst.empty())
     ctx->bases.back().ast =
-        make_shared<IndexExpr>(N<IdExpr>(name), N<TupleExpr>(genAst));
+        std::make_shared<IndexExpr>(N<IdExpr>(name), N<TupleExpr>(genAst));
 
-  vector<StmtPtr> stmts{nullptr}; // Will be filled later!
+  std::vector<StmtPtr> stmts{nullptr}; // Will be filled later!
   // Parse nested classes
   for (auto sp : getClassMethods(stmt->suite))
     if (sp && sp->getClass()) {
       // Add dummy base to fix nested class' name.
       ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
-      ctx->bases.back().ast = make_shared<IdExpr>(name);
+      ctx->bases.back().ast = std::make_shared<IdExpr>(name);
       auto origName = sp->getClass()->name;
       stmts.emplace_back(transform(sp));
       ctx->add(origName,
@@ -856,7 +857,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       ctx->bases.pop_back();
     }
 
-  vector<Param> memberArgs;
+  std::vector<Param> memberArgs;
   for (auto &s : substitutions)
     for (auto &i : s)
       i.second = transform(i.second, true);
@@ -889,9 +890,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                ctx->moduleName.module);
     ctx->cache->classes[canonicalName].ast =
         N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), attr);
-    vector<StmtPtr> fns;
+    std::vector<StmtPtr> fns;
     ExprPtr codeType = ctx->bases.back().ast->clone();
-    vector<string> magics{};
+    std::vector<std::string> magics{};
     // Internal classes do not get any auto-generated members.
     if (!attr.has(Attr::Internal)) {
       // Prepare a list of magics that are to be auto-generated.
@@ -973,8 +974,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     // if (stmt->baseClasses.size())
     // LOG("{} -> {}", stmt->name, c->toString(0));
   }
-  stmts[0] = N<ClassStmt>(canonicalName, vector<Param>{}, N<SuiteStmt>(),
-                          Attr({Attr::Extend}), vector<ExprPtr>{}, vector<ExprPtr>{});
+  stmts[0] = N<ClassStmt>(canonicalName, std::vector<Param>{}, N<SuiteStmt>(),
+                          Attr({Attr::Extend}), std::vector<ExprPtr>{},
+                          std::vector<ExprPtr>{});
   resultStmt = N<SuiteStmt>(stmts);
 }
 
@@ -1064,9 +1066,9 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
 }
 
 void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
-                                        vector<StmtPtr> &stmts, bool shadow,
+                                        std::vector<StmtPtr> &stmts, bool shadow,
                                         bool mustExist) {
-  vector<ExprPtr> leftSide;
+  std::vector<ExprPtr> leftSide;
   if (auto et = lhs->getTuple()) { // (a, b) = ...
     for (auto &i : et->items)
       leftSide.push_back(i);
@@ -1126,10 +1128,10 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
 }
 
 StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr suite) {
-  auto isinstance = [&](const ExprPtr &e, const string &typ) -> ExprPtr {
+  auto isinstance = [&](const ExprPtr &e, const std::string &typ) -> ExprPtr {
     return N<CallExpr>(N<IdExpr>("isinstance"), e->clone(), N<IdExpr>(typ));
   };
-  auto findEllipsis = [&](const vector<ExprPtr> &items) {
+  auto findEllipsis = [&](const std::vector<ExprPtr> &items) {
     int i = items.size();
     for (int it = 0; it < items.size(); it++)
       if (items[it]->getEllipsis()) {
@@ -1160,7 +1162,7 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
                   suite));
   } else if (auto el = pattern->getList()) {
     auto ellipsis = findEllipsis(el->items), sz = int(el->items.size());
-    string op;
+    std::string op;
     if (ellipsis == el->items.size())
       op = "==";
     else
@@ -1184,13 +1186,14 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
   } else if (auto ea = CAST(pattern, AssignExpr)) {
     seqassert(ea->var->getId(), "only simple assignment expressions are supported");
     return N<SuiteStmt>(
-        vector<StmtPtr>{N<AssignStmt>(clone(ea->var), clone(var)),
-                        transformPattern(clone(var), clone(ea->expr), clone(suite))},
+        std::vector<StmtPtr>{
+            N<AssignStmt>(clone(ea->var), clone(var)),
+            transformPattern(clone(var), clone(ea->expr), clone(suite))},
         true);
   } else if (auto ei = pattern->getId()) {
     if (ei->value != "_")
       return N<SuiteStmt>(
-          vector<StmtPtr>{N<AssignStmt>(clone(pattern), clone(var)), suite}, true);
+          std::vector<StmtPtr>{N<AssignStmt>(clone(pattern), clone(var)), suite}, true);
     else
       return suite;
   }
@@ -1201,9 +1204,10 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
       N<IfStmt>(N<CallExpr>(N<DotExpr>(var->clone(), "__match__"), pattern), suite));
 }
 
-StmtPtr SimplifyVisitor::transformCImport(const string &name, const vector<Param> &args,
-                                          const Expr *ret, const string &altName) {
-  vector<Param> fnArgs;
+StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
+                                          const std::vector<Param> &args,
+                                          const Expr *ret, const std::string &altName) {
+  std::vector<Param> fnArgs;
   auto attr = Attr({Attr::C});
   for (int ai = 0; ai < args.size(); ai++) {
     seqassert(args[ai].name.empty(), "unexpected argument name");
@@ -1226,12 +1230,13 @@ StmtPtr SimplifyVisitor::transformCImport(const string &name, const vector<Param
   return tf;
 }
 
-StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const string &name,
-                                             const vector<Param> &args, const Expr *ret,
-                                             const string &altName) {
+StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::string &name,
+                                             const std::vector<Param> &args,
+                                             const Expr *ret,
+                                             const std::string &altName) {
   // name : Function[args] = _dlsym(dylib, "name", Fn=Function[args])
-  vector<ExprPtr> fnArgs{N<ListExpr>(vector<ExprPtr>{}),
-                         ret ? ret->clone() : N<IdExpr>("void")};
+  std::vector<ExprPtr> fnArgs{N<ListExpr>(std::vector<ExprPtr>{}),
+                              ret ? ret->clone() : N<IdExpr>("void")};
   for (const auto &a : args) {
     seqassert(a.name.empty(), "unexpected argument name");
     seqassert(!a.deflt, "unexpected default argument");
@@ -1241,16 +1246,17 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const string &na
   auto type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
-      N<CallExpr>(N<IdExpr>("_dlsym"), vector<CallExpr::Arg>{{"", dylib->clone()},
-                                                             {"", N<StringExpr>(name)},
-                                                             {"Fn", type}})));
+      N<CallExpr>(N<IdExpr>("_dlsym"),
+                  std::vector<CallExpr::Arg>{
+                      {"", dylib->clone()}, {"", N<StringExpr>(name)}, {"Fn", type}})));
 }
 
 StmtPtr SimplifyVisitor::transformPythonImport(const Expr *what,
-                                               const vector<Param> &args,
-                                               const Expr *ret, const string &altName) {
+                                               const std::vector<Param> &args,
+                                               const Expr *ret,
+                                               const std::string &altName) {
   // Get a module name (e.g. os.path)
-  vector<string> dirs;
+  std::vector<std::string> dirs;
   auto e = what;
   while (auto d = e->getDot()) {
     dirs.push_back(d->member);
@@ -1258,7 +1264,7 @@ StmtPtr SimplifyVisitor::transformPythonImport(const Expr *what,
   }
   seqassert(e && e->getId(), "invalid import python statement");
   dirs.push_back(e->getId()->value);
-  string name = dirs[0], lib;
+  std::string name = dirs[0], lib;
   for (int i = int(dirs.size()) - 1; i > 0; i--)
     lib += dirs[i] + (i > 1 ? "." : "");
 
@@ -1278,8 +1284,8 @@ StmtPtr SimplifyVisitor::transformPythonImport(const Expr *what,
                                              "_getattr"),
                                   N<StringExpr>(name)));
   // Make a call expression: f(args...)
-  vector<Param> params;
-  vector<ExprPtr> callArgs;
+  std::vector<Param> params;
+  std::vector<ExprPtr> callArgs;
   for (int i = 0; i < args.size(); i++) {
     params.emplace_back(Param{format("a{}", i), clone(args[i].type), nullptr});
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
@@ -1304,7 +1310,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file.
   if (ctx->cache->age)
     ctx->cache->age++;
-  auto ictx = make_shared<SimplifyContext>(file.path, ctx->cache);
+  auto ictx = std::make_shared<SimplifyContext>(file.path, ctx->cache);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
   auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
@@ -1320,18 +1326,18 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
   // assume that standard library has no recursive imports. We will just append the
   // top-level statements as-is.
   if (ctx->isStdlibLoading) {
-    resultStmt = N<SuiteStmt>(vector<StmtPtr>{sn}, true);
+    resultStmt = N<SuiteStmt>(std::vector<StmtPtr>{sn}, true);
   } else {
     // Generate import function identifier.
-    string importVar = import->second.importVar =
-               ctx->cache->getTemporaryVar(format("import_{}", file.module), '.'),
-           importDoneVar;
+    std::string importVar = import->second.importVar =
+                    ctx->cache->getTemporaryVar(format("import_{}", file.module), '.'),
+                importDoneVar;
     // import_done = False (global variable that indicates if an import has been
     // loaded)
     preamble->globals.push_back(N<AssignStmt>(
         N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false)));
     ctx->cache->globals.insert(importDoneVar);
-    vector<StmtPtr> stmts;
+    std::vector<StmtPtr> stmts;
     stmts.push_back(nullptr); // placeholder to be filled later!
     // We need to wrap all imported top-level statements (not signatures! they have
     // already been handled and are in the preamble) into a function. We also take the
@@ -1363,21 +1369,21 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // Add a def import(): ... manually to the cache and to the preamble (it won't be
     // transformed here!).
     ctx->cache->functions[importVar].ast =
-        N<FunctionStmt>(importVar, nullptr, vector<Param>{}, N<SuiteStmt>(stmts),
+        N<FunctionStmt>(importVar, nullptr, std::vector<Param>{}, N<SuiteStmt>(stmts),
                         Attr({Attr::ForceRealize}));
     preamble->functions.push_back(ctx->cache->functions[importVar].ast->clone());
     ;
   }
 }
 
-StmtPtr SimplifyVisitor::transformPythonDefinition(const string &name,
-                                                   const vector<Param> &args,
+StmtPtr SimplifyVisitor::transformPythonDefinition(const std::string &name,
+                                                   const std::vector<Param> &args,
                                                    const Expr *ret,
                                                    const Stmt *codeStmt) {
   seqassert(codeStmt && codeStmt->getExpr() && codeStmt->getExpr()->expr->getString(),
             "invalid Python definition");
   auto code = codeStmt->getExpr()->expr->getString()->getValue();
-  vector<string> pyargs;
+  std::vector<std::string> pyargs;
   for (const auto &a : args)
     pyargs.emplace_back(a.name);
   code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
@@ -1392,9 +1398,9 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(const Stmt *codeStmt) {
             "invalid LLVM definition");
 
   auto code = codeStmt->getExpr()->expr->getString()->getValue();
-  vector<StmtPtr> items;
+  std::vector<StmtPtr> items;
   auto se = N<StringExpr>("");
-  string finalCode = se->getValue();
+  std::string finalCode = se->getValue();
   items.push_back(N<ExprStmt>(se));
 
   int braceCount = 0, braceStart = 0;
@@ -1410,7 +1416,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(const Stmt *codeStmt) {
       }
     } else if (braceCount && code[i] == '}') {
       braceCount--;
-      string exprCode = code.substr(braceStart, i - braceStart);
+      std::string exprCode = code.substr(braceStart, i - braceStart);
       auto offset = getSrcInfo();
       offset.col += i;
       auto expr = transform(parseExpr(ctx->cache, exprCode, offset), true);
@@ -1427,13 +1433,13 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(const Stmt *codeStmt) {
   return N<SuiteStmt>(items);
 }
 
-StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
-                                      const vector<Param> &args, bool isRecord) {
+StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr,
+                                      const std::vector<Param> &args, bool isRecord) {
 #define I(s) N<IdExpr>(s)
   assert(typExpr);
   ExprPtr ret;
-  vector<Param> fargs;
-  vector<StmtPtr> stmts;
+  std::vector<Param> fargs;
+  std::vector<StmtPtr> stmts;
   Attr attr;
   attr.set("autogenerated");
   if (op == "new") {
@@ -1533,7 +1539,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"other", typExpr->clone()});
     ret = I("bool");
-    vector<StmtPtr> *v = &stmts;
+    std::vector<StmtPtr> *v = &stmts;
     for (int i = 0; i < (int)args.size() - 1; i++) {
       v->emplace_back(N<IfStmt>(
           N<CallExpr>(
@@ -1563,7 +1569,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"other", typExpr->clone()});
     ret = I("bool");
-    vector<StmtPtr> *v = &stmts;
+    std::vector<StmtPtr> *v = &stmts;
     for (int i = 0; i < (int)args.size() - 1; i++) {
       v->emplace_back(N<IfStmt>(
           N<UnaryExpr>("!", N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name),
@@ -1621,7 +1627,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
     //   return T(T1.__unpickle__(src),...)
     fargs.emplace_back(Param{"src", N<IndexExpr>(I("Ptr"), I("byte"))});
     ret = typExpr->clone();
-    vector<ExprPtr> ar;
+    std::vector<ExprPtr> ar;
     for (auto &a : args)
       ar.emplace_back(N<CallExpr>(N<DotExpr>(clone(a.type), "__unpickle__"), I("src")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
@@ -1651,7 +1657,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
     //   return T(T1.__from_py__(src._tuple_get(1)), ...)
     fargs.emplace_back(Param{"src", I("pyobj")});
     ret = typExpr->clone();
-    vector<ExprPtr> ar;
+    std::vector<ExprPtr> ar;
     for (int i = 0; i < args.size(); i++)
       ar.push_back(
           N<CallExpr>(N<DotExpr>(clone(args[i].type), "__from_py__"),
@@ -1708,20 +1714,20 @@ StmtPtr SimplifyVisitor::codegenMagic(const string &op, const Expr *typExpr,
     //   return (*self, *t)
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"tup", nullptr});
-    stmts.emplace_back(N<ReturnStmt>(
-        N<TupleExpr>(vector<ExprPtr>{N<StarExpr>(I("self")), N<StarExpr>(I("tup"))})));
+    stmts.emplace_back(N<ReturnStmt>(N<TupleExpr>(
+        std::vector<ExprPtr>{N<StarExpr>(I("self")), N<StarExpr>(I("tup"))})));
   } else {
     seqassert(false, "invalid magic {}", op);
   }
 #undef I
-  auto t = make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
-                                     N<SuiteStmt>(stmts), attr);
+  auto t = std::make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
+                                          N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
 }
 
-vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
-  vector<StmtPtr> v;
+std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
+  std::vector<StmtPtr> v;
   if (!s)
     return v;
   if (auto sp = s->getSuite()) {

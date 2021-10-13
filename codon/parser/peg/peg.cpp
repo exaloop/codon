@@ -20,11 +20,11 @@ using namespace std;
 namespace codon {
 namespace ast {
 
-static shared_ptr<peg::Grammar> grammar(nullptr);
-static shared_ptr<peg::Grammar> ompGrammar(nullptr);
+static std::shared_ptr<peg::Grammar> grammar(nullptr);
+static std::shared_ptr<peg::Grammar> ompGrammar(nullptr);
 
-shared_ptr<peg::Grammar> initParser() {
-  auto g = make_shared<peg::Grammar>();
+std::shared_ptr<peg::Grammar> initParser() {
+  auto g = std::make_shared<peg::Grammar>();
   init_codon_rules(*g);
   init_codon_actions(*g);
   ~(*g)["NLP"] <= peg::usr([](const char *s, size_t n, peg::SemanticValues &, any &dt) {
@@ -35,9 +35,9 @@ shared_ptr<peg::Grammar> initParser() {
     x.second.accept(v);
   }
   (*g)["program"].enablePackratParsing = true;
-  for (auto &rule : vector<string>{"arguments", "slices", "genexp", "parentheses",
-                                   "star_parens", "generics", "with_parens_item",
-                                   "params", "from_as_parens", "from_params"}) {
+  for (auto &rule : std::vector<std::string>{
+           "arguments", "slices", "genexp", "parentheses", "star_parens", "generics",
+           "with_parens_item", "params", "from_as_parens", "from_params"}) {
     (*g)[rule].enter = [](const char *, size_t, any &dt) {
       any_cast<ParseContext &>(dt).parens++;
     };
@@ -49,8 +49,9 @@ shared_ptr<peg::Grammar> initParser() {
 }
 
 template <typename T>
-T parseCode(const shared_ptr<Cache> &cache, const string &file, string code,
-            int line_offset, int col_offset, const string &rule) {
+T parseCode(const std::shared_ptr<Cache> &cache, const std::string &file,
+            std::string code, int line_offset, int col_offset,
+            const std::string &rule) {
   using namespace std::chrono;
   auto t = high_resolution_clock::now();
 
@@ -58,8 +59,8 @@ T parseCode(const shared_ptr<Cache> &cache, const string &file, string code,
   if (!grammar)
     grammar = initParser();
 
-  vector<tuple<size_t, size_t, string>> errors;
-  auto log = [&](size_t line, size_t col, const string &msg) {
+  std::vector<tuple<size_t, size_t, std::string>> errors;
+  auto log = [&](size_t line, size_t col, const std::string &msg) {
     errors.push_back({line, col, msg});
   };
   T result = nullptr;
@@ -80,22 +81,22 @@ T parseCode(const shared_ptr<Cache> &cache, const string &file, string code,
   return result;
 }
 
-StmtPtr parseCode(const shared_ptr<Cache> &cache, const string &file,
-                  const string &code, int line_offset) {
+StmtPtr parseCode(const std::shared_ptr<Cache> &cache, const std::string &file,
+                  const std::string &code, int line_offset) {
   return parseCode<StmtPtr>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-ExprPtr parseExpr(const shared_ptr<Cache> &cache, const string &code,
+ExprPtr parseExpr(const std::shared_ptr<Cache> &cache, const std::string &code,
                   const codon::SrcInfo &offset) {
   return parseCode<ExprPtr>(cache, offset.file, code, offset.line, offset.col,
                             "fstring");
 }
 
-StmtPtr parseFile(const shared_ptr<Cache> &cache, const string &file) {
-  vector<string> lines;
-  string code;
+StmtPtr parseFile(const std::shared_ptr<Cache> &cache, const std::string &file) {
+  std::vector<std::string> lines;
+  std::string code;
   if (file == "-") {
-    for (string line; getline(cin, line);) {
+    for (std::string line; getline(cin, line);) {
       lines.push_back(line);
       code += line + "\n";
     }
@@ -103,7 +104,7 @@ StmtPtr parseFile(const shared_ptr<Cache> &cache, const string &file) {
     ifstream fin(file);
     if (!fin)
       error(fmt::format("cannot open {}", file).c_str());
-    for (string line; getline(fin, line);) {
+    for (std::string line; getline(fin, line);) {
       lines.push_back(line);
       code += line + "\n";
     }
@@ -118,8 +119,8 @@ StmtPtr parseFile(const shared_ptr<Cache> &cache, const string &file) {
   return result;
 }
 
-shared_ptr<peg::Grammar> initOpenMPParser() {
-  auto g = make_shared<peg::Grammar>();
+std::shared_ptr<peg::Grammar> initOpenMPParser() {
+  auto g = std::make_shared<peg::Grammar>();
   init_omp_rules(*g);
   init_omp_actions(*g);
   for (auto &x : *g) {
@@ -130,16 +131,17 @@ shared_ptr<peg::Grammar> initOpenMPParser() {
   return g;
 }
 
-vector<CallExpr::Arg> parseOpenMP(const shared_ptr<Cache> &cache, const string &code,
-                                  const codon::SrcInfo &loc) {
+std::vector<CallExpr::Arg> parseOpenMP(const std::shared_ptr<Cache> &cache,
+                                       const std::string &code,
+                                       const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
 
-  vector<tuple<size_t, size_t, string>> errors;
-  auto log = [&](size_t line, size_t col, const string &msg) {
+  std::vector<tuple<size_t, size_t, std::string>> errors;
+  auto log = [&](size_t line, size_t col, const std::string &msg) {
     errors.push_back({line, col, msg});
   };
-  vector<CallExpr::Arg> result;
+  std::vector<CallExpr::Arg> result;
   auto ctx = make_any<ParseContext>(cache, 0, 0, 0);
   auto r = (*ompGrammar)["pragma"].parse_and_get_value(code.c_str(), code.size(), ctx,
                                                        result, "", log);

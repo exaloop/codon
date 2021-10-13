@@ -12,17 +12,17 @@ namespace ast {
 
 /// String and collection utilities
 
-vector<string> split(const string &s, char delim) {
-  vector<string> items;
-  string item;
+std::vector<std::string> split(const std::string &s, char delim) {
+  std::vector<std::string> items;
+  std::string item;
   std::istringstream iss(s);
   while (std::getline(iss, item, delim))
     items.push_back(item);
   return items;
 }
 // clang-format off
-string escape(const string &str) {
-  string r;
+std::string escape(const std::string &str) {
+  std::string r;
   r.reserve(str.size());
   for (unsigned char c : str) {
     switch (c) {
@@ -44,8 +44,8 @@ string escape(const string &str) {
   }
   return r;
 }
-string unescape(const string &str) {
-  string r;
+std::string unescape(const std::string &str) {
+  std::string r;
   r.reserve(str.size());
   for (int i = 0; i < str.size(); i++) {
     if (str[i] == '\\' && i + 1 < str.size())
@@ -85,8 +85,8 @@ string unescape(const string &str) {
   return r;
 }
 // clang-format on
-string escapeFStringBraces(const string &str, int start, int len) {
-  string t;
+std::string escapeFStringBraces(const std::string &str, int start, int len) {
+  std::string t;
   t.reserve(len);
   for (int i = start; i < start + len; i++)
     if (str[i] == '{')
@@ -97,33 +97,33 @@ string escapeFStringBraces(const string &str, int start, int len) {
       t += str[i];
   return t;
 }
-bool startswith(const string &str, const string &prefix) {
+bool startswith(const std::string &str, const std::string &prefix) {
   return str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix;
 }
-bool endswith(const string &str, const string &suffix) {
+bool endswith(const std::string &str, const std::string &suffix) {
   return str.size() >= suffix.size() &&
          str.substr(str.size() - suffix.size()) == suffix;
 }
-void ltrim(string &str) {
+void ltrim(std::string &str) {
   str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char ch) {
               return !std::isspace(ch);
             }));
 }
-void rtrim(string &str) {
+void rtrim(std::string &str) {
   /// https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
   str.erase(std::find_if(str.rbegin(), str.rend(),
                          [](unsigned char ch) { return !std::isspace(ch); })
                 .base(),
             str.end());
 }
-int trimStars(string &str) {
+int trimStars(std::string &str) {
   int stars = 0;
   for (; stars < str.size() && str[stars] == '*'; stars++)
     ;
   str = str.substr(stars);
   return stars;
 }
-bool isdigit(const string &str) {
+bool isdigit(const std::string &str) {
   return std::all_of(str.begin(), str.end(), ::isdigit);
 }
 
@@ -139,8 +139,8 @@ void error(const ::codon::SrcInfo &info, const char *format) {
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 
-string executable_path(const char *argv0) {
-  typedef vector<char> char_vector;
+std::string executable_path(const char *argv0) {
+  typedef std::vector<char> char_vector;
   char_vector buf(1024, 0);
   auto size = static_cast<uint32_t>(buf.size());
   bool havePath = false;
@@ -158,16 +158,16 @@ string executable_path(const char *argv0) {
     }
   } while (shouldContinue);
   if (!havePath) {
-    return string(argv0);
+    return std::string(argv0);
   }
-  return string(&buf[0], size);
+  return std::string(&buf[0], size);
 }
 #elif __linux__
 #include <unistd.h>
 
-string executable_path(const char *argv0) {
-  typedef vector<char> char_vector;
-  typedef vector<char>::size_type size_type;
+std::string executable_path(const char *argv0) {
+  typedef std::vector<char> char_vector;
+  typedef std::vector<char>::size_type size_type;
   char_vector buf(1024, 0);
   size_type size = buf.size();
   bool havePath = false;
@@ -187,21 +187,23 @@ string executable_path(const char *argv0) {
     }
   } while (shouldContinue);
   if (!havePath) {
-    return string(argv0);
+    return std::string(argv0);
   }
-  return string(&buf[0], size);
+  return std::string(&buf[0], size);
 }
 #else
-string executable_path(const char *argv0) { return string(argv0); }
+std::string executable_path(const char *argv0) { return std::string(argv0); }
 #endif
 
-shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
-                                     const string &relativeTo, bool forceStdlib,
-                                     const string &module0) {
+std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
+                                          const std::string &what,
+                                          const std::string &relativeTo,
+                                          bool forceStdlib,
+                                          const std::string &module0) {
   using fmt::format;
 
-  auto getStdLibPaths = [](const string &argv0) {
-    vector<string> paths;
+  auto getStdLibPaths = [](const std::string &argv0) {
+    std::vector<std::string> paths;
     char abs[PATH_MAX + 1];
     if (auto c = getenv("CODON_PATH")) {
       if (realpath(c, abs))
@@ -218,10 +220,10 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
 
   char abs[PATH_MAX + 1];
   strncpy(abs, module0.c_str(), PATH_MAX);
-  auto module0Root = string(dirname(abs));
-  auto getRoot = [&](const string &s) {
+  auto module0Root = std::string(dirname(abs));
+  auto getRoot = [&](const std::string &s) {
     bool isStdLib = false;
-    string root;
+    std::string root;
     for (auto &p : getStdLibPaths(argv0))
       if (startswith(s, p)) {
         root = p;
@@ -239,7 +241,7 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
                       s, module};
   };
 
-  vector<string> paths;
+  std::vector<std::string> paths;
   if (!forceStdlib) {
     realpath(relativeTo.c_str(), abs);
     auto parent = dirname(abs);
@@ -253,7 +255,7 @@ shared_ptr<ImportFile> getImportFile(const string &argv0, const string &what,
   for (auto &p : paths) {
     if (!realpath(p.c_str(), abs))
       continue;
-    auto path = string(abs);
+    auto path = std::string(abs);
     struct stat buffer;
     if (!stat(path.c_str(), &buffer))
       return std::make_shared<ImportFile>(getRoot(path));

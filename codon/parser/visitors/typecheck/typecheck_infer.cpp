@@ -12,12 +12,6 @@
 #include "codon/sir/types/types.h"
 
 using fmt::format;
-using std::deque;
-using std::dynamic_pointer_cast;
-using std::get;
-using std::ostream;
-using std::stack;
-using std::static_pointer_cast;
 
 namespace codon {
 namespace ast {
@@ -39,7 +33,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     if (auto p = typ->getPartial()) {
       if (auto rt = realize(p->func))
         unify(rt, p->func);
-      return make_shared<PartialType>(t->getRecord(), p->func, p->known);
+      return std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
     } else {
       return t;
     }
@@ -74,7 +68,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       // Realizations are stored in the top-most base.
       ctx->bases[0].visitedAsts[realizedName] = {TypecheckItem::Type, realizedType};
       auto r = ctx->cache->classes[realizedType->name].realizations[realizedName] =
-          make_shared<Cache::Class::ClassRealization>();
+          std::make_shared<Cache::Class::ClassRealization>();
       r->type = realizedType;
       // Realize arguments
       if (auto tr = realizedType->getRecord())
@@ -82,9 +76,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
           realize(a);
       auto lt = getLLVMType(realizedType.get());
       // Realize fields.
-      vector<ir::types::Type *> typeArgs;
-      vector<string> names;
-      map<std::string, SrcInfo> memberInfo;
+      std::vector<ir::types::Type *> typeArgs;
+      std::vector<std::string> names;
+      std::map<std::string, SrcInfo> memberInfo;
       for (auto &m : ctx->cache->classes[realizedType->name].fields) {
         auto mt = ctx->instantiate(N<IdExpr>(m.name).get(), m.type, realizedType.get());
         LOG_REALIZE("- member: {} -> {}: {}", m.name, m.type->toString(),
@@ -136,8 +130,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         break;
       }
     }
-    auto oldBases = vector<TypeContext::RealizationBase>(ctx->bases.begin() + depth,
-                                                         ctx->bases.end());
+    auto oldBases = std::vector<TypeContext::RealizationBase>(
+        ctx->bases.begin() + depth, ctx->bases.end());
     while (ctx->bases.size() > depth)
       ctx->bases.pop_back();
     if (ctx->realizationDepth > 500)
@@ -173,10 +167,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           if (!ast->args[i].generic) {
             seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
                       "unbound argument {}", type->args[j]->toString());
-            string varName = ast->args[i].name;
+            std::string varName = ast->args[i].name;
             trimStars(varName);
             ctx->add(TypecheckItem::Var, varName,
-                     make_shared<LinkType>(
+                     std::make_shared<LinkType>(
                          type->args[j++]->generalize(ctx->typecheckLevel)));
           }
 
@@ -185,7 +179,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       auto oldKey = type->realizedName();
       auto r =
           ctx->cache->functions[type->ast->name].realizations[type->realizedName()] =
-              make_shared<Cache::Function::FunctionRealization>();
+              std::make_shared<Cache::Function::FunctionRealization>();
       r->type = type->getFunc();
       // Realizations are stored in the top-most base.
       ctx->bases[0].visitedAsts[type->realizedName()] = {TypecheckItem::Func,
@@ -244,9 +238,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         seqassert(!type || ast->args.size() ==
                                type->args.size() + type->funcGenerics.size() - 1,
                   "type/AST argument mismatch");
-        vector<Param> args;
+        std::vector<Param> args;
         for (auto &i : ast->args) {
-          string varName = i.name;
+          std::string varName = i.name;
           trimStars(varName);
           args.emplace_back(Param{varName, nullptr, nullptr, i.generic});
         }
@@ -275,8 +269,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   }
 }
 
-pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
-                                                const string &name) {
+std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
+                                                     const std::string &name) {
   if (!result)
     return {0, nullptr};
 
@@ -301,7 +295,7 @@ pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
           seqassert(f.second.type && f.second.type->canRealize(), "cannot realize {}",
                     f.first);
-          auto e = make_shared<IdExpr>(f.second.type->ast->name);
+          auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
           auto t = ctx->instantiate(e.get(), f.second.type, nullptr, false)->getFunc();
           realize(t);
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
@@ -309,7 +303,7 @@ pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
       }
 
     int newUnbounds = 0;
-    std::map<types::TypePtr, string> newActiveUnbounds;
+    std::map<types::TypePtr, std::string> newActiveUnbounds;
     for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
       auto l = i->first->getLink();
       assert(l);
@@ -346,7 +340,7 @@ pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
           }
         }
         if (!fixed) {
-          map<int, pair<codon::SrcInfo, string>> v;
+          std::map<int, std::pair<codon::SrcInfo, std::string>> v;
           for (auto &ub : ctx->activeUnbounds)
             if (ub.first->getLink()->id >= minUnbound) {
               v[ub.first->getLink()->id] = {ub.first->getSrcInfo(), ub.second};
@@ -386,8 +380,8 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   };
 
   ir::types::Type *handle = nullptr;
-  vector<ir::types::Type *> types;
-  vector<StaticValue *> statics;
+  std::vector<ir::types::Type *> types;
+  std::vector<StaticValue *> statics;
   for (auto &m : t->generics)
     if (auto s = m.type->getStatic()) {
       seqassert(s->expr->staticValue.evaluated, "static not realized");
@@ -437,9 +431,9 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
     types.erase(types.begin());
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (auto tr = const_cast<ClassType *>(t)->getRecord()) {
-    vector<ir::types::Type *> typeArgs;
-    vector<string> names;
-    map<std::string, SrcInfo> memberInfo;
+    std::vector<ir::types::Type *> typeArgs;
+    std::vector<std::string> names;
+    std::map<std::string, SrcInfo> memberInfo;
     for (int ai = 0; ai < tr->args.size(); ai++) {
       names.emplace_back(ctx->cache->classes[t->name].fields[ai].name);
       typeArgs.emplace_back(getLLVM(tr->args[ai]));

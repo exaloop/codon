@@ -28,7 +28,7 @@ namespace ast {
  */
 class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   /// Shared simplification context.
-  shared_ptr<SimplifyContext> ctx;
+  std::shared_ptr<SimplifyContext> ctx;
 
   /// Simplification step will divide the input AST into four sub-ASTs that are stored
   /// here:
@@ -44,12 +44,12 @@ class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   /// This approach also allows us to generate global types without having to
   /// worry about initialization order.
   struct Preamble {
-    vector<StmtPtr> globals;
-    vector<StmtPtr> functions;
+    std::vector<StmtPtr> globals;
+    std::vector<StmtPtr> functions;
   };
   /// Preamble contains shared definition statements and is shared across all visitors
   /// (in all modules). See Preamble (type) for more details.
-  shared_ptr<Preamble> preamble;
+  std::shared_ptr<Preamble> preamble;
 
   /// Each new expression is stored here (as visit() does not return anything) and
   /// later returned by a transform() call.
@@ -69,18 +69,19 @@ public:
   ///        Each value is passed as a string (integer part is ignored).
   ///        The method will replace this map with a map that links canonical names
   ///        to their string and integer values.
-  static StmtPtr apply(shared_ptr<Cache> cache, const StmtPtr &node, const string &file,
-                       const unordered_map<string, string> &defines,
+  static StmtPtr apply(std::shared_ptr<Cache> cache, const StmtPtr &node,
+                       const std::string &file,
+                       const std::unordered_map<std::string, std::string> &defines,
                        bool barebones = false);
 
   /// Static method that applies SimplifyStage on a given AST node after the standard
   /// library was loaded.
-  static StmtPtr apply(shared_ptr<SimplifyContext> cache, const StmtPtr &node,
-                       const string &file, int atAge = -1);
+  static StmtPtr apply(std::shared_ptr<SimplifyContext> cache, const StmtPtr &node,
+                       const std::string &file, int atAge = -1);
 
 public:
-  explicit SimplifyVisitor(shared_ptr<SimplifyContext> ctx,
-                           shared_ptr<Preamble> preamble);
+  explicit SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
+                           std::shared_ptr<Preamble> preamble);
 
   /// Transform an AST expression node.
   /// @raise ParserException if a node describes a type (use transformType instead).
@@ -342,20 +343,21 @@ private:
   ///   123u -> UInt[64](123)
   ///   123i56 -> Int[56]("123")  (same for UInt)
   ///   123pf -> int.__suffix_pf__("123")
-  ExprPtr transformInt(const string &value, const string &suffix);
+  ExprPtr transformInt(const std::string &value, const std::string &suffix);
   /// Converts a float string to double.
-  ExprPtr transformFloat(const string &value, const string &suffix);
+  ExprPtr transformFloat(const std::string &value, const std::string &suffix);
   /// Converts a Python-like F-string (f"foo {x+1} bar") to a concatenation:
   ///   str.cat("foo ", str(x + 1), " bar").
   /// Also supports "{x=}" specifier (that prints the raw expression as well).
   /// @li f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
-  ExprPtr transformFString(string value);
+  ExprPtr transformFString(std::string value);
   /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
   /// @li (for i in j if a for k in i if a if b) becomes:
   ///          for i in j: if a: for k in i: if a: if b: <prev>
   /// @param prev (out-argument) A pointer to the innermost block (suite) where a
   /// comprehension (or generator) expression should reside.
-  StmtPtr transformGeneratorBody(const vector<GeneratorBody> &loops, SuiteStmt *&prev);
+  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &loops,
+                                 SuiteStmt *&prev);
   /// Make an anonymous function _lambda_XX with provided statements and argument names.
   /// Function definition is prepended to the current statement.
   /// If the statements refer to outer variables, those variables will be captured and
@@ -365,7 +367,8 @@ private:
   ///            def _lambda(a, b): return a+b
   ///          and returns
   ///            _lambda(b).
-  ExprPtr makeAnonFn(vector<StmtPtr> stmts, const vector<string> &argNames = {});
+  ExprPtr makeAnonFn(std::vector<StmtPtr> stmts,
+                     const std::vector<std::string> &argNames = {});
 
   /// Transforms a simple assignment:
   ///   a[x] = b -> a.__setitem__(x, b)
@@ -384,8 +387,8 @@ private:
   ///   a, b = c, d + foo() -> tmp = (c, d + foo); a = tmp[0]; b = tmp[1].
   /// Processes each assignment recursively to support cases like:
   ///   a, (b, c) = d
-  void unpackAssignments(ExprPtr lhs, ExprPtr rhs, vector<StmtPtr> &stmts, bool shadow,
-                         bool mustExist);
+  void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts,
+                         bool shadow, bool mustExist);
   /// Transform a match...case pattern to a series of if statements as follows:
   ///   - Int pattern
   ///     case 1: ... ->
@@ -422,16 +425,16 @@ private:
   ///   @.c
   ///   def foo(a1: int) -> float: pass
   ///   f = foo (only if altName is provided).
-  StmtPtr transformCImport(const string &name, const vector<Param> &args,
-                           const Expr *ret, const string &altName);
+  StmtPtr transformCImport(const std::string &name, const std::vector<Param> &args,
+                           const Expr *ret, const std::string &altName);
   /// Transform a dynamic C import (from C import lib.foo(int) -> float as f) to:
   ///   def foo(a1: int) -> float:
   ///     fptr = _dlsym(lib, "foo")
   ///     f = Function[float, int](fptr)
   ///     return f(a1)  (if return type is void, just call f(a1))
-  StmtPtr transformCDLLImport(const Expr *dylib, const string &name,
-                              const vector<Param> &args, const Expr *ret,
-                              const string &altName);
+  StmtPtr transformCDLLImport(const Expr *dylib, const std::string &name,
+                              const std::vector<Param> &args, const Expr *ret,
+                              const std::string &altName);
   /// Transform a Python module import (from python import module as f) to:
   ///   f = pyobj._import("module")
   /// Transform a Python function import (from python import lib.foo(int) -> float as f)
@@ -440,8 +443,8 @@ private:
   ///     f = pyobj._import("lib")._getattr("foo")
   ///     return float.__from_py__(f(a0))
   /// If a return type is nullptr, the function just returns f (raw pyobj).
-  StmtPtr transformPythonImport(const Expr *what, const vector<Param> &args,
-                                const Expr *ret, const string &altName);
+  StmtPtr transformPythonImport(const Expr *what, const std::vector<Param> &args,
+                                const Expr *ret, const std::string &altName);
   /// Import a new file (with a given module name) into its own context and wrap its
   /// top-level statements into a function to support Python-style runtime import
   /// loading. Once import is done, generate:
@@ -454,8 +457,9 @@ private:
   /// Transform a Python code-block @python def foo(x: int, y) -> int: <python code> to:
   ///   pyobj._exec("def foo(x, y): <python code>")
   ///   from python import __main__.foo(int, _) -> int
-  StmtPtr transformPythonDefinition(const string &name, const vector<Param> &args,
-                                    const Expr *ret, const Stmt *codeStmt);
+  StmtPtr transformPythonDefinition(const std::string &name,
+                                    const std::vector<Param> &args, const Expr *ret,
+                                    const Stmt *codeStmt);
   /// Transform LLVM code @llvm def foo(x: int) -> float: <llvm code> to:
   ///   def foo(x: int) -> float:
   ///     StringExpr("<llvm code>")
@@ -476,12 +480,12 @@ private:
   //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
   //    Pickling: __pickle__, __unpickle__
   //    Python: __to_py__, __from_py__
-  StmtPtr codegenMagic(const string &op, const Expr *typExpr, const vector<Param> &args,
-                       bool isRecord);
+  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
+                       const std::vector<Param> &args, bool isRecord);
   // Return a list of all function statements within a given class suite. Checks each
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.
-  vector<StmtPtr> getClassMethods(const StmtPtr &s);
+  std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
 };
 
 } // namespace ast

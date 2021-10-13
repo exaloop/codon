@@ -45,21 +45,21 @@ struct TranslateItem {
  */
 struct TranslateContext : public Context<TranslateItem> {
   /// A pointer to the shared cache.
-  shared_ptr<Cache> cache;
+  std::shared_ptr<Cache> cache;
   /// Stack of function bases.
-  vector<codon::ir::BodiedFunc *> bases;
+  std::vector<codon::ir::BodiedFunc *> bases;
   /// Stack of IR series (blocks).
-  vector<codon::ir::SeriesFlow *> series;
+  std::vector<codon::ir::SeriesFlow *> series;
 
 public:
-  TranslateContext(shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
+  TranslateContext(std::shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
                    codon::ir::BodiedFunc *base);
 
   using Context<TranslateItem>::add;
   /// Convenience method for adding an object to the context.
-  shared_ptr<TranslateItem> add(TranslateItem::Kind kind, const string &name,
-                                void *type);
-  shared_ptr<TranslateItem> find(const string &name) const override;
+  std::shared_ptr<TranslateItem> add(TranslateItem::Kind kind, const std::string &name,
+                                     void *type);
+  std::shared_ptr<TranslateItem> find(const std::string &name) const override;
 
   /// Convenience method for adding a series.
   void addSeries(codon::ir::SeriesFlow *s);

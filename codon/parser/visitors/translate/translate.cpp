@@ -14,31 +14,24 @@
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
 using fmt::format;
-using std::function;
-using std::get;
-using std::make_shared;
-using std::move;
-using std::shared_ptr;
-using std::stack;
-using std::vector;
 
 namespace codon {
 namespace ast {
 
-TranslateVisitor::TranslateVisitor(shared_ptr<TranslateContext> ctx)
-    : ctx(move(ctx)), result(nullptr) {}
+TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
+    : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Module *TranslateVisitor::apply(shared_ptr<Cache> cache, StmtPtr stmts) {
+ir::Module *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
   auto main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
 
   char buf[PATH_MAX + 1];
   realpath(cache->module0.c_str(), buf);
-  main->setSrcInfo({string(buf), 0, 0, 0});
+  main->setSrcInfo({std::string(buf), 0, 0, 0});
 
   auto block = cache->module->Nr<ir::SeriesFlow>("body");
   main->setBody(block);
 
-  cache->codegenCtx = make_shared<TranslateContext>(cache, block, main);
+  cache->codegenCtx = std::make_shared<TranslateContext>(cache, block, main);
   TranslateVisitor(cache->codegenCtx).transform(stmts);
   return cache->module;
 }
@@ -91,7 +84,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
   seqassert(ft, "not calling function: {}", ft->toString());
   auto callee = transform(expr->expr);
   bool isVariadic = ft->ast->hasAttr(Attr::CVarArg);
-  vector<ir::Value *> items;
+  std::vector<ir::Value *> items;
   for (int i = 0; i < expr->args.size(); i++) {
     seqassert(!expr->args[i].value->getEllipsis(), "ellipsis not elided");
     if (i + 1 == expr->args.size() && isVariadic) {
@@ -105,7 +98,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
       items.emplace_back(transform(expr->args[i].value));
     }
   }
-  result = make<ir::CallInstr>(expr, callee, move(items));
+  result = make<ir::CallInstr>(expr, callee, std::move(items));
 }
 
 void TranslateVisitor::visit(StackAllocExpr *expr) {
@@ -153,10 +146,10 @@ void TranslateVisitor::visit(PipeExpr *expr) {
     return false;
   };
 
-  vector<ir::PipelineFlow::Stage> stages;
+  std::vector<ir::PipelineFlow::Stage> stages;
   auto *firstStage = transform(expr->items[0].expr);
   auto firstIsGen = isGen(firstStage);
-  stages.emplace_back(firstStage, vector<ir::Value *>(), firstIsGen, false);
+  stages.emplace_back(firstStage, std::vector<ir::Value *>(), firstIsGen, false);
 
   // Pipeline without generators (just function call sugar)
   auto simplePipeline = !firstIsGen;
@@ -168,7 +161,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
     if (i + 1 != expr->items.size())
       simplePipeline &= !isGen(fn);
 
-    vector<ir::Value *> args;
+    std::vector<ir::Value *> args;
     for (auto &a : call->args)
       args.emplace_back(a.value->getEllipsis() ? nullptr : transform(a.value));
     stages.emplace_back(fn, args, isGen(fn), false);
@@ -179,7 +172,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
     ir::util::CloneVisitor cv(ctx->getModule());
     result = cv.clone(stages[0].getCallee());
     for (auto i = 1; i < stages.size(); ++i) {
-      vector<ir::Value *> newArgs;
+      std::vector<ir::Value *> newArgs;
       for (auto arg : stages[i])
         newArgs.push_back(arg ? cv.clone(arg) : result);
       result = make<ir::CallInstr>(expr, cv.clone(stages[i].getCallee()), newArgs);
@@ -278,9 +271,9 @@ void TranslateVisitor::visit(WhileStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ForStmt *stmt) {
-  unique_ptr<OMPSched> os = nullptr;
+  std::unique_ptr<OMPSched> os = nullptr;
   if (stmt->decorator) {
-    os = make_unique<OMPSched>();
+    os = std::make_unique<OMPSched>();
     auto c = stmt->decorator->getCall();
     seqassert(c, "for par is not a call: {}", stmt->decorator->toString());
     auto fc = c->expr->getType()->getFunc();
@@ -290,7 +283,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
-    os = make_unique<OMPSched>(schedule, threads, chunk, ordered);
+    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered);
     LOG_TYPECHECK("parsed {}", stmt->decorator->toString());
   }
 
@@ -302,7 +295,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
 
   auto loop = make<ir::ForFlow>(stmt, transform(stmt->iter), bodySeries, var);
   if (os)
-    loop->setSchedule(move(os));
+    loop->setSchedule(std::move(os));
   ctx->add(TranslateItem::Var, varName, var);
   ctx->addSeries(cast<ir::SeriesFlow>(loop->getBody()));
   transform(stmt->suite);
@@ -389,7 +382,7 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
   seqassert(t && t->getClass(), "{} is not a class", t ? t->toString() : "-");
-  string name = t->getClass()->realizedTypeName();
+  std::string name = t->getClass()->realizedTypeName();
   auto i = ctx->find(name);
   seqassert(i, "type {} not realized", t->toString());
   return i->getType();
@@ -397,10 +390,10 @@ codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
 
 void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *ast,
                                          ir::Func *func) {
-  vector<string> names;
-  vector<int> indices;
-  vector<SrcInfo> srcInfos;
-  vector<codon::ir::types::Type *> types;
+  std::vector<std::string> names;
+  std::vector<int> indices;
+  std::vector<SrcInfo> srcInfos;
+  std::vector<codon::ir::types::Type *> types;
   for (int i = 0, j = 1; i < ast->args.size(); i++)
     if (!ast->args[i].generic) {
       if (!type->args[j]->getFunc()) {
@@ -420,13 +413,13 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   irType->setAstType(type->getFunc());
   func->realize(irType, names);
   // TODO: refactor IR attribute API
-  map<string, string> attr;
+  std::map<std::string, std::string> attr;
   attr[".module"] = ast->attributes.module;
   for (auto &a : ast->attributes.customAttr) {
     // LOG("{} -> {}", ast->name, a);
     attr[a] = "";
   }
-  func->setAttribute(make_unique<ir::KeyValueAttribute>(attr));
+  func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
   func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
@@ -448,9 +441,9 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
 
 void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
                                              ir::Func *func) {
-  vector<string> names;
-  vector<codon::ir::types::Type *> types;
-  vector<int> indices;
+  std::vector<std::string> names;
+  std::vector<codon::ir::types::Type *> types;
+  std::vector<int> indices;
   for (int i = 0, j = 1; i < ast->args.size(); i++)
     if (!ast->args[i].generic) {
       types.push_back(getType(type->args[j]));
@@ -464,11 +457,11 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   auto f = cast<ir::LLVMFunc>(func);
   f->realize(irType, names);
   // TODO: refactor IR attribute API
-  map<string, string> attr;
+  std::map<std::string, std::string> attr;
   attr[".module"] = ast->attributes.module;
   for (auto &a : ast->attributes.customAttr)
     attr[a] = "";
-  func->setAttribute(make_unique<ir::KeyValueAttribute>(attr));
+  func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
 
@@ -477,7 +470,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
             "LLVM function does not begin with a string");
   std::istringstream sin(
       ast->suite->firstInBlock()->getExpr()->expr->getString()->getValue());
-  vector<ir::types::Generic> literals;
+  std::vector<ir::types::Generic> literals;
   auto &ss = ast->suite->getSuite()->stmts;
   for (int i = 1; i < ss.size(); i++) {
     if (auto *ei = ss[i]->getExpr()->expr->getInt()) { // static integer expression
@@ -489,15 +482,15 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     }
   }
   bool isDeclare = true;
-  string declare;
-  vector<string> lines;
-  for (string l; getline(sin, l);) {
-    string lp = l;
+  std::string declare;
+  std::vector<std::string> lines;
+  for (std::string l; getline(sin, l);) {
+    std::string lp = l;
     ltrim(lp);
     rtrim(lp);
     // Extract declares and constants.
     if (isDeclare && !startswith(lp, "declare ")) {
-      bool isConst = lp.find("private constant") != string::npos;
+      bool isConst = lp.find("private constant") != std::string::npos;
       if (!isConst) {
         isDeclare = false;
         if (!lp.empty() && lp.back() != ':')

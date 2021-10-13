@@ -9,35 +9,34 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
-using std::dynamic_pointer_cast;
-using std::stack;
 
 namespace codon {
 namespace ast {
 
-SimplifyItem::SimplifyItem(Kind k, string base, string canonicalName, bool global)
+SimplifyItem::SimplifyItem(Kind k, std::string base, std::string canonicalName,
+                           bool global)
     : kind(k), base(move(base)), canonicalName(move(canonicalName)), global(global) {}
 
-SimplifyContext::SimplifyContext(string filename, shared_ptr<Cache> cache)
+SimplifyContext::SimplifyContext(std::string filename, std::shared_ptr<Cache> cache)
     : Context<SimplifyItem>(move(filename)), cache(move(cache)),
       isStdlibLoading(false), moduleName{ImportFile::PACKAGE, "", ""}, canAssign(true),
       allowTypeOf(true), substitutions(nullptr) {}
 
-SimplifyContext::Base::Base(string name, shared_ptr<Expr> ast, int attributes)
+SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, int attributes)
     : name(move(name)), ast(move(ast)), attributes(attributes) {}
 
-shared_ptr<SimplifyItem> SimplifyContext::add(SimplifyItem::Kind kind,
-                                              const string &name,
-                                              const string &canonicalName,
-                                              bool global) {
+std::shared_ptr<SimplifyItem> SimplifyContext::add(SimplifyItem::Kind kind,
+                                                   const std::string &name,
+                                                   const std::string &canonicalName,
+                                                   bool global) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = make_shared<SimplifyItem>(kind, getBase(), canonicalName, global);
+  auto t = std::make_shared<SimplifyItem>(kind, getBase(), canonicalName, global);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
 
-shared_ptr<SimplifyItem> SimplifyContext::find(const string &name) const {
+std::shared_ptr<SimplifyItem> SimplifyContext::find(const std::string &name) const {
   auto t = Context<SimplifyItem>::find(name);
   if (t)
     return t;
@@ -51,21 +50,21 @@ shared_ptr<SimplifyItem> SimplifyContext::find(const string &name) const {
   // Check if there is a global mangled function with this name (for Simplify callbacks)
   auto fn = cache->functions.find(name);
   if (fn != cache->functions.end())
-    return make_shared<SimplifyItem>(SimplifyItem::Func, "", name, true);
+    return std::make_shared<SimplifyItem>(SimplifyItem::Func, "", name, true);
   return nullptr;
 }
 
-string SimplifyContext::getBase() const {
+std::string SimplifyContext::getBase() const {
   if (bases.empty())
     return "";
   return bases.back().name;
 }
 
-string SimplifyContext::generateCanonicalName(const string &name,
-                                              bool includeBase) const {
-  string newName = name;
-  if (includeBase && name.find('.') == string::npos) {
-    string base = getBase();
+std::string SimplifyContext::generateCanonicalName(const std::string &name,
+                                                   bool includeBase) const {
+  std::string newName = name;
+  if (includeBase && name.find('.') == std::string::npos) {
+    std::string base = getBase();
     if (base.empty()) {
       base = moduleName.status == ImportFile::STDLIB ? "std." : "";
       base += moduleName.module;
@@ -83,12 +82,13 @@ string SimplifyContext::generateCanonicalName(const string &name,
 }
 
 void SimplifyContext::dump(int pad) {
-  auto ordered = std::map<string, decltype(map)::mapped_type>(map.begin(), map.end());
+  auto ordered =
+      std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
   LOG("base: {}", getBase());
   for (auto &i : ordered) {
-    string s;
+    std::string s;
     auto t = i.second.front().second;
-    LOG("{}{:.<25} {} {}", string(pad * 2, ' '), i.first, t->canonicalName,
+    LOG("{}{:.<25} {} {}", std::string(pad * 2, ' '), i.first, t->canonicalName,
         t->getBase());
   }
 }

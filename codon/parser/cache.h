@@ -53,10 +53,10 @@ struct TranslateContext;
 struct Cache : public std::enable_shared_from_this<Cache> {
   /// Stores a count for each identifier (name) seen in the code.
   /// Used to generate unique identifier for each name in the code (e.g. Foo -> Foo.2).
-  unordered_map<string, int> identifierCount;
+  std::unordered_map<std::string, int> identifierCount;
   /// Maps a unique identifier back to the original name in the code
   /// (e.g. Foo.2 -> Foo).
-  unordered_map<string, string> reverseIdentifierLookup;
+  std::unordered_map<std::string, std::string> reverseIdentifierLookup;
   /// Number of code-generated source code positions. Used to generate the next unique
   /// source-code position information.
   int generatedSrcInfoCount;
@@ -75,41 +75,41 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Holds module import data.
   struct Import {
     /// Absolute filename of an import.
-    string filename;
+    std::string filename;
     /// Import simplify context.
-    shared_ptr<SimplifyContext> ctx;
+    std::shared_ptr<SimplifyContext> ctx;
     /// Unique import variable for checking already loaded imports.
-    string importVar;
+    std::string importVar;
     /// File content (line:col indexable)
-    vector<string> content;
+    std::vector<std::string> content;
   };
 
   /// Absolute path of seqc executable (if available).
-  string argv0;
+  std::string argv0;
   /// Absolute path of the entry-point module (if available).
-  string module0;
+  std::string module0;
   /// LLVM module.
   codon::ir::Module *module = nullptr;
 
   /// Table of imported files that maps an absolute filename to a Import structure.
   /// By convention, the key of Seq standard library is "".
-  unordered_map<string, Import> imports;
+  std::unordered_map<std::string, Import> imports;
 
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step.
-  set<string> globals;
+  std::set<std::string> globals;
 
   /// Stores class data for each class (type) in the source code.
   struct Class {
     /// Generic (unrealized) class template AST.
-    shared_ptr<ClassStmt> ast;
+    std::shared_ptr<ClassStmt> ast;
     /// Non-simplified AST. Used for base class instantiation.
-    shared_ptr<ClassStmt> originalAst;
+    std::shared_ptr<ClassStmt> originalAst;
 
     /// A class function method.
     struct ClassMethod {
       /// Canonical name of a method (e.g. __init__.1).
-      string name;
+      std::string name;
       /// A corresponding generic function type.
       types::FuncTypePtr type;
       /// Method age (how many class extension were seen before a method definition).
@@ -118,41 +118,41 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     };
     /// Class method lookup table. Each name points to a list of ClassMethod instances
     /// that share the same method name (a list because methods can be overloaded).
-    unordered_map<string, vector<ClassMethod>> methods;
+    std::unordered_map<std::string, std::vector<ClassMethod>> methods;
 
     /// A class field (member).
     struct ClassField {
       /// Field name.
-      string name;
+      std::string name;
       /// A corresponding generic field type.
       types::TypePtr type;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.
-    vector<ClassField> fields;
+    std::vector<ClassField> fields;
 
     /// A class realization.
     struct ClassRealization {
       /// Realized class type.
       types::ClassTypePtr type;
       /// A list of field names and realization's realized field types.
-      vector<std::pair<string, types::TypePtr>> fields;
+      std::vector<std::pair<std::string, types::TypePtr>> fields;
       /// IR type pointer.
       codon::ir::types::Type *ir;
     };
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
-    unordered_map<string, shared_ptr<ClassRealization>> realizations;
+    std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
-  unordered_map<string, Class> classes;
+  std::unordered_map<std::string, Class> classes;
 
   struct Function {
     /// Generic (unrealized) function template AST.
-    shared_ptr<FunctionStmt> ast;
+    std::shared_ptr<FunctionStmt> ast;
 
     /// A function realization.
     struct FunctionRealization {
@@ -160,13 +160,13 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       types::FuncTypePtr type;
       /// Realized function AST (stored here for later realization in code generations
       /// stage).
-      shared_ptr<FunctionStmt> ast;
+      std::shared_ptr<FunctionStmt> ast;
       /// IR function pointer.
       ir::Func *ir;
     };
     /// Realization lookup table that maps a realized function name to the corresponding
     /// FunctionRealization instance.
-    unordered_map<string, shared_ptr<FunctionRealization>> realizations;
+    std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations;
 
     /// Unrealized function type.
     types::FuncTypePtr type;
@@ -175,64 +175,67 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
-  unordered_map<string, Function> functions;
+  std::unordered_map<std::string, Function> functions;
 
   /// Pointer to the later contexts needed for IR API access.
-  shared_ptr<TypeContext> typeCtx;
-  shared_ptr<TranslateContext> codegenCtx;
+  std::shared_ptr<TypeContext> typeCtx;
+  std::shared_ptr<TranslateContext> codegenCtx;
   /// Set of function realizations that are to be translated to IR.
-  set<std::pair<string, string>> pendingRealizations;
+  std::set<std::pair<std::string, std::string>> pendingRealizations;
 
   /// Custom operators
-  unordered_map<string, std::pair<bool, std::function<StmtPtr(ast::SimplifyVisitor *,
-                                                              ast::CustomStmt *)>>>
+  std::unordered_map<std::string,
+                     std::pair<bool, std::function<StmtPtr(ast::SimplifyVisitor *,
+                                                           ast::CustomStmt *)>>>
       customBlockStmts;
-  unordered_map<string,
-                std::function<StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>>
+  std::unordered_map<std::string,
+                     std::function<StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
 public:
-  explicit Cache(string argv0 = "");
+  explicit Cache(std::string argv0 = "");
 
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
-  string getTemporaryVar(const string &prefix = "", char sigil = '.');
+  std::string getTemporaryVar(const std::string &prefix = "", char sigil = '.');
 
   /// Generate a unique SrcInfo for internally generated AST nodes.
   SrcInfo generateSrcInfo();
   /// Get file contents at the given location.
-  string getContent(const SrcInfo &info);
+  std::string getContent(const SrcInfo &info);
 
   /// Realization API.
 
   /// Find a class with a given canonical name and return a matching types::Type pointer
   /// or a nullptr if a class is not found.
   /// Returns an _uninstantiated_ type.
-  types::ClassTypePtr findClass(const string &name) const;
+  types::ClassTypePtr findClass(const std::string &name) const;
   /// Find a function with a given canonical name and return a matching types::Type
   /// pointer or a nullptr if a function is not found.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr findFunction(const string &name) const;
+  types::FuncTypePtr findFunction(const std::string &name) const;
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr findMethod(types::ClassType *typ, const string &member,
-                                const vector<pair<string, types::TypePtr>> &args);
+  types::FuncTypePtr
+  findMethod(types::ClassType *typ, const std::string &member,
+             const std::vector<std::pair<std::string, types::TypePtr>> &args);
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.
   ir::types::Type *realizeType(types::ClassTypePtr type,
-                               const vector<types::TypePtr> &generics = {});
+                               const std::vector<types::TypePtr> &generics = {});
   /// Given a function type and function arguments, instantiate the type and
   /// realize it. The first argument is the function return type.
   /// You can also pass function generics if a function has one (e.g. T in def
   /// foo[T](...)). If a generic is used as an argument, it will be auto-deduced. Pass
   /// only if a generic cannot be deduced from the provided args.
-  ir::Func *realizeFunction(types::FuncTypePtr type, const vector<types::TypePtr> &args,
-                            const vector<types::TypePtr> &generics = {},
+  ir::Func *realizeFunction(types::FuncTypePtr type,
+                            const std::vector<types::TypePtr> &args,
+                            const std::vector<types::TypePtr> &generics = {},
                             types::ClassTypePtr parentClass = nullptr);
 
-  ir::types::Type *makeTuple(const vector<types::TypePtr> &types);
-  ir::types::Type *makeFunction(const vector<types::TypePtr> &types);
+  ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
+  ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
 };
 
 } // namespace ast

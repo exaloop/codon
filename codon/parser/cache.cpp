@@ -12,11 +12,11 @@
 namespace codon {
 namespace ast {
 
-Cache::Cache(string argv0)
+Cache::Cache(std::string argv0)
     : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0), testFlags(0),
       argv0(move(argv0)), module(nullptr), typeCtx(nullptr), codegenCtx(nullptr) {}
 
-string Cache::getTemporaryVar(const string &prefix, char sigil) {
+std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
                      ++varCount);
 }
@@ -25,7 +25,7 @@ SrcInfo Cache::generateSrcInfo() {
   return {FILE_GENERATED, generatedSrcInfoCount, generatedSrcInfoCount++, 0};
 }
 
-string Cache::getContent(const SrcInfo &info) {
+std::string Cache::getContent(const SrcInfo &info) {
   auto i = imports.find(info.file);
   if (i == imports.end())
     return "";
@@ -40,23 +40,24 @@ string Cache::getContent(const SrcInfo &info) {
   return s.substr(col, len);
 }
 
-types::ClassTypePtr Cache::findClass(const string &name) const {
+types::ClassTypePtr Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->kind == TypecheckItem::Type)
     return f->type->getClass();
   return nullptr;
 }
 
-types::FuncTypePtr Cache::findFunction(const string &name) const {
+types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->type && f->kind == TypecheckItem::Func)
     return f->type->getFunc();
   return nullptr;
 }
 
-types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const string &member,
-                                     const vector<pair<string, types::TypePtr>> &args) {
-  auto e = make_shared<IdExpr>(typ->name);
+types::FuncTypePtr
+Cache::findMethod(types::ClassType *typ, const std::string &member,
+                  const std::vector<std::pair<std::string, types::TypePtr>> &args) {
+  auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
   seqassert(e->type, "not a class");
   int oldAge = typeCtx->age;
@@ -67,8 +68,8 @@ types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const string &member
 }
 
 ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
-                                    const vector<types::TypePtr> &generics) {
-  auto e = make_shared<IdExpr>(type->name);
+                                    const std::vector<types::TypePtr> &generics) {
+  auto e = std::make_shared<IdExpr>(type->name);
   e->type = type;
   type = typeCtx->instantiateGeneric(e.get(), type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
@@ -81,10 +82,10 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
 }
 
 ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
-                                 const vector<types::TypePtr> &args,
-                                 const vector<types::TypePtr> &generics,
+                                 const std::vector<types::TypePtr> &args,
+                                 const std::vector<types::TypePtr> &generics,
                                  types::ClassTypePtr parentClass) {
-  auto e = make_shared<IdExpr>(type->ast->name);
+  auto e = std::make_shared<IdExpr>(type->ast->name);
   e->type = type;
   type = typeCtx->instantiate(e.get(), type, parentClass.get(), false)->getFunc();
   if (args.size() != type->args.size())
@@ -117,7 +118,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
   return nullptr;
 }
 
-ir::types::Type *Cache::makeTuple(const vector<types::TypePtr> &types) {
+ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto name = tv.generateTupleStub(types.size());
   auto t = typeCtx->find(name);
@@ -125,7 +126,7 @@ ir::types::Type *Cache::makeTuple(const vector<types::TypePtr> &types) {
   return realizeType(t->type->getClass(), types);
 }
 
-ir::types::Type *Cache::makeFunction(const vector<types::TypePtr> &types) {
+ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassert(!types.empty(), "types must have at least one argument");
   auto name = tv.generateFunctionStub(types.size() - 1);

@@ -8,10 +8,6 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using std::dynamic_pointer_cast;
-using std::min;
-using std::static_pointer_cast;
-
 namespace codon {
 namespace ast {
 namespace types {
@@ -29,9 +25,9 @@ void Type::Unification::undo() {
     t->trait = nullptr;
 }
 TypePtr Type::follow() { return shared_from_this(); }
-vector<shared_ptr<Type>> Type::getUnbounds() const { return {}; }
-string Type::toString() const { return debugString(false); }
-bool Type::is(const string &s) { return getClass() && getClass()->name == s; }
+std::vector<std::shared_ptr<Type>> Type::getUnbounds() const { return {}; }
+std::string Type::toString() const { return debugString(false); }
+bool Type::is(const std::string &s) { return getClass() && getClass()->name == s; }
 char Type::isStaticType() {
   auto t = follow();
   if (auto s = t->getStatic())
@@ -43,11 +39,12 @@ char Type::isStaticType() {
 
 bool Trait::canRealize() const { return false; }
 bool Trait::isInstantiated() const { return false; }
-string Trait::debugString(bool debug) const { return ""; }
-string Trait::realizedName() const { return ""; }
+std::string Trait::debugString(bool debug) const { return ""; }
+std::string Trait::realizedName() const { return ""; }
 
 LinkType::LinkType(Kind kind, int id, int level, TypePtr type, char isStatic,
-                   shared_ptr<Trait> trait, TypePtr defaultType, string genericName)
+                   std::shared_ptr<Trait> trait, TypePtr defaultType,
+                   std::string genericName)
     : kind(kind), id(id), level(level), type(move(type)), isStatic(isStatic),
       trait(move(trait)), genericName(move(genericName)),
       defaultType(move(defaultType)) {
@@ -123,9 +120,9 @@ TypePtr LinkType::generalize(int atLevel) {
     return shared_from_this();
   } else if (kind == Unbound) {
     if (level >= atLevel)
-      return make_shared<LinkType>(
+      return std::make_shared<LinkType>(
           Generic, id, 0, nullptr, isStatic,
-          trait ? static_pointer_cast<Trait>(trait->generalize(atLevel)) : nullptr,
+          trait ? std::static_pointer_cast<Trait>(trait->generalize(atLevel)) : nullptr,
           defaultType ? defaultType->generalize(atLevel) : nullptr, genericName);
     else
       return shared_from_this();
@@ -135,13 +132,13 @@ TypePtr LinkType::generalize(int atLevel) {
   }
 }
 TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
-                              unordered_map<int, TypePtr> *cache) {
+                              std::unordered_map<int, TypePtr> *cache) {
   if (kind == Generic) {
     if (cache && cache->find(id) != cache->end())
       return (*cache)[id];
-    auto t = make_shared<LinkType>(
+    auto t = std::make_shared<LinkType>(
         Unbound, unboundCount ? (*unboundCount)++ : id, atLevel, nullptr, isStatic,
-        trait ? static_pointer_cast<Trait>(
+        trait ? std::static_pointer_cast<Trait>(
                     trait->instantiate(atLevel, unboundCount, cache))
               : nullptr,
         defaultType ? defaultType->instantiate(atLevel, unboundCount, cache) : nullptr,
@@ -162,7 +159,7 @@ TypePtr LinkType::follow() {
   else
     return shared_from_this();
 }
-vector<TypePtr> LinkType::getUnbounds() const {
+std::vector<TypePtr> LinkType::getUnbounds() const {
   if (kind == Unbound)
     return {std::const_pointer_cast<Type>(shared_from_this())};
   else if (kind == Link)
@@ -178,7 +175,7 @@ bool LinkType::canRealize() const {
 bool LinkType::isInstantiated() const {
   return kind == Link ? type->isInstantiated() : false;
 }
-string LinkType::debugString(bool debug) const {
+std::string LinkType::debugString(bool debug) const {
   if (kind == Unbound || kind == Generic)
     return debug ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
                                trait ? ":" + trait->debugString(debug) : "")
@@ -187,13 +184,13 @@ string LinkType::debugString(bool debug) const {
     return type->debugString(debug);
   // fmt::format("{}->{}", id, type->debugString(debug));
 }
-string LinkType::realizedName() const {
+std::string LinkType::realizedName() const {
   if (kind == Unbound)
     return "?";
   seqassert(kind == Link, "unexpected generic link");
   return type->realizedName();
 }
-shared_ptr<LinkType> LinkType::getUnbound() {
+std::shared_ptr<LinkType> LinkType::getUnbound() {
   if (kind == Unbound)
     return std::static_pointer_cast<LinkType>(shared_from_this());
   if (kind == Link)
@@ -237,7 +234,8 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
   }
 }
 
-ClassType::ClassType(string name, string niceName, vector<Generic> generics)
+ClassType::ClassType(std::string name, std::string niceName,
+                     std::vector<Generic> generics)
     : name(move(name)), niceName(move(niceName)), generics(move(generics)) {}
 ClassType::ClassType(const ClassTypePtr &base)
     : name(base->name), niceName(base->niceName), generics(base->generics) {}
@@ -266,21 +264,21 @@ TypePtr ClassType::generalize(int atLevel) {
   auto g = generics;
   for (auto &t : g)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
-  auto c = make_shared<ClassType>(name, niceName, g);
+  auto c = std::make_shared<ClassType>(name, niceName, g);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
-                               unordered_map<int, TypePtr> *cache) {
+                               std::unordered_map<int, TypePtr> *cache) {
   auto g = generics;
   for (auto &t : g)
     t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto c = make_shared<ClassType>(name, niceName, g);
+  auto c = std::make_shared<ClassType>(name, niceName, g);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
-vector<TypePtr> ClassType::getUnbounds() const {
-  vector<TypePtr> u;
+std::vector<TypePtr> ClassType::getUnbounds() const {
+  std::vector<TypePtr> u;
   for (auto &t : generics)
     if (t.type) {
       auto tu = t.type->getUnbounds();
@@ -296,8 +294,8 @@ bool ClassType::isInstantiated() const {
   return std::all_of(generics.begin(), generics.end(),
                      [](auto &t) { return !t.type || t.type->isInstantiated(); });
 }
-string ClassType::debugString(bool debug) const {
-  vector<string> gs;
+std::string ClassType::debugString(bool debug) const {
+  std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
@@ -309,20 +307,22 @@ string ClassType::debugString(bool debug) const {
     n = "Function";
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
-string ClassType::realizedName() const {
-  vector<string> gs;
+std::string ClassType::realizedName() const {
+  std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
-  string s = join(gs, ",");
+  std::string s = join(gs, ",");
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }
-string ClassType::realizedTypeName() const { return this->ClassType::realizedName(); }
+std::string ClassType::realizedTypeName() const {
+  return this->ClassType::realizedName();
+}
 
-RecordType::RecordType(string name, string niceName, vector<Generic> generics,
-                       vector<TypePtr> args)
+RecordType::RecordType(std::string name, std::string niceName,
+                       std::vector<Generic> generics, std::vector<TypePtr> args)
     : ClassType(move(name), move(niceName), move(generics)), args(move(args)) {}
-RecordType::RecordType(const ClassTypePtr &base, vector<TypePtr> args)
+RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args)
     : ClassType(base), args(move(args)) {}
 int RecordType::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
@@ -330,7 +330,7 @@ int RecordType::unify(Type *typ, Unification *us) {
     if (name == "int" && tr->name == "Int")
       return tr->unify(this, us);
     if (tr->name == "int" && name == "Int") {
-      auto t64 = make_shared<StaticType>(64);
+      auto t64 = std::make_shared<StaticType>(64);
       return generics[0].type->unify(t64.get(), us);
     }
     int s1 = 2, s;
@@ -354,23 +354,23 @@ int RecordType::unify(Type *typ, Unification *us) {
   }
 }
 TypePtr RecordType::generalize(int atLevel) {
-  auto c = static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
+  auto c = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
   auto a = args;
   for (auto &t : a)
     t = t->generalize(atLevel);
-  return make_shared<RecordType>(c, a);
+  return std::make_shared<RecordType>(c, a);
 }
 TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
-                                unordered_map<int, TypePtr> *cache) {
-  auto c = static_pointer_cast<ClassType>(
+                                std::unordered_map<int, TypePtr> *cache) {
+  auto c = std::static_pointer_cast<ClassType>(
       this->ClassType::instantiate(atLevel, unboundCount, cache));
   auto a = args;
   for (auto &t : a)
     t = t->instantiate(atLevel, unboundCount, cache);
-  return make_shared<RecordType>(c, a);
+  return std::make_shared<RecordType>(c, a);
 }
-vector<TypePtr> RecordType::getUnbounds() const {
-  vector<TypePtr> u;
+std::vector<TypePtr> RecordType::getUnbounds() const {
+  std::vector<TypePtr> u;
   for (auto &a : args) {
     auto tu = a->getUnbounds();
     u.insert(u.begin(), tu.begin(), tu.end());
@@ -389,15 +389,15 @@ bool RecordType::isInstantiated() const {
                      [](auto &a) { return a->isInstantiated(); }) &&
          this->ClassType::isInstantiated();
 }
-string RecordType::debugString(bool debug) const {
+std::string RecordType::debugString(bool debug) const {
   return fmt::format("{}", this->ClassType::debugString(debug));
 }
-shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
+std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
   // This is only relevant for Tuples and KwTuples.
   if ((startswith(name, TYPE_TUPLE) || startswith(name, TYPE_KWTUPLE)) &&
       args.size() > 1) {
-    string first = args[0]->realizedName();
+    std::string first = args[0]->realizedName();
     for (int i = 1; i < args.size(); i++)
       if (args[i]->realizedName() != first)
         return getRecord();
@@ -405,8 +405,8 @@ shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   return nullptr;
 }
 
-FuncType::FuncType(const shared_ptr<RecordType> &baseType, FunctionStmt *ast,
-                   vector<Generic> funcGenerics, TypePtr funcParent)
+FuncType::FuncType(const std::shared_ptr<RecordType> &baseType, FunctionStmt *ast,
+                   std::vector<Generic> funcGenerics, TypePtr funcParent)
     : RecordType(*baseType), ast(ast), funcGenerics(move(funcGenerics)),
       funcParent(move(funcParent)) {}
 int FuncType::unify(Type *typ, Unification *us) {
@@ -437,12 +437,12 @@ TypePtr FuncType::generalize(int atLevel) {
   for (auto &t : g)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
-  return make_shared<FuncType>(
-      static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), ast, g,
-      p);
+  return std::make_shared<FuncType>(
+      std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), ast,
+      g, p);
 }
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
-                              unordered_map<int, TypePtr> *cache) {
+                              std::unordered_map<int, TypePtr> *cache) {
   auto g = funcGenerics;
   for (auto &t : g)
     if (t.type) {
@@ -451,13 +451,13 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
         (*cache)[t.id] = t.type;
     }
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
-  return make_shared<FuncType>(
-      static_pointer_cast<RecordType>(
+  return std::make_shared<FuncType>(
+      std::static_pointer_cast<RecordType>(
           this->RecordType::instantiate(atLevel, unboundCount, cache)),
       ast, g, p);
 }
-vector<TypePtr> FuncType::getUnbounds() const {
-  vector<TypePtr> u;
+std::vector<TypePtr> FuncType::getUnbounds() const {
+  std::vector<TypePtr> u;
   for (auto &t : funcGenerics)
     if (t.type) {
       auto tu = t.type->getUnbounds();
@@ -497,39 +497,39 @@ bool FuncType::isInstantiated() const {
     args[0]->getFunc()->funcParent = removed;
   return ret;
 }
-string FuncType::debugString(bool debug) const {
-  vector<string> gs;
+std::string FuncType::debugString(bool debug) const {
+  std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
-  string s = join(gs, ",");
-  vector<string> as;
+  std::string s = join(gs, ",");
+  std::vector<std::string> as;
   // Important: return type does not have to be realized.
   for (int ai = debug ? 0 : 1; ai < args.size(); ai++)
     as.push_back(args[ai]->debugString(debug));
-  string a = join(as, ",");
-  s = s.empty() ? a : join(vector<string>{a, s}, ",");
+  std::string a = join(as, ",");
+  s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}", ast->name, s.empty() ? "" : fmt::format("[{}]", s));
 }
-string FuncType::realizedName() const {
-  vector<string> gs;
+std::string FuncType::realizedName() const {
+  std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
-  string s = join(gs, ",");
-  vector<string> as;
+  std::string s = join(gs, ",");
+  std::vector<std::string> as;
   // Important: return type does not have to be realized.
   for (int ai = 1; ai < args.size(); ai++)
     as.push_back(args[ai]->getFunc() ? args[ai]->getFunc()->realizedName()
                                      : args[ai]->realizedName());
-  string a = join(as, ",");
-  s = s.empty() ? a : join(vector<string>{a, s}, ",");
+  std::string a = join(as, ",");
+  s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
                      ast->name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-PartialType::PartialType(const shared_ptr<RecordType> &baseType,
-                         shared_ptr<FuncType> func, vector<char> known)
+PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
+                         std::shared_ptr<FuncType> func, std::vector<char> known)
     : RecordType(*baseType), func(move(func)), known(move(known)) {}
 int PartialType::unify(Type *typ, Unification *us) {
   int s1 = 0, s;
@@ -543,23 +543,23 @@ int PartialType::unify(Type *typ, Unification *us) {
   return s == -1 ? s : s1 + s;
 }
 TypePtr PartialType::generalize(int atLevel) {
-  return make_shared<PartialType>(
-      static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), func,
+  return std::make_shared<PartialType>(
+      std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), func,
       known);
 }
 TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
-                                 unordered_map<int, TypePtr> *cache) {
-  return make_shared<PartialType>(
-      static_pointer_cast<RecordType>(
+                                 std::unordered_map<int, TypePtr> *cache) {
+  return std::make_shared<PartialType>(
+      std::static_pointer_cast<RecordType>(
           this->RecordType::instantiate(atLevel, unboundCount, cache)),
       func, known);
 }
-string PartialType::debugString(bool debug) const {
-  vector<string> gs;
+std::string PartialType::debugString(bool debug) const {
+  std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
-  vector<string> as;
+  std::vector<std::string> as;
   int i, gi;
   for (i = 0, gi = 0; i < known.size(); i++)
     if (!known[i])
@@ -569,31 +569,32 @@ string PartialType::debugString(bool debug) const {
   return fmt::format("{}[{}]", !debug ? func->ast->name : func->debugString(debug),
                      join(as, ","));
 }
-string PartialType::realizedName() const {
-  vector<string> gs;
+std::string PartialType::realizedName() const {
+  std::vector<std::string> gs;
   gs.push_back(func->realizedName());
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
-  string s = join(gs, ",");
+  std::string s = join(gs, ",");
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-StaticType::StaticType(shared_ptr<Expr> e, shared_ptr<TypeContext> ctx)
+StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx)
     : expr(e->clone()), typeCtx(move(ctx)) {
   // seqassert(expr->isStatic(), "{} is not a static expression", expr->toString());
   if (!expr->isStatic() || !expr->staticValue.evaluated) {
-    unordered_set<string> seen;
+    std::unordered_set<std::string> seen;
     parseExpr(expr, seen);
   }
 }
-StaticType::StaticType(vector<ClassType::Generic> generics, shared_ptr<Expr> e,
-                       shared_ptr<TypeContext> typeCtx)
+StaticType::StaticType(std::vector<ClassType::Generic> generics,
+                       std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> typeCtx)
     : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {
   // seqassert(!expr || !expr->getInt(), "invalid complex static expression: {}",
   //           expr ? expr->toString() : "-");
 }
-StaticType::StaticType(int64_t i) : expr(make_shared<IntExpr>(i)), typeCtx(nullptr) {}
+StaticType::StaticType(int64_t i)
+    : expr(std::make_shared<IntExpr>(i)), typeCtx(nullptr) {}
 int StaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getStatic()) {
     if (canRealize())
@@ -637,21 +638,21 @@ TypePtr StaticType::generalize(int atLevel) {
   auto e = generics;
   for (auto &t : e)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
-  auto c = make_shared<StaticType>(e, expr, typeCtx);
+  auto c = std::make_shared<StaticType>(e, expr, typeCtx);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 TypePtr StaticType::instantiate(int atLevel, int *unboundCount,
-                                unordered_map<int, TypePtr> *cache) {
+                                std::unordered_map<int, TypePtr> *cache) {
   auto e = generics;
   for (auto &t : e)
     t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto c = make_shared<StaticType>(e, expr, typeCtx);
+  auto c = std::make_shared<StaticType>(e, expr, typeCtx);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
-vector<TypePtr> StaticType::getUnbounds() const {
-  vector<TypePtr> u;
+std::vector<TypePtr> StaticType::getUnbounds() const {
+  std::vector<TypePtr> u;
   for (auto &t : generics)
     if (t.type) {
       auto tu = t.type->getUnbounds();
@@ -667,11 +668,11 @@ bool StaticType::canRealize() const {
   return true;
 }
 bool StaticType::isInstantiated() const { return expr->staticValue.evaluated; }
-string StaticType::debugString(bool debug) const {
+std::string StaticType::debugString(bool debug) const {
   if (expr->staticValue.evaluated)
     return expr->staticValue.toString();
   if (debug) {
-    vector<string> s;
+    std::vector<std::string> s;
     for (auto &g : generics)
       s.push_back(g.type->debugString(debug));
     return fmt::format("Static[{};{}]", join(s, ","), expr->toString());
@@ -679,9 +680,9 @@ string StaticType::debugString(bool debug) const {
     return fmt::format("Static[{}]", FormatVisitor::apply(expr));
   }
 }
-string StaticType::realizedName() const {
+std::string StaticType::realizedName() const {
   seqassert(canRealize(), "cannot realize {}", toString());
-  vector<string> deps;
+  std::vector<std::string> deps;
   for (auto &e : generics)
     deps.push_back(e.type->realizedName());
   if (!expr->staticValue.evaluated) // If not already evaluated, evaluate!
@@ -701,7 +702,7 @@ StaticValue StaticType::evaluate() const {
   typeCtx->popBlock();
   return en->staticValue;
 }
-void StaticType::parseExpr(const ExprPtr &e, unordered_set<string> &seen) {
+void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &seen) {
   e->type = nullptr;
   if (auto ei = e->getId()) {
     if (!in(seen, ei->value)) {
@@ -728,7 +729,7 @@ void StaticType::parseExpr(const ExprPtr &e, unordered_set<string> &seen) {
   }
 }
 
-CallableTrait::CallableTrait(vector<TypePtr> args) : args(move(args)) {}
+CallableTrait::CallableTrait(std::vector<TypePtr> args) : args(move(args)) {}
 int CallableTrait::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
     if (tr->name == "NoneType")
@@ -746,7 +747,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       return 1;
     } else if (auto pt = tr->getPartial()) {
       // Handle Callable[...]<->Partial[...].
-      vector<int> zeros;
+      std::vector<int> zeros;
       for (int pi = 9; pi < tr->name.size() && tr->name[pi] != '.'; pi++)
         if (tr->name[pi] == '0')
           zeros.emplace_back(pi - 9);
@@ -781,21 +782,21 @@ TypePtr CallableTrait::generalize(int atLevel) {
   auto g = args;
   for (auto &t : g)
     t = t ? t->generalize(atLevel) : nullptr;
-  auto c = make_shared<CallableTrait>(g);
+  auto c = std::make_shared<CallableTrait>(g);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
-                                   unordered_map<int, TypePtr> *cache) {
+                                   std::unordered_map<int, TypePtr> *cache) {
   auto g = args;
   for (auto &t : g)
     t = t ? t->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto c = make_shared<CallableTrait>(g);
+  auto c = std::make_shared<CallableTrait>(g);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
-string CallableTrait::debugString(bool debug) const {
-  vector<string> gs;
+std::string CallableTrait::debugString(bool debug) const {
+  std::vector<std::string> gs;
   for (auto &a : args)
     gs.push_back(a->debugString(debug));
   return fmt::format("Callable[{}]", join(gs, ","));

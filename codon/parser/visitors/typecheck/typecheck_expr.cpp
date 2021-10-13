@@ -11,12 +11,6 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
-using std::deque;
-using std::dynamic_pointer_cast;
-using std::get;
-using std::ostream;
-using std::stack;
-using std::static_pointer_cast;
 
 namespace codon {
 namespace ast {
@@ -60,7 +54,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr, bool disableActivation) {
     TypePtr t = nullptr;
     if (!expr->isType()) {
       if (expr->isStatic())
-        t = make_shared<StaticType>(expr, ctx);
+        t = std::make_shared<StaticType>(expr, ctx);
       else
         error("expected type expression");
     } else {
@@ -104,7 +98,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     generateFunctionStub(std::stoi(expr->value.substr(10)));
   else if (expr->value == "Callable") { // Empty Callable references
     auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
-    typ->getLink()->trait = make_shared<CallableTrait>(vector<TypePtr>{});
+    typ->getLink()->trait = std::make_shared<CallableTrait>(std::vector<TypePtr>{});
     unify(expr->type, typ);
     expr->markType();
     return;
@@ -181,7 +175,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   auto tupleVar = ctx->cache->getTemporaryVar("tuple");
   block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-  vector<ExprPtr> items;
+  std::vector<ExprPtr> items;
   for (int ai = 0; ai < tuple->args.size(); ai++)
     items.emplace_back(
         N<StmtExpr>(N<AssignStmt>(clone(expr->loops[0].vars),
@@ -271,7 +265,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
     resultExpr = transform(N<CallExpr>(N<DotExpr>(
         N<CallExpr>(N<DotExpr>(clone(expr->expr), "__bool__")), "__invert__")));
   } else {
-    string magic;
+    std::string magic;
     if (expr->op == "~")
       magic = "invert";
     else if (expr->op == "+")
@@ -286,10 +280,11 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 }
 
 void TypecheckVisitor::visit(BinaryExpr *expr) {
-  static unordered_map<StaticValue::Type, unordered_set<string>> staticOps = {
-      {StaticValue::INT,
-       {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%"}},
-      {StaticValue::STRING, {"==", "!=", "+"}}};
+  static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
+      staticOps = {
+          {StaticValue::INT,
+           {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%"}},
+          {StaticValue::STRING, {"==", "!=", "+"}}};
   if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
     expr->lexpr = transform(expr->lexpr);
   if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
@@ -355,7 +350,8 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         } else {
           seqassert(false, "unknown static operator {}", expr->op); // TODO!
         }
-        if (in(set<string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"}, expr->op))
+        if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
+               expr->op))
           resultExpr = transform(N<BoolExpr>(bool(lvalue)));
         else
           resultExpr = transform(N<IntExpr>(lvalue));
@@ -452,7 +448,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   if (expr->typeExpr->getId() &&
       startswith(expr->typeExpr->getId()->value, TYPE_CALLABLE)) {
-    vector<TypePtr> types;
+    std::vector<TypePtr> types;
     for (int i = 0; i < expr->typeParams.size(); i++) {
       expr->typeParams[i] = transformType(expr->typeParams[i]);
       if (expr->typeParams[i]->type->isStaticType())
@@ -460,7 +456,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       types.push_back(expr->typeParams[i]->type);
     }
     auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
-    typ->getLink()->trait = make_shared<CallableTrait>(types);
+    typ->getLink()->trait = std::make_shared<CallableTrait>(types);
     unify(expr->type, typ);
   } else {
     expr->typeExpr = transformType(expr->typeExpr);
@@ -474,7 +470,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       expr->typeParams[i] = transform(expr->typeParams[i], true);
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
-        t = make_shared<StaticType>(expr->typeParams[i], ctx);
+        t = std::make_shared<StaticType>(expr->typeParams[i], ctx);
       } else {
         if (!expr->typeParams[i]->isType())
           error("expected type or static parameters");
@@ -594,7 +590,7 @@ void TypecheckVisitor::wrapOptionalIfNeeded(const TypePtr &targetType, ExprPtr &
 ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
                                           bool *noReturn) {
   // Table of supported binary operations and the corresponding magic methods.
-  auto magics = unordered_map<string, string>{
+  auto magics = std::unordered_map<std::string, std::string>{
       {"+", "add"},     {"-", "sub"},       {"*", "mul"},     {"**", "pow"},
       {"/", "truediv"}, {"//", "floordiv"}, {"@", "matmul"},  {"%", "mod"},
       {"<", "lt"},      {"<=", "le"},       {">", "gt"},      {">=", "ge"},
@@ -722,7 +718,7 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
 ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &expr,
                                                     ExprPtr &index) {
   if (!tuple->getRecord() ||
-      in(set<string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
+      in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
     // Ptr, pyobj and str are internal types and have only one overloaded __getitem__
     return nullptr;
   if (ctx->cache->classes[tuple->name].methods["__getitem__"].size() != 1)
@@ -767,7 +763,7 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
       stop = step > 0 ? sz : 0;
     sliceAdjustIndices(sz, &start, &stop, step);
     // Generate new tuple.
-    vector<ExprPtr> te;
+    std::vector<ExprPtr> te;
     for (auto i = start; (step >= 0) ? (i < stop) : (i >= stop); i += step) {
       if (i < 0 || i >= sz)
         error("tuple index out of range (expected 0..{}, got {})", sz, i);
@@ -779,7 +775,8 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
   return nullptr;
 }
 
-ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *args) {
+ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
+                                       std::vector<CallExpr::Arg> *args) {
   if (expr->member == "__class__") {
     expr->expr = transform(expr->expr, true, true, true);
     unify(expr->type, ctx->findInternal("str"));
@@ -806,7 +803,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
     generateFnCall(typ->generics.size() - 1);
   auto methods = ctx->findMethod(typ->name, expr->member);
   if (methods.empty()) {
-    auto findGeneric = [this](ClassType *c, const string &m) -> TypePtr {
+    auto findGeneric = [this](ClassType *c, const std::string &m) -> TypePtr {
       for (auto &g : c->generics) {
         if (ctx->cache->reverseIdentifierLookup[g.name] == m)
           return g.type;
@@ -860,7 +857,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
   //         If it exists, return a simple IdExpr with that method's name.
   //         Append a "self" variable to the front if needed.
   if (args) {
-    vector<pair<string, TypePtr>> argTypes;
+    std::vector<std::pair<std::string, TypePtr>> argTypes;
     bool isType = expr->expr->isType();
     if (!isType)
       argTypes.emplace_back(make_pair("", typ)); // self variable
@@ -882,7 +879,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
       return e;
     }
     // No method was found, print a nice error message.
-    vector<string> nice;
+    std::vector<std::string> nice;
     for (auto &t : argTypes)
       nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
     error("cannot find a method '{}' in {} with arguments {}", expr->member,
@@ -894,7 +891,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
   auto oldType = expr->getType() ? expr->getType()->getClass() : nullptr;
   if (methods.size() > 1 && oldType && oldType->getFunc()) {
     // If old type is already a function, use its arguments to pick the best call.
-    vector<pair<string, TypePtr>> methodArgs;
+    std::vector<std::pair<std::string, TypePtr>> methodArgs;
     if (!expr->expr->isType()) // self argument
       methodArgs.emplace_back(make_pair("", typ));
     for (auto i = 1; i < oldType->generics.size(); i++)
@@ -902,7 +899,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
     bestMethod = ctx->findBestMethod(expr->expr.get(), expr->member, methodArgs);
     if (!bestMethod) {
       // Print a nice error message.
-      vector<string> nice;
+      std::vector<std::string> nice;
       for (auto &t : methodArgs)
         nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
       error("cannot find a method '{}' in {} with arguments {}", expr->member,
@@ -934,7 +931,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr, vector<CallExpr::Arg> *arg
   } else {
     // Object access: y.method. Transform y.method to a partial call
     // typeof(t).foo(y, ...).
-    vector<ExprPtr> methodArgs{expr->expr};
+    std::vector<ExprPtr> methodArgs{expr->expr};
     for (int i = 0; i < std::max(1, (int)bestMethod->args.size() - 2); i++)
       methodArgs.push_back(N<EllipsisExpr>());
     // Handle @property methods.
@@ -1005,7 +1002,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
         unify(expr->args[ai].value->type, inType);
     }
   }
-  set<string> seenNames;
+  std::set<std::string> seenNames;
   for (auto &i : expr->args)
     if (!i.name.empty()) {
       if (in(seenNames, i.name))
@@ -1034,8 +1031,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
 
   auto callee = expr->expr->getType()->getClass();
   FuncTypePtr calleeFn = callee ? callee->getFunc() : nullptr;
-  vector<char> known;
-  string partialVar;
+  std::vector<char> known;
+  std::string partialVar;
   if (!callee) {
     // Case 1: Unbound callee, will be resolved later.
     unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
@@ -1068,8 +1065,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   }
 
   // Handle named and default arguments
-  vector<CallExpr::Arg> args;
-  vector<ExprPtr> typeArgs;
+  std::vector<CallExpr::Arg> args;
+  std::vector<ExprPtr> typeArgs;
   int typeArgCount = 0;
   bool isPartial = false;
   int ellipsisStage = -1;
@@ -1078,8 +1075,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   else
     ctx->reorderNamedArgs(
         calleeFn.get(), expr->args,
-        [&](int starArgIndex, int kwstarArgIndex, const vector<vector<int>> &slots,
-            bool partial) {
+        [&](int starArgIndex, int kwstarArgIndex,
+            const std::vector<std::vector<int>> &slots, bool partial) {
           isPartial = partial;
           ctx->addBlock(); // add generics for default arguments.
           addFunctionGenerics(calleeFn->getFunc().get());
@@ -1089,7 +1086,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                                                    : expr->args[slots[si][0]].value);
               typeArgCount += typeArgs.back() != nullptr;
             } else if (si == starArgIndex && !(partial && slots[si].empty())) {
-              vector<ExprPtr> extra;
+              std::vector<ExprPtr> extra;
               for (auto &e : slots[si]) {
                 extra.push_back(expr->args[e].value);
                 if (extra.back()->getEllipsis())
@@ -1097,8 +1094,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
               }
               args.push_back({"", transform(N<TupleExpr>(extra))});
             } else if (si == kwstarArgIndex && !(partial && slots[si].empty())) {
-              vector<string> names;
-              vector<CallExpr::Arg> values;
+              std::vector<std::string> names;
+              std::vector<CallExpr::Arg> values;
               for (auto &e : slots[si]) {
                 names.emplace_back(expr->args[e].name);
                 values.emplace_back(CallExpr::Arg{"", expr->args[e].value});
@@ -1134,7 +1131,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
           ctx->popBlock();
           return 0;
         },
-        [&](const string &errorMsg) {
+        [&](const std::string &errorMsg) {
           error("{}", errorMsg);
           return -1;
         },
@@ -1154,7 +1151,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       if (calleeFn->funcGenerics[si].type->isStaticType()) {
         if (!typeArgs[si]->isStatic())
           error("expected static expression");
-        t = make_shared<StaticType>(typeArgs[si], ctx);
+        t = std::make_shared<StaticType>(typeArgs[si], ctx);
       }
       unify(t, calleeFn->funcGenerics[si].type);
     }
@@ -1181,7 +1178,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     return oldExpr;
   }
 
-  vector<TypePtr> replacements(calleeFn->args.size() - 1, nullptr);
+  std::vector<TypePtr> replacements(calleeFn->args.size() - 1, nullptr);
   for (int si = 0; si < calleeFn->args.size() - 1; si++) {
     bool isPipeArg = extraStage && args[si].value->getEllipsis();
     auto orig = args[si].value.get();
@@ -1217,7 +1214,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
           auto de = transform(calleeFn->ast->args[i].deflt, true);
           TypePtr t = nullptr;
           if (de->isStatic())
-            t = make_shared<StaticType>(de, ctx);
+            t = std::make_shared<StaticType>(de, ctx);
           else
             t = de->getType();
           unify(calleeFn->funcGenerics[j].type, t);
@@ -1233,16 +1230,16 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       calleeFn->generics[si + 1].type = calleeFn->args[si + 1] = replacements[si];
     }
   if (auto rt = realize(calleeFn)) {
-    unify(rt, static_pointer_cast<Type>(calleeFn));
+    unify(rt, std::static_pointer_cast<Type>(calleeFn));
     expr->expr = transform(expr->expr);
   }
 
   expr->done &= expr->expr->done;
 
   // Emit the final call.
-  vector<char> newMask;
+  std::vector<char> newMask;
   if (isPartial)
-    newMask = vector<char>(calleeFn->args.size() - 1, 1);
+    newMask = std::vector<char>(calleeFn->args.size() - 1, 1);
   for (int si = 0; si < calleeFn->args.size() - 1; si++)
     if (args[si].value->getEllipsis() && !args[si].value->getEllipsis()->isPipeArg)
       newMask[si] = 0;
@@ -1251,12 +1248,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     // Transform calleeFn(args...) to Partial.N<known>.<calleeFn>(args...).
     auto partialTypeName = generatePartialStub(newMask, calleeFn->getFunc().get());
     deactivateUnbounds(calleeFn.get());
-    vector<ExprPtr> newArgs;
+    std::vector<ExprPtr> newArgs;
     for (auto &r : args)
       if (!r.value->getEllipsis())
         newArgs.push_back(r.value);
 
-    string var = ctx->cache->getTemporaryVar("partial");
+    std::string var = ctx->cache->getTemporaryVar("partial");
     ExprPtr call = nullptr;
     if (!partialVar.empty()) {
       auto stmts = const_cast<StmtExpr *>(expr->expr->getStmtExpr())->stmts;
@@ -1284,7 +1281,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   }
 }
 
-pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
+std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   if (!expr->expr->getId())
     return {false, nullptr};
   auto val = expr->expr->getId()->value;
@@ -1341,12 +1338,12 @@ pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     if (!typ || !expr->args[1].value->staticValue.evaluated)
       return {true, nullptr};
     auto member = expr->args[1].value->staticValue.getString();
-    vector<pair<string, TypePtr>> args{{string(), typ}};
+    std::vector<std::pair<std::string, TypePtr>> args{{std::string(), typ}};
     for (int i = 2; i < expr->args.size(); i++) {
       expr->args[i].value = transformType(expr->args[i].value);
       if (!expr->args[i].value->getType()->getClass())
         return {true, nullptr};
-      args.push_back({string(), expr->args[i].value->getType()});
+      args.push_back({std::string(), expr->args[i].value->getType()});
     }
     bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
                   ctx->findMember(typ->getClass()->name, member);
@@ -1403,11 +1400,12 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
     ctx->add(TypecheckItem::Type, g.name, g.type);
 }
 
-string TypecheckVisitor::generateTupleStub(int len, const string &name,
-                                           vector<string> names, bool hasSuffix) {
-  static map<string, int> usedNames;
+std::string TypecheckVisitor::generateTupleStub(int len, const std::string &name,
+                                                std::vector<std::string> names,
+                                                bool hasSuffix) {
+  static std::map<std::string, int> usedNames;
   auto key = join(names, ";");
-  string suffix;
+  std::string suffix;
   if (!names.empty()) {
     if (!in(usedNames, key))
       usedNames[key] = usedNames.size();
@@ -1418,12 +1416,13 @@ string TypecheckVisitor::generateTupleStub(int len, const string &name,
   }
   auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
   if (!ctx->find(typeName)) {
-    vector<Param> args;
+    std::vector<Param> args;
     for (int i = 1; i <= len; i++)
       args.emplace_back(Param(names[i - 1], N<IdExpr>(format("T{}", i)), nullptr));
     for (int i = 1; i <= len; i++)
       args.emplace_back(Param(format("T{}", i), N<IdExpr>("type"), nullptr, true));
-    StmtPtr stmt = make_shared<ClassStmt>(typeName, args, nullptr, Attr({Attr::Tuple}));
+    StmtPtr stmt =
+        std::make_shared<ClassStmt>(typeName, args, nullptr, Attr({Attr::Tuple}));
     stmt->setSrcInfo(ctx->cache->generateSrcInfo());
 
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
@@ -1434,13 +1433,13 @@ string TypecheckVisitor::generateTupleStub(int len, const string &name,
   return typeName;
 }
 
-string TypecheckVisitor::generateFunctionStub(int n) {
+std::string TypecheckVisitor::generateFunctionStub(int n) {
   seqassert(n >= 0, "invalid n");
   auto typeName = format(TYPE_FUNCTION "{}", n);
   if (!ctx->find(typeName)) {
-    vector<ExprPtr> genericNames{N<IdExpr>("TR")};
+    std::vector<ExprPtr> genericNames{N<IdExpr>("TR")};
     // TODO: remove this args hack
-    vector<Param> args;
+    std::vector<Param> args;
     args.emplace_back(Param{"ret", N<IdExpr>("TR"), nullptr});
     for (int i = 1; i <= n; i++) {
       genericNames.emplace_back(N<IdExpr>(format("T{}", i)));
@@ -1450,32 +1449,32 @@ string TypecheckVisitor::generateFunctionStub(int n) {
       args.emplace_back(Param(g->getId()->value, N<IdExpr>("type"), nullptr, true));
     ExprPtr type = N<IndexExpr>(N<IdExpr>(typeName), N<TupleExpr>(genericNames));
 
-    vector<StmtPtr> fns;
-    vector<Param> params;
-    vector<StmtPtr> stmts;
+    std::vector<StmtPtr> fns;
+    std::vector<Param> params;
+    std::vector<StmtPtr> stmts;
     // def __new__(what: Ptr[byte]) -> Function.N[TR, T1, ..., TN]:
     //   return __internal__.fn_new[Function.N[TR, ...]](what)
     params.emplace_back(
         Param{"what", N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("byte"))});
     stmts.push_back(N<ReturnStmt>(N<CallExpr>(N<DotExpr>("__internal__", "fn_new"),
                                               N<IdExpr>("what"), clone(type))));
-    fns.emplace_back(
-        make_shared<FunctionStmt>("__new__", clone(type), params, N<SuiteStmt>(stmts)));
+    fns.emplace_back(std::make_shared<FunctionStmt>("__new__", clone(type), params,
+                                                    N<SuiteStmt>(stmts)));
     params.clear();
     stmts.clear();
     // def __new__(what: Function.N[TR, T1, ..., TN]) -> Function.N[TR, T1, ..., TN]:
     //   return what
     params.emplace_back(Param{"what", clone(type)});
     fns.emplace_back(
-        make_shared<FunctionStmt>("__new__", clone(type), params,
-                                  N<SuiteStmt>(N<ReturnStmt>(N<IdExpr>("what")))));
+        std::make_shared<FunctionStmt>("__new__", clone(type), params,
+                                       N<SuiteStmt>(N<ReturnStmt>(N<IdExpr>("what")))));
     params.clear();
     // def __raw__(self: Function.N[TR, T1, ..., TN]) -> Ptr[byte]:
     //   return __internal__.fn_raw(self)
     params.emplace_back(Param{"self", clone(type)});
     stmts.push_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>("__internal__", "fn_raw"), N<IdExpr>("self"))));
-    fns.emplace_back(make_shared<FunctionStmt>(
+    fns.emplace_back(std::make_shared<FunctionStmt>(
         "__raw__", N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("byte")), params,
         N<SuiteStmt>(stmts)));
     params.clear();
@@ -1491,8 +1490,8 @@ string TypecheckVisitor::generateFunctionStub(int n) {
     params.clear();
     stmts.clear();
     // class Function.N[TR, T1, ..., TN]
-    StmtPtr stmt = make_shared<ClassStmt>(typeName, args, N<SuiteStmt>(fns),
-                                          Attr({Attr::Internal, Attr::Tuple}));
+    StmtPtr stmt = std::make_shared<ClassStmt>(typeName, args, N<SuiteStmt>(fns),
+                                               Attr({Attr::Internal, Attr::Tuple}));
     stmt->setSrcInfo(ctx->cache->generateSrcInfo());
 
     // Parse this function in a clean context.
@@ -1504,9 +1503,9 @@ string TypecheckVisitor::generateFunctionStub(int n) {
   return typeName;
 }
 
-string TypecheckVisitor::generatePartialStub(const vector<char> &mask,
-                                             types::FuncType *fn) {
-  string strMask(mask.size(), '1');
+std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
+                                                  types::FuncType *fn) {
+  std::string strMask(mask.size(), '1');
   for (int i = 0; i < mask.size(); i++)
     if (!mask[i])
       strMask[i] = '0';
@@ -1523,30 +1522,31 @@ void TypecheckVisitor::generateFnCall(int n) {
   // def __call__(self: Function.N[TR, T1, ..., TN], a1: T1, ..., aN: TN) -> TR:
   //   %0 = call {=TR} %self({=T1} %a1, ..., {=TN} %aN)
   //   ret {=TR} %0
-  //  string name = ctx->cache->generateSrcInfo()
+  //  std::string name = ctx->cache->generateSrcInfo()
 
   auto typeName = format(TYPE_FUNCTION "{}", n);
   if (!in(ctx->cache->classes[typeName].methods, "__call__")) {
-    vector<Param> params;
-    vector<StmtPtr> fns;
+    std::vector<Param> params;
+    std::vector<StmtPtr> fns;
     params.emplace_back(Param{"self", nullptr});
-    vector<string> llvmArgs;
-    vector<CallExpr::Arg> callArgs;
+    std::vector<std::string> llvmArgs;
+    std::vector<CallExpr::Arg> callArgs;
     for (int i = 1; i <= n; i++) {
       llvmArgs.emplace_back(format("{{=T{}}} %a{}", i, i));
       params.emplace_back(Param{format("a{}", i), N<IdExpr>(format("T{}", i))});
       callArgs.emplace_back(CallExpr::Arg{"", N<IdExpr>(format("a{}", i))});
     }
-    string llvmNonVoid =
+    std::string llvmNonVoid =
         format("%0 = call {{=TR}} %self({})\nret {{=TR}} %0", join(llvmArgs, ", "));
-    string llvmVoid = format("call {{=TR}} %self({})\nret void", join(llvmArgs, ", "));
-    fns.emplace_back(make_shared<FunctionStmt>(
+    std::string llvmVoid =
+        format("call {{=TR}} %self({})\nret void", join(llvmArgs, ", "));
+    fns.emplace_back(std::make_shared<FunctionStmt>(
         "__call__.void", N<IdExpr>("TR"), clone_nop(params),
         N<SuiteStmt>(N<ExprStmt>(N<StringExpr>(llvmVoid))), Attr({Attr::LLVM})));
-    fns.emplace_back(make_shared<FunctionStmt>(
+    fns.emplace_back(std::make_shared<FunctionStmt>(
         "__call__.ret", N<IdExpr>("TR"), clone_nop(params),
         N<SuiteStmt>(N<ExprStmt>(N<StringExpr>(llvmNonVoid))), Attr({Attr::LLVM})));
-    fns.emplace_back(make_shared<FunctionStmt>(
+    fns.emplace_back(std::make_shared<FunctionStmt>(
         "__call__", N<IdExpr>("TR"), clone_nop(params),
         N<SuiteStmt>(N<IfStmt>(
             N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>("TR"), N<IdExpr>("void")),
@@ -1556,7 +1556,7 @@ void TypecheckVisitor::generateFnCall(int n) {
                                       clone_nop(callArgs)))))));
     // Parse this function in a clean context.
 
-    StmtPtr stmt = N<ClassStmt>(typeName, vector<Param>{}, N<SuiteStmt>(fns),
+    StmtPtr stmt = N<ClassStmt>(typeName, std::vector<Param>{}, N<SuiteStmt>(fns),
                                 Attr({Attr::Extend}));
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
                                   FILE_GENERATED, 0);
@@ -1568,10 +1568,10 @@ void TypecheckVisitor::generateFnCall(int n) {
 ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   auto fn = expr->getType()->getFunc();
   seqassert(fn, "not a function: {}", expr->getType()->toString());
-  vector<char> mask(fn->args.size() - 1, 0);
+  std::vector<char> mask(fn->args.size() - 1, 0);
   auto partialTypeName = generatePartialStub(mask, fn.get());
   deactivateUnbounds(fn.get());
-  string var = ctx->cache->getTemporaryVar("partial");
+  std::string var = ctx->cache->getTemporaryVar("partial");
   ExprPtr call = N<StmtExpr>(
       N<AssignStmt>(N<IdExpr>(var), N<CallExpr>(N<IdExpr>(partialTypeName))),
       N<IdExpr>(var));
@@ -1591,7 +1591,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   if (callee && expr->isType())
     expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
 
-  unordered_set<string> hints = {"Generator", "float", TYPE_OPTIONAL};
+  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL};
   if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&

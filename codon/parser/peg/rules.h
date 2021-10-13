@@ -17,22 +17,22 @@ namespace codon {
 namespace ast {
 
 struct ParseContext {
-  shared_ptr<Cache> cache;
+  std::shared_ptr<Cache> cache;
   std::stack<int> indent;
   int parens;
   int line_offset, col_offset;
-  ParseContext(shared_ptr<Cache> cache, int parens = 0, int line_offset = 0,
+  ParseContext(std::shared_ptr<Cache> cache, int parens = 0, int line_offset = 0,
                int col_offset = 0)
       : cache(move(cache)), parens(parens), line_offset(line_offset),
         col_offset(col_offset) {}
 
-  bool hasCustomStmtKeyword(const string &kwd, bool hasExpr) const {
+  bool hasCustomStmtKeyword(const std::string &kwd, bool hasExpr) const {
     auto i = cache->customBlockStmts.find(kwd);
     if (i != cache->customBlockStmts.end())
       return i->second.first == hasExpr;
     return false;
   }
-  bool hasCustomExprStmt(const string &kwd) const {
+  bool hasCustomExprStmt(const std::string &kwd) const {
     return in(cache->customExprStmts, kwd);
   }
 };

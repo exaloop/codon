@@ -18,19 +18,20 @@ namespace codon {
 namespace ast {
 
 class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
-  shared_ptr<TypeContext> ctx;
-  shared_ptr<vector<StmtPtr>> prependStmts;
+  std::shared_ptr<TypeContext> ctx;
+  std::shared_ptr<std::vector<StmtPtr>> prependStmts;
   bool allowVoidExpr;
 
   ExprPtr resultExpr;
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(shared_ptr<Cache> cache, StmtPtr stmts);
+  static StmtPtr apply(std::shared_ptr<Cache> cache, StmtPtr stmts);
 
 public:
-  explicit TypecheckVisitor(shared_ptr<TypeContext> ctx,
-                            const shared_ptr<vector<StmtPtr>> &stmts = nullptr);
+  explicit TypecheckVisitor(
+      std::shared_ptr<TypeContext> ctx,
+      const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
   /// All of these are non-const in TypeCheck visitor.
   ExprPtr transform(const ExprPtr &e) override;
@@ -203,7 +204,7 @@ private:
   /// If there are multiple valid overloaded methods, pick the first one
   ///   (TODO: improve this).
   /// Return nullptr if no transformation was made.
-  ExprPtr transformDot(DotExpr *expr, vector<CallExpr::Arg> *args = nullptr);
+  ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
   /// Deactivate any unbound that was activated during the instantiation of type t.
   void deactivateUnbounds(types::Type *t);
   /// Transform a call expression callee(args...).
@@ -247,16 +248,17 @@ private:
   /// Note: This is the most evil method in the whole parser suite. 🤦🏻‍
   ExprPtr transformCall(CallExpr *expr, const types::TypePtr &inType = nullptr,
                         ExprPtr *extraStage = nullptr);
-  pair<bool, ExprPtr> transformSpecialCall(CallExpr *expr);
+  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *expr);
   /// Find all generics on which a given function depends and add them to the context.
   void addFunctionGenerics(const types::FuncType *t);
 
   /// Generate a tuple class Tuple.N[T1,...,TN](a1: T1, ..., aN: TN).
   /// Also used to generate a named tuple class Name.N[T1,...,TN] with field names
   /// provided in names parameter.
-  string generateTupleStub(int len, const string &name = "Tuple",
-                           vector<string> names = vector<string>{},
-                           bool hasSuffix = true);
+  std::string
+  generateTupleStub(int len, const std::string &name = "Tuple",
+                    std::vector<std::string> names = std::vector<std::string>{},
+                    bool hasSuffix = true);
   /// Generate a function type Function.N[TR, T1, ..., TN] as follows:
   ///   @internal @tuple @trait
   ///   class Function.N[TR, T1, ..., TN]:
@@ -264,8 +266,8 @@ private:
   ///     def __raw__(self: Function.N[TR, T1, ..., TN]) -> Ptr[byte]
   ///     def __str__(self: Function.N[TR, T1, ..., TN]) -> str
   /// Return the canonical name of Function.N.
-  string generateCallableStub(int n);
-  string generateFunctionStub(int n);
+  std::string generateCallableStub(int n);
+  std::string generateFunctionStub(int n);
   /// Generate a partial function type Partial.N01...01 (where 01...01 is a mask
   /// of size N) as follows:
   ///   @tuple @no_total_ordering @no_pickle @no_container @no_python
@@ -277,7 +279,7 @@ private:
   /// The following partial constructor is added if an oldMask is set:
   ///     def __new_<old_mask>_<mask>(p, aI: TI...) # (if oldMask[I-1] != mask[I-1]):
   ///       return Partial.N<mask>.__new__(self.ptr, self.a1, a2, ...) # (see above)
-  string generatePartialStub(const vector<char> &mask, types::FuncType *fn);
+  std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
   void generateFnCall(int n);
   /// Make an empty partial call fn(...) for a function fn.
   ExprPtr partializeFunction(ExprPtr expr);
@@ -286,7 +288,8 @@ private:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b);
   types::TypePtr realizeType(types::ClassType *typ);
   types::TypePtr realizeFunc(types::FuncType *typ);
-  std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast, const string &name);
+  std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
+                                     const std::string &name);
   codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,

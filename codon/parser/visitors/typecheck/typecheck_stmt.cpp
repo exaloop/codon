@@ -10,12 +10,6 @@
 #include "codon/parser/visitors/typecheck/typecheck_ctx.h"
 
 using fmt::format;
-using std::deque;
-using std::dynamic_pointer_cast;
-using std::get;
-using std::ostream;
-using std::stack;
-using std::static_pointer_cast;
 
 namespace codon {
 namespace ast {
@@ -53,7 +47,7 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 /**************************************************************************************/
 
 void TypecheckVisitor::visit(SuiteStmt *stmt) {
-  vector<StmtPtr> stmts;
+  std::vector<StmtPtr> stmts;
   stmt->done = true;
   for (auto &s : stmt->stmts)
     if (auto t = transform(s)) {
@@ -75,7 +69,7 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
 
 void TypecheckVisitor::visit(AssignStmt *stmt) {
   // Simplify stage ensures that lhs is always IdExpr.
-  string lhs;
+  std::string lhs;
   if (auto e = stmt->lhs->getId())
     lhs = e->value;
   seqassert(!lhs.empty(), "invalid AssignStmt {}", stmt->lhs->toString());
@@ -92,7 +86,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     if (!stmt->rhs->isStatic())
       error("right-hand side is not a static expression");
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
-    unify(stmt->type->type, make_shared<StaticType>(stmt->rhs, ctx));
+    unify(stmt->type->type, std::make_shared<StaticType>(stmt->rhs, ctx));
     unify(stmt->lhs->type, stmt->type->getType());
     ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
     stmt->done = realize(stmt->lhs->type) != nullptr;
@@ -149,7 +143,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
   if (stmt->isAtomic && stmt->lhs->getId() &&
       (c = const_cast<CallExpr *>(stmt->rhs->getCall())) &&
       (c->expr->isId("min") || c->expr->isId("max")) && c->args.size() == 2 &&
-      c->args[0].value->isId(string(stmt->lhs->getId()->value))) {
+      c->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
     auto ptrTyp =
         ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
     c->args[1].value = transform(c->args[1].value);
@@ -260,9 +254,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), stmt->iter));
 
     auto cntVar = ctx->cache->getTemporaryVar("idx");
-    vector<StmtPtr> forBlock;
+    std::vector<StmtPtr> forBlock;
     for (int ai = 0; ai < tuple->args.size(); ai++) {
-      vector<StmtPtr> stmts;
+      std::vector<StmtPtr> stmts;
       stmts.push_back(N<AssignStmt>(clone(stmt->var),
                                     N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))));
       stmts.push_back(clone(stmt->suite));
@@ -290,7 +284,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       if (varType->is("void"))
         error("expression with void type");
     }
-    string varName;
+    std::string varName;
     if (auto e = stmt->var->getId())
       varName = e->value;
     seqassert(!varName.empty(), "empty for variable {}", stmt->var->toString());
@@ -329,7 +323,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 }
 
 void TypecheckVisitor::visit(TryStmt *stmt) {
-  vector<TryStmt::Catch> catches;
+  std::vector<TryStmt::Catch> catches;
   stmt->suite = transform(stmt->suite);
   stmt->done = stmt->suite->done;
   for (auto &c : stmt->catches) {
@@ -355,7 +349,7 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
       error("cannot throw non-exception (first object member must be of type "
             "ExcHeader)");
     auto var = ctx->cache->getTemporaryVar("exc");
-    vector<CallExpr::Arg> args;
+    std::vector<CallExpr::Arg> args;
     args.emplace_back(CallExpr::Arg{"", N<StringExpr>(tc->name)});
     args.emplace_back(CallExpr::Arg{
         "", N<DotExpr>(N<DotExpr>(var, ctx->cache->classes[tc->name].fields[0].name),
@@ -384,7 +378,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Parse preamble.
   bool isClassMember = !attr.parentClass.empty();
-  auto explicits = vector<ClassType::Generic>();
+  auto explicits = std::vector<ClassType::Generic>();
   for (const auto &a : stmt->args)
     if (a.generic) {
       char staticType = 0;
@@ -405,7 +399,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       LOG_REALIZE("[generic] {} -> {}", a.name, t->toString());
       ctx->add(TypecheckItem::Type, a.name, t);
     }
-  vector<TypePtr> generics;
+  std::vector<TypePtr> generics;
   if (isClassMember && attr.has(Attr::Method)) {
     // Fetch parent class generics.
     auto parentClassAST = ctx->cache->classes[attr.parentClass].ast.get();
@@ -457,7 +451,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       u->getUnbound()->kind = LinkType::Generic;
   }
   // Construct the type.
-  auto typ = make_shared<FuncType>(
+  auto typ = std::make_shared<FuncType>(
       baseType, ctx->cache->functions[stmt->name].ast.get(), explicits);
   if (attr.has(Attr::ForceRealize) || (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))
     if (!typ->canRealize())
@@ -497,11 +491,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   ClassTypePtr typ = nullptr;
   if (!extension) {
     if (stmt->isRecord())
-      typ = make_shared<RecordType>(stmt->name,
-                                    ctx->cache->reverseIdentifierLookup[stmt->name]);
+      typ = std::make_shared<RecordType>(
+          stmt->name, ctx->cache->reverseIdentifierLookup[stmt->name]);
     else
-      typ = make_shared<ClassType>(stmt->name,
-                                   ctx->cache->reverseIdentifierLookup[stmt->name]);
+      typ = std::make_shared<ClassType>(
+          stmt->name, ctx->cache->reverseIdentifierLookup[stmt->name]);
     typ->setSrcInfo(stmt->getSrcInfo());
     ctx->add(TypecheckItem::Type, stmt->name, typ);
     ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Type, typ};

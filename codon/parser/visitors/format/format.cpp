@@ -9,7 +9,7 @@ using fmt::format;
 namespace codon {
 namespace ast {
 
-FormatVisitor::FormatVisitor(bool html, shared_ptr<Cache> cache)
+FormatVisitor::FormatVisitor(bool html, std::shared_ptr<Cache> cache)
     : renderType(false), renderHTML(html), indent(0), cache(cache) {
   if (renderHTML) {
     header = "<html><head><link rel=stylesheet href=code.css/></head>\n<body>";
@@ -33,20 +33,22 @@ FormatVisitor::FormatVisitor(bool html, shared_ptr<Cache> cache)
   }
 }
 
-string FormatVisitor::transform(const ExprPtr &expr) { return transform(expr.get()); }
+std::string FormatVisitor::transform(const ExprPtr &expr) {
+  return transform(expr.get());
+}
 
-string FormatVisitor::transform(const Expr *expr) {
+std::string FormatVisitor::transform(const Expr *expr) {
   FormatVisitor v(renderHTML, cache);
   if (expr)
     const_cast<Expr *>(expr)->accept(v);
   return v.result;
 }
 
-string FormatVisitor::transform(const StmtPtr &stmt) {
+std::string FormatVisitor::transform(const StmtPtr &stmt) {
   return transform(stmt.get(), 0);
 }
 
-string FormatVisitor::transform(Stmt *stmt, int indent) {
+std::string FormatVisitor::transform(Stmt *stmt, int indent) {
   FormatVisitor v(renderHTML, cache);
   v.indent = this->indent + indent;
   if (stmt)
@@ -54,16 +56,16 @@ string FormatVisitor::transform(Stmt *stmt, int indent) {
   return (stmt && stmt->getSuite() ? "" : pad(indent)) + v.result + newline();
 }
 
-string FormatVisitor::pad(int indent) const {
-  string s;
+std::string FormatVisitor::pad(int indent) const {
+  std::string s;
   for (int i = 0; i < (this->indent + indent) * 2; i++)
     s += space;
   return s;
 }
 
-string FormatVisitor::newline() const { return nl + "\n"; }
+std::string FormatVisitor::newline() const { return nl + "\n"; }
 
-string FormatVisitor::keyword(const string &s) const {
+std::string FormatVisitor::keyword(const std::string &s) const {
   return fmt::format("{}{}{}", keywordStart, s, keywordEnd);
 }
 
@@ -122,16 +124,16 @@ void FormatVisitor::visit(SetExpr *expr) {
 }
 
 void FormatVisitor::visit(DictExpr *expr) {
-  vector<string> s;
+  std::vector<std::string> s;
   for (auto &i : expr->items)
     s.push_back(fmt::format("{}: {}", transform(i.key), transform(i.value)));
   result = renderExpr(expr, "{{{}}}", join(s, ", "));
 }
 
 void FormatVisitor::visit(GeneratorExpr *expr) {
-  string s;
+  std::string s;
   for (auto &i : expr->loops) {
-    string cond;
+    std::string cond;
     for (auto &k : i.conds)
       cond += fmt::format(" if {}", transform(k));
     s += fmt::format("for {} in {}{}", i.vars->toString(), i.gen->toString(), cond);
@@ -145,9 +147,9 @@ void FormatVisitor::visit(GeneratorExpr *expr) {
 }
 
 void FormatVisitor::visit(DictGeneratorExpr *expr) {
-  string s;
+  std::string s;
   for (auto &i : expr->loops) {
-    string cond;
+    std::string cond;
     for (auto &k : i.conds)
       cond += fmt::format(" if {}", transform(k));
 
@@ -172,7 +174,7 @@ void FormatVisitor::visit(BinaryExpr *expr) {
 }
 
 void FormatVisitor::visit(PipeExpr *expr) {
-  vector<string> items;
+  std::vector<std::string> items;
   for (auto &l : expr->items) {
     if (!items.size())
       items.push_back(transform(l.expr));
@@ -187,7 +189,7 @@ void FormatVisitor::visit(IndexExpr *expr) {
 }
 
 void FormatVisitor::visit(CallExpr *expr) {
-  vector<string> args;
+  std::vector<std::string> args;
   for (auto &i : expr->args) {
     if (i.name == "")
       args.push_back(transform(i.value));
@@ -202,7 +204,7 @@ void FormatVisitor::visit(DotExpr *expr) {
 }
 
 void FormatVisitor::visit(SliceExpr *expr) {
-  string s;
+  std::string s;
   if (expr->start)
     s += transform(expr->start);
   s += ":";
@@ -228,7 +230,7 @@ void FormatVisitor::visit(LambdaExpr *expr) {
 void FormatVisitor::visit(YieldExpr *expr) { result = renderExpr(expr, "(yield)"); }
 
 void FormatVisitor::visit(StmtExpr *expr) {
-  string s;
+  std::string s;
   for (int i = 0; i < expr->stmts.size(); i++)
     s += format("{}{}", pad(2), transform(expr->stmts[i].get(), 2));
   result = renderExpr(expr, "({}{}{}{}{})", newline(), s, newline(), pad(2),
@@ -313,7 +315,7 @@ void FormatVisitor::visit(IfStmt *stmt) {
 }
 
 void FormatVisitor::visit(MatchStmt *stmt) {
-  string s;
+  std::string s;
   for (auto &c : stmt->cases)
     s += fmt::format("{}{}{}{}:{}{}", pad(1), keyword("case"), transform(c.pattern),
                      c.guard ? " " + (keyword("case") + " " + transform(c.guard)) : "",
@@ -332,7 +334,7 @@ void FormatVisitor::visit(ImportStmt *stmt) {
 }
 
 void FormatVisitor::visit(TryStmt *stmt) {
-  vector<string> catches;
+  std::vector<std::string> catches;
   for (auto &c : stmt->catches) {
     catches.push_back(
         fmt::format("{} {}{}:{}{}", keyword("catch"), transform(c.exc),
@@ -380,14 +382,14 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
   //    fstmt = cache->functions[fstmt->name].ast.get();
   //  }
 
-  vector<string> attrs;
+  std::vector<std::string> attrs;
   for (auto &a : fstmt->decorators)
     attrs.push_back(fmt::format("@{}", transform(a)));
   if (!fstmt->attributes.module.empty())
     attrs.push_back(fmt::format("@module:{}", fstmt->attributes.parentClass));
   if (!fstmt->attributes.parentClass.empty())
     attrs.push_back(fmt::format("@parent:{}", fstmt->attributes.parentClass));
-  vector<string> args;
+  std::vector<std::string> args;
   for (auto &a : fstmt->args)
     args.push_back(fmt::format(
         "{}{}{}", a.name, a.type ? fmt::format(": {}", transform(a.type)) : "",
@@ -413,14 +415,14 @@ void FormatVisitor::visit(ClassStmt *stmt) {
   //   return;
   // }
 
-  vector<string> attrs;
+  std::vector<std::string> attrs;
 
   if (!stmt->attributes.has(Attr::Extend))
     attrs.push_back("@extend");
   if (!stmt->attributes.has(Attr::Tuple))
     attrs.push_back("@tuple");
-  vector<string> args;
-  string key = stmt->isRecord() ? "type" : "class";
+  std::vector<std::string> args;
+  std::string key = stmt->isRecord() ? "type" : "class";
   for (auto &a : stmt->args)
     args.push_back(fmt::format("{}: {}", a.name, transform(a.type)));
   result = fmt::format("{}{} {}({})",

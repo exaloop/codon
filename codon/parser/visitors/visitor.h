@@ -91,12 +91,12 @@ template <typename TE, typename TS>
  * this visitor is generic for each different return type.
  */
 struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
-  virtual TE transform(const shared_ptr<Expr> &expr) = 0;
-  virtual TS transform(const shared_ptr<Stmt> &stmt) = 0;
+  virtual TE transform(const std::shared_ptr<Expr> &expr) = 0;
+  virtual TS transform(const std::shared_ptr<Stmt> &stmt) = 0;
 
   /// Convenience method that transforms a vector of nodes.
-  template <typename T> auto transform(const vector<T> &ts) {
-    vector<T> r;
+  template <typename T> auto transform(const std::vector<T> &ts) {
+    std::vector<T> r;
     for (auto &e : ts)
       r.push_back(transform(e));
     return r;
@@ -142,8 +142,8 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
  * Replaces expressions with transformed values.
  */
 struct ReplaceASTVisitor : public ASTVisitor {
-  virtual void transform(shared_ptr<Expr> &expr) = 0;
-  virtual void transform(shared_ptr<Stmt> &stmt) = 0;
+  virtual void transform(std::shared_ptr<Expr> &expr) = 0;
+  virtual void transform(std::shared_ptr<Stmt> &stmt) = 0;
 
   void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;

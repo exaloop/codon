@@ -20,56 +20,58 @@ struct json {
   // values={str -> null} -> string value
   // values={i -> json} -> list (if list=true)
   // values={...} -> dictionary
-  unordered_map<string, shared_ptr<json>> values;
+  std::unordered_map<std::string, std::shared_ptr<json>> values;
   bool list;
 
   json();
-  json(const string &s);
-  json(const string &s, const string &v);
-  json(const vector<shared_ptr<json>> &vs);
-  json(const vector<string> &vs);
-  json(const unordered_map<string, string> &vs);
-  string toString();
-  shared_ptr<json> get(const string &s);
-  shared_ptr<json> set(const string &s, const string &value);
-  shared_ptr<json> set(const string &s, const shared_ptr<json> &value);
+  json(const std::string &s);
+  json(const std::string &s, const std::string &v);
+  json(const std::vector<std::shared_ptr<json>> &vs);
+  json(const std::vector<std::string> &vs);
+  json(const std::unordered_map<std::string, std::string> &vs);
+  std::string toString();
+  std::shared_ptr<json> get(const std::string &s);
+  std::shared_ptr<json> set(const std::string &s, const std::string &value);
+  std::shared_ptr<json> set(const std::string &s, const std::shared_ptr<json> &value);
 };
 
 struct DocContext;
 struct DocShared {
   int itemID;
-  shared_ptr<json> j;
-  unordered_map<string, shared_ptr<DocContext>> modules;
-  string argv0;
-  shared_ptr<Cache> cache;
-  unordered_map<int, vector<string>> generics;
+  std::shared_ptr<json> j;
+  std::unordered_map<std::string, std::shared_ptr<DocContext>> modules;
+  std::string argv0;
+  std::shared_ptr<Cache> cache;
+  std::unordered_map<int, std::vector<std::string>> generics;
   DocShared() : itemID(1) {}
 };
 
 struct DocContext : public Context<int> {
-  shared_ptr<DocShared> shared;
-  explicit DocContext(shared_ptr<DocShared> shared)
+  std::shared_ptr<DocShared> shared;
+  explicit DocContext(std::shared_ptr<DocShared> shared)
       : Context<int>(""), shared(move(shared)) {
-    stack.push_front(vector<string>());
+    stack.push_front(std::vector<std::string>());
   }
-  shared_ptr<int> find(const string &s) const override;
+  std::shared_ptr<int> find(const std::string &s) const override;
 };
 
-struct DocVisitor : public CallbackASTVisitor<shared_ptr<json>, string> {
-  shared_ptr<DocContext> ctx;
-  shared_ptr<json> resultExpr;
-  string resultStmt;
+struct DocVisitor : public CallbackASTVisitor<std::shared_ptr<json>, std::string> {
+  std::shared_ptr<DocContext> ctx;
+  std::shared_ptr<json> resultExpr;
+  std::string resultStmt;
 
 public:
-  explicit DocVisitor(shared_ptr<DocContext> ctx) : ctx(move(ctx)) {}
-  static shared_ptr<json> apply(const string &argv0, const vector<string> &files);
+  explicit DocVisitor(std::shared_ptr<DocContext> ctx) : ctx(move(ctx)) {}
+  static std::shared_ptr<json> apply(const std::string &argv0,
+                                     const std::vector<std::string> &files);
 
-  shared_ptr<json> transform(const ExprPtr &e) override;
-  string transform(const StmtPtr &e) override;
+  std::shared_ptr<json> transform(const ExprPtr &e) override;
+  std::string transform(const StmtPtr &e) override;
 
   void transformModule(StmtPtr stmt);
-  shared_ptr<json> jsonify(const codon::SrcInfo &s);
-  vector<StmtPtr> flatten(StmtPtr stmt, string *docstr = nullptr, bool deep = true);
+  std::shared_ptr<json> jsonify(const codon::SrcInfo &s);
+  std::vector<StmtPtr> flatten(StmtPtr stmt, std::string *docstr = nullptr,
+                               bool deep = true);
 
 public:
   void visit(IntExpr *) override;

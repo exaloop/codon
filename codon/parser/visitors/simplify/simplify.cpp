@@ -11,26 +11,17 @@
 #include "codon/parser/visitors/simplify/simplify_ctx.h"
 
 using fmt::format;
-using std::deque;
-using std::dynamic_pointer_cast;
-using std::function;
-using std::get;
-using std::move;
-using std::ostream;
-using std::pair;
-using std::stack;
 
 namespace codon {
 namespace ast {
 
 using namespace types;
 
-StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
-                               const string &file,
-                               const unordered_map<string, string> &defines,
-                               bool barebones) {
-  vector<StmtPtr> stmts;
-  auto preamble = make_shared<Preamble>();
+StmtPtr SimplifyVisitor::apply(
+    std::shared_ptr<Cache> cache, const StmtPtr &node, const std::string &file,
+    const std::unordered_map<std::string, std::string> &defines, bool barebones) {
+  std::vector<StmtPtr> stmts;
+  auto preamble = std::make_shared<Preamble>();
 
   if (!cache->module)
     cache->module = new codon::ir::Module("", cache);
@@ -38,7 +29,7 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
   // Load standard library if it has not been loaded.
   if (!in(cache->imports, STDLIB_IMPORT)) {
     // Load the internal module
-    auto stdlib = make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
+    auto stdlib = std::make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
     auto stdlibPath =
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     if (!stdlibPath ||
@@ -59,7 +50,7 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
       stdlib->add(SimplifyItem::Type, name, canonical, true);
       // Generate an AST for each POD type. All of them are tuples.
       cache->classes[canonical].ast =
-          make_shared<ClassStmt>(canonical, vector<Param>(), nullptr);
+          std::make_shared<ClassStmt>(canonical, std::vector<Param>(), nullptr);
       preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
     }
     // Add simple POD types to the preamble (these types are defined in LLVM and we
@@ -68,28 +59,30 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
       auto canonical = stdlib->generateCanonicalName(name);
       stdlib->add(SimplifyItem::Type, name, canonical, true);
       // Generate an AST for each POD type. All of them are tuples.
-      cache->classes[canonical].ast = make_shared<ClassStmt>(
-          canonical, vector<Param>(), nullptr, Attr({Attr::Internal, Attr::Tuple}));
+      cache->classes[canonical].ast =
+          std::make_shared<ClassStmt>(canonical, std::vector<Param>(), nullptr,
+                                      Attr({Attr::Internal, Attr::Tuple}));
       preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
     }
     // Add generic POD types to the preamble
     for (auto &name :
-         vector<string>{"Ptr", "Generator", TYPE_OPTIONAL, "Int", "UInt"}) {
+         std::vector<std::string>{"Ptr", "Generator", TYPE_OPTIONAL, "Int", "UInt"}) {
       auto canonical = stdlib->generateCanonicalName(name);
       stdlib->add(SimplifyItem::Type, name, canonical, true);
-      vector<Param> generics;
-      auto isInt = string(name) == "Int" || string(name) == "UInt";
+      std::vector<Param> generics;
+      auto isInt = std::string(name) == "Int" || std::string(name) == "UInt";
       if (isInt)
         generics.emplace_back(
             Param{stdlib->generateCanonicalName("N"),
-                  make_shared<IndexExpr>(make_shared<IdExpr>("Static"),
-                                         make_shared<IdExpr>("int")),
+                  std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
+                                              std::make_shared<IdExpr>("int")),
                   nullptr, true});
       else
         generics.emplace_back(Param{
-            stdlib->generateCanonicalName("T"), make_shared<IdExpr>("type"),
-            name == TYPE_OPTIONAL ? make_shared<IdExpr>("NoneType") : nullptr, true});
-      cache->classes[canonical].ast = make_shared<ClassStmt>(
+            stdlib->generateCanonicalName("T"), std::make_shared<IdExpr>("type"),
+            name == TYPE_OPTIONAL ? std::make_shared<IdExpr>("NoneType") : nullptr,
+            true});
+      cache->classes[canonical].ast = std::make_shared<ClassStmt>(
           canonical, generics, nullptr, Attr({Attr::Internal, Attr::Tuple}));
       preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
     }
@@ -114,38 +107,38 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
     // Add __argv__ variable as __argv__: Array[str]
     preamble->globals.push_back(
         SimplifyVisitor(stdlib, preamble)
-            .transform(make_shared<AssignStmt>(
-                make_shared<IdExpr>(VAR_ARGV), nullptr,
-                make_shared<IndexExpr>(make_shared<IdExpr>("Array"),
-                                       make_shared<IdExpr>("str")))));
+            .transform(std::make_shared<AssignStmt>(
+                std::make_shared<IdExpr>(VAR_ARGV), nullptr,
+                std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Array"),
+                                            std::make_shared<IdExpr>("str")))));
     stdlib->isStdlibLoading = false;
 
     // The whole standard library has the age of zero to allow back-references.
     cache->age++;
   }
 
-  auto ctx = make_shared<SimplifyContext>(file, cache);
+  auto ctx = std::make_shared<SimplifyContext>(file, cache);
   cache->imports[file].filename = file;
   cache->imports[file].ctx = ctx;
   cache->imports[MAIN_IMPORT] = {file, ctx};
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
-  auto before = make_shared<SuiteStmt>();
+  auto before = std::make_shared<SuiteStmt>();
   // Load the command-line defines.
   for (auto &d : defines) {
-    before->stmts.push_back(make_shared<AssignStmt>(
-        make_shared<IdExpr>(d.first), make_shared<IntExpr>(d.second),
-        make_shared<IndexExpr>(make_shared<IdExpr>("Static"),
-                               make_shared<IdExpr>("int"))));
+    before->stmts.push_back(std::make_shared<AssignStmt>(
+        std::make_shared<IdExpr>(d.first), std::make_shared<IntExpr>(d.second),
+        std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
+                                    std::make_shared<IdExpr>("int"))));
   }
   // Prepend __name__ = "__main__".
-  before->stmts.push_back(make_shared<AssignStmt>(
-      make_shared<IdExpr>("__name__"), make_shared<StringExpr>(MODULE_MAIN)));
+  before->stmts.push_back(std::make_shared<AssignStmt>(
+      std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
   // Transform the input node.
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(before));
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
 
-  auto suite = make_shared<SuiteStmt>();
+  auto suite = std::make_shared<SuiteStmt>();
   for (auto &s : preamble->globals)
     suite->stmts.push_back(s);
   for (auto &s : preamble->functions)
@@ -155,17 +148,18 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<Cache> cache, const StmtPtr &node,
   return suite;
 }
 
-StmtPtr SimplifyVisitor::apply(shared_ptr<SimplifyContext> ctx, const StmtPtr &node,
-                               const string &file, int atAge) {
-  vector<StmtPtr> stmts;
+StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
+                               const StmtPtr &node, const std::string &file,
+                               int atAge) {
+  std::vector<StmtPtr> stmts;
   int oldAge = ctx->cache->age;
   if (atAge != -1)
     ctx->cache->age = atAge;
-  auto preamble = make_shared<Preamble>();
+  auto preamble = std::make_shared<Preamble>();
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
   if (atAge != -1)
     ctx->cache->age = oldAge;
-  auto suite = make_shared<SuiteStmt>();
+  auto suite = std::make_shared<SuiteStmt>();
   for (auto &s : preamble->globals)
     suite->stmts.push_back(s);
   for (auto &s : preamble->functions)
@@ -175,9 +169,9 @@ StmtPtr SimplifyVisitor::apply(shared_ptr<SimplifyContext> ctx, const StmtPtr &n
   return suite;
 }
 
-SimplifyVisitor::SimplifyVisitor(shared_ptr<SimplifyContext> ctx,
-                                 shared_ptr<Preamble> preamble)
-    : ctx(move(ctx)), preamble(move(preamble)) {}
+SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
+                                 std::shared_ptr<Preamble> preamble)
+    : ctx(std::move(ctx)), preamble(std::move(preamble)) {}
 
 } // namespace ast
 } // namespace codon

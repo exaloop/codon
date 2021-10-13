@@ -12,47 +12,47 @@
 namespace codon {
 namespace ast {
 
-class FormatVisitor : public CallbackASTVisitor<string, string> {
-  string result;
-  string space;
+class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
+  std::string result;
+  std::string space;
   bool renderType, renderHTML;
   int indent;
 
-  string header, footer, nl;
-  string typeStart, typeEnd;
-  string nodeStart, nodeEnd;
-  string exprStart, exprEnd;
-  string commentStart, commentEnd;
-  string keywordStart, keywordEnd;
+  std::string header, footer, nl;
+  std::string typeStart, typeEnd;
+  std::string nodeStart, nodeEnd;
+  std::string exprStart, exprEnd;
+  std::string commentStart, commentEnd;
+  std::string keywordStart, keywordEnd;
 
-  shared_ptr<Cache> cache;
+  std::shared_ptr<Cache> cache;
 
 private:
-  template <typename T, typename... Ts> string renderExpr(T &&t, Ts &&...args) {
-    string s;
+  template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
+    std::string s;
     // if (renderType)
     // s += fmt::format("{}{}{}", typeStart,
     //  t->getType() ? t->getType()->toString() : "-", typeEnd);
     return fmt::format("{}{}{}{}{}{}", exprStart, s, nodeStart, fmt::format(args...),
                        nodeEnd, exprEnd);
   }
-  template <typename... Ts> string renderComment(Ts &&...args) {
+  template <typename... Ts> std::string renderComment(Ts &&...args) {
     return fmt::format("{}{}{}", commentStart, fmt::format(args...), commentEnd);
   }
-  string pad(int indent = 0) const;
-  string newline() const;
-  string keyword(const string &s) const;
+  std::string pad(int indent = 0) const;
+  std::string newline() const;
+  std::string keyword(const std::string &s) const;
 
 public:
-  FormatVisitor(bool html, shared_ptr<Cache> cache = nullptr);
-  string transform(const ExprPtr &e) override;
-  string transform(const Expr *expr);
-  string transform(const StmtPtr &stmt) override;
-  string transform(Stmt *stmt, int indent);
+  FormatVisitor(bool html, std::shared_ptr<Cache> cache = nullptr);
+  std::string transform(const ExprPtr &e) override;
+  std::string transform(const Expr *expr);
+  std::string transform(const StmtPtr &stmt) override;
+  std::string transform(Stmt *stmt, int indent);
 
   template <typename T>
-  static string apply(const T &stmt, shared_ptr<Cache> cache = nullptr,
-                      bool html = false, bool init = false) {
+  static std::string apply(const T &stmt, std::shared_ptr<Cache> cache = nullptr,
+                           bool html = false, bool init = false) {
     auto t = FormatVisitor(html, cache);
     return fmt::format("{}{}{}", t.header, t.transform(stmt), t.footer);
   }
@@ -122,9 +122,9 @@ public:
     return out << c.result;
   }
 
-  using CallbackASTVisitor<string, string>::transform;
-  template <typename T> string transform(const vector<T> &ts) {
-    vector<string> r;
+  using CallbackASTVisitor<std::string, std::string>::transform;
+  template <typename T> std::string transform(const std::vector<T> &ts) {
+    std::vector<std::string> r;
     for (auto &e : ts)
       r.push_back(transform(e));
     return fmt::format("{}", fmt::join(r, ", "));
