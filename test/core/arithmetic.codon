@@ -60,7 +60,7 @@ def test_conversions():
     assert float(byte(42)) == 42.0
     assert bool(byte(0)) == False
     assert bool(byte(42)) == True
-    assert str(byte(42)) == "'*'"
+    assert str(byte(42)) == "byte('*')"
 
     # intN -> int, float, bool, str | N < 64
     assert int(i32(-42)) == -42

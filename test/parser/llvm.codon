@@ -159,7 +159,7 @@ print z.__and__(True), z.__or__(True), z.__xor__(True) #: False True True
 #%% byte,barebones
 z = byte.__new__()
 z = byte(65)
-print z.__repr__() #: 'A'
+print z.__repr__() #: byte('A')
 print z.__bool__() #: True
 print z.__eq__(byte(5)) #: False
 print z.__ne__(byte(5)) #: True

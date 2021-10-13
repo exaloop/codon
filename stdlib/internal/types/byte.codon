@@ -10,13 +10,15 @@ class byte:
         ret i8 0
     def __new__(b: byte) -> byte:
         return b
+    def __new__(s: str) -> byte:
+        if s.__len__() != 1:
+            raise ValueError("str length must be 1 in byte constructor")
+        return s.ptr[0]
     @pure
     @llvm
     def __new__(i: int) -> byte:
         %0 = trunc i64 %i to i8
         ret i8 %0
-    def __repr__(self) -> str:
-        return seq_str_byte(self)
     def __copy__(self) -> byte:
         return self
     @pure
@@ -62,7 +64,7 @@ class byte:
         %1 = zext i1 %0 to i8
         ret i8 %1
     def __repr__(self):
-        return str(__ptr__(self), 1).__repr__()
+        return f'byte({str(__ptr__(self), 1).__repr__()})'
     @pure
     @llvm
     def __int__(self) -> int:
