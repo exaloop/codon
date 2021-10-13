@@ -316,7 +316,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
             "bad 'known' string");
   std::vector<int> extra;
   std::map<std::string, int> namedArgs,
-      extraNamedArgs; // keep the std::map--- we need it sorted!
+      extraNamedArgs; // keep the map--- we need it sorted!
   for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
     if (args[ai].name.empty()) {
       while (!known.empty() && si < slots.size() && known[si])

@@ -173,8 +173,7 @@ struct BoolExpr : public Expr {
 /// @li 13u
 /// @li 000_010b
 struct IntExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify
-  /// stage.
+  /// Expression value is stored as a string that is parsed during the simplify stage.
   std::string value;
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
@@ -197,8 +196,7 @@ struct IntExpr : public Expr {
 /// @li 13.15z
 /// @li e-12
 struct FloatExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify
-  /// stage.
+  /// Expression value is stored as a string that is parsed during the simplify stage.
   std::string value;
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
