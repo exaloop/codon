@@ -115,6 +115,9 @@ def test_list():
     l6.extend(['xyz'])
     l6.extend('')
     assert l6 == ['a', 'b', 'c', 'xyz']
+
+    assert List[int]().copy() == List[int]()
+    assert [1,2,3].copy() == [1,2,3]
 test_list()
 
 @test
