@@ -373,7 +373,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
-                            ctx->cache->module0);
+                            ctx->cache->module0, ctx->cache->pluginImportPaths);
   if (!file)
     error("cannot locate import '{}'", join(dirs, "."));
 

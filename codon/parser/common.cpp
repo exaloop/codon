@@ -198,23 +198,29 @@ std::string executable_path(const char *argv0) { return std::string(argv0); }
 std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           const std::string &what,
                                           const std::string &relativeTo,
-                                          bool forceStdlib,
-                                          const std::string &module0) {
+                                          bool forceStdlib, const std::string &module0,
+                                          const std::vector<std::string> &plugins) {
   using fmt::format;
 
-  auto getStdLibPaths = [](const std::string &argv0) {
+  auto getStdLibPaths = [](const std::string &argv0,
+                           const std::vector<std::string> &plugins) {
     std::vector<std::string> paths;
     char abs[PATH_MAX + 1];
     if (auto c = getenv("CODON_PATH")) {
       if (realpath(c, abs))
         paths.push_back(abs);
     }
-    if (!argv0.empty())
+    if (!argv0.empty()) {
       for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
         strncpy(abs, executable_path(argv0.c_str()).c_str(), PATH_MAX);
         if (realpath(format("{}/{}", dirname(abs), loci).c_str(), abs))
           paths.push_back(abs);
       }
+    }
+    for (auto &path : plugins) {
+      if (realpath(path.c_str(), abs))
+        paths.push_back(abs);
+    }
     return paths;
   };
 
@@ -224,7 +230,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
   auto getRoot = [&](const std::string &s) {
     bool isStdLib = false;
     std::string root;
-    for (auto &p : getStdLibPaths(argv0))
+    for (auto &p : getStdLibPaths(argv0, plugins))
       if (startswith(s, p)) {
         root = p;
         isStdLib = true;
@@ -248,7 +254,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
     paths.push_back(format("{}/{}.codon", parent, what));
     paths.push_back(format("{}/{}/__init__.codon", parent, what));
   }
-  for (auto &p : getStdLibPaths(argv0)) {
+  for (auto &p : getStdLibPaths(argv0, plugins)) {
     paths.push_back(format("{}/{}.codon", p, what));
     paths.push_back(format("{}/{}/__init__.codon", p, what));
   }

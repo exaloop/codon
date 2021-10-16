@@ -15,14 +15,13 @@ namespace codon {
 struct Plugin {
   /// the associated DSL
   std::unique_ptr<DSL> dsl;
-  /// plugin load path
-  std::string path;
+  /// plugin information
+  DSL::Info info;
   /// library handle
   llvm::sys::DynamicLibrary handle;
 
-  Plugin(std::unique_ptr<DSL> dsl, const std::string &path,
-         const llvm::sys::DynamicLibrary &handle)
-      : dsl(std::move(dsl)), path(path), handle(handle) {}
+  Plugin(std::unique_ptr<DSL> dsl, DSL::Info info, llvm::sys::DynamicLibrary handle)
+      : dsl(std::move(dsl)), info(std::move(info)), handle(std::move(handle)) {}
 };
 
 /// Manager for loading, applying and unloading plugins.
@@ -36,8 +35,6 @@ private:
   bool debug;
 
 public:
-  using LoadFunc = std::function<std::unique_ptr<DSL>()>;
-
   /// Error codes when loading plugins
   enum Error { NONE = 0, NOT_FOUND, NO_ENTRYPOINT, UNSUPPORTED_VERSION };
 

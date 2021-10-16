@@ -49,6 +49,9 @@ ir::Module *parse(const std::string &argv0, const std::string &file,
     auto cache = std::make_shared<ast::Cache>(argv0);
     if (plm) {
       for (auto *plugin : *plm) {
+        if (!plugin->info.stdlibPath.empty())
+          cache->pluginImportPaths.push_back(plugin->info.stdlibPath);
+
         for (auto &kw : plugin->dsl->getExprKeywords()) {
           cache->customExprStmts[kw.keyword] = kw.callback;
         }

@@ -16,6 +16,22 @@ namespace codon {
 /// the DSL, like keywords and IR passes.
 class DSL {
 public:
+  /// General information about this plugin.
+  struct Info {
+    /// Extension name
+    std::string name;
+    /// Extension description
+    std::string description;
+    /// Extension version
+    std::string version;
+    /// Extension URL
+    std::string url;
+    /// Supported Codon versions (semver range)
+    std::string supported;
+    /// Plugin stdlib path
+    std::string stdlibPath;
+  };
+
   using KeywordCallback =
       std::function<ast::StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>;
 
@@ -31,17 +47,6 @@ public:
   };
 
   virtual ~DSL() noexcept = default;
-
-  /// @return the name of this DSL
-  virtual std::string getName() const = 0;
-
-  /// @param major major version number (i.e. X in X.Y.Z)
-  /// @param minor minor version number (i.e. Y in X.Y.Z)
-  /// @param patch patch version number (i.e. Z in X.Y.Z)
-  /// @return true if the given major, minor and patch versions are supported
-  virtual bool isVersionSupported(unsigned major, unsigned minor, unsigned patch) {
-    return true;
-  }
 
   /// Registers this DSL's IR passes with the given pass manager.
   /// @param pm the pass manager to add the passes to

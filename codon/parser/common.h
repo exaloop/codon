@@ -184,7 +184,8 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib = false,
-                                          const std::string &module0 = "");
+                                          const std::string &module0 = "",
+                                          const std::vector<std::string> &plugins = {});
 
 } // namespace ast
 } // namespace codon
