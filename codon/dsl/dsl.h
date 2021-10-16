@@ -1,5 +1,6 @@
 #pragma once
 
+#include "codon/parser/cache.h"
 #include "codon/sir/sir.h"
 #include "codon/sir/transform/manager.h"
 #include "codon/sir/transform/pass.h"
@@ -15,26 +16,19 @@ namespace codon {
 /// the DSL, like keywords and IR passes.
 class DSL {
 public:
-  /// Represents a keyword, consisting of the keyword
-  /// name (e.g. "if", "while", etc.) and a callback
-  /// to generate the resulting IR node.
-  template <typename Callback> struct Keyword {
-    /// keyword name
-    std::string name;
-    /// callback to produce IR node
-    Callback callback;
+  using KeywordCallback =
+      std::function<ast::StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>;
+
+  struct ExprKeyword {
+    std::string keyword;
+    KeywordCallback callback;
   };
 
-  using ExprKeywordCallback =
-      std::function<ir::Node *(ir::Module *M, const std::vector<ir::Value *> &values)>;
-  using BlockKeywordCallback = std::function<ir::Node *(
-      ir::Module *M, const std::vector<ir::Value *> &values, ir::SeriesFlow *block)>;
-  using BinaryKeywordCallback =
-      std::function<ir::Node *(ir::Module *M, ir::Value *lhs, ir::Value *rhs)>;
-
-  using ExprKeyword = Keyword<ExprKeywordCallback>;
-  using BlockKeyword = Keyword<BlockKeywordCallback>;
-  using BinaryKeyword = Keyword<BinaryKeywordCallback>;
+  struct BlockKeyword {
+    std::string keyword;
+    KeywordCallback callback;
+    bool hasExpr;
+  };
 
   virtual ~DSL() noexcept = default;
 
@@ -60,19 +54,14 @@ public:
   virtual void addLLVMPasses(llvm::PassManagerBuilder *pmb, bool debug) {}
 
   /// Returns a vector of "expression keywords", defined as keywords of
-  /// the form "keyword <expr1> ... <exprN>".
+  /// the form "keyword <expr>".
   /// @return this DSL's expression keywords
   virtual std::vector<ExprKeyword> getExprKeywords() { return {}; }
 
   /// Returns a vector of "block keywords", defined as keywords of the
-  /// form "keyword <expr1> ... <exprN>: <block of code>".
+  /// form "keyword <expr>: <block of code>".
   /// @return this DSL's block keywords
   virtual std::vector<BlockKeyword> getBlockKeywords() { return {}; }
-
-  /// Returns a vector of "binary keywords", defined as keywords of the
-  /// form "<expr1> keyword <expr2>".
-  /// @return this DSL's binary keywords
-  virtual std::vector<BinaryKeyword> getBinaryKeywords() { return {}; }
 };
 
 } // namespace codon

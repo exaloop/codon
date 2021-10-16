@@ -27,7 +27,8 @@ namespace codon {
 
 ir::Module *parse(const std::string &argv0, const std::string &file,
                   const std::string &code, bool isCode, int isTest, int startLine,
-                  const std::unordered_map<std::string, std::string> &defines) {
+                  const std::unordered_map<std::string, std::string> &defines,
+                  PluginManager *plm) {
   try {
     auto d = getenv("CODON_DEBUG");
     if (d) {
@@ -46,6 +47,17 @@ ir::Module *parse(const std::string &argv0, const std::string &file,
       realpath(file.c_str(), abs);
 
     auto cache = std::make_shared<ast::Cache>(argv0);
+    if (plm) {
+      for (auto *plugin : *plm) {
+        for (auto &kw : plugin->dsl->getExprKeywords()) {
+          cache->customExprStmts[kw.keyword] = kw.callback;
+        }
+        for (auto &kw : plugin->dsl->getBlockKeywords()) {
+          cache->customBlockStmts[kw.keyword] = {kw.hasExpr, kw.callback};
+        }
+      }
+    }
+
     ast::StmtPtr codeStmt = isCode ? ast::parseCode(cache, abs, code, startLine)
                                    : ast::parseFile(cache, abs);
     if (_dbg_level) {

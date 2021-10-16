@@ -108,11 +108,6 @@ ProcessResult processSource(const std::vector<const char *> &args) {
     defmap.emplace(name, value);
   }
 
-  auto *module = codon::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
-                              /*isTest=*/false, /*startLine=*/0, defmap);
-  if (!module)
-    return {{}, {}};
-
   const bool isDebug = (optMode == OptMode::Debug);
   auto t = std::chrono::high_resolution_clock::now();
 
@@ -147,6 +142,12 @@ ProcessResult processSource(const std::vector<const char *> &args) {
     }
   }
   t = std::chrono::high_resolution_clock::now();
+
+  auto *module = codon::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
+                              /*isTest=*/false, /*startLine=*/0, defmap, plm.get());
+  if (!module)
+    return {{}, {}};
+
   pm->run(module);
   LOG_TIME("[T] ir-opt = {:.1f}", std::chrono::duration_cast<std::chrono::milliseconds>(
                                       std::chrono::high_resolution_clock::now() - t)

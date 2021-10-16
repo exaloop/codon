@@ -1,11 +1,13 @@
 #pragma once
 
-#include "codon/dsl/dsl.h"
-#include "codon/sir/util/iterators.h"
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "codon/dsl/dsl.h"
+#include "codon/sir/util/iterators.h"
+#include "llvm/Support/DynamicLibrary.h"
 
 namespace codon {
 
@@ -15,10 +17,11 @@ struct Plugin {
   std::unique_ptr<DSL> dsl;
   /// plugin load path
   std::string path;
-  /// plugin dlopen handle
-  void *handle;
+  /// library handle
+  llvm::sys::DynamicLibrary handle;
 
-  Plugin(std::unique_ptr<DSL> dsl, const std::string &path, void *handle)
+  Plugin(std::unique_ptr<DSL> dsl, const std::string &path,
+         const llvm::sys::DynamicLibrary &handle)
       : dsl(std::move(dsl)), path(path), handle(handle) {}
 };
 
@@ -43,8 +46,6 @@ public:
   /// @param debug true if compining in debug mode
   explicit PluginManager(ir::transform::PassManager *pm, bool debug = false)
       : pm(pm), plugins(), debug(debug) {}
-
-  ~PluginManager();
 
   /// @return iterator to the first plugin
   auto begin() { return ir::util::raw_ptr_adaptor(plugins.begin()); }
