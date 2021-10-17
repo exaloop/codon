@@ -1,5 +1,6 @@
 #include "plugins.h"
 
+#include <cstdlib>
 #include <filesystem>
 
 #include "codon/parser/common.h"
@@ -27,7 +28,14 @@ bool PluginManager::load(const std::string &path, std::string *errMsg) {
   const std::string libExt = "so";
 #endif
 
-  fs::path tomlPath = fs::path(path) / "plugin.toml";
+  const std::string config = "plugin.toml";
+  fs::path tomlPath = fs::path(path) / config;
+  if (!fs::exists(tomlPath)) {
+    // try default install path
+    if (auto *homeDir = std::getenv("HOME"))
+      tomlPath = fs::path(homeDir) / ".codon/plugins" / path / config;
+  }
+
   toml::parse_result tml;
   try {
     tml = toml::parse_file(tomlPath.string());

@@ -34,7 +34,7 @@ build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
-mkdir -p codon-deploy/bin codon-deploy/lib/codon
+mkdir -p codon-deploy/bin codon-deploy/lib/codon codon-deploy/plugins
 cp build/codon codon-deploy/bin/
 cp build/libcodon*.so codon-deploy/lib/codon/
 cp build/libomp.so codon-deploy/lib/codon/

@@ -184,7 +184,7 @@ jobs:
 
       - name: Prepare Artifacts
         run: |
-          mkdir -p codon-deploy/bin codon-deploy/lib/codon
+          mkdir -p codon-deploy/bin codon-deploy/lib/codon codon-deploy/plugins
           cp build/codon codon-deploy/bin/
           cp build/libcodon*.${LIBEXT} codon-deploy/lib/codon/
           cp build/libomp.${LIBEXT} codon-deploy/lib/codon/
