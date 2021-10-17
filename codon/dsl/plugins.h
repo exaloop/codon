@@ -27,22 +27,12 @@ struct Plugin {
 /// Manager for loading, applying and unloading plugins.
 class PluginManager {
 private:
-  /// pass manager with which to register plugin IR passes
-  ir::transform::PassManager *pm;
   /// vector of loaded plugins
   std::vector<std::unique_ptr<Plugin>> plugins;
-  /// true if compiling in debug mode
-  bool debug;
 
 public:
-  /// Error codes when loading plugins
-  enum Error { NONE = 0, NOT_FOUND, NO_ENTRYPOINT, UNSUPPORTED_VERSION };
-
-  /// Constructs a plugin manager from a given IR pass manager
-  /// @param pm the IR pass manager to register IR passes with
-  /// @param debug true if compining in debug mode
-  explicit PluginManager(ir::transform::PassManager *pm, bool debug = false)
-      : pm(pm), plugins(), debug(debug) {}
+  /// Constructs a plugin manager
+  PluginManager() : plugins() {}
 
   /// @return iterator to the first plugin
   auto begin() { return ir::util::raw_ptr_adaptor(plugins.begin()); }
@@ -54,9 +44,10 @@ public:
   auto end() const { return ir::util::const_raw_ptr_adaptor(plugins.end()); }
 
   /// Loads the plugin at the given load path.
-  Error load(const std::string &path);
-  /// Loads the given DSL
-  Error load(DSL *dsl);
+  /// @param path path to plugin directory containing "plugin.toml" file
+  /// @param errMsg where to store potential error messages, if non-null
+  /// @return true if the plugin was loaded successfully, false otherwise
+  bool load(const std::string &path, std::string *errMsg = nullptr);
 };
 
 } // namespace codon

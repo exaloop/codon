@@ -114,7 +114,7 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   std::vector<std::string> disabledOptsVec(disabledOpts);
   auto pm =
       std::make_unique<codon::ir::transform::PassManager>(isDebug, disabledOptsVec);
-  auto plm = std::make_unique<codon::PluginManager>(pm.get(), isDebug);
+  auto plm = std::make_unique<codon::PluginManager>();
 
   LOG_TIME("[T] ir-setup = {:.1f}",
            std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -124,22 +124,13 @@ ProcessResult processSource(const std::vector<const char *> &args) {
 
   // load other plugins
   for (const auto &dsl : dsls) {
-    auto result = plm->load(dsl);
-    switch (result) {
-    case codon::PluginManager::NONE:
-      break;
-    case codon::PluginManager::NOT_FOUND:
-      codon::compilationError("DSL '" + dsl + "' not found");
-      break;
-    case codon::PluginManager::NO_ENTRYPOINT:
-      codon::compilationError("DSL '" + dsl + "' has no entry point");
-      break;
-    case codon::PluginManager::UNSUPPORTED_VERSION:
-      codon::compilationError("DSL '" + dsl + "' version incompatible");
-      break;
-    default:
-      break;
-    }
+    std::string errMsg;
+    if (!plm->load(dsl, &errMsg))
+      codon::compilationError(errMsg);
+  }
+  // add all IR passes
+  for (const auto *plugin : *plm) {
+    plugin->dsl->addIRPasses(pm.get(), isDebug);
   }
   t = std::chrono::high_resolution_clock::now();
 
