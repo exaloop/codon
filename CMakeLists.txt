@@ -35,7 +35,7 @@ else()
     set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
-add_executable(peg2cpp codon/util/peg2cpp.cpp codon/util/peglib.h)
+add_executable(peg2cpp codon/util/peg2cpp.cpp codon/util/cpp-peglib/peglib.h)
 target_link_libraries(peg2cpp Threads::Threads)
 add_custom_command(
     OUTPUT  codon_rules.cpp
@@ -157,7 +157,7 @@ set(CODON_HPPFILES
     codon/sir/value.h
     codon/sir/var.h
     codon/util/common.h
-    codon/util/peglib.h
+    codon/util/cpp-peglib/peglib.h
     codon/util/fmt/chrono.h
     codon/util/fmt/color.h
     codon/util/fmt/compile.h
@@ -168,7 +168,35 @@ set(CODON_HPPFILES
     codon/util/fmt/ostream.h
     codon/util/fmt/posix.h
     codon/util/fmt/printf.h
-    codon/util/fmt/ranges.h)
+    codon/util/fmt/ranges.h
+    codon/util/semver/semver.h
+    codon/util/toml++/toml.h
+    codon/util/toml++/toml_default_formatter.hpp
+    codon/util/toml++/toml_node.hpp
+    codon/util/toml++/toml_preprocessor.h
+    codon/util/toml++/toml_utf8_streams.hpp
+    codon/util/toml++/toml_array.h
+    codon/util/toml++/toml_formatter.h
+    codon/util/toml++/toml_node_view.h
+    codon/util/toml++/toml_print_to_stream.h
+    codon/util/toml++/toml_value.h
+    codon/util/toml++/toml_array.hpp
+    codon/util/toml++/toml_instantiations.hpp
+    codon/util/toml++/toml_parse_error.h
+    codon/util/toml++/toml_table.h
+    codon/util/toml++/toml_version.h
+    codon/util/toml++/toml_common.h
+    codon/util/toml++/toml_json_formatter.h
+    codon/util/toml++/toml_parse_result.h
+    codon/util/toml++/toml_table.hpp
+    codon/util/toml++/toml_date_time.h
+    codon/util/toml++/toml_json_formatter.hpp
+    codon/util/toml++/toml_parser.h
+    codon/util/toml++/toml_utf8.h
+    codon/util/toml++/toml_default_formatter.h
+    codon/util/toml++/toml_node.h
+    codon/util/toml++/toml_parser.hpp
+    codon/util/toml++/toml_utf8_streams.h)
 set(CODON_CPPFILES
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp

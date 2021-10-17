@@ -12,7 +12,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/peg/rules.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/util/peglib.h"
+#include "codon/util/cpp-peglib/peglib.h"
 
 extern int _ocaml_time;
 

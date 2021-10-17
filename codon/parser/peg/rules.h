@@ -11,7 +11,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/util/peglib.h"
+#include "codon/util/cpp-peglib/peglib.h"
 
 namespace codon {
 namespace ast {

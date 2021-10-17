@@ -1,5 +1,3 @@
-
-#include "codon/util/peglib.h"
 #include <algorithm>
 #include <any>
 #include <cassert>
@@ -22,6 +20,7 @@
 #include <vector>
 
 #define FMT_HEADER_ONLY
+#include "codon/util/cpp-peglib/peglib.h"
 #include "codon/util/fmt/format.h"
 
 using namespace std;

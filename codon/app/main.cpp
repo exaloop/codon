@@ -78,7 +78,8 @@ ProcessResult processSource(const std::vector<const char *> &args) {
       llvm::cl::desc("Add static variable definitions. The syntax is <name>=<value>"));
   llvm::cl::list<std::string> disabledOpts(
       "disable-opt", llvm::cl::desc("Disable the specified IR optimization"));
-  llvm::cl::list<std::string> dsls("dsl", llvm::cl::desc("Use specified DSL"));
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
 
@@ -123,9 +124,9 @@ ProcessResult processSource(const std::vector<const char *> &args) {
                1000.0);
 
   // load other plugins
-  for (const auto &dsl : dsls) {
+  for (const auto &plugin : plugins) {
     std::string errMsg;
-    if (!plm->load(dsl, &errMsg))
+    if (!plm->load(plugin, &errMsg))
       codon::compilationError(errMsg);
   }
   // add all IR passes
