@@ -32,12 +32,13 @@ StmtPtr SimplifyVisitor::apply(
     auto stdlib = std::make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
     auto stdlibPath =
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
-    if (!stdlibPath ||
-        stdlibPath->path.substr(stdlibPath->path.size() - 14) != "__init__.codon")
+    const std::string initFile = "__init__.codon";
+    if (!stdlibPath || !endswith(stdlibPath->path, initFile))
       ast::error("cannot load standard library");
     if (barebones)
       stdlibPath->path =
-          stdlibPath->path.substr(0, stdlibPath->path.size() - 7) + "test__.codon";
+          stdlibPath->path.substr(0, stdlibPath->path.size() - initFile.size()) +
+          "__init_test__.codon";
     stdlib->setFilename(stdlibPath->path);
     cache->imports[STDLIB_IMPORT] = {stdlibPath->path, stdlib};
 

@@ -238,9 +238,10 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
       }
     if (!isStdLib && startswith(s, module0Root))
       root = module0Root;
-    seqassert(startswith(s, root) && endswith(s, ".codon"),
-              "bad path substitution: {}, {}", s, root);
-    auto module = s.substr(root.size() + 1, s.size() - root.size() - 7);
+    const std::string ext = ".codon";
+    seqassert(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
+              s, root);
+    auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
     std::replace(module.begin(), module.end(), '/', '.');
     return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
                                                          : ImportFile::STDLIB,
