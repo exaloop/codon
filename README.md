@@ -11,14 +11,6 @@
     <img src="https://img.shields.io/discord/895056805846192139.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2"
          alt="Discord">
   </a>
-  <a href="https://github.com/exaloop/codon/releases/latest">
-    <img src="https://img.shields.io/github/v/release/exaloop/codon?sort=semver"
-         alt="Version">
-  </a>
-  <a href="https://github.com/exaloop/codon/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/exaloop/codon"
-         alt="License">
-  </a>
 </p>
 
 ## What is Codon?
