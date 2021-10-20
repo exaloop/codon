@@ -8,6 +8,7 @@ def seq_alloc(a: int) -> cobj: pass
 def seq_alloc_atomic(a: int) -> cobj: pass
 from C import seq_realloc(cobj, int) -> cobj
 from C import seq_free(cobj)
+from C import seq_register_finalizer(cobj, cobj)
 from C import seq_gc_add_roots(cobj, cobj)
 from C import seq_gc_remove_roots(cobj, cobj)
 from C import seq_gc_clear_roots()
@@ -33,6 +34,9 @@ def realloc(p: cobj, sz: int):
 
 def free(p: cobj):
     seq_free(p)
+
+def register_finalizer(p: cobj, f: Function[[cobj, cobj], void]):
+    seq_register_finalizer(p, f.__raw__())
 
 def add_roots(start: cobj, end: cobj):
     seq_gc_add_roots(start, end)
