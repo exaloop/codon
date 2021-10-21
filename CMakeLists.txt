@@ -122,6 +122,8 @@ set(CODON_HPPFILES
     codon/sir/llvm/coro/Coroutines.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
+    codon/sir/llvm/memory_manager.h
+    codon/sir/llvm/optimize.h
     codon/sir/module.h
     codon/sir/sir.h
     codon/sir/transform/cleanup/canonical.h
@@ -240,6 +242,8 @@ set(CODON_CPPFILES
     codon/sir/llvm/coro/CoroSplit.cpp
     codon/sir/llvm/coro/Coroutines.cpp
     codon/sir/llvm/llvisitor.cpp
+    codon/sir/llvm/memory_manager.cpp
+    codon/sir/llvm/optimize.cpp
     codon/sir/module.cpp
     codon/sir/transform/cleanup/canonical.cpp
     codon/sir/transform/cleanup/dead_code.cpp

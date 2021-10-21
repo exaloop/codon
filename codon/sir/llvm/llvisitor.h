@@ -129,8 +129,6 @@ private:
   std::vector<TryCatchData> trycatch;
   /// Debug information
   DebugInfo db;
-  /// LLVM target machine
-  std::unique_ptr<llvm::TargetMachine> machine;
   /// Plugin manager
   PluginManager *plugins;
 
@@ -175,8 +173,6 @@ private:
   TryCatchData *getInnermostTryCatchBeforeLoop();
 
   // LLVM passes
-  void applyDebugTransformations();
-  void runLLVMOptimizationPasses();
   void runLLVMPipeline();
 
 public:
@@ -208,9 +204,6 @@ public:
   /// @param node the node to compile
   void process(const Node *node);
 
-  /// Performs LLVM's module verification on the contained module.
-  /// Causes an assertion failure if verification fails.
-  void verify();
   /// Dumps the unoptimized module IR to a file.
   /// @param filename name of file to write IR to
   void dump(const std::string &filename = "_dump.ll");

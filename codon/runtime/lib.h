@@ -24,13 +24,26 @@ struct seq_str_t {
 extern int seq_debug;
 
 SEQ_FUNC void seq_init(int debug);
+
+SEQ_FUNC bool seq_is_macos();
+SEQ_FUNC seq_int_t seq_pid();
+SEQ_FUNC seq_int_t seq_time();
+SEQ_FUNC seq_int_t seq_time_monotonic();
+SEQ_FUNC char **seq_env();
 SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);
 
 SEQ_FUNC void *seq_alloc(size_t n);
 SEQ_FUNC void *seq_alloc_atomic(size_t n);
+SEQ_FUNC void *seq_calloc(size_t m, size_t n);
+SEQ_FUNC void *seq_calloc_atomic(size_t m, size_t n);
 SEQ_FUNC void *seq_realloc(void *p, size_t n);
 SEQ_FUNC void seq_free(void *p);
 SEQ_FUNC void seq_register_finalizer(void *p, void (*f)(void *obj, void *data));
+
+SEQ_FUNC void seq_gc_add_roots(void *start, void *end);
+SEQ_FUNC void seq_gc_remove_roots(void *start, void *end);
+SEQ_FUNC void seq_gc_clear_roots();
+SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end);
 
 SEQ_FUNC void *seq_alloc_exc(int type, void *obj);
 SEQ_FUNC void seq_throw(void *exc);
@@ -49,7 +62,18 @@ SEQ_FUNC seq_str_t seq_str_byte(char c);
 SEQ_FUNC seq_str_t seq_str_ptr(void *p);
 SEQ_FUNC seq_str_t seq_str_tuple(seq_str_t *strs, seq_int_t n);
 
+SEQ_FUNC void *seq_stdin();
+SEQ_FUNC void *seq_stdout();
+SEQ_FUNC void *seq_stderr();
+
 SEQ_FUNC void seq_print(seq_str_t str);
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo);
+
+SEQ_FUNC void *seq_lock_new();
+SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout);
+SEQ_FUNC void seq_lock_release(void *lock);
+SEQ_FUNC void *seq_rlock_new();
+SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout);
+SEQ_FUNC void seq_rlock_release(void *lock);
 
 #endif /* CODON_RUNTIME_LIB_H */

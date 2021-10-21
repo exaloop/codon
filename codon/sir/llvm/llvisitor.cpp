@@ -5,24 +5,11 @@
 #include <unistd.h>
 #include <utility>
 
-#include "llvm/CodeGen/CommandFlags.h"
-
+#include "codon/runtime/lib.h"
 #include "codon/sir/dsl/codegen.h"
-#include "codon/sir/llvm/coro/Coroutines.h"
+#include "codon/sir/llvm/memory_manager.h"
+#include "codon/sir/llvm/optimize.h"
 #include "codon/util/common.h"
-
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
-#define CODON_VERSION_STRING()                                                         \
-  ("codon version " STR(CODON_VERSION_MAJOR) "." STR(CODON_VERSION_MINOR) "." STR(     \
-      CODON_VERSION_PATCH))
-
-extern "C" void seq_gc_add_roots(void *start, void *end);
-extern "C" void seq_gc_remove_roots(void *start, void *end);
-extern "C" int64_t seq_exc_offset();
-extern "C" uint64_t seq_exc_class();
-
-static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
@@ -57,140 +44,6 @@ const SrcInfo *getSrcInfo(const Node *x) {
 llvm::Value *getDummyVoidValue(llvm::LLVMContext &context) {
   return llvm::ConstantTokenNone::get(context);
 }
-
-std::unique_ptr<llvm::TargetMachine>
-getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
-                 llvm::StringRef featuresStr, const llvm::TargetOptions &options) {
-  std::string err;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), triple, err);
-
-  if (!target)
-    return nullptr;
-
-  return std::unique_ptr<llvm::TargetMachine>(target->createTargetMachine(
-      triple.getTriple(), cpuStr, featuresStr, options,
-      llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
-      llvm::CodeGenOpt::Aggressive));
-}
-
-/**
- * Simple extension of LLVM's SectionMemoryManager which catches data section
- * allocations and registers them with the GC. This allows the GC to know not
- * to collect globals even in JIT mode.
- */
-class BoehmGCMemoryManager : public llvm::SectionMemoryManager {
-private:
-  /// Vector of (start, end) address pairs registered with GC.
-  std::vector<std::pair<void *, void *>> roots;
-
-  uint8_t *allocateDataSection(uintptr_t size, unsigned alignment, unsigned sectionID,
-                               llvm::StringRef sectionName, bool isReadOnly) override {
-    uint8_t *result = SectionMemoryManager::allocateDataSection(
-        size, alignment, sectionID, sectionName, isReadOnly);
-    void *start = result;
-    void *end = result + size;
-    seq_gc_add_roots(start, end);
-    roots.emplace_back(start, end);
-    return result;
-  }
-
-public:
-  BoehmGCMemoryManager() : SectionMemoryManager(), roots() {}
-
-  ~BoehmGCMemoryManager() override {
-    for (const auto &root : roots) {
-      seq_gc_remove_roots(root.first, root.second);
-    }
-  }
-};
-
-/**
- * Sometimes coroutine lowering produces hard-to-analyze loops involving
- * function pointer comparisons. This pass puts them into a somewhat
- * easier-to-analyze form.
- */
-struct CoroBranchSimplifier : public llvm::LoopPass {
-  static char ID;
-  CoroBranchSimplifier() : llvm::LoopPass(ID) {}
-
-  static llvm::Value *getNonNullOperand(llvm::Value *op1, llvm::Value *op2) {
-    auto *ptr = llvm::dyn_cast<llvm::PointerType>(op1->getType());
-    if (!ptr || !ptr->getElementType()->isFunctionTy())
-      return nullptr;
-
-    auto *c1 = llvm::dyn_cast<llvm::Constant>(op1);
-    auto *c2 = llvm::dyn_cast<llvm::Constant>(op2);
-    const bool isNull1 = (c1 && c1->isNullValue());
-    const bool isNull2 = (c2 && c2->isNullValue());
-    if (!(isNull1 ^ isNull2))
-      return nullptr;
-    return isNull1 ? op2 : op1;
-  }
-
-  bool runOnLoop(llvm::Loop *loop, llvm::LPPassManager &lpm) override {
-    if (auto *exit = loop->getExitingBlock()) {
-      if (auto *br = llvm::dyn_cast<llvm::BranchInst>(exit->getTerminator())) {
-        if (!br->isConditional() || br->getNumSuccessors() != 2 ||
-            loop->contains(br->getSuccessor(0)) || !loop->contains(br->getSuccessor(1)))
-          return false;
-
-        auto *cond = br->getCondition();
-        if (auto *cmp = llvm::dyn_cast<llvm::CmpInst>(cond)) {
-          if (cmp->getPredicate() != llvm::CmpInst::Predicate::ICMP_EQ)
-            return false;
-
-          if (auto *f = getNonNullOperand(cmp->getOperand(0), cmp->getOperand(1))) {
-            if (auto *sel = llvm::dyn_cast<llvm::SelectInst>(f)) {
-              if (auto *g =
-                      getNonNullOperand(sel->getTrueValue(), sel->getFalseValue())) {
-                // If we can deduce that g is not null, we can replace the condition.
-                if (auto *phi = llvm::dyn_cast<llvm::PHINode>(g)) {
-                  bool ok = true;
-                  for (unsigned i = 0; i < phi->getNumIncomingValues(); i++) {
-                    auto *phiBlock = phi->getIncomingBlock(i);
-                    auto *phiValue = phi->getIncomingValue(i);
-
-                    if (auto *c = llvm::dyn_cast<llvm::Constant>(phiValue)) {
-                      if (c->isNullValue()) {
-                        ok = false;
-                        break;
-                      }
-                    } else {
-                      // There is no way for the value to be null if the incoming phi
-                      // value is predicated on this exit condition, which checks for a
-                      // non-null function pointer.
-
-                      if (phiBlock != exit || phiValue != f) {
-                        ok = false;
-                        break;
-                      }
-                    }
-                  }
-                  if (!ok)
-                    return false;
-
-                  br->setCondition(sel->getCondition());
-                  return true;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    return false;
-  }
-};
-
-void addCoroutineBranchSimplifier(const llvm::PassManagerBuilder &builder,
-                                  llvm::legacy::PassManagerBase &pm) {
-  pm.add(new CoroBranchSimplifier());
-}
-
-char CoroBranchSimplifier::ID = 0;
-llvm::RegisterPass<CoroBranchSimplifier> X("coro-br-simpl",
-                                           "Coroutine Branch Simplifier");
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -210,7 +63,7 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 LLVMVisitor::LLVMVisitor(bool debug, const std::string &flags)
     : util::ConstVisitor(), context(), builder(context), module(), func(nullptr),
       block(nullptr), value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
-      db(debug, flags), machine(), plugins(nullptr) {
+      db(debug, flags), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -269,132 +122,9 @@ void LLVMVisitor::process(const Node *x) {
   x->accept(*this);
 }
 
-void LLVMVisitor::verify() {
-  const bool broken = llvm::verifyModule(*module, &llvm::errs());
-  seqassert(!broken, "module broken");
-}
-
 void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, false); }
 
-void LLVMVisitor::applyDebugTransformations() {
-  if (db.debug) {
-    // remove tail calls and fix linkage for stack traces
-    for (auto &f : *module) {
-      f.setLinkage(llvm::GlobalValue::ExternalLinkage);
-      if (f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline)) {
-        f.removeFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
-      }
-      f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
-      f.setHasUWTable();
-      f.addFnAttr("no-frame-pointer-elim", "true");
-      f.addFnAttr("no-frame-pointer-elim-non-leaf");
-      f.addFnAttr("no-jump-tables", "false");
-
-      for (auto &block : f.getBasicBlockList()) {
-        for (auto &inst : block) {
-          if (auto *call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
-            call->setTailCall(false);
-          }
-        }
-      }
-    }
-  } else {
-    llvm::StripDebugInfo(*module);
-  }
-}
-
-void LLVMVisitor::runLLVMOptimizationPasses() {
-  applyDebugTransformations();
-
-  llvm::Triple moduleTriple(module->getTargetTriple());
-  std::string cpuStr, featuresStr;
-  const llvm::TargetOptions options =
-      llvm::codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
-  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
-
-  auto pm = std::make_unique<llvm::legacy::PassManager>();
-  auto fpm = std::make_unique<llvm::legacy::FunctionPassManager>(module.get());
-  pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-
-  if (moduleTriple.getArch()) {
-    cpuStr = llvm::codegen::getCPUStr();
-    featuresStr = llvm::codegen::getFeaturesStr();
-    machine = getTargetMachine(moduleTriple, cpuStr, featuresStr, options);
-  }
-
-  llvm::codegen::setFunctionAttributes(cpuStr, featuresStr, *module);
-  pm->add(llvm::createTargetTransformInfoWrapperPass(
-      machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
-  fpm->add(llvm::createTargetTransformInfoWrapperPass(
-      machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
-
-  if (machine) {
-    auto &ltm = dynamic_cast<llvm::LLVMTargetMachine &>(*machine);
-    llvm::Pass *tpc = ltm.createPassConfig(*pm);
-    pm->add(tpc);
-  }
-
-  unsigned optLevel = 3;
-  unsigned sizeLevel = 0;
-  llvm::PassManagerBuilder pmb;
-
-  if (!db.debug) {
-    pmb.OptLevel = optLevel;
-    pmb.SizeLevel = sizeLevel;
-    pmb.Inliner = llvm::createFunctionInliningPass(optLevel, sizeLevel, false);
-    pmb.DisableUnrollLoops = false;
-    pmb.LoopVectorize = true;
-    pmb.SLPVectorize = true;
-    // pmb.MergeFunctions = true;
-  } else {
-    pmb.OptLevel = 0;
-  }
-
-  if (machine) {
-    machine->adjustPassManager(pmb);
-  }
-
-  coro::addCoroutinePassesToExtensionPoints(pmb);
-  if (!db.debug) {
-    pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
-                     addCoroutineBranchSimplifier);
-  }
-
-  if (plugins) {
-    for (auto *plugin : *plugins) {
-      plugin->dsl->addLLVMPasses(&pmb, db.debug);
-    }
-  }
-
-  pmb.populateModulePassManager(*pm);
-  pmb.populateFunctionPassManager(*fpm);
-
-  fpm->doInitialization();
-  for (llvm::Function &f : *module) {
-    fpm->run(f);
-  }
-  fpm->doFinalization();
-  pm->run(*module);
-  applyDebugTransformations();
-}
-
-void LLVMVisitor::runLLVMPipeline() {
-  using namespace std::chrono;
-  auto t = high_resolution_clock::now();
-  verify();
-  runLLVMOptimizationPasses();
-  LOG_TIME("[T] llvm/opt = {:.1f}",
-           duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
-               1000.0);
-  if (!db.debug) {
-    t = high_resolution_clock::now();
-    runLLVMOptimizationPasses();
-    LOG_TIME("[T] llvm/opt2 = {:.1f}",
-             duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
-                 1000.0);
-  }
-  verify();
-}
+void LLVMVisitor::runLLVMPipeline() { optimize(module.get(), db.debug, plugins); }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename) {
   runLLVMPipeline();
@@ -406,6 +136,7 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename) {
     compilationError(err.message());
   llvm::raw_pwrite_stream *os = &out->os();
 
+  auto machine = getTargetMachine(module.get());
   auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
   auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
   llvm::legacy::PassManager pm;
@@ -694,7 +425,8 @@ void LLVMVisitor::visit(const Module *x) {
   db.builder = std::make_unique<llvm::DIBuilder>(*module);
   llvm::DIFile *file = db.getFile(srcInfo->file);
   db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
-                                          CODON_VERSION_STRING(), !db.debug, db.flags,
+                                          ("codon version " CODON_VERSION), !db.debug,
+                                          db.flags,
                                           /*RV=*/0);
   module->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                         llvm::DEBUG_METADATA_VERSION);
