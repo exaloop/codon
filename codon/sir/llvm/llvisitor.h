@@ -97,11 +97,13 @@ private:
     llvm::DICompileUnit *unit;
     /// Whether we are compiling in debug mode
     bool debug;
+    /// Whether we are compiling in JIT mode
+    bool jit;
     /// Program command-line flags
     std::string flags;
 
-    explicit DebugInfo(bool debug, const std::string &flags)
-        : builder(), unit(nullptr), debug(debug), flags(flags) {}
+    DebugInfo(bool debug, bool jit, const std::string &flags)
+        : builder(), unit(nullptr), debug(debug), jit(jit), flags(flags) {}
 
     llvm::DIFile *getFile(const std::string &path);
   };
@@ -178,9 +180,37 @@ private:
 
   llvm::Value *getVar(const Var *var);
   llvm::Function *getFunc(const Func *func);
+  llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(context); }
 
 public:
-  LLVMVisitor(bool debug = false, const std::string &flags = "");
+  static std::string getNameForFunction(const Func *x) {
+    if (auto *externalFunc = cast<ExternalFunc>(x)) {
+      return x->getUnmangledName();
+    } else {
+      return x->referenceString();
+    }
+  }
+
+  static std::string getDebugNameForVariable(const Var *x) {
+    std::string name = x->getName();
+    auto pos = name.find(".");
+    if (pos != 0 && pos != std::string::npos) {
+      return name.substr(0, pos);
+    } else {
+      return name;
+    }
+  }
+
+  static const SrcInfo *getSrcInfo(const Node *x) {
+    if (auto *srcInfo = x->getAttribute<SrcInfoAttribute>()) {
+      return &srcInfo->info;
+    } else {
+      static SrcInfo defaultSrcInfo("<internal>", 0, 0, 0);
+      return &defaultSrcInfo;
+    }
+  }
+
+  LLVMVisitor(bool debug = false, bool jit = false, const std::string &flags = "");
 
   llvm::LLVMContext &getContext() { return context; }
   llvm::IRBuilder<> &getBuilder() { return builder; }
@@ -198,6 +228,11 @@ public:
   void setFunc(llvm::Function *f) { func = f; }
   void setBlock(llvm::BasicBlock *b) { block = b; }
   void setValue(llvm::Value *v) { value = v; }
+
+  /// Registers a new global variable or function with
+  /// this visitor.
+  /// @param var the global variable (or function) to register
+  void registerGlobal(const Var *var);
 
   /// Returns a new LLVM module initialized for the host
   /// architecture.

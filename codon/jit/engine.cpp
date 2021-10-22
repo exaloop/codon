@@ -120,10 +120,13 @@ public:
   }
 };
 
+typedef int MainFunc(int, char **);
+typedef void InputFunc();
+
 JIT::JIT(ir::Module *module)
     : module(module), pm(std::make_unique<ir::transform::PassManager>(/*debug=*/true)),
       plm(std::make_unique<PluginManager>()),
-      llvisitor(std::make_unique<ir::LLVMVisitor>(/*debug=*/true)) {
+      llvisitor(std::make_unique<ir::LLVMVisitor>(/*debug=*/true, /*jit=*/true)) {
   if (auto e = Engine::create()) {
     engine = std::move(e.get());
   } else {
@@ -131,6 +134,30 @@ JIT::JIT(ir::Module *module)
     seqassert(false, "JIT engine creation error");
   }
   llvisitor->setPluginManager(plm.get());
+}
+
+void JIT::init() {
+  module->accept(*llvisitor);
+  auto module = llvisitor->takeModule();
+  llvm::cantFail(
+      engine->addModule({std::move(module), std::make_unique<llvm::LLVMContext>()}));
+  auto func = llvm::cantFail(engine->lookup("main"));
+  auto *main = (MainFunc *)func.getAddress();
+  (*main)(0, nullptr);
+}
+
+void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+  const std::string name = ir::LLVMVisitor::getNameForFunction(input);
+  llvisitor->registerGlobal(input);
+  for (auto *var : newGlobals)
+    llvisitor->registerGlobal(var);
+  input->accept(*llvisitor);
+  auto module = llvisitor->takeModule();
+  llvm::cantFail(
+      engine->addModule({std::move(module), std::make_unique<llvm::LLVMContext>()}));
+  auto func = llvm::cantFail(engine->lookup(name));
+  auto *repl = (InputFunc *)func.getAddress();
+  (*repl)();
 }
 
 } // namespace jit
