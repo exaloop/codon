@@ -3,6 +3,7 @@
 #include "codon/dsl/plugins.h"
 #include "codon/sir/llvm/llvm.h"
 #include "codon/sir/sir.h"
+#include "codon/util/common.h"
 
 #include <string>
 #include <unordered_map>
@@ -175,6 +176,9 @@ private:
   // LLVM passes
   void runLLVMPipeline();
 
+  llvm::Value *getVar(const Var *var);
+  llvm::Function *getFunc(const Func *func);
+
 public:
   LLVMVisitor(bool debug = false, const std::string &flags = "");
 
@@ -194,6 +198,19 @@ public:
   void setFunc(llvm::Function *f) { func = f; }
   void setBlock(llvm::BasicBlock *b) { block = b; }
   void setValue(llvm::Value *v) { value = v; }
+
+  /// Returns a new LLVM module initialized for the host
+  /// architecture.
+  /// @param src source information for the new module
+  /// @return a new module
+  std::unique_ptr<llvm::Module> makeModule(const SrcInfo *src = nullptr);
+
+  /// Returns the current LLVM module and replaces it with a
+  /// new, fresh one. References to variables or functions
+  /// from the old module will be included as "external".
+  /// @param src source information for the new module
+  /// @return the current module, replaced internally
+  std::unique_ptr<llvm::Module> takeModule(const SrcInfo *src = nullptr);
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use

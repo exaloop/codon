@@ -80,6 +80,7 @@ add_definitions(${LLVM_DEFINITIONS})
 set(CODON_HPPFILES
     codon/dsl/dsl.h
     codon/dsl/plugins.h
+    codon/jit/engine.h
     codon/parser/ast.h
     codon/parser/ast/expr.h
     codon/parser/ast/stmt.h
@@ -201,6 +202,7 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_utf8_streams.h)
 set(CODON_CPPFILES
     codon/dsl/plugins.cpp
+    codon/jit/engine.cpp
     codon/parser/ast/expr.cpp
     codon/parser/ast/stmt.cpp
     codon/parser/ast/types.cpp

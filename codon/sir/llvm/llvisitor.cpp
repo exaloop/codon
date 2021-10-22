@@ -107,6 +107,100 @@ LLVMVisitor::LLVMVisitor(bool debug, const std::string &flags)
   llvm::initializeTypePromotionPass(registry);
 }
 
+llvm::Value *LLVMVisitor::getVar(const Var *var) {
+  llvm::Value *val = vars[var];
+  if (!val)
+    return nullptr;
+
+  llvm::Module *m = nullptr;
+  if (auto *x = llvm::dyn_cast<llvm::Instruction>(val))
+    m = x->getModule();
+  else if (auto *x = llvm::dyn_cast<llvm::GlobalValue>(val))
+    m = x->getParent();
+
+  // the following happens when JIT'ing
+  if (var->isGlobal() && m != module.get()) {
+    // see if it's in the module already
+    auto name = var->getName();
+    if (auto *global = module->getNamedValue(name))
+      return global;
+
+    llvm::Type *llvmType = getLLVMType(var->getType());
+    auto *storage = new llvm::GlobalVariable(*module, llvmType, /*isConstant=*/false,
+                                             llvm::GlobalVariable::ExternalLinkage,
+                                             /*Initializer=*/nullptr, name);
+    storage->setExternallyInitialized(true);
+
+    // debug info
+    auto *srcInfo = getSrcInfo(var);
+    llvm::DIFile *file = db.getFile(srcInfo->file);
+    llvm::DIScope *scope = db.unit;
+    llvm::DIGlobalVariableExpression *debugVar =
+        db.builder->createGlobalVariableExpression(scope, getDebugNameForVariable(var),
+                                                   name, file, srcInfo->line,
+                                                   getDIType(var->getType()),
+                                                   /*IsLocalToUnit=*/true);
+    storage->addDebugInfo(debugVar);
+    return storage;
+  }
+
+  // should never have a non-global val from another module
+  return val;
+}
+
+llvm::Function *LLVMVisitor::getFunc(const Func *func) {
+  llvm::Function *f = funcs[func];
+  if (!f)
+    return nullptr;
+
+  // the following happens when JIT'ing
+  if (f->getParent() != module.get()) {
+    // see if it's in the module already
+    if (auto *g = module->getFunction(f->getName()))
+      return g;
+
+    auto *g =
+        llvm::Function::Create(f->getFunctionType(), llvm::Function::ExternalLinkage,
+                               f->getName(), module.get());
+    g->copyAttributesFrom(f);
+    return g;
+  }
+
+  return f;
+}
+
+std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(const SrcInfo *src) {
+  auto module = std::make_unique<llvm::Module>("codon", context);
+  module->setTargetTriple(
+      llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
+  module->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
+
+  if (src) {
+    module->setSourceFileName(src->file);
+    // debug info setup
+    db.builder = std::make_unique<llvm::DIBuilder>(*module);
+    llvm::DIFile *file = db.getFile(src->file);
+    db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
+                                            ("codon version " CODON_VERSION), !db.debug,
+                                            db.flags,
+                                            /*RV=*/0);
+  }
+  module->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
+                        llvm::DEBUG_METADATA_VERSION);
+  // darwin only supports dwarf2
+  if (llvm::Triple(module->getTargetTriple()).isOSDarwin()) {
+    module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
+  }
+
+  return module;
+}
+
+std::unique_ptr<llvm::Module> LLVMVisitor::takeModule(const SrcInfo *src) {
+  auto currentModule = std::move(module);
+  module = makeModule(src);
+  return currentModule;
+}
+
 void LLVMVisitor::setDebugInfoForNode(const Node *x) {
   if (x && func) {
     auto *srcInfo = getSrcInfo(x);
@@ -414,26 +508,7 @@ LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatchBeforeLoop() {
  */
 
 void LLVMVisitor::visit(const Module *x) {
-  module = std::make_unique<llvm::Module>("codon", context);
-  module->setTargetTriple(
-      llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
-  module->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
-  auto *srcInfo = getSrcInfo(x->getMainFunc());
-  module->setSourceFileName(srcInfo->file);
-
-  // debug info setup
-  db.builder = std::make_unique<llvm::DIBuilder>(*module);
-  llvm::DIFile *file = db.getFile(srcInfo->file);
-  db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
-                                          ("codon version " CODON_VERSION), !db.debug,
-                                          db.flags,
-                                          /*RV=*/0);
-  module->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
-                        llvm::DEBUG_METADATA_VERSION);
-  // darwin only supports dwarf2
-  if (llvm::Triple(module->getTargetTriple()).isOSDarwin()) {
-    module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
-  }
+  module = makeModule(getSrcInfo(x));
 
   // args variable
   const Var *argVar = x->getArgVar();
@@ -1057,10 +1132,10 @@ void LLVMVisitor::visit(const Var *x) { seqassert(0, "cannot visit var"); }
 
 void LLVMVisitor::visit(const VarValue *x) {
   if (auto *f = cast<Func>(x->getVar())) {
-    value = funcs[f];
+    value = getFunc(f);
     seqassert(value, "{} value not found", *x);
   } else {
-    llvm::Value *varPtr = vars[x->getVar()];
+    llvm::Value *varPtr = getVar(x->getVar());
     seqassert(varPtr, "{} value not found", *x);
     builder.SetInsertPoint(block);
     value = builder.CreateLoad(varPtr);
@@ -1068,7 +1143,7 @@ void LLVMVisitor::visit(const VarValue *x) {
 }
 
 void LLVMVisitor::visit(const PointerValue *x) {
-  llvm::Value *var = vars[x->getVar()];
+  llvm::Value *var = getVar(x->getVar());
   seqassert(var, "{} variable not found", *x);
   value = var; // note: we don't load the pointer
 }
@@ -1415,7 +1490,7 @@ void LLVMVisitor::visit(const WhileFlow *x) {
 void LLVMVisitor::visit(const ForFlow *x) {
   seqassert(!x->isParallel(), "parallel for-loop not lowered");
   llvm::Type *loopVarType = getLLVMType(x->getVar()->getType());
-  llvm::Value *loopVar = vars[x->getVar()];
+  llvm::Value *loopVar = getVar(x->getVar());
   seqassert(loopVar, "{} loop variable not found", *x);
 
   auto *condBlock = llvm::BasicBlock::Create(context, "for.cond", func);
@@ -1473,7 +1548,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
 
 void LLVMVisitor::visit(const ImperativeForFlow *x) {
   seqassert(!x->isParallel(), "parallel for-loop not lowered");
-  llvm::Value *loopVar = vars[x->getVar()];
+  llvm::Value *loopVar = getVar(x->getVar());
   seqassert(loopVar, "{} loop variable not found", *x);
   seqassert(x->getStep() != 0, "step cannot be 0");
 
@@ -1828,7 +1903,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       if (var) {
         llvm::Value *obj =
             builder.CreateBitCast(objPtr, getLLVMType(catches[i]->getType()));
-        llvm::Value *varPtr = vars[var];
+        llvm::Value *varPtr = getVar(var);
         seqassert(varPtr, "could not get catch var");
         builder.CreateStore(obj, varPtr);
       }
@@ -1953,7 +2028,7 @@ void LLVMVisitor::visit(const dsl::CustomFlow *x) {
  */
 
 void LLVMVisitor::visit(const AssignInstr *x) {
-  llvm::Value *var = vars[x->getLhs()];
+  llvm::Value *var = getVar(x->getLhs());
   seqassert(var, "could not find {} var", *x);
   process(x->getRhs());
   if (var != getDummyVoidValue(context)) {
