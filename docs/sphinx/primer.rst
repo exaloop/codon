@@ -634,8 +634,8 @@ Let's import some C functions:
 
 .. code:: python
 
-    from C import pow(float) -> float
-    pow(2.0)  # 4.0
+    from C import pow(float, float) -> float
+    pow(2.0, 2.0)  # 4.0
 
     # Import and rename function
     from C import puts(cobj) -> void as print_line  # type cobj is C's pointer (void*, char*, etc.)
