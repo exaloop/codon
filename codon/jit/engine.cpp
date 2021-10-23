@@ -1,124 +1,89 @@
 #include "engine.h"
 
-#include "codon/sir/llvm/llvm.h"
 #include "codon/sir/llvm/memory_manager.h"
 #include "codon/sir/llvm/optimize.h"
-
-#include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
-#include "llvm/ExecutionEngine/Orc/CompileUtils.h"
-#include "llvm/ExecutionEngine/Orc/Core.h"
-#include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
-#include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
-#include "llvm/ExecutionEngine/Orc/IRTransformLayer.h"
-#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
-#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/Orc/TPCIndirectionUtils.h"
-#include "llvm/ExecutionEngine/Orc/TargetProcessControl.h"
 
 namespace codon {
 namespace jit {
 
-class Engine {
-private:
-  std::unique_ptr<llvm::orc::TargetProcessControl> tpc;
-  std::unique_ptr<llvm::orc::ExecutionSession> sess;
-  std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu;
+void Engine::handleLazyCallThroughError() {
+  llvm::errs() << "LazyCallThrough error: Could not find function body";
+  exit(1);
+}
 
-  llvm::DataLayout layout;
-  llvm::orc::MangleAndInterner mangle;
+llvm::Expected<llvm::orc::ThreadSafeModule>
+Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
+                       const llvm::orc::MaterializationResponsibility &R) {
+  module.withModuleDo(
+      [](llvm::Module &module) { ir::optimize(&module, /*debug=*/true); });
+  return std::move(module);
+}
 
-  llvm::orc::RTDyldObjectLinkingLayer objectLayer;
-  llvm::orc::IRCompileLayer compileLayer;
-  llvm::orc::IRTransformLayer optimizeLayer;
-  llvm::orc::CompileOnDemandLayer codLayer;
+Engine::Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
+               std::unique_ptr<llvm::orc::ExecutionSession> sess,
+               std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu,
+               llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout)
+    : tpc(std::move(tpc)), sess(std::move(sess)), tpciu(std::move(tpciu)),
+      layout(std::move(layout)), mangle(*this->sess, this->layout),
+      objectLayer(*this->sess,
+                  []() { return std::make_unique<ir::BoehmGCMemoryManager>(); }),
+      compileLayer(*this->sess, objectLayer,
+                   std::make_unique<llvm::orc::ConcurrentIRCompiler>(std::move(jtmb))),
+      optimizeLayer(*this->sess, compileLayer, optimizeModule),
+      codLayer(*this->sess, optimizeLayer, this->tpciu->getLazyCallThroughManager(),
+               [this] { return this->tpciu->createIndirectStubsManager(); }),
+      mainJD(this->sess->createBareJITDylib("<main>")) {
+  mainJD.addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          layout.getGlobalPrefix())));
+}
 
-  llvm::orc::JITDylib &mainJD;
+Engine::~Engine() {
+  if (auto err = sess->endSession())
+    sess->reportError(std::move(err));
+  if (auto err = tpciu->cleanup())
+    sess->reportError(std::move(err));
+}
 
-  static void handleLazyCallThroughError() {
-    llvm::errs() << "LazyCallThrough error: Could not find function body";
-    exit(1);
-  }
+llvm::Expected<std::unique_ptr<Engine>> Engine::create() {
+  auto ssp = std::make_shared<llvm::orc::SymbolStringPool>();
+  auto tpc = llvm::orc::SelfTargetProcessControl::Create(ssp);
+  if (!tpc)
+    return tpc.takeError();
 
-  static llvm::Expected<llvm::orc::ThreadSafeModule>
-  optimizeModule(llvm::orc::ThreadSafeModule module,
-                 const llvm::orc::MaterializationResponsibility &R) {
-    module.withModuleDo(
-        [](llvm::Module &module) { ir::optimize(&module, /*debug=*/true); });
-    return std::move(module);
-  }
+  auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(ssp));
 
-public:
-  Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
-         std::unique_ptr<llvm::orc::ExecutionSession> sess,
-         std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu,
-         llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout)
-      : tpc(std::move(tpc)), sess(std::move(sess)), tpciu(std::move(tpciu)),
-        layout(std::move(layout)), mangle(*this->sess, this->layout),
-        objectLayer(*this->sess,
-                    []() { return std::make_unique<ir::BoehmGCMemoryManager>(); }),
-        compileLayer(
-            *this->sess, objectLayer,
-            std::make_unique<llvm::orc::ConcurrentIRCompiler>(std::move(jtmb))),
-        optimizeLayer(*this->sess, compileLayer, optimizeModule),
-        codLayer(*this->sess, optimizeLayer, this->tpciu->getLazyCallThroughManager(),
-                 [this] { return this->tpciu->createIndirectStubsManager(); }),
-        mainJD(this->sess->createBareJITDylib("<main>")) {
-    mainJD.addGenerator(
-        llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            layout.getGlobalPrefix())));
-  }
+  auto tpciu = llvm::orc::TPCIndirectionUtils::Create(**tpc);
+  if (!tpciu)
+    return tpciu.takeError();
 
-  ~Engine() {
-    if (auto err = sess->endSession())
-      sess->reportError(std::move(err));
-    if (auto err = tpciu->cleanup())
-      sess->reportError(std::move(err));
-  }
+  (*tpciu)->createLazyCallThroughManager(
+      *sess, llvm::pointerToJITTargetAddress(&handleLazyCallThroughError));
 
-  static llvm::Expected<std::unique_ptr<Engine>> create() {
-    auto ssp = std::make_shared<llvm::orc::SymbolStringPool>();
-    auto tpc = llvm::orc::SelfTargetProcessControl::Create(ssp);
-    if (!tpc)
-      return tpc.takeError();
+  if (auto err = llvm::orc::setUpInProcessLCTMReentryViaTPCIU(**tpciu))
+    return std::move(err);
 
-    auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(ssp));
+  llvm::orc::JITTargetMachineBuilder jtmb((*tpc)->getTargetTriple());
 
-    auto tpciu = llvm::orc::TPCIndirectionUtils::Create(**tpc);
-    if (!tpciu)
-      return tpciu.takeError();
+  auto layout = jtmb.getDefaultDataLayoutForTarget();
+  if (!layout)
+    return layout.takeError();
 
-    (*tpciu)->createLazyCallThroughManager(
-        *sess, llvm::pointerToJITTargetAddress(&handleLazyCallThroughError));
+  return std::make_unique<Engine>(std::move(*tpc), std::move(sess), std::move(*tpciu),
+                                  std::move(jtmb), std::move(*layout));
+}
 
-    if (auto err = llvm::orc::setUpInProcessLCTMReentryViaTPCIU(**tpciu))
-      return std::move(err);
+llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,
+                              llvm::orc::ResourceTrackerSP rt) {
+  if (!rt)
+    rt = mainJD.getDefaultResourceTracker();
 
-    llvm::orc::JITTargetMachineBuilder jtmb((*tpc)->getTargetTriple());
+  return optimizeLayer.add(rt, std::move(module));
+}
 
-    auto layout = jtmb.getDefaultDataLayoutForTarget();
-    if (!layout)
-      return layout.takeError();
-
-    return std::make_unique<Engine>(std::move(*tpc), std::move(sess), std::move(*tpciu),
-                                    std::move(jtmb), std::move(*layout));
-  }
-
-  const llvm::DataLayout &getDataLayout() const { return layout; }
-
-  llvm::orc::JITDylib &getMainJITDylib() { return mainJD; }
-
-  llvm::Error addModule(llvm::orc::ThreadSafeModule module,
-                        llvm::orc::ResourceTrackerSP rt = nullptr) {
-    if (!rt)
-      rt = mainJD.getDefaultResourceTracker();
-
-    return optimizeLayer.add(rt, std::move(module));
-  }
-
-  llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef name) {
-    return sess->lookup({&mainJD}, mangle(name.str()));
-  }
-};
+llvm::Expected<llvm::JITEvaluatedSymbol> Engine::lookup(llvm::StringRef name) {
+  return sess->lookup({&mainJD}, mangle(name.str()));
+}
 
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
