@@ -1043,7 +1043,7 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     // ctx->moduleName != MODULE_MAIN;
     // ⚠️ TODO: should we make __main__ top-level variables NOT global by default?
     // Problem: a = [1]; def foo(): a.append(2) won't work anymore as in Python.
-    if (global && !isStatic)
+    if (global && !isStatic && !(r && r->isType()))
       ctx->cache->globals[canonical] = nullptr;
     // Handle type aliases as well!
     ctx->add(r && r->isType() ? SimplifyItem::Type : SimplifyItem::Var, e->value,

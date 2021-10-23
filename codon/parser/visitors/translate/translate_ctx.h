@@ -52,8 +52,7 @@ struct TranslateContext : public Context<TranslateItem> {
   std::vector<codon::ir::SeriesFlow *> series;
 
 public:
-  TranslateContext(std::shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
-                   codon::ir::BodiedFunc *base);
+  TranslateContext(std::shared_ptr<Cache> cache);
 
   using Context<TranslateItem>::add;
   /// Convenience method for adding an object to the context.

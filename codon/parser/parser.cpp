@@ -172,18 +172,14 @@ void generateDocstr(const std::string &argv0) {
 int jitLoop(const std::string &argv0) {
   fmt::print("Loading Codon JIT...");
   auto cache = std::make_shared<ast::Cache>(argv0);
-  cache->isJit = true;
-
   string fileName = "<jit>";
   // Initialize JIT (load stdlib by parsing an empty AST node)
-
-  // ast::SimplifyVisitor::apply(cache, move(codeStmt), abs, defines, (isTest > 1));
-
   auto transformed =
       ast::SimplifyVisitor::apply(cache, make_shared<ast::SuiteStmt>(), fileName, {});
   auto typechecked = ast::TypecheckVisitor::apply(cache, move(transformed));
   ast::TranslateVisitor::apply(cache, move(typechecked));
 
+  cache->isJit = true; // we still need main(), so set isJit after it has been set
   auto jit = jit::JIT(cache->module);
   cache->module->setSrcInfo({fileName, 0, 0, 0});
   jit.init();

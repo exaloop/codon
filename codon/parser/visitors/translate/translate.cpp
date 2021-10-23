@@ -24,8 +24,13 @@ TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
 ir::Func *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
   ir::BodiedFunc *main;
   if (cache->isJit) {
-    main = cache->module->Nr<ir::BodiedFunc>(format("_jit_{}", cache->jitCell));
+    auto fnName = format("_jit_{}", cache->jitCell);
+    main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
+    main->setGlobal();
+    auto irType = cache->module->unsafeGetFuncType(
+        fnName, cache->classes["void"].realizations["void"]->ir, {}, false);
+    main->realize(irType, {});
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
     char buf[PATH_MAX + 1];
@@ -36,7 +41,11 @@ ir::Func *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
   auto block = cache->module->Nr<ir::SeriesFlow>("body");
   main->setBody(block);
 
-  cache->codegenCtx = std::make_shared<TranslateContext>(cache, block, main);
+  if (!cache->codegenCtx)
+    cache->codegenCtx = std::make_shared<TranslateContext>(cache);
+  cache->codegenCtx->bases = {main};
+  cache->codegenCtx->series = {block};
+
   TranslateVisitor(cache->codegenCtx).transform(stmts);
   return main;
 }
@@ -233,6 +242,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs && var == VAR_ARGV) {
     ctx->add(TranslateItem::Var, var, ctx->getModule()->getArgVar());
+    ctx->cache->globals[var] = ctx->getModule()->getArgVar();
   } else if (!stmt->rhs || !stmt->rhs->isType()) {
     auto *newVar =
         make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
