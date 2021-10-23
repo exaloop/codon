@@ -181,7 +181,7 @@ int runMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
-int jitMode() { return codon::jitLoop(); }
+int jitMode(const std::string &argv0) { return codon::jitLoop(argv0); }
 
 int buildMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> libs(

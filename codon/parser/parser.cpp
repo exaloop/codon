@@ -170,6 +170,7 @@ void generateDocstr(const std::string &argv0) {
 }
 
 int jitLoop(const std::string &argv0) {
+  fmt::print("Loading Codon JIT...");
   auto cache = std::make_shared<ast::Cache>(argv0);
   cache->isJit = true;
 
@@ -187,51 +188,62 @@ int jitLoop(const std::string &argv0) {
   cache->module->setSrcInfo({fileName, 0, 0, 0});
   jit.init();
 
+  fmt::print("done!\n\n");
+  fflush(stdout);
+
+  auto execJit = [&](const string &code) {
+    try {
+      ast::StmtPtr node = ast::parseCode(cache, fileName, code, 0);
+      // cache->module0 = "<jit>";
+
+      auto sctx = cache->imports[MAIN_IMPORT].ctx;
+      auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+      auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+      auto simplified = make_shared<ast::SuiteStmt>();
+      for (auto &s : preamble->globals)
+        simplified->stmts.push_back(s);
+      for (auto &s : preamble->functions)
+        simplified->stmts.push_back(s);
+      simplified->stmts.push_back(s);
+      // TODO: unroll on errors...
+
+      auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+      vector<string> globalNames;
+      for (auto &g : cache->globals)
+        if (!g.second)
+          globalNames.push_back(g.first);
+
+      auto func = ast::TranslateVisitor::apply(cache, typechecked);
+      cache->jitCell++;
+
+      vector<ir::Var *> globalVars;
+      for (auto &g : globalNames) {
+        seqassert(cache->globals[g], "JIT global {} not set", g);
+        globalVars.push_back(cache->globals[g]);
+      }
+      jit.run(func, globalVars);
+    } catch (exc::ParserException &e) {
+      for (int i = 0; i < e.messages.size(); i++)
+        if (!e.messages[i].empty()) {
+          compilationError(e.messages[i], e.locations[i].file, e.locations[i].line,
+                           e.locations[i].col, /*terminate=*/false);
+        }
+    }
+  };
+
   string code;
   for (string l; std::getline(std::cin, l);) {
     if (l != "#%%") {
       code += l + "\n";
     } else {
-      try {
-        ast::StmtPtr node = ast::parseCode(cache, fileName, code, 0);
-        // cache->module0 = "<jit>";
-
-        auto sctx = cache->imports[MAIN_IMPORT].ctx;
-        auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
-        auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
-        auto simplified = make_shared<ast::SuiteStmt>();
-        for (auto &s : preamble->globals)
-          simplified->stmts.push_back(s);
-        for (auto &s : preamble->functions)
-          simplified->stmts.push_back(s);
-        simplified->stmts.push_back(s);
-        // TODO: unroll on errors...
-
-        auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
-        vector<string> globalNames;
-        for (auto &g : cache->globals)
-          if (!g.second)
-            globalNames.push_back(g.first);
-
-        auto func = ast::TranslateVisitor::apply(cache, typechecked);
-        cache->jitCell++;
-
-        vector<ir::Var *> globalVars;
-        for (auto &g : globalNames) {
-          seqassert(cache->globals[g], "JIT global {} not set", g);
-          globalVars.push_back(cache->globals[g]);
-        }
-        jit.run(func, globalVars);
-      } catch (exc::ParserException &e) {
-        for (int i = 0; i < e.messages.size(); i++)
-          if (!e.messages[i].empty()) {
-            compilationError(e.messages[i], e.locations[i].file, e.locations[i].line,
-                             e.locations[i].col, /*terminate=*/false);
-          }
-      }
+      execJit(code);
       code = "";
+      fmt::print("\n\n[done: {}]\n\n", cache->jitCell - 1);
+      fflush(stdout);
     }
   }
+  if (!code.empty())
+    execJit(code);
   return EXIT_SUCCESS;
 }
 
