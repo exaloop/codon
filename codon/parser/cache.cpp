@@ -14,7 +14,8 @@ namespace ast {
 
 Cache::Cache(std::string argv0)
     : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0), testFlags(0),
-      argv0(move(argv0)), module(nullptr), typeCtx(nullptr), codegenCtx(nullptr) {}
+      argv0(move(argv0)), module(nullptr), typeCtx(nullptr), codegenCtx(nullptr),
+      isJit(false), jitCell(0) {}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,

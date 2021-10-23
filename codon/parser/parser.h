@@ -18,5 +18,6 @@ codon::ir::Module *parse(const std::string &argv0, const std::string &file,
                          PluginManager *plm = nullptr);
 
 void generateDocstr(const std::string &argv0);
+int jitLoop(const std::string &argv0);
 
 } // namespace codon

@@ -156,7 +156,7 @@ void SimplifyVisitor::visit(AssertStmt *stmt) {
   ExprPtr msg = N<StringExpr>("");
   if (stmt->message)
     msg = N<CallExpr>(N<IdExpr>("str"), clone(stmt->message));
-  if (ctx->getLevel() && ctx->bases.back().attributes & FLAG_TEST)
+  if (ctx->getLevel() && (ctx->bases.back().attributes & FLAG_TEST))
     resultStmt = transform(
         N<IfStmt>(N<UnaryExpr>("!", clone(stmt->expr)),
                   N<ExprStmt>(N<CallExpr>(N<DotExpr>("__internal__", "seq_assert_test"),
@@ -328,7 +328,8 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
     error("not a top-level variable");
   seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
             stmt->var);
-  ctx->cache->globals.insert(val->canonicalName);
+  if (!in(ctx->cache->globals, val->canonicalName))
+    ctx->cache->globals[val->canonicalName] = nullptr;
   val->global = true;
   ctx->add(SimplifyItem::Var, stmt->var, val->canonicalName, true);
 }
@@ -1043,7 +1044,7 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     // ⚠️ TODO: should we make __main__ top-level variables NOT global by default?
     // Problem: a = [1]; def foo(): a.append(2) won't work anymore as in Python.
     if (global && !isStatic)
-      ctx->cache->globals.insert(canonical);
+      ctx->cache->globals[canonical] = nullptr;
     // Handle type aliases as well!
     ctx->add(r && r->isType() ? SimplifyItem::Type : SimplifyItem::Var, e->value,
              canonical, global);
@@ -1336,7 +1337,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // loaded)
     preamble->globals.push_back(N<AssignStmt>(
         N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false)));
-    ctx->cache->globals.insert(importDoneVar);
+    ctx->cache->globals[importDoneVar] = nullptr;
     std::vector<StmtPtr> stmts;
     stmts.push_back(nullptr); // placeholder to be filled later!
     // We need to wrap all imported top-level statements (not signatures! they have

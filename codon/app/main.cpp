@@ -181,6 +181,8 @@ int runMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
+int jitMode() { return codon::jitLoop(); }
+
 int buildMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> libs(
       "l", llvm::cl::desc("Link the specified library (only for executables)"));
@@ -289,6 +291,9 @@ int main(int argc, const char **argv) {
     const char *oldArgv0 = args[0];
     args[0] = argv0.data();
     return docMode(args, oldArgv0);
+  }
+  if (mode == "jit") {
+    return jitMode(args[0]);
   }
   return otherMode({argv, argv + argc});
 }

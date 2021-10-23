@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "codon/jit/engine.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -16,6 +17,10 @@
 #include "codon/sir/sir.h"
 #include "codon/sir/util/format.h"
 #include "codon/util/fmt/format.h"
+
+using std::make_shared;
+using std::string;
+using std::vector;
 
 int _ocaml_time = 0;
 int _ll_time = 0;
@@ -114,7 +119,8 @@ ir::Module *parse(const std::string &argv0, const std::string &file,
     }
 
     t = high_resolution_clock::now();
-    auto *module = ast::TranslateVisitor::apply(cache, move(typechecked));
+    ast::TranslateVisitor::apply(cache, move(typechecked));
+    auto module = cache->module;
     module->setSrcInfo({abs, 0, 0, 0});
 
     if (!isTest)
@@ -161,6 +167,72 @@ void generateDocstr(const std::string &argv0) {
                          e.locations[i].col, /*terminate=*/false);
       }
   }
+}
+
+int jitLoop(const std::string &argv0) {
+  auto cache = std::make_shared<ast::Cache>(argv0);
+  cache->isJit = true;
+
+  string fileName = "<jit>";
+  // Initialize JIT (load stdlib by parsing an empty AST node)
+
+  // ast::SimplifyVisitor::apply(cache, move(codeStmt), abs, defines, (isTest > 1));
+
+  auto transformed =
+      ast::SimplifyVisitor::apply(cache, make_shared<ast::SuiteStmt>(), fileName, {});
+  auto typechecked = ast::TypecheckVisitor::apply(cache, move(transformed));
+  ast::TranslateVisitor::apply(cache, move(typechecked));
+
+  auto jit = jit::JIT(cache->module);
+  cache->module->setSrcInfo({fileName, 0, 0, 0});
+  jit.init();
+
+  string code;
+  for (string l; std::getline(std::cin, l);) {
+    if (l != "#%%") {
+      code += l + "\n";
+    } else {
+      try {
+        ast::StmtPtr node = ast::parseCode(cache, fileName, code, 0);
+        // cache->module0 = "<jit>";
+
+        auto sctx = cache->imports[MAIN_IMPORT].ctx;
+        auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+        auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+        auto simplified = make_shared<ast::SuiteStmt>();
+        for (auto &s : preamble->globals)
+          simplified->stmts.push_back(s);
+        for (auto &s : preamble->functions)
+          simplified->stmts.push_back(s);
+        simplified->stmts.push_back(s);
+        // TODO: unroll on errors...
+
+        auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+        vector<string> globalNames;
+        for (auto &g : cache->globals)
+          if (!g.second)
+            globalNames.push_back(g.first);
+
+        auto func = ast::TranslateVisitor::apply(cache, typechecked);
+        cache->jitCell++;
+
+        vector<ir::Var *> globalVars;
+        for (auto &g : globalNames) {
+          seqassert(cache->globals[g], "JIT global {} not set", g);
+          globalVars.push_back(cache->globals[g]);
+        }
+        jit.run(func, globalVars);
+      } catch (exc::ParserException &e) {
+        for (int i = 0; i < e.messages.size(); i++)
+          if (!e.messages[i].empty()) {
+            compilationError(e.messages[i], e.locations[i].file, e.locations[i].line,
+                             e.locations[i].col, /*terminate=*/false);
+          }
+      }
+      code = "";
+    }
+  }
+  return EXIT_SUCCESS;
 }
 
 } // namespace codon

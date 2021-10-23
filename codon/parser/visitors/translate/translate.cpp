@@ -21,19 +21,24 @@ namespace ast {
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Module *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
-  auto main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-
-  char buf[PATH_MAX + 1];
-  realpath(cache->module0.c_str(), buf);
-  main->setSrcInfo({std::string(buf), 0, 0, 0});
+ir::Func *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
+  ir::BodiedFunc *main;
+  if (cache->isJit) {
+    main = cache->module->Nr<ir::BodiedFunc>(format("_jit_{}", cache->jitCell));
+    main->setSrcInfo({"<jit>", 0, 0, 0});
+  } else {
+    main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    char buf[PATH_MAX + 1];
+    realpath(cache->module0.c_str(), buf);
+    main->setSrcInfo({std::string(buf), 0, 0, 0});
+  }
 
   auto block = cache->module->Nr<ir::SeriesFlow>("body");
   main->setBody(block);
 
   cache->codegenCtx = std::make_shared<TranslateContext>(cache, block, main);
   TranslateVisitor(cache->codegenCtx).transform(stmts);
-  return cache->module;
+  return main;
 }
 
 /************************************************************************************/
@@ -234,6 +239,8 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
                       in(ctx->cache->globals, var), var);
     if (!in(ctx->cache->globals, var))
       ctx->getBase()->push_back(newVar);
+    else
+      ctx->cache->globals[var] = newVar;
     ctx->add(TranslateItem::Var, var, newVar);
     if (stmt->rhs)
       result = make<ir::AssignInstr>(stmt, newVar, transform(stmt->rhs));
