@@ -138,12 +138,14 @@ JIT::JIT(ir::Module *module)
 
 void JIT::init() {
   module->accept(*llvisitor);
-  auto module = llvisitor->takeModule();
+  auto pair = llvisitor->takeModule();
+  auto rt = engine->getMainJITDylib().createResourceTracker();
   llvm::cantFail(
-      engine->addModule({std::move(module), std::make_unique<llvm::LLVMContext>()}));
+      engine->addModule({std::move(std::get<1>(pair)), std::move(std::get<0>(pair))}));
   auto func = llvm::cantFail(engine->lookup("main"));
   auto *main = (MainFunc *)func.getAddress();
   (*main)(0, nullptr);
+  llvm::cantFail(rt->remove());
 }
 
 void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
@@ -152,12 +154,14 @@ void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
   for (auto *var : newGlobals)
     llvisitor->registerGlobal(var);
   input->accept(*llvisitor);
-  auto module = llvisitor->takeModule();
+  auto pair = llvisitor->takeModule();
+  auto rt = engine->getMainJITDylib().createResourceTracker();
   llvm::cantFail(
-      engine->addModule({std::move(module), std::make_unique<llvm::LLVMContext>()}));
+      engine->addModule({std::move(std::get<1>(pair)), std::move(std::get<0>(pair))}));
   auto func = llvm::cantFail(engine->lookup(name));
   auto *repl = (InputFunc *)func.getAddress();
   (*repl)();
+  llvm::cantFail(rt->remove());
 }
 
 } // namespace jit

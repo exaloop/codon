@@ -7,6 +7,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace codon {
@@ -109,11 +110,11 @@ private:
   };
 
   /// LLVM context used for compilation
-  llvm::LLVMContext context;
-  /// LLVM IR builder used for constructing LLVM IR
-  llvm::IRBuilder<> builder;
+  std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
   std::unique_ptr<llvm::Module> module;
+  /// LLVM IR builder used for constructing LLVM IR
+  llvm::IRBuilder<> builder;
   /// Current function we are compiling
   llvm::Function *func;
   /// Current basic block we are compiling
@@ -180,7 +181,7 @@ private:
 
   llvm::Value *getVar(const Var *var);
   llvm::Function *getFunc(const Func *func);
-  llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(context); }
+  llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
 
 public:
   static std::string getNameForFunction(const Func *x) {
@@ -210,9 +211,14 @@ public:
     }
   }
 
-  LLVMVisitor(bool debug = false, bool jit = false, const std::string &flags = "");
+  /// Constructs an LLVM visitor.
+  /// @param debug whether to compile in debug mode
+  /// @param jit whether to compile in JIT mode
+  /// @param flags command-line flags to be included in debug info
+  explicit LLVMVisitor(bool debug = false, bool jit = false,
+                       const std::string &flags = "");
 
-  llvm::LLVMContext &getContext() { return context; }
+  llvm::LLVMContext &getContext() { return *context; }
   llvm::IRBuilder<> &getBuilder() { return builder; }
   llvm::Module *getModule() { return module.get(); }
   llvm::FunctionCallee getFunc() { return func; }
@@ -236,16 +242,19 @@ public:
 
   /// Returns a new LLVM module initialized for the host
   /// architecture.
+  /// @param context LLVM context used for creating module
   /// @param src source information for the new module
   /// @return a new module
-  std::unique_ptr<llvm::Module> makeModule(const SrcInfo *src = nullptr);
+  std::unique_ptr<llvm::Module> makeModule(llvm::LLVMContext &context,
+                                           const SrcInfo *src = nullptr);
 
-  /// Returns the current LLVM module and replaces it with a
-  /// new, fresh one. References to variables or functions
+  /// Returns the current LLVM context/module and replaces them
+  /// with new, fresh ones. References to variables or functions
   /// from the old module will be included as "external".
   /// @param src source information for the new module
-  /// @return the current module, replaced internally
-  std::unique_ptr<llvm::Module> takeModule(const SrcInfo *src = nullptr);
+  /// @return the current context/module, replaced internally
+  std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
+  takeModule(const SrcInfo *src = nullptr);
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use
