@@ -15,17 +15,22 @@ namespace ir {
 
 class LLVMVisitor : public util::ConstVisitor {
 private:
-  template <typename V> using CacheBase = std::unordered_map<id_t, V *>;
+  template <typename V>
+  using CacheBase = std::unordered_map<id_t, std::pair<V *, int64_t>>;
   template <typename K, typename V> class Cache : public CacheBase<V> {
   public:
     using CacheBase<V>::CacheBase;
 
-    V *operator[](const K *key) {
+    std::pair<V *, int64_t> get(const K *key) {
       auto it = CacheBase<V>::find(key->getId());
-      return (it != CacheBase<V>::end()) ? it->second : nullptr;
+      return (it != CacheBase<V>::end()) ? it->second : std::make_pair(nullptr, 0);
     }
 
-    void insert(const K *key, V *value) { CacheBase<V>::emplace(key->getId(), value); }
+    V *operator[](const K *key) { return get(key).first; }
+
+    void insert(const K *key, V *value, int64_t id) {
+      CacheBase<V>::emplace(key->getId(), std::make_pair(value, id));
+    }
   };
 
   struct CoroData {
@@ -113,6 +118,8 @@ private:
   std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
   std::unique_ptr<llvm::Module> M;
+  /// Module ID
+  int64_t moduleId;
   /// LLVM IR builder used for constructing LLVM IR
   std::unique_ptr<llvm::IRBuilder<>> B;
   /// Current function we are compiling
@@ -180,12 +187,19 @@ private:
   void runLLVMPipeline();
 
   llvm::Value *getVar(const Var *var);
+  void insertVar(const Var *var, llvm::Value *x) { vars.insert(var, x, moduleId); }
   llvm::Function *getFunc(const Func *func);
+  void insertFunc(const Func *func, llvm::Function *x) {
+    funcs.insert(func, x, moduleId);
+  }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
 
 public:
   static std::string getNameForFunction(const Func *x) {
-    if (auto *externalFunc = cast<ExternalFunc>(x)) {
+    auto *bodiedFunc = cast<BodiedFunc>(x);
+    if (bodiedFunc && bodiedFunc->isJIT()) {
+      return x->getName();
+    } else if (isA<ExternalFunc>(x)) {
       return x->getUnmangledName();
     } else {
       return x->referenceString();
@@ -243,6 +257,10 @@ public:
   /// this visitor.
   /// @param var the global variable (or function) to register
   void registerGlobal(const Var *var);
+
+  /// Returns the default LLVM linkage type for the module.
+  /// @return LLVM linkage type
+  llvm::GlobalValue::LinkageTypes getDefaultLinkage();
 
   /// Returns a new LLVM module initialized for the host
   /// architecture.

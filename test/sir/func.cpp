@@ -32,8 +32,8 @@ TEST_F(SIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
 TEST_F(SIRCoreTest, BodiedFuncQueryAndReplace) {
   auto *fn = module->Nr<BodiedFunc>();
   fn->realize(module->unsafeGetDummyFuncType(), {});
-  fn->setBuiltin();
-  ASSERT_TRUE(fn->isBuiltin());
+  fn->setJIT();
+  ASSERT_TRUE(fn->isJIT());
 
   auto *body = fn->getBody();
   ASSERT_FALSE(body);
@@ -63,7 +63,7 @@ TEST_F(SIRCoreTest, BodiedFuncCloning) {
   auto *fn = module->Nr<BodiedFunc>("fn");
   fn->realize(module->unsafeGetDummyFuncType(), {});
 
-  fn->setBuiltin();
+  fn->setJIT();
   fn->setBody(module->Nr<SeriesFlow>());
   ASSERT_TRUE(util::match(fn, cv->clone(fn)));
 }

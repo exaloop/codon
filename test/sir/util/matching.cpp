@@ -25,8 +25,8 @@ TEST_F(SIRCoreTest, MatchingEquivalentFunc) {
     auto *second = module->Nr<BodiedFunc>();
     second->realize(module->unsafeGetDummyFuncType(), {});
 
-    first->setBuiltin();
-    second->setBuiltin();
+    first->setJIT();
+    second->setJIT();
 
     ASSERT_TRUE(util::match(first, second));
   }
@@ -58,7 +58,7 @@ TEST_F(SIRCoreTest, MatchingNonEquivalentFunc) {
     auto *second = module->Nr<BodiedFunc>();
     second->realize(module->unsafeGetDummyFuncType(), {});
 
-    first->setBuiltin();
+    first->setJIT();
 
     ASSERT_FALSE(util::match(first, second));
   }

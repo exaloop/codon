@@ -31,6 +31,7 @@ ir::Func *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
     auto irType = cache->module->unsafeGetFuncType(
         fnName, cache->classes["void"].realizations["void"]->ir, {}, false);
     main->realize(irType, {});
+    main->setJIT();
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
     char buf[PATH_MAX + 1];

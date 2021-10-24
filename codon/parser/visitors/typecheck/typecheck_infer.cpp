@@ -220,8 +220,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           r->ir = ctx->cache->module->Nr<ir::ExternalFunc>(type->realizedName());
         } else {
           r->ir = ctx->cache->module->Nr<ir::BodiedFunc>(type->realizedName());
-          if (ast->attributes.has(Attr::ForceRealize))
-            ir::cast<ir::BodiedFunc>(r->ir)->setBuiltin();
         }
 
         auto parent = type->funcParent;

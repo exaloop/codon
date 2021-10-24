@@ -29,8 +29,8 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 
 LLVMVisitor::LLVMVisitor(bool debug, bool jit, const std::string &flags)
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
-      B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
-      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
+      moduleId(0), B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr),
+      block(nullptr), value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
       db(debug, jit, flags), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -75,22 +75,27 @@ LLVMVisitor::LLVMVisitor(bool debug, bool jit, const std::string &flags)
   llvm::initializeTypePromotionPass(registry);
 }
 
+llvm::GlobalValue::LinkageTypes LLVMVisitor::getDefaultLinkage() {
+  return db.jit ? llvm::GlobalValue::ExternalLinkage
+                : llvm::GlobalValue::PrivateLinkage;
+}
+
 void LLVMVisitor::registerGlobal(const Var *var) {
   if (!var->isGlobal())
     return;
 
   if (auto *f = cast<Func>(var)) {
     makeLLVMFunction(f);
-    funcs.insert(f, func);
+    insertFunc(f, func);
   } else {
     llvm::Type *llvmType = getLLVMType(var->getType());
     if (llvmType->isVoidTy()) {
-      vars.insert(var, getDummyVoidValue());
+      insertVar(var, getDummyVoidValue());
     } else {
       auto *storage = new llvm::GlobalVariable(
-          *M, llvmType, /*isConstant=*/false, llvm::GlobalVariable::PrivateLinkage,
+          *M, llvmType, /*isConstant=*/false, getDefaultLinkage(),
           llvm::Constant::getNullValue(llvmType), var->getName());
-      vars.insert(var, storage);
+      insertVar(var, storage);
 
       // debug info
       auto *srcInfo = getSrcInfo(var);
@@ -107,24 +112,18 @@ void LLVMVisitor::registerGlobal(const Var *var) {
 }
 
 llvm::Value *LLVMVisitor::getVar(const Var *var) {
-  llvm::Value *val = vars[var];
+  std::pair<llvm::Value *, int64_t> p = vars.get(var);
   if (db.jit && var->isGlobal()) {
-    if (val) {
-      llvm::Module *m = nullptr;
-      if (auto *x = llvm::dyn_cast<llvm::Instruction>(val))
-        m = x->getModule();
-      else if (auto *x = llvm::dyn_cast<llvm::GlobalValue>(val))
-        m = x->getParent();
-
-      if (m != M.get()) {
-        // see if it's in the M already
+    if (auto *val = p.first) {
+      if (p.second != moduleId) {
+        // see if it's in the module already
         auto name = var->getName();
         if (auto *global = M->getNamedValue(name))
           return global;
 
         llvm::Type *llvmType = getLLVMType(var->getType());
         auto *storage = new llvm::GlobalVariable(*M, llvmType, /*isConstant=*/false,
-                                                 llvm::GlobalVariable::ExternalLinkage,
+                                                 llvm::GlobalValue::ExternalLinkage,
                                                  /*Initializer=*/nullptr, name);
         storage->setExternallyInitialized(true);
 
@@ -138,7 +137,7 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
                 getDIType(var->getType()),
                 /*IsLocalToUnit=*/true);
         storage->addDebugInfo(debugVar);
-        vars.insert(var, storage);
+        insertVar(var, storage);
         return storage;
       }
     } else {
@@ -146,15 +145,15 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       return vars[var];
     }
   }
-  return val;
+  return p.first;
 }
 
 llvm::Function *LLVMVisitor::getFunc(const Func *func) {
-  llvm::Function *f = funcs[func];
+  std::pair<llvm::Function *, int64_t> p = funcs.get(func);
   if (db.jit) {
-    if (f) {
-      if (f->getParent() != M.get()) {
-        // see if it's in the M already
+    if (auto *f = p.first) {
+      if (p.second != moduleId) {
+        // see if it's in the module already
         if (auto *g = M->getFunction(f->getName()))
           return g;
 
@@ -162,7 +161,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
                                          llvm::Function::ExternalLinkage, f->getName(),
                                          M.get());
         g->copyAttributesFrom(f);
-        funcs.insert(func, g);
+        insertFunc(func, g);
         return g;
       }
     } else {
@@ -170,7 +169,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
       return funcs[func];
     }
   }
-  return f;
+  return p.first;
 }
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
@@ -205,6 +204,7 @@ LLVMVisitor::takeModule(const SrcInfo *src) {
   auto currentModule = std::move(M);
   context = std::make_unique<llvm::LLVMContext>();
   M = makeModule(*context, src);
+  ++moduleId;
   return {std::move(currentContext), std::move(currentModule)};
 }
 
@@ -599,7 +599,7 @@ void LLVMVisitor::visit(const Module *x) {
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(exitBlock);
-  llvm::Value *argStorage = vars[x->getArgVar()];
+  llvm::Value *argStorage = getVar(x->getArgVar());
   seqassert(argStorage, "argument storage missing");
   B->CreateStore(arr, argStorage);
   B->CreateCall(initFunc, B->getInt32(db.debug ? 1 : 0));
@@ -752,7 +752,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   auto *funcType = cast<FuncType>(x->getType());
   std::vector<Type *> argTypes(funcType->begin(), funcType->end());
 
-  func->setLinkage(llvm::GlobalValue::PrivateLinkage);
+  func->setLinkage(getDefaultLinkage());
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   std::vector<llvm::Value *> args;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
@@ -915,7 +915,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   seqassert(!fail, "linking failed");
   func = M->getFunction(getNameForFunction(x));
   seqassert(func, "function not linked in");
-  func->setLinkage(llvm::GlobalValue::PrivateLinkage);
+  func->setLinkage(getDefaultLinkage());
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
 }
 
@@ -929,7 +929,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   if (fnAttributes && fnAttributes->has("std.internal.attributes.export")) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
-    func->setLinkage(llvm::GlobalValue::PrivateLinkage);
+    func->setLinkage(getDefaultLinkage());
   }
   if (fnAttributes && fnAttributes->has("std.internal.attributes.inline")) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
@@ -956,7 +956,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     const Var *var = *varIter;
     llvm::Value *storage = B->CreateAlloca(getLLVMType(var->getType()));
     B->CreateStore(argIter, storage);
-    vars.insert(var, storage);
+    insertVar(var, storage);
 
     // debug info
     auto *srcInfo = getSrcInfo(var);
@@ -977,10 +977,10 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   for (auto *var : *x) {
     llvm::Type *llvmType = getLLVMType(var->getType());
     if (llvmType->isVoidTy()) {
-      vars.insert(var, getDummyVoidValue());
+      insertVar(var, getDummyVoidValue());
     } else {
       llvm::Value *storage = B->CreateAlloca(llvmType);
-      vars.insert(var, storage);
+      insertVar(var, storage);
 
       // debug info
       auto *srcInfo = getSrcInfo(var);

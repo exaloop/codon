@@ -47,7 +47,7 @@ public:
     result = compareFuncs(x, y) &&
              std::equal(x->begin(), x->end(), y->begin(), y->end(),
                         [this](auto *x, auto *y) { return process(x, y); }) &&
-             process(x->getBody(), y->getBody()) && x->isBuiltin() == y->isBuiltin();
+             process(x->getBody(), y->getBody()) && x->isJIT() == y->isJIT();
   }
   VISIT(ExternalFunc);
   void handle(const ExternalFunc *x, const ExternalFunc *y) {

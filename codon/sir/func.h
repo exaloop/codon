@@ -88,8 +88,8 @@ private:
   std::list<Var *> symbols;
   /// the function body
   Value *body = nullptr;
-  /// whether the function is builtin
-  bool builtin = false;
+  /// whether the function is a JIT input
+  bool jit = false;
 
 public:
   static const char NodeId;
@@ -136,11 +136,11 @@ public:
   /// @param b the new body
   void setBody(Flow *b) { body = b; }
 
-  /// @return true if the function is builtin
-  bool isBuiltin() const { return builtin; }
-  /// Changes the function's builtin status.
-  /// @param v true if builtin, false otherwise
-  void setBuiltin(bool v = true) { builtin = v; }
+  /// @return true if the function is a JIT input
+  bool isJIT() const { return jit; }
+  /// Changes the function's JIT input status.
+  /// @param v true if JIT input, false otherwise
+  void setJIT(bool v = true) { jit = v; }
 
 protected:
   std::vector<Value *> doGetUsedValues() const override {
