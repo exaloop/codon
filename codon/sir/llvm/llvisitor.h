@@ -112,9 +112,9 @@ private:
   /// LLVM context used for compilation
   std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
-  std::unique_ptr<llvm::Module> module;
+  std::unique_ptr<llvm::Module> M;
   /// LLVM IR builder used for constructing LLVM IR
-  llvm::IRBuilder<> builder;
+  std::unique_ptr<llvm::IRBuilder<>> B;
   /// Current function we are compiling
   llvm::Function *func;
   /// Current basic block we are compiling
@@ -202,12 +202,16 @@ public:
     }
   }
 
+  static const SrcInfo *getDefaultSrcInfo() {
+    static SrcInfo defaultSrcInfo("<internal>", 0, 0, 0);
+    return &defaultSrcInfo;
+  }
+
   static const SrcInfo *getSrcInfo(const Node *x) {
     if (auto *srcInfo = x->getAttribute<SrcInfoAttribute>()) {
       return &srcInfo->info;
     } else {
-      static SrcInfo defaultSrcInfo("<internal>", 0, 0, 0);
-      return &defaultSrcInfo;
+      return getDefaultSrcInfo();
     }
   }
 
@@ -219,8 +223,8 @@ public:
                        const std::string &flags = "");
 
   llvm::LLVMContext &getContext() { return *context; }
-  llvm::IRBuilder<> &getBuilder() { return builder; }
-  llvm::Module *getModule() { return module.get(); }
+  llvm::IRBuilder<> &getBuilder() { return *B; }
+  llvm::Module *getModule() { return M.get(); }
   llvm::FunctionCallee getFunc() { return func; }
   llvm::BasicBlock *getBlock() { return block; }
   llvm::Value *getValue() { return value; }

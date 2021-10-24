@@ -28,9 +28,10 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 }
 
 LLVMVisitor::LLVMVisitor(bool debug, bool jit, const std::string &flags)
-    : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), module(),
-      builder(*context), func(nullptr), block(nullptr), value(nullptr), vars(), funcs(),
-      coro(), loops(), trycatch(), db(debug, jit, flags), plugins(nullptr) {
+    : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
+      B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
+      db(debug, jit, flags), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -87,7 +88,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
       vars.insert(var, getDummyVoidValue());
     } else {
       auto *storage = new llvm::GlobalVariable(
-          *module, llvmType, /*isConstant=*/false, llvm::GlobalVariable::PrivateLinkage,
+          *M, llvmType, /*isConstant=*/false, llvm::GlobalVariable::PrivateLinkage,
           llvm::Constant::getNullValue(llvmType), var->getName());
       vars.insert(var, storage);
 
@@ -115,17 +116,16 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       else if (auto *x = llvm::dyn_cast<llvm::GlobalValue>(val))
         m = x->getParent();
 
-      if (m != module.get()) {
-        // see if it's in the module already
+      if (m != M.get()) {
+        // see if it's in the M already
         auto name = var->getName();
-        if (auto *global = module->getNamedValue(name))
+        if (auto *global = M->getNamedValue(name))
           return global;
 
         llvm::Type *llvmType = getLLVMType(var->getType());
-        auto *storage =
-            new llvm::GlobalVariable(*module, llvmType, /*isConstant=*/false,
-                                     llvm::GlobalVariable::ExternalLinkage,
-                                     /*Initializer=*/nullptr, name);
+        auto *storage = new llvm::GlobalVariable(*M, llvmType, /*isConstant=*/false,
+                                                 llvm::GlobalVariable::ExternalLinkage,
+                                                 /*Initializer=*/nullptr, name);
         storage->setExternallyInitialized(true);
 
         // debug info
@@ -153,14 +153,14 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
   llvm::Function *f = funcs[func];
   if (db.jit) {
     if (f) {
-      if (f->getParent() != module.get()) {
-        // see if it's in the module already
-        if (auto *g = module->getFunction(f->getName()))
+      if (f->getParent() != M.get()) {
+        // see if it's in the M already
+        if (auto *g = M->getFunction(f->getName()))
           return g;
 
         auto *g = llvm::Function::Create(f->getFunctionType(),
                                          llvm::Function::ExternalLinkage, f->getName(),
-                                         module.get());
+                                         M.get());
         g->copyAttributesFrom(f);
         funcs.insert(func, g);
         return g;
@@ -175,47 +175,46 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
                                                       const SrcInfo *src) {
-  auto module = std::make_unique<llvm::Module>("codon", context);
-  module->setTargetTriple(
-      llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
-  module->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
+  auto M = std::make_unique<llvm::Module>("codon", context);
+  M->setTargetTriple(llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
+  M->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
+  B = std::make_unique<llvm::IRBuilder<>>(context);
 
-  if (src) {
-    module->setSourceFileName(src->file);
-    // debug info setup
-    db.builder = std::make_unique<llvm::DIBuilder>(*module);
-    llvm::DIFile *file = db.getFile(src->file);
-    db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
-                                            ("codon version " CODON_VERSION), !db.debug,
-                                            db.flags,
-                                            /*RV=*/0);
-  }
-  module->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
-                        llvm::DEBUG_METADATA_VERSION);
+  auto *srcInfo = src ? src : getDefaultSrcInfo();
+  M->setSourceFileName(srcInfo->file);
+  // debug info setup
+  db.builder = std::make_unique<llvm::DIBuilder>(*M);
+  llvm::DIFile *file = db.getFile(srcInfo->file);
+  db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
+                                          ("codon version " CODON_VERSION), !db.debug,
+                                          db.flags,
+                                          /*RV=*/0);
+  M->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
+                   llvm::DEBUG_METADATA_VERSION);
   // darwin only supports dwarf2
-  if (llvm::Triple(module->getTargetTriple()).isOSDarwin()) {
-    module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
+  if (llvm::Triple(M->getTargetTriple()).isOSDarwin()) {
+    M->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
   }
 
-  return module;
+  return M;
 }
 
 std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
 LLVMVisitor::takeModule(const SrcInfo *src) {
   auto currentContext = std::move(context);
-  auto currentModule = std::move(module);
+  auto currentModule = std::move(M);
   context = std::make_unique<llvm::LLVMContext>();
-  module = makeModule(*context, src);
+  M = makeModule(*context, src);
   return {std::move(currentContext), std::move(currentModule)};
 }
 
 void LLVMVisitor::setDebugInfoForNode(const Node *x) {
   if (x && func) {
     auto *srcInfo = getSrcInfo(x);
-    builder.SetCurrentDebugLocation(llvm::DILocation::get(
+    B->SetCurrentDebugLocation(llvm::DILocation::get(
         *context, srcInfo->line, srcInfo->col, func->getSubprogram()));
   } else {
-    builder.SetCurrentDebugLocation(llvm::DebugLoc());
+    B->SetCurrentDebugLocation(llvm::DebugLoc());
   }
 }
 
@@ -226,7 +225,7 @@ void LLVMVisitor::process(const Node *x) {
 
 void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, false); }
 
-void LLVMVisitor::runLLVMPipeline() { optimize(module.get(), db.debug, plugins); }
+void LLVMVisitor::runLLVMPipeline() { optimize(M.get(), db.debug, plugins); }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename) {
   runLLVMPipeline();
@@ -238,19 +237,19 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename) {
     compilationError(err.message());
   llvm::raw_pwrite_stream *os = &out->os();
 
-  auto machine = getTargetMachine(module.get());
+  auto machine = getTargetMachine(M.get());
   auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
   auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
   llvm::legacy::PassManager pm;
 
-  llvm::TargetLibraryInfoImpl tlii(llvm::Triple(module->getTargetTriple()));
+  llvm::TargetLibraryInfoImpl tlii(llvm::Triple(M->getTargetTriple()));
   pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
   seqassert(!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_ObjectFile,
                                           /*DisableVerify=*/true, mmiwp),
             "could not add passes");
   const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
       ->Initialize(mmiwp->getMMI().getContext(), *machine);
-  pm.run(*module);
+  pm.run(*M);
   out->keep();
 }
 
@@ -258,7 +257,7 @@ void LLVMVisitor::writeToBitcodeFile(const std::string &filename) {
   runLLVMPipeline();
   std::error_code err;
   llvm::raw_fd_ostream stream(filename, err, llvm::sys::fs::F_None);
-  llvm::WriteBitcodeToFile(*module, stream);
+  llvm::WriteBitcodeToFile(*M, stream);
   if (err) {
     compilationError(err.message());
   }
@@ -269,7 +268,7 @@ void LLVMVisitor::writeToLLFile(const std::string &filename, bool optimize) {
     runLLVMPipeline();
   auto fo = fopen(filename.c_str(), "w");
   llvm::raw_fd_ostream fout(fileno(fo), true);
-  fout << *module;
+  fout << *M;
   fout.close();
 }
 
@@ -357,8 +356,8 @@ void LLVMVisitor::compile(const std::string &filename,
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
-  llvm::Function *main = module->getFunction("main");
-  llvm::EngineBuilder EB(std::move(module));
+  llvm::Function *main = M->getFunction("main");
+  llvm::EngineBuilder EB(std::move(M));
   EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
   llvm::ExecutionEngine *eng = EB.create();
 
@@ -374,8 +373,8 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
 }
 
 llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
-  auto f = module->getOrInsertFunction(atomic ? "seq_alloc_atomic" : "seq_alloc",
-                                       builder.getInt8PtrTy(), builder.getInt64Ty());
+  auto f = M->getOrInsertFunction(atomic ? "seq_alloc_atomic" : "seq_alloc",
+                                  B->getInt8PtrTy(), B->getInt64Ty());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   g->setReturnDoesNotAlias();
@@ -384,46 +383,43 @@ llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
 }
 
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
-  return module->getOrInsertFunction("seq_personality", builder.getInt32Ty(),
-                                     builder.getInt32Ty(), builder.getInt32Ty(),
-                                     builder.getInt64Ty(), builder.getInt8PtrTy(),
-                                     builder.getInt8PtrTy());
+  return M->getOrInsertFunction("seq_personality", B->getInt32Ty(), B->getInt32Ty(),
+                                B->getInt32Ty(), B->getInt64Ty(), B->getInt8PtrTy(),
+                                B->getInt8PtrTy());
 }
 
 llvm::FunctionCallee LLVMVisitor::makeExcAllocFunc() {
-  auto f = module->getOrInsertFunction("seq_alloc_exc", builder.getInt8PtrTy(),
-                                       builder.getInt32Ty(), builder.getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_alloc_exc", B->getInt8PtrTy(), B->getInt32Ty(),
+                                  B->getInt8PtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   return f;
 }
 
 llvm::FunctionCallee LLVMVisitor::makeThrowFunc() {
-  auto f = module->getOrInsertFunction("seq_throw", builder.getVoidTy(),
-                                       builder.getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_throw", B->getVoidTy(), B->getInt8PtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotReturn();
   return f;
 }
 
 llvm::FunctionCallee LLVMVisitor::makeTerminateFunc() {
-  auto f = module->getOrInsertFunction("seq_terminate", builder.getVoidTy(),
-                                       builder.getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_terminate", B->getVoidTy(), B->getInt8PtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotReturn();
   return f;
 }
 
 llvm::StructType *LLVMVisitor::getTypeInfoType() {
-  return llvm::StructType::get(builder.getInt32Ty());
+  return llvm::StructType::get(B->getInt32Ty());
 }
 
 llvm::StructType *LLVMVisitor::getPadType() {
-  return llvm::StructType::get(builder.getInt8PtrTy(), builder.getInt32Ty());
+  return llvm::StructType::get(B->getInt8PtrTy(), B->getInt32Ty());
 }
 
 llvm::StructType *LLVMVisitor::getExceptionType() {
-  return llvm::StructType::get(getTypeInfoType(), builder.getInt8PtrTy());
+  return llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
 }
 
 namespace {
@@ -446,12 +442,12 @@ int typeIdxLookup(const std::string &name) {
 llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(const std::string &name) {
   auto *typeInfoType = getTypeInfoType();
   const std::string typeVarName = "codon.typeidx." + (name.empty() ? "<all>" : name);
-  llvm::GlobalVariable *tidx = module->getGlobalVariable(typeVarName);
+  llvm::GlobalVariable *tidx = M->getGlobalVariable(typeVarName);
   int idx = typeIdxLookup(name);
   if (!tidx) {
     tidx = new llvm::GlobalVariable(
-        *module, typeInfoType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-        llvm::ConstantStruct::get(typeInfoType, builder.getInt32(idx)), typeVarName);
+        *M, typeInfoType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantStruct::get(typeInfoType, B->getInt32(idx)), typeVarName);
   }
   return tidx;
 }
@@ -466,13 +462,13 @@ int LLVMVisitor::getTypeIdx(types::Type *catchType) {
 
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   if (trycatch.empty()) {
-    return builder.CreateCall(callee, args);
+    return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
     auto *unwindBlock = trycatch.back().exceptionBlock;
-    auto *result = builder.CreateInvoke(callee, normalBlock, unwindBlock, args);
+    auto *result = B->CreateInvoke(callee, normalBlock, unwindBlock, args);
     block = normalBlock;
     return result;
   }
@@ -512,12 +508,12 @@ LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatchBeforeLoop() {
 }
 
 /*
- * General values, module, functions, vars
+ * General values, M, functions, vars
  */
 
 void LLVMVisitor::visit(const Module *x) {
-  // initialize module
-  module = makeModule(*context, getSrcInfo(x));
+  // initialize M
+  M = makeModule(*context, getSrcInfo(x));
 
   // args variable
   seqassert(x->getArgVar()->isGlobal(), "arg var is not global");
@@ -542,23 +538,18 @@ void LLVMVisitor::visit(const Module *x) {
   setDebugInfoForNode(nullptr);
 
   // build canonical main function
-  auto *strType =
-      llvm::StructType::get(*context, {builder.getInt64Ty(), builder.getInt8PtrTy()});
+  auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getInt8PtrTy()});
   auto *arrType =
-      llvm::StructType::get(*context, {builder.getInt64Ty(), strType->getPointerTo()});
+      llvm::StructType::get(*context, {B->getInt64Ty(), strType->getPointerTo()});
 
   auto *initFunc = llvm::cast<llvm::Function>(
-      module->getOrInsertFunction("seq_init", builder.getVoidTy(), builder.getInt32Ty())
-          .getCallee());
+      M->getOrInsertFunction("seq_init", B->getVoidTy(), B->getInt32Ty()).getCallee());
   auto *strlenFunc = llvm::cast<llvm::Function>(
-      module
-          ->getOrInsertFunction("strlen", builder.getInt64Ty(), builder.getInt8PtrTy())
-          .getCallee());
+      M->getOrInsertFunction("strlen", B->getInt64Ty(), B->getInt8PtrTy()).getCallee());
 
   auto *canonicalMainFunc = llvm::cast<llvm::Function>(
-      module
-          ->getOrInsertFunction("main", builder.getInt32Ty(), builder.getInt32Ty(),
-                                builder.getInt8PtrTy()->getPointerTo())
+      M->getOrInsertFunction("main", B->getInt32Ty(), B->getInt32Ty(),
+                             B->getInt8PtrTy()->getPointerTo())
           .getCallee());
 
   canonicalMainFunc->setPersonalityFn(
@@ -577,86 +568,85 @@ void LLVMVisitor::visit(const Module *x) {
   auto *bodyBlock = llvm::BasicBlock::Create(*context, "body", canonicalMainFunc);
   auto *exitBlock = llvm::BasicBlock::Create(*context, "exit", canonicalMainFunc);
 
-  builder.SetInsertPoint(entryBlock);
+  B->SetInsertPoint(entryBlock);
   auto allocFunc = makeAllocFunc(/*atomic=*/false);
-  llvm::Value *len = builder.CreateZExt(argc, builder.getInt64Ty());
-  llvm::Value *elemSize =
-      builder.getInt64(module->getDataLayout().getTypeAllocSize(strType));
-  llvm::Value *allocSize = builder.CreateMul(len, elemSize);
-  llvm::Value *ptr = builder.CreateCall(allocFunc, allocSize);
-  ptr = builder.CreateBitCast(ptr, strType->getPointerTo());
+  llvm::Value *len = B->CreateZExt(argc, B->getInt64Ty());
+  llvm::Value *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(strType));
+  llvm::Value *allocSize = B->CreateMul(len, elemSize);
+  llvm::Value *ptr = B->CreateCall(allocFunc, allocSize);
+  ptr = B->CreateBitCast(ptr, strType->getPointerTo());
   llvm::Value *arr = llvm::UndefValue::get(arrType);
-  arr = builder.CreateInsertValue(arr, len, 0);
-  arr = builder.CreateInsertValue(arr, ptr, 1);
-  builder.CreateBr(loopBlock);
+  arr = B->CreateInsertValue(arr, len, 0);
+  arr = B->CreateInsertValue(arr, ptr, 1);
+  B->CreateBr(loopBlock);
 
-  builder.SetInsertPoint(loopBlock);
-  llvm::PHINode *control = builder.CreatePHI(builder.getInt32Ty(), 2, "i");
-  llvm::Value *next = builder.CreateAdd(control, builder.getInt32(1), "next");
-  llvm::Value *cond = builder.CreateICmpSLT(control, argc);
-  control->addIncoming(builder.getInt32(0), entryBlock);
+  B->SetInsertPoint(loopBlock);
+  llvm::PHINode *control = B->CreatePHI(B->getInt32Ty(), 2, "i");
+  llvm::Value *next = B->CreateAdd(control, B->getInt32(1), "next");
+  llvm::Value *cond = B->CreateICmpSLT(control, argc);
+  control->addIncoming(B->getInt32(0), entryBlock);
   control->addIncoming(next, bodyBlock);
-  builder.CreateCondBr(cond, bodyBlock, exitBlock);
+  B->CreateCondBr(cond, bodyBlock, exitBlock);
 
-  builder.SetInsertPoint(bodyBlock);
-  llvm::Value *arg = builder.CreateLoad(builder.CreateGEP(argv, control));
-  llvm::Value *argLen = builder.CreateZExtOrTrunc(builder.CreateCall(strlenFunc, arg),
-                                                  builder.getInt64Ty());
+  B->SetInsertPoint(bodyBlock);
+  llvm::Value *arg = B->CreateLoad(B->CreateGEP(argv, control));
+  llvm::Value *argLen =
+      B->CreateZExtOrTrunc(B->CreateCall(strlenFunc, arg), B->getInt64Ty());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = builder.CreateInsertValue(str, argLen, 0);
-  str = builder.CreateInsertValue(str, arg, 1);
-  builder.CreateStore(str, builder.CreateGEP(ptr, control));
-  builder.CreateBr(loopBlock);
+  str = B->CreateInsertValue(str, argLen, 0);
+  str = B->CreateInsertValue(str, arg, 1);
+  B->CreateStore(str, B->CreateGEP(ptr, control));
+  B->CreateBr(loopBlock);
 
-  builder.SetInsertPoint(exitBlock);
+  B->SetInsertPoint(exitBlock);
   llvm::Value *argStorage = vars[x->getArgVar()];
   seqassert(argStorage, "argument storage missing");
-  builder.CreateStore(arr, argStorage);
-  builder.CreateCall(initFunc, builder.getInt32(db.debug ? 1 : 0));
+  B->CreateStore(arr, argStorage);
+  B->CreateCall(initFunc, B->getInt32(db.debug ? 1 : 0));
 
   // Put the entire program in a new function
   {
-    auto *proxyMainTy = llvm::FunctionType::get(builder.getVoidTy(), {}, false);
+    auto *proxyMainTy = llvm::FunctionType::get(B->getVoidTy(), {}, false);
     auto *proxyMain = llvm::cast<llvm::Function>(
-        module->getOrInsertFunction("codon.proxy_main", proxyMainTy).getCallee());
+        M->getOrInsertFunction("codon.proxy_main", proxyMainTy).getCallee());
     proxyMain->setLinkage(llvm::GlobalValue::PrivateLinkage);
     proxyMain->setPersonalityFn(
         llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
     auto *proxyBlockEntry = llvm::BasicBlock::Create(*context, "entry", proxyMain);
     auto *proxyBlockMain = llvm::BasicBlock::Create(*context, "main", proxyMain);
     auto *proxyBlockExit = llvm::BasicBlock::Create(*context, "exit", proxyMain);
-    builder.SetInsertPoint(proxyBlockEntry);
+    B->SetInsertPoint(proxyBlockEntry);
 
-    llvm::Value *shouldExit = builder.getFalse();
-    builder.CreateCondBr(shouldExit, proxyBlockExit, proxyBlockMain);
+    llvm::Value *shouldExit = B->getFalse();
+    B->CreateCondBr(shouldExit, proxyBlockExit, proxyBlockMain);
 
-    builder.SetInsertPoint(proxyBlockExit);
-    builder.CreateRetVoid();
+    B->SetInsertPoint(proxyBlockExit);
+    B->CreateRetVoid();
 
     // invoke real main
     auto *normal = llvm::BasicBlock::Create(*context, "normal", proxyMain);
     auto *unwind = llvm::BasicBlock::Create(*context, "unwind", proxyMain);
-    builder.SetInsertPoint(proxyBlockMain);
-    builder.CreateInvoke(realMain, normal, unwind);
+    B->SetInsertPoint(proxyBlockMain);
+    B->CreateInvoke(realMain, normal, unwind);
 
-    builder.SetInsertPoint(unwind);
-    llvm::LandingPadInst *caughtResult = builder.CreateLandingPad(getPadType(), 1);
+    B->SetInsertPoint(unwind);
+    llvm::LandingPadInst *caughtResult = B->CreateLandingPad(getPadType(), 1);
     caughtResult->setCleanup(true);
     caughtResult->addClause(getTypeIdxVar(nullptr));
-    llvm::Value *unwindException = builder.CreateExtractValue(caughtResult, 0);
-    builder.CreateCall(makeTerminateFunc(), unwindException);
-    builder.CreateUnreachable();
+    llvm::Value *unwindException = B->CreateExtractValue(caughtResult, 0);
+    B->CreateCall(makeTerminateFunc(), unwindException);
+    B->CreateUnreachable();
 
-    builder.SetInsertPoint(normal);
-    builder.CreateRetVoid();
+    B->SetInsertPoint(normal);
+    B->CreateRetVoid();
 
     // actually make the call
-    builder.SetInsertPoint(exitBlock);
-    builder.CreateCall(proxyMain);
+    B->SetInsertPoint(exitBlock);
+    B->CreateCall(proxyMain);
   }
 
-  builder.SetInsertPoint(exitBlock);
-  builder.CreateRet(builder.getInt32(0));
+  B->SetInsertPoint(exitBlock);
+  B->CreateRet(B->getInt32(0));
   db.builder->finalize();
 }
 
@@ -675,7 +665,7 @@ void LLVMVisitor::makeLLVMFunction(const Func *x) {
   // process LLVM functions in full immediately
   if (auto *llvmFunc = cast<LLVMFunc>(x)) {
     process(llvmFunc);
-    func = module->getFunction(getNameForFunction(x));
+    func = M->getFunction(getNameForFunction(x));
     func->setSubprogram(subprogram);
     setDebugInfoForNode(nullptr);
     return;
@@ -692,33 +682,32 @@ void LLVMVisitor::makeLLVMFunction(const Func *x) {
       llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
   const std::string functionName = getNameForFunction(x);
   func = llvm::cast<llvm::Function>(
-      module->getOrInsertFunction(functionName, llvmFuncType).getCallee());
+      M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
   if (!cast<ExternalFunc>(x)) {
     func->setSubprogram(subprogram);
   }
 }
 
 void LLVMVisitor::makeYield(llvm::Value *value, bool finalYield) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   if (value) {
     seqassert(coro.promise, "promise is null");
-    builder.CreateStore(value, coro.promise);
+    B->CreateStore(value, coro.promise);
   }
   llvm::FunctionCallee coroSuspend =
-      llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_suspend);
-  llvm::Value *suspendResult =
-      builder.CreateCall(coroSuspend, {llvm::ConstantTokenNone::get(*context),
-                                       builder.getInt1(finalYield)});
+      llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_suspend);
+  llvm::Value *suspendResult = B->CreateCall(
+      coroSuspend, {llvm::ConstantTokenNone::get(*context), B->getInt1(finalYield)});
 
   block = llvm::BasicBlock::Create(*context, "yield.new", func);
 
-  llvm::SwitchInst *inst = builder.CreateSwitch(suspendResult, coro.suspend, 2);
-  inst->addCase(builder.getInt8(0), block);
-  inst->addCase(builder.getInt8(1), coro.cleanup);
+  llvm::SwitchInst *inst = B->CreateSwitch(suspendResult, coro.suspend, 2);
+  inst->addCase(B->getInt8(0), block);
+  inst->addCase(B->getInt8(1), coro.cleanup);
 }
 
 void LLVMVisitor::visit(const ExternalFunc *x) {
-  func = module->getFunction(getNameForFunction(x));
+  func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassert(func, "{} not inserted", *x);
   func->setDoesNotThrow();
@@ -754,7 +743,7 @@ bool internalFuncMatches(const std::string &name, const InternalFunc *x) {
 
 void LLVMVisitor::visit(const InternalFunc *x) {
   using namespace types;
-  func = module->getFunction(getNameForFunction(x));
+  func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassert(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
@@ -770,7 +759,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
     args.push_back(it);
   }
   block = llvm::BasicBlock::Create(*context, "entry", func);
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   llvm::Value *result = nullptr;
 
   if (internalFuncMatches<PointerType, IntType>("__new__", x)) {
@@ -779,51 +768,50 @@ void LLVMVisitor::visit(const InternalFunc *x) {
     llvm::Type *llvmBaseType = getLLVMType(baseType);
     auto allocFunc = makeAllocFunc(baseType->isAtomic());
     llvm::Value *elemSize =
-        builder.getInt64(module->getDataLayout().getTypeAllocSize(llvmBaseType));
-    llvm::Value *allocSize = builder.CreateMul(elemSize, args[0]);
-    result = builder.CreateCall(allocFunc, allocSize);
-    result = builder.CreateBitCast(result, llvmBaseType->getPointerTo());
+        B->getInt64(M->getDataLayout().getTypeAllocSize(llvmBaseType));
+    llvm::Value *allocSize = B->CreateMul(elemSize, args[0]);
+    result = B->CreateCall(allocFunc, allocSize);
+    result = B->CreateBitCast(result, llvmBaseType->getPointerTo());
   }
 
   else if (internalFuncMatches<IntType, IntNType>("__new__", x)) {
     auto *intNType = cast<IntNType>(argTypes[0]);
     if (intNType->isSigned()) {
-      result = builder.CreateSExtOrTrunc(args[0], builder.getInt64Ty());
+      result = B->CreateSExtOrTrunc(args[0], B->getInt64Ty());
     } else {
-      result = builder.CreateZExtOrTrunc(args[0], builder.getInt64Ty());
+      result = B->CreateZExtOrTrunc(args[0], B->getInt64Ty());
     }
   }
 
   else if (internalFuncMatches<IntNType, IntType>("__new__", x)) {
     auto *intNType = cast<IntNType>(parentType);
     if (intNType->isSigned()) {
-      result = builder.CreateSExtOrTrunc(args[0], getLLVMType(intNType));
+      result = B->CreateSExtOrTrunc(args[0], getLLVMType(intNType));
     } else {
-      result = builder.CreateZExtOrTrunc(args[0], getLLVMType(intNType));
+      result = B->CreateZExtOrTrunc(args[0], getLLVMType(intNType));
     }
   }
 
   else if (internalFuncMatches<RefType>("__new__", x)) {
     auto *refType = cast<RefType>(parentType);
     auto allocFunc = makeAllocFunc(refType->getContents()->isAtomic());
-    llvm::Value *size = builder.getInt64(
-        module->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents())));
-    result = builder.CreateCall(allocFunc, size);
+    llvm::Value *size = B->getInt64(
+        M->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents())));
+    result = B->CreateCall(allocFunc, size);
   }
 
   else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     llvm::Type *baseType = getLLVMType(generatorType->getBase());
     if (baseType->isVoidTy()) {
-      result = llvm::ConstantPointerNull::get(builder.getVoidTy()->getPointerTo());
+      result = llvm::ConstantPointerNull::get(B->getVoidTy()->getPointerTo());
     } else {
       llvm::FunctionCallee coroPromise =
-          llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_promise);
-      llvm::Value *aln =
-          builder.getInt32(module->getDataLayout().getPrefTypeAlignment(baseType));
-      llvm::Value *from = builder.getFalse();
-      llvm::Value *ptr = builder.CreateCall(coroPromise, {args[0], aln, from});
-      result = builder.CreateBitCast(ptr, baseType->getPointerTo());
+          llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
+      llvm::Value *aln = B->getInt32(M->getDataLayout().getPrefTypeAlignment(baseType));
+      llvm::Value *from = B->getFalse();
+      llvm::Value *ptr = B->CreateCall(coroPromise, {args[0], aln, from});
+      result = B->CreateBitCast(ptr, baseType->getPointerTo());
     }
   }
 
@@ -833,12 +821,12 @@ void LLVMVisitor::visit(const InternalFunc *x) {
               "args size does not match");
     result = llvm::UndefValue::get(getLLVMType(recordType));
     for (auto i = 0; i < args.size(); i++) {
-      result = builder.CreateInsertValue(result, args[i], i);
+      result = B->CreateInsertValue(result, args[i], i);
     }
   }
 
   seqassert(result, "internal function {} not found", *x);
-  builder.CreateRet(result);
+  B->CreateRet(result);
 }
 
 std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
@@ -884,7 +872,7 @@ std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
 }
 
 void LLVMVisitor::visit(const LLVMFunc *x) {
-  func = module->getFunction(getNameForFunction(x));
+  func = M->getFunction(getNameForFunction(x));
   coro = {};
   if (func)
     return;
@@ -920,19 +908,19 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     err.print("LLVM", buf);
     compilationError(buf.str());
   }
-  sub->setDataLayout(module->getDataLayout());
+  sub->setDataLayout(M->getDataLayout());
 
-  llvm::Linker L(*module);
+  llvm::Linker L(*M);
   const bool fail = L.linkInModule(std::move(sub));
   seqassert(!fail, "linking failed");
-  func = module->getFunction(getNameForFunction(x));
+  func = M->getFunction(getNameForFunction(x));
   seqassert(func, "function not linked in");
   func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
 }
 
 void LLVMVisitor::visit(const BodiedFunc *x) {
-  func = module->getFunction(getNameForFunction(x));
+  func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassert(func, "{} not inserted", *x);
   setDebugInfoForNode(x);
@@ -955,8 +943,8 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   seqassert(funcType, "{} is not a function type", *x->getType());
   auto *returnType = funcType->getReturnType();
   auto *entryBlock = llvm::BasicBlock::Create(*context, "entry", func);
-  builder.SetInsertPoint(entryBlock);
-  builder.SetCurrentDebugLocation(llvm::DebugLoc());
+  B->SetInsertPoint(entryBlock);
+  B->SetCurrentDebugLocation(llvm::DebugLoc());
 
   // set up arguments and other symbols
   seqassert(std::distance(func->arg_begin(), func->arg_end()) ==
@@ -966,8 +954,8 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto argIter = func->arg_begin();
   for (auto varIter = x->arg_begin(); varIter != x->arg_end(); ++varIter) {
     const Var *var = *varIter;
-    llvm::Value *storage = builder.CreateAlloca(getLLVMType(var->getType()));
-    builder.CreateStore(argIter, storage);
+    llvm::Value *storage = B->CreateAlloca(getLLVMType(var->getType()));
+    B->CreateStore(argIter, storage);
     vars.insert(var, storage);
 
     // debug info
@@ -991,7 +979,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     if (llvmType->isVoidTy()) {
       vars.insert(var, getDummyVoidValue());
     } else {
-      llvm::Value *storage = builder.CreateAlloca(llvmType);
+      llvm::Value *storage = B->CreateAlloca(llvmType);
       vars.insert(var, storage);
 
       // debug info
@@ -1015,17 +1003,17 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     seqassert(generatorType, "{} is not a generator type", *returnType);
 
     llvm::FunctionCallee coroId =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_id);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_id);
     llvm::FunctionCallee coroBegin =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_begin);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_begin);
     llvm::FunctionCallee coroSize = llvm::Intrinsic::getDeclaration(
-        module.get(), llvm::Intrinsic::coro_size, {builder.getInt64Ty()});
+        M.get(), llvm::Intrinsic::coro_size, {B->getInt64Ty()});
     llvm::FunctionCallee coroEnd =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_end);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_end);
     llvm::FunctionCallee coroAlloc =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_alloc);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_alloc);
     llvm::FunctionCallee coroFree =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_free);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_free);
 
     coro.cleanup = llvm::BasicBlock::Create(*context, "coro.cleanup", func);
     coro.suspend = llvm::BasicBlock::Create(*context, "coro.suspend", func);
@@ -1035,75 +1023,73 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
     // coro ID and promise
     llvm::Value *id = nullptr;
-    llvm::Value *nullPtr = llvm::ConstantPointerNull::get(builder.getInt8PtrTy());
+    llvm::Value *nullPtr = llvm::ConstantPointerNull::get(B->getInt8PtrTy());
     if (!cast<types::VoidType>(generatorType->getBase())) {
-      coro.promise = builder.CreateAlloca(getLLVMType(generatorType->getBase()));
+      coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
       coro.promise->setName("coro.promise");
-      llvm::Value *promiseRaw =
-          builder.CreateBitCast(coro.promise, builder.getInt8PtrTy());
-      id = builder.CreateCall(coroId,
-                              {builder.getInt32(0), promiseRaw, nullPtr, nullPtr});
+      llvm::Value *promiseRaw = B->CreateBitCast(coro.promise, B->getInt8PtrTy());
+      id = B->CreateCall(coroId, {B->getInt32(0), promiseRaw, nullPtr, nullPtr});
     } else {
-      id = builder.CreateCall(coroId, {builder.getInt32(0), nullPtr, nullPtr, nullPtr});
+      id = B->CreateCall(coroId, {B->getInt32(0), nullPtr, nullPtr, nullPtr});
     }
     id->setName("coro.id");
-    llvm::Value *needAlloc = builder.CreateCall(coroAlloc, id);
-    builder.CreateCondBr(needAlloc, allocBlock, startBlock);
+    llvm::Value *needAlloc = B->CreateCall(coroAlloc, id);
+    B->CreateCondBr(needAlloc, allocBlock, startBlock);
 
     // coro alloc
-    builder.SetInsertPoint(allocBlock);
-    llvm::Value *size = builder.CreateCall(coroSize);
+    B->SetInsertPoint(allocBlock);
+    llvm::Value *size = B->CreateCall(coroSize);
     auto allocFunc = makeAllocFunc(/*atomic=*/false);
-    llvm::Value *alloc = builder.CreateCall(allocFunc, size);
-    builder.CreateBr(startBlock);
+    llvm::Value *alloc = B->CreateCall(allocFunc, size);
+    B->CreateBr(startBlock);
 
     // coro start
-    builder.SetInsertPoint(startBlock);
-    llvm::PHINode *phi = builder.CreatePHI(builder.getInt8PtrTy(), 2);
+    B->SetInsertPoint(startBlock);
+    llvm::PHINode *phi = B->CreatePHI(B->getInt8PtrTy(), 2);
     phi->addIncoming(nullPtr, entryBlock);
     phi->addIncoming(alloc, allocBlock);
-    coro.handle = builder.CreateCall(coroBegin, {id, phi});
+    coro.handle = B->CreateCall(coroBegin, {id, phi});
     coro.handle->setName("coro.handle");
 
     // coro cleanup
-    builder.SetInsertPoint(coro.cleanup);
-    llvm::Value *mem = builder.CreateCall(coroFree, {id, coro.handle});
-    llvm::Value *needFree = builder.CreateIsNotNull(mem);
-    builder.CreateCondBr(needFree, freeBlock, coro.suspend);
+    B->SetInsertPoint(coro.cleanup);
+    llvm::Value *mem = B->CreateCall(coroFree, {id, coro.handle});
+    llvm::Value *needFree = B->CreateIsNotNull(mem);
+    B->CreateCondBr(needFree, freeBlock, coro.suspend);
 
     // coro free
-    builder.SetInsertPoint(freeBlock); // no-op: GC will free automatically
-    builder.CreateBr(coro.suspend);
+    B->SetInsertPoint(freeBlock); // no-op: GC will free automatically
+    B->CreateBr(coro.suspend);
 
     // coro suspend
-    builder.SetInsertPoint(coro.suspend);
-    builder.CreateCall(coroEnd, {coro.handle, builder.getFalse()});
-    builder.CreateRet(coro.handle);
+    B->SetInsertPoint(coro.suspend);
+    B->CreateCall(coroEnd, {coro.handle, B->getFalse()});
+    B->CreateRet(coro.handle);
 
     // coro exit
     block = coro.exit;
     makeYield(nullptr, /*finalYield=*/true);
-    builder.SetInsertPoint(block);
-    builder.CreateUnreachable();
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
 
     // initial yield
     block = startBlock;
     makeYield(); // coroutine will be initially suspended
   } else {
-    builder.CreateBr(startBlock);
+    B->CreateBr(startBlock);
     block = startBlock;
   }
 
   process(x->getBody());
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
 
   if (x->isGenerator()) {
-    builder.CreateBr(coro.exit);
+    B->CreateBr(coro.exit);
   } else {
     if (cast<types::VoidType>(returnType)) {
-      builder.CreateRetVoid();
+      B->CreateRetVoid();
     } else {
-      builder.CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
+      B->CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
     }
   }
 }
@@ -1117,8 +1103,8 @@ void LLVMVisitor::visit(const VarValue *x) {
   } else {
     llvm::Value *varPtr = getVar(x->getVar());
     seqassert(varPtr, "{} value not found", *x);
-    builder.SetInsertPoint(block);
-    value = builder.CreateLoad(varPtr);
+    B->SetInsertPoint(block);
+    value = B->CreateLoad(varPtr);
   }
 }
 
@@ -1134,23 +1120,23 @@ void LLVMVisitor::visit(const PointerValue *x) {
 
 llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   if (auto *x = cast<types::IntType>(t)) {
-    return builder.getInt64Ty();
+    return B->getInt64Ty();
   }
 
   if (auto *x = cast<types::FloatType>(t)) {
-    return builder.getDoubleTy();
+    return B->getDoubleTy();
   }
 
   if (auto *x = cast<types::BoolType>(t)) {
-    return builder.getInt8Ty();
+    return B->getInt8Ty();
   }
 
   if (auto *x = cast<types::ByteType>(t)) {
-    return builder.getInt8Ty();
+    return B->getInt8Ty();
   }
 
   if (auto *x = cast<types::VoidType>(t)) {
-    return builder.getVoidTy();
+    return B->getVoidTy();
   }
 
   if (auto *x = cast<types::RecordType>(t)) {
@@ -1162,7 +1148,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::RefType>(t)) {
-    return builder.getInt8PtrTy();
+    return B->getInt8PtrTy();
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
@@ -1179,7 +1165,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     if (cast<types::RefType>(x->getBase())) {
       return getLLVMType(x->getBase());
     } else {
-      return llvm::StructType::get(builder.getInt1Ty(), getLLVMType(x->getBase()));
+      return llvm::StructType::get(B->getInt1Ty(), getLLVMType(x->getBase()));
     }
   }
 
@@ -1188,25 +1174,25 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::GeneratorType>(t)) {
-    return builder.getInt8PtrTy();
+    return B->getInt8PtrTy();
   }
 
   if (auto *x = cast<types::IntNType>(t)) {
-    return builder.getIntNTy(x->getLen());
+    return B->getIntNTy(x->getLen());
   }
 
   if (auto *x = cast<dsl::types::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
 
-  seqassert(0, "unknown type");
+  seqassert(0, "unknown type: {}", *t);
   return nullptr;
 }
 
 llvm::DIType *LLVMVisitor::getDITypeHelper(
     types::Type *t, std::unordered_map<std::string, llvm::DICompositeType *> &cache) {
   llvm::Type *type = getLLVMType(t);
-  auto &layout = module->getDataLayout();
+  auto &layout = M->getDataLayout();
 
   if (auto *x = cast<types::IntType>(t)) {
     return db.builder->createBasicType(
@@ -1298,10 +1284,10 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
       return getDITypeHelper(x->getBase(), cache);
     } else {
       auto *baseType = getLLVMType(x->getBase());
-      auto *structType = llvm::StructType::get(builder.getInt1Ty(), baseType);
+      auto *structType = llvm::StructType::get(B->getInt1Ty(), baseType);
       auto *structLayout = layout.getStructLayout(structType);
       auto *srcInfo = getSrcInfo(x);
-      auto i1SizeInBits = layout.getTypeAllocSizeInBits(builder.getInt1Ty());
+      auto i1SizeInBits = layout.getTypeAllocSizeInBits(B->getInt1Ty());
       auto *i1DebugType =
           db.builder->createBasicType("i1", i1SizeInBits, llvm::dwarf::DW_ATE_boolean);
       llvm::DIFile *file = db.getFile(srcInfo->file);
@@ -1369,33 +1355,33 @@ LLVMVisitor::LoopData *LLVMVisitor::getLoopData(id_t loopId) {
  */
 
 void LLVMVisitor::visit(const IntConst *x) {
-  builder.SetInsertPoint(block);
-  value = builder.getInt64(x->getVal());
+  B->SetInsertPoint(block);
+  value = B->getInt64(x->getVal());
 }
 
 void LLVMVisitor::visit(const FloatConst *x) {
-  builder.SetInsertPoint(block);
-  value = llvm::ConstantFP::get(builder.getDoubleTy(), x->getVal());
+  B->SetInsertPoint(block);
+  value = llvm::ConstantFP::get(B->getDoubleTy(), x->getVal());
 }
 
 void LLVMVisitor::visit(const BoolConst *x) {
-  builder.SetInsertPoint(block);
-  value = builder.getInt8(x->getVal() ? 1 : 0);
+  B->SetInsertPoint(block);
+  value = B->getInt8(x->getVal() ? 1 : 0);
 }
 
 void LLVMVisitor::visit(const StringConst *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   std::string s = x->getVal();
   auto *strVar = new llvm::GlobalVariable(
-      *module, llvm::ArrayType::get(builder.getInt8Ty(), s.length() + 1),
+      *M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
       /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantDataArray::getString(*context, s), "str_literal");
-  auto *strType = llvm::StructType::get(builder.getInt64Ty(), builder.getInt8PtrTy());
-  llvm::Value *ptr = builder.CreateBitCast(strVar, builder.getInt8PtrTy());
-  llvm::Value *len = builder.getInt64(s.length());
+  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
+  llvm::Value *ptr = B->CreateBitCast(strVar, B->getInt8PtrTy());
+  llvm::Value *len = B->getInt64(s.length());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = builder.CreateInsertValue(str, len, 0);
-  str = builder.CreateInsertValue(str, ptr, 1);
+  str = B->CreateInsertValue(str, len, 0);
+  str = B->CreateInsertValue(str, ptr, 1);
   value = str;
 }
 
@@ -1420,23 +1406,23 @@ void LLVMVisitor::visit(const IfFlow *x) {
 
   process(x->getCond());
   llvm::Value *cond = value;
-  builder.SetInsertPoint(block);
-  cond = builder.CreateTrunc(cond, builder.getInt1Ty());
-  builder.CreateCondBr(cond, trueBlock, falseBlock);
+  B->SetInsertPoint(block);
+  cond = B->CreateTrunc(cond, B->getInt1Ty());
+  B->CreateCondBr(cond, trueBlock, falseBlock);
 
   block = trueBlock;
   if (x->getTrueBranch()) {
     process(x->getTrueBranch());
   }
-  builder.SetInsertPoint(block);
-  builder.CreateBr(exitBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(exitBlock);
 
   block = falseBlock;
   if (x->getFalseBranch()) {
     process(x->getFalseBranch());
   }
-  builder.SetInsertPoint(block);
-  builder.CreateBr(exitBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(exitBlock);
 
   block = exitBlock;
 }
@@ -1446,23 +1432,23 @@ void LLVMVisitor::visit(const WhileFlow *x) {
   auto *bodyBlock = llvm::BasicBlock::Create(*context, "while.body", func);
   auto *exitBlock = llvm::BasicBlock::Create(*context, "while.exit", func);
 
-  builder.SetInsertPoint(block);
-  builder.CreateBr(condBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(condBlock);
 
   block = condBlock;
   process(x->getCond());
   llvm::Value *cond = value;
-  builder.SetInsertPoint(block);
-  cond = builder.CreateTrunc(cond, builder.getInt1Ty());
-  builder.CreateCondBr(cond, bodyBlock, exitBlock);
+  B->SetInsertPoint(block);
+  cond = B->CreateTrunc(cond, B->getInt1Ty());
+  B->CreateCondBr(cond, bodyBlock, exitBlock);
 
   block = bodyBlock;
   enterLoop(
       {/*breakBlock=*/exitBlock, /*continueBlock=*/condBlock, /*loopId=*/x->getId()});
   process(x->getBody());
   exitLoop();
-  builder.SetInsertPoint(block);
-  builder.CreateBr(condBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(condBlock);
 
   block = exitBlock;
 }
@@ -1481,34 +1467,34 @@ void LLVMVisitor::visit(const ForFlow *x) {
   // LLVM coroutine intrinsics
   // https://prereleases.llvm.org/6.0.0/rc3/docs/Coroutines.html
   llvm::FunctionCallee coroResume =
-      llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_resume);
+      llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_resume);
   llvm::FunctionCallee coroDone =
-      llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_done);
+      llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_done);
   llvm::FunctionCallee coroPromise =
-      llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_promise);
+      llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
   llvm::FunctionCallee coroDestroy =
-      llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_destroy);
+      llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_destroy);
 
   process(x->getIter());
   llvm::Value *iter = value;
-  builder.SetInsertPoint(block);
-  builder.CreateBr(condBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(condBlock);
 
   block = condBlock;
   call(coroResume, {iter});
-  builder.SetInsertPoint(block);
-  llvm::Value *done = builder.CreateCall(coroDone, iter);
-  builder.CreateCondBr(done, cleanupBlock, bodyBlock);
+  B->SetInsertPoint(block);
+  llvm::Value *done = B->CreateCall(coroDone, iter);
+  B->CreateCondBr(done, cleanupBlock, bodyBlock);
 
   if (!loopVarType->isVoidTy()) {
-    builder.SetInsertPoint(bodyBlock);
+    B->SetInsertPoint(bodyBlock);
     llvm::Value *alignment =
-        builder.getInt32(module->getDataLayout().getPrefTypeAlignment(loopVarType));
-    llvm::Value *from = builder.getFalse();
-    llvm::Value *promise = builder.CreateCall(coroPromise, {iter, alignment, from});
-    promise = builder.CreateBitCast(promise, loopVarType->getPointerTo());
-    llvm::Value *generatedValue = builder.CreateLoad(promise);
-    builder.CreateStore(generatedValue, loopVar);
+        B->getInt32(M->getDataLayout().getPrefTypeAlignment(loopVarType));
+    llvm::Value *from = B->getFalse();
+    llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
+    promise = B->CreateBitCast(promise, loopVarType->getPointerTo());
+    llvm::Value *generatedValue = B->CreateLoad(promise);
+    B->CreateStore(generatedValue, loopVar);
   }
 
   block = bodyBlock;
@@ -1516,12 +1502,12 @@ void LLVMVisitor::visit(const ForFlow *x) {
       {/*breakBlock=*/exitBlock, /*continueBlock=*/condBlock, /*loopId=*/x->getId()});
   process(x->getBody());
   exitLoop();
-  builder.SetInsertPoint(block);
-  builder.CreateBr(condBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(condBlock);
 
-  builder.SetInsertPoint(cleanupBlock);
-  builder.CreateCall(coroDestroy, iter);
-  builder.CreateBr(exitBlock);
+  B->SetInsertPoint(cleanupBlock);
+  B->CreateCall(coroDestroy, iter);
+  B->CreateBr(exitBlock);
 
   block = exitBlock;
 }
@@ -1538,35 +1524,34 @@ void LLVMVisitor::visit(const ImperativeForFlow *x) {
   auto *exitBlock = llvm::BasicBlock::Create(*context, "imp_for.exit", func);
 
   process(x->getStart());
-  builder.SetInsertPoint(block);
-  builder.CreateStore(value, loopVar);
+  B->SetInsertPoint(block);
+  B->CreateStore(value, loopVar);
   process(x->getEnd());
   auto *end = value;
-  builder.SetInsertPoint(block);
-  builder.CreateBr(condBlock);
-  builder.SetInsertPoint(condBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(condBlock);
+  B->SetInsertPoint(condBlock);
 
   llvm::Value *done;
   if (x->getStep() > 0)
-    done = builder.CreateICmpSGE(builder.CreateLoad(loopVar), end);
+    done = B->CreateICmpSGE(B->CreateLoad(loopVar), end);
   else
-    done = builder.CreateICmpSLE(builder.CreateLoad(loopVar), end);
+    done = B->CreateICmpSLE(B->CreateLoad(loopVar), end);
 
-  builder.CreateCondBr(done, exitBlock, bodyBlock);
+  B->CreateCondBr(done, exitBlock, bodyBlock);
 
   block = bodyBlock;
   enterLoop(
       {/*breakBlock=*/exitBlock, /*continueBlock=*/updateBlock, /*loopId=*/x->getId()});
   process(x->getBody());
   exitLoop();
-  builder.SetInsertPoint(block);
-  builder.CreateBr(updateBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(updateBlock);
 
-  builder.SetInsertPoint(updateBlock);
-  builder.CreateStore(
-      builder.CreateAdd(builder.CreateLoad(loopVar), builder.getInt64(x->getStep())),
-      loopVar);
-  builder.CreateBr(condBlock);
+  B->SetInsertPoint(updateBlock);
+  B->CreateStore(B->CreateAdd(B->CreateLoad(loopVar), B->getInt64(x->getStep())),
+                 loopVar);
+  B->CreateBr(condBlock);
 
   block = exitBlock;
 }
@@ -1591,9 +1576,9 @@ bool anyMatch(types::Type *type, std::vector<types::Type *> types) {
 void LLVMVisitor::visit(const TryCatchFlow *x) {
   const bool isRoot = trycatch.empty();
   const bool supportBreakAndContinue = !loops.empty();
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   auto *entryBlock = llvm::BasicBlock::Create(*context, "trycatch.entry", func);
-  builder.CreateBr(entryBlock);
+  B->CreateBr(entryBlock);
 
   TryCatchData tc;
   tc.exceptionBlock = llvm::BasicBlock::Create(*context, "trycatch.exception", func);
@@ -1607,32 +1592,31 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       llvm::BasicBlock::Create(*context, "trycatch.unwind_resume", func);
   auto *endBlock = llvm::BasicBlock::Create(*context, "trycatch.end", func);
 
-  builder.SetInsertPoint(func->getEntryBlock().getTerminator());
-  auto *excStateNotThrown = builder.getInt8(TryCatchData::State::NOT_THROWN);
-  auto *excStateThrown = builder.getInt8(TryCatchData::State::THROWN);
-  auto *excStateCaught = builder.getInt8(TryCatchData::State::CAUGHT);
-  auto *excStateReturn = builder.getInt8(TryCatchData::State::RETURN);
-  auto *excStateBreak = builder.getInt8(TryCatchData::State::BREAK);
-  auto *excStateContinue = builder.getInt8(TryCatchData::State::CONTINUE);
+  B->SetInsertPoint(func->getEntryBlock().getTerminator());
+  auto *excStateNotThrown = B->getInt8(TryCatchData::State::NOT_THROWN);
+  auto *excStateThrown = B->getInt8(TryCatchData::State::THROWN);
+  auto *excStateCaught = B->getInt8(TryCatchData::State::CAUGHT);
+  auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
+  auto *excStateBreak = B->getInt8(TryCatchData::State::BREAK);
+  auto *excStateContinue = B->getInt8(TryCatchData::State::CONTINUE);
 
   llvm::StructType *padType = getPadType();
-  llvm::StructType *unwindType =
-      llvm::StructType::get(builder.getInt64Ty()); // header only
+  llvm::StructType *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
   llvm::StructType *excType =
-      llvm::StructType::get(getTypeInfoType(), builder.getInt8PtrTy());
+      llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
 
   if (isRoot) {
-    tc.excFlag = builder.CreateAlloca(builder.getInt8Ty());
-    tc.catchStore = builder.CreateAlloca(padType);
-    tc.delegateDepth = builder.CreateAlloca(builder.getInt64Ty());
+    tc.excFlag = B->CreateAlloca(B->getInt8Ty());
+    tc.catchStore = B->CreateAlloca(padType);
+    tc.delegateDepth = B->CreateAlloca(B->getInt64Ty());
     tc.retStore = (coro.exit || func->getReturnType()->isVoidTy())
                       ? nullptr
-                      : builder.CreateAlloca(func->getReturnType());
-    tc.loopSequence = builder.CreateAlloca(builder.getInt64Ty());
-    builder.CreateStore(excStateNotThrown, tc.excFlag);
-    builder.CreateStore(llvm::ConstantAggregateZero::get(padType), tc.catchStore);
-    builder.CreateStore(builder.getInt64(0), tc.delegateDepth);
-    builder.CreateStore(builder.getInt64(-1), tc.loopSequence);
+                      : B->CreateAlloca(func->getReturnType());
+    tc.loopSequence = B->CreateAlloca(B->getInt64Ty());
+    B->CreateStore(excStateNotThrown, tc.excFlag);
+    B->CreateStore(llvm::ConstantAggregateZero::get(padType), tc.catchStore);
+    B->CreateStore(B->getInt64(0), tc.delegateDepth);
+    B->CreateStore(B->getInt64(-1), tc.loopSequence);
   } else {
     tc.excFlag = trycatch[0].excFlag;
     tc.catchStore = trycatch[0].catchStore;
@@ -1645,32 +1629,32 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   block = tc.finallyBlock;
   process(x->getFinally());
   auto *finallyBlock = block;
-  builder.SetInsertPoint(finallyBlock);
-  llvm::Value *excFlagRead = builder.CreateLoad(tc.excFlag);
+  B->SetInsertPoint(finallyBlock);
+  llvm::Value *excFlagRead = B->CreateLoad(tc.excFlag);
 
   if (!isRoot) {
-    llvm::Value *depthRead = builder.CreateLoad(tc.delegateDepth);
-    llvm::Value *delegate = builder.CreateICmpSGT(depthRead, builder.getInt64(0));
+    llvm::Value *depthRead = B->CreateLoad(tc.delegateDepth);
+    llvm::Value *delegate = B->CreateICmpSGT(depthRead, B->getInt64(0));
     auto *finallyNormal =
         llvm::BasicBlock::Create(*context, "trycatch.finally.normal", func);
     auto *finallyDelegate =
         llvm::BasicBlock::Create(*context, "trycatch.finally.delegate", func);
-    builder.CreateCondBr(delegate, finallyDelegate, finallyNormal);
+    B->CreateCondBr(delegate, finallyDelegate, finallyNormal);
 
-    builder.SetInsertPoint(finallyDelegate);
-    llvm::Value *depthNew = builder.CreateSub(depthRead, builder.getInt64(1));
-    llvm::Value *delegateNew = builder.CreateICmpSGT(depthNew, builder.getInt64(0));
-    builder.CreateStore(depthNew, tc.delegateDepth);
-    builder.CreateCondBr(delegateNew, trycatch.back().finallyBlock,
-                         trycatch.back().exceptionRouteBlock);
+    B->SetInsertPoint(finallyDelegate);
+    llvm::Value *depthNew = B->CreateSub(depthRead, B->getInt64(1));
+    llvm::Value *delegateNew = B->CreateICmpSGT(depthNew, B->getInt64(0));
+    B->CreateStore(depthNew, tc.delegateDepth);
+    B->CreateCondBr(delegateNew, trycatch.back().finallyBlock,
+                    trycatch.back().exceptionRouteBlock);
 
     finallyBlock = finallyNormal;
-    builder.SetInsertPoint(finallyNormal);
+    B->SetInsertPoint(finallyNormal);
   }
 
-  builder.SetInsertPoint(finallyBlock);
+  B->SetInsertPoint(finallyBlock);
   llvm::SwitchInst *theSwitch =
-      builder.CreateSwitch(excFlagRead, endBlock, supportBreakAndContinue ? 5 : 3);
+      B->CreateSwitch(excFlagRead, endBlock, supportBreakAndContinue ? 5 : 3);
   theSwitch->addCase(excStateCaught, endBlock);
   theSwitch->addCase(excStateThrown, unwindResumeBlock);
 
@@ -1678,14 +1662,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     auto *finallyReturn =
         llvm::BasicBlock::Create(*context, "trycatch.finally.return", func);
     theSwitch->addCase(excStateReturn, finallyReturn);
-    builder.SetInsertPoint(finallyReturn);
+    B->SetInsertPoint(finallyReturn);
     if (coro.exit) {
-      builder.CreateBr(coro.exit);
+      B->CreateBr(coro.exit);
     } else if (tc.retStore) {
-      llvm::Value *retVal = builder.CreateLoad(tc.retStore);
-      builder.CreateRet(retVal);
+      llvm::Value *retVal = B->CreateLoad(tc.retStore);
+      B->CreateRet(retVal);
     } else {
-      builder.CreateRetVoid();
+      B->CreateRetVoid();
     }
   } else {
     theSwitch->addCase(excStateReturn, trycatch.back().finallyBlock);
@@ -1703,35 +1687,31 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     auto *finallyContinueDone =
         llvm::BasicBlock::Create(*context, "trycatch.finally.continue.done", func);
 
-    builder.SetInsertPoint(finallyBreak);
-    auto *breakSwitch =
-        builder.CreateSwitch(builder.CreateLoad(tc.loopSequence), endBlock, 0);
-    builder.SetInsertPoint(finallyBreakDone);
-    builder.CreateStore(excStateNotThrown, tc.excFlag);
+    B->SetInsertPoint(finallyBreak);
+    auto *breakSwitch = B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+    B->SetInsertPoint(finallyBreakDone);
+    B->CreateStore(excStateNotThrown, tc.excFlag);
     auto *breakDoneSwitch =
-        builder.CreateSwitch(builder.CreateLoad(tc.loopSequence), endBlock, 0);
+        B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
 
-    builder.SetInsertPoint(finallyContinue);
-    auto *continueSwitch =
-        builder.CreateSwitch(builder.CreateLoad(tc.loopSequence), endBlock, 0);
-    builder.SetInsertPoint(finallyContinueDone);
-    builder.CreateStore(excStateNotThrown, tc.excFlag);
+    B->SetInsertPoint(finallyContinue);
+    auto *continueSwitch = B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+    B->SetInsertPoint(finallyContinueDone);
+    B->CreateStore(excStateNotThrown, tc.excFlag);
     auto *continueDoneSwitch =
-        builder.CreateSwitch(builder.CreateLoad(tc.loopSequence), endBlock, 0);
+        B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
 
     for (auto &l : loops) {
       if (!trycatch.empty() && l.sequenceNumber < prevSeq) {
-        breakSwitch->addCase(builder.getInt64(l.sequenceNumber),
+        breakSwitch->addCase(B->getInt64(l.sequenceNumber),
                              trycatch.back().finallyBlock);
-        continueSwitch->addCase(builder.getInt64(l.sequenceNumber),
+        continueSwitch->addCase(B->getInt64(l.sequenceNumber),
                                 trycatch.back().finallyBlock);
       } else {
-        breakSwitch->addCase(builder.getInt64(l.sequenceNumber), finallyBreakDone);
-        breakDoneSwitch->addCase(builder.getInt64(l.sequenceNumber), l.breakBlock);
-        continueSwitch->addCase(builder.getInt64(l.sequenceNumber),
-                                finallyContinueDone);
-        continueDoneSwitch->addCase(builder.getInt64(l.sequenceNumber),
-                                    l.continueBlock);
+        breakSwitch->addCase(B->getInt64(l.sequenceNumber), finallyBreakDone);
+        breakDoneSwitch->addCase(B->getInt64(l.sequenceNumber), l.breakBlock);
+        continueSwitch->addCase(B->getInt64(l.sequenceNumber), finallyContinueDone);
+        continueDoneSwitch->addCase(B->getInt64(l.sequenceNumber), l.continueBlock);
       }
     }
     theSwitch->addCase(excStateBreak, finallyBreak);
@@ -1763,12 +1743,12 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   exitTryCatch();
 
   // make sure we always get to finally block
-  builder.SetInsertPoint(block);
-  builder.CreateBr(tc.finallyBlock);
+  B->SetInsertPoint(block);
+  B->CreateBr(tc.finallyBlock);
 
   // rethrow if uncaught
-  builder.SetInsertPoint(unwindResumeBlock);
-  builder.CreateResume(builder.CreateLoad(tc.catchStore));
+  B->SetInsertPoint(unwindResumeBlock);
+  B->CreateResume(B->CreateLoad(tc.catchStore));
 
   // make sure we delegate to parent try-catch if necessary
   std::vector<types::Type *> catchTypesFull(tc.catchTypes);
@@ -1791,9 +1771,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
           // catch-all is in parent; set finally depth
           catchAll =
               llvm::BasicBlock::Create(*context, "trycatch.fdepth_catchall", func);
-          builder.SetInsertPoint(catchAll);
-          builder.CreateStore(builder.getInt64(depth), tc.delegateDepth);
-          builder.CreateBr(it->handlers[i]);
+          B->SetInsertPoint(catchAll);
+          B->CreateStore(B->getInt64(depth), tc.delegateDepth);
+          B->CreateBr(it->handlers[i]);
           handlersFull.push_back(catchAll);
           catchAllDepth = depth;
         } else {
@@ -1805,9 +1785,8 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   }
 
   // exception handling
-  builder.SetInsertPoint(tc.exceptionBlock);
-  llvm::LandingPadInst *caughtResult =
-      builder.CreateLandingPad(padType, catches.size());
+  B->SetInsertPoint(tc.exceptionBlock);
+  llvm::LandingPadInst *caughtResult = B->CreateLandingPad(padType, catches.size());
   caughtResult->setCleanup(true);
   std::vector<llvm::Value *> typeIndices;
 
@@ -1820,78 +1799,76 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     caughtResult->addClause(tidx);
   }
 
-  llvm::Value *unwindException = builder.CreateExtractValue(caughtResult, 0);
-  builder.CreateStore(caughtResult, tc.catchStore);
-  builder.CreateStore(excStateThrown, tc.excFlag);
-  llvm::Value *depthMax = builder.getInt64(trycatch.size());
-  builder.CreateStore(depthMax, tc.delegateDepth);
+  llvm::Value *unwindException = B->CreateExtractValue(caughtResult, 0);
+  B->CreateStore(caughtResult, tc.catchStore);
+  B->CreateStore(excStateThrown, tc.excFlag);
+  llvm::Value *depthMax = B->getInt64(trycatch.size());
+  B->CreateStore(depthMax, tc.delegateDepth);
 
-  llvm::Value *unwindExceptionClass = builder.CreateLoad(builder.CreateStructGEP(
-      unwindType,
-      builder.CreatePointerCast(unwindException, unwindType->getPointerTo()), 0));
+  llvm::Value *unwindExceptionClass = B->CreateLoad(B->CreateStructGEP(
+      unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
+      0));
 
   // check for foreign exceptions
-  builder.CreateCondBr(
-      builder.CreateICmpEQ(unwindExceptionClass, builder.getInt64(seq_exc_class())),
-      tc.exceptionRouteBlock, externalExcBlock);
+  B->CreateCondBr(B->CreateICmpEQ(unwindExceptionClass, B->getInt64(seq_exc_class())),
+                  tc.exceptionRouteBlock, externalExcBlock);
 
   // external exception (currently assumed to be unreachable)
-  builder.SetInsertPoint(externalExcBlock);
-  builder.CreateUnreachable();
+  B->SetInsertPoint(externalExcBlock);
+  B->CreateUnreachable();
 
   // reroute Codon exceptions
-  builder.SetInsertPoint(tc.exceptionRouteBlock);
-  unwindException = builder.CreateExtractValue(builder.CreateLoad(tc.catchStore), 0);
-  llvm::Value *excVal = builder.CreatePointerCast(
-      builder.CreateConstGEP1_64(unwindException, (uint64_t)seq_exc_offset()),
+  B->SetInsertPoint(tc.exceptionRouteBlock);
+  unwindException = B->CreateExtractValue(B->CreateLoad(tc.catchStore), 0);
+  llvm::Value *excVal = B->CreatePointerCast(
+      B->CreateConstGEP1_64(unwindException, (uint64_t)seq_exc_offset()),
       excType->getPointerTo());
 
-  llvm::Value *loadedExc = builder.CreateLoad(excVal);
-  llvm::Value *objType = builder.CreateExtractValue(loadedExc, 0);
-  objType = builder.CreateExtractValue(objType, 0);
-  llvm::Value *objPtr = builder.CreateExtractValue(loadedExc, 1);
+  llvm::Value *loadedExc = B->CreateLoad(excVal);
+  llvm::Value *objType = B->CreateExtractValue(loadedExc, 0);
+  objType = B->CreateExtractValue(objType, 0);
+  llvm::Value *objPtr = B->CreateExtractValue(loadedExc, 1);
 
   // set depth when catch-all entered
   auto *defaultRouteBlock = llvm::BasicBlock::Create(*context, "trycatch.fdepth", func);
-  builder.SetInsertPoint(defaultRouteBlock);
+  B->SetInsertPoint(defaultRouteBlock);
   if (catchAll)
-    builder.CreateStore(builder.getInt64(catchAllDepth), tc.delegateDepth);
-  builder.CreateBr(catchAll ? (catchAllDepth > 0 ? tc.finallyBlock : catchAll)
-                            : tc.finallyBlock);
+    B->CreateStore(B->getInt64(catchAllDepth), tc.delegateDepth);
+  B->CreateBr(catchAll ? (catchAllDepth > 0 ? tc.finallyBlock : catchAll)
+                       : tc.finallyBlock);
 
-  builder.SetInsertPoint(tc.exceptionRouteBlock);
+  B->SetInsertPoint(tc.exceptionRouteBlock);
   llvm::SwitchInst *switchToCatchBlock =
-      builder.CreateSwitch(objType, defaultRouteBlock, (unsigned)handlersFull.size());
+      B->CreateSwitch(objType, defaultRouteBlock, (unsigned)handlersFull.size());
   for (unsigned i = 0; i < handlersFull.size(); i++) {
     // set finally depth
     auto *depthSet = llvm::BasicBlock::Create(*context, "trycatch.fdepth", func);
-    builder.SetInsertPoint(depthSet);
-    builder.CreateStore(builder.getInt64(depths[i]), tc.delegateDepth);
-    builder.CreateBr((i < tc.handlers.size()) ? handlersFull[i] : tc.finallyBlock);
+    B->SetInsertPoint(depthSet);
+    B->CreateStore(B->getInt64(depths[i]), tc.delegateDepth);
+    B->CreateBr((i < tc.handlers.size()) ? handlersFull[i] : tc.finallyBlock);
 
     if (catchTypesFull[i]) {
-      switchToCatchBlock->addCase(
-          builder.getInt32((uint64_t)getTypeIdx(catchTypesFull[i])), depthSet);
+      switchToCatchBlock->addCase(B->getInt32((uint64_t)getTypeIdx(catchTypesFull[i])),
+                                  depthSet);
     }
 
     // translate catch body if this block is ours (vs. a parent's)
     if (i < catches.size()) {
       block = handlersFull[i];
-      builder.SetInsertPoint(block);
+      B->SetInsertPoint(block);
       const Var *var = catches[i]->getVar();
 
       if (var) {
-        llvm::Value *obj =
-            builder.CreateBitCast(objPtr, getLLVMType(catches[i]->getType()));
+        llvm::Value *obj = B->CreateBitCast(objPtr, getLLVMType(catches[i]->getType()));
         llvm::Value *varPtr = getVar(var);
         seqassert(varPtr, "could not get catch var");
-        builder.CreateStore(obj, varPtr);
+        B->CreateStore(obj, varPtr);
       }
 
-      builder.CreateStore(excStateCaught, tc.excFlag);
+      B->CreateStore(excStateCaught, tc.excFlag);
       process(catches[i]->getHandler());
-      builder.SetInsertPoint(block);
-      builder.CreateBr(tc.finallyBlock);
+      B->SetInsertPoint(block);
+      B->CreateBr(tc.finallyBlock);
     }
   }
 
@@ -1946,42 +1923,42 @@ void LLVMVisitor::codegenPipeline(
     // LLVM coroutine intrinsics
     // https://prereleases.llvm.org/6.0.0/rc3/docs/Coroutines.html
     llvm::FunctionCallee coroResume =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_resume);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_resume);
     llvm::FunctionCallee coroDone =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_done);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_done);
     llvm::FunctionCallee coroPromise =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_promise);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
     llvm::FunctionCallee coroDestroy =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_destroy);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_destroy);
 
     llvm::Value *iter = value;
-    builder.SetInsertPoint(block);
-    builder.CreateBr(condBlock);
+    B->SetInsertPoint(block);
+    B->CreateBr(condBlock);
 
     block = condBlock;
     call(coroResume, {iter});
-    builder.SetInsertPoint(block);
-    llvm::Value *done = builder.CreateCall(coroDone, iter);
-    builder.CreateCondBr(done, cleanupBlock, bodyBlock);
+    B->SetInsertPoint(block);
+    llvm::Value *done = B->CreateCall(coroDone, iter);
+    B->CreateCondBr(done, cleanupBlock, bodyBlock);
 
-    builder.SetInsertPoint(bodyBlock);
+    B->SetInsertPoint(bodyBlock);
     llvm::Value *alignment =
-        builder.getInt32(module->getDataLayout().getPrefTypeAlignment(baseType));
-    llvm::Value *from = builder.getFalse();
-    llvm::Value *promise = builder.CreateCall(coroPromise, {iter, alignment, from});
-    promise = builder.CreateBitCast(promise, baseType->getPointerTo());
-    value = builder.CreateLoad(promise);
+        B->getInt32(M->getDataLayout().getPrefTypeAlignment(baseType));
+    llvm::Value *from = B->getFalse();
+    llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
+    promise = B->CreateBitCast(promise, baseType->getPointerTo());
+    value = B->CreateLoad(promise);
 
     block = bodyBlock;
     callStage(stage);
     codegenPipeline(stages, where + 1);
 
-    builder.SetInsertPoint(block);
-    builder.CreateBr(condBlock);
+    B->SetInsertPoint(block);
+    B->CreateBr(condBlock);
 
-    builder.SetInsertPoint(cleanupBlock);
-    builder.CreateCall(coroDestroy, iter);
-    builder.CreateBr(exitBlock);
+    B->SetInsertPoint(cleanupBlock);
+    B->CreateCall(coroDestroy, iter);
+    B->CreateBr(exitBlock);
 
     block = exitBlock;
   } else {
@@ -1999,7 +1976,7 @@ void LLVMVisitor::visit(const PipelineFlow *x) {
 }
 
 void LLVMVisitor::visit(const dsl::CustomFlow *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   value = x->getBuilder()->buildValue(this);
 }
 
@@ -2012,8 +1989,8 @@ void LLVMVisitor::visit(const AssignInstr *x) {
   seqassert(var, "could not find {} var", *x);
   process(x->getRhs());
   if (var != getDummyVoidValue()) {
-    builder.SetInsertPoint(block);
-    builder.CreateStore(value, var);
+    B->SetInsertPoint(block);
+    B->CreateStore(value, var);
   }
 }
 
@@ -2024,13 +2001,13 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   seqassert(index >= 0, "invalid index");
 
   process(x->getVal());
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   if (auto *refType = cast<types::RefType>(memberedType)) {
-    value = builder.CreateBitCast(value,
-                                  getLLVMType(refType->getContents())->getPointerTo());
-    value = builder.CreateLoad(value);
+    value =
+        B->CreateBitCast(value, getLLVMType(refType->getContents())->getPointerTo());
+    value = B->CreateLoad(value);
   }
-  value = builder.CreateExtractValue(value, index);
+  value = B->CreateExtractValue(value, index);
 }
 
 void LLVMVisitor::visit(const InsertInstr *x) {
@@ -2044,21 +2021,21 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   process(x->getRhs());
   llvm::Value *rhs = value;
 
-  builder.SetInsertPoint(block);
-  lhs = builder.CreateBitCast(lhs, getLLVMType(refType->getContents())->getPointerTo());
-  llvm::Value *load = builder.CreateLoad(lhs);
-  load = builder.CreateInsertValue(load, rhs, index);
-  builder.CreateStore(load, lhs);
+  B->SetInsertPoint(block);
+  lhs = B->CreateBitCast(lhs, getLLVMType(refType->getContents())->getPointerTo());
+  llvm::Value *load = B->CreateLoad(lhs);
+  load = B->CreateInsertValue(load, rhs, index);
+  B->CreateStore(load, lhs);
 }
 
 void LLVMVisitor::visit(const CallInstr *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   process(x->getCallee());
   llvm::Value *f = value;
 
   std::vector<llvm::Value *> args;
   for (auto *arg : *x) {
-    builder.SetInsertPoint(block);
+    B->SetInsertPoint(block);
     process(arg);
     args.push_back(value);
   }
@@ -2068,14 +2045,14 @@ void LLVMVisitor::visit(const CallInstr *x) {
 }
 
 void LLVMVisitor::visit(const TypePropertyInstr *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   switch (x->getProperty()) {
   case TypePropertyInstr::Property::SIZEOF:
-    value = builder.getInt64(
-        module->getDataLayout().getTypeAllocSize(getLLVMType(x->getInspectType())));
+    value = B->getInt64(
+        M->getDataLayout().getTypeAllocSize(getLLVMType(x->getInspectType())));
     break;
   case TypePropertyInstr::Property::IS_ATOMIC:
-    value = builder.getInt8(x->getInspectType()->isAtomic() ? 1 : 0);
+    value = B->getInt8(x->getInspectType()->isAtomic() ? 1 : 0);
     break;
   default:
     seqassert(0, "unknown type property");
@@ -2083,33 +2060,33 @@ void LLVMVisitor::visit(const TypePropertyInstr *x) {
 }
 
 void LLVMVisitor::visit(const YieldInInstr *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   if (x->isSuspending()) {
     llvm::FunctionCallee coroSuspend =
-        llvm::Intrinsic::getDeclaration(module.get(), llvm::Intrinsic::coro_suspend);
+        llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_suspend);
     llvm::Value *tok = llvm::ConstantTokenNone::get(*context);
-    llvm::Value *final = builder.getFalse();
-    llvm::Value *susp = builder.CreateCall(coroSuspend, {tok, final});
+    llvm::Value *final = B->getFalse();
+    llvm::Value *susp = B->CreateCall(coroSuspend, {tok, final});
 
     block = llvm::BasicBlock::Create(*context, "yieldin.new", func);
-    llvm::SwitchInst *inst = builder.CreateSwitch(susp, coro.suspend, 2);
-    inst->addCase(builder.getInt8(0), block);
-    inst->addCase(builder.getInt8(1), coro.cleanup);
-    builder.SetInsertPoint(block);
+    llvm::SwitchInst *inst = B->CreateSwitch(susp, coro.suspend, 2);
+    inst->addCase(B->getInt8(0), block);
+    inst->addCase(B->getInt8(1), coro.cleanup);
+    B->SetInsertPoint(block);
   }
-  value = builder.CreateLoad(coro.promise);
+  value = B->CreateLoad(coro.promise);
 }
 
 void LLVMVisitor::visit(const StackAllocInstr *x) {
   auto *arrayType = llvm::cast<llvm::StructType>(getLLVMType(x->getType()));
-  builder.SetInsertPoint(func->getEntryBlock().getTerminator());
-  llvm::Value *len = builder.getInt64(x->getCount());
-  llvm::Value *ptr = builder.CreateAlloca(
+  B->SetInsertPoint(func->getEntryBlock().getTerminator());
+  llvm::Value *len = B->getInt64(x->getCount());
+  llvm::Value *ptr = B->CreateAlloca(
       llvm::cast<llvm::PointerType>(arrayType->getElementType(1))->getElementType(),
       len);
   llvm::Value *arr = llvm::UndefValue::get(arrayType);
-  arr = builder.CreateInsertValue(arr, len, 0);
-  arr = builder.CreateInsertValue(arr, ptr, 1);
+  arr = B->CreateInsertValue(arr, len, 0);
+  arr = B->CreateInsertValue(arr, ptr, 1);
   value = arr;
 }
 
@@ -2122,26 +2099,26 @@ void LLVMVisitor::visit(const TernaryInstr *x) {
   process(x->getCond());
   llvm::Value *cond = value;
 
-  builder.SetInsertPoint(block);
-  cond = builder.CreateTrunc(cond, builder.getInt1Ty());
-  builder.CreateCondBr(cond, trueBlock, falseBlock);
+  B->SetInsertPoint(block);
+  cond = B->CreateTrunc(cond, B->getInt1Ty());
+  B->CreateCondBr(cond, trueBlock, falseBlock);
 
   block = trueBlock;
   process(x->getTrueValue());
   llvm::Value *trueValue = value;
   trueBlock = block;
-  builder.SetInsertPoint(trueBlock);
-  builder.CreateBr(exitBlock);
+  B->SetInsertPoint(trueBlock);
+  B->CreateBr(exitBlock);
 
   block = falseBlock;
   process(x->getFalseValue());
   llvm::Value *falseValue = value;
   falseBlock = block;
-  builder.SetInsertPoint(falseBlock);
-  builder.CreateBr(exitBlock);
+  B->SetInsertPoint(falseBlock);
+  B->CreateBr(exitBlock);
 
-  builder.SetInsertPoint(exitBlock);
-  llvm::PHINode *phi = builder.CreatePHI(valueType, 2);
+  B->SetInsertPoint(exitBlock);
+  llvm::PHINode *phi = B->CreatePHI(valueType, 2);
   phi->addIncoming(trueValue, trueBlock);
   phi->addIncoming(falseValue, falseBlock);
   value = phi;
@@ -2150,18 +2127,18 @@ void LLVMVisitor::visit(const TernaryInstr *x) {
 
 void LLVMVisitor::visit(const BreakInstr *x) {
   seqassert(!loops.empty(), "not in a loop");
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
 
   auto *loop = !x->getLoop() ? &loops.back() : getLoopData(x->getLoop()->getId());
 
   if (trycatch.empty() || trycatch.back().sequenceNumber < loop->sequenceNumber) {
-    builder.CreateBr(loop->breakBlock);
+    B->CreateBr(loop->breakBlock);
   } else {
     auto *tc = &trycatch.back();
-    auto *excStateBreak = builder.getInt8(TryCatchData::State::BREAK);
-    builder.CreateStore(excStateBreak, tc->excFlag);
-    builder.CreateStore(builder.getInt64(loop->sequenceNumber), tc->loopSequence);
-    builder.CreateBr(tc->finallyBlock);
+    auto *excStateBreak = B->getInt8(TryCatchData::State::BREAK);
+    B->CreateStore(excStateBreak, tc->excFlag);
+    B->CreateStore(B->getInt64(loop->sequenceNumber), tc->loopSequence);
+    B->CreateBr(tc->finallyBlock);
   }
 
   block = llvm::BasicBlock::Create(*context, "break.new", func);
@@ -2169,17 +2146,17 @@ void LLVMVisitor::visit(const BreakInstr *x) {
 
 void LLVMVisitor::visit(const ContinueInstr *x) {
   seqassert(!loops.empty(), "not in a loop");
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   auto *loop = !x->getLoop() ? &loops.back() : getLoopData(x->getLoop()->getId());
 
   if (trycatch.empty() || trycatch.back().sequenceNumber < loop->sequenceNumber) {
-    builder.CreateBr(loop->continueBlock);
+    B->CreateBr(loop->continueBlock);
   } else {
     auto *tc = &trycatch.back();
-    auto *excStateContinue = builder.getInt8(TryCatchData::State::CONTINUE);
-    builder.CreateStore(excStateContinue, tc->excFlag);
-    builder.CreateStore(builder.getInt64(loop->sequenceNumber), tc->loopSequence);
-    builder.CreateBr(tc->finallyBlock);
+    auto *excStateContinue = B->getInt8(TryCatchData::State::CONTINUE);
+    B->CreateStore(excStateContinue, tc->excFlag);
+    B->CreateStore(B->getInt64(loop->sequenceNumber), tc->loopSequence);
+    B->CreateBr(tc->finallyBlock);
   }
 
   block = llvm::BasicBlock::Create(*context, "continue.new", func);
@@ -2189,29 +2166,29 @@ void LLVMVisitor::visit(const ReturnInstr *x) {
   if (x->getValue()) {
     process(x->getValue());
   }
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   if (coro.exit) {
     if (auto *tc = getInnermostTryCatch()) {
-      auto *excStateReturn = builder.getInt8(TryCatchData::State::RETURN);
-      builder.CreateStore(excStateReturn, tc->excFlag);
-      builder.CreateBr(tc->finallyBlock);
+      auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
+      B->CreateStore(excStateReturn, tc->excFlag);
+      B->CreateBr(tc->finallyBlock);
     } else {
-      builder.CreateBr(coro.exit);
+      B->CreateBr(coro.exit);
     }
   } else {
     if (auto *tc = getInnermostTryCatch()) {
-      auto *excStateReturn = builder.getInt8(TryCatchData::State::RETURN);
-      builder.CreateStore(excStateReturn, tc->excFlag);
+      auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
+      B->CreateStore(excStateReturn, tc->excFlag);
       if (tc->retStore) {
         seqassert(value, "no return value storage");
-        builder.CreateStore(value, tc->retStore);
+        B->CreateStore(value, tc->retStore);
       }
-      builder.CreateBr(tc->finallyBlock);
+      B->CreateBr(tc->finallyBlock);
     } else {
       if (x->getValue()) {
-        builder.CreateRet(value);
+        B->CreateRet(value);
       } else {
-        builder.CreateRetVoid();
+        B->CreateRetVoid();
       }
     }
   }
@@ -2223,16 +2200,16 @@ void LLVMVisitor::visit(const YieldInstr *x) {
     if (x->getValue()) {
       seqassert(coro.promise, "no coroutine promise");
       process(x->getValue());
-      builder.SetInsertPoint(block);
-      builder.CreateStore(value, coro.promise);
+      B->SetInsertPoint(block);
+      B->CreateStore(value, coro.promise);
     }
-    builder.SetInsertPoint(block);
+    B->SetInsertPoint(block);
     if (auto *tc = getInnermostTryCatch()) {
-      auto *excStateReturn = builder.getInt8(TryCatchData::State::RETURN);
-      builder.CreateStore(excStateReturn, tc->excFlag);
-      builder.CreateBr(tc->finallyBlock);
+      auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
+      B->CreateStore(excStateReturn, tc->excFlag);
+      B->CreateBr(tc->finallyBlock);
     } else {
-      builder.CreateBr(coro.exit);
+      B->CreateBr(coro.exit);
     }
     block = llvm::BasicBlock::Create(*context, "yield.new", func);
   } else {
@@ -2250,9 +2227,9 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();
   process(x->getValue());
-  builder.SetInsertPoint(block);
-  llvm::Value *exc = builder.CreateCall(
-      excAllocFunc, {builder.getInt32(getTypeIdx(x->getValue()->getType())), value});
+  B->SetInsertPoint(block);
+  llvm::Value *exc = B->CreateCall(
+      excAllocFunc, {B->getInt32(getTypeIdx(x->getValue()->getType())), value});
   call(throwFunc, exc);
 }
 
@@ -2262,7 +2239,7 @@ void LLVMVisitor::visit(const FlowInstr *x) {
 }
 
 void LLVMVisitor::visit(const dsl::CustomInstr *x) {
-  builder.SetInsertPoint(block);
+  B->SetInsertPoint(block);
   value = x->getBuilder()->buildValue(this);
 }
 
