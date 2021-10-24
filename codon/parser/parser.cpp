@@ -30,22 +30,26 @@ bool _isTest = false;
 
 namespace codon {
 
+void setDebug() {
+  auto d = getenv("CODON_DEBUG");
+  if (d) {
+    auto s = std::string(d);
+    _dbg_level |= s.find('t') != std::string::npos ? (1 << 0) : 0; // time
+    _dbg_level |= s.find('r') != std::string::npos ? (1 << 2) : 0; // realize
+    _dbg_level |= s.find('T') != std::string::npos ? (1 << 4) : 0; // type-check
+    _dbg_level |= s.find('L') != std::string::npos ? (1 << 5) : 0; // lexer
+    _dbg_level |= s.find('i') != std::string::npos ? (1 << 6) : 0; // IR
+    _dbg_level |=
+        s.find('l') != std::string::npos ? (1 << 7) : 0; // User-level debugging
+  }
+}
+
 ir::Module *parse(const std::string &argv0, const std::string &file,
                   const std::string &code, bool isCode, int isTest, int startLine,
                   const std::unordered_map<std::string, std::string> &defines,
                   PluginManager *plm) {
   try {
-    auto d = getenv("CODON_DEBUG");
-    if (d) {
-      auto s = std::string(d);
-      _dbg_level |= s.find('t') != std::string::npos ? (1 << 0) : 0; // time
-      _dbg_level |= s.find('r') != std::string::npos ? (1 << 2) : 0; // realize
-      _dbg_level |= s.find('T') != std::string::npos ? (1 << 4) : 0; // type-check
-      _dbg_level |= s.find('L') != std::string::npos ? (1 << 5) : 0; // lexer
-      _dbg_level |= s.find('i') != std::string::npos ? (1 << 6) : 0; // IR
-      _dbg_level |=
-          s.find('l') != std::string::npos ? (1 << 7) : 0; // User-level debugging
-    }
+    setDebug();
 
     char abs[PATH_MAX + 1] = {'-', 0};
     if (file != "-")
@@ -171,6 +175,8 @@ void generateDocstr(const std::string &argv0) {
 
 int jitLoop(const std::string &argv0) {
   fmt::print("Loading Codon JIT...");
+  setDebug();
+
   auto cache = std::make_shared<ast::Cache>(argv0);
   string fileName = "<jit>";
   // Initialize JIT (load stdlib by parsing an empty AST node)
@@ -210,8 +216,12 @@ int jitLoop(const std::string &argv0) {
           globalNames.push_back(g.first);
       // add newly realized functions
       vector<ast::StmtPtr> v;
-      for (auto &p : cache->pendingRealizations)
+      vector<ir::Func **> frs;
+      for (auto &p : cache->pendingRealizations) {
         v.push_back(cache->functions[p.first].ast);
+        frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
+        // LOG("pr: {} -> {} ", p.first, p.second);
+      }
       v.push_back(typechecked);
       auto func = ast::TranslateVisitor::apply(cache, make_shared<ast::SuiteStmt>(v));
       cache->jitCell++;
@@ -220,6 +230,10 @@ int jitLoop(const std::string &argv0) {
       for (auto &g : globalNames) {
         seqassert(cache->globals[g], "JIT global {} not set", g);
         globalVars.push_back(cache->globals[g]);
+      }
+      for (auto &i : frs) {
+        seqassert(*i, "JIT fn not set");
+        globalVars.push_back(*i);
       }
       jit.run(func, globalVars);
     } catch (exc::ParserException &e) {
