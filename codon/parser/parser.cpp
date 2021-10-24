@@ -208,8 +208,12 @@ int jitLoop(const std::string &argv0) {
       for (auto &g : cache->globals)
         if (!g.second)
           globalNames.push_back(g.first);
-
-      auto func = ast::TranslateVisitor::apply(cache, typechecked);
+      // add newly realized functions
+      vector<ast::StmtPtr> v;
+      for (auto &p : cache->pendingRealizations)
+        v.push_back(cache->functions[p.first].ast);
+      v.push_back(typechecked);
+      auto func = ast::TranslateVisitor::apply(cache, make_shared<ast::SuiteStmt>(v));
       cache->jitCell++;
 
       vector<ir::Var *> globalVars;
