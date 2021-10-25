@@ -20,6 +20,7 @@ public:
 
   /// Constructs a constant propagation pass.
   /// @param reachingDefKey the reaching definition analysis' key
+  /// @param globalVarsKey global variables analysis' key
   ConstPropPass(const std::string &reachingDefKey, const std::string &globalVarsKey)
       : reachingDefKey(reachingDefKey), globalVarsKey(globalVarsKey) {}
 
