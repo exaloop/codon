@@ -29,8 +29,8 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 
 LLVMVisitor::LLVMVisitor(bool debug, bool jit, const std::string &flags)
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
-      moduleId(0), B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr),
-      block(nullptr), value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
+      B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
       db(debug, jit, flags), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -112,10 +112,10 @@ void LLVMVisitor::registerGlobal(const Var *var) {
 }
 
 llvm::Value *LLVMVisitor::getVar(const Var *var) {
-  std::pair<llvm::Value *, int64_t> p = vars.get(var);
+  auto it = vars.find(var->getId());
   if (db.jit && var->isGlobal()) {
-    if (auto *val = p.first) {
-      if (p.second != moduleId) {
+    if (it != vars.end()) {
+      if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
         auto name = var->getName();
         if (auto *global = M->getNamedValue(name))
@@ -142,34 +142,42 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       }
     } else {
       registerGlobal(var);
-      return vars[var];
+      return it->second;
     }
   }
-  return p.first;
+  return (it != vars.end()) ? it->second : nullptr;
 }
 
 llvm::Function *LLVMVisitor::getFunc(const Func *func) {
-  std::pair<llvm::Function *, int64_t> p = funcs.get(func);
+  auto it = funcs.find(func->getId());
   if (db.jit) {
-    if (auto *f = p.first) {
-      if (p.second != moduleId) {
+    if (it != funcs.end()) {
+      if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
-        if (auto *g = M->getFunction(f->getName()))
+        const std::string name = getNameForFunction(func);
+        if (auto *g = M->getFunction(name))
           return g;
 
-        auto *g = llvm::Function::Create(f->getFunctionType(),
-                                         llvm::Function::ExternalLinkage, f->getName(),
-                                         M.get());
-        g->copyAttributesFrom(f);
+        auto *funcType = cast<types::FuncType>(func->getType());
+        llvm::Type *returnType = getLLVMType(funcType->getReturnType());
+        std::vector<llvm::Type *> argTypes;
+        for (const auto &argType : *funcType) {
+          argTypes.push_back(getLLVMType(argType));
+        }
+
+        auto *llvmFuncType =
+            llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
+        auto *g = llvm::Function::Create(llvmFuncType, llvm::Function::ExternalLinkage,
+                                         name, M.get());
         insertFunc(func, g);
         return g;
       }
     } else {
       registerGlobal(func);
-      return funcs[func];
+      return it->second;
     }
   }
-  return p.first;
+  return (it != funcs.end()) ? it->second : nullptr;
 }
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
@@ -202,9 +210,24 @@ std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
 LLVMVisitor::takeModule(const SrcInfo *src) {
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
+
+  // reset all LLVM fields/data -- they are owned by the context
+  B = {};
+  func = nullptr;
+  block = nullptr;
+  value = nullptr;
+  for (auto &it : vars)
+    it.second = nullptr;
+  for (auto &it : funcs)
+    it.second = nullptr;
+  coro.reset();
+  loops.clear();
+  trycatch.clear();
+  db.reset();
+
   context = std::make_unique<llvm::LLVMContext>();
   M = makeModule(*context, src);
-  ++moduleId;
+
   return {std::move(currentContext), std::move(currentModule)};
 }
 

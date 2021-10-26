@@ -15,24 +15,6 @@ namespace ir {
 
 class LLVMVisitor : public util::ConstVisitor {
 private:
-  template <typename V>
-  using CacheBase = std::unordered_map<id_t, std::pair<V *, int64_t>>;
-  template <typename K, typename V> class Cache : public CacheBase<V> {
-  public:
-    using CacheBase<V>::CacheBase;
-
-    std::pair<V *, int64_t> get(const K *key) {
-      auto it = CacheBase<V>::find(key->getId());
-      return (it != CacheBase<V>::end()) ? it->second : std::make_pair(nullptr, 0);
-    }
-
-    V *operator[](const K *key) { return get(key).first; }
-
-    void insert(const K *key, V *value, int64_t id) {
-      CacheBase<V>::emplace(key->getId(), std::make_pair(value, id));
-    }
-  };
-
   struct CoroData {
     /// Coroutine promise (where yielded values are stored)
     llvm::Value *promise;
@@ -44,6 +26,8 @@ private:
     llvm::BasicBlock *suspend;
     /// Coroutine exit block
     llvm::BasicBlock *exit;
+
+    void reset() { promise = handle = cleanup = suspend = exit = nullptr; }
   };
 
   struct NestableData {
@@ -63,6 +47,8 @@ private:
     LoopData(llvm::BasicBlock *breakBlock, llvm::BasicBlock *continueBlock, id_t loopId)
         : NestableData(), breakBlock(breakBlock), continueBlock(continueBlock),
           loopId(loopId) {}
+
+    void reset() { breakBlock = continueBlock = nullptr; }
   };
 
   struct TryCatchData : NestableData {
@@ -94,6 +80,13 @@ private:
           finallyBlock(nullptr), catchTypes(), handlers(), excFlag(nullptr),
           catchStore(nullptr), delegateDepth(nullptr), retStore(nullptr),
           loopSequence(nullptr) {}
+
+    void reset() {
+      exceptionBlock = exceptionRouteBlock = finallyBlock = nullptr;
+      catchTypes.clear();
+      handlers.clear();
+      excFlag = catchStore = delegateDepth = loopSequence = nullptr;
+    }
   };
 
   struct DebugInfo {
@@ -112,14 +105,17 @@ private:
         : builder(), unit(nullptr), debug(debug), jit(jit), flags(flags) {}
 
     llvm::DIFile *getFile(const std::string &path);
+
+    void reset() {
+      builder = {};
+      unit = nullptr;
+    }
   };
 
   /// LLVM context used for compilation
   std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
   std::unique_ptr<llvm::Module> M;
-  /// Module ID
-  int64_t moduleId;
   /// LLVM IR builder used for constructing LLVM IR
   std::unique_ptr<llvm::IRBuilder<>> B;
   /// Current function we are compiling
@@ -129,9 +125,9 @@ private:
   /// Last compiled value
   llvm::Value *value;
   /// LLVM values corresponding to IR variables
-  Cache<Var, llvm::Value> vars;
+  std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
-  Cache<Func, llvm::Function> funcs;
+  std::unordered_map<id_t, llvm::Function *> funcs;
   /// Coroutine data, if current function is a coroutine
   CoroData coro;
   /// Loop data stack, containing break/continue blocks
@@ -187,19 +183,16 @@ private:
   void runLLVMPipeline();
 
   llvm::Value *getVar(const Var *var);
-  void insertVar(const Var *var, llvm::Value *x) { vars.insert(var, x, moduleId); }
+  void insertVar(const Var *var, llvm::Value *x) { vars.emplace(var->getId(), x); }
   llvm::Function *getFunc(const Func *func);
   void insertFunc(const Func *func, llvm::Function *x) {
-    funcs.insert(func, x, moduleId);
+    funcs.emplace(func->getId(), x);
   }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
 
 public:
   static std::string getNameForFunction(const Func *x) {
-    auto *bodiedFunc = cast<BodiedFunc>(x);
-    if (bodiedFunc && bodiedFunc->isJIT()) {
-      return x->getName();
-    } else if (isA<ExternalFunc>(x)) {
+    if (isA<ExternalFunc>(x)) {
       return x->getUnmangledName();
     } else {
       return x->referenceString();
@@ -242,8 +235,8 @@ public:
   llvm::FunctionCallee getFunc() { return func; }
   llvm::BasicBlock *getBlock() { return block; }
   llvm::Value *getValue() { return value; }
-  Cache<Var, llvm::Value> &getVars() { return vars; }
-  Cache<Func, llvm::Function> &getFuncs() { return funcs; }
+  std::unordered_map<id_t, llvm::Value *> &getVars() { return vars; }
+  std::unordered_map<id_t, llvm::Function *> &getFuncs() { return funcs; }
   CoroData &getCoro() { return coro; }
   std::vector<LoopData> &getLoops() { return loops; }
   std::vector<TryCatchData> &getTryCatch() { return trycatch; }
