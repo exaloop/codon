@@ -1,5 +1,6 @@
 #include "engine.h"
 
+#include "codon/runtime/lib.h"
 #include "codon/sir/llvm/memory_manager.h"
 #include "codon/sir/llvm/optimize.h"
 
@@ -129,7 +130,11 @@ void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
   llvm::cantFail(engine->addModule({std::move(pair.second), std::move(pair.first)}));
   auto func = llvm::cantFail(engine->lookup(name));
   auto *repl = (InputFunc *)func.getAddress();
-  (*repl)();
+  try {
+    (*repl)();
+  } catch (const seq_jit_error &) {
+    // nothing to do
+  }
   // llvm::cantFail(rt->remove());
 }
 

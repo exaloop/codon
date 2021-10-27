@@ -625,7 +625,8 @@ void LLVMVisitor::visit(const Module *x) {
   llvm::Value *argStorage = getVar(x->getArgVar());
   seqassert(argStorage, "argument storage missing");
   B->CreateStore(arr, argStorage);
-  B->CreateCall(initFunc, B->getInt32(db.debug ? 1 : 0));
+  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) | (db.jit ? SEQ_FLAG_JIT : 0);
+  B->CreateCall(initFunc, B->getInt32(flags));
 
   // Put the entire program in a new function
   {

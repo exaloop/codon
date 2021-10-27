@@ -1,11 +1,15 @@
-#ifndef CODON_RUNTIME_LIB_H
-#define CODON_RUNTIME_LIB_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
+#include <string>
 #include <unwind.h>
+
+#define SEQ_FLAG_DEBUG (1 << 0)
+#define SEQ_FLAG_JIT (1 << 1)
 
 #define SEQ_FUNC extern "C"
 
@@ -21,9 +25,9 @@ struct seq_str_t {
   char *str;
 };
 
-extern int seq_debug;
+extern int seq_flags;
 
-SEQ_FUNC void seq_init(int debug);
+SEQ_FUNC void seq_init(int flags);
 
 SEQ_FUNC bool seq_is_macos();
 SEQ_FUNC seq_int_t seq_pid();
@@ -76,4 +80,7 @@ SEQ_FUNC void *seq_rlock_new();
 SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_rlock_release(void *lock);
 
-#endif /* CODON_RUNTIME_LIB_H */
+class seq_jit_error : public std::runtime_error {
+public:
+  explicit seq_jit_error(const std::string &what = "") : std::runtime_error(what) {}
+};
