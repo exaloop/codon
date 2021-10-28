@@ -81,6 +81,19 @@ SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_rlock_release(void *lock);
 
 class seq_jit_error : public std::runtime_error {
+private:
+  std::string type;
+  std::string file;
+  int line;
+  int col;
+
 public:
-  explicit seq_jit_error(const std::string &what = "") : std::runtime_error(what) {}
+  explicit seq_jit_error(const std::string &what, const std::string &type,
+                         const std::string &file, int line, int col)
+      : std::runtime_error(what), type(type), file(file), line(line), col(col) {}
+
+  std::string getType() const { return type; }
+  std::string getFile() const { return file; }
+  int getLine() const { return line; }
+  int getCol() const { return col; }
 };

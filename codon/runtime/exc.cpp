@@ -221,7 +221,10 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
 
   if (seq_flags & SEQ_FLAG_JIT) {
-    throw seq_jit_error();
+    std::string msg(hdr->msg.str, hdr->msg.len);
+    std::string file(hdr->file.str, hdr->file.len);
+    std::string type(hdr->type.str, hdr->type.len);
+    throw seq_jit_error(msg, type, file, (int)hdr->line, (int)hdr->col);
   } else {
     abort();
   }

@@ -4,9 +4,16 @@
 
 namespace codon {
 namespace jit {
-
+namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
+
+Status statusFromError(llvm::Error err) {
+  return Status(Status::Code::LLVM_ERROR, llvm::toString(std::move(err)));
+}
+} // namespace
+
+const Status Status::OK = Status(Status::Code::SUCCESS);
 
 JIT::JIT(ir::Module *module)
     : module(module), pm(std::make_unique<ir::transform::PassManager>(/*debug=*/true)),
@@ -21,18 +28,23 @@ JIT::JIT(ir::Module *module)
   llvisitor->setPluginManager(plm.get());
 }
 
-void JIT::init() {
+Status JIT::init() {
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
-  // auto rt = engine->getMainJITDylib().createResourceTracker();
-  llvm::cantFail(engine->addModule({std::move(pair.second), std::move(pair.first)}));
-  auto func = llvm::cantFail(engine->lookup("main"));
-  auto *main = (MainFunc *)func.getAddress();
+
+  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
+    return statusFromError(std::move(err));
+
+  auto func = engine->lookup("main");
+  if (auto err = func.takeError())
+    return statusFromError(std::move(err));
+
+  auto *main = (MainFunc *)func->getAddress();
   (*main)(0, nullptr);
-  // llvm::cantFail(rt->remove());
+  return Status::OK;
 }
 
-void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+Status JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
   llvisitor->registerGlobal(input);
   for (auto *var : newGlobals) {
@@ -44,17 +56,23 @@ void JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
   }
   input->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
-  // auto rt = engine->getMainJITDylib().createResourceTracker();
-  llvm::StripDebugInfo(*pair.second); // TODO: needed?
-  llvm::cantFail(engine->addModule({std::move(pair.second), std::move(pair.first)}));
-  auto func = llvm::cantFail(engine->lookup(name));
-  auto *repl = (InputFunc *)func.getAddress();
+  llvm::StripDebugInfo(*pair.first); // TODO: needed?
+
+  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
+    return statusFromError(std::move(err));
+
+  auto func = engine->lookup(name);
+  if (auto err = func.takeError())
+    return statusFromError(std::move(err));
+
+  auto *repl = (InputFunc *)func->getAddress();
   try {
     (*repl)();
-  } catch (const seq_jit_error &) {
-    // nothing to do
+  } catch (const seq_jit_error &err) {
+    return Status(Status::Code::RUNTIME_ERROR, err.what(), err.getType(),
+                  SrcInfo(err.getFile(), err.getLine(), err.getCol(), /*len=*/0));
   }
-  // llvm::cantFail(rt->remove());
+  return Status::OK;
 }
 
 } // namespace jit

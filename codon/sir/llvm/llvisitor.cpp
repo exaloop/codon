@@ -206,7 +206,7 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   return M;
 }
 
-std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
+std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
 LLVMVisitor::takeModule(const SrcInfo *src) {
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
@@ -228,7 +228,7 @@ LLVMVisitor::takeModule(const SrcInfo *src) {
   context = std::make_unique<llvm::LLVMContext>();
   M = makeModule(*context, src);
 
-  return {std::move(currentContext), std::move(currentModule)};
+  return {std::move(currentModule), std::move(currentContext)};
 }
 
 void LLVMVisitor::setDebugInfoForNode(const Node *x) {

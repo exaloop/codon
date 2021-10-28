@@ -263,12 +263,12 @@ public:
   std::unique_ptr<llvm::Module> makeModule(llvm::LLVMContext &context,
                                            const SrcInfo *src = nullptr);
 
-  /// Returns the current LLVM context/module and replaces them
+  /// Returns the current module/LLVM context and replaces them
   /// with new, fresh ones. References to variables or functions
   /// from the old module will be included as "external".
   /// @param src source information for the new module
-  /// @return the current context/module, replaced internally
-  std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
+  /// @return the current module/context, replaced internally
+  std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
   takeModule(const SrcInfo *src = nullptr);
 
   /// Sets current debug info based on a given node.
