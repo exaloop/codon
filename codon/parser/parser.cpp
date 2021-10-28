@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/jit/engine.h"
+#include "codon/jit/jit.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"

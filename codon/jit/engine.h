@@ -3,6 +3,8 @@
 #include <memory>
 #include <vector>
 
+#include "codon/sir/llvm/llvm.h"
+
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
@@ -13,11 +15,6 @@
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/TPCIndirectionUtils.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcessControl.h"
-
-#include "codon/sir/llvm/llvisitor.h"
-#include "codon/sir/llvm/llvm.h"
-#include "codon/sir/transform/manager.h"
-#include "codon/sir/var.h"
 
 namespace codon {
 namespace jit {
@@ -62,21 +59,6 @@ public:
                         llvm::orc::ResourceTrackerSP rt = nullptr);
 
   llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef name);
-};
-
-class JIT {
-private:
-  ir::Module *module;
-  std::unique_ptr<ir::transform::PassManager> pm;
-  std::unique_ptr<PluginManager> plm;
-  std::unique_ptr<ir::LLVMVisitor> llvisitor;
-  std::unique_ptr<Engine> engine;
-
-public:
-  JIT(ir::Module *module);
-  ir::Module *getModule() const { return module; }
-  void init();
-  void run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals = {});
 };
 
 } // namespace jit
