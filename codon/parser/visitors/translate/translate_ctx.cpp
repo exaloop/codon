@@ -11,7 +11,7 @@
 namespace codon {
 namespace ast {
 
-TranslateContext::TranslateContext(std::shared_ptr<Cache> cache)
+TranslateContext::TranslateContext(Cache *cache)
     : Context<TranslateItem>(""), cache(std::move(cache)) {
   stack.push_front(std::vector<std::string>());
 }

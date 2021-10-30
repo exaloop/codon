@@ -10,10 +10,10 @@
 
 namespace codon {
 namespace {
-bool error(const std::string &msg, std::string *errMsg) {
+Plugin *error(const std::string &msg, std::string *errMsg) {
   if (!msg.empty() && errMsg)
     *errMsg = msg;
-  return false;
+  return nullptr;
 }
 
 typedef std::unique_ptr<DSL> LoadFunc();
@@ -21,7 +21,7 @@ typedef std::unique_ptr<DSL> LoadFunc();
 
 namespace fs = std::filesystem;
 
-bool PluginManager::load(const std::string &path, std::string *errMsg) {
+Plugin *PluginManager::load(const std::string &path, std::string *errMsg) {
 #if __APPLE__
   const std::string libExt = "dylib";
 #else
@@ -102,7 +102,7 @@ bool PluginManager::load(const std::string &path, std::string *errMsg) {
     plugins.push_back(std::make_unique<Plugin>(std::make_unique<DSL>(), info,
                                                llvm::sys::DynamicLibrary()));
   }
-  return true;
+  return plugins.back().get();
 }
 
 } // namespace codon

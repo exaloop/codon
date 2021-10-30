@@ -41,7 +41,7 @@ struct DocShared {
   std::shared_ptr<json> j;
   std::unordered_map<std::string, std::shared_ptr<DocContext>> modules;
   std::string argv0;
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
   std::unordered_map<int, std::vector<std::string>> generics;
   DocShared() : itemID(1) {}
 };

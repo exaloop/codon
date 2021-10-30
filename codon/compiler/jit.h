@@ -4,7 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "codon/jit/engine.h"
+#include "codon/compiler/engine.h"
+#include "codon/parser/cache.h"
 #include "codon/sir/llvm/llvisitor.h"
 #include "codon/sir/transform/manager.h"
 #include "codon/sir/var.h"
@@ -44,6 +45,7 @@ public:
 
 class JIT {
 private:
+  std::shared_ptr<ast::Cache> cache;
   ir::Module *module;
   std::unique_ptr<ir::transform::PassManager> pm;
   std::unique_ptr<PluginManager> plm;
@@ -51,8 +53,7 @@ private:
   std::unique_ptr<Engine> engine;
 
 public:
-  JIT(ir::Module *module);
-  ir::Module *getModule() const { return module; }
+  explicit JIT(const std::string &argv0);
   Status init();
   Status run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals = {});
 };

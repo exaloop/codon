@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/jit/jit.h"
+#include "codon/compiler/jit.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -55,7 +55,7 @@ ir::Module *parse(const std::string &argv0, const std::string &file,
     if (file != "-")
       realpath(file.c_str(), abs);
 
-    auto cache = std::make_shared<ast::Cache>(argv0);
+    auto *cache = new ast::Cache(argv0);
     if (plm) {
       for (auto *plugin : *plm) {
         if (!plugin->info.stdlibPath.empty())
@@ -177,7 +177,7 @@ int jitLoop(const std::string &argv0) {
   fmt::print("Loading Codon JIT...");
   setDebug();
 
-  auto cache = std::make_shared<ast::Cache>(argv0);
+  auto *cache = new ast::Cache(argv0);
   string fileName = "<jit>";
   // Initialize JIT (load stdlib by parsing an empty AST node)
   auto transformed =
@@ -186,7 +186,7 @@ int jitLoop(const std::string &argv0) {
   ast::TranslateVisitor::apply(cache, move(typechecked));
 
   cache->isJit = true; // we still need main(), so set isJit after it has been set
-  auto jit = jit::JIT(cache->module);
+  auto jit = jit::JIT(argv0);
   cache->module->setSrcInfo({fileName, 0, 0, 0});
   jit.init();
 

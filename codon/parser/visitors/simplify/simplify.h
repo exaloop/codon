@@ -72,8 +72,7 @@ public:
   ///        Each value is passed as a string (integer part is ignored).
   ///        The method will replace this map with a map that links canonical names
   ///        to their string and integer values.
-  static StmtPtr apply(std::shared_ptr<Cache> cache, const StmtPtr &node,
-                       const std::string &file,
+  static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones = false);
 

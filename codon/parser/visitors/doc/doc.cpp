@@ -89,7 +89,8 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
                                         const std::vector<std::string> &files) {
   auto shared = std::make_shared<DocShared>();
   shared->argv0 = argv0;
-  shared->cache = std::make_shared<ast::Cache>(argv0);
+  auto cache = std::make_unique<ast::Cache>(argv0);
+  shared->cache = cache.get();
 
   auto stdlib = getImportFile(argv0, "internal", "", true, "");
   auto ast = ast::parseFile(shared->cache, stdlib->path);
@@ -122,6 +123,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
     DocVisitor(ctx).transformModule(std::move(ast));
   }
 
+  shared->cache = nullptr;
   return shared->j;
 }
 

@@ -46,8 +46,8 @@ public:
   /// Loads the plugin at the given load path.
   /// @param path path to plugin directory containing "plugin.toml" file
   /// @param errMsg where to store potential error messages, if non-null
-  /// @return true if the plugin was loaded successfully, false otherwise
-  bool load(const std::string &path, std::string *errMsg = nullptr);
+  /// @return plugin pointer if successful, null otherwise
+  Plugin *load(const std::string &path, std::string *errMsg = nullptr);
 };
 
 } // namespace codon

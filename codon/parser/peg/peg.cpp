@@ -49,9 +49,8 @@ std::shared_ptr<peg::Grammar> initParser() {
 }
 
 template <typename T>
-T parseCode(const std::shared_ptr<Cache> &cache, const std::string &file,
-            std::string code, int line_offset, int col_offset,
-            const std::string &rule) {
+T parseCode(Cache *cache, const std::string &file, std::string code, int line_offset,
+            int col_offset, const std::string &rule) {
   using namespace std::chrono;
   auto t = high_resolution_clock::now();
 
@@ -81,18 +80,17 @@ T parseCode(const std::shared_ptr<Cache> &cache, const std::string &file,
   return result;
 }
 
-StmtPtr parseCode(const std::shared_ptr<Cache> &cache, const std::string &file,
-                  const std::string &code, int line_offset) {
+StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code,
+                  int line_offset) {
   return parseCode<StmtPtr>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-ExprPtr parseExpr(const std::shared_ptr<Cache> &cache, const std::string &code,
-                  const codon::SrcInfo &offset) {
+ExprPtr parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
   return parseCode<ExprPtr>(cache, offset.file, code, offset.line, offset.col,
                             "fstring");
 }
 
-StmtPtr parseFile(const std::shared_ptr<Cache> &cache, const std::string &file) {
+StmtPtr parseFile(Cache *cache, const std::string &file) {
   std::vector<std::string> lines;
   std::string code;
   if (file == "-") {
@@ -131,8 +129,7 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
   return g;
 }
 
-std::vector<CallExpr::Arg> parseOpenMP(const std::shared_ptr<Cache> &cache,
-                                       const std::string &code,
+std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
                                        const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();

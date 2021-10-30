@@ -25,7 +25,7 @@ class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
   std::string commentStart, commentEnd;
   std::string keywordStart, keywordEnd;
 
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
 
 private:
   template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
@@ -44,15 +44,15 @@ private:
   std::string keyword(const std::string &s) const;
 
 public:
-  FormatVisitor(bool html, std::shared_ptr<Cache> cache = nullptr);
+  FormatVisitor(bool html, Cache *cache = nullptr);
   std::string transform(const ExprPtr &e) override;
   std::string transform(const Expr *expr);
   std::string transform(const StmtPtr &stmt) override;
   std::string transform(Stmt *stmt, int indent);
 
   template <typename T>
-  static std::string apply(const T &stmt, std::shared_ptr<Cache> cache = nullptr,
-                           bool html = false, bool init = false) {
+  static std::string apply(const T &stmt, Cache *cache = nullptr, bool html = false,
+                           bool init = false) {
     auto t = FormatVisitor(html, cache);
     return fmt::format("{}{}{}", t.header, t.transform(stmt), t.footer);
   }

@@ -9,7 +9,7 @@ using fmt::format;
 namespace codon {
 namespace ast {
 
-FormatVisitor::FormatVisitor(bool html, std::shared_ptr<Cache> cache)
+FormatVisitor::FormatVisitor(bool html, Cache *cache)
     : renderType(false), renderHTML(html), indent(0), cache(cache) {
   if (renderHTML) {
     header = "<html><head><link rel=stylesheet href=code.css/></head>\n<body>";

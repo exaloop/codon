@@ -88,8 +88,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::string argv0;
   /// Absolute path of the entry-point module (if available).
   std::string module0;
-  /// LLVM module.
-  codon::ir::Module *module = nullptr;
+  /// IR module.
+  ir::Module *module = nullptr;
 
   /// Table of imported files that maps an absolute filename to a Import structure.
   /// By convention, the key of the Codon's standard library is "".

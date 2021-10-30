@@ -14,7 +14,7 @@ using fmt::format;
 namespace codon {
 namespace ast {
 
-TypeContext::TypeContext(std::shared_ptr<Cache> cache)
+TypeContext::TypeContext(Cache *cache)
     : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0),
       allowActivation(true), age(0), realizationDepth(0) {
   stack.push_front(std::vector<std::string>());

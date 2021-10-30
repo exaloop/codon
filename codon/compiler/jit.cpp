@@ -15,8 +15,9 @@ Status statusFromError(llvm::Error err) {
 
 const Status Status::OK = Status(Status::Code::SUCCESS);
 
-JIT::JIT(ir::Module *module)
-    : module(module), pm(std::make_unique<ir::transform::PassManager>(/*debug=*/true)),
+JIT::JIT(const std::string &argv0)
+    : cache(std::make_shared<ast::Cache>(argv0)), module(nullptr),
+      pm(std::make_unique<ir::transform::PassManager>(/*debug=*/true)),
       plm(std::make_unique<PluginManager>()),
       llvisitor(std::make_unique<ir::LLVMVisitor>(/*debug=*/true, /*jit=*/true)) {
   if (auto e = Engine::create()) {

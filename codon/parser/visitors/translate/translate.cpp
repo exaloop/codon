@@ -21,7 +21,7 @@ namespace ast {
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Func *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
+ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
   ir::BodiedFunc *main;
   if (cache->isJit) {
     auto fnName = format("_jit_{}", cache->jitCell);

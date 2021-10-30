@@ -1,16 +1,14 @@
-#include "codon/dsl/plugins.h"
-#include "codon/parser/parser.h"
-#include "codon/sir/llvm/llvisitor.h"
-#include "codon/sir/transform/manager.h"
-#include "codon/sir/transform/pass.h"
-#include "codon/util/common.h"
-#include "llvm/Support/CommandLine.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "codon/compiler/compiler.h"
+#include "codon/parser/parser.h"
+#include "codon/util/common.h"
+#include "llvm/Support/CommandLine.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
@@ -48,12 +46,6 @@ std::string makeOutputFilename(const std::string &filename,
 
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
-struct ProcessResult {
-  std::unique_ptr<codon::ir::transform::PassManager> pm;
-  std::unique_ptr<codon::PluginManager> plm;
-  std::unique_ptr<codon::ir::LLVMVisitor> visitor;
-  std::string input;
-};
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
@@ -62,7 +54,7 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
-ProcessResult processSource(const std::vector<const char *> &args) {
+std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &args) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
   llvm::cl::opt<OptMode> optMode(
@@ -110,54 +102,29 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   }
 
   const bool isDebug = (optMode == OptMode::Debug);
-  auto t = std::chrono::high_resolution_clock::now();
-
   std::vector<std::string> disabledOptsVec(disabledOpts);
-  auto pm =
-      std::make_unique<codon::ir::transform::PassManager>(isDebug, disabledOptsVec);
-  auto plm = std::make_unique<codon::PluginManager>();
+  auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec);
 
-  LOG_TIME("[T] ir-setup = {:.1f}",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - t)
-                   .count() /
-               1000.0);
-
-  // load other plugins
+  // load plugins
   for (const auto &plugin : plugins) {
     std::string errMsg;
-    if (!plm->load(plugin, &errMsg))
-      codon::compilationError(errMsg);
+    if (!compiler->load(plugin, &errMsg)) {
+      codon::compilationError(errMsg, /*file=*/"", /*line=*/0, /*col=*/0,
+                              /*terminate=*/false);
+      return {};
+    }
   }
-  // add all IR passes
-  for (const auto *plugin : *plm) {
-    plugin->dsl->addIRPasses(pm.get(), isDebug);
+
+  if (auto err = compiler->parseFile(input, /*isTest=*/0, defmap)) {
+    for (auto &msg : err.messages) {
+      codon::compilationError(msg.msg, msg.file, msg.line, msg.col,
+                              /*terminate=*/false);
+    }
+    return {};
   }
-  t = std::chrono::high_resolution_clock::now();
 
-  auto *module = codon::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
-                              /*isTest=*/false, /*startLine=*/0, defmap, plm.get());
-  if (!module)
-    return {{}, {}};
-
-  pm->run(module);
-  LOG_TIME("[T] ir-opt = {:.1f}", std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::high_resolution_clock::now() - t)
-                                          .count() /
-                                      1000.0);
-
-  t = std::chrono::high_resolution_clock::now();
-  auto visitor = std::make_unique<codon::ir::LLVMVisitor>(isDebug);
-  visitor->setPluginManager(plm.get());
-  visitor->visit(module);
-  LOG_TIME("[T] ir-visitor = {:.1f}",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - t)
-                   .count() /
-               1000.0);
-  if (_dbg_level)
-    visitor->dump();
-  return {std::move(pm), std::move(plm), std::move(visitor), input};
+  compiler->compile();
+  return compiler;
 }
 
 int runMode(const std::vector<const char *> &args) {
@@ -166,18 +133,18 @@ int runMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
                                       llvm::cl::desc("<program arguments>..."));
   auto start_t = std::chrono::high_resolution_clock::now();
-  auto result = processSource(args);
-  if (!result.visitor)
+  auto compiler = processSource(args);
+  if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
   std::vector<std::string> argsVec(seqArgs);
-  argsVec.insert(argsVec.begin(), result.input);
+  argsVec.insert(argsVec.begin(), compiler->getInput());
   LOG_USER("compiler took: {:.2f} seconds",
            std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::high_resolution_clock::now() - start_t)
                    .count() /
                1000.0);
-  result.visitor->run(argsVec, libsVec);
+  compiler->getLLVMVisitor()->run(argsVec, libsVec);
   return EXIT_SUCCESS;
 }
 
@@ -201,12 +168,12 @@ int buildMode(const std::vector<const char *> &args) {
           "Write compiled output to specified file. Supported extensions: "
           "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
 
-  auto result = processSource(args);
-  if (!result.visitor)
+  auto compiler = processSource(args);
+  if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
 
-  if (output.empty() && result.input == "-")
+  if (output.empty() && compiler->getInput() == "-")
     codon::compilationError("output file must be specified when reading from stdin");
   std::string extension;
   switch (buildKind) {
@@ -227,22 +194,22 @@ int buildMode(const std::vector<const char *> &args) {
     assert(0);
   }
   const std::string filename =
-      output.empty() ? makeOutputFilename(result.input, extension) : output;
+      output.empty() ? makeOutputFilename(compiler->getInput(), extension) : output;
   switch (buildKind) {
   case BuildKind::LLVM:
-    result.visitor->writeToLLFile(filename);
+    compiler->getLLVMVisitor()->writeToLLFile(filename);
     break;
   case BuildKind::Bitcode:
-    result.visitor->writeToBitcodeFile(filename);
+    compiler->getLLVMVisitor()->writeToBitcodeFile(filename);
     break;
   case BuildKind::Object:
-    result.visitor->writeToObjectFile(filename);
+    compiler->getLLVMVisitor()->writeToObjectFile(filename);
     break;
   case BuildKind::Executable:
-    result.visitor->writeToExecutable(filename, libsVec);
+    compiler->getLLVMVisitor()->writeToExecutable(filename, libsVec);
     break;
   case BuildKind::Detect:
-    result.visitor->compile(filename, libsVec);
+    compiler->getLLVMVisitor()->compile(filename, libsVec);
     break;
   default:
     assert(0);
