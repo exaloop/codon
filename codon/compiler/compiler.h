@@ -14,15 +14,6 @@
 namespace codon {
 
 class Compiler {
-private:
-  bool debug;
-  std::string input;
-  std::unique_ptr<PluginManager> plm;
-  std::unique_ptr<ast::Cache> cache;
-  std::unique_ptr<ir::Module> module;
-  std::unique_ptr<ir::transform::PassManager> pm;
-  std::unique_ptr<ir::LLVMVisitor> llvisitor;
-
 public:
   struct ParserError {
     struct Message {
@@ -42,6 +33,20 @@ public:
     static ParserError failure() { return ParserError(true); }
   };
 
+private:
+  bool debug;
+  std::string input;
+  std::unique_ptr<PluginManager> plm;
+  std::unique_ptr<ast::Cache> cache;
+  std::unique_ptr<ir::Module> module;
+  std::unique_ptr<ir::transform::PassManager> pm;
+  std::unique_ptr<ir::LLVMVisitor> llvisitor;
+
+  ParserError parse(bool isCode, const std::string &file, const std::string &code,
+                    int startLine, int testFlags,
+                    const std::unordered_map<std::string, std::string> &defines);
+
+public:
   Compiler(const std::string &argv0, bool debug = false,
            const std::vector<std::string> &disabledPasses = {});
 
@@ -54,11 +59,11 @@ public:
 
   bool load(const std::string &plugin, std::string *errMsg);
   ParserError
-  parseFile(const std::string &file, int isTest = 0,
+  parseFile(const std::string &file, int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   ParserError
-  parseCode(const std::string &code, const std::string &file, int isTest = 0,
-            int startLine = 0,
+  parseCode(const std::string &file, const std::string &code, int startLine = 0,
+            int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   void compile();
 };

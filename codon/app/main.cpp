@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <chrono>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
@@ -72,8 +71,12 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
       "disable-opt", llvm::cl::desc("Disable the specified IR optimization"));
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  codon::getLogger().parse(log);
+  if (auto *d = getenv("CODON_DEBUG"))
+    codon::getLogger().parse(std::string(d));
 
   auto &exts = supportedExtensions();
   if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
@@ -123,7 +126,10 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
     return {};
   }
 
-  compiler->compile();
+  {
+    TIME("compile");
+    compiler->compile();
+  }
   return compiler;
 }
 
@@ -132,18 +138,12 @@ int runMode(const std::vector<const char *> &args) {
       "l", llvm::cl::desc("Load and link the specified library"));
   llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
                                       llvm::cl::desc("<program arguments>..."));
-  auto start_t = std::chrono::high_resolution_clock::now();
   auto compiler = processSource(args);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
   std::vector<std::string> argsVec(seqArgs);
   argsVec.insert(argsVec.begin(), compiler->getInput());
-  LOG_USER("compiler took: {:.2f} seconds",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - start_t)
-                   .count() /
-               1000.0);
   compiler->getLLVMVisitor()->run(argsVec, libsVec);
   return EXIT_SUCCESS;
 }

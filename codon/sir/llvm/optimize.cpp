@@ -1,7 +1,5 @@
 #include "optimize.h"
 
-#include <chrono>
-
 #include "codon/sir/llvm/coro/Coroutines.h"
 #include "codon/util/common.h"
 #include "llvm/CodeGen/CommandFlags.h"
@@ -238,21 +236,14 @@ void verify(llvm::Module *module) {
 } // namespace
 
 void optimize(llvm::Module *module, bool debug, PluginManager *plugins) {
-  using std::chrono::duration_cast;
-  using std::chrono::high_resolution_clock;
-  using std::chrono::milliseconds;
-  auto t = high_resolution_clock::now();
   verify(module);
-  runLLVMOptimizationPasses(module, debug, plugins);
-  LOG_TIME("[T] llvm/opt = {:.1f}",
-           duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
-               1000.0);
-  if (!debug) {
-    t = high_resolution_clock::now();
+  {
+    TIME("llvm/opt");
     runLLVMOptimizationPasses(module, debug, plugins);
-    LOG_TIME("[T] llvm/opt2 = {:.1f}",
-             duration_cast<milliseconds>(high_resolution_clock::now() - t).count() /
-                 1000.0);
+  }
+  if (!debug) {
+    TIME("llvm/opt2");
+    runLLVMOptimizationPasses(module, debug, plugins);
   }
   verify(module);
 }

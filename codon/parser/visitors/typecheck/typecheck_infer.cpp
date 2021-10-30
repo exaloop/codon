@@ -149,7 +149,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
                 type->realizedName(), ctx->getBase(), depth);
     {
-      _level++;
+      getLogger().level++;
       ctx->realizationDepth++;
       ctx->addBlock();
       ctx->typecheckLevel++;
@@ -255,7 +255,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->popBlock();
       ctx->typecheckLevel--;
       ctx->realizationDepth--;
-      _level--;
+      getLogger().level--;
     }
     // Restore old bases back.
     ctx->bases.insert(ctx->bases.end(), oldBases.begin(), oldBases.end());

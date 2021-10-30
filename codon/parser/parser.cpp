@@ -30,27 +30,11 @@ bool _isTest = false;
 
 namespace codon {
 
-void setDebug() {
-  auto d = getenv("CODON_DEBUG");
-  if (d) {
-    auto s = std::string(d);
-    _dbg_level |= s.find('t') != std::string::npos ? (1 << 0) : 0; // time
-    _dbg_level |= s.find('r') != std::string::npos ? (1 << 2) : 0; // realize
-    _dbg_level |= s.find('T') != std::string::npos ? (1 << 4) : 0; // type-check
-    _dbg_level |= s.find('L') != std::string::npos ? (1 << 5) : 0; // lexer
-    _dbg_level |= s.find('i') != std::string::npos ? (1 << 6) : 0; // IR
-    _dbg_level |=
-        s.find('l') != std::string::npos ? (1 << 7) : 0; // User-level debugging
-  }
-}
-
 ir::Module *parse(const std::string &argv0, const std::string &file,
                   const std::string &code, bool isCode, int isTest, int startLine,
                   const std::unordered_map<std::string, std::string> &defines,
                   PluginManager *plm) {
   try {
-    setDebug();
-
     char abs[PATH_MAX + 1] = {'-', 0};
     if (file != "-")
       realpath(file.c_str(), abs);
@@ -175,7 +159,6 @@ void generateDocstr(const std::string &argv0) {
 
 int jitLoop(const std::string &argv0) {
   fmt::print("Loading Codon JIT...");
-  setDebug();
 
   auto *cache = new ast::Cache(argv0);
   string fileName = "<jit>";

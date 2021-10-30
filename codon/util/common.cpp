@@ -1,6 +1,9 @@
-#include "codon/util/common.h"
+#include "common.h"
+
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <vector>
 
 namespace codon {
 namespace {
@@ -19,6 +22,8 @@ void compilationMessage(const std::string &header, const std::string &msg,
     std::cerr << ": ";
   std::cerr << header << "\033[1m " << msg << "\033[0m" << std::endl;
 }
+
+std::vector<Logger> loggers;
 } // namespace
 
 void compilationError(const std::string &msg, const std::string &file, int line,
@@ -34,7 +39,30 @@ void compilationWarning(const std::string &msg, const std::string &file, int lin
   if (terminate)
     exit(EXIT_FAILURE);
 }
+
+void Logger::parse(const std::string &s) {
+  flags |= s.find('t') != std::string::npos ? FLAG_TIME : 0;
+  flags |= s.find('r') != std::string::npos ? FLAG_REALIZE : 0;
+  flags |= s.find('T') != std::string::npos ? FLAG_TYPECHECK : 0;
+  flags |= s.find('i') != std::string::npos ? FLAG_IR : 0;
+  flags |= s.find('l') != std::string::npos ? FLAG_USER : 0;
+}
 } // namespace codon
+
+codon::Logger &codon::getLogger() {
+  if (loggers.empty())
+    loggers.emplace_back();
+  return loggers.back();
+}
+
+void codon::pushLogger() { loggers.emplace_back(); }
+
+bool codon::popLogger() {
+  if (loggers.empty())
+    return false;
+  loggers.pop_back();
+  return true;
+}
 
 void _seqassert(const char *expr_str, const char *file, int line,
                 const std::string &msg) {
