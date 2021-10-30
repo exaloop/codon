@@ -9,18 +9,19 @@ namespace codon {
 namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
                         const std::string &file, int line, int col) {
+  auto &out = getLogger().err;
   assert(!(file.empty() && (line > 0 || col > 0)));
   assert(!(col > 0 && line <= 0));
-  std::cerr << "\033[1m";
+  out << "\033[1m";
   if (!file.empty())
-    std::cerr << file.substr(file.rfind('/') + 1);
+    out << file.substr(file.rfind('/') + 1);
   if (line > 0)
-    std::cerr << ":" << line;
+    out << ":" << line;
   if (col > 0)
-    std::cerr << ":" << col;
+    out << ":" << col;
   if (!file.empty())
-    std::cerr << ": ";
-  std::cerr << header << "\033[1m " << msg << "\033[0m" << std::endl;
+    out << ": ";
+  out << header << "\033[1m " << msg << "\033[0m" << std::endl;
 }
 
 std::vector<Logger> loggers;
@@ -64,10 +65,11 @@ bool codon::popLogger() {
   return true;
 }
 
-void _seqassert(const char *expr_str, const char *file, int line,
-                const std::string &msg) {
-  std::cerr << "Assert failed:\t" << msg << "\n"
-            << "Expression:\t" << expr_str << "\n"
-            << "Source:\t\t" << file << ":" << line << "\n";
+void codon::assertionFailure(const char *expr_str, const char *file, int line,
+                             const std::string &msg) {
+  auto &out = getLogger().err;
+  out << "Assert failed:\t" << msg << "\n"
+      << "Expression:\t" << expr_str << "\n"
+      << "Source:\t\t" << file << ":" << line << "\n";
   abort();
 }

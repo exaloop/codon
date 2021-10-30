@@ -1,14 +1,9 @@
 #pragma once
 
-#include <cassert>
 #include <chrono>
-#include <climits>
-#include <cstdint>
-#include <libgen.h>
-#include <memory>
+#include <filesystem>
+#include <iostream>
 #include <ostream>
-#include <stdexcept>
-#include <sys/stat.h>
 
 #include "codon/config/config.h"
 #include "codon/util/fmt/format.h"
@@ -18,7 +13,8 @@
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
 #define DBG(c, ...)                                                                    \
-  fmt::print("{}" c "\n", std::string(2 * codon::getLogger().level, ' '), ##__VA_ARGS__)
+  fmt::print(codon::getLogger().log, "{}" c "\n",                                      \
+             std::string(2 * codon::getLogger().level, ' '), ##__VA_ARGS__)
 #define LOG(c, ...) DBG(c, ##__VA_ARGS__)
 #define LOG_TIME(c, ...)                                                               \
   {                                                                                    \
@@ -51,15 +47,17 @@
 #ifndef NDEBUG
 #define seqassert(expr, msg, ...)                                                      \
   ((expr) ? (void)(0)                                                                  \
-          : _seqassert(#expr, __FILE__, __LINE__, fmt::format(msg, ##__VA_ARGS__)))
+          : codon::assertionFailure(#expr, __FILE__, __LINE__,                         \
+                                    fmt::format(msg, ##__VA_ARGS__)))
 #else
 #define seqassert(expr, msg, ...) ;
 #endif
 #pragma clang diagnostic pop
-void _seqassert(const char *expr_str, const char *file, int line,
-                const std::string &msg);
 
 namespace codon {
+
+void assertionFailure(const char *expr_str, const char *file, int line,
+                      const std::string &msg);
 
 struct Logger {
   static constexpr int FLAG_TIME = (1 << 0);
@@ -70,8 +68,11 @@ struct Logger {
 
   int flags;
   int level;
+  std::ostream &out;
+  std::ostream &err;
+  std::ostream &log;
 
-  Logger() : flags(0), level(0) {}
+  Logger() : flags(0), level(0), out(std::cout), err(std::cerr), log(std::clog) {}
 
   void parse(const std::string &logs);
 };
@@ -111,20 +112,22 @@ struct SrcInfo {
   int line;
   int col;
   int len;
-  int id; /// used to differentiate different
+  int id; /// used to differentiate different instances
+
   SrcInfo(std::string file, int line, int col, int len)
-      : file(std::move(file)), line(line), col(col), len(len) {
-    static int _id(0);
-    id = _id++;
+      : file(std::move(file)), line(line), col(col), len(len), id(0) {
+    static int nextId = 0;
+    id = nextId++;
   };
-  SrcInfo() : SrcInfo("", 0, 0, 0){};
-  friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &c) {
-    char buf[PATH_MAX + 1];
-    strncpy(buf, c.file.c_str(), PATH_MAX);
-    auto f = basename(buf);
-    out << f << ":" << c.line << ":" << c.col;
+
+  SrcInfo() : SrcInfo("", 0, 0, 0) {}
+
+  friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
+    out << std::filesystem::path(src.file).filename() << ":" << src.line << ":"
+        << src.col;
     return out;
   }
+
   bool operator==(const SrcInfo &src) const { return id == src.id; }
 };
 
