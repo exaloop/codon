@@ -51,3 +51,6 @@ Thumbs.db
 .idea
 .mypy_cache
 .vscode
+
+extra/jupyter/share/jupyter/kernels/codon/kernel.json
+scratch.seq
