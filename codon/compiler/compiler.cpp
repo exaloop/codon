@@ -13,11 +13,12 @@
 namespace codon {
 
 Compiler::Compiler(const std::string &argv0, bool debug,
-                   const std::vector<std::string> &disabledPasses)
-    : debug(debug), input(), plm(std::make_unique<PluginManager>()),
+                   const std::vector<std::string> &disabledPasses, bool isTest)
+    : argv0(argv0), debug(debug), input(), plm(std::make_unique<PluginManager>()),
       cache(std::make_unique<ast::Cache>(argv0)),
       module(std::make_unique<ir::Module>()),
-      pm(std::make_unique<ir::transform::PassManager>(debug, disabledPasses)),
+      pm(std::make_unique<ir::transform::PassManager>(debug && !isTest,
+                                                      disabledPasses)),
       llvisitor(std::make_unique<ir::LLVMVisitor>(debug)) {
   cache->module = module.get();
   module->setCache(cache.get());
@@ -75,7 +76,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     t4.log();
   } catch (const exc::ParserException &e) {
     auto result = Compiler::ParserError::failure();
-    for (int i = 0; i < e.messages.size(); i++) {
+    for (unsigned i = 0; i < e.messages.size(); i++) {
       if (!e.messages[i].empty())
         result.messages.push_back({e.messages[i], e.locations[i].file,
                                    e.locations[i].line, e.locations[i].col});
@@ -103,6 +104,24 @@ Compiler::parseCode(const std::string &file, const std::string &code, int startL
 void Compiler::compile() {
   pm->run(module.get());
   llvisitor->visit(module.get());
+}
+
+Compiler::ParserError Compiler::docgen(const std::vector<std::string> &files,
+                                       std::string *output) {
+  try {
+    auto j = ast::DocVisitor::apply(argv0, files);
+    if (output)
+      *output = j->toString();
+  } catch (exc::ParserException &e) {
+    auto result = Compiler::ParserError::failure();
+    for (unsigned i = 0; i < e.messages.size(); i++) {
+      if (!e.messages[i].empty())
+        result.messages.push_back({e.messages[i], e.locations[i].file,
+                                   e.locations[i].line, e.locations[i].col});
+    }
+    return result;
+  }
+  return Compiler::ParserError::success();
 }
 
 } // namespace codon

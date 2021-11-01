@@ -1,5 +1,11 @@
 #include "jit.h"
 
+#include "codon/parser/peg/peg.h"
+#include "codon/parser/visitors/doc/doc.h"
+#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/translate/translate.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 #include "codon/runtime/lib.h"
 
 namespace codon {
@@ -8,44 +14,54 @@ namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
 
-Status statusFromError(llvm::Error err) {
-  return Status(Status::Code::LLVM_ERROR, llvm::toString(std::move(err)));
+Error fromLLVMError(llvm::Error err) {
+  return Error(Error::Code::LLVM_ERROR, llvm::toString(std::move(err)));
 }
+
+const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
-const Status Status::OK = Status(Status::Code::SUCCESS);
+const Error Error::NONE = Error(Error::Code::SUCCESS);
 
 JIT::JIT(const std::string &argv0)
-    : cache(std::make_shared<ast::Cache>(argv0)), module(nullptr),
-      pm(std::make_unique<ir::transform::PassManager>(/*debug=*/true)),
-      plm(std::make_unique<PluginManager>()),
-      llvisitor(std::make_unique<ir::LLVMVisitor>(/*debug=*/true, /*jit=*/true)) {
+    : compiler(std::make_unique<Compiler>(argv0, /*debug=*/true)) {
   if (auto e = Engine::create()) {
     engine = std::move(e.get());
   } else {
     engine = {};
     seqassert(false, "JIT engine creation error");
   }
-  llvisitor->setPluginManager(plm.get());
 }
 
-Status JIT::init() {
+Error JIT::init() {
+  auto *cache = compiler->getCache();
+  auto *module = compiler->getModule();
+  auto *llvisitor = compiler->getLLVMVisitor();
+
+  auto transformed = ast::SimplifyVisitor::apply(
+      cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME, {});
+  auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
+  ast::TranslateVisitor::apply(cache, std::move(typechecked));
+  cache->isJit = true; // we still need main(), so set isJit after it has been set
+  module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
+
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
-    return statusFromError(std::move(err));
+    return fromLLVMError(std::move(err));
 
   auto func = engine->lookup("main");
   if (auto err = func.takeError())
-    return statusFromError(std::move(err));
+    return fromLLVMError(std::move(err));
 
   auto *main = (MainFunc *)func->getAddress();
   (*main)(0, nullptr);
-  return Status::OK;
+  return Error::NONE;
 }
 
-Status JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+  auto *llvisitor = compiler->getLLVMVisitor();
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
   llvisitor->registerGlobal(input);
   for (auto *var : newGlobals) {
@@ -60,20 +76,65 @@ Status JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals)
   llvm::StripDebugInfo(*pair.first); // TODO: needed?
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
-    return statusFromError(std::move(err));
+    return fromLLVMError(std::move(err));
 
   auto func = engine->lookup(name);
   if (auto err = func.takeError())
-    return statusFromError(std::move(err));
+    return fromLLVMError(std::move(err));
 
   auto *repl = (InputFunc *)func->getAddress();
   try {
     (*repl)();
   } catch (const seq_jit_error &err) {
-    return Status(Status::Code::RUNTIME_ERROR, err.what(), err.getType(),
-                  SrcInfo(err.getFile(), err.getLine(), err.getCol(), /*len=*/0));
+    return Error(Error::Code::RUNTIME_ERROR, err.what(), err.getType(),
+                 SrcInfo(err.getFile(), err.getLine(), err.getCol(), /*len=*/0));
   }
-  return Status::OK;
+  return Error::NONE;
+}
+
+Error JIT::exec(const std::string &code) {
+  auto *cache = compiler->getCache();
+  ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
+
+  auto sctx = cache->imports[MAIN_IMPORT].ctx;
+  auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+  auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+  auto simplified = std::make_shared<ast::SuiteStmt>();
+  for (auto &s : preamble->globals)
+    simplified->stmts.push_back(s);
+  for (auto &s : preamble->functions)
+    simplified->stmts.push_back(s);
+  simplified->stmts.push_back(s);
+  // TODO: unroll on errors...
+
+  auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+  std::vector<std::string> globalNames;
+  for (auto &g : cache->globals) {
+    if (!g.second)
+      globalNames.push_back(g.first);
+  }
+  // add newly realized functions
+  std::vector<ast::StmtPtr> v;
+  std::vector<ir::Func **> frs;
+  for (auto &p : cache->pendingRealizations) {
+    v.push_back(cache->functions[p.first].ast);
+    frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
+  }
+  v.push_back(typechecked);
+  auto func = ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
+  cache->jitCell++;
+
+  std::vector<ir::Var *> globalVars;
+  for (auto &g : globalNames) {
+    seqassert(cache->globals[g], "JIT global {} not set", g);
+    globalVars.push_back(cache->globals[g]);
+    std::cout << g << std::endl;
+  }
+  for (auto &i : frs) {
+    seqassert(*i, "JIT fn not set");
+    globalVars.push_back(*i);
+  }
+  return run(func, globalVars);
 }
 
 } // namespace jit

@@ -1,10 +1,13 @@
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/jit.h"
 #include "codon/parser/parser.h"
 #include "codon/util/common.h"
 #include "llvm/Support/CommandLine.h"
@@ -49,7 +52,21 @@ enum OptMode { Debug, Release };
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  codon::generateDocstr(argv0);
+  std::vector<std::string> files;
+  for (std::string line; std::getline(std::cin, line);)
+    files.push_back(line);
+
+  auto compiler = std::make_unique<codon::Compiler>(args[0]);
+  std::string result;
+  if (auto err = compiler->docgen(files, &result)) {
+    for (auto &msg : err.messages) {
+      codon::compilationError(msg.msg, msg.file, msg.line, msg.col,
+                              /*terminate=*/false);
+    }
+    return EXIT_FAILURE;
+  }
+
+  fmt::print("{}\n", result);
   return EXIT_SUCCESS;
 }
 
@@ -148,7 +165,27 @@ int runMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
-int jitMode(const std::string &argv0) { return codon::jitLoop(argv0); }
+int jitMode(const std::vector<const char *> &args) {
+  codon::jit::JIT jit(args[0]);
+  if (auto err = jit.init()) {
+    codon::compilationError("failed to initialize JIT: " + err.getMessage());
+  }
+  fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
+  std::string code;
+  for (std::string line; std::getline(std::cin, line);) {
+    if (line != "#%%") {
+      code += line + "\n";
+    } else {
+      jit.exec(code);
+      code = "";
+      fmt::print("\n\n[done]\n\n");
+      fflush(stdout);
+    }
+  }
+  if (!code.empty())
+    jit.exec(code);
+  return EXIT_SUCCESS;
+}
 
 int buildMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> libs(
@@ -260,7 +297,8 @@ int main(int argc, const char **argv) {
     return docMode(args, oldArgv0);
   }
   if (mode == "jit") {
-    return jitMode(args[0]);
+    args[0] = argv0.data();
+    return jitMode(args);
   }
   return otherMode({argv, argv + argc});
 }

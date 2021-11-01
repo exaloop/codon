@@ -34,6 +34,7 @@ public:
   };
 
 private:
+  std::string argv0;
   bool debug;
   std::string input;
   std::unique_ptr<PluginManager> plm;
@@ -48,7 +49,7 @@ private:
 
 public:
   Compiler(const std::string &argv0, bool debug = false,
-           const std::vector<std::string> &disabledPasses = {});
+           const std::vector<std::string> &disabledPasses = {}, bool isTest = false);
 
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }
@@ -66,6 +67,7 @@ public:
             int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   void compile();
+  ParserError docgen(const std::vector<std::string> &files, std::string *output);
 };
 
 } // namespace codon
