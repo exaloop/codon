@@ -128,7 +128,6 @@ Error JIT::exec(const std::string &code) {
   for (auto &g : globalNames) {
     seqassert(cache->globals[g], "JIT global {} not set", g);
     globalVars.push_back(cache->globals[g]);
-    std::cout << g << std::endl;
   }
   for (auto &i : frs) {
     seqassert(*i, "JIT fn not set");
