@@ -42,7 +42,7 @@ bool Compiler::load(const std::string &plugin, std::string *errMsg) {
   return false;
 }
 
-Compiler::ParserError
+llvm::Error
 Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
@@ -75,26 +75,20 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
   } catch (const exc::ParserException &e) {
-    auto result = Compiler::ParserError::failure();
-    for (unsigned i = 0; i < e.messages.size(); i++) {
-      if (!e.messages[i].empty())
-        result.messages.push_back({e.messages[i], e.locations[i].file,
-                                   e.locations[i].line, e.locations[i].col});
-    }
-    return result;
+    return llvm::make_error<error::ParserErrorInfo>(e);
   }
   module->setSrcInfo({abspath, 0, 0, 0});
-  return Compiler::ParserError::success();
+  return llvm::Error::success();
 }
 
-Compiler::ParserError
+llvm::Error
 Compiler::parseFile(const std::string &file, int testFlags,
                     const std::unordered_map<std::string, std::string> &defines) {
   return parse(/*isCode=*/false, file, /*code=*/"", /*startLine=*/0, testFlags,
                defines);
 }
 
-Compiler::ParserError
+llvm::Error
 Compiler::parseCode(const std::string &file, const std::string &code, int startLine,
                     int testFlags,
                     const std::unordered_map<std::string, std::string> &defines) {
@@ -106,22 +100,16 @@ void Compiler::compile() {
   llvisitor->visit(module.get());
 }
 
-Compiler::ParserError Compiler::docgen(const std::vector<std::string> &files,
-                                       std::string *output) {
+llvm::Error Compiler::docgen(const std::vector<std::string> &files,
+                             std::string *output) {
   try {
     auto j = ast::DocVisitor::apply(argv0, files);
     if (output)
       *output = j->toString();
   } catch (exc::ParserException &e) {
-    auto result = Compiler::ParserError::failure();
-    for (unsigned i = 0; i < e.messages.size(); i++) {
-      if (!e.messages[i].empty())
-        result.messages.push_back({e.messages[i], e.locations[i].file,
-                                   e.locations[i].line, e.locations[i].col});
-    }
-    return result;
+    return llvm::make_error<error::ParserErrorInfo>(e);
   }
-  return Compiler::ParserError::success();
+  return llvm::Error::success();
 }
 
 } // namespace codon

@@ -1,6 +1,6 @@
 #include <algorithm>
-#include <dirent.h>
 #include <cstdio>
+#include <dirent.h>
 #include <fcntl.h>
 #include <fstream>
 #include <gc.h>
@@ -13,8 +13,9 @@
 #include <unistd.h>
 #include <vector>
 
-#include "codon/parser/common.h"
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/error.h"
+#include "codon/parser/common.h"
 #include "codon/sir/util/inlining.h"
 #include "codon/sir/util/irtools.h"
 #include "codon/sir/util/outlining.h"
@@ -182,15 +183,19 @@ public:
       auto startLine = get<4>(GetParam());
       int testFlags = 1 + get<5>(GetParam());
 
-      auto compiler = std::make_unique<Compiler>(argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true);
-      if (auto err = code.empty() ? compiler->parseFile(file, testFlags) : compiler->parseCode(file, code, startLine, testFlags)) {
-        for (auto &msg : err.messages) {
-          getLogger().level = 0;
-          printf("%s\n", msg.msg.c_str());
-        }
-        fflush(stdout);
-        exit(EXIT_FAILURE);
-      }
+      auto compiler = std::make_unique<Compiler>(
+          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true);
+      llvm::handleAllErrors(code.empty()
+                                ? compiler->parseFile(file, testFlags)
+                                : compiler->parseCode(file, code, startLine, testFlags),
+                            [](const error::ParserErrorInfo &e) {
+                              for (auto &msg : e) {
+                                getLogger().level = 0;
+                                printf("%s\n", msg.getMessage().c_str());
+                              }
+                              fflush(stdout);
+                              exit(EXIT_FAILURE);
+                            });
 
       auto *pm = compiler->getPassManager();
       pm->registerPass(std::make_unique<TestOutliner>());

@@ -14,14 +14,8 @@ namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
 
-Error fromLLVMError(llvm::Error err) {
-  return Error(Error::Code::LLVM_ERROR, llvm::toString(std::move(err)));
-}
-
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
-
-const Error Error::NONE = Error(Error::Code::SUCCESS);
 
 JIT::JIT(const std::string &argv0)
     : compiler(std::make_unique<Compiler>(argv0, /*debug=*/true)) {
@@ -33,7 +27,7 @@ JIT::JIT(const std::string &argv0)
   }
 }
 
-Error JIT::init() {
+llvm::Error JIT::init() {
   auto *cache = compiler->getCache();
   auto *module = compiler->getModule();
   auto *llvisitor = compiler->getLLVMVisitor();
@@ -49,18 +43,18 @@ Error JIT::init() {
   auto pair = llvisitor->takeModule();
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
-    return fromLLVMError(std::move(err));
+    return err;
 
   auto func = engine->lookup("main");
   if (auto err = func.takeError())
-    return fromLLVMError(std::move(err));
+    return err;
 
   auto *main = (MainFunc *)func->getAddress();
   (*main)(0, nullptr);
-  return Error::NONE;
+  return llvm::Error::success();
 }
 
-Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+llvm::Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
   auto *llvisitor = compiler->getLLVMVisitor();
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
   llvisitor->registerGlobal(input);
@@ -76,64 +70,69 @@ Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) 
   llvm::StripDebugInfo(*pair.first); // TODO: needed?
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
-    return fromLLVMError(std::move(err));
+    return err;
 
   auto func = engine->lookup(name);
   if (auto err = func.takeError())
-    return fromLLVMError(std::move(err));
+    return err;
 
   auto *repl = (InputFunc *)func->getAddress();
   try {
     (*repl)();
   } catch (const seq_jit_error &err) {
-    return Error(Error::Code::RUNTIME_ERROR, err.what(), err.getType(),
-                 SrcInfo(err.getFile(), err.getLine(), err.getCol(), /*len=*/0));
+    return llvm::make_error<error::RuntimeErrorInfo>(
+        err.getType(), err.what(), err.getFile(), err.getLine(), err.getCol());
   }
-  return Error::NONE;
+  return llvm::Error::success();
 }
 
-Error JIT::exec(const std::string &code) {
+llvm::Error JIT::exec(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
-  auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
-  auto simplified = std::make_shared<ast::SuiteStmt>();
-  for (auto &s : preamble->globals)
+  try {
+    auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+    auto simplified = std::make_shared<ast::SuiteStmt>();
+    for (auto &s : preamble->globals)
+      simplified->stmts.push_back(s);
+    for (auto &s : preamble->functions)
+      simplified->stmts.push_back(s);
     simplified->stmts.push_back(s);
-  for (auto &s : preamble->functions)
-    simplified->stmts.push_back(s);
-  simplified->stmts.push_back(s);
-  // TODO: unroll on errors...
+    // TODO: unroll on errors...
 
-  auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
-  std::vector<std::string> globalNames;
-  for (auto &g : cache->globals) {
-    if (!g.second)
-      globalNames.push_back(g.first);
-  }
-  // add newly realized functions
-  std::vector<ast::StmtPtr> v;
-  std::vector<ir::Func **> frs;
-  for (auto &p : cache->pendingRealizations) {
-    v.push_back(cache->functions[p.first].ast);
-    frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
-  }
-  v.push_back(typechecked);
-  auto func = ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
-  cache->jitCell++;
+    auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+    std::vector<std::string> globalNames;
+    for (auto &g : cache->globals) {
+      if (!g.second)
+        globalNames.push_back(g.first);
+    }
+    // add newly realized functions
+    std::vector<ast::StmtPtr> v;
+    std::vector<ir::Func **> frs;
+    for (auto &p : cache->pendingRealizations) {
+      v.push_back(cache->functions[p.first].ast);
+      frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
+    }
+    v.push_back(typechecked);
+    auto func =
+        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
+    cache->jitCell++;
 
-  std::vector<ir::Var *> globalVars;
-  for (auto &g : globalNames) {
-    seqassert(cache->globals[g], "JIT global {} not set", g);
-    globalVars.push_back(cache->globals[g]);
+    std::vector<ir::Var *> globalVars;
+    for (auto &g : globalNames) {
+      seqassert(cache->globals[g], "JIT global {} not set", g);
+      globalVars.push_back(cache->globals[g]);
+    }
+    for (auto &i : frs) {
+      seqassert(*i, "JIT fn not set");
+      globalVars.push_back(*i);
+    }
+    return run(func, globalVars);
+  } catch (const exc::ParserException &e) {
+    return llvm::make_error<error::ParserErrorInfo>(e);
   }
-  for (auto &i : frs) {
-    seqassert(*i, "JIT fn not set");
-    globalVars.push_back(*i);
-  }
-  return run(func, globalVars);
 }
 
 } // namespace jit

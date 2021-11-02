@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "codon/parser/common.h"
-#include "codon/parser/parser.h"
 #include "codon/util/common.h"
 #include "gtest/gtest.h"
 

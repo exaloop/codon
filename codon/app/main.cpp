@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "codon/compiler/compiler.h"
+#include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
-#include "codon/parser/parser.h"
 #include "codon/util/common.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -46,6 +46,14 @@ std::string makeOutputFilename(const std::string &filename,
   return filename + extension;
 }
 
+void display(const codon::error::ParserErrorInfo &e) {
+  for (auto &msg : e) {
+    codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
+                            msg.getColumn(),
+                            /*terminate=*/false);
+  }
+}
+
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
 } // namespace
@@ -58,13 +66,14 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
 
   auto compiler = std::make_unique<codon::Compiler>(args[0]);
   std::string result;
-  if (auto err = compiler->docgen(files, &result)) {
-    for (auto &msg : err.messages) {
-      codon::compilationError(msg.msg, msg.file, msg.line, msg.col,
-                              /*terminate=*/false);
-    }
+  bool failed = false;
+  llvm::handleAllErrors(compiler->docgen(files, &result),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
     return EXIT_FAILURE;
-  }
 
   fmt::print("{}\n", result);
   return EXIT_SUCCESS;
@@ -135,13 +144,14 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
     }
   }
 
-  if (auto err = compiler->parseFile(input, /*isTest=*/0, defmap)) {
-    for (auto &msg : err.messages) {
-      codon::compilationError(msg.msg, msg.file, msg.line, msg.col,
-                              /*terminate=*/false);
-    }
+  bool failed = false;
+  llvm::handleAllErrors(compiler->parseFile(input, /*isTest=*/0, defmap),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
     return {};
-  }
 
   {
     TIME("compile");
@@ -165,25 +175,31 @@ int runMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
+namespace {
+void jitExec(codon::jit::JIT *jit, const std::string &code) {
+  llvm::handleAllErrors(
+      jit->exec(code), [](const codon::error::ParserErrorInfo &e) { display(e); },
+      [](const codon::error::RuntimeErrorInfo &e) { /* nothing */ });
+}
+} // namespace
+
 int jitMode(const std::vector<const char *> &args) {
   codon::jit::JIT jit(args[0]);
-  if (auto err = jit.init()) {
-    codon::compilationError("failed to initialize JIT: " + err.getMessage());
-  }
+  llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   std::string code;
   for (std::string line; std::getline(std::cin, line);) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
-      jit.exec(code);
+      jitExec(&jit, code);
       code = "";
       fmt::print("\n\n[done]\n\n");
       fflush(stdout);
     }
   }
   if (!code.empty())
-    jit.exec(code);
+    jitExec(&jit, code);
   return EXIT_SUCCESS;
 }
 

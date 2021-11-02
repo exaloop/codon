@@ -75,6 +75,7 @@ add_definitions(${LLVM_DEFINITIONS})
 set(CODON_HPPFILES
     codon/compiler/compiler.h
     codon/compiler/engine.h
+    codon/compiler/error.h
     codon/compiler/jit.h
     codon/dsl/dsl.h
     codon/dsl/plugins.h
@@ -87,7 +88,6 @@ set(CODON_HPPFILES
     codon/parser/ctx.h
     codon/parser/peg/peg.h
     codon/parser/peg/rules.h
-    codon/parser/parser.h
     codon/parser/visitors/doc/doc.h
     codon/parser/visitors/format/format.h
     codon/parser/visitors/simplify/simplify.h
@@ -200,6 +200,7 @@ set(CODON_HPPFILES
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/engine.cpp
+    codon/compiler/error.cpp
     codon/compiler/jit.cpp
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp
@@ -208,7 +209,6 @@ set(CODON_CPPFILES
     codon/parser/cache.cpp
     codon/parser/common.cpp
     codon/parser/peg/peg.cpp
-    codon/parser/parser.cpp
     codon/parser/visitors/doc/doc.cpp
     codon/parser/visitors/format/format.cpp
     codon/parser/visitors/simplify/simplify.cpp

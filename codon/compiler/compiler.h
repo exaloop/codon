@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/compiler/error.h"
 #include "codon/dsl/plugins.h"
 #include "codon/parser/cache.h"
 #include "codon/sir/llvm/llvisitor.h"
@@ -14,25 +15,6 @@
 namespace codon {
 
 class Compiler {
-public:
-  struct ParserError {
-    struct Message {
-      std::string msg;
-      std::string file;
-      int line = 0;
-      int col = 0;
-    };
-
-    bool error;
-    std::vector<Message> messages;
-
-    explicit ParserError(bool error) : error(error), messages() {}
-    operator bool() const { return error; }
-
-    static ParserError success() { return ParserError(false); }
-    static ParserError failure() { return ParserError(true); }
-  };
-
 private:
   std::string argv0;
   bool debug;
@@ -43,7 +25,7 @@ private:
   std::unique_ptr<ir::transform::PassManager> pm;
   std::unique_ptr<ir::LLVMVisitor> llvisitor;
 
-  ParserError parse(bool isCode, const std::string &file, const std::string &code,
+  llvm::Error parse(bool isCode, const std::string &file, const std::string &code,
                     int startLine, int testFlags,
                     const std::unordered_map<std::string, std::string> &defines);
 
@@ -59,15 +41,15 @@ public:
   ir::LLVMVisitor *getLLVMVisitor() const { return llvisitor.get(); }
 
   bool load(const std::string &plugin, std::string *errMsg);
-  ParserError
+  llvm::Error
   parseFile(const std::string &file, int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
-  ParserError
+  llvm::Error
   parseCode(const std::string &file, const std::string &code, int startLine = 0,
             int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   void compile();
-  ParserError docgen(const std::vector<std::string> &files, std::string *output);
+  llvm::Error docgen(const std::vector<std::string> &files, std::string *output);
 };
 
 } // namespace codon
