@@ -1,3 +1,4 @@
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -278,7 +279,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
   int minUnbound = ctx->cache->unboundCount;
   ctx->addBlock();
   int iteration = 0;
-  for (int prevSize = INT_MAX;;) {
+  for (int prevSize = std::numeric_limits<int>::max();;) {
     LOG_TYPECHECK("== iter {} ==========================================", iteration);
     ctx->typecheckLevel++;
     result = TypecheckVisitor(ctx).transform(result);
