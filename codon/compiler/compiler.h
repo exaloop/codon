@@ -49,7 +49,7 @@ public:
             int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
   void compile();
-  llvm::Error docgen(const std::vector<std::string> &files, std::string *output);
+  llvm::Expected<std::string> docgen(const std::vector<std::string> &files);
 };
 
 } // namespace codon

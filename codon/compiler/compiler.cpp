@@ -100,16 +100,13 @@ void Compiler::compile() {
   llvisitor->visit(module.get());
 }
 
-llvm::Error Compiler::docgen(const std::vector<std::string> &files,
-                             std::string *output) {
+llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &files) {
   try {
     auto j = ast::DocVisitor::apply(argv0, files);
-    if (output)
-      *output = j->toString();
+    return j->toString();
   } catch (exc::ParserException &e) {
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
-  return llvm::Error::success();
 }
 
 } // namespace codon
