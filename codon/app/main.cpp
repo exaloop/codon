@@ -136,12 +136,15 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 
   // load plugins
   for (const auto &plugin : plugins) {
-    std::string errMsg;
-    if (!compiler->load(plugin, &errMsg)) {
-      codon::compilationError(errMsg, /*file=*/"", /*line=*/0, /*col=*/0,
-                              /*terminate=*/false);
+    bool failed = false;
+    llvm::handleAllErrors(
+        compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
+          codon::compilationError(e.getMessage(), /*file=*/"", /*line=*/0, /*col=*/0,
+                                  /*terminate=*/false);
+          failed = true;
+        });
+    if (failed)
       return {};
-    }
   }
 
   bool failed = false;
@@ -155,7 +158,7 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 
   {
     TIME("compile");
-    compiler->compile();
+    llvm::cantFail(compiler->compile());
   }
   return compiler;
 }

@@ -10,10 +10,8 @@
 
 namespace codon {
 namespace {
-Plugin *error(const std::string &msg, std::string *errMsg) {
-  if (!msg.empty() && errMsg)
-    *errMsg = msg;
-  return nullptr;
+llvm::Expected<Plugin *> pluginError(const std::string &msg) {
+  return llvm::make_error<error::PluginErrorInfo>(msg);
 }
 
 typedef std::unique_ptr<DSL> LoadFunc();
@@ -21,7 +19,7 @@ typedef std::unique_ptr<DSL> LoadFunc();
 
 namespace fs = std::filesystem;
 
-Plugin *PluginManager::load(const std::string &path, std::string *errMsg) {
+llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
 #if __APPLE__
   const std::string libExt = "dylib";
 #else
@@ -40,9 +38,8 @@ Plugin *PluginManager::load(const std::string &path, std::string *errMsg) {
   try {
     tml = toml::parse_file(tomlPath.string());
   } catch (const toml::parse_error &e) {
-    return error(
-        fmt::format("[toml::parse_file(\"{}\")] {}", tomlPath.string(), e.what()),
-        errMsg);
+    return pluginError(
+        fmt::format("[toml::parse_file(\"{}\")] {}", tomlPath.string(), e.what()));
   }
   auto about = tml["about"];
   auto library = tml["library"];
@@ -70,31 +67,26 @@ Plugin *PluginManager::load(const std::string &path, std::string *errMsg) {
         semver::version(CODON_VERSION_MAJOR, CODON_VERSION_MINOR, CODON_VERSION_PATCH),
         info.supported);
   } catch (const std::invalid_argument &e) {
-    return error(fmt::format("[semver::range::satisfies(..., \"{}\")] {}",
-                             info.supported, e.what()),
-                 errMsg);
+    return pluginError(fmt::format("[semver::range::satisfies(..., \"{}\")] {}",
+                                   info.supported, e.what()));
   }
   if (!versionOk)
-    return error(fmt::format("unsupported version {} (supported: {})", CODON_VERSION,
-                             info.supported),
-                 errMsg);
+    return pluginError(fmt::format("unsupported version {} (supported: {})",
+                                   CODON_VERSION, info.supported));
 
   if (!dylibPath.empty()) {
     std::string libLoadErrorMsg;
     auto handle = llvm::sys::DynamicLibrary::getPermanentLibrary(dylibPath.c_str(),
                                                                  &libLoadErrorMsg);
     if (!handle.isValid())
-      return error(
-          fmt::format(
-              "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}",
-              dylibPath, libLoadErrorMsg),
-          errMsg);
+      return pluginError(fmt::format(
+          "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}", dylibPath,
+          libLoadErrorMsg));
 
     auto *entry = (LoadFunc *)handle.getAddressOfSymbol("load");
     if (!entry)
-      return error(
-          fmt::format("could not find 'load' in plugin shared library: {}", dylibPath),
-          errMsg);
+      return pluginError(
+          fmt::format("could not find 'load' in plugin shared library: {}", dylibPath));
 
     auto dsl = (*entry)();
     plugins.push_back(std::make_unique<Plugin>(std::move(dsl), info, handle));

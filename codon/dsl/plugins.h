@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "codon/compiler/error.h"
 #include "codon/dsl/dsl.h"
 #include "codon/sir/util/iterators.h"
 #include "llvm/Support/DynamicLibrary.h"
@@ -45,9 +46,8 @@ public:
 
   /// Loads the plugin at the given load path.
   /// @param path path to plugin directory containing "plugin.toml" file
-  /// @param errMsg where to store potential error messages, if non-null
-  /// @return plugin pointer if successful, null otherwise
-  Plugin *load(const std::string &path, std::string *errMsg = nullptr);
+  /// @return plugin pointer if successful, plugin error otherwise
+  llvm::Expected<Plugin *> load(const std::string &path);
 };
 
 } // namespace codon

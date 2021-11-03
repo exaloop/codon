@@ -201,7 +201,7 @@ public:
       pm->registerPass(std::make_unique<TestOutliner>());
       pm->registerPass(std::make_unique<TestInliner>());
 
-      compiler->compile();
+      llvm::cantFail(compiler->compile());
       compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
       exit(EXIT_SUCCESS);

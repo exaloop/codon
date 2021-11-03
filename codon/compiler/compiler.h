@@ -40,7 +40,7 @@ public:
   ir::transform::PassManager *getPassManager() const { return pm.get(); }
   ir::LLVMVisitor *getLLVMVisitor() const { return llvisitor.get(); }
 
-  bool load(const std::string &plugin, std::string *errMsg);
+  llvm::Error load(const std::string &plugin);
   llvm::Error
   parseFile(const std::string &file, int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
@@ -48,7 +48,7 @@ public:
   parseCode(const std::string &file, const std::string &code, int startLine = 0,
             int testFlags = 0,
             const std::unordered_map<std::string, std::string> &defines = {});
-  void compile();
+  llvm::Error compile();
   llvm::Expected<std::string> docgen(const std::vector<std::string> &files);
 };
 

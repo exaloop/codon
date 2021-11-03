@@ -25,21 +25,23 @@ Compiler::Compiler(const std::string &argv0, bool debug,
   llvisitor->setPluginManager(plm.get());
 }
 
-bool Compiler::load(const std::string &plugin, std::string *errMsg) {
-  if (auto *p = plm->load(plugin, errMsg)) {
-    if (!p->info.stdlibPath.empty()) {
-      cache->pluginImportPaths.push_back(p->info.stdlibPath);
-    }
-    for (auto &kw : p->dsl->getExprKeywords()) {
-      cache->customExprStmts[kw.keyword] = kw.callback;
-    }
-    for (auto &kw : p->dsl->getBlockKeywords()) {
-      cache->customBlockStmts[kw.keyword] = {kw.hasExpr, kw.callback};
-    }
-    p->dsl->addIRPasses(pm.get(), debug);
-    return true;
+llvm::Error Compiler::load(const std::string &plugin) {
+  auto result = plm->load(plugin);
+  if (auto err = result.takeError())
+    return err;
+
+  auto *p = *result;
+  if (!p->info.stdlibPath.empty()) {
+    cache->pluginImportPaths.push_back(p->info.stdlibPath);
   }
-  return false;
+  for (auto &kw : p->dsl->getExprKeywords()) {
+    cache->customExprStmts[kw.keyword] = kw.callback;
+  }
+  for (auto &kw : p->dsl->getBlockKeywords()) {
+    cache->customBlockStmts[kw.keyword] = {kw.hasExpr, kw.callback};
+  }
+  p->dsl->addIRPasses(pm.get(), debug);
+  return llvm::Error::success();
 }
 
 llvm::Error
@@ -95,9 +97,10 @@ Compiler::parseCode(const std::string &file, const std::string &code, int startL
   return parse(/*isCode=*/true, file, code, startLine, testFlags, defines);
 }
 
-void Compiler::compile() {
+llvm::Error Compiler::compile() {
   pm->run(module.get());
   llvisitor->visit(module.get());
+  return llvm::Error::success();
 }
 
 llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &files) {
