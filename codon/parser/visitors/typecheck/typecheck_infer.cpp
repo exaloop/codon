@@ -304,7 +304,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
     std::map<types::TypePtr, std::string> newActiveUnbounds;
     for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
       auto l = i->first->getLink();
-      assert(l);
+      seqassert(l, "link is null");
       if (l->kind == LinkType::Unbound) {
         newActiveUnbounds[i->first] = i->second;
         if (l->id >= minUnbound)
@@ -403,20 +403,21 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   } else if (name == "str") {
     handle = module->getStringType();
   } else if (name == "Int" || name == "UInt") {
-    assert(statics.size() == 1 && statics[0]->type == StaticValue::INT &&
-           types.empty());
+    seqassert(statics.size() == 1 && statics[0]->type == StaticValue::INT &&
+                  types.empty(),
+              "bad generics/statics");
     handle = module->Nr<ir::types::IntNType>(statics[0]->getInt(), name == "Int");
   } else if (name == "Ptr") {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (name == "Generator") {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (name == TYPE_OPTIONAL) {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetOptionalType(types[0]);
   } else if (name == "NoneType") {
-    assert(types.empty() && statics.empty());
+    seqassert(types.empty() && statics.empty(), "bad generics/statics");
     auto record =
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});

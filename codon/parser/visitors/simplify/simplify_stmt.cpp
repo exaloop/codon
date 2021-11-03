@@ -301,7 +301,7 @@ void SimplifyVisitor::visit(ThrowStmt *stmt) {
 }
 
 void SimplifyVisitor::visit(WithStmt *stmt) {
-  assert(stmt->items.size());
+  seqassert(stmt->items.size(), "stmt->items is empty");
   std::vector<StmtPtr> content;
   for (int i = int(stmt->items.size()) - 1; i >= 0; i--) {
     std::string var =
@@ -1437,7 +1437,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(const Stmt *codeStmt) {
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr,
                                       const std::vector<Param> &args, bool isRecord) {
 #define I(s) N<IdExpr>(s)
-  assert(typExpr);
+  seqassert(typExpr, "typExpr is null");
   ExprPtr ret;
   std::vector<Param> fargs;
   std::vector<StmtPtr> stmts;

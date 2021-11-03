@@ -10,8 +10,11 @@ namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
                         const std::string &file, int line, int col) {
   auto &out = getLogger().err;
-  assert(!(file.empty() && (line > 0 || col > 0)));
-  assert(!(col > 0 && line <= 0));
+  seqassert(!(file.empty() && (line > 0 || col > 0)),
+            "empty filename with non-zero line/col: file={}, line={}, col={}", file,
+            line, col);
+  seqassert(!(col > 0 && line <= 0), "col but no line: file={}, line={}, col={}", file,
+            line, col);
   out << "\033[1m";
   if (!file.empty())
     out << file.substr(file.rfind('/') + 1);
