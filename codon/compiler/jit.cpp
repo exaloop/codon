@@ -34,10 +34,16 @@ llvm::Error JIT::init() {
 
   auto transformed = ast::SimplifyVisitor::apply(
       cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME, {});
-  auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
-  ast::TranslateVisitor::apply(cache, std::move(typechecked));
+  auto p = transformSimplified(transformed);
   cache->isJit = true; // we still need main(), so set isJit after it has been set
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
+
+  for (auto var : p.second)
+    llvisitor->registerGlobal(var);
+  for (auto var : p.second) {
+    if (auto *func = ir::cast<ir::Func>(var))
+      func->accept(*llvisitor);
+  }
 
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
@@ -86,6 +92,39 @@ llvm::Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlo
   return llvm::Error::success();
 }
 
+std::pair<ir::Func *, std::vector<ir::Var *>>
+JIT::transformSimplified(const ast::StmtPtr &simplified) {
+  auto *cache = compiler->getCache();
+  auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+  std::vector<std::string> globalNames;
+  for (auto &g : cache->globals) {
+    if (!g.second)
+      globalNames.push_back(g.first);
+  }
+  // add newly realized functions
+  std::vector<ast::StmtPtr> v;
+  std::vector<ir::Func **> frs;
+  v.push_back(typechecked);
+  for (auto &p : cache->pendingRealizations) {
+    v.push_back(cache->functions[p.first].ast);
+    frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
+  }
+  auto func =
+      ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
+  cache->jitCell++;
+
+  std::vector<ir::Var *> globalVars;
+  for (auto &g : globalNames) {
+    seqassert(cache->globals[g], "JIT global {} not set", g);
+    globalVars.push_back(cache->globals[g]);
+  }
+  for (auto &i : frs) {
+    seqassert(*i, "JIT fn not set");
+    globalVars.push_back(*i);
+  }
+  return {func, globalVars};
+}
+
 llvm::Error JIT::exec(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
@@ -102,34 +141,8 @@ llvm::Error JIT::exec(const std::string &code) {
     simplified->stmts.push_back(s);
     // TODO: unroll on errors...
 
-    auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
-    std::vector<std::string> globalNames;
-    for (auto &g : cache->globals) {
-      if (!g.second)
-        globalNames.push_back(g.first);
-    }
-    // add newly realized functions
-    std::vector<ast::StmtPtr> v;
-    std::vector<ir::Func **> frs;
-    for (auto &p : cache->pendingRealizations) {
-      v.push_back(cache->functions[p.first].ast);
-      frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
-    }
-    v.push_back(typechecked);
-    auto func =
-        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
-    cache->jitCell++;
-
-    std::vector<ir::Var *> globalVars;
-    for (auto &g : globalNames) {
-      seqassert(cache->globals[g], "JIT global {} not set", g);
-      globalVars.push_back(cache->globals[g]);
-    }
-    for (auto &i : frs) {
-      seqassert(*i, "JIT fn not set");
-      globalVars.push_back(*i);
-    }
-    return run(func, globalVars);
+    auto p = transformSimplified(simplified);
+    return run(p.first, p.second);
   } catch (const exc::ParserException &e) {
     return llvm::make_error<error::ParserErrorInfo>(e);
   }

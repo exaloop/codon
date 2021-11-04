@@ -25,6 +25,10 @@ public:
   llvm::Error init();
   llvm::Error run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals = {});
   llvm::Error exec(const std::string &code);
+
+private:
+  std::pair<ir::Func *, std::vector<ir::Var *>>
+  transformSimplified(const ast::StmtPtr &simplified);
 };
 
 } // namespace jit

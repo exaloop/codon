@@ -206,7 +206,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Realize the return type.
       if (auto t = realize(type->args[0]))
         unify(type->args[0], t);
-      LOG_TYPECHECK("done with {} / {}", type->realizedName(), oldKey);
+      LOG_REALIZE("done with {} / {}", type->realizedName(), oldKey);
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.
