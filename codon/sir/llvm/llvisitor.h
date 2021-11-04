@@ -229,6 +229,24 @@ public:
   explicit LLVMVisitor(bool debug = false, bool jit = false,
                        const std::string &flags = "");
 
+  /// @return true if in debug mode, false otherwise
+  bool getDebug() const { return db.debug; }
+  /// Sets debug status.
+  /// @param d true if debug mode
+  void setDebug(bool d = true) { db.debug = d; }
+
+  /// @return true if in JIT mode, false otherwise
+  bool getJIT() const { return db.jit; }
+  /// Sets JIT status.
+  /// @param j true if JIT mode
+  void setJIT(bool j = true) { db.jit = j; }
+
+  /// @return program flags
+  std::string getFlags() const { return db.flags; }
+  /// Sets program flags.
+  /// @param f flags
+  void setFlags(const std::string &f) { db.flags = f; }
+
   llvm::LLVMContext &getContext() { return *context; }
   llvm::IRBuilder<> &getBuilder() { return *B; }
   llvm::Module *getModule() { return M.get(); }

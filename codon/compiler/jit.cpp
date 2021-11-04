@@ -25,6 +25,7 @@ JIT::JIT(const std::string &argv0)
     engine = {};
     seqassert(false, "JIT engine creation error");
   }
+  compiler->getLLVMVisitor()->setJIT(true);
 }
 
 llvm::Error JIT::init() {
@@ -34,16 +35,10 @@ llvm::Error JIT::init() {
 
   auto transformed = ast::SimplifyVisitor::apply(
       cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME, {});
-  auto p = transformSimplified(transformed);
+  auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
+  ast::TranslateVisitor::apply(cache, std::move(typechecked));
   cache->isJit = true; // we still need main(), so set isJit after it has been set
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
-
-  for (auto var : p.second)
-    llvisitor->registerGlobal(var);
-  for (auto var : p.second) {
-    if (auto *func = ir::cast<ir::Func>(var))
-      func->accept(*llvisitor);
-  }
 
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
