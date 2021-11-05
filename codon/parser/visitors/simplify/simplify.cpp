@@ -88,7 +88,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     }
     // Reserve the following static identifiers.
     for (auto name : {"staticlen", "compile_error", "isinstance", "hasattr", "type",
-                      "TypeVar", "Callable"})
+                      "TypeVar", "Callable", "argv"})
       stdlib->generateCanonicalName(name);
 
     // This code must be placed in a preamble (these are not POD types but are

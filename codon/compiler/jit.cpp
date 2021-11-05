@@ -35,6 +35,7 @@ llvm::Error JIT::init() {
 
   auto transformed = ast::SimplifyVisitor::apply(
       cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME, {});
+
   auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
   cache->isJit = true; // we still need main(), so set isJit after it has been set
@@ -90,6 +91,9 @@ llvm::Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlo
 std::pair<ir::Func *, std::vector<ir::Var *>>
 JIT::transformSimplified(const ast::StmtPtr &simplified) {
   auto *cache = compiler->getCache();
+
+  // LOG("-- {}", simplified->toString(1));
+
   auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
   std::vector<std::string> globalNames;
   for (auto &g : cache->globals) {

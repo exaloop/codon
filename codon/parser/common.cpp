@@ -250,10 +250,12 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           bool forceStdlib, const std::string &module0,
                                           const std::vector<std::string> &plugins) {
   std::vector<fs::path> paths;
-  auto parentRelativeTo = fs::path(relativeTo).parent_path();
-  if (!forceStdlib) {
-    addPath(paths, (parentRelativeTo / what).replace_extension("codon"));
-    addPath(paths, parentRelativeTo / what / "__init__.codon");
+  if (what != "<jit>") {
+    auto parentRelativeTo = fs::path(relativeTo).parent_path();
+    if (!forceStdlib) {
+      addPath(paths, (parentRelativeTo / what).replace_extension("codon"));
+      addPath(paths, parentRelativeTo / what / "__init__.codon");
+    }
   }
   for (auto &p : getStdLibPaths(argv0, plugins)) {
     addPath(paths, (p / what).replace_extension("codon"));

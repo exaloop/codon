@@ -1043,7 +1043,8 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     // ctx->moduleName != MODULE_MAIN;
     // ⚠️ TODO: should we make __main__ top-level variables NOT global by default?
     // Problem: a = [1]; def foo(): a.append(2) won't work anymore as in Python.
-    if (global && !isStatic && !(r && r->isType()))
+    if (global && !isStatic && !(r && r->isType()) &&
+        !in(ctx->cache->globals, canonical))
       ctx->cache->globals[canonical] = nullptr;
     // Handle type aliases as well!
     ctx->add(r && r->isType() ? SimplifyItem::Type : SimplifyItem::Var, e->value,
@@ -1337,7 +1338,8 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // loaded)
     preamble->globals.push_back(N<AssignStmt>(
         N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false)));
-    ctx->cache->globals[importDoneVar] = nullptr;
+    if (!in(ctx->cache->globals, importDoneVar))
+      ctx->cache->globals[importDoneVar] = nullptr;
     std::vector<StmtPtr> stmts;
     stmts.push_back(nullptr); // placeholder to be filled later!
     // We need to wrap all imported top-level statements (not signatures! they have
