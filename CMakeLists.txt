@@ -364,3 +364,60 @@ add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/sir "${gc_SOURCE_DIR}/include")
 target_link_libraries(codon_test codonc codonrt gtest_main)
 target_compile_definitions(codon_test PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+
+option(CODON_JUPYTER "build Codon Jupyter server" OFF)
+
+if(CODON_JUPYTER)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json.in"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json")
+    CPMAddPackage(
+        NAME libzmq
+        VERSION 4.3.4
+        URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+        OPTIONS "WITH_PERF_TOOL OFF" 
+                "ZMQ_BUILD_TESTS OFF" 
+                "ENABLE_CPACK OFF"
+                "BUILD_SHARED ON"
+                "WITH_LIBSODIUM OFF")
+    CPMAddPackage(
+        NAME cppzmq
+        URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
+        VERSION 4.8.1
+        OPTION "CPPZMQ_BUILD_TESTS OFF")
+    if(cppzmq_ADDED)
+        set_target_properties(unit_tests PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
+    CPMAddPackage(
+        NAME xtl
+        GITHUB_REPOSITORY "xtensor-stack/xtl"
+        VERSION 0.7.3
+        GIT_TAG 0.7.3
+        OPTIONS "BUILD_TESTS OFF")
+    CPMAddPackage(
+        NAME json
+        GITHUB_REPOSITORY "nlohmann/json"
+        VERSION 3.10.4)
+    CPMAddPackage(
+        NAME xeus
+        GITHUB_REPOSITORY "jupyter-xeus/xeus"
+        VERSION 2.2.0
+        GIT_TAG 2.2.0
+        OPTIONS "BUILD_EXAMPLES OFF"
+        "XEUS_BUILD_SHARED_LIBS OFF"
+        "XEUS_STATIC_DEPENDENCIES ON")
+    if (xeus_ADDED)
+        install(TARGETS nlohmann_json EXPORT xeus-targets)
+    endif()
+
+    set(CODON_JUPYTER_SRC extra/jupyter/src/codon.cpp extra/jupyter/src/codon.h)
+    add_executable(codon-jupyter extra/jupyter/src/main.cpp ${CODON_JUPYTER_SRC})
+    add_dependencies(codon-jupyter xeus-static)
+    target_link_libraries(codon-jupyter PRIVATE xeus-static Threads::Threads codonc codonrt)
+    set_target_properties(codon-jupyter PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+    # Install kernel
+    install(TARGETS codon-jupyter RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(XJUPYTER_DATA_DIR extra/jupyter/share/jupyter CACHE STRING "Jupyter data directory")
+    set(KERNELSPEC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels)
+    install(DIRECTORY ${KERNELSPEC_DIR} DESTINATION ${XJUPYTER_DATA_DIR} PATTERN "*.in" EXCLUDE)
+endif()

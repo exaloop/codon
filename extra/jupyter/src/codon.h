@@ -1,5 +1,6 @@
 #pragma once
 
+#include <codon/compiler/jit.h>
 #include <nlohmann/json.hpp>
 #include <xeus/xinterpreter.hpp>
 
@@ -8,6 +9,8 @@ namespace nl = nlohmann;
 
 namespace codon {
 class CodonJupyter : public xinterpreter {
+  std::unique_ptr<codon::jit::JIT> jit;
+
 private:
   void configure_impl() override;
 

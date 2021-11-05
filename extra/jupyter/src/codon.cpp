@@ -1,6 +1,9 @@
 #include "codon.h"
+#include <dirent.h>
+#include <fcntl.h>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <unistd.h>
 #include <xeus/xhelper.hpp>
 
 using std::move;
@@ -14,6 +17,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                                             bool silent, bool store_history,
                                             nl::json user_expressions,
                                             bool allow_stdin) {
+  auto err = jit->exec(code);
   nl::json pub_data;
   pub_data["text/plain"] = "Hello World !!";
   publish_execution_result(execution_counter, move(pub_data), nl::json::object());
@@ -21,7 +25,10 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
   return xeus::create_successful_reply();
 }
 
-void CodonJupyter::configure_impl() {}
+void CodonJupyter::configure_impl() {
+  jit = std::make_unique<codon::jit::JIT>("");
+  llvm::cantFail(jit->init());
+}
 
 nl::json CodonJupyter::complete_request_impl(const string &code, int cursor_pos) {
   return xeus::create_complete_reply({}, cursor_pos, cursor_pos);
