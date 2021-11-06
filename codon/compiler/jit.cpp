@@ -1,5 +1,7 @@
 #include "jit.h"
 
+#include <sstream>
+
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
@@ -15,6 +17,15 @@ typedef int MainFunc(int, char **);
 typedef void InputFunc();
 
 const std::string JIT_FILENAME = "<jit>";
+
+class CaptureOutput {
+private:
+  std::streambuf *orig;
+
+public:
+  CaptureOutput(std::streambuf *buf) : orig(std::cout.rdbuf(buf)) {}
+  ~CaptureOutput() { std::cout.rdbuf(orig); }
+};
 } // namespace
 
 JIT::JIT(const std::string &argv0)
@@ -56,7 +67,8 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals) {
+llvm::Expected<std::string> JIT::run(const ir::Func *input,
+                                     const std::vector<ir::Var *> &newGlobals) {
   auto *llvisitor = compiler->getLLVMVisitor();
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
   llvisitor->registerGlobal(input);
@@ -72,20 +84,22 @@ llvm::Error JIT::run(const ir::Func *input, const std::vector<ir::Var *> &newGlo
   llvm::StripDebugInfo(*pair.first); // TODO: needed?
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
-    return err;
+    return std::move(err);
 
   auto func = engine->lookup(name);
   if (auto err = func.takeError())
-    return err;
+    return std::move(err);
 
   auto *repl = (InputFunc *)func->getAddress();
+  std::stringstream buffer;
   try {
+    CaptureOutput(buffer.rdbuf());
     (*repl)();
   } catch (const seq_jit_error &err) {
     return llvm::make_error<error::RuntimeErrorInfo>(
         err.getType(), err.what(), err.getFile(), err.getLine(), err.getCol());
   }
-  return llvm::Error::success();
+  return buffer.str();
 }
 
 std::pair<ir::Func *, std::vector<ir::Var *>>
@@ -124,7 +138,7 @@ JIT::transformSimplified(const ast::StmtPtr &simplified) {
   return {func, globalVars};
 }
 
-llvm::Error JIT::exec(const std::string &code) {
+llvm::Expected<std::string> JIT::exec(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 

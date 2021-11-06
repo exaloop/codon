@@ -179,10 +179,15 @@ int runMode(const std::vector<const char *> &args) {
 }
 
 namespace {
-void jitExec(codon::jit::JIT *jit, const std::string &code) {
-  llvm::handleAllErrors(
-      jit->exec(code), [](const codon::error::ParserErrorInfo &e) { display(e); },
-      [](const codon::error::RuntimeErrorInfo &e) { /* nothing */ });
+std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
+  auto result = jit->exec(code);
+  if (auto err = result.takeError()) {
+    llvm::handleAllErrors(
+        std::move(err), [](const codon::error::ParserErrorInfo &e) { display(e); },
+        [](const codon::error::RuntimeErrorInfo &e) { /* nothing */ });
+    return "";
+  }
+  return *result;
 }
 } // namespace
 
@@ -195,14 +200,13 @@ int jitMode(const std::vector<const char *> &args) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
-      jitExec(&jit, code);
+      fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
       code = "";
-      fmt::print("\n\n[done]\n\n");
       fflush(stdout);
     }
   }
   if (!code.empty())
-    jitExec(&jit, code);
+    fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
   return EXIT_SUCCESS;
 }
 

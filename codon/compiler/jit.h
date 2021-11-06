@@ -23,8 +23,9 @@ private:
 public:
   explicit JIT(const std::string &argv0);
   llvm::Error init();
-  llvm::Error run(const ir::Func *input, const std::vector<ir::Var *> &newGlobals = {});
-  llvm::Error exec(const std::string &code);
+  llvm::Expected<std::string> run(const ir::Func *input,
+                                  const std::vector<ir::Var *> &newGlobals = {});
+  llvm::Expected<std::string> exec(const std::string &code);
 
 private:
   std::pair<ir::Func *, std::vector<ir::Var *>>
