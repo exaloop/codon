@@ -78,14 +78,17 @@ public:
 
 class RuntimeErrorInfo : public llvm::ErrorInfo<RuntimeErrorInfo> {
 private:
+  std::string output;
   std::string type;
   Message message;
 
 public:
-  RuntimeErrorInfo(const std::string &type, const std::string &msg,
-                   const std::string &file = "", int line = 0, int col = 0)
-      : type(type), message(msg, file, line, col) {}
+  RuntimeErrorInfo(const std::string &output, const std::string &type,
+                   const std::string &msg, const std::string &file = "", int line = 0,
+                   int col = 0)
+      : output(output), type(type), message(msg, file, line, col) {}
 
+  std::string getOutput() const { return output; }
   std::string getType() const { return type; }
   std::string getMessage() const { return message.getMessage(); }
   std::string getFile() const { return message.getFile(); }

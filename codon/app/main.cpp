@@ -182,10 +182,11 @@ namespace {
 std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
   auto result = jit->exec(code);
   if (auto err = result.takeError()) {
+    std::string output;
     llvm::handleAllErrors(
         std::move(err), [](const codon::error::ParserErrorInfo &e) { display(e); },
-        [](const codon::error::RuntimeErrorInfo &e) { /* nothing */ });
-    return "";
+        [&output](const codon::error::RuntimeErrorInfo &e) { output = e.getOutput(); });
+    return output;
   }
   return *result;
 }

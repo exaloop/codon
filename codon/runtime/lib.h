@@ -82,16 +82,20 @@ SEQ_FUNC void seq_rlock_release(void *lock);
 
 class seq_jit_error : public std::runtime_error {
 private:
+  std::string output;
   std::string type;
   std::string file;
   int line;
   int col;
 
 public:
-  explicit seq_jit_error(const std::string &what, const std::string &type,
-                         const std::string &file, int line, int col)
-      : std::runtime_error(what), type(type), file(file), line(line), col(col) {}
+  explicit seq_jit_error(const std::string &output, const std::string &what,
+                         const std::string &type, const std::string &file, int line,
+                         int col)
+      : std::runtime_error(what), output(output), type(type), file(file), line(line),
+        col(col) {}
 
+  std::string getOutput() const { return output; }
   std::string getType() const { return type; }
   std::string getFile() const { return file; }
   int getLine() const { return line; }

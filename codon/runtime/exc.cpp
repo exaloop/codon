@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -160,7 +161,7 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   return &(e->unwindException);
 }
 
-static void print_from_last_dot(seq_str_t s) {
+static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
   char *p = s.str;
   int64_t n = s.len;
 
@@ -172,7 +173,7 @@ static void print_from_last_dot(seq_str_t s) {
     }
   }
 
-  fwrite(p, 1, (size_t)n, stderr);
+  buf.write(p, (size_t)n);
 }
 
 SEQ_FUNC void seq_terminate(void *exc) {
@@ -186,46 +187,49 @@ SEQ_FUNC void seq_terminate(void *exc) {
     exit((int)status);
   }
 
-  fprintf(stderr, "\033[1m");
-  print_from_last_dot(hdr->type);
+  std::ostringstream buf;
+
+  buf << "\033[1m";
+  print_from_last_dot(hdr->type, buf);
   if (hdr->msg.len > 0) {
-    fprintf(stderr, ": ");
-    fprintf(stderr, "\033[0m");
-    fwrite(hdr->msg.str, 1, (size_t)hdr->msg.len, stderr);
+    buf << ": \033[0m";
+    buf.write(hdr->msg.str, hdr->msg.len);
   } else {
-    fprintf(stderr, "\033[0m");
+    buf << "\033[0m";
   }
 
-  fprintf(stderr, "\n\n");
-  fprintf(stderr, "\033[1mRaised from:\033[0m \033[32m");
-  fwrite(hdr->func.str, 1, (size_t)hdr->func.len, stderr);
-  fprintf(stderr, "\033[0m\n");
-  fwrite(hdr->file.str, 1, (size_t)hdr->file.len, stderr);
+  buf << "\n\n\033[1mRaised from:\033[0m \033[32m";
+  buf.write(hdr->func.str, hdr->func.len);
+  buf << "\033[0m\n";
+  buf.write(hdr->file.str, hdr->file.len);
   if (hdr->line > 0) {
-    fprintf(stderr, ":%lld", (long long)hdr->line);
+    buf << ":" << hdr->line;
     if (hdr->col > 0)
-      fprintf(stderr, ":%lld", (long long)hdr->col);
+      buf << ":" << hdr->col;
   }
-  fprintf(stderr, "\n");
+  buf << "\n";
 
   if (seq_flags & SEQ_FLAG_DEBUG) {
     auto *bt = &base->bt;
     if (bt->count > 0) {
-      fprintf(stderr, "\n\033[1mBacktrace:\033[0m\n");
+      buf << "\n\033[1mBacktrace:\033[0m\n";
       for (unsigned i = 0; i < bt->count; i++) {
         auto *frame = &bt->frames[i];
-        fprintf(stderr, "  [\033[33m0x%lx\033[0m] \033[32m%s\033[0m %s:%d\n", frame->pc,
-                frame->function, frame->filename, frame->lineno);
+        buf << "  [\033[33m0x" << std::hex << frame->pc << std::dec
+            << "\033[0m] \033[32m" << frame->function << "\033[0m " << frame->filename
+            << ":" << frame->lineno << "\n";
       }
     }
   }
 
+  auto output = buf.str();
   if (seq_flags & SEQ_FLAG_JIT) {
     std::string msg(hdr->msg.str, hdr->msg.len);
     std::string file(hdr->file.str, hdr->file.len);
     std::string type(hdr->type.str, hdr->type.len);
-    throw seq_jit_error(msg, type, file, (int)hdr->line, (int)hdr->col);
+    throw seq_jit_error(output, msg, type, file, (int)hdr->line, (int)hdr->col);
   } else {
+    fwrite(output.data(), 1, output.size(), stderr);
     abort();
   }
 }
