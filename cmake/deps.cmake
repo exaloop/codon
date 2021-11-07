@@ -79,12 +79,32 @@ CPMAddPackage(
     GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
+    set(backtrace_SOURCES
+        "${backtrace_SOURCE_DIR}/atomic.c"
+        "${backtrace_SOURCE_DIR}/backtrace.c"
+        "${backtrace_SOURCE_DIR}/dwarf.c"
+        "${backtrace_SOURCE_DIR}/fileline.c"
+        "${backtrace_SOURCE_DIR}/mmapio.c"
+        "${backtrace_SOURCE_DIR}/mmap.c"
+        "${backtrace_SOURCE_DIR}/posix.c"
+        "${backtrace_SOURCE_DIR}/print.c"
+        "${backtrace_SOURCE_DIR}/simple.c"
+        "${backtrace_SOURCE_DIR}/sort.c"
+        "${backtrace_SOURCE_DIR}/state.c")
+
     # https://go.googlesource.com/gollvm/+/refs/heads/master/cmake/modules/LibbacktraceUtils.cmake
     set(BACKTRACE_ELF_SIZE 64)
     set(HAVE_GETIPINFO 1)
-    set(BACKTRACE_USES_MALLOC 0)
+    set(BACKTRACE_USES_MALLOC 1)
     set(BACKTRACE_SUPPORTS_THREADS 1)
     set(BACKTRACE_SUPPORTS_DATA 1)
+    if(APPLE)
+        set(HAVE_MACH_O_DYLD_H 1)
+        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/macho.c")
+    else()
+        set(HAVE_MACH_O_DYLD_H 0)
+        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/elf.c")
+    endif()
     if(HAVE_SYNC_BOOL_COMPARE_AND_SWAP_4)
         if(HAVE_SYNC_BOOL_COMPARE_AND_SWAP_8)
             set(HAVE_SYNC_FUNCTIONS 1)
@@ -97,19 +117,7 @@ if(backtrace_ADDED)
     configure_file(
         ${CMAKE_SOURCE_DIR}/cmake/backtrace-config.h.in
         ${backtrace_SOURCE_DIR}/config.h)
-    add_library(backtrace STATIC
-        "${backtrace_SOURCE_DIR}/atomic.c"
-        "${backtrace_SOURCE_DIR}/backtrace.c"
-        "${backtrace_SOURCE_DIR}/dwarf.c"
-        "${backtrace_SOURCE_DIR}/elf.c"
-        "${backtrace_SOURCE_DIR}/fileline.c"
-        "${backtrace_SOURCE_DIR}/mmapio.c"
-        "${backtrace_SOURCE_DIR}/mmap.c"
-        "${backtrace_SOURCE_DIR}/posix.c"
-        "${backtrace_SOURCE_DIR}/print.c"
-        "${backtrace_SOURCE_DIR}/simple.c"
-        "${backtrace_SOURCE_DIR}/sort.c"
-        "${backtrace_SOURCE_DIR}/state.c")
+    add_library(backtrace STATIC ${backtrace_SOURCES})
     target_include_directories(backtrace BEFORE PRIVATE "${backtrace_SOURCE_DIR}")
     set_target_properties(backtrace PROPERTIES
         COMPILE_FLAGS "-funwind-tables -D_GNU_SOURCE"

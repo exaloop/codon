@@ -46,6 +46,9 @@
 /* Define to 1 if you have the `lstat' function. */
 #cmakedefine HAVE_LSTAT 1
 
+/* Define to 1 if you have the <mach-o/dyld.h> header file. */
+#cmakedefine HAVE_MACH_O_DYLD_H 1
+
 /* Define to 1 if you have the <memory.h> header file. */
 #cmakedefine HAVE_MEMORY_H 1
 
