@@ -287,7 +287,7 @@ int startJupyterKernel(const std::string &argv0, const std::string &configPath);
 int jupyterMode(const std::vector<const char *> &args) {
 #ifdef CODON_JUPYTER
   int code = codon::startJupyterKernel(args[0], args.size() > 1 ? std::string(args[1])
-                                                       : "connection.json");
+                                                                : "connection.json");
   return code;
 #else
   fmt::eprint("Jupyter support not included. Please recompile with "
