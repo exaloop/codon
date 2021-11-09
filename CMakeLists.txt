@@ -7,8 +7,16 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
+option(CODON_JUPYTER "build Codon Jupyter server" OFF)
+if(CODON_JUPYTER)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json.in"
+        "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json"
+    )
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-unused-variable")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-limit-debug-info")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
@@ -20,6 +28,7 @@ find_package(LLVM REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
+
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
@@ -196,7 +205,8 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_default_formatter.h
     codon/util/toml++/toml_node.h
     codon/util/toml++/toml_parser.hpp
-    codon/util/toml++/toml_utf8_streams.h)
+    codon/util/toml++/toml_utf8_streams.h
+    extra/jupyter/src/codon.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/engine.cpp
@@ -273,9 +283,16 @@ set(CODON_CPPFILES
     codon/sir/value.cpp
     codon/sir/var.cpp
     codon/util/common.cpp
-    codon/util/fmt/format.cpp)
+    codon/util/fmt/format.cpp
+    extra/jupyter/src/codon.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
+if(CODON_JUPYTER)
+    add_compile_definitions(CODON_JUPYTER)
+    add_dependencies(codonc xeus-static nlohmann_json)
+    target_link_libraries(codonc PRIVATE xeus-static)
+    # set_target_properties(codonc PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+endif()
 if(ASAN)
     target_compile_options(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
     target_link_libraries(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
@@ -333,7 +350,7 @@ add_dependencies(headers codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon ${STATIC_LIBCPP} codonc Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} codonc Threads::Threads)
 
 # Codon test
 # Download and unpack googletest at configure time
@@ -365,59 +382,3 @@ target_include_directories(codon_test PRIVATE test/sir "${gc_SOURCE_DIR}/include
 target_link_libraries(codon_test codonc codonrt gtest_main)
 target_compile_definitions(codon_test PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
-option(CODON_JUPYTER "build Codon Jupyter server" OFF)
-
-if(CODON_JUPYTER)
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json.in"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json")
-    CPMAddPackage(
-        NAME libzmq
-        VERSION 4.3.4
-        URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-        OPTIONS "WITH_PERF_TOOL OFF" 
-                "ZMQ_BUILD_TESTS OFF" 
-                "ENABLE_CPACK OFF"
-                "BUILD_SHARED ON"
-                "WITH_LIBSODIUM OFF")
-    CPMAddPackage(
-        NAME cppzmq
-        URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
-        VERSION 4.8.1
-        OPTION "CPPZMQ_BUILD_TESTS OFF")
-    if(cppzmq_ADDED)
-        set_target_properties(unit_tests PROPERTIES EXCLUDE_FROM_ALL ON)
-    endif()
-    CPMAddPackage(
-        NAME xtl
-        GITHUB_REPOSITORY "xtensor-stack/xtl"
-        VERSION 0.7.3
-        GIT_TAG 0.7.3
-        OPTIONS "BUILD_TESTS OFF")
-    CPMAddPackage(
-        NAME json
-        GITHUB_REPOSITORY "nlohmann/json"
-        VERSION 3.10.4)
-    CPMAddPackage(
-        NAME xeus
-        GITHUB_REPOSITORY "jupyter-xeus/xeus"
-        VERSION 2.2.0
-        GIT_TAG 2.2.0
-        OPTIONS "BUILD_EXAMPLES OFF"
-        "XEUS_BUILD_SHARED_LIBS OFF"
-        "XEUS_STATIC_DEPENDENCIES ON")
-    if (xeus_ADDED)
-        install(TARGETS nlohmann_json EXPORT xeus-targets)
-    endif()
-
-    set(CODON_JUPYTER_SRC extra/jupyter/src/codon.cpp extra/jupyter/src/codon.h)
-    add_executable(codon-jupyter extra/jupyter/src/main.cpp ${CODON_JUPYTER_SRC})
-    add_dependencies(codon-jupyter xeus-static)
-    target_link_libraries(codon-jupyter PRIVATE xeus-static Threads::Threads codonc codonrt)
-    set_target_properties(codon-jupyter PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-    # Install kernel
-    install(TARGETS codon-jupyter RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    set(XJUPYTER_DATA_DIR extra/jupyter/share/jupyter CACHE STRING "Jupyter data directory")
-    set(KERNELSPEC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels)
-    install(DIRECTORY ${KERNELSPEC_DIR} DESTINATION ${XJUPYTER_DATA_DIR} PATTERN "*.in" EXCLUDE)
-endif()

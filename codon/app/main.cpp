@@ -279,6 +279,23 @@ int buildMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
+#ifdef CODON_JUPYTER
+namespace codon {
+int startJupyterKernel(const std::string &argv0, const std::string &configPath);
+}
+#endif
+int jupyterMode(const std::vector<const char *> &args) {
+#ifdef CODON_JUPYTER
+  int code = codon::startJupyterKernel(args[0], args.size() > 1 ? std::string(args[1])
+                                                       : "connection.json");
+  return code;
+#else
+  fmt::eprint("Jupyter support not included. Please recompile with "
+              "-DCODON_JUPYTER.");
+  return EXIT_FAILURE;
+#endif
+}
+
 void showCommandsAndExit() {
   codon::compilationError("Available commands: seqc <run|build|doc>");
 }
@@ -323,6 +340,10 @@ int main(int argc, const char **argv) {
   if (mode == "jit") {
     args[0] = argv0.data();
     return jitMode(args);
+  }
+  if (mode == "jupyter") {
+    args[0] = argv0.data();
+    return jupyterMode(args);
   }
   return otherMode({argv, argv + argc});
 }

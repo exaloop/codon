@@ -2,7 +2,7 @@
     "display_name": "Codon",
     "argv": [
         "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_BINDIR@/@EXECUTABLE_NAME@",
-        "-f",
+        "jupyter",
         "{connection_file}"
     ],
     "language": "python"

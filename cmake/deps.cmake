@@ -123,3 +123,44 @@ if(backtrace_ADDED)
         COMPILE_FLAGS "-funwind-tables -D_GNU_SOURCE"
         POSITION_INDEPENDENT_CODE ON)
 endif()
+
+if(CODON_JUPYTER)
+    CPMAddPackage(
+        NAME libzmq
+        VERSION 4.3.4
+        URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+        OPTIONS "WITH_PERF_TOOL OFF" 
+                "ZMQ_BUILD_TESTS OFF" 
+                "ENABLE_CPACK OFF"
+                "BUILD_SHARED ON"
+                "WITH_LIBSODIUM OFF")
+    CPMAddPackage(
+        NAME cppzmq
+        URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
+        VERSION 4.8.1
+        OPTION "CPPZMQ_BUILD_TESTS OFF")
+    if(cppzmq_ADDED)
+        set_target_properties(unit_tests PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
+    CPMAddPackage(
+        NAME xtl
+        GITHUB_REPOSITORY "xtensor-stack/xtl"
+        VERSION 0.7.3
+        GIT_TAG 0.7.3
+        OPTIONS "BUILD_TESTS OFF")
+    CPMAddPackage(
+        NAME json
+        GITHUB_REPOSITORY "nlohmann/json"
+        VERSION 3.10.4)
+    CPMAddPackage(
+        NAME xeus
+        GITHUB_REPOSITORY "jupyter-xeus/xeus"
+        VERSION 2.2.0
+        GIT_TAG 2.2.0
+        OPTIONS "BUILD_EXAMPLES OFF"
+        "XEUS_BUILD_SHARED_LIBS OFF"
+        "XEUS_STATIC_DEPENDENCIES ON")
+    if (xeus_ADDED)
+        install(TARGETS nlohmann_json EXPORT xeus-targets)
+    endif()
+endif()
