@@ -290,8 +290,8 @@ int jupyterMode(const std::vector<const char *> &args) {
                                                                 : "connection.json");
   return code;
 #else
-  fmt::eprint("Jupyter support not included. Please recompile with "
-              "-DCODON_JUPYTER.");
+  fmt::print("Jupyter support not included. Please recompile with "
+             "-DCODON_JUPYTER.");
   return EXIT_FAILURE;
 #endif
 }
