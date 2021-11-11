@@ -95,7 +95,7 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
   try {
     CaptureOutput(buffer.rdbuf());
     (*repl)();
-  } catch (const seq_jit_error &err) {
+  } catch (const JITError &err) {
     return llvm::make_error<error::RuntimeErrorInfo>(err.getOutput(), err.getType(),
                                                      err.what(), err.getFile(),
                                                      err.getLine(), err.getCol());

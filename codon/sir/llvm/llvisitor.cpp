@@ -1,6 +1,8 @@
 #include "llvisitor.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
@@ -27,11 +29,11 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
   return builder->createFile(filename, directory);
 }
 
-LLVMVisitor::LLVMVisitor(bool debug, bool jit, const std::string &flags)
+LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
-      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(),
-      db(debug, jit, flags), plugins(nullptr) {
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), db(),
+      plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -376,6 +378,63 @@ void LLVMVisitor::compile(const std::string &filename,
   }
 }
 
+namespace {
+class DebugInfoListener : public llvm::JITEventListener {
+public:
+  std::pair<std::unique_ptr<llvm::object::ObjectFile>,
+            std::unique_ptr<llvm::MemoryBuffer>>
+      saved;
+  intptr_t start = 0;
+
+  void notifyObjectLoaded(ObjectKey key, const llvm::object::ObjectFile &obj,
+                          const llvm::RuntimeDyld::LoadedObjectInfo &L) override {
+    start = L.getSectionLoadAddress(*obj.section_begin());
+    saved = L.getObjectForDebug(obj).takeBinary();
+    if (!saved.first) {
+      auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
+      auto newObj = llvm::cantFail(
+          llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
+      saved = std::make_pair(std::move(newObj), std::move(buf));
+    }
+  }
+};
+
+std::string unmangleType(llvm::StringRef s) {
+  auto p = s.rsplit('.');
+  return (p.second.empty() ? p.first : p.second).str();
+}
+
+std::string unmangleFunc(llvm::StringRef s) {
+  // separate type and function
+  auto p = s.split(':');
+  llvm::StringRef func = s;
+  std::string type;
+  if (!p.second.empty()) {
+    type = unmangleType(p.first);
+    func = p.second;
+  }
+
+  // trim off ".<id>"
+  p = func.rsplit('.');
+  if (!p.second.empty() && p.second.find_if([](char c) { return !std::isdigit(c); }) ==
+                               llvm::StringRef::npos)
+    func = p.first;
+
+  // trim off generics
+  func = func.split('[').first;
+
+  // trim off qualified name
+  p = func.rsplit('.');
+  if (!p.second.empty())
+    func = p.second;
+
+  if (!type.empty())
+    return type + "." + func.str();
+  else
+    return func.str();
+}
+} // namespace
+
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
@@ -384,14 +443,48 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
   llvm::ExecutionEngine *eng = EB.create();
 
-  std::string err;
+  auto dbListener = std::unique_ptr<DebugInfoListener>();
+  if (db.debug) {
+    dbListener = std::make_unique<DebugInfoListener>();
+    eng->RegisterJITEventListener(dbListener.get());
+  }
+
   for (auto &lib : libs) {
+    std::string err;
     if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(lib.c_str(), &err)) {
       compilationError(err);
     }
   }
 
-  eng->runFunctionAsMain(main, args, envp);
+  try {
+    eng->runFunctionAsMain(main, args, envp);
+  } catch (const JITError &e) {
+    fmt::print(stderr, "{}", e.getOutput());
+    if (db.debug) {
+      llvm::symbolize::LLVMSymbolizer sym;
+      auto invalid = [](const std::string &name) { return name == "<invalid>"; };
+
+      fmt::print(stderr, "\n\033[1mBacktrace:\033[0m\n");
+      auto base = dbListener->start;
+      for (auto pc : e.getBacktrace()) {
+        auto src = sym.symbolizeCode(
+            *dbListener->saved.first,
+            {pc - base, llvm::object::SectionedAddress::UndefSection});
+        if (auto err = src.takeError())
+          break;
+        if (invalid(src->FunctionName) || invalid(src->FileName))
+          continue;
+
+        auto func = unmangleFunc(src->FunctionName);
+        auto file = src->FileName;
+        auto line = src->Line;
+        auto col = src->Column;
+        fmt::print(stderr, "  [\033[33m0x{:016x}\033[0m] \033[32m{}\033[0m {}:{}:{}\n",
+                   pc, func, file, line, col);
+      }
+    }
+    std::abort();
+  }
   delete eng;
 }
 
@@ -625,7 +718,8 @@ void LLVMVisitor::visit(const Module *x) {
   llvm::Value *argStorage = getVar(x->getArgVar());
   seqassert(argStorage, "argument storage missing");
   B->CreateStore(arr, argStorage);
-  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) | (db.jit ? SEQ_FLAG_JIT : 0);
+  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) | (db.jit ? SEQ_FLAG_JIT : 0) |
+                    (db.standalone ? SEQ_FLAG_STANDALONE : 0);
   B->CreateCall(initFunc, B->getInt32(flags));
 
   // Put the entire program in a new function

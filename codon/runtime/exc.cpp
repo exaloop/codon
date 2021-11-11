@@ -7,9 +7,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
 
 struct BacktraceFrame {
   char *function;
@@ -42,6 +46,8 @@ struct Backtrace {
     frames[count++] = {functionDup, filenameDup, pc, lineno};
   }
 
+  void push_back(uintptr_t pc) { push_back("<invalid>", "<invalid>", pc, 0); }
+
   void free() {
     for (auto i = 0; i < count; i++) {
       auto *frame = &frames[i];
@@ -55,7 +61,7 @@ struct Backtrace {
 };
 
 void seq_backtrace_error_callback(void *data, const char *msg, int errnum) {
-  // nothing to do
+  // printf("seq_backtrace_error_callback: %s (errnum = %d)\n", msg, errnum);
 }
 
 int seq_backtrace_full_callback(void *data, uintptr_t pc, const char *filename,
@@ -140,6 +146,7 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 }
 
 static struct backtrace_state *state = nullptr;
+static std::mutex stateLock;
 
 SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   const size_t size = sizeof(OurException);
@@ -152,11 +159,33 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   if (seq_flags & SEQ_FLAG_DEBUG) {
     e->bt.frames = nullptr;
     e->bt.count = 0;
-    if (!state)
-      state = backtrace_create_state(/*filename=*/nullptr, /*threaded=*/0,
+
+    if (seq_flags & SEQ_FLAG_STANDALONE) {
+      if (!state) {
+        stateLock.lock();
+        if (!state)
+          state =
+              backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
                                      seq_backtrace_error_callback, /*data=*/nullptr);
-    backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
-                   seq_backtrace_error_callback, &e->bt);
+        stateLock.unlock();
+      }
+      backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
+                     seq_backtrace_error_callback, &e->bt);
+    } else {
+      unw_cursor_t cursor;
+      unw_context_t context;
+
+      unw_getcontext(&context);
+      unw_init_local(&cursor, &context);
+
+      while (unw_step(&cursor) > 0) {
+        unw_word_t pc;
+        unw_get_reg(&cursor, UNW_REG_IP, &pc);
+        if (pc == 0)
+          break;
+        e->bt.push_back(pc);
+      }
+    }
   }
   return &(e->unwindException);
 }
@@ -209,7 +238,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
   buf << "\n";
 
-  if (seq_flags & SEQ_FLAG_DEBUG) {
+  if ((seq_flags & SEQ_FLAG_DEBUG) && (seq_flags & SEQ_FLAG_STANDALONE)) {
     auto *bt = &base->bt;
     if (bt->count > 0) {
       buf << "\n\033[1mBacktrace:\033[0m\n";
@@ -223,14 +252,23 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
 
   auto output = buf.str();
-  if (seq_flags & SEQ_FLAG_JIT) {
+  if (seq_flags & SEQ_FLAG_STANDALONE) {
+    fwrite(output.data(), 1, output.size(), stderr);
+    abort();
+  } else {
+    auto *bt = &base->bt;
     std::string msg(hdr->msg.str, hdr->msg.len);
     std::string file(hdr->file.str, hdr->file.len);
     std::string type(hdr->type.str, hdr->type.len);
-    throw seq_jit_error(output, msg, type, file, (int)hdr->line, (int)hdr->col);
-  } else {
-    fwrite(output.data(), 1, output.size(), stderr);
-    abort();
+
+    std::vector<uintptr_t> backtrace;
+    if (seq_flags & SEQ_FLAG_DEBUG) {
+      for (unsigned i = 0; i < bt->count; i++) {
+        backtrace.push_back(bt->frames[i].pc);
+      }
+    }
+    throw codon::JITError(output, msg, type, file, (int)hdr->line, (int)hdr->col,
+                          backtrace);
   }
 }
 

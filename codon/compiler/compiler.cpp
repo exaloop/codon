@@ -19,9 +19,10 @@ Compiler::Compiler(const std::string &argv0, bool debug,
       module(std::make_unique<ir::Module>()),
       pm(std::make_unique<ir::transform::PassManager>(debug && !isTest,
                                                       disabledPasses)),
-      llvisitor(std::make_unique<ir::LLVMVisitor>(debug)) {
+      llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
   module->setCache(cache.get());
+  llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
 }
 

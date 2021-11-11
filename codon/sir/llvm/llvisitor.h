@@ -98,11 +98,14 @@ private:
     bool debug;
     /// Whether we are compiling in JIT mode
     bool jit;
+    /// Whether we are compiling a standalone object/executable
+    bool standalone;
     /// Program command-line flags
     std::string flags;
 
-    DebugInfo(bool debug, bool jit, const std::string &flags)
-        : builder(), unit(nullptr), debug(debug), jit(jit), flags(flags) {}
+    DebugInfo()
+        : builder(), unit(nullptr), debug(false), jit(false), standalone(false),
+          flags() {}
 
     llvm::DIFile *getFile(const std::string &path);
 
@@ -223,11 +226,7 @@ public:
   }
 
   /// Constructs an LLVM visitor.
-  /// @param debug whether to compile in debug mode
-  /// @param jit whether to compile in JIT mode
-  /// @param flags command-line flags to be included in debug info
-  explicit LLVMVisitor(bool debug = false, bool jit = false,
-                       const std::string &flags = "");
+  LLVMVisitor();
 
   /// @return true if in debug mode, false otherwise
   bool getDebug() const { return db.debug; }
@@ -240,6 +239,12 @@ public:
   /// Sets JIT status.
   /// @param j true if JIT mode
   void setJIT(bool j = true) { db.jit = j; }
+
+  /// @return true if in standalone mode, false otherwise
+  bool getStandalone() const { return db.standalone; }
+  /// Sets standalone status.
+  /// @param s true if standalone
+  void setStandalone(bool s = true) { db.standalone = s; }
 
   /// @return program flags
   std::string getFlags() const { return db.flags; }

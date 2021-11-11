@@ -79,7 +79,8 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
-std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &args) {
+std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &args,
+                                               bool standalone) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
   llvm::cl::opt<OptMode> optMode(
@@ -133,6 +134,7 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   const bool isDebug = (optMode == OptMode::Debug);
   std::vector<std::string> disabledOptsVec(disabledOpts);
   auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec);
+  compiler->getLLVMVisitor()->setStandalone(standalone);
 
   // load plugins
   for (const auto &plugin : plugins) {
@@ -168,7 +170,7 @@ int runMode(const std::vector<const char *> &args) {
       "l", llvm::cl::desc("Load and link the specified library"));
   llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
                                       llvm::cl::desc("<program arguments>..."));
-  auto compiler = processSource(args);
+  auto compiler = processSource(args, /*standalone=*/false);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
@@ -229,7 +231,7 @@ int buildMode(const std::vector<const char *> &args) {
           "Write compiled output to specified file. Supported extensions: "
           "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
 
-  auto compiler = processSource(args);
+  auto compiler = processSource(args, /*standalone=*/true);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
