@@ -67,9 +67,8 @@ endif()
 
 CPMAddPackage(
     NAME openmp
-    GITHUB_REPOSITORY "llvm-mirror/openmp"
-    VERSION 9.0
-    GIT_TAG release_90
+    GITHUB_REPOSITORY "exaloop/openmp"
+    VERSION 12.0.1
     OPTIONS "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
 
