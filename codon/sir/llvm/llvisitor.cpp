@@ -433,6 +433,11 @@ std::string unmangleFunc(llvm::StringRef s) {
   else
     return func.str();
 }
+
+std::string simplifyFile(llvm::StringRef s) {
+  auto p = s.rsplit('/');
+  return (p.second.empty() ? p.first : p.second).str();
+}
 } // namespace
 
 void LLVMVisitor::run(const std::vector<std::string> &args,
@@ -476,10 +481,12 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           continue;
 
         auto func = unmangleFunc(src->FunctionName);
-        auto file = src->FileName;
+        auto file = simplifyFile(src->FileName);
         auto line = src->Line;
         auto col = src->Column;
-        fmt::print(stderr, "  [\033[33m0x{:016x}\033[0m] \033[32m{}\033[0m {}:{}:{}\n",
+        fmt::print(stderr,
+                   "  [\033[33m0x{:016x}\033[0m] \033[32m{}\033[0m at "
+                   "\033[36m{}\033[0m:\033[33m{}\033[0m:\033[33m{}\033[0m\n",
                    pc, func, file, line, col);
       }
     }
