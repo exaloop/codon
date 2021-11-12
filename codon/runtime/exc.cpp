@@ -12,9 +12,6 @@
 #include <string>
 #include <vector>
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-
 struct BacktraceFrame {
   char *function;
   char *filename;
@@ -68,6 +65,12 @@ int seq_backtrace_full_callback(void *data, uintptr_t pc, const char *filename,
                                 int lineno, const char *function) {
   auto *bt = ((Backtrace *)data);
   bt->push_back(function, filename, pc, lineno);
+  return (bt->count < Backtrace::LIMIT) ? 0 : 1;
+}
+
+int seq_backtrace_simple_callback(void *data, uintptr_t pc) {
+  auto *bt = ((Backtrace *)data);
+  bt->push_back(pc);
   return (bt->count < Backtrace::LIMIT) ? 0 : 1;
 }
 
@@ -172,19 +175,8 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
       backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
                      seq_backtrace_error_callback, &e->bt);
     } else {
-      unw_cursor_t cursor;
-      unw_context_t context;
-
-      unw_getcontext(&context);
-      unw_init_local(&cursor, &context);
-
-      while (unw_step(&cursor) > 0) {
-        unw_word_t pc;
-        unw_get_reg(&cursor, UNW_REG_IP, &pc);
-        if (pc == 0)
-          break;
-        e->bt.push_back(pc);
-      }
+      backtrace_simple(/*state=*/nullptr, /*skip=*/1, seq_backtrace_simple_callback,
+                       seq_backtrace_error_callback, &e->bt);
     }
   }
   return &(e->unwindException);
