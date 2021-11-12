@@ -18,11 +18,12 @@ fi
 
 # build
 mkdir build
+export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
+export LIBUNWIND_PREFIX="$(pwd)/llvm"
 (cd build && cmake .. -DCMAKE_BUILD_TYPE=Release \
                       -DCMAKE_C_COMPILER="$(pwd)/llvm/bin/clang" \
                       -DCMAKE_CXX_COMPILER="$(pwd)/llvm/bin/clang++" \
-                      -DLLVM_DIR=$(llvm/bin/llvm-config --cmakedir) \
-                      -DLIBUNWIND_PREFIX="$(pwd)/llvm")
+                      -DLIBUNWIND_PREFIX="${LIBUNWIND_PREFIX}")
 cmake --build build --config Release -- VERBOSE=1
 
 # test
