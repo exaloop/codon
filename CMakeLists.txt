@@ -73,6 +73,11 @@ else()
         $<TARGET_FILE:bz2>
         $<TARGET_FILE:liblzma>
         -Wl,--no-whole-archive)
+    if(DEFINED LIBUNWIND_PREFIX)
+        target_include_directories(codonrt PRIVATE "${LIBUNWIND_PREFIX}/include")
+        find_library(UNWIND_LIBRARY unwind HINTS "${LIBUNWIND_PREFIX}/lib/libunwind.a")
+        target_link_libraries(codonrt PRIVATE ${UNWIND_LIBRARY})
+    endif()
 endif()
 add_custom_command(TARGET codonrt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp> ${CMAKE_BINARY_DIR})

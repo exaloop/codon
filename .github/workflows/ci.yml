@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: llvm
-          key: manylinux-llvm
+          key: manylinux-llvm-2
 
       - name: Main
         uses: ./.github/actions/build-manylinux
@@ -130,7 +130,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: llvm
-          key: ${{ runner.os }}-llvm
+          key: ${{ runner.os }}-llvm-2
 
       - name: Build Dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -142,10 +142,11 @@ jobs:
       - name: Build
         run: |
           mkdir build
-          export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
           (cd build && cmake .. -DCMAKE_BUILD_TYPE=Release \
                                 -DCMAKE_C_COMPILER=${CC} \
-                                -DCMAKE_CXX_COMPILER=${CXX})
+                                -DCMAKE_CXX_COMPILER=${CXX}
+                                -DLLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
+                                -DLIBUNWIND_PREFIX="$(pwd)/llvm")
           cmake --build build --config Release -- VERBOSE=1
         env:
           CC: clang

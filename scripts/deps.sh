@@ -27,6 +27,22 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
   make -j "${JOBS}"
   make install
 
+  # libunwind
+  mkdir -p "${SRCDIR}/libunwind/build"
+  cd "${SRCDIR}/libunwind/build"
+  cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLIBUNWIND_BUILD_32_BITS=OFF \
+      -DLIBUNWIND_ENABLE_SHARED=OFF \
+      -DLIBUNWIND_ENABLE_STATIC=ON \
+      -DLIBUNWIND_ENABLE_CROSS_UNWINDING=ON \
+      -DLIBUNWIND_ENABLE_THREADS=ON \
+      -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
+  make -j "${JOBS}"
+  make install
+  mkdir -p "${INSTALLDIR}/include"
+  cp -r ${SRCDIR}/libunwind/include/* "${INSTALLDIR}/include/"
+
   # clang
   if ! command -v clang &> /dev/null; then
     mkdir -p "${SRCDIR}/clang/build"

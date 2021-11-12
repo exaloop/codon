@@ -18,12 +18,11 @@ fi
 
 # build
 mkdir build
-export CC="$(pwd)/llvm/bin/clang"
-export CXX="$(pwd)/llvm/bin/clang++"
-export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
 (cd build && cmake .. -DCMAKE_BUILD_TYPE=Release \
-                      -DCMAKE_C_COMPILER=${CC} \
-                      -DCMAKE_CXX_COMPILER=${CXX})
+                      -DCMAKE_C_COMPILER="$(pwd)/llvm/bin/clang" \
+                      -DCMAKE_CXX_COMPILER="$(pwd)/llvm/bin/clang++" \
+                      -DLLVM_DIR=$(llvm/bin/llvm-config --cmakedir) \
+                      -DLIBUNWIND_PREFIX="$(pwd)/llvm")
 cmake --build build --config Release -- VERBOSE=1
 
 # test
