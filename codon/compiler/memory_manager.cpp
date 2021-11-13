@@ -3,7 +3,6 @@
 #include "codon/runtime/lib.h"
 
 namespace codon {
-namespace ir {
 
 BoehmGCMemoryManager::BoehmGCMemoryManager() : SectionMemoryManager(), roots() {}
 
@@ -26,5 +25,4 @@ BoehmGCMemoryManager::~BoehmGCMemoryManager() {
   }
 }
 
-} // namespace ir
 } // namespace codon

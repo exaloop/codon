@@ -6,7 +6,6 @@
 #include "codon/sir/llvm/llvm.h"
 
 namespace codon {
-namespace ir {
 
 /// Simple extension of LLVM's SectionMemoryManager which catches data section
 /// allocations and registers them with the GC. This allows the GC to know not
@@ -23,5 +22,4 @@ public:
   ~BoehmGCMemoryManager() override;
 };
 
-} // namespace ir
 } // namespace codon

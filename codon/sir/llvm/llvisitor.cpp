@@ -7,9 +7,10 @@
 #include <unistd.h>
 #include <utility>
 
+#include "codon/compiler/debug_listener.h"
+#include "codon/compiler/memory_manager.h"
 #include "codon/runtime/lib.h"
 #include "codon/sir/dsl/codegen.h"
-#include "codon/sir/llvm/memory_manager.h"
 #include "codon/sir/llvm/optimize.h"
 #include "codon/util/common.h"
 
@@ -448,9 +449,9 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
   llvm::ExecutionEngine *eng = EB.create();
 
-  auto dbListener = std::unique_ptr<DebugInfoListener>();
+  auto dbListener = std::unique_ptr<DebugListener>();
   if (db.debug) {
-    dbListener = std::make_unique<DebugInfoListener>();
+    dbListener = std::make_unique<DebugListener>();
     eng->RegisterJITEventListener(dbListener.get());
   }
 
@@ -470,11 +471,8 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
       auto invalid = [](const std::string &name) { return name == "<invalid>"; };
 
       fmt::print(stderr, "\n\033[1mBacktrace:\033[0m\n");
-      auto base = dbListener->start;
       for (auto pc : e.getBacktrace()) {
-        auto src = sym.symbolizeCode(
-            *dbListener->saved.first,
-            {pc - base, llvm::object::SectionedAddress::UndefSection});
+        auto src = dbListener->symbolize(pc);
         if (auto err = src.takeError())
           break;
         if (invalid(src->FunctionName) || invalid(src->FileName))

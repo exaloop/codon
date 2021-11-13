@@ -1,6 +1,6 @@
 #include "engine.h"
 
-#include "codon/sir/llvm/memory_manager.h"
+#include "codon/compiler/memory_manager.h"
 #include "codon/sir/llvm/optimize.h"
 
 namespace codon {
@@ -26,7 +26,7 @@ Engine::Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
     : tpc(std::move(tpc)), sess(std::move(sess)), tpciu(std::move(tpciu)),
       layout(std::move(layout)), mangle(*this->sess, this->layout),
       objectLayer(*this->sess,
-                  []() { return std::make_unique<ir::BoehmGCMemoryManager>(); }),
+                  []() { return std::make_unique<BoehmGCMemoryManager>(); }),
       compileLayer(*this->sess, objectLayer,
                    std::make_unique<llvm::orc::ConcurrentIRCompiler>(std::move(jtmb))),
       optimizeLayer(*this->sess, compileLayer, optimizeModule),

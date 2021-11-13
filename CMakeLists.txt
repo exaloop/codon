@@ -83,9 +83,11 @@ add_definitions(${LLVM_DEFINITIONS})
 
 set(CODON_HPPFILES
     codon/compiler/compiler.h
+    codon/compiler/debug_listener.h
     codon/compiler/engine.h
     codon/compiler/error.h
     codon/compiler/jit.h
+    codon/compiler/memory_manager.h
     codon/dsl/dsl.h
     codon/dsl/plugins.h
     codon/parser/ast.h
@@ -129,7 +131,6 @@ set(CODON_HPPFILES
     codon/sir/llvm/coro/Coroutines.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
-    codon/sir/llvm/memory_manager.h
     codon/sir/llvm/optimize.h
     codon/sir/module.h
     codon/sir/sir.h
@@ -209,9 +210,11 @@ set(CODON_HPPFILES
     extra/jupyter/src/codon.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
+    codon/compiler/debug_listener.cpp
     codon/compiler/engine.cpp
     codon/compiler/error.cpp
     codon/compiler/jit.cpp
+    codon/compiler/memory_manager.cpp
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp
     codon/parser/ast/stmt.cpp
@@ -253,7 +256,6 @@ set(CODON_CPPFILES
     codon/sir/llvm/coro/CoroSplit.cpp
     codon/sir/llvm/coro/Coroutines.cpp
     codon/sir/llvm/llvisitor.cpp
-    codon/sir/llvm/memory_manager.cpp
     codon/sir/llvm/optimize.cpp
     codon/sir/module.cpp
     codon/sir/transform/cleanup/canonical.cpp
