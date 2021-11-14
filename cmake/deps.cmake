@@ -92,6 +92,7 @@ if(backtrace_ADDED)
         "${backtrace_SOURCE_DIR}/state.c")
 
     # https://go.googlesource.com/gollvm/+/refs/heads/master/cmake/modules/LibbacktraceUtils.cmake
+    set(BACKTRACE_SUPPORTED 1)
     set(BACKTRACE_ELF_SIZE 64)
     set(HAVE_GETIPINFO 1)
     set(BACKTRACE_USES_MALLOC 1)
