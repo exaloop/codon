@@ -1,7 +1,6 @@
 #include "debug_listener.h"
 
 #include <algorithm>
-#include <iostream>
 
 namespace codon {
 
