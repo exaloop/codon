@@ -380,26 +380,6 @@ void LLVMVisitor::compile(const std::string &filename,
 }
 
 namespace {
-class DebugInfoListener : public llvm::JITEventListener {
-public:
-  std::pair<std::unique_ptr<llvm::object::ObjectFile>,
-            std::unique_ptr<llvm::MemoryBuffer>>
-      saved;
-  intptr_t start = 0;
-
-  void notifyObjectLoaded(ObjectKey key, const llvm::object::ObjectFile &obj,
-                          const llvm::RuntimeDyld::LoadedObjectInfo &L) override {
-    start = L.getSectionLoadAddress(*obj.section_begin());
-    saved = L.getObjectForDebug(obj).takeBinary();
-    if (!saved.first) {
-      auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
-      auto newObj = llvm::cantFail(
-          llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
-      saved = std::make_pair(std::move(newObj), std::move(buf));
-    }
-  }
-};
-
 std::string unmangleType(llvm::StringRef s) {
   auto p = s.rsplit('.');
   return (p.second.empty() ? p.first : p.second).str();
