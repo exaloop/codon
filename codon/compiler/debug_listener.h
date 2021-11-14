@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include "codon/sir/llvm/llvm.h"

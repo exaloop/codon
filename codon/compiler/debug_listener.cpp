@@ -16,15 +16,10 @@ void DebugListener::notifyObjectLoaded(ObjectKey key,
     }
   }
 
-  auto saved = L.getObjectForDebug(obj).takeBinary();
-  if (!saved.first) {
-    auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
-    auto newObj = llvm::cantFail(
-        llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
-    saved = std::make_pair(std::move(newObj), std::move(buf));
-  }
-  objects.emplace_back(key, std::move(saved.first), std::move(saved.second), start,
-                       stop);
+  auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
+  auto newObj = llvm::cantFail(
+      llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
+  objects.emplace_back(key, std::move(newObj), std::move(buf), start, stop);
 }
 
 void DebugListener::notifyFreeingObject(ObjectKey key) {
