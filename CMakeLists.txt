@@ -74,6 +74,10 @@ else()
         $<TARGET_FILE:liblzma>
         -Wl,--no-whole-archive)
 endif()
+if(ASAN)
+    target_compile_options(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+    target_link_libraries(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+endif()
 add_custom_command(TARGET codonrt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp> ${CMAKE_BINARY_DIR})
 
