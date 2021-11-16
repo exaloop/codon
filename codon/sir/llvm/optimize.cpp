@@ -54,10 +54,9 @@ void applyDebugTransformations(llvm::Module *module, bool debug) {
     // remove tail calls and fix linkage for stack traces
     for (auto &f : *module) {
       f.setLinkage(llvm::GlobalValue::ExternalLinkage);
-      if (f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline)) {
-        f.removeFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
+      if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline)) {
+        f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
       }
-      f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
       f.setHasUWTable();
       f.addFnAttr("no-frame-pointer-elim", "true");
       f.addFnAttr("no-frame-pointer-elim-non-leaf");

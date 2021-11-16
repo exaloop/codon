@@ -15,11 +15,7 @@ void DebugListener::notifyObjectLoaded(ObjectKey key,
       break;
     }
   }
-
-  auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
-  auto newObj = llvm::cantFail(
-      llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
-  objects.emplace_back(key, std::move(newObj), std::move(buf), start, stop);
+  objects.emplace_back(key, &obj, start, stop);
 }
 
 void DebugListener::notifyFreeingObject(ObjectKey key) {
@@ -29,10 +25,9 @@ void DebugListener::notifyFreeingObject(ObjectKey key) {
       objects.end());
 }
 
-llvm::Expected<llvm::DILineInfo> DebugListener::symbolize(intptr_t pc) const {
+llvm::Expected<llvm::DILineInfo> DebugListener::symbolize(intptr_t pc) {
   for (const auto &o : objects) {
     if (o.contains(pc)) {
-      llvm::symbolize::LLVMSymbolizer sym;
       return sym.symbolizeCode(o.getObject(),
                                {static_cast<uint64_t>(pc - o.getStart()),
                                 llvm::object::SectionedAddress::UndefSection});

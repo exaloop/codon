@@ -753,7 +753,7 @@ void LLVMVisitor::visit(const Module *x) {
   db.builder->finalize();
 }
 
-void LLVMVisitor::makeLLVMFunction(const Func *x) {
+llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
   auto *srcInfo = getSrcInfo(x);
   llvm::DIFile *file = db.getFile(srcInfo->file);
   auto *derivedType = llvm::cast<llvm::DIDerivedType>(getDIType(x->getType()));
@@ -761,15 +761,17 @@ void LLVMVisitor::makeLLVMFunction(const Func *x) {
       llvm::cast<llvm::DISubroutineType>(derivedType->getRawBaseType());
   llvm::DISubprogram *subprogram = db.builder->createFunction(
       file, x->getUnmangledName(), getNameForFunction(x), file, srcInfo->line,
-      subroutineType, /*ScopeLine=*/0, llvm::DINode::FlagZero,
+      subroutineType, /*ScopeLine=*/0,
+      llvm::DINode::FlagAllCallsDescribed | llvm::DINode::FlagPrototyped,
       llvm::DISubprogram::toSPFlags(/*IsLocalToUnit=*/true,
                                     /*IsDefinition=*/true, /*IsOptimized=*/!db.debug));
+  return subprogram;
+}
 
+void LLVMVisitor::makeLLVMFunction(const Func *x) {
   // process LLVM functions in full immediately
   if (auto *llvmFunc = cast<LLVMFunc>(x)) {
     process(llvmFunc);
-    func = M->getFunction(getNameForFunction(x));
-    func->setSubprogram(subprogram);
     setDebugInfoForNode(nullptr);
     return;
   }
@@ -787,7 +789,7 @@ void LLVMVisitor::makeLLVMFunction(const Func *x) {
   func = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
   if (!cast<ExternalFunc>(x)) {
-    func->setSubprogram(subprogram);
+    func->setSubprogram(getDISubprogramForFunc(x));
   }
 }
 
@@ -1020,6 +1022,19 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   seqassert(func, "function not linked in");
   func->setLinkage(getDefaultLinkage());
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
+  func->setSubprogram(getDISubprogramForFunc(x));
+
+  // set up debug info
+  // for now we just set all to func's source location
+  auto *srcInfo = getSrcInfo(x);
+  for (auto &block : func->getBasicBlockList()) {
+    for (auto &inst : block) {
+      if (!inst.getDebugLoc()) {
+        inst.setDebugLoc(llvm::DebugLoc(llvm::DILocation::get(
+            *context, srcInfo->line, srcInfo->col, func->getSubprogram())));
+      }
+    }
+  }
 }
 
 void LLVMVisitor::visit(const BodiedFunc *x) {
@@ -1047,7 +1062,6 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto *returnType = funcType->getReturnType();
   auto *entryBlock = llvm::BasicBlock::Create(*context, "entry", func);
   B->SetInsertPoint(entryBlock);
-  B->SetCurrentDebugLocation(llvm::DebugLoc());
 
   // set up arguments and other symbols
   seqassert(std::distance(func->arg_begin(), func->arg_end()) ==

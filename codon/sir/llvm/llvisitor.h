@@ -192,6 +192,7 @@ private:
     funcs.emplace(func->getId(), x);
   }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
+  llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
 
 public:
   static std::string getNameForFunction(const Func *x) {
