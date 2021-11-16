@@ -22,14 +22,14 @@ private:
 
 public:
   explicit JIT(const std::string &argv0);
+
+  Compiler *getCompiler() const { return compiler.get(); }
+  Engine *getEngine() const { return engine.get(); }
+
   llvm::Error init();
   llvm::Expected<std::string> run(const ir::Func *input,
                                   const std::vector<ir::Var *> &newGlobals = {});
   llvm::Expected<std::string> exec(const std::string &code);
-
-private:
-  std::pair<ir::Func *, std::vector<ir::Var *>>
-  transformSimplified(const ast::StmtPtr &simplified);
 };
 
 } // namespace jit

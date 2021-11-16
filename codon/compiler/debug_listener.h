@@ -13,19 +13,19 @@ public:
   private:
     ObjectKey key;
     const llvm::object::ObjectFile *object;
-    intptr_t start;
-    intptr_t stop;
+    uintptr_t start;
+    uintptr_t stop;
 
   public:
-    ObjectInfo(ObjectKey key, const llvm::object::ObjectFile *object, intptr_t start,
-               intptr_t stop)
+    ObjectInfo(ObjectKey key, const llvm::object::ObjectFile *object, uintptr_t start,
+               uintptr_t stop)
         : key(key), object(object), start(start), stop(stop) {}
 
     ObjectKey getKey() const { return key; }
     const llvm::object::ObjectFile &getObject() const { return *object; }
-    intptr_t getStart() const { return start; }
-    intptr_t getStop() const { return stop; }
-    bool contains(intptr_t pc) const { return start <= pc && pc < stop; }
+    uintptr_t getStart() const { return start; }
+    uintptr_t getStop() const { return stop; }
+    bool contains(uintptr_t pc) const { return start <= pc && pc < stop; }
   };
 
 private:
@@ -39,7 +39,8 @@ private:
 public:
   DebugListener() : llvm::JITEventListener(), sym(), objects() {}
 
-  llvm::Expected<llvm::DILineInfo> symbolize(intptr_t pc);
+  llvm::Expected<llvm::DILineInfo> symbolize(uintptr_t pc);
+  std::string getPrettyBacktrace(const std::vector<uintptr_t> &backtrace);
 };
 
 } // namespace codon

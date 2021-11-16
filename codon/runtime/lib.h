@@ -101,4 +101,8 @@ public:
   int getCol() const { return col; }
   std::vector<uintptr_t> getBacktrace() const { return backtrace; }
 };
+
+std::string makeBacktraceFrameString(uintptr_t pc, const std::string &func = "",
+                                     const std::string &file = "", int line = 0,
+                                     int col = 0);
 } // namespace codon

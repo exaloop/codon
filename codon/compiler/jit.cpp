@@ -103,42 +103,6 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
   return buffer.str();
 }
 
-std::pair<ir::Func *, std::vector<ir::Var *>>
-JIT::transformSimplified(const ast::StmtPtr &simplified) {
-  auto *cache = compiler->getCache();
-
-  // LOG("-- {}", simplified->toString(1));
-
-  auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
-  std::vector<std::string> globalNames;
-  for (auto &g : cache->globals) {
-    if (!g.second)
-      globalNames.push_back(g.first);
-  }
-  // add newly realized functions
-  std::vector<ast::StmtPtr> v;
-  std::vector<ir::Func **> frs;
-  v.push_back(typechecked);
-  for (auto &p : cache->pendingRealizations) {
-    v.push_back(cache->functions[p.first].ast);
-    frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
-  }
-  auto func =
-      ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
-  cache->jitCell++;
-
-  std::vector<ir::Var *> globalVars;
-  for (auto &g : globalNames) {
-    seqassert(cache->globals[g], "JIT global {} not set", g);
-    globalVars.push_back(cache->globals[g]);
-  }
-  for (auto &i : frs) {
-    seqassert(*i, "JIT fn not set");
-    globalVars.push_back(*i);
-  }
-  return {func, globalVars};
-}
-
 llvm::Expected<std::string> JIT::exec(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
@@ -155,8 +119,35 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     simplified->stmts.push_back(s);
     // TODO: unroll on errors...
 
-    auto p = transformSimplified(simplified);
-    return run(p.first, p.second);
+    auto *cache = compiler->getCache();
+    auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
+    std::vector<std::string> globalNames;
+    for (auto &g : cache->globals) {
+      if (!g.second)
+        globalNames.push_back(g.first);
+    }
+    // add newly realized functions
+    std::vector<ast::StmtPtr> v;
+    std::vector<ir::Func **> frs;
+    v.push_back(typechecked);
+    for (auto &p : cache->pendingRealizations) {
+      v.push_back(cache->functions[p.first].ast);
+      frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
+    }
+    auto func =
+        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
+    cache->jitCell++;
+
+    std::vector<ir::Var *> globalVars;
+    for (auto &g : globalNames) {
+      seqassert(cache->globals[g], "JIT global {} not set", g);
+      globalVars.push_back(cache->globals[g]);
+    }
+    for (auto &i : frs) {
+      seqassert(*i, "JIT fn not set");
+      globalVars.push_back(*i);
+    }
+    return run(func, globalVars);
   } catch (const exc::ParserException &e) {
     return llvm::make_error<error::ParserErrorInfo>(e);
   }

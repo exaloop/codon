@@ -379,48 +379,6 @@ void LLVMVisitor::compile(const std::string &filename,
   }
 }
 
-namespace {
-std::string unmangleType(llvm::StringRef s) {
-  auto p = s.rsplit('.');
-  return (p.second.empty() ? p.first : p.second).str();
-}
-
-std::string unmangleFunc(llvm::StringRef s) {
-  // separate type and function
-  auto p = s.split(':');
-  llvm::StringRef func = s;
-  std::string type;
-  if (!p.second.empty()) {
-    type = unmangleType(p.first);
-    func = p.second;
-  }
-
-  // trim off ".<id>"
-  p = func.rsplit('.');
-  if (!p.second.empty() && p.second.find_if([](char c) { return !std::isdigit(c); }) ==
-                               llvm::StringRef::npos)
-    func = p.first;
-
-  // trim off generics
-  func = func.split('[').first;
-
-  // trim off qualified name
-  p = func.rsplit('.');
-  if (!p.second.empty())
-    func = p.second;
-
-  if (!type.empty())
-    return type + "." + func.str();
-  else
-    return func.str();
-}
-
-std::string simplifyFile(llvm::StringRef s) {
-  auto p = s.rsplit('/');
-  return (p.second.empty() ? p.first : p.second).str();
-}
-} // namespace
-
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
@@ -446,28 +404,8 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     eng->runFunctionAsMain(main, args, envp);
   } catch (const JITError &e) {
     fmt::print(stderr, "{}", e.getOutput());
-    if (db.debug) {
-      llvm::symbolize::LLVMSymbolizer sym;
-      auto invalid = [](const std::string &name) { return name == "<invalid>"; };
-
-      fmt::print(stderr, "\n\033[1mBacktrace:\033[0m\n");
-      for (auto pc : e.getBacktrace()) {
-        auto src = dbListener->symbolize(pc);
-        if (auto err = src.takeError())
-          break;
-        if (invalid(src->FunctionName) || invalid(src->FileName))
-          continue;
-
-        auto func = unmangleFunc(src->FunctionName);
-        auto file = simplifyFile(src->FileName);
-        auto line = src->Line;
-        auto col = src->Column;
-        fmt::print(stderr,
-                   "  [\033[33m0x{:016x}\033[0m] \033[32m{}\033[0m at "
-                   "\033[36m{}\033[0m:\033[33m{}\033[0m:\033[33m{}\033[0m\n",
-                   pc, func, file, line, col);
-      }
-    }
+    if (db.debug)
+      fmt::print(stderr, "\n{}", dbListener->getPrettyBacktrace(e.getBacktrace()));
     std::abort();
   }
   delete eng;

@@ -236,9 +236,11 @@ SEQ_FUNC void seq_terminate(void *exc) {
       buf << "\n\033[1mBacktrace:\033[0m\n";
       for (unsigned i = 0; i < bt->count; i++) {
         auto *frame = &bt->frames[i];
-        buf << "  [\033[33m0x" << std::hex << frame->pc << std::dec
-            << "\033[0m] \033[32m" << frame->function << "\033[0m " << frame->filename
-            << ":" << frame->lineno << "\n";
+        buf << "  "
+            << codon::makeBacktraceFrameString(frame->pc, std::string(frame->function),
+                                               std::string(frame->filename),
+                                               frame->lineno)
+            << "\n";
       }
     }
   }
@@ -586,4 +588,24 @@ SEQ_FUNC int64_t seq_exc_offset() {
 
 SEQ_FUNC uint64_t seq_exc_class() {
   return genClass(ourBaseExcpClassChars, sizeof(ourBaseExcpClassChars));
+}
+
+std::string codon::makeBacktraceFrameString(uintptr_t pc, const std::string &func,
+                                            const std::string &file, int line,
+                                            int col) {
+  std::ostringstream buf;
+  buf << "[\033[33m0x" << std::hex << pc << std::dec << "\033[0m]";
+  if (!func.empty()) {
+    buf << " \033[32m" << func << "\033[0m";
+    if (!file.empty()) {
+      buf << " at \033[36m" << file << "\033[0m";
+      if (line != 0) {
+        buf << ":\033[33m" << line << "\033[0m";
+        if (col != 0) {
+          buf << ":\033[33m" << col << "\033[0m";
+        }
+      }
+    }
+  }
+  return buf.str();
 }
