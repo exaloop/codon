@@ -49,14 +49,14 @@ std::unique_ptr<llvm::TargetMachine> getTargetMachine(llvm::Module *module,
 }
 
 namespace {
-void applyDebugTransformations(llvm::Module *module, bool debug) {
+void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   if (debug) {
     // remove tail calls and fix linkage for stack traces
     for (auto &f : *module) {
-      f.setLinkage(llvm::GlobalValue::ExternalLinkage);
-      if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline)) {
+      if (!jit)
+        f.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline))
         f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
-      }
       f.setHasUWTable();
       f.addFnAttr("no-frame-pointer-elim", "true");
       f.addFnAttr("no-frame-pointer-elim-non-leaf");
@@ -160,9 +160,9 @@ char CoroBranchSimplifier::ID = 0;
 llvm::RegisterPass<CoroBranchSimplifier> X("coro-br-simpl",
                                            "Coroutine Branch Simplifier");
 
-void runLLVMOptimizationPasses(llvm::Module *module, bool debug,
+void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
                                PluginManager *plugins) {
-  applyDebugTransformations(module, debug);
+  applyDebugTransformations(module, debug, jit);
 
   llvm::Triple moduleTriple(module->getTargetTriple());
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
@@ -224,7 +224,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug,
   }
   fpm->doFinalization();
   pm->run(*module);
-  applyDebugTransformations(module, debug);
+  applyDebugTransformations(module, debug, jit);
 }
 
 void verify(llvm::Module *module) {
@@ -234,15 +234,15 @@ void verify(llvm::Module *module) {
 
 } // namespace
 
-void optimize(llvm::Module *module, bool debug, PluginManager *plugins) {
+void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
   verify(module);
   {
     TIME("llvm/opt");
-    runLLVMOptimizationPasses(module, debug, plugins);
+    runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
   if (!debug) {
     TIME("llvm/opt2");
-    runLLVMOptimizationPasses(module, debug, plugins);
+    runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
   verify(module);
 }

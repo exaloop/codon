@@ -14,8 +14,9 @@ void Engine::handleLazyCallThroughError() {
 llvm::Expected<llvm::orc::ThreadSafeModule>
 Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
                        const llvm::orc::MaterializationResponsibility &R) {
-  module.withModuleDo(
-      [](llvm::Module &module) { ir::optimize(&module, /*debug=*/true); });
+  module.withModuleDo([](llvm::Module &module) {
+    ir::optimize(&module, /*debug=*/true, /*jit=*/true);
+  });
   return std::move(module);
 }
 

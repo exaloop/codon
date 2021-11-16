@@ -14,6 +14,7 @@ getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Module *module, bool setFunctionAttributes = false);
 
-void optimize(llvm::Module *module, bool debug, PluginManager *plugins = nullptr);
+void optimize(llvm::Module *module, bool debug, bool jit = false,
+              PluginManager *plugins = nullptr);
 } // namespace ir
 } // namespace codon

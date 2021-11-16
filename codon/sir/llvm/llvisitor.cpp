@@ -254,7 +254,7 @@ void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, fa
 
 void LLVMVisitor::runLLVMPipeline() {
   db.builder->finalize();
-  optimize(M.get(), db.debug, plugins);
+  optimize(M.get(), db.debug, db.jit, plugins);
 }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename) {
