@@ -15,7 +15,7 @@ llvm::Expected<llvm::orc::ThreadSafeModule>
 Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
                        const llvm::orc::MaterializationResponsibility &R) {
   module.withModuleDo(
-      [](llvm::Module &module) { ir::optimize(&module, /*debug=*/false); });
+      [](llvm::Module &module) { ir::optimize(&module, /*debug=*/true); });
   return std::move(module);
 }
 
@@ -32,10 +32,13 @@ Engine::Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
       optimizeLayer(*this->sess, compileLayer, optimizeModule),
       codLayer(*this->sess, optimizeLayer, this->tpciu->getLazyCallThroughManager(),
                [this] { return this->tpciu->createIndirectStubsManager(); }),
-      mainJD(this->sess->createBareJITDylib("<main>")) {
+      mainJD(this->sess->createBareJITDylib("<main>")),
+      dbListener(std::make_unique<DebugListener>()) {
   mainJD.addGenerator(
       llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           layout.getGlobalPrefix())));
+  objectLayer.setAutoClaimResponsibilityForObjectSymbols(true);
+  objectLayer.registerJITEventListener(*dbListener);
 }
 
 Engine::~Engine() {

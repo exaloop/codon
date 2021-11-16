@@ -12,14 +12,17 @@ public:
   class ObjectInfo {
   private:
     ObjectKey key;
-    const llvm::object::ObjectFile *object;
+    std::unique_ptr<llvm::object::ObjectFile> object;
+    std::unique_ptr<llvm::MemoryBuffer> buffer;
     uintptr_t start;
     uintptr_t stop;
 
   public:
-    ObjectInfo(ObjectKey key, const llvm::object::ObjectFile *object, uintptr_t start,
+    ObjectInfo(ObjectKey key, std::unique_ptr<llvm::object::ObjectFile> object,
+               std::unique_ptr<llvm::MemoryBuffer> buffer, uintptr_t start,
                uintptr_t stop)
-        : key(key), object(object), start(start), stop(stop) {}
+        : key(key), object(std::move(object)), buffer(std::move(buffer)), start(start),
+          stop(stop) {}
 
     ObjectKey getKey() const { return key; }
     const llvm::object::ObjectFile &getObject() const { return *object; }
@@ -40,6 +43,7 @@ public:
   DebugListener() : llvm::JITEventListener(), sym(), objects() {}
 
   llvm::Expected<llvm::DILineInfo> symbolize(uintptr_t pc);
+  llvm::Expected<std::string> getPrettyBacktrace(uintptr_t pc);
   std::string getPrettyBacktrace(const std::vector<uintptr_t> &backtrace);
 };
 

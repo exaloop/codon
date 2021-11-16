@@ -59,7 +59,10 @@ void DebugListener::notifyObjectLoaded(ObjectKey key,
       break;
     }
   }
-  objects.emplace_back(key, &obj, start, stop);
+  auto buf = llvm::MemoryBuffer::getMemBufferCopy(obj.getData(), obj.getFileName());
+  auto newObj = llvm::cantFail(
+      llvm::object::ObjectFile::createObjectFile(buf->getMemBufferRef()));
+  objects.emplace_back(key, std::move(newObj), std::move(buf), start, stop);
 }
 
 void DebugListener::notifyFreeingObject(ObjectKey key) {
@@ -80,20 +83,27 @@ llvm::Expected<llvm::DILineInfo> DebugListener::symbolize(uintptr_t pc) {
   return llvm::DILineInfo();
 }
 
+llvm::Expected<std::string> DebugListener::getPrettyBacktrace(uintptr_t pc) {
+  auto invalid = [](const std::string &name) { return name == "<invalid>"; };
+  auto src = symbolize(pc);
+  if (auto err = src.takeError())
+    return std::move(err);
+  if (invalid(src->FunctionName) || invalid(src->FileName))
+    return "";
+  return makeBacktraceFrameString(pc, unmangleFunc(src->FunctionName),
+                                  simplifyFile(src->FileName), src->Line, src->Column);
+}
+
 std::string DebugListener::getPrettyBacktrace(const std::vector<uintptr_t> &backtrace) {
   auto invalid = [](const std::string &name) { return name == "<invalid>"; };
   std::ostringstream buf;
   buf << "\033[1mBacktrace:\033[0m\n";
   for (auto pc : backtrace) {
-    auto src = symbolize(pc);
-    if (auto err = src.takeError())
+    auto line = getPrettyBacktrace(pc);
+    if (!line)
       break;
-    if (invalid(src->FunctionName) || invalid(src->FileName))
-      continue;
-    buf << "  "
-        << makeBacktraceFrameString(pc, unmangleFunc(src->FunctionName),
-                                    simplifyFile(src->FileName), src->Line, src->Column)
-        << "\n";
+    if (!line->empty())
+      buf << "  " << *line << "\n";
   }
   return buf.str();
 }

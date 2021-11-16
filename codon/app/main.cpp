@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -187,7 +188,15 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
     std::string output;
     llvm::handleAllErrors(
         std::move(err), [](const codon::error::ParserErrorInfo &e) { display(e); },
-        [&output](const codon::error::RuntimeErrorInfo &e) { output = e.getOutput(); });
+        [&output](const codon::error::RuntimeErrorInfo &e) {
+          std::stringstream buf;
+          buf << e.getOutput();
+          buf << "\n\033[1mBacktrace:\033[0m\n";
+          for (const auto &line : e.getBacktrace()) {
+            buf << "  " << line << "\n";
+          }
+          output = buf.str();
+        });
     return output;
   }
   return *result;

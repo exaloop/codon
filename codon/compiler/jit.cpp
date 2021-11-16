@@ -81,7 +81,6 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
   }
   input->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
-  llvm::StripDebugInfo(*pair.first); // TODO: needed?
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return std::move(err);
@@ -95,10 +94,16 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input,
   try {
     CaptureOutput(buffer.rdbuf());
     (*repl)();
-  } catch (const JITError &err) {
-    return llvm::make_error<error::RuntimeErrorInfo>(err.getOutput(), err.getType(),
-                                                     err.what(), err.getFile(),
-                                                     err.getLine(), err.getCol());
+  } catch (const JITError &e) {
+    std::vector<std::string> backtrace;
+    for (auto pc : e.getBacktrace()) {
+      auto line = engine->getDebugListener()->getPrettyBacktrace(pc);
+      if (line && !line->empty())
+        backtrace.push_back(*line);
+    }
+    return llvm::make_error<error::RuntimeErrorInfo>(e.getOutput(), e.getType(),
+                                                     e.what(), e.getFile(), e.getLine(),
+                                                     e.getCol(), backtrace);
   }
   return buffer.str();
 }

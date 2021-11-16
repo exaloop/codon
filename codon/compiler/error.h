@@ -81,12 +81,14 @@ private:
   std::string output;
   std::string type;
   Message message;
+  std::vector<std::string> backtrace;
 
 public:
   RuntimeErrorInfo(const std::string &output, const std::string &type,
                    const std::string &msg, const std::string &file = "", int line = 0,
-                   int col = 0)
-      : output(output), type(type), message(msg, file, line, col) {}
+                   int col = 0, std::vector<std::string> backtrace = {})
+      : output(output), type(type), message(msg, file, line, col),
+        backtrace(std::move(backtrace)) {}
 
   std::string getOutput() const { return output; }
   std::string getType() const { return type; }
@@ -94,6 +96,7 @@ public:
   std::string getFile() const { return message.getFile(); }
   int getLine() const { return message.getLine(); }
   int getColumn() const { return message.getColumn(); }
+  std::vector<std::string> getBacktrace() const { return backtrace; }
 
   void log(llvm::raw_ostream &out) const override {
     out << type << ": ";

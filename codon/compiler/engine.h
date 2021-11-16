@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "codon/compiler/debug_listener.h"
 #include "codon/sir/llvm/llvm.h"
 
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
@@ -35,6 +36,8 @@ private:
 
   llvm::orc::JITDylib &mainJD;
 
+  std::unique_ptr<DebugListener> dbListener;
+
   static void handleLazyCallThroughError();
 
   static llvm::Expected<llvm::orc::ThreadSafeModule>
@@ -54,6 +57,8 @@ public:
   const llvm::DataLayout &getDataLayout() const { return layout; }
 
   llvm::orc::JITDylib &getMainJITDylib() { return mainJD; }
+
+  DebugListener *getDebugListener() const { return dbListener.get(); }
 
   llvm::Error addModule(llvm::orc::ThreadSafeModule module,
                         llvm::orc::ResourceTrackerSP rt = nullptr);

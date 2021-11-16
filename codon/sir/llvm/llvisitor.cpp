@@ -211,6 +211,7 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
 
 std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
 LLVMVisitor::takeModule(const SrcInfo *src) {
+  db.builder->finalize();
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
 
@@ -251,7 +252,10 @@ void LLVMVisitor::process(const Node *x) {
 
 void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, false); }
 
-void LLVMVisitor::runLLVMPipeline() { optimize(M.get(), db.debug, plugins); }
+void LLVMVisitor::runLLVMPipeline() {
+  db.builder->finalize();
+  optimize(M.get(), db.debug, plugins);
+}
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename) {
   runLLVMPipeline();
@@ -688,7 +692,6 @@ void LLVMVisitor::visit(const Module *x) {
 
   B->SetInsertPoint(exitBlock);
   B->CreateRet(B->getInt32(0));
-  db.builder->finalize();
 }
 
 llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
