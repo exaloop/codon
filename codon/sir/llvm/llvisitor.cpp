@@ -702,8 +702,7 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
       llvm::cast<llvm::DISubroutineType>(derivedType->getRawBaseType());
   llvm::DISubprogram *subprogram = db.builder->createFunction(
       file, x->getUnmangledName(), getNameForFunction(x), file, srcInfo->line,
-      subroutineType, /*ScopeLine=*/0,
-      llvm::DINode::FlagAllCallsDescribed | llvm::DINode::FlagPrototyped,
+      subroutineType, /*ScopeLine=*/0, llvm::DINode::FlagZero,
       llvm::DISubprogram::toSPFlags(/*IsLocalToUnit=*/true,
                                     /*IsDefinition=*/true, /*IsOptimized=*/!db.debug));
   return subprogram;

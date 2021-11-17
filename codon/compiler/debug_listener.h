@@ -32,7 +32,6 @@ public:
   };
 
 private:
-  llvm::symbolize::LLVMSymbolizer sym;
   std::vector<ObjectInfo> objects;
 
   void notifyObjectLoaded(ObjectKey key, const llvm::object::ObjectFile &obj,
@@ -40,7 +39,7 @@ private:
   void notifyFreeingObject(ObjectKey key) override;
 
 public:
-  DebugListener() : llvm::JITEventListener(), sym(), objects() {}
+  DebugListener() : llvm::JITEventListener(), objects() {}
 
   llvm::Expected<llvm::DILineInfo> symbolize(uintptr_t pc);
   llvm::Expected<std::string> getPrettyBacktrace(uintptr_t pc);

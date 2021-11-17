@@ -6,47 +6,6 @@
 #include "codon/runtime/lib.h"
 
 namespace codon {
-namespace {
-std::string unmangleType(llvm::StringRef s) {
-  auto p = s.rsplit('.');
-  return (p.second.empty() ? p.first : p.second).str();
-}
-
-std::string unmangleFunc(llvm::StringRef s) {
-  // separate type and function
-  auto p = s.split(':');
-  llvm::StringRef func = s;
-  std::string type;
-  if (!p.second.empty()) {
-    type = unmangleType(p.first);
-    func = p.second;
-  }
-
-  // trim off ".<id>"
-  p = func.rsplit('.');
-  if (!p.second.empty() && p.second.find_if([](char c) { return !std::isdigit(c); }) ==
-                               llvm::StringRef::npos)
-    func = p.first;
-
-  // trim off generics
-  func = func.split('[').first;
-
-  // trim off qualified name
-  p = func.rsplit('.');
-  if (!p.second.empty())
-    func = p.second;
-
-  if (!type.empty())
-    return type + "." + func.str();
-  else
-    return func.str();
-}
-
-std::string simplifyFile(llvm::StringRef s) {
-  auto p = s.rsplit('/');
-  return (p.second.empty() ? p.first : p.second).str();
-}
-} // namespace
 
 void DebugListener::notifyObjectLoaded(ObjectKey key,
                                        const llvm::object::ObjectFile &obj,
@@ -75,6 +34,10 @@ void DebugListener::notifyFreeingObject(ObjectKey key) {
 llvm::Expected<llvm::DILineInfo> DebugListener::symbolize(uintptr_t pc) {
   for (const auto &o : objects) {
     if (o.contains(pc)) {
+      llvm::symbolize::LLVMSymbolizer::Options opt;
+      opt.PrintFunctions = llvm::DILineInfoSpecifier::FunctionNameKind::ShortName;
+      opt.PathStyle = llvm::DILineInfoSpecifier::FileLineInfoKind::BaseNameOnly;
+      llvm::symbolize::LLVMSymbolizer sym(opt);
       return sym.symbolizeCode(
           o.getObject(),
           {pc - o.getStart(), llvm::object::SectionedAddress::UndefSection});
@@ -90,12 +53,11 @@ llvm::Expected<std::string> DebugListener::getPrettyBacktrace(uintptr_t pc) {
     return std::move(err);
   if (invalid(src->FunctionName) || invalid(src->FileName))
     return "";
-  return makeBacktraceFrameString(pc, unmangleFunc(src->FunctionName),
-                                  simplifyFile(src->FileName), src->Line, src->Column);
+  return makeBacktraceFrameString(pc, src->FunctionName, src->FileName, src->Line,
+                                  src->Column);
 }
 
 std::string DebugListener::getPrettyBacktrace(const std::vector<uintptr_t> &backtrace) {
-  auto invalid = [](const std::string &name) { return name == "<invalid>"; };
   std::ostringstream buf;
   buf << "\033[1mBacktrace:\033[0m\n";
   for (auto pc : backtrace) {
