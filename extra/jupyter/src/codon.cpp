@@ -14,6 +14,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
+#include "codon/parser/common.h"
 #include "codon/util/common.h"
 
 using std::move;
@@ -29,7 +30,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                                             nl::json user_expressions,
                                             bool allow_stdin) {
   auto result = jit->exec(code);
-  bool failed = false;
+  string failed;
   llvm::handleAllErrors(
       result.takeError(),
       [&](const codon::error::ParserErrorInfo &e) {
@@ -38,17 +39,26 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
           backtrace.push_back(msg.getMessage());
         string err = backtrace[0];
         backtrace.erase(backtrace.begin());
-        publish_execution_error("ParserError", err, backtrace);
-        failed = true;
+        failed =
+            fmt::format("Error: {}\nBacktrace:\n{}", err, ast::join(backtrace, "  \n"));
+        // publish_execution_error("ParserError", err, backtrace);
+        // failed = true;
       },
       [&](const codon::error::RuntimeErrorInfo &e) {
-        publish_execution_error(e.getType(), e.getMessage(), {});
-        failed = true;
+        failed = fmt::format("Error: {}", e.getMessage());
+        // publish_execution_error(e.getType(), e.getMessage(), {});
+        // failed = true;
       });
-  if (!failed) {
+  if (failed.empty()) {
     nl::json pub_data;
-    pub_data["text/plain"] = *result;
+    pub_data["text/plain"] = fmt::format(">> {}", *result);
     publish_execution_result(execution_counter, move(pub_data), nl::json::object());
+    return nl::json{{"status", "ok"},
+                    {"payload", nl::json::array()},
+                    {"user_expressions", nl::json::object()}};
+  } else {
+    publish_stream("stderr", failed);
+    return nl::json{{"status", "error"}};
   }
 }
 
@@ -58,16 +68,16 @@ void CodonJupyter::configure_impl() {
 }
 
 nl::json CodonJupyter::complete_request_impl(const string &code, int cursor_pos) {
-  return xeus::create_complete_reply({}, cursor_pos, cursor_pos);
+  return nl::json{{"status", "ok"}};
 }
 
 nl::json CodonJupyter::inspect_request_impl(const string &code, int cursor_pos,
                                             int detail_level) {
-  return xeus::create_inspect_reply();
+  return nl::json{{"status", "ok"}};
 }
 
 nl::json CodonJupyter::is_complete_request_impl(const string &code) {
-  return xeus::create_is_complete_reply("complete");
+  return nl::json{{"status", "complete"}};
 }
 
 nl::json CodonJupyter::kernel_info_request_impl() {

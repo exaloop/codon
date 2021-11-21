@@ -16,7 +16,7 @@ if(CODON_JUPYTER)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-unused-variable")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-limit-debug-info")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
@@ -28,7 +28,6 @@ find_package(LLVM REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
-
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
@@ -84,7 +83,6 @@ add_custom_command(TARGET codonrt POST_BUILD
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
-
 set(CODON_HPPFILES
     codon/compiler/compiler.h
     codon/compiler/debug_listener.h
@@ -297,7 +295,6 @@ if(CODON_JUPYTER)
     add_compile_definitions(CODON_JUPYTER)
     add_dependencies(codonc xeus-static nlohmann_json)
     target_link_libraries(codonc PRIVATE xeus-static)
-    # set_target_properties(codonc PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 if(ASAN)
     target_compile_options(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
