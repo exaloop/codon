@@ -39,19 +39,17 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
           backtrace.push_back(msg.getMessage());
         string err = backtrace[0];
         backtrace.erase(backtrace.begin());
-        failed =
-            fmt::format("Error: {}\nBacktrace:\n{}", err, ast::join(backtrace, "  \n"));
-        // publish_execution_error("ParserError", err, backtrace);
-        // failed = true;
+        failed = fmt::format("Compile error: {}\nBacktrace:\n{}", err,
+                             ast::join(backtrace, "  \n"));
       },
       [&](const codon::error::RuntimeErrorInfo &e) {
-        failed = fmt::format("Error: {}", e.getMessage());
-        // publish_execution_error(e.getType(), e.getMessage(), {});
-        // failed = true;
+        auto backtrace = e.getBacktrace();
+        failed = fmt::format("Runtime error: {}\nBacktrace:\n{}", e.getMessage(),
+                             ast::join(backtrace, "  \n"));
       });
   if (failed.empty()) {
     nl::json pub_data;
-    pub_data["text/plain"] = fmt::format(">> {}", *result);
+    pub_data["text/plain"] = *result;
     publish_execution_result(execution_counter, move(pub_data), nl::json::object());
     return nl::json{{"status", "ok"},
                     {"payload", nl::json::array()},
@@ -81,8 +79,9 @@ nl::json CodonJupyter::is_complete_request_impl(const string &code) {
 }
 
 nl::json CodonJupyter::kernel_info_request_impl() {
-  return xeus::create_info_reply("", "codon_kernel", "0.1.0", "python", "3.7",
-                                 "text/x-python", ".seq");
+  return xeus::create_info_reply("1.0", "codon_kernel", "0.1.0", "python", "3.7",
+                                 "text/x-python", ".seq", "python", "", "",
+                                 "Codon Kernel");
 }
 
 void CodonJupyter::shutdown_request_impl() {}
