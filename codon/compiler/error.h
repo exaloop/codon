@@ -128,5 +128,23 @@ public:
   static char ID;
 };
 
+class IOErrorInfo : public llvm::ErrorInfo<IOErrorInfo> {
+private:
+  std::string message;
+
+public:
+  explicit IOErrorInfo(const std::string &message) : message(message) {}
+
+  std::string getMessage() const { return message; }
+
+  void log(llvm::raw_ostream &out) const override { out << message; }
+
+  std::error_code convertToErrorCode() const override {
+    return llvm::inconvertibleErrorCode();
+  }
+
+  static char ID;
+};
+
 } // namespace error
 } // namespace codon
