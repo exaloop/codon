@@ -79,7 +79,7 @@ public:
   }
 
   ~CaptureOutput() {
-    seqassert(dup2(saved, STDOUT_FILENO) != -1, "IO error when capturing stdout");
+    // seqassert(dup2(saved, STDOUT_FILENO) != -1, "IO error when capturing stdout");
   }
 };
 } // namespace
