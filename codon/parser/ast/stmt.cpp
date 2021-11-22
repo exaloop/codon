@@ -52,6 +52,16 @@ void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
       stmts.push_back(ss);
   }
 }
+StmtPtr *SuiteStmt::lastInBlock() {
+  if (stmts.empty())
+    return nullptr;
+  if (auto s = const_cast<SuiteStmt *>(stmts.back()->getSuite())) {
+    auto l = s->lastInBlock();
+    if (l)
+      return l;
+  }
+  return &(stmts.back());
+}
 
 std::string BreakStmt::toString(int) const { return "(break)"; }
 ACCEPT_IMPL(BreakStmt, ASTVisitor);

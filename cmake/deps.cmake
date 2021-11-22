@@ -134,10 +134,7 @@ if(CODON_JUPYTER)
         NAME cppzmq
         URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
         VERSION 4.8.1
-        OPTION "CPPZMQ_BUILD_TESTS OFF")
-    if(cppzmq_ADDED)
-        set_target_properties(unit_tests PROPERTIES EXCLUDE_FROM_ALL ON)
-    endif()
+        OPTIONS "CPPZMQ_BUILD_TESTS OFF")
     CPMAddPackage(
         NAME xtl
         GITHUB_REPOSITORY "xtensor-stack/xtl"

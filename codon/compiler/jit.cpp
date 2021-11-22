@@ -84,8 +84,8 @@ public:
 };
 } // namespace
 
-JIT::JIT(const std::string &argv0)
-    : compiler(std::make_unique<Compiler>(argv0, /*debug=*/true)) {
+JIT::JIT(const std::string &argv0, const std::string &mode)
+    : compiler(std::make_unique<Compiler>(argv0, /*debug=*/true)), mode(mode) {
   if (auto e = Engine::create()) {
     engine = std::move(e.get());
   } else {
@@ -176,6 +176,17 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
   try {
+    auto *e = node->getSuite()
+                  ? const_cast<ast::SuiteStmt *>(node->getSuite())->lastInBlock()
+                  : &node;
+    if (e)
+      if (auto ex = (*e)->getExpr()) {
+        *e = std::make_shared<ast::PrintStmt>(
+            std::vector<ast::ExprPtr>{std::make_shared<ast::CallExpr>(
+                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr,
+                std::make_shared<ast::StringExpr>(mode))},
+            false);
+      }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();
     for (auto &s : preamble->globals)

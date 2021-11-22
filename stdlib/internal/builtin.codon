@@ -329,3 +329,14 @@ class int:
             raise ValueError("invalid literal for int() with base " + str(base) + ": " + s)
 
         return result
+
+
+def _jit_display(x, s: Static[str]):
+    if hasattr(x, "__repr_pretty__") and s == "jupyter":
+        return x.__repr_pretty__()
+    elif hasattr(x, "__repr__"):
+        return x.__repr__()
+    elif hasattr(x, "__str__"):
+        return x.__str__()
+    else:
+        return ''

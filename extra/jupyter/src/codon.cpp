@@ -61,7 +61,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
 }
 
 void CodonJupyter::configure_impl() {
-  jit = std::make_unique<codon::jit::JIT>(argv0);
+  jit = std::make_unique<codon::jit::JIT>(argv0, "jupyter");
   llvm::cantFail(jit->init());
 }
 

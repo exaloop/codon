@@ -19,9 +19,10 @@ class JIT {
 private:
   std::unique_ptr<Compiler> compiler;
   std::unique_ptr<Engine> engine;
+  std::string mode;
 
 public:
-  explicit JIT(const std::string &argv0);
+  explicit JIT(const std::string &argv0, const std::string &mode = "");
 
   Compiler *getCompiler() const { return compiler.get(); }
   Engine *getEngine() const { return engine.get(); }
