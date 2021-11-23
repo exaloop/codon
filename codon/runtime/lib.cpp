@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <unwind.h>
@@ -214,10 +215,25 @@ SEQ_FUNC seq_str_t seq_check_errno() {
   return {0, nullptr};
 }
 
-SEQ_FUNC void seq_print(seq_str_t str) { fwrite(str.str, 1, (size_t)str.len, stdout); }
+SEQ_FUNC void seq_print(seq_str_t str) { seq_print_full(str, stdout); }
+
+static std::ostringstream capture;
+static std::mutex captureLock;
 
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
-  fwrite(str.str, 1, (size_t)str.len, fo);
+  if ((seq_flags & SEQ_FLAG_JIT) && (fo == stdout || fo == stderr)) {
+    captureLock.lock();
+    capture.write(str.str, str.len);
+    captureLock.unlock();
+  } else {
+    fwrite(str.str, 1, (size_t)str.len, fo);
+  }
+}
+
+std::string codon::getCapturedOutput() {
+  std::string result = capture.str();
+  capture.str("");
+  return result;
 }
 
 SEQ_FUNC void *seq_stdin() { return stdin; }

@@ -209,6 +209,8 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
 
   std::ostringstream buf;
+  if (seq_flags & SEQ_FLAG_JIT)
+    buf << codon::getCapturedOutput();
 
   buf << "\033[1m";
   print_from_last_dot(hdr->type, buf);

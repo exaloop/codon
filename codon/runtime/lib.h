@@ -105,4 +105,6 @@ public:
 std::string makeBacktraceFrameString(uintptr_t pc, const std::string &func = "",
                                      const std::string &file = "", int line = 0,
                                      int col = 0);
+
+std::string getCapturedOutput();
 } // namespace codon
