@@ -31,6 +31,7 @@ JIT::JIT(const std::string &argv0, const std::string &mode)
 llvm::Error JIT::init() {
   auto *cache = compiler->getCache();
   auto *module = compiler->getModule();
+  auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
   auto transformed = ast::SimplifyVisitor::apply(
@@ -41,6 +42,7 @@ llvm::Error JIT::init() {
   cache->isJit = true; // we still need main(), so set isJit after it has been set
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
 
+  pm->run(module);
   module->accept(*llvisitor);
   auto pair = llvisitor->takeModule();
 
@@ -58,7 +60,11 @@ llvm::Error JIT::init() {
 
 llvm::Expected<std::string> JIT::run(const ir::Func *input,
                                      const std::vector<ir::Var *> &newGlobals) {
+  auto *module = compiler->getModule();
+  auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
+  pm->run(module);
+
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
   llvisitor->registerGlobal(input);
   for (auto *var : newGlobals) {

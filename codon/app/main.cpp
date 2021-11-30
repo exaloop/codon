@@ -204,7 +204,25 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
 } // namespace
 
 int jitMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   codon::jit::JIT jit(args[0]);
+
+  // load plugins
+  for (const auto &plugin : plugins) {
+    bool failed = false;
+    llvm::handleAllErrors(jit.getCompiler()->load(plugin),
+                          [&failed](const codon::error::PluginErrorInfo &e) {
+                            codon::compilationError(e.getMessage(), /*file=*/"",
+                                                    /*line=*/0, /*col=*/0,
+                                                    /*terminate=*/false);
+                            failed = true;
+                          });
+    if (failed)
+      return EXIT_FAILURE;
+  }
+
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   std::string code;
