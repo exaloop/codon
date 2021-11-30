@@ -16,6 +16,8 @@
 #include "codon/util/fmt/format.h"
 #include "codon/util/fmt/ostream.h"
 
+#define CAST(s, T) dynamic_cast<T *>(s.get())
+
 namespace codon {
 
 namespace exc {

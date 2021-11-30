@@ -1,5 +1,6 @@
 #include "doc.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -89,7 +90,8 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
                                         const std::vector<std::string> &files) {
   auto shared = std::make_shared<DocShared>();
   shared->argv0 = argv0;
-  shared->cache = std::make_shared<ast::Cache>(argv0);
+  auto cache = std::make_unique<ast::Cache>(argv0);
+  shared->cache = cache.get();
 
   auto stdlib = getImportFile(argv0, "internal", "", true, "");
   auto ast = ast::parseFile(shared->cache, stdlib->path);
@@ -113,15 +115,15 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   DocVisitor(shared->modules[""]).transformModule(std::move(ast));
   auto ctx = std::make_shared<DocContext>(shared);
 
-  char abs[PATH_MAX];
   for (auto &f : files) {
-    realpath(f.c_str(), abs);
-    ctx->setFilename(abs);
-    ast = ast::parseFile(shared->cache, abs);
+    auto path = std::filesystem::canonical(std::filesystem::path(f)).string();
+    ctx->setFilename(path);
+    ast = ast::parseFile(shared->cache, path);
     // LOG("parsing {}", f);
     DocVisitor(ctx).transformModule(std::move(ast));
   }
 
+  shared->cache = nullptr;
   return shared->j;
 }
 

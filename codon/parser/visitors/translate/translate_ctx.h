@@ -45,15 +45,14 @@ struct TranslateItem {
  */
 struct TranslateContext : public Context<TranslateItem> {
   /// A pointer to the shared cache.
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
   /// Stack of function bases.
   std::vector<codon::ir::BodiedFunc *> bases;
   /// Stack of IR series (blocks).
   std::vector<codon::ir::SeriesFlow *> series;
 
 public:
-  TranslateContext(std::shared_ptr<Cache> cache, codon::ir::SeriesFlow *series,
-                   codon::ir::BodiedFunc *base);
+  TranslateContext(Cache *cache);
 
   using Context<TranslateItem>::add;
   /// Convenience method for adding an object to the context.

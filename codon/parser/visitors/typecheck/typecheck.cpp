@@ -23,10 +23,12 @@ TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
   prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }
 
-StmtPtr TypecheckVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
-  auto ctx = std::make_shared<TypeContext>(cache);
-  cache->typeCtx = ctx;
-  TypecheckVisitor v(ctx);
+StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
+  if (!cache->typeCtx) {
+    auto ctx = std::make_shared<TypeContext>(cache);
+    cache->typeCtx = ctx;
+  }
+  TypecheckVisitor v(cache->typeCtx);
   auto infer = v.inferTypes(stmts->clone(), true, "<top>");
   return std::move(infer.second);
 }

@@ -88,16 +88,16 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::string argv0;
   /// Absolute path of the entry-point module (if available).
   std::string module0;
-  /// LLVM module.
-  codon::ir::Module *module = nullptr;
+  /// IR module.
+  ir::Module *module = nullptr;
 
   /// Table of imported files that maps an absolute filename to a Import structure.
-  /// By convention, the key of Seq standard library is "".
+  /// By convention, the key of the Codon's standard library is "".
   std::unordered_map<std::string, Import> imports;
 
   /// Set of unique (canonical) global identifiers for marking such variables as global
-  /// in code-generation step.
-  std::set<std::string> globals;
+  /// in code-generation step and in JIT.
+  std::map<std::string, ir::Var *> globals;
 
   /// Stores class data for each class (type) in the source code.
   struct Class {
@@ -194,6 +194,10 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Plugin-added import paths
   std::vector<std::string> pluginImportPaths;
+
+  /// Set if the Codon is running in JIT mode.
+  bool isJit;
+  int jitCell;
 
 public:
   explicit Cache(std::string argv0 = "");

@@ -9,6 +9,7 @@ from C import dlsym(cobj, cobj) -> cobj as c_dlsym
 from C import dlclose(cobj) -> i32 as c_dlclose
 RTLD_NOW = 2
 RTLD_GLOBAL = 8 if seq_is_macos() else 256
+RTLD_LOCAL = 0 if seq_is_macos() else 256
 
 def dlext():
     if seq_is_macos():
@@ -26,8 +27,12 @@ def dlopen(name: str, flag: int = RTLD_NOW | RTLD_GLOBAL) -> cobj:
         raise CError(dlerror())
     return h
 
-def dlsym[Fn](lib: str, name: str) -> Fn:
-    h = dlopen(lib)
+def dlsym[Fn](lib, name: str) -> Fn:
+    h = cobj()
+    if isinstance(lib, str):
+        h = dlopen(lib)
+    else:
+        h = lib
     fn = c_dlsym(h, name.c_str())
     if fn == cobj():
         raise CError(dlerror())

@@ -25,6 +25,7 @@ from internal.types.collections.dict import *
 
 import internal.c_stubs as _C
 from internal.builtin import *
+from internal.builtin import _jit_display
 from internal.box import Box
 from internal.str import *
 

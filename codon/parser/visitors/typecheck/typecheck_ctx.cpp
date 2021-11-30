@@ -14,7 +14,7 @@ using fmt::format;
 namespace codon {
 namespace ast {
 
-TypeContext::TypeContext(std::shared_ptr<Cache> cache)
+TypeContext::TypeContext(Cache *cache)
     : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0),
       allowActivation(true), age(0), realizationDepth(0) {
   stack.push_front(std::vector<std::string>());
@@ -89,7 +89,7 @@ TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char static
 
 types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
                                         types::ClassType *generics, bool activate) {
-  assert(type);
+  seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics)
     for (auto &g : generics->generics)
@@ -122,12 +122,12 @@ types::TypePtr
 TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
-  assert(c);
+  seqassert(c, "root class is null");
   auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
   if (generics.size() != c->generics.size())
     error(expr->getSrcInfo(), "generics do not match");
   for (int i = 0; i < c->generics.size(); i++) {
-    assert(c->generics[i].type);
+    seqassert(c->generics[i].type, "generic is null");
     g->generics.push_back(
         types::ClassType::Generic("", "", generics[i], c->generics[i].id));
   }

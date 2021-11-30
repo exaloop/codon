@@ -1,5 +1,5 @@
 import os
-from internal.dlopen import dlext
+from internal.dlopen import *
 
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
@@ -45,75 +45,76 @@ def init():
         return
 
     LD = os.getenv('CODON_PYTHON', default='libpython.' + dlext())
+    hnd = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     global PyUnicode_AsEncodedString
-    PyUnicode_AsEncodedString = _dlsym(LD, "PyUnicode_AsEncodedString")
+    PyUnicode_AsEncodedString = dlsym(hnd, "PyUnicode_AsEncodedString")
     global PyBytes_AsString
-    PyBytes_AsString = _dlsym(LD, "PyBytes_AsString")
+    PyBytes_AsString = dlsym(hnd, "PyBytes_AsString")
     global PyErr_Fetch
-    PyErr_Fetch = _dlsym(LD, "PyErr_Fetch")
+    PyErr_Fetch = dlsym(hnd, "PyErr_Fetch")
     global PyObject_GetAttrString
-    PyObject_GetAttrString = _dlsym(LD, "PyObject_GetAttrString")
+    PyObject_GetAttrString = dlsym(hnd, "PyObject_GetAttrString")
     global PyObject_GetAttr
-    PyObject_GetAttr = _dlsym(LD, "PyObject_GetAttr")
+    PyObject_GetAttr = dlsym(hnd, "PyObject_GetAttr")
     global PyObject_Str
-    PyObject_Str = _dlsym(LD, "PyObject_Str")
+    PyObject_Str = dlsym(hnd, "PyObject_Str")
     global PyRun_SimpleString
-    PyRun_SimpleString = _dlsym(LD, "PyRun_SimpleString")
+    PyRun_SimpleString = dlsym(hnd, "PyRun_SimpleString")
     global Py_IncRef
-    Py_IncRef = _dlsym(LD, "Py_IncRef")
+    Py_IncRef = dlsym(hnd, "Py_IncRef")
     global Py_DecRef
-    Py_DecRef = _dlsym(LD, "Py_DecRef")
+    Py_DecRef = dlsym(hnd, "Py_DecRef")
     global PyObject_Call
-    PyObject_Call = _dlsym(LD, "PyObject_Call")
+    PyObject_Call = dlsym(hnd, "PyObject_Call")
     global PyObject_SetAttrString
-    PyObject_SetAttrString = _dlsym(LD, "PyObject_SetAttrString")
+    PyObject_SetAttrString = dlsym(hnd, "PyObject_SetAttrString")
     global PyObject_Length
-    PyObject_Length = _dlsym(LD, "PyObject_Length")
+    PyObject_Length = dlsym(hnd, "PyObject_Length")
     global Py_Initialize
-    Py_Initialize = _dlsym(LD, "Py_Initialize")
+    Py_Initialize = dlsym(hnd, "Py_Initialize")
     global PyImport_ImportModule
-    PyImport_ImportModule = _dlsym(LD, "PyImport_ImportModule")
+    PyImport_ImportModule = dlsym(hnd, "PyImport_ImportModule")
     global PyLong_FromLong
-    PyLong_FromLong = _dlsym(LD, "PyLong_FromLong")
+    PyLong_FromLong = dlsym(hnd, "PyLong_FromLong")
     global PyLong_AsLong
-    PyLong_AsLong = _dlsym(LD, "PyLong_AsLong")
+    PyLong_AsLong = dlsym(hnd, "PyLong_AsLong")
     global PyFloat_FromDouble
-    PyFloat_FromDouble = _dlsym(LD, "PyFloat_FromDouble")
+    PyFloat_FromDouble = dlsym(hnd, "PyFloat_FromDouble")
     global PyFloat_AsDouble
-    PyFloat_AsDouble = _dlsym(LD, "PyFloat_AsDouble")
+    PyFloat_AsDouble = dlsym(hnd, "PyFloat_AsDouble")
     global PyBool_FromLong
-    PyBool_FromLong = _dlsym(LD, "PyBool_FromLong")
+    PyBool_FromLong = dlsym(hnd, "PyBool_FromLong")
     global PyObject_IsTrue
-    PyObject_IsTrue = _dlsym(LD, "PyObject_IsTrue")
+    PyObject_IsTrue = dlsym(hnd, "PyObject_IsTrue")
     global PyUnicode_DecodeFSDefaultAndSize
-    PyUnicode_DecodeFSDefaultAndSize = _dlsym(LD, "PyUnicode_DecodeFSDefaultAndSize")
+    PyUnicode_DecodeFSDefaultAndSize = dlsym(hnd, "PyUnicode_DecodeFSDefaultAndSize")
     global PyTuple_New
-    PyTuple_New = _dlsym(LD, "PyTuple_New")
+    PyTuple_New = dlsym(hnd, "PyTuple_New")
     global PyTuple_SetItem
-    PyTuple_SetItem = _dlsym(LD, "PyTuple_SetItem")
+    PyTuple_SetItem = dlsym(hnd, "PyTuple_SetItem")
     global PyTuple_GetItem
-    PyTuple_GetItem = _dlsym(LD, "PyTuple_GetItem")
+    PyTuple_GetItem = dlsym(hnd, "PyTuple_GetItem")
     global PyList_New
-    PyList_New = _dlsym(LD, "PyList_New")
+    PyList_New = dlsym(hnd, "PyList_New")
     global PyList_SetItem
-    PyList_SetItem = _dlsym(LD, "PyList_SetItem")
+    PyList_SetItem = dlsym(hnd, "PyList_SetItem")
     global PyList_GetItem
-    PyList_GetItem = _dlsym(LD, "PyList_GetItem")
+    PyList_GetItem = dlsym(hnd, "PyList_GetItem")
     global PySet_New
-    PySet_New = _dlsym(LD, "PySet_New")
+    PySet_New = dlsym(hnd, "PySet_New")
     global PySet_Add
-    PySet_Add = _dlsym(LD, "PySet_Add")
+    PySet_Add = dlsym(hnd, "PySet_Add")
     global PyDict_New
-    PyDict_New = _dlsym(LD, "PyDict_New")
+    PyDict_New = dlsym(hnd, "PyDict_New")
     global PyDict_SetItem
-    PyDict_SetItem = _dlsym(LD, "PyDict_SetItem")
+    PyDict_SetItem = dlsym(hnd, "PyDict_SetItem")
     global PyDict_Next
-    PyDict_Next = _dlsym(LD, "PyDict_Next")
+    PyDict_Next = dlsym(hnd, "PyDict_Next")
     global PyObject_GetIter
-    PyObject_GetIter = _dlsym(LD, "PyObject_GetIter")
+    PyObject_GetIter = dlsym(hnd, "PyObject_GetIter")
     global PyIter_Next
-    PyIter_Next = _dlsym(LD, "PyIter_Next")
+    PyIter_Next = dlsym(hnd, "PyIter_Next")
 
     Py_Initialize()
     _PY_INITIALIZED = True

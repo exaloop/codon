@@ -35,7 +35,7 @@ void CloneVisitor::visit(const BodiedFunc *v) {
 
   if (v->getBody())
     res->setBody(clone(v->getBody()));
-  res->setBuiltin(v->isBuiltin());
+  res->setJIT(v->isJIT());
   result = res;
 }
 

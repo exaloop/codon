@@ -92,15 +92,14 @@ private:
       typesMap;
 
   /// the type-checker cache
-  std::shared_ptr<ast::Cache> cache;
+  ast::Cache *cache = nullptr;
 
 public:
   static const char NodeId;
 
   /// Constructs an SIR module.
   /// @param name the module name
-  /// @param cache the type-checker cache
-  explicit Module(std::string name, std::shared_ptr<ast::Cache> cache = nullptr);
+  explicit Module(const std::string &name = "");
 
   virtual ~Module() noexcept = default;
 
@@ -259,9 +258,10 @@ public:
   }
 
   /// @return the type-checker cache
-  std::shared_ptr<ast::Cache> getCache() { return cache; }
-  /// @return the type-checker cache
-  std::shared_ptr<const ast::Cache> getCache() const { return cache; }
+  ast::Cache *getCache() const { return cache; }
+  /// Sets the type-checker cache.
+  /// @param c the cache
+  void setCache(ast::Cache *c) { cache = c; }
 
   /// Gets or realizes a method.
   /// @param parent the parent class

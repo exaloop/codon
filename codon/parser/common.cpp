@@ -1,8 +1,8 @@
 #include "common.h"
 
-#include <libgen.h>
+#include <filesystem>
 #include <string>
-#include <sys/stat.h>
+#include <vector>
 
 #include "codon/parser/common.h"
 #include "codon/util/fmt/format.h"
@@ -195,79 +195,77 @@ std::string executable_path(const char *argv0) {
 std::string executable_path(const char *argv0) { return std::string(argv0); }
 #endif
 
+namespace fs = std::filesystem;
+
+namespace {
+void addPath(std::vector<fs::path> &paths, const fs::path &path) {
+  if (fs::exists(path))
+    paths.push_back(fs::canonical(path));
+}
+
+std::vector<fs::path> getStdLibPaths(const std::string &argv0,
+                                     const std::vector<std::string> &plugins) {
+  std::vector<fs::path> paths;
+  if (auto c = getenv("CODON_PATH")) {
+    addPath(paths, fs::path(std::string(c)));
+  }
+  if (!argv0.empty()) {
+    auto base = fs::path(executable_path(argv0.c_str()));
+    for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
+      addPath(paths, base.parent_path() / loci);
+    }
+  }
+  for (auto &path : plugins) {
+    addPath(paths, fs::path(path));
+  }
+  return paths;
+}
+
+ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plugins,
+                   const std::string &module0Root, const std::string &s) {
+  bool isStdLib = false;
+  std::string root;
+  for (auto &p : getStdLibPaths(argv0, plugins))
+    if (startswith(s, p)) {
+      root = p;
+      isStdLib = true;
+      break;
+    }
+  if (!isStdLib && startswith(s, module0Root))
+    root = module0Root;
+  const std::string ext = ".codon";
+  seqassert(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}", s,
+            root);
+  auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
+  std::replace(module.begin(), module.end(), '/', '.');
+  return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
+                                                       : ImportFile::STDLIB,
+                    s, module};
+}
+} // namespace
+
 std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib, const std::string &module0,
                                           const std::vector<std::string> &plugins) {
-  using fmt::format;
-
-  auto getStdLibPaths = [](const std::string &argv0,
-                           const std::vector<std::string> &plugins) {
-    std::vector<std::string> paths;
-    char abs[PATH_MAX + 1];
-    if (auto c = getenv("CODON_PATH")) {
-      if (realpath(c, abs))
-        paths.push_back(abs);
+  std::vector<fs::path> paths;
+  if (what != "<jit>") {
+    auto parentRelativeTo = fs::path(relativeTo).parent_path();
+    if (!forceStdlib) {
+      addPath(paths, (parentRelativeTo / what).replace_extension("codon"));
+      addPath(paths, parentRelativeTo / what / "__init__.codon");
     }
-    if (!argv0.empty()) {
-      for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
-        strncpy(abs, executable_path(argv0.c_str()).c_str(), PATH_MAX);
-        if (realpath(format("{}/{}", dirname(abs), loci).c_str(), abs))
-          paths.push_back(abs);
-      }
-    }
-    for (auto &path : plugins) {
-      if (realpath(path.c_str(), abs))
-        paths.push_back(abs);
-    }
-    return paths;
-  };
-
-  char abs[PATH_MAX + 1];
-  strncpy(abs, module0.c_str(), PATH_MAX);
-  auto module0Root = std::string(dirname(abs));
-  auto getRoot = [&](const std::string &s) {
-    bool isStdLib = false;
-    std::string root;
-    for (auto &p : getStdLibPaths(argv0, plugins))
-      if (startswith(s, p)) {
-        root = p;
-        isStdLib = true;
-        break;
-      }
-    if (!isStdLib && startswith(s, module0Root))
-      root = module0Root;
-    const std::string ext = ".codon";
-    seqassert(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
-              s, root);
-    auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
-    std::replace(module.begin(), module.end(), '/', '.');
-    return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
-                                                         : ImportFile::STDLIB,
-                      s, module};
-  };
-
-  std::vector<std::string> paths;
-  if (!forceStdlib) {
-    realpath(relativeTo.c_str(), abs);
-    auto parent = dirname(abs);
-    paths.push_back(format("{}/{}.codon", parent, what));
-    paths.push_back(format("{}/{}/__init__.codon", parent, what));
   }
   for (auto &p : getStdLibPaths(argv0, plugins)) {
-    paths.push_back(format("{}/{}.codon", p, what));
-    paths.push_back(format("{}/{}/__init__.codon", p, what));
+    addPath(paths, (p / what).replace_extension("codon"));
+    addPath(paths, p / what / "__init__.codon");
   }
-  for (auto &p : paths) {
-    if (!realpath(p.c_str(), abs))
-      continue;
-    auto path = std::string(abs);
-    struct stat buffer;
-    if (!stat(path.c_str(), &buffer))
-      return std::make_shared<ImportFile>(getRoot(path));
-  }
-  return nullptr;
+
+  auto module0Root = fs::path(module0).parent_path().string();
+  return paths.empty() ? nullptr
+                       : std::make_shared<ImportFile>(
+                             getRoot(argv0, plugins, module0Root, paths[0].string()));
 }
 
 } // namespace ast

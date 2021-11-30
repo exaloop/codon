@@ -1,3 +1,4 @@
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -149,7 +150,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
                 type->realizedName(), ctx->getBase(), depth);
     {
-      _level++;
+      getLogger().level++;
       ctx->realizationDepth++;
       ctx->addBlock();
       ctx->typecheckLevel++;
@@ -205,7 +206,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Realize the return type.
       if (auto t = realize(type->args[0]))
         unify(type->args[0], t);
-      LOG_TYPECHECK("done with {} / {}", type->realizedName(), oldKey);
+      LOG_REALIZE("done with {} / {}", type->realizedName(), oldKey);
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.
@@ -220,8 +221,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           r->ir = ctx->cache->module->Nr<ir::ExternalFunc>(type->realizedName());
         } else {
           r->ir = ctx->cache->module->Nr<ir::BodiedFunc>(type->realizedName());
-          if (ast->attributes.has(Attr::ForceRealize))
-            ir::cast<ir::BodiedFunc>(r->ir)->setBuiltin();
         }
 
         auto parent = type->funcParent;
@@ -257,7 +256,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->popBlock();
       ctx->typecheckLevel--;
       ctx->realizationDepth--;
-      _level--;
+      getLogger().level--;
     }
     // Restore old bases back.
     ctx->bases.insert(ctx->bases.end(), oldBases.begin(), oldBases.end());
@@ -280,7 +279,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
   int minUnbound = ctx->cache->unboundCount;
   ctx->addBlock();
   int iteration = 0;
-  for (int prevSize = INT_MAX;;) {
+  for (int prevSize = std::numeric_limits<int>::max();;) {
     LOG_TYPECHECK("== iter {} ==========================================", iteration);
     ctx->typecheckLevel++;
     result = TypecheckVisitor(ctx).transform(result);
@@ -306,7 +305,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
     std::map<types::TypePtr, std::string> newActiveUnbounds;
     for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
       auto l = i->first->getLink();
-      assert(l);
+      seqassert(l, "link is null");
       if (l->kind == LinkType::Unbound) {
         newActiveUnbounds[i->first] = i->second;
         if (l->id >= minUnbound)
@@ -405,20 +404,21 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   } else if (name == "str") {
     handle = module->getStringType();
   } else if (name == "Int" || name == "UInt") {
-    assert(statics.size() == 1 && statics[0]->type == StaticValue::INT &&
-           types.empty());
+    seqassert(statics.size() == 1 && statics[0]->type == StaticValue::INT &&
+                  types.empty(),
+              "bad generics/statics");
     handle = module->Nr<ir::types::IntNType>(statics[0]->getInt(), name == "Int");
   } else if (name == "Ptr") {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (name == "Generator") {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (name == TYPE_OPTIONAL) {
-    assert(types.size() == 1 && statics.empty());
+    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
     handle = module->unsafeGetOptionalType(types[0]);
   } else if (name == "NoneType") {
-    assert(types.empty() && statics.empty());
+    seqassert(types.empty() && statics.empty(), "bad generics/statics");
     auto record =
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});

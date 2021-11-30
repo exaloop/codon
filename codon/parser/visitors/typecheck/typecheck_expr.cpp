@@ -1143,8 +1143,9 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
 
   // Typecheck given arguments with the expected (signature) types.
   bool unificationsDone = true;
-  assert((expr->ordered && typeArgs.empty()) ||
-         (!expr->ordered && typeArgs.size() == calleeFn->funcGenerics.size()));
+  seqassert((expr->ordered && typeArgs.empty()) ||
+                (!expr->ordered && typeArgs.size() == calleeFn->funcGenerics.size()),
+            "bad vector sizes");
   for (int si = 0; !expr->ordered && si < calleeFn->funcGenerics.size(); si++)
     if (typeArgs[si]) {
       auto t = typeArgs[si]->type;

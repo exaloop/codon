@@ -1,5 +1,6 @@
 #include "translate.h"
 
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -21,19 +22,34 @@ namespace ast {
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Module *TranslateVisitor::apply(std::shared_ptr<Cache> cache, StmtPtr stmts) {
-  auto main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-
-  char buf[PATH_MAX + 1];
-  realpath(cache->module0.c_str(), buf);
-  main->setSrcInfo({std::string(buf), 0, 0, 0});
+ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
+  ir::BodiedFunc *main;
+  if (cache->isJit) {
+    auto fnName = format("_jit_{}", cache->jitCell);
+    main = cache->module->Nr<ir::BodiedFunc>(fnName);
+    main->setSrcInfo({"<jit>", 0, 0, 0});
+    main->setGlobal();
+    auto irType = cache->module->unsafeGetFuncType(
+        fnName, cache->classes["void"].realizations["void"]->ir, {}, false);
+    main->realize(irType, {});
+    main->setJIT();
+  } else {
+    main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    auto path =
+        std::filesystem::canonical(std::filesystem::path(cache->module0)).string();
+    main->setSrcInfo({path, 0, 0, 0});
+  }
 
   auto block = cache->module->Nr<ir::SeriesFlow>("body");
   main->setBody(block);
 
-  cache->codegenCtx = std::make_shared<TranslateContext>(cache, block, main);
+  if (!cache->codegenCtx)
+    cache->codegenCtx = std::make_shared<TranslateContext>(cache);
+  cache->codegenCtx->bases = {main};
+  cache->codegenCtx->series = {block};
+
   TranslateVisitor(cache->codegenCtx).transform(stmts);
-  return cache->module;
+  return main;
 }
 
 /************************************************************************************/
@@ -228,12 +244,15 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs && var == VAR_ARGV) {
     ctx->add(TranslateItem::Var, var, ctx->getModule()->getArgVar());
+    ctx->cache->globals[var] = ctx->getModule()->getArgVar();
   } else if (!stmt->rhs || !stmt->rhs->isType()) {
     auto *newVar =
         make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
                       in(ctx->cache->globals, var), var);
     if (!in(ctx->cache->globals, var))
       ctx->getBase()->push_back(newVar);
+    else
+      ctx->cache->globals[var] = newVar;
     ctx->add(TranslateItem::Var, var, newVar);
     if (stmt->rhs)
       result = make<ir::AssignInstr>(stmt, newVar, transform(stmt->rhs));

@@ -17,14 +17,13 @@ namespace codon {
 namespace ast {
 
 struct ParseContext {
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
   std::stack<int> indent;
   int parens;
   int line_offset, col_offset;
-  ParseContext(std::shared_ptr<Cache> cache, int parens = 0, int line_offset = 0,
-               int col_offset = 0)
-      : cache(move(cache)), parens(parens), line_offset(line_offset),
-        col_offset(col_offset) {}
+  ParseContext(Cache *cache, int parens = 0, int line_offset = 0, int col_offset = 0)
+      : cache(cache), parens(parens), line_offset(line_offset), col_offset(col_offset) {
+  }
 
   bool hasCustomStmtKeyword(const std::string &kwd, bool hasExpr) const {
     auto i = cache->customBlockStmts.find(kwd);

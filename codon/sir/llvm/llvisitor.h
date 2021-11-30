@@ -3,9 +3,11 @@
 #include "codon/dsl/plugins.h"
 #include "codon/sir/llvm/llvm.h"
 #include "codon/sir/sir.h"
+#include "codon/util/common.h"
 
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace codon {
@@ -13,19 +15,6 @@ namespace ir {
 
 class LLVMVisitor : public util::ConstVisitor {
 private:
-  template <typename V> using CacheBase = std::unordered_map<id_t, V *>;
-  template <typename K, typename V> class Cache : public CacheBase<V> {
-  public:
-    using CacheBase<V>::CacheBase;
-
-    V *operator[](const K *key) {
-      auto it = CacheBase<V>::find(key->getId());
-      return (it != CacheBase<V>::end()) ? it->second : nullptr;
-    }
-
-    void insert(const K *key, V *value) { CacheBase<V>::emplace(key->getId(), value); }
-  };
-
   struct CoroData {
     /// Coroutine promise (where yielded values are stored)
     llvm::Value *promise;
@@ -37,6 +26,8 @@ private:
     llvm::BasicBlock *suspend;
     /// Coroutine exit block
     llvm::BasicBlock *exit;
+
+    void reset() { promise = handle = cleanup = suspend = exit = nullptr; }
   };
 
   struct NestableData {
@@ -56,6 +47,8 @@ private:
     LoopData(llvm::BasicBlock *breakBlock, llvm::BasicBlock *continueBlock, id_t loopId)
         : NestableData(), breakBlock(breakBlock), continueBlock(continueBlock),
           loopId(loopId) {}
+
+    void reset() { breakBlock = continueBlock = nullptr; }
   };
 
   struct TryCatchData : NestableData {
@@ -87,6 +80,13 @@ private:
           finallyBlock(nullptr), catchTypes(), handlers(), excFlag(nullptr),
           catchStore(nullptr), delegateDepth(nullptr), retStore(nullptr),
           loopSequence(nullptr) {}
+
+    void reset() {
+      exceptionBlock = exceptionRouteBlock = finallyBlock = nullptr;
+      catchTypes.clear();
+      handlers.clear();
+      excFlag = catchStore = delegateDepth = loopSequence = nullptr;
+    }
   };
 
   struct DebugInfo {
@@ -96,21 +96,31 @@ private:
     llvm::DICompileUnit *unit;
     /// Whether we are compiling in debug mode
     bool debug;
+    /// Whether we are compiling in JIT mode
+    bool jit;
+    /// Whether we are compiling a standalone object/executable
+    bool standalone;
     /// Program command-line flags
     std::string flags;
 
-    explicit DebugInfo(bool debug, const std::string &flags)
-        : builder(), unit(nullptr), debug(debug), flags(flags) {}
+    DebugInfo()
+        : builder(), unit(nullptr), debug(false), jit(false), standalone(false),
+          flags() {}
 
     llvm::DIFile *getFile(const std::string &path);
+
+    void reset() {
+      builder = {};
+      unit = nullptr;
+    }
   };
 
   /// LLVM context used for compilation
-  llvm::LLVMContext context;
-  /// LLVM IR builder used for constructing LLVM IR
-  llvm::IRBuilder<> builder;
+  std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
-  std::unique_ptr<llvm::Module> module;
+  std::unique_ptr<llvm::Module> M;
+  /// LLVM IR builder used for constructing LLVM IR
+  std::unique_ptr<llvm::IRBuilder<>> B;
   /// Current function we are compiling
   llvm::Function *func;
   /// Current basic block we are compiling
@@ -118,9 +128,9 @@ private:
   /// Last compiled value
   llvm::Value *value;
   /// LLVM values corresponding to IR variables
-  Cache<Var, llvm::Value> vars;
+  std::unordered_map<id_t, llvm::Value *> vars;
   /// LLVM functions corresponding to IR functions
-  Cache<Func, llvm::Function> funcs;
+  std::unordered_map<id_t, llvm::Function *> funcs;
   /// Coroutine data, if current function is a coroutine
   CoroData coro;
   /// Loop data stack, containing break/continue blocks
@@ -175,17 +185,82 @@ private:
   // LLVM passes
   void runLLVMPipeline();
 
-public:
-  LLVMVisitor(bool debug = false, const std::string &flags = "");
+  llvm::Value *getVar(const Var *var);
+  void insertVar(const Var *var, llvm::Value *x) { vars.emplace(var->getId(), x); }
+  llvm::Function *getFunc(const Func *func);
+  void insertFunc(const Func *func, llvm::Function *x) {
+    funcs.emplace(func->getId(), x);
+  }
+  llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
+  llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
 
-  llvm::LLVMContext &getContext() { return context; }
-  llvm::IRBuilder<> &getBuilder() { return builder; }
-  llvm::Module *getModule() { return module.get(); }
+public:
+  static std::string getNameForFunction(const Func *x) {
+    if (isA<ExternalFunc>(x)) {
+      return x->getUnmangledName();
+    } else {
+      return x->referenceString();
+    }
+  }
+
+  static std::string getDebugNameForVariable(const Var *x) {
+    std::string name = x->getName();
+    auto pos = name.find(".");
+    if (pos != 0 && pos != std::string::npos) {
+      return name.substr(0, pos);
+    } else {
+      return name;
+    }
+  }
+
+  static const SrcInfo *getDefaultSrcInfo() {
+    static SrcInfo defaultSrcInfo("<internal>", 0, 0, 0);
+    return &defaultSrcInfo;
+  }
+
+  static const SrcInfo *getSrcInfo(const Node *x) {
+    if (auto *srcInfo = x->getAttribute<SrcInfoAttribute>()) {
+      return &srcInfo->info;
+    } else {
+      return getDefaultSrcInfo();
+    }
+  }
+
+  /// Constructs an LLVM visitor.
+  LLVMVisitor();
+
+  /// @return true if in debug mode, false otherwise
+  bool getDebug() const { return db.debug; }
+  /// Sets debug status.
+  /// @param d true if debug mode
+  void setDebug(bool d = true) { db.debug = d; }
+
+  /// @return true if in JIT mode, false otherwise
+  bool getJIT() const { return db.jit; }
+  /// Sets JIT status.
+  /// @param j true if JIT mode
+  void setJIT(bool j = true) { db.jit = j; }
+
+  /// @return true if in standalone mode, false otherwise
+  bool getStandalone() const { return db.standalone; }
+  /// Sets standalone status.
+  /// @param s true if standalone
+  void setStandalone(bool s = true) { db.standalone = s; }
+
+  /// @return program flags
+  std::string getFlags() const { return db.flags; }
+  /// Sets program flags.
+  /// @param f flags
+  void setFlags(const std::string &f) { db.flags = f; }
+
+  llvm::LLVMContext &getContext() { return *context; }
+  llvm::IRBuilder<> &getBuilder() { return *B; }
+  llvm::Module *getModule() { return M.get(); }
   llvm::FunctionCallee getFunc() { return func; }
   llvm::BasicBlock *getBlock() { return block; }
   llvm::Value *getValue() { return value; }
-  Cache<Var, llvm::Value> &getVars() { return vars; }
-  Cache<Func, llvm::Function> &getFuncs() { return funcs; }
+  std::unordered_map<id_t, llvm::Value *> &getVars() { return vars; }
+  std::unordered_map<id_t, llvm::Function *> &getFuncs() { return funcs; }
   CoroData &getCoro() { return coro; }
   std::vector<LoopData> &getLoops() { return loops; }
   std::vector<TryCatchData> &getTryCatch() { return trycatch; }
@@ -194,6 +269,31 @@ public:
   void setFunc(llvm::Function *f) { func = f; }
   void setBlock(llvm::BasicBlock *b) { block = b; }
   void setValue(llvm::Value *v) { value = v; }
+
+  /// Registers a new global variable or function with
+  /// this visitor.
+  /// @param var the global variable (or function) to register
+  void registerGlobal(const Var *var);
+
+  /// Returns the default LLVM linkage type for the module.
+  /// @return LLVM linkage type
+  llvm::GlobalValue::LinkageTypes getDefaultLinkage();
+
+  /// Returns a new LLVM module initialized for the host
+  /// architecture.
+  /// @param context LLVM context used for creating module
+  /// @param src source information for the new module
+  /// @return a new module
+  std::unique_ptr<llvm::Module> makeModule(llvm::LLVMContext &context,
+                                           const SrcInfo *src = nullptr);
+
+  /// Returns the current module/LLVM context and replaces them
+  /// with new, fresh ones. References to variables or functions
+  /// from the old module will be included as "external".
+  /// @param src source information for the new module
+  /// @return the current module/context, replaced internally
+  std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
+  takeModule(const SrcInfo *src = nullptr);
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use

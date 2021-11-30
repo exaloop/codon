@@ -1,6 +1,5 @@
 #include "manager.h"
 
-#include <cassert>
 #include <unordered_set>
 
 #include "codon/sir/analyze/analysis.h"
@@ -49,7 +48,7 @@ std::string PassManager::registerPass(std::unique_ptr<Pass> pass,
   key = km.getUniqueKey(key);
 
   for (const auto &req : reqs) {
-    assert(deps.find(req) != deps.end());
+    seqassert(deps.find(req) != deps.end(), "required key '{}' not found", req);
     deps[req].push_back(key);
   }
 
@@ -76,7 +75,7 @@ std::string PassManager::registerAnalysis(std::unique_ptr<analyze::Analysis> ana
   key = km.getUniqueKey(key);
 
   for (const auto &req : reqs) {
-    assert(deps.find(req) != deps.end());
+    seqassert(deps.find(req) != deps.end(), "required key '{}' not found", req);
     deps[req].push_back(key);
   }
 

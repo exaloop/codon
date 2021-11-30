@@ -1,29 +1,30 @@
-#ifndef CODON_RUNTIME_LIB_H
-#define CODON_RUNTIME_LIB_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
+#include <string>
 #include <unwind.h>
+#include <vector>
+
+#define SEQ_FLAG_DEBUG (1 << 0)      // compiled/running in debug mode
+#define SEQ_FLAG_JIT (1 << 1)        // compiled/running in JIT mode
+#define SEQ_FLAG_STANDALONE (1 << 2) // compiled as a standalone object/binary
 
 #define SEQ_FUNC extern "C"
 
 typedef int64_t seq_int_t;
-
-struct seq_t {
-  seq_int_t len;
-  char *seq;
-};
 
 struct seq_str_t {
   seq_int_t len;
   char *str;
 };
 
-extern int seq_debug;
+extern int seq_flags;
 
-SEQ_FUNC void seq_init(int debug);
+SEQ_FUNC void seq_init(int flags);
 
 SEQ_FUNC bool seq_is_macos();
 SEQ_FUNC seq_int_t seq_pid();
@@ -76,4 +77,34 @@ SEQ_FUNC void *seq_rlock_new();
 SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_rlock_release(void *lock);
 
-#endif /* CODON_RUNTIME_LIB_H */
+namespace codon {
+class JITError : public std::runtime_error {
+private:
+  std::string output;
+  std::string type;
+  std::string file;
+  int line;
+  int col;
+  std::vector<uintptr_t> backtrace;
+
+public:
+  JITError(const std::string &output, const std::string &what, const std::string &type,
+           const std::string &file, int line, int col,
+           std::vector<uintptr_t> backtrace = {})
+      : std::runtime_error(what), output(output), type(type), file(file), line(line),
+        col(col), backtrace(std::move(backtrace)) {}
+
+  std::string getOutput() const { return output; }
+  std::string getType() const { return type; }
+  std::string getFile() const { return file; }
+  int getLine() const { return line; }
+  int getCol() const { return col; }
+  std::vector<uintptr_t> getBacktrace() const { return backtrace; }
+};
+
+std::string makeBacktraceFrameString(uintptr_t pc, const std::string &func = "",
+                                     const std::string &file = "", int line = 0,
+                                     int col = 0);
+
+std::string getCapturedOutput();
+} // namespace codon

@@ -66,7 +66,6 @@ if(bdwgc_ADDED)
 endif()
 
 CPMAddPackage(
-    NAME openmp
     GITHUB_REPOSITORY "llvm-mirror/openmp"
     VERSION 9.0
     GIT_TAG release_90
@@ -79,29 +78,10 @@ CPMAddPackage(
     GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
-    # https://go.googlesource.com/gollvm/+/refs/heads/master/cmake/modules/LibbacktraceUtils.cmake
-    set(BACKTRACE_ELF_SIZE 64)
-    set(HAVE_GETIPINFO 1)
-    set(BACKTRACE_USES_MALLOC 0)
-    set(BACKTRACE_SUPPORTS_THREADS 1)
-    set(BACKTRACE_SUPPORTS_DATA 1)
-    if(HAVE_SYNC_BOOL_COMPARE_AND_SWAP_4)
-        if(HAVE_SYNC_BOOL_COMPARE_AND_SWAP_8)
-            set(HAVE_SYNC_FUNCTIONS 1)
-        endif()
-    endif()
-    # Generate backtrace-supported.h based on the above.
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/cmake/backtrace-supported.h.in
-        ${backtrace_SOURCE_DIR}/backtrace-supported.h)
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/cmake/backtrace-config.h.in
-        ${backtrace_SOURCE_DIR}/config.h)
-    add_library(backtrace STATIC
+    set(backtrace_SOURCES
         "${backtrace_SOURCE_DIR}/atomic.c"
         "${backtrace_SOURCE_DIR}/backtrace.c"
         "${backtrace_SOURCE_DIR}/dwarf.c"
-        "${backtrace_SOURCE_DIR}/elf.c"
         "${backtrace_SOURCE_DIR}/fileline.c"
         "${backtrace_SOURCE_DIR}/mmapio.c"
         "${backtrace_SOURCE_DIR}/mmap.c"
@@ -110,8 +90,71 @@ if(backtrace_ADDED)
         "${backtrace_SOURCE_DIR}/simple.c"
         "${backtrace_SOURCE_DIR}/sort.c"
         "${backtrace_SOURCE_DIR}/state.c")
+
+    # https://go.googlesource.com/gollvm/+/refs/heads/master/cmake/modules/LibbacktraceUtils.cmake
+    set(BACKTRACE_SUPPORTED 1)
+    set(BACKTRACE_ELF_SIZE 64)
+    set(HAVE_GETIPINFO 1)
+    set(BACKTRACE_USES_MALLOC 1)
+    set(BACKTRACE_SUPPORTS_THREADS 1)
+    set(BACKTRACE_SUPPORTS_DATA 1)
+    set(HAVE_SYNC_FUNCTIONS 1)
+    if(APPLE)
+        set(HAVE_MACH_O_DYLD_H 1)
+        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/macho.c")
+    else()
+        set(HAVE_MACH_O_DYLD_H 0)
+        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/elf.c")
+    endif()
+    # Generate backtrace-supported.h based on the above.
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/cmake/backtrace-supported.h.in
+        ${backtrace_SOURCE_DIR}/backtrace-supported.h)
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/cmake/backtrace-config.h.in
+        ${backtrace_SOURCE_DIR}/config.h)
+    add_library(backtrace STATIC ${backtrace_SOURCES})
     target_include_directories(backtrace BEFORE PRIVATE "${backtrace_SOURCE_DIR}")
     set_target_properties(backtrace PROPERTIES
         COMPILE_FLAGS "-funwind-tables -D_GNU_SOURCE"
         POSITION_INDEPENDENT_CODE ON)
+endif()
+
+if(CODON_JUPYTER)
+    CPMAddPackage(
+        NAME libzmq
+        VERSION 4.3.4
+        URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+        OPTIONS "WITH_PERF_TOOL OFF" 
+                "ZMQ_BUILD_TESTS OFF" 
+                "ENABLE_CPACK OFF"
+                "BUILD_SHARED ON"
+                "WITH_LIBSODIUM OFF")
+    CPMAddPackage(
+        NAME cppzmq
+        URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
+        VERSION 4.8.1
+        OPTIONS "CPPZMQ_BUILD_TESTS OFF")
+    CPMAddPackage(
+        NAME xtl
+        GITHUB_REPOSITORY "xtensor-stack/xtl"
+        VERSION 0.7.3
+        GIT_TAG 0.7.3
+        OPTIONS "BUILD_TESTS OFF")
+    CPMAddPackage(
+        NAME json
+        GITHUB_REPOSITORY "nlohmann/json"
+        VERSION 3.10.4)
+    CPMAddPackage(
+        NAME xeus
+        GITHUB_REPOSITORY "jupyter-xeus/xeus"
+        VERSION 2.2.0
+        GIT_TAG 2.2.0
+        PATCH_COMMAND sed -i bak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
+        OPTIONS "BUILD_EXAMPLES OFF"
+                "XEUS_BUILD_SHARED_LIBS OFF"
+                "XEUS_STATIC_DEPENDENCIES ON")
+    if (xeus_ADDED)
+        install(TARGETS nlohmann_json EXPORT xeus-targets)
+    endif()
 endif()

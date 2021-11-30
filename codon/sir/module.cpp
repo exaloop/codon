@@ -100,8 +100,7 @@ const std::string Module::INIT_MAGIC_NAME = "__init__";
 
 const char Module::NodeId = 0;
 
-Module::Module(std::string name, std::shared_ptr<ast::Cache> cache)
-    : AcceptorExtend(std::move(name)), cache(std::move(cache)) {
+Module::Module(const std::string &name) : AcceptorExtend(name) {
   mainFunc = std::make_unique<BodiedFunc>("main");
   mainFunc->realize(cast<types::FuncType>(unsafeGetDummyFuncType()), {});
   mainFunc->setModule(this);

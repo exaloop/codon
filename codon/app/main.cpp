@@ -1,16 +1,17 @@
-#include "codon/dsl/plugins.h"
-#include "codon/parser/parser.h"
-#include "codon/sir/llvm/llvisitor.h"
-#include "codon/sir/transform/manager.h"
-#include "codon/sir/transform/pass.h"
-#include "codon/util/common.h"
-#include "llvm/Support/CommandLine.h"
 #include <algorithm>
-#include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "codon/compiler/compiler.h"
+#include "codon/compiler/error.h"
+#include "codon/compiler/jit.h"
+#include "codon/util/common.h"
+#include "llvm/Support/CommandLine.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
@@ -46,23 +47,41 @@ std::string makeOutputFilename(const std::string &filename,
   return filename + extension;
 }
 
+void display(const codon::error::ParserErrorInfo &e) {
+  for (auto &msg : e) {
+    codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
+                            msg.getColumn(),
+                            /*terminate=*/false);
+  }
+}
+
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
-struct ProcessResult {
-  std::unique_ptr<codon::ir::transform::PassManager> pm;
-  std::unique_ptr<codon::PluginManager> plm;
-  std::unique_ptr<codon::ir::LLVMVisitor> visitor;
-  std::string input;
-};
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  codon::generateDocstr(argv0);
+  std::vector<std::string> files;
+  for (std::string line; std::getline(std::cin, line);)
+    files.push_back(line);
+
+  auto compiler = std::make_unique<codon::Compiler>(args[0]);
+  bool failed = false;
+  auto result = compiler->docgen(files);
+  llvm::handleAllErrors(result.takeError(),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
+    return EXIT_FAILURE;
+
+  fmt::print("{}\n", *result);
   return EXIT_SUCCESS;
 }
 
-ProcessResult processSource(const std::vector<const char *> &args) {
+std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &args,
+                                               bool standalone) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
   llvm::cl::opt<OptMode> optMode(
@@ -80,8 +99,12 @@ ProcessResult processSource(const std::vector<const char *> &args) {
       "disable-opt", llvm::cl::desc("Disable the specified IR optimization"));
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  codon::getLogger().parse(log);
+  if (auto *d = getenv("CODON_DEBUG"))
+    codon::getLogger().parse(std::string(d));
 
   auto &exts = supportedExtensions();
   if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
@@ -110,54 +133,37 @@ ProcessResult processSource(const std::vector<const char *> &args) {
   }
 
   const bool isDebug = (optMode == OptMode::Debug);
-  auto t = std::chrono::high_resolution_clock::now();
-
   std::vector<std::string> disabledOptsVec(disabledOpts);
-  auto pm =
-      std::make_unique<codon::ir::transform::PassManager>(isDebug, disabledOptsVec);
-  auto plm = std::make_unique<codon::PluginManager>();
+  auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec);
+  compiler->getLLVMVisitor()->setStandalone(standalone);
 
-  LOG_TIME("[T] ir-setup = {:.1f}",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - t)
-                   .count() /
-               1000.0);
-
-  // load other plugins
+  // load plugins
   for (const auto &plugin : plugins) {
-    std::string errMsg;
-    if (!plm->load(plugin, &errMsg))
-      codon::compilationError(errMsg);
+    bool failed = false;
+    llvm::handleAllErrors(
+        compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
+          codon::compilationError(e.getMessage(), /*file=*/"", /*line=*/0, /*col=*/0,
+                                  /*terminate=*/false);
+          failed = true;
+        });
+    if (failed)
+      return {};
   }
-  // add all IR passes
-  for (const auto *plugin : *plm) {
-    plugin->dsl->addIRPasses(pm.get(), isDebug);
+
+  bool failed = false;
+  llvm::handleAllErrors(compiler->parseFile(input, /*isTest=*/0, defmap),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
+    return {};
+
+  {
+    TIME("compile");
+    llvm::cantFail(compiler->compile());
   }
-  t = std::chrono::high_resolution_clock::now();
-
-  auto *module = codon::parse(args[0], input.c_str(), /*code=*/"", /*isCode=*/false,
-                              /*isTest=*/false, /*startLine=*/0, defmap, plm.get());
-  if (!module)
-    return {{}, {}};
-
-  pm->run(module);
-  LOG_TIME("[T] ir-opt = {:.1f}", std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::high_resolution_clock::now() - t)
-                                          .count() /
-                                      1000.0);
-
-  t = std::chrono::high_resolution_clock::now();
-  auto visitor = std::make_unique<codon::ir::LLVMVisitor>(isDebug);
-  visitor->setPluginManager(plm.get());
-  visitor->visit(module);
-  LOG_TIME("[T] ir-visitor = {:.1f}",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - t)
-                   .count() /
-               1000.0);
-  if (_dbg_level)
-    visitor->dump();
-  return {std::move(pm), std::move(plm), std::move(visitor), input};
+  return compiler;
 }
 
 int runMode(const std::vector<const char *> &args) {
@@ -165,19 +171,72 @@ int runMode(const std::vector<const char *> &args) {
       "l", llvm::cl::desc("Load and link the specified library"));
   llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
                                       llvm::cl::desc("<program arguments>..."));
-  auto start_t = std::chrono::high_resolution_clock::now();
-  auto result = processSource(args);
-  if (!result.visitor)
+  auto compiler = processSource(args, /*standalone=*/false);
+  if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
   std::vector<std::string> argsVec(seqArgs);
-  argsVec.insert(argsVec.begin(), result.input);
-  LOG_USER("compiler took: {:.2f} seconds",
-           std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now() - start_t)
-                   .count() /
-               1000.0);
-  result.visitor->run(argsVec, libsVec);
+  argsVec.insert(argsVec.begin(), compiler->getInput());
+  compiler->getLLVMVisitor()->run(argsVec, libsVec);
+  return EXIT_SUCCESS;
+}
+
+namespace {
+std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
+  auto result = jit->exec(code);
+  if (auto err = result.takeError()) {
+    std::string output;
+    llvm::handleAllErrors(
+        std::move(err), [](const codon::error::ParserErrorInfo &e) { display(e); },
+        [&output](const codon::error::RuntimeErrorInfo &e) {
+          std::stringstream buf;
+          buf << e.getOutput();
+          buf << "\n\033[1mBacktrace:\033[0m\n";
+          for (const auto &line : e.getBacktrace()) {
+            buf << "  " << line << "\n";
+          }
+          output = buf.str();
+        });
+    return output;
+  }
+  return *result;
+}
+} // namespace
+
+int jitMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  codon::jit::JIT jit(args[0]);
+
+  // load plugins
+  for (const auto &plugin : plugins) {
+    bool failed = false;
+    llvm::handleAllErrors(jit.getCompiler()->load(plugin),
+                          [&failed](const codon::error::PluginErrorInfo &e) {
+                            codon::compilationError(e.getMessage(), /*file=*/"",
+                                                    /*line=*/0, /*col=*/0,
+                                                    /*terminate=*/false);
+                            failed = true;
+                          });
+    if (failed)
+      return EXIT_FAILURE;
+  }
+
+  llvm::cantFail(jit.init());
+  fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
+  std::string code;
+  for (std::string line; std::getline(std::cin, line);) {
+    if (line != "#%%") {
+      code += line + "\n";
+    } else {
+      fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
+      code = "";
+      fflush(stdout);
+    }
+  }
+  if (!code.empty())
+    fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
   return EXIT_SUCCESS;
 }
 
@@ -199,12 +258,12 @@ int buildMode(const std::vector<const char *> &args) {
           "Write compiled output to specified file. Supported extensions: "
           "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
 
-  auto result = processSource(args);
-  if (!result.visitor)
+  auto compiler = processSource(args, /*standalone=*/true);
+  if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
 
-  if (output.empty() && result.input == "-")
+  if (output.empty() && compiler->getInput() == "-")
     codon::compilationError("output file must be specified when reading from stdin");
   std::string extension;
   switch (buildKind) {
@@ -222,31 +281,48 @@ int buildMode(const std::vector<const char *> &args) {
     extension = "";
     break;
   default:
-    assert(0);
+    seqassert(0, "unknown build kind");
   }
   const std::string filename =
-      output.empty() ? makeOutputFilename(result.input, extension) : output;
+      output.empty() ? makeOutputFilename(compiler->getInput(), extension) : output;
   switch (buildKind) {
   case BuildKind::LLVM:
-    result.visitor->writeToLLFile(filename);
+    compiler->getLLVMVisitor()->writeToLLFile(filename);
     break;
   case BuildKind::Bitcode:
-    result.visitor->writeToBitcodeFile(filename);
+    compiler->getLLVMVisitor()->writeToBitcodeFile(filename);
     break;
   case BuildKind::Object:
-    result.visitor->writeToObjectFile(filename);
+    compiler->getLLVMVisitor()->writeToObjectFile(filename);
     break;
   case BuildKind::Executable:
-    result.visitor->writeToExecutable(filename, libsVec);
+    compiler->getLLVMVisitor()->writeToExecutable(filename, libsVec);
     break;
   case BuildKind::Detect:
-    result.visitor->compile(filename, libsVec);
+    compiler->getLLVMVisitor()->compile(filename, libsVec);
     break;
   default:
-    assert(0);
+    seqassert(0, "unknown build kind");
   }
 
   return EXIT_SUCCESS;
+}
+
+#ifdef CODON_JUPYTER
+namespace codon {
+int startJupyterKernel(const std::string &argv0, const std::string &configPath);
+}
+#endif
+int jupyterMode(const std::vector<const char *> &args) {
+#ifdef CODON_JUPYTER
+  int code = codon::startJupyterKernel(args[0], args.size() > 1 ? std::string(args[1])
+                                                                : "connection.json");
+  return code;
+#else
+  fmt::print("Jupyter support not included. Please recompile with "
+             "-DCODON_JUPYTER.");
+  return EXIT_FAILURE;
+#endif
 }
 
 void showCommandsAndExit() {
@@ -289,6 +365,14 @@ int main(int argc, const char **argv) {
     const char *oldArgv0 = args[0];
     args[0] = argv0.data();
     return docMode(args, oldArgv0);
+  }
+  if (mode == "jit") {
+    args[0] = argv0.data();
+    return jitMode(args);
+  }
+  if (mode == "jupyter") {
+    args[0] = argv0.data();
+    return jupyterMode(args);
   }
   return otherMode({argv, argv + argc});
 }

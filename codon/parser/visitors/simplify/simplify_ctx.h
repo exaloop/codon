@@ -51,7 +51,7 @@ public:
  */
 struct SimplifyContext : public Context<SimplifyItem> {
   /// A pointer to the shared cache.
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
 
   /// A base scope definition. Each function or a class defines a new base scope.
   struct Base {
@@ -95,7 +95,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
   std::unordered_map<std::string, ExprPtr> *substitutions;
 
 public:
-  SimplifyContext(std::string filename, std::shared_ptr<Cache> cache);
+  SimplifyContext(std::string filename, Cache *cache);
 
   using Context<SimplifyItem>::add;
   /// Convenience method for adding an object to the context.

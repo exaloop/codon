@@ -17,14 +17,13 @@ namespace ast {
 
 using namespace types;
 
-StmtPtr SimplifyVisitor::apply(
-    std::shared_ptr<Cache> cache, const StmtPtr &node, const std::string &file,
-    const std::unordered_map<std::string, std::string> &defines, bool barebones) {
+StmtPtr
+SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
+                       const std::unordered_map<std::string, std::string> &defines,
+                       bool barebones) {
   std::vector<StmtPtr> stmts;
   auto preamble = std::make_shared<Preamble>();
-
-  if (!cache->module)
-    cache->module = new codon::ir::Module("", cache);
+  seqassert(cache->module, "cache's module is not set");
 
   // Load standard library if it has not been loaded.
   if (!in(cache->imports, STDLIB_IMPORT)) {
@@ -89,7 +88,7 @@ StmtPtr SimplifyVisitor::apply(
     }
     // Reserve the following static identifiers.
     for (auto name : {"staticlen", "compile_error", "isinstance", "hasattr", "type",
-                      "TypeVar", "Callable"})
+                      "TypeVar", "Callable", "argv"})
       stdlib->generateCanonicalName(name);
 
     // This code must be placed in a preamble (these are not POD types but are

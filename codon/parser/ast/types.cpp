@@ -18,7 +18,7 @@ void Type::Unification::undo() {
     linked[i]->type = nullptr;
   }
   for (int i = int(leveled.size()) - 1; i >= 0; i--) {
-    assert(leveled[i].first->kind == LinkType::Unbound);
+    seqassert(leveled[i].first->kind == LinkType::Unbound, "not unbound");
     leveled[i].first->level = leveled[i].second;
   }
   for (auto &t : traits)
@@ -687,7 +687,7 @@ std::string StaticType::realizedName() const {
     deps.push_back(e.type->realizedName());
   if (!expr->staticValue.evaluated) // If not already evaluated, evaluate!
     const_cast<StaticType *>(this)->expr->staticValue = evaluate();
-  assert(expr->staticValue.evaluated);
+  seqassert(expr->staticValue.evaluated, "static value not evaluated");
   return expr->staticValue.toString();
 }
 StaticValue StaticType::evaluate() const {

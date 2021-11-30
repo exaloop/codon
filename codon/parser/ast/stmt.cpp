@@ -52,6 +52,16 @@ void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
       stmts.push_back(ss);
   }
 }
+StmtPtr *SuiteStmt::lastInBlock() {
+  if (stmts.empty())
+    return nullptr;
+  if (auto s = const_cast<SuiteStmt *>(stmts.back()->getSuite())) {
+    auto l = s->lastInBlock();
+    if (l)
+      return l;
+  }
+  return &(stmts.back());
+}
 
 std::string BreakStmt::toString(int) const { return "(break)"; }
 ACCEPT_IMPL(BreakStmt, ASTVisitor);
@@ -362,7 +372,7 @@ ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 WithStmt::WithStmt(std::vector<ExprPtr> items, std::vector<std::string> vars,
                    StmtPtr suite)
     : Stmt(), items(std::move(items)), vars(std::move(vars)), suite(std::move(suite)) {
-  assert(items.size() == vars.size());
+  seqassert(items.size() == vars.size(), "vector size mismatch");
 }
 WithStmt::WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> itemVarPairs, StmtPtr suite)
     : Stmt(), suite(std::move(suite)) {

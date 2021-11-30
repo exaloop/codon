@@ -7,16 +7,19 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
+option(CODON_JUPYTER "build Codon Jupyter server" OFF)
+if(CODON_JUPYTER)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json.in"
+        "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json"
+    )
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wall -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-limit-debug-info")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
-
-if(ASAN)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-endif()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -70,14 +73,23 @@ else()
         $<TARGET_FILE:liblzma>
         -Wl,--no-whole-archive)
 endif()
+if(ASAN)
+    target_compile_options(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+    target_link_libraries(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+endif()
 add_custom_command(TARGET codonrt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp> ${CMAKE_BINARY_DIR})
 
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
-
 set(CODON_HPPFILES
+    codon/compiler/compiler.h
+    codon/compiler/debug_listener.h
+    codon/compiler/engine.h
+    codon/compiler/error.h
+    codon/compiler/jit.h
+    codon/compiler/memory_manager.h
     codon/dsl/dsl.h
     codon/dsl/plugins.h
     codon/parser/ast.h
@@ -89,7 +101,6 @@ set(CODON_HPPFILES
     codon/parser/ctx.h
     codon/parser/peg/peg.h
     codon/parser/peg/rules.h
-    codon/parser/parser.h
     codon/parser/visitors/doc/doc.h
     codon/parser/visitors/format/format.h
     codon/parser/visitors/simplify/simplify.h
@@ -122,7 +133,6 @@ set(CODON_HPPFILES
     codon/sir/llvm/coro/Coroutines.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
-    codon/sir/llvm/memory_manager.h
     codon/sir/llvm/optimize.h
     codon/sir/module.h
     codon/sir/sir.h
@@ -198,8 +208,15 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_default_formatter.h
     codon/util/toml++/toml_node.h
     codon/util/toml++/toml_parser.hpp
-    codon/util/toml++/toml_utf8_streams.h)
+    codon/util/toml++/toml_utf8_streams.h
+    extra/jupyter/src/codon.h)
 set(CODON_CPPFILES
+    codon/compiler/compiler.cpp
+    codon/compiler/debug_listener.cpp
+    codon/compiler/engine.cpp
+    codon/compiler/error.cpp
+    codon/compiler/jit.cpp
+    codon/compiler/memory_manager.cpp
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp
     codon/parser/ast/stmt.cpp
@@ -207,7 +224,6 @@ set(CODON_CPPFILES
     codon/parser/cache.cpp
     codon/parser/common.cpp
     codon/parser/peg/peg.cpp
-    codon/parser/parser.cpp
     codon/parser/visitors/doc/doc.cpp
     codon/parser/visitors/format/format.cpp
     codon/parser/visitors/simplify/simplify.cpp
@@ -242,7 +258,6 @@ set(CODON_CPPFILES
     codon/sir/llvm/coro/CoroSplit.cpp
     codon/sir/llvm/coro/Coroutines.cpp
     codon/sir/llvm/llvisitor.cpp
-    codon/sir/llvm/memory_manager.cpp
     codon/sir/llvm/optimize.cpp
     codon/sir/module.cpp
     codon/sir/transform/cleanup/canonical.cpp
@@ -272,9 +287,19 @@ set(CODON_CPPFILES
     codon/sir/value.cpp
     codon/sir/var.cpp
     codon/util/common.cpp
-    codon/util/fmt/format.cpp)
+    codon/util/fmt/format.cpp
+    extra/jupyter/src/codon.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
+if(CODON_JUPYTER)
+    add_compile_definitions(CODON_JUPYTER)
+    add_dependencies(codonc xeus-static nlohmann_json)
+    target_link_libraries(codonc PRIVATE xeus-static)
+endif()
+if(ASAN)
+    target_compile_options(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+    target_link_libraries(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+endif()
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     set_source_files_properties(codon_rules.cpp codon/parser/peg/peg.cpp PROPERTIES COMPILE_FLAGS "-O2")
 endif()
@@ -301,6 +326,7 @@ llvm_map_components_to_libnames(LLVM_LIBS
     Remarks
     ScalarOpts
     Support
+    Symbolize
     Target
     TransformUtils
     Vectorize
@@ -328,7 +354,7 @@ add_dependencies(headers codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon ${STATIC_LIBCPP} codonc Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} codonc Threads::Threads)
 
 # Codon test
 # Download and unpack googletest at configure time
@@ -359,3 +385,4 @@ add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/sir "${gc_SOURCE_DIR}/include")
 target_link_libraries(codon_test codonc codonrt gtest_main)
 target_compile_definitions(codon_test PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+

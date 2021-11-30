@@ -92,6 +92,7 @@ struct SuiteStmt : public Stmt {
   const Stmt *firstInBlock() const override {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
+  StmtPtr *lastInBlock();
 
   /// Flatten all nested SuiteStmt objects that do not own a block in the statement
   /// vector. This is shallow flattening.

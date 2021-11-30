@@ -17,7 +17,7 @@ SimplifyItem::SimplifyItem(Kind k, std::string base, std::string canonicalName,
                            bool global)
     : kind(k), base(move(base)), canonicalName(move(canonicalName)), global(global) {}
 
-SimplifyContext::SimplifyContext(std::string filename, std::shared_ptr<Cache> cache)
+SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
     : Context<SimplifyItem>(move(filename)), cache(move(cache)),
       isStdlibLoading(false), moduleName{ImportFile::PACKAGE, "", ""}, canAssign(true),
       allowTypeOf(true), substitutions(nullptr) {}

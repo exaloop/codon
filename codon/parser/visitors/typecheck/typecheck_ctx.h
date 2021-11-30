@@ -33,7 +33,7 @@ struct TypecheckItem {
  */
 struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
-  std::shared_ptr<Cache> cache;
+  Cache *cache;
 
   /// A realization base definition. Each function realization defines a new base scope.
   /// Used to properly realize enclosed functions and to prevent mess with mutually
@@ -68,7 +68,7 @@ struct TypeContext : public Context<TypecheckItem> {
   std::set<std::string> defaultCallDepth;
 
 public:
-  explicit TypeContext(std::shared_ptr<Cache> cache);
+  explicit TypeContext(Cache *cache);
 
   using Context<TypecheckItem>::add;
   /// Convenience method for adding an object to the context.

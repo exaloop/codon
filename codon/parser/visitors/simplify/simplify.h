@@ -27,9 +27,7 @@ namespace ast {
  * ➡️ Note: This visitor *copies* the incoming AST and does not modify it.
  */
 class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
-  /// Shared simplification context.
-  std::shared_ptr<SimplifyContext> ctx;
-
+public:
   /// Simplification step will divide the input AST into four sub-ASTs that are stored
   /// here:
   ///   - Type (class) signatures
@@ -47,6 +45,11 @@ class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     std::vector<StmtPtr> globals;
     std::vector<StmtPtr> functions;
   };
+
+private:
+  /// Shared simplification context.
+  std::shared_ptr<SimplifyContext> ctx;
+
   /// Preamble contains shared definition statements and is shared across all visitors
   /// (in all modules). See Preamble (type) for more details.
   std::shared_ptr<Preamble> preamble;
@@ -69,8 +72,7 @@ public:
   ///        Each value is passed as a string (integer part is ignored).
   ///        The method will replace this map with a map that links canonical names
   ///        to their string and integer values.
-  static StmtPtr apply(std::shared_ptr<Cache> cache, const StmtPtr &node,
-                       const std::string &file,
+  static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones = false);
 

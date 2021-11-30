@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -41,6 +43,8 @@ struct Backtrace {
     frames[count++] = {functionDup, filenameDup, pc, lineno};
   }
 
+  void push_back(uintptr_t pc) { push_back("<invalid>", "<invalid>", pc, 0); }
+
   void free() {
     for (auto i = 0; i < count; i++) {
       auto *frame = &frames[i];
@@ -54,13 +58,19 @@ struct Backtrace {
 };
 
 void seq_backtrace_error_callback(void *data, const char *msg, int errnum) {
-  // nothing to do
+  // printf("seq_backtrace_error_callback: %s (errnum = %d)\n", msg, errnum);
 }
 
 int seq_backtrace_full_callback(void *data, uintptr_t pc, const char *filename,
                                 int lineno, const char *function) {
   auto *bt = ((Backtrace *)data);
   bt->push_back(function, filename, pc, lineno);
+  return (bt->count < Backtrace::LIMIT) ? 0 : 1;
+}
+
+int seq_backtrace_simple_callback(void *data, uintptr_t pc) {
+  auto *bt = ((Backtrace *)data);
+  bt->push_back(pc);
   return (bt->count < Backtrace::LIMIT) ? 0 : 1;
 }
 
@@ -127,7 +137,7 @@ static void seq_delete_exc(_Unwind_Exception *expToDelete) {
   if (!expToDelete || expToDelete->exception_class != ourBaseExceptionClass)
     return;
   auto *exc = (OurException *)((char *)expToDelete + ourBaseFromUnwindOffset);
-  if (seq_debug) {
+  if (seq_flags & SEQ_FLAG_DEBUG) {
     exc->bt.free();
   }
   seq_free(exc);
@@ -139,6 +149,7 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 }
 
 static struct backtrace_state *state = nullptr;
+static std::mutex stateLock;
 
 SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   const size_t size = sizeof(OurException);
@@ -148,19 +159,30 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   e->obj = obj;
   e->unwindException.exception_class = ourBaseExceptionClass;
   e->unwindException.exception_cleanup = seq_delete_unwind_exc;
-  if (seq_debug) {
+  if (seq_flags & SEQ_FLAG_DEBUG) {
     e->bt.frames = nullptr;
     e->bt.count = 0;
-    if (!state)
-      state = backtrace_create_state(/*filename=*/nullptr, /*threaded=*/0,
+
+    if (seq_flags & SEQ_FLAG_STANDALONE) {
+      if (!state) {
+        stateLock.lock();
+        if (!state)
+          state =
+              backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
                                      seq_backtrace_error_callback, /*data=*/nullptr);
-    backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
-                   seq_backtrace_error_callback, &e->bt);
+        stateLock.unlock();
+      }
+      backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
+                     seq_backtrace_error_callback, &e->bt);
+    } else {
+      backtrace_simple(/*state=*/nullptr, /*skip=*/1, seq_backtrace_simple_callback,
+                       seq_backtrace_error_callback, &e->bt);
+    }
   }
   return &(e->unwindException);
 }
 
-static void print_from_last_dot(seq_str_t s) {
+static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
   char *p = s.str;
   int64_t n = s.len;
 
@@ -172,7 +194,7 @@ static void print_from_last_dot(seq_str_t s) {
     }
   }
 
-  fwrite(p, 1, (size_t)n, stderr);
+  buf.write(p, (size_t)n);
 }
 
 SEQ_FUNC void seq_terminate(void *exc) {
@@ -186,41 +208,64 @@ SEQ_FUNC void seq_terminate(void *exc) {
     exit((int)status);
   }
 
-  fprintf(stderr, "\033[1m");
-  print_from_last_dot(hdr->type);
+  std::ostringstream buf;
+  if (seq_flags & SEQ_FLAG_JIT)
+    buf << codon::getCapturedOutput();
+
+  buf << "\033[1m";
+  print_from_last_dot(hdr->type, buf);
   if (hdr->msg.len > 0) {
-    fprintf(stderr, ": ");
-    fprintf(stderr, "\033[0m");
-    fwrite(hdr->msg.str, 1, (size_t)hdr->msg.len, stderr);
+    buf << ": \033[0m";
+    buf.write(hdr->msg.str, hdr->msg.len);
   } else {
-    fprintf(stderr, "\033[0m");
+    buf << "\033[0m";
   }
 
-  fprintf(stderr, "\n\n");
-  fprintf(stderr, "\033[1mRaised from:\033[0m \033[32m");
-  fwrite(hdr->func.str, 1, (size_t)hdr->func.len, stderr);
-  fprintf(stderr, "\033[0m\n");
-  fwrite(hdr->file.str, 1, (size_t)hdr->file.len, stderr);
+  buf << "\n\n\033[1mRaised from:\033[0m \033[32m";
+  buf.write(hdr->func.str, hdr->func.len);
+  buf << "\033[0m\n";
+  buf.write(hdr->file.str, hdr->file.len);
   if (hdr->line > 0) {
-    fprintf(stderr, ":%lld", (long long)hdr->line);
+    buf << ":" << hdr->line;
     if (hdr->col > 0)
-      fprintf(stderr, ":%lld", (long long)hdr->col);
+      buf << ":" << hdr->col;
   }
-  fprintf(stderr, "\n");
+  buf << "\n";
 
-  if (seq_debug) {
+  if ((seq_flags & SEQ_FLAG_DEBUG) && (seq_flags & SEQ_FLAG_STANDALONE)) {
     auto *bt = &base->bt;
     if (bt->count > 0) {
-      fprintf(stderr, "\n\033[1mBacktrace:\033[0m\n");
+      buf << "\n\033[1mBacktrace:\033[0m\n";
       for (unsigned i = 0; i < bt->count; i++) {
         auto *frame = &bt->frames[i];
-        fprintf(stderr, "  [\033[33m0x%lx\033[0m] \033[32m%s\033[0m %s:%d\n", frame->pc,
-                frame->function, frame->filename, frame->lineno);
+        buf << "  "
+            << codon::makeBacktraceFrameString(frame->pc, std::string(frame->function),
+                                               std::string(frame->filename),
+                                               frame->lineno)
+            << "\n";
       }
     }
   }
 
-  abort();
+  auto output = buf.str();
+  if (seq_flags & SEQ_FLAG_STANDALONE) {
+    fwrite(output.data(), 1, output.size(), stderr);
+    abort();
+  } else {
+    auto *bt = &base->bt;
+    std::string msg(hdr->msg.str, hdr->msg.len);
+    std::string file(hdr->file.str, hdr->file.len);
+    std::string type(hdr->type.str, hdr->type.len);
+
+    std::vector<uintptr_t> backtrace;
+    if (seq_flags & SEQ_FLAG_DEBUG) {
+      for (unsigned i = 0; i < bt->count; i++) {
+        backtrace.push_back(bt->frames[i].pc);
+      }
+    }
+    throw codon::JITError(output, msg, type, file, (int)hdr->line, (int)hdr->col,
+                          backtrace);
+  }
 }
 
 SEQ_FUNC void seq_throw(void *exc) {
@@ -545,4 +590,24 @@ SEQ_FUNC int64_t seq_exc_offset() {
 
 SEQ_FUNC uint64_t seq_exc_class() {
   return genClass(ourBaseExcpClassChars, sizeof(ourBaseExcpClassChars));
+}
+
+std::string codon::makeBacktraceFrameString(uintptr_t pc, const std::string &func,
+                                            const std::string &file, int line,
+                                            int col) {
+  std::ostringstream buf;
+  buf << "[\033[33m0x" << std::hex << pc << std::dec << "\033[0m]";
+  if (!func.empty()) {
+    buf << " \033[32m" << func << "\033[0m";
+    if (!file.empty()) {
+      buf << " at \033[36m" << file << "\033[0m";
+      if (line != 0) {
+        buf << ":\033[33m" << line << "\033[0m";
+        if (col != 0) {
+          buf << ":\033[33m" << col << "\033[0m";
+        }
+      }
+    }
+  }
+  return buf.str();
 }

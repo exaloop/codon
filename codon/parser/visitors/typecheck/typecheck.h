@@ -26,7 +26,7 @@ class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(std::shared_ptr<Cache> cache, StmtPtr stmts);
+  static StmtPtr apply(Cache *cache, StmtPtr stmts);
 
 public:
   explicit TypecheckVisitor(
