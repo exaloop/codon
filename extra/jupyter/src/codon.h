@@ -11,9 +11,10 @@ namespace codon {
 class CodonJupyter : public xinterpreter {
   std::unique_ptr<codon::jit::JIT> jit;
   std::string argv0;
+  std::vector<std::string> plugins;
 
 public:
-  CodonJupyter(const std::string &argv0);
+  CodonJupyter(const std::string &argv0, const std::vector<std::string> &plugins);
 
 private:
   void configure_impl() override;
@@ -34,7 +35,9 @@ private:
   void shutdown_request_impl() override;
 };
 
-int startJupyterKernel(const std::string &argv0, const std::string &configPath);
+int startJupyterKernel(const std::string &argv0,
+                       const std::vector<std::string> &plugins,
+                       const std::string &configPath);
 
 } // namespace codon
 #endif
