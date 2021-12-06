@@ -3,6 +3,21 @@ from sys import stderr
 def time():
     return _C.seq_time() / 1e9
 
+def time_ns():
+    return _C.seq_time()
+
+def monotonic():
+    return _C.seq_time_monotonic() / 1e9
+
+def monotonic_ns():
+    return _C.seq_time_monotonic()
+
+def perf_counter():
+    return _C.seq_time_highres() / 1e9
+
+def perf_counter_ns():
+    return _C.seq_time_highres()
+
 class TimeInterval:
     """
     Utility class for timing Seq code
@@ -44,3 +59,71 @@ def timing(msg: str = ""):
             foo()  # prints runtime of foo
     """
     return TimeInterval(0, msg)
+
+@tuple
+class struct_time:
+    _year: i16
+    _yday: i16
+    _sec: i8
+    _min: i8
+    _hour: i8
+    _mday: i8
+    _mon: i8
+    _wday: i8
+    _isdst: i8
+
+    def __new__(year: int, mon: int, mday: int, hour: int, min: int, sec: int, wday: int, yday: int, isdst: int):
+        return struct_time(i16(year - 1900), i16(yday - 1), i8(sec), i8(min), i8(hour), i8(mday), i8(mon - 1), i8(wday), i8(isdst))
+
+    @property
+    def tm_year(self):
+        return int(self._year) + 1900
+
+    @property
+    def tm_yday(self):
+        return int(self._yday) + 1
+
+    @property
+    def tm_sec(self):
+        return int(self._sec)
+
+    @property
+    def tm_min(self):
+        return int(self._min)
+
+    @property
+    def tm_hour(self):
+        return int(self._hour)
+
+    @property
+    def tm_mday(self):
+        return int(self._mday)
+
+    @property
+    def tm_mon(self):
+        return int(self._mon) + 1
+
+    @property
+    def tm_wday(self):
+        return int(self._wday)
+
+    @property
+    def tm_isdst(self):
+        return int(self._isdst)
+
+def localtime(secs: int = -1):
+    tm = struct_time()
+    worked = _C.seq_localtime(secs, __ptr__(tm).as_byte())
+    if not worked:
+        raise OSError("localtime failed")
+    return tm
+
+def gmtime(secs: int = -1):
+    tm = struct_time()
+    worked = _C.seq_gmtime(secs, __ptr__(tm).as_byte())
+    if not worked:
+        raise OSError("localtime failed")
+    return tm
+
+def mktime(t: struct_time):
+    return _C.seq_mktime(__ptr__(t).as_byte())

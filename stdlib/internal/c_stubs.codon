@@ -24,6 +24,14 @@ def seq_time() -> int: pass
 def seq_time_monotonic() -> int: pass
 @pure
 @C
+def seq_time_highres() -> int: pass
+from C import seq_localtime(int, cobj) -> bool
+from C import seq_gmtime(int, cobj) -> bool
+@pure
+@C
+def seq_mktime(a: cobj) -> int: pass
+@pure
+@C
 def seq_pid() -> int: pass
 @pure
 @C

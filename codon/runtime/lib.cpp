@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -78,6 +79,60 @@ SEQ_FUNC seq_int_t seq_time_monotonic() {
   auto duration = chrono::steady_clock::now().time_since_epoch();
   seq_int_t nanos = chrono::duration_cast<chrono::nanoseconds>(duration).count();
   return nanos;
+}
+
+SEQ_FUNC seq_int_t seq_time_highres() {
+  auto duration = chrono::high_resolution_clock::now().time_since_epoch();
+  seq_int_t nanos = chrono::duration_cast<chrono::nanoseconds>(duration).count();
+  return nanos;
+}
+
+static void copy_time_c_to_seq(struct tm *x, seq_time_t *output) {
+  output->year = x->tm_year;
+  output->yday = x->tm_yday;
+  output->sec = x->tm_sec;
+  output->min = x->tm_min;
+  output->hour = x->tm_hour;
+  output->mday = x->tm_mday;
+  output->mon = x->tm_mon;
+  output->wday = x->tm_wday;
+  output->isdst = x->tm_isdst;
+}
+
+static void copy_time_seq_to_c(seq_time_t *x, struct tm *output) {
+  output->tm_year = x->year;
+  output->tm_yday = x->yday;
+  output->tm_sec = x->sec;
+  output->tm_min = x->min;
+  output->tm_hour = x->hour;
+  output->tm_mday = x->mday;
+  output->tm_mon = x->mon;
+  output->tm_wday = x->wday;
+  output->tm_isdst = x->isdst;
+}
+
+SEQ_FUNC bool seq_localtime(seq_int_t secs, seq_time_t *output) {
+  struct tm result;
+  time_t now = (secs >= 0 ? secs : time(nullptr));
+  if (now == (time_t)-1 || !localtime_r(&now, &result))
+    return false;
+  copy_time_c_to_seq(&result, output);
+  return true;
+}
+
+SEQ_FUNC bool seq_gmtime(seq_int_t secs, seq_time_t *output) {
+  struct tm result;
+  time_t now = (secs >= 0 ? secs : time(nullptr));
+  if (now == (time_t)-1 || !gmtime_r(&now, &result))
+    return false;
+  copy_time_c_to_seq(&result, output);
+  return true;
+}
+
+SEQ_FUNC seq_int_t seq_mktime(seq_time_t *time) {
+  struct tm result;
+  copy_time_seq_to_c(time, &result);
+  return mktime(&result);
 }
 
 extern char **environ;
