@@ -13,6 +13,11 @@ _DI4Y = 1461
 _DI100Y = 36524
 _DI400Y = 146097
 
+_ROUND_HALF_EVEN = 0
+_ROUND_CEILING = 1
+_ROUND_FLOOR = 2
+_ROUND_UP = 3
+
 #############
 # utilities #
 #############
@@ -317,7 +322,7 @@ def _utc_to_seconds(year, month, day, hour, minute, second):
     return ((ordinal * 24 + hour) * 60 + minute) * 60 + second
 
 @llvm
-def _round_half_to_even(a: float) -> float:
+def _round_half_even(a: float) -> float:
     declare double @llvm.roundeven.f64(double %a)
     %tmp = call double @llvm.roundeven.f64(double %a)
     ret double %tmp
@@ -393,7 +398,7 @@ class timedelta:
         self * other
 
     def __mul__(self, other: float):
-        timedelta._new(int(_round_half_to_even(self._microseconds * other)))
+        timedelta._new(int(_round_half_even(self._microseconds * other)))
 
     def __rmul__(self, other: float):
         self * other
@@ -402,7 +407,7 @@ class timedelta:
         return self._microseconds / other._microseconds
 
     def __truediv__(self, other: float):
-        return timedelta._new(int(_round_half_to_even(self._microseconds / other)))
+        return timedelta._new(int(_round_half_even(self._microseconds / other)))
 
     def __truediv__(self, other: int):
         return self / float(other)
@@ -745,14 +750,66 @@ class datetime:
     def __str__(self):
         return self.isoformat(sep=' ')
 
+    def _from_timet_and_us(timet, us):
+        from time import localtime
+        tm = localtime(timet)
+        year = tm.tm_year
+        month = tm.tm_mon
+        day = tm.tm_mday
+        hour = tm.tm_hour
+        minute = tm.tm_min
+        second = min(59, tm.tm_sec)
+        # TODO: timezone adjustments
+        return datetime(year, month, day, hour, minute, second, us)
+
+    def today():
+        from time import time
+        return datetime.fromtimestamp(time())
+
+    def fromtimestamp(timestamp):
+        from time import _time_to_timeval, _ROUND_HALF_EVEN
+        timet, us = _time_to_timeval(float(timestamp), _ROUND_HALF_EVEN)
+        return datetime._from_timet_and_us(timet, us)
+
+    def __add__(self, other: timedelta):
+        td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        year = self.year
+        month = self.month
+        day = self.day + td_days
+        hour = self.hour
+        minute = self.minute
+        second = self.second + td_seconds
+        microsecond = self.microsecond + td_microseconds
+        return datetime(*_normalize_datetime(year, month, day, hour, minute, second, microsecond))
+
+    def __radd__(self, other: timedelta):
+        return self + other
+
+    def __sub__(self, other: timedelta):
+        td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        year = self.year
+        month = self.month
+        day = self.day - td_days
+        hour = self.hour
+        minute = self.minute
+        second = self.second - td_seconds
+        microsecond = self.microsecond - td_microseconds
+        return datetime(*_normalize_datetime(year, month, day, hour, minute, second, microsecond))
+
+    def __sub__(self, other: datetime):
+        delta_d = _ymd_to_ord(self.year, self.month, self.day) - _ymd_to_ord(other.year, other.month, other.day)
+        delta_s = (self.hour - other.hour)*3600 + (self.minute - other.minute)*60 + (self.second - other.second)
+        delta_us = self.microsecond - other.microsecond
+        return timedelta(days=delta_d, seconds=delta_s, microseconds=delta_us)
+
     def replace(self, year: int = -1, month: int = -1, day: int = -1, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1, fold: int = -1):
         return datetime(self.time().replace(hour, minute, second, microsecond, fold), self.date.replace(year, month, day))
 
     def toordinal(self):
         return self.date().toordinal()
 
-    #def timestamp(self):
-    #    return (self - datetime(1970, 1, 1)).total_seconds()
+    def timestamp(self):
+        return (self - datetime(1970, 1, 1)).total_seconds()
 
     def weekday(self):
         return self.date().isoweekday()

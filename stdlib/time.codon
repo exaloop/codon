@@ -127,3 +127,93 @@ def gmtime(secs: int = -1):
 
 def mktime(t: struct_time):
     return _C.seq_mktime(__ptr__(t).as_byte())
+
+
+# pytime.h funcs
+
+_ROUND_HALF_EVEN = 0
+_ROUND_CEILING = 1
+_ROUND_FLOOR = 2
+_ROUND_UP = 3
+
+_MIN = 0x8000000000000000
+_MAX = 0x7fffffffffffffff
+
+def _overflow():
+    raise OverflowError("timestamp too large")
+
+def _add(t1: int, t2: int):
+    if t2 > 0 and t1 > _MAX - t2:
+        return _MAX
+    elif t2 < 0 and t1 < _MIN - t2:
+        return _MIN
+    else:
+        return t1 + t2
+
+def _mul_check_overflow(a: int, b: int):
+    if b != 0:
+        # assert b > 0
+        return (a < _MIN // b) or (_MAX // b < a)
+    else:
+        return False
+
+def _mul(t: int, k: int):
+    # assert k >= 0
+    if (_mul_check_overflow(t, k)):
+        return _MAX if t >= 0 else _MIN
+    else:
+        return t * k
+
+def _muldiv(ticks: int, mul: int, div: int):
+    intpart = ticks / div
+    ticks %= div
+    remaining = _mul(ticks, mul) // div
+    return _add(_mul(intpart, mul), remaining)
+
+def _round_half_even(x: float):
+    from math import fabs
+    rounded = x.__round__()
+    if fabs(x - rounded) == 0.5:
+        rounded = 2.0 * (x / 2.0).__round__()
+    return rounded
+
+def _round(x: float, mode: int):
+    d = x
+    if mode == _ROUND_HALF_EVEN:
+        d = _round_half_even(d)
+    elif mode == _ROUND_CEILING:
+        d = d.__ceil__()
+    elif mode == _ROUND_FLOOR:
+        d = d.__floor__()
+    elif mode == _ROUND_UP:
+        d = d.__ceil__() if d >= 0 else d.__floor__()
+    return d
+
+def _double_to_denominator(d: float, idenominator: int, mode: int):
+    from math import modf
+    denominator = float(idenominator)
+    floatpart, intpart = modf(d)
+
+    floatpart *= denominator
+    floatpart = _round(floatpart, mode)
+    if floatpart >= denominator:
+        floatpart -= denominator
+        intpart += 1.0
+    elif floatpart < 0.0:
+        floatpart += denominator
+        intpart -= 1.0
+    # assert 0.0 <= floatpart < denominator
+
+    if intpart < _MIN or intpart > _MAX:
+        _overflow()
+
+    sec = int(intpart)
+    numerator = int(floatpart)
+    # assert 0 <= numerator < idenominator
+    return sec, numerator
+
+def _time_to_timespec(t: float, mode: int):
+    return _double_to_denominator(t, 1000000000, mode)
+
+def _time_to_timeval(t: float, mode: int):
+    return _double_to_denominator(t, 1000000, mode)
