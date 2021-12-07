@@ -336,15 +336,50 @@ class timedelta:
     def _new(microseconds: int) -> timedelta:
         return (microseconds, )
 
-    def __new__(days: int = 0, seconds: int = 0, microseconds: int = 0, milliseconds: int = 0, minutes: int = 0, hours: int = 0, weeks: int = 0) -> timedelta:
+    @inline
+    def _accum(sofar: int, leftover: float, num, factor: int):
+        from math import modf
+        if isinstance(num, int):
+            sofar += num * factor
+            return sofar, leftover
+        elif isinstance(num, float):
+            fracpart, intpart = modf(num)
+            prod = int(intpart) * factor
+            s = sofar + prod
+
+            if fracpart == 0.0:
+                return s, leftover
+            dnum = factor * fracpart
+            fracpart, intpart = modf(dnum)
+            y = s + int(intpart)
+            return y, leftover + fracpart
+        else:
+            compile_error("expected int or float argument to timedelta constructor")
+
+    # override default constructor
+    def __new__(days: int):
+        return timedelta(days, 0)
+
+    def __new__(days = 0, seconds = 0, microseconds = 0, milliseconds = 0, minutes = 0, hours = 0, weeks = 0) -> timedelta:
         us = 0
-        us += days * (24 * 60 * 60 * 1000000)
-        us += seconds * (1000000)
-        us += microseconds
-        us += milliseconds * (1000)
-        us += minutes * (60 * 1000000)
-        us += hours * (60 * 60 * 1000000)
-        us += weeks * (7 * 24 * 60 * 60 * 1000000)
+        leftover = 0.0
+
+        us, leftover = timedelta._accum(us, leftover, days, 24 * 60 * 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, seconds, 1000000)
+        us, leftover = timedelta._accum(us, leftover, microseconds, 1)
+        us, leftover = timedelta._accum(us, leftover, milliseconds, 1000)
+        us, leftover = timedelta._accum(us, leftover, minutes, 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, hours, 60 * 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, weeks, 7 * 24 * 60 * 60 * 1000000)
+
+        if leftover:
+            from math import fabs
+            whole_us = leftover.__round__()
+            if fabs(whole_us - leftover) == 0.5:
+                is_odd = us & 1
+                whole_us = 2.0 * ((leftover + is_odd) * 0.5) - is_odd
+            us += int(whole_us)
+
         return (us,)
 
     @property
@@ -384,22 +419,22 @@ class timedelta:
                 return f"{hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
 
     def __add__(self, other: timedelta):
-        timedelta._new(self._microseconds + other._microseconds)
+        return timedelta._new(self._microseconds + other._microseconds)
 
     def __sub__(self, other: timedelta):
-        timedelta._new(self._microseconds - other._microseconds)
+        return timedelta._new(self._microseconds - other._microseconds)
 
     def __mul__(self, other: int):
-        timedelta._new(self._microseconds * other)
+        return timedelta._new(self._microseconds * other)
 
     def __rmul__(self, other: int):
-        self * other
+        return self * other
 
     def __mul__(self, other: float):
-        timedelta._new(int(_round_half_even(self._microseconds * other)))
+        return timedelta._new(int(_round_half_even(self._microseconds * other)))
 
     def __rmul__(self, other: float):
-        self * other
+        return self * other
 
     def __truediv__(self, other: timedelta):
         return self._microseconds / other._microseconds
