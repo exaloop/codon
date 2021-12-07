@@ -385,20 +385,22 @@ std::string RangeExpr::toString() const {
 }
 ACCEPT_IMPL(RangeExpr, ASTVisitor);
 
-StmtExpr::StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr)
-    : Expr(), stmts(std::move(stmts)), expr(std::move(expr)) {}
-StmtExpr::StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr)
-    : Expr(), expr(std::move(expr)) {
+StmtExpr::StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr,
+                   bool ownBlock)
+    : Expr(), stmts(std::move(stmts)), expr(std::move(expr)), ownBlock(ownBlock) {}
+StmtExpr::StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr, bool ownBlock)
+    : Expr(), expr(std::move(expr)), ownBlock(ownBlock) {
   stmts.push_back(std::move(stmt));
 }
 StmtExpr::StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2,
-                   ExprPtr expr)
-    : Expr(), expr(std::move(expr)) {
+                   ExprPtr expr, bool ownBlock)
+    : Expr(), expr(std::move(expr)), ownBlock(ownBlock) {
   stmts.push_back(std::move(stmt));
   stmts.push_back(std::move(stmt2));
 }
 StmtExpr::StmtExpr(const StmtExpr &expr)
-    : Expr(expr), stmts(ast::clone(expr.stmts)), expr(ast::clone(expr.expr)) {}
+    : Expr(expr), stmts(ast::clone(expr.stmts)), expr(ast::clone(expr.expr)),
+      ownBlock(expr.ownBlock) {}
 std::string StmtExpr::toString() const {
   return wrapType(format("stmt-expr ({}) {}", combine(stmts, " "), expr->toString()));
 }

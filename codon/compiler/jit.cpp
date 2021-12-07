@@ -113,11 +113,16 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
                   : &node;
     if (e)
       if (auto ex = (*e)->getExpr()) {
-        *e = std::make_shared<ast::PrintStmt>(
-            std::vector<ast::ExprPtr>{std::make_shared<ast::CallExpr>(
-                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr,
-                std::make_shared<ast::StringExpr>(mode))},
-            false);
+        *e = std::make_shared<ast::IfStmt>(
+            std::make_shared<ast::CallExpr>(std::make_shared<ast::IdExpr>("isinstance"),
+                                            ex->expr->clone(),
+                                            std::make_shared<ast::IdExpr>("void")),
+            ex->clone(),
+            std::make_shared<ast::PrintStmt>(
+                std::vector<ast::ExprPtr>{std::make_shared<ast::CallExpr>(
+                    std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
+                    std::make_shared<ast::StringExpr>(mode))},
+                false));
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();
@@ -126,6 +131,7 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     for (auto &s : preamble->functions)
       simplified->stmts.push_back(s);
     simplified->stmts.push_back(s);
+    // LOG("{}\n", simplified->toString(1));
     // TODO: unroll on errors...
 
     auto *cache = compiler->getCache();

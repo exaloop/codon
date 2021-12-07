@@ -600,10 +600,13 @@ struct RangeExpr : public Expr {
 struct StmtExpr : public Expr {
   std::vector<std::shared_ptr<Stmt>> stmts;
   ExprPtr expr;
+  bool ownBlock;
 
-  StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr);
-  StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr);
-  StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2, ExprPtr expr);
+  StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr,
+           bool ownBlock = false);
+  StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr, bool ownBlock = false);
+  StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2, ExprPtr expr,
+           bool ownBlock = false);
   StmtExpr(const StmtExpr &expr);
 
   std::string toString() const override;

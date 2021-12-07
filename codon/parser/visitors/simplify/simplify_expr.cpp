@@ -186,7 +186,7 @@ void SimplifyVisitor::visit(ListExpr *expr) {
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(it)))));
     }
   }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  resultExpr = N<StmtExpr>(stmts, transform(var), true);
 }
 
 void SimplifyVisitor::visit(SetExpr *expr) {
@@ -204,7 +204,7 @@ void SimplifyVisitor::visit(SetExpr *expr) {
       stmts.push_back(transform(
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(it)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  resultExpr = N<StmtExpr>(stmts, transform(var), true);
 }
 
 void SimplifyVisitor::visit(DictExpr *expr) {
@@ -224,7 +224,7 @@ void SimplifyVisitor::visit(DictExpr *expr) {
       stmts.push_back(transform(N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(clone(var), "__setitem__"), clone(it.key), clone(it.value)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  resultExpr = N<StmtExpr>(stmts, transform(var), true);
 }
 
 void SimplifyVisitor::visit(GeneratorExpr *expr) {
@@ -255,14 +255,14 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(expr->expr))));
     stmts.push_back(transform(suite));
-    resultExpr = N<StmtExpr>(stmts, transform(var));
+    resultExpr = N<StmtExpr>(stmts, transform(var), true);
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     stmts.push_back(transform(
         N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")), nullptr, true)));
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(expr->expr))));
     stmts.push_back(transform(suite));
-    resultExpr = N<StmtExpr>(stmts, transform(var));
+    resultExpr = N<StmtExpr>(stmts, transform(var), true);
   } else {
     prev->stmts.push_back(N<YieldStmt>(clone(expr->expr)));
     stmts.push_back(suite);
@@ -281,7 +281,7 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
   prev->stmts.push_back(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  resultExpr = N<StmtExpr>(stmts, transform(var), true);
 }
 
 void SimplifyVisitor::visit(IfExpr *expr) {
@@ -473,7 +473,7 @@ void SimplifyVisitor::visit(CallExpr *expr) {
       var = N<IdExpr>(varName);
       ex = N<StmtExpr>(
           transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true)),
-          transform(ex));
+          transform(ex), true);
     }
     std::vector<GeneratorBody> body;
     body.push_back({var, transform(g->loops[0].gen), {}});
@@ -653,7 +653,7 @@ void SimplifyVisitor::visit(AssignExpr *expr) {
     error("assignment expression in a short-circuiting subexpression");
   resultExpr = transform(N<StmtExpr>(
       std::vector<StmtPtr>{N<AssignStmt>(clone(expr->var), clone(expr->expr))},
-      clone(expr->var)));
+      clone(expr->var), false));
 }
 
 void SimplifyVisitor::visit(RangeExpr *expr) {
@@ -662,9 +662,14 @@ void SimplifyVisitor::visit(RangeExpr *expr) {
 
 void SimplifyVisitor::visit(StmtExpr *expr) {
   std::vector<StmtPtr> stmts;
+  if (expr->ownBlock)
+    ctx->addBlock();
   for (auto &s : expr->stmts)
     stmts.emplace_back(transform(s));
-  resultExpr = N<StmtExpr>(stmts, transform(expr->expr));
+  auto e = transform(expr->expr);
+  if (expr->ownBlock)
+    ctx->popBlock();
+  resultExpr = N<StmtExpr>(stmts, e);
 }
 
 /**************************************************************************************/
