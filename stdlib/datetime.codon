@@ -90,7 +90,7 @@ def _ord_to_ymd(ordinal):
     leapyear = (n1 == 3) and (n4 != 24 or n100 == 3)
     # assert leapyear == is_leap(year)
     month = (n + 50) >> 5
-    preceding = _days_before_month(month) + int(month > 2 and leapyear)
+    preceding = _days_before_monthx(month) + int(month > 2 and leapyear)
     if preceding > n:
         month -= 1
         preceding -= _days_in_month(year, month)
@@ -126,7 +126,7 @@ def _check_date_args(year, month, day):
     if not (1 <= day <= _days_in_month(year, month)):
         raise ValueError("day is out of range for month")
 
-def _check_time_args(hour, minute, second, microsecond, fold):
+def _check_time_args(hour, minute, second, microsecond):
     if not (0 <= hour <= 23):
         raise ValueError("hour must be in 0..23")
     if not (0 <= minute <= 59):
@@ -135,8 +135,6 @@ def _check_time_args(hour, minute, second, microsecond, fold):
         raise ValueError("second must be in 0..59")
     if not (0 <= microsecond <= 999999):
         raise ValueError("microsecond must be in 0..999999")
-    if not (fold == 0 or fold == 1):
-        raise ValueError("fold must be either 0 or 1")
 
 def _normalize_pair(hi, lo, factor):
     # assert factor > 0
@@ -619,9 +617,9 @@ class date:
 class time:
     _value: int
 
-    def __new__(hour: int, minute: int, second: int = 0, microsecond: int = 0, fold: int = 0) -> time:
-        _check_time_args(hour, minute, second, microsecond, fold)
-        v = (hour << 40) | (minute << 32) | (second << 24) | (microsecond << 1) | fold
+    def __new__(hour: int, minute: int, second: int = 0, microsecond: int = 0) -> time:
+        _check_time_args(hour, minute, second, microsecond)
+        v = (hour << 40) | (minute << 32) | (second << 24) | microsecond
         return (v,)
 
     @property
@@ -642,15 +640,10 @@ class time:
     @property
     def microsecond(self):
         v = self._value
-        return (v >> 1) & 0xffffff
-
-    @property
-    def fold(self):
-        v = self._value
-        return v & 1
+        return v & 0xffffff
 
     def __repr__(self):
-        return f"time(hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond}, fold={self.fold})"
+        return f"time(hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond})"
 
     def __str__(self):
         return self.isoformat()
@@ -660,7 +653,7 @@ class time:
         # TODO: deal with timezone
         return time(hour, minute, second, microsecond)
 
-    def replace(self, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1, fold: int = -1):
+    def replace(self, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1):
         if hour == -1:
             hour = self.hour
         if second == -1:
@@ -669,9 +662,7 @@ class time:
             minute == self.minute
         if microsecond == -1:
             microsecond = self.microsecond
-        if fold == -1:
-            fold = self.fold
-        return time(hour, minute, second, microsecond, fold)
+        return time(hour, minute, second, microsecond)
 
     def isoformat(self, timespec: Static[str] = 'auto'):
         hh = str(self.hour).zfill(2)
@@ -703,8 +694,8 @@ class datetime:
     _time: time
     _date: date
 
-    def __new__(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, microsecond: int = 0, fold: int = 0):
-        return datetime(time(hour, minute, second, microsecond, fold), date(year, month, day))
+    def __new__(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, microsecond: int = 0):
+        return datetime(time(hour, minute, second, microsecond), date(year, month, day))
 
     def date(self):
         return self._date
@@ -740,12 +731,8 @@ class datetime:
     def microsecond(self):
         return self.time().microsecond
 
-    @property
-    def fold(self):
-        return self.time().fold
-
     def __repr__(self):
-        return f"datetime(year={self.year}, month={self.month}, day={self.day}, hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond}, fold={self.fold})"
+        return f"datetime(year={self.year}, month={self.month}, day={self.day}, hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond})"
 
     def __str__(self):
         return self.isoformat(sep=' ')
@@ -766,10 +753,36 @@ class datetime:
         from time import time
         return datetime.fromtimestamp(time())
 
+    # TODO: support timezone
+    def now():
+        return datetime.today()
+
+    # TODO: support timezone
     def fromtimestamp(timestamp):
         from time import _time_to_timeval, _ROUND_HALF_EVEN
         timet, us = _time_to_timeval(float(timestamp), _ROUND_HALF_EVEN)
         return datetime._from_timet_and_us(timet, us)
+
+    def utcfromtimestamp(timestamp):
+        return datetime.fromtimestamp(timestamp)
+
+    def fromordinal(ordinal: int):
+        return datetime.combine(date.fromordinal(ordinal), time())
+
+    # TODO: support timezone
+    def combine(date: date, time: time):
+        return datetime(time, date)
+
+    def fromisoformat(date_string: str):
+        year, month, day = _parse_isoformat_date(date_string)
+        if len(date_string) == 10:
+            return datetime(year=year, month=month, day=day)
+        date_string = '' if len(date_string) < 12 else date_string[12:]
+        hour, minute, second, microsecond = _parse_hh_mm_ss_ff(date_string)
+        return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second, microsecond=microsecond)
+
+    def fromisocalendar(year: int, week: int, day: int):
+        return datetime.combine(date.fromisocalendar(year, week, day), time())
 
     def __add__(self, other: timedelta):
         td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
@@ -802,8 +815,37 @@ class datetime:
         delta_us = self.microsecond - other.microsecond
         return timedelta(days=delta_d, seconds=delta_s, microseconds=delta_us)
 
-    def replace(self, year: int = -1, month: int = -1, day: int = -1, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1, fold: int = -1):
-        return datetime(self.time().replace(hour, minute, second, microsecond, fold), self.date.replace(year, month, day))
+    def __eq__(self, other: datetime):
+        return self.date() == other.date() and self.time() == other.time()
+
+    def __ne__(self, other: datetime):
+        not (self == other)
+
+    def __lt__(self, other: datetime):
+        return (self.date(), self.time()) < (other.date(), other.time())
+
+    def __le__(self, other: datetime):
+        return (self.date(), self.time()) <= (other.date(), other.time())
+
+    def __gt__(self, other: datetime):
+        return (self.date(), self.time()) > (other.date(), other.time())
+
+    def __ge__(self, other: datetime):
+        return (self.date(), self.time()) >= (other.date(), other.time())
+
+    def __bool__(self):
+        return True
+
+    def replace(self, year: int = -1, month: int = -1, day: int = -1, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1):
+        return datetime(self.time().replace(hour, minute, second, microsecond), self.date().replace(year, month, day))
+
+    def timetuple(self):
+        from time import struct_time
+        yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
+        return struct_time(self.year, self.month, self.day, self.hour, self.minute, self.second, self.weekday(), yday)
+
+    def utctimetuple(self):
+        return self.timetuple()
 
     def toordinal(self):
         return self.date().toordinal()
@@ -826,21 +868,3 @@ class datetime:
         date = self.date()
         time = self.time()
         return _format_ctime(date.year, date.month, date.day, time.hour, time.minute, time.second, time.microsecond)
-
-@tuple
-class timezone:
-    _offset: timedelta
-    _name: str
-
-    def __init__(offset: timedelta, name: str) -> timezone:
-        if (offset.days == -1 and offset.seconds == 0 and offset.microseconds < 1) or offset.days < -1 or offset.days >= 1:
-            raise ValueError(f"offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not {offset}.")
-        return (offset, name)
-
-    @property
-    def offset(self):
-        return self._offset
-
-    @property
-    def name(self):
-        return self._name
