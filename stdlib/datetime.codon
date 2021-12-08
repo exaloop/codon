@@ -319,11 +319,12 @@ def _utc_to_seconds(year, month, day, hour, minute, second):
     ordinal = _ymd_to_ord(year, month, day)
     return ((ordinal * 24 + hour) * 60 + minute) * 60 + second
 
-@llvm
-def _round_half_even(a: float) -> float:
-    declare double @llvm.roundeven.f64(double %a)
-    %tmp = call double @llvm.roundeven.f64(double %a)
-    ret double %tmp
+def _round_half_even(x: float):
+    from math import fabs
+    rounded = x.__round__()
+    if fabs(x - rounded) == 0.5:
+        rounded = 2.0 * (x / 2.0).__round__()
+    return rounded
 
 ################
 # core classes #
@@ -377,7 +378,7 @@ class timedelta:
             whole_us = leftover.__round__()
             if fabs(whole_us - leftover) == 0.5:
                 is_odd = us & 1
-                whole_us = 2.0 * ((leftover + is_odd) * 0.5) - is_odd
+                whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
             us += int(whole_us)
 
         return (us,)
@@ -399,7 +400,16 @@ class timedelta:
 
     def __repr__(self):
         days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
-        return f"timedelta(days={days}, seconds={seconds}, microseconds={microseconds})"
+        if days == 0 and seconds == 0 and microseconds == 0:
+            return "timedelta(0)"
+        v = []
+        if days:
+            v.append(f"days={days}")
+        if seconds:
+            v.append(f"seconds={seconds}")
+        if microseconds:
+            v.append(f"microseconds={microseconds}")
+        return f"timedelta({', '.join(v)})"
 
     def __str__(self):
         days, seconds, us = _normalize_d_s_us(0, 0, self._microseconds)
@@ -408,7 +418,6 @@ class timedelta:
 
         if days:
             if us:
-                # %d day%s, %d:%02d:%02d.%06d
                 return f"{days} day{'' if days == 1 or days == -1 else 's'}, {hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}.{str(us).zfill(6)}"
             else:
                 return f"{days} day{'' if days == 1 or days == -1 else 's'}, {hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
@@ -446,13 +455,16 @@ class timedelta:
         return self / float(other)
 
     def __floordiv__(self, other: timedelta):
-        return self._microseconds // other._microseconds
+        return int((self._microseconds / other._microseconds).__floor__())
 
     def __floordiv__(self, other: int):
         return timedelta._new(self._microseconds // other)
 
     def __mod__(self, other: timedelta):
-        return timedelta._new(self._microseconds % other._microseconds)
+        n = self._microseconds
+        M = other._microseconds
+        m = self._microseconds % other._microseconds
+        return timedelta._new(((n % M) + M) % M)
 
     def __divmod__(self, other: timedelta):
         return self // other, self % other
