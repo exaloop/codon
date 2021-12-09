@@ -125,9 +125,12 @@ def gmtime(secs: int = -1):
         raise OSError("localtime failed")
     return tm
 
-def mktime(t: struct_time):
-    return _C.seq_mktime(__ptr__(t).as_byte())
-
+def mktime(t):
+    if isinstance(t, struct_time):
+        return _C.seq_mktime(__ptr__(t).as_byte())
+    else:
+        tm = struct_time(*t)
+        return _C.seq_mktime(__ptr__(tm).as_byte())
 
 # pytime.h funcs
 

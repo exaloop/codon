@@ -842,9 +842,6 @@ class datetime:
         microsecond = self.microsecond + td_microseconds
         return datetime(*_normalize_datetime(year, month, day, hour, minute, second, microsecond))
 
-    def __radd__(self, other: timedelta):
-        return self + other
-
     def __sub__(self, other: timedelta):
         td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
         year = self.year
@@ -915,3 +912,11 @@ class datetime:
         date = self.date()
         time = self.time()
         return _format_ctime(date.year, date.month, date.day, time.hour, time.minute, time.second, time.microsecond)
+
+@extend
+class timedelta:
+    def __add__(self, other: date):
+        return other + self
+
+    def __add__(self, other: datetime):
+        return other + self
