@@ -232,6 +232,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           r->ir->setParentType(getLLVMType(parent->getClass().get()));
         }
         r->ir->setGlobal();
+
         ctx->cache->pendingRealizations.insert({type->ast->name, type->realizedName()});
 
         seqassert(!type || ast->args.size() ==
@@ -245,6 +246,29 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         }
         r->ast = Nx<FunctionStmt>(ast, type->realizedName(), nullptr, args, realized,
                                   ast->attributes);
+
+        // Set up IR node
+        std::vector<std::string> names;
+        std::vector<codon::ir::types::Type *> types;
+        for (int i = 0, j = 1; i < r->ast->args.size(); i++)
+          if (!r->ast->args[i].generic) {
+            if (!type->args[j]->getFunc()) {
+              types.push_back(getLLVMType(type->args[j]->getClass().get()));
+              names.push_back(
+                  ctx->cache->reverseIdentifierLookup[r->ast->args[i].name]);
+            }
+            j++;
+          }
+        if (r->ast->hasAttr(Attr::CVarArg)) {
+          types.pop_back();
+          names.pop_back();
+        }
+        auto irType = ctx->cache->module->unsafeGetFuncType(
+            type->realizedName(), getLLVMType(type->args[0]->getClass().get()), types,
+            r->ast->hasAttr(Attr::CVarArg));
+        irType->setAstType(type->getFunc());
+        r->ir->realize(irType, names);
+
         ctx->cache->functions[type->ast->name].realizations[type->realizedName()] = r;
       } else {
         ctx->cache->functions[type->ast->name].realizations[oldKey] =
