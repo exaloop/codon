@@ -168,6 +168,7 @@ void SimplifyVisitor::visit(TupleExpr *expr) {
 }
 
 void SimplifyVisitor::visit(ListExpr *expr) {
+  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("list"));
   stmts.push_back(transform(N<AssignStmt>(
@@ -187,9 +188,11 @@ void SimplifyVisitor::visit(ListExpr *expr) {
     }
   }
   resultExpr = N<StmtExpr>(stmts, transform(var));
+  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(SetExpr *expr) {
+  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("set"));
   stmts.push_back(transform(
@@ -205,9 +208,11 @@ void SimplifyVisitor::visit(SetExpr *expr) {
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(it)))));
     }
   resultExpr = N<StmtExpr>(stmts, transform(var));
+  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(DictExpr *expr) {
+  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("dict"));
   stmts.push_back(transform(
@@ -225,9 +230,11 @@ void SimplifyVisitor::visit(DictExpr *expr) {
           N<DotExpr>(clone(var), "__setitem__"), clone(it.key), clone(it.value)))));
     }
   resultExpr = N<StmtExpr>(stmts, transform(var));
+  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(GeneratorExpr *expr) {
+  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   SuiteStmt *prev;
   std::vector<StmtPtr> stmts;
 
@@ -268,9 +275,11 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     stmts.push_back(suite);
     resultExpr = N<CallExpr>(N<DotExpr>(N<CallExpr>(makeAnonFn(stmts)), "__iter__"));
   }
+  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
+  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   SuiteStmt *prev;
   auto suite = transformGeneratorBody(expr->loops, prev);
 
@@ -282,6 +291,7 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));
   resultExpr = N<StmtExpr>(stmts, transform(var));
+  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(IfExpr *expr) {
@@ -310,6 +320,7 @@ void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
   seqassert(expr->exprs.size() >= 2, "not enough expressions in ChainBinaryExpr");
   std::vector<ExprPtr> e;
   std::string prev;
+  ctx->addBlock();
   for (int i = 1; i < expr->exprs.size(); i++) {
     auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
     prev = ctx->generateCanonicalName("chain");
@@ -320,6 +331,7 @@ void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
                           N<IdExpr>(prev));
     e.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
   }
+  ctx->popBlock();
 
   int i = int(e.size()) - 1;
   ExprPtr b = e[i];
@@ -471,9 +483,11 @@ void SimplifyVisitor::visit(CallExpr *expr) {
       std::string varName = ctx->cache->getTemporaryVar("for");
       ctx->add(SimplifyItem::Var, varName, varName);
       var = N<IdExpr>(varName);
+      ctx->addBlock(); // prevent tmp vars from being toplevel vars
       ex = N<StmtExpr>(
           transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true)),
           transform(ex));
+      ctx->popBlock();
     }
     std::vector<GeneratorBody> body;
     body.push_back({var, transform(g->loops[0].gen), {}});
@@ -664,7 +678,8 @@ void SimplifyVisitor::visit(StmtExpr *expr) {
   std::vector<StmtPtr> stmts;
   for (auto &s : expr->stmts)
     stmts.emplace_back(transform(s));
-  resultExpr = N<StmtExpr>(stmts, transform(expr->expr));
+  auto e = transform(expr->expr);
+  resultExpr = N<StmtExpr>(stmts, e);
 }
 
 /**************************************************************************************/

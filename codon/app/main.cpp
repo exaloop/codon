@@ -310,13 +310,20 @@ int buildMode(const std::vector<const char *> &args) {
 
 #ifdef CODON_JUPYTER
 namespace codon {
-int startJupyterKernel(const std::string &argv0, const std::string &configPath);
+int startJupyterKernel(const std::string &argv0,
+                       const std::vector<std::string> &plugins,
+                       const std::string &configPath);
 }
 #endif
 int jupyterMode(const std::vector<const char *> &args) {
 #ifdef CODON_JUPYTER
-  int code = codon::startJupyterKernel(args[0], args.size() > 1 ? std::string(args[1])
-                                                                : "connection.json");
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<connection file>"),
+                                   llvm::cl::init("connection.json"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  int code = codon::startJupyterKernel(args[0], plugins, input);
   return code;
 #else
   fmt::print("Jupyter support not included. Please recompile with "

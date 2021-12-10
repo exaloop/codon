@@ -23,7 +23,9 @@ using std::string;
 namespace nl = nlohmann;
 namespace codon {
 
-CodonJupyter::CodonJupyter(const std::string &argv0) : argv0(argv0) {}
+CodonJupyter::CodonJupyter(const std::string &argv0,
+                           const std::vector<std::string> &plugins)
+    : argv0(argv0), plugins(plugins) {}
 
 nl::json CodonJupyter::execute_request_impl(int execution_counter, const string &code,
                                             bool silent, bool store_history,
@@ -62,6 +64,18 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
 
 void CodonJupyter::configure_impl() {
   jit = std::make_unique<codon::jit::JIT>(argv0, "jupyter");
+
+  for (const auto &plugin : plugins) {
+    // TODO: error handling on plugin init
+    bool failed = false;
+    llvm::handleAllErrors(jit->getCompiler()->load(plugin),
+                          [&failed](const codon::error::PluginErrorInfo &e) {
+                            codon::compilationError(e.getMessage(), /*file=*/"",
+                                                    /*line=*/0, /*col=*/0,
+                                                    /*terminate=*/false);
+                            failed = true;
+                          });
+  }
   llvm::cantFail(jit->init());
 }
 
@@ -86,11 +100,13 @@ nl::json CodonJupyter::kernel_info_request_impl() {
 
 void CodonJupyter::shutdown_request_impl() {}
 
-int startJupyterKernel(const std::string &argv0, const std::string &configPath) {
+int startJupyterKernel(const std::string &argv0,
+                       const std::vector<std::string> &plugins,
+                       const std::string &configPath) {
   xeus::xconfiguration config = xeus::load_configuration(configPath);
 
   auto context = xeus::make_context<zmq::context_t>();
-  auto interpreter = std::make_unique<CodonJupyter>(argv0);
+  auto interpreter = std::make_unique<CodonJupyter>(argv0, plugins);
   xeus::xkernel kernel(config, xeus::get_user_name(), move(context), move(interpreter),
                        xeus::make_xserver_zmq);
   kernel.start();

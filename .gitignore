@@ -53,4 +53,4 @@ Thumbs.db
 .vscode
 
 extra/jupyter/share/jupyter/kernels/codon/kernel.json
-scratch.seq
+scratch.*
