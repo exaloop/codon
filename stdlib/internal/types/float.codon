@@ -17,6 +17,8 @@ class float:
         return s if s != "-nan" else "nan"
     def __copy__(self) -> float:
         return self
+    def __deepcopy__(self) -> float:
+        return self
     @pure
     @llvm
     def __int__(self) -> int:

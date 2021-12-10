@@ -284,7 +284,7 @@ def starmap(function, iterable):
         yield function(*args)
 
 @inline
-def groupby[T](iterable: Generator[T], key: Callable[[T], S] = NoneType, S: type = NoneType):
+def groupby(iterable, key = Optional[int]()):
     """
     Make an iterator that returns consecutive keys and groups from the iterable.
     """
@@ -292,7 +292,7 @@ def groupby[T](iterable: Generator[T], key: Callable[[T], S] = NoneType, S: type
     group = []
 
     for currvalue in iterable:
-        k = currvalue if isinstance(key, NoneType) else key(currvalue)
+        k = currvalue if isinstance(key, Optional) else key(currvalue)
         if currkey is None:
             currkey = k
         if k != ~currkey:

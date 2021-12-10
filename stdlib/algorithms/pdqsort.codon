@@ -35,7 +35,7 @@ def _partial_insertion_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Call
                 arr[sift] = arr[sift_1]
                 sift -= 1
                 sift_1 -= 1
-                if sift == begin or keyf(tmp) >= keyf(arr[sift_1]):
+                if sift == begin or not keyf(tmp) < keyf(arr[sift_1]):
                     break
 
             arr[sift] = tmp
@@ -52,7 +52,7 @@ def _partition_left[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T]
 
     while True:
         last -= 1
-        if keyf(pivot) >= keyf(arr[last]):
+        if not keyf(pivot) < keyf(arr[last]):
             break
 
     if (last + 1 == end):
@@ -71,7 +71,7 @@ def _partition_left[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T]
         arr[first], arr[last] = arr[last], arr[first]
         while True:
             last -= 1
-            if keyf(pivot) >= keyf(arr[last]):
+            if not keyf(pivot) < keyf(arr[last]):
                 break
         while True:
             first += 1
@@ -91,7 +91,7 @@ def _partition_right[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T
 
     while True:
         first += 1
-        if keyf(arr[first]) >= keyf(pivot):
+        if not keyf(arr[first]) < keyf(pivot):
             break
 
     if first - 1 == begin:
@@ -115,7 +115,7 @@ def _partition_right[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T
 
         while True:
             first += 1
-            if keyf(arr[first]) >= keyf(pivot):
+            if not keyf(arr[first]) < keyf(pivot):
                 break
 
         while True:
@@ -155,7 +155,7 @@ def _pdq_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], 
         else:
             _sort3(arr, begin + size_2, begin, end - 1, keyf)
 
-        if not leftmost and keyf(arr[begin - 1]) >= keyf(arr[begin]):
+        if not leftmost and not keyf(arr[begin - 1]) < keyf(arr[begin]):
             begin = _partition_left(arr, begin, end, keyf) + 1
             continue
 

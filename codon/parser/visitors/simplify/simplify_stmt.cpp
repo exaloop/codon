@@ -786,8 +786,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     if (bcName.empty() || !in(ctx->cache->classes, bcName))
       error(baseClass.get(), "invalid base class");
     baseASTs.push_back(ctx->cache->classes[bcName].ast.get());
-    if (baseASTs.back()->attributes.has(Attr::Tuple) != isRecord)
-      error("tuples cannot inherit reference classes (and vice versa)");
+    if (!isRecord && baseASTs.back()->attributes.has(Attr::Tuple))
+      error("reference classes cannot inherit by-value classes");
     if (baseASTs.back()->attributes.has(Attr::Internal))
       error("cannot inherit internal types");
     int si = 0;

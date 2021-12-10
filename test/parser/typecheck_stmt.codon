@@ -282,3 +282,19 @@ class int:
             yield self
             self -= 1
 print list((5).run_lola_run())  #: [5, 4, 3, 2, 1]
+
+
+#%% early_return,barebones
+def foo(x):
+    print  x-1
+    return
+    print len(x)
+foo(5) #: 4
+
+def foo(x):
+    if isinstance(x, int):
+        print  x+1
+        return
+    print len(x)
+foo(1) #: 2
+foo('s') #: 1

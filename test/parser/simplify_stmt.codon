@@ -851,6 +851,11 @@ print np.transpose(a)
 n = np.array([[1, 2], [3, 4]])
 print n[0], n[0][0] + 1 #: [1 2] 2
 
+a = np.array([1,2,3])
+print(a + 1) #: [2 3 4]
+print(a - 1) #: [0 1 2]
+print(1 - a) #: [ 0 -1 -2]
+
 #%% python_import_fn
 from python import re.split(str, str) -> List[str] as rs
 print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
@@ -943,10 +948,23 @@ class defdict(Dict[str,float]):
 z = defdict()
 z[1.1] #! cannot unify float and str
 
+#%% inherit_tuple,barebones
+class Foo:
+    a: int
+    b: str
+    def __init__(self, a: int):
+        self.a, self.b = a, 'yoo'
+@tuple
+class FooTup(Foo): pass
+
+f = Foo(5)
+print f.a, f.b #: 5 yoo
+fp = FooTup(6, 's')
+print fp #: (a: 6, b: s)
 
 #%% inherit_class_err_1,barebones
 class defdict(Array[int]):
-    pass #! tuples cannot inherit reference classes (and vice versa)
+    pass #! reference classes cannot inherit by-value classes
 
 #%% inherit_class_err_2,barebones
 @tuple

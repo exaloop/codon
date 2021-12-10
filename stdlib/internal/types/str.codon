@@ -23,7 +23,10 @@ class str:
     def __bool__(self) -> bool:
         return self.len != 0
     def __copy__(self) -> str:
-        return self
+        n = len(self)
+        p = cobj(n)
+        str.memcpy(p, self.ptr, n)
+        return str(p, n)
     @llvm
     def memcpy(dest: Ptr[byte], src: Ptr[byte], len: int) -> void:
         declare void @llvm.memcpy.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 %align, i1 %isvolatile)

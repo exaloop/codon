@@ -104,6 +104,9 @@ class deque[T]:
                 return True
         return False
 
+    def __deepcopy__(self):
+        return deque(i.__deepcopy__() for i in self)
+
     def __copy__(self):
         return deque[T](copy(self._arr), self._head, self._tail, self._maxlen)
 
