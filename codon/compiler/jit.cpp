@@ -107,6 +107,12 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+
+
+  ast::Cache bCache = *cache;
+  ast::SimplifyContext bSimplify = *sctx;
+  ast::TypeContext bType = *(cache->typeCtx);
+  ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
     auto *e = node->getSuite()
                   ? const_cast<ast::SuiteStmt *>(node->getSuite())->lastInBlock()
@@ -162,6 +168,10 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     }
     return run(func, globalVars);
   } catch (const exc::ParserException &e) {
+    *cache = bCache;
+    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
+    *(cache->typeCtx) = bType;
+    *(cache->codegenCtx) = bTranslate;
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
 }
