@@ -1088,7 +1088,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   int typeArgCount = 0;
   bool isPartial = false;
   int ellipsisStage = -1;
-  auto newMask = vector<char>(calleeFn->ast->args.size(), 1);
+  auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
   if (expr->ordered)
     args = expr->args;
   else

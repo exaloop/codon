@@ -23,7 +23,7 @@ class str:
     def __bool__(self) -> bool:
         return self.len != 0
     def __copy__(self) -> str:
-        n = len(self)
+        n = self.len
         p = cobj(n)
         str.memcpy(p, self.ptr, n)
         return str(p, n)

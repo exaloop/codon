@@ -35,9 +35,6 @@ def realloc(p: cobj, sz: int):
 def free(p: cobj):
     seq_free(p)
 
-def register_finalizer(p: cobj, f: Function[[cobj, cobj], void]):
-    seq_register_finalizer(p, f.__raw__())
-
 def add_roots(start: cobj, end: cobj):
     seq_gc_add_roots(start, end)
 

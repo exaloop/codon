@@ -960,7 +960,7 @@ class FooTup(Foo): pass
 f = Foo(5)
 print f.a, f.b #: 5 yoo
 fp = FooTup(6, 's')
-print fp #: (a: 6, b: s)
+print fp #: (a: 6, b: 's')
 
 #%% inherit_class_err_1,barebones
 class defdict(Array[int]):
