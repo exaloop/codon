@@ -63,7 +63,7 @@ Cache::findMethod(types::ClassType *typ, const std::string &member,
   seqassert(e->type, "not a class");
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
-  auto f = typeCtx->findBestMethod(e.get(), member, args);
+  auto f = TypecheckVisitor(typeCtx).findBestMethod(e.get(), member, args);
   typeCtx->age = oldAge;
   return f;
 }

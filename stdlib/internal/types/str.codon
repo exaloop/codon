@@ -7,41 +7,52 @@ class str:
     @__internal__
     def __new__(l: int, p: Ptr[byte]) -> str:
         pass
+
     def __new__(p: Ptr[byte], l: int) -> str:
         return str(l, p)
+
     def __new__() -> str:
         return str(Ptr[byte](), 0)
-    def __new__[T](what: T) -> str: # lowest priority!
+
+    def __new__(what) -> str:
         if hasattr(what, "__str__"):
             return what.__str__()
         else:
             return what.__repr__()
+
     def __str__(what: str) -> str:
         return what
+
     def __len__(self) -> int:
         return self.len
+
     def __bool__(self) -> bool:
         return self.len != 0
+
     def __copy__(self) -> str:
         n = self.len
         p = cobj(n)
         str.memcpy(p, self.ptr, n)
         return str(p, n)
+
     @llvm
     def memcpy(dest: Ptr[byte], src: Ptr[byte], len: int) -> void:
         declare void @llvm.memcpy.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 0, i1 false)
         ret void
+
     @llvm
     def memmove(dest: Ptr[byte], src: Ptr[byte], len: int) -> void:
         declare void @llvm.memmove.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memmove.p0i8.p0i8.i64(i8* %dest, i8* %src, i64 %len, i32 0, i1 false)
         ret void
+
     @llvm
     def memset(dest: Ptr[byte], val: byte, len: int) -> void:
         declare void @llvm.memset.p0i8.i64(i8* %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memset.p0i8.i64(i8* %dest, i8 %val, i64 %len, i32 0, i1 false)
         ret void
+
     def __add__(self, other: str) -> str:
         len1 = self.len
         len2 = other.len
@@ -50,17 +61,20 @@ class str:
         str.memcpy(p, self.ptr, len1)
         str.memcpy(p + len1, other.ptr, len2)
         return str(p, len3)
+
     def c_str(self):
         n = self.__len__()
         p = cobj(n + 1)
         str.memcpy(p, self.ptr, n)
         p[n] = byte(0)
         return p
+
     def from_ptr(t: cobj) -> str:
         n = strlen(t)
         p = Ptr[byte](n)
         str.memcpy(p, t, n)
         return str(p, n)
+
     def __eq__(self, other: str):
         if self.len != other.len:
             return False
@@ -70,10 +84,13 @@ class str:
                 return False
             i += 1
         return True
+
     def __match__(self, other: str):
         return self.__eq__(other)
+
     def __ne__(self, other: str):
         return not self.__eq__(other)
+
     def cat(*args):
         total = 0
         if staticlen(args) == 1 and hasattr(args[0], "__iter__") and hasattr(args[0], "__len__"):

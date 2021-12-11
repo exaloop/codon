@@ -6,17 +6,11 @@ class complex:
     def __new__():
         return complex(0.0, 0.0)
 
-    def __new__(real: int, imag: int):
-        return complex(float(real), float(imag))
-
-    def __new__(real: float, imag: int):
-        return complex(real, float(imag))
-
-    def __new__(real: int, imag: float):
-        return complex(float(real), imag)
-
     def __new__(other):
         return other.__complex__()
+
+    def __new__(real, imag):
+        return complex(float(real), float(imag))
 
     def __complex__(self):
         return self
@@ -41,6 +35,42 @@ class complex:
 
     def __hash__(self):
         return self.real.__hash__() + self.imag.__hash__()*1000003
+
+    def __add__(self, other):
+        return self + complex(other)
+
+    def __sub__(self, other):
+        return self - complex(other)
+
+    def __mul__(self, other):
+        return self * complex(other)
+
+    def __truediv__(self, other):
+        return self / complex(other)
+
+    def __eq__(self, other):
+        return self == complex(other)
+
+    def __ne__(self, other):
+        return self != complex(other)
+
+    def __pow__(self, other):
+        return self ** complex(other)
+
+    def __radd__(self, other):
+        return complex(other) + self
+
+    def __rsub__(self, other):
+        return complex(other) - self
+
+    def __rmul__(self, other):
+        return complex(other) * self
+
+    def __rtruediv__(self, other):
+        return complex(other) / self
+
+    def __rpow__(self, other):
+        return complex(other) ** self
 
     def __add__(self, other: complex):
         return complex(self.real + other.real, self.imag + other.imag)
@@ -159,42 +189,6 @@ class complex:
                 len /= exp(at * other.imag)
                 phase += other.imag * log(vabs)
             return complex(len * cos(phase), len * sin(phase))
-
-    def __add__(self, other):
-        return self + complex(other)
-
-    def __sub__(self, other):
-        return self - complex(other)
-
-    def __mul__(self, other):
-        return self * complex(other)
-
-    def __truediv__(self, other):
-        return self / complex(other)
-
-    def __eq__(self, other):
-        return self == complex(other)
-
-    def __ne__(self, other):
-        return self != complex(other)
-
-    def __pow__(self, other):
-        return self ** complex(other)
-
-    def __radd__(self, other):
-        return complex(other) + self
-
-    def __rsub__(self, other):
-        return complex(other) - self
-
-    def __rmul__(self, other):
-        return complex(other) * self
-
-    def __rtruediv__(self, other):
-        return complex(other) / self
-
-    def __rpow__(self, other):
-        return complex(other) ** self
 
     def __repr__(self):
         @pure

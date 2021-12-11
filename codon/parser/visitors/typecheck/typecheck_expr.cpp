@@ -683,8 +683,8 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   if (isAtomic) {
     auto ptrlt =
         ctx->instantiateGeneric(expr->lexpr.get(), ctx->findInternal("Ptr"), {lt});
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic),
-                                 {{"", ptrlt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic),
+                            {{"", ptrlt}, {"", rt}});
     if (method) {
       expr->lexpr = N<PtrExpr>(expr->lexpr);
       if (noReturn)
@@ -693,19 +693,19 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   }
   // Check if lt.__iop__(lt, rt) exists.
   if (!method && expr->inPlace) {
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__i{}__", magic),
-                                 {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__i{}__", magic),
+                            {{"", lt}, {"", rt}});
     if (method && noReturn)
       *noReturn = true;
   }
   // Check if lt.__op__(lt, rt) exists.
   if (!method)
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__{}__", magic),
-                                 {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__{}__", magic),
+                            {{"", lt}, {"", rt}});
   // Check if rt.__rop__(rt, lt) exists.
   if (!method) {
-    method = ctx->findBestMethod(expr->rexpr.get(), format("__r{}__", magic),
-                                 {{"", rt}, {"", lt}});
+    method = findBestMethod(expr->rexpr.get(), format("__r{}__", magic),
+                            {{"", rt}, {"", lt}});
     if (method)
       swap(expr->lexpr, expr->rexpr);
   }
@@ -873,8 +873,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       argTypes.emplace_back(make_pair("", typ)); // self variable
     for (const auto &a : *args)
       argTypes.emplace_back(make_pair(a.name, a.value->getType()));
-    if (auto bestMethod =
-            ctx->findBestMethod(expr->expr.get(), expr->member, argTypes)) {
+    if (auto bestMethod = findBestMethod(expr->expr.get(), expr->member, argTypes)) {
       ExprPtr e = N<IdExpr>(bestMethod->ast->name);
       auto t = ctx->instantiate(expr, bestMethod, typ.get());
       unify(e->type, t);
@@ -906,7 +905,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       methodArgs.emplace_back(make_pair("", typ));
     for (auto i = 1; i < oldType->generics.size(); i++)
       methodArgs.emplace_back(make_pair("", oldType->generics[i].type));
-    bestMethod = ctx->findBestMethod(expr->expr.get(), expr->member, methodArgs);
+    bestMethod = findBestMethod(expr->expr.get(), expr->member, methodArgs);
     if (!bestMethod) {
       // Print a nice error message.
       std::vector<std::string> nice;
@@ -916,9 +915,11 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
             typ->toString(), join(nice, ", "));
     }
   } else {
-    // HACK: if we still have multiple valid methods, we just use the first one.
-    // TODO: handle this better (maybe hold these types until they can be selected?)
-    bestMethod = methods[0];
+    auto m = ctx->cache->classes.find(typ->name);
+    auto t = m->second.methods.find(expr->member);
+    seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
+                "first method is not dispatch");
+    bestMethod = t->second[0].type;
   }
 
   // Case 7: only one valid method remaining. Check if this is a class method or an
@@ -1004,6 +1005,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       ai--;
     } else {
       // Case 3: Normal argument
+      // LOG("-> {}", expr->args[ai].value->toString());
       expr->args[ai].value = transform(expr->args[ai].value, true);
       // Unbound inType might become a generator that will need to be extracted, so
       // don't unify it yet.
@@ -1365,8 +1367,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
                   ctx->findMember(typ->getClass()->name, member);
     if (exists && args.size() > 1)
-      exists &=
-          ctx->findBestMethod(expr->args[0].value.get(), member, args, true) != nullptr;
+      exists &= findBestMethod(expr->args[0].value.get(), member, args) != nullptr;
     return {true, transform(N<BoolExpr>(exists))};
   } else if (val == "compile_error") {
     expr->args[0].value = transform(expr->args[0].value);
@@ -1609,8 +1610,72 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   return call;
 }
 
+types::FuncTypePtr TypecheckVisitor::findBestMethod(
+    const Expr *expr, const std::string &member,
+    const std::vector<std::pair<std::string, types::TypePtr>> &args) {
+  auto typ = expr->getType()->getClass();
+  seqassert(typ, "not a class");
+
+  // Pick the last method that accepts the given arguments.
+  auto methods = ctx->findMethod(typ->name, member);
+  // if (methods.size() == 1)
+  //   return methods[0];
+  types::FuncTypePtr method = nullptr;
+  for (int mi = int(methods.size()) - 1; mi >= 0; mi--) {
+    auto m = ctx->instantiate(expr, methods[mi], typ.get(), false)->getFunc();
+    std::vector<types::TypePtr> reordered;
+    std::vector<CallExpr::Arg> callArgs;
+    for (auto &a : args) {
+      callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
+      callArgs.back().value->setType(a.second);
+    }
+    auto score = ctx->reorderNamedArgs(
+        m.get(), callArgs,
+        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
+          for (int si = 0; si < slots.size(); si++) {
+            if (m->ast->args[si].generic) {
+              // Ignore type arguments
+            } else if (si == s || si == k || slots[si].size() != 1) {
+              // Ignore *args, *kwargs and default arguments
+              reordered.emplace_back(nullptr);
+            } else {
+              reordered.emplace_back(args[slots[si][0]].second);
+            }
+          }
+          return 0;
+        },
+        [](const std::string &) { return -1; });
+    for (int ai = 0, mi = 1, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+      auto argType = reordered[ai];
+      if (!argType)
+        continue;
+      auto expectTyp =
+          m->ast->args[ai].generic ? m->generics[gi++].type : m->args[mi++];
+      try {
+        ExprPtr dummy = std::make_shared<IdExpr>("");
+        dummy->type = argType;
+        dummy->done = true;
+        wrapExpr(dummy, expectTyp, m, /*undoOnSuccess*/ true);
+      } catch (const exc::ParserException &) {
+        score = -1;
+      }
+    }
+    if (score != -1) {
+      // std::vector<std::string> ar;
+      // for (auto &a: args) {
+      //   if (a.first.empty()) ar.push_back(a.second->toString());
+      //   else ar.push_back(format("{}: {}", a.first, a.second->toString()));
+      // }
+      // LOG("- {} vs {}", m->toString(), join(ar, "; "));
+      method = methods[mi];
+      break;
+    }
+  }
+  return method;
+}
+
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
-                                const FuncTypePtr &callee) {
+                                const FuncTypePtr &callee, bool undoOnSuccess) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
   if (callee && expr->isType())
@@ -1637,7 +1702,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr);
   }
-  unify(expr->type, expectedType);
+  unify(expr->type, expectedType, undoOnSuccess);
   return true;
 }
 

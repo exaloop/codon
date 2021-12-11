@@ -113,8 +113,8 @@ public:
   void dump() override { dump(0); }
 
   /// Generate a unique identifier (name) for a given string.
-  std::string generateCanonicalName(const std::string &name,
-                                    bool includeBase = false) const;
+  std::string generateCanonicalName(const std::string &name, bool includeBase = false,
+                                    bool zeroId = false) const;
 
   bool inFunction() const { return getLevel() && !bases.back().isType(); }
   bool inClass() const { return getLevel() && bases.back().isType(); }

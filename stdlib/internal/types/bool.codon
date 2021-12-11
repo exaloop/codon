@@ -4,7 +4,7 @@ from internal.attributes import commutative, associative
 class bool:
     def __new__() -> bool:
         return False
-    def __new__[T](what: T) -> bool: # lowest priority!
+    def __new__(what) -> bool:
         return what.__bool__()
     def __repr__(self) -> str:
         return "True" if self else "False"

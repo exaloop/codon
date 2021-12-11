@@ -61,7 +61,8 @@ std::string SimplifyContext::getBase() const {
 }
 
 std::string SimplifyContext::generateCanonicalName(const std::string &name,
-                                                   bool includeBase) const {
+                                                   bool includeBase,
+                                                   bool zeroId) const {
   std::string newName = name;
   if (includeBase && name.find('.') == std::string::npos) {
     std::string base = getBase();
@@ -74,7 +75,7 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;
-  newName = num ? format("{}.{}", newName, num) : newName;
+  newName = num || zeroId ? format("{}.{}", newName, num) : newName;
   if (newName != name)
     cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;

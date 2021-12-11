@@ -283,9 +283,19 @@ private:
   void generateFnCall(int n);
   /// Make an empty partial call fn(...) for a function fn.
   ExprPtr partializeFunction(ExprPtr expr);
+  /// Picks the best method of a given expression that matches the given argument
+  /// types. Prefers methods whose signatures are closer to the given arguments:
+  /// e.g. foo(int) will match (int) better that a foo(T).
+  /// Also takes care of the Optional arguments.
+  /// If multiple equally good methods are found, return the first one.
+  /// Return nullptr if no methods were found.
+  types::FuncTypePtr
+  findBestMethod(const Expr *expr, const std::string &member,
+                 const std::vector<std::pair<std::string, types::TypePtr>> &args);
 
 private:
-  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b);
+  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
+                       bool undoOnSuccess = false);
   types::TypePtr realizeType(types::ClassType *typ);
   types::TypePtr realizeFunc(types::FuncType *typ);
   std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
@@ -293,7 +303,7 @@ private:
   codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
-                const types::FuncTypePtr &callee);
+                const types::FuncTypePtr &callee, bool undoOnSuccess = false);
   int64_t translateIndex(int64_t idx, int64_t len, bool clamp = false);
   int64_t sliceAdjustIndices(int64_t length, int64_t *start, int64_t *stop,
                              int64_t step);

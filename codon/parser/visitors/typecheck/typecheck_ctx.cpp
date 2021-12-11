@@ -141,10 +141,12 @@ TypeContext::findMethod(const std::string &typeName, const std::string &method) 
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
     if (t != m->second.methods.end()) {
+      seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
+                "first method is not dispatch");
       std::unordered_map<std::string, int> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
-      for (auto &mt : t->second) {
-        // LOG("{}::{} @ {} vs. {}", typeName, method, age, mt.age);
+      for (int mti = 1; mti < t->second.size(); mti++) {
+        auto &mt = t->second[mti];
         if (mt.age <= age) {
           auto sig = cache->functions[mt.name].ast->signature();
           auto it = signatureLoci.find(sig);
@@ -175,110 +177,6 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
         return mm.type;
   }
   return nullptr;
-}
-
-types::FuncTypePtr TypeContext::findBestMethod(
-    const Expr *expr, const std::string &member,
-    const std::vector<std::pair<std::string, types::TypePtr>> &args, bool checkSingle) {
-  auto typ = expr->getType()->getClass();
-  seqassert(typ, "not a class");
-  auto methods = findMethod(typ->name, member);
-  if (methods.empty())
-    return nullptr;
-  if (methods.size() == 1 && !checkSingle) // methods is not overloaded
-    return methods[0];
-
-  // Calculate the unification score for each available methods and pick the one with
-  // highest score.
-  std::vector<std::pair<int, int>> scores;
-  for (int mi = 0; mi < methods.size(); mi++) {
-    auto method = instantiate(expr, methods[mi], typ.get(), false)->getFunc();
-    std::vector<types::TypePtr> reordered;
-    std::vector<CallExpr::Arg> callArgs;
-    for (auto &a : args) {
-      callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
-      callArgs.back().value->setType(a.second);
-    }
-    auto score = reorderNamedArgs(
-        method.get(), callArgs,
-        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-          for (int si = 0; si < slots.size(); si++) {
-            // Ignore *args, *kwargs and default arguments
-            reordered.emplace_back(si == s || si == k || slots[si].size() != 1
-                                       ? nullptr
-                                       : args[slots[si][0]].second);
-          }
-          return 0;
-        },
-        [](const std::string &) { return -1; });
-    if (score == -1)
-      continue;
-    // Scoring system for each argument:
-    //   Generics, traits and default arguments get a score of zero (lowest priority).
-    //   Optional unwrap gets the score of 1.
-    //   Optional wrap gets the score of 2.
-    //   Successful unification gets the score of 3 (highest priority).
-    for (int ai = 0, mi = 1, gi = 0; ai < reordered.size(); ai++) {
-      auto argType = reordered[ai];
-      if (!argType)
-        continue;
-      auto expectedType = method->ast->args[ai].generic ? method->generics[gi++].type
-                                                        : method->args[mi++];
-      auto expectedClass = expectedType->getClass();
-      // Ignore traits, *args/**kwargs and default arguments.
-      if (expectedClass && expectedClass->name == "Generator")
-        continue;
-      // LOG("<~> {} {}", argType->toString(), expectedType->toString());
-      auto argClass = argType->getClass();
-
-      types::Type::Unification undo;
-      int u = argType->unify(expectedType.get(), &undo);
-      undo.undo();
-      if (u >= 0) {
-        score += u + 3;
-        continue;
-      }
-      if (!method->ast->args[ai].generic) {
-        // Unification failed: maybe we need to wrap an argument?
-        if (expectedClass && expectedClass->name == TYPE_OPTIONAL && argClass &&
-            argClass->name != expectedClass->name) {
-          u = argType->unify(expectedClass->generics[0].type.get(), &undo);
-          undo.undo();
-          if (u >= 0) {
-            score += u + 2;
-            continue;
-          }
-        }
-        // ... or unwrap it (less ideal)?
-        if (argClass && argClass->name == TYPE_OPTIONAL && expectedClass &&
-            argClass->name != expectedClass->name) {
-          u = argClass->generics[0].type->unify(expectedType.get(), &undo);
-          undo.undo();
-          if (u >= 0) {
-            score += u;
-            continue;
-          }
-        }
-      }
-      // This method cannot be selected, ignore it.
-      score = -1;
-      break;
-    }
-    // LOG("{} {} / {}", typ->toString(), method->toString(), score);
-    if (score >= 0)
-      scores.emplace_back(std::make_pair(score, mi));
-  }
-  if (scores.empty())
-    return nullptr;
-  // Get the best score.
-  sort(scores.begin(), scores.end(), std::greater<>());
-  // LOG("Method: {}", methods[scores[0].second]->toString());
-  // std::string x;
-  // for (auto &a : args)
-  //   x += format("{}{},", a.first.empty() ? "" : a.first + ": ",
-  //   a.second->toString());
-  // LOG("        {} :: {} ( {} )", typ->toString(), member, x);
-  return methods[scores[0].second];
 }
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,

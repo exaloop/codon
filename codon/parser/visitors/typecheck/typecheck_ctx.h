@@ -127,16 +127,6 @@ public:
   types::TypePtr findMember(const std::string &typeName,
                             const std::string &member) const;
 
-  /// Picks the best method of a given expression that matches the given argument
-  /// types. Prefers methods whose signatures are closer to the given arguments:
-  /// e.g. foo(int) will match (int) better that a foo(T).
-  /// Also takes care of the Optional arguments.
-  /// If multiple equally good methods are found, return the first one.
-  /// Return nullptr if no methods were found.
-  types::FuncTypePtr
-  findBestMethod(const Expr *expr, const std::string &member,
-                 const std::vector<std::pair<std::string, types::TypePtr>> &args,
-                 bool checkSingle = false);
 
   typedef std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>
       ReorderDoneFn;

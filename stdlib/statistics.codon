@@ -394,22 +394,10 @@ class NormalDist:
         self._mu = mu
         self._sigma = sigma
 
-    def __init__(self, mu: float, sigma: float):
+    def __init__(self, mu, sigma):
         self._init(float(mu), float(sigma))
 
-    def __init__(self, mu: int, sigma: int):
-        self._init(float(mu), float(sigma))
-
-    def __init__(self, mu: float, sigma: int):
-        self._init(float(mu), float(sigma))
-
-    def __init__(self, mu: int, sigma: float):
-        self._init(float(mu), float(sigma))
-
-    def __init__(self, mu: float):
-        self._init(mu, 1.0)
-
-    def __init__(self, mu: int):
+    def __init__(self, mu):
         self._init(float(mu), 1.0)
 
     def __init__(self):
