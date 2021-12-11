@@ -107,17 +107,26 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+
+
+  ast::Cache bCache = *cache;
+  ast::SimplifyContext bSimplify = *sctx;
+  ast::TypeContext bType = *(cache->typeCtx);
+  ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
     auto *e = node->getSuite()
                   ? const_cast<ast::SuiteStmt *>(node->getSuite())->lastInBlock()
                   : &node;
     if (e)
-      if (auto ex = (*e)->getExpr()) {
-        *e = std::make_shared<ast::PrintStmt>(
-            std::vector<ast::ExprPtr>{std::make_shared<ast::CallExpr>(
-                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr,
-                std::make_shared<ast::StringExpr>(mode))},
-            false);
+      if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
+        *e = std::make_shared<ast::IfStmt>(
+            std::make_shared<ast::CallExpr>(std::make_shared<ast::IdExpr>("isinstance"),
+                                            ex->expr->clone(),
+                                            std::make_shared<ast::IdExpr>("void")),
+            ex->clone(),
+            std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
+                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
+                std::make_shared<ast::StringExpr>(mode))));
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();
@@ -131,10 +140,7 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     auto *cache = compiler->getCache();
     auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
     std::vector<std::string> globalNames;
-    for (auto &g : cache->globals) {
-      if (!g.second)
         globalNames.push_back(g.first);
-    }
     // add newly realized functions
     std::vector<ast::StmtPtr> v;
     std::vector<ir::Func **> frs;
@@ -158,6 +164,10 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     }
     return run(func, globalVars);
   } catch (const exc::ParserException &e) {
+    *cache = bCache;
+    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
+    *(cache->typeCtx) = bType;
+    *(cache->codegenCtx) = bTranslate;
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
 }
