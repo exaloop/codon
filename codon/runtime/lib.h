@@ -46,6 +46,7 @@ SEQ_FUNC seq_int_t seq_time_highres();
 SEQ_FUNC bool seq_localtime(seq_int_t secs, seq_time_t *output);
 SEQ_FUNC bool seq_gmtime(seq_int_t secs, seq_time_t *output);
 SEQ_FUNC seq_int_t seq_mktime(seq_time_t *time);
+SEQ_FUNC void seq_sleep(double secs);
 SEQ_FUNC char **seq_env();
 SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);
 

@@ -1,4 +1,8 @@
 # Adapted from https://github.com/python/cpython/blob/main/Modules/_datetimemodule.c
+# - Currently does not support timezones
+# - Timedeltas use a pure-microseconds representations for efficiency, meaning they
+#   have a smaller range (+/- 292,471.2 years) but should be more than enough for
+#   all practical uses
 
 #############
 # constants #
@@ -664,7 +668,7 @@ class date:
 class time:
     _value: int
 
-    def __new__(hour: int, minute: int, second: int = 0, microsecond: int = 0) -> time:
+    def __new__(hour: int = 0, minute: int = 0, second: int = 0, microsecond: int = 0) -> time:
         _check_time_args(hour, minute, second, microsecond)
         v = (hour << 40) | (minute << 32) | (second << 24) | microsecond
         return (v,)
@@ -690,10 +694,21 @@ class time:
         return v & 0xffffff
 
     def __repr__(self):
-        return f"time(hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond})"
+        h, m, s, us = self.hour, self.minute, self.second, self.microsecond
+        v = []
+        v.append(f"hour={h}")
+        v.append(f"minute={m}")
+        if s or us:
+            v.append(f"second={s}")
+        if us:
+            v.append(f"microsecond={us}")
+        return f"time({', '.join(v)})"
 
     def __str__(self):
         return self.isoformat()
+
+    def __bool__(self):
+        return True
 
     def fromisoformat(time_string: str):
         hour, minute, second, microsecond, tzoffset, tzmicrosecond = _parse_isoformat_time(time_string)
@@ -706,7 +721,7 @@ class time:
         if second == -1:
             second = self.second
         if minute == -1:
-            minute == self.minute
+            minute = self.minute
         if microsecond == -1:
             microsecond = self.microsecond
         return time(hour, minute, second, microsecond)
@@ -719,7 +734,7 @@ class time:
         ms = str(self.microsecond // 1000).zfill(3)
 
         if timespec == 'auto':
-            if us:
+            if self.microsecond:
                 return f"{hh}:{mm}:{ss}.{us}"
             else:
                 return f"{hh}:{mm}:{ss}"
@@ -804,6 +819,9 @@ class datetime:
     def now():
         return datetime.today()
 
+    def utcnow():
+        return datetime.now()
+
     # TODO: support timezone
     def fromtimestamp(timestamp):
         from time import _time_to_timeval, _ROUND_HALF_EVEN
@@ -821,10 +839,11 @@ class datetime:
         return datetime(time, date)
 
     def fromisoformat(date_string: str):
-        year, month, day = _parse_isoformat_date(date_string)
+        time_string = '' if len(date_string) < 10 else date_string[:10]
+        year, month, day = _parse_isoformat_date(time_string)
         if len(date_string) == 10:
             return datetime(year=year, month=month, day=day)
-        date_string = '' if len(date_string) < 12 else date_string[12:]
+        date_string = '' if len(date_string) < 12 else date_string[11:]
         hour, minute, second, microsecond = _parse_hh_mm_ss_ff(date_string)
         return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second, microsecond=microsecond)
 
@@ -863,7 +882,7 @@ class datetime:
         return self.date() == other.date() and self.time() == other.time()
 
     def __ne__(self, other: datetime):
-        not (self == other)
+        return not (self == other)
 
     def __lt__(self, other: datetime):
         return (self.date(), self.time()) < (other.date(), other.time())
@@ -886,7 +905,7 @@ class datetime:
     def timetuple(self):
         from time import struct_time
         yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
-        return struct_time(self.year, self.month, self.day, self.hour, self.minute, self.second, self.weekday(), yday)
+        return struct_time(self.year, self.month, self.day, self.hour, self.minute, self.second, self.weekday(), yday, -1)
 
     def utctimetuple(self):
         return self.timetuple()
@@ -898,6 +917,9 @@ class datetime:
         return (self - datetime(1970, 1, 1)).total_seconds()
 
     def weekday(self):
+        return self.date().weekday()
+
+    def isoweekday(self):
         return self.date().isoweekday()
 
     def isocalendar(self):
@@ -911,7 +933,7 @@ class datetime:
     def ctime(self):
         date = self.date()
         time = self.time()
-        return _format_ctime(date.year, date.month, date.day, time.hour, time.minute, time.second, time.microsecond)
+        return _format_ctime(date.year, date.month, date.day, time.hour, time.minute, time.second)
 
 @extend
 class timedelta:

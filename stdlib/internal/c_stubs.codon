@@ -30,6 +30,7 @@ from C import seq_gmtime(int, cobj) -> bool
 @pure
 @C
 def seq_mktime(a: cobj) -> int: pass
+from C import seq_sleep(float)
 @pure
 @C
 def seq_pid() -> int: pass

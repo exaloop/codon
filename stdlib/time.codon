@@ -18,6 +18,11 @@ def perf_counter():
 def perf_counter_ns():
     return _C.seq_time_highres()
 
+def sleep(secs: float):
+    if secs < 0:
+        raise ValueError("sleep length must be non-negative")
+    _C.seq_sleep(secs)
+
 class TimeInterval:
     """
     Utility class for timing Seq code
@@ -72,8 +77,23 @@ class struct_time:
     _wday: i8
     _isdst: i8
 
+    # (sunday=0) --> (monday=0)
+    def _wday_adjust_monday_start(wday: int):
+        x = wday - 1
+        if x < 0:
+            x = 6
+        return x
+
+    # (monday=0) --> (sunday=0)
+    def _wday_adjust_sunday_start(wday: int):
+        x = wday + 1
+        if x > 6:
+            x = 0
+        return x
+
     def __new__(year: int, mon: int, mday: int, hour: int, min: int, sec: int, wday: int, yday: int, isdst: int):
-        return struct_time(i16(year - 1900), i16(yday - 1), i8(sec), i8(min), i8(hour), i8(mday), i8(mon - 1), i8(wday), i8(isdst))
+        return struct_time(i16(year - 1900), i16(yday - 1), i8(sec), i8(min), i8(hour), i8(mday), i8(mon - 1),
+                           i8(struct_time._wday_adjust_sunday_start(wday)), i8(isdst))
 
     @property
     def tm_year(self):
@@ -105,7 +125,7 @@ class struct_time:
 
     @property
     def tm_wday(self):
-        return int(self._wday)
+        return struct_time._wday_adjust_monday_start(int(self._wday))
 
     @property
     def tm_isdst(self):

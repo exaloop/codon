@@ -13,6 +13,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <unwind.h>
 #include <vector>
@@ -133,6 +134,10 @@ SEQ_FUNC seq_int_t seq_mktime(seq_time_t *time) {
   struct tm result;
   copy_time_seq_to_c(time, &result);
   return mktime(&result);
+}
+
+SEQ_FUNC void seq_sleep(double secs) {
+  std::this_thread::sleep_for(std::chrono::duration<double, std::ratio<1>>(secs));
 }
 
 extern char **environ;
