@@ -142,18 +142,15 @@ TypeContext::findMethod(const std::string &typeName, const std::string &method) 
     auto t = m->second.methods.find(method);
     if (t != m->second.methods.end()) {
       seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
-                "first method is not dispatch");
-      std::unordered_map<std::string, int> signatureLoci;
+                "first method '{}' is not dispatch", t->second[0].name);
+      std::unordered_set<std::string> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
-      for (int mti = 1; mti < t->second.size(); mti++) {
+      for (int mti = int(t->second.size()) - 1; mti > 0; mti--) {
         auto &mt = t->second[mti];
         if (mt.age <= age) {
           auto sig = cache->functions[mt.name].ast->signature();
-          auto it = signatureLoci.find(sig);
-          if (it != signatureLoci.end())
-            vv[it->second] = mt.type;
-          else {
-            signatureLoci[sig] = vv.size();
+          if (!in(signatureLoci, sig)) {
+            signatureLoci.insert(sig);
             vv.emplace_back(mt.type);
           }
         }

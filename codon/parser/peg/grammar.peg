@@ -253,7 +253,7 @@ with_stmt <- 'with' SPACE (with_parens_item / with_item) _ ':' _ suite {
 with_parens_item <- '(' _ tlist(',', as_item) _ ')' { return VS; }
 with_item <- list(',', as_item) { return VS; }
 as_item <-
-  / expression SPACE 'as' SPACE star_target &(_ (',' / ')' / ':'))  {
+  / expression SPACE 'as' SPACE id &(_ (',' / ')' / ':'))  {
     return pair(ac_expr(V0), ac_expr(V1));
   }
   / expression { return pair(ac_expr(V0), (ExprPtr)nullptr); }

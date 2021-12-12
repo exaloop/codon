@@ -68,11 +68,24 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     auto transformed = ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt),
                                                    abspath, defines, (testFlags > 1));
     t2.log();
+    if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+      auto fo = fopen("_dump_simplify.sexp", "w");
+      fmt::print(fo, "{}\n", transformed->toString(0));
+      fclose(fo);
+    }
 
     Timer t3("typecheck");
     auto typechecked =
         ast::TypecheckVisitor::apply(cache.get(), std::move(transformed));
     t3.log();
+    if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+      auto fo = fopen("_dump_typecheck.sexp", "w");
+      fmt::print(fo, "{}\n", typechecked->toString(0));
+      for (auto &f : cache->functions)
+        for (auto &r : f.second.realizations)
+          fmt::print(fo, "{}\n", r.second->ast->toString(0));
+      fclose(fo);
+    }
 
     Timer t4("translate");
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));

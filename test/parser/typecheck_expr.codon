@@ -256,20 +256,21 @@ a = [5]
 a.foo #! cannot find 'foo' in List[int]
 
 #%% dot_case_6,barebones
+# Did heavy changes to this testcase because
+# of the automatic optional wraps/unwraps and promotions
 class Foo:
-    def bar(self, a: int):
-        print 'normal', a
-    def bar(self, a: Optional[int]):
-        print 'optional', a
-    def bar[T](self, a: Optional[T]):
-        print 'optional generic', a, a.__class__
     def bar(self, a):
         print 'generic', a, a.__class__
+    def bar(self, a: Optional[float]):
+        print 'optional', a
+    def bar(self, a: int):
+        print 'normal', a
 f = Foo()
 f.bar(1) #: normal 1
-f.bar(Optional(1)) #: optional 1
-f.bar(Optional('s')) #: optional generic s Optional[str]
+f.bar(1.1) #: optional 1.1
+f.bar(Optional('s')) #: generic s Optional[str]
 f.bar('hehe') #: generic hehe str
+
 
 #%% dot_case_6b,barebones
 class Foo:

@@ -176,9 +176,11 @@ class Ptr:
     def __repr__(self) -> str:
         return seq_str_ptr(self.as_byte())
 
+
 ptr = Ptr
 Jar = Ptr[byte]
 cobj = Ptr[byte]
+
 
 # Forward declarations
 @__internal__
@@ -186,9 +188,12 @@ cobj = Ptr[byte]
 class Array[T]:
     len: int
     ptr: Ptr[T]
+
+
 class List[T]:
     arr: Array[T]
     len: int
+
 
 @extend
 class NoneType:

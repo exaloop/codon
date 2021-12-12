@@ -731,7 +731,8 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
       in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
     // Ptr, pyobj and str are internal types and have only one overloaded __getitem__
     return nullptr;
-  if (ctx->cache->classes[tuple->name].methods["__getitem__"].size() != 1)
+  if (ctx->cache->classes[tuple->name].methods["__getitem__"].size() != 2)
+    // n.b.: there is dispatch as well
     // TODO: be smarter! there might be a compatible getitem?
     return nullptr;
 
@@ -914,12 +915,14 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       error("cannot find a method '{}' in {} with arguments {}", expr->member,
             typ->toString(), join(nice, ", "));
     }
-  } else {
+  } else if (methods.size() > 1) {
     auto m = ctx->cache->classes.find(typ->name);
     auto t = m->second.methods.find(expr->member);
     seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
-                "first method is not dispatch");
+              "first method is not dispatch");
     bestMethod = t->second[0].type;
+  } else {
+    bestMethod = methods[0];
   }
 
   // Case 7: only one valid method remaining. Check if this is a class method or an
@@ -1618,10 +1621,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
 
   // Pick the last method that accepts the given arguments.
   auto methods = ctx->findMethod(typ->name, member);
-  // if (methods.size() == 1)
-  //   return methods[0];
-  types::FuncTypePtr method = nullptr;
-  for (int mi = int(methods.size()) - 1; mi >= 0; mi--) {
+  for (int mi = 0; mi < methods.size(); mi++) {
     auto m = ctx->instantiate(expr, methods[mi], typ.get(), false)->getFunc();
     std::vector<types::TypePtr> reordered;
     std::vector<CallExpr::Arg> callArgs;
@@ -1645,12 +1645,13 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
           return 0;
         },
         [](const std::string &) { return -1; });
+
     for (int ai = 0, mi = 1, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+      auto expectTyp =
+          m->ast->args[ai].generic ? m->generics[gi++].type : m->args[mi++];
       auto argType = reordered[ai];
       if (!argType)
         continue;
-      auto expectTyp =
-          m->ast->args[ai].generic ? m->generics[gi++].type : m->args[mi++];
       try {
         ExprPtr dummy = std::make_shared<IdExpr>("");
         dummy->type = argType;
@@ -1667,11 +1668,10 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
       //   else ar.push_back(format("{}: {}", a.first, a.second->toString()));
       // }
       // LOG("- {} vs {}", m->toString(), join(ar, "; "));
-      method = methods[mi];
-      break;
+      return methods[mi];
     }
   }
-  return method;
+  return nullptr;
 }
 
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,

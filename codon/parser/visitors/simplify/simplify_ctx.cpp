@@ -76,8 +76,8 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
   }
   auto num = cache->identifierCount[newName]++;
   newName = num || zeroId ? format("{}.{}", newName, num) : newName;
-  if (newName != name)
-    cache->identifierCount[newName]++;
+  // if (newName != name)
+    // cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;
   return newName;
 }
