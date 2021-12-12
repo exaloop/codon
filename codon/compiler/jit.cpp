@@ -140,7 +140,10 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     auto *cache = compiler->getCache();
     auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
     std::vector<std::string> globalNames;
+    for (auto &g : cache->globals) {
+      if (!g.second)
         globalNames.push_back(g.first);
+    }
     // add newly realized functions
     std::vector<ast::StmtPtr> v;
     std::vector<ir::Func **> frs;
