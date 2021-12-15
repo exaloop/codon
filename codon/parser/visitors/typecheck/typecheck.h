@@ -289,9 +289,10 @@ private:
   /// Also takes care of the Optional arguments.
   /// If multiple equally good methods are found, return the first one.
   /// Return nullptr if no methods were found.
-  types::FuncTypePtr
-  findBestMethod(const Expr *expr, const std::string &member,
-                 const std::vector<std::pair<std::string, types::TypePtr>> &args);
+  types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
+                                    const std::vector<types::TypePtr> &args);
+  types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
+                                    const std::vector<CallExpr::Arg> &args);
 
 private:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,

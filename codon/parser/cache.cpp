@@ -55,9 +55,8 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   return nullptr;
 }
 
-types::FuncTypePtr
-Cache::findMethod(types::ClassType *typ, const std::string &member,
-                  const std::vector<std::pair<std::string, types::TypePtr>> &args) {
+types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &member,
+                                     const std::vector<types::TypePtr> &args) {
   auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
   seqassert(e->type, "not a class");

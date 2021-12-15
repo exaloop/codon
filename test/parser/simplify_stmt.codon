@@ -558,7 +558,7 @@ print f.foo() #: F
 class Foo:
     def foo(self):
         return 'F'
-Foo.foo(1) #! cannot unify int and Foo
+Foo.foo(1) #! cannot find a method 'foo' in Foo with arguments  = int
 
 #%% function_nested,barebones
 def foo(v):
@@ -941,12 +941,12 @@ print FooBarBaz[str]().foo() #: foo 0
 print FooBarBaz[float]().bar() #: bar 0/float
 print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
 
-#%% inherit_class_2,barebones
+#%% inherit_class_err_2,barebones
 class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
-z[1.1] #! cannot unify float and str
+z[1.1] #! cannot find a method '__getitem__' in defdict with arguments  = defdict,  = float
 
 #%% inherit_tuple,barebones
 class Foo:

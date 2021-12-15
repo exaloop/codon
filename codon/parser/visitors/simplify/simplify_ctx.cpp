@@ -64,7 +64,8 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
                                                    bool includeBase,
                                                    bool zeroId) const {
   std::string newName = name;
-  if (includeBase && name.find('.') == std::string::npos) {
+  bool alreadyGenerated = name.find('.') != std::string::npos;
+  if (includeBase && !alreadyGenerated) {
     std::string base = getBase();
     if (base.empty()) {
       base = moduleName.status == ImportFile::STDLIB ? "std." : "";
@@ -75,9 +76,10 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;
-  newName = num || zeroId ? format("{}.{}", newName, num) : newName;
-  // if (newName != name)
-    // cache->identifierCount[newName]++;
+  if (num)
+    newName = format("{}.{}", newName, num);
+  if (name != newName && !zeroId)
+    cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;
   return newName;
 }

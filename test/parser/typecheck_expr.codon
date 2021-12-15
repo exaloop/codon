@@ -306,7 +306,7 @@ class Foo:
         print 'foo'
     def method(self, a):
         print a
-Foo().clsmethod() #! too many arguments for Foo.clsmethod (expected maximum 0, got 1)
+Foo().clsmethod() #! cannot find a method 'clsmethod' in Foo with arguments  = Foo
 
 #%% call,barebones
 def foo(a, b, c='hi'):

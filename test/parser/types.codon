@@ -298,7 +298,7 @@ print h(list(map(lambda i: i-1, map(lambda i: i+2, range(5)))))
 #%% func_unify_error,barebones
 def foo(x:int):
     print x
-z = 1 & foo #! cannot unify foo[...] and int
+z = 1 & foo #! cannot find magic 'and' in int
 
 #%% void_error,barebones
 def foo():
@@ -515,7 +515,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo[bool,bool,bool,str,str]
+print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo.2[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
@@ -533,7 +533,8 @@ class A[T]:
             c: V
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
-print A.B.C[str].foo(1,1,1,True) #! cannot unify int and str
+
+print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments  = int,  = int,  = int,  = bool
 
 #%% nested_deep_class_error_2,barebones
 class A[T]:
@@ -744,8 +745,8 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__ #: X.foo[X[float],float,int,int]
-# print y.foo[float].__class__
+print X[float].foo(U=int, ...).__class__ #: X.foo.2[X[float],float,int,int]
+# print y.foo.1[float].__class__
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
@@ -753,7 +754,7 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.foo(U=float,...).__class__ #: X.foo[X[X[int]],...,...]
+print y.foo(U=float,...).__class__ #: X.foo.2[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones

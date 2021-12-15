@@ -22,12 +22,12 @@ translateGenerics(std::vector<types::Generic> &generics) {
   return ret;
 }
 
-std::vector<std::pair<std::string, codon::ast::types::TypePtr>>
+std::vector<codon::ast::types::TypePtr>
 generateDummyNames(std::vector<types::Type *> &types) {
-  std::vector<std::pair<std::string, codon::ast::types::TypePtr>> ret;
+  std::vector<codon::ast::types::TypePtr> ret;
   for (auto *t : types) {
     seqassert(t->getAstType(), "{} must have an ast type", *t);
-    ret.emplace_back("", t->getAstType());
+    ret.emplace_back(t->getAstType());
   }
   return ret;
 }

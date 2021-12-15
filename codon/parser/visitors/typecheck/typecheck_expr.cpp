@@ -683,8 +683,8 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   if (isAtomic) {
     auto ptrlt =
         ctx->instantiateGeneric(expr->lexpr.get(), ctx->findInternal("Ptr"), {lt});
-    method = findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic),
-                            {{"", ptrlt}, {"", rt}});
+    method =
+        findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic), {ptrlt, rt});
     if (method) {
       expr->lexpr = N<PtrExpr>(expr->lexpr);
       if (noReturn)
@@ -693,19 +693,16 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   }
   // Check if lt.__iop__(lt, rt) exists.
   if (!method && expr->inPlace) {
-    method = findBestMethod(expr->lexpr.get(), format("__i{}__", magic),
-                            {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__i{}__", magic), {lt, rt});
     if (method && noReturn)
       *noReturn = true;
   }
   // Check if lt.__op__(lt, rt) exists.
   if (!method)
-    method = findBestMethod(expr->lexpr.get(), format("__{}__", magic),
-                            {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__{}__", magic), {lt, rt});
   // Check if rt.__rop__(rt, lt) exists.
   if (!method) {
-    method = findBestMethod(expr->rexpr.get(), format("__r{}__", magic),
-                            {{"", rt}, {"", lt}});
+    method = findBestMethod(expr->rexpr.get(), format("__r{}__", magic), {rt, lt});
     if (method)
       swap(expr->lexpr, expr->rexpr);
   }
@@ -868,12 +865,15 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   //         If it exists, return a simple IdExpr with that method's name.
   //         Append a "self" variable to the front if needed.
   if (args) {
-    std::vector<std::pair<std::string, TypePtr>> argTypes;
+    std::vector<CallExpr::Arg> argTypes;
     bool isType = expr->expr->isType();
-    if (!isType)
-      argTypes.emplace_back(make_pair("", typ)); // self variable
+    if (!isType) {
+      ExprPtr expr = N<IdExpr>("self");
+      expr->setType(typ);
+      argTypes.emplace_back(CallExpr::Arg{"", expr});
+    }
     for (const auto &a : *args)
-      argTypes.emplace_back(make_pair(a.name, a.value->getType()));
+      argTypes.emplace_back(a);
     if (auto bestMethod = findBestMethod(expr->expr.get(), expr->member, argTypes)) {
       ExprPtr e = N<IdExpr>(bestMethod->ast->name);
       auto t = ctx->instantiate(expr, bestMethod, typ.get());
@@ -891,7 +891,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // No method was found, print a nice error message.
     std::vector<std::string> nice;
     for (auto &t : argTypes)
-      nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
+      nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
     error("cannot find a method '{}' in {} with arguments {}", expr->member,
           typ->toString(), join(nice, ", "));
   }
@@ -901,17 +901,17 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   auto oldType = expr->getType() ? expr->getType()->getClass() : nullptr;
   if (methods.size() > 1 && oldType && oldType->getFunc()) {
     // If old type is already a function, use its arguments to pick the best call.
-    std::vector<std::pair<std::string, TypePtr>> methodArgs;
+    std::vector<TypePtr> methodArgs;
     if (!expr->expr->isType()) // self argument
-      methodArgs.emplace_back(make_pair("", typ));
+      methodArgs.emplace_back(typ);
     for (auto i = 1; i < oldType->generics.size(); i++)
-      methodArgs.emplace_back(make_pair("", oldType->generics[i].type));
+      methodArgs.emplace_back(oldType->generics[i].type);
     bestMethod = findBestMethod(expr->expr.get(), expr->member, methodArgs);
     if (!bestMethod) {
       // Print a nice error message.
       std::vector<std::string> nice;
       for (auto &t : methodArgs)
-        nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
+        nice.emplace_back(format("{}", t->toString()));
       error("cannot find a method '{}' in {} with arguments {}", expr->member,
             typ->toString(), join(nice, ", "));
     }
@@ -1360,12 +1360,12 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     if (!typ || !expr->args[1].value->staticValue.evaluated)
       return {true, nullptr};
     auto member = expr->args[1].value->staticValue.getString();
-    std::vector<std::pair<std::string, TypePtr>> args{{std::string(), typ}};
+    std::vector<TypePtr> args{typ};
     for (int i = 2; i < expr->args.size(); i++) {
       expr->args[i].value = transformType(expr->args[i].value);
       if (!expr->args[i].value->getType()->getClass())
         return {true, nullptr};
-      args.push_back({std::string(), expr->args[i].value->getType()});
+      args.push_back(expr->args[i].value->getType());
     }
     bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
                   ctx->findMember(typ->getClass()->name, member);
@@ -1613,9 +1613,20 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   return call;
 }
 
-types::FuncTypePtr TypecheckVisitor::findBestMethod(
-    const Expr *expr, const std::string &member,
-    const std::vector<std::pair<std::string, types::TypePtr>> &args) {
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+                                 const std::vector<types::TypePtr> &args) {
+  std::vector<CallExpr::Arg> callArgs;
+  for (auto &a : args) {
+    callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
+    callArgs.back().value->setType(a);
+  }
+  return findBestMethod(expr, member, callArgs);
+}
+
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+                                 const std::vector<CallExpr::Arg> &args) {
   auto typ = expr->getType()->getClass();
   seqassert(typ, "not a class");
 
@@ -1624,13 +1635,8 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
   for (int mi = 0; mi < methods.size(); mi++) {
     auto m = ctx->instantiate(expr, methods[mi], typ.get(), false)->getFunc();
     std::vector<types::TypePtr> reordered;
-    std::vector<CallExpr::Arg> callArgs;
-    for (auto &a : args) {
-      callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
-      callArgs.back().value->setType(a.second);
-    }
     auto score = ctx->reorderNamedArgs(
-        m.get(), callArgs,
+        m.get(), args,
         [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
             if (m->ast->args[si].generic) {
@@ -1639,13 +1645,12 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
               // Ignore *args, *kwargs and default arguments
               reordered.emplace_back(nullptr);
             } else {
-              reordered.emplace_back(args[slots[si][0]].second);
+              reordered.emplace_back(args[slots[si][0]].value->type);
             }
           }
           return 0;
         },
         [](const std::string &) { return -1; });
-
     for (int ai = 0, mi = 1, gi = 0; score != -1 && ai < reordered.size(); ai++) {
       auto expectTyp =
           m->ast->args[ai].generic ? m->generics[gi++].type : m->args[mi++];

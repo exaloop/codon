@@ -3,14 +3,14 @@ class complex:
     real: float
     imag: float
 
-    def __new__():
-        return complex(0.0, 0.0)
+    def __new__() -> complex:
+        return (0.0, 0.0)
 
     def __new__(other):
         return other.__complex__()
 
-    def __new__(real, imag):
-        return complex(float(real), float(imag))
+    def __new__(real, imag) -> complex:
+        return (float(real), float(imag))
 
     def __complex__(self):
         return self

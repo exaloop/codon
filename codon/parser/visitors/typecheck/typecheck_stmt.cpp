@@ -155,7 +155,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
     auto rhsTyp = c->args[1].value->getType()->getClass();
     if (auto method = findBestMethod(stmt->lhs.get(),
                                      format("__atomic_{}__", c->expr->getId()->value),
-                                     {{"", ptrTyp}, {"", rhsTyp}})) {
+                                     {ptrTyp, rhsTyp})) {
       resultStmt = transform(N<ExprStmt>(N<CallExpr>(
           N<IdExpr>(method->ast->name), N<PtrExpr>(stmt->lhs), c->args[1].value)));
       return;
@@ -168,8 +168,8 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
   if (stmt->isAtomic && lhsClass && rhsClass) {
     auto ptrType =
         ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
-    if (auto m = findBestMethod(stmt->lhs.get(), "__atomic_xchg__",
-                                {{"", ptrType}, {"", rhsClass}})) {
+    if (auto m =
+            findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
       resultStmt = transform(N<ExprStmt>(
           N<CallExpr>(N<IdExpr>(m->ast->name), N<PtrExpr>(stmt->lhs), stmt->rhs)));
       return;

@@ -10,60 +10,69 @@ class I:
     def __float__(self: int) -> float:
         %tmp = sitofp i64 %self to double
         ret double %tmp
+
     @llvm
     def __bool__(self: int) -> bool:
         %0 = icmp ne i64 %self, 0
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     def __pos__(self: int) -> int:
         return self
+
     def __neg__(self: int) -> int:
         return I.__sub__(0, self)
+
     @llvm
     def __abs__(self: int) -> int:
         %0 = icmp sgt i64 %self, 0
         %1 = sub i64 0, %self
         %2 = select i1 %0, i64 %self, i64 %1
         ret i64 %2
+
     @llvm
     def __lshift__(self: int, other: int) -> int:
         %0 = shl i64 %self, %other
         ret i64 %0
+
     @llvm
     def __rshift__(self: int, other: int) -> int:
         %0 = ashr i64 %self, %other
         ret i64 %0
-    @llvm
-    def __add__(self: int, b: int) -> int:
-        %tmp = add i64 %self, %b
-        ret i64 %tmp
+
     @llvm
     def __add__(self: int, other: float) -> float:
         %0 = sitofp i64 %self to double
         %1 = fadd double %0, %other
         ret double %1
+
     @llvm
-    def __sub__(self: int, b: int) -> int:
-        %tmp = sub i64 %self, %b
+    def __add__(self: int, b: int) -> int:
+        %tmp = add i64 %self, %b
         ret i64 %tmp
+
     @llvm
     def __sub__(self: int, other: float) -> float:
         %0 = sitofp i64 %self to double
         %1 = fsub double %0, %other
         ret double %1
+
     @llvm
-    def __mul__(self: int, b: int) -> int:
-        %tmp = mul i64 %self, %b
+    def __sub__(self: int, b: int) -> int:
+        %tmp = sub i64 %self, %b
         ret i64 %tmp
+
     @llvm
     def __mul__(self: int, other: float) -> float:
         %0 = sitofp i64 %self to double
         %1 = fmul double %0, %other
         ret double %1
+
     @llvm
-    def __floordiv__(self: int, b: int) -> int:
-        %tmp = sdiv i64 %self, %b
+    def __mul__(self: int, b: int) -> int:
+        %tmp = mul i64 %self, %b
         ret i64 %tmp
+
     @llvm
     def __floordiv__(self: int, other: float) -> float:
         declare double @llvm.floor.f64(double)
@@ -71,141 +80,177 @@ class I:
         %1 = fdiv double %0, %other
         %2 = call double @llvm.floor.f64(double %1)
         ret double %2
+
+    @llvm
+    def __floordiv__(self: int, b: int) -> int:
+        %tmp = sdiv i64 %self, %b
+        ret i64 %tmp
+
+    @llvm
+    def __truediv__(self: int, other: float) -> float:
+        %0 = sitofp i64 %self to double
+        %1 = fdiv double %0, %other
+        ret double %1
+
     @llvm
     def __truediv__(self: int, other: int) -> float:
         %0 = sitofp i64 %self to double
         %1 = sitofp i64 %other to double
         %2 = fdiv double %0, %1
         ret double %2
-    @llvm
-    def __truediv__(self: int, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = fdiv double %0, %other
-        ret double %1
-    @llvm
-    def __mod__(a: int, b: int) -> int:
-        %tmp = srem i64 %a, %b
-        ret i64 %tmp
+
     @llvm
     def __mod__(self: int, other: float) -> float:
         %0 = sitofp i64 %self to double
         %1 = frem double %0, %other
         ret double %1
+
+    @llvm
+    def __mod__(a: int, b: int) -> int:
+        %tmp = srem i64 %a, %b
+        ret i64 %tmp
+
     @llvm
     def __invert__(a: int) -> int:
         %tmp = xor i64 %a, -1
         ret i64 %tmp
+
     @llvm
     def __and__(a: int, b: int) -> int:
         %tmp = and i64 %a, %b
         ret i64 %tmp
+
     @llvm
     def __or__(a: int, b: int) -> int:
         %tmp = or i64 %a, %b
         ret i64 %tmp
+
     @llvm
     def __xor__(a: int, b: int) -> int:
         %tmp = xor i64 %a, %b
         ret i64 %tmp
+
     @llvm
     def __shr__(a: int, b: int) -> int:
         %tmp = ashr i64 %a, %b
         ret i64 %tmp
+
     @llvm
     def __shl__(a: int, b: int) -> int:
         %tmp = shl i64 %a, %b
         ret i64 %tmp
+
     @llvm
     def __bitreverse__(a: int) -> int:
         declare i64 @llvm.bitreverse.i64(i64 %a)
         %tmp = call i64 @llvm.bitreverse.i64(i64 %a)
         ret i64 %tmp
+
     @llvm
     def __bswap__(a: int) -> int:
         declare i64 @llvm.bswap.i64(i64 %a)
         %tmp = call i64 @llvm.bswap.i64(i64 %a)
         ret i64 %tmp
+
     @llvm
     def __ctpop__(a: int) -> int:
         declare i64 @llvm.ctpop.i64(i64 %a)
         %tmp = call i64 @llvm.ctpop.i64(i64 %a)
         ret i64 %tmp
+
     @llvm
     def __ctlz__(a: int) -> int:
         declare i64 @llvm.ctlz.i64(i64 %a, i1 %is_zero_undef)
         %tmp = call i64 @llvm.ctlz.i64(i64 %a, i1 false)
         ret i64 %tmp
+
     @llvm
     def __cttz__(a: int) -> int:
         declare i64 @llvm.cttz.i64(i64 %a, i1 %is_zero_undef)
         %tmp = call i64 @llvm.cttz.i64(i64 %a, i1 false)
         ret i64 %tmp
-    @llvm
-    def __eq__(a: int, b: int) -> bool:
-        %tmp = icmp eq i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
+
     @llvm
     def __eq__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp oeq double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
     @llvm
-    def __ne__(a: int, b: int) -> bool:
-        %tmp = icmp ne i64 %a, %b
+    def __eq__(a: int, b: int) -> bool:
+        %tmp = icmp eq i64 %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
     @llvm
     def __ne__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp one double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
     @llvm
-    def __lt__(a: int, b: int) -> bool:
-        %tmp = icmp slt i64 %a, %b
+    def __ne__(a: int, b: int) -> bool:
+        %tmp = icmp ne i64 %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
     @llvm
     def __lt__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp olt double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
     @llvm
-    def __gt__(a: int, b: int) -> bool:
-        %tmp = icmp sgt i64 %a, %b
+    def __lt__(a: int, b: int) -> bool:
+        %tmp = icmp slt i64 %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
     @llvm
     def __gt__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp ogt double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
     @llvm
-    def __le__(a: int, b: int) -> bool:
-        %tmp = icmp sle i64 %a, %b
+    def __gt__(a: int, b: int) -> bool:
+        %tmp = icmp sgt i64 %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
     @llvm
     def __le__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp ole double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
     @llvm
-    def __ge__(a: int, b: int) -> bool:
-        %tmp = icmp sge i64 %a, %b
+    def __le__(a: int, b: int) -> bool:
+        %tmp = icmp sle i64 %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
     @llvm
     def __ge__(self: int, b: float) -> bool:
         %0 = sitofp i64 %self to double
         %1 = fcmp oge double %0, %b
         %2 = zext i1 %1 to i8
         ret i8 %2
+
+    @llvm
+    def __ge__(a: int, b: int) -> bool:
+        %tmp = icmp sge i64 %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
+
+    def __pow__(self: int, exp: float):
+        return float(self) ** exp
+
     def __pow__(self: int, exp: int):
         if exp < 0:
             return 0
@@ -218,8 +263,6 @@ class I:
                 break
             self *= self
         return result
-    def __pow__(self: int, exp: float):
-        return float(self) ** exp
 
 @extend
 class int:
@@ -227,158 +270,197 @@ class int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return self
+
     def __float__(self) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__float__(self)
+
     def __bool__(self) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__bool__(self)
+
     def __pos__(self) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return self
+
     def __neg__(self) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__neg__(self)
+
     def __lshift__(self, other: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__lshift__(self, other)
+
     def __rshift__(self, other: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__rshift__(self, other)
-    def __add__(self, b: int) -> int:
-        global OP_COUNT
-        OP_COUNT = inc(OP_COUNT)
-        return I.__add__(self, b)
+
     def __add__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__add__(self, other)
-    def __sub__(self, b: int) -> int:
+
+    def __add__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__sub__(self, b)
+        return I.__add__(self, b)
+
     def __sub__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__sub__(self, other)
-    def __mul__(self, b: int) -> int:
+
+    def __sub__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__mul__(self, b)
+        return I.__sub__(self, b)
+
     def __mul__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__mul__(self, other)
-    def __floordiv__(self, b: int) -> int:
+
+    def __mul__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__floordiv__(self, b)
+        return I.__mul__(self, b)
+
     def __floordiv__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__floordiv__(self, other)
-    def __truediv__(self, other: int) -> float:
+
+    def __floordiv__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__truediv__(self, other)
+        return I.__floordiv__(self, b)
+
     def __truediv__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__truediv__(self, other)
-    def __mod__(self, b: int) -> int:
+
+    def __truediv__(self, other: int) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__mod__(self, b)
+        return I.__truediv__(self, other)
+
     def __mod__(self, other: float) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__mod__(self, other)
+
+    def __mod__(self, b: int) -> int:
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__mod__(self, b)
+
     def __invert__(self) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__invert__(self)
+
     def __and__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__and__(self, b)
+
     def __or__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__or__(self, b)
+
     def __xor__(self, b: int) -> int:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__xor__(self, b)
-    def __eq__(self, b: int) -> bool:
-        global OP_COUNT
-        OP_COUNT = inc(OP_COUNT)
-        return I.__eq__(self, b)
+
     def __eq__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__eq__(self, b)
-    def __ne__(self, b: int) -> bool:
+
+    def __eq__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__ne__(self, b)
+        return I.__eq__(self, b)
+
     def __ne__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__ne__(self, b)
-    def __lt__(self, b: int) -> bool:
+
+    def __ne__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__lt__(self, b)
+        return I.__ne__(self, b)
+
     def __lt__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__lt__(self, b)
-    def __gt__(self, b: int) -> bool:
+
+    def __lt__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__gt__(self, b)
+        return I.__lt__(self, b)
+
     def __gt__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__gt__(self, b)
-    def __le__(self, b: int) -> bool:
+
+    def __gt__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__le__(self, b)
+        return I.__gt__(self, b)
+
     def __le__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__le__(self, b)
-    def __ge__(self, b: int) -> bool:
+
+    def __le__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__ge__(self, b)
+        return I.__le__(self, b)
+
     def __ge__(self, b: float) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__ge__(self, b)
-    def __pow__(self, exp: int):
+
+    def __ge__(self, b: int) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
-        return I.__pow__(self, exp)
+        return I.__ge__(self, b)
+
     def __pow__(self, exp: float):
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return I.__pow__(self, exp)
+
+    def __pow__(self, exp: int):
+        global OP_COUNT
+        OP_COUNT = inc(OP_COUNT)
+        return I.__pow__(self, exp)
+
 
 class F:
     @llvm
     def __int__(self: float) -> int:
         %0 = fptosi double %self to i64
         ret i64 %0
+
     def __float__(self: float):
         return self
+
     @llvm
     def __bool__(self: float) -> bool:
         %0 = fcmp one double %self, 0.000000e+00
@@ -391,10 +473,12 @@ class float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return F.__int__(self)
+
     def __float__(self) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return self
+
     def __bool__(self) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
@@ -406,10 +490,12 @@ class bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return 1 if self else 0
+
     def __float__(self) -> float:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)
         return 1. if self else 0.
+
     def __bool__(self) -> bool:
         global OP_COUNT
         OP_COUNT = inc(OP_COUNT)

@@ -223,9 +223,8 @@ public:
   types::FuncTypePtr findFunction(const std::string &name) const;
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr
-  findMethod(types::ClassType *typ, const std::string &member,
-             const std::vector<std::pair<std::string, types::TypePtr>> &args);
+  types::FuncTypePtr findMethod(types::ClassType *typ, const std::string &member,
+                                const std::vector<types::TypePtr> &args);
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.

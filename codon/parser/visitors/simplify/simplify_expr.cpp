@@ -617,7 +617,7 @@ void SimplifyVisitor::visit(DotExpr *expr) {
       auto s = join(chain, ".", importEnd, i + 1);
       val = fctx->find(s);
       // Make sure that we access only global imported variables.
-      if (val && (importName.empty() || val->isGlobal())) {
+      if (val && (importName.empty() || val->isType() || val->isGlobal())) {
         itemName = val->canonicalName;
         itemEnd = i + 1;
         if (!importName.empty())

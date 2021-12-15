@@ -140,7 +140,7 @@ TypeContext::findMethod(const std::string &typeName, const std::string &method) 
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
-    if (t != m->second.methods.end()) {
+    if (t != m->second.methods.end() && !t->second.empty()) {
       seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
                 "first method '{}' is not dispatch", t->second[0].name);
       std::unordered_set<std::string> signatureLoci;
