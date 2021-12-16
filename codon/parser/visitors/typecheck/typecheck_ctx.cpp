@@ -195,15 +195,17 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   int starArgIndex = -1, kwstarArgIndex = -1;
   for (int i = 0; i < func->ast->args.size(); i++) {
-    if ((known.empty() || !known[i]) && startswith(func->ast->args[i].name, "**"))
+    // if (!known.empty() && known[i] && !partial)
+      // continue;
+    if (startswith(func->ast->args[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
-    else if ((known.empty() || !known[i]) && startswith(func->ast->args[i].name, "*"))
+    else if (startswith(func->ast->args[i].name, "*"))
       starArgIndex = i, score -= 2;
   }
-  seqassert(known.empty() || starArgIndex == -1 || !known[starArgIndex],
-            "partial *args");
-  seqassert(known.empty() || kwstarArgIndex == -1 || !known[kwstarArgIndex],
-            "partial **kwargs");
+  // seqassert(known.empty() || starArgIndex == -1 || !known[starArgIndex],
+  //           "partial *args");
+  // seqassert(known.empty() || kwstarArgIndex == -1 || !known[kwstarArgIndex],
+  //           "partial **kwargs");
 
   // 1. Assign positional arguments to slots
   // Each slot contains a list of arg's indices

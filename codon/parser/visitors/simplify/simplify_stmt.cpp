@@ -954,7 +954,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
         auto subs = substitutions[ai];
         if (ctx->cache->classes[ctx->bases.back().name]
-            .methods[ctx->cache->reverseIdentifierLookup[f->name]].empty())
+                .methods[ctx->cache->reverseIdentifierLookup[f->name]]
+                .empty())
           generateDispatch(ctx->cache->reverseIdentifierLookup[f->name]);
         auto newName = ctx->generateCanonicalName(
             ctx->cache->reverseIdentifierLookup[f->name], true);
@@ -1765,10 +1766,11 @@ std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
 
 void SimplifyVisitor::generateDispatch(const std::string &name) {
   transform(N<FunctionStmt>(
-      name + ".dispatch", nullptr, std::vector<Param>{Param("*args")},
-      N<SuiteStmt>(
-          N<ReturnStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(ctx->bases.back().name), name),
-                                    N<StarExpr>(N<IdExpr>("args")))))));
+      name + ".dispatch", nullptr,
+      std::vector<Param>{Param("*args"), Param("**kwargs")},
+      N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
+          N<DotExpr>(N<IdExpr>(ctx->bases.back().name), name),
+          N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs")))))));
 }
 
 } // namespace ast

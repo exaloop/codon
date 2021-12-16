@@ -952,7 +952,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     if (bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.pop_back();
     ExprPtr e = N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs);
-    return transform(e, false, allowVoidExpr);
+    auto ex = transform(e, false, allowVoidExpr);
+    return ex;
   }
 }
 
@@ -1094,6 +1095,18 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   bool isPartial = false;
   int ellipsisStage = -1;
   auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
+  auto getPartialArg = [&](int pi) {
+    auto id = transform(N<IdExpr>(partialVar));
+    ExprPtr it = N<IntExpr>(pi);
+    // Manual call to transformStaticTupleIndex needed because otherwise
+    // IndexExpr routes this to InstantiateExpr.
+    auto ex = transformStaticTupleIndex(callee.get(), id, it);
+    seqassert(ex, "partial indexing failed");
+    return ex;
+  };
+
+  ExprPtr partialStarArgs = nullptr;
+  ExprPtr partialKwstarArgs = nullptr;
   if (expr->ordered)
     args = expr->args;
   else
@@ -1110,17 +1123,38 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                                                    : expr->args[slots[si][0]].value);
               typeArgCount += typeArgs.back() != nullptr;
               newMask[si] = slots[si].empty() ? 0 : 1;
-            } else if (si == starArgIndex && !(partial && slots[si].empty())) {
+            } else if (si == starArgIndex) {
               std::vector<ExprPtr> extra;
+              if (!known.empty())
+                extra.push_back(N<StarExpr>(getPartialArg(-2)));
               for (auto &e : slots[si]) {
                 extra.push_back(expr->args[e].value);
                 if (extra.back()->getEllipsis())
                   ellipsisStage = args.size();
               }
-              args.push_back({"", transform(N<TupleExpr>(extra))});
-            } else if (si == kwstarArgIndex && !(partial && slots[si].empty())) {
+              auto e = transform(N<TupleExpr>(extra));
+              if (partial) {
+                partialStarArgs = e;
+                args.push_back({"", transform(N<EllipsisExpr>())});
+                newMask[si] = 0;
+              } else {
+                args.push_back({"", e});
+              }
+            } else if (si == kwstarArgIndex) {
               std::vector<std::string> names;
               std::vector<CallExpr::Arg> values;
+              if (!known.empty()) {
+                auto e = getPartialArg(-1);
+                auto t = e->getType()->getRecord();
+                seqassert(t && startswith(t->name, "KwTuple"), "{} not a kwtuple",
+                          e->toString());
+                auto &ff = ctx->cache->classes[t->name].fields;
+                for (int i = 0; i < t->getRecord()->args.size(); i++) {
+                  names.emplace_back(ff[i].name);
+                  values.emplace_back(
+                      CallExpr::Arg{"", transform(N<DotExpr>(clone(e), ff[i].name))});
+                }
+              }
               for (auto &e : slots[si]) {
                 names.emplace_back(expr->args[e].name);
                 values.emplace_back(CallExpr::Arg{"", expr->args[e].value});
@@ -1128,16 +1162,17 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                   ellipsisStage = args.size();
               }
               auto kwName = generateTupleStub(names.size(), "KwTuple", names);
-              args.push_back({"", transform(N<CallExpr>(N<IdExpr>(kwName), values))});
+              auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
+              if (partial) {
+                partialKwstarArgs = e;
+                args.push_back({"", transform(N<EllipsisExpr>())});
+                newMask[si] = 0;
+              } else {
+                args.push_back({"", e});
+              }
             } else if (slots[si].empty()) {
               if (!known.empty() && known[si]) {
-                // Manual call to transformStaticTupleIndex needed because otherwise
-                // IndexExpr routes this to InstantiateExpr.
-                auto id = transform(N<IdExpr>(partialVar));
-                ExprPtr it = N<IntExpr>(pi++);
-                auto ex = transformStaticTupleIndex(callee.get(), id, it);
-                seqassert(ex, "partial indexing failed");
-                args.push_back({"", ex});
+                args.push_back({"", getPartialArg(pi++)});
               } else if (partial) {
                 args.push_back({"", transform(N<EllipsisExpr>())});
                 newMask[si] = 0;
@@ -1165,6 +1200,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   if (isPartial) {
     deactivateUnbounds(expr->args.back().value->getType().get());
     expr->args.pop_back();
+    if (!partialStarArgs)
+      partialStarArgs = transform(N<TupleExpr>());
+    if (!partialKwstarArgs) {
+      auto kwName = generateTupleStub(0, "KwTuple", {});
+      partialKwstarArgs = transform(N<CallExpr>(N<IdExpr>(kwName)));
+    }
   }
 
   // Typecheck given arguments with the expected (signature) types.
@@ -1257,11 +1298,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
         deactivateUnbounds(pt->func.get());
       calleeFn->generics[si + 1].type = calleeFn->args[si + 1] = replacements[si];
     }
-  if (auto rt = realize(calleeFn)) {
-    unify(rt, std::static_pointer_cast<Type>(calleeFn));
-    expr->expr = transform(expr->expr);
+  if (!isPartial) {
+    if (auto rt = realize(calleeFn)) {
+      unify(rt, std::static_pointer_cast<Type>(calleeFn));
+      expr->expr = transform(expr->expr);
+    }
   }
-
   expr->done &= expr->expr->done;
 
   // Emit the final call.
@@ -1274,6 +1316,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     for (auto &r : args)
       if (!r.value->getEllipsis())
         newArgs.push_back(r.value);
+    newArgs.push_back(partialStarArgs);
+    newArgs.push_back(partialKwstarArgs);
 
     std::string var = ctx->cache->getTemporaryVar("partial");
     ExprPtr call = nullptr;
@@ -1535,7 +1579,8 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
       tupleSize++;
   auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->ast->name);
   if (!ctx->find(typeName))
-    generateTupleStub(tupleSize, typeName, {}, false);
+    // 2 for .starArgs and .kwstarArgs (empty tuples if fn does not have them)
+    generateTupleStub(tupleSize + 2, typeName, {}, false);
   return typeName;
 }
 
@@ -1601,9 +1646,12 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   auto partialTypeName = generatePartialStub(mask, fn.get());
   deactivateUnbounds(fn.get());
   std::string var = ctx->cache->getTemporaryVar("partial");
-  ExprPtr call = N<StmtExpr>(
-      N<AssignStmt>(N<IdExpr>(var), N<CallExpr>(N<IdExpr>(partialTypeName))),
-      N<IdExpr>(var));
+  auto kwName = generateTupleStub(0, "KwTuple", {});
+  ExprPtr call =
+      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
+                                N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
+                                            N<CallExpr>(N<IdExpr>(kwName)))),
+                  N<IdExpr>(var));
   call = transform(call, false, allowVoidExpr);
   seqassert(call->type->getRecord() &&
                 startswith(call->type->getRecord()->name, partialTypeName) &&

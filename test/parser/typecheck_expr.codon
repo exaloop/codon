@@ -447,16 +447,7 @@ q = p(zh=43, ...)
 q(1) #: 1 () (zh: 43)
 r = q(5, 38, ...)
 r() #: 5 (38) (zh: 43)
-
-#%% call_partial_star_error,barebones
-def foo(x, *args, **kwargs):
-    print x, args, kwargs
-p = foo(...)
-p(1, z=5)
-q = p(zh=43, ...)
-q(1)
-r = q(5, 38, ...)
-r(1, a=1) #! too many arguments for foo[T1,T2,T3] (expected maximum 3, got 2)
+r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
 
 #%% call_kwargs,barebones
 def kwhatever(**kwargs):
@@ -503,6 +494,79 @@ foo(*t, **f) #: (1, 's') (x: 6, y: True)
 foo(*(1,2)) #: (1, 2) ()
 foo(3, f) #: (3, (x: 6, y: True)) ()
 foo(k = 3, **f) #: () (k: 3, x: 6, y: True)
+
+#%% call_partial_args_kwargs,barebones
+def foo(*args):
+    print(args)
+a = foo(1, 2, ...)
+b = a(3, 4, ...)
+c = b(5, ...)
+c('zooooo')
+#: (1, 2, 3, 4, 5, 'zooooo')
+
+def fox(*args, **kwargs):
+    print(args, kwargs)
+xa = fox(1, 2, x=5, ...)
+xb = xa(3, 4, q=6, ...)
+xc = xb(5, ...)
+xd = xc(z=5.1, ...)
+xd('zooooo', w='lele')
+#: (1, 2, 3, 4, 5, 'zooooo') (x: 5, q: 6, z: 5.1, w: 'lele')
+
+class Foo:
+    i: int
+    def __str__(self):
+        return f'#{self.i}'
+    def foo(self, a):
+        return f'{self}:generic'
+    def foo(self, a: float):
+        return f'{self}:float'
+    def foo(self, a: int):
+        return f'{self}:int'
+f = Foo(4)
+
+def pacman(x, f):
+    print f(x, '5')
+    print f(x, 2.1)
+    print f(x, 4)
+pacman(f, Foo.foo)
+#: #4:generic
+#: #4:float
+#: #4:int
+
+def macman(f):
+    print f('5')
+    print f(2.1)
+    print f(4)
+macman(f.foo)
+#: #4:generic
+#: #4:float
+#: #4:int
+
+class Fox:
+    i: int
+    def __str__(self):
+        return f'#{self.i}'
+    def foo(self, a, b):
+        return f'{self}:generic b={b}'
+    def foo(self, a: float, c):
+        return f'{self}:float, c={c}'
+    def foo(self, a: int):
+        return f'{self}:int'
+    def foo(self, a: int, z, q):
+        return f'{self}:int z={z} q={q}'
+ff = Fox(5)
+def maxman(f):
+    print f('5', b=1)
+    print f(2.1, 3)
+    print f(4)
+    print f(5, 1, q=3)
+maxman(ff.foo)
+#: #5:generic b=1
+#: #5:float, c=3
+#: #5:int
+#: #5:int z=1 q=3
+
 
 #%% call_static,barebones
 print isinstance(1, int), isinstance(2.2, float), isinstance(3, bool)
