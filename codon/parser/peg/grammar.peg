@@ -61,12 +61,12 @@ small_stmt <-
   / 'break' &(SPACE / ';' / EOL) { return any(ast<BreakStmt>(LOC)); }
   / 'continue' &(SPACE / ';' / EOL) { return any(ast<ContinueStmt>(LOC)); }
   / global_stmt
-  / yield_stmt
+  / yield_stmt &(SPACE / ';' / EOL)
   / assert_stmt
   / del_stmt
-  / return_stmt
-  / raise_stmt
-  / print_stmt
+  / return_stmt &(SPACE / ';' / EOL)
+  / raise_stmt &(SPACE / ';' / EOL)
+  / print_stmt 
   / import_stmt
   / expressions &(_ ';' / _ EOL)  { return any(ast<ExprStmt>(LOC, ac_expr(V0))); }
   / NAME SPACE expressions {
