@@ -298,3 +298,47 @@ def foo(x):
     print len(x)
 foo(1) #: 2
 foo('s') #: 1
+
+#%% super,barebones
+class Foo:
+    def foo(a):
+        # super(a)
+        print 'foo-1', a
+    def foo(a: int):
+        super(a)
+        print 'foo-2', a
+    def foo(a: str):
+        super(a)
+        print 'foo-3', a
+    def foo(a):
+        super(a)
+        print 'foo-4', a
+Foo.foo(1)
+#: foo-1 1
+#: foo-2 1
+#: foo-4 1
+
+class Bear:
+    def woof(x):
+        return f'bear woof {x}'
+@extend
+class Bear:
+    def woof(x):
+        return super(x) + f' bear w--f {x}'
+print Bear.woof('!')
+#: bear woof ! bear w--f !
+
+class PolarBear(Bear):
+    def woof():
+        return 'polar ' + super('@')
+print PolarBear.woof()
+#: polar bear woof @ bear w--f @
+
+#%% super_error,barebones
+class Foo:
+    def foo(a):
+        super(a)
+        print 'foo-1', a
+Foo.foo(1)
+#! no matching super methods are available
+#! while realizing Foo.foo.2
