@@ -103,19 +103,20 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
     if (auto l = i.second->getLink()) {
       if (l->kind != types::LinkType::Unbound)
         continue;
-      i.second->setSrcInfo(expr->getSrcInfo());
+      if (expr)
+        i.second->setSrcInfo(expr->getSrcInfo());
       if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
         LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
                       i.second->debugString(true), type->debugString(true),
-                      expr->toString(), activate);
+                      expr ? expr->toString() : "", activate);
         if (activate && allowActivation)
-          activeUnbounds[i.second] =
-              format("{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
-                     type->toString(), cache->getContent(expr->getSrcInfo()));
+          activeUnbounds[i.second] = format(
+              "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
+              type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
       }
     }
   }
-  LOG_TYPECHECK("[inst] {} -> {}", expr->toString(), t->debugString(true));
+  LOG_TYPECHECK("[inst] {} -> {}", expr ? expr->toString() : "", t->debugString(true));
   return t;
 }
 
@@ -135,8 +136,9 @@ TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
   return instantiate(expr, root, g.get());
 }
 
-std::vector<types::FuncTypePtr>
-TypeContext::findMethod(const std::string &typeName, const std::string &method) const {
+std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
+                                                        const std::string &method,
+                                                        bool hideShadowed) const {
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
@@ -148,9 +150,13 @@ TypeContext::findMethod(const std::string &typeName, const std::string &method) 
       for (int mti = int(t->second.size()) - 1; mti > 0; mti--) {
         auto &mt = t->second[mti];
         if (mt.age <= age) {
-          auto sig = cache->functions[mt.name].ast->signature();
-          if (!in(signatureLoci, sig)) {
-            signatureLoci.insert(sig);
+          if (hideShadowed) {
+            auto sig = cache->functions[mt.name].ast->signature();
+            if (!in(signatureLoci, sig)) {
+              signatureLoci.insert(sig);
+              vv.emplace_back(mt.type);
+            }
+          } else {
             vv.emplace_back(mt.type);
           }
         }
@@ -196,7 +202,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   int starArgIndex = -1, kwstarArgIndex = -1;
   for (int i = 0; i < func->ast->args.size(); i++) {
     // if (!known.empty() && known[i] && !partial)
-      // continue;
+    // continue;
     if (startswith(func->ast->args[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
     else if (startswith(func->ast->args[i].name, "*"))

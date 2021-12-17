@@ -154,7 +154,15 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->realizationDepth++;
       ctx->addBlock();
       ctx->typecheckLevel++;
-      ctx->bases.push_back({type->ast->name, type->getFunc(), type->args[0]});
+
+      // Find parents!
+      ctx->bases.push_back({type->ast->name, type->getFunc(), type->args[0],
+                            {}, findSuperMethods(type->getFunc())});
+      // if (startswith(type->ast->name, "Foo")) {
+      //   LOG(": {}", type->toString());
+      //   for (auto  &s: ctx->bases.back().supers)
+      //     LOG("  - {}", s->toString());
+      // }
       auto clonedAst = ctx->cache->functions[type->ast->name].ast->clone();
       auto *ast = (FunctionStmt *)clonedAst.get();
       addFunctionGenerics(type);

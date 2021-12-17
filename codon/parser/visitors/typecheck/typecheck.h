@@ -293,6 +293,11 @@ private:
                                     const std::vector<types::TypePtr> &args);
   types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
                                     const std::vector<CallExpr::Arg> &args);
+  std::vector<types::FuncTypePtr> findSuperMethods(const types::FuncTypePtr &func);
+  std::vector<types::FuncTypePtr>
+  findMatchingMethods(types::ClassType *typ,
+                      const std::vector<types::FuncTypePtr> &methods,
+                      const std::vector<CallExpr::Arg> &args);
 
 private:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,

@@ -48,6 +48,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Map of locally realized types and functions.
     std::unordered_map<std::string, std::pair<TypecheckItem::Kind, types::TypePtr>>
         visitedAsts;
+    /// List of functions that can be accessed via super()
+    std::vector<types::FuncTypePtr> supers;
   };
   std::vector<RealizationBase> bases;
 
@@ -121,12 +123,12 @@ public:
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
-                                             const std::string &method) const;
+                                             const std::string &method,
+                                             bool hideShadowed = true) const;
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   types::TypePtr findMember(const std::string &typeName,
                             const std::string &member) const;
-
 
   typedef std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>
       ReorderDoneFn;

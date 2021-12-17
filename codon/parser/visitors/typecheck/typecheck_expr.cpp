@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -1026,6 +1027,20 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       seenNames.insert(i.name);
     }
 
+  if (expr->expr->isId("super")) {
+    if (ctx->bases.back().supers.empty())
+      error("no matching super methods are available");
+    auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
+    auto m =
+        findMatchingMethods(parentCls ? CAST(parentCls, types::ClassType) : nullptr,
+                            ctx->bases.back().supers, expr->args);
+    if (m.empty())
+      error("no matching super methods are available");
+    // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(), m[0]->toString());
+    ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
+    return transform(e, false, true);
+  }
+
   // Intercept dot-callees (e.g. expr.foo). Needed in order to select a proper
   // overload for magic methods and to avoid dealing with partial calls
   // (a non-intercepted object DotExpr (e.g. expr.foo) will get transformed into a
@@ -1677,11 +1692,48 @@ TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
                                  const std::vector<CallExpr::Arg> &args) {
   auto typ = expr->getType()->getClass();
   seqassert(typ, "not a class");
+  auto methods = ctx->findMethod(typ->name, member, false);
+  auto m = findMatchingMethods(typ.get(), methods, args);
+  return m.empty() ? nullptr : m[0];
+}
 
+std::vector<types::FuncTypePtr>
+TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
+  if (func->ast->attributes.parentClass.empty() ||
+      endswith(func->ast->name, ".dispatch"))
+    return {};
+  auto p = ctx->find(func->ast->attributes.parentClass)->type;
+  if (!p || !p->getClass())
+    return {};
+
+  auto methodName = ctx->cache->reverseIdentifierLookup[func->ast->name];
+  auto m = ctx->cache->classes.find(p->getClass()->name);
+  std::vector<types::FuncTypePtr> result;
+  if (m != ctx->cache->classes.end()) {
+    auto t = m->second.methods.find(methodName);
+    if (t != m->second.methods.end() && !t->second.empty()) {
+      seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
+                "first method '{}' is not dispatch", t->second[0].name);
+      for (int mti = 1; mti < t->second.size(); mti++) {
+        auto &mt = t->second[mti];
+        if (mt.type->ast->name == func->ast->name)
+          break;
+        result.emplace_back(mt.type);
+      }
+    }
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+std::vector<types::FuncTypePtr>
+TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
+                                      const std::vector<types::FuncTypePtr> &methods,
+                                      const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
-  auto methods = ctx->findMethod(typ->name, member);
+  std::vector<types::FuncTypePtr> results;
   for (int mi = 0; mi < methods.size(); mi++) {
-    auto m = ctx->instantiate(expr, methods[mi], typ.get(), false)->getFunc();
+    auto m = ctx->instantiate(nullptr, methods[mi], typ, false)->getFunc();
     std::vector<types::TypePtr> reordered;
     auto score = ctx->reorderNamedArgs(
         m.get(), args,
@@ -1721,10 +1773,10 @@ TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
       //   else ar.push_back(format("{}: {}", a.first, a.second->toString()));
       // }
       // LOG("- {} vs {}", m->toString(), join(ar, "; "));
-      return methods[mi];
+      results.push_back(methods[mi]);
     }
   }
-  return nullptr;
+  return results;
 }
 
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
