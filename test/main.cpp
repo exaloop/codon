@@ -353,6 +353,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/str_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
+        "stdlib/datetime_test.codon",
         "stdlib/itertools_test.codon",
         "stdlib/bisect_test.codon",
         "stdlib/random_test.codon",
