@@ -23,6 +23,10 @@ class str:
     def __bool__(self) -> bool:
         return self.len != 0
     def __copy__(self) -> str:
+        return self
+    def __deepcopy__(self) -> str:
+        return self
+    def __ptrcopy__(self) -> str:
         n = self.len
         p = cobj(n)
         str.memcpy(p, self.ptr, n)

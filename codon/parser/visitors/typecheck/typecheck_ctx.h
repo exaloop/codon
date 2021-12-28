@@ -69,7 +69,7 @@ struct TypeContext : public Context<TypecheckItem> {
 
   /// Number of nested blocks (0 for toplevel)
   int blockLevel;
-  /// True if early return is sounds (anything afterwards won't be typechecked)
+  /// True if an early return is found (anything afterwards won't be typechecked)
   bool returnEarly;
 
 public:
