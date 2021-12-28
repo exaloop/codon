@@ -45,7 +45,7 @@ class float:
     def __suffix_zoo__(x):
         return str(x) + '_zoo'
 
-print 1.2e-2zoo #: 1.2e-2_zoo
+print 1.2e-1zoo #: 0.12_zoo
 
 #%% string,barebones
 print 'kthxbai', "kthxbai" #: kthxbai kthxbai
