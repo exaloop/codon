@@ -942,13 +942,13 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // Object access: y.method. Transform y.method to a partial call
     // typeof(t).foo(y, ...).
     std::vector<ExprPtr> methodArgs{expr->expr};
-    for (int i = 0; i < std::max(1, (int)bestMethod->args.size() - 2); i++)
-      methodArgs.push_back(N<EllipsisExpr>());
+    methodArgs.push_back(N<EllipsisExpr>());
     // Handle @property methods.
     if (bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.pop_back();
     ExprPtr e = N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs);
-    return transform(e, false, allowVoidExpr);
+    ExprPtr r = transform(e, false, allowVoidExpr);
+    return r;
   }
 }
 
