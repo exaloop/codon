@@ -27,8 +27,8 @@ print -1u7 #: 127
 
 @extend
 class int:
-    def __suffix_test__(s: str):
-        return 'TEST: ' + s
+    def __suffix_test__(s):
+        return 'TEST: ' + str(s)
 print 123_456test #: TEST: 123456
 
 #%% int_error,barebones
@@ -42,8 +42,8 @@ print 2.e-2 #: 0.02
 #%% float_suffix,barebones
 @extend
 class float:
-    def __suffix_zoo__(x: str):
-        return x+'_zoo'
+    def __suffix_zoo__(x):
+        return str(x) + '_zoo'
 
 print 1.2e-2zoo #: 1.2e-2_zoo
 

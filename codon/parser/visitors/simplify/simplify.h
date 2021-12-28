@@ -343,8 +343,8 @@ private:
   /// (XXXuN and XXXiN), and other suffix integers to a corresponding integer value or a
   /// constructor:
   ///   123u -> UInt[64](123)
-  ///   123i56 -> Int[56]("123")  (same for UInt)
-  ///   123pf -> int.__suffix_pf__("123")
+  ///   123i56 -> Int[56](123)  (same for UInt)
+  ///   123pf -> int.__suffix_pf__(123)
   ExprPtr transformInt(const std::string &value, const std::string &suffix);
   /// Converts a float string to double.
   ExprPtr transformFloat(const std::string &value, const std::string &suffix);

@@ -691,48 +691,48 @@ ExprPtr SimplifyVisitor::transformInt(const std::string &value,
       return std::stoull(s.substr(2), nullptr, 2);
     return std::stoull(s, nullptr, 0);
   };
+  int64_t val;
   try {
-    if (suffix.empty()) {
-      auto expr = N<IntExpr>(to_int(value));
-      return expr;
-    }
+    val = to_int(value);
+    if (suffix.empty())
+      return N<IntExpr>(val);
     /// Unsigned numbers: use UInt[64] for that
     if (suffix == "u")
       return transform(N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)),
-                                   N<IntExpr>(to_int(value))));
+                                   N<IntExpr>(val)));
     /// Fixed-precision numbers (uXXX and iXXX)
     /// NOTE: you cannot use binary (0bXXX) format with those numbers.
     /// TODO: implement non-string constructor for these cases.
     if (suffix[0] == 'u' && isdigit(suffix.substr(1)))
       return transform(N<CallExpr>(
           N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(std::stoi(suffix.substr(1)))),
-          N<StringExpr>(value)));
+          N<IntExpr>(val)));
     if (suffix[0] == 'i' && isdigit(suffix.substr(1)))
       return transform(N<CallExpr>(
           N<IndexExpr>(N<IdExpr>("Int"), N<IntExpr>(std::stoi(suffix.substr(1)))),
-          N<StringExpr>(value)));
+          N<IntExpr>(val)));
   } catch (std::out_of_range &) {
     error("integer {} out of range", value);
   }
   /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
   /// NOTE: you cannot neither use binary (0bXXX) format here.
   return transform(N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)),
-                               N<StringExpr>(value)));
+                               N<IntExpr>(val)));
 }
 
 ExprPtr SimplifyVisitor::transformFloat(const std::string &value,
                                         const std::string &suffix) {
+  double val;
   try {
-    if (suffix.empty()) {
-      auto expr = N<FloatExpr>(std::stod(value));
-      return expr;
-    }
+    val = std::stod(value);
   } catch (std::out_of_range &) {
     error("float {} out of range", value);
   }
+  if (suffix.empty())
+    return N<FloatExpr>(val);
   /// Custom suffix sfx: use float.__suffix_sfx__(str) call.
   return transform(N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", suffix)),
-                               N<StringExpr>(value)));
+                               N<FloatExpr>(val)));
 }
 
 ExprPtr SimplifyVisitor::transformFString(std::string value) {
