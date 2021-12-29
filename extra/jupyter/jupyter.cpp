@@ -1,9 +1,11 @@
-#include "codon.h"
+#include "jupyter.h"
 
 #ifdef CODON_JUPYTER
+#include <codecvt>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>
+#include <locale>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
 #include <xeus/xhelper.hpp>
@@ -50,8 +52,35 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                              ast::join(backtrace, "  \n"));
       });
   if (failed.empty()) {
+    std::string msg = *result;
     nl::json pub_data;
-    pub_data["text/plain"] = *result;
+    if (ast::startswith(msg, "\x00\x00__codon/mime__\x00")) {
+      std::string mime = "";
+      int i = 17;
+      for (; i < msg.size() && msg[i]; i++)
+        mime += msg[i];
+      if (i < msg.size() && !msg[i]) {
+        i += 1;
+      } else {
+        mime = "text/plain";
+        i = 0;
+      }
+
+      std::string out;
+      out.reserve(msg.size() * 1.5);
+      for (; i < msg.size(); i++) {
+        uint8_t c = msg[i];
+        if (c <= 127) {
+          out.push_back(c);
+        } else {
+          out.push_back((c >> 6) | 0xC0);
+          out.push_back((c & 0x3F) | 0x80);
+        }
+      }
+      pub_data[mime] = out;
+    } else {
+      pub_data["text/plain"] = msg;
+    }
     publish_execution_result(execution_counter, move(pub_data), nl::json::object());
     return nl::json{{"status", "ok"},
                     {"payload", nl::json::array()},
