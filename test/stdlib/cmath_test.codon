@@ -3,7 +3,6 @@ import cmath
 
 INF = float('inf')
 NAN = float('nan')
-j = complex(0, 1)
 
 def float_identical(x, y):
     if math.isnan(x) or math.isnan(y):
@@ -27,11 +26,11 @@ def complex_identical(x, y):
 ###########
 
 ZERO_DIVISION = (
-    (1+1*j, 0+0*j),
-    (1+1*j, 0.0+0*j),
-    (1+1*j, 0+0*j),
-    (1.0+0*j, 0+0*j),
-    (1+0*j, 0+0*j),
+    (1+1j, 0+0j),
+    (1+1j, 0.0+0j),
+    (1+1j, 0+0j),
+    (1.0+0j, 0+0j),
+    (1+0j, 0+0j),
 )
 
 def close_abs(x, y, eps=1e-9):
@@ -81,14 +80,14 @@ def test_truediv():
 
     # A naive complex division algorithm (such as in 2.0) is very prone to
     # nonsense errors for these (overflows and underflows).
-    assert check_div(complex(1e200, 1e200), 1+0*j)
-    assert check_div(complex(1e-200, 1e-200), 1+0*j)
+    assert check_div(complex(1e200, 1e200), 1+0j)
+    assert check_div(complex(1e-200, 1e-200), 1+0j)
 
     # Just for fun.
     for i in range(100):
         check_div(complex(random(), random()), complex(random(), random()))
 
-    assert close_complex(complex.__truediv__(2+0*j, 1+1*j), 1-1*j)
+    assert close_complex(complex.__truediv__(2+0j, 1+1j), 1-1j)
 
     for denom_real, denom_imag in [(0., NAN), (NAN, 0.), (NAN, NAN)]:
         z = complex(0, 0) / complex(denom_real, denom_imag)
@@ -98,51 +97,51 @@ test_truediv()
 
 @test
 def test_richcompare():
-    assert not complex.__eq__(1+1*j, 1<<10000)
-    assert complex.__eq__(1+1*j, 1+1*j)
-    assert not complex.__eq__(1+1*j, 2+2*j)
-    assert not complex.__ne__(1+1*j, 1+1*j)
-    assert complex.__ne__(1+1*j, 2+2*j), True
+    assert not complex.__eq__(1+1j, 1<<10000)
+    assert complex.__eq__(1+1j, 1+1j)
+    assert not complex.__eq__(1+1j, 2+2j)
+    assert not complex.__ne__(1+1j, 1+1j)
+    assert complex.__ne__(1+1j, 2+2j), True
     for i in range(1, 100):
         f = i / 100.0
-        assert complex.__eq__(f+0*j, f)
-        assert not complex.__ne__(f+0*j, f)
+        assert complex.__eq__(f+0j, f)
+        assert not complex.__ne__(f+0j, f)
         assert not complex.__eq__(complex(f, f), f)
         assert complex.__ne__(complex(f, f), f)
 
     import operator
-    assert operator.eq(1+1*j, 1+1*j) == True
-    assert operator.eq(1+1*j, 2+2*j) == False
-    assert operator.ne(1+1*j, 1+1*j) == False
-    assert operator.ne(1+1*j, 2+2*j) == True
+    assert operator.eq(1+1j, 1+1j) == True
+    assert operator.eq(1+1j, 2+2j) == False
+    assert operator.ne(1+1j, 1+1j) == False
+    assert operator.ne(1+1j, 2+2j) == True
 test_richcompare()
 
 @test
 def test_pow():
     def pow(a, b): return a ** b
-    assert close_complex(pow(1+1*j, 0+0*j), 1.0)
-    assert close_complex(pow(0+0*j, 2+0*j), 0.0)
-    assert close_complex(pow(1*j, -1), 1/(1*j))
-    assert close_complex(pow(1*j, 200), 1)
+    assert close_complex(pow(1+1j, 0+0j), 1.0)
+    assert close_complex(pow(0+0j, 2+0j), 0.0)
+    assert close_complex(pow(1j, -1), 1/(1j))
+    assert close_complex(pow(1j, 200), 1)
 
-    a = 3.33+4.43*j
-    assert a ** (0*j) == 1
-    assert a ** (0.+0.*j) == 1
+    a = 3.33+4.43j
+    assert a ** (0j) == 1
+    assert a ** (0.+0.j) == 1
 
-    assert (3*j) ** (0*j) == 1
-    assert (3*j) ** 0 == 1
+    assert (3j) ** (0j) == 1
+    assert (3j) ** 0 == 1
 
     # The following is used to exercise certain code paths
     assert a ** 105 == a ** 105
     assert a ** -105 == a ** -105
     assert a ** -30 == a ** -30
 
-    assert (0.0*j) ** 0 == 1
+    assert (0.0j) ** 0 == 1
 test_pow()
 
 @test
 def test_conjugate():
-    assert close_complex(complex(5.3, 9.8).conjugate(), 5.3-9.8*j)
+    assert close_complex(complex(5.3, 9.8).conjugate(), 5.3-9.8j)
 test_conjugate()
 
 @test
@@ -419,8 +418,8 @@ def test_polar():
     assert check(0, (0., 0.))
     assert check(1, (1., 0.))
     assert check(-1, (1., pi))
-    assert check(1*j, (1., pi / 2))
-    assert check(-3*j, (3., -pi / 2))
+    assert check(1j, (1., pi / 2))
+    assert check(-3j, (3., -pi / 2))
     inf = float('inf')
     assert check(complex(inf, 0), (inf, 0.))
     assert check(complex(-inf, 0), (inf, pi))
@@ -446,10 +445,10 @@ def test_phase():
     assert almost_equal(phase(0), 0.)
     assert almost_equal(phase(1.), 0.)
     assert almost_equal(phase(-1.), pi)
-    assert almost_equal(phase(-1.+1E-300*j), pi)
-    assert almost_equal(phase(-1.-1E-300*j), -pi)
-    assert almost_equal(phase(1*j), pi/2)
-    assert almost_equal(phase(-1*j), -pi/2)
+    assert almost_equal(phase(-1.+1E-300j), pi)
+    assert almost_equal(phase(-1.-1E-300j), -pi)
+    assert almost_equal(phase(1j), pi/2)
+    assert almost_equal(phase(-1j), -pi/2)
 
     # zeros
     assert phase(complex(0.0, 0.0)) == 0.0
@@ -539,7 +538,7 @@ test_isfinite()
 @test
 def test_isnan():
     assert not cmath.isnan(1)
-    assert not cmath.isnan(1*j)
+    assert not cmath.isnan(1j)
     assert not cmath.isnan(INF)
     assert cmath.isnan(NAN)
     assert cmath.isnan(complex(NAN, 0))
@@ -552,7 +551,7 @@ test_isnan()
 @test
 def test_isinf():
     assert not cmath.isinf(1)
-    assert not cmath.isinf(1*j)
+    assert not cmath.isinf(1j)
     assert not cmath.isinf(NAN)
     assert cmath.isinf(INF)
     assert cmath.isinf(complex(INF, 0))
@@ -583,10 +582,10 @@ test_atanh_sign()
 @test
 def test_is_close():
     # test complex values that are close to within 12 decimal places
-    complex_examples = [(1.0+1.0*j, 1.000000000001+1.0*j),
-                        (1.0+1.0*j, 1.0+1.000000000001*j),
-                        (-1.0+1.0*j, -1.000000000001+1.0*j),
-                        (1.0-1.0*j, 1.0-0.999999999999*j),
+    complex_examples = [(1.0+1.0j, 1.000000000001+1.0j),
+                        (1.0+1.0j, 1.0+1.000000000001j),
+                        (-1.0+1.0j, -1.000000000001+1.0j),
+                        (1.0-1.0j, 1.0-0.999999999999j),
                         ]
 
     for a,b in complex_examples:
@@ -594,20 +593,20 @@ def test_is_close():
         assert not cmath.isclose(a, b, rel_tol=1e-13)
 
     # test values near zero that are near to within three decimal places
-    near_zero_examples = [(0.001*j, 0),
-                          (0.001 + 0*j, 0),
-                          (0.001+0.001*j, 0),
-                          (-0.001+0.001*j, 0),
-                          (0.001-0.001*j, 0),
-                          (-0.001-0.001*j, 0),
+    near_zero_examples = [(0.001j, 0),
+                          (0.001 + 0j, 0),
+                          (0.001+0.001j, 0),
+                          (-0.001+0.001j, 0),
+                          (0.001-0.001j, 0),
+                          (-0.001-0.001j, 0),
                           ]
 
     for a,b in near_zero_examples:
         assert cmath.isclose(a, b, abs_tol=1.5e-03)
         assert not cmath.isclose(a, b, abs_tol=0.5e-03)
 
-    assert cmath.isclose(0.001-0.001*j, 0.001+0.001*j, abs_tol=2e-03)
-    assert not cmath.isclose(0.001-0.001*j, 0.001+0.001*j, abs_tol=1e-03)
+    assert cmath.isclose(0.001-0.001j, 0.001+0.001j, abs_tol=2e-03)
+    assert not cmath.isclose(0.001-0.001j, 0.001+0.001j, abs_tol=1e-03)
 test_is_close()
 
 @test
