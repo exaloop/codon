@@ -1107,3 +1107,28 @@ v = [1]
 methodcaller('append')(v, 42)
 print v #: [1, 42]
 print methodcaller('index')(v, 42) #: 1
+
+
+#%% fn_overloads,barebones
+def foo(x):
+    return 1, x
+
+def foo(x, y):
+    def foo(x, y):
+        return f'{x}_{y}'
+    return 2, foo(x, y)
+
+def foo(x):
+    if x == '':
+        return 3, 0
+    return 3, 1 + foo(x[1:])[1]
+
+print foo('hi') #: (3, 2)
+print foo('hi', 1) #: (2, 'hi_1')
+
+#%% fn_overloads_error,barebones
+def foo(x):
+    return 1, x
+def foo(x, y):
+    return 2, x, y
+foo('hooooooooy!', 1, 2) #! cannot find an overload 'foo' with arguments  = str,  = int,  = int

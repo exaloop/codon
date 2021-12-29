@@ -106,7 +106,15 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
   auto val = ctx->find(expr->value);
   if (!val) {
-    val = ctx->find(expr->value + ":0"); // is it function?!
+    auto i = ctx->cache->overloads.find(expr->value);
+    if (i != ctx->cache->overloads.end()) {
+      if (i->second.size() == 1) {
+        val = ctx->find(i->second[0].name);
+      } else {
+        auto d = findDispatch(expr->value);
+        val = ctx->find(d->ast->name);
+      }
+    }
   }
   seqassert(val, "cannot find IdExpr '{}' ({})", expr->value, expr->getSrcInfo());
 
@@ -1062,6 +1070,24 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   if (auto ed = const_cast<DotExpr *>((*lhs)->getDot())) {
     if (auto edt = transformDot(ed, &expr->args))
       *lhs = edt;
+  } else if (auto ei = const_cast<IdExpr *>((*lhs)->getId())) {
+    // check if this is an overloaded function?
+    auto i = ctx->cache->overloads.find(ei->value);
+    if (i != ctx->cache->overloads.end() && i->second.size() != 1) {
+      if (auto bestMethod = findBestMethod(ei->value, expr->args)) {
+        ExprPtr e = N<IdExpr>(bestMethod->ast->name);
+        auto t = ctx->instantiate(expr, bestMethod);
+        unify(e->type, t);
+        unify(ei->type, e->type);
+        *lhs = e;
+      } else {
+        std::vector<std::string> nice;
+        for (auto &t : expr->args)
+          nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
+        error("cannot find an overload '{}' with arguments {}", ei->value,
+              join(nice, ", "));
+      }
+    }
   }
   expr->expr = transform(expr->expr, true);
 
@@ -1702,6 +1728,18 @@ TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
   return m.empty() ? nullptr : m[0];
 }
 
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const std::string &fn,
+                                 const std::vector<CallExpr::Arg> &args) {
+  std::vector<types::FuncTypePtr> methods;
+  for (auto &m : ctx->cache->overloads[fn])
+    if (!endswith(m.name, ":dispatch"))
+      methods.push_back(ctx->cache->functions[m.name].type);
+  std::reverse(methods.begin(), methods.end());
+  auto m = findMatchingMethods(nullptr, methods, args);
+  return m.empty() ? nullptr : m[0];
+}
+
 std::vector<types::FuncTypePtr>
 TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
   if (func->ast->attributes.parentClass.empty() ||
@@ -1901,6 +1939,7 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
   ctx->cache->functions[name].ast = ast;
   ctx->cache->functions[name].type = typ;
   prependStmts->push_back(ast);
+  // LOG("dispatch: {}", ast->toString(1));
   return typ;
 }
 

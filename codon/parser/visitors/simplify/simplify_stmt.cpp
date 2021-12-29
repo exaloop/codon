@@ -1407,7 +1407,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     stmts[0] = N<SuiteStmt>();
     // Add a def import(): ... manually to the cache and to the preamble (it won't be
     // transformed here!).
-    ctx->cache->overloads[importVar].push_back({importVar, ctx->cache->age});
+    ctx->cache->overloads[importVar].push_back({importVar + ":0", ctx->cache->age});
     ctx->cache->functions[importVar + ":0"].ast =
         N<FunctionStmt>(importVar + ":0", nullptr, std::vector<Param>{},
                         N<SuiteStmt>(stmts), Attr({Attr::ForceRealize}));
