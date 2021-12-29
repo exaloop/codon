@@ -732,7 +732,7 @@ ExprPtr SimplifyVisitor::transformFloat(const std::string &value,
     return N<FloatExpr>(val);
   /// Custom suffix sfx: use float.__suffix_sfx__(str) call.
   return transform(N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", suffix)),
-                               N<FloatExpr>(val)));
+                               N<FloatExpr>(value)));
 }
 
 ExprPtr SimplifyVisitor::transformFString(std::string value) {
