@@ -44,6 +44,7 @@ class str:
             if c == '\n': d = "\\n"
             elif c == '\r': d = "\\r"
             elif c == '\t': d = "\\t"
+            elif c == '\a': d = "\\a"
             elif c == '\\': d = "\\\\"
             elif c == q: d = qe
             else:

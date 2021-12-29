@@ -538,7 +538,7 @@ def foo() -> int:
     a{=a}
 foo()
 #! not a type or static expression
-#! while realizing foo (arguments foo)
+#! while realizing foo:0 (arguments foo:0)
 
 #%% function_llvm_err_4,barebones
 a = 5

@@ -52,8 +52,6 @@ std::shared_ptr<peg::Grammar> initParser() {
 template <typename T>
 T parseCode(Cache *cache, const std::string &file, std::string code, int line_offset,
             int col_offset, const std::string &rule) {
-  TIME("peg");
-
   // Initialize
   if (!grammar)
     grammar = initParser();

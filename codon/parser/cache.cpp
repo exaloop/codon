@@ -52,6 +52,9 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->type && f->kind == TypecheckItem::Func)
     return f->type->getFunc();
+  f = typeCtx->find(name + ":0");
+  if (f && f->type && f->kind == TypecheckItem::Func)
+    return f->type->getFunc();
   return nullptr;
 }
 

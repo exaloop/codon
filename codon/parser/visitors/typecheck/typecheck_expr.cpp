@@ -105,6 +105,9 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     return;
   }
   auto val = ctx->find(expr->value);
+  if (!val) {
+    val = ctx->find(expr->value + ":0"); // is it function?!
+  }
   seqassert(val, "cannot find IdExpr '{}' ({})", expr->value, expr->getSrcInfo());
 
   auto t = ctx->instantiate(expr, val->type);
@@ -725,14 +728,17 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
 
 ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &expr,
                                                     ExprPtr &index) {
-  if (!tuple->getRecord() ||
-      in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
+  if (!tuple->getRecord())
+    return nullptr;
+  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL))
+    // in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
     // Ptr, pyobj and str are internal types and have only one overloaded __getitem__
     return nullptr;
-  if (ctx->cache->classes[tuple->name].methods["__getitem__"].size() != 2)
-    // n.b.: there is dispatch as well
-    // TODO: be smarter! there might be a compatible getitem?
-    return nullptr;
+  // if (in(ctx->cache->classes[tuple->name].methods, "__getitem__")) {
+  //     ctx->cache->overloads[ctx->cache->classes[tuple->name].methods["__getitem__"]]
+  //             .size() != 1)
+  //   return nullptr;
+  // }
 
   // Extract a static integer value from a compatible expression.
   auto getInt = [&](int64_t *o, const ExprPtr &e) {
@@ -919,9 +925,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   } else if (methods.size() > 1) {
     auto m = ctx->cache->classes.find(typ->name);
     auto t = m->second.methods.find(expr->member);
-    seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
-              "first method is not dispatch");
-    bestMethod = t->second[0].type;
+    bestMethod = findDispatch(t->second);
   } else {
     bestMethod = methods[0];
   }
@@ -1036,7 +1040,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                             ctx->bases.back().supers, expr->args);
     if (m.empty())
       error("no matching super methods are available");
-    // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(), m[0]->toString());
+    // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(),
+    // m[0]->toString());
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
     return transform(e, false, true);
   }
@@ -1700,7 +1705,7 @@ TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
 std::vector<types::FuncTypePtr>
 TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
   if (func->ast->attributes.parentClass.empty() ||
-      endswith(func->ast->name, ".dispatch"))
+      endswith(func->ast->name, ":dispatch"))
     return {};
   auto p = ctx->find(func->ast->attributes.parentClass)->type;
   if (!p || !p->getClass())
@@ -1711,14 +1716,13 @@ TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
   std::vector<types::FuncTypePtr> result;
   if (m != ctx->cache->classes.end()) {
     auto t = m->second.methods.find(methodName);
-    if (t != m->second.methods.end() && !t->second.empty()) {
-      seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
-                "first method '{}' is not dispatch", t->second[0].name);
-      for (int mti = 1; mti < t->second.size(); mti++) {
-        auto &mt = t->second[mti];
-        if (mt.type->ast->name == func->ast->name)
+    if (t != m->second.methods.end()) {
+      for (auto &m : ctx->cache->overloads[t->second]) {
+        if (endswith(m.name, ":dispatch"))
+          continue;
+        if (m.name == func->ast->name)
           break;
-        result.emplace_back(mt.type);
+        result.emplace_back(ctx->cache->functions[m.name].type);
       }
     }
   }
@@ -1858,6 +1862,46 @@ int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
     }
   }
   return 0;
+}
+
+types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
+  for (auto &m : ctx->cache->overloads[fn])
+    if (endswith(ctx->cache->functions[m.name].ast->name, ":dispatch"))
+      return ctx->cache->functions[m.name].type;
+
+  // Generate dispatch and return it!
+  auto name = fn + ":dispatch";
+
+  ExprPtr root;
+  auto a = ctx->cache->functions[ctx->cache->overloads[fn][0].name].ast;
+  if (!a->attributes.parentClass.empty())
+    root = N<DotExpr>(N<IdExpr>(a->attributes.parentClass),
+                      ctx->cache->reverseIdentifierLookup[fn]);
+  else
+    root = N<IdExpr>(fn);
+  root = N<CallExpr>(root, N<StarExpr>(N<IdExpr>("args")),
+                     N<KeywordStarExpr>(N<IdExpr>("kwargs")));
+  auto ast = N<FunctionStmt>(
+      name, nullptr, std::vector<Param>{Param("*args"), Param("**kwargs")},
+      N<SuiteStmt>(N<IfStmt>(
+          N<CallExpr>(N<IdExpr>("isinstance"), root->clone(), N<IdExpr>("void")),
+          N<ExprStmt>(root->clone()), N<ReturnStmt>(root))),
+      Attr({"autogenerated"}));
+  ctx->cache->reverseIdentifierLookup[name] = ctx->cache->reverseIdentifierLookup[fn];
+
+  auto baseType =
+      ctx->instantiate(N<IdExpr>(name).get(), ctx->find(generateFunctionStub(2))->type,
+                       nullptr, false)
+          ->getRecord();
+  auto typ = std::make_shared<FuncType>(baseType, ast.get());
+  typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
+  ctx->add(TypecheckItem::Func, name, typ);
+
+  ctx->cache->overloads[fn].insert(ctx->cache->overloads[fn].begin(), {name, 0});
+  ctx->cache->functions[name].ast = ast;
+  ctx->cache->functions[name].type = typ;
+  prependStmts->push_back(ast);
+  return typ;
 }
 
 } // namespace ast

@@ -142,22 +142,23 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
-    if (t != m->second.methods.end() && !t->second.empty()) {
-      seqassert(!t->second.empty() && endswith(t->second[0].name, ".dispatch"),
-                "first method '{}' is not dispatch", t->second[0].name);
+    if (t != m->second.methods.end()) {
+      auto mt = cache->overloads[t->second];
       std::unordered_set<std::string> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
-      for (int mti = int(t->second.size()) - 1; mti > 0; mti--) {
-        auto &mt = t->second[mti];
-        if (mt.age <= age) {
+      for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+        auto &m = mt[mti];
+        if (endswith(m.name, ":dispatch"))
+          continue;
+        if (m.age <= age) {
           if (hideShadowed) {
-            auto sig = cache->functions[mt.name].ast->signature();
+            auto sig = cache->functions[m.name].ast->signature();
             if (!in(signatureLoci, sig)) {
               signatureLoci.insert(sig);
-              vv.emplace_back(mt.type);
+              vv.emplace_back(cache->functions[m.name].type);
             }
           } else {
-            vv.emplace_back(mt.type);
+            vv.emplace_back(cache->functions[m.name].type);
           }
         }
       }

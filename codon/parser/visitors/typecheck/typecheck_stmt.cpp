@@ -474,12 +474,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
   // Check if this is a class method; if so, update the class method lookup table.
   if (isClassMember) {
-    auto &methods = ctx->cache->classes[attr.parentClass]
-                        .methods[ctx->cache->reverseIdentifierLookup[stmt->name]];
+    auto m = ctx->cache->classes[attr.parentClass]
+                 .methods[ctx->cache->reverseIdentifierLookup[stmt->name]];
     bool found = false;
-    for (auto &i : methods)
+    for (auto &i : ctx->cache->overloads[m])
       if (i.name == stmt->name) {
-        i.type = typ;
+        ctx->cache->functions[i.name].type = typ;
         found = true;
         break;
       }
@@ -568,6 +568,12 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(1));
   }
   stmt->done = true;
+}
+
+std::string TypecheckVisitor::getRootName(const std::string &name) {
+  auto p = name.rfind(':');
+  seqassert(p != std::string::npos, ": not found in {}", name);
+  return name.substr(0, p);
 }
 
 } // namespace ast

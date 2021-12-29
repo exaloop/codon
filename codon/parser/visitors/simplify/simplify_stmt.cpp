@@ -437,28 +437,30 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       if (stmt->decorators.size() != 1)
         error("__attribute__ cannot be mixed with other decorators");
       attr.isAttribute = true;
-    } else if (d->isId(Attr::LLVM))
+    } else if (d->isId(Attr::LLVM)) {
       attr.set(Attr::LLVM);
-    else if (d->isId(Attr::Python))
+    } else if (d->isId(Attr::Python)) {
       attr.set(Attr::Python);
-    else if (d->isId(Attr::Internal))
+    } else if (d->isId(Attr::Internal)) {
       attr.set(Attr::Internal);
-    else if (d->isId(Attr::Atomic))
+    } else if (d->isId(Attr::Atomic)) {
       attr.set(Attr::Atomic);
-    else if (d->isId(Attr::Property))
+    } else if (d->isId(Attr::Property)) {
       attr.set(Attr::Property);
-    else if (d->isId(Attr::ForceRealize))
+    } else if (d->isId(Attr::ForceRealize)) {
       attr.set(Attr::ForceRealize);
-    else {
+    } else {
       // Let's check if this is a attribute
       auto dt = transform(clone(d));
       if (dt && dt->getId()) {
         auto ci = ctx->find(dt->getId()->value);
         if (ci && ci->kind == SimplifyItem::Func) {
-          if (ctx->cache->functions[ci->canonicalName].ast->attributes.isAttribute) {
-            attr.set(ci->canonicalName);
-            continue;
-          }
+          if (ctx->cache->overloads[ci->canonicalName].size() == 1)
+            if (ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0].name]
+                    .ast->attributes.isAttribute) {
+              attr.set(ci->canonicalName);
+              continue;
+            }
         }
       }
       decorators.emplace_back(clone(d));
@@ -473,19 +475,22 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   }
 
   bool isClassMember = ctx->inClass();
-  if (isClassMember && !endswith(stmt->name, ".dispatch") &&
-      ctx->cache->classes[ctx->bases.back().name].methods[stmt->name].empty()) {
-    generateDispatch(stmt->name);
+  std::string rootName;
+  if (isClassMember) {
+    auto &m = ctx->cache->classes[ctx->bases.back().name].methods;
+    auto i = m.find(stmt->name);
+    if (i != m.end())
+      rootName = i->second;
+  } else if (auto c = ctx->find(stmt->name)) {
+    if (c->isFunc() && c->getModule() == ctx->getModule() &&
+        c->getBase() == ctx->getBase())
+      rootName = c->canonicalName;
   }
-  auto func_name = stmt->name;
-  if (endswith(stmt->name, ".dispatch"))
-    func_name = func_name.substr(0, func_name.size() - 9);
-  auto canonicalName = ctx->generateCanonicalName(
-      func_name, true, isClassMember && !endswith(stmt->name, ".dispatch"));
-  if (endswith(stmt->name, ".dispatch")) {
-    canonicalName += ".dispatch";
-    ctx->cache->reverseIdentifierLookup[canonicalName] = func_name;
-  }
+  if (rootName.empty())
+    rootName = ctx->generateCanonicalName(stmt->name, true);
+  auto canonicalName =
+      format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+  ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
   bool isEnclosedFunc = ctx->inFunction();
 
   if (attr.has(Attr::ForceRealize) && (ctx->getLevel() || isClassMember))
@@ -495,7 +500,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->bases = std::vector<SimplifyContext::Base>();
   if (!isClassMember)
     // Class members are added to class' method table
-    ctx->add(SimplifyItem::Func, func_name, canonicalName, ctx->isToplevel());
+    ctx->add(SimplifyItem::Func, stmt->name, rootName, ctx->isToplevel());
   if (isClassMember)
     ctx->bases.push_back(oldBases[0]);
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
@@ -614,8 +619,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     // ... set the enclosing class name...
     attr.parentClass = ctx->bases.back().name;
     // ... add the method to class' method list ...
-    ctx->cache->classes[ctx->bases.back().name].methods[func_name].push_back(
-        {canonicalName, nullptr, ctx->cache->age});
+    ctx->cache->classes[ctx->bases.back().name].methods[stmt->name] = rootName;
     // ... and if the function references outer class variable (by definition a
     // generic), mark it as not static as it needs fully instantiated class to be
     // realized. For example, in class A[T]: def foo(): pass, A.foo() can be realized
@@ -624,6 +628,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (isMethod)
       attr.set(Attr::Method);
   }
+  ctx->cache->overloads[rootName].push_back({canonicalName, ctx->cache->age});
 
   std::vector<CallExpr::Arg> partialArgs;
   if (!captures.empty()) {
@@ -649,21 +654,21 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   ExprPtr finalExpr;
   if (!captures.empty())
-    finalExpr = N<CallExpr>(N<IdExpr>(func_name), partialArgs);
+    finalExpr = N<CallExpr>(N<IdExpr>(stmt->name), partialArgs);
   if (isClassMember && decorators.size())
     error("decorators cannot be applied to class methods");
   for (int j = int(decorators.size()) - 1; j >= 0; j--) {
     if (auto c = const_cast<CallExpr *>(decorators[j]->getCall())) {
       c->args.emplace(c->args.begin(),
-                      CallExpr::Arg{"", finalExpr ? finalExpr : N<IdExpr>(func_name)});
+                      CallExpr::Arg{"", finalExpr ? finalExpr : N<IdExpr>(stmt->name)});
       finalExpr = N<CallExpr>(c->expr, c->args);
     } else {
       finalExpr =
-          N<CallExpr>(decorators[j], finalExpr ? finalExpr : N<IdExpr>(func_name));
+          N<CallExpr>(decorators[j], finalExpr ? finalExpr : N<IdExpr>(stmt->name));
     }
   }
   if (finalExpr)
-    resultStmt = transform(N<AssignStmt>(N<IdExpr>(func_name), finalExpr));
+    resultStmt = transform(N<AssignStmt>(N<IdExpr>(stmt->name), finalExpr));
 }
 
 void SimplifyVisitor::visit(ClassStmt *stmt) {
@@ -744,6 +749,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   ClassStmt *originalAST = nullptr;
   auto classItem =
       std::make_shared<SimplifyItem>(SimplifyItem::Type, "", "", ctx->isToplevel());
+  classItem->moduleName = ctx->getModule();
   if (!extension) {
     classItem->canonicalName = canonicalName =
         ctx->generateCanonicalName(name, !attr.has(Attr::Internal));
@@ -949,22 +955,29 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   for (int ai = 0; ai < baseASTs.size(); ai++) {
     // FUNCS
     for (auto &mm : ctx->cache->classes[baseASTs[ai]->name].methods)
-      for (auto &mf : mm.second) {
+      for (auto &mf : ctx->cache->overloads[mm.second]) {
         auto f = ctx->cache->functions[mf.name].ast;
         if (f->attributes.has("autogenerated"))
           continue;
 
         auto subs = substitutions[ai];
-        if (ctx->cache->classes[ctx->bases.back().name]
-                .methods[ctx->cache->reverseIdentifierLookup[f->name]]
-                .empty())
-          generateDispatch(ctx->cache->reverseIdentifierLookup[f->name]);
-        auto newName = ctx->generateCanonicalName(
-            ctx->cache->reverseIdentifierLookup[f->name], true);
+
+        std::string rootName;
+        auto &mts = ctx->cache->classes[ctx->bases.back().name].methods;
+        auto it = mts.find(ctx->cache->reverseIdentifierLookup[f->name]);
+        if (it != mts.end())
+          rootName = it->second;
+        else
+          rootName = ctx->generateCanonicalName(
+              ctx->cache->reverseIdentifierLookup[f->name], true);
+        auto newCanonicalName =
+            format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+        ctx->cache->reverseIdentifierLookup[newCanonicalName] =
+            ctx->cache->reverseIdentifierLookup[f->name];
         auto nf = std::dynamic_pointer_cast<FunctionStmt>(
             replace(std::static_pointer_cast<Stmt>(f), subs));
-        subs[nf->name] = N<IdExpr>(newName);
-        nf->name = newName;
+        subs[nf->name] = N<IdExpr>(newCanonicalName);
+        nf->name = newCanonicalName;
         suite->stmts.push_back(nf);
         nf->attributes.parentClass = ctx->bases.back().name;
 
@@ -972,10 +985,10 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         if (nf->attributes.has(".changedSelf")) // replace self type with new class
           nf->args[0].type = transformType(ctx->bases.back().ast);
         preamble->functions.push_back(clone(nf));
-        ctx->cache->functions[newName].ast = nf;
+        ctx->cache->overloads[rootName].push_back({newCanonicalName, ctx->cache->age});
+        ctx->cache->functions[newCanonicalName].ast = nf;
         ctx->cache->classes[ctx->bases.back().name]
-            .methods[ctx->cache->reverseIdentifierLookup[f->name]]
-            .push_back({newName, nullptr, ctx->cache->age});
+            .methods[ctx->cache->reverseIdentifierLookup[f->name]] = rootName;
       }
   }
   for (auto sp : getClassMethods(stmt->suite))
@@ -1248,8 +1261,10 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
   auto f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("void"), fnArgs,
                            nullptr, attr);
   StmtPtr tf = transform(f); // Already in the preamble
-  if (!altName.empty())
+  if (!altName.empty()) {
     ctx->add(altName, ctx->find(name));
+    ctx->remove(name);
+  }
   return tf;
 }
 
@@ -1392,10 +1407,11 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     stmts[0] = N<SuiteStmt>();
     // Add a def import(): ... manually to the cache and to the preamble (it won't be
     // transformed here!).
-    ctx->cache->functions[importVar].ast =
-        N<FunctionStmt>(importVar, nullptr, std::vector<Param>{}, N<SuiteStmt>(stmts),
-                        Attr({Attr::ForceRealize}));
-    preamble->functions.push_back(ctx->cache->functions[importVar].ast->clone());
+    ctx->cache->overloads[importVar].push_back({importVar, ctx->cache->age});
+    ctx->cache->functions[importVar + ":0"].ast =
+        N<FunctionStmt>(importVar + ":0", nullptr, std::vector<Param>{},
+                        N<SuiteStmt>(stmts), Attr({Attr::ForceRealize}));
+    preamble->functions.push_back(ctx->cache->functions[importVar + ":0"].ast->clone());
     ;
   }
 }
@@ -1766,16 +1782,6 @@ std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
     v.push_back(s);
   }
   return v;
-}
-
-void SimplifyVisitor::generateDispatch(const std::string &name) {
-  transform(N<FunctionStmt>(
-      name + ".dispatch", nullptr,
-      std::vector<Param>{Param("*args"), Param("**kwargs")},
-      N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-          N<DotExpr>(N<IdExpr>(ctx->bases.back().name), name),
-          N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs"))))),
-      Attr({"autogenerated"})));
 }
 
 } // namespace ast

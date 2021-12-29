@@ -374,7 +374,7 @@ def foo(i, j, k):
     return i + j + k
 print foo(1.1, 2.2, 3.3)  #: 6.6
 p = foo(6, ...)
-print p.__class__ #: foo[int,...,...]
+print p.__class__ #: foo:0[int,...,...]
 print p(2, 1)  #: 9
 print p(k=3, j=6) #: 15
 q = p(k=1, ...)
@@ -390,11 +390,11 @@ print 42 |> add_two  #: 44
 def moo(a, b, c=3):
     print a, b, c
 m = moo(b=2, ...)
-print m.__class__ #: moo[...,int,...]
+print m.__class__ #: moo:0[...,int,...]
 m('s', 1.1) #: s 2 1.1
 # #
 n = m(c=2.2, ...)
-print n.__class__ #: moo[...,int,float]
+print n.__class__ #: moo:0[...,int,float]
 n('x') #: x 2 2.2
 print n('y').__class__ #: void
 
@@ -403,11 +403,11 @@ def ff(a, b, c):
 print ff(1.1, 2, True).__class__ #: Tuple[float,int,bool]
 print ff(1.1, ...)(2, True).__class__ #: Tuple[float,int,bool]
 y = ff(1.1, ...)(c=True, ...)
-print y.__class__ #: ff[float,...,bool]
+print y.__class__ #: ff:0[float,...,bool]
 print ff(1.1, ...)(2, ...)(True).__class__ #: Tuple[float,int,bool]
 print y('hei').__class__ #: Tuple[float,str,bool]
 z = ff(1.1, ...)(c='s', ...)
-print z.__class__ #: ff[float,...,str]
+print z.__class__ #: ff:0[float,...,str]
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
@@ -432,7 +432,7 @@ l = [1]
 def adder(a, b): return a+b
 doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
 #: int int
-#: adder[.. Generator[int]
+#: adder:0[ Generator[int]
 #: 5
 #: 1 Optional[int]
 #: 5 int

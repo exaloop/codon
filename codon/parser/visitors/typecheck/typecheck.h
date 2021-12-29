@@ -313,6 +313,8 @@ private:
   int64_t translateIndex(int64_t idx, int64_t len, bool clamp = false);
   int64_t sliceAdjustIndices(int64_t length, int64_t *start, int64_t *stop,
                              int64_t step);
+  types::FuncTypePtr findDispatch(const std::string &fn);
+  std::string getRootName(const std::string &name);
 
   friend struct Cache;
 };

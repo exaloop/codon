@@ -199,10 +199,10 @@ def f[T](x: T) -> T:
 print f(1.2).__class__ #: float
 print f('s').__class__ #: str
 
-def f[T](x: T):
-    return f(x - 1, T) if x else 1
-print f(1) #: 1
-print f(1.1).__class__ #: int
+def f2[T](x: T):
+    return f2(x - 1, T) if x else 1
+print f2(1) #: 1
+print f2(1.1).__class__ #: int
 
 
 #%% recursive_error,barebones
@@ -215,7 +215,7 @@ def rec3(x, y): #- ('a, 'b) -> 'b
         return y
 rec3(1, 's')
 #! cannot unify str and int
-#! while realizing rec3 (arguments rec3[int,str])
+#! while realizing rec3:0 (arguments rec3:0[int,str])
 
 #%% instantiate_function_2,barebones
 def fx[T](x: T) -> T:
@@ -447,13 +447,13 @@ def f(x):
     return g(x)
 print f(5), f('s') #: 5 s
 
-def f[U](x: U, y):
+def f2[U](x: U, y):
     def g[T, U](x: T, y: U):
         return (x, y)
     return g(y, x)
 x, y = 1, 'haha'
-print f(x, y).__class__ #: Tuple[str,int]
-print f('aa', 1.1, U=str).__class__ #: Tuple[float,str]
+print f2(x, y).__class__ #: Tuple[str,int]
+print f2('aa', 1.1, U=str).__class__ #: Tuple[float,str]
 
 #%% nested_fn_generic_error,barebones
 def f[U](x: U, y): # ('u, 'a) -> tuple['a, 'u]
@@ -464,7 +464,7 @@ print f(1.1, 1, int).__class__ #! cannot unify float and int
 
 #%% fn_realization,barebones
 def ff[T](x: T, y: tuple[T]):
-      print ff(T=str,...).__class__ #: ff[str,Tuple[str],str]
+      print ff(T=str,...).__class__ #: ff:0[str,Tuple[str],str]
       return x
 x = ff(1, (1,))
 print x, x.__class__ #: 1 int
@@ -474,7 +474,7 @@ def fg[T](x:T):
     def g[T](y):
         z = T()
         return z
-    print fg(T=str,...).__class__  #: fg[str,str]
+    print fg(T=str,...).__class__  #: fg:0[str,str]
     print g(1, T).__class__ #: int
 fg(1)
 print fg(1).__class__ #: void
@@ -515,7 +515,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo.2[bool,bool,bool,str,str]
+print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo:0[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
@@ -734,10 +734,10 @@ def test(name, sort, key):
 def foo(l, f):
     return [f(i) for i in l]
 test('hi', foo, lambda x: x+1) #: hi [2, 3, 4, 5]
-# TODO
-# def foof(l: List[int], x, f: Callable[[int], int]):
-#     return [f(i)+x for i in l]
-# test('qsort', foof(..., 3, ...))
+
+def foof(l: List[int], x, f: Callable[[int], int]):
+    return [f(i)+x for i in l]
+test('qsort', foof(x=3, ...), lambda x: x+1) #: qsort [5, 6, 7, 8]
 
 #%% class_fn_access,barebones
 class X[T]:
@@ -745,8 +745,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__ #: X.foo.2[X[float],float,int,int]
-# print y.foo.1[float].__class__
+print X[float].foo(U=int, ...).__class__ #: X.foo:0[X[float],float,int,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
@@ -754,7 +753,7 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.foo(U=float,...).__class__ #: X.foo.2[X[X[int]],...,...]
+print y.foo(U=float,...).__class__ #: X.foo:0[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones
@@ -765,10 +764,10 @@ def bar[T](x):
     print x, T.__class__
 foo(bar, 1)
 #: 1 int
-#: bar[...]
+#: bar:0[...]
 foo(bar(...), 's')
 #: s str
-#: bar[...]
+#: bar:0[...]
 z = bar
 z('s', int)
 #: s int
@@ -786,8 +785,8 @@ def foo(f, x):
 def bar[T](x):
     print x, T.__class__
 foo(bar(T=int,...), 1)
-#! too many arguments for bar[T1,int] (expected maximum 2, got 2)
-#! while realizing foo (arguments foo[bar[...],int])
+#! too many arguments for bar:0[T1,int] (expected maximum 2, got 2)
+#! while realizing foo:0 (arguments foo:0[bar:0[...],int])
 
 #%% sort_partial
 def foo(x, y):
@@ -806,16 +805,16 @@ def frec(x, y):
     return grec(x, y) if bl(y) else 2
 print frec(1, 2).__class__, frec('s', 1).__class__
 #! expression with void type
-#! while realizing frec (arguments frec[int,int])
+#! while realizing frec:0 (arguments frec:0[int,int])
 
 #%% return_fn,barebones
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__ #: retfn.inner[...,...,int,...]
+    print inner.__class__ #: retfn:0.inner:0[...,...,int,...]
     return inner(15, ...)
 f = retfn(1)
-print f.__class__ #: retfn.inner[int,...,int,...]
+print f.__class__ #: retfn:0.inner:0[int,...,int,...]
 f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
@@ -823,7 +822,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
 def dec(fn, a):
-    print 'decorating', fn.__class__ #: decorating foo[...,...,...]
+    print 'decorating', fn.__class__ #: decorating foo:0[...,...,...]
     def inner(*args, **kwargs):
         print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
@@ -846,7 +845,7 @@ def dec(fn, a):
     return inner
 ff = dec(foo, 10)
 print ff(5.5, 's', z=True)
-#: decorating foo[...,...,...]
+#: decorating foo:0[...,...,...]
 #: decorator (5.5, 's') (z: True)
 #: 10 (5.5, 's') (z: True)
 #: 1
@@ -856,7 +855,7 @@ def zoo(e, b, *args):
     return f'zoo: {e}, {b}, {args}'
 print zoo(2, 3)
 print zoo('s', 3)
-#: decorating zoo[...,...,...]
+#: decorating zoo:0[...,...,...]
 #: decorator (2, 3) ()
 #: zoo: 5, 2, (3)
 #: decorator ('s', 3) ()
@@ -869,9 +868,9 @@ def mydecorator(func):
         print("after")
     return inner
 @mydecorator
-def foo():
+def foo2():
     print("foo")
-foo()
+foo2()
 #: before
 #: foo
 #: after
@@ -891,7 +890,7 @@ def factorial(num):
     return n
 factorial(10)
 #: 3628800
-#: time needed for factorial[...] is 3628799
+#: time needed for factorial:0[...] is 3628799
 
 def dx1(func):
     def inner():
@@ -921,9 +920,9 @@ def dy2(func):
     return inner
 @dy1
 @dy2
-def num(a, b):
+def num2(a, b):
     return a+b
-print(num(10, 20)) #: 3600
+print(num2(10, 20)) #: 3600
 
 #%% hetero_iter,barebones
 e = (1, 2, 3, 'foo', 5, 'bar', 6)
@@ -970,14 +969,14 @@ def tee(iterable, n=2):
     return list(gen(d) for d in deques)
 it = [1,2,3,4]
 a, b = tee(it) #! cannot typecheck the program
-#! while realizing tee (arguments tee[List[int],int])
+#! while realizing tee:0 (arguments tee:0[List[int],int])
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Static[int] = 10):
     print T.__class__, U.__class__, x.__class__, y.__class__, Int[z+1].__class__
     return List[x]()
-print foo(T=int,U=str,...).__class__ #: foo[T1,x,z,int,str]
-print foo(T=int,U=str,z=5,x=bool,...).__class__ #: foo[T1,bool,5,int,str]
+print foo(T=int,U=str,...).__class__ #: foo:0[T1,x,z,int,str]
+print foo(T=int,U=str,z=5,x=bool,...).__class__ #: foo:0[T1,bool,5,int,str]
 print foo(float,3,T=int,U=str,z=5).__class__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 
@@ -993,11 +992,11 @@ print Foo[5,int,float,6].__class__ #: Foo[5,int,float,6]
 print Foo(1.1, 10i32, [False], 10u66).__class__ #: Foo[66,bool,float,32]
 
 
-def foo[N: Static[int]]():
+def foo2[N: Static[int]]():
     print Int[N].__class__, N
 x: Static[int] = 5
 y: Static[int] = 105 - x * 2
-foo(y-x) #: Int[90] 90
+foo2(y-x) #: Int[90] 90
 
 if 1.1+2.2 > 0:
     x: Static[int] = 88

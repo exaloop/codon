@@ -106,19 +106,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Non-simplified AST. Used for base class instantiation.
     std::shared_ptr<ClassStmt> originalAst;
 
-    /// A class function method.
-    struct ClassMethod {
-      /// Canonical name of a method (e.g. __init__.1).
-      std::string name;
-      /// A corresponding generic function type.
-      types::FuncTypePtr type;
-      /// Method age (how many class extension were seen before a method definition).
-      /// Used to prevent the usage of a method before it was defined in the code.
-      int age;
-    };
-    /// Class method lookup table. Each name points to a list of ClassMethod instances
-    /// that share the same method name (a list because methods can be overloaded).
-    std::unordered_map<std::string, std::vector<ClassMethod>> methods;
+    /// Class method lookup table. Each non-canonical name points
+    /// to a root function name of a corresponding method.
+    std::unordered_map<std::string, std::string> methods;
 
     /// A class field (member).
     struct ClassField {
@@ -176,6 +166,20 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
   std::unordered_map<std::string, Function> functions;
+
+
+  struct Overload {
+    /// Canonical name of an overload (e.g. Foo.__init__.1).
+    std::string name;
+    /// Overload age (how many class extension were seen before a method definition).
+    /// Used to prevent the usage of an overload before it was defined in the code.
+    /// TODO: I have no recollection of how this was supposed to work. Most likely
+    /// it does not work at all...
+    int age;
+  };
+  /// Maps a "root" name of each function to the list of names of the function
+  /// overloads.
+  std::unordered_map<std::string, std::vector<Overload>> overloads;
 
   /// Pointer to the later contexts needed for IR API access.
   std::shared_ptr<TypeContext> typeCtx;

@@ -296,7 +296,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto c = stmt->decorator->getCall();
     seqassert(c, "for par is not a call: {}", stmt->decorator->toString());
     auto fc = c->expr->getType()->getFunc();
-    seqassert(fc && fc->ast->name == "std.openmp.for_par", "for par is not a function");
+    seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
+              "for par is not a function");
     auto schedule =
         fc->funcGenerics[0].type->getStatic()->expr->staticValue.getString();
     bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();

@@ -252,7 +252,7 @@ try:
 except MyError:
     print "my"
 except OSError as o:
-    print "os", o._hdr[0], len(o._hdr[1]), o._hdr[3][-20:], o._hdr[4]
+    print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
     #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 249
 finally:
     print "whoa"  #: whoa
@@ -263,7 +263,7 @@ def foo():
 try:
     foo()
 except MyError as e:
-    print e._hdr[0], e._hdr[1] #: MyError foo!
+    print e._hdr.typename, e._hdr.msg #: MyError foo!
 
 #%% throw_error,barebones
 raise 'hello' #! cannot throw non-exception (first object member must be of type ExcHeader)
@@ -291,13 +291,13 @@ def foo(x):
     print len(x)
 foo(5) #: 4
 
-def foo(x):
+def foo2(x):
     if isinstance(x, int):
         print  x+1
         return
     print len(x)
-foo(1) #: 2
-foo('s') #: 1
+foo2(1) #: 2
+foo2('s') #: 1
 
 #%% super,barebones
 class Foo:
@@ -341,4 +341,4 @@ class Foo:
         print 'foo-1', a
 Foo.foo(1)
 #! no matching super methods are available
-#! while realizing Foo.foo.2
+#! while realizing Foo.foo:0
