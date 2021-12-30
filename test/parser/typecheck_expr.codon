@@ -441,6 +441,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
 p = foo(...)
 p(1, z=5) #: 1 () (z: 5)
+p('s', zh=65) #: s () (zh: 65)
 q = p(zh=43, ...)
 q(1) #: 1 () (zh: 43)
 r = q(5, 38, ...)

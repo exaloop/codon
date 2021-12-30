@@ -173,6 +173,9 @@ class List:
     def __copy__(self):
         return List[T](self.arr.__copy__(), self.len)
 
+    def __deepcopy__(self):
+        return [l.__deepcopy__() for l in self]
+
     def __iter__(self):
         i = 0
         N = self.len

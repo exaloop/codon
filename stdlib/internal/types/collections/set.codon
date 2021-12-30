@@ -119,6 +119,9 @@ class Set[K]:
         str.memcpy(keys_copy.as_byte(), self._keys.as_byte(), n * gc.sizeof(K))
         return Set[K](n, self._size, self._n_occupied, self._upper_bound, flags_copy, keys_copy)
 
+    def __deepcopy__(self):
+        return {s.__deepcopy__() for s in self}
+
     def __repr__(self):
         n = self.__len__()
         if n == 0:

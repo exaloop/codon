@@ -555,9 +555,8 @@ atom <-
       ast<IntExpr>(LOC, ac<string>(V0)), ast<IntExpr>(LOC, ac<string>(V1))
     );
   }
-  / FLOAT {
-    // Right now suffixes are _not_ supported
-    return ast<FloatExpr>(LOC, ac<string>(V0), "");
+  / FLOAT NAME? {
+    return ast<FloatExpr>(LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
   }
   / INT NAME? {
     return ast<IntExpr>(LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");

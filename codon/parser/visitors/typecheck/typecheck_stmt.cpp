@@ -49,11 +49,16 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 void TypecheckVisitor::visit(SuiteStmt *stmt) {
   std::vector<StmtPtr> stmts;
   stmt->done = true;
-  for (auto &s : stmt->stmts)
+  ctx->blockLevel += int(stmt->ownBlock);
+  for (auto &s : stmt->stmts) {
+    if (ctx->returnEarly)
+      break;
     if (auto t = transform(s)) {
       stmts.push_back(t);
       stmt->done &= stmts.back()->done;
     }
+  }
+  ctx->blockLevel -= int(stmt->ownBlock);
   stmt->stmts = stmts;
 }
 
@@ -205,16 +210,18 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   stmt->expr = transform(stmt->expr);
   if (stmt->expr) {
     auto &base = ctx->bases.back();
-    wrapExpr(stmt->expr, base.returnType, nullptr);
+    if (!base.returnType->getUnbound())
+      wrapExpr(stmt->expr, base.returnType, nullptr);
 
     if (stmt->expr->getType()->getFunc() &&
         !(base.returnType->getClass() &&
           startswith(base.returnType->getClass()->name, TYPE_FUNCTION)))
       stmt->expr = partializeFunction(stmt->expr);
     unify(base.returnType, stmt->expr->type);
-    auto retTyp = stmt->expr->getType()->getClass();
     stmt->done = stmt->expr->done;
   } else {
+    if (ctx->blockLevel == 1)
+      ctx->returnEarly = true;
     stmt->done = true;
   }
 }
@@ -307,7 +314,12 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
         isTrue = !stmt->cond->staticValue.getString().empty();
       else
         isTrue = stmt->cond->staticValue.getInt();
-      resultStmt = transform(isTrue ? stmt->ifSuite : stmt->elseSuite);
+      resultStmt = isTrue ? stmt->ifSuite : stmt->elseSuite;
+      bool isOwn = // these blocks will not be a real owning blocks after inlining
+          resultStmt && resultStmt->getSuite() && resultStmt->getSuite()->ownBlock;
+      ctx->blockLevel -= isOwn;
+      resultStmt = transform(resultStmt);
+      ctx->blockLevel += isOwn;
       if (!resultStmt)
         resultStmt = transform(N<SuiteStmt>());
       return;

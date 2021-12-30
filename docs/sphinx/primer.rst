@@ -811,7 +811,12 @@ You can also add methods to types:
 Type extensions
 ~~~~~~~~~~~~~~~
 
-Suppose you have a class that lacks a method or an operator that might be really useful. Codon provides an ``@extend`` annotation that allows you to add and modify methods of various types at compile time, including built-in types like ``int`` or ``str``. This allows much of the functionality of built-in types to be implemented in Codon as type extensions in the standard library.
+Suppose you have a class that lacks a method or an operator that might be really useful. 
+
+Codon provides an ``@extend`` annotation that allows programmers to add and modify 
+methods of various types at compile time, including built-in types like ``int`` or ``str``. 
+This actually allows much of the functionality of built-in types to be implemented in 
+Codon as type extensions in the standard library. 
 
 .. code:: python
 
