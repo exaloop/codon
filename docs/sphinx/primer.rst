@@ -640,7 +640,7 @@ Let's import some C functions:
     # Import and rename function
     from C import puts(cobj) -> void as print_line  # type cobj is C's pointer (void*, char*, etc.)
     print_line("hi!".c_str())  # prints "hi!".
-                               # Note .ptr at the end of string--- needed to cast Codon's string to char*.
+                               # Note .c_str() at the end of string--- needed to cast Codon's string to char*.
 
 ``from C import`` only works if the symbol is available to the program. If you
 are running your programs via ``codon``, you can link dynamic libraries

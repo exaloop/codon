@@ -27,8 +27,8 @@ print -1u7 #: 127
 
 @extend
 class int:
-    def __suffix_test__(s: str):
-        return 'TEST: ' + s
+    def __suffix_test__(s):
+        return 'TEST: ' + str(s)
 print 123_456test #: TEST: 123456
 
 #%% int_error,barebones
@@ -42,10 +42,10 @@ print 2.e-2 #: 0.02
 #%% float_suffix,barebones
 @extend
 class float:
-    def __suffix_zoo__(x: str):
-        return x+'_zoo'
+    def __suffix_zoo__(x):
+        return str(x) + '_zoo'
 
-print 1.2e-2zoo #: 1.2e-2_zoo
+print 1.2e-1zoo #: 0.12_zoo
 
 #%% string,barebones
 print 'kthxbai', "kthxbai" #: kthxbai kthxbai
@@ -274,7 +274,7 @@ f[:,0] #: ((start: None, stop: None, step: None), 0)
 Ptr[9.99] #! expected type or static parameters
 
 #%% index_error_b,barebones
-Ptr['s'] #! cannot unify T and "s"
+Ptr['s'] #! cannot unify T and 's'
 
 #%% index_error_static,barebones
 Ptr[1] #! cannot unify T and 1

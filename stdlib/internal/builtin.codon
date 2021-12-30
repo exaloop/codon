@@ -232,7 +232,7 @@ def reversed(x):
             yield x[i]
             i -= 1
 
-def round(x, n) -> float:
+def round(x, n = 0):
     """
     Return the x rounded off to the given
     n digits after the decimal point.

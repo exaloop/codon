@@ -1108,7 +1108,6 @@ methodcaller('append')(v, 42)
 print v #: [1, 42]
 print methodcaller('index')(v, 42) #: 1
 
-
 #%% fn_overloads,barebones
 def foo(x):
     return 1, x

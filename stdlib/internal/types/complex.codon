@@ -260,3 +260,13 @@ class complex:
         declare double @llvm.log.f64(double)
         %y = call double @llvm.log.f64(double %x)
         ret double %y
+
+@extend
+class int:
+    def __suffix_j__(x: int):
+        return complex(0, x)
+
+@extend
+class float:
+    def __suffix_j__(x: float):
+        return complex(0, x)

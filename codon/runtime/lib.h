@@ -22,6 +22,18 @@ struct seq_str_t {
   char *str;
 };
 
+struct seq_time_t {
+  int16_t year;
+  int16_t yday;
+  int8_t sec;
+  int8_t min;
+  int8_t hour;
+  int8_t mday;
+  int8_t mon;
+  int8_t wday;
+  int8_t isdst;
+};
+
 extern int seq_flags;
 
 SEQ_FUNC void seq_init(int flags);
@@ -30,6 +42,11 @@ SEQ_FUNC bool seq_is_macos();
 SEQ_FUNC seq_int_t seq_pid();
 SEQ_FUNC seq_int_t seq_time();
 SEQ_FUNC seq_int_t seq_time_monotonic();
+SEQ_FUNC seq_int_t seq_time_highres();
+SEQ_FUNC bool seq_localtime(seq_int_t secs, seq_time_t *output);
+SEQ_FUNC bool seq_gmtime(seq_int_t secs, seq_time_t *output);
+SEQ_FUNC seq_int_t seq_mktime(seq_time_t *time);
+SEQ_FUNC void seq_sleep(double secs);
 SEQ_FUNC char **seq_env();
 SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);
 

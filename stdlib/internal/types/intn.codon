@@ -1,9 +1,11 @@
 from internal.attributes import commutative, associative, distributive
 
+
 def check_N(N: Static[int]):
     if N <= 0:
         compile_error("N must be greater than 0")
     pass
+
 
 @extend
 class Int:
@@ -261,6 +263,7 @@ class Int:
 
     def len() -> int:
         return N
+
 
 @extend
 class UInt:

@@ -283,6 +283,7 @@ def starmap(function, iterable):
     for args in iterable:
         yield function(*args)
 
+# TODO: fix this once Optional[Callable] lands
 @inline
 def groupby(iterable, key = Optional[int]()):
     """

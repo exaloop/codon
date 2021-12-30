@@ -74,6 +74,19 @@ class KeyError:
     def message(self):
         return self._hdr.msg
 
+class OverflowError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ('OverflowError', '', '', '', 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ('OverflowError', message, '', '', 0, 0)
+
+    @property
+    def message(self):
+        return self._hdr.msg
+
 class CError:
     _hdr: ExcHeader
 
