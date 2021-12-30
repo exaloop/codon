@@ -27,7 +27,7 @@ class File:
 
     def __iter__(self):
         for a in self._iter():
-            yield copy(a)
+            yield a.__ptrcopy__()
 
     def readlines(self):
         return [l for l in self]
@@ -142,7 +142,7 @@ class gzFile:
 
     def __iter__(self):
         for a in self._iter():
-            yield copy(a)
+            yield a.__ptrcopy__()
 
     def __enter__(self):
         pass

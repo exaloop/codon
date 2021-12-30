@@ -106,12 +106,6 @@ class str:
             n += self.len
         return str(p, total)
 
-    def __copy__(self):
-        n = len(self)
-        p = cobj(n)
-        str.memcpy(p, self.ptr, n)
-        return str(p, n)
-
     def _cmp(self, other: str):
         n = min(self.len, other.len)
         i = 0

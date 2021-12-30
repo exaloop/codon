@@ -50,6 +50,8 @@ class Int:
         return int(self)
     def __copy__(self) -> Int[N]:
         return self
+    def __deepcopy__(self) -> Int[N]:
+        return self
     def __hash__(self) -> int:
         return int(self)
     @pure
@@ -254,6 +256,8 @@ class UInt:
     def __index__(self):
         return int(self)
     def __copy__(self) -> UInt[N]:
+        return self
+    def __deepcopy__(self) -> UInt[N]:
         return self
     def __hash__(self) -> int:
         return int(self)

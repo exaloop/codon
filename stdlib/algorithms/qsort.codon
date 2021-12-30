@@ -1,6 +1,8 @@
 def _med3[S,T](a: int, b: int, c: int, d: Array[T], k: Callable[[T], S]):
-    return ((b if (k(d[b]) < k(d[c])) else (c if k(d[a]) < k(d[c]) else a))
-               if (k(d[a]) < k(d[b])) else (b if (k(d[b]) > k(d[c])) else (c if k(d[a]) > k(d[c]) else a)))
+    if k(d[a]) < k(d[b]):
+        return b if (k(d[b]) < k(d[c])) else (c if k(d[a]) < k(d[c]) else a)
+    else:
+        return b if not (k(d[b]) < k(d[c]) or k(d[b]) == k(d[c])) else (c if not (k(d[a]) < k(d[c]) or k(d[a]) == k(d[c])) else a)
 
 def _swap[T](i: int, j: int, a: Array[T]):
     a[i], a[j] = a[j], a[i]
@@ -17,7 +19,7 @@ def _qsort[S,T](arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S]):
         i = frm + 1
         while i < frm + cnt:
             j = i
-            while j > frm and keyf(arr[j - 1]) > keyf(arr[j]):
+            while j > frm and not (keyf(arr[j - 1]) < keyf(arr[j]) or keyf(arr[j - 1]) == keyf(arr[j])):
                 _swap(j, j - 1, arr)
                 j -= 1
             i += 1
@@ -41,13 +43,13 @@ def _qsort[S,T](arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S]):
     d = c
 
     while True:
-        while b <= c and keyf(arr[b]) <= keyf(arr[frm]):
+        while b <= c and (keyf(arr[b]) < keyf(arr[frm]) or keyf(arr[b]) == keyf(arr[frm])):
             if keyf(arr[b]) == keyf(arr[frm]):
                 _swap(a, b, arr)
                 a += 1
             b += 1
 
-        while c >= b and keyf(arr[c]) >= keyf(arr[frm]):
+        while c >= b and not keyf(arr[c]) < keyf(arr[frm]):
             if keyf(arr[c]) == keyf(arr[frm]):
                 _swap(c, d, arr)
                 d -= 1
