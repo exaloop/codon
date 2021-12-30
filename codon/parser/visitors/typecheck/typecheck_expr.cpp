@@ -1053,38 +1053,43 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     return transform(e, false, true);
   }
 
-  // Intercept dot-callees (e.g. expr.foo). Needed in order to select a proper
-  // overload for magic methods and to avoid dealing with partial calls
-  // (a non-intercepted object DotExpr (e.g. expr.foo) will get transformed into a
-  // partial call).
-  ExprPtr *lhs = &expr->expr;
-  // Make sure to check for instantiation DotExpr (e.g. a.b[T]) as well.
-  if (auto ei = const_cast<IndexExpr *>(expr->expr->getIndex())) {
-    // A potential function instantiation
-    lhs = &ei->expr;
-  } else if (auto eii = CAST(expr->expr, InstantiateExpr)) {
-    // Real instantiation
-    lhs = &eii->typeExpr;
-  }
-  if (auto ed = const_cast<DotExpr *>((*lhs)->getDot())) {
-    if (auto edt = transformDot(ed, &expr->args))
-      *lhs = edt;
-  } else if (auto ei = const_cast<IdExpr *>((*lhs)->getId())) {
-    // check if this is an overloaded function?
-    auto i = ctx->cache->overloads.find(ei->value);
-    if (i != ctx->cache->overloads.end() && i->second.size() != 1) {
-      if (auto bestMethod = findBestMethod(ei->value, expr->args)) {
-        ExprPtr e = N<IdExpr>(bestMethod->ast->name);
-        auto t = ctx->instantiate(expr, bestMethod);
-        unify(e->type, t);
-        unify(ei->type, e->type);
-        *lhs = e;
-      } else {
-        std::vector<std::string> nice;
-        for (auto &t : expr->args)
-          nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
-        error("cannot find an overload '{}' with arguments {}", ei->value,
-              join(nice, ", "));
+  bool isPartial = !expr->args.empty() && expr->args.back().value->getEllipsis() &&
+                   !expr->args.back().value->getEllipsis()->isPipeArg &&
+                   expr->args.back().name.empty();
+  if (!isPartial) {
+    // Intercept dot-callees (e.g. expr.foo). Needed in order to select a proper
+    // overload for magic methods and to avoid dealing with partial calls
+    // (a non-intercepted object DotExpr (e.g. expr.foo) will get transformed into a
+    // partial call).
+    ExprPtr *lhs = &expr->expr;
+    // Make sure to check for instantiation DotExpr (e.g. a.b[T]) as well.
+    if (auto ei = const_cast<IndexExpr *>(expr->expr->getIndex())) {
+      // A potential function instantiation
+      lhs = &ei->expr;
+    } else if (auto eii = CAST(expr->expr, InstantiateExpr)) {
+      // Real instantiation
+      lhs = &eii->typeExpr;
+    }
+    if (auto ed = const_cast<DotExpr *>((*lhs)->getDot())) {
+      if (auto edt = transformDot(ed, &expr->args))
+        *lhs = edt;
+    } else if (auto ei = const_cast<IdExpr *>((*lhs)->getId())) {
+      // check if this is an overloaded function?
+      auto i = ctx->cache->overloads.find(ei->value);
+      if (i != ctx->cache->overloads.end() && i->second.size() != 1) {
+        if (auto bestMethod = findBestMethod(ei->value, expr->args)) {
+          ExprPtr e = N<IdExpr>(bestMethod->ast->name);
+          auto t = ctx->instantiate(expr, bestMethod);
+          unify(e->type, t);
+          unify(ei->type, e->type);
+          *lhs = e;
+        } else {
+          std::vector<std::string> nice;
+          for (auto &t : expr->args)
+            nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
+          error("cannot find an overload '{}' with arguments {}", ei->value,
+                join(nice, ", "));
+        }
       }
     }
   }
@@ -1137,7 +1142,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   std::vector<CallExpr::Arg> args;
   std::vector<ExprPtr> typeArgs;
   int typeArgCount = 0;
-  bool isPartial = false;
+  // bool isPartial = false;
   int ellipsisStage = -1;
   auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
   auto getPartialArg = [&](int pi) {
@@ -1159,7 +1164,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
         calleeFn.get(), expr->args,
         [&](int starArgIndex, int kwstarArgIndex,
             const std::vector<std::vector<int>> &slots, bool partial) {
-          isPartial = partial;
           ctx->addBlock(); // add generics for default arguments.
           addFunctionGenerics(calleeFn->getFunc().get());
           for (int si = 0, pi = 0; si < slots.size(); si++) {
@@ -1272,8 +1276,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   // Special case: function instantiation
   if (isPartial && typeArgCount && typeArgCount == expr->args.size()) {
     for (auto &a : args) {
-      seqassert(a.value->getEllipsis(), "expected ellipsis");
-      deactivateUnbounds(a.value->getType().get());
+      if (a.value->getEllipsis())
+        deactivateUnbounds(a.value->getType().get());
     }
     auto e = transform(expr->expr);
     unify(expr->type, e->getType());

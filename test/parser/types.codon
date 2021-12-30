@@ -753,7 +753,8 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.foo(U=float,...).__class__ #: X.foo:0[X[X[int]],...,...]
+# TODO: should this even be the case?
+# print y.foo(U=float,...).__class__  ->  X.foo:0[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones
