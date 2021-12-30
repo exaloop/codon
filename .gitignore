@@ -55,3 +55,4 @@ Thumbs.db
 extra/jupyter/share/jupyter/kernels/codon/kernel.json
 scratch.*
 _*
+.ipynb_checkpoints
