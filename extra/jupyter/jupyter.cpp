@@ -52,34 +52,34 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                              ast::join(backtrace, "  \n"));
       });
   if (failed.empty()) {
-    std::string msg = *result;
+    std::string out = *result;
+    // std::string out;
+    // for (int i = 0; i < msg.size(); i++) {
+    //   uint8_t c = msg[i];
+    //   if (c <= 127) {
+    //     out.push_back(c);
+    //   } else {
+    //     out.push_back((c >> 6) | 0xC0);
+    //     out.push_back((c & 0x3F) | 0x80);
+    //   }
+    // }
+
     nl::json pub_data;
-    if (ast::startswith(msg, "\x00\x00__codon/mime__\x00")) {
+    if (ast::startswith(out, "\x00\x00__codon/mime__\x00")) {
       std::string mime = "";
       int i = 17;
-      for (; i < msg.size() && msg[i]; i++)
-        mime += msg[i];
-      if (i < msg.size() && !msg[i]) {
+      for (; i < out.size() && out[i]; i++)
+        mime += out[i];
+      if (i < out.size() && !out[i]) {
         i += 1;
       } else {
         mime = "text/plain";
         i = 0;
       }
-
-      std::string out;
-      out.reserve(msg.size() * 1.5);
-      for (; i < msg.size(); i++) {
-        uint8_t c = msg[i];
-        if (c <= 127) {
-          out.push_back(c);
-        } else {
-          out.push_back((c >> 6) | 0xC0);
-          out.push_back((c & 0x3F) | 0x80);
-        }
-      }
-      pub_data[mime] = out;
+      pub_data[mime] = out.substr(i);
+      LOG("> {}: {}", mime, out.substr(i));
     } else {
-      pub_data["text/plain"] = msg;
+      pub_data["text/plain"] = out;
     }
     publish_execution_result(execution_counter, move(pub_data), nl::json::object());
     return nl::json{{"status", "ok"},

@@ -235,6 +235,16 @@ class pyobj:
     def get[T](self) -> T:
         return T.__from_py__(self)
 
+    def _repr_mimebundle_(self, bundle = Set[str]()):
+        # p = PyObject_GetAttrString(self.p, '_repr_mimebundle_'.c_str())
+        # if p != cobj():
+        #     return Dict[str, str].__from_py__(self._getattr("_repr_mimebundle_").__call__())
+        # else:
+        p = PyObject_GetAttrString(self.p, '_repr_html_'.c_str())
+        if p != cobj():
+            return {'text/html': str.__from_py__(self._getattr("_repr_html_").__call__())}
+        return {'text/plain': self.__repr__()}
+
 def none():
     raise NotImplementedError()
 
