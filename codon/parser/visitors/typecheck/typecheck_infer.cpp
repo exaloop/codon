@@ -156,8 +156,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->typecheckLevel++;
 
       // Find parents!
-      ctx->bases.push_back({type->ast->name, type->getFunc(), type->args[0],
-                            {}, findSuperMethods(type->getFunc())});
+      ctx->bases.push_back({type->ast->name,
+                            type->getFunc(),
+                            type->args[0],
+                            {},
+                            findSuperMethods(type->getFunc())});
       // if (startswith(type->ast->name, "Foo")) {
       //   LOG(": {}", type->toString());
       //   for (auto  &s: ctx->bases.back().supers)
@@ -174,13 +177,16 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       if (!isInternal)
         for (int i = 0, j = 1; i < ast->args.size(); i++)
           if (!ast->args[i].generic) {
-            seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
-                      "unbound argument {}", type->args[j]->toString());
             std::string varName = ast->args[i].name;
             trimStars(varName);
             ctx->add(TypecheckItem::Var, varName,
-                     std::make_shared<LinkType>(
-                         type->args[j++]->generalize(ctx->typecheckLevel)));
+                     std::make_shared<LinkType>(type->args[j++]));
+            // N.B. this used to be:
+            // seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
+            // "unbound argument {}", type->args[j]->toString());
+            // type->args[j++]->generalize(ctx->typecheckLevel)
+            // no idea why... most likely an old artefact, BUT if seq or sequre
+            // fail with weird type errors try returning this and see if it works
           }
 
       // Need to populate realization table in advance to make recursive functions
@@ -220,7 +226,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Realize the return type.
       if (auto t = realize(type->args[0]))
         unify(type->args[0], t);
-      LOG_REALIZE("done with {} / {}", type->realizedName(), oldKey);
+      LOG_REALIZE("... done with {} / {}", type->realizedName(), oldKey);
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.

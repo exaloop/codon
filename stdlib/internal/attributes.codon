@@ -38,3 +38,7 @@ def distributive():
 def C():
     pass
 
+@__attribute__
+def realize_without_self():
+    pass
+

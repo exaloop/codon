@@ -476,12 +476,18 @@ std::vector<TypePtr> FuncType::getUnbounds() const {
 }
 bool FuncType::canRealize() const {
   // Important: return type does not have to be realized.
-  for (int ai = 1; ai < args.size(); ai++)
+
+  bool force = ast->hasAttr(Attr::RealizeWithoutSelf);
+
+  int ai = 1 + force;
+  for (; ai < args.size(); ai++)
     if (!args[ai]->getFunc() && !args[ai]->canRealize())
       return false;
-  return std::all_of(funcGenerics.begin(), funcGenerics.end(),
-                     [](auto &a) { return !a.type || a.type->canRealize(); }) &&
-         (!funcParent || funcParent->canRealize());
+  bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
+                              [](auto &a) { return !a.type || a.type->canRealize(); });
+  if (!force)
+    generics &= (!funcParent || funcParent->canRealize());
+  return generics;
 }
 bool FuncType::isInstantiated() const {
   TypePtr removed = nullptr;
