@@ -106,12 +106,6 @@ class str:
             n += self.len
         return str(p, total)
 
-    def __copy__(self):
-        n = len(self)
-        p = cobj(n)
-        str.memcpy(p, self.ptr, n)
-        return str(p, n)
-
     def _cmp(self, other: str):
         n = min(self.len, other.len)
         i = 0
@@ -505,7 +499,7 @@ class str:
         """
         return self.isdecimal()
 
-    def ljust(self, width: int, fillchar: str) -> str:
+    def ljust(self, width: int, fillchar: str = ' ') -> str:
         """
         ljust(width[, fillchar]) -> string
 
@@ -517,7 +511,7 @@ class str:
             return self
         return self + (fillchar * (width - len(self)))
 
-    def rjust(self, width: int, fillchar: str) -> str:
+    def rjust(self, width: int, fillchar: str = ' ') -> str:
         """
         rjust(width[, fillchar]) -> string
 
@@ -529,7 +523,7 @@ class str:
             return self
         return (fillchar * (width - len(self))) + self
 
-    def center(self, width: int, fillchar: str) -> str:
+    def center(self, width: int, fillchar: str = ' ') -> str:
         """
         str.center(width[, fillchar]) -> string
 

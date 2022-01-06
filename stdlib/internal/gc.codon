@@ -35,9 +35,6 @@ def realloc(p: cobj, sz: int):
 def free(p: cobj):
     seq_free(p)
 
-def register_finalizer(p: cobj, f: Function[[cobj, cobj], void]):
-    seq_register_finalizer(p, f.__raw__())
-
 def add_roots(start: cobj, end: cobj):
     seq_gc_add_roots(start, end)
 
@@ -49,3 +46,9 @@ def clear_roots():
 
 def exclude_static_roots(start: cobj, end: cobj):
     seq_gc_exclude_static_roots(start, end)
+
+def register_finalizer(p):
+    if hasattr(p, '__del__'):
+        def f(x: cobj, data: cobj, T: type):
+            Ptr[T](__ptr__(x).as_byte())[0].__del__()
+        seq_register_finalizer(p.__raw__(), f(T=type(p), ...).__raw__())

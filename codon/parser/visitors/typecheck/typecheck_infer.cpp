@@ -188,7 +188,13 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 
       StmtPtr realized = nullptr;
       if (!isInternal) {
+        auto oldBlockLevel = ctx->blockLevel;
+        auto oldReturnEarly = ctx->returnEarly;
+        ctx->blockLevel = 0;
+        ctx->returnEarly = false;
         realized = inferTypes(ast->suite, false, type->realizedName()).second;
+        ctx->blockLevel = oldBlockLevel;
+        ctx->returnEarly = oldReturnEarly;
         if (ast->attributes.has(Attr::LLVM)) {
           auto s = realized->getSuite();
           for (int i = 1; i < s->stmts.size(); i++) {

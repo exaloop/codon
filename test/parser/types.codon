@@ -765,10 +765,7 @@ def bar[T](x):
 foo(bar, 1)
 #: 1 int
 #: bar[...]
-foo(bar(T=int,...), 1)
-#: 1 int
-#: bar[...]
-foo(bar(T=str,...), 's')
+foo(bar(...), 's')
 #: s str
 #: bar[...]
 z = bar
@@ -780,7 +777,16 @@ z(1, T=str)
 zz = bar(T=int,...)
 zz(1)
 #: 1 int
-# zz('s') # TODO: zz = foo[int] is update stmt, messes up everything... :/
+
+#%% forward_error,barebones
+def foo(f, x):
+    f(x, type(x))
+    print f.__class__
+def bar[T](x):
+    print x, T.__class__
+foo(bar(T=int,...), 1)
+#! too many arguments for bar[T1,int] (expected maximum 2, got 2)
+#! while realizing foo (arguments foo[bar[...],int])
 
 #%% sort_partial
 def foo(x, y):
@@ -1082,3 +1088,22 @@ def test(v: Optional[int]):
     print v.__class__
 test(5) #: Optional[int]
 test(None) #: Optional[int]
+
+#%% methodcaller,barebones
+def foo():
+    def bar(a, b):
+        print 'bar', a, b
+    return bar
+foo()(1, 2) #: bar 1 2
+
+def methodcaller(foo: Static[str]):
+    def caller(foo: Static[str], obj, *args, **kwargs):
+        if isinstance(getattr(obj, foo)(*args, **kwargs), void):
+            getattr(obj, foo)(*args, **kwargs)
+        else:
+            return getattr(obj, foo)(*args, **kwargs)
+    return caller(foo=foo, ...)
+v = [1]
+methodcaller('append')(v, 42)
+print v #: [1, 42]
+print methodcaller('index')(v, 42) #: 1

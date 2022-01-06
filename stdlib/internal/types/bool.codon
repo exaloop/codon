@@ -10,6 +10,8 @@ class bool:
         return "True" if self else "False"
     def __copy__(self) -> bool:
         return self
+    def __deepcopy__(self) -> bool:
+        return self
     def __bool__(self) -> bool:
         return self
     def __hash__(self):

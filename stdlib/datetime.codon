@@ -1,0 +1,944 @@
+# Adapted from https://github.com/python/cpython/blob/main/Modules/_datetimemodule.c
+# - Currently does not support timezones
+# - Timedeltas use a pure-microseconds representations for efficiency, meaning they
+#   have a smaller range (+/- 292,471.2 years) but should be more than enough for
+#   all practical uses
+
+#############
+# constants #
+#############
+
+MINYEAR = 1
+MAXYEAR = 9999
+MAXORDINAL = 3652059
+MAX_DELTA_DAYS = 999999999
+
+_DI4Y = 1461
+_DI100Y = 36524
+_DI400Y = 146097
+
+_ROUND_HALF_EVEN = 0
+_ROUND_CEILING = 1
+_ROUND_FLOOR = 2
+_ROUND_UP = 3
+
+#############
+# utilities #
+#############
+
+def _signed_add_overflowed(result, i, j):
+    return ((result ^ i) & (result ^ j)) < 0
+
+def _divmod(x, y):
+    # assert y > 0
+    quo = x // y
+    r = x - quo * y
+    if r < 0:
+        quo -= 1
+        r += y
+    # assert 0 <= r < y
+    return quo, r
+
+def _divide_nearest(m, n):
+    return m // n  # TODO
+
+def _days_in_monthx(i):
+    return (0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)[i]
+
+def _days_before_monthx(i):
+    return (0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)[i]
+
+def _is_leap(year):
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0);
+
+def _days_in_month(year, month):
+    # assert 1 <= month <= 12
+    if month == 2 and _is_leap(year):
+        return 29
+    else:
+        return _days_in_monthx(month)
+
+def _days_before_month(year, month):
+    # assert 1 <= month <= 12
+    days = _days_before_monthx(month)
+    if month > 2 and _is_leap(year):
+        days += 1
+    return days
+
+def _days_before_year(year):
+    y = year - 1
+    # assert year >= 1
+    return y*365 + y//4 - y//100 + y//400
+
+def _ord_to_ymd(ordinal):
+    ordinal -= 1
+    n400 = ordinal // _DI400Y
+    n = ordinal % _DI400Y
+    year = n400 * 400 + 1
+
+    n100 = n // _DI100Y
+    n = n % _DI100Y
+
+    n4 = n // _DI4Y
+    n = n % _DI4Y
+
+    n1 = n // 365
+    n = n % 365
+
+    year += n100 * 100 + n4 * 4 + n1
+    if n1 == 4 or n100 == 4:
+        # assert n == 0
+        year -= 1
+        return (year, 12, 31)
+
+    leapyear = (n1 == 3) and (n4 != 24 or n100 == 3)
+    # assert leapyear == is_leap(year)
+    month = (n + 50) >> 5
+    preceding = _days_before_monthx(month) + int(month > 2 and leapyear)
+    if preceding > n:
+        month -= 1
+        preceding -= _days_in_month(year, month)
+    n -= preceding
+    # assert 0 <= n
+    # assert n < _days_in_month(year, month)
+    day = n + 1
+    return (year, month, day)
+
+def _ymd_to_ord(year, month, day):
+    return _days_before_year(year) + _days_before_month(year, month) + day
+
+def _weekday(year, month, day):
+    return (_ymd_to_ord(year, month, day) + 6) % 7
+
+def _iso_week1_monday(year):
+    first_day = _ymd_to_ord(year, 1, 1)
+    first_weekday = (first_day + 6) % 7
+    week1_monday  = first_day - first_weekday
+    if first_weekday > 3:
+        week1_monday += 7
+    return week1_monday
+
+def _check_delta_day_range(days):
+    if not (-MAX_DELTA_DAYS <= days <= MAX_DELTA_DAYS):
+        raise OverflowError(f"days={days}; must have magnitude <= {MAX_DELTA_DAYS}")
+
+def _check_date_args(year, month, day):
+    if not (MINYEAR <= year <= MAXYEAR):
+        raise ValueError(f"year {year} is out of range")
+    if not (1 <= month <= 12):
+        raise ValueError("month must be in 1..12")
+    if not (1 <= day <= _days_in_month(year, month)):
+        raise ValueError("day is out of range for month")
+
+def _check_time_args(hour, minute, second, microsecond):
+    if not (0 <= hour <= 23):
+        raise ValueError("hour must be in 0..23")
+    if not (0 <= minute <= 59):
+        raise ValueError("minute must be in 0..59")
+    if not (0 <= second <= 59):
+        raise ValueError("second must be in 0..59")
+    if not (0 <= microsecond <= 999999):
+        raise ValueError("microsecond must be in 0..999999")
+
+def _normalize_pair(hi, lo, factor):
+    # assert factor > 0
+    if lo < 0 or lo >= factor:
+        num_hi, lo = _divmod(lo, factor)
+        new_hi = hi + num_hi
+        # assert not _signed_add_overflowed(new_hi, hi, num_hi)
+        hi = new_hi
+    # assert 0 <= lo < factor
+    return hi, lo
+
+def _normalize_d_s_us(d, s, us):
+    if us < 0 or us >= 1000000:
+        s, us = _normalize_pair(s, us, 1000000)
+    if s < 0 or s >= 24*3600:
+        d, s = _normalize_pair(d, s, 24*3600)
+    # assert 0 <= s < 24*3600
+    # assert 0 <= us < 1000000
+    return d, s, us
+
+def _normalize_y_m_d(y, m, d):
+    def error():
+        raise OverflowError("date value out of range")
+
+    # assert 1 <= m <= 12
+    dim = _days_in_month(y, m)
+    if d < 1 or d > dim:
+        if d == 0:
+            m -= 1
+            if m > 0:
+                d = _days_in_month(y, m)
+            else:
+                y -= 1
+                m = 12
+                d = 31
+        elif d == dim + 1:
+            m += 1
+            d = 1
+            if m > 12:
+                m = 1
+                y += 1
+        else:
+            ordinal = _ymd_to_ord(y, m, 1) + d - 1
+            if ordinal < 1 or ordinal > MAXORDINAL:
+                error()
+            else:
+                return _ord_to_ymd(ordinal)
+    # assert m > 0
+    # assert d > 0
+    if not (MINYEAR <= y <= MAXYEAR):
+        error()
+    return y, m, d
+
+def _normalize_date(year, month, day):
+    return _normalize_y_m_d(year, month, day)
+
+def _normalize_datetime(year, month, day, hour, minute, second, microsecond):
+    second, microsecond = _normalize_pair(second, microsecond, 1000000)
+    minute, second = _normalize_pair(minute, second, 60)
+    hour, minute = _normalize_pair(hour, minute, 60)
+    day, hour = _normalize_pair(day, hour, 24)
+    year, month, day = _normalize_date(year, month, day)
+    return year, month, day, hour, minute, second, microsecond
+
+def _parse_digits(digits: str, num_digits: int):
+    if len(digits) < num_digits:
+        return '', -1
+    p = digits.ptr
+    var = 0
+    for i in range(num_digits):
+        tmp = int(p[0]) - 48  # 48 == '0'
+        if not (0 <= tmp <= 9):
+            return '', -1
+        var *= 10
+        var += tmp
+        p += 1
+    return str(p, len(digits) - num_digits), var
+
+def _isoformat_error(s):
+    raise ValueError(f"Invalid isoformat string: {s}")
+
+def _parse_isoformat_date(dtstr):
+    p = dtstr
+    p, year = _parse_digits(p, 4)
+    if year < 0:
+        _isoformat_error(dtstr)
+
+    if not p or p[0] != '-':
+        _isoformat_error(dtstr)
+    p = p[1:]
+
+    p, month = _parse_digits(p, 2)
+    if month < 0:
+        _isoformat_error(dtstr)
+
+    if not p or p[0] != '-':
+        _isoformat_error(dtstr)
+    p = p[1:]
+
+    p, day = _parse_digits(p, 2)
+    if day < 0 or p:
+        _isoformat_error(dtstr)
+
+    return year, month, day
+
+def _parse_hh_mm_ss_ff(tstr):
+    hour, minute, second, microsecond = 0, 0, 0, 0
+
+    p = tstr
+    for i in range(3):
+        p, val = _parse_digits(p, 2)
+        if val < 0:
+            _isoformat_error(tstr)
+
+        if i == 0:
+            hour = val
+        if i == 1:
+            minute = val
+        if i == 2:
+            second = val
+
+        if not p:
+            return hour, minute, second, microsecond
+        c = p[0]
+        p = p[1:]
+        if c == ':':
+            continue
+        elif c == '.':
+            break
+        else:
+            _isoformat_error(tstr)
+
+    len_remains = len(p)
+    if not (len_remains == 6 or len_remains == 3):
+        _isoformat_error(tstr)
+
+    p, microsecond = _parse_digits(p, len_remains)
+    if microsecond < 0:
+        _isoformat_error(tstr)
+
+    if len_remains == 3:
+        microsecond *= 1000
+
+    return hour, minute, second, microsecond
+
+def _parse_isoformat_time(dtstr):
+    n = len(dtstr)
+    tzinfo_pos = 0
+    tzsign = 0
+    while tzinfo_pos < n:
+        c = dtstr[tzinfo_pos]
+        if c == '+':
+            tzsign = 1
+            break
+        if c == '-':
+            tzsign = -1
+            break
+        tzinfo_pos += 1
+
+    hour, minute, second, microsecond = _parse_hh_mm_ss_ff(dtstr[:tzinfo_pos])
+    if tzinfo_pos == n:
+        return hour, minute, second, microsecond, 0, 0
+
+    tzlen = n - tzinfo_pos
+    if not (tzlen == 6 or tzlen == 9 or tzlen == 16):
+        _isoformat_error(dtstr)
+
+    tzhour, tzminute, tzsecond, tzmicrosecond = _parse_hh_mm_ss_ff(dtstr[tzinfo_pos + 1:])
+    tzoffset = tzsign * ((tzhour * 3600) + (tzminute * 60) + tzsecond)
+    tzmicrosecond *= tzsign
+    return hour, minute, second, microsecond, tzoffset, tzmicrosecond
+
+def _format_ctime(year, month, day, hours, minutes, seconds):
+    DAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    wday = _weekday(year, month, day)
+    return f"{DAY_NAMES[wday]} {MONTH_NAMES[month - 1]} {str(day).rjust(2)} {str(hours).zfill(2)}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)} {str(year).zfill(4)}"
+
+def _utc_to_seconds(year, month, day, hour, minute, second):
+    if year < MINYEAR or year > MAXYEAR:
+        raise ValueError(f"year {year} is out of range")
+    ordinal = _ymd_to_ord(year, month, day)
+    return ((ordinal * 24 + hour) * 60 + minute) * 60 + second
+
+def _round_half_even(x: float):
+    from math import fabs
+    rounded = x.__round__()
+    if fabs(x - rounded) == 0.5:
+        rounded = 2.0 * (x / 2.0).__round__()
+    return rounded
+
+################
+# core classes #
+################
+
+@tuple
+class timedelta:
+    _microseconds: int
+
+    def _new(microseconds: int) -> timedelta:
+        return (microseconds, )
+
+    @inline
+    def _accum(sofar: int, leftover: float, num, factor: int):
+        from math import modf
+        if isinstance(num, int):
+            sofar += num * factor
+            return sofar, leftover
+        elif isinstance(num, float):
+            fracpart, intpart = modf(num)
+            prod = int(intpart) * factor
+            s = sofar + prod
+
+            if fracpart == 0.0:
+                return s, leftover
+            dnum = factor * fracpart
+            fracpart, intpart = modf(dnum)
+            y = s + int(intpart)
+            return y, leftover + fracpart
+        else:
+            compile_error("expected int or float argument to timedelta constructor")
+
+    # override default constructor
+    def __new__(days: int):
+        return timedelta(days, 0)
+
+    def __new__(days = 0, seconds = 0, microseconds = 0, milliseconds = 0, minutes = 0, hours = 0, weeks = 0) -> timedelta:
+        us = 0
+        leftover = 0.0
+
+        us, leftover = timedelta._accum(us, leftover, days, 24 * 60 * 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, seconds, 1000000)
+        us, leftover = timedelta._accum(us, leftover, microseconds, 1)
+        us, leftover = timedelta._accum(us, leftover, milliseconds, 1000)
+        us, leftover = timedelta._accum(us, leftover, minutes, 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, hours, 60 * 60 * 1000000)
+        us, leftover = timedelta._accum(us, leftover, weeks, 7 * 24 * 60 * 60 * 1000000)
+
+        if leftover:
+            from math import fabs
+            whole_us = leftover.__round__()
+            if fabs(whole_us - leftover) == 0.5:
+                is_odd = us & 1
+                whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
+            us += int(whole_us)
+
+        return (us,)
+
+    @property
+    def days(self):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
+        return days
+
+    @property
+    def seconds(self):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
+        return seconds
+
+    @property
+    def microseconds(self):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
+        return microseconds
+
+    def __repr__(self):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, self._microseconds)
+        if days == 0 and seconds == 0 and microseconds == 0:
+            return "timedelta(0)"
+        v = []
+        if days:
+            v.append(f"days={days}")
+        if seconds:
+            v.append(f"seconds={seconds}")
+        if microseconds:
+            v.append(f"microseconds={microseconds}")
+        return f"timedelta({', '.join(v)})"
+
+    def __str__(self):
+        days, seconds, us = _normalize_d_s_us(0, 0, self._microseconds)
+        minutes, seconds = _divmod(seconds, 60)
+        hours, minutes = _divmod(minutes, 60)
+
+        if days:
+            if us:
+                return f"{days} day{'' if days == 1 or days == -1 else 's'}, {hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}.{str(us).zfill(6)}"
+            else:
+                return f"{days} day{'' if days == 1 or days == -1 else 's'}, {hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
+        else:
+            if us:
+                return f"{hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}.{str(us).zfill(6)}"
+            else:
+                return f"{hours}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
+
+    def __add__(self, other: timedelta):
+        return timedelta._new(self._microseconds + other._microseconds)
+
+    def __sub__(self, other: timedelta):
+        return timedelta._new(self._microseconds - other._microseconds)
+
+    def __mul__(self, other: int):
+        return timedelta._new(self._microseconds * other)
+
+    def __rmul__(self, other: int):
+        return self * other
+
+    def __mul__(self, other: float):
+        return timedelta._new(int(_round_half_even(self._microseconds * other)))
+
+    def __rmul__(self, other: float):
+        return self * other
+
+    def __truediv__(self, other: timedelta):
+        return self._microseconds / other._microseconds
+
+    def __truediv__(self, other: float):
+        return timedelta._new(int(_round_half_even(self._microseconds / other)))
+
+    def __truediv__(self, other: int):
+        return self / float(other)
+
+    def __floordiv__(self, other: timedelta):
+        return int((self._microseconds / other._microseconds).__floor__())
+
+    def __floordiv__(self, other: int):
+        return timedelta._new(self._microseconds // other)
+
+    def __mod__(self, other: timedelta):
+        n = self._microseconds
+        M = other._microseconds
+        m = self._microseconds % other._microseconds
+        return timedelta._new(((n % M) + M) % M)
+
+    def __divmod__(self, other: timedelta):
+        return self // other, self % other
+
+    def __pos__(self):
+        return self
+
+    def __neg__(self):
+        return timedelta._new(-self._microseconds)
+
+    def __abs__(self):
+        return timedelta._new(abs(self._microseconds))
+
+    def __eq__(self, other: timedelta):
+        return self._microseconds == other._microseconds
+
+    def __ne__(self, other: timedelta):
+        return self._microseconds != other._microseconds
+
+    def __lt__(self, other: timedelta):
+        return self._microseconds < other._microseconds
+
+    def __le__(self, other: timedelta):
+        return self._microseconds <= other._microseconds
+
+    def __gt__(self, other: timedelta):
+        return self._microseconds > other._microseconds
+
+    def __ge__(self, other: timedelta):
+        return self._microseconds >= other._microseconds
+
+    def __bool__(self):
+        return bool(self._microseconds)
+
+    def total_seconds(self):
+        return self._microseconds / 1e6
+
+@tuple
+class IsoCalendarDate:
+    year: int
+    week: int
+    weekday: int
+
+    def __repr__(self):
+        return f"IsoCalendarDate(year={self.year}, week={self.week}, weekday={self.weekday})"
+
+@tuple
+class date:
+    _value: UInt[32]
+
+    def __new__(year: int, month: int, day: int):
+        _check_date_args(year, month, day)
+        v = (year << 16) | (month << 8) | day
+        return date(UInt[32](v))
+
+    @property
+    def year(self):
+        v = int(self._value)
+        return v >> 16
+
+    @property
+    def month(self):
+        v = int(self._value)
+        return (v >> 8) & 0xff
+
+    @property
+    def day(self):
+        v = int(self._value)
+        return v & 0xff
+
+    def __repr__(self):
+        return f"date(year={self.year}, month={self.month}, day={self.day})"
+
+    def today():
+        from time import time
+        return date.fromtimestamp(time())
+
+    def fromtimestamp(timestamp):
+        from time import localtime
+        ts = int(timestamp)
+        tm = localtime(ts)
+        return date(tm.tm_year, tm.tm_mon, tm.tm_mday)
+
+    def fromordinal(ordinal: int):
+        return date(*_ord_to_ymd(ordinal))
+
+    def fromisoformat(date_string: str):
+        return date(*_parse_isoformat_date(date_string))
+
+    def fromisocalendar(year, week, day):
+        if year < MINYEAR or year > MAXYEAR:
+            raise ValueError(f"Year is out of range: {year}")
+
+        if week <= 0 or week >= 53:
+            out_of_range = True
+            if week == 53:
+                first_weekday = _weekday(year, 1, 1)
+                if first_weekday == 3 or (first_weekday == 2 and _is_leap(year)):
+                    out_of_range = False
+
+            if out_of_range:
+                raise ValueError(f"Invalid week: {week}")
+
+        if day <= 0 or day >= 8:
+            raise ValueError(f"Invalid day: {day} (range is [1, 7])")
+
+        day_1 = _iso_week1_monday(year)
+        month = week
+        day_offset = (month - 1)*7 + day - 1
+        return date(*_ord_to_ymd(day_1 + day_offset))
+
+    def __add__(self, other: timedelta):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        day = self.day + days
+        return date(*_normalize_date(self.year, self.month, day))
+
+    def __sub__(self, other: timedelta):
+        days, seconds, microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        day = self.day - days
+        return date(*_normalize_date(self.year, self.month, day))
+
+    def __sub__(self, other: date):
+        left_ord = _ymd_to_ord(self.year, self.month, self.day)
+        right_ord = _ymd_to_ord(other.year, other.month, other.day)
+        return timedelta(days=left_ord-right_ord)
+
+    def __eq__(self, other: date):
+        return self._value == other._value
+
+    def __ne__(self, other: date):
+        return self._value != other._value
+
+    def __lt__(self, other: date):
+        return self._value < other._value
+
+    def __le__(self, other: date):
+        return self._value <= other._value
+
+    def __gt__(self, other: date):
+        return self._value > other._value
+
+    def __ge__(self, other: date):
+        return self._value >= other._value
+
+    def __bool__(self):
+        return True
+
+    def replace(self, year: int = -1, month: int = -1, day: int = -1):
+        if year == -1:
+            year = self.year
+        if month == -1:
+            month = self.month
+        if day == -1:
+            day = self.day
+        return date(year, month, day)
+
+    def timetuple(self):
+        from time import struct_time
+        yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
+        return struct_time(self.year, self.month, self.day, 0, 0, 0, self.weekday(), yday, -1)
+
+    def toordinal(self):
+        return _ymd_to_ord(self.year, self.month, self.day)
+
+    def weekday(self):
+        return _weekday(self.year, self.month, self.day)
+
+    def isoweekday(self):
+        return self.weekday() + 1
+
+    def isocalendar(self):
+        year = self.year
+        week1_monday = _iso_week1_monday(year)
+        today = _ymd_to_ord(year, self.month, self.day)
+        week, day = _divmod(today - week1_monday, 7)
+        if week < 0:
+            year -= 1
+            week1_monday = _iso_week1_monday(year)
+            week, day = _divmod(today - week1_monday, 7)
+        elif week >= 52 and today >= _iso_week1_monday(year + 1):
+            year += 1
+            week = 0
+        return IsoCalendarDate(year, week + 1, day + 1)
+
+    def isoformat(self):
+        return f'{str(self.year).zfill(4)}-{str(self.month).zfill(2)}-{str(self.day).zfill(2)}'
+
+    def __str__(self):
+        return self.isoformat()
+
+    def ctime(self):
+        return _format_ctime(self.year, self.month, self.day, 0, 0, 0)
+
+    # strftime() / __format__() not supported
+
+@tuple
+class time:
+    _value: int
+
+    def __new__(hour: int = 0, minute: int = 0, second: int = 0, microsecond: int = 0) -> time:
+        _check_time_args(hour, minute, second, microsecond)
+        v = (hour << 40) | (minute << 32) | (second << 24) | microsecond
+        return (v,)
+
+    @property
+    def hour(self):
+        v = self._value
+        return v >> 40
+
+    @property
+    def minute(self):
+        v = self._value
+        return (v >> 32) & 0xff
+
+    @property
+    def second(self):
+        v = self._value
+        return (v >> 24) & 0xff
+
+    @property
+    def microsecond(self):
+        v = self._value
+        return v & 0xffffff
+
+    def __repr__(self):
+        h, m, s, us = self.hour, self.minute, self.second, self.microsecond
+        v = []
+        v.append(f"hour={h}")
+        v.append(f"minute={m}")
+        if s or us:
+            v.append(f"second={s}")
+        if us:
+            v.append(f"microsecond={us}")
+        return f"time({', '.join(v)})"
+
+    def __str__(self):
+        return self.isoformat()
+
+    def __bool__(self):
+        return True
+
+    def fromisoformat(time_string: str):
+        hour, minute, second, microsecond, tzoffset, tzmicrosecond = _parse_isoformat_time(time_string)
+        # TODO: deal with timezone
+        return time(hour, minute, second, microsecond)
+
+    def replace(self, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1):
+        if hour == -1:
+            hour = self.hour
+        if second == -1:
+            second = self.second
+        if minute == -1:
+            minute = self.minute
+        if microsecond == -1:
+            microsecond = self.microsecond
+        return time(hour, minute, second, microsecond)
+
+    def isoformat(self, timespec: Static[str] = 'auto'):
+        hh = str(self.hour).zfill(2)
+        mm = str(self.minute).zfill(2)
+        ss = str(self.second).zfill(2)
+        us = str(self.microsecond).zfill(6)
+        ms = str(self.microsecond // 1000).zfill(3)
+
+        if timespec == 'auto':
+            if self.microsecond:
+                return f"{hh}:{mm}:{ss}.{us}"
+            else:
+                return f"{hh}:{mm}:{ss}"
+        elif timespec == 'hours':
+            return hh
+        elif timespec == 'minutes':
+            return f"{hh}:{mm}"
+        elif timespec == 'seconds':
+            return f"{hh}:{mm}:{ss}"
+        elif timespec == 'milliseconds':
+            return f"{hh}:{mm}:{ss}.{ms}"
+        elif timespec == 'microseconds':
+            return f"{hh}:{mm}:{ss}.{us}"
+        else:
+            compile_error("invalid timespec; valid ones are 'auto', 'hours', 'minutes', 'seconds', 'milliseconds' and 'microseconds'")
+
+@tuple
+class datetime:
+    _time: time
+    _date: date
+
+    def __new__(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, microsecond: int = 0):
+        return datetime(time(hour, minute, second, microsecond), date(year, month, day))
+
+    def date(self):
+        return self._date
+
+    def time(self):
+        return self._time
+
+    @property
+    def year(self):
+        return self.date().year
+
+    @property
+    def month(self):
+        return self.date().month
+
+    @property
+    def day(self):
+        return self.date().day
+
+    @property
+    def hour(self):
+        return self.time().hour
+
+    @property
+    def minute(self):
+        return self.time().minute
+
+    @property
+    def second(self):
+        return self.time().second
+
+    @property
+    def microsecond(self):
+        return self.time().microsecond
+
+    def __repr__(self):
+        return f"datetime(year={self.year}, month={self.month}, day={self.day}, hour={self.hour}, minute={self.minute}, second={self.second}, microsecond={self.microsecond})"
+
+    def __str__(self):
+        return self.isoformat(sep=' ')
+
+    def _from_timet_and_us(timet, us):
+        from time import localtime
+        tm = localtime(timet)
+        year = tm.tm_year
+        month = tm.tm_mon
+        day = tm.tm_mday
+        hour = tm.tm_hour
+        minute = tm.tm_min
+        second = min(59, tm.tm_sec)
+        # TODO: timezone adjustments
+        return datetime(year, month, day, hour, minute, second, us)
+
+    def today():
+        from time import time
+        return datetime.fromtimestamp(time())
+
+    # TODO: support timezone
+    def now():
+        return datetime.today()
+
+    def utcnow():
+        return datetime.now()
+
+    # TODO: support timezone
+    def fromtimestamp(timestamp):
+        from time import _time_to_timeval, _ROUND_HALF_EVEN
+        timet, us = _time_to_timeval(float(timestamp), _ROUND_HALF_EVEN)
+        return datetime._from_timet_and_us(timet, us)
+
+    def utcfromtimestamp(timestamp):
+        return datetime.fromtimestamp(timestamp)
+
+    def fromordinal(ordinal: int):
+        return datetime.combine(date.fromordinal(ordinal), time())
+
+    # TODO: support timezone
+    def combine(date: date, time: time):
+        return datetime(time, date)
+
+    def fromisoformat(date_string: str):
+        time_string = '' if len(date_string) < 10 else date_string[:10]
+        year, month, day = _parse_isoformat_date(time_string)
+        if len(date_string) == 10:
+            return datetime(year=year, month=month, day=day)
+        date_string = '' if len(date_string) < 12 else date_string[11:]
+        hour, minute, second, microsecond = _parse_hh_mm_ss_ff(date_string)
+        return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second, microsecond=microsecond)
+
+    def fromisocalendar(year: int, week: int, day: int):
+        return datetime.combine(date.fromisocalendar(year, week, day), time())
+
+    def __add__(self, other: timedelta):
+        td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        year = self.year
+        month = self.month
+        day = self.day + td_days
+        hour = self.hour
+        minute = self.minute
+        second = self.second + td_seconds
+        microsecond = self.microsecond + td_microseconds
+        return datetime(*_normalize_datetime(year, month, day, hour, minute, second, microsecond))
+
+    def __sub__(self, other: timedelta):
+        td_days, td_seconds, td_microseconds = _normalize_d_s_us(0, 0, other._microseconds)
+        year = self.year
+        month = self.month
+        day = self.day - td_days
+        hour = self.hour
+        minute = self.minute
+        second = self.second - td_seconds
+        microsecond = self.microsecond - td_microseconds
+        return datetime(*_normalize_datetime(year, month, day, hour, minute, second, microsecond))
+
+    def __sub__(self, other: datetime):
+        delta_d = _ymd_to_ord(self.year, self.month, self.day) - _ymd_to_ord(other.year, other.month, other.day)
+        delta_s = (self.hour - other.hour)*3600 + (self.minute - other.minute)*60 + (self.second - other.second)
+        delta_us = self.microsecond - other.microsecond
+        return timedelta(days=delta_d, seconds=delta_s, microseconds=delta_us)
+
+    def __eq__(self, other: datetime):
+        return self.date() == other.date() and self.time() == other.time()
+
+    def __ne__(self, other: datetime):
+        return not (self == other)
+
+    def __lt__(self, other: datetime):
+        return (self.date(), self.time()) < (other.date(), other.time())
+
+    def __le__(self, other: datetime):
+        return (self.date(), self.time()) <= (other.date(), other.time())
+
+    def __gt__(self, other: datetime):
+        return (self.date(), self.time()) > (other.date(), other.time())
+
+    def __ge__(self, other: datetime):
+        return (self.date(), self.time()) >= (other.date(), other.time())
+
+    def __bool__(self):
+        return True
+
+    def replace(self, year: int = -1, month: int = -1, day: int = -1, hour: int = -1, minute: int = -1, second: int = -1, microsecond: int = -1):
+        return datetime(self.time().replace(hour, minute, second, microsecond), self.date().replace(year, month, day))
+
+    def timetuple(self):
+        from time import struct_time
+        yday = self.toordinal() - date(self.year, 1, 1).toordinal() + 1
+        return struct_time(self.year, self.month, self.day, self.hour, self.minute, self.second, self.weekday(), yday, -1)
+
+    def utctimetuple(self):
+        return self.timetuple()
+
+    def toordinal(self):
+        return self.date().toordinal()
+
+    def timestamp(self):
+        return (self - datetime(1970, 1, 1)).total_seconds()
+
+    def weekday(self):
+        return self.date().weekday()
+
+    def isoweekday(self):
+        return self.date().isoweekday()
+
+    def isocalendar(self):
+        return self.date().isocalendar()
+
+    def isoformat(self, sep: str = 'T', timespec: Static[str] = 'auto'):
+        date_part = str(self.date())
+        time_part = self.time().isoformat(timespec=timespec)
+        return f"{date_part}{sep}{time_part}"
+
+    def ctime(self):
+        date = self.date()
+        time = self.time()
+        return _format_ctime(date.year, date.month, date.day, time.hour, time.minute, time.second)
+
+@extend
+class timedelta:
+    def __add__(self, other: date):
+        return other + self
+
+    def __add__(self, other: datetime):
+        return other + self

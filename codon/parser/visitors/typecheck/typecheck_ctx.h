@@ -67,6 +67,11 @@ struct TypeContext : public Context<TypecheckItem> {
   /// (e.g. class A: def __init__(a: A = A())).
   std::set<std::string> defaultCallDepth;
 
+  /// Number of nested blocks (0 for toplevel)
+  int blockLevel;
+  /// True if an early return is found (anything afterwards won't be typechecked)
+  bool returnEarly;
+
 public:
   explicit TypeContext(Cache *cache);
 

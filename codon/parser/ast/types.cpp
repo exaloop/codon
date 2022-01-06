@@ -562,10 +562,12 @@ std::string PartialType::debugString(bool debug) const {
   std::vector<std::string> as;
   int i, gi;
   for (i = 0, gi = 0; i < known.size(); i++)
-    if (!known[i])
-      as.emplace_back("...");
-    else
-      as.emplace_back(gs[gi++]);
+    if (!func->ast->args[i].generic) {
+      if (!known[i])
+        as.emplace_back("...");
+      else
+        as.emplace_back(gs[gi++]);
+    }
   return fmt::format("{}[{}]", !debug ? func->ast->name : func->debugString(debug),
                      join(as, ","));
 }
@@ -756,7 +758,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       if (args[0]->unify(pt->func->args[0].get(), us) == -1)
         return -1;
       for (int pi = 0, gi = 1; pi < pt->known.size(); pi++)
-        if (!pt->known[pi])
+        if (!pt->known[pi] && !pt->func->ast->args[pi].generic)
           if (args[gi++]->unify(pt->func->args[pi + 1].get(), us) == -1)
             return -1;
       return 1;

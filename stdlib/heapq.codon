@@ -148,7 +148,7 @@ def nsmallest[T](n: int, iterable: Generator[T], key = Optional[int]()):
     Equivalent to:  sorted(iterable, key=key)[:n]
     """
     if n == 1:
-        v = List[T](1)
+        v = List(1)
         for a in iterable:
             if not v:
                 v.append(a)
@@ -165,7 +165,7 @@ def nsmallest[T](n: int, iterable: Generator[T], key = Optional[int]()):
         it = iter(iterable)
         # put the range(n) first so that zip() doesn't
         # consume one too many elements from the iterator
-        result = List[Tuple[T,int]](n)
+        result = List(n)
         done = False
         for i in range(n):
             if it.done():
@@ -174,7 +174,7 @@ def nsmallest[T](n: int, iterable: Generator[T], key = Optional[int]()):
             result.append((it.next(), i))
         if not result:
             it.destroy()
-            return List[T](0)
+            return []
         _heapify_max(result)
         top = result[0][0]
         order = n
@@ -191,7 +191,7 @@ def nsmallest[T](n: int, iterable: Generator[T], key = Optional[int]()):
     else:
         # General case, slowest method
         it = iter(iterable)
-        result = List[Tuple[type(key(T())),int,T]](n)
+        result = List(n)
         done = False
         for i in range(n):
             if it.done():
@@ -201,7 +201,7 @@ def nsmallest[T](n: int, iterable: Generator[T], key = Optional[int]()):
             result.append((key(elem), i, elem))
         if not result:
             it.destroy()
-            return List[T](0)
+            return []
         _heapify_max(result)
         top = result[0][0]
         order = n
@@ -222,7 +222,7 @@ def nlargest[T](n: int, iterable: Generator[T], key = Optional[int]()):
     Equivalent to:  sorted(iterable, key=key, reverse=True)[:n]
     """
     if n == 1:
-        v = List[T](1)
+        v = List(1)
         for a in iterable:
             if not v:
                 v.append(a)
@@ -237,7 +237,7 @@ def nlargest[T](n: int, iterable: Generator[T], key = Optional[int]()):
     # When key is none, use simpler decoration
     if isinstance(key, Optional):
         it = iter(iterable)
-        result = List[Tuple[T,int]](n)
+        result = List(n)
         done = False
         for i in range(0, -n, -1):
             if it.done():
@@ -246,7 +246,7 @@ def nlargest[T](n: int, iterable: Generator[T], key = Optional[int]()):
             result.append((it.next(), i))
         if not result:
             it.destroy()
-            return List[T](0)
+            return []
         heapify(result)
         top = result[0][0]
         order = -n
@@ -263,7 +263,7 @@ def nlargest[T](n: int, iterable: Generator[T], key = Optional[int]()):
     else:
         # General case, slowest method
         it = iter(iterable)
-        result = List[Tuple[type(key(T())),int,T]](n)
+        result = List(n)
         done = False
         for i in range(0, -n, -1):
             if it.done():
@@ -272,7 +272,7 @@ def nlargest[T](n: int, iterable: Generator[T], key = Optional[int]()):
             elem = it.next()
             result.append((key(elem), i, elem))
         if not result:
-            return List[T](0)
+            return []
         heapify(result)
         top = result[0][0]
         order = -n

@@ -10,6 +10,13 @@ class Array:
         p = Ptr[T](self.len)
         str.memcpy(p.as_byte(), self.ptr.as_byte(), self.len * sizeof(T))
         return (self.len, p)
+    def __deepcopy__(self) -> Array[T]:
+        p = Ptr[T](self.len)
+        i = 0
+        while i < self.len:
+            p[i] = self.ptr[i].__deepcopy__()
+            i += 1
+        return (self.len, p)
     def __len__(self) -> int:
         return self.len
     def __bool__(self) -> bool:

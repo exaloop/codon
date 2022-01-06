@@ -47,7 +47,7 @@ std::string StaticValue::toString() const {
   if (!evaluated)
     return type == StaticValue::STRING ? "str" : "int";
   return type == StaticValue::STRING
-             ? "\"" + escape(std::get<std::string>(value)) + "\""
+             ? "'" + escape(std::get<std::string>(value)) + "'"
              : std::to_string(std::get<int64_t>(value));
 }
 int64_t StaticValue::getInt() const {
@@ -100,7 +100,7 @@ std::string IntExpr::toString() const {
 ACCEPT_IMPL(IntExpr, ASTVisitor);
 
 FloatExpr::FloatExpr(double floatValue)
-    : Expr(), value(std::to_string(floatValue)), floatValue(floatValue) {}
+    : Expr(), value(fmt::format("{:g}", floatValue)), floatValue(floatValue) {}
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
     : Expr(), value(value), suffix(std::move(suffix)), floatValue(0.0) {}
 std::string FloatExpr::toString() const {

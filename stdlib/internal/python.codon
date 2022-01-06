@@ -132,12 +132,6 @@ class pyobj:
     def _getattr(self, name: str):
         return pyobj.exc_wrap(pyobj(PyObject_GetAttrString(self.p, name.c_str())))
 
-    def __getitem__(self, t):
-        return self._getattr("__getitem__")(t)
-
-    def __add__(self, t):
-        return self._getattr("__add__")(t)
-
     def __setitem__(self, name: str, val: pyobj):
         return pyobj.exc_wrap(pyobj(PyObject_SetAttrString(self.p, name.c_str(), val.p)))
 
@@ -232,7 +226,7 @@ class pyobj:
         ensure_initialized()
         PyRun_SimpleString(code.c_str())
 
-    def get[T](self) -> T:
+    def get(self, T: type) -> T:
         return T.__from_py__(self)
 
     def _repr_mimebundle_(self, bundle = Set[str]()):
@@ -254,7 +248,7 @@ def none():
 def py(x) -> pyobj:
     return x.__to_py__()
 
-def get[T](x: pyobj) -> T:
+def get(x: pyobj, T: type) -> T:
     return T.__from_py__(x)
 
 @extend
