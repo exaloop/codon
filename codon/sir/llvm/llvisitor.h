@@ -167,7 +167,7 @@ private:
 
   // General function helpers
   llvm::Value *call(llvm::FunctionCallee callee, llvm::ArrayRef<llvm::Value *> args);
-  void makeLLVMFunction(const Func *);
+  llvm::Function *makeLLVMFunction(const Func *);
   void makeYield(llvm::Value *value = nullptr, bool finalYield = false);
   std::string buildLLVMCodeString(const LLVMFunc *);
   void callStage(const PipelineFlow::Stage *stage);

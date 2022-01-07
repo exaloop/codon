@@ -18,7 +18,7 @@ const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
 JIT::JIT(const std::string &argv0, const std::string &mode)
-    : compiler(std::make_unique<Compiler>(argv0, /*debug=*/true)), mode(mode) {
+    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)), mode(mode) {
   if (auto e = Engine::create()) {
     engine = std::move(e.get());
   } else {
@@ -107,7 +107,6 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
-
 
   ast::Cache bCache = *cache;
   ast::SimplifyContext bSimplify = *sctx;
