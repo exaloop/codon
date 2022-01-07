@@ -716,8 +716,8 @@ ExprPtr SimplifyVisitor::transformInt(const std::string &value,
   }
   /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
   /// NOTE: you cannot neither use binary (0bXXX) format here.
-  return transform(N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)),
-                               N<IntExpr>(val)));
+  return transform(
+      N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)), N<IntExpr>(val)));
 }
 
 ExprPtr SimplifyVisitor::transformFloat(const std::string &value,

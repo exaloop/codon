@@ -46,9 +46,8 @@ std::string StaticValue::toString() const {
     return "";
   if (!evaluated)
     return type == StaticValue::STRING ? "str" : "int";
-  return type == StaticValue::STRING
-             ? "'" + escape(std::get<std::string>(value)) + "'"
-             : std::to_string(std::get<int64_t>(value));
+  return type == StaticValue::STRING ? "'" + escape(std::get<std::string>(value)) + "'"
+                                     : std::to_string(std::get<int64_t>(value));
 }
 int64_t StaticValue::getInt() const {
   seqassert(type == StaticValue::INT, "not an int");
