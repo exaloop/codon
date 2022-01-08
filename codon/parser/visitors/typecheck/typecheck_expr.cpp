@@ -1052,6 +1052,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
     return transform(e, false, true);
   }
+  if (expr->expr->isId("super"))
+    return transformSuper(expr);
 
   bool isPartial = !expr->args.empty() && expr->args.back().value->getEllipsis() &&
                    !expr->args.back().value->getEllipsis()->isPipeArg &&
@@ -1944,6 +1946,52 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
   prependStmts->push_back(ast);
   // LOG("dispatch: {}", ast->toString(1));
   return typ;
+}
+
+ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
+  // For now, we just support casting to the _FIRST_ overload (i.e. empty super())
+  if (!expr->args.empty())
+    error("super does not take arguments");
+
+  if (ctx->bases.empty())
+    error("no parent classes available");
+  auto fptyp = ctx->bases.back().type->getFunc();
+  if (!fptyp || fptyp->ast->hasAttr(Attr::Method))
+    error("no parent classes available");
+  ClassTypePtr typ = fptyp->args[1]->getClass();
+  auto &cands = ctx->cache->classes[typ->name].parentClasses;
+  if (cands.empty())
+    error("no parent classes available");
+  if (typ->getRecord())
+    error("cannot use super on tuple types");
+
+  // find parent typ
+  // unify top N args with parent typ args
+  // realize & do bitcast
+  // call bitcast() . method
+
+  auto name = cands[0].first;
+  int fields = cands[0].second;
+  auto val = ctx->find(name);
+  seqassert(val, "cannot find '{}'", name);
+  auto ftyp = ctx->instantiate(expr, val->type)->getClass();
+
+  for (int i = 0; i < fields; i++) {
+    auto t = ctx->cache->classes[typ->name].fields[i].type;
+    t = ctx->instantiate(expr, t, typ.get());
+
+    auto ft = ctx->cache->classes[name].fields[i].type;
+    ft = ctx->instantiate(expr, ft, ftyp.get());
+    unify(t, ft);
+  }
+
+  ExprPtr typExpr = N<IdExpr>(name);
+  typExpr->setType(ftyp);
+  auto self = fptyp->ast->args[0].name;
+  ExprPtr e = transform(
+      N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                  N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
+  return e;
 }
 
 } // namespace ast

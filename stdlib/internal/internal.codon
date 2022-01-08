@@ -125,6 +125,12 @@ class __internal__:
     def opt_ref_invert[T](what: Optional[T]) -> T:
         ret i8* %what
 
+    @pure
+    @llvm
+    def to_class_ptr[T](ptr: Ptr[byte]) -> T:
+        %0 = bitcast i8* %ptr to {=T}
+        ret {=T} %0
+
     def raw_type_str(p: Ptr[byte], name: str) -> str:
         pstr = p.__repr__()
         # '<[name] at [pstr]>'

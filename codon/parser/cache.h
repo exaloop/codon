@@ -134,6 +134,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
 
+    std::vector<std::pair<std::string, int>> parentClasses;
+
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
