@@ -679,3 +679,33 @@ def foo(x: Callable[[1,2], 3]): pass  #! unexpected static type
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! cannot unify T and 1
+
+#%% super,barebones
+class A[T]:
+    a: T
+    def __init__(self, t: T):
+        self.a = t
+    def foo(self):
+        return f'A:{self.a}'
+class B(A[str]):
+    b: int
+    def __init__(self):
+        super().__init__('s')
+        self.b = 6
+    def baz(self):
+        return f'{super().foo()}::{self.b}'
+b = B()
+print b.foo() #: A:s
+print b.baz() #: A:s::6
+
+
+#%% super_error,barebones
+class A:
+    def __init__(self):
+        super().__init__()
+a = A()
+#! no parent classes available
+#! while realizing A.__init__:1 (arguments A.__init__:1[A])
+
+#%% super_error_2,barebones
+super().foo(1) #! no parent classes available

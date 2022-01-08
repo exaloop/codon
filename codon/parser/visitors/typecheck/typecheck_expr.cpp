@@ -1953,7 +1953,7 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   if (!expr->args.empty())
     error("super does not take arguments");
 
-  if (ctx->bases.empty())
+  if (ctx->bases.empty() || !ctx->bases.back().type)
     error("no parent classes available");
   auto fptyp = ctx->bases.back().type->getFunc();
   if (!fptyp || fptyp->ast->hasAttr(Attr::Method))
