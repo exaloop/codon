@@ -1038,15 +1038,15 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       seenNames.insert(i.name);
     }
 
-  if (expr->expr->isId("super")) {
+  if (expr->expr->isId("superf")) {
     if (ctx->bases.back().supers.empty())
-      error("no matching super methods are available");
+      error("no matching superf methods are available");
     auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
     auto m =
         findMatchingMethods(parentCls ? CAST(parentCls, types::ClassType) : nullptr,
                             ctx->bases.back().supers, expr->args);
     if (m.empty())
-      error("no matching super methods are available");
+      error("no matching superf methods are available");
     // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(),
     // m[0]->toString());
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
