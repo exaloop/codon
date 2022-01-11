@@ -1038,20 +1038,22 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       seenNames.insert(i.name);
     }
 
-  if (expr->expr->isId("super")) {
+  if (expr->expr->isId("superf")) {
     if (ctx->bases.back().supers.empty())
-      error("no matching super methods are available");
+      error("no matching superf methods are available");
     auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
     auto m =
         findMatchingMethods(parentCls ? CAST(parentCls, types::ClassType) : nullptr,
                             ctx->bases.back().supers, expr->args);
     if (m.empty())
-      error("no matching super methods are available");
+      error("no matching superf methods are available");
     // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(),
     // m[0]->toString());
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
     return transform(e, false, true);
   }
+  if (expr->expr->isId("super"))
+    return transformSuper(expr);
 
   bool isPartial = !expr->args.empty() && expr->args.back().value->getEllipsis() &&
                    !expr->args.back().value->getEllipsis()->isPipeArg &&
@@ -1421,8 +1423,15 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
         expr->args[1].value =
             transformType(expr->args[1].value, /*disableActivation*/ true);
         auto t = expr->args[1].value->type;
-        auto unifyOK = typ->unify(t.get(), nullptr) >= 0;
-        return {true, transform(N<BoolExpr>(unifyOK))};
+        auto hierarchy = getSuperTypes(typ->getClass());
+
+        for (auto &tx: hierarchy) {
+          auto unifyOK = tx->unify(t.get(), nullptr) >= 0;
+          if (unifyOK) {
+            return {true, transform(N<BoolExpr>(true))};
+          }
+        }
+        return {true, transform(N<BoolExpr>(false))};
       }
     }
   } else if (val == "staticlen") {
@@ -1944,6 +1953,92 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
   prependStmts->push_back(ast);
   // LOG("dispatch: {}", ast->toString(1));
   return typ;
+}
+
+ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
+  // For now, we just support casting to the _FIRST_ overload (i.e. empty super())
+  if (!expr->args.empty())
+    error("super does not take arguments");
+
+  if (ctx->bases.empty() || !ctx->bases.back().type)
+    error("no parent classes available");
+  auto fptyp = ctx->bases.back().type->getFunc();
+  if (!fptyp || !fptyp->ast->hasAttr(Attr::Method))
+    error("no parent classes available");
+  if (fptyp->args.size() < 2)
+    error("no parent classes available");
+  ClassTypePtr typ = fptyp->args[1]->getClass();
+  auto &cands = ctx->cache->classes[typ->name].parentClasses;
+  if (cands.empty())
+    error("no parent classes available");
+  //  if (typ->getRecord())
+  //    error("cannot use super on tuple types");
+
+  // find parent typ
+  // unify top N args with parent typ args
+  // realize & do bitcast
+  // call bitcast() . method
+
+  auto name = cands[0].first;
+  int fields = cands[0].second;
+  auto val = ctx->find(name);
+  seqassert(val, "cannot find '{}'", name);
+  auto ftyp = ctx->instantiate(expr, val->type)->getClass();
+
+  if (typ->getRecord()) {
+    std::vector<ExprPtr> members;
+    for (int i = 0; i < fields; i++)
+      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name),
+                                   ctx->cache->classes[typ->name].fields[i].name));
+    ExprPtr e = transform(
+        N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
+    unify(e->type, ftyp);
+    e->type = ftyp;
+    return e;
+  } else {
+    for (int i = 0; i < fields; i++) {
+      auto t = ctx->cache->classes[typ->name].fields[i].type;
+      t = ctx->instantiate(expr, t, typ.get());
+
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(expr, ft, ftyp.get());
+      unify(t, ft);
+    }
+
+    ExprPtr typExpr = N<IdExpr>(name);
+    typExpr->setType(ftyp);
+    auto self = fptyp->ast->args[0].name;
+    ExprPtr e = transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                    N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
+    return e;
+  }
+}
+
+std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cls) {
+  std::vector<ClassTypePtr> result;
+  if (!cls)
+    return result;
+  result.push_back(cls);
+  int start = 0;
+  for (auto &cand: ctx->cache->classes[cls->name].parentClasses) {
+    auto name = cand.first;
+    int fields = cand.second;
+    auto val = ctx->find(name);
+    seqassert(val, "cannot find '{}'", name);
+    auto ftyp = ctx->instantiate(nullptr, val->type)->getClass();
+    for (int i = start; i < fields; i++) {
+      auto t = ctx->cache->classes[cls->name].fields[i].type;
+      t = ctx->instantiate(nullptr, t, cls.get());
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(nullptr, ft, ftyp.get());
+      unify(t, ft);
+    }
+    start += fields;
+    for (auto &t: getSuperTypes(ftyp))
+      result.push_back(t);
+  }
+  return result;
 }
 
 } // namespace ast

@@ -550,6 +550,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       typeAst = ctx->bases[ctx->bases.size() - 2].ast;
       ctx->bases.back().selfName = name;
       attr.set(".changedSelf");
+      attr.set(Attr::Method);
     }
 
     if (attr.has(Attr::C)) {
@@ -796,6 +797,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   std::vector<std::unordered_map<std::string, ExprPtr>> substitutions;
   std::vector<int> argSubstitutions;
   std::unordered_set<std::string> seenMembers;
+  std::vector<int> baseASTsFields;
   for (auto &baseClass : stmt->baseClasses) {
     std::string bcName;
     std::vector<ExprPtr> subs;
@@ -836,6 +838,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         if (!extension)
           ctx->cache->classes[canonicalName].fields.push_back({a.name, nullptr});
       }
+    baseASTsFields.push_back(args.size());
   }
 
   // Add generics, if any, to the context.
@@ -956,6 +959,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                ctx->moduleName.module);
     ctx->cache->classes[canonicalName].ast =
         N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), attr);
+    for (int i = 0; i < baseASTs.size(); i++)
+      ctx->cache->classes[canonicalName].parentClasses.push_back(
+          {baseASTs[i]->name, baseASTsFields[i]});
     std::vector<StmtPtr> fns;
     ExprPtr codeType = ctx->bases.back().ast->clone();
     std::vector<std::string> magics{};

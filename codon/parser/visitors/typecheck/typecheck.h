@@ -301,6 +301,10 @@ private:
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
 
+  ExprPtr transformSuper(const CallExpr *expr);
+  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
+
+
 private:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
                        bool undoOnSuccess = false);
