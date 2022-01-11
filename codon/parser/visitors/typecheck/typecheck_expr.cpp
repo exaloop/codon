@@ -1423,8 +1423,15 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
         expr->args[1].value =
             transformType(expr->args[1].value, /*disableActivation*/ true);
         auto t = expr->args[1].value->type;
-        auto unifyOK = typ->unify(t.get(), nullptr) >= 0;
-        return {true, transform(N<BoolExpr>(unifyOK))};
+        auto hierarchy = getSuperTypes(typ->getClass());
+
+        for (auto &tx: hierarchy) {
+          auto unifyOK = tx->unify(t.get(), nullptr) >= 0;
+          if (unifyOK) {
+            return {true, transform(N<BoolExpr>(true))};
+          }
+        }
+        return {true, transform(N<BoolExpr>(false))};
       }
     }
   } else if (val == "staticlen") {
@@ -1956,7 +1963,7 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   if (ctx->bases.empty() || !ctx->bases.back().type)
     error("no parent classes available");
   auto fptyp = ctx->bases.back().type->getFunc();
-  if (!fptyp || fptyp->ast->hasAttr(Attr::Method))
+  if (!fptyp || !fptyp->ast->hasAttr(Attr::Method))
     error("no parent classes available");
   if (fptyp->args.size() < 2)
     error("no parent classes available");
@@ -2006,6 +2013,32 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
                     N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
     return e;
   }
+}
+
+std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cls) {
+  std::vector<ClassTypePtr> result;
+  if (!cls)
+    return result;
+  result.push_back(cls);
+  int start = 0;
+  for (auto &cand: ctx->cache->classes[cls->name].parentClasses) {
+    auto name = cand.first;
+    int fields = cand.second;
+    auto val = ctx->find(name);
+    seqassert(val, "cannot find '{}'", name);
+    auto ftyp = ctx->instantiate(nullptr, val->type)->getClass();
+    for (int i = start; i < fields; i++) {
+      auto t = ctx->cache->classes[cls->name].fields[i].type;
+      t = ctx->instantiate(nullptr, t, cls.get());
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(nullptr, ft, ftyp.get());
+      unify(t, ft);
+    }
+    start += fields;
+    for (auto &t: getSuperTypes(ftyp))
+      result.push_back(t);
+  }
+  return result;
 }
 
 } // namespace ast

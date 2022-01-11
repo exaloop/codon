@@ -600,6 +600,30 @@ print hasattr(int, "__getitem__")
 print hasattr([1, 2], "__getitem__", str)
 #: False
 
+#%% isinstance_inheritance,barebones
+class AX[T]:
+    a: T
+    def __init__(self, a: T):
+        self.a = a
+class Side:
+    def __init__(self):
+        pass
+class BX[T,U](AX[T], Side):
+    b: U
+    def __init__(self, a: T, b: U):
+        super().__init__(a)
+        self.b = b
+class CX[T,U](BX[T,U]):
+    c: int
+    def __init__(self, a: T, b: U):
+        super().__init__(a, b)
+        self.c = 1
+c = CX('a', False)
+print isinstance(c, CX), isinstance(c, BX), isinstance(c, AX), isinstance(c, Side)
+#: True True True True
+print isinstance(c, BX[str, bool]), isinstance(c, BX[str, str]), isinstance(c, AX[int])
+#: True False False
+
 #%% staticlen_err,barebones
 print staticlen([1, 2]) #! List[int] is not a tuple type
 
@@ -694,6 +718,56 @@ class B(A[str]):
         self.b = 6
     def baz(self):
         return f'{super().foo()}::{self.b}'
+b = B()
+print b.foo() #: A:s
+print b.baz() #: A:s::6
+
+class AX[T]:
+    a: T
+    def __init__(self, a: T):
+        self.a = a
+    def foo(self):
+        return f'[AX:{self.a}]'
+class BX[T,U](AX[T]):
+    b: U
+    def __init__(self, a: T, b: U):
+        print super().__class__
+        super().__init__(a)
+        self.b = b
+    def foo(self):
+        return f'[BX:{super().foo()}:{self.b}]'
+class CX[T,U](BX[T,U]):
+    c: int
+    def __init__(self, a: T, b: U):
+        print super().__class__
+        super().__init__(a, b)
+        self.c = 1
+    def foo(self):
+        return f'CX:{super().foo()}:{self.c}'
+c = CX('a', False)
+print c.__class__, c.foo()
+#: BX[str,bool]
+#: AX[str]
+#: CX[str,bool] CX:[BX:[AX:a]:False]:1
+
+
+#%% super_tuple,barebones
+@tuple
+class A[T]:
+    a: T
+    x: int
+    def __new__(a: T) -> A[T]:
+        return (a, 1)
+    def foo(self):
+        return f'A:{self.a}'
+@tuple
+class B(A[str]):
+    b: int
+    def __new__() -> B:
+        return (*(A('s')), 6)
+    def baz(self):
+        return f'{super().foo()}::{self.b}'
+
 b = B()
 print b.foo() #: A:s
 print b.baz() #: A:s::6

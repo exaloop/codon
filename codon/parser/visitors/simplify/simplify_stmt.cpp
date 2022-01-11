@@ -544,6 +544,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (!typeAst && isClassMember && ia == 0 && a.name == "self") {
       typeAst = ctx->bases[ctx->bases.size() - 2].ast;
       attr.set(".changedSelf");
+      attr.set(Attr::Method);
     }
 
     if (attr.has(Attr::C)) {
