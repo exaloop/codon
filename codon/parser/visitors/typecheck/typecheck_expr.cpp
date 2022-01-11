@@ -1958,12 +1958,14 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   auto fptyp = ctx->bases.back().type->getFunc();
   if (!fptyp || fptyp->ast->hasAttr(Attr::Method))
     error("no parent classes available");
+  if (fptyp->args.size() < 2)
+    error("no parent classes available");
   ClassTypePtr typ = fptyp->args[1]->getClass();
   auto &cands = ctx->cache->classes[typ->name].parentClasses;
   if (cands.empty())
     error("no parent classes available");
-  if (typ->getRecord())
-    error("cannot use super on tuple types");
+  //  if (typ->getRecord())
+  //    error("cannot use super on tuple types");
 
   // find parent typ
   // unify top N args with parent typ args
@@ -1976,22 +1978,34 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   seqassert(val, "cannot find '{}'", name);
   auto ftyp = ctx->instantiate(expr, val->type)->getClass();
 
-  for (int i = 0; i < fields; i++) {
-    auto t = ctx->cache->classes[typ->name].fields[i].type;
-    t = ctx->instantiate(expr, t, typ.get());
+  if (typ->getRecord()) {
+    std::vector<ExprPtr> members;
+    for (int i = 0; i < fields; i++)
+      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name),
+                                   ctx->cache->classes[typ->name].fields[i].name));
+    ExprPtr e = transform(
+        N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
+    unify(e->type, ftyp);
+    e->type = ftyp;
+    return e;
+  } else {
+    for (int i = 0; i < fields; i++) {
+      auto t = ctx->cache->classes[typ->name].fields[i].type;
+      t = ctx->instantiate(expr, t, typ.get());
 
-    auto ft = ctx->cache->classes[name].fields[i].type;
-    ft = ctx->instantiate(expr, ft, ftyp.get());
-    unify(t, ft);
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(expr, ft, ftyp.get());
+      unify(t, ft);
+    }
+
+    ExprPtr typExpr = N<IdExpr>(name);
+    typExpr->setType(ftyp);
+    auto self = fptyp->ast->args[0].name;
+    ExprPtr e = transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                    N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
+    return e;
   }
-
-  ExprPtr typExpr = N<IdExpr>(name);
-  typExpr->setType(ftyp);
-  auto self = fptyp->ast->args[0].name;
-  ExprPtr e = transform(
-      N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                  N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
-  return e;
 }
 
 } // namespace ast

@@ -133,7 +133,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
-
+    /// List of inherited class. We also keep the number of fields each of inherited
+    /// class.
     std::vector<std::pair<std::string, int>> parentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}

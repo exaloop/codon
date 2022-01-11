@@ -88,7 +88,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     }
     // Reserve the following static identifiers.
     for (auto name : {"staticlen", "compile_error", "isinstance", "hasattr", "type",
-                      "TypeVar", "Callable", "argv", "super", "superf", "fn"})
+                      "TypeVar", "Callable", "argv", "super", "superf"})
       stdlib->generateCanonicalName(name);
     stdlib->add(SimplifyItem::Var, "super", "super", true);
     stdlib->add(SimplifyItem::Var, "superf", "superf", true);
