@@ -48,6 +48,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Map of locally realized types and functions.
     std::unordered_map<std::string, std::pair<TypecheckItem::Kind, types::TypePtr>>
         visitedAsts;
+    /// List of functions that can be accessed via super()
+    std::vector<types::FuncTypePtr> supers;
   };
   std::vector<RealizationBase> bases;
 
@@ -121,22 +123,12 @@ public:
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
-                                             const std::string &method) const;
+                                             const std::string &method,
+                                             bool hideShadowed = true) const;
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   types::TypePtr findMember(const std::string &typeName,
                             const std::string &member) const;
-
-  /// Picks the best method of a given expression that matches the given argument
-  /// types. Prefers methods whose signatures are closer to the given arguments:
-  /// e.g. foo(int) will match (int) better that a foo(T).
-  /// Also takes care of the Optional arguments.
-  /// If multiple equally good methods are found, return the first one.
-  /// Return nullptr if no methods were found.
-  types::FuncTypePtr
-  findBestMethod(const Expr *expr, const std::string &member,
-                 const std::vector<std::pair<std::string, types::TypePtr>> &args,
-                 bool checkSingle = false);
 
   typedef std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>
       ReorderDoneFn;

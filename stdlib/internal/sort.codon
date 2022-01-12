@@ -1,14 +1,14 @@
-from algorithms.timsort import tim_sort_inplace
 from algorithms.pdqsort import pdq_sort_inplace
 from algorithms.insertionsort import insertion_sort_inplace
 from algorithms.heapsort import heap_sort_inplace
 from algorithms.qsort import qsort_inplace
 
-def sorted[T](
+def sorted(
     v: Generator[T],
     key = Optional[int](),
     algorithm: Optional[str] = None,
-    reverse: bool = False
+    reverse: bool = False,
+    T: type
 ):
     """
     Return a sorted list of the elements in v
@@ -27,8 +27,6 @@ def _sort_list(self, key, algorithm: str):
         insertion_sort_inplace(self, key)
     elif algorithm == 'heap':
         heap_sort_inplace(self, key)
-        #case 'tim':
-        #    tim_sort_inplace(self, key)
     elif algorithm == 'quick':
         qsort_inplace(self, key)
     else:

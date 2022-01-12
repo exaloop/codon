@@ -106,19 +106,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Non-simplified AST. Used for base class instantiation.
     std::shared_ptr<ClassStmt> originalAst;
 
-    /// A class function method.
-    struct ClassMethod {
-      /// Canonical name of a method (e.g. __init__.1).
-      std::string name;
-      /// A corresponding generic function type.
-      types::FuncTypePtr type;
-      /// Method age (how many class extension were seen before a method definition).
-      /// Used to prevent the usage of a method before it was defined in the code.
-      int age;
-    };
-    /// Class method lookup table. Each name points to a list of ClassMethod instances
-    /// that share the same method name (a list because methods can be overloaded).
-    std::unordered_map<std::string, std::vector<ClassMethod>> methods;
+    /// Class method lookup table. Each non-canonical name points
+    /// to a root function name of a corresponding method.
+    std::unordered_map<std::string, std::string> methods;
 
     /// A class field (member).
     struct ClassField {
@@ -143,6 +133,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
+    /// List of inherited class. We also keep the number of fields each of inherited
+    /// class.
+    std::vector<std::pair<std::string, int>> parentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
@@ -176,6 +169,20 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
   std::unordered_map<std::string, Function> functions;
+
+
+  struct Overload {
+    /// Canonical name of an overload (e.g. Foo.__init__.1).
+    std::string name;
+    /// Overload age (how many class extension were seen before a method definition).
+    /// Used to prevent the usage of an overload before it was defined in the code.
+    /// TODO: I have no recollection of how this was supposed to work. Most likely
+    /// it does not work at all...
+    int age;
+  };
+  /// Maps a "root" name of each function to the list of names of the function
+  /// overloads.
+  std::unordered_map<std::string, std::vector<Overload>> overloads;
 
   /// Pointer to the later contexts needed for IR API access.
   std::shared_ptr<TypeContext> typeCtx;
@@ -223,9 +230,8 @@ public:
   types::FuncTypePtr findFunction(const std::string &name) const;
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr
-  findMethod(types::ClassType *typ, const std::string &member,
-             const std::vector<std::pair<std::string, types::TypePtr>> &args);
+  types::FuncTypePtr findMethod(types::ClassType *typ, const std::string &member,
+                                const std::vector<types::TypePtr> &args);
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.

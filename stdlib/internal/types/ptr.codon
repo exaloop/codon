@@ -4,53 +4,63 @@ def seq_str_ptr(a: Ptr[byte]) -> str: pass
 
 @extend
 class Ptr:
-    @__internal__
-    def __new__(sz: int) -> Ptr[T]:
-        pass
     @pure
     @llvm
     def __new__() -> Ptr[T]:
         ret {=T}* null
+
+    @__internal__
+    def __new__(sz: int) -> Ptr[T]:
+        pass
+
+    @pure
+    @llvm
+    def __new__(other: Ptr[T]) -> Ptr[T]:
+        ret {=T}* %other
+
     @pure
     @llvm
     def __new__(other: Ptr[byte]) -> Ptr[T]:
         %0 = bitcast i8* %other to {=T}*
         ret {=T}* %0
-    @pure
-    @llvm
-    def __new__(other: Ptr[T]) -> Ptr[T]:
-        ret {=T}* %other
+
     @pure
     @llvm
     def __int__(self) -> int:
         %0 = ptrtoint {=T}* %self to i64
         ret i64 %0
+
     @pure
     @llvm
     def __copy__(self) -> Ptr[T]:
         ret {=T}* %self
+
     @pure
     @llvm
     def __bool__(self) -> bool:
         %0 = icmp ne {=T}* %self, null
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __getitem__(self, index: int) -> T:
         %0 = getelementptr {=T}, {=T}* %self, i64 %index
         %1 = load {=T}, {=T}* %0
         ret {=T} %1
+
     @llvm
     def __setitem__(self, index: int, what: T) -> void:
         %0 = getelementptr {=T}, {=T}* %self, i64 %index
         store {=T} %what, {=T}* %0
         ret void
+
     @pure
     @llvm
     def __add__(self, other: int) -> Ptr[T]:
         %0 = getelementptr {=T}, {=T}* %self, i64 %other
         ret {=T}* %0
+
     @pure
     @llvm
     def __sub__(self, other: Ptr[T]) -> int:
@@ -59,90 +69,105 @@ class Ptr:
         %2 = sub i64 %0, %1
         %3 = sdiv exact i64 %2, ptrtoint ({=T}* getelementptr ({=T}, {=T}* null, i32 1) to i64)
         ret i64 %3
+
     @pure
     @llvm
     def __eq__(self, other: Ptr[T]) -> bool:
         %0 = icmp eq {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __ne__(self, other: Ptr[T]) -> bool:
         %0 = icmp ne {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __lt__(self, other: Ptr[T]) -> bool:
         %0 = icmp slt {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __gt__(self, other: Ptr[T]) -> bool:
         %0 = icmp sgt {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __le__(self, other: Ptr[T]) -> bool:
         %0 = icmp sle {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @pure
     @llvm
     def __ge__(self, other: Ptr[T]) -> bool:
         %0 = icmp sge {=T}* %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @llvm
     def __prefetch_r0__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 0, i32 0, i32 1)
         ret void
+
     @llvm
     def __prefetch_r1__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 0, i32 1, i32 1)
         ret void
+
     @llvm
     def __prefetch_r2__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 0, i32 2, i32 1)
         ret void
+
     @llvm
     def __prefetch_r3__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 0, i32 3, i32 1)
         ret void
+
     @llvm
     def __prefetch_w0__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 1, i32 0, i32 1)
         ret void
+
     @llvm
     def __prefetch_w1__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 1, i32 1, i32 1)
         ret void
+
     @llvm
     def __prefetch_w2__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 1, i32 2, i32 1)
         ret void
+
     @llvm
     def __prefetch_w3__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
         %0 = bitcast {=T}* %self to i8*
         call void @llvm.prefetch(i8* %0, i32 1, i32 3, i32 1)
         ret void
+
     @pure
     @llvm
     def as_byte(self) -> Ptr[byte]:
@@ -151,9 +176,11 @@ class Ptr:
     def __repr__(self) -> str:
         return seq_str_ptr(self.as_byte())
 
+
 ptr = Ptr
 Jar = Ptr[byte]
 cobj = Ptr[byte]
+
 
 # Forward declarations
 @__internal__
@@ -161,9 +188,12 @@ cobj = Ptr[byte]
 class Array[T]:
     len: int
     ptr: Ptr[T]
+
+
 class List[T]:
     arr: Array[T]
     len: int
+
 
 @extend
 class NoneType:

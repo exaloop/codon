@@ -33,16 +33,21 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
   return std::move(infer.second);
 }
 
-TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
+TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
   if (!a)
     return a = b;
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
-  if (a->unify(b.get(), &undo) >= 0)
+  if (a->unify(b.get(), &undo) >= 0) {
+    if (undoOnSuccess)
+      undo.undo();
     return a;
-  undo.undo();
+  } else {
+    undo.undo();
+  }
   // LOG("{} / {}", a->debugString(true), b->debugString(true));
-  a->unify(b.get(), &undo);
+  if (!undoOnSuccess)
+    a->unify(b.get(), &undo);
   error("cannot unify {} and {}", a->toString(), b->toString());
   return nullptr;
 }

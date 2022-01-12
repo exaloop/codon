@@ -153,9 +153,9 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
         ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
     c->args[1].value = transform(c->args[1].value);
     auto rhsTyp = c->args[1].value->getType()->getClass();
-    if (auto method = ctx->findBestMethod(
-            stmt->lhs.get(), format("__atomic_{}__", c->expr->getId()->value),
-            {{"", ptrTyp}, {"", rhsTyp}})) {
+    if (auto method = findBestMethod(stmt->lhs.get(),
+                                     format("__atomic_{}__", c->expr->getId()->value),
+                                     {ptrTyp, rhsTyp})) {
       resultStmt = transform(N<ExprStmt>(N<CallExpr>(
           N<IdExpr>(method->ast->name), N<PtrExpr>(stmt->lhs), c->args[1].value)));
       return;
@@ -168,8 +168,8 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
   if (stmt->isAtomic && lhsClass && rhsClass) {
     auto ptrType =
         ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
-    if (auto m = ctx->findBestMethod(stmt->lhs.get(), "__atomic_xchg__",
-                                     {{"", ptrType}, {"", rhsClass}})) {
+    if (auto m =
+            findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
       resultStmt = transform(N<ExprStmt>(
           N<CallExpr>(N<IdExpr>(m->ast->name), N<PtrExpr>(stmt->lhs), stmt->rhs)));
       return;
@@ -474,12 +474,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
   // Check if this is a class method; if so, update the class method lookup table.
   if (isClassMember) {
-    auto &methods = ctx->cache->classes[attr.parentClass]
-                        .methods[ctx->cache->reverseIdentifierLookup[stmt->name]];
+    auto m = ctx->cache->classes[attr.parentClass]
+                 .methods[ctx->cache->reverseIdentifierLookup[stmt->name]];
     bool found = false;
-    for (auto &i : methods)
+    for (auto &i : ctx->cache->overloads[m])
       if (i.name == stmt->name) {
-        i.type = typ;
+        ctx->cache->functions[i.name].type = typ;
         found = true;
         break;
       }
@@ -568,6 +568,12 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(1));
   }
   stmt->done = true;
+}
+
+std::string TypecheckVisitor::getRootName(const std::string &name) {
+  auto p = name.rfind(':');
+  seqassert(p != std::string::npos, ": not found in {}", name);
+  return name.substr(0, p);
 }
 
 } // namespace ast

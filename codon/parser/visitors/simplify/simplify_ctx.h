@@ -32,13 +32,16 @@ struct SimplifyItem {
   bool global;
   /// Non-empty string if a variable is import variable
   std::string importPath;
+  /// Full module name
+  std::string moduleName;
 
 public:
-  SimplifyItem(Kind k, std::string base, std::string canonicalName,
-               bool global = false);
+  SimplifyItem(Kind k, std::string base, std::string canonicalName, bool global = false,
+               std::string moduleName = "");
 
   /// Convenience getters.
   std::string getBase() const { return base; }
+  std::string getModule() const { return moduleName; }
   bool isGlobal() const { return global; }
   bool isVar() const { return kind == Var; }
   bool isFunc() const { return kind == Func; }
@@ -107,14 +110,16 @@ public:
   /// Return a canonical name of the top-most base, or an empty string if this is a
   /// top-level base.
   std::string getBase() const;
+  /// Return the current module.
+  std::string getModule() const;
   /// Return the current base nesting level (note: bases, not blocks).
   int getLevel() const { return bases.size(); }
   /// Pretty-print the current context state.
   void dump() override { dump(0); }
 
   /// Generate a unique identifier (name) for a given string.
-  std::string generateCanonicalName(const std::string &name,
-                                    bool includeBase = false) const;
+  std::string generateCanonicalName(const std::string &name, bool includeBase = false,
+                                    bool zeroId = false) const;
 
   bool inFunction() const { return getLevel() && !bases.back().isType(); }
   bool inClass() const { return getLevel() && bases.back().isType(); }

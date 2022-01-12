@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -104,6 +105,17 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     return;
   }
   auto val = ctx->find(expr->value);
+  if (!val) {
+    auto i = ctx->cache->overloads.find(expr->value);
+    if (i != ctx->cache->overloads.end()) {
+      if (i->second.size() == 1) {
+        val = ctx->find(i->second[0].name);
+      } else {
+        auto d = findDispatch(expr->value);
+        val = ctx->find(d->ast->name);
+      }
+    }
+  }
   seqassert(val, "cannot find IdExpr '{}' ({})", expr->value, expr->getSrcInfo());
 
   auto t = ctx->instantiate(expr, val->type);
@@ -683,8 +695,8 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   if (isAtomic) {
     auto ptrlt =
         ctx->instantiateGeneric(expr->lexpr.get(), ctx->findInternal("Ptr"), {lt});
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic),
-                                 {{"", ptrlt}, {"", rt}});
+    method =
+        findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic), {ptrlt, rt});
     if (method) {
       expr->lexpr = N<PtrExpr>(expr->lexpr);
       if (noReturn)
@@ -693,19 +705,16 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   }
   // Check if lt.__iop__(lt, rt) exists.
   if (!method && expr->inPlace) {
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__i{}__", magic),
-                                 {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__i{}__", magic), {lt, rt});
     if (method && noReturn)
       *noReturn = true;
   }
   // Check if lt.__op__(lt, rt) exists.
   if (!method)
-    method = ctx->findBestMethod(expr->lexpr.get(), format("__{}__", magic),
-                                 {{"", lt}, {"", rt}});
+    method = findBestMethod(expr->lexpr.get(), format("__{}__", magic), {lt, rt});
   // Check if rt.__rop__(rt, lt) exists.
   if (!method) {
-    method = ctx->findBestMethod(expr->rexpr.get(), format("__r{}__", magic),
-                                 {{"", rt}, {"", lt}});
+    method = findBestMethod(expr->rexpr.get(), format("__r{}__", magic), {rt, lt});
     if (method)
       swap(expr->lexpr, expr->rexpr);
   }
@@ -727,13 +736,17 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
 
 ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &expr,
                                                     ExprPtr &index) {
-  if (!tuple->getRecord() ||
-      in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
+  if (!tuple->getRecord())
+    return nullptr;
+  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL))
+    // in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
     // Ptr, pyobj and str are internal types and have only one overloaded __getitem__
     return nullptr;
-  if (ctx->cache->classes[tuple->name].methods["__getitem__"].size() != 1)
-    // TODO: be smarter! there might be a compatible getitem?
-    return nullptr;
+  // if (in(ctx->cache->classes[tuple->name].methods, "__getitem__")) {
+  //     ctx->cache->overloads[ctx->cache->classes[tuple->name].methods["__getitem__"]]
+  //             .size() != 1)
+  //   return nullptr;
+  // }
 
   // Extract a static integer value from a compatible expression.
   auto getInt = [&](int64_t *o, const ExprPtr &e) {
@@ -867,14 +880,16 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   //         If it exists, return a simple IdExpr with that method's name.
   //         Append a "self" variable to the front if needed.
   if (args) {
-    std::vector<std::pair<std::string, TypePtr>> argTypes;
+    std::vector<CallExpr::Arg> argTypes;
     bool isType = expr->expr->isType();
-    if (!isType)
-      argTypes.emplace_back(make_pair("", typ)); // self variable
+    if (!isType) {
+      ExprPtr expr = N<IdExpr>("self");
+      expr->setType(typ);
+      argTypes.emplace_back(CallExpr::Arg{"", expr});
+    }
     for (const auto &a : *args)
-      argTypes.emplace_back(make_pair(a.name, a.value->getType()));
-    if (auto bestMethod =
-            ctx->findBestMethod(expr->expr.get(), expr->member, argTypes)) {
+      argTypes.emplace_back(a);
+    if (auto bestMethod = findBestMethod(expr->expr.get(), expr->member, argTypes)) {
       ExprPtr e = N<IdExpr>(bestMethod->ast->name);
       auto t = ctx->instantiate(expr, bestMethod, typ.get());
       unify(e->type, t);
@@ -891,7 +906,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // No method was found, print a nice error message.
     std::vector<std::string> nice;
     for (auto &t : argTypes)
-      nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
+      nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
     error("cannot find a method '{}' in {} with arguments {}", expr->member,
           typ->toString(), join(nice, ", "));
   }
@@ -901,23 +916,25 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   auto oldType = expr->getType() ? expr->getType()->getClass() : nullptr;
   if (methods.size() > 1 && oldType && oldType->getFunc()) {
     // If old type is already a function, use its arguments to pick the best call.
-    std::vector<std::pair<std::string, TypePtr>> methodArgs;
+    std::vector<TypePtr> methodArgs;
     if (!expr->expr->isType()) // self argument
-      methodArgs.emplace_back(make_pair("", typ));
+      methodArgs.emplace_back(typ);
     for (auto i = 1; i < oldType->generics.size(); i++)
-      methodArgs.emplace_back(make_pair("", oldType->generics[i].type));
-    bestMethod = ctx->findBestMethod(expr->expr.get(), expr->member, methodArgs);
+      methodArgs.emplace_back(oldType->generics[i].type);
+    bestMethod = findBestMethod(expr->expr.get(), expr->member, methodArgs);
     if (!bestMethod) {
       // Print a nice error message.
       std::vector<std::string> nice;
       for (auto &t : methodArgs)
-        nice.emplace_back(format("{} = {}", t.first, t.second->toString()));
+        nice.emplace_back(format("{}", t->toString()));
       error("cannot find a method '{}' in {} with arguments {}", expr->member,
             typ->toString(), join(nice, ", "));
     }
+  } else if (methods.size() > 1) {
+    auto m = ctx->cache->classes.find(typ->name);
+    auto t = m->second.methods.find(expr->member);
+    bestMethod = findDispatch(t->second);
   } else {
-    // HACK: if we still have multiple valid methods, we just use the first one.
-    // TODO: handle this better (maybe hold these types until they can be selected?)
     bestMethod = methods[0];
   }
 
@@ -947,8 +964,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     if (bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.pop_back();
     ExprPtr e = N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs);
-    ExprPtr r = transform(e, false, allowVoidExpr);
-    return r;
+    auto ex = transform(e, false, allowVoidExpr);
+    return ex;
   }
 }
 
@@ -1004,6 +1021,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       ai--;
     } else {
       // Case 3: Normal argument
+      // LOG("-> {}", expr->args[ai].value->toString());
       expr->args[ai].value = transform(expr->args[ai].value, true);
       // Unbound inType might become a generator that will need to be extracted, so
       // don't unify it yet.
@@ -1020,22 +1038,62 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       seenNames.insert(i.name);
     }
 
-  // Intercept dot-callees (e.g. expr.foo). Needed in order to select a proper
-  // overload for magic methods and to avoid dealing with partial calls
-  // (a non-intercepted object DotExpr (e.g. expr.foo) will get transformed into a
-  // partial call).
-  ExprPtr *lhs = &expr->expr;
-  // Make sure to check for instantiation DotExpr (e.g. a.b[T]) as well.
-  if (auto ei = const_cast<IndexExpr *>(expr->expr->getIndex())) {
-    // A potential function instantiation
-    lhs = &ei->expr;
-  } else if (auto eii = CAST(expr->expr, InstantiateExpr)) {
-    // Real instantiation
-    lhs = &eii->typeExpr;
+  if (expr->expr->isId("superf")) {
+    if (ctx->bases.back().supers.empty())
+      error("no matching superf methods are available");
+    auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
+    auto m =
+        findMatchingMethods(parentCls ? CAST(parentCls, types::ClassType) : nullptr,
+                            ctx->bases.back().supers, expr->args);
+    if (m.empty())
+      error("no matching superf methods are available");
+    // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(),
+    // m[0]->toString());
+    ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
+    return transform(e, false, true);
   }
-  if (auto ed = const_cast<DotExpr *>((*lhs)->getDot())) {
-    if (auto edt = transformDot(ed, &expr->args))
-      *lhs = edt;
+  if (expr->expr->isId("super"))
+    return transformSuper(expr);
+
+  bool isPartial = !expr->args.empty() && expr->args.back().value->getEllipsis() &&
+                   !expr->args.back().value->getEllipsis()->isPipeArg &&
+                   expr->args.back().name.empty();
+  if (!isPartial) {
+    // Intercept dot-callees (e.g. expr.foo). Needed in order to select a proper
+    // overload for magic methods and to avoid dealing with partial calls
+    // (a non-intercepted object DotExpr (e.g. expr.foo) will get transformed into a
+    // partial call).
+    ExprPtr *lhs = &expr->expr;
+    // Make sure to check for instantiation DotExpr (e.g. a.b[T]) as well.
+    if (auto ei = const_cast<IndexExpr *>(expr->expr->getIndex())) {
+      // A potential function instantiation
+      lhs = &ei->expr;
+    } else if (auto eii = CAST(expr->expr, InstantiateExpr)) {
+      // Real instantiation
+      lhs = &eii->typeExpr;
+    }
+    if (auto ed = const_cast<DotExpr *>((*lhs)->getDot())) {
+      if (auto edt = transformDot(ed, &expr->args))
+        *lhs = edt;
+    } else if (auto ei = const_cast<IdExpr *>((*lhs)->getId())) {
+      // check if this is an overloaded function?
+      auto i = ctx->cache->overloads.find(ei->value);
+      if (i != ctx->cache->overloads.end() && i->second.size() != 1) {
+        if (auto bestMethod = findBestMethod(ei->value, expr->args)) {
+          ExprPtr e = N<IdExpr>(bestMethod->ast->name);
+          auto t = ctx->instantiate(expr, bestMethod);
+          unify(e->type, t);
+          unify(ei->type, e->type);
+          *lhs = e;
+        } else {
+          std::vector<std::string> nice;
+          for (auto &t : expr->args)
+            nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
+          error("cannot find an overload '{}' with arguments {}", ei->value,
+                join(nice, ", "));
+        }
+      }
+    }
   }
   expr->expr = transform(expr->expr, true);
 
@@ -1086,9 +1144,21 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   std::vector<CallExpr::Arg> args;
   std::vector<ExprPtr> typeArgs;
   int typeArgCount = 0;
-  bool isPartial = false;
+  // bool isPartial = false;
   int ellipsisStage = -1;
   auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
+  auto getPartialArg = [&](int pi) {
+    auto id = transform(N<IdExpr>(partialVar));
+    ExprPtr it = N<IntExpr>(pi);
+    // Manual call to transformStaticTupleIndex needed because otherwise
+    // IndexExpr routes this to InstantiateExpr.
+    auto ex = transformStaticTupleIndex(callee.get(), id, it);
+    seqassert(ex, "partial indexing failed");
+    return ex;
+  };
+
+  ExprPtr partialStarArgs = nullptr;
+  ExprPtr partialKwstarArgs = nullptr;
   if (expr->ordered)
     args = expr->args;
   else
@@ -1096,7 +1166,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
         calleeFn.get(), expr->args,
         [&](int starArgIndex, int kwstarArgIndex,
             const std::vector<std::vector<int>> &slots, bool partial) {
-          isPartial = partial;
           ctx->addBlock(); // add generics for default arguments.
           addFunctionGenerics(calleeFn->getFunc().get());
           for (int si = 0, pi = 0; si < slots.size(); si++) {
@@ -1105,17 +1174,38 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                                                    : expr->args[slots[si][0]].value);
               typeArgCount += typeArgs.back() != nullptr;
               newMask[si] = slots[si].empty() ? 0 : 1;
-            } else if (si == starArgIndex && !(partial && slots[si].empty())) {
+            } else if (si == starArgIndex) {
               std::vector<ExprPtr> extra;
+              if (!known.empty())
+                extra.push_back(N<StarExpr>(getPartialArg(-2)));
               for (auto &e : slots[si]) {
                 extra.push_back(expr->args[e].value);
                 if (extra.back()->getEllipsis())
                   ellipsisStage = args.size();
               }
-              args.push_back({"", transform(N<TupleExpr>(extra))});
-            } else if (si == kwstarArgIndex && !(partial && slots[si].empty())) {
+              auto e = transform(N<TupleExpr>(extra));
+              if (partial) {
+                partialStarArgs = e;
+                args.push_back({"", transform(N<EllipsisExpr>())});
+                newMask[si] = 0;
+              } else {
+                args.push_back({"", e});
+              }
+            } else if (si == kwstarArgIndex) {
               std::vector<std::string> names;
               std::vector<CallExpr::Arg> values;
+              if (!known.empty()) {
+                auto e = getPartialArg(-1);
+                auto t = e->getType()->getRecord();
+                seqassert(t && startswith(t->name, "KwTuple"), "{} not a kwtuple",
+                          e->toString());
+                auto &ff = ctx->cache->classes[t->name].fields;
+                for (int i = 0; i < t->getRecord()->args.size(); i++) {
+                  names.emplace_back(ff[i].name);
+                  values.emplace_back(
+                      CallExpr::Arg{"", transform(N<DotExpr>(clone(e), ff[i].name))});
+                }
+              }
               for (auto &e : slots[si]) {
                 names.emplace_back(expr->args[e].name);
                 values.emplace_back(CallExpr::Arg{"", expr->args[e].value});
@@ -1123,16 +1213,17 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                   ellipsisStage = args.size();
               }
               auto kwName = generateTupleStub(names.size(), "KwTuple", names);
-              args.push_back({"", transform(N<CallExpr>(N<IdExpr>(kwName), values))});
+              auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
+              if (partial) {
+                partialKwstarArgs = e;
+                args.push_back({"", transform(N<EllipsisExpr>())});
+                newMask[si] = 0;
+              } else {
+                args.push_back({"", e});
+              }
             } else if (slots[si].empty()) {
               if (!known.empty() && known[si]) {
-                // Manual call to transformStaticTupleIndex needed because otherwise
-                // IndexExpr routes this to InstantiateExpr.
-                auto id = transform(N<IdExpr>(partialVar));
-                ExprPtr it = N<IntExpr>(pi++);
-                auto ex = transformStaticTupleIndex(callee.get(), id, it);
-                seqassert(ex, "partial indexing failed");
-                args.push_back({"", ex});
+                args.push_back({"", getPartialArg(pi++)});
               } else if (partial) {
                 args.push_back({"", transform(N<EllipsisExpr>())});
                 newMask[si] = 0;
@@ -1160,6 +1251,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   if (isPartial) {
     deactivateUnbounds(expr->args.back().value->getType().get());
     expr->args.pop_back();
+    if (!partialStarArgs)
+      partialStarArgs = transform(N<TupleExpr>());
+    if (!partialKwstarArgs) {
+      auto kwName = generateTupleStub(0, "KwTuple", {});
+      partialKwstarArgs = transform(N<CallExpr>(N<IdExpr>(kwName)));
+    }
   }
 
   // Typecheck given arguments with the expected (signature) types.
@@ -1181,8 +1278,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   // Special case: function instantiation
   if (isPartial && typeArgCount && typeArgCount == expr->args.size()) {
     for (auto &a : args) {
-      seqassert(a.value->getEllipsis(), "expected ellipsis");
-      deactivateUnbounds(a.value->getType().get());
+      if (a.value->getEllipsis())
+        deactivateUnbounds(a.value->getType().get());
     }
     auto e = transform(expr->expr);
     unify(expr->type, e->getType());
@@ -1252,11 +1349,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
         deactivateUnbounds(pt->func.get());
       calleeFn->generics[si + 1].type = calleeFn->args[si + 1] = replacements[si];
     }
-  if (auto rt = realize(calleeFn)) {
-    unify(rt, std::static_pointer_cast<Type>(calleeFn));
-    expr->expr = transform(expr->expr);
+  if (!isPartial) {
+    if (auto rt = realize(calleeFn)) {
+      unify(rt, std::static_pointer_cast<Type>(calleeFn));
+      expr->expr = transform(expr->expr);
+    }
   }
-
   expr->done &= expr->expr->done;
 
   // Emit the final call.
@@ -1269,6 +1367,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     for (auto &r : args)
       if (!r.value->getEllipsis())
         newArgs.push_back(r.value);
+    newArgs.push_back(partialStarArgs);
+    newArgs.push_back(partialKwstarArgs);
 
     std::string var = ctx->cache->getTemporaryVar("partial");
     ExprPtr call = nullptr;
@@ -1323,8 +1423,15 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
         expr->args[1].value =
             transformType(expr->args[1].value, /*disableActivation*/ true);
         auto t = expr->args[1].value->type;
-        auto unifyOK = typ->unify(t.get(), nullptr) >= 0;
-        return {true, transform(N<BoolExpr>(unifyOK))};
+        auto hierarchy = getSuperTypes(typ->getClass());
+
+        for (auto &tx: hierarchy) {
+          auto unifyOK = tx->unify(t.get(), nullptr) >= 0;
+          if (unifyOK) {
+            return {true, transform(N<BoolExpr>(true))};
+          }
+        }
+        return {true, transform(N<BoolExpr>(false))};
       }
     }
   } else if (val == "staticlen") {
@@ -1355,18 +1462,17 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     if (!typ || !expr->args[1].value->staticValue.evaluated)
       return {true, nullptr};
     auto member = expr->args[1].value->staticValue.getString();
-    std::vector<std::pair<std::string, TypePtr>> args{{std::string(), typ}};
+    std::vector<TypePtr> args{typ};
     for (int i = 2; i < expr->args.size(); i++) {
       expr->args[i].value = transformType(expr->args[i].value);
       if (!expr->args[i].value->getType()->getClass())
         return {true, nullptr};
-      args.push_back({std::string(), expr->args[i].value->getType()});
+      args.push_back(expr->args[i].value->getType());
     }
     bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
                   ctx->findMember(typ->getClass()->name, member);
     if (exists && args.size() > 1)
-      exists &=
-          ctx->findBestMethod(expr->args[0].value.get(), member, args, true) != nullptr;
+      exists &= findBestMethod(expr->args[0].value.get(), member, args) != nullptr;
     return {true, transform(N<BoolExpr>(exists))};
   } else if (val == "compile_error") {
     expr->args[0].value = transform(expr->args[0].value);
@@ -1531,7 +1637,8 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
       tupleSize++;
   auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->ast->name);
   if (!ctx->find(typeName))
-    generateTupleStub(tupleSize, typeName, {}, false);
+    // 2 for .starArgs and .kwstarArgs (empty tuples if fn does not have them)
+    generateTupleStub(tupleSize + 2, typeName, {}, false);
   return typeName;
 }
 
@@ -1597,9 +1704,12 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   auto partialTypeName = generatePartialStub(mask, fn.get());
   deactivateUnbounds(fn.get());
   std::string var = ctx->cache->getTemporaryVar("partial");
-  ExprPtr call = N<StmtExpr>(
-      N<AssignStmt>(N<IdExpr>(var), N<CallExpr>(N<IdExpr>(partialTypeName))),
-      N<IdExpr>(var));
+  auto kwName = generateTupleStub(0, "KwTuple", {});
+  ExprPtr call =
+      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
+                                N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
+                                            N<CallExpr>(N<IdExpr>(kwName)))),
+                  N<IdExpr>(var));
   call = transform(call, false, allowVoidExpr);
   seqassert(call->type->getRecord() &&
                 startswith(call->type->getRecord()->name, partialTypeName) &&
@@ -1609,8 +1719,122 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   return call;
 }
 
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+                                 const std::vector<types::TypePtr> &args) {
+  std::vector<CallExpr::Arg> callArgs;
+  for (auto &a : args) {
+    callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
+    callArgs.back().value->setType(a);
+  }
+  return findBestMethod(expr, member, callArgs);
+}
+
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+                                 const std::vector<CallExpr::Arg> &args) {
+  auto typ = expr->getType()->getClass();
+  seqassert(typ, "not a class");
+  auto methods = ctx->findMethod(typ->name, member, false);
+  auto m = findMatchingMethods(typ.get(), methods, args);
+  return m.empty() ? nullptr : m[0];
+}
+
+types::FuncTypePtr
+TypecheckVisitor::findBestMethod(const std::string &fn,
+                                 const std::vector<CallExpr::Arg> &args) {
+  std::vector<types::FuncTypePtr> methods;
+  for (auto &m : ctx->cache->overloads[fn])
+    if (!endswith(m.name, ":dispatch"))
+      methods.push_back(ctx->cache->functions[m.name].type);
+  std::reverse(methods.begin(), methods.end());
+  auto m = findMatchingMethods(nullptr, methods, args);
+  return m.empty() ? nullptr : m[0];
+}
+
+std::vector<types::FuncTypePtr>
+TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
+  if (func->ast->attributes.parentClass.empty() ||
+      endswith(func->ast->name, ":dispatch"))
+    return {};
+  auto p = ctx->find(func->ast->attributes.parentClass)->type;
+  if (!p || !p->getClass())
+    return {};
+
+  auto methodName = ctx->cache->reverseIdentifierLookup[func->ast->name];
+  auto m = ctx->cache->classes.find(p->getClass()->name);
+  std::vector<types::FuncTypePtr> result;
+  if (m != ctx->cache->classes.end()) {
+    auto t = m->second.methods.find(methodName);
+    if (t != m->second.methods.end()) {
+      for (auto &m : ctx->cache->overloads[t->second]) {
+        if (endswith(m.name, ":dispatch"))
+          continue;
+        if (m.name == func->ast->name)
+          break;
+        result.emplace_back(ctx->cache->functions[m.name].type);
+      }
+    }
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+std::vector<types::FuncTypePtr>
+TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
+                                      const std::vector<types::FuncTypePtr> &methods,
+                                      const std::vector<CallExpr::Arg> &args) {
+  // Pick the last method that accepts the given arguments.
+  std::vector<types::FuncTypePtr> results;
+  for (int mi = 0; mi < methods.size(); mi++) {
+    auto m = ctx->instantiate(nullptr, methods[mi], typ, false)->getFunc();
+    std::vector<types::TypePtr> reordered;
+    auto score = ctx->reorderNamedArgs(
+        m.get(), args,
+        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
+          for (int si = 0; si < slots.size(); si++) {
+            if (m->ast->args[si].generic) {
+              // Ignore type arguments
+            } else if (si == s || si == k || slots[si].size() != 1) {
+              // Ignore *args, *kwargs and default arguments
+              reordered.emplace_back(nullptr);
+            } else {
+              reordered.emplace_back(args[slots[si][0]].value->type);
+            }
+          }
+          return 0;
+        },
+        [](const std::string &) { return -1; });
+    for (int ai = 0, mi = 1, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+      auto expectTyp =
+          m->ast->args[ai].generic ? m->generics[gi++].type : m->args[mi++];
+      auto argType = reordered[ai];
+      if (!argType)
+        continue;
+      try {
+        ExprPtr dummy = std::make_shared<IdExpr>("");
+        dummy->type = argType;
+        dummy->done = true;
+        wrapExpr(dummy, expectTyp, m, /*undoOnSuccess*/ true);
+      } catch (const exc::ParserException &) {
+        score = -1;
+      }
+    }
+    if (score != -1) {
+      // std::vector<std::string> ar;
+      // for (auto &a: args) {
+      //   if (a.first.empty()) ar.push_back(a.second->toString());
+      //   else ar.push_back(format("{}: {}", a.first, a.second->toString()));
+      // }
+      // LOG("- {} vs {}", m->toString(), join(ar, "; "));
+      results.push_back(methods[mi]);
+    }
+  }
+  return results;
+}
+
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
-                                const FuncTypePtr &callee) {
+                                const FuncTypePtr &callee, bool undoOnSuccess) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
   if (callee && expr->isType())
@@ -1637,7 +1861,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr);
   }
-  unify(expr->type, expectedType);
+  unify(expr->type, expectedType, undoOnSuccess);
   return true;
 }
 
@@ -1688,6 +1912,133 @@ int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
     }
   }
   return 0;
+}
+
+types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
+  for (auto &m : ctx->cache->overloads[fn])
+    if (endswith(ctx->cache->functions[m.name].ast->name, ":dispatch"))
+      return ctx->cache->functions[m.name].type;
+
+  // Generate dispatch and return it!
+  auto name = fn + ":dispatch";
+
+  ExprPtr root;
+  auto a = ctx->cache->functions[ctx->cache->overloads[fn][0].name].ast;
+  if (!a->attributes.parentClass.empty())
+    root = N<DotExpr>(N<IdExpr>(a->attributes.parentClass),
+                      ctx->cache->reverseIdentifierLookup[fn]);
+  else
+    root = N<IdExpr>(fn);
+  root = N<CallExpr>(root, N<StarExpr>(N<IdExpr>("args")),
+                     N<KeywordStarExpr>(N<IdExpr>("kwargs")));
+  auto ast = N<FunctionStmt>(
+      name, nullptr, std::vector<Param>{Param("*args"), Param("**kwargs")},
+      N<SuiteStmt>(N<IfStmt>(
+          N<CallExpr>(N<IdExpr>("isinstance"), root->clone(), N<IdExpr>("void")),
+          N<ExprStmt>(root->clone()), N<ReturnStmt>(root))),
+      Attr({"autogenerated"}));
+  ctx->cache->reverseIdentifierLookup[name] = ctx->cache->reverseIdentifierLookup[fn];
+
+  auto baseType =
+      ctx->instantiate(N<IdExpr>(name).get(), ctx->find(generateFunctionStub(2))->type,
+                       nullptr, false)
+          ->getRecord();
+  auto typ = std::make_shared<FuncType>(baseType, ast.get());
+  typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
+  ctx->add(TypecheckItem::Func, name, typ);
+
+  ctx->cache->overloads[fn].insert(ctx->cache->overloads[fn].begin(), {name, 0});
+  ctx->cache->functions[name].ast = ast;
+  ctx->cache->functions[name].type = typ;
+  prependStmts->push_back(ast);
+  // LOG("dispatch: {}", ast->toString(1));
+  return typ;
+}
+
+ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
+  // For now, we just support casting to the _FIRST_ overload (i.e. empty super())
+  if (!expr->args.empty())
+    error("super does not take arguments");
+
+  if (ctx->bases.empty() || !ctx->bases.back().type)
+    error("no parent classes available");
+  auto fptyp = ctx->bases.back().type->getFunc();
+  if (!fptyp || !fptyp->ast->hasAttr(Attr::Method))
+    error("no parent classes available");
+  if (fptyp->args.size() < 2)
+    error("no parent classes available");
+  ClassTypePtr typ = fptyp->args[1]->getClass();
+  auto &cands = ctx->cache->classes[typ->name].parentClasses;
+  if (cands.empty())
+    error("no parent classes available");
+  //  if (typ->getRecord())
+  //    error("cannot use super on tuple types");
+
+  // find parent typ
+  // unify top N args with parent typ args
+  // realize & do bitcast
+  // call bitcast() . method
+
+  auto name = cands[0].first;
+  int fields = cands[0].second;
+  auto val = ctx->find(name);
+  seqassert(val, "cannot find '{}'", name);
+  auto ftyp = ctx->instantiate(expr, val->type)->getClass();
+
+  if (typ->getRecord()) {
+    std::vector<ExprPtr> members;
+    for (int i = 0; i < fields; i++)
+      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name),
+                                   ctx->cache->classes[typ->name].fields[i].name));
+    ExprPtr e = transform(
+        N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
+    unify(e->type, ftyp);
+    e->type = ftyp;
+    return e;
+  } else {
+    for (int i = 0; i < fields; i++) {
+      auto t = ctx->cache->classes[typ->name].fields[i].type;
+      t = ctx->instantiate(expr, t, typ.get());
+
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(expr, ft, ftyp.get());
+      unify(t, ft);
+    }
+
+    ExprPtr typExpr = N<IdExpr>(name);
+    typExpr->setType(ftyp);
+    auto self = fptyp->ast->args[0].name;
+    ExprPtr e = transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                    N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
+    return e;
+  }
+}
+
+std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cls) {
+  std::vector<ClassTypePtr> result;
+  if (!cls)
+    return result;
+  result.push_back(cls);
+  int start = 0;
+  for (auto &cand: ctx->cache->classes[cls->name].parentClasses) {
+    auto name = cand.first;
+    int fields = cand.second;
+    auto val = ctx->find(name);
+    seqassert(val, "cannot find '{}'", name);
+    auto ftyp = ctx->instantiate(nullptr, val->type)->getClass();
+    for (int i = start; i < fields; i++) {
+      auto t = ctx->cache->classes[cls->name].fields[i].type;
+      t = ctx->instantiate(nullptr, t, cls.get());
+      auto ft = ctx->cache->classes[name].fields[i].type;
+      ft = ctx->instantiate(nullptr, ft, ftyp.get());
+      unify(t, ft);
+    }
+    start += fields;
+    for (auto &t: getSuperTypes(ftyp))
+      result.push_back(t);
+  }
+  return result;
 }
 
 } // namespace ast

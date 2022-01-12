@@ -538,7 +538,7 @@ def foo() -> int:
     a{=a}
 foo()
 #! not a type or static expression
-#! while realizing foo (arguments foo)
+#! while realizing foo:0 (arguments foo:0)
 
 #%% function_llvm_err_4,barebones
 a = 5
@@ -558,7 +558,7 @@ print f.foo() #: F
 class Foo:
     def foo(self):
         return 'F'
-Foo.foo(1) #! cannot unify int and Foo
+Foo.foo(1) #! cannot find a method 'foo' in Foo with arguments  = int
 
 #%% function_nested,barebones
 def foo(v):
@@ -941,12 +941,12 @@ print FooBarBaz[str]().foo() #: foo 0
 print FooBarBaz[float]().bar() #: bar 0/float
 print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
 
-#%% inherit_class_2,barebones
+#%% inherit_class_err_2,barebones
 class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
-z[1.1] #! cannot unify float and str
+z[1.1] #! cannot find a method '__getitem__' in defdict with arguments  = defdict,  = float
 
 #%% inherit_tuple,barebones
 class Foo:
@@ -982,3 +982,16 @@ class Bar:
     x: float
 class FooBar(Foo, Bar):
     pass #! 'x' declared twice
+
+#%% keyword_prefix,barebones
+def foo(return_, pass_, yield_, break_, continue_, print_, assert_):
+    return_.append(1)
+    pass_.append(2)
+    yield_.append(3)
+    break_.append(4)
+    continue_.append(5)
+    print_.append(6)
+    assert_.append(7)
+    return return_, pass_, yield_, break_, continue_, print_, assert_
+print foo([1], [1], [1], [1], [1], [1], [1])
+#: ([1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7])
