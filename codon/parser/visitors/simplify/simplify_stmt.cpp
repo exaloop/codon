@@ -506,7 +506,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
   if (isClassMember && ctx->bases[0].deducedMembers)
     ctx->bases.back().deducedMembers = ctx->bases[0].deducedMembers;
-  ctx->addBlock();                                               // ... and a block!
+  ctx->addBlock(); // ... and a block!
   // Set atomic flag if @atomic attribute is present.
   if (attr.has(Attr::Atomic))
     ctx->bases.back().attributes |= FLAG_ATOMIC;
@@ -541,7 +541,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (!a.deflt && defaultsStarted && !stars && !a.generic)
       error("non-default argument '{}' after a default argument", varName);
     defaultsStarted |= bool(a.deflt);
-
 
     auto name = ctx->generateCanonicalName(varName);
 
@@ -1095,7 +1094,8 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
   } else if (auto ed = lhs->getDot()) {
     seqassert(!type, "unexpected type annotation");
     auto l = transform(ed->expr);
-    if (ctx->bases.back().deducedMembers && l->isId(ctx->bases.back().selfName)) {
+    if (ctx->bases.size() && ctx->bases.back().deducedMembers &&
+        l->isId(ctx->bases.back().selfName)) {
       if (std::find(ctx->bases.back().deducedMembers->begin(),
                     ctx->bases.back().deducedMembers->end(),
                     ed->member) == ctx->bases.back().deducedMembers->end())
