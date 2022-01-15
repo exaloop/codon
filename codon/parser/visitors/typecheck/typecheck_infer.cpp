@@ -156,11 +156,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->typecheckLevel++;
 
       // Find parents!
-      ctx->bases.push_back({type->ast->name,
-                            type->getFunc(),
-                            type->args[0],
-                            {},
-                            findSuperMethods(type->getFunc())});
+      ctx->bases.push_back({type->ast->name, type->getFunc(), type->args[0],
+                            {}, findSuperMethods(type->getFunc())});
       // if (startswith(type->ast->name, "Foo")) {
       //   LOG(": {}", type->toString());
       //   for (auto  &s: ctx->bases.back().supers)
