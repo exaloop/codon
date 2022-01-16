@@ -308,10 +308,10 @@ void SimplifyVisitor::visit(UnaryExpr *expr) {
 void SimplifyVisitor::visit(BinaryExpr *expr) {
   auto lhs = (startswith(expr->op, "is") && expr->lexpr->getNone())
                  ? clone(expr->lexpr)
-                 : transform(expr->lexpr);
+                 : transform(expr->lexpr, startswith(expr->op, "is"));
   auto rhs = (startswith(expr->op, "is") && expr->rexpr->getNone())
                  ? clone(expr->rexpr)
-                 : transform(expr->rexpr, false,
+                 : transform(expr->rexpr, startswith(expr->op, "is"),
                              /*allowAssign*/ expr->op != "&&" && expr->op != "||");
   resultExpr = N<BinaryExpr>(lhs, expr->op, rhs, expr->inPlace);
 }

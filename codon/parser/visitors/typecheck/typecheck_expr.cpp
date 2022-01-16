@@ -645,6 +645,8 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
 
   // Check if this is a "a is None" expression. If so, ...
   if (expr->op == "is" && expr->rexpr->getNone()) {
+    if (expr->lexpr->getType()->getClass()->name == "NoneType")
+      return transform(N<BoolExpr>(true));
     if (expr->lexpr->getType()->getClass()->name != TYPE_OPTIONAL)
       // ... return False if lhs is not an Optional...
       return transform(N<BoolExpr>(false));

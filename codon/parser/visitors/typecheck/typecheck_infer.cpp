@@ -403,8 +403,10 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
 
 ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   auto realizedName = t->realizedTypeName();
+  if (!in(ctx->cache->classes[t->name].realizations, realizedName))
+    realizeType(const_cast<types::ClassType*>(t));
   if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir)
-    return l;
+      return l;
   auto getLLVM = [&](const TypePtr &tt) {
     auto t = tt->getClass();
     seqassert(t && in(ctx->cache->classes[t->name].realizations, t->realizedTypeName()),

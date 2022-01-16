@@ -562,8 +562,15 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
 
     // First add all generics!
+    auto deflt = a.deflt;
+    if (typeAst && typeAst->getIndex() && typeAst->getIndex()->expr->isId("Callable") &&
+        deflt && deflt->getNone())
+      deflt = N<CallExpr>(N<IdExpr>("NoneType"));
+    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) && deflt &&
+        deflt->getNone())
+      deflt = N<IdExpr>("NoneType");
     args.emplace_back(
-        Param{std::string(stars, '*') + name, typeAst, a.deflt, a.generic});
+        Param{std::string(stars, '*') + name, typeAst, deflt, a.generic});
     if (a.generic) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
         ctx->add(SimplifyItem::Var, varName, name);
