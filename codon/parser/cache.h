@@ -170,7 +170,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// corresponding Function instance.
   std::unordered_map<std::string, Function> functions;
 
-
   struct Overload {
     /// Canonical name of an overload (e.g. Foo.__init__.1).
     std::string name;

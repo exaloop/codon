@@ -1425,7 +1425,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
         auto t = expr->args[1].value->type;
         auto hierarchy = getSuperTypes(typ->getClass());
 
-        for (auto &tx: hierarchy) {
+        for (auto &tx : hierarchy) {
           auto unifyOK = tx->unify(t.get(), nullptr) >= 0;
           if (unifyOK) {
             return {true, transform(N<BoolExpr>(true))};
@@ -2021,7 +2021,7 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
     return result;
   result.push_back(cls);
   int start = 0;
-  for (auto &cand: ctx->cache->classes[cls->name].parentClasses) {
+  for (auto &cand : ctx->cache->classes[cls->name].parentClasses) {
     auto name = cand.first;
     int fields = cand.second;
     auto val = ctx->find(name);
@@ -2035,7 +2035,7 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
       unify(t, ft);
     }
     start += fields;
-    for (auto &t: getSuperTypes(ftyp))
+    for (auto &t : getSuperTypes(ftyp))
       result.push_back(t);
   }
   return result;
