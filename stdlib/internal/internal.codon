@@ -125,6 +125,24 @@ class __internal__:
     def opt_ref_invert[T](what: Optional[T]) -> T:
         ret i8* %what
 
+    @pure
+    @llvm
+    def to_class_ptr[T](ptr: Ptr[byte]) -> T:
+        %0 = bitcast i8* %ptr to {=T}
+        ret {=T} %0
+
+    @pure
+    def _tuple_offsetof(x, field: Static[int]):
+        @llvm
+        def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
+            %a = alloca {=T}
+            %b = getelementptr inbounds {=T}, {=T}* %a, i64 0, i32 {=idx}
+            %base = ptrtoint {=T}* %a to i64
+            %elem = ptrtoint {=TE}* %b to i64
+            %offset = sub i64 %elem, %base
+            ret i64 %offset
+        return _llvm_offsetof(type(x), field, type(x[field]))
+
     def raw_type_str(p: Ptr[byte], name: str) -> str:
         pstr = p.__repr__()
         # '<[name] at [pstr]>'

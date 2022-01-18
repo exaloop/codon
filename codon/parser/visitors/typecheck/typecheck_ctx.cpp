@@ -103,19 +103,20 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
     if (auto l = i.second->getLink()) {
       if (l->kind != types::LinkType::Unbound)
         continue;
-      i.second->setSrcInfo(expr->getSrcInfo());
+      if (expr)
+        i.second->setSrcInfo(expr->getSrcInfo());
       if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
         LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
                       i.second->debugString(true), type->debugString(true),
-                      expr->toString(), activate);
+                      expr ? expr->toString() : "", activate);
         if (activate && allowActivation)
-          activeUnbounds[i.second] =
-              format("{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
-                     type->toString(), cache->getContent(expr->getSrcInfo()));
+          activeUnbounds[i.second] = format(
+              "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
+              type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
       }
     }
   }
-  LOG_TYPECHECK("[inst] {} -> {}", expr->toString(), t->debugString(true));
+  LOG_TYPECHECK("[inst] {} -> {}", expr ? expr->toString() : "", t->debugString(true));
   return t;
 }
 
@@ -135,24 +136,29 @@ TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
   return instantiate(expr, root, g.get());
 }
 
-std::vector<types::FuncTypePtr>
-TypeContext::findMethod(const std::string &typeName, const std::string &method) const {
+std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
+                                                        const std::string &method,
+                                                        bool hideShadowed) const {
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     auto t = m->second.methods.find(method);
     if (t != m->second.methods.end()) {
-      std::unordered_map<std::string, int> signatureLoci;
+      auto mt = cache->overloads[t->second];
+      std::unordered_set<std::string> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
-      for (auto &mt : t->second) {
-        // LOG("{}::{} @ {} vs. {}", typeName, method, age, mt.age);
-        if (mt.age <= age) {
-          auto sig = cache->functions[mt.name].ast->signature();
-          auto it = signatureLoci.find(sig);
-          if (it != signatureLoci.end())
-            vv[it->second] = mt.type;
-          else {
-            signatureLoci[sig] = vv.size();
-            vv.emplace_back(mt.type);
+      for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+        auto &m = mt[mti];
+        if (endswith(m.name, ":dispatch"))
+          continue;
+        if (m.age <= age) {
+          if (hideShadowed) {
+            auto sig = cache->functions[m.name].ast->signature();
+            if (!in(signatureLoci, sig)) {
+              signatureLoci.insert(sig);
+              vv.emplace_back(cache->functions[m.name].type);
+            }
+          } else {
+            vv.emplace_back(cache->functions[m.name].type);
           }
         }
       }
@@ -177,110 +183,6 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
   return nullptr;
 }
 
-types::FuncTypePtr TypeContext::findBestMethod(
-    const Expr *expr, const std::string &member,
-    const std::vector<std::pair<std::string, types::TypePtr>> &args, bool checkSingle) {
-  auto typ = expr->getType()->getClass();
-  seqassert(typ, "not a class");
-  auto methods = findMethod(typ->name, member);
-  if (methods.empty())
-    return nullptr;
-  if (methods.size() == 1 && !checkSingle) // methods is not overloaded
-    return methods[0];
-
-  // Calculate the unification score for each available methods and pick the one with
-  // highest score.
-  std::vector<std::pair<int, int>> scores;
-  for (int mi = 0; mi < methods.size(); mi++) {
-    auto method = instantiate(expr, methods[mi], typ.get(), false)->getFunc();
-    std::vector<types::TypePtr> reordered;
-    std::vector<CallExpr::Arg> callArgs;
-    for (auto &a : args) {
-      callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
-      callArgs.back().value->setType(a.second);
-    }
-    auto score = reorderNamedArgs(
-        method.get(), callArgs,
-        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-          for (int si = 0; si < slots.size(); si++) {
-            // Ignore *args, *kwargs and default arguments
-            reordered.emplace_back(si == s || si == k || slots[si].size() != 1
-                                       ? nullptr
-                                       : args[slots[si][0]].second);
-          }
-          return 0;
-        },
-        [](const std::string &) { return -1; });
-    if (score == -1)
-      continue;
-    // Scoring system for each argument:
-    //   Generics, traits and default arguments get a score of zero (lowest priority).
-    //   Optional unwrap gets the score of 1.
-    //   Optional wrap gets the score of 2.
-    //   Successful unification gets the score of 3 (highest priority).
-    for (int ai = 0, mi = 1, gi = 0; ai < reordered.size(); ai++) {
-      auto argType = reordered[ai];
-      if (!argType)
-        continue;
-      auto expectedType = method->ast->args[ai].generic ? method->generics[gi++].type
-                                                        : method->args[mi++];
-      auto expectedClass = expectedType->getClass();
-      // Ignore traits, *args/**kwargs and default arguments.
-      if (expectedClass && expectedClass->name == "Generator")
-        continue;
-      // LOG("<~> {} {}", argType->toString(), expectedType->toString());
-      auto argClass = argType->getClass();
-
-      types::Type::Unification undo;
-      int u = argType->unify(expectedType.get(), &undo);
-      undo.undo();
-      if (u >= 0) {
-        score += u + 3;
-        continue;
-      }
-      if (!method->ast->args[ai].generic) {
-        // Unification failed: maybe we need to wrap an argument?
-        if (expectedClass && expectedClass->name == TYPE_OPTIONAL && argClass &&
-            argClass->name != expectedClass->name) {
-          u = argType->unify(expectedClass->generics[0].type.get(), &undo);
-          undo.undo();
-          if (u >= 0) {
-            score += u + 2;
-            continue;
-          }
-        }
-        // ... or unwrap it (less ideal)?
-        if (argClass && argClass->name == TYPE_OPTIONAL && expectedClass &&
-            argClass->name != expectedClass->name) {
-          u = argClass->generics[0].type->unify(expectedType.get(), &undo);
-          undo.undo();
-          if (u >= 0) {
-            score += u;
-            continue;
-          }
-        }
-      }
-      // This method cannot be selected, ignore it.
-      score = -1;
-      break;
-    }
-    // LOG("{} {} / {}", typ->toString(), method->toString(), score);
-    if (score >= 0)
-      scores.emplace_back(std::make_pair(score, mi));
-  }
-  if (scores.empty())
-    return nullptr;
-  // Get the best score.
-  sort(scores.begin(), scores.end(), std::greater<>());
-  // LOG("Method: {}", methods[scores[0].second]->toString());
-  // std::string x;
-  // for (auto &a : args)
-  //   x += format("{}{},", a.first.empty() ? "" : a.first + ": ",
-  //   a.second->toString());
-  // LOG("        {} :: {} ( {} )", typ->toString(), member, x);
-  return methods[scores[0].second];
-}
-
 int TypeContext::reorderNamedArgs(types::FuncType *func,
                                   const std::vector<CallExpr::Arg> &args,
                                   ReorderDoneFn onDone, ReorderErrorFn onError,
@@ -300,15 +202,17 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   int starArgIndex = -1, kwstarArgIndex = -1;
   for (int i = 0; i < func->ast->args.size(); i++) {
-    if ((known.empty() || !known[i]) && startswith(func->ast->args[i].name, "**"))
+    // if (!known.empty() && known[i] && !partial)
+    // continue;
+    if (startswith(func->ast->args[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
-    else if ((known.empty() || !known[i]) && startswith(func->ast->args[i].name, "*"))
+    else if (startswith(func->ast->args[i].name, "*"))
       starArgIndex = i, score -= 2;
   }
-  seqassert(known.empty() || starArgIndex == -1 || !known[starArgIndex],
-            "partial *args");
-  seqassert(known.empty() || kwstarArgIndex == -1 || !known[kwstarArgIndex],
-            "partial **kwargs");
+  // seqassert(known.empty() || starArgIndex == -1 || !known[starArgIndex],
+  //           "partial *args");
+  // seqassert(known.empty() || kwstarArgIndex == -1 || !known[kwstarArgIndex],
+  //           "partial **kwargs");
 
   // 1. Assign positional arguments to slots
   // Each slot contains a list of arg's indices

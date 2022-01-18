@@ -385,12 +385,21 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   }
   // IndexExpr[i1, ..., iN] is internally stored as IndexExpr[TupleExpr[i1, ..., iN]]
   // for N > 1, so make sure to check that case.
+
   std::vector<ExprPtr> it;
   if (auto t = index->getTuple())
     for (auto &i : t->items)
-      it.push_back(transform(i, true));
+      it.push_back(i);
   else
-    it.push_back(transform(index, true));
+    it.push_back(index);
+  for (auto &i : it) {
+    if (auto es = i->getStar())
+      i = N<StarExpr>(transform(es->what));
+    else if (auto ek = CAST(i, KeywordStarExpr))
+      i = N<KeywordStarExpr>(transform(ek->what));
+    else
+      i = transform(i, true);
+  }
   if (e->isType()) {
     resultExpr = N<InstantiateExpr>(e, it);
     resultExpr->markType();
@@ -617,7 +626,7 @@ void SimplifyVisitor::visit(DotExpr *expr) {
       auto s = join(chain, ".", importEnd, i + 1);
       val = fctx->find(s);
       // Make sure that we access only global imported variables.
-      if (val && (importName.empty() || val->isGlobal())) {
+      if (val && (importName.empty() || val->isType() || val->isGlobal())) {
         itemName = val->canonicalName;
         itemEnd = i + 1;
         if (!importName.empty())

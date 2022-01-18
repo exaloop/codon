@@ -14,8 +14,9 @@ namespace codon {
 namespace ast {
 
 SimplifyItem::SimplifyItem(Kind k, std::string base, std::string canonicalName,
-                           bool global)
-    : kind(k), base(move(base)), canonicalName(move(canonicalName)), global(global) {}
+                           bool global, std::string moduleName)
+    : kind(k), base(move(base)), canonicalName(move(canonicalName)), global(global),
+      moduleName(move(moduleName)) {}
 
 SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
     : Context<SimplifyItem>(move(filename)), cache(move(cache)),
@@ -31,6 +32,7 @@ std::shared_ptr<SimplifyItem> SimplifyContext::add(SimplifyItem::Kind kind,
                                                    bool global) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   auto t = std::make_shared<SimplifyItem>(kind, getBase(), canonicalName, global);
+  t->moduleName = getModule();
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
@@ -60,22 +62,29 @@ std::string SimplifyContext::getBase() const {
   return bases.back().name;
 }
 
+std::string SimplifyContext::getModule() const {
+  std::string base = moduleName.status == ImportFile::STDLIB ? "std." : "";
+  base += moduleName.module;
+  if (startswith(base, "__main__"))
+    base = base.substr(8);
+  return base;
+}
+
 std::string SimplifyContext::generateCanonicalName(const std::string &name,
-                                                   bool includeBase) const {
+                                                   bool includeBase,
+                                                   bool zeroId) const {
   std::string newName = name;
-  if (includeBase && name.find('.') == std::string::npos) {
+  bool alreadyGenerated = name.find('.') != std::string::npos;
+  if (includeBase && !alreadyGenerated) {
     std::string base = getBase();
-    if (base.empty()) {
-      base = moduleName.status == ImportFile::STDLIB ? "std." : "";
-      base += moduleName.module;
-      if (startswith(base, "__main__"))
-        base = base.substr(8);
-    }
+    if (base.empty())
+      base = getModule();
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;
-  newName = num ? format("{}.{}", newName, num) : newName;
-  if (newName != name)
+  if (num)
+    newName = format("{}.{}", newName, num);
+  if (name != newName && !zeroId)
     cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;
   return newName;

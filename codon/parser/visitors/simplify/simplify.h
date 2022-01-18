@@ -488,6 +488,9 @@ private:
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
+
+  // Generate dispatch method for partial overloaded calls.
+  void generateDispatch(const std::string &name);
 };
 
 } // namespace ast

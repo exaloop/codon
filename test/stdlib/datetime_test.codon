@@ -708,10 +708,10 @@ class TestDate[theclass](TestCase):
         iso_long_years = sorted(map(int, ISO_LONG_YEARS_TABLE.split()))
         L = []
         for i in range(400):
-            d = self.theclass(2000+i, 12, 31)
-            d1 = self.theclass(1600+i, 12, 31)
-            self.assertEqual(d.isocalendar()[1:], d1.isocalendar()[1:])
-            if d.isocalendar()[1] == 53:
+            d = self.theclass(2000+i, 12, 31).isocalendar()
+            d1 = self.theclass(1600+i, 12, 31).isocalendar()
+            self.assertEqual((d.week, d.weekday), (d1.week, d1.weekday))
+            if d.week == 53:
                 L.append(i)
         self.assertEqual(L, iso_long_years)
 

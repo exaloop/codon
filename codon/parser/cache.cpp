@@ -52,18 +52,20 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->type && f->kind == TypecheckItem::Func)
     return f->type->getFunc();
+  f = typeCtx->find(name + ":0");
+  if (f && f->type && f->kind == TypecheckItem::Func)
+    return f->type->getFunc();
   return nullptr;
 }
 
-types::FuncTypePtr
-Cache::findMethod(types::ClassType *typ, const std::string &member,
-                  const std::vector<std::pair<std::string, types::TypePtr>> &args) {
+types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &member,
+                                     const std::vector<types::TypePtr> &args) {
   auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
   seqassert(e->type, "not a class");
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
-  auto f = typeCtx->findBestMethod(e.get(), member, args);
+  auto f = TypecheckVisitor(typeCtx).findBestMethod(e.get(), member, args);
   typeCtx->age = oldAge;
   return f;
 }

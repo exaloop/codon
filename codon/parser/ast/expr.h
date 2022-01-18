@@ -275,7 +275,7 @@ struct KeywordStarExpr : public Expr {
 struct TupleExpr : public Expr {
   std::vector<ExprPtr> items;
 
-  explicit TupleExpr(std::vector<ExprPtr> items);
+  explicit TupleExpr(std::vector<ExprPtr> items = {});
   TupleExpr(const TupleExpr &expr);
 
   std::string toString() const override;
