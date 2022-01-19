@@ -68,8 +68,10 @@ public:
   }
 
   void visit(BodiedFunc *f) override {
-    seen.insert(f->getBody()->getId());
-    process(f->getBody());
+    if (f->getBody()) {
+      seen.insert(f->getBody()->getId());
+      process(f->getBody());
+    }
   }
 
   LAMBDA_VISIT(VarValue);

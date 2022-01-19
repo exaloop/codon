@@ -331,7 +331,7 @@ class int:
         return result
 
 
-def _jit_display(x, s: Static[str], bundle: Set[str] = set()):
+def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
     if hasattr(x, "_repr_mimebundle_") and s == "jupyter":
         d = x._repr_mimebundle_(bundle)
         # TODO: pick appropriate mime

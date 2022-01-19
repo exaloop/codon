@@ -35,8 +35,31 @@ PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyObject_GetIter = Function[[cobj], cobj](cobj())
 PyIter_Next = Function[[cobj], cobj](cobj())
+PyObject_HasAttrString = Function[[cobj, cobj], int](cobj())
+PyImport_AddModule = Function[[cobj], cobj](cobj())
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
+
+_PY_INIT = """
+import io
+
+cls = None
+try:
+     import matplotlib.figure
+     cls = matplotlib.figure.Figure
+except ModuleNotFoundError:
+     pass
+
+def __codon_repr__(fig):
+     if cls and isinstance(fig, cls):
+          stream = io.StringIO()
+          fig.savefig(stream, format="svg")
+          return 'image/svg+xml', stream.getvalue()
+     elif hasattr(fig, "_repr_html_"):
+          return 'text/html', fig._repr_html_()
+     else:
+          return 'text/plain', fig.__repr__()
+"""
 
 _PY_INITIALIZED = False
 def init():
@@ -115,8 +138,14 @@ def init():
     PyObject_GetIter = dlsym(hnd, "PyObject_GetIter")
     global PyIter_Next
     PyIter_Next = dlsym(hnd, "PyIter_Next")
+    global PyObject_HasAttrString
+    PyObject_HasAttrString = dlsym(hnd, "PyObject_HasAttrString")
+    global PyImport_AddModule
+    PyImport_AddModule = dlsym(hnd, "PyImport_AddModule")
+
 
     Py_Initialize()
+    PyRun_SimpleString(_PY_INIT.c_str())
     _PY_INITIALIZED = True
 
 def ensure_initialized():
@@ -229,19 +258,18 @@ class pyobj:
     def get(self, T: type) -> T:
         return T.__from_py__(self)
 
+    def _main_module():
+        m = PyImport_AddModule("__main__".c_str())
+        return pyobj(m)
+
     def _repr_mimebundle_(self, bundle = Set[str]()):
-        # p = PyObject_GetAttrString(self.p, '_repr_mimebundle_'.c_str())
-        # if p != cobj():
-        #     return Dict[str, str].__from_py__(self._getattr("_repr_mimebundle_").__call__())
-        # else:
-        p = PyObject_GetAttrString(self.p, '_repr_html_'.c_str())
-        if p != cobj():
-            return {'text/html': str.__from_py__(self._getattr("_repr_html_").__call__())}
-        return {'text/plain': self.__repr__()}
+        fn = pyobj._main_module()._getattr("__codon_repr__")
+        assert fn.p != cobj(), "cannot find python.__codon_repr__"
+        mime, txt = fn.__call__(self).get(Tuple[str, str])
+        return {mime: txt}
 
 def none():
     raise NotImplementedError()
-
 
 # Type conversions
 

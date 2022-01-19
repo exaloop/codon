@@ -481,6 +481,7 @@ public:
   void visit(const dsl::CustomInstr *v) override;
 
   template <typename NodeType> void process(const NodeType *v) {
+    if (!v) return;
     if (seenIds.find(v->getId()) != seenIds.end())
       return;
     seenIds.insert(v->getId());

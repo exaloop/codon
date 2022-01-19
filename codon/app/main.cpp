@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -226,17 +227,18 @@ int jitMode(const std::vector<const char *> &args) {
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   std::string code;
+  // std::ifstream qq("scratch.codon");
   for (std::string line; std::getline(std::cin, line);) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
-      fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
+      fmt::print("{}[done]\n", jitExec(&jit, code));
       code = "";
       fflush(stdout);
     }
   }
   if (!code.empty())
-    fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
+    fmt::print("{}[done]\n", jitExec(&jit, code));
   return EXIT_SUCCESS;
 }
 
