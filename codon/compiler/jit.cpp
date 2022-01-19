@@ -58,23 +58,14 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Expected<std::string> JIT::run(const ir::Func *input,
-                                     const std::vector<ir::Var *> &newGlobals) {
+llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
   pm->run(module);
 
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
-  llvisitor->registerGlobal(input);
-  for (auto *var : newGlobals) {
-    llvisitor->registerGlobal(var);
-  }
-  for (auto *var : newGlobals) {
-    if (auto *func = ir::cast<ir::Func>(var))
-      func->accept(*llvisitor);
-  }
-  input->accept(*llvisitor);
+  llvisitor->processNewGlobals(module);
   auto pair = llvisitor->takeModule();
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
@@ -138,11 +129,7 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
 
     auto *cache = compiler->getCache();
     auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
-    std::vector<std::string> globalNames;
-    for (auto &g : cache->globals) {
-      if (!g.second)
-        globalNames.push_back(g.first);
-    }
+
     // add newly realized functions
     std::vector<ast::StmtPtr> v;
     std::vector<ir::Func **> frs;
@@ -155,16 +142,7 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
         ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
     cache->jitCell++;
 
-    std::vector<ir::Var *> globalVars;
-    for (auto &g : globalNames) {
-      seqassert(cache->globals[g], "JIT global {} not set", g);
-      globalVars.push_back(cache->globals[g]);
-    }
-    for (auto &i : frs) {
-      seqassert(*i, "JIT fn not set");
-      globalVars.push_back(*i);
-    }
-    return run(func, globalVars);
+    return run(func);
   } catch (const exc::ParserException &e) {
     *cache = bCache;
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;

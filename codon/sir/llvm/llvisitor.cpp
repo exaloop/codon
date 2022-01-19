@@ -113,6 +113,25 @@ void LLVMVisitor::registerGlobal(const Var *var) {
   }
 }
 
+void LLVMVisitor::processNewGlobals(Module *module) {
+  std::vector<Func *> newFuncs;
+  for (auto *var : *module) {
+    if (!var->isGlobal())
+      continue;
+    auto id = var->getId();
+    auto *func = cast<Func>(var);
+    bool isNewFunc = (func && funcs.find(id) == funcs.end());
+    if (isNewFunc || (!func && vars.find(id) == vars.end()))
+      registerGlobal(var);
+    if (isNewFunc)
+      newFuncs.push_back(func);
+  }
+
+  for (auto *func : newFuncs) {
+    func->accept(*this);
+  }
+}
+
 llvm::Value *LLVMVisitor::getVar(const Var *var) {
   auto it = vars.find(var->getId());
   if (db.jit && var->isGlobal()) {

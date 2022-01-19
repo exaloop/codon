@@ -275,6 +275,11 @@ public:
   /// @param var the global variable (or function) to register
   void registerGlobal(const Var *var);
 
+  /// Processes new globals that were not previously
+  /// compiled. Used in JIT mode.
+  /// @param module the IR module
+  void processNewGlobals(Module *module);
+
   /// Returns the default LLVM linkage type for the module.
   /// @return LLVM linkage type
   llvm::GlobalValue::LinkageTypes getDefaultLinkage();
