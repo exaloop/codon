@@ -1,3 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 e = 2.718281828459045
 pi = 3.141592653589793
 tau = 6.283185307179586
@@ -5,11 +7,35 @@ tau = 6.283185307179586
 inf = 1.0 / 0.0
 nan = 0.0 / 0.0
 
+
 def factorial(x: int) -> int:
-    _F = (1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880,  3628800,  39916800,  479001600,  6227020800,  87178291200,  1307674368000,  20922789888000,  355687428096000,  6402373705728000,  121645100408832000,  2432902008176640000)
+    _F = (
+        1,
+        1,
+        2,
+        6,
+        24,
+        120,
+        720,
+        5040,
+        40320,
+        362880,
+        3628800,
+        39916800,
+        479001600,
+        6227020800,
+        87178291200,
+        1307674368000,
+        20922789888000,
+        355687428096000,
+        6402373705728000,
+        121645100408832000,
+        2432902008176640000,
+    )
     if not (0 <= x <= 20):
         raise ValueError("factorial is only supported for 0 <= x <= 20")
     return _F[x]
+
 
 def isnan(x: float) -> bool:
     """
@@ -23,6 +49,7 @@ def isnan(x: float) -> bool:
         return False
     return True
 
+
 def isinf(x: float) -> bool:
     """
     isinf(float) -> bool:
@@ -30,6 +57,7 @@ def isinf(x: float) -> bool:
     Return True if float arg is an INF, else False.
     """
     return x == inf or x == -inf
+
 
 def isfinite(x: float) -> bool:
     """
@@ -41,6 +69,7 @@ def isfinite(x: float) -> bool:
     if isnan(x) or isinf(x):
         return False
     return True
+
 
 def ceil(x: float) -> float:
     """
@@ -58,6 +87,7 @@ def ceil(x: float) -> float:
 
     return f(x)
 
+
 def floor(x: float) -> float:
     """
     floor(float) -> float
@@ -74,6 +104,7 @@ def floor(x: float) -> float:
 
     return f(x)
 
+
 def fabs(x: float) -> float:
     """
     fabs(float) -> float
@@ -89,6 +120,7 @@ def fabs(x: float) -> float:
 
     return f(x)
 
+
 def fmod(x: float, y: float) -> float:
     """
     fmod(float, float) -> float
@@ -102,6 +134,7 @@ def fmod(x: float, y: float) -> float:
         ret double %z
 
     return f(x, y)
+
 
 def exp(x: float) -> float:
     """
@@ -118,6 +151,7 @@ def exp(x: float) -> float:
 
     return f(x)
 
+
 def expm1(x: float) -> float:
     """
     expm1(float) -> float
@@ -127,6 +161,7 @@ def expm1(x: float) -> float:
     """
     return _C.expm1(x)
 
+
 def ldexp(x: float, i: int) -> float:
     """
     ldexp(float, int) -> float
@@ -134,6 +169,7 @@ def ldexp(x: float, i: int) -> float:
     Returns x multiplied by 2 raised to the power of exponent.
     """
     return _C.ldexp(x, i)
+
 
 def log(x: float, base: float = e) -> float:
     """
@@ -151,7 +187,8 @@ def log(x: float, base: float = e) -> float:
     if base == e:
         return f(x)
     else:
-        return f(x)/f(base)
+        return f(x) / f(base)
+
 
 def log2(x: float) -> float:
     """
@@ -168,6 +205,7 @@ def log2(x: float) -> float:
 
     return f(x)
 
+
 def log10(x: float) -> float:
     """
     log10(float) -> float
@@ -183,14 +221,16 @@ def log10(x: float) -> float:
 
     return f(x)
 
+
 def degrees(x: float) -> float:
     """
     degrees(float) -> float
 
     Convert angle x from radians to degrees.
     """
-    radToDeg = 180.0/pi
+    radToDeg = 180.0 / pi
     return x * radToDeg
+
 
 def radians(x: float) -> float:
     """
@@ -198,8 +238,9 @@ def radians(x: float) -> float:
 
     Convert angle x from degrees to radians.
     """
-    degToRad = pi/180.0
+    degToRad = pi / 180.0
     return x * degToRad
+
 
 def sqrt(x: float) -> float:
     """
@@ -216,6 +257,7 @@ def sqrt(x: float) -> float:
 
     return f(x)
 
+
 def pow(x: float, y: float) -> float:
     """
     pow(float, float) -> float
@@ -231,6 +273,7 @@ def pow(x: float, y: float) -> float:
 
     return f(x, y)
 
+
 def acos(x: float) -> float:
     """
     acos(float) -> float
@@ -238,6 +281,7 @@ def acos(x: float) -> float:
     Returns the arc cosine of x in radians.
     """
     return _C.acos(x)
+
 
 def asin(x: float) -> float:
     """
@@ -247,6 +291,7 @@ def asin(x: float) -> float:
     """
     return _C.asin(x)
 
+
 def atan(x: float) -> float:
     """
     atan(float) -> float
@@ -254,6 +299,7 @@ def atan(x: float) -> float:
     Returns the arc tangent of x in radians.
     """
     return _C.atan(x)
+
 
 def atan2(y: float, x: float) -> float:
     """
@@ -264,6 +310,7 @@ def atan2(y: float, x: float) -> float:
     correct quadrant.
     """
     return _C.atan2(y, x)
+
 
 def cos(x: float) -> float:
     """
@@ -280,6 +327,7 @@ def cos(x: float) -> float:
 
     return f(x)
 
+
 def sin(x: float) -> float:
     """
     sin(float) -> float
@@ -295,6 +343,7 @@ def sin(x: float) -> float:
 
     return f(x)
 
+
 def hypot(x: float, y: float) -> float:
     """
     hypot(float, float) -> float
@@ -305,6 +354,7 @@ def hypot(x: float, y: float) -> float:
     """
     return _C.hypot(x, y)
 
+
 def tan(x: float) -> float:
     """
     tan(float) -> float
@@ -312,6 +362,7 @@ def tan(x: float) -> float:
     Return the tangent of a radian angle x.
     """
     return _C.tan(x)
+
 
 def cosh(x: float) -> float:
     """
@@ -321,6 +372,7 @@ def cosh(x: float) -> float:
     """
     return _C.cosh(x)
 
+
 def sinh(x: float) -> float:
     """
     sinh(float) -> float
@@ -328,6 +380,7 @@ def sinh(x: float) -> float:
     Returns the hyperbolic sine of x.
     """
     return _C.sinh(x)
+
 
 def tanh(x: float) -> float:
     """
@@ -337,6 +390,7 @@ def tanh(x: float) -> float:
     """
     return _C.tanh(x)
 
+
 def acosh(x: float) -> float:
     """
     acosh(float) -> float
@@ -344,6 +398,7 @@ def acosh(x: float) -> float:
     Return the inverse hyperbolic cosine of x.
     """
     return _C.acosh(x)
+
 
 def asinh(x: float) -> float:
     """
@@ -353,6 +408,7 @@ def asinh(x: float) -> float:
     """
     return _C.asinh(x)
 
+
 def atanh(x: float) -> float:
     """
     atanh(float) -> float
@@ -360,6 +416,7 @@ def atanh(x: float) -> float:
     Return the inverse hyperbolic tangent of x.
     """
     return _C.atanh(x)
+
 
 def copysign(x: float, y: float) -> float:
     """
@@ -377,6 +434,7 @@ def copysign(x: float, y: float) -> float:
 
     return f(x, y)
 
+
 def log1p(x: float) -> float:
     """
     log1p(float) -> float
@@ -384,6 +442,7 @@ def log1p(x: float) -> float:
     Return the natural logarithm of 1+x (base e).
     """
     return _C.log1p(x)
+
 
 def trunc(x: float) -> float:
     """
@@ -401,6 +460,7 @@ def trunc(x: float) -> float:
 
     return f(x)
 
+
 def erf(x: float) -> float:
     """
     erf(float) -> float
@@ -408,6 +468,7 @@ def erf(x: float) -> float:
     Return the error function at x.
     """
     return _C.erf(x)
+
 
 def erfc(x: float) -> float:
     """
@@ -417,6 +478,7 @@ def erfc(x: float) -> float:
     """
     return _C.erfc(x)
 
+
 def gamma(x: float) -> float:
     """
     gamma(float) -> float
@@ -424,6 +486,7 @@ def gamma(x: float) -> float:
     Return the Gamma function at x.
     """
     return _C.tgamma(x)
+
 
 def lgamma(x: float) -> float:
     """
@@ -433,6 +496,7 @@ def lgamma(x: float) -> float:
     the absolute value of the Gamma function at x.
     """
     return _C.lgamma(x)
+
 
 def remainder(x: float, y: float) -> float:
     """
@@ -447,6 +511,7 @@ def remainder(x: float, y: float) -> float:
     """
     return _C.remainder(x, y)
 
+
 def gcd(a: float, b: float) -> float:
     """
     gcd(float, float) -> float
@@ -456,8 +521,9 @@ def gcd(a: float, b: float) -> float:
     a = abs(a)
     b = abs(b)
     while a:
-        a, b = b%a, a
+        a, b = b % a, a
     return b
+
 
 @pure
 def frexp(x: float) -> Tuple[float, int]:
@@ -472,6 +538,7 @@ def frexp(x: float) -> Tuple[float, int]:
     res = _C.frexp(float(x), __ptr__(tmp))
     return (res, int(tmp))
 
+
 @pure
 def modf(x: float) -> Tuple[float, float]:
     """
@@ -483,6 +550,7 @@ def modf(x: float) -> Tuple[float, float]:
     tmp = 0.0
     res = _C.modf(float(x), __ptr__(tmp))
     return (res, tmp)
+
 
 def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) -> bool:
     """
@@ -514,6 +582,6 @@ def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) ->
     # regular computation
     diff = fabs(b - a)
 
-    return (((diff <= fabs(rel_tol * b)) or
-            (diff <= fabs(rel_tol * a))) or
-            (diff <= abs_tol))
+    return ((diff <= fabs(rel_tol * b)) or (diff <= fabs(rel_tol * a))) or (
+        diff <= abs_tol
+    )
