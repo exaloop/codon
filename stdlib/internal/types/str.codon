@@ -1,6 +1,11 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @pure
 @C
-def strlen(a: cobj) -> int: pass
+def strlen(a: cobj) -> int:
+    pass
+
 
 @extend
 class str:
@@ -68,7 +73,7 @@ class str:
         str.memcpy(p + len1, other.ptr, len2)
         return str(p, len3)
 
-    def c_str(self):
+    def c_str(self) -> cobj:
         n = self.__len__()
         p = cobj(n + 1)
         str.memcpy(p, self.ptr, n)
@@ -81,7 +86,7 @@ class str:
         str.memcpy(p, t, n)
         return str(p, n)
 
-    def __eq__(self, other: str):
+    def __eq__(self, other: str) -> bool:
         if self.len != other.len:
             return False
         i = 0
@@ -91,15 +96,19 @@ class str:
             i += 1
         return True
 
-    def __match__(self, other: str):
+    def __match__(self, other: str) -> bool:
         return self.__eq__(other)
 
-    def __ne__(self, other: str):
+    def __ne__(self, other: str) -> bool:
         return not self.__eq__(other)
 
-    def cat(*args):
+    def cat(*args) -> str:
         total = 0
-        if staticlen(args) == 1 and hasattr(args[0], "__iter__") and hasattr(args[0], "__len__"):
+        if (
+            staticlen(args) == 1
+            and hasattr(args[0], "__iter__")
+            and hasattr(args[0], "__len__")
+        ):
             for s in args[0]:
                 if not isinstance(s, str):
                     compile_error("not a string")
