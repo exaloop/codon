@@ -1,9 +1,14 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from bisect import bisect_right, bisect_left, insort
 from collections import deque
 
 
 DEFAULT_LOAD_FACTOR = 1000
-class SortedList[T]:
+
+
+class SortedList:
+    T: type
     _len: int
     _load: int
     _lists: List[List[T]]
@@ -11,7 +16,7 @@ class SortedList[T]:
     _offset: int
     # _index:
 
-    def __init__(self):
+    def __init__(self) -> void:
         self._len = 0
         self._load = DEFAULT_LOAD_FACTOR
         self._lists = List[List[T]]()
@@ -19,7 +24,7 @@ class SortedList[T]:
         # self._index = []
         self._offset = 0
 
-    def clear(self):
+    def clear(self) -> void:
         """
         Remove all values from sorted list.
         Runtime complexity: `O(n)`
@@ -31,12 +36,12 @@ class SortedList[T]:
         # self._index.clear()
 
     @property
-    def left(self):
+    def left(self) -> T:
         if not self._lists:
             raise IndexError("list index out of range")
         return self._lists[0][0]
 
-    def add(self, value: T):
+    def add(self, value: T) -> void:
         """
         Add `value` to sorted list.
         Runtime complexity: `O(log(n))` -- approximate.
@@ -62,8 +67,7 @@ class SortedList[T]:
             self._maxes.append(value)
         self._len += 1
 
-
-    def _expand(self, pos: int):
+    def _expand(self, pos: int) -> void:
         """
         Split sublists with length greater than double the load-factor.
         Updates the index when the sublist length is less than double the load
@@ -75,15 +79,14 @@ class SortedList[T]:
             _maxes = self._maxes
 
             _lists_pos = self._lists[pos]
-            half = _lists_pos[self._load:]
-            del _lists_pos[self._load:]
+            half = _lists_pos[self._load :]
+            del _lists_pos[self._load :]
             _maxes[pos] = _lists_pos[-1]
 
             self._lists.insert(pos + 1, half)
             _maxes.insert(pos + 1, half[-1])
 
-
-    def _delete(self, pos: int, idx: int):
+    def _delete(self, pos: int, idx: int) -> void:
         """
         Delete value at the given `(pos, idx)`.
         Combines lists that are less than half the load level.
@@ -120,15 +123,12 @@ class SortedList[T]:
             del self._lists[pos]
             del self._maxes[pos]
 
-
-    def __iter__(self):
+    def __iter__(self) -> Generator[T]:
         for l in self._lists:
             yield from l
 
-
-    def __len__(self):
+    def __len__(self) -> int:
         return self._len
 
-
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self._len > 0
