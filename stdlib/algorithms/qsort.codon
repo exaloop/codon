@@ -1,25 +1,59 @@
-def _med3[S,T](a: int, b: int, c: int, d: Array[T], k: Callable[[T], S]):
+# (c) 2022 Exaloop Inc. All rights reserved.
+# Parts of this file: https://github.com/orlp/pdqsort
+# License:
+#    Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
+#
+#    This software is provided 'as-is', without any express or implied warranty. In no event will the
+#    authors be held liable for any damages arising from the use of this software.
+#
+#    Permission is granted to anyone to use this software for any purpose, including commercial
+#    applications, and to alter it and redistribute it freely, subject to the following restrictions:
+#
+#    1. The origin of this software must not be misrepresented; you must not claim that you wrote the
+#    original software. If you use this software in a product, an acknowledgment in the product
+#    documentation would be appreciated but is not required.
+#
+#    2. Altered source versions must be plainly marked as such, and must not be misrepresented as
+#    being the original software.
+#
+#    3. This notice may not be removed or altered from any source distribution.
+
+
+def _med3(
+    a: int, b: int, c: int, d: Array[T], k: Callable[[T], S], T: type, S: type
+) -> int:
     if k(d[a]) < k(d[b]):
         return b if (k(d[b]) < k(d[c])) else (c if k(d[a]) < k(d[c]) else a)
     else:
-        return b if not (k(d[b]) < k(d[c]) or k(d[b]) == k(d[c])) else (c if not (k(d[a]) < k(d[c]) or k(d[a]) == k(d[c])) else a)
+        return (
+            b
+            if not (k(d[b]) < k(d[c]) or k(d[b]) == k(d[c]))
+            else (c if not (k(d[a]) < k(d[c]) or k(d[a]) == k(d[c])) else a)
+        )
 
-def _swap[T](i: int, j: int, a: Array[T]):
+
+def _swap(i: int, j: int, a: Array[T], T: type) -> void:
     a[i], a[j] = a[j], a[i]
 
-def _vecswap[T](i: int, j: int, n: int, a: Array[T]):
+
+def _vecswap(i: int, j: int, n: int, a: Array[T], T: type) -> void:
     while n > 0:
         _swap(i, j, a)
         i += 1
         j += 1
         n -= 1
 
-def _qsort[S,T](arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S]):
+
+def _qsort(
+    arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S], T: type, S: type
+) -> void:
     if cnt <= 7:
         i = frm + 1
         while i < frm + cnt:
             j = i
-            while j > frm and not (keyf(arr[j - 1]) < keyf(arr[j]) or keyf(arr[j - 1]) == keyf(arr[j])):
+            while j > frm and not (
+                keyf(arr[j - 1]) < keyf(arr[j]) or keyf(arr[j - 1]) == keyf(arr[j])
+            ):
                 _swap(j, j - 1, arr)
                 j -= 1
             i += 1
@@ -43,7 +77,9 @@ def _qsort[S,T](arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S]):
     d = c
 
     while True:
-        while b <= c and (keyf(arr[b]) < keyf(arr[frm]) or keyf(arr[b]) == keyf(arr[frm])):
+        while b <= c and (
+            keyf(arr[b]) < keyf(arr[frm]) or keyf(arr[b]) == keyf(arr[frm])
+        ):
             if keyf(arr[b]) == keyf(arr[frm]):
                 _swap(a, b, arr)
                 a += 1
@@ -76,30 +112,37 @@ def _qsort[S,T](arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S]):
     if span > 1:
         _qsort(arr, hi - span, span, keyf)
 
-def qsort_array[S,T](collection: Array[T], size: int, keyf: Callable[[T], S]):
-    """
-        Pattern-defeating Quicksort
-        By Orson Peters, published at https://github.com/orlp/pdqsort
 
-        Sorts the array inplace.
+def qsort_array(
+    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
+) -> void:
+    """
+    Pattern-defeating Quicksort
+    By Orson Peters, published at https://github.com/orlp/pdqsort
+
+    Sorts the array inplace.
     """
     _qsort(collection, 0, size, keyf)
 
-def qsort_inplace[S,T](collection: List[T], keyf: Callable[[T], S]):
-    """
-        Pattern-defeating Quicksort
-        By Orson Peters, published at https://github.com/orlp/pdqsort
 
-        Sorts the list inplace.
+def qsort_inplace(
+    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+) -> void:
+    """
+    Pattern-defeating Quicksort
+    By Orson Peters, published at https://github.com/orlp/pdqsort
+
+    Sorts the list inplace.
     """
     qsort_array(collection.arr, collection.len, keyf)
 
-def qsort[S,T](collection: List[T], keyf: Callable[[T], S]) -> List[T]:
-    """
-        Pattern-defeating Quicksort
-        By Orson Peters, published at https://github.com/orlp/pdqsort
 
-        Returns a sorted list.
+def qsort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
+    """
+    Pattern-defeating Quicksort
+    By Orson Peters, published at https://github.com/orlp/pdqsort
+
+    Returns a sorted list.
     """
     newlst = copy(collection)
     qsort_inplace(newlst, keyf)
