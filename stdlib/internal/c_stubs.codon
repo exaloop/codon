@@ -1,198 +1,385 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 # Seq runtime functions
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
+
+
 @pure
 @C
-def seq_strdup(a: cobj) -> str: pass
+def seq_strdup(a: cobj) -> str:
+    pass
+
+
 @pure
 @C
-def seq_stdin() -> cobj: pass
+def seq_stdin() -> cobj:
+    pass
+
+
 @pure
 @C
-def seq_stdout() -> cobj: pass
+def seq_stdout() -> cobj:
+    pass
+
+
 @pure
 @C
-def seq_stderr() -> cobj: pass
+def seq_stderr() -> cobj:
+    pass
+
+
 @pure
 @C
-def seq_env() -> Ptr[cobj]: pass
+def seq_env() -> Ptr[cobj]:
+    pass
+
+
 @pure
 @C
-def seq_time() -> int: pass
+def seq_time() -> int:
+    pass
+
+
 @pure
 @C
-def seq_time_monotonic() -> int: pass
+def seq_time_monotonic() -> int:
+    pass
+
+
 @pure
 @C
-def seq_time_highres() -> int: pass
+def seq_time_highres() -> int:
+    pass
+
+
 from C import seq_localtime(int, cobj) -> bool
 from C import seq_gmtime(int, cobj) -> bool
+
+
 @pure
 @C
-def seq_mktime(a: cobj) -> int: pass
+def seq_mktime(a: cobj) -> int:
+    pass
+
+
 from C import seq_sleep(float)
+
+
 @pure
 @C
-def seq_pid() -> int: pass
+def seq_pid() -> int:
+    pass
+
+
 @pure
 @C
-def seq_lock_new() -> cobj: pass
+def seq_lock_new() -> cobj:
+    pass
+
+
 from C import seq_lock_acquire(cobj, bool, float) -> bool
 from C import seq_lock_release(cobj)
+
+
 @pure
 @C
-def seq_rlock_new() -> cobj: pass
+def seq_rlock_new() -> cobj:
+    pass
+
+
 from C import seq_rlock_acquire(cobj, bool, float) -> bool
 from C import seq_rlock_release(cobj)
+
+
 @pure
 @C
-def seq_i32_to_float(a: i32) -> float: pass
+def seq_i32_to_float(a: i32) -> float:
+    pass
+
 
 # <ctype.h>
 @pure
 @C
-def isdigit(a: int) -> int: pass
+def isdigit(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def isspace(a: int) -> int: pass
+def isspace(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def isupper(a: int) -> int: pass
+def isupper(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def islower(a: int) -> int: pass
+def islower(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def toupper(a: int) -> int: pass
+def toupper(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def tolower(a: int) -> int: pass
+def tolower(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def isalnum(a: int) -> int: pass
+def isalnum(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def isalpha(a: int) -> int: pass
+def isalpha(a: int) -> int:
+    pass
+
+
 @pure
 @C
-def istitle(a: int) -> int: pass
+def istitle(a: int) -> int:
+    pass
+
 
 # <math.h>
 @pure
 @C
-def ceil(a: float) -> float: pass
+def ceil(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def floor(a: float) -> float: pass
+def floor(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def fabs(a: float) -> float: pass
+def fabs(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def fmod(a: float, b: float) -> float: pass
+def fmod(a: float, b: float) -> float:
+    pass
+
+
 @pure
 @C
-def exp(a: float) -> float: pass
+def exp(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def expm1(a: float) -> float: pass
+def expm1(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def ldexp(a: float, b: int) -> float: pass
+def ldexp(a: float, b: int) -> float:
+    pass
+
+
 @pure
 @C
-def log(a: float) -> float: pass
+def log(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def log2(a: float) -> float: pass
+def log2(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def log10(a: float) -> float: pass
+def log10(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def sqrt(a: float) -> float: pass
+def sqrt(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def pow(a: float, b: float) -> float: pass
+def pow(a: float, b: float) -> float:
+    pass
+
+
 @pure
 @C
-def round(a: float) -> float: pass
+def round(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def acos(a: float) -> float: pass
+def acos(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def asin(a: float) -> float: pass
+def asin(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def atan(a: float) -> float: pass
+def atan(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def atan2(a: float, b: float) -> float: pass
+def atan2(a: float, b: float) -> float:
+    pass
+
+
 @pure
 @C
-def cos(a: float) -> float: pass
+def cos(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def sin(a: float) -> float: pass
+def sin(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def tan(a: float) -> float: pass
+def tan(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def cosh(a: float) -> float: pass
+def cosh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def sinh(a: float) -> float: pass
+def sinh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def tanh(a: float) -> float: pass
+def tanh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def acosh(a: float) -> float: pass
+def acosh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def asinh(a: float) -> float: pass
+def asinh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def atanh(a: float) -> float: pass
+def atanh(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def copysign(a: float, b: float) -> float: pass
+def copysign(a: float, b: float) -> float:
+    pass
+
+
 @pure
 @C
-def log1p(a: float) -> float: pass
+def log1p(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def trunc(a: float) -> float: pass
+def trunc(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def log2(a: float) -> float: pass
+def log2(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def erf(a: float) -> float: pass
+def erf(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def erfc(a: float) -> float: pass
+def erfc(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def tgamma(a: float) -> float: pass
+def tgamma(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def lgamma(a: float) -> float: pass
+def lgamma(a: float) -> float:
+    pass
+
+
 @pure
 @C
-def remainder(a: float, b: float) -> float: pass
+def remainder(a: float, b: float) -> float:
+    pass
+
+
 @pure
 @C
-def hypot(a: float, b: float) -> float: pass
+def hypot(a: float, b: float) -> float:
+    pass
+
+
 from C import frexp(float, Ptr[Int[32]]) -> float
 from C import modf(float, Ptr[float]) -> float
 
 # <stdio.h>
 @pure
 @C
-def ferror(a: cobj) -> i32: pass
+def ferror(a: cobj) -> i32:
+    pass
+
+
 from C import fgetc(cobj) -> i32
 from C import fopen(cobj, cobj) -> cobj
 from C import fclose(cobj) -> int
@@ -208,9 +395,13 @@ from C import getline(Ptr[cobj], Ptr[int], cobj) -> int
 from C import exit(int)
 from C import system(cobj) -> int
 from C import free(cobj)
+
+
 @pure
 @C
-def atoi(a: cobj) -> int: pass
+def atoi(a: cobj) -> int:
+    pass
+
 
 # <zlib.h>
 from C import gzopen(cobj, cobj) -> cobj
