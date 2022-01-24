@@ -1,46 +1,60 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @__attribute__
 def test():
     pass
+
 
 @__attribute__
 def export():
     pass
 
+
 @__attribute__
 def inline():
     pass
+
 
 @__attribute__
 def noinline():
     pass
 
+
 @__attribute__
 def pure():
     pass
+
 
 @__attribute__
 def nonpure():
     pass
 
+
 @__attribute__
 def commutative():
     pass
+
 
 @__attribute__
 def associative():
     pass
 
+
 @__attribute__
 def distributive():
     pass
+
 
 @__attribute__
 def C():
     pass
 
+
 @__attribute__
 def realize_without_self():
     pass
+
 
 @__attribute__
 def overload():
