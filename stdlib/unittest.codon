@@ -1,92 +1,102 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 # Simplified version of Python's unittest.TestCase to allow
 # copy/pasting tests directly from CPython's test suite.
 
+
 class TestCase:
-    def fail(self, standard_message: str, special_message: str = ''):
-        print('TEST FAILED:', special_message if special_message else standard_message)
+    def fail(self, standard_message: str, special_message: str = "") -> void:
+        print("TEST FAILED:", special_message if special_message else standard_message)
 
-    def assertTrue(self, obj, msg = ''):
+    def assertTrue(self, obj, msg="") -> void:
         if not bool(obj):
-            self.fail(f'expected object to be true: {obj}', msg)
+            self.fail(f"expected object to be true: {obj}", msg)
 
-    def assertFalse(self, obj, msg = ''):
+    def assertFalse(self, obj, msg="") -> void:
         if bool(obj):
-            self.fail(f'expected object to be false: {obj}', msg)
+            self.fail(f"expected object to be false: {obj}", msg)
 
-    def assertEqual(self, first, second, msg = ''):
-        result = (first == second)
+    def assertEqual(self, first, second, msg="") -> void:
+        result = first == second
         if not result:
-            self.fail(f'expected equality of:\n  1: {first}\n  2: {second}', msg)
+            self.fail(f"expected equality of:\n  1: {first}\n  2: {second}", msg)
 
-    def assertNotEqual(self, first, second, msg = ''):
-        result = (first != second)
+    def assertNotEqual(self, first, second, msg="") -> void:
+        result = first != second
         if not result:
-            self.fail(f'expected inequality of:\n  1: {first}\n  2: {second}', msg)
+            self.fail(f"expected inequality of:\n  1: {first}\n  2: {second}", msg)
 
-    def assertSequenceEqual(self, seq1, seq2, msg = ''):
+    def assertSequenceEqual(self, seq1, seq2, msg="") -> void:
         len1 = len(seq1)
         len2 = len(seq2)
         if len1 != len2:
-            self.fail(f'expected equality of sequences (len1={len1}, len2={len2}):\n  1: {seq1}\n  2: {seq2}', msg)
+            self.fail(
+                f"expected equality of sequences (len1={len1}, len2={len2}):\n  1: {seq1}\n  2: {seq2}",
+                msg,
+            )
 
         for i in range(len1):
             a, b = seq1[i], seq2[i]
             if a != b:
-                self.fail(f'expected equality of sequences (diff at elem {i}):\n  1: {seq1}\n  2: {seq2}', msg)
+                self.fail(
+                    f"expected equality of sequences (diff at elem {i}):\n  1: {seq1}\n  2: {seq2}",
+                    msg,
+                )
 
-    def assertIn(self, member, container, msg = ''):
+    def assertIn(self, member, container, msg="") -> void:
         if member not in container:
-            self.fail(f'expected {member} to be in {container}', msg)
+            self.fail(f"expected {member} to be in {container}", msg)
 
-    def assertNotIn(self, member, container, msg = ''):
+    def assertNotIn(self, member, container, msg="") -> void:
         if member in container:
-            self.fail(f'expected {member} to not be in {container}', msg)
+            self.fail(f"expected {member} to not be in {container}", msg)
 
-    def assertIs(self, expr1, expr2, msg = ''):
+    def assertIs(self, expr1, expr2, msg="") -> void:
         if expr1 is not expr2:
-            self.fail(f'expected {expr1} to be identical to {expr2}', msg)
+            self.fail(f"expected {expr1} to be identical to {expr2}", msg)
 
-    def assertIsNot(self, expr1, expr2, msg = ''):
+    def assertIsNot(self, expr1, expr2, msg="") -> void:
         if expr1 is expr2:
-            self.fail(f'expected {expr1} to not be identical to {expr2}', msg)
+            self.fail(f"expected {expr1} to not be identical to {expr2}", msg)
 
-    def assertIsNot(self, expr1, expr2, msg = ''):
+    def assertIsNot(self, expr1, expr2, msg="") -> void:
         if expr1 is expr2:
-            self.fail(f'expected {expr1} to not be identical to {expr2}', msg)
+            self.fail(f"expected {expr1} to not be identical to {expr2}", msg)
 
-    def assertCountEqual(self, first, second, msg = ''):
+    def assertCountEqual(self, first, second, msg="") -> void:
         from collections import Counter
+
         first_seq, second_seq = list(first), list(second)
 
         first_counter = Counter(first_seq)
         second_counter = Counter(second_seq)
 
         if first_counter != second_counter:
-            self.fail(f'expected equal counts:\n  1: {first}\n  2: {second}', msg)
+            self.fail(f"expected equal counts:\n  1: {first}\n  2: {second}", msg)
 
-    def assertLess(self, a, b, msg = ''):
+    def assertLess(self, a, b, msg="") -> void:
         if not (a < b):
-            self.fail(f'expected less-than:\n  1: {a}\n  2: {b}', msg)
+            self.fail(f"expected less-than:\n  1: {a}\n  2: {b}", msg)
 
-    def assertLessEqual(self, a, b, msg = ''):
+    def assertLessEqual(self, a, b, msg="") -> void:
         if not (a <= b):
-            self.fail(f'expected less-than-or-equal:\n  1: {a}\n  2: {b}', msg)
+            self.fail(f"expected less-than-or-equal:\n  1: {a}\n  2: {b}", msg)
 
-    def assertGreater(self, a, b, msg = ''):
+    def assertGreater(self, a, b, msg="") -> void:
         if not (a > b):
-            self.fail(f'expected greater-than:\n  1: {a}\n  2: {b}', msg)
+            self.fail(f"expected greater-than:\n  1: {a}\n  2: {b}", msg)
 
-    def assertGreaterEqual(self, a, b, msg = ''):
+    def assertGreaterEqual(self, a, b, msg="") -> void:
         if not (a >= b):
-            self.fail(f'expected greater-than-or-equal:\n  1: {a}\n  2: {b}', msg)
+            self.fail(f"expected greater-than-or-equal:\n  1: {a}\n  2: {b}", msg)
 
-    def assertIsNone(self, obj, msg = ''):
+    def assertIsNone(self, obj, msg="") -> void:
         if obj is not None:
-            self.fail(f'expected {obj} to be None', msg)
+            self.fail(f"expected {obj} to be None", msg)
 
-    def assertIsNotNone(self, obj, msg = ''):
+    def assertIsNotNone(self, obj, msg="") -> void:
         if obj is None:
-            self.fail(f'expected {obj} to not be None', msg)
+            self.fail(f"expected {obj} to not be None", msg)
 
     def assertRaises(self, exception: type, function, *args, **kwargs):
         try:
@@ -95,26 +105,31 @@ class TestCase:
             return
         except:
             pass
-        self.fail(f'call to function did not raise the given exception')
+        self.fail(f"call to function did not raise the given exception")
 
-    def assertAlmostEqual(self, first, second, places: int = 0, msg= '',
-                          delta = None):
+    def assertAlmostEqual(
+        self, first, second, places: int = 0, msg="", delta=None
+    ) -> void:
         if first == second:
             # shortcut
             return
         if places <= 0 and delta is None:
-            raise ValueError('specify delta or places not both')
+            raise ValueError("specify delta or places not both")
 
-        standard_msg = ''
+        standard_msg = ""
         diff = abs(first - second)
         if delta is not None:
             if diff <= delta:
                 return
-            standard_msg = f'{first} != {second} within {delta} delta ({diff} difference)'
+            standard_msg = (
+                f"{first} != {second} within {delta} delta ({diff} difference)"
+            )
         else:
             if places <= 0:
                 places = 7
             if round(diff, places) == 0:
                 return
-            standard_msg = f'{first} != {second} within {places} places ({diff} difference)'
+            standard_msg = (
+                f"{first} != {second} within {places} places ({diff} difference)"
+            )
         self.fail(standard_msg, msg)
