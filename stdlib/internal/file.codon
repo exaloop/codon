@@ -1,66 +1,70 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.gc import realloc, free
+
+
 class File:
     sz: int
     buf: Ptr[byte]
     fp: cobj
 
-    def __init__(self, fp: cobj):
+    def __init__(self, fp: cobj) -> void:
         self.fp = fp
         self._reset()
 
-    def __init__(self, path: str, mode: str):
+    def __init__(self, path: str, mode: str) -> void:
         self.fp = _C.fopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError("file " + path + " could not be opened")
         self._reset()
 
-    def _errcheck(self, msg: str):
+    def _errcheck(self, msg: str) -> void:
         err = int(_C.ferror(self.fp))
         if err:
             raise IOError("file I/O error: " + msg)
 
-    def __enter__(self):
+    def __enter__(self) -> void:
         pass
 
-    def __exit__(self):
+    def __exit__(self) -> void:
         self.close()
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[str]:
         for a in self._iter():
             yield a.__ptrcopy__()
 
-    def readlines(self):
+    def readlines(self) -> List[str]:
         return [l for l in self]
 
-    def write(self, s: str):
+    def write(self, s: str) -> void:
         self._ensure_open()
         _C.fwrite(s.ptr, 1, len(s), self.fp)
         self._errcheck("error in write")
 
-    def __file_write_gen__[T](self, g: Generator[T]):
+    def __file_write_gen__(self, g: Generator[T], T: type) -> void:
         for s in g:
             self.write(str(s))
 
-    def read(self, sz: int):
+    def read(self, sz: int) -> str:
         self._ensure_open()
         buf = Ptr[byte](sz)
         ret = _C.fread(buf, 1, sz, self.fp)
         self._errcheck("error in read")
         return str(buf, ret)
 
-    def tell(self):
+    def tell(self) -> int:
         ret = _C.ftell(self.fp)
         self._errcheck("error in tell")
         return ret
 
-    def seek(self, offset: int, whence: int):
+    def seek(self, offset: int, whence: int) -> void:
         _C.fseek(self.fp, offset, i32(whence))
         self._errcheck("error in seek")
 
-    def flush(self):
+    def flush(self) -> void:
         _C.fflush(self.fp)
 
-    def close(self):
+    def close(self) -> void:
         if self.fp:
             _C.fclose(self.fp)
             self.fp = cobj()
@@ -68,27 +72,31 @@ class File:
             _C.free(self.buf)
             self._reset()
 
-    def _ensure_open(self):
+    def _ensure_open(self) -> void:
         if not self.fp:
             raise IOError("I/O operation on closed file")
 
-    def _reset(self):
+    def _reset(self) -> void:
         self.buf = Ptr[byte]()
         self.sz = 0
 
-    def _iter(self):
+    def _iter(self) -> Generator[str]:
         self._ensure_open()
         while True:
-            rd = _C.getline(Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp)
+            rd = _C.getline(
+                Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+            )
             if rd != -1:
                 yield str(self.buf, rd)
             else:
                 break
 
-    def _iter_trim_newline(self):
+    def _iter_trim_newline(self) -> Generator[str]:
         self._ensure_open()
         while True:
-            rd = _C.getline(Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp)
+            rd = _C.getline(
+                Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+            )
             if rd != -1:
                 if self.buf[rd - 1] == byte(10):
                     rd -= 1
@@ -96,28 +104,30 @@ class File:
             else:
                 break
 
-def _gz_errcheck(stream: cobj):
+
+def _gz_errcheck(stream: cobj) -> void:
     errnum = i32(0)
     msg = _C.gzerror(stream, __ptr__(errnum))
     if msg and msg[0]:
         raise IOError("zlib error: " + str(msg, _C.strlen(msg)))
+
 
 class gzFile:
     sz: int
     buf: Ptr[byte]
     fp: cobj
 
-    def __init__(self, fp: cobj):
+    def __init__(self, fp: cobj) -> void:
         self.fp = fp
         self._reset()
 
-    def __init__(self, path: str, mode: str):
+    def __init__(self, path: str, mode: str) -> void:
         self.fp = _C.gzopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError("file " + path + " could not be opened")
         self._reset()
 
-    def _getline(self):
+    def _getline(self) -> int:
         if not self.buf:
             self.sz = 128
             self.buf = Ptr[byte](self.sz)
@@ -140,17 +150,17 @@ class gzFile:
 
         return offset
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[str]:
         for a in self._iter():
             yield a.__ptrcopy__()
 
-    def __enter__(self):
+    def __enter__(self) -> void:
         pass
 
-    def __exit__(self):
+    def __exit__(self) -> void:
         self.close()
 
-    def close(self):
+    def close(self) -> void:
         if self.fp:
             _C.gzclose(self.fp)
             self.fp = cobj()
@@ -158,28 +168,28 @@ class gzFile:
             free(self.buf)
             self._reset()
 
-    def readlines(self):
+    def readlines(self) -> List[str]:
         return [l for l in self]
 
-    def write(self, s: str):
+    def write(self, s: str) -> void:
         self._ensure_open()
         _C.gzwrite(self.fp, s.ptr, u32(len(s)))
         _gz_errcheck(self.fp)
 
-    def __file_write_gen__[T](self, g: Generator[T]):
+    def __file_write_gen__(self, g: Generator[T], T: type) -> void:
         for s in g:
             self.write(str(s))
 
-    def tell(self):
+    def tell(self) -> int:
         ret = _C.gztell(self.fp)
         _gz_errcheck(self.fp)
         return ret
 
-    def seek(self, offset: int, whence: int):
+    def seek(self, offset: int, whence: int) -> void:
         _C.gzseek(self.fp, offset, i32(whence))
         _gz_errcheck(self.fp)
 
-    def _iter(self):
+    def _iter(self) -> Generator[str]:
         self._ensure_open()
         while True:
             rd = self._getline()
@@ -188,7 +198,7 @@ class gzFile:
             else:
                 break
 
-    def _iter_trim_newline(self):
+    def _iter_trim_newline(self) -> Generator[str]:
         self._ensure_open()
         while True:
             rd = self._getline()
@@ -199,22 +209,25 @@ class gzFile:
             else:
                 break
 
-    def _ensure_open(self):
+    def _ensure_open(self) -> void:
         if not self.fp:
             raise IOError("I/O operation on closed file")
 
-    def _reset(self):
+    def _reset(self) -> void:
         self.buf = cobj()
         self.sz = 0
 
-def open(path: str, mode: str = "r"):
+
+def open(path: str, mode: str = "r") -> File:
     return File(path, mode)
 
-def gzopen(path: str, mode: str = "r"):
+
+def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
 
-def is_binary(path: str):
-    textchars = {7, 8, 9, 10, 12, 13, 27} | set(iter(range(0x20, 0x100))) - {0x7f}
+
+def is_binary(path: str) -> bool:
+    textchars = {7, 8, 9, 10, 12, 13, 27} | set(iter(range(0x20, 0x100))) - {0x7F}
     with open(path, "rb") as f:
         header = f.read(1024)
         return any(ord(c) not in textchars for c in header)
