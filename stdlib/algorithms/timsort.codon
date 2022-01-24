@@ -1,12 +1,60 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+# Pats of this file: (c) 2022 Python Software Foundation. All right reserved.
+# License:
+#    1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"), and
+#    the Individual or Organization ("Licensee") accessing and otherwise using Python
+#    3.10.2 software in source or binary form and its associated documentation.
+#
+#    2. Subject to the terms and conditions of this License Agreement, PSF hereby
+#    grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
+#    analyze, test, perform and/or display publicly, prepare derivative works,
+#    distribute, and otherwise use Python 3.10.2 alone or in any derivative
+#    version, provided, however, that PSF's License Agreement and PSF's notice of
+#    copyright, i.e., "Copyright © 2001-2022 Python Software Foundation; All Rights
+#    Reserved" are retained in Python 3.10.2 alone or in any derivative version
+#    prepared by Licensee.
+#
+#    3. In the event Licensee prepares a derivative work that is based on or
+#    incorporates Python 3.10.2 or any part thereof, and wants to make the
+#    derivative work available to others as provided herein, then Licensee hereby
+#    agrees to include in any such work a brief summary of the changes made to Python
+#    3.10.2.
+#
+#    4. PSF is making Python 3.10.2 available to Licensee on an "AS IS" basis.
+#    PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED.  BY WAY OF
+#    EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND DISCLAIMS ANY REPRESENTATION OR
+#    WARRANTY OF MERCHANTABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE OR THAT THE
+#    USE OF PYTHON 3.10.2 WILL NOT INFRINGE ANY THIRD PARTY RIGHTS.
+#
+#    5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON 3.10.2
+#    FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS A RESULT OF
+#    MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON 3.10.2, OR ANY DERIVATIVE
+#    THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
+#
+#    6. This License Agreement will automatically terminate upon a material breach of
+#    its terms and conditions.
+#
+#    7. Nothing in this License Agreement shall be deemed to create any relationship
+#    of agency, partnership, or joint venture between PSF and Licensee.  This License
+#    Agreement does not grant permission to use PSF trademarks or trade name in a
+#    trademark sense to endorse or promote products or services of Licensee, or any
+#    third party.
+#
+#    8. By copying, installing or otherwise using Python 3.10.2, Licensee agrees
+#    to be bound by the terms and conditions of this License Agreement.
+
 BLOCK_SIZE = 64
 CACHELINE_SIZE = 64
 MIN_GALLOP = 7
 
 from algorithms.insertionsort import _insertion_sort
 
-def _count_run[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]) -> Tuple[int,int]:
+
+def _count_run(
+    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+) -> Tuple[int, int]:
     """
-        Returns the # of elements in the next run and if the run is "inorder" or "reversed"
+    Returns the # of elements in the next run and if the run is "inorder" or "reversed"
     """
     inorder = 1
 
@@ -34,37 +82,52 @@ def _count_run[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S])
 
     return n, inorder
 
+
 def _merge_compute_minrun(n: int) -> int:
     """
-        Computes the minrun for Timsort
+    Computes the minrun for Timsort
     """
     r = 0
     while n >= 64:
         r |= n & 1
-        n >>=1
+        n >>= 1
     return n + r
 
-def _reverse_sortslice[T](arr: Array[T], begin: int, end: int):
+
+def _reverse_sortslice(arr: Array[T], begin: int, end: int, T: type) -> void:
     if end - begin < 2:
         return
     arr[begin], arr[end - 1] = arr[end - 1], arr[begin]
     _reverse_sortslice(arr, begin + 1, end - 1)
 
-def _modified_comp[S,T](a: T, b: T, keyf: Callable[[T], S], left: bool) -> bool:
+
+def _modified_comp(
+    a: T, b: T, keyf: Callable[[T], S], left: bool, T: type, S: type
+) -> bool:
     """
-        Abstracts the left or right compare in gallop
+    Abstracts the left or right compare in gallop
     """
     if left:
         return keyf(b) >= keyf(a)
     else:
         return keyf(a) < keyf(b)
 
-def _gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S], hint: int, left: bool) -> int:
+
+def _gallop(
+    arr: Array[T],
+    a: Tuple[int, int],
+    b: Tuple[int, int],
+    keyf: Callable[[T], S],
+    hint: int,
+    left: bool,
+    T: type,
+    S: type,
+) -> int:
     """
-        Gallop for Timsort
+    Gallop for Timsort
     """
 
-    key = arr[0] # just to initialize k
+    key = arr[0]  # just to initialize k
     if left:
         key = arr[b[0] + b[1] - 1]
     else:
@@ -77,7 +140,7 @@ def _gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Call
         # Gallop left
         maxofs = hint + 1
 
-        while (ofs < maxofs):
+        while ofs < maxofs:
             if _modified_comp(key, arr[curr - ofs], keyf, left):
                 lastofs = ofs
                 ofs = (ofs << 1) + 1
@@ -115,7 +178,15 @@ def _gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Call
 
     return ofs
 
-def _merge_with_gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S]):
+
+def _merge_with_gallop(
+    arr: Array[T],
+    a: Tuple[int, int],
+    b: Tuple[int, int],
+    keyf: Callable[[T], S],
+    T: type,
+    S: type,
+) -> void:
     min_gallop = MIN_GALLOP
 
     combined = Array[T](a[1] + b[1])
@@ -162,7 +233,9 @@ def _merge_with_gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int],
             if min_gallop > 1:
                 min_gallop -= 1
 
-            acount = _gallop(combined, (0, len(a_copy)), (len(a_copy), len(b_copy)), keyf, i, False)
+            acount = _gallop(
+                combined, (0, len(a_copy)), (len(a_copy), len(b_copy)), keyf, i, False
+            )
             if acount:
                 while i < acount:
                     arr[k] = a_copy[i]
@@ -175,7 +248,9 @@ def _merge_with_gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int],
             if i == len(a_copy) or j == len(b_copy):
                 break
 
-            b_end = _gallop(combined, (len(a_copy), len(b_copy)), (0, len(a_copy)), keyf, j, True)
+            b_end = _gallop(
+                combined, (len(a_copy), len(b_copy)), (0, len(a_copy)), keyf, j, True
+            )
             bcount = len(b_copy) - b_end
             if bcount:
                 while j < b_end:
@@ -201,7 +276,15 @@ def _merge_with_gallop[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int],
         j += 1
         k += 1
 
-def _merge_at[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Callable[[T], S]):
+
+def _merge_at(
+    arr: Array[T],
+    a: Tuple[int, int],
+    b: Tuple[int, int],
+    keyf: Callable[[T], S],
+    T: type,
+    S: type,
+) -> void:
     start_a, len_a = a
     start_b, len_b = b
 
@@ -212,13 +295,20 @@ def _merge_at[S,T](arr: Array[T], a: Tuple[int,int], b: Tuple[int,int], keyf: Ca
         return
 
     # Where does a end in b?
-    len_b = _gallop(arr, b, a, keyf, len_b-1, True)
+    len_b = _gallop(arr, b, a, keyf, len_b - 1, True)
     if len_b == 0:
         return
 
     _merge_with_gallop(arr, (start_a, len_a), (start_b, len_b), keyf)
 
-def _merge_collapse[S,T](arr: Array[T], stack: List[Tuple[int,int]], keyf: Callable[[T], S]):
+
+def _merge_collapse(
+    arr: Array[T],
+    stack: List[Tuple[int, int]],
+    keyf: Callable[[T], S],
+    T: type,
+    S: type,
+) -> void:
     if len(stack) <= 1:
         return
 
@@ -260,18 +350,28 @@ def _merge_collapse[S,T](arr: Array[T], stack: List[Tuple[int,int]], keyf: Calla
             stack.append((B[0], B[1] + C[1]))
             return
 
-def _final_merge[S,T](arr: Array[T], stack: List[Tuple[int,int]], keyf: Callable[[T], S]):
+
+def _final_merge(
+    arr: Array[T],
+    stack: List[Tuple[int, int]],
+    keyf: Callable[[T], S],
+    T: type,
+    S: type,
+) -> void:
     while len(stack) > 1:
         C = stack.pop()
         B = stack.pop()
         _merge_at(arr, B, C, keyf)
         stack.append((B[0], B[1] + C[1]))
 
-def _tim_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
+
+def _tim_sort(
+    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+) -> void:
     if end - begin < 2:
         return
 
-    merge_pending = List[Tuple[int,int]]()
+    merge_pending = List[Tuple[int, int]]()
     minrun = _merge_compute_minrun(end - begin)
     i = begin
     while i < end:
@@ -290,30 +390,37 @@ def _tim_sort[S,T](arr: Array[T], begin: int, end: int, keyf: Callable[[T], S]):
 
     _final_merge(arr, merge_pending, keyf)
 
-def tim_sort_array[S,T](collection: Array[T], size: int, keyf: Callable[[T], S]):
-    """
-        Timsort
-        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
 
-        Sorts the array inplace.
+def tim_sort_array(
+    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
+) -> void:
+    """
+    Timsort
+    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+    Sorts the array inplace.
     """
     _tim_sort(collection, 0, size, keyf)
 
-def tim_sort_inplace[S,T](collection: List[T], keyf: Callable[[T], S]):
-    """
-        Timsort
-        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
 
-        Sorts the list inplace.
+def tim_sort_inplace(
+    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+) -> void:
+    """
+    Timsort
+    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+    Sorts the list inplace.
     """
     tim_sort_array(collection.arr, collection.len, keyf)
 
-def tim_sort[S,T](collection: List[T], keyf: Callable[[T], S]) -> List[T]:
-    """
-        Timsort
-        By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
 
-        Returns a sorted list.
+def tim_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
+    """
+    Timsort
+    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
+
+    Returns a sorted list.
     """
     newlst = list(collection)
     tim_sort_inplace(newlst, keyf)
