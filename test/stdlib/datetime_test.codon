@@ -2,14 +2,25 @@ from datetime import *
 from unittest import TestCase
 from operator import lt, le, gt, ge, eq, ne, truediv, floordiv, mod
 
+
 class TestTimeDelta(TestCase):
     def test_constructor(self):
         eq = self.assertEqual
         td = timedelta
 
         # Check keyword args to constructor
-        eq(td(), td(weeks=0, days=0, hours=0, minutes=0, seconds=0,
-                    milliseconds=0, microseconds=0))
+        eq(
+            td(),
+            td(
+                weeks=0,
+                days=0,
+                hours=0,
+                minutes=0,
+                seconds=0,
+                milliseconds=0,
+                microseconds=0,
+            ),
+        )
         eq(td(1), td(days=1))
         eq(td(0, 1), td(seconds=1))
         eq(td(0, 0, 1), td(microseconds=1))
@@ -21,10 +32,10 @@ class TestTimeDelta(TestCase):
         eq(td(milliseconds=1), td(microseconds=1000))
 
         # Check float args to constructor
-        eq(td(weeks=1.0/7), td(days=1))
-        eq(td(days=1.0/24), td(hours=1))
-        eq(td(hours=1.0/60), td(minutes=1))
-        eq(td(minutes=1.0/60), td(seconds=1))
+        eq(td(weeks=1.0 / 7), td(days=1))
+        eq(td(days=1.0 / 24), td(hours=1))
+        eq(td(hours=1.0 / 60), td(minutes=1))
+        eq(td(minutes=1.0 / 60), td(seconds=1))
         eq(td(seconds=0.001), td(milliseconds=1))
         eq(td(milliseconds=0.001), td(microseconds=1))
 
@@ -32,57 +43,57 @@ class TestTimeDelta(TestCase):
         eq = self.assertEqual
         td = timedelta
 
-        a = td(7) # One week
-        b = td(0, 60) # One minute
-        c = td(0, 0, 1000) # One millisecond
-        eq(a+b+c, td(7, 60, 1000))
-        eq(a-b, td(6, 24*3600 - 60))
+        a = td(7)  # One week
+        b = td(0, 60)  # One minute
+        c = td(0, 0, 1000)  # One millisecond
+        eq(a + b + c, td(7, 60, 1000))
+        eq(a - b, td(6, 24 * 3600 - 60))
         # eq(b.__rsub__(a), td(6, 24*3600 - 60))
         eq(-a, td(-7))
         eq(+a, td(7))
-        eq(-b, td(-1, 24*3600 - 60))
-        eq(-c, td(-1, 24*3600 - 1, 999000))
+        eq(-b, td(-1, 24 * 3600 - 60))
+        eq(-c, td(-1, 24 * 3600 - 1, 999000))
         eq(abs(a), a)
         eq(abs(-a), a)
-        eq(td(6, 24*3600), a)
-        eq(td(0, 0, 60*1000000), b)
-        eq(a*10, td(70))
-        eq(a*10, 10*a)
-        eq(a*10, 10*a)
-        eq(b*10, td(0, 600))
-        eq(10*b, td(0, 600))
-        eq(b*10, td(0, 600))
-        eq(c*10, td(0, 0, 10000))
-        eq(10*c, td(0, 0, 10000))
-        eq(c*10, td(0, 0, 10000))
-        eq(a*-1, -a)
-        eq(b*-2, -b-b)
-        eq(c*-2, -c+-c)
-        eq(b*(60*24), (b*60)*24)
-        eq(b*(60*24), (60*b)*24)
-        eq(c*1000, td(0, 1))
-        eq(1000*c, td(0, 1))
-        eq(a//7, td(1))
-        eq(b//10, td(0, 6))
-        eq(c//1000, td(0, 0, 1))
-        eq(a//10, td(0, 7*24*360))
-        eq(a//3600000, td(0, 0, 7*24*1000))
-        eq(a/0.5, td(14))
-        eq(b/0.5, td(0, 120))
-        eq(a/7, td(1))
-        eq(b/10, td(0, 6))
-        eq(c/1000, td(0, 0, 1))
-        eq(a/10, td(0, 7*24*360))
-        eq(a/3600000, td(0, 0, 7*24*1000))
+        eq(td(6, 24 * 3600), a)
+        eq(td(0, 0, 60 * 1000000), b)
+        eq(a * 10, td(70))
+        eq(a * 10, 10 * a)
+        eq(a * 10, 10 * a)
+        eq(b * 10, td(0, 600))
+        eq(10 * b, td(0, 600))
+        eq(b * 10, td(0, 600))
+        eq(c * 10, td(0, 0, 10000))
+        eq(10 * c, td(0, 0, 10000))
+        eq(c * 10, td(0, 0, 10000))
+        eq(a * -1, -a)
+        eq(b * -2, -b - b)
+        eq(c * -2, -c + -c)
+        eq(b * (60 * 24), (b * 60) * 24)
+        eq(b * (60 * 24), (60 * b) * 24)
+        eq(c * 1000, td(0, 1))
+        eq(1000 * c, td(0, 1))
+        eq(a // 7, td(1))
+        eq(b // 10, td(0, 6))
+        eq(c // 1000, td(0, 0, 1))
+        eq(a // 10, td(0, 7 * 24 * 360))
+        eq(a // 3600000, td(0, 0, 7 * 24 * 1000))
+        eq(a / 0.5, td(14))
+        eq(b / 0.5, td(0, 120))
+        eq(a / 7, td(1))
+        eq(b / 10, td(0, 6))
+        eq(c / 1000, td(0, 0, 1))
+        eq(a / 10, td(0, 7 * 24 * 360))
+        eq(a / 3600000, td(0, 0, 7 * 24 * 1000))
 
         # Multiplication by float
         us = td(microseconds=1)
-        eq((3*us) * 0.5, 2*us)
-        eq((5*us) * 0.5, 2*us)
-        eq(0.5 * (3*us), 2*us)
-        eq(0.5 * (5*us), 2*us)
-        eq((-3*us) * 0.5, -2*us)
-        eq((-5*us) * 0.5, -2*us)
+        eq((3 * us) * 0.5, 2 * us)
+        eq((5 * us) * 0.5, 2 * us)
+        eq(0.5 * (3 * us), 2 * us)
+        eq(0.5 * (5 * us), 2 * us)
+        eq((-3 * us) * 0.5, -2 * us)
+        eq((-5 * us) * 0.5, -2 * us)
 
         # TODO: check Python's Issue #23521 and possibly
         # incorporate the same fix here. For now a couple
@@ -93,35 +104,33 @@ class TestTimeDelta(TestCase):
         # eq(td(seconds=1) * 0.6112295, td(microseconds=611229))
 
         # Division by int and float
-        eq((3*us) / 2, 2*us)
-        eq((5*us) / 2, 2*us)
-        eq((-3*us) / 2.0, -2*us)
-        eq((-5*us) / 2.0, -2*us)
-        eq((3*us) / -2, -2*us)
-        eq((5*us) / -2, -2*us)
-        eq((3*us) / -2.0, -2*us)
-        eq((5*us) / -2.0, -2*us)
+        eq((3 * us) / 2, 2 * us)
+        eq((5 * us) / 2, 2 * us)
+        eq((-3 * us) / 2.0, -2 * us)
+        eq((-5 * us) / 2.0, -2 * us)
+        eq((3 * us) / -2, -2 * us)
+        eq((5 * us) / -2, -2 * us)
+        eq((3 * us) / -2.0, -2 * us)
+        eq((5 * us) / -2.0, -2 * us)
         for i in range(-10, 10):
-            eq((i*us/3)//us, round(i/3))
+            eq((i * us / 3) // us, round(i / 3))
         for i in range(-10, 10):
-            eq((i*us/-3)//us, round(i/-3))
+            eq((i * us / -3) // us, round(i / -3))
 
         # Issue #23521
         # eq(td(seconds=1) / (1 / 0.6112295), td(microseconds=611229))
 
         # Issue #11576
-        eq(td(999999999, 86399, 999999) - td(999999999, 86399, 999998),
-           td(0, 0, 1))
-        eq(td(999999999, 1, 1) - td(999999999, 1, 0),
-           td(0, 0, 1))
+        eq(td(999999999, 86399, 999999) - td(999999999, 86399, 999998), td(0, 0, 1))
+        eq(td(999999999, 1, 1) - td(999999999, 1, 0), td(0, 0, 1))
 
-    '''
+    """
     def test_disallowed_special(self):
         a = timedelta(42)
         NAN = 0. / 0.
         self.assertRaises(ValueError, a.__mul__, NAN)
         self.assertRaises(ValueError, a.__truediv__, NAN)
-    '''
+    """
 
     def test_basic_attributes(self):
         days, seconds, us = 1, 7, 31
@@ -143,27 +152,31 @@ class TestTimeDelta(TestCase):
             self.assertEqual(td.total_seconds(), td / timedelta(seconds=1))
 
     def test_carries(self):
-        t1 = timedelta(days=100,
-                       weeks=-7,
-                       hours=-24*(100-49),
-                       minutes=-3,
-                       seconds=12,
-                       microseconds=(3*60 - 12) * 1e6 + 1)
+        t1 = timedelta(
+            days=100,
+            weeks=-7,
+            hours=-24 * (100 - 49),
+            minutes=-3,
+            seconds=12,
+            microseconds=(3 * 60 - 12) * 1e6 + 1,
+        )
         t2 = timedelta(microseconds=1)
         self.assertEqual(t1, t2)
 
     def test_hash_equality(self):
-        t1 = timedelta(days=100,
-                       weeks=-7,
-                       hours=-24*(100-49),
-                       minutes=-3,
-                       seconds=12,
-                       microseconds=(3*60 - 12) * 1000000)
+        t1 = timedelta(
+            days=100,
+            weeks=-7,
+            hours=-24 * (100 - 49),
+            minutes=-3,
+            seconds=12,
+            microseconds=(3 * 60 - 12) * 1000000,
+        )
         t2 = timedelta()
         self.assertEqual(hash(t1), hash(t2))
 
         t1 += timedelta(weeks=7)
-        t2 += timedelta(days=7*7)
+        t2 += timedelta(days=7 * 7)
         self.assertEqual(t1, t2)
         self.assertEqual(hash(t1), hash(t2))
 
@@ -183,7 +196,7 @@ class TestTimeDelta(TestCase):
         self.assertFalse(t1 > t2)
 
         for args in (3, 3, 3), (2, 4, 4), (2, 3, 5):
-            t2 = timedelta(*args)   # this is larger than t1
+            t2 = timedelta(*args)  # this is larger than t1
             self.assertTrue(t1 < t2)
             self.assertTrue(t2 > t1)
             self.assertTrue(t1 <= t2)
@@ -208,8 +221,7 @@ class TestTimeDelta(TestCase):
 
         eq(str(td(hours=12, minutes=58, seconds=59)), "12:58:59")
         eq(str(td(hours=2, minutes=3, seconds=4)), "2:03:04")
-        eq(str(td(weeks=-30, hours=23, minutes=12, seconds=34)),
-           "-210 days, 23:12:34")
+        eq(str(td(weeks=-30, hours=23, minutes=12, seconds=34)), "-210 days, 23:12:34")
 
         eq(str(td(milliseconds=1)), "0:00:00.001000")
         eq(str(td(microseconds=3)), "0:00:00.000003")
@@ -217,32 +229,32 @@ class TestTimeDelta(TestCase):
         # Codon's timedelta has a smaller range than Python's
         # since it uses a pure microseconds representation, so
         # below case is not supported.
-        '''
+        """
         eq(str(td(days=999999999, hours=23, minutes=59, seconds=59,
                    microseconds=999999)),
            "999999999 days, 23:59:59.999999")
-        '''
+        """
 
     def test_repr(self):
         td = timedelta
-        self.assertEqual(repr(td(1)),
-                         "timedelta(days=1)")
-        self.assertEqual(repr(td(10, 2)),
-                         "timedelta(days=10, seconds=2)")
-        self.assertEqual(repr(td(-10, 2, 400000)),
-                         "timedelta(days=-10, seconds=2, microseconds=400000)")
-        self.assertEqual(repr(td(seconds=60)),
-                         "timedelta(seconds=60)")
-        self.assertEqual(repr(td()),
-                         "timedelta(0)")
-        self.assertEqual(repr(td(microseconds=100)),
-                         "timedelta(microseconds=100)")
-        self.assertEqual(repr(td(days=1, microseconds=100)),
-                         "timedelta(days=1, microseconds=100)")
-        self.assertEqual(repr(td(seconds=1, microseconds=100)),
-                         "timedelta(seconds=1, microseconds=100)")
+        self.assertEqual(repr(td(1)), "timedelta(days=1)")
+        self.assertEqual(repr(td(10, 2)), "timedelta(days=10, seconds=2)")
+        self.assertEqual(
+            repr(td(-10, 2, 400000)),
+            "timedelta(days=-10, seconds=2, microseconds=400000)",
+        )
+        self.assertEqual(repr(td(seconds=60)), "timedelta(seconds=60)")
+        self.assertEqual(repr(td()), "timedelta(0)")
+        self.assertEqual(repr(td(microseconds=100)), "timedelta(microseconds=100)")
+        self.assertEqual(
+            repr(td(days=1, microseconds=100)), "timedelta(days=1, microseconds=100)"
+        )
+        self.assertEqual(
+            repr(td(seconds=1, microseconds=100)),
+            "timedelta(seconds=1, microseconds=100)",
+        )
 
-    '''
+    """
     def test_resolution_info(self):
         self.assertIsInstance(timedelta.min, timedelta)
         self.assertIsInstance(timedelta.max, timedelta)
@@ -279,46 +291,47 @@ class TestTimeDelta(TestCase):
         INF = 1. / 0.
         self.assertRaises(OverflowError, day.__mul__, INF)
         self.assertRaises(OverflowError, day.__mul__, -INF)
-    '''
+    """
 
     def test_microsecond_rounding(self):
         td = timedelta
         eq = self.assertEqual
 
         # Single-field rounding.
-        eq(td(milliseconds=0.4/1000), td(0))    # rounds to 0
-        eq(td(milliseconds=-0.4/1000), td(0))    # rounds to 0
-        eq(td(milliseconds=0.5/1000), td(microseconds=0))
-        eq(td(milliseconds=-0.5/1000), td(microseconds=-0))
-        eq(td(milliseconds=0.6/1000), td(microseconds=1))
-        eq(td(milliseconds=-0.6/1000), td(microseconds=-1))
-        eq(td(milliseconds=1.5/1000), td(microseconds=2))
-        eq(td(milliseconds=-1.5/1000), td(microseconds=-2))
-        eq(td(seconds=0.5/10**6), td(microseconds=0))
-        eq(td(seconds=-0.5/10**6), td(microseconds=-0))
-        eq(td(seconds=1/2**7), td(microseconds=7812))
-        eq(td(seconds=-1/2**7), td(microseconds=-7812))
+        eq(td(milliseconds=0.4 / 1000), td(0))  # rounds to 0
+        eq(td(milliseconds=-0.4 / 1000), td(0))  # rounds to 0
+        eq(td(milliseconds=0.5 / 1000), td(microseconds=0))
+        eq(td(milliseconds=-0.5 / 1000), td(microseconds=-0))
+        eq(td(milliseconds=0.6 / 1000), td(microseconds=1))
+        eq(td(milliseconds=-0.6 / 1000), td(microseconds=-1))
+        eq(td(milliseconds=1.5 / 1000), td(microseconds=2))
+        eq(td(milliseconds=-1.5 / 1000), td(microseconds=-2))
+        eq(td(seconds=0.5 / 10 ** 6), td(microseconds=0))
+        eq(td(seconds=-0.5 / 10 ** 6), td(microseconds=-0))
+        eq(td(seconds=1 / 2 ** 7), td(microseconds=7812))
+        eq(td(seconds=-1 / 2 ** 7), td(microseconds=-7812))
 
         # Rounding due to contributions from more than one field.
         us_per_hour = 3600e6
         us_per_day = us_per_hour * 24
-        eq(td(days=.4/us_per_day), td(0))
-        eq(td(hours=.2/us_per_hour), td(0))
-        eq(td(days=.4/us_per_day, hours=.2/us_per_hour), td(microseconds=1))
+        eq(td(days=0.4 / us_per_day), td(0))
+        eq(td(hours=0.2 / us_per_hour), td(0))
+        eq(td(days=0.4 / us_per_day, hours=0.2 / us_per_hour), td(microseconds=1))
 
-        eq(td(days=-.4/us_per_day), td(0))
-        eq(td(hours=-.2/us_per_hour), td(0))
-        eq(td(days=-.4/us_per_day, hours=-.2/us_per_hour), td(microseconds=-1))
+        eq(td(days=-0.4 / us_per_day), td(0))
+        eq(td(hours=-0.2 / us_per_hour), td(0))
+        eq(td(days=-0.4 / us_per_day, hours=-0.2 / us_per_hour), td(microseconds=-1))
 
         # Test for a patch in Issue 8860
-        eq(td(microseconds=0.5), 0.5*td(microseconds=1.0))
+        eq(td(microseconds=0.5), 0.5 * td(microseconds=1.0))
         resolution = td(microseconds=1)  # td.resolution
-        eq(td(microseconds=0.5)//resolution, 0.5*resolution//resolution)
+        eq(td(microseconds=0.5) // resolution, 0.5 * resolution // resolution)
 
     def test_massive_normalization(self):
         td = timedelta(microseconds=-1)
-        self.assertEqual((td.days, td.seconds, td.microseconds),
-                         (-1, 24*3600-1, 999999))
+        self.assertEqual(
+            (td.days, td.seconds, td.microseconds), (-1, 24 * 3600 - 1, 999999)
+        )
 
     def test_bool(self):
         self.assertTrue(timedelta(1))
@@ -339,8 +352,8 @@ class TestTimeDelta(TestCase):
         self.assertEqual(t // minute, 2)
 
         zerotd = timedelta(0)
-        #self.assertRaises(ZeroDivisionError, truediv, t, zerotd)
-        #self.assertRaises(ZeroDivisionError, floordiv, t, zerotd)
+        # self.assertRaises(ZeroDivisionError, truediv, t, zerotd)
+        # self.assertRaises(ZeroDivisionError, floordiv, t, zerotd)
 
     def test_remainder(self):
         t = timedelta(minutes=2, seconds=30)
@@ -349,11 +362,11 @@ class TestTimeDelta(TestCase):
         self.assertEqual(r, timedelta(seconds=30))
 
         t = timedelta(minutes=-2, seconds=30)
-        r = t %  minute
+        r = t % minute
         self.assertEqual(r, timedelta(seconds=30))
 
         zerotd = timedelta(0)
-        #self.assertRaises(ZeroDivisionError, mod, t, zerotd)
+        # self.assertRaises(ZeroDivisionError, mod, t, zerotd)
 
     def test_divmod(self):
         t = timedelta(minutes=2, seconds=30)
@@ -368,13 +381,13 @@ class TestTimeDelta(TestCase):
         self.assertEqual(r, timedelta(seconds=30))
 
         zerotd = timedelta(0)
-        #self.assertRaises(ZeroDivisionError, divmod, t, zerotd)
+        # self.assertRaises(ZeroDivisionError, divmod, t, zerotd)
+
 
 class TestDateOnly(TestCase):
     def test_delta_non_days_ignored(self):
         dt = date(2000, 1, 2)
-        delta = timedelta(days=1, hours=2, minutes=3, seconds=4,
-                          microseconds=5)
+        delta = timedelta(days=1, hours=2, minutes=3, seconds=4, microseconds=5)
         days = timedelta(delta.days)
         self.assertEqual(days, timedelta(1))
 
@@ -400,7 +413,10 @@ class TestDateOnly(TestCase):
         dt2 = dt - delta
         self.assertEqual(dt2, dt - days)
 
-class TestDate[theclass](TestCase):
+
+class TestDate(TestCase):
+    theclass: type
+
     def test_basic_attributes(self):
         dt = self.theclass(2002, 3, 1)
         self.assertEqual(dt.year, 2002)
@@ -409,18 +425,20 @@ class TestDate[theclass](TestCase):
 
     def test_ordinal_conversions(self):
         # Check some fixed values.
-        for y, m, d, n in [(1, 1, 1, 1),      # calendar origin
-                           (1, 12, 31, 365),
-                           (2, 1, 1, 366),
-                           # first example from "Calendrical Calculations"
-                           (1945, 11, 12, 710347)]:
+        for y, m, d, n in [
+            (1, 1, 1, 1),  # calendar origin
+            (1, 12, 31, 365),
+            (2, 1, 1, 366),
+            # first example from "Calendrical Calculations"
+            (1945, 11, 12, 710347),
+        ]:
             dt = self.theclass(y, m, d)
             self.assertEqual(n, dt.toordinal())
             fromord = self.theclass.fromordinal(n)
             self.assertEqual(dt, fromord)
             if hasattr(fromord, "hour"):
-            # if we're checking something fancier than a date, verify
-            # the extra fields have been zeroed out
+                # if we're checking something fancier than a date, verify
+                # the extra fields have been zeroed out
                 self.assertEqual(fromord.hour, 0)
                 self.assertEqual(fromord.minute, 0)
                 self.assertEqual(fromord.second, 0)
@@ -428,7 +446,7 @@ class TestDate[theclass](TestCase):
 
         # Check first and last days of year spottily across the whole
         # range of years supported.
-        for year in range(MINYEAR, MAXYEAR+1, 7):
+        for year in range(MINYEAR, MAXYEAR + 1, 7):
             # Verify (year, 1, 1) -> ordinal -> y, m, d is identity.
             d = self.theclass(year, 1, 1)
             n = d.toordinal()
@@ -436,10 +454,10 @@ class TestDate[theclass](TestCase):
             self.assertEqual(d, d2)
             # Verify that moving back a day gets to the end of year-1.
             if year > 1:
-                d = self.theclass.fromordinal(n-1)
-                d2 = self.theclass(year-1, 12, 31)
+                d = self.theclass.fromordinal(n - 1)
+                d2 = self.theclass(year - 1, 12, 31)
                 self.assertEqual(d, d2)
-                self.assertEqual(d2.toordinal(), n-1)
+                self.assertEqual(d2.toordinal(), n - 1)
 
         # Test every day in a leap-year and a non-leap year.
         dim = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -448,13 +466,13 @@ class TestDate[theclass](TestCase):
             for month, maxday in zip(range(1, 13), dim):
                 if month == 2 and isleap:
                     maxday += 1
-                for day in range(1, maxday+1):
+                for day in range(1, maxday + 1):
                     d = self.theclass(year, month, day)
                     self.assertEqual(d.toordinal(), n)
                     self.assertEqual(d, self.theclass.fromordinal(n))
                     n += 1
 
-    '''
+    """
     def test_extreme_ordinals(self):
         a = self.theclass.min
         a = self.theclass(a.year, a.month, a.day)  # get rid of time parts
@@ -479,7 +497,7 @@ class TestDate[theclass](TestCase):
         b = a - timedelta(days=1)
         self.assertEqual(b.toordinal(), aord - 1)
         self.assertEqual(b, self.theclass.fromordinal(aord - 1))
-    '''
+    """
 
     def test_bad_constructor_arguments(self):
         # bad years
@@ -489,17 +507,17 @@ class TestDate[theclass](TestCase):
         def make(theclass, a, b, c):
             return self.theclass(a, b, c)
 
-        self.assertRaises(ValueError, make(self.theclass, ...), MINYEAR-1, 1, 1)
-        self.assertRaises(ValueError, make(self.theclass, ...), MAXYEAR+1, 1, 1)
+        self.assertRaises(ValueError, make(self.theclass, ...), MINYEAR - 1, 1, 1)
+        self.assertRaises(ValueError, make(self.theclass, ...), MAXYEAR + 1, 1, 1)
         # bad months
-        self.theclass(2000, 1, 1)    # no exception
-        self.theclass(2000, 12, 1)   # no exception
+        self.theclass(2000, 1, 1)  # no exception
+        self.theclass(2000, 12, 1)  # no exception
         self.assertRaises(ValueError, make(self.theclass, ...), 2000, 0, 1)
         self.assertRaises(ValueError, make(self.theclass, ...), 2000, 13, 1)
         # bad days
-        self.theclass(2000, 2, 29)   # no exception
-        self.theclass(2004, 2, 29)   # no exception
-        self.theclass(2400, 2, 29)   # no exception
+        self.theclass(2000, 2, 29)  # no exception
+        self.theclass(2004, 2, 29)  # no exception
+        self.theclass(2400, 2, 29)  # no exception
         self.assertRaises(ValueError, make(self.theclass, ...), 2000, 2, 30)
         self.assertRaises(ValueError, make(self.theclass, ...), 2001, 2, 29)
         self.assertRaises(ValueError, make(self.theclass, ...), 2100, 2, 29)
@@ -520,9 +538,9 @@ class TestDate[theclass](TestCase):
         self.assertEqual(dic[d], 2)
         self.assertEqual(dic[e], 2)
 
-        d = self.theclass(2001,  1,  1)
+        d = self.theclass(2001, 1, 1)
         # same thing
-        e = self.theclass(2001,  1,  1)
+        e = self.theclass(2001, 1, 1)
         self.assertEqual(d, e)
         self.assertEqual(hash(d), hash(e))
 
@@ -535,10 +553,10 @@ class TestDate[theclass](TestCase):
     def test_computations(self):
         a = self.theclass(2002, 1, 31)
         b = self.theclass(1956, 1, 31)
-        c = self.theclass(2001,2,1)
+        c = self.theclass(2001, 2, 1)
 
-        diff = a-b
-        self.assertEqual(diff.days, 46*365 + len(range(1956, 2002, 4)))
+        diff = a - b
+        self.assertEqual(diff.days, 46 * 365 + len(range(1956, 2002, 4)))
         self.assertEqual(diff.seconds, 0)
         self.assertEqual(diff.microseconds, 0)
 
@@ -551,8 +569,8 @@ class TestDate[theclass](TestCase):
         self.assertEqual(-day + a, self.theclass(2002, 3, 1))
         self.assertEqual(a + week, self.theclass(2002, 3, 9))
         self.assertEqual(a - week, self.theclass(2002, 2, 23))
-        self.assertEqual(a + 52*week, self.theclass(2003, 3, 1))
-        self.assertEqual(a - 52*week, self.theclass(2001, 3, 3))
+        self.assertEqual(a + 52 * week, self.theclass(2003, 3, 1))
+        self.assertEqual(a - 52 * week, self.theclass(2001, 3, 3))
         self.assertEqual((a + week) - a, week)
         self.assertEqual((a + day) - a, day)
         self.assertEqual((a - week) - a, -week)
@@ -563,7 +581,7 @@ class TestDate[theclass](TestCase):
         self.assertEqual(a - (a - day), day)
         self.assertEqual(c - (c - day), day)
 
-        '''
+        """
         # Add/sub ints or floats should be illegal
         for i in 1, 1.0:
             self.assertRaises(TypeError, lambda: a+i)
@@ -582,9 +600,9 @@ class TestDate[theclass](TestCase):
         self.assertRaises(TypeError, lambda: a // a)
         # date + date is senseless
         self.assertRaises(TypeError, lambda: a + a)
-        '''
+        """
 
-    '''
+    """
     def test_overflow(self):
         tiny = self.theclass.resolution
 
@@ -598,7 +616,7 @@ class TestDate[theclass](TestCase):
             dt += delta  # no problem
             self.assertRaises(OverflowError, dt.__add__, delta)
             self.assertRaises(OverflowError, dt.__sub__, -delta)
-    '''
+    """
 
     def test_fromtimestamp(self):
         import time
@@ -640,28 +658,27 @@ class TestDate[theclass](TestCase):
         # It worked or it didn't.  If it didn't, assume it's reason #2, and
         # let the test pass if they're within half a second of each other.
         if today != todayagain:
-            self.assertAlmostEqual(todayagain, today,
-                                   delta=timedelta(seconds=0.5))
+            self.assertAlmostEqual(todayagain, today, delta=timedelta(seconds=0.5))
 
     def test_weekday(self):
         for i in range(7):
             # March 4, 2002 is a Monday
-            self.assertEqual(self.theclass(2002, 3, 4+i).weekday(), i)
-            self.assertEqual(self.theclass(2002, 3, 4+i).isoweekday(), i+1)
+            self.assertEqual(self.theclass(2002, 3, 4 + i).weekday(), i)
+            self.assertEqual(self.theclass(2002, 3, 4 + i).isoweekday(), i + 1)
             # January 2, 1956 is a Monday
-            self.assertEqual(self.theclass(1956, 1, 2+i).weekday(), i)
-            self.assertEqual(self.theclass(1956, 1, 2+i).isoweekday(), i+1)
+            self.assertEqual(self.theclass(1956, 1, 2 + i).weekday(), i)
+            self.assertEqual(self.theclass(1956, 1, 2 + i).isoweekday(), i + 1)
 
     def test_isocalendar(self):
         # Check examples from
         # http://www.phys.uu.nl/~vgent/calendar/isocalendar.htm
         week_mondays = [
-                ((2003, 12, 22), (2003, 52, 1)),
-                ((2003, 12, 29), (2004, 1, 1)),
-                ((2004, 1, 5), (2004, 2, 1)),
-                ((2009, 12, 21), (2009, 52, 1)),
-                ((2009, 12, 28), (2009, 53, 1)),
-                ((2010, 1, 4), (2010, 1, 1)),
+            ((2003, 12, 22), (2003, 52, 1)),
+            ((2003, 12, 29), (2004, 1, 1)),
+            ((2004, 1, 5), (2004, 2, 1)),
+            ((2009, 12, 21), (2009, 52, 1)),
+            ((2009, 12, 28), (2009, 53, 1)),
+            ((2010, 1, 4), (2010, 1, 1)),
         ]
 
         test_cases = []
@@ -708,8 +725,8 @@ class TestDate[theclass](TestCase):
         iso_long_years = sorted(map(int, ISO_LONG_YEARS_TABLE.split()))
         L = []
         for i in range(400):
-            d = self.theclass(2000+i, 12, 31).isocalendar()
-            d1 = self.theclass(1600+i, 12, 31).isocalendar()
+            d = self.theclass(2000 + i, 12, 31).isocalendar()
+            d1 = self.theclass(1600 + i, 12, 31).isocalendar()
             self.assertEqual((d.week, d.weekday), (d1.week, d1.weekday))
             if d.week == 53:
                 L.append(i)
@@ -723,7 +740,7 @@ class TestDate[theclass](TestCase):
         t = self.theclass(2002, 3, 2)
         self.assertEqual(t.ctime(), "Sat Mar  2 00:00:00 2002")
 
-    '''
+    """
     def test_resolution_info(self):
         # XXX: Should min and max respect subclassing?
         if issubclass(self.theclass, datetime):
@@ -744,32 +761,37 @@ class TestDate[theclass](TestCase):
         self.assertEqual(big, justasbig)
         self.assertEqual(self.theclass.min + big, self.theclass.max)
         self.assertEqual(self.theclass.max - big, self.theclass.min)
-    '''
+    """
 
     def test_timetuple(self):
         from time import struct_time
+
         for i in range(7):
             # January 2, 1956 is a Monday (0)
-            d = self.theclass(1956, 1, 2+i)
+            d = self.theclass(1956, 1, 2 + i)
             t = d.timetuple()
-            self.assertEqual(t, struct_time(1956, 1, 2+i, 0, 0, 0, i, 2+i, -1))
+            self.assertEqual(t, struct_time(1956, 1, 2 + i, 0, 0, 0, i, 2 + i, -1))
             # February 1, 1956 is a Wednesday (2)
-            d = self.theclass(1956, 2, 1+i)
+            d = self.theclass(1956, 2, 1 + i)
             t = d.timetuple()
-            self.assertEqual(t, struct_time(1956, 2, 1+i, 0, 0, 0, (2+i)%7, 32+i, -1))
+            self.assertEqual(
+                t, struct_time(1956, 2, 1 + i, 0, 0, 0, (2 + i) % 7, 32 + i, -1)
+            )
             # March 1, 1956 is a Thursday (3), and is the 31+29+1 = 61st day
             # of the year.
-            d = self.theclass(1956, 3, 1+i)
+            d = self.theclass(1956, 3, 1 + i)
             t = d.timetuple()
-            self.assertEqual(t, struct_time(1956, 3, 1+i, 0, 0, 0, (3+i)%7, 61+i, -1))
+            self.assertEqual(
+                t, struct_time(1956, 3, 1 + i, 0, 0, 0, (3 + i) % 7, 61 + i, -1)
+            )
             self.assertEqual(t.tm_year, 1956)
             self.assertEqual(t.tm_mon, 3)
-            self.assertEqual(t.tm_mday, 1+i)
+            self.assertEqual(t.tm_mday, 1 + i)
             self.assertEqual(t.tm_hour, 0)
             self.assertEqual(t.tm_min, 0)
             self.assertEqual(t.tm_sec, 0)
-            self.assertEqual(t.tm_wday, (3+i)%7)
-            self.assertEqual(t.tm_yday, 61+i)
+            self.assertEqual(t.tm_wday, (3 + i) % 7)
+            self.assertEqual(t.tm_yday, 61 + i)
             self.assertEqual(t.tm_isdst, -1)
 
     def test_compare(self):
@@ -783,7 +805,7 @@ class TestDate[theclass](TestCase):
         self.assertFalse(t1 > t2)
 
         for args in (3, 3, 3), (2, 4, 4), (2, 3, 5):
-            t2 = self.theclass(*args)   # this is larger than t1
+            t2 = self.theclass(*args)  # this is larger than t1
             self.assertTrue(t1 < t2)
             self.assertTrue(t2 > t1)
             self.assertTrue(t1 <= t2)
@@ -797,7 +819,7 @@ class TestDate[theclass](TestCase):
             self.assertFalse(t1 >= t2)
             self.assertFalse(t2 <= t1)
 
-        '''
+        """
         for badarg in OTHERSTUFF:
             self.assertEqual(t1 == badarg, False)
             self.assertEqual(t1 != badarg, True)
@@ -811,12 +833,12 @@ class TestDate[theclass](TestCase):
             self.assertRaises(TypeError, lambda: badarg < t1)
             self.assertRaises(TypeError, lambda: badarg > t1)
             self.assertRaises(TypeError, lambda: badarg >= t1)
-        '''
+        """
 
     def test_bool(self):
         # All dates are considered true.
-        #self.assertTrue(self.theclass.min)
-        #self.assertTrue(self.theclass.max)
+        # self.assertTrue(self.theclass.min)
+        # self.assertTrue(self.theclass.max)
         self.assertTrue(self.theclass(1, 1, 1))
 
     def test_replace(self):
@@ -841,7 +863,7 @@ class TestDate[theclass](TestCase):
             (2000, 2, 29),
             (2004, 11, 12),
             (2004, 4, 3),
-            (2017, 5, 30)
+            (2017, 5, 30),
         ]
 
         for dt_tuple in base_dates:
@@ -853,17 +875,17 @@ class TestDate[theclass](TestCase):
     def test_fromisoformat_fails(self):
         # Test that fromisoformat() fails on invalid values
         bad_strs = [
-            '',                 # Empty string
-            '\ud800',           # bpo-34454: Surrogate code point
-            '009-03-04',        # Not 10 characters
-            '123456789',        # Not a date
-            '200a-12-04',       # Invalid character in year
-            '2009-1a-04',       # Invalid character in month
-            '2009-12-0a',       # Invalid character in day
-            '2009-01-32',       # Invalid day
-            '2009-02-29',       # Invalid leap day
-            '20090228',         # Valid ISO8601 output not from isoformat()
-            '2009\ud80002\ud80028',     # Separators are surrogate codepoints
+            "",  # Empty string
+            "\ud800",  # bpo-34454: Surrogate code point
+            "009-03-04",  # Not 10 characters
+            "123456789",  # Not a date
+            "200a-12-04",  # Invalid character in year
+            "2009-1a-04",  # Invalid character in month
+            "2009-12-0a",  # Invalid character in day
+            "2009-01-32",  # Invalid day
+            "2009-02-29",  # Invalid leap day
+            "20090228",  # Valid ISO8601 output not from isoformat()
+            "2009\ud80002\ud80028",  # Separators are surrogate codepoints
         ]
 
         for bad_str in bad_strs:
@@ -874,15 +896,15 @@ class TestDate[theclass](TestCase):
         # inverse of the isocalendar function
         dates = [
             (2016, 4, 3),
-            (2005, 1, 2),       # (2004, 53, 7)
-            (2008, 12, 30),     # (2009, 1, 2)
-            (2010, 1, 2),       # (2009, 53, 6)
-            (2009, 12, 31),     # (2009, 53, 4)
-            (1900, 1, 1),       # Unusual non-leap year (year % 100 == 0)
+            (2005, 1, 2),  # (2004, 53, 7)
+            (2008, 12, 30),  # (2009, 1, 2)
+            (2010, 1, 2),  # (2009, 53, 6)
+            (2009, 12, 31),  # (2009, 53, 4)
+            (1900, 1, 1),  # Unusual non-leap year (year % 100 == 0)
             (1900, 12, 31),
-            (2000, 1, 1),       # Unusual leap year (year % 400 == 0)
+            (2000, 1, 1),  # Unusual leap year (year % 400 == 0)
             (2000, 12, 31),
-            (2004, 1, 1),       # Leap year
+            (2004, 1, 1),  # Leap year
             (2004, 12, 31),
             (1, 1, 1),
             (9999, 12, 31),
@@ -910,15 +932,17 @@ class TestDate[theclass](TestCase):
             (10000, 1, 1),
             (0, 1, 1),
             (9999999, 1, 1),
-            (2<<32, 1, 1),
-            (2019, 2<<32, 1),
-            (2019, 1, 2<<32),
+            (2 << 32, 1, 1),
+            (2019, 2 << 32, 1),
+            (2019, 1, 2 << 32),
         ]
 
         for isocal in isocals:
             self.assertRaises(ValueError, self.theclass.fromisocalendar, *isocal)
 
-class TestDateTime[theclass](TestDate[theclass]):
+
+class TestDateTime(TestDate[theclass]):
+    theclass: type
 
     def test_basic_attributes(self):
         dt = self.theclass(2002, 3, 1, 12, 0)
@@ -944,46 +968,55 @@ class TestDateTime[theclass](TestDate[theclass]):
 
     def test_isoformat(self):
         t = self.theclass(1, 2, 3, 4, 5, 1, 123)
-        self.assertEqual(t.isoformat(),    "0001-02-03T04:05:01.000123")
-        self.assertEqual(t.isoformat('T'), "0001-02-03T04:05:01.000123")
-        self.assertEqual(t.isoformat(' '), "0001-02-03 04:05:01.000123")
-        self.assertEqual(t.isoformat('\x00'), "0001-02-03\x0004:05:01.000123")
+        self.assertEqual(t.isoformat(), "0001-02-03T04:05:01.000123")
+        self.assertEqual(t.isoformat("T"), "0001-02-03T04:05:01.000123")
+        self.assertEqual(t.isoformat(" "), "0001-02-03 04:05:01.000123")
+        self.assertEqual(t.isoformat("\x00"), "0001-02-03\x0004:05:01.000123")
         # bpo-34482: Check that surrogates are handled properly.
-        self.assertEqual(t.isoformat('\ud800'),
-                         "0001-02-03\ud80004:05:01.000123")
-        self.assertEqual(t.isoformat(timespec='hours'), "0001-02-03T04")
-        self.assertEqual(t.isoformat(timespec='minutes'), "0001-02-03T04:05")
-        self.assertEqual(t.isoformat(timespec='seconds'), "0001-02-03T04:05:01")
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "0001-02-03T04:05:01.000")
-        self.assertEqual(t.isoformat(timespec='microseconds'), "0001-02-03T04:05:01.000123")
-        self.assertEqual(t.isoformat(timespec='auto'), "0001-02-03T04:05:01.000123")
-        self.assertEqual(t.isoformat(sep=' ', timespec='minutes'), "0001-02-03 04:05")
+        self.assertEqual(t.isoformat("\ud800"), "0001-02-03\ud80004:05:01.000123")
+        self.assertEqual(t.isoformat(timespec="hours"), "0001-02-03T04")
+        self.assertEqual(t.isoformat(timespec="minutes"), "0001-02-03T04:05")
+        self.assertEqual(t.isoformat(timespec="seconds"), "0001-02-03T04:05:01")
+        self.assertEqual(
+            t.isoformat(timespec="milliseconds"), "0001-02-03T04:05:01.000"
+        )
+        self.assertEqual(
+            t.isoformat(timespec="microseconds"), "0001-02-03T04:05:01.000123"
+        )
+        self.assertEqual(t.isoformat(timespec="auto"), "0001-02-03T04:05:01.000123")
+        self.assertEqual(t.isoformat(sep=" ", timespec="minutes"), "0001-02-03 04:05")
         # str is ISO format with the separator forced to a blank.
         self.assertEqual(str(t), "0001-02-03 04:05:01.000123")
 
-        #t = self.theclass(1, 2, 3, 4, 5, 1, 999500, tzinfo=timezone.utc)
-        #self.assertEqual(t.isoformat(timespec='milliseconds'), "0001-02-03T04:05:01.999+00:00")
+        # t = self.theclass(1, 2, 3, 4, 5, 1, 999500, tzinfo=timezone.utc)
+        # self.assertEqual(t.isoformat(timespec='milliseconds'), "0001-02-03T04:05:01.999+00:00")
 
         t = self.theclass(1, 2, 3, 4, 5, 1, 999500)
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "0001-02-03T04:05:01.999")
+        self.assertEqual(
+            t.isoformat(timespec="milliseconds"), "0001-02-03T04:05:01.999"
+        )
 
         t = self.theclass(1, 2, 3, 4, 5, 1)
-        self.assertEqual(t.isoformat(timespec='auto'), "0001-02-03T04:05:01")
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "0001-02-03T04:05:01.000")
-        self.assertEqual(t.isoformat(timespec='microseconds'), "0001-02-03T04:05:01.000000")
+        self.assertEqual(t.isoformat(timespec="auto"), "0001-02-03T04:05:01")
+        self.assertEqual(
+            t.isoformat(timespec="milliseconds"), "0001-02-03T04:05:01.000"
+        )
+        self.assertEqual(
+            t.isoformat(timespec="microseconds"), "0001-02-03T04:05:01.000000"
+        )
 
         t = self.theclass(2, 3, 2)
-        self.assertEqual(t.isoformat(),    "0002-03-02T00:00:00")
-        self.assertEqual(t.isoformat('T'), "0002-03-02T00:00:00")
-        self.assertEqual(t.isoformat(' '), "0002-03-02 00:00:00")
+        self.assertEqual(t.isoformat(), "0002-03-02T00:00:00")
+        self.assertEqual(t.isoformat("T"), "0002-03-02T00:00:00")
+        self.assertEqual(t.isoformat(" "), "0002-03-02 00:00:00")
         # str is ISO format with the separator forced to a blank.
         self.assertEqual(str(t), "0002-03-02 00:00:00")
         # ISO format with timezone
-        #tz = FixedOffset(timedelta(seconds=16), 'XXX')
-        #t = self.theclass(2, 3, 2, tzinfo=tz)
-        #self.assertEqual(t.isoformat(), "0002-03-02T00:00:00+00:00:16")
+        # tz = FixedOffset(timedelta(seconds=16), 'XXX')
+        # t = self.theclass(2, 3, 2, tzinfo=tz)
+        # self.assertEqual(t.isoformat(), "0002-03-02T00:00:00+00:00:16")
 
-    '''
+    """
     def test_isoformat_timezone(self):
         tzoffsets = [
             ('05:00', timedelta(hours=5)),
@@ -1013,9 +1046,9 @@ class TestDateTime[theclass](TestDate[theclass]):
             exp = exp_base + exp_tz
             with self.subTest(tzi=tzi):
                 assert dt.isoformat() == exp
-    '''
+    """
 
-    '''
+    """
     def test_more_ctime(self):
         # Test fields that TestDate doesn't touch.
         import time
@@ -1031,7 +1064,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         # So test a case where that difference doesn't matter.
         t = self.theclass(2002, 3, 22, 18, 3, 5, 123)
         self.assertEqual(t.ctime(), time.ctime(time.mktime(t.timetuple())))
-    '''
+    """
 
     def test_tz_independent_comparing(self):
         dt1 = self.theclass(2002, 3, 1, 9, 0, 0)
@@ -1062,17 +1095,17 @@ class TestDateTime[theclass](TestDate[theclass]):
         make_dt4 = lambda a, b, c, d, e, f: self.theclass(a, b, c, d, e, f)
         make_dt5 = lambda a, b, c, d, e, f, g: self.theclass(a, b, c, d, e, f, g)
 
-        self.assertRaises(ValueError, make_dt1, MINYEAR-1, 1, 1)
-        self.assertRaises(ValueError, make_dt1, MAXYEAR+1, 1, 1)
+        self.assertRaises(ValueError, make_dt1, MINYEAR - 1, 1, 1)
+        self.assertRaises(ValueError, make_dt1, MAXYEAR + 1, 1, 1)
         # bad months
-        self.theclass(2000, 1, 1)    # no exception
-        self.theclass(2000, 12, 1)   # no exception
+        self.theclass(2000, 1, 1)  # no exception
+        self.theclass(2000, 12, 1)  # no exception
         self.assertRaises(ValueError, make_dt1, 2000, 0, 1)
         self.assertRaises(ValueError, make_dt1, 2000, 13, 1)
         # bad days
-        self.theclass(2000, 2, 29)   # no exception
-        self.theclass(2004, 2, 29)   # no exception
-        self.theclass(2400, 2, 29)   # no exception
+        self.theclass(2000, 2, 29)  # no exception
+        self.theclass(2004, 2, 29)  # no exception
+        self.theclass(2400, 2, 29)  # no exception
         self.assertRaises(ValueError, make_dt1, 2000, 2, 30)
         self.assertRaises(ValueError, make_dt1, 2001, 2, 29)
         self.assertRaises(ValueError, make_dt1, 2100, 2, 29)
@@ -1080,29 +1113,26 @@ class TestDateTime[theclass](TestDate[theclass]):
         self.assertRaises(ValueError, make_dt1, 2000, 1, 0)
         self.assertRaises(ValueError, make_dt1, 2000, 1, 32)
         # bad hours
-        self.theclass(2000, 1, 31, 0)    # no exception
-        self.theclass(2000, 1, 31, 23)   # no exception
+        self.theclass(2000, 1, 31, 0)  # no exception
+        self.theclass(2000, 1, 31, 23)  # no exception
         self.assertRaises(ValueError, make_dt2, 2000, 1, 31, -1)
         self.assertRaises(ValueError, make_dt2, 2000, 1, 31, 24)
         # bad minutes
-        self.theclass(2000, 1, 31, 23, 0)    # no exception
-        self.theclass(2000, 1, 31, 23, 59)   # no exception
+        self.theclass(2000, 1, 31, 23, 0)  # no exception
+        self.theclass(2000, 1, 31, 23, 59)  # no exception
         self.assertRaises(ValueError, make_dt3, 2000, 1, 31, 23, -1)
         self.assertRaises(ValueError, make_dt3, 2000, 1, 31, 23, 60)
         # bad seconds
-        self.theclass(2000, 1, 31, 23, 59, 0)    # no exception
-        self.theclass(2000, 1, 31, 23, 59, 59)   # no exception
+        self.theclass(2000, 1, 31, 23, 59, 0)  # no exception
+        self.theclass(2000, 1, 31, 23, 59, 59)  # no exception
         self.assertRaises(ValueError, make_dt4, 2000, 1, 31, 23, 59, -1)
         self.assertRaises(ValueError, make_dt4, 2000, 1, 31, 23, 59, 60)
         # bad microseconds
-        self.theclass(2000, 1, 31, 23, 59, 59, 0)    # no exception
-        self.theclass(2000, 1, 31, 23, 59, 59, 999999)   # no exception
-        self.assertRaises(ValueError, make_dt5,
-                          2000, 1, 31, 23, 59, 59, -1)
-        self.assertRaises(ValueError, make_dt5,
-                          2000, 1, 31, 23, 59, 59,
-                          1000000)
-        '''
+        self.theclass(2000, 1, 31, 23, 59, 59, 0)  # no exception
+        self.theclass(2000, 1, 31, 23, 59, 59, 999999)  # no exception
+        self.assertRaises(ValueError, make_dt5, 2000, 1, 31, 23, 59, 59, -1)
+        self.assertRaises(ValueError, make_dt5, 2000, 1, 31, 23, 59, 59, 1000000)
+        """
         # bad fold
         self.assertRaises(ValueError, self.theclass,
                           2000, 1, 31, fold=-1)
@@ -1111,7 +1141,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         # Positional fold:
         self.assertRaises(TypeError, self.theclass,
                           2000, 1, 31, 23, 59, 59, 0, None, 1)
-        '''
+        """
 
     def test_hash_equality(self):
         d = self.theclass(2000, 12, 31, 23, 30, 17)
@@ -1125,8 +1155,8 @@ class TestDateTime[theclass](TestDate[theclass]):
         self.assertEqual(dic[d], 2)
         self.assertEqual(dic[e], 2)
 
-        d = self.theclass(2001,  1,  1,  0,  5, 17)
-        e = self.theclass(2001,  1,  1,  0,  5, 17)
+        d = self.theclass(2001, 1, 1, 0, 5, 17)
+        e = self.theclass(2001, 1, 1, 0, 5, 17)
         self.assertEqual(d, e)
         self.assertEqual(hash(d), hash(e))
 
@@ -1139,8 +1169,8 @@ class TestDateTime[theclass](TestDate[theclass]):
     def test_computations(self):
         a = self.theclass(2002, 1, 31)
         b = self.theclass(1956, 1, 31)
-        diff = a-b
-        self.assertEqual(diff.days, 46*365 + len(range(1956, 2002, 4)))
+        diff = a - b
+        self.assertEqual(diff.days, 46 * 365 + len(range(1956, 2002, 4)))
         self.assertEqual(diff.seconds, 0)
         self.assertEqual(diff.microseconds, 0)
         a = self.theclass(2002, 3, 2, 17, 6)
@@ -1150,17 +1180,17 @@ class TestDateTime[theclass](TestDate[theclass]):
         week = timedelta(7)
         self.assertEqual(a + hour, self.theclass(2002, 3, 2, 18, 6))
         self.assertEqual(hour + a, self.theclass(2002, 3, 2, 18, 6))
-        self.assertEqual(a + 10*hour, self.theclass(2002, 3, 3, 3, 6))
+        self.assertEqual(a + 10 * hour, self.theclass(2002, 3, 3, 3, 6))
         self.assertEqual(a - hour, self.theclass(2002, 3, 2, 16, 6))
         self.assertEqual(-hour + a, self.theclass(2002, 3, 2, 16, 6))
         self.assertEqual(a - hour, a + -hour)
-        self.assertEqual(a - 20*hour, self.theclass(2002, 3, 1, 21, 6))
+        self.assertEqual(a - 20 * hour, self.theclass(2002, 3, 1, 21, 6))
         self.assertEqual(a + day, self.theclass(2002, 3, 3, 17, 6))
         self.assertEqual(a - day, self.theclass(2002, 3, 1, 17, 6))
         self.assertEqual(a + week, self.theclass(2002, 3, 9, 17, 6))
         self.assertEqual(a - week, self.theclass(2002, 2, 23, 17, 6))
-        self.assertEqual(a + 52*week, self.theclass(2003, 3, 1, 17, 6))
-        self.assertEqual(a - 52*week, self.theclass(2001, 3, 3, 17, 6))
+        self.assertEqual(a + 52 * week, self.theclass(2003, 3, 1, 17, 6))
+        self.assertEqual(a - 52 * week, self.theclass(2001, 3, 3, 17, 6))
         self.assertEqual((a + week) - a, week)
         self.assertEqual((a + day) - a, day)
         self.assertEqual((a + hour) - a, hour)
@@ -1177,15 +1207,21 @@ class TestDateTime[theclass](TestDate[theclass]):
         self.assertEqual(a - (a - day), day)
         self.assertEqual(a - (a - hour), hour)
         self.assertEqual(a - (a - millisec), millisec)
-        self.assertEqual(a + (week + day + hour + millisec),
-                         self.theclass(2002, 3, 10, 18, 6, 0, 1000))
-        self.assertEqual(a + (week + day + hour + millisec),
-                         (((a + week) + day) + hour) + millisec)
-        self.assertEqual(a - (week + day + hour + millisec),
-                         self.theclass(2002, 2, 22, 16, 5, 59, 999000))
-        self.assertEqual(a - (week + day + hour + millisec),
-                         (((a - week) - day) - hour) - millisec)
-        '''
+        self.assertEqual(
+            a + (week + day + hour + millisec),
+            self.theclass(2002, 3, 10, 18, 6, 0, 1000),
+        )
+        self.assertEqual(
+            a + (week + day + hour + millisec), (((a + week) + day) + hour) + millisec
+        )
+        self.assertEqual(
+            a - (week + day + hour + millisec),
+            self.theclass(2002, 2, 22, 16, 5, 59, 999000),
+        )
+        self.assertEqual(
+            a - (week + day + hour + millisec), (((a - week) - day) - hour) - millisec
+        )
+        """
         # Add/sub ints or floats should be illegal
         for i in 1, 1.0:
             self.assertRaises(TypeError, lambda: a+i)
@@ -1204,7 +1240,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         self.assertRaises(TypeError, lambda: a // a)
         # datetime + datetime is senseless
         self.assertRaises(TypeError, lambda: a + a)
-        '''
+        """
 
     def test_more_compare(self):
         # The test_compare() inherited from TestDate covers the error cases.
@@ -1218,7 +1254,7 @@ class TestDateTime[theclass](TestDate[theclass]):
             (2000, 11, 29, 21, 58, 16, 999998),
             (2000, 11, 29, 20, 59, 16, 999998),
             (2000, 11, 29, 20, 58, 17, 999998),
-            (2000, 11, 29, 20, 58, 16, 999999)
+            (2000, 11, 29, 20, 58, 16, 999999),
         ]
         t1 = self.theclass(*args)
         t2 = self.theclass(*args)
@@ -1231,7 +1267,7 @@ class TestDateTime[theclass](TestDate[theclass]):
 
         for i in range(len(args)):
             newargs = newargsx[i]
-            t2 = self.theclass(*newargs)   # this is larger than t1
+            t2 = self.theclass(*newargs)  # this is larger than t1
             self.assertTrue(t1 < t2)
             self.assertTrue(t2 > t1)
             self.assertTrue(t1 <= t2)
@@ -1262,7 +1298,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         got = self.theclass.fromtimestamp(ts)
         self.verify_field_equality(expected, got)
 
-    '''
+    """
     def test_utcfromtimestamp(self):
         import time
 
@@ -1270,23 +1306,23 @@ class TestDateTime[theclass](TestDate[theclass]):
         expected = time.gmtime(int(ts))
         got = self.theclass.utcfromtimestamp(ts)
         self.verify_field_equality(expected, got)
-    '''
+    """
 
     def test_timestamp_naive(self):
-        '''
+        """
         t = self.theclass(1970, 1, 1)
         self.assertEqual(t.timestamp(), 18000.0)
         t = self.theclass(1970, 1, 1, 1, 2, 3, 4)
         self.assertEqual(t.timestamp(),
                          18000.0 + 3600 + 2*60 + 3 + 4*1e-6)
-        '''
+        """
 
         t = self.theclass(1970, 1, 1)
         self.assertEqual(t.timestamp(), 0)
         t = self.theclass(1970, 1, 1, 1, 2, 3, 4)
-        self.assertEqual(t.timestamp(), 3600 + 2*60 + 3 + 4*1e-6)
+        self.assertEqual(t.timestamp(), 3600 + 2 * 60 + 3 + 4 * 1e-6)
 
-        '''
+        """
         # Missing hour
         t0 = self.theclass(2012, 3, 11, 2, 30)
         t1 = t0.replace(fold=1)
@@ -1308,9 +1344,9 @@ class TestDateTime[theclass](TestDate[theclass]):
                 continue
 
             self.assertEqual(self.theclass.fromtimestamp(s), t)
-        '''
+        """
 
-    '''
+    """
     def test_timestamp_aware(self):
         t = self.theclass(1970, 1, 1, tzinfo=timezone.utc)
         self.assertEqual(t.timestamp(), 0.0)
@@ -1321,8 +1357,8 @@ class TestDateTime[theclass](TestDate[theclass]):
                           tzinfo=timezone(timedelta(hours=-5), 'EST'))
         self.assertEqual(t.timestamp(),
                          18000 + 3600 + 2*60 + 3 + 4*1e-6)
-    '''
-    '''
+    """
+    """
     def test_microsecond_rounding(self):
         for fts in (self.theclass.fromtimestamp,
                     self.theclass.utcfromtimestamp):
@@ -1358,8 +1394,8 @@ class TestDateTime[theclass](TestDate[theclass]):
             t = fts(1/2**7)
             self.assertEqual(t.second, 0)
             self.assertEqual(t.microsecond, 7812)
-    '''
-    '''
+    """
+    """
     def test_timestamp_limits(self):
         # minimum timestamp
         min_dt = self.theclass.min.replace(tzinfo=timezone.utc)
@@ -1396,18 +1432,18 @@ class TestDateTime[theclass](TestDate[theclass]):
         ts = max_dt.timestamp() + delta
         self.assertRaises(ValueError, self.theclass.fromtimestamp, ts)
         self.assertRaises(ValueError, self.theclass.utcfromtimestamp, ts)
-    '''
+    """
 
     def test_negative_float_fromtimestamp(self):
         # The result is tz-dependent; at least test that this doesn't
         # fail (like it did before bug 1646728 was fixed).
         self.theclass.fromtimestamp(-1.05)
 
-    '''
+    """
     def test_negative_float_utcfromtimestamp(self):
         d = self.theclass.utcfromtimestamp(-1.05)
         self.assertEqual(d, self.theclass(1969, 12, 31, 23, 59, 58, 950000))
-    '''
+    """
 
     def test_utcnow(self):
         import time
@@ -1445,7 +1481,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         self.assertEqual(t, dt.time())
         self.assertEqual(dt, combine(dt.date(), dt.time()))
 
-        '''
+        """
         self.assertRaises(TypeError, combine) # need an arg
         self.assertRaises(TypeError, combine, d) # need two args
         self.assertRaises(TypeError, combine, t, d) # args reversed
@@ -1464,7 +1500,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         dt = combine(dt, t)
         self.assertEqual(dt.date(), d)
         self.assertEqual(dt.time(), t)
-        '''
+        """
 
     def test_replace(self):
         cls = self.theclass
@@ -1483,7 +1519,7 @@ class TestDateTime[theclass](TestDate[theclass]):
         base = cls(2000, 2, 29)
         self.assertRaises(ValueError, lambda: base.replace(year=2001))
 
-    '''
+    """
     def test_astimezone(self):
         dt = self.theclass.now()
         f = FixedOffset(44, "0044")
@@ -1515,29 +1551,26 @@ class TestDateTime[theclass](TestDate[theclass]):
         dt_broken = dt.replace(tzinfo=broken)
         with self.assertRaises(TypeError):
             dt_broken.astimezone()
-    '''
+    """
 
     def test_fromisoformat_datetime(self):
         # Test that isoformat() is reversible
-        base_dates = [
-            (1, 1, 1),
-            (1900, 1, 1),
-            (2004, 11, 12),
-            (2017, 5, 30)
-        ]
+        base_dates = [(1, 1, 1), (1900, 1, 1), (2004, 11, 12), (2017, 5, 30)]
 
         base_times = [
             (0, 0, 0, 0),
             (0, 0, 0, 241000),
             (0, 0, 0, 234567),
-            (12, 30, 45, 234567)
+            (12, 30, 45, 234567),
         ]
 
-        separators = [' ', 'T']
+        separators = [" ", "T"]
 
-        dts = [self.theclass(*date_tuple, *time_tuple)
-               for date_tuple in base_dates
-               for time_tuple in base_times]
+        dts = [
+            self.theclass(*date_tuple, *time_tuple)
+            for date_tuple in base_dates
+            for time_tuple in base_times
+        ]
 
         for dt in dts:
             for sep in separators:
@@ -1546,9 +1579,7 @@ class TestDateTime[theclass](TestDate[theclass]):
                 self.assertEqual(dt, dt_rt)
 
     def test_fromisoformat_separators(self):
-        separators = [
-            ' ', 'T'
-        ]
+        separators = [" ", "T"]
 
         for sep in separators:
             dt = self.theclass(2018, 1, 31, 23, 59, 47, 124789)
@@ -1559,7 +1590,7 @@ class TestDateTime[theclass](TestDate[theclass]):
 
     def test_fromisoformat_ambiguous(self):
         # Test strings like 2018-01-31+12:15 (where +12:15 is not a time zone)
-        separators = ['+', '-']
+        separators = ["+", "-"]
         for sep in separators:
             dt = self.theclass(2018, 1, 31, 12, 15)
             dtstr = dt.isoformat(sep=sep)
@@ -1568,78 +1599,78 @@ class TestDateTime[theclass](TestDate[theclass]):
             self.assertEqual(dt, dt_rt)
 
     def test_fromisoformat_timespecs(self):
-        datetime_bases = [
-            (2009, 12, 4, 8, 17, 45, 123456),
-            (2009, 12, 4, 8, 17, 45, 0)]
+        datetime_bases = [(2009, 12, 4, 8, 17, 45, 123456), (2009, 12, 4, 8, 17, 45, 0)]
 
-        timespecs = ['hours', 'minutes', 'seconds',
-                     'milliseconds', 'microseconds']
+        timespecs = ["hours", "minutes", "seconds", "milliseconds", "microseconds"]
 
         for dt_tuple in datetime_bases:
             dt = self.theclass(*(dt_tuple[0:4]))
-            dtstr = dt.isoformat(timespec='hours')
+            dtstr = dt.isoformat(timespec="hours")
             dt_rt = self.theclass.fromisoformat(dtstr)
             self.assertEqual(dt, dt_rt)
 
             dt = self.theclass(*(dt_tuple[0:5]))
-            dtstr = dt.isoformat(timespec='minutes')
+            dtstr = dt.isoformat(timespec="minutes")
             dt_rt = self.theclass.fromisoformat(dtstr)
             self.assertEqual(dt, dt_rt)
 
             dt = self.theclass(*(dt_tuple[0:6]))
-            dtstr = dt.isoformat(timespec='seconds')
+            dtstr = dt.isoformat(timespec="seconds")
             dt_rt = self.theclass.fromisoformat(dtstr)
             self.assertEqual(dt, dt_rt)
 
             new_microseconds = 1000 * (dt_tuple[6] // 1000)
             dt_tuple2 = (*dt_tuple[0:6], new_microseconds)
             dt = self.theclass(*(dt_tuple2[0:7]))
-            dtstr = dt.isoformat(timespec='milliseconds')
+            dtstr = dt.isoformat(timespec="milliseconds")
             dt_rt = self.theclass.fromisoformat(dtstr)
             self.assertEqual(dt, dt_rt)
 
             dt = self.theclass(*(dt_tuple[0:8]))
-            dtstr = dt.isoformat(timespec='microseconds')
+            dtstr = dt.isoformat(timespec="microseconds")
             dt_rt = self.theclass.fromisoformat(dtstr)
             self.assertEqual(dt, dt_rt)
 
     def test_fromisoformat_fails_datetime(self):
         # Test that fromisoformat() fails on invalid values
         bad_strs = [
-            '',                             # Empty string
-            '\ud800',                       # bpo-34454: Surrogate code point
-            '2009.04-19T03',                # Wrong first separator
-            '2009-04.19T03',                # Wrong second separator
-            '2009-04-19T0a',                # Invalid hours
-            '2009-04-19T03:1a:45',          # Invalid minutes
-            '2009-04-19T03:15:4a',          # Invalid seconds
-            '2009-04-19T03;15:45',          # Bad first time separator
-            '2009-04-19T03:15;45',          # Bad second time separator
-            '2009-04-19T03:15:4500:00',     # Bad time zone separator
-            '2009-04-19T03:15:45.2345',     # Too many digits for milliseconds
-            '2009-04-19T03:15:45.1234567',  # Too many digits for microseconds
-            '2009-04-19T03:15:45.123456+24:30',    # Invalid time zone offset
-            '2009-04-19T03:15:45.123456-24:30',    # Invalid negative offset
-            '2009-04-10ᛇᛇᛇᛇᛇ12:15',         # Too many unicode separators
-            '2009-04\ud80010T12:15',        # Surrogate char in date
-            '2009-04-10T12\ud80015',        # Surrogate char in time
-            '2009-04-19T1',                 # Incomplete hours
-            '2009-04-19T12:3',              # Incomplete minutes
-            '2009-04-19T12:30:4',           # Incomplete seconds
-            '2009-04-19T12:',               # Ends with time separator
-            '2009-04-19T12:30:',            # Ends with time separator
-            '2009-04-19T12:30:45.',         # Ends with time separator
-            '2009-04-19T12:30:45.123456+',  # Ends with timzone separator
-            '2009-04-19T12:30:45.123456-',  # Ends with timzone separator
-            '2009-04-19T12:30:45.123456-05:00a',    # Extra text
-            '2009-04-19T12:30:45.123-05:00a',       # Extra text
-            '2009-04-19T12:30:45-05:00a',           # Extra text
+            "",  # Empty string
+            "\ud800",  # bpo-34454: Surrogate code point
+            "2009.04-19T03",  # Wrong first separator
+            "2009-04.19T03",  # Wrong second separator
+            "2009-04-19T0a",  # Invalid hours
+            "2009-04-19T03:1a:45",  # Invalid minutes
+            "2009-04-19T03:15:4a",  # Invalid seconds
+            "2009-04-19T03;15:45",  # Bad first time separator
+            "2009-04-19T03:15;45",  # Bad second time separator
+            "2009-04-19T03:15:4500:00",  # Bad time zone separator
+            "2009-04-19T03:15:45.2345",  # Too many digits for milliseconds
+            "2009-04-19T03:15:45.1234567",  # Too many digits for microseconds
+            "2009-04-19T03:15:45.123456+24:30",  # Invalid time zone offset
+            "2009-04-19T03:15:45.123456-24:30",  # Invalid negative offset
+            "2009-04-10ᛇᛇᛇᛇᛇ12:15",  # Too many unicode separators
+            "2009-04\ud80010T12:15",  # Surrogate char in date
+            "2009-04-10T12\ud80015",  # Surrogate char in time
+            "2009-04-19T1",  # Incomplete hours
+            "2009-04-19T12:3",  # Incomplete minutes
+            "2009-04-19T12:30:4",  # Incomplete seconds
+            "2009-04-19T12:",  # Ends with time separator
+            "2009-04-19T12:30:",  # Ends with time separator
+            "2009-04-19T12:30:45.",  # Ends with time separator
+            "2009-04-19T12:30:45.123456+",  # Ends with timzone separator
+            "2009-04-19T12:30:45.123456-",  # Ends with timzone separator
+            "2009-04-19T12:30:45.123456-05:00a",  # Extra text
+            "2009-04-19T12:30:45.123-05:00a",  # Extra text
+            "2009-04-19T12:30:45-05:00a",  # Extra text
         ]
 
         for bad_str in bad_strs:
             self.assertRaises(ValueError, self.theclass.fromisoformat, bad_str)
 
-class TestTime[theclass=time](TestCase):
+
+class TestTime(TestCase):
+    theclass: type = time
+
     def test_basic_attributes(self):
         t = self.theclass(12, 0)
         self.assertEqual(t.hour, 12)
@@ -1658,12 +1689,7 @@ class TestTime[theclass=time](TestCase):
 
     def test_comparing(self):
         args = (1, 2, 3, 4)
-        newargsx = [
-            (2, 2, 3, 4),
-            (1, 3, 3, 4),
-            (1, 2, 4, 4),
-            (1, 2, 3, 5)
-        ]
+        newargsx = [(2, 2, 3, 4), (1, 3, 3, 4), (1, 2, 4, 4), (1, 2, 3, 5)]
         t1 = self.theclass(*args)
         t2 = self.theclass(*args)
         self.assertEqual(t1, t2)
@@ -1675,7 +1701,7 @@ class TestTime[theclass=time](TestCase):
 
         for i in range(len(args)):
             newargs = newargsx[i]
-            t2 = self.theclass(*newargs)   # this is larger than t1
+            t2 = self.theclass(*newargs)  # this is larger than t1
             self.assertTrue(t1 < t2)
             self.assertTrue(t2 > t1)
             self.assertTrue(t1 <= t2)
@@ -1689,7 +1715,7 @@ class TestTime[theclass=time](TestCase):
             self.assertFalse(t1 >= t2)
             self.assertFalse(t2 <= t1)
 
-        '''
+        """
         for badarg in OTHERSTUFF:
             self.assertEqual(t1 == badarg, False)
             self.assertEqual(t1 != badarg, True)
@@ -1704,12 +1730,12 @@ class TestTime[theclass=time](TestCase):
             self.assertRaises(TypeError, lambda: badarg < t1)
             self.assertRaises(TypeError, lambda: badarg > t1)
             self.assertRaises(TypeError, lambda: badarg >= t1)
-        '''
+        """
 
     def test_bad_constructor_arguments(self):
         # bad hours
-        self.theclass(0, 0)    # no exception
-        self.theclass(23, 0)   # no exception
+        self.theclass(0, 0)  # no exception
+        self.theclass(23, 0)  # no exception
 
         make_time1 = lambda a, b: self.theclass(a, b)
         make_time2 = lambda a, b, c: self.theclass(a, b, c)
@@ -1718,18 +1744,18 @@ class TestTime[theclass=time](TestCase):
         self.assertRaises(ValueError, make_time1, -1, 0)
         self.assertRaises(ValueError, make_time1, 24, 0)
         # bad minutes
-        self.theclass(23, 0)    # no exception
-        self.theclass(23, 59)   # no exception
+        self.theclass(23, 0)  # no exception
+        self.theclass(23, 59)  # no exception
         self.assertRaises(ValueError, make_time1, 23, -1)
         self.assertRaises(ValueError, make_time1, 23, 60)
         # bad seconds
-        self.theclass(23, 59, 0)    # no exception
-        self.theclass(23, 59, 59)   # no exception
+        self.theclass(23, 59, 0)  # no exception
+        self.theclass(23, 59, 59)  # no exception
         self.assertRaises(ValueError, make_time2, 23, 59, -1)
         self.assertRaises(ValueError, make_time2, 23, 59, 60)
         # bad microseconds
-        self.theclass(23, 59, 59, 0)        # no exception
-        self.theclass(23, 59, 59, 999999)   # no exception
+        self.theclass(23, 59, 59, 0)  # no exception
+        self.theclass(23, 59, 59, 999999)  # no exception
         self.assertRaises(ValueError, make_time3, 23, 59, 59, -1)
         self.assertRaises(ValueError, make_time3, 23, 59, 59, 1000000)
 
@@ -1745,8 +1771,8 @@ class TestTime[theclass=time](TestCase):
         self.assertEqual(dic[d], 2)
         self.assertEqual(dic[e], 2)
 
-        d = self.theclass(0,  5, 17)
-        e = self.theclass(0,  5, 17)
+        d = self.theclass(0, 5, 17)
+        e = self.theclass(0, 5, 17)
         self.assertEqual(d, e)
         self.assertEqual(hash(d), hash(e))
 
@@ -1790,20 +1816,20 @@ class TestTime[theclass=time](TestCase):
         self.assertEqual(t.isoformat(), str(t))
 
         t = self.theclass(hour=12, minute=34, second=56, microsecond=123456)
-        self.assertEqual(t.isoformat(timespec='hours'), "12")
-        self.assertEqual(t.isoformat(timespec='minutes'), "12:34")
-        self.assertEqual(t.isoformat(timespec='seconds'), "12:34:56")
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "12:34:56.123")
-        self.assertEqual(t.isoformat(timespec='microseconds'), "12:34:56.123456")
-        self.assertEqual(t.isoformat(timespec='auto'), "12:34:56.123456")
+        self.assertEqual(t.isoformat(timespec="hours"), "12")
+        self.assertEqual(t.isoformat(timespec="minutes"), "12:34")
+        self.assertEqual(t.isoformat(timespec="seconds"), "12:34:56")
+        self.assertEqual(t.isoformat(timespec="milliseconds"), "12:34:56.123")
+        self.assertEqual(t.isoformat(timespec="microseconds"), "12:34:56.123456")
+        self.assertEqual(t.isoformat(timespec="auto"), "12:34:56.123456")
 
         t = self.theclass(hour=12, minute=34, second=56, microsecond=999500)
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "12:34:56.999")
+        self.assertEqual(t.isoformat(timespec="milliseconds"), "12:34:56.999")
 
         t = self.theclass(hour=12, minute=34, second=56, microsecond=0)
-        self.assertEqual(t.isoformat(timespec='milliseconds'), "12:34:56.000")
-        self.assertEqual(t.isoformat(timespec='microseconds'), "12:34:56.000000")
-        self.assertEqual(t.isoformat(timespec='auto'), "12:34:56")
+        self.assertEqual(t.isoformat(timespec="milliseconds"), "12:34:56.000")
+        self.assertEqual(t.isoformat(timespec="microseconds"), "12:34:56.000000")
+        self.assertEqual(t.isoformat(timespec="auto"), "12:34:56")
 
     def test_str(self):
         self.assertEqual(str(self.theclass(1, 2, 3, 4)), "01:02:03.000004")
@@ -1813,24 +1839,30 @@ class TestTime[theclass=time](TestCase):
         self.assertEqual(str(self.theclass(23, 15, 0, 0)), "23:15:00")
 
     def test_repr(self):
-        self.assertEqual(repr(self.theclass(1, 2, 3, 4)),
-                         "time(hour=1, minute=2, second=3, microsecond=4)")
-        self.assertEqual(repr(self.theclass(10, 2, 3, 4000)),
-                         "time(hour=10, minute=2, second=3, microsecond=4000)")
-        self.assertEqual(repr(self.theclass(0, 2, 3, 400000)),
-                         "time(hour=0, minute=2, second=3, microsecond=400000)")
-        self.assertEqual(repr(self.theclass(12, 2, 3, 0)),
-                         "time(hour=12, minute=2, second=3)")
-        self.assertEqual(repr(self.theclass(23, 15, 0, 0)),
-                         "time(hour=23, minute=15)")
+        self.assertEqual(
+            repr(self.theclass(1, 2, 3, 4)),
+            "time(hour=1, minute=2, second=3, microsecond=4)",
+        )
+        self.assertEqual(
+            repr(self.theclass(10, 2, 3, 4000)),
+            "time(hour=10, minute=2, second=3, microsecond=4000)",
+        )
+        self.assertEqual(
+            repr(self.theclass(0, 2, 3, 400000)),
+            "time(hour=0, minute=2, second=3, microsecond=400000)",
+        )
+        self.assertEqual(
+            repr(self.theclass(12, 2, 3, 0)), "time(hour=12, minute=2, second=3)"
+        )
+        self.assertEqual(repr(self.theclass(23, 15, 0, 0)), "time(hour=23, minute=15)")
 
-    '''
+    """
     def test_resolution_info(self):
         self.assertIsInstance(self.theclass.min, self.theclass)
         self.assertIsInstance(self.theclass.max, self.theclass)
         self.assertIsInstance(self.theclass.resolution, timedelta)
         self.assertTrue(self.theclass.max > self.theclass.min)
-    '''
+    """
 
     def test_bool(self):
         # time is always True.
@@ -1856,9 +1888,12 @@ class TestTime[theclass=time](TestCase):
         # Out of bounds.
         base = cls(1)
         self.assertRaises(ValueError, lambda: base.replace(hour=24))
-        self.assertRaises(ValueError, lambda: base.replace(minute=-2))  # minute=-1 indicates default; changed to -2 for test
+        self.assertRaises(
+            ValueError, lambda: base.replace(minute=-2)
+        )  # minute=-1 indicates default; changed to -2 for test
         self.assertRaises(ValueError, lambda: base.replace(second=100))
         self.assertRaises(ValueError, lambda: base.replace(microsecond=1000000))
+
 
 case_td = TestTimeDelta()
 case_td.test_computations()
@@ -1925,7 +1960,7 @@ case_dt.test_hash_equality()
 case_dt.test_computations()
 case_dt.test_more_compare()
 case_dt.test_fromtimestamp()
-#case_dt.test_utcfromtimestamp()
+# case_dt.test_utcfromtimestamp()
 case_dt.test_timestamp_naive()
 # case_dt.test_microsecond_rounding()
 # case_dt.test_timestamp_limits()
