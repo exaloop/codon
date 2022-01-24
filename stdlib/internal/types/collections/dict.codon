@@ -1,13 +1,18 @@
-# dict implementation based on klib's khash
+# (c) 2022 Exaloop Inc. All rights reserved.
 
+# dict implementation based on klib's khash
 import internal.khash as khash
 import internal.gc as gc
 
-def _dict_hash(key):
+
+def _dict_hash(key) -> int:
     k = key.__hash__()
     return (k >> 33) ^ k ^ (k << 11)
 
-class Dict[K,V]:
+
+class Dict:
+    K: type
+    V: type
     _n_buckets: int
     _size: int
     _n_occupied: int
@@ -17,9 +22,9 @@ class Dict[K,V]:
     _keys: Ptr[K]
     _vals: Ptr[V]
 
-# Magic methods
+    # Magic methods
 
-    def _init(self):
+    def _init(self) -> void:
         self._n_buckets = 0
         self._size = 0
         self._n_occupied = 0
@@ -28,7 +33,7 @@ class Dict[K,V]:
         self._keys = Ptr[K]()
         self._vals = Ptr[V]()
 
-    def _init_from(self, other):
+    def _init_from(self, other) -> void:
         n = other._n_buckets
 
         if n == 0:
@@ -52,15 +57,15 @@ class Dict[K,V]:
         self._keys = keys_copy
         self._vals = vals_copy
 
-    def __init__(self):
+    def __init__(self) -> void:
         self._init()
 
-    def __init__(self, g: Generator[Tuple[K,V]]):
+    def __init__(self, g: Generator[Tuple[K, V]]) -> void:
         self._init()
-        for k,v in g:
+        for k, v in g:
             self[k] = v
 
-    def __init__(self, other: Dict[K,V]):
+    def __init__(self, other: Dict[K, V]) -> void:
         self._init_from(other)
 
     def __getitem__(self, key: K) -> V:
@@ -69,40 +74,40 @@ class Dict[K,V]:
             return self._vals[x]
         raise KeyError(str(key))
 
-    def __setitem__(self, key: K, val: V):
+    def __setitem__(self, key: K, val: V) -> void:
         ret, x = self._kh_put(key)
         self._vals[x] = val
 
-    def __delitem__(self, key: K):
+    def __delitem__(self, key: K) -> void:
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
         else:
             raise KeyError(str(key))
 
-    def __contains__(self, key: K):
+    def __contains__(self, key: K) -> bool:
         return self._kh_get(key) != self._kh_end()
 
-    def __eq__(self, other: Dict[K,V]):
+    def __eq__(self, other: Dict[K, V]) -> bool:
         if self.__len__() != other.__len__():
             return False
-        for k,v in self.items():
+        for k, v in self.items():
             if k not in other or other[k] != v:
                 return False
         return True
 
-    def __ne__(self, other: Dict[K,V]):
+    def __ne__(self, other: Dict[K, V]) -> bool:
         return not (self == other)
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[K]:
         return self.keys()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._size
 
     def __copy__(self):
         if self.__len__() == 0:
-            return Dict[K,V]()
+            return Dict[K, V]()
         n = self._n_buckets
         f = khash.__ac_fsize(n)
         flags_copy = Ptr[u32](f)
@@ -111,12 +116,20 @@ class Dict[K,V]:
         str.memcpy(flags_copy.as_byte(), self._flags.as_byte(), f * gc.sizeof(u32))
         str.memcpy(keys_copy.as_byte(), self._keys.as_byte(), n * gc.sizeof(K))
         str.memcpy(vals_copy.as_byte(), self._vals.as_byte(), n * gc.sizeof(V))
-        return Dict[K,V](n, self._size, self._n_occupied, self._upper_bound, flags_copy, keys_copy, vals_copy)
+        return Dict[K, V](
+            n,
+            self._size,
+            self._n_occupied,
+            self._upper_bound,
+            flags_copy,
+            keys_copy,
+            vals_copy,
+        )
 
-    def __deepcopy__(self):
+    def __deepcopy__(self) -> Dict[K, V]:
         return {k.__deepcopy__(): v.__deepcopy__() for k, v in self.items()}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -135,10 +148,9 @@ class Dict[K,V]:
             lst.append("}")
             return str.cat(lst)
 
+    # Helper methods
 
-# Helper methods
-
-    def resize(self, new_n_buckets: int):
+    def resize(self, new_n_buckets: int) -> void:
         self._kh_resize(new_n_buckets)
 
     def get(self, key: K, s: V) -> V:
@@ -152,29 +164,29 @@ class Dict[K,V]:
             return val
         return self._vals[x]
 
-    def increment[T](self, key: K, by: T = 1):
+    def increment(self, key: K, by: T = 1, T: type) -> void:
         ret, x = self._kh_put(key)
         if ret != 0:  # i.e. key not present
             self._vals[x] = by
         else:
             self._vals[x] += by
 
-    def __dict_do_op_throws__[F, Z](self, key: K, other: Z, op: F):
+    def __dict_do_op_throws__(self, key: K, other: Z, op: F, F: type, Z: type) -> void:
         x = self._kh_get(key)
         if x == self._kh_end():
             raise KeyError(str(key))
         else:
             self._vals[x] = op(self._vals[x], other)
 
-    def __dict_do_op__[F, Z](self, key: K, other: Z, dflt: V, op: F):
+    def __dict_do_op__(self, key: K, other: Z, dflt: V, op: F, F: type, Z: type) -> void:
         ret, x = self._kh_put(key)
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
-    def update(self, other: Dict[K,V]):
-        for k,v in other.items():
+    def update(self, other: Dict[K, V]) -> void:
+        for k, v in other.items():
             self[k] = v
 
-    def pop(self, key: K):
+    def pop(self, key: K) -> V:
         x = self._kh_get(key)
         if x != self._kh_end():
             v = self._vals[x]
@@ -182,55 +194,57 @@ class Dict[K,V]:
             return v
         raise KeyError(str(key))
 
-    def popitem(self):
+    def popitem(self) -> Tuple[K, V]:
         for k in self:
             return (k, self.pop(k))
-        raise KeyError('dictionary is empty')
+        raise KeyError("dictionary is empty")
 
-    def clear(self):
+    def clear(self) -> void:
         self._kh_clear()
 
-    def items(self):
+    def items(self) -> Generator[Tuple[K, V]]:
         i = self._kh_begin()
         while i < self._kh_end():
             if self._kh_exist(i):
                 yield self._keys[i], self._vals[i]
             i += 1
 
-    def keys(self):
-        for k,v in self.items():
+    def keys(self) -> Generator[K]:
+        for k, v in self.items():
             yield k
 
-    def values(self):
-        for k,v in self.items():
+    def values(self) -> Generator[V]:
+        for k, v in self.items():
             yield v
 
     def copy(self):
         return self.__copy__()
 
-    def fromkeys[KS,V](ks: KS, v: V):
+    def fromkeys(ks: Generator[K], v: V, K: type, V: type) -> Dict[K, V]:
         return {k: v for k in ks}
 
-# Internal helpers
+    # Internal helpers
 
-    def _kh_clear(self):
+    def _kh_clear(self) -> void:
         if self._flags:
             i = 0
             n = khash.__ac_fsize(self._n_buckets)
             while i < n:
-                self._flags[i] = u32(0xaaaaaaaa)
+                self._flags[i] = u32(0xAAAAAAAA)
                 i += 1
             self._size = 0
             self._n_occupied = 0
 
-    def _kh_get(self, key: K):
+    def _kh_get(self, key: K) -> int:
         if self._n_buckets:
             step = 0
             mask = self._n_buckets - 1
             k = _dict_hash(key)
             i = k & mask
             last = i
-            while not khash.__ac_isempty(self._flags, i) and (khash.__ac_isdel(self._flags, i) or self._keys[i] != key):
+            while not khash.__ac_isempty(self._flags, i) and (
+                khash.__ac_isdel(self._flags, i) or self._keys[i] != key
+            ):
                 step += 1
                 i = (i + step) & mask
                 if i == last:
@@ -239,7 +253,7 @@ class Dict[K,V]:
         else:
             return 0
 
-    def _kh_resize(self, new_n_buckets: int):
+    def _kh_resize(self, new_n_buckets: int) -> void:
         HASH_UPPER = 0.77
         new_flags = Ptr[u32]()
         j = 1
@@ -257,19 +271,23 @@ class Dict[K,V]:
         if new_n_buckets < 4:
             new_n_buckets = 4
 
-        if self._size >= int(new_n_buckets*HASH_UPPER + 0.5):
+        if self._size >= int(new_n_buckets * HASH_UPPER + 0.5):
             j = 0
         else:
             fsize = khash.__ac_fsize(new_n_buckets)
             new_flags = Ptr[u32](fsize)
             i = 0
             while i < fsize:
-                new_flags[i] = u32(0xaaaaaaaa)
+                new_flags[i] = u32(0xAAAAAAAA)
                 i += 1
 
             if self._n_buckets < new_n_buckets:
-                self._keys = Ptr[K](gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K)))
-                self._vals = Ptr[V](gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V)))
+                self._keys = Ptr[K](
+                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                )
+                self._vals = Ptr[V](
+                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                )
 
         if j:
             j = 0
@@ -290,7 +308,10 @@ class Dict[K,V]:
                             i = (i + step) & new_mask
 
                         khash.__ac_set_isempty_false(new_flags, i)
-                        if i < self._n_buckets and khash.__ac_iseither(self._flags, i) == 0:
+                        if (
+                            i < self._n_buckets
+                            and khash.__ac_iseither(self._flags, i) == 0
+                        ):
                             self._keys[i], key = key, self._keys[i]
                             self._vals[i], val = val, self._vals[i]
                             khash.__ac_set_isdel_true(self._flags, i)
@@ -301,15 +322,19 @@ class Dict[K,V]:
                 j += 1
 
             if self._n_buckets > new_n_buckets:
-                self._keys = Ptr[K](gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K)))
-                self._vals = Ptr[V](gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V)))
+                self._keys = Ptr[K](
+                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                )
+                self._vals = Ptr[V](
+                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                )
 
             self._flags = new_flags
             self._n_buckets = new_n_buckets
             self._n_occupied = self._size
-            self._upper_bound = int(self._n_buckets*HASH_UPPER + 0.5)
+            self._upper_bound = int(self._n_buckets * HASH_UPPER + 0.5)
 
-    def _kh_put(self, key: K):
+    def _kh_put(self, key: K) -> Tuple[int, int]:
         if self._n_occupied >= self._upper_bound:
             if self._n_buckets > (self._size << 1):
                 self._kh_resize(self._n_buckets - 1)
@@ -326,7 +351,9 @@ class Dict[K,V]:
             x = i
         else:
             last = i
-            while not khash.__ac_isempty(self._flags, i) and (khash.__ac_isdel(self._flags, i) or self._keys[i] != key):
+            while not khash.__ac_isempty(self._flags, i) and (
+                khash.__ac_isdel(self._flags, i) or self._keys[i] != key
+            ):
                 if khash.__ac_isdel(self._flags, i):
                     site = i
                 step += 1
@@ -356,18 +383,19 @@ class Dict[K,V]:
 
         return (ret, x)
 
-    def _kh_del(self, x: int):
+    def _kh_del(self, x: int) -> void:
         if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
             khash.__ac_set_isdel_true(self._flags, x)
             self._size -= 1
 
-    def _kh_begin(self):
+    def _kh_begin(self) -> int:
         return 0
 
-    def _kh_end(self):
+    def _kh_end(self) -> int:
         return self._n_buckets
 
-    def _kh_exist(self, x: int):
+    def _kh_exist(self, x: int) -> bool:
         return not khash.__ac_iseither(self._flags, x)
+
 
 dict = Dict
