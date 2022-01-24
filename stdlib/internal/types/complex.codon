@@ -1,3 +1,6 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @tuple
 class complex:
     real: float
@@ -12,78 +15,80 @@ class complex:
     def __new__(real, imag) -> complex:
         return (float(real), float(imag))
 
-    def __complex__(self):
+    def __complex__(self) -> complex:
         return self
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.real != 0.0 and self.imag != 0.0
 
-    def __pos__(self):
+    def __pos__(self) -> complex:
         return self
 
-    def __neg__(self):
+    def __neg__(self) -> complex:
         return complex(-self.real, -self.imag)
 
-    def __abs__(self):
+    def __abs__(self) -> float:
         @pure
         @C
-        def hypot(a: float, b: float) -> float: pass
+        def hypot(a: float, b: float) -> float:
+            pass
+
         return hypot(self.real, self.imag)
 
-    def __copy__(self):
+    def __copy__(self) -> complex:
         return self
 
-    def __hash__(self):
-        return self.real.__hash__() + self.imag.__hash__()*1000003
+    def __hash__(self) -> int:
+        return self.real.__hash__() + self.imag.__hash__() * 1000003
 
-    def __add__(self, other):
+    def __add__(self, other) -> complex:
         return self + complex(other)
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> complex:
         return self - complex(other)
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> complex:
         return self * complex(other)
 
-    def __truediv__(self, other):
+    def __truediv__(self, other) -> complex:
         return self / complex(other)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return self == complex(other)
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return self != complex(other)
 
-    def __pow__(self, other):
+    def __pow__(self, other) -> complex:
         return self ** complex(other)
 
-    def __radd__(self, other):
+    def __radd__(self, other) -> complex:
         return complex(other) + self
 
-    def __rsub__(self, other):
+    def __rsub__(self, other) -> complex:
         return complex(other) - self
 
-    def __rmul__(self, other):
+    def __rmul__(self, other) -> complex:
         return complex(other) * self
 
-    def __rtruediv__(self, other):
+    def __rtruediv__(self, other) -> complex:
         return complex(other) / self
 
-    def __rpow__(self, other):
+    def __rpow__(self, other) -> complex:
         return complex(other) ** self
 
-    def __add__(self, other: complex):
+    def __add__(self, other: complex) -> complex:
         return complex(self.real + other.real, self.imag + other.imag)
 
-    def __sub__(self, other: complex):
+    def __sub__(self, other: complex) -> complex:
         return complex(self.real - other.real, self.imag - other.imag)
 
-    def __mul__(self, other: complex):
+    def __mul__(self, other: complex) -> complex:
         a = (self.real * other.real) - (self.imag * other.imag)
         b = (self.real * other.imag) + (self.imag * other.real)
         return complex(a, b)
 
-    def __truediv__(self, other: complex):
+    def __truediv__(self, other: complex) -> complex:
         a = self
         b = other
         abs_breal = (-b.real) if b.real < 0 else b.real
@@ -96,34 +101,38 @@ class complex:
                 return complex(0.0, 0.0)
             else:
                 ratio = b.imag / b.real
-                denom = b.real + b.imag*ratio
-                return complex((a.real + a.imag*ratio)/denom, (a.imag - a.real*ratio)/denom)
+                denom = b.real + b.imag * ratio
+                return complex(
+                    (a.real + a.imag * ratio) / denom, (a.imag - a.real * ratio) / denom
+                )
         elif abs_bimag >= abs_breal:
             # divide tops and bottom by b.imag
             ratio = b.real / b.imag
-            denom = b.real*ratio + b.imag
+            denom = b.real * ratio + b.imag
             # assert b.imag != 0.0
-            return complex((a.real*ratio + a.imag)/denom, (a.imag*ratio - a.real)/denom)
+            return complex(
+                (a.real * ratio + a.imag) / denom, (a.imag * ratio - a.real) / denom
+            )
         else:
-            nan = 0./0.
+            nan = 0.0 / 0.0
             return complex(nan, nan)
 
-    def __eq__(self, other: complex):
+    def __eq__(self, other: complex) -> bool:
         return self.real == other.real and self.imag == other.imag
 
-    def __ne__(self, other: complex):
+    def __ne__(self, other: complex) -> bool:
         return not (self == other)
 
-    def __pow__(self, other: int):
-        def powu(x: complex, n: int):
+    def __pow__(self, other: int) -> complex:
+        def powu(x: complex, n: int) -> complex:
             mask = 1
             r = complex(1.0, 0.0)
             p = x
             while mask > 0 and n >= mask:
                 if n & mask:
-                    r = r*p
+                    r = r * p
                 mask <<= 1
-                p = p*p
+                p = p * p
             return r
 
         if other > 0:
@@ -131,14 +140,16 @@ class complex:
         else:
             return complex(1.0, 0.0) / powu(self, -other)
 
-    def __pow__(self, other: complex):
+    def __pow__(self, other: complex) -> complex:
         @pure
         @C
-        def hypot(a: float, b: float) -> float: pass
+        def hypot(a: float, b: float) -> float:
+            pass
 
         @pure
         @C
-        def atan2(a: float, b: float) -> float: pass
+        def atan2(a: float, b: float) -> float:
+            pass
 
         @pure
         @llvm
@@ -175,22 +186,22 @@ class complex:
             %y = call double @llvm.cos.f64(double %x)
             ret double %y
 
-        if other.real == 0. and other.imag == 0.:
-            return complex(1., 0.)
-        elif self.real == 0. and self.imag == 0.:
+        if other.real == 0.0 and other.imag == 0.0:
+            return complex(1.0, 0.0)
+        elif self.real == 0.0 and self.imag == 0.0:
             # if other.imag != 0. or other.real < 0.: errno = EDOM
-            return complex(0., 0.)
+            return complex(0.0, 0.0)
         else:
             vabs = hypot(self.real, self.imag)
             len = pow(vabs, other.real)
             at = atan2(self.imag, self.real)
             phase = at * other.real
-            if other.imag != 0.:
+            if other.imag != 0.0:
                 len /= exp(at * other.imag)
                 phase += other.imag * log(vabs)
             return complex(len * cos(phase), len * sin(phase))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         @pure
         @llvm
         def copysign(x: float, y: float) -> float:
@@ -205,25 +216,29 @@ class complex:
             %y = call double @llvm.fabs.f64(double %x)
             ret double %y
 
-        if self.real == 0.0 and copysign(1., self.real) == 1.:
-            return f'{self.imag}j'
+        if self.real == 0.0 and copysign(1.0, self.real) == 1.0:
+            return f"{self.imag}j"
         else:
-            sign = '+'
-            if self.imag < 0.0 or (self.imag == 0.0 and copysign(1., self.imag) == -1.):
-                sign = '-'
-            return f'({self.real}{sign}{fabs(self.imag)}j)'
+            sign = "+"
+            if self.imag < 0.0 or (
+                self.imag == 0.0 and copysign(1.0, self.imag) == -1.0
+            ):
+                sign = "-"
+            return f"({self.real}{sign}{fabs(self.imag)}j)"
 
-    def conjugate(self):
+    def conjugate(self) -> complex:
         return complex(self.real, -self.imag)
 
     # helpers
-    def _phase(self):
+    def _phase(self) -> float:
         @pure
         @C
-        def atan2(a: float, b: float) -> float: pass
+        def atan2(a: float, b: float) -> float:
+            pass
+
         return atan2(self.imag, self.real)
 
-    def _polar(self):
+    def _polar(self) -> Tuple[float, float]:
         return (self.__abs__(), self._phase())
 
     @pure
@@ -261,12 +276,14 @@ class complex:
         %y = call double @llvm.log.f64(double %x)
         ret double %y
 
+
 @extend
 class int:
-    def __suffix_j__(x: int):
+    def __suffix_j__(x: int) -> complex:
         return complex(0, x)
+
 
 @extend
 class float:
-    def __suffix_j__(x: float):
+    def __suffix_j__(x: float) -> complex:
         return complex(0, x)
