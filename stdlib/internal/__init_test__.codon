@@ -1,3 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 # Core library
 
 from internal.attributes import *
@@ -18,7 +20,8 @@ from internal.internal import *
 from internal.types.collections.list import *
 import internal.c_stubs as _C
 
-def next[T](g: Generator[T], default: Optional[T] = None):
+
+def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
         if default:
             return ~default
@@ -26,48 +29,67 @@ def next[T](g: Generator[T], default: Optional[T] = None):
             raise StopIteration()
     return g.next()
 
+
 from C import seq_print_full(str, cobj)
 
-class Set[T]:
+
+class Set:
+    T: type
     items: List[T]
-    def __init__(self):
+
+    def __init__(self) -> void:
         self.items = List[T]()
-    def __iter__(self):
+
+    def __iter__(self) -> Generator[T]:
         yield from self.items
-    def add(self, what: T):
+
+    def add(self, what: T) -> void:
         if what not in self.items:
             self.items.append(what)
+
     def __repr__(self) -> str:
         s = self.items.__repr__()
-        s.ptr[0] = '{'.ptr[0]
-        s.ptr[s.len - 1] = '}'.ptr[0]
+        s.ptr[0] = "{".ptr[0]
+        s.ptr[s.len - 1] = "}".ptr[0]
         return s
-class Dict[K, V]:
+
+
+class Dict:
+    K: type
+    V: type
     keys: List[K]
     values: List[V]
-    def __init__(self):
+
+    def __init__(self) -> void:
         self.keys = List[K]()
         self.values = List[V]()
-    def __iter__(self):
+
+    def __iter__(self) -> Generator[K]:
         yield from self.keys
-    def items(self):
+
+    def items(self) -> Generator[Tuple[K, V]]:
         for i in range(self.keys.len):
             yield (self.keys[i], self.values[i])
-    def __contains__(self, key: K):
+
+    def __contains__(self, key: K) -> bool:
         return self.keys.index(key) != -1
-    def __getitem__(self, key: K):
+
+    def __getitem__(self, key: K) -> V:
         i = self.keys.index(key)
         return self.values[i]
-    def __setitem__(self, key: K, val: V):
+
+    def __setitem__(self, key: K, val: V) -> void:
         i = self.keys.index(key)
         if i != -1:
             self.values[i] = val
         else:
             self.keys.append(key)
             self.values.append(val)
-    def __len__(self):
+
+    def __len__(self) -> int:
         return self.keys.len
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         n = self.__len__()
         if n == 0:
             return "{}"
@@ -76,22 +98,27 @@ class Dict[K, V]:
             lst.append("{")
             first = True
             for k, v in self.items():
-                if not first: lst.append(", ")
-                else: first = False
+                if not first:
+                    lst.append(", ")
+                else:
+                    first = False
                 lst.append(k.__repr__())
                 lst.append(": ")
                 lst.append(v.__repr__())
             lst.append("}")
             return str.cat(lst)
+
+
 @extend
 class str:
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> str:
         if idx < 0:
             idx += self.len
         if not (0 <= idx < self.len):
             raise IndexError("string index out of range")
         return str(self.ptr + idx, 1)
-    def __getitem__(self, s: Slice):
+
+    def __getitem__(self, s: Slice) -> str:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
@@ -99,8 +126,10 @@ class str:
             return str(self.ptr + start, length)
         else:
             raise ValueError("nope")
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         return "'" + self + "'"
+
 
 from internal.builtin import *
 
