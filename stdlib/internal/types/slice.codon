@@ -1,10 +1,13 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @tuple
 class Slice:
     start: Optional[int]
     stop: Optional[int]
     step: Optional[int]
 
-    def adjust_indices(self, length: int):
+    def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
         stepx = ~self.step if self.step else 1
         startx = 0
         stopx = 0
@@ -18,7 +21,9 @@ class Slice:
             stopx = ~self.stop if self.stop else -(length + 1)
         return Slice.adjust_indices_helper(length, startx, stopx, stepx)
 
-    def adjust_indices_helper(length: int, start: int, stop: int, step: int):
+    def adjust_indices_helper(
+        length: int, start: int, stop: int, step: int
+    ) -> Tuple[int, int, int, int]:
         if start < 0:
             start += length
             if start < 0:
@@ -41,4 +46,6 @@ class Slice:
                 return start, stop, step, (stop - start - 1) // step + 1
 
         return start, stop, step, 0
+
+
 slice = Slice
