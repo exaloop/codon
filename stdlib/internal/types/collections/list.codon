@@ -1,42 +1,45 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 import internal.gc as gc
+
 
 @extend
 class List:
-    def __init__(self):
+    def __init__(self) -> void:
         self.arr = Array[T](10)
         self.len = 0
 
-    def __init__(self, it: Generator[T]):
+    def __init__(self, it: Generator[T]) -> void:
         self.arr = Array[T](10)
         self.len = 0
         for i in it:
             self.append(i)
 
-    def __init__(self, other: List[T]):
+    def __init__(self, other: List[T]) -> void:
         self.arr = Array[T](other.len)
         self.len = 0
         for i in other:
             self.append(i)
 
-    def __init__(self, capacity: int):
+    def __init__(self, capacity: int) -> void:
         self.arr = Array[T](capacity)
         self.len = 0
 
-    def __init__(self, dummy: bool, other):
+    def __init__(self, dummy: bool, other) -> void:
         """Dummy __init__ used for list comprehension optimization"""
-        if hasattr(other, '__len__'):
+        if hasattr(other, "__len__"):
             self.__init__(other.__len__())
         else:
             self.__init__()
 
-    def __init__(self, arr: Array[T], len: int):
+    def __init__(self, arr: Array[T], len: int) -> void:
         self.arr = arr
         self.len = len
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.len
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.__len__() > 0
 
     def __getitem__(self, idx: int) -> T:
@@ -45,13 +48,13 @@ class List:
         self._idx_check(idx, "list index out of range")
         return self.arr[idx]
 
-    def __setitem__(self, idx: int, val: T):
+    def __setitem__(self, idx: int, val: T) -> void:
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
         self.arr[idx] = val
 
-    def __delitem__(self, idx: int):
+    def __delitem__(self, idx: int) -> void:
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
@@ -60,7 +63,7 @@ class List:
             idx += 1
         self.len -= 1
 
-    def __eq__(self, other: List[T]):
+    def __eq__(self, other: List[T]) -> bool:
         if self.__len__() != other.__len__():
             return False
         for i in range(self.__len__()):
@@ -68,10 +71,10 @@ class List:
                 return False
         return True
 
-    def __ne__(self, other: List[T]):
+    def __ne__(self, other: List[T]) -> bool:
         return not (self == other)
 
-    def __getitem__(self, s: Slice):
+    def __getitem__(self, s: Slice) -> List[T]:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         if s.step is None:
@@ -84,7 +87,7 @@ class List:
                 other.append(self.arr[i])
             return other
 
-    def __setitem__(self, s: Slice, other):
+    def __setitem__(self, s: Slice, other) -> void:
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
             for a in other:
@@ -115,7 +118,9 @@ class List:
 
             seq_len = seq.__len__()
             if seq_len != length:
-                raise ValueError(f"attempt to assign sequence of size {seq_len} to extended slice of size {length}")
+                raise ValueError(
+                    f"attempt to assign sequence of size {seq_len} to extended slice of size {length}"
+                )
 
             if length == 0:
                 return
@@ -127,7 +132,7 @@ class List:
                 cur += step
                 i += 1
 
-    def __delitem__(self, s: Slice):
+    def __delitem__(self, s: Slice) -> void:
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
         else:
@@ -140,7 +145,7 @@ class List:
 
                 if step < 0:
                     stop = start + 1
-                    start = stop + step*(length - 1) - 1
+                    start = stop + step * (length - 1) - 1
                     step = -step
 
                 cur = start
@@ -149,34 +154,38 @@ class List:
                     lim = step - 1
                     if cur + step > self.__len__():
                         lim = self.__len__() - cur - 1
-                    str.memmove((self.arr.ptr + (cur - i)).as_byte(),
-                                (self.arr.ptr + (cur + 1)).as_byte(),
-                                lim * gc.sizeof(T))
+                    str.memmove(
+                        (self.arr.ptr + (cur - i)).as_byte(),
+                        (self.arr.ptr + (cur + 1)).as_byte(),
+                        lim * gc.sizeof(T),
+                    )
                     cur += step
                     i += 1
 
-                cur = start + length*step
+                cur = start + length * step
                 if cur < self.__len__():
-                    str.memmove((self.arr.ptr + (cur - length)).as_byte(),
-                                (self.arr.ptr + cur).as_byte(),
-                                (self.__len__() - cur) * gc.sizeof(T))
+                    str.memmove(
+                        (self.arr.ptr + (cur - length)).as_byte(),
+                        (self.arr.ptr + cur).as_byte(),
+                        (self.__len__() - cur) * gc.sizeof(T),
+                    )
 
                 self.len -= length
                 # self._resize(self.__len__())
 
-    def __contains__(self, x: T):
+    def __contains__(self, x: T) -> bool:
         for a in self:
             if a == x:
                 return True
         return False
 
-    def __copy__(self):
+    def __copy__(self) -> List[T]:
         return List[T](self.arr.__copy__(), self.len)
 
-    def __deepcopy__(self):
+    def __deepcopy__(self) -> List[T]:
         return [l.__deepcopy__() for l in self]
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[T]:
         i = 0
         N = self.len
         p = self.arr.ptr
@@ -184,13 +193,13 @@ class List:
             yield p[i]
             i += 1
 
-    def __reversed__(self):
+    def __reversed__(self) -> Generator[T]:
         i = self.len - 1
         while i >= 0:
             yield self.arr[i]
             i -= 1
 
-    def __add__(self, other: List[T]):
+    def __add__(self, other: List[T]) -> List[T]:
         v = List[T](self.len + other.len)
         for a in self:
             v.append(a)
@@ -198,12 +207,12 @@ class List:
             v.append(a)
         return v
 
-    def __iadd__(self, other: List[T]):
+    def __iadd__(self, other: List[T]) -> List[T]:
         for a in other:
             self.append(a)
         return self
 
-    def __mul__(self, n: int):
+    def __mul__(self, n: int) -> List[T]:
         if n <= 0:
             return List[T]()
 
@@ -218,7 +227,7 @@ class List:
             i += 1
         return v
 
-    def __imul__(self, n: int):
+    def __imul__(self, n: int) -> List[T]:
         if n == 1:
             return self
 
@@ -257,19 +266,18 @@ class List:
             y.append("]")
             return str.cat(y)
 
+    # Helper functions
 
-# Helper functions
-
-    def append(self, x: T):
+    def append(self, x: T) -> void:
         self._resize_if_full()
         self.arr[self.len] = x
         self.len += 1
 
-    def extend(self, itr: Generator[T]):
+    def extend(self, itr: Generator[T]) -> void:
         for a in itr:
             self.append(a)
 
-    def insert(self, idx: int, x: T):
+    def insert(self, idx: int, x: T) -> void:
         n = self.__len__()
         if idx < 0:
             idx += n
@@ -280,12 +288,12 @@ class List:
         self._resize_if_full()
         i = n
         while i > idx:
-            self.arr[i] = self.arr[i-1]
+            self.arr[i] = self.arr[i - 1]
             i -= 1
         self.arr[idx] = x
         self.len += 1
 
-    def pop(self, idx: int = -1):
+    def pop(self, idx: int = -1) -> T:
         if self.__len__() == 0:
             raise IndexError("pop from empty list")
         if idx < 0:
@@ -295,7 +303,7 @@ class List:
         del self[idx]
         return x
 
-    def remove(self, x: T):
+    def remove(self, x: T) -> bool:
         i = 0
         for a in self:
             if a == x:
@@ -304,10 +312,10 @@ class List:
             i += 1
         return False
 
-    def clear(self):
+    def clear(self) -> void:
         self.len = 0
 
-    def index(self, x: T):
+    def index(self, x: T) -> int:
         i = 0
         for a in self:
             if a == x:
@@ -315,48 +323,48 @@ class List:
             i += 1
         return -1
 
-    def count(self, x: T):
+    def count(self, x: T) -> int:
         count = 0
         for a in self:
             if a == x:
                 count += 1
         return count
 
-    def reverse(self):
+    def reverse(self) -> void:
         i = 0
-        while i < self.len//2:
+        while i < self.len // 2:
             j = self.len - i - 1
             x = self[i]
             self[i] = self[j]
             self[j] = x
             i += 1
 
-    def copy(self):
+    def copy(self) -> List[T]:
         return self.__copy__()
 
-# Internal helpers
+    # Internal helpers
 
-    def _idx_check(self, idx: int, msg: str):
+    def _idx_check(self, idx: int, msg: str) -> void:
         if idx >= self.len or idx < 0:
             raise IndexError(msg)
 
-    def _resize(self, new_cap: int):
+    def _resize(self, new_cap: int) -> void:
         p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(), new_cap * gc.sizeof(T)))
         self.arr = Array[T](p, new_cap)
 
-    def _resize_if_full(self):
+    def _resize_if_full(self) -> void:
         if self.len == self.arr.len:
-            new_cap = (1 + 3*self.len) // 2
+            new_cap = (1 + 3 * self.len) // 2
             self._resize(new_cap)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         # https://www.boost.org/doc/libs/1_35_0/doc/html/boost/hash_combine_id241013.html
         seed = 0
         for v in self:
-            seed ^= v.__hash__() + 0x9e3779b9 + (seed << 6) + (seed >> 2)
+            seed ^= v.__hash__() + 0x9E3779B9 + (seed << 6) + (seed >> 2)
         return seed
 
-    def _assign_slice(self, ilow: int, ihigh: int, v: Ptr[T], n: int):
+    def _assign_slice(self, ilow: int, ihigh: int, v: Ptr[T], n: int) -> void:
         a = self
         L = a.len
 
@@ -379,12 +387,20 @@ class List:
 
         if d < 0:
             tail = L - ihigh
-            str.memmove((a.arr.ptr + (ihigh + d)).as_byte(), (a.arr.ptr + ihigh).as_byte(), tail * gc.sizeof(T))
+            str.memmove(
+                (a.arr.ptr + (ihigh + d)).as_byte(),
+                (a.arr.ptr + ihigh).as_byte(),
+                tail * gc.sizeof(T),
+            )
             a._resize(L + d)
         elif d > 0:
             k = L
             a._resize(k + d)
-            str.memmove((a.arr.ptr + (ihigh + d)).as_byte(), (a.arr.ptr + ihigh).as_byte(), (k - ihigh) * gc.sizeof(T))
+            str.memmove(
+                (a.arr.ptr + (ihigh + d)).as_byte(),
+                (a.arr.ptr + ihigh).as_byte(),
+                (k - ihigh) * gc.sizeof(T),
+            )
 
         k = 0
         while k < n:
@@ -393,8 +409,10 @@ class List:
             ilow += 1
         a.len += d
 
-    def _copy_arr(self, start: int, stop: int, length: int):
+    def _copy_arr(self, start: int, stop: int, length: int) -> Array[T]:
         if length <= 0:
             return Array[T](Ptr[T](), 0)
         return self.arr.slice(start, stop).__copy__()
+
+
 list = List
