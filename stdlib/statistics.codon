@@ -1,22 +1,33 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 import bisect
 import random
 from math import frexp as _frexp, floor as _floor, fabs as _fabs, erf as _erf
-from math import gcd as _gcd, exp as _exp, log as _log, sqrt as _sqrt, tau as _tau, hypot as _hypot
+from math import (
+    gcd as _gcd,
+    exp as _exp,
+    log as _log,
+    sqrt as _sqrt,
+    tau as _tau,
+    hypot as _hypot,
+)
+
 
 class StatisticsError:
     _hdr: ExcHeader
 
     def __init__(self):
-        self._hdr = ('StatisticsError', '', '', '', 0, 0)
+        self._hdr = ("StatisticsError", "", "", "", 0, 0)
 
     def __init__(self, message: str):
-        self._hdr = ('StatisticsError', message, '', '', 0, 0)
+        self._hdr = ("StatisticsError", message, "", "", 0, 0)
 
     @property
     def message(self):
         return self._hdr.msg
 
-def median[T](data: List[T]) -> float:
+
+def median(data: List[T], T: type) -> float:
     """
     Return the median (middle value) of numeric data.
 
@@ -28,13 +39,14 @@ def median[T](data: List[T]) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n%2 == 1:
-        return float(data[n//2])
+    if n % 2 == 1:
+        return float(data[n // 2])
     else:
-        i = n//2
+        i = n // 2
         return (data[i - 1] + data[i]) / 2
 
-def median_low[T](data: List[T]) -> float:
+
+def median_low(data: List[T], T: type) -> float:
     """
     Return the low median of numeric data.
 
@@ -45,12 +57,13 @@ def median_low[T](data: List[T]) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n%2 == 1:
-        return float(data[n//2])
+    if n % 2 == 1:
+        return float(data[n // 2])
     else:
-        return float(data[n//2 -1])
+        return float(data[n // 2 - 1])
 
-def median_high[T](data: List[T]) -> float:
+
+def median_high(data: List[T], T: type) -> float:
     """
     Return the high median of data.
 
@@ -61,9 +74,10 @@ def median_high[T](data: List[T]) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    return float(data[n//2])
+    return float(data[n // 2])
 
-def _find_lteq[T](a: List[T], x: float):
+
+def _find_lteq(a: List[T], x: float, T: type):
     """
     Locate the leftmost value exactly equal to x
     """
@@ -72,16 +86,18 @@ def _find_lteq[T](a: List[T], x: float):
         return i
     assert False
 
-def _find_rteq[T](a: List[T], l: int, x: float):
+
+def _find_rteq(a: List[T], l: int, x: float, T: type):
     """
     Locate the rightmost value exactly equal to x
     """
     i = bisect.bisect_right(a, x, lo=l)
-    if i != (len(a)+1) and a[i-1] == x:
-        return i-1
+    if i != (len(a) + 1) and a[i - 1] == x:
+        return i - 1
     assert False
 
-def median_grouped[T,S=int](data: List[T], interval: S = 1) -> float:
+
+def median_grouped(data: List[T], interval: S = 1, T: type, S: type = int) -> float:
     """
     Return the 50th percentile (median) of grouped continuous data.
     """
@@ -93,8 +109,8 @@ def median_grouped[T,S=int](data: List[T], interval: S = 1) -> float:
         return float(data[0])
 
     # Find the value at the midpoint.
-    x = float(data[n//2])
-    L = x - float(interval)/2  # The lower limit of the median interval.
+    x = float(data[n // 2])
+    L = x - float(interval) / 2  # The lower limit of the median interval.
 
     # Find the position of leftmost occurrence of x in data
     l1 = _find_lteq(data, x)
@@ -103,9 +119,10 @@ def median_grouped[T,S=int](data: List[T], interval: S = 1) -> float:
     l2 = _find_rteq(data, l1, x)
     cf = l1
     f = l2 - l1 + 1
-    return L + interval*(n/2 - cf)/f
+    return L + interval * (n / 2 - cf) / f
 
-def mode[T](data: List[T]) -> T:
+
+def mode(data: List[T], T: type) -> T:
     """
     Return the most common data point from discrete or nominal data.
     """
@@ -119,7 +136,8 @@ def mode[T](data: List[T]) -> T:
             elem = i
     return elem
 
-def multimode[T](data: List[T]):
+
+def multimode(data: List[T], T: type):
     """
     Return a list of the most frequently occurring values.
 
@@ -141,7 +159,10 @@ def multimode[T](data: List[T]):
             mulmode.append(i)
     return mulmode
 
-def quantiles[T](data: List[T], n: int = 4, method: str = 'exclusive') -> List[float]:
+
+def quantiles(
+    data: List[T], n: int = 4, method: str = "exclusive", T: type
+) -> List[float]:
     """
     Divide *data* into *n* continuous intervals with equal probability.
 
@@ -159,32 +180,33 @@ def quantiles[T](data: List[T], n: int = 4, method: str = 'exclusive') -> List[f
     maximum value is treated as the 100th percentile.
     """
     if n < 1:
-        raise StatisticsError('n must be at least 1')
+        raise StatisticsError("n must be at least 1")
     data = sorted(data)
     ld = len(data)
     if ld < 2:
-        raise StatisticsError('must have at least two data points')
+        raise StatisticsError("must have at least two data points")
 
-    if method == 'inclusive':
+    if method == "inclusive":
         m = ld - 1
         result = List[float]()
         for i in range(1, n):
             j = i * m // n
             delta = (i * m) - (j * n)
-            interpolated = (data[j] * (n - delta) + data[j+1] * delta) / n
+            interpolated = (data[j] * (n - delta) + data[j + 1] * delta) / n
             result.append(interpolated)
         return result
-    if method == 'exclusive':
+    if method == "exclusive":
         m = ld + 1
         result = List[float]()
         for i in range(1, n):
-            j = i * m // n                               # rescale i to m/n
-            j = 1 if j < 1 else ld-1 if j > ld-1 else j  # clamp to 1 .. ld-1
-            delta = (i * m) - (j * n)                           # exact integer math
-            interpolated = (data[j-1] * (n - delta) + data[j] * delta) / n
+            j = i * m // n  # rescale i to m/n
+            j = 1 if j < 1 else ld - 1 if j > ld - 1 else j  # clamp to 1 .. ld-1
+            delta = (i * m) - (j * n)  # exact integer math
+            interpolated = (data[j - 1] * (n - delta) + data[j] * delta) / n
             result.append(interpolated)
         return result
-    raise ValueError(f'Unknown method: {method}')
+    raise ValueError(f"Unknown method: {method}")
+
 
 def _lcm(x: int, y: int):
     """
@@ -233,6 +255,7 @@ def _sum(data: List[float]) -> float:
         i += 1
     return s + c
 
+
 def mean(data: List[float]) -> float:
     """
     Return the sample arithmetic mean of data.
@@ -243,9 +266,10 @@ def mean(data: List[float]) -> float:
     """
     n = len(data)
     if n < 1:
-        raise StatisticsError('mean requires at least one data point')
+        raise StatisticsError("mean requires at least one data point")
     total = _sum(data)
-    return total/n
+    return total / n
+
 
 '''
 def fmean(data: List[float]) -> float:
@@ -258,6 +282,7 @@ def fmean(data: List[float]) -> float:
     """
     pass
 '''
+
 
 def geometric_mean(data: List[float]) -> float:
     """
@@ -274,6 +299,7 @@ def geometric_mean(data: List[float]) -> float:
         raise StatisticsError("geometric mean requires a non-empty dataset")
     return _exp(mean(list(map(_log, data))))
 
+
 def _fail_neg(values: List[float], errmsg: str):
     """
     Iterate over values, failing if any are less than zero.
@@ -282,6 +308,7 @@ def _fail_neg(values: List[float], errmsg: str):
         if x < 0:
             raise StatisticsError(errmsg)
         yield x
+
 
 def harmonic_mean(data: List[float]) -> float:
     """
@@ -307,9 +334,10 @@ def harmonic_mean(data: List[float]) -> float:
     for x in _fail_neg(data, errmsg):
         if x == 0.0:
             return 0.0
-        li.append(1/x)
+        li.append(1 / x)
     total = _sum(li)
-    return n/total
+    return n / total
+
 
 def _ss(data: List[float], c: float):
     """
@@ -319,13 +347,14 @@ def _ss(data: List[float], c: float):
     from the mean are calculated in a second pass. Otherwise, deviations are
     calculated from c as given.
     """
-    total = _sum([(x-c)**2 for x in data])
-    total2 = _sum([(x-c) for x in data])
+    total = _sum([(x - c) ** 2 for x in data])
+    total2 = _sum([(x - c) for x in data])
 
-    total -= total2**2/len(data)
+    total -= total2 ** 2 / len(data)
     return total
 
-def pvariance(data: List[float], mu: Optional[float]=None):
+
+def pvariance(data: List[float], mu: Optional[float] = None):
     """
     Return the population variance of `data`.
 
@@ -336,24 +365,28 @@ def pvariance(data: List[float], mu: Optional[float]=None):
     TODO/CAVEATS:
       - Assumes input is a list of floats
     """
-    mu1 = ~mu if mu else mean(data)
+    if mu is None:
+        mu = mean(data)
 
     n = len(data)
     if n < 1:
         raise StatisticsError("pvariance requires at least one data point")
 
-    ss = _ss(data, mu1)
-    return ss/n
+    ss = _ss(data, mu)
+    return ss / n
 
-def pstdev(data: List[float], mu: Optional[float]=None):
+
+def pstdev(data: List[float], mu: Optional[float] = None):
     """
     Return the square root of the population variance.
     """
-    mu1 = ~mu if mu else mean(data)
-    var = pvariance(data, mu1)
+    if mu is None:
+        mu = mean(data)
+    var = pvariance(data, mu)
     return _sqrt(var)
 
-def variance(data: List[float], xbar: Optional[float]=None):
+
+def variance(data: List[float], xbar: Optional[float] = None):
     """
     Return the sample variance of data.
 
@@ -361,36 +394,43 @@ def variance(data: List[float], xbar: Optional[float]=None):
     The optional argument xbar, if given, should be the mean of
     the data. If it is missing or None, the mean is automatically calculated.
     """
-    xbar1 = ~xbar if xbar else mean(data)
+    if xbar is None:
+        xbar = mean(data)
     n = len(data)
     if n < 2:
         raise StatisticsError("variance requires at least two data points")
-    ss = _ss(data, xbar1)
-    return ss/(n-1)
+    ss = _ss(data, xbar)
+    return ss / (n - 1)
 
-def stdev(data, xbar: Optional[float]=None):
+
+def stdev(data, xbar: Optional[float] = None):
     """
     Return the square root of the sample variance.
     """
-    xbar1 = ~xbar if xbar else mean(data)
-    var = variance(data, xbar1)
+    if xbar is None:
+        xbar = mean(data)
+    var = variance(data, xbar)
     return _sqrt(var)
+
 
 class NormalDist:
     """
     Normal distribution of a random variable
     """
+
     PRECISION: float
     _mu: float
     _sigma: float
 
     def __eq__(self, other: NormalDist):
-        return (self._mu - other._mu) < self.PRECISION and (self._sigma - other._sigma) < self.PRECISION
+        return (self._mu - other._mu) < self.PRECISION and (
+            self._sigma - other._sigma
+        ) < self.PRECISION
 
     def _init(self, mu: float, sigma: float):
         self.PRECISION = 1e-6
         if sigma < 0.0:
-            raise StatisticsError('sigma must be non-negative')
+            raise StatisticsError("sigma must be non-negative")
         self._mu = mu
         self._sigma = sigma
 
@@ -447,7 +487,7 @@ class NormalDist:
         """
         variance = self._sigma ** 2.0
         if not variance:
-            raise StatisticsError('pdf() not defined when sigma is zero')
+            raise StatisticsError("pdf() not defined when sigma is zero")
         return _exp((x - self._mu) ** 2.0 / (-2.0 * variance)) / _sqrt(_tau * variance)
 
     def cdf(self, x):
@@ -455,7 +495,7 @@ class NormalDist:
         Cumulative distribution function.  P(X <= x)
         """
         if not self._sigma:
-            raise StatisticsError('cdf() not defined when sigma is zero')
+            raise StatisticsError("cdf() not defined when sigma is zero")
         return 0.5 * (1.0 + _erf((x - self._mu) / (self._sigma * _sqrt(2.0))))
 
     def _normal_dist_inv_cdf(self, p: float, mu: float, sigma: float):
@@ -470,22 +510,55 @@ class NormalDist:
         if _fabs(q) <= 0.425:
             r = 0.180625 - q * q
             # Hash sum: 55.88319_28806_14901_4439
-            num = (((((((2.5090809287301226727e+3 * r +
-                    3.3430575583588128105e+4) * r +
-                    6.7265770927008700853e+4) * r +
-                    4.5921953931549871457e+4) * r +
-                    1.3731693765509461125e+4) * r +
-                    1.9715909503065514427e+3) * r +
-                    1.3314166789178437745e+2) * r +
-                    3.3871328727963666080e+0) * q
-            den = (((((((5.2264952788528545610e+3 * r +
-                    2.8729085735721942674e+4) * r +
-                    3.9307895800092710610e+4) * r +
-                    2.1213794301586595867e+4) * r +
-                    5.3941960214247511077e+3) * r +
-                    6.8718700749205790830e+2) * r +
-                    4.2313330701600911252e+1) * r +
-                    1.0)
+            num = (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    (
+                                        2.5090809287301226727e3 * r
+                                        + 3.3430575583588128105e4
+                                    )
+                                    * r
+                                    + 6.7265770927008700853e4
+                                )
+                                * r
+                                + 4.5921953931549871457e4
+                            )
+                            * r
+                            + 1.3731693765509461125e4
+                        )
+                        * r
+                        + 1.9715909503065514427e3
+                    )
+                    * r
+                    + 1.3314166789178437745e2
+                )
+                * r
+                + 3.3871328727963666080e0
+            ) * q
+            den = (
+                (
+                    (
+                        (
+                            (
+                                (5.2264952788528545610e3 * r + 2.8729085735721942674e4)
+                                * r
+                                + 3.9307895800092710610e4
+                            )
+                            * r
+                            + 2.1213794301586595867e4
+                        )
+                        * r
+                        + 5.3941960214247511077e3
+                    )
+                    * r
+                    + 6.8718700749205790830e2
+                )
+                * r
+                + 4.2313330701600911252e1
+            ) * r + 1.0
             x = num / den
             return mu + (x * sigma)
         r = p if q <= 0.0 else 1.0 - p
@@ -493,41 +566,105 @@ class NormalDist:
         if r <= 5.0:
             r = r - 1.6
             # Hash sum: 49.33206_50330_16102_89036
-            num = (((((((7.74545014278341407640e-4 * r +
-                    2.27238449892691845833e-2) * r +
-                    2.41780725177450611770e-1) * r +
-                    1.27045825245236838258e+0) * r +
-                    3.64784832476320460504e+0) * r +
-                    5.76949722146069140550e+0) * r +
-                    4.63033784615654529590e+0) * r +
-                    1.42343711074968357734e+0)
-            den = (((((((1.05075007164441684324e-9 * r +
-                    5.47593808499534494600e-4) * r +
-                    1.51986665636164571966e-2) * r +
-                    1.48103976427480074590e-1) * r +
-                    6.89767334985100004550e-1) * r +
-                    1.67638483018380384940e+0) * r +
-                    2.05319162663775882187e+0) * r +
-                    1.0)
+            num = (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    7.74545014278341407640e-4 * r
+                                    + 2.27238449892691845833e-2
+                                )
+                                * r
+                                + 2.41780725177450611770e-1
+                            )
+                            * r
+                            + 1.27045825245236838258e0
+                        )
+                        * r
+                        + 3.64784832476320460504e0
+                    )
+                    * r
+                    + 5.76949722146069140550e0
+                )
+                * r
+                + 4.63033784615654529590e0
+            ) * r + 1.42343711074968357734e0
+            den = (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    1.05075007164441684324e-9 * r
+                                    + 5.47593808499534494600e-4
+                                )
+                                * r
+                                + 1.51986665636164571966e-2
+                            )
+                            * r
+                            + 1.48103976427480074590e-1
+                        )
+                        * r
+                        + 6.89767334985100004550e-1
+                    )
+                    * r
+                    + 1.67638483018380384940e0
+                )
+                * r
+                + 2.05319162663775882187e0
+            ) * r + 1.0
         else:
             r = r - 5.0
             # Hash sum: 47.52583_31754_92896_71629
-            num = (((((((2.01033439929228813265e-7 * r +
-                    2.71155556874348757815e-5) * r +
-                    1.24266094738807843860e-3) * r +
-                    2.65321895265761230930e-2) * r +
-                    2.96560571828504891230e-1) * r +
-                    1.78482653991729133580e+0) * r +
-                    5.46378491116411436990e+0) * r +
-                    6.65790464350110377720e+0)
-            den = (((((((2.04426310338993978564e-15 * r +
-                    1.42151175831644588870e-7) * r +
-                    1.84631831751005468180e-5) * r +
-                    7.86869131145613259100e-4) * r +
-                    1.48753612908506148525e-2) * r +
-                    1.36929880922735805310e-1) * r +
-                    5.99832206555887937690e-1) * r +
-                    1.0)
+            num = (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    2.01033439929228813265e-7 * r
+                                    + 2.71155556874348757815e-5
+                                )
+                                * r
+                                + 1.24266094738807843860e-3
+                            )
+                            * r
+                            + 2.65321895265761230930e-2
+                        )
+                        * r
+                        + 2.96560571828504891230e-1
+                    )
+                    * r
+                    + 1.78482653991729133580e0
+                )
+                * r
+                + 5.46378491116411436990e0
+            ) * r + 6.65790464350110377720e0
+            den = (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    2.04426310338993978564e-15 * r
+                                    + 1.42151175831644588870e-7
+                                )
+                                * r
+                                + 1.84631831751005468180e-5
+                            )
+                            * r
+                            + 7.86869131145613259100e-4
+                        )
+                        * r
+                        + 1.48753612908506148525e-2
+                    )
+                    * r
+                    + 1.36929880922735805310e-1
+                )
+                * r
+                + 5.99832206555887937690e-1
+            ) * r + 1.0
         x = num / den
         if q < 0.0:
             x = -x
@@ -542,12 +679,12 @@ class NormalDist:
         probability.
         """
         if p <= 0.0 or p >= 1.0:
-            raise StatisticsError('p must be in the range 0.0 < p < 1.0')
+            raise StatisticsError("p must be in the range 0.0 < p < 1.0")
         if self._sigma <= 0.0:
-            raise StatisticsError('cdf() not defined when sigma at or below zero')
+            raise StatisticsError("cdf() not defined when sigma at or below zero")
         return self._normal_dist_inv_cdf(p, self._mu, self._sigma)
 
-    def quantiles(self, n: int=4):
+    def quantiles(self, n: int = 4):
         """
         Divide into *n* continuous intervals with equal probability.
 
@@ -557,7 +694,7 @@ class NormalDist:
         Set *n* to 100 for percentiles which gives the 99 cuts points that
         separate the normal distribution in to 100 equal sized groups.
         """
-        return [self.inv_cdf(float(i)/float(n)) for i in range(1, n)]
+        return [self.inv_cdf(float(i) / float(n)) for i in range(1, n)]
 
     def overlap(self, other: NormalDist) -> float:
         """
@@ -569,13 +706,13 @@ class NormalDist:
         """
         X, Y = self, other
 
-        if (Y._sigma, Y._mu) < (X._sigma, X._mu):       # sort to assure commutativity
+        if (Y._sigma, Y._mu) < (X._sigma, X._mu):  # sort to assure commutativity
             X, Y = Y, X
 
         X_var, Y_var = X.variance, Y.variance
 
         if not X_var or not Y_var:
-            raise StatisticsError('overlap() not defined when sigma is zero')
+            raise StatisticsError("overlap() not defined when sigma is zero")
 
         dv = Y_var - X_var
         dm = _fabs(Y._mu - X._mu)
@@ -584,7 +721,7 @@ class NormalDist:
             return 1.0 - _erf(dm / (2.0 * X._sigma * _sqrt(2.0)))
 
         a = X._mu * Y_var - Y._mu * X_var
-        b = X._sigma * Y._sigma * _sqrt(dm**2.0 + dv * _log(Y_var / X_var))
+        b = X._sigma * Y._sigma * _sqrt(dm ** 2.0 + dv * _log(Y_var / X_var))
         x1 = (a + b) / dv
         x2 = (a - b) / dv
 
@@ -689,4 +826,4 @@ class NormalDist:
         return hash((self._mu, self._sigma))
 
     def __repr__(self):
-        return f'NormalDist(mu={self._mu}, sigma={self._sigma})'
+        return f"NormalDist(mu={self._mu}, sigma={self._sigma})"
