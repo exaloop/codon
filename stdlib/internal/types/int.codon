@@ -1,14 +1,19 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.attributes import commutative, associative, distributive
 from internal.types.complex import complex
 
 
 @pure
 @C
-def seq_str_int(a: int) -> str: pass
+def seq_str_int(a: int) -> str:
+    pass
+
 
 @pure
 @C
-def seq_str_uint(a: int) -> str: pass
+def seq_str_uint(a: int) -> str:
+    pass
 
 
 @extend
@@ -36,10 +41,10 @@ class int:
         %tmp = sitofp i64 %self to double
         ret double %tmp
 
-    def __complex__(self):
+    def __complex__(self) -> complex:
         return complex(float(self), 0.0)
 
-    def __index__(self):
+    def __index__(self) -> int:
         return self
 
     def __repr__(self) -> str:
@@ -176,9 +181,9 @@ class int:
         %tmp = srem i64 %a, %b
         ret i64 %tmp
 
-    def __divmod__(self, other: int):
+    def __divmod__(self, other: int) -> Tuple[int, int]:
         d = self // other
-        m = self - d*other
+        m = self - d * other
         if m and ((other ^ m) < 0):
             m += other
             d -= 1
@@ -339,10 +344,10 @@ class int:
         %res = zext i1 %tmp to i8
         ret i8 %res
 
-    def __pow__(self, exp: float):
+    def __pow__(self, exp: float) -> float:
         return float(self) ** exp
 
-    def __pow__(self, exp: int):
+    def __pow__(self, exp: int) -> int:
         if exp < 0:
             return 0
         result = 1
@@ -355,7 +360,7 @@ class int:
             self *= self
         return result
 
-    def popcnt(self):
+    def popcnt(self) -> int:
         return Int[64](self).popcnt()
 
     @llvm
@@ -406,13 +411,13 @@ class int:
         %tmp = atomicrmw max i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
-    def __match__(self, i: int):
+    def __match__(self, i: int) -> bool:
         return self == i
 
     @property
-    def real(self):
+    def real(self) -> int:
         return self
 
     @property
-    def imag(self):
+    def imag(self) -> int:
         return 0
