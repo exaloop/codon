@@ -1,9 +1,17 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.gc import free
+
+
 @pure
 @C
-def seq_check_errno() -> str: pass
+def seq_check_errno() -> str:
+    pass
+
+
 from C import seq_print(str)
 from C import exit(int)
+
 
 @extend
 class __internal__:
@@ -14,7 +22,7 @@ class __internal__:
 
     @pure
     @llvm
-    def _tuple_getitem_llvm[T, E](t: T, idx: int) -> E:
+    def _tuple_getitem_llvm(t: T, idx: int, T: type, E: type) -> E:
         %x = alloca {=T}
         store {=T} %t, {=T}* %x
         %p0 = bitcast {=T}* %x to {=E}*
@@ -26,21 +34,23 @@ class __internal__:
         if idx < 0:
             idx += len
         if idx < 0 or idx >= len:
-            raise IndexError("tuple index " + str(idx) + ' out of range 0..' + str(len))
+            raise IndexError("tuple index " + str(idx) + " out of range 0.." + str(len))
         return idx
 
-    def tuple_getitem[T, E](t: T, idx: int) -> E:
-        return __internal__._tuple_getitem_llvm(t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E)
+    def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
+        return __internal__._tuple_getitem_llvm(
+            t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
+        )
 
     @pure
     @llvm
-    def fn_new[T](ptr: Ptr[byte]) -> T:
+    def fn_new(ptr: Ptr[byte], T: type) -> T:
         %0 = bitcast i8* %ptr to {=T}
         ret {=T} %0
 
     @pure
     @llvm
-    def fn_raw[T](fn: T) -> Ptr[byte]:
+    def fn_raw(fn: T, T: type) -> Ptr[byte]:
         %0 = bitcast {=T} %fn to i8*
         ret i8* %0
 
@@ -63,76 +73,77 @@ class __internal__:
         ret i{=T} %0
 
     def seq_assert(file: str, line: int, msg: str) -> AssertionError:
-        s = 'Assert failed'
-        if msg: s += ': ' + msg
-        s += ' (' + file + ':' + line.__repr__() + ')'
+        s = "Assert failed"
+        if msg:
+            s += ": " + msg
+        s += " (" + file + ":" + line.__repr__() + ")"
         return AssertionError(s)
 
-    def seq_assert_test(file: str, line: int, msg: str):
+    def seq_assert_test(file: str, line: int, msg: str) -> void:
         s = "\033[1;31mTEST FAILED:\033[0m " + file + " (line " + str(line) + ")"
         if msg:
             s += ": " + msg
         seq_print(s + "\n")
 
-    def check_errno(prefix: str):
+    def check_errno(prefix: str) -> void:
         msg = seq_check_errno()
         if msg:
             raise OSError(prefix + msg)
 
     @pure
     @llvm
-    def opt_tuple_new[T]() -> Optional[T]:
+    def opt_tuple_new(T: type) -> Optional[T]:
         ret { i1, {=T} } { i1 false, {=T} undef }
 
     @pure
     @llvm
-    def opt_ref_new[T]() -> Optional[T]:
+    def opt_ref_new(T: type) -> Optional[T]:
         ret i8* null
 
     @pure
     @llvm
-    def opt_tuple_new_arg[T](what: T) -> Optional[T]:
+    def opt_tuple_new_arg(what: T, T: type) -> Optional[T]:
         %0 = insertvalue { i1, {=T} } { i1 true, {=T} undef }, {=T} %what, 1
         ret { i1, {=T} } %0
 
     @pure
     @llvm
-    def opt_ref_new_arg[T](what: T) -> Optional[T]:
+    def opt_ref_new_arg(what: T, T: type) -> Optional[T]:
         ret i8* %what
 
     @pure
     @llvm
-    def opt_tuple_bool[T](what: Optional[T]) -> bool:
+    def opt_tuple_bool(what: Optional[T], T: type) -> bool:
         %0 = extractvalue { i1, {=T} } %what, 0
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def opt_ref_bool[T](what: Optional[T]) -> bool:
+    def opt_ref_bool(what: Optional[T], T: type) -> bool:
         %0 = icmp ne i8* %what, null
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @pure
     @llvm
-    def opt_tuple_invert[T](what: Optional[T]) -> T:
+    def opt_tuple_invert(what: Optional[T], T: type) -> T:
         %0 = extractvalue { i1, {=T} } %what, 1
         ret {=T} %0
 
     @pure
     @llvm
-    def opt_ref_invert[T](what: Optional[T]) -> T:
+    def opt_ref_invert(what: Optional[T], T: type) -> T:
         ret i8* %what
 
     @pure
     @llvm
-    def to_class_ptr[T](ptr: Ptr[byte]) -> T:
+    def to_class_ptr(ptr: Ptr[byte], T: type) -> T:
         %0 = bitcast i8* %ptr to {=T}
         ret {=T} %0
 
     @pure
-    def _tuple_offsetof(x, field: Static[int]):
+    def _tuple_offsetof(x, field: Static[int]) -> int:
         @llvm
         def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
             %a = alloca {=T}
@@ -141,6 +152,7 @@ class __internal__:
             %elem = ptrtoint {=TE}* %b to i64
             %offset = sub i64 %elem, %base
             ret i64 %offset
+
         return _llvm_offsetof(type(x), field, type(x[field]))
 
     def raw_type_str(p: Ptr[byte], name: str) -> str:
@@ -149,21 +161,21 @@ class __internal__:
         total = 1 + name.len + 4 + pstr.len + 1
         buf = Ptr[byte](total)
         where = 0
-        buf[where] = byte(60) # '<'
+        buf[where] = byte(60)  # '<'
         where += 1
         str.memcpy(buf + where, name.ptr, name.len)
         where += name.len
-        buf[where] = byte(32) # ' '
+        buf[where] = byte(32)  # ' '
         where += 1
-        buf[where] = byte(97) # 'a'
+        buf[where] = byte(97)  # 'a'
         where += 1
-        buf[where] = byte(116) # 't'
+        buf[where] = byte(116)  # 't'
         where += 1
-        buf[where] = byte(32) # ' '
+        buf[where] = byte(32)  # ' '
         where += 1
         str.memcpy(buf + where, pstr.ptr, pstr.len)
         where += pstr.len
-        buf[where] = byte(62) # '>'
+        buf[where] = byte(62)  # '>'
         free(pstr.ptr)
         return str(buf, total)
 
@@ -179,7 +191,7 @@ class __internal__:
             i += 1
         buf = Ptr[byte](total)
         where = 0
-        buf[where] = byte(40) # '('
+        buf[where] = byte(40)  # '('
         where += 1
         i = 0
         while i < n:
@@ -188,21 +200,21 @@ class __internal__:
             if l:
                 str.memcpy(buf + where, s.ptr, l)
                 where += l
-                buf[where] = byte(58) # ':'
+                buf[where] = byte(58)  # ':'
                 where += 1
-                buf[where] = byte(32) # ' '
+                buf[where] = byte(32)  # ' '
                 where += 1
             s = strs[i]
             l = s.len
             str.memcpy(buf + where, s.ptr, l)
             where += l
             if i < n - 1:
-                buf[where] = byte(44) # ','
+                buf[where] = byte(44)  # ','
                 where += 1
-                buf[where] = byte(32) # ' '
+                buf[where] = byte(32)  # ' '
                 where += 1
             i += 1
-        buf[where] = byte(41) # ')'
+        buf[where] = byte(41)  # ')'
         return str(buf, total)
 
 
@@ -210,5 +222,6 @@ class __internal__:
 class Import:
     name: str
     file: str
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         return f"<module '{self.name}' from '{self.file}'>"
