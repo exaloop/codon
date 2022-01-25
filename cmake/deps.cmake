@@ -144,16 +144,17 @@ if(CODON_JUPYTER)
     CPMAddPackage(
         NAME json
         GITHUB_REPOSITORY "nlohmann/json"
-        VERSION 3.10.4)
+        VERSION 3.10.1)
     CPMAddPackage(
         NAME xeus
         GITHUB_REPOSITORY "jupyter-xeus/xeus"
         VERSION 2.2.0
         GIT_TAG 2.2.0
-        PATCH_COMMAND sed -i bak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
+        PATCH_COMMAND sed -ibak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
         OPTIONS "BUILD_EXAMPLES OFF"
                 "XEUS_BUILD_SHARED_LIBS OFF"
-                "XEUS_STATIC_DEPENDENCIES ON")
+                "XEUS_STATIC_DEPENDENCIES ON"
+                "CMAKE_POSITION_INDEPENDENT_CODE ON")
     if (xeus_ADDED)
         install(TARGETS nlohmann_json EXPORT xeus-targets)
     endif()

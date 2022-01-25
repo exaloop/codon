@@ -1,6 +1,6 @@
 #include "doc.h"
 
-#include <filesystem>
+#include <experimental/filesystem>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -116,7 +116,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   auto ctx = std::make_shared<DocContext>(shared);
 
   for (auto &f : files) {
-    auto path = std::filesystem::canonical(std::filesystem::path(f)).string();
+    auto path = std::experimental::filesystem::canonical(std::experimental::filesystem::path(f)).string();
     ctx->setFilename(path);
     ast = ast::parseFile(shared->cache, path);
     // LOG("parsing {}", f);

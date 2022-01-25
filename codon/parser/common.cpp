@@ -1,6 +1,5 @@
 #include "common.h"
 
-#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -195,7 +194,7 @@ std::string executable_path(const char *argv0) {
 std::string executable_path(const char *argv0) { return std::string(argv0); }
 #endif
 
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 
 namespace {
 void addPath(std::vector<fs::path> &paths, const fs::path &path) {

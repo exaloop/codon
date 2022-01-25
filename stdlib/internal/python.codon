@@ -43,28 +43,33 @@ _PY_MODULE_CACHE = Dict[str, pyobj]()
 _PY_INIT = """
 import io
 
-cls = None
-cls2 = None
+clsf = None
+clsa = None
+plt = None
 try:
-     import matplotlib.figure
-     cls = matplotlib.figure.Figure
-     cls2 = matplotlib.lines.Line2D
+    import matplotlib.figure
+    import matplotlib.pyplot
+    plt = matplotlib.pyplot
+    clsf = matplotlib.figure.Figure
+    clsa = matplotlib.artist.Artist
 except ModuleNotFoundError:
-     pass
+    pass
 
 def __codon_repr__(fig):
-     if cls and isinstance(fig, cls):
-          stream = io.StringIO()
-          fig.savefig(stream, format="svg")
-          return 'image/svg+xml', stream.getvalue()
-     elif cls2 and isinstance(fig, cls2):
-          stream = io.StringIO()
-          fig.savefig(stream, format="svg")
-          return 'image/svg+xml', stream.getvalue()
-     elif hasattr(fig, "_repr_html_"):
-          return 'text/html', fig._repr_html_()
-     else:
-          return 'text/plain', fig.__repr__()
+    if clsf and isinstance(fig, clsf):
+        stream = io.StringIO()
+        fig.savefig(stream, format="svg")
+        return 'image/svg+xml', stream.getvalue()
+    elif clsa and isinstance(fig, list) and all(
+        isinstance(i, clsa) for i in fig
+    ):
+        stream = io.StringIO()
+        plt.gcf().savefig(stream, format="svg")
+        return 'image/svg+xml', stream.getvalue()
+    elif hasattr(fig, "_repr_html_"):
+        return 'text/html', fig._repr_html_()
+    else:
+        return 'text/plain', fig.__repr__()
 """
 
 _PY_INITIALIZED = False

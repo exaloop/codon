@@ -1,7 +1,5 @@
 #include "compiler.h"
 
-#include <filesystem>
-
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -67,7 +65,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
   std::string abspath =
-      (file != "-") ? std::filesystem::absolute(std::filesystem::path(file)).string()
+      (file != "-") ? std::experimental::filesystem::absolute(std::experimental::filesystem::path(file)).string()
                     : file;
   try {
     Timer t1("parse");

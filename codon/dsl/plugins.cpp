@@ -1,7 +1,7 @@
 #include "plugins.h"
 
 #include <cstdlib>
-#include <filesystem>
+#include <experimental/filesystem>
 
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
@@ -17,7 +17,7 @@ llvm::Expected<Plugin *> pluginError(const std::string &msg) {
 typedef std::unique_ptr<DSL> LoadFunc();
 } // namespace
 
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 
 llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
 #if __APPLE__

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include <filesystem>
+#include <experimental/filesystem>
 #include <iostream>
 #include <ostream>
 
@@ -123,7 +123,7 @@ struct SrcInfo {
   SrcInfo() : SrcInfo("", 0, 0, 0) {}
 
   friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
-    out << std::filesystem::path(src.file).filename() << ":" << src.line << ":"
+    out << std::experimental::filesystem::path(src.file).filename() << ":" << src.line << ":"
         << src.col;
     return out;
   }

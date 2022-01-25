@@ -1,6 +1,5 @@
 #include "translate.h"
 
-#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -36,7 +35,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
     auto path =
-        std::filesystem::canonical(std::filesystem::path(cache->module0)).string();
+        std::experimental::filesystem::canonical(std::experimental::filesystem::path(cache->module0)).string();
     main->setSrcInfo({path, 0, 0, 0});
   }
 
