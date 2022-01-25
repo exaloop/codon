@@ -56,6 +56,12 @@ void display(const codon::error::ParserErrorInfo &e) {
   }
 }
 
+void initLogFlags(const llvm::cl::opt<std::string> &log) {
+  codon::getLogger().parse(log);
+  if (auto *d = getenv("CODON_DEBUG"))
+    codon::getLogger().parse(std::string(d));
+}
+
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
 } // namespace
@@ -103,9 +109,7 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  codon::getLogger().parse(log);
-  if (auto *d = getenv("CODON_DEBUG"))
-    codon::getLogger().parse(std::string(d));
+  initLogFlags(log);
 
   auto &exts = supportedExtensions();
   if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
@@ -207,7 +211,9 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
 int jitMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  initLogFlags(log);
   codon::jit::JIT jit(args[0]);
 
   // load plugins

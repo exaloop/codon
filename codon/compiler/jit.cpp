@@ -44,7 +44,7 @@ llvm::Error JIT::init() {
 
   pm->run(module);
   module->accept(*llvisitor);
-  auto pair = llvisitor->takeModule();
+  auto pair = llvisitor->takeModule(module);
 
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return err;
@@ -62,12 +62,18 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
+
+  Timer t1("jit/ir");
   pm->run(module);
+  t1.log();
 
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
-  llvisitor->processNewGlobals(module);
-  auto pair = llvisitor->takeModule();
 
+  Timer t2("jit/llvm");
+  auto pair = llvisitor->takeModule(module);
+  t2.log();
+
+  Timer t3("jit/engine");
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return std::move(err);
 
@@ -76,6 +82,8 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
     return std::move(err);
 
   auto *repl = (InputFunc *)func->getAddress();
+  t3.log();
+
   try {
     (*repl)();
   } catch (const JITError &e) {
