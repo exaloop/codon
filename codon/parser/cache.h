@@ -188,6 +188,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::shared_ptr<TranslateContext> codegenCtx;
   /// Set of function realizations that are to be translated to IR.
   std::set<std::pair<std::string, std::string>> pendingRealizations;
+  /// Mapping of partial record names to function pointers and corresponding masks.
+  std::unordered_map<std::string, std::pair<types::FuncTypePtr, std::vector<char>>>
+      partials;
 
   /// Custom operators
   std::unordered_map<std::string,

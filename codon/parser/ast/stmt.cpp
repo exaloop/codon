@@ -42,6 +42,7 @@ std::string SuiteStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(SuiteStmt, ASTVisitor);
 void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
+  // WARNING: does not preserve attributes!
   if (!s)
     return;
   auto suite = const_cast<SuiteStmt *>(s->getSuite());

@@ -397,11 +397,14 @@ StmtExpr::StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2,
   stmts.push_back(std::move(stmt2));
 }
 StmtExpr::StmtExpr(const StmtExpr &expr)
-    : Expr(expr), stmts(ast::clone(expr.stmts)), expr(ast::clone(expr.expr)) {}
+    : Expr(expr), stmts(ast::clone(expr.stmts)), expr(ast::clone(expr.expr)),
+      attributes(expr.attributes) {}
 std::string StmtExpr::toString() const {
   return wrapType(format("stmt-expr ({}) {}", combine(stmts, " "), expr->toString()));
 }
 ACCEPT_IMPL(StmtExpr, ASTVisitor);
+bool StmtExpr::hasAttr(const std::string &attr) const { return in(attributes, attr); }
+void StmtExpr::setAttr(const std::string &attr) { attributes.insert(attr); }
 
 PtrExpr::PtrExpr(ExprPtr expr) : Expr(), expr(std::move(expr)) {}
 PtrExpr::PtrExpr(const PtrExpr &expr) : Expr(expr), expr(ast::clone(expr.expr)) {}

@@ -209,6 +209,10 @@ void TranslateVisitor::visit(StmtExpr *expr) {
     transform(s);
   ctx->popSeries();
   result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->expr));
+  for (auto &a: expr->attributes) {
+    // if (a == ir::ListLiteralAttribute::AttributeName)
+    //   result->setAttribute(ir::ListLiteralAttribute);
+  }
 }
 
 /************************************************************************************/

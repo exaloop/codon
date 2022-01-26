@@ -10,6 +10,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/sir/attribute.h"
 
 using fmt::format;
 
@@ -739,14 +740,7 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
   if (!tuple->getRecord())
     return nullptr;
   if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL))
-    // in(std::set<std::string>{"Ptr", "pyobj", "str", "Array"}, tuple->name))
-    // Ptr, pyobj and str are internal types and have only one overloaded __getitem__
     return nullptr;
-  // if (in(ctx->cache->classes[tuple->name].methods, "__getitem__")) {
-  //     ctx->cache->overloads[ctx->cache->classes[tuple->name].methods["__getitem__"]]
-  //             .size() != 1)
-  //   return nullptr;
-  // }
 
   // Extract a static integer value from a compatible expression.
   auto getInt = [&](int64_t *o, const ExprPtr &e) {
@@ -1121,30 +1115,32 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
               N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), expr->args))),
           clone(var)));
     }
-  } else if (auto pc = callee->getPartial()) {
-    ExprPtr var = N<IdExpr>(partialVar = ctx->cache->getTemporaryVar("pt"));
-    expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr),
-                                       N<IdExpr>(pc->func->ast->name)));
-    calleeFn = expr->expr->type->getFunc();
-    for (int i = 0, j = 0; i < pc->known.size(); i++)
-      if (pc->func->ast->args[i].generic) {
-        if (pc->known[i])
-          unify(calleeFn->funcGenerics[j].type, pc->func->funcGenerics[j].type);
-        j++;
-      }
-    known = pc->known;
-    seqassert(calleeFn, "not a function: {}", expr->expr->type->toString());
-  } else if (!callee->getFunc()) {
-    // Case 3: callee is not a named function. Route it through a __call__ method.
-    ExprPtr newCall = N<CallExpr>(N<DotExpr>(expr->expr, "__call__"), expr->args);
-    return transform(newCall, false, allowVoidExpr);
+  } else {
+    auto pc = callee->getPartial();
+    if (pc) {
+      ExprPtr var = N<IdExpr>(partialVar = ctx->cache->getTemporaryVar("pt"));
+      expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr),
+                                         N<IdExpr>(pc->func->ast->name)));
+      calleeFn = expr->expr->type->getFunc();
+      for (int i = 0, j = 0; i < pc->known.size(); i++)
+        if (pc->func->ast->args[i].generic) {
+          if (pc->known[i])
+            unify(calleeFn->funcGenerics[j].type, pc->func->funcGenerics[j].type);
+          j++;
+        }
+      known = pc->known;
+      seqassert(calleeFn, "not a function: {}", expr->expr->type->toString());
+    } else if (!callee->getFunc()) {
+      // Case 3: callee is not a named function. Route it through a __call__ method.
+      ExprPtr newCall = N<CallExpr>(N<DotExpr>(expr->expr, "__call__"), expr->args);
+      return transform(newCall, false, allowVoidExpr);
+    }
   }
 
   // Handle named and default arguments
   std::vector<CallExpr::Arg> args;
   std::vector<ExprPtr> typeArgs;
   int typeArgCount = 0;
-  // bool isPartial = false;
   int ellipsisStage = -1;
   auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
   auto getPartialArg = [&](int pi) {
@@ -1383,12 +1379,14 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                                     N<CallExpr>(N<IdExpr>(partialTypeName), newArgs)),
                       N<IdExpr>(var));
     }
+    const_cast<StmtExpr *>(call->getStmtExpr())
+        ->setAttr(ir::PartialFunctionAttribute::AttributeName);
     call = transform(call, false, allowVoidExpr);
-    seqassert(call->type->getRecord() &&
-                  startswith(call->type->getRecord()->name, partialTypeName) &&
-                  !call->type->getPartial(),
-              "bad partial transformation");
-    call->type = N<PartialType>(call->type->getRecord(), calleeFn, newMask);
+    // seqassert(call->type->getRecord() &&
+    //               startswith(call->type->getRecord()->name, partialTypeName) &&
+    //               !call->type->getPartial(),
+    //           "bad partial transformation");
+    // call->type = N<PartialType>(call->type->getRecord(), calleeFn, newMask);
     return call;
   } else {
     // Case 2. Normal function call.
@@ -1636,9 +1634,12 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     else if (!fn->ast->args[i].generic)
       tupleSize++;
   auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->ast->name);
-  if (!ctx->find(typeName))
+  if (!ctx->find(typeName)) {
+    ctx->cache->partials[typeName] = {
+        std::static_pointer_cast<types::FuncType>(fn->shared_from_this()), mask};
     // 2 for .starArgs and .kwstarArgs (empty tuples if fn does not have them)
     generateTupleStub(tupleSize + 2, typeName, {}, false);
+  }
   return typeName;
 }
 
@@ -1710,12 +1711,14 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
                                 N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
                                             N<CallExpr>(N<IdExpr>(kwName)))),
                   N<IdExpr>(var));
+  const_cast<StmtExpr *>(call->getStmtExpr())
+      ->setAttr(ir::PartialFunctionAttribute::AttributeName);
   call = transform(call, false, allowVoidExpr);
-  seqassert(call->type->getRecord() &&
-                startswith(call->type->getRecord()->name, partialTypeName) &&
-                !call->type->getPartial(),
-            "bad partial transformation");
-  call->type = N<PartialType>(call->type->getRecord(), fn, mask);
+  // seqassert(call->type->getRecord() &&
+  //               startswith(call->type->getRecord()->name, partialTypeName) &&
+  //               !call->type->getPartial(),
+  //           "bad partial transformation");
+  // call->type = N<PartialType>(call->type->getRecord(), fn, mask);
   return call;
 }
 

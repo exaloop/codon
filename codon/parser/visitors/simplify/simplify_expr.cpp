@@ -9,6 +9,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/sir/attribute.h"
 
 using fmt::format;
 
@@ -187,7 +188,9 @@ void SimplifyVisitor::visit(ListExpr *expr) {
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(it)))));
     }
   }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::ListLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -207,7 +210,9 @@ void SimplifyVisitor::visit(SetExpr *expr) {
       stmts.push_back(transform(
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(it)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::SetLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -229,7 +234,9 @@ void SimplifyVisitor::visit(DictExpr *expr) {
       stmts.push_back(transform(N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(clone(var), "__setitem__"), clone(it.key), clone(it.value)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::DictLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -688,7 +695,9 @@ void SimplifyVisitor::visit(StmtExpr *expr) {
   for (auto &s : expr->stmts)
     stmts.emplace_back(transform(s));
   auto e = transform(expr->expr);
-  resultExpr = N<StmtExpr>(stmts, e);
+  auto s = N<StmtExpr>(stmts, e);
+  s->attributes = expr->attributes;
+  resultExpr = s;
 }
 
 /**************************************************************************************/
