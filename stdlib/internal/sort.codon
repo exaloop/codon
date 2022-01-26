@@ -4,6 +4,7 @@ from algorithms.pdqsort import pdq_sort_inplace
 from algorithms.insertionsort import insertion_sort_inplace
 from algorithms.heapsort import heap_sort_inplace
 from algorithms.qsort import qsort_inplace
+from algorithms.timsort import tim_sort_inplace
 
 
 def sorted(
@@ -27,7 +28,9 @@ def sorted(
 def _sort_list(
     self: List[T], key: Callable[[T], S], algorithm: str, T: type, S: type
 ) -> void:
-    if algorithm == "pdq":
+    if algorithm == "tim":
+        tim_sort_inplace(self, key)
+    elif algorithm == "pdq":
         pdq_sort_inplace(self, key)
     elif algorithm == "insertion":
         insertion_sort_inplace(self, key)
@@ -47,7 +50,7 @@ class List:
         algorithm: Optional[str] = None,
         reverse: bool = False,
     ) -> void:
-        alg = ~algorithm if algorithm else "pdq"
+        alg = ~algorithm if algorithm else "tim"
         if isinstance(key, Optional):
             _sort_list(self, lambda x: x, alg)
         else:

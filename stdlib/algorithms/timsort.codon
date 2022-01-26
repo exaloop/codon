@@ -380,7 +380,7 @@ def _tim_sort(
             _reverse_sortslice(arr, i, i + n)
 
         if n < minrun:
-            force = min(minrun, end)
+            force = min(minrun, end - i)
             _insertion_sort(arr, i, i + force, keyf)
             n = force
 

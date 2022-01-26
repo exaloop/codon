@@ -46,7 +46,7 @@ def test_sort1(name, sort):
 test_sort1("qsort   :", qsort_inplace)
 test_sort1("heapsort:", heap_sort_inplace)
 test_sort1("pdqsort :", pdq_sort_inplace)
-# test_sort1('timsort :', tim_sort_inplace[int,int])
+test_sort1("timsort :", tim_sort_inplace)
 
 
 @test
@@ -69,7 +69,7 @@ def test_sort2(name, sort):
 test_sort2("qsort   :", qsort_inplace)
 test_sort2("heapsort:", heap_sort_inplace)
 test_sort2("pdqsort :", pdq_sort_inplace)
-# test_sort2('timsort :', tim_sort_inplace[int,int])
+test_sort2("timsort :", tim_sort_inplace)
 
 # test standard sort routines
 @test
