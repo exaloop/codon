@@ -22,6 +22,14 @@ class RandomGenerator:
         self.state = Array[u32](N)
         self.next = N + 1
 
+    def gestate(self) -> Tuple[Array[u32], int]:
+        return self.state.copy(), self.next
+
+    def setstate(self, state: Tuple[Array[u32], int]):
+        if len(state[0]) != N:
+            raise ValueError("Invalid RNG state")
+        self.state, self.next = state
+
     def gettimeofday(self):
         return _C.seq_time() * 1000
 
@@ -215,6 +223,12 @@ class Random:
         # a = None
         self.gen.seed()
         # self.gauss_next = None
+
+    def getstate(self):
+        return self.gen.getstate()
+    
+    def setstate(self, state):
+        self.gen.setstate(state)
 
     def from_bytes_big(self, b) -> int:
         """
