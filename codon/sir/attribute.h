@@ -115,6 +115,23 @@ private:
   std::ostream &doFormat(std::ostream &os) const override;
 };
 
+/// Attribute attached to IR structures corresponding to tuple literals
+struct TupleLiteralAttribute : public Attribute {
+  static const std::string AttributeName;
+
+  /// values contained in tuple literal
+  std::vector<Value *> elements;
+
+  explicit TupleLiteralAttribute(std::vector<Value *> elements)
+      : elements(std::move(elements)) {}
+
+  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
+  std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
+
+private:
+  std::ostream &doFormat(std::ostream &os) const override;
+};
+
 /// Attribute attached to IR structures corresponding to list literals
 struct ListLiteralAttribute : public Attribute {
   static const std::string AttributeName;

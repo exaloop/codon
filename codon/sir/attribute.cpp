@@ -39,6 +39,31 @@ std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
 
 const std::string SrcInfoAttribute::AttributeName = "srcInfoAttribute";
 
+const std::string TupleLiteralAttribute::AttributeName = "tupleLiteralAttribute";
+
+std::unique_ptr<Attribute> TupleLiteralAttribute::clone(util::CloneVisitor &cv) const {
+  std::vector<Value *> elementsCloned;
+  for (auto *val : elements)
+    elementsCloned.push_back(cv.clone(val));
+  return std::make_unique<TupleLiteralAttribute>(elementsCloned);
+}
+
+std::unique_ptr<Attribute>
+TupleLiteralAttribute::forceClone(util::CloneVisitor &cv) const {
+  std::vector<Value *> elementsCloned;
+  for (auto *val : elements)
+    elementsCloned.push_back(cv.forceClone(val));
+  return std::make_unique<TupleLiteralAttribute>(elementsCloned);
+}
+
+std::ostream &TupleLiteralAttribute::doFormat(std::ostream &os) const {
+  std::vector<std::string> strings;
+  for (auto *val : elements)
+    strings.push_back(fmt::format(FMT_STRING("{}"), *val));
+  fmt::print(os, FMT_STRING("({})"), fmt::join(strings.begin(), strings.end(), ","));
+  return os;
+}
+
 const std::string ListLiteralAttribute::AttributeName = "listLiteralAttribute";
 
 std::unique_ptr<Attribute> ListLiteralAttribute::clone(util::CloneVisitor &cv) const {
