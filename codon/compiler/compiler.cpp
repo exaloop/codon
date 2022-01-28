@@ -112,22 +112,9 @@ Compiler::parseCode(const std::string &file, const std::string &code, int startL
                     const std::unordered_map<std::string, std::string> &defines) {
   return parse(/*isCode=*/true, file, code, startLine, testFlags, defines);
 }
-struct DummyOp : public codon::ir::util::Operator {
-  void handle(codon::ir::CallInstr *x) override {
-    auto *M = x->getModule();
-    auto *func = codon::ir::util::getFunc(x->getCallee());
-    if (!func || func->getUnmangledName() != "foo")
-      return;
-    auto fn = M->getOrRealizeFunc("bar", {x->front()->getType()}, {});
-    seqassert(fn, "did not succeed");
-    auto result = codon::ir::util::call(fn, {x->front()});
-    x->replaceAll(result);
-  }
-};
+
 llvm::Error Compiler::compile() {
   pm->run(module.get());
-  auto d = DummyOp();
-  module->accept(d);
   llvisitor->visit(module.get());
   return llvm::Error::success();
 }
