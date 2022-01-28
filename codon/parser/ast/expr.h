@@ -612,7 +612,7 @@ struct StmtExpr : public Expr {
   ACCEPT(ASTVisitor);
 
   const StmtExpr *getStmtExpr() const override { return this; }
-  
+
   /// Attribute helpers
   bool hasAttr(const std::string &attr) const;
   void setAttr(const std::string &attr);
