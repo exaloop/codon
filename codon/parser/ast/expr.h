@@ -600,6 +600,8 @@ struct RangeExpr : public Expr {
 struct StmtExpr : public Expr {
   std::vector<std::shared_ptr<Stmt>> stmts;
   ExprPtr expr;
+  /// Set of attributes.
+  std::set<std::string> attributes;
 
   StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr);
   StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr);
@@ -610,6 +612,10 @@ struct StmtExpr : public Expr {
   ACCEPT(ASTVisitor);
 
   const StmtExpr *getStmtExpr() const override { return this; }
+
+  /// Attribute helpers
+  bool hasAttr(const std::string &attr) const;
+  void setAttr(const std::string &attr);
 };
 
 /// Pointer expression (__ptr__(expr)).

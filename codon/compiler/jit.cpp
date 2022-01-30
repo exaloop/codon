@@ -108,7 +108,6 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
 
-
   ast::Cache bCache = *cache;
   ast::SimplifyContext bSimplify = *sctx;
   ast::TypeContext bType = *(cache->typeCtx);

@@ -9,6 +9,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/sir/attribute.h"
 
 using fmt::format;
 
@@ -187,7 +188,9 @@ void SimplifyVisitor::visit(ListExpr *expr) {
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(it)))));
     }
   }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::ListLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -207,7 +210,9 @@ void SimplifyVisitor::visit(SetExpr *expr) {
       stmts.push_back(transform(
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(it)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::SetLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -229,7 +234,9 @@ void SimplifyVisitor::visit(DictExpr *expr) {
       stmts.push_back(transform(N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(clone(var), "__setitem__"), clone(it.key), clone(it.value)))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ir::DictLiteralAttribute::AttributeName);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -386,14 +393,13 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   // IndexExpr[i1, ..., iN] is internally stored as IndexExpr[TupleExpr[i1, ..., iN]]
   // for N > 1, so make sure to check that case.
 
-
   std::vector<ExprPtr> it;
   if (auto t = index->getTuple())
     for (auto &i : t->items)
       it.push_back(i);
   else
     it.push_back(index);
-  for (auto &i: it) {
+  for (auto &i : it) {
     if (auto es = i->getStar())
       i = N<StarExpr>(transform(es->what));
     else if (auto ek = CAST(i, KeywordStarExpr))
@@ -689,7 +695,9 @@ void SimplifyVisitor::visit(StmtExpr *expr) {
   for (auto &s : expr->stmts)
     stmts.emplace_back(transform(s));
   auto e = transform(expr->expr);
-  resultExpr = N<StmtExpr>(stmts, e);
+  auto s = N<StmtExpr>(stmts, e);
+  s->attributes = expr->attributes;
+  resultExpr = s;
 }
 
 /**************************************************************************************/
@@ -726,8 +734,8 @@ ExprPtr SimplifyVisitor::transformInt(const std::string &value,
   }
   /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
   /// NOTE: you cannot neither use binary (0bXXX) format here.
-  return transform(N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)),
-                               N<IntExpr>(val)));
+  return transform(
+      N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)), N<IntExpr>(val)));
 }
 
 ExprPtr SimplifyVisitor::transformFloat(const std::string &value,
