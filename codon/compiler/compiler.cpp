@@ -9,8 +9,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/sir/util/irtools.h"
-#include "codon/sir/util/operator.h"
 
 namespace codon {
 

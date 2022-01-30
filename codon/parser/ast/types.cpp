@@ -551,13 +551,17 @@ int PartialType::unify(Type *typ, Unification *us) {
 TypePtr PartialType::generalize(int atLevel) {
   return std::make_shared<PartialType>(
       std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), func,
+      /*func->generalize(0)->getFunc(), */
       known);
 }
 TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
                                  std::unordered_map<int, TypePtr> *cache) {
+  auto rec = std::static_pointer_cast<RecordType>(
+      this->RecordType::instantiate(atLevel, unboundCount, cache));
+  // Do not track function unbounds!
+  // auto tempCache = cache ? *cache : std::unordered_map<int, TypePtr>();
   return std::make_shared<PartialType>(
-      std::static_pointer_cast<RecordType>(
-          this->RecordType::instantiate(atLevel, unboundCount, cache)),
+      rec, // func->instantiate(atLevel, unboundCount, &tempCache)->getFunc(),
       func, known);
 }
 std::string PartialType::debugString(bool debug) const {

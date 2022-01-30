@@ -508,13 +508,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     else
       typ = std::make_shared<ClassType>(
           stmt->name, ctx->cache->reverseIdentifierLookup[stmt->name]);
-    if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
-      seqassert(in(ctx->cache->partials, stmt->name),
-                "invalid partial initialization: {}", stmt->name);
-      typ = std::make_shared<PartialType>(typ->getRecord(),
-                                          ctx->cache->partials[stmt->name].first,
-                                          ctx->cache->partials[stmt->name].second);
-    }
     typ->setSrcInfo(stmt->getSrcInfo());
     ctx->add(TypecheckItem::Type, stmt->name, typ);
     ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Type, typ};

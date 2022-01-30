@@ -35,9 +35,8 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
       if (auto rt = realize(p->func))
         unify(rt, p->func);
       return std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
-    } else {
-      return t;
     }
+    return t;
   } else {
     return nullptr;
   }
@@ -117,8 +116,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   try {
     auto it =
         ctx->cache->functions[type->ast->name].realizations.find(type->realizedName());
-    if (it != ctx->cache->functions[type->ast->name].realizations.end())
+    if (it != ctx->cache->functions[type->ast->name].realizations.end()) {
       return it->second->type;
+    }
 
     // Set up bases. Ensure that we have proper parent bases even during a realization
     // of mutually recursive functions.
@@ -156,8 +156,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       ctx->typecheckLevel++;
 
       // Find parents!
-      ctx->bases.push_back({type->ast->name, type->getFunc(), type->args[0],
-                            {}, findSuperMethods(type->getFunc())});
+      ctx->bases.push_back({type->ast->name,
+                            type->getFunc(),
+                            type->args[0],
+                            {},
+                            findSuperMethods(type->getFunc())});
       auto clonedAst = ctx->cache->functions[type->ast->name].ast->clone();
       auto *ast = (FunctionStmt *)clonedAst.get();
       addFunctionGenerics(type);
@@ -404,9 +407,9 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
 ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   auto realizedName = t->realizedTypeName();
   if (!in(ctx->cache->classes[t->name].realizations, realizedName))
-    realizeType(const_cast<types::ClassType*>(t));
+    realizeType(const_cast<types::ClassType *>(t));
   if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir)
-      return l;
+    return l;
   auto getLLVM = [&](const TypePtr &tt) {
     auto t = tt->getClass();
     seqassert(t && in(ctx->cache->classes[t->name].realizations, t->realizedTypeName()),

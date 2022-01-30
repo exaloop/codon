@@ -48,6 +48,11 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess
   // LOG("{} / {}", a->debugString(true), b->debugString(true));
   if (!undoOnSuccess)
     a->unify(b.get(), &undo);
+  // if (format("cannot unify {} and {}", a->toString(), b->toString()) ==
+  //     "cannot unify ._lambda_82:0[...] and T2") {
+  //   LOG("cannot unify {} and {}", a->debugString(1), b->debugString(1));
+  //   a->unify(b.get(), &undo);
+  // }
   error("cannot unify {} and {}", a->toString(), b->toString());
   return nullptr;
 }
