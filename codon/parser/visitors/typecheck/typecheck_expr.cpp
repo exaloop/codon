@@ -867,7 +867,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
           N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
     } else {
       // For debugging purposes:
-      ctx->findMethod(typ->name, expr->member);
+      if (expr->member == "ticker")
+        ctx->findMethod(typ->name, expr->member);
       error("cannot find '{}' in {}", expr->member, typ->toString());
     }
   }
@@ -1392,13 +1393,13 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     // TODO: needs cleaner logic for this. Maybe just use normal record type
     // and just track partialized function args, not the whole function as it's done
     // now. Major caveat: needs rewiring of the function generic partialization logic.
-    if (startswith(calleeFn->ast->name, TYPE_PARTIAL) &&
-        endswith(calleeFn->ast->name, ".__new__:0")) {
-      seqassert(expr->type->getRecord(), "expected a partial record");
-      auto r = expr->type->getRecord();
-      expr->type = std::make_shared<PartialType>(r, ctx->cache->partials[r->name].first,
-                                                 ctx->cache->partials[r->name].second);
-    }
+    // if (startswith(calleeFn->ast->name, TYPE_PARTIAL) &&
+    //     endswith(calleeFn->ast->name, ".__new__:0")) {
+    //   seqassert(expr->type->getRecord(), "expected a partial record");
+    //   auto r = expr->type->getRecord();
+    //   expr->type = std::make_shared<PartialType>(r, ctx->cache->partials[r->name].first,
+    //                                              ctx->cache->partials[r->name].second);
+    // }
     return nullptr;
   }
 }

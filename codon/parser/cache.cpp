@@ -111,14 +111,18 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
       }
     }
   }
+  int oldAge = typeCtx->age;
+  typeCtx->age = 99999;
   auto tv = TypecheckVisitor(typeCtx);
+  ir::Func *f = nullptr;
   if (auto rtv = tv.realize(type)) {
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
       TranslateVisitor(codegenCtx).transform(functions[fn.first].ast->clone());
-    return functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
+    f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
   }
-  return nullptr;
+  typeCtx->age = oldAge;
+  return f;
 }
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
