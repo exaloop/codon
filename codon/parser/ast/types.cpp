@@ -539,30 +539,25 @@ PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
     : RecordType(*baseType), func(move(func)), known(move(known)) {}
 int PartialType::unify(Type *typ, Unification *us) {
   int s1 = 0, s;
-  if (auto tc = typ->getPartial()) {
-    // Check names.
-    if ((s = func->unify(tc->func.get(), us)) == -1)
-      return -1;
-    s1 += s;
-  }
+  // if (auto tc = typ->getPartial()) {
+  //   // Check names.
+  //   if ((s = func->unify(tc->func.get(), us)) == -1)
+  //     return -1;
+  //   s1 += s;
+  // }
   s = this->RecordType::unify(typ, us);
   return s == -1 ? s : s1 + s;
 }
 TypePtr PartialType::generalize(int atLevel) {
   return std::make_shared<PartialType>(
       std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), func,
-      /*func->generalize(0)->getFunc(), */
       known);
 }
 TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
                                  std::unordered_map<int, TypePtr> *cache) {
   auto rec = std::static_pointer_cast<RecordType>(
       this->RecordType::instantiate(atLevel, unboundCount, cache));
-  // Do not track function unbounds!
-  // auto tempCache = cache ? *cache : std::unordered_map<int, TypePtr>();
-  return std::make_shared<PartialType>(
-      rec, // func->instantiate(atLevel, unboundCount, &tempCache)->getFunc(),
-      func, known);
+  return std::make_shared<PartialType>(rec, func, known);
 }
 std::string PartialType::debugString(bool debug) const {
   std::vector<std::string> gs;
@@ -583,7 +578,7 @@ std::string PartialType::debugString(bool debug) const {
 }
 std::string PartialType::realizedName() const {
   std::vector<std::string> gs;
-  gs.push_back(func->realizedName());
+  // gs.push_back(func->realizedName());
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
@@ -765,12 +760,23 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           zeros.emplace_back(pi - 9);
       if (zeros.size() + 1 != args.size())
         return -1;
-      if (args[0]->unify(pt->func->args[0].get(), us) == -1)
-        return -1;
+
+      int ic = 0;
+      std::unordered_map<int, TypePtr> c;
+      auto pf = pt->func->instantiate(0, &ic, &c)->getFunc();
+      // For partial functions, we just check can we unify without actually performing
+      // unification
       for (int pi = 0, gi = 1; pi < pt->known.size(); pi++)
-        if (!pt->known[pi] && !pt->func->ast->args[pi].generic)
-          if (args[gi++]->unify(pt->func->args[pi + 1].get(), us) == -1)
+        if (!pt->known[pi] && !pf->ast->args[pi].generic)
+          if (args[gi++]->unify(pf->args[pi + 1].get(), us) == -1)
             return -1;
+      if (us && us->realizator && pf->canRealize()) {
+        // Realize if possible to allow deduction of return type [and possible unification!]
+        auto rf = us->realizator->realize(pf);
+        pf->unify(rf.get(), us);
+      }
+      if (args[0]->unify(pf->args[0].get(), us) == -1)
+        return -1;
       return 1;
     }
   } else if (auto tl = typ->getLink()) {

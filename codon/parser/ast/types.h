@@ -14,6 +14,7 @@ struct Expr;
 struct StaticValue;
 struct FunctionStmt;
 struct TypeContext;
+class TypecheckVisitor;
 
 namespace types {
 
@@ -43,6 +44,8 @@ struct Type : public codon::SrcObject, public std::enable_shared_from_this<Type>
     std::vector<std::pair<LinkType *, int>> leveled;
     /// List of assigned traits.
     std::vector<LinkType *> traits;
+    /// Pointer to a TypecheckVisitor to support realization function types.
+    TypecheckVisitor *realizator = nullptr;
 
   public:
     /// Undo the unification step.

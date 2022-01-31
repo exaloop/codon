@@ -1122,10 +1122,12 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr),
                                        N<IdExpr>(pc->func->ast->name)));
     calleeFn = expr->expr->type->getFunc();
+    // Fill in generics
     for (int i = 0, j = 0; i < pc->known.size(); i++)
       if (pc->func->ast->args[i].generic) {
         if (pc->known[i])
-          unify(calleeFn->funcGenerics[j].type, pc->func->funcGenerics[j].type);
+          unify(calleeFn->funcGenerics[j].type,
+                ctx->instantiate(expr, pc->func->funcGenerics[j].type));
         j++;
       }
     known = pc->known;
@@ -1340,8 +1342,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     if (replacements[si]) {
       if (replacements[si]->getFunc())
         deactivateUnbounds(replacements[si].get());
-      if (auto pt = replacements[si]->getPartial())
-        deactivateUnbounds(pt->func.get());
       calleeFn->generics[si + 1].type = calleeFn->args[si + 1] = replacements[si];
     }
   if (!isPartial) {
@@ -1390,18 +1390,15 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
 
     // HACK: Intercept Partial.__new__ and replace it with partial type
     // TODO: needs cleaner logic for this. Maybe just use normal record type
-    // and just track partialized function args, not the whole function as it's done now.
-    // Major caveat: needs rewiring of the function generic partialization logic.
+    // and just track partialized function args, not the whole function as it's done
+    // now. Major caveat: needs rewiring of the function generic partialization logic.
     if (startswith(calleeFn->ast->name, TYPE_PARTIAL) &&
         endswith(calleeFn->ast->name, ".__new__:0")) {
       seqassert(expr->type->getRecord(), "expected a partial record");
-      LOG("partial constructor");
       auto r = expr->type->getRecord();
-      // TODO: maybe
       expr->type = std::make_shared<PartialType>(r, ctx->cache->partials[r->name].first,
                                                  ctx->cache->partials[r->name].second);
     }
-    LOG("-- {} :: {}", ctx->getBase(), calleeFn->debugString(1));
     return nullptr;
   }
 }
@@ -1650,7 +1647,7 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
     generateTupleStub(tupleSize + 2, typeName, {}, false);
   }
-  LOG("[p] {} -> {}", typeName, ctx->cache->partials[typeName].first->debugString(1));
+  // LOG("[p] {} -> {}", typeName, ctx->cache->partials[typeName].first->debugString(1));
   return typeName;
 }
 
@@ -1725,7 +1722,6 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   const_cast<StmtExpr *>(call->getStmtExpr())
       ->setAttr(ir::PartialFunctionAttribute::AttributeName);
   call = transform(call, false, allowVoidExpr);
-  LOG("-- {} / {}", ctx->getBase(), call->type->debugString(1));
   seqassert(call->type->getPartial(), "expected partial type");
   return call;
 }
@@ -1872,6 +1868,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr);
   }
+
+  // Special case:
   unify(expr->type, expectedType, undoOnSuccess);
   return true;
 }

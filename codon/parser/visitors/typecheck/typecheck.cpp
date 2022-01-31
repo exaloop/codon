@@ -38,6 +38,7 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess
     return a = b;
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
+  undo.realizator = this;
   if (a->unify(b.get(), &undo) >= 0) {
     if (undoOnSuccess)
       undo.undo();
