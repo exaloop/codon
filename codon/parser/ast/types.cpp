@@ -100,7 +100,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
     if (undo) {
       LOG_TYPECHECK("[unify] {} := {}", id, typ->debugString(true));
       // Link current type to typ and ensure that this modification is recorded in undo.
-      undo->linked.push_back(this);
+      undo->linked.push_back(getLink());
       kind = Link;
       seqassert(!typ->getLink() || typ->getLink()->kind != Unbound ||
                     typ->getLink()->id <= id,
@@ -108,7 +108,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
       type = typ->follow();
       if (auto t = type->getLink())
         if (trait && t->kind == Unbound && !t->trait) {
-          undo->traits.push_back(t.get());
+          undo->traits.push_back(t->getLink());
           t->trait = trait;
         }
     }
@@ -205,7 +205,7 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
       if (tl->trait && occurs(tl->trait.get(), undo))
         return true;
       if (undo && tl->level > level) {
-        undo->leveled.emplace_back(make_pair(tl.get(), tl->level));
+        undo->leveled.emplace_back(make_pair(tl, tl->level));
         tl->level = level;
       }
       return false;

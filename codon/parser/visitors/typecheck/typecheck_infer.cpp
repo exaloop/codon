@@ -237,6 +237,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         } else {
           r->ir = ctx->cache->module->Nr<ir::BodiedFunc>(type->realizedName());
         }
+        r->ir->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 
         auto parent = type->funcParent;
         if (!ast->attributes.parentClass.empty() &&
@@ -284,6 +285,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         irType->setAstType(type->getFunc());
         r->ir->realize(irType, names);
 
+        // LOG("-> {}", *(r->ir));
         ctx->cache->functions[type->ast->name].realizations[type->realizedName()] = r;
       } else {
         ctx->cache->functions[type->ast->name].realizations[oldKey] =

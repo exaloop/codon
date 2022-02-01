@@ -438,7 +438,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
-  func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
+  // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
   if (!ast->attributes.has(Attr::C) && !ast->attributes.has(Attr::Internal)) {
     ctx->addBlock();
     for (auto i = 0; i < names.size(); i++)
@@ -515,7 +515,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   f->setLLVMBody(join(lines, "\n"));
   f->setLLVMDeclarations(declare);
   f->setLLVMLiterals(literals);
-  func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
+  // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 }
 
 } // namespace ast
