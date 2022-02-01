@@ -771,7 +771,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           if (args[gi++]->unify(pf->args[pi + 1].get(), us) == -1)
             return -1;
       if (us && us->realizator && pf->canRealize()) {
-        // Realize if possible to allow deduction of return type [and possible unification!]
+        // Realize if possible to allow deduction of return type [and possible
+        // unification!]
         auto rf = us->realizator->realize(pf);
         pf->unify(rf.get(), us);
       }

@@ -1397,7 +1397,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     //     endswith(calleeFn->ast->name, ".__new__:0")) {
     //   seqassert(expr->type->getRecord(), "expected a partial record");
     //   auto r = expr->type->getRecord();
-    //   expr->type = std::make_shared<PartialType>(r, ctx->cache->partials[r->name].first,
+    //   expr->type = std::make_shared<PartialType>(r,
+    //   ctx->cache->partials[r->name].first,
     //                                              ctx->cache->partials[r->name].second);
     // }
     return nullptr;
@@ -1648,7 +1649,8 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
     generateTupleStub(tupleSize + 2, typeName, {}, false);
   }
-  // LOG("[p] {} -> {}", typeName, ctx->cache->partials[typeName].first->debugString(1));
+  // LOG("[p] {} -> {}", typeName,
+  // ctx->cache->partials[typeName].first->debugString(1));
   return typeName;
 }
 
