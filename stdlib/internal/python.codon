@@ -1,42 +1,43 @@
 import os
 from internal.dlopen import *
 
-PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
-PyBytes_AsString = Function[[cobj], cobj](cobj())
-PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], void](cobj())
-PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
-PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
-PyObject_Str = Function[[cobj], cobj](cobj())
-PyRun_SimpleString = Function[[cobj], void](cobj())
-Py_IncRef = Function[[cobj], void](cobj())
 Py_DecRef = Function[[cobj], void](cobj())
-PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
-PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
-PyObject_Length = Function[[cobj], int](cobj())
+Py_IncRef = Function[[cobj], void](cobj())
 Py_Initialize = Function[[], void](cobj())
-PyImport_ImportModule = Function[[cobj], cobj](cobj())
-PyLong_FromLong = Function[[int], cobj](cobj())
-PyLong_AsLong = Function[[cobj], int](cobj())
-PyFloat_FromDouble = Function[[float], cobj](cobj())
-PyFloat_AsDouble = Function[[cobj], float](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
-PyObject_IsTrue = Function[[cobj], int](cobj())
-PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
-PyTuple_New = Function[[int], cobj](cobj())
-PyTuple_SetItem = Function[[cobj, int, cobj], void](cobj())
-PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
+PyBytes_AsString = Function[[cobj], cobj](cobj())
+PyDict_New = Function[[], cobj](cobj())
+PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
+PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
+PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], void](cobj())
+PyFloat_AsDouble = Function[[cobj], float](cobj())
+PyFloat_FromDouble = Function[[float], cobj](cobj())
+PyImport_AddModule = Function[[cobj], cobj](cobj())
+PyImport_ImportModule = Function[[cobj], cobj](cobj())
+PyIter_Next = Function[[cobj], cobj](cobj())
+PyList_GetItem = Function[[cobj, int], cobj](cobj())
 PyList_New = Function[[int], cobj](cobj())
 PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
-PyList_GetItem = Function[[cobj, int], cobj](cobj())
-PySet_New = Function[[cobj], cobj](cobj())
-PySet_Add = Function[[cobj, cobj], cobj](cobj())
-PyDict_New = Function[[], cobj](cobj())
-PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
-PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
+PyLong_AsLong = Function[[cobj], int](cobj())
+PyLong_FromLong = Function[[int], cobj](cobj())
+PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
+PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetIter = Function[[cobj], cobj](cobj())
-PyIter_Next = Function[[cobj], cobj](cobj())
 PyObject_HasAttrString = Function[[cobj, cobj], int](cobj())
-PyImport_AddModule = Function[[cobj], cobj](cobj())
+PyObject_IsTrue = Function[[cobj], int](cobj())
+PyObject_Length = Function[[cobj], int](cobj())
+PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_Str = Function[[cobj], cobj](cobj())
+PyRun_SimpleString = Function[[cobj], void](cobj())
+PySet_Add = Function[[cobj, cobj], cobj](cobj())
+PySet_New = Function[[cobj], cobj](cobj())
+PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
+PyTuple_New = Function[[int], cobj](cobj())
+PyTuple_SetItem = Function[[cobj, int, cobj], void](cobj())
+PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
+PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
+PyUnicode_FromString = Function[[cobj], cobj](cobj())
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
 
@@ -68,16 +69,18 @@ def __codon_repr__(fig):
 """
 
 _PY_INITIALIZED = False
-def init():
+def init(python_loaded: bool = False):
     global _PY_INITIALIZED
     if _PY_INITIALIZED:
         return
 
-    LD = os.getenv('CODON_PYTHON', default='libpython.' + dlext())
+    LD = "" if python_loaded else os.getenv('CODON_PYTHON', default='libpython.' + dlext())
     hnd = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     global PyUnicode_AsEncodedString
     PyUnicode_AsEncodedString = dlsym(hnd, "PyUnicode_AsEncodedString")
+    global PyUnicode_FromString
+    PyUnicode_FromString = dlsym(hnd, "PyUnicode_FromString")
     global PyBytes_AsString
     PyBytes_AsString = dlsym(hnd, "PyBytes_AsString")
     global PyErr_Fetch
@@ -150,13 +153,14 @@ def init():
     PyImport_AddModule = dlsym(hnd, "PyImport_AddModule")
 
 
-    Py_Initialize()
-    PyRun_SimpleString(_PY_INIT.c_str())
+    if not python_loaded:
+        Py_Initialize()
+        PyRun_SimpleString(_PY_INIT.c_str())
     _PY_INITIALIZED = True
 
-def ensure_initialized():
+def ensure_initialized(python_loaded: bool = False):
     if not _PY_INITIALIZED:
-        init()
+        init(python_loaded)
         # raise ValueError("Python not initialized; make sure to 'import python'")
 
 @extend

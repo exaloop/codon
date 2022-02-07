@@ -100,7 +100,7 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return getCapturedOutput();
 }
 
-llvm::Expected<std::string> JIT::exec(const std::string &code) {
+llvm::Expected<std::string> JIT::execute(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
