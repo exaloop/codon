@@ -189,7 +189,7 @@ int runMode(const std::vector<const char *> &args) {
 
 namespace {
 std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
-  auto result = jit->exec(code);
+  auto result = jit->execute(code);
   if (auto err = result.takeError()) {
     std::string output;
     llvm::handleAllErrors(

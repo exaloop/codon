@@ -29,7 +29,7 @@ public:
 
   llvm::Error init();
   llvm::Expected<std::string> run(const ir::Func *input);
-  llvm::Expected<std::string> exec(const std::string &code);
+  llvm::Expected<std::string> execute(const std::string &code);
 };
 
 } // namespace jit

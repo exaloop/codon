@@ -33,7 +33,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                                             bool silent, bool store_history,
                                             nl::json user_expressions,
                                             bool allow_stdin) {
-  auto result = jit->exec(code);
+  auto result = jit->execute(code);
   string failed;
   llvm::handleAllErrors(
       result.takeError(),
