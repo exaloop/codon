@@ -32,8 +32,8 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
   } else if (auto c = typ->getClass()) {
     auto t = realizeType(c.get());
     if (auto p = typ->getPartial()) {
-    //   if (auto rt = realize(p->func))
-    //     unify(rt, p->func);
+      //   if (auto rt = realize(p->func))
+      //     unify(rt, p->func);
       return std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
     }
     return t;
