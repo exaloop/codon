@@ -306,8 +306,8 @@ test_infinity_and_nan_constants()
 @test
 def test_user_object():
     class MyComplexOS:
-        T: type
         value: T
+        T: type
 
         def __init__(self, value: T):
             self.value = value

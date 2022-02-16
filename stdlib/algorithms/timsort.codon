@@ -42,6 +42,8 @@
 #
 #    8. By copying, installing or otherwise using Python 3.10.2, Licensee agrees
 #    to be bound by the terms and conditions of this License Agreement.
+#
+# Timsort by Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
 
 BLOCK_SIZE = 64
 CACHELINE_SIZE = 64
@@ -94,7 +96,7 @@ def _merge_compute_minrun(n: int) -> int:
     return n + r
 
 
-def _reverse_sortslice(arr: Array[T], begin: int, end: int, T: type) -> void:
+def _reverse_sortslice(arr: Array[T], begin: int, end: int, T: type):
     if end - begin < 2:
         return
     arr[begin], arr[end - 1] = arr[end - 1], arr[begin]
@@ -186,7 +188,7 @@ def _merge_with_gallop(
     keyf: Callable[[T], S],
     T: type,
     S: type,
-) -> void:
+):
     min_gallop = MIN_GALLOP
 
     combined = Array[T](a[1] + b[1])
@@ -284,7 +286,7 @@ def _merge_at(
     keyf: Callable[[T], S],
     T: type,
     S: type,
-) -> void:
+):
     start_a, len_a = a
     start_b, len_b = b
 
@@ -308,7 +310,7 @@ def _merge_collapse(
     keyf: Callable[[T], S],
     T: type,
     S: type,
-) -> void:
+):
     if len(stack) <= 1:
         return
 
@@ -357,7 +359,7 @@ def _final_merge(
     keyf: Callable[[T], S],
     T: type,
     S: type,
-) -> void:
+):
     while len(stack) > 1:
         C = stack.pop()
         B = stack.pop()
@@ -367,7 +369,7 @@ def _final_merge(
 
 def _tim_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     if end - begin < 2:
         return
 
@@ -393,35 +395,17 @@ def _tim_sort(
 
 def tim_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
-    """
-    Timsort
-    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
-
-    Sorts the array inplace.
-    """
+):
     _tim_sort(collection, 0, size, keyf)
 
 
 def tim_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
-) -> void:
-    """
-    Timsort
-    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
-
-    Sorts the list inplace.
-    """
+):
     tim_sort_array(collection.arr, collection.len, keyf)
 
 
 def tim_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
-    """
-    Timsort
-    By Tim Peters, published at https://github.com/python/cpython/blob/master/Objects/listobject.c#L2187
-
-    Returns a sorted list.
-    """
     newlst = list(collection)
     tim_sort_inplace(newlst, keyf)
     return newlst

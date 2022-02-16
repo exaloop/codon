@@ -86,16 +86,13 @@ def string_search_rabin_karp(
         yield len(text) - len(pattern)
 
 
-def computeLPArray(pattern: str, len_pat: int) -> List[int]:
+def compute_lp_array(pattern: str, len_pat: int) -> List[int]:
     """
     Return a list containing the length of the maximum matching
     proper prefix of the pattern[0, 1, ..., i]
     """
     len = 0  # length of the previous longest prefix
-    lp = List[
-        int
-    ]()  # longest proper prefix will hold the longest prefix values for pattern
-    lp.append(0)
+    lp = [0]  # longest proper prefix will hold the longest prefix values for pattern
     i = 1
 
     while i < len_pat:
@@ -112,7 +109,7 @@ def computeLPArray(pattern: str, len_pat: int) -> List[int]:
     return lp
 
 
-def string_search_KMP(text: str, pattern: str) -> Generator[int]:
+def string_search_kmp(text: str, pattern: str) -> Generator[int]:
     """
     Knuth-Morris-Pratt algorithm
     Return a list containing the position of each index
@@ -123,7 +120,7 @@ def string_search_KMP(text: str, pattern: str) -> Generator[int]:
             yield i
         return
 
-    lp_array = computeLPArray(pattern, len(pattern))
+    lp_array = compute_lp_array(pattern, len(pattern))
     i, j = 0, 0  # indices for text and pattern
     while i < len(text):
         if pattern[j] == text[i]:
@@ -148,7 +145,7 @@ def replace_interleave(self, new: str, maxcount: int) -> str:
     """
 
     j = 0
-    res = List[str]()
+    res = []
     # insert the new string for maxcount <= len(self) times.
     for i in range(len(self)):
         if i + 1 > maxcount:
@@ -168,7 +165,7 @@ def replace_delete_substring(self, old: str, new: str, maxcount: int) -> str:
     Returns a string deleting any instances of the 'old' string in self and
     replaceing it with the 'new' string.
     """
-    li = list(string_search_KMP(self, old))
+    li = list(string_search_kmp(self, old))
 
     # no matches
     if len(li) == 0:
@@ -185,7 +182,7 @@ def replace_delete_substring(self, old: str, new: str, maxcount: int) -> str:
     assert result_len >= 0
 
     j = li[0]
-    res = List[str]()
+    res = []
     res.append(self[0:j])
 
     # replace the old substring with the new substring

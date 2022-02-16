@@ -24,7 +24,7 @@ import internal.c_stubs as _C
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
         if default:
-            return ~default
+            return unwrap(default)
         else:
             raise StopIteration()
     return g.next()
@@ -34,16 +34,16 @@ from C import seq_print_full(str, cobj)
 
 
 class Set:
-    T: type
     items: List[T]
+    T: type
 
-    def __init__(self) -> void:
-        self.items = List[T]()
+    def __init__(self):
+        self.items = []
 
     def __iter__(self) -> Generator[T]:
         yield from self.items
 
-    def add(self, what: T) -> void:
+    def add(self, what: T):
         if what not in self.items:
             self.items.append(what)
 
@@ -55,14 +55,14 @@ class Set:
 
 
 class Dict:
-    K: type
-    V: type
     keys: List[K]
     values: List[V]
+    K: type
+    V: type
 
-    def __init__(self) -> void:
-        self.keys = List[K]()
-        self.values = List[V]()
+    def __init__(self):
+        self.keys = []
+        self.values = []
 
     def __iter__(self) -> Generator[K]:
         yield from self.keys
@@ -78,7 +78,7 @@ class Dict:
         i = self.keys.index(key)
         return self.values[i]
 
-    def __setitem__(self, key: K, val: V) -> void:
+    def __setitem__(self, key: K, val: V):
         i = self.keys.index(key)
         if i != -1:
             self.values[i] = val
@@ -94,7 +94,7 @@ class Dict:
         if n == 0:
             return "{}"
         else:
-            lst = List[str]()
+            lst = []
             lst.append("{")
             first = True
             for k, v in self.items():
@@ -128,7 +128,7 @@ class str:
             raise ValueError("nope")
 
     def __repr__(self) -> str:
-        return "'" + self + "'"
+        return f"'{self}'"
 
 
 from internal.builtin import *

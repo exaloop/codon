@@ -11,8 +11,6 @@ def _dict_hash(key) -> int:
 
 
 class Dict:
-    K: type
-    V: type
     _n_buckets: int
     _size: int
     _n_occupied: int
@@ -22,9 +20,12 @@ class Dict:
     _keys: Ptr[K]
     _vals: Ptr[V]
 
+    K: type
+    V: type
+
     # Magic methods
 
-    def _init(self) -> void:
+    def _init(self):
         self._n_buckets = 0
         self._size = 0
         self._n_occupied = 0
@@ -33,7 +34,7 @@ class Dict:
         self._keys = Ptr[K]()
         self._vals = Ptr[V]()
 
-    def _init_from(self, other) -> void:
+    def _init_from(self, other):
         n = other._n_buckets
 
         if n == 0:
@@ -57,15 +58,15 @@ class Dict:
         self._keys = keys_copy
         self._vals = vals_copy
 
-    def __init__(self) -> void:
+    def __init__(self):
         self._init()
 
-    def __init__(self, g: Generator[Tuple[K, V]]) -> void:
+    def __init__(self, g: Generator[Tuple[K, V]]):
         self._init()
         for k, v in g:
             self[k] = v
 
-    def __init__(self, other: Dict[K, V]) -> void:
+    def __init__(self, other: Dict[K, V]):
         self._init_from(other)
 
     def __getitem__(self, key: K) -> V:
@@ -74,11 +75,11 @@ class Dict:
             return self._vals[x]
         raise KeyError(str(key))
 
-    def __setitem__(self, key: K, val: V) -> void:
+    def __setitem__(self, key: K, val: V):
         ret, x = self._kh_put(key)
         self._vals[x] = val
 
-    def __delitem__(self, key: K) -> void:
+    def __delitem__(self, key: K):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
@@ -134,7 +135,7 @@ class Dict:
         if n == 0:
             return "{}"
         else:
-            lst = List[str]()
+            lst = []
             lst.append("{")
             first = True
             for k, v in self.items():
@@ -150,7 +151,7 @@ class Dict:
 
     # Helper methods
 
-    def resize(self, new_n_buckets: int) -> void:
+    def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
     def get(self, key: K, s: V) -> V:
@@ -164,25 +165,25 @@ class Dict:
             return val
         return self._vals[x]
 
-    def increment(self, key: K, by: T = 1, T: type) -> void:
+    def increment(self, key: K, by: T = 1, T: type):
         ret, x = self._kh_put(key)
         if ret != 0:  # i.e. key not present
             self._vals[x] = by
         else:
             self._vals[x] += by
 
-    def __dict_do_op_throws__(self, key: K, other: Z, op: F, F: type, Z: type) -> void:
+    def __dict_do_op_throws__(self, key: K, other: Z, op: F, F: type, Z: type):
         x = self._kh_get(key)
         if x == self._kh_end():
             raise KeyError(str(key))
         else:
             self._vals[x] = op(self._vals[x], other)
 
-    def __dict_do_op__(self, key: K, other: Z, dflt: V, op: F, F: type, Z: type) -> void:
+    def __dict_do_op__(self, key: K, other: Z, dflt: V, op: F, F: type, Z: type):
         ret, x = self._kh_put(key)
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
-    def update(self, other: Dict[K, V]) -> void:
+    def update(self, other: Dict[K, V]):
         for k, v in other.items():
             self[k] = v
 
@@ -199,7 +200,7 @@ class Dict:
             return (k, self.pop(k))
         raise KeyError("dictionary is empty")
 
-    def clear(self) -> void:
+    def clear(self):
         self._kh_clear()
 
     def items(self) -> Generator[Tuple[K, V]]:
@@ -225,7 +226,7 @@ class Dict:
 
     # Internal helpers
 
-    def _kh_clear(self) -> void:
+    def _kh_clear(self):
         if self._flags:
             i = 0
             n = khash.__ac_fsize(self._n_buckets)
@@ -253,7 +254,7 @@ class Dict:
         else:
             return 0
 
-    def _kh_resize(self, new_n_buckets: int) -> void:
+    def _kh_resize(self, new_n_buckets: int):
         HASH_UPPER = 0.77
         new_flags = Ptr[u32]()
         j = 1
@@ -383,7 +384,7 @@ class Dict:
 
         return (ret, x)
 
-    def _kh_del(self, x: int) -> void:
+    def _kh_del(self, x: int):
         if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
             khash.__ac_set_isdel_true(self._flags, x)
             self._size -= 1

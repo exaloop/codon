@@ -27,7 +27,7 @@ def perf_counter_ns() -> int:
     return _C.seq_time_highres()
 
 
-def sleep(secs: float) -> void:
+def sleep(secs: float):
     if secs < 0:
         raise ValueError("sleep length must be non-negative")
     _C.seq_sleep(secs)
@@ -41,14 +41,14 @@ class TimeInterval:
     start: int
     msg: str
 
-    def __init__(self) -> void:
+    def __init__(self):
         self.start = _C.seq_time()
         self.msg = ""
 
-    def __enter__(self) -> void:
+    def __enter__(self):
         self.start = _C.seq_time()
 
-    def __exit__(self) -> void:
+    def __exit__(self):
         print(self.report(self.msg), file=stderr)
 
     def report(self, msg="", memory=False) -> str:
@@ -60,7 +60,7 @@ class TimeInterval:
     def elapsed(self) -> float:
         return float(_C.seq_time() - self.start) / 1e9
 
-    def tick(self, msg, memory=False) -> void:
+    def tick(self, msg, memory=False):
         ret = self.report(msg)
         self.start = _C.seq_time()
 
@@ -199,7 +199,7 @@ _MIN = 0x8000000000000000
 _MAX = 0x7FFFFFFFFFFFFFFF
 
 
-def _overflow() -> void:
+def _overflow():
     raise OverflowError("timestamp too large")
 
 

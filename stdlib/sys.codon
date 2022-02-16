@@ -7,7 +7,7 @@ stdout = File(_C.seq_stdout())
 stderr = File(_C.seq_stderr())
 
 
-def exit(status: int = 0) -> void:
+def exit(status: int = 0):
     raise SystemExit(status)
 
 

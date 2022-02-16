@@ -192,15 +192,15 @@ cobj = Ptr[byte]
 @__internal__
 @tuple
 class Array:
-    T: type
     len: int
     ptr: Ptr[T]
+    T: type
 
 
 class List:
-    T: type
-    arr: Array[T]
     len: int
+    arr: Array[T]
+    T: type
 
 
 @extend

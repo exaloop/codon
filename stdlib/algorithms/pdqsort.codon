@@ -162,14 +162,14 @@ def _partition_right(
 
 def _sort2(
     arr: Array[T], i: int, j: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     if keyf(arr[j]) < keyf(arr[i]):
         arr[i], arr[j] = arr[j], arr[i]
 
 
 def _sort3(
     arr: Array[T], i: int, j: int, k: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     _sort2(arr, i, j, keyf)
     _sort2(arr, j, k, keyf)
     _sort2(arr, i, j, keyf)
@@ -184,7 +184,7 @@ def _pdq_sort(
     leftmost: bool,
     T: type,
     S: type,
-) -> void:
+):
     while True:
         size = end - begin
         if size < INSERTION_SORT_THRESHOLD:
@@ -292,7 +292,7 @@ def _pdq_sort(
 
 def pdq_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort
@@ -304,7 +304,7 @@ def pdq_sort_array(
 
 def pdq_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort

@@ -77,12 +77,12 @@ def __codon_repr__(fig):
 _PY_INITIALIZED = False
 
 
-def init() -> void:
+def init():
     global _PY_INITIALIZED
     if _PY_INITIALIZED:
         return
 
-    LD = os.getenv("CODON_PYTHON", default="libpython." + dlext())
+    LD = os.getenv("CODON_PYTHON", default=f"libpython.{dlext()}")
     hnd = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     global PyUnicode_AsEncodedString
@@ -163,7 +163,7 @@ def init() -> void:
     _PY_INITIALIZED = True
 
 
-def ensure_initialized() -> void:
+def ensure_initialized():
     if not _PY_INITIALIZED:
         init()
         # raise ValueError("Python not initialized; make sure to 'import python'")
@@ -215,7 +215,7 @@ class pyobj:
         pyobj(obj).decref()
         return str.from_ptr(bts)
 
-    def exc_check() -> void:
+    def exc_check():
         ptype, pvalue, ptraceback = cobj(), cobj(), cobj()
         PyErr_Fetch(__ptr__(ptype), __ptr__(pvalue), __ptr__(ptraceback))
         if ptype != cobj():
@@ -236,15 +236,15 @@ class pyobj:
         pyobj.exc_check()
         return _retval
 
-    def incref(self) -> void:
+    def incref(self):
         Py_IncRef(self.p)
 
-    def decref(self) -> void:
+    def decref(self):
         Py_DecRef(self.p)
 
     def __call__(self, *args, **kwargs) -> pyobj:
         names = iter(kwargs.__dict__())
-        kws = Dict[str, pyobj]()
+        kws = dict[str, pyobj]()
         if staticlen(kwargs) > 0:
             kws = {next(names): i.__to_py__() for i in kwargs}
         return pyobj.exc_wrap(
@@ -256,7 +256,7 @@ class pyobj:
         pyobj.exc_check()
         return pyobj(t)
 
-    def _tuple_set(self, idx: int, val: pyobj) -> void:
+    def _tuple_set(self, idx: int, val: pyobj):
         PyTuple_SetItem(self.p, idx, val.p)
         pyobj.exc_check()
 
@@ -273,7 +273,7 @@ class pyobj:
         _PY_MODULE_CACHE[name] = m
         return m
 
-    def _exec(code: str) -> void:
+    def _exec(code: str):
         ensure_initialized()
         PyRun_SimpleString(code.c_str())
 
@@ -388,7 +388,7 @@ class Dict:
         return pyobj(pydict)
 
     def __from_py__(d: pyobj) -> Dict[K, V]:
-        b = Dict[K, V]()
+        b = dict[K, V]()
         pos = 0
         k_ptr = cobj()
         v_ptr = cobj()

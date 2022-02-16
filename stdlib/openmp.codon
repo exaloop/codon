@@ -70,9 +70,9 @@ class Task:
 
 @tuple
 class TaskWithPrivates:
-    T: type
     task: Task
     data: T
+    T: type
 
 
 _DEFAULT_IDENT = Ident()
@@ -846,7 +846,7 @@ def _atomic_float_min(a: Ptr[float], b: float):
     __kmpc_atomic_float8_min(_default_loc(), i32(get_thread_num()), a, b)
 
 
-def _atomic_float_max(a: Ptr[float], b: float) -> void:
+def _atomic_float_max(a: Ptr[float], b: float):
     from C import __kmpc_atomic_float8_max(Ptr[Ident], i32, Ptr[float], float)
     __kmpc_atomic_float8_max(_default_loc(), i32(get_thread_num()), a, b)
 

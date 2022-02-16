@@ -5,34 +5,34 @@ import internal.gc as gc
 
 @extend
 class List:
-    def __init__(self) -> void:
+    def __init__(self):
         self.arr = Array[T](10)
         self.len = 0
 
-    def __init__(self, it: Generator[T]) -> void:
+    def __init__(self, it: Generator[T]):
         self.arr = Array[T](10)
         self.len = 0
         for i in it:
             self.append(i)
 
-    def __init__(self, other: List[T]) -> void:
+    def __init__(self, other: List[T]):
         self.arr = Array[T](other.len)
         self.len = 0
         for i in other:
             self.append(i)
 
-    def __init__(self, capacity: int) -> void:
+    def __init__(self, capacity: int):
         self.arr = Array[T](capacity)
         self.len = 0
 
-    def __init__(self, dummy: bool, other) -> void:
+    def __init__(self, dummy: bool, other):
         """Dummy __init__ used for list comprehension optimization"""
         if hasattr(other, "__len__"):
             self.__init__(other.__len__())
         else:
             self.__init__()
 
-    def __init__(self, arr: Array[T], len: int) -> void:
+    def __init__(self, arr: Array[T], len: int):
         self.arr = arr
         self.len = len
 
@@ -48,13 +48,13 @@ class List:
         self._idx_check(idx, "list index out of range")
         return self.arr[idx]
 
-    def __setitem__(self, idx: int, val: T) -> void:
+    def __setitem__(self, idx: int, val: T):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
         self.arr[idx] = val
 
-    def __delitem__(self, idx: int) -> void:
+    def __delitem__(self, idx: int):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
@@ -87,7 +87,7 @@ class List:
                 other.append(self.arr[i])
             return other
 
-    def __setitem__(self, s: Slice, other) -> void:
+    def __setitem__(self, s: Slice, other):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
             for a in other:
@@ -132,7 +132,7 @@ class List:
                 cur += step
                 i += 1
 
-    def __delitem__(self, s: Slice) -> void:
+    def __delitem__(self, s: Slice):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
         else:
@@ -268,16 +268,16 @@ class List:
 
     # Helper functions
 
-    def append(self, x: T) -> void:
+    def append(self, x: T):
         self._resize_if_full()
         self.arr[self.len] = x
         self.len += 1
 
-    def extend(self, itr: Generator[T]) -> void:
+    def extend(self, itr: Generator[T]):
         for a in itr:
             self.append(a)
 
-    def insert(self, idx: int, x: T) -> void:
+    def insert(self, idx: int, x: T):
         n = self.__len__()
         if idx < 0:
             idx += n
@@ -312,7 +312,7 @@ class List:
             i += 1
         return False
 
-    def clear(self) -> void:
+    def clear(self):
         self.len = 0
 
     def index(self, x: T) -> int:
@@ -330,7 +330,7 @@ class List:
                 count += 1
         return count
 
-    def reverse(self) -> void:
+    def reverse(self):
         i = 0
         while i < self.len // 2:
             j = self.len - i - 1
@@ -344,15 +344,15 @@ class List:
 
     # Internal helpers
 
-    def _idx_check(self, idx: int, msg: str) -> void:
+    def _idx_check(self, idx: int, msg: str):
         if idx >= self.len or idx < 0:
             raise IndexError(msg)
 
-    def _resize(self, new_cap: int) -> void:
+    def _resize(self, new_cap: int):
         p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(), new_cap * gc.sizeof(T)))
         self.arr = Array[T](p, new_cap)
 
-    def _resize_if_full(self) -> void:
+    def _resize_if_full(self):
         if self.len == self.arr.len:
             new_cap = (1 + 3 * self.len) // 2
             self._resize(new_cap)
@@ -364,7 +364,7 @@ class List:
             seed ^= v.__hash__() + 0x9E3779B9 + (seed << 6) + (seed >> 2)
         return seed
 
-    def _assign_slice(self, ilow: int, ihigh: int, v: Ptr[T], n: int) -> void:
+    def _assign_slice(self, ilow: int, ihigh: int, v: Ptr[T], n: int):
         a = self
         L = a.len
 

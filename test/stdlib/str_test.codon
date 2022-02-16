@@ -761,6 +761,26 @@ def test_repr():
     assert repr("\"'") == "'\"\\''"
 
 
+@test
+def test_algorithms():
+    from algorithms.strings import *
+
+    assert [1, 2] == list(string_search_slow('abbba', 'bb'))
+    assert [2, 1] == list(rstring_search_slow('abbbc', 'bb'))
+
+    assert [0, 9, 11, 14] == list(string_search_slow('1214313141212 12', '12'))
+    assert [0, 9, 11, 14] == list(string_search_rabin_karp('1214313141212 12', '12', 1001))
+    assert [0, 9, 11, 14] == list(string_search_kmp('1214313141212 12', '12'))
+
+    assert [0, 9, 12] == list(string_search_slow('AABAACAADAABAABA', 'AABA'))
+    assert [0, 9, 12] == list(string_search_rabin_karp('AABAACAADAABAABA', 'AABA', 1001))
+    assert [0, 9, 12] == list(string_search_kmp('AABAACAADAABAABA', 'AABA'))
+
+    assert [10] == list(string_search_slow('ABABDABACDABABCABAB', 'ABABCABAB'))
+    assert [10] == list(string_search_rabin_karp('ABABDABACDABABCABAB', 'ABABCABAB', 101))
+    assert [10] == list(string_search_kmp('ABABDABACDABABCABAB', 'ABABCABAB'))
+
+
 test_isdigit()
 test_islower()
 test_isupper()
@@ -806,3 +826,4 @@ test_fstr()
 test_slice()
 test_join()
 test_repr()
+test_algorithms()

@@ -12,7 +12,6 @@ def _set_hash(key) -> int:
 
 
 class Set:
-    K: type
     _n_buckets: int
     _size: int
     _n_occupied: int
@@ -21,8 +20,10 @@ class Set:
     _flags: Ptr[u32]
     _keys: Ptr[K]
 
+    K: type
+
     # Magic methods
-    def _init(self) -> void:
+    def _init(self):
         self._n_buckets = 0
         self._size = 0
         self._n_occupied = 0
@@ -30,10 +31,10 @@ class Set:
         self._flags = Ptr[u32]()
         self._keys = Ptr[K]()
 
-    def __init__(self) -> void:
+    def __init__(self):
         self._init()
 
-    def __init__(self, g: Generator[K]) -> void:
+    def __init__(self, g: Generator[K]):
         self._init()
         for a in g:
             self.add(a)
@@ -133,7 +134,7 @@ class Set:
         if n == 0:
             return "{}"
         else:
-            lst = List[str]()
+            lst = []
             lst.append("{")
             first = True
             for k in self:
@@ -147,17 +148,17 @@ class Set:
 
     # Helper methods
 
-    def resize(self, new_n_buckets: int) -> void:
+    def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def add(self, key: K) -> void:
+    def add(self, key: K):
         self._kh_put(key)
 
-    def update(self, other: Set[K]) -> void:
+    def update(self, other: Set[K]):
         for k in other:
             self.add(k)
 
-    def remove(self, key: K) -> void:
+    def remove(self, key: K):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
@@ -171,7 +172,7 @@ class Set:
             self.remove(a)
             return a
 
-    def discard(self, key: K) -> void:
+    def discard(self, key: K):
         x = self._kh_get(key)
         if x != self._kh_end():
             self._kh_del(x)
@@ -183,7 +184,7 @@ class Set:
                 s.add(a)
         return s
 
-    def difference_update(self, other: Set[K]) -> void:
+    def difference_update(self, other: Set[K]):
         for a in other:
             self.discard(a)
 
@@ -196,7 +197,7 @@ class Set:
                 s.add(a)
         return s
 
-    def intersection_update(self, other: Set[K]) -> void:
+    def intersection_update(self, other: Set[K]):
         for a in self:
             if a not in other:
                 self.discard(a)
@@ -211,7 +212,7 @@ class Set:
                 s.add(a)
         return s
 
-    def symmetric_difference_update(self, other: Set[K]) -> void:
+    def symmetric_difference_update(self, other: Set[K]):
         for a in other:
             if a in self:
                 self.discard(a)
@@ -249,7 +250,7 @@ class Set:
     def issuperset(self, other: Set[K]) -> bool:
         return other.issubset(self)
 
-    def clear(self) -> void:
+    def clear(self):
         self._kh_clear()
 
     def copy(self) -> Set[K]:
@@ -257,7 +258,7 @@ class Set:
 
     # Internal helpers
 
-    def _kh_clear(self) -> void:
+    def _kh_clear(self):
         if self._flags:
             i = 0
             n = khash.__ac_fsize(self._n_buckets)
@@ -285,7 +286,7 @@ class Set:
         else:
             return 0
 
-    def _kh_resize(self, new_n_buckets: int) -> void:
+    def _kh_resize(self, new_n_buckets: int):
         HASH_UPPER = 0.77
         new_flags = Ptr[u32]()
         j = 1
@@ -406,7 +407,7 @@ class Set:
 
         return (ret, x)
 
-    def _kh_del(self, x: int) -> void:
+    def _kh_del(self, x: int):
         if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
             khash.__ac_set_isdel_true(self._flags, x)
             self._size -= 1

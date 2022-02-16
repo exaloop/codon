@@ -68,10 +68,10 @@ import os
 class GetoptError:
     _hdr: ExcHeader
 
-    def __init__(self) -> void:
+    def __init__(self):
         self._hdr = ("GetoptError", "", "", "", 0, 0)
 
-    def __init__(self, message: str) -> void:
+    def __init__(self, message: str):
         self._hdr = ("GetoptError", message, "", "", 0, 0)
 
     @property
@@ -79,9 +79,6 @@ class GetoptError:
         return self._hdr.msg
 
 
-# Return:
-#   has_arg?
-#   full option name
 def long_has_args(opt: str, longopts: List[str]) -> Tuple[bool, str]:
     possibilities = [o for o in longopts if o.startswith(opt)]
     if not possibilities:
@@ -122,7 +119,7 @@ def do_longs(
             optarg, args = args[0], args[1:]
     elif optarg != "":
         raise GetoptError(f"option --{opt} must not have an argument")
-    opts.append(("--" + opt, optarg))
+    opts.append((f"--{opt}", optarg))
     return opts, args
 
 
@@ -145,7 +142,7 @@ def do_shorts(
                     raise GetoptError(f"option -{opt} requires argument")
                 optstring, args = args[0], args[1:]
             optarg, optstring = optstring, ""
-        opts.append(("-" + opt, optarg))
+        opts.append((f"-{opt}", optarg))
     return opts, args
 
 

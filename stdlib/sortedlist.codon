@@ -8,23 +8,21 @@ DEFAULT_LOAD_FACTOR = 1000
 
 
 class SortedList:
-    T: type
     _len: int
     _load: int
     _lists: List[List[T]]
     _maxes: List[T]
     _offset: int
-    # _index:
+    T: type
 
-    def __init__(self) -> void:
+    def __init__(self):
         self._len = 0
         self._load = DEFAULT_LOAD_FACTOR
-        self._lists = List[List[T]]()
-        self._maxes = List[T]()
-        # self._index = []
+        self._lists = []
+        self._maxes = []
         self._offset = 0
 
-    def clear(self) -> void:
+    def clear(self):
         """
         Remove all values from sorted list.
         Runtime complexity: `O(n)`
@@ -33,7 +31,6 @@ class SortedList:
         self._lists.clear()
         self._maxes.clear()
         self._offset = 0
-        # self._index.clear()
 
     @property
     def left(self) -> T:
@@ -41,7 +38,7 @@ class SortedList:
             raise IndexError("list index out of range")
         return self._lists[0][0]
 
-    def add(self, value: T) -> void:
+    def add(self, value: T):
         """
         Add `value` to sorted list.
         Runtime complexity: `O(log(n))` -- approximate.
@@ -67,7 +64,7 @@ class SortedList:
             self._maxes.append(value)
         self._len += 1
 
-    def _expand(self, pos: int) -> void:
+    def _expand(self, pos: int):
         """
         Split sublists with length greater than double the load-factor.
         Updates the index when the sublist length is less than double the load
@@ -86,7 +83,7 @@ class SortedList:
             self._lists.insert(pos + 1, half)
             _maxes.insert(pos + 1, half[-1])
 
-    def _delete(self, pos: int, idx: int) -> void:
+    def _delete(self, pos: int, idx: int):
         """
         Delete value at the given `(pos, idx)`.
         Combines lists that are less than half the load level.

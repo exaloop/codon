@@ -142,7 +142,7 @@ class str:
     def join(self, l: Generator[str]) -> str:
         if len(self) == 0:
             return str.cat(list(l))
-        v = List[str]()
+        v = []
         for a in l:
             v.append(a)
             v.append(self)
@@ -561,7 +561,7 @@ class str:
         if width <= len(self):
             return self
 
-        s = List[str]()
+        s = []
         if self and (self[0] == "+" or self[0] == "-"):
             # move sign to beginning of string
             s.append(self[0])
@@ -577,7 +577,7 @@ class str:
             s.append(self)
         return "".join(s)
 
-    def count(self, sub: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF) -> int:
+    def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.count(sub[, start[, end]]) -> int
 
@@ -585,13 +585,14 @@ class str:
         bytes str[start:end].  Optional arguments start and end are interpreted
         as in slice notation.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         count = 0
         for _ in algorithms.filter_overlaps(self[start:end]._search(sub), len(sub)):
             count += 1
         return count
 
-    def find(self, sub: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF) -> int:
+    def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.find(sub [,start [,end]]) -> int
 
@@ -601,6 +602,7 @@ class str:
 
         Return -1 on failure.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         pos = str._getfirst(self[start:end]._search(sub))
 
@@ -615,7 +617,7 @@ class str:
 
         return pos + start  # add start position because of truncation
 
-    def rfind(self, sub: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF) -> int:
+    def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.rfind(sub [,start [,end]]) -> int
 
@@ -625,6 +627,7 @@ class str:
 
         Return -1 on failure.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         pos = str._getfirst(self[start:end]._rsearch(sub))
 
@@ -772,16 +775,16 @@ class str:
             return self._split_whitespace(
                 maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
             )
-        sepx = ~sep
+        sep: str = sep
 
-        li = list(algorithms.filter_overlaps(self._search(sepx), len(sepx)))
-        str_split = List[str]()
+        li = list(algorithms.filter_overlaps(self._search(sep), len(sep)))
+        str_split = []
 
         # no delimiter found
         if len(li) == 0:
             return [self]
 
-        if len(sepx) > len(self):
+        if len(sep) > len(self):
             return [self]
 
         if maxsplit == 0:
@@ -805,11 +808,11 @@ class str:
                 if li[j] - 1 == prev:
                     str_split.append("")
                 else:
-                    str_split.append(self[prev + len(sepx) : li[j]])
+                    str_split.append(self[prev + len(sep) : li[j]])
                 prev = li[j]
 
         if prev != len(self):
-            str_split.append(self[prev + len(sepx) :])
+            str_split.append(self[prev + len(sep) :])
 
         return str_split
 
@@ -827,17 +830,17 @@ class str:
             return self._rsplit_whitespace(
                 maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
             )
-        sepx = ~sep
+        sep: str = sep
 
         li = list(
-            algorithms.rfilter_overlaps(reversed(list(self._search(sepx))), len(sepx))
+            algorithms.rfilter_overlaps(reversed(list(self._search(sep))), len(sep))
         )
-        str_split = List[str]()
+        str_split = []
         end_of_li = len(li) - 1
 
         if len(li) == 0:
             return [self]
-        if len(sepx) > len(self):
+        if len(sep) > len(self):
             return [self]
         if maxsplit == 0:
             return [self]
@@ -848,10 +851,10 @@ class str:
         prev = li[0]
         # append first part of string
         # if sep is found in the last index, add '' to separate
-        if prev == len(self) - len(sepx):
+        if prev == len(self) - len(sep):
             str_split.append("")
         else:
-            str_split.append(self[prev + len(sepx) :])
+            str_split.append(self[prev + len(sep) :])
 
         # split the rest of the string according to separator
         if len(li) > 1 and maxsplit > 1:
@@ -860,7 +863,7 @@ class str:
                 if li[j] + 1 == prev:
                     str_split.append("")
                 else:
-                    str_split.append(self[li[j] + len(sepx) : prev])
+                    str_split.append(self[li[j] + len(sep) : prev])
                 prev = li[j]
 
         if prev != 0:
@@ -882,7 +885,7 @@ class str:
         Line breaks are not included in the resulting list unless keepends
         is given and true.
         """
-        line_split = List[str]()
+        line_split = []
 
         prev = 0
         for i in range(len(self)):
@@ -953,7 +956,7 @@ class str:
         return line_split
 
     def startswith(
-        self, prefix: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF
+        self, prefix: str, start: int = 0, end: Optional[int] = None
     ) -> bool:
         """
         str.startswith(prefix[, start[, end]]) -> bool
@@ -962,6 +965,7 @@ class str:
         With optional start, test str beginning at that position.
         With optional end, stop comparing str at that position.
         """
+        end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
         elif start < 0:
@@ -981,9 +985,7 @@ class str:
 
         return prefix == self[start : start + len(prefix)]
 
-    def endswith(
-        self, suffix: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF
-    ) -> bool:
+    def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
         """
         str.endswith(prefix[, start[, end]]) -> bool
 
@@ -991,6 +993,7 @@ class str:
         With optional start, test str beginning at that position.
         With optional end, stop comparing str at that position.
         """
+        end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
         elif start < 0:
@@ -1015,12 +1018,13 @@ class str:
 
         return suffix == self[start : start + len(suffix)]
 
-    def index(self, sub: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF) -> int:
+    def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.index(sub [,start [,end]]) -> int
 
         Like str.find() but raise ValueError when the substring is not found.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         i = self.find(sub, start, end)
         if i == -1:
@@ -1028,12 +1032,13 @@ class str:
         else:
             return i
 
-    def rindex(self, sub: str, start: int = 0, end: int = 0x7FFFFFFFFFFFFFFF) -> int:
+    def rindex(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.index(sub [,start [,end]]) -> int
 
         Like str.find() but raise ValueError when the substring is not found.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         i = self.rfind(sub, start, end)
         if i == -1:
@@ -1086,7 +1091,7 @@ class str:
         incr = 0
         i = 0  # chars up to and including most recent \n or \r
         j = 0  # chars since most recent \n or \r (use in tab calculations)
-        u = List[str]()
+        u = []
         j = 0  # same as first pass
 
         # create output string and fill it
@@ -1147,7 +1152,7 @@ class str:
             if len(pattern) <= 5:
                 yield from algorithms.string_search_slow(self, pattern)
             else:
-                yield from algorithms.string_search_KMP(self, pattern)
+                yield from algorithms.string_search_kmp(self, pattern)
 
     def _rsearch(self, pattern: str) -> Generator[int]:
         if len(pattern) == 1:

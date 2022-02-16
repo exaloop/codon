@@ -3,7 +3,7 @@
 
 def _heapify(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Makes the array a heap from [begin, end).
     """
@@ -24,7 +24,7 @@ def _heapify(
 
 def _heap_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     if end - begin < 2:
         return
 
@@ -46,7 +46,7 @@ def _heap_sort(
 
 def heap_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Heap Sort
     Sorts the array inplace.
@@ -56,7 +56,7 @@ def heap_sort_array(
 
 def heap_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Heap Sort
     Sorts the list inplace.

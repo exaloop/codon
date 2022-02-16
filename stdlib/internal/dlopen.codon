@@ -49,6 +49,6 @@ def dlsym(lib, name: str, Fn: type) -> Fn:
     return Fn(fn)
 
 
-def dlclose(handle: cobj) -> void:
+def dlclose(handle: cobj):
     if c_dlclose(handle) != i32(0):
         raise CError(dlerror())

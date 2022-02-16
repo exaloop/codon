@@ -3,7 +3,7 @@
 
 def _insertion_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     i = begin + 1
     while i < end:
         x = arr[i]
@@ -17,7 +17,7 @@ def _insertion_sort(
 
 def insertion_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Insertion Sort
     Sorts the array inplace.
@@ -27,7 +27,7 @@ def insertion_sort_array(
 
 def insertion_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
-) -> void:
+):
     """
     Insertion Sort
     Sorts the list inplace.

@@ -35,7 +35,7 @@ class RandomGenerator:
 
     def init_genrand(self, s: u32):
         """
-        init_genrand(u32) -> void
+        init_genrand(u32)
 
         initializes state[N] with a seed
         """
@@ -226,7 +226,7 @@ class Random:
 
     def getstate(self):
         return self.gen.getstate()
-    
+
     def setstate(self, state):
         self.gen.setstate(state)
 

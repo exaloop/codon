@@ -34,7 +34,7 @@ class __internal__:
         if idx < 0:
             idx += len
         if idx < 0 or idx >= len:
-            raise IndexError("tuple index " + str(idx) + " out of range 0.." + str(len))
+            raise IndexError(f"tuple index {idx} out of range 0..{len}")
         return idx
 
     def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
@@ -73,19 +73,16 @@ class __internal__:
         ret i{=T} %0
 
     def seq_assert(file: str, line: int, msg: str) -> AssertionError:
-        s = "Assert failed"
-        if msg:
-            s += ": " + msg
-        s += " (" + file + ":" + line.__repr__() + ")"
+        s = f": {msg}" if msg else ""
+        s = f"Assert failed{s} ({file}:{line.__repr__()})"
         return AssertionError(s)
 
-    def seq_assert_test(file: str, line: int, msg: str) -> void:
-        s = "\033[1;31mTEST FAILED:\033[0m " + file + " (line " + str(line) + ")"
-        if msg:
-            s += ": " + msg
-        seq_print(s + "\n")
+    def seq_assert_test(file: str, line: int, msg: str):
+        s = f": {msg}" if msg else ""
+        s = f"\033[1;31mTEST FAILED:\033[0m {file} (line {line}){s}\n"
+        seq_print(s)
 
-    def check_errno(prefix: str) -> void:
+    def check_errno(prefix: str):
         msg = seq_check_errno()
         if msg:
             raise OSError(prefix + msg)

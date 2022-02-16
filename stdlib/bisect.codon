@@ -61,8 +61,7 @@ def bisect_left(
     """
     if lo < 0:
         raise ValueError("lo must be non-negative")
-    if hi is None:
-        hi = len(a)
+    hi: int = len(a) if hi is None else hi
     while lo < hi:
         mid = (lo + hi) // 2
         if a[mid] < x:
@@ -89,8 +88,7 @@ def bisect_right(
     """
     if lo < 0:
         raise ValueError("lo must be non-negative")
-    if hi is None:
-        hi = len(a)
+    hi: int = len(a) if hi is None else hi
     while lo < hi:
         mid = (lo + hi) // 2
         if x < a[mid]:
@@ -102,7 +100,7 @@ def bisect_right(
 
 def insort_left(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
-) -> void:
+):
     """
     Insert item x in list a, and keep it sorted assuming a is sorted.
 
@@ -117,7 +115,7 @@ def insort_left(
 
 def insort_right(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
-) -> void:
+):
     """
     Insert item x in list a, and keep it sorted assuming a is sorted.
 

@@ -17,7 +17,7 @@ class EnvMap:
     def __new__() -> EnvMap:
         return (Dict[str, str](),)
 
-    def _init_if_needed(self) -> void:
+    def _init_if_needed(self):
         if len(self._map) == 0:
             env = _C.seq_env()
             p = env[0]

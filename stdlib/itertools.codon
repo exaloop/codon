@@ -1,5 +1,7 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
+from internal.types.optional import unwrap
+
 # Infinite iterators
 
 
@@ -46,13 +48,12 @@ def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
 
 @tuple
 class accumulate:
-    """
-    Make an iterator that returns accumulated sums, or accumulated results
-    of other binary functions (specified via the optional func argument).
-    """
-
     @inline
     def __new__(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
+        """
+        Make an iterator that returns accumulated sums, or accumulated results
+        of other binary functions (specified via the optional func argument).
+        """
         total = initial
         yield total
         for element in iterable:
@@ -61,10 +62,14 @@ class accumulate:
 
     @inline
     def __new__(iterable: Generator[T], func=lambda a, b: a + b, T: type):
+        """
+        Make an iterator that returns accumulated sums, or accumulated results
+        of other binary functions (specified via the optional func argument).
+        """
         total = None
         for element in iterable:
-            total = element if total is None else func(~total, element)
-            yield ~total
+            total = element if total is None else func(unwrap(total), element)
+            yield unwrap(total)
 
 
 @tuple
@@ -142,29 +147,28 @@ def groupby(iterable, key=Optional[int]()):
         k = currvalue if isinstance(key, Optional) else key(currvalue)
         if currkey is None:
             currkey = k
-        if k != ~currkey:
-            yield ~currkey, group
+        if k != unwrap(currkey):
+            yield unwrap(currkey), group
             currkey = k
             group = []
         group.append(currvalue)
     if currkey is not None:
-        yield ~currkey, group
+        yield unwrap(currkey), group
 
 
 @tuple
 class islice:
-    """
-    Make an iterator that returns selected elements from the iterable.
-    """
-
     def __new__(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
-        if stop and ~stop < 0:
+        """
+        Make an iterator that returns selected elements from the iterable.
+        """
+        if stop and unwrap(stop) < 0:
             raise ValueError(
                 "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
             )
         i = 0
         for x in iterable:
-            if stop and i >= ~stop:
+            if stop and i >= unwrap(stop):
                 break
             yield x
             i += 1
@@ -176,11 +180,14 @@ class islice:
         step: Optional[int] = None,
         T: type,
     ) -> Generator[T]:
+        """
+        Make an iterator that returns selected elements from the iterable.
+        """
         from sys import maxsize
 
-        start: int = 0 if not start else ~start
-        stop: int = maxsize if not stop else ~stop
-        step: int = 1 if not step else ~step
+        start: int = 0 if not start else start
+        stop: int = maxsize if not stop else stop
+        step: int = 1 if not step else step
         have_stop = False
 
         if start < 0 or stop < 0:
@@ -266,15 +273,14 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
 
 @tuple
 class zip_longest:
-    """
-    Make an iterator that aggregates elements from each of the iterables.
-    If the iterables are of uneven length, missing values are filled-in
-    with fillvalue. Iteration continues until the longest iterable is
-    exhausted.
-    """
-
     @inline
     def __new__(*iterables, fillvalue):
+        """
+        Make an iterator that aggregates elements from each of the iterables.
+        If the iterables are of uneven length, missing values are filled-in
+        with fillvalue. Iteration continues until the longest iterable is
+        exhausted.
+        """
         if staticlen(iterables) == 2:
             a = iter(iterables[0])
             b = iter(iterables[1])
@@ -317,6 +323,13 @@ class zip_longest:
 
     @inline
     def __new__(*args):
+        """
+        Make an iterator that aggregates elements from each of the iterables.
+        If the iterables are of uneven length, missing values are filled-in
+        with fillvalue. Iteration continues until the longest iterable is
+        exhausted.
+        """
+
         def get_next(it):
             if it.__done__() or it.done():
                 return None
@@ -422,7 +435,7 @@ def permutations(
         pool: List[T], r: Optional[int], T: type
     ) -> Generator[List[T]]:
         n = len(pool)
-        r: int = ~r if r else n
+        r: int = r if r else n
         if r > n:
             return
 
@@ -445,7 +458,7 @@ def permutations(
             if b == -1:
                 return
 
-    if r is not None and ~r < 0:
+    if r is not None and unwrap(r) < 0:
         raise ValueError("r must be non-negative")
     if hasattr(pool, "__getitem__") and hasattr(pool, "__len__"):
         return permutations_helper(pool, r)
@@ -455,12 +468,11 @@ def permutations(
 
 @tuple
 class product:
-    """
-    Cartesian product of input iterables.
-    """
-
     @inline
     def __new__(*args):
+        """
+        Cartesian product of input iterables.
+        """
         if staticlen(args) == 0:
             yield ()
         else:
@@ -471,6 +483,9 @@ class product:
 
     @inline
     def __new__(*args, repeat: int):
+        """
+        Cartesian product of input iterables.
+        """
         if repeat < 0:
             raise ValueError("repeat argument cannot be negative")
         pools = [list(pool) for _ in range(repeat) for pool in args]

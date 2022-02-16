@@ -636,7 +636,7 @@ print a.__class__ #: Array[int]
 
 #%% typeof,barebones
 a = 5
-z = List[type(a)]()
+z = []
 z.append(6)
 print z.__class__, z, type(1.1).__class__  #: List[int] [6] float
 

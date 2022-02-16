@@ -32,11 +32,11 @@ def _med3(
         )
 
 
-def _swap(i: int, j: int, a: Array[T], T: type) -> void:
+def _swap(i: int, j: int, a: Array[T], T: type):
     a[i], a[j] = a[j], a[i]
 
 
-def _vecswap(i: int, j: int, n: int, a: Array[T], T: type) -> void:
+def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
     while n > 0:
         _swap(i, j, a)
         i += 1
@@ -45,14 +45,14 @@ def _vecswap(i: int, j: int, n: int, a: Array[T], T: type) -> void:
 
 
 def _qsort(
-    arr: Array[T], frm: int, cnt: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+    arr: Array[T], frm: int, cnt: int, key: Callable[[T], S], T: type, S: type
+):
     if cnt <= 7:
         i = frm + 1
         while i < frm + cnt:
             j = i
             while j > frm and not (
-                keyf(arr[j - 1]) < keyf(arr[j]) or keyf(arr[j - 1]) == keyf(arr[j])
+                key(arr[j - 1]) < key(arr[j]) or key(arr[j - 1]) == key(arr[j])
             ):
                 _swap(j, j - 1, arr)
                 j -= 1
@@ -65,10 +65,10 @@ def _qsort(
 
     if cnt > 40:
         s = cnt // 8
-        lo = _med3(lo, lo + s, lo + 2 * s, arr, keyf)
-        mid = _med3(mid - s, mid, mid + s, arr, keyf)
-        hi = _med3(hi - 2 * s, hi - s, hi, arr, keyf)
-    mid = _med3(lo, mid, hi, arr, keyf)
+        lo = _med3(lo, lo + s, lo + 2 * s, arr, key)
+        mid = _med3(mid - s, mid, mid + s, arr, key)
+        hi = _med3(hi - 2 * s, hi - s, hi, arr, key)
+    mid = _med3(lo, mid, hi, arr, key)
 
     _swap(frm, mid, arr)
     a = frm
@@ -78,15 +78,15 @@ def _qsort(
 
     while True:
         while b <= c and (
-            keyf(arr[b]) < keyf(arr[frm]) or keyf(arr[b]) == keyf(arr[frm])
+            key(arr[b]) < key(arr[frm]) or key(arr[b]) == key(arr[frm])
         ):
-            if keyf(arr[b]) == keyf(arr[frm]):
+            if key(arr[b]) == key(arr[frm]):
                 _swap(a, b, arr)
                 a += 1
             b += 1
 
-        while c >= b and not keyf(arr[c]) < keyf(arr[frm]):
-            if keyf(arr[c]) == keyf(arr[frm]):
+        while c >= b and not key(arr[c]) < key(arr[frm]):
+            if key(arr[c]) == key(arr[frm]):
                 _swap(c, d, arr)
                 d -= 1
             c -= 1
@@ -106,44 +106,44 @@ def _qsort(
 
     span = b - a
     if span > 1:
-        _qsort(arr, frm, span, keyf)
+        _qsort(arr, frm, span, key)
 
     span = d - c
     if span > 1:
-        _qsort(arr, hi - span, span, keyf)
+        _qsort(arr, hi - span, span, key)
 
 
 def qsort_array(
-    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
-) -> void:
+    collection: Array[T], size: int, key: Callable[[T], S], T: type, S: type
+):
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort
 
     Sorts the array inplace.
     """
-    _qsort(collection, 0, size, keyf)
+    _qsort(collection, 0, size, key)
 
 
 def qsort_inplace(
-    collection: List[T], keyf: Callable[[T], S], T: type, S: type
-) -> void:
+    collection: List[T], key: Callable[[T], S], T: type, S: type
+):
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort
 
     Sorts the list inplace.
     """
-    qsort_array(collection.arr, collection.len, keyf)
+    qsort_array(collection.arr, collection.len, key)
 
 
-def qsort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
+def qsort(collection: List[T], key: Callable[[T], S], T: type, S: type) -> List[T]:
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort
 
     Returns a sorted list.
     """
-    newlst = copy(collection)
-    qsort_inplace(newlst, keyf)
-    return newlst
+    collection = collection[:]
+    qsort_inplace(collection, key)
+    return collection

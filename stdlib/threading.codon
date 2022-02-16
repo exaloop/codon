@@ -13,13 +13,13 @@ class Lock:
             raise ValueError("can't specify a timeout for a non-blocking call")
         return _C.seq_lock_acquire(self.p, block, timeout)
 
-    def release(self) -> void:
+    def release(self):
         _C.seq_lock_release(self.p)
 
-    def __enter__(self) -> void:
+    def __enter__(self):
         self.acquire()
 
-    def __exit__(self) -> void:
+    def __exit__(self):
         self.release()
 
 
@@ -35,13 +35,13 @@ class RLock:
             raise ValueError("can't specify a timeout for a non-blocking call")
         return _C.seq_rlock_acquire(self.p, block, timeout)
 
-    def release(self) -> void:
+    def release(self):
         _C.seq_rlock_release(self.p)
 
-    def __enter__(self) -> void:
+    def __enter__(self):
         self.acquire()
 
-    def __exit__(self) -> void:
+    def __exit__(self):
         self.release()
 
 

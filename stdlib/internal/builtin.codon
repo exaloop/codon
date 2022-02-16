@@ -1,6 +1,7 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
 from internal.gc import alloc_atomic, free
+from internal.types.optional import unwrap
 
 
 @tuple
@@ -19,7 +20,7 @@ def id(x) -> int:
 _stdout = _C.seq_stdout()
 
 
-def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False) -> void:
+def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
     """
     Print args to the text stream file.
     """
@@ -134,7 +135,7 @@ def ord(s: str) -> int:
     """
     if len(s) != 1:
         raise TypeError(
-            "ord() expected a character, but string of length " + str(len(s)) + " found"
+            f"ord() expected a character, but string of length {len(s)} found"
         )
     return int(s.ptr[0])
 
@@ -162,7 +163,7 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     """
     if g.done():
         if default:
-            return ~default
+            return unwrap(default)
         else:
             raise StopIteration()
     return g.next()
@@ -367,7 +368,7 @@ class int:
 
         if end != p + n:
             raise ValueError(
-                "invalid literal for int() with base " + str(base) + ": " + s
+                f"invalid literal for int() with base {base}: {s}"
             )
 
         return result

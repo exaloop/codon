@@ -704,7 +704,7 @@ class Node[T]:
     children: List[Node[T]]
     def __init__(self, data: T):
         self.data = data
-        self.children = List[Node[T]]()
+        self.children = []
 print Node(2).data #: 2
 
 class Node2:
@@ -712,7 +712,7 @@ class Node2:
     children: List[Node2]
     def __init__(self, data: int):
         self.data = data
-        self.children = List[Node2]()
+        self.children = []
 print Node2(3).data #: 3
 
 #%% class_auto_init,barebones

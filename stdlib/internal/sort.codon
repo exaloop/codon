@@ -27,7 +27,7 @@ def sorted(
 
 def _sort_list(
     self: List[T], key: Callable[[T], S], algorithm: str, T: type, S: type
-) -> void:
+):
     if algorithm == "tim":
         tim_sort_inplace(self, key)
     elif algorithm == "pdq":
@@ -39,7 +39,7 @@ def _sort_list(
     elif algorithm == "quick":
         qsort_inplace(self, key)
     else:
-        raise ValueError("Algorithm '" + algorithm + "' does not exist")
+        raise ValueError(f"Algorithm '{algorithm}' does not exist")
 
 
 @extend
@@ -49,11 +49,11 @@ class List:
         key=Optional[int](),
         algorithm: Optional[str] = None,
         reverse: bool = False,
-    ) -> void:
-        alg = ~algorithm if algorithm else "tim"
+    ):
+        algorithm: str = algorithm if algorithm else "tim"
         if isinstance(key, Optional):
-            _sort_list(self, lambda x: x, alg)
+            _sort_list(self, lambda x: x, algorithm)
         else:
-            _sort_list(self, key, alg)
+            _sort_list(self, key, algorithm)
         if reverse:
             self.reverse()

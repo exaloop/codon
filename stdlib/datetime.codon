@@ -179,12 +179,12 @@ def _iso_week1_monday(year: int) -> int:
     return week1_monday
 
 
-def _check_delta_day_range(days: int) -> void:
+def _check_delta_day_range(days: int):
     if not (-MAX_DELTA_DAYS <= days <= MAX_DELTA_DAYS):
         raise OverflowError(f"days={days}; must have magnitude <= {MAX_DELTA_DAYS}")
 
 
-def _check_date_args(year: int, month: int, day: int) -> void:
+def _check_date_args(year: int, month: int, day: int):
     if not (MINYEAR <= year <= MAXYEAR):
         raise ValueError(f"year {year} is out of range")
     if not (1 <= month <= 12):
@@ -193,7 +193,7 @@ def _check_date_args(year: int, month: int, day: int) -> void:
         raise ValueError("day is out of range for month")
 
 
-def _check_time_args(hour: int, minute: int, second: int, microsecond: int) -> void:
+def _check_time_args(hour: int, minute: int, second: int, microsecond: int):
     if not (0 <= hour <= 23):
         raise ValueError("hour must be in 0..23")
     if not (0 <= minute <= 59):
@@ -295,7 +295,7 @@ def _parse_digits(digits: str, num_digits: int) -> Tuple[str, int]:
     return str(p, len(digits) - num_digits), var
 
 
-def _isoformat_error(s: str) -> void:
+def _isoformat_error(s: str):
     raise ValueError(f"Invalid isoformat string: {s}")
 
 

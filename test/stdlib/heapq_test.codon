@@ -22,7 +22,7 @@ def test_heapify():
 @test
 def test_naive_nbest():
     data = [randrange(2000) for i in range(1000)]
-    heap = List[int]()
+    heap = []
     for item in data:
         heapq.heappush(heap, item)
         if len(heap) > 10:
@@ -99,7 +99,7 @@ def test_heapsort():
             heap = data[:]
             heapq.heapify(heap)
         else:  # The rest of the time, use heappush
-            heap = List[int]()
+            heap = []
             for item in data:
                 heapq.heappush(heap, item)
         heap_sorted = [heapq.heappop(heap) for i in range(size)]
@@ -206,6 +206,13 @@ def test_comparison_operator():
     assert hsort(data, LT) == target
 
 
+@test
+def test_merge():
+    # assert [0, 1, 2, 3, 4, 5, 5, 7, 8, 10, 15, 20, 25] == list(heapq.merge([1,3,5,7], [0,2,4,8], [5,10,15,20], [], [25]))
+    # assert ['dog', 'cat', 'fish', 'horse', 'kangaroo'] == list(heapq.merge(['dog', 'horse'], ['cat', 'fish', 'kangaroo'], key=len))
+    pass
+
+
 test_heapify()
 test_naive_nbest()
 test_nsmallest()
@@ -216,3 +223,4 @@ test_heappushpop()
 test_heappop_max()
 test_heapsort()
 # test_comparison_operator()
+# test_merge()

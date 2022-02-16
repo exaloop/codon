@@ -43,6 +43,6 @@ optional = Optional
 
 
 def unwrap(opt: Optional[T], T: type) -> T:
-    if not opt:
+    if opt is None:
         raise ValueError("optional is None")
     return ~opt

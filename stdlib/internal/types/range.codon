@@ -92,14 +92,6 @@ class range:
 
     def __repr__(self) -> str:
         if self.step == 1:
-            return "range(" + str(self.start) + ", " + str(self.stop) + ")"
+            return f"range({self.start}, {self.stop})"
         else:
-            return (
-                "range("
-                + str(self.start)
-                + ", "
-                + str(self.stop)
-                + ", "
-                + str(self.step)
-                + ")"
-            )
+            return f"range({self.start}, {self.stop}, {self.step})"
