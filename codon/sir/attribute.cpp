@@ -67,24 +67,24 @@ std::ostream &TupleLiteralAttribute::doFormat(std::ostream &os) const {
 const std::string ListLiteralAttribute::AttributeName = "listLiteralAttribute";
 
 std::unique_ptr<Attribute> ListLiteralAttribute::clone(util::CloneVisitor &cv) const {
-  std::vector<Value *> elementsCloned;
-  for (auto *val : elements)
-    elementsCloned.push_back(cv.clone(val));
+  std::vector<LiteralElement> elementsCloned;
+  for (auto &e : elements)
+    elementsCloned.push_back({cv.clone(e.value), e.star});
   return std::make_unique<ListLiteralAttribute>(elementsCloned);
 }
 
 std::unique_ptr<Attribute>
 ListLiteralAttribute::forceClone(util::CloneVisitor &cv) const {
-  std::vector<Value *> elementsCloned;
-  for (auto *val : elements)
-    elementsCloned.push_back(cv.forceClone(val));
+  std::vector<LiteralElement> elementsCloned;
+  for (auto &e : elements)
+    elementsCloned.push_back({cv.forceClone(e.value), e.star});
   return std::make_unique<ListLiteralAttribute>(elementsCloned);
 }
 
 std::ostream &ListLiteralAttribute::doFormat(std::ostream &os) const {
   std::vector<std::string> strings;
-  for (auto *val : elements)
-    strings.push_back(fmt::format(FMT_STRING("{}"), *val));
+  for (auto &e : elements)
+    strings.push_back(fmt::format(FMT_STRING("{}{}"), e.star ? "*" : "", *e.value));
   fmt::print(os, FMT_STRING("[{}]"), fmt::join(strings.begin(), strings.end(), ","));
   return os;
 }
@@ -92,24 +92,24 @@ std::ostream &ListLiteralAttribute::doFormat(std::ostream &os) const {
 const std::string SetLiteralAttribute::AttributeName = "setLiteralAttribute";
 
 std::unique_ptr<Attribute> SetLiteralAttribute::clone(util::CloneVisitor &cv) const {
-  std::vector<Value *> elementsCloned;
-  for (auto *val : elements)
-    elementsCloned.push_back(cv.clone(val));
+  std::vector<LiteralElement> elementsCloned;
+  for (auto &e : elements)
+    elementsCloned.push_back({cv.clone(e.value), e.star});
   return std::make_unique<SetLiteralAttribute>(elementsCloned);
 }
 
 std::unique_ptr<Attribute>
 SetLiteralAttribute::forceClone(util::CloneVisitor &cv) const {
-  std::vector<Value *> elementsCloned;
-  for (auto *val : elements)
-    elementsCloned.push_back(cv.forceClone(val));
+  std::vector<LiteralElement> elementsCloned;
+  for (auto &e : elements)
+    elementsCloned.push_back({cv.forceClone(e.value), e.star});
   return std::make_unique<SetLiteralAttribute>(elementsCloned);
 }
 
 std::ostream &SetLiteralAttribute::doFormat(std::ostream &os) const {
   std::vector<std::string> strings;
-  for (auto *val : elements)
-    strings.push_back(fmt::format(FMT_STRING("{}"), *val));
+  for (auto &e : elements)
+    strings.push_back(fmt::format(FMT_STRING("{}{}"), e.star ? "*" : "", *e.value));
   fmt::print(os, FMT_STRING("set([{}])"),
              fmt::join(strings.begin(), strings.end(), ","));
   return os;
