@@ -84,10 +84,11 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
                                                bool standalone) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
+  auto regs = llvm::cl::getRegisteredOptions();
   llvm::cl::opt<OptMode> optMode(
       llvm::cl::desc("optimization mode"),
       llvm::cl::values(
-          clEnumValN(Debug, "debug",
+          clEnumValN(Debug, regs.find("debug") != regs.end() ? "default" : "debug",
                      "Turn off compiler optimizations and show backtraces"),
           clEnumValN(Release, "release",
                      "Turn on compiler optimizations and disable debug info")),

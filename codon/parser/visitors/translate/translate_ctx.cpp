@@ -21,14 +21,14 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
     return t;
   std::shared_ptr<TranslateItem> ret = nullptr;
   auto tt = cache->typeCtx->find(name);
-  if (tt->isType() && tt->type->canRealize()) {
+  if (tt && tt->isType() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Type, bases[0]);
     seqassert(in(cache->classes, tt->type->getClass()->name) &&
                   in(cache->classes[tt->type->getClass()->name].realizations, name),
               "cannot find type realization {}", name);
     ret->handle.type =
         cache->classes[tt->type->getClass()->name].realizations[name]->ir;
-  } else if (tt->type->getFunc() && tt->type->canRealize()) {
+  } else if (tt && tt->type->getFunc() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Func, bases[0]);
     seqassert(
         in(cache->functions, tt->type->getFunc()->ast->name) &&

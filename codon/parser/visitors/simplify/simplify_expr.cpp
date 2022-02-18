@@ -500,9 +500,9 @@ void SimplifyVisitor::visit(CallExpr *expr) {
       ctx->add(SimplifyItem::Var, varName, varName);
       var = N<IdExpr>(varName);
       ctx->addBlock(); // prevent tmp vars from being toplevel vars
-      ex = N<StmtExpr>(
-          transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true)),
-          transform(ex));
+      auto head =
+          transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true));
+      ex = N<StmtExpr>(head, transform(ex));
       ctx->popBlock();
     }
     std::vector<GeneratorBody> body;

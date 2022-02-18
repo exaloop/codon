@@ -381,6 +381,8 @@ print log(5.5)  #: 1.70475
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
 RT = "./libcodonrt." + dlext()
+if RT[-3:] == ".so":
+    RT = "build/" + RT[2:]
 from C import RT.seq_str_int(int) -> str as sp
 print sp(65)  #: 65
 

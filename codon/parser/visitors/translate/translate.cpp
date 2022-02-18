@@ -91,8 +91,10 @@ void TranslateVisitor::visit(IdExpr *expr) {
 }
 
 void TranslateVisitor::visit(IfExpr *expr) {
-  result = make<ir::TernaryInstr>(expr, transform(expr->cond), transform(expr->ifexpr),
-                                  transform(expr->elsexpr));
+  auto cond = transform(expr->cond);
+  auto ifexpr = transform(expr->ifexpr);
+  auto elsexpr = transform(expr->elsexpr);
+  result = make<ir::TernaryInstr>(expr, cond, ifexpr, elsexpr);
 }
 
 void TranslateVisitor::visit(CallExpr *expr) {
