@@ -132,14 +132,22 @@ private:
   std::ostream &doFormat(std::ostream &os) const override;
 };
 
+/// Information about an element in a collection literal
+struct LiteralElement {
+  /// the element value
+  Value *value;
+  /// true if preceded by "*", as in "[*x]"
+  bool star;
+};
+
 /// Attribute attached to IR structures corresponding to list literals
 struct ListLiteralAttribute : public Attribute {
   static const std::string AttributeName;
 
-  /// values contained in list literal
-  std::vector<Value *> elements;
+  /// elements contained in list literal
+  std::vector<LiteralElement> elements;
 
-  explicit ListLiteralAttribute(std::vector<Value *> elements)
+  explicit ListLiteralAttribute(std::vector<LiteralElement> elements)
       : elements(std::move(elements)) {}
 
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
@@ -153,10 +161,10 @@ private:
 struct SetLiteralAttribute : public Attribute {
   static const std::string AttributeName;
 
-  /// values contained in set literal
-  std::vector<Value *> elements;
+  /// elements contained in set literal
+  std::vector<LiteralElement> elements;
 
-  explicit SetLiteralAttribute(std::vector<Value *> elements)
+  explicit SetLiteralAttribute(std::vector<LiteralElement> elements)
       : elements(std::move(elements)) {}
 
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
