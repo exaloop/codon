@@ -180,7 +180,9 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
         transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true));
   }
   ctx->loops.push_back(breakVar); // needed for transforming break in loop..else blocks
-  StmtPtr whileStmt = N<WhileStmt>(transform(cond), transform(stmt->suite));
+
+  cond = transform(cond);
+  StmtPtr whileStmt = N<WhileStmt>(cond, transform(stmt->suite));
   ctx->loops.pop_back();
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     resultStmt =
@@ -232,7 +234,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   ctx->addBlock();
   if (auto i = stmt->var->getId()) {
     ctx->add(SimplifyItem::Var, i->value, ctx->generateCanonicalName(i->value));
-    forStmt = N<ForStmt>(transform(stmt->var), clone(iter), transform(stmt->suite),
+    auto var = transform(stmt->var);
+    forStmt = N<ForStmt>(var, clone(iter), transform(stmt->suite),
                          nullptr, decorator, ompArgs);
   } else {
     std::string varName = ctx->cache->getTemporaryVar("for");
@@ -259,8 +262,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
 
 void SimplifyVisitor::visit(IfStmt *stmt) {
   seqassert(stmt->cond, "invalid if statement");
-  resultStmt = N<IfStmt>(transform(stmt->cond), transform(stmt->ifSuite),
-                         transform(stmt->elseSuite));
+  auto cond = transform(stmt->cond);
+  resultStmt = N<IfStmt>(cond, transform(stmt->ifSuite), transform(stmt->elseSuite));
 }
 
 void SimplifyVisitor::visit(MatchStmt *stmt) {
