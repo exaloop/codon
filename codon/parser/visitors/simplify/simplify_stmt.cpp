@@ -235,8 +235,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   if (auto i = stmt->var->getId()) {
     ctx->add(SimplifyItem::Var, i->value, ctx->generateCanonicalName(i->value));
     auto var = transform(stmt->var);
-    forStmt = N<ForStmt>(var, clone(iter), transform(stmt->suite),
-                         nullptr, decorator, ompArgs);
+    forStmt = N<ForStmt>(var, clone(iter), transform(stmt->suite), nullptr, decorator,
+                         ompArgs);
   } else {
     std::string varName = ctx->cache->getTemporaryVar("for");
     ctx->add(SimplifyItem::Var, varName, varName);
@@ -476,7 +476,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     // TODO: error on decorators
     return;
   }
-
+  bool overload = attr.has(Attr::Overload);
   bool isClassMember = ctx->inClass();
   std::string rootName;
   if (isClassMember) {
@@ -484,10 +484,11 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     auto i = m.find(stmt->name);
     if (i != m.end())
       rootName = i->second;
-  } else if (auto c = ctx->find(stmt->name)) {
-    if (c->isFunc() && c->getModule() == ctx->getModule() &&
-        c->getBase() == ctx->getBase())
-      rootName = c->canonicalName;
+  } else if (overload) {
+    if (auto c = ctx->find(stmt->name))
+      if (c->isFunc() && c->getModule() == ctx->getModule() &&
+          c->getBase() == ctx->getBase())
+        rootName = c->canonicalName;
   }
   if (rootName.empty())
     rootName = ctx->generateCanonicalName(stmt->name, true);

@@ -294,6 +294,7 @@ const std::string Attr::Capture = ".__capture__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
 const std::string Attr::Test = "std.internal.attributes.test";
+const std::string Attr::Overload = "std.internal.attributes.overload";
 
 FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args,
                            StmtPtr suite, Attr attributes,

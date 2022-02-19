@@ -39,13 +39,16 @@ struct Type : public codon::SrcObject, public std::enable_shared_from_this<Type>
   /// Needed because the unify() is destructive.
   struct Unification {
     /// List of unbound types that have been changed.
-    std::vector<std::shared_ptr<LinkType>> linked;
+    std::vector<LinkType *> linked;
     /// List of unbound types whose level has been changed.
-    std::vector<std::pair<std::shared_ptr<LinkType>, int>> leveled;
+    std::vector<std::pair<LinkType *, int>> leveled;
     /// List of assigned traits.
-    std::vector<std::shared_ptr<LinkType>> traits;
+    std::vector<LinkType *> traits;
     /// Pointer to a TypecheckVisitor to support realization function types.
     TypecheckVisitor *realizator = nullptr;
+    /// List of pointers that are owned by unification process
+    /// (to avoid memory issues with undoing).
+    std::vector<std::shared_ptr<Type>> ownedTypes;
 
   public:
     /// Undo the unification step.

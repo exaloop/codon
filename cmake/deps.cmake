@@ -69,6 +69,9 @@ CPMAddPackage(
     GITHUB_REPOSITORY "llvm-mirror/openmp"
     VERSION 9.0
     GIT_TAG release_90
+    # GITHUB_REPOSITORY "exaloop/openmp"
+    # VERSION 12.0.1
+    # GIT_TAG v12.0.1
     OPTIONS "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
 
@@ -125,8 +128,8 @@ if(CODON_JUPYTER)
         NAME libzmq
         VERSION 4.3.4
         URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-        OPTIONS "WITH_PERF_TOOL OFF" 
-                "ZMQ_BUILD_TESTS OFF" 
+        OPTIONS "WITH_PERF_TOOL OFF"
+                "ZMQ_BUILD_TESTS OFF"
                 "ENABLE_CPACK OFF"
                 "BUILD_SHARED ON"
                 "WITH_LIBSODIUM OFF")

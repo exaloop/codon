@@ -42,3 +42,6 @@ def C():
 def realize_without_self():
     pass
 
+@__attribute__
+def overload():
+    pass

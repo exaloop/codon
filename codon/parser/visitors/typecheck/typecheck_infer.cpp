@@ -150,6 +150,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
                 type->realizedName(), ctx->getBase(), depth);
     {
+      // Timer trx(fmt::format("fn {}", type->realizedName()));
       getLogger().level++;
       ctx->realizationDepth++;
       ctx->addBlock();
@@ -221,7 +222,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Realize the return type.
       if (auto t = realize(type->args[0]))
         unify(type->args[0], t);
-      LOG_REALIZE("... done with {} / {}", type->realizedName(), oldKey);
+      LOG_REALIZE("[realize] done with {} / {} =>{}", type->realizedName(), oldKey,
+                  time);
+      // trx.log();
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.

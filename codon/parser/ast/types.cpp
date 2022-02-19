@@ -100,7 +100,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
     if (undo) {
       LOG_TYPECHECK("[unify] {} := {}", id, typ->debugString(true));
       // Link current type to typ and ensure that this modification is recorded in undo.
-      undo->linked.push_back(getLink());
+      undo->linked.push_back(this);
       kind = Link;
       seqassert(!typ->getLink() || typ->getLink()->kind != Unbound ||
                     typ->getLink()->id <= id,
@@ -108,7 +108,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
       type = typ->follow();
       if (auto t = type->getLink())
         if (trait && t->kind == Unbound && !t->trait) {
-          undo->traits.push_back(t->getLink());
+          undo->traits.push_back(t.get());
           t->trait = trait;
         }
     }
@@ -185,7 +185,7 @@ std::string LinkType::debugString(bool debug) const {
   // fmt::format("{}->{}", id, type->debugString(debug));
 }
 std::string LinkType::realizedName() const {
-  if (kind == Unbound)
+  if (kind == Unbound || kind == Generic)
     return "?";
   seqassert(kind == Link, "unexpected generic link");
   return type->realizedName();
@@ -205,7 +205,7 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
       if (tl->trait && occurs(tl->trait.get(), undo))
         return true;
       if (undo && tl->level > level) {
-        undo->leveled.emplace_back(make_pair(tl, tl->level));
+        undo->leveled.emplace_back(make_pair(tl.get(), tl->level));
         tl->level = level;
       }
       return false;
@@ -578,7 +578,7 @@ std::string PartialType::debugString(bool debug) const {
 }
 std::string PartialType::realizedName() const {
   std::vector<std::string> gs;
-  // gs.push_back(func->realizedName());
+  gs.push_back(func->ast->name);
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
