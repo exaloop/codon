@@ -57,8 +57,81 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
 ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
+
+  types::PartialType *p = nullptr;
+  if (expr->attributes) {
+    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
+        expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
+      ctx->seqItems.push_back(std::vector<std::pair<ExprAttr, ir::Value *>>());
+    }
+    if (expr->hasAttr(ExprAttr::Partial))
+      p = expr->type->getPartial().get();
+    // LOG("{} {}: {}", std::string(ctx->seqItems.size(), ' '), expr->attributes, expr->toString());
+  }
+
   expr->accept(v);
-  return v.result;
+  ir::Value *ir = v.result;
+
+  if (expr->attributes) {
+    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set)) {
+      std::vector<ir::LiteralElement> v;
+      for (auto &p : ctx->seqItems.back()) {
+        seqassert(p.first <= ExprAttr::StarSequenceItem, "invalid list/set element");
+        v.push_back(
+            ir::LiteralElement{p.second, p.first == ExprAttr::StarSequenceItem});
+      }
+      if (expr->hasAttr(ExprAttr::List))
+        ir->setAttribute(std::make_unique<ir::ListLiteralAttribute>(v));
+      else
+        ir->setAttribute(std::make_unique<ir::SetLiteralAttribute>(v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::Dict)) {
+      std::vector<ir::DictLiteralAttribute::KeyValuePair> v;
+      LOG("{} {}", expr->toString(), expr->getSrcInfo());
+      for (int pi = 0; pi < ctx->seqItems.back().size(); pi++) {
+        auto &p = ctx->seqItems.back()[pi];
+        if (p.first == ExprAttr::StarSequenceItem) {
+          v.push_back({p.second, nullptr});
+        } else {
+          seqassert(p.first == ExprAttr::SequenceItem &&
+                        pi + 1 < ctx->seqItems.back().size() &&
+                        ctx->seqItems.back()[pi + 1].first == ExprAttr::SequenceItem,
+                    "invalid dict element");
+          v.push_back({p.second, ctx->seqItems.back()[pi + 1].second});
+          pi++;
+        }
+      }
+      ir->setAttribute(std::make_unique<ir::DictLiteralAttribute>(v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::Partial)) {
+      std::vector<ir::Value *> v;
+      seqassert(p, "invalid partial element");
+      int j = 0;
+      for (int i = 0; i < p->known.size(); i++) {
+        if (p->known[i] && !p->func->ast->args[i].generic) {
+          seqassert(j < ctx->seqItems.back().size() &&
+                        ctx->seqItems.back()[j].first == ExprAttr::SequenceItem,
+                    "invalid partial element");
+          v.push_back(ctx->seqItems.back()[j++].second);
+        } else if (!p->func->ast->args[i].generic) {
+          v.push_back({nullptr});
+        }
+      }
+      // seqassert(j == ctx->seqItems.back().size(), "invalid partial element");
+      ir->setAttribute(std::make_unique<ir::PartialFunctionAttribute>(nullptr, v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::SequenceItem)) {
+      ctx->seqItems.back().push_back({ExprAttr::SequenceItem, ir});
+    }
+    if (expr->hasAttr(ExprAttr::StarSequenceItem)) {
+      ctx->seqItems.back().push_back({ExprAttr::StarSequenceItem, ir});
+    }
+  }
+
+  return ir;
 }
 
 void TranslateVisitor::defaultVisit(Expr *n) {
@@ -211,10 +284,6 @@ void TranslateVisitor::visit(StmtExpr *expr) {
     transform(s);
   ctx->popSeries();
   result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->expr));
-  for (auto &a : expr->attributes) {
-    // if (a == ir::ListLiteralAttribute::AttributeName)
-    //   result->setAttribute(ir::ListLiteralAttribute);
-  }
 }
 
 /************************************************************************************/
