@@ -177,7 +177,9 @@ private:
 /// Attribute attached to IR structures corresponding to dict literals
 struct DictLiteralAttribute : public Attribute {
   struct KeyValuePair {
+    /// the key in the literal
     Value *key;
+    /// the value in the literal, or null if key is being star-unpacked
     Value *value;
   };
 

@@ -120,7 +120,8 @@ const std::string DictLiteralAttribute::AttributeName = "dictLiteralAttribute";
 std::unique_ptr<Attribute> DictLiteralAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<DictLiteralAttribute::KeyValuePair> elementsCloned;
   for (auto &val : elements)
-    elementsCloned.push_back({cv.clone(val.key), cv.clone(val.value)});
+    elementsCloned.push_back(
+        {cv.clone(val.key), val.value ? cv.clone(val.value) : nullptr});
   return std::make_unique<DictLiteralAttribute>(elementsCloned);
 }
 
@@ -128,14 +129,20 @@ std::unique_ptr<Attribute>
 DictLiteralAttribute::forceClone(util::CloneVisitor &cv) const {
   std::vector<DictLiteralAttribute::KeyValuePair> elementsCloned;
   for (auto &val : elements)
-    elementsCloned.push_back({cv.forceClone(val.key), cv.forceClone(val.value)});
+    elementsCloned.push_back(
+        {cv.forceClone(val.key), val.value ? cv.forceClone(val.value) : nullptr});
   return std::make_unique<DictLiteralAttribute>(elementsCloned);
 }
 
 std::ostream &DictLiteralAttribute::doFormat(std::ostream &os) const {
   std::vector<std::string> strings;
-  for (auto &val : elements)
-    strings.push_back(fmt::format(FMT_STRING("{}:{}"), *val.key, *val.value));
+  for (auto &val : elements) {
+    if (val.value) {
+      strings.push_back(fmt::format(FMT_STRING("{}:{}"), *val.key, *val.value));
+    } else {
+      strings.push_back(fmt::format(FMT_STRING("**{}"), *val.key));
+    }
+  }
   fmt::print(os, FMT_STRING("dict([{}])"),
              fmt::join(strings.begin(), strings.end(), ","));
   return os;
