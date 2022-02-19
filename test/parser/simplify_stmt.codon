@@ -997,3 +997,26 @@ def foo(return_, pass_, yield_, break_, continue_, print_, assert_):
     return return_, pass_, yield_, break_, continue_, print_, assert_
 print foo([1], [1], [1], [1], [1], [1], [1])
 #: ([1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7])
+
+
+#%% class_deduce,barebones
+@deduce
+class Foo:
+    def __init__(self, x):
+        self.x = [x]
+        self.y = 1, x
+
+f = Foo(1)
+print(f.x, f.y, f.__class__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
+
+f: Foo = Foo('s')
+print(f.x, f.y, f.__class__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
+
+@deduce
+class Bar:
+    def __init__(self, y):
+        self.y = Foo(y)
+
+b = Bar(3.1)
+print(b.y.x, b.__class__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
+

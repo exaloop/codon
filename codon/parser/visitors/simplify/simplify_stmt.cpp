@@ -697,7 +697,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   // @dataclass(...)
   // @extend
   for (auto &d : stmt->decorators) {
-    if (d->isId("__deduce__")) {
+    if (d->isId("deduce")) {
       deduce = true;
     } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple))
