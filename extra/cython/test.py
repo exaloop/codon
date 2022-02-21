@@ -96,7 +96,7 @@ def fib_codon(a: int) -> int:
     return a if a < 2 else fib_codon(a - 1) + fib_codon(a - 2)
 
 
-iters = 42
+iters = 37
 sys.setrecursionlimit(iters ** 2 + 1)
 timed(f"fib({iters})", ("python", fib_python, iters), ("codon", fib_codon, iters))
 
@@ -125,7 +125,7 @@ def asum_codon_par(x: int, m: int = 2) -> int:
     return s
 
 
-iters, step = 1_000_000_000, 3
+iters, step = 50_000_000, 3
 timed(
     f"asum({iters}, {step})",
     ("python", asum_python, iters, step),

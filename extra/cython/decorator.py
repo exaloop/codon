@@ -29,15 +29,11 @@ def _wrapper_stub_init():
         PyObject_GetAttrString,
         PyObject_SetAttrString,
         PyTuple_GetItem,
-        PyUnicode_FromString,
     )
 
     ensure_initialized(True)
 
     module = PyImport_AddModule("__codon_interop__".c_str())
-    PyObject_SetAttrString(
-        module, "__codon_ret__".c_str(), PyUnicode_FromString("01".c_str())
-    )
 
 
 def _wrapper_stub_header():
