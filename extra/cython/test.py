@@ -2,7 +2,27 @@ import sys
 from time import time
 from typing import Dict, List, Tuple
 
-from interop.decorator import codon
+from extra.cython import codon, CodonError
+
+
+# test error handling
+
+
+def test_error_handling():
+    @codon
+    def get() -> int:
+        return "not int"
+
+    try:
+        r = get()
+        assert False
+    except CodonError:
+        assert True
+    except BaseException:
+        assert False
+
+
+test_error_handling()
 
 
 # test type validity
