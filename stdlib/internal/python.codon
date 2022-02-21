@@ -74,8 +74,12 @@ def init(python_loaded: bool = False):
     if _PY_INITIALIZED:
         return
 
-    LD = "" if python_loaded else os.getenv('CODON_PYTHON', default='libpython.' + dlext())
-    hnd = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
+    hnd: cobj
+    if python_loaded:
+        hnd = dlopen("", RTLD_LOCAL | RTLD_NOW)
+    else:
+        LD = os.getenv('CODON_PYTHON', default='libpython.' + dlext())
+        hnd = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     global PyUnicode_AsEncodedString
     PyUnicode_AsEncodedString = dlsym(hnd, "PyUnicode_AsEncodedString")
@@ -161,7 +165,6 @@ def init(python_loaded: bool = False):
 def ensure_initialized(python_loaded: bool = False):
     if not _PY_INITIALIZED:
         init(python_loaded)
-        # raise ValueError("Python not initialized; make sure to 'import python'")
 
 @extend
 class pyobj:

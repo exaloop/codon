@@ -4,9 +4,9 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 extensions = [
-    Extension("jit_interop",
+    Extension("codon_jit",
         sources=[
-            "interop/jit.pyx"
+            "extra/cython/jit.pyx"
         ],
         libraries=[
             "codonc",
