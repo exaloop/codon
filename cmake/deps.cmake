@@ -66,13 +66,11 @@ if(bdwgc_ADDED)
 endif()
 
 CPMAddPackage(
-    GITHUB_REPOSITORY "llvm-mirror/openmp"
-    VERSION 9.0
-    GIT_TAG release_90
-    # GITHUB_REPOSITORY "exaloop/openmp"
-    # VERSION 12.0.1
-    # GIT_TAG v12.0.1
-    OPTIONS "OPENMP_ENABLE_LIBOMPTARGET OFF"
+    NAME openmp
+    GITHUB_REPOSITORY "exaloop/openmp"
+    VERSION 13.0.0-fb9fc3c
+    OPTIONS "CMAKE_BUILD_TYPE Release"
+            "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
 
 CPMAddPackage(
