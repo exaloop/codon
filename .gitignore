@@ -16,6 +16,7 @@
 *.pyc
 build/
 build_*/
+extra/cython/jit.cpp
 extra/jupyter/build/
 
 # Packages #

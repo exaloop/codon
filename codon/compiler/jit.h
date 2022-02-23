@@ -17,24 +17,24 @@ namespace jit {
 
 struct JITResult {
   std::string data;
-  bool is_error;
+  bool isError;
 
   JITResult():
-    data(""), is_error(false) {}
+    data(""), isError(false) {}
 
-  JITResult(const std::string &data, bool is_error):
-    data(data), is_error(is_error) {}
+  JITResult(const std::string &data, bool isError):
+    data(data), isError(isError) {}
 
   operator bool() {
-    return !this->is_error;
+    return !this->isError;
   }
 
   static JITResult success(const std::string &output) {
     return JITResult(output, false);
   }
 
-  static JITResult error(const std::string &error_info) {
-    return JITResult(error_info, true);
+  static JITResult error(const std::string &errorInfo) {
+    return JITResult(errorInfo, true);
   }
 };
 
@@ -53,7 +53,7 @@ public:
   llvm::Error init();
   llvm::Expected<std::string> run(const ir::Func *input);
   llvm::Expected<std::string> execute(const std::string &code);
-  JITResult execute_safe(const std::string &code);
+  JITResult executeSafe(const std::string &code);
 };
 
 } // namespace jit

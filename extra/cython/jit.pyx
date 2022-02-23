@@ -4,20 +4,11 @@
 from cython.operator import dereference as dref
 from libcpp.string cimport string
 
-
-cdef extern from "llvm/Support/Error.h" namespace "llvm":
-    cdef cppclass Error
+from jit cimport JIT, JITResult
 
 
-cdef extern from "codon/compiler/jit.h" namespace "codon::jit":
-    cdef cppclass JITResult:
-        string data
-        bint operator bool()
-
-    cdef cppclass JIT:
-        JIT(string)
-        Error init()
-        JITResult execute_safe(string)
+class JitError(Exception):
+    pass
 
 
 cdef class Jit:
@@ -31,8 +22,8 @@ cdef class Jit:
         del self.jit
 
     def execute(self, code: object) -> object:
-        result = dref(self.jit).execute_safe(code)
+        result = dref(self.jit).executeSafe(code)
         if <bint>result:
             return result.data
         else:
-            raise RuntimeError(result.data)
+            raise JitError(result.data)

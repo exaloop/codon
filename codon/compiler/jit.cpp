@@ -160,11 +160,11 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
   }
 }
 
-JITResult JIT::execute_safe(const std::string &code) {
+JITResult JIT::executeSafe(const std::string &code) {
   auto result = this->execute(code);
   if (auto err = result.takeError()) {
-    auto error_info = llvm::toString(std::move(err));
-    return JITResult::error(error_info);
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
   }
   return JITResult::success(result.get());
 }

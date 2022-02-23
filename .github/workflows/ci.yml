@@ -151,6 +151,15 @@ jobs:
           CC: clang
           CXX: clang++
 
+      - name: Build Cython
+        run: |
+          pip install cython
+          python extra/cython/setup.py build_ext --inplace --force
+        env:
+          CC: clang
+          CXX: clang++
+          PYTHONPATH: ./test/python
+
       - name: Test
         run: |
           echo $CODON_PYTHON
@@ -158,6 +167,7 @@ jobs:
           build/codon_test
           build/codon run test/core/helloworld.codon
           build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+          python extra/cython/test.py
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: ./test/python
