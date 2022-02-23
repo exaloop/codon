@@ -2,8 +2,7 @@ import sys
 from time import time
 from typing import Dict, List, Tuple
 
-from extra.cython import codon, CodonError
-
+from extra.cython import JitError, codon
 
 # test error handling
 
@@ -15,10 +14,11 @@ def test_error_handling():
 
     try:
         r = get()
-        assert False
-    except CodonError:
+    except JitError:
         assert True
     except BaseException:
+        assert False
+    else:
         assert False
 
 
@@ -64,71 +64,3 @@ def test_param_types():
 
 
 test_param_types()
-
-
-# test exec time
-
-
-def timed(label, *args):
-    def timed_single(fn, *args):
-        cpt = time()
-        r = fn(*args)
-        return r, round(time() - cpt, 3)
-
-    print(f"{label}:")
-    res = [(a[0], *timed_single(*a[1:])) for a in args]
-    mxl = [0, 0, 0]
-    for r in res:
-        for i in range(len(r)):
-            mxl[i] = max(mxl[i], len(str(r[i])))
-    for r in res:
-        l = " | ".join([str(r[i]).ljust(mxl[i], " ") for i in range(len(r))])
-        print(f"  {l}")
-    print()
-
-
-def fib_python(a: int) -> int:
-    return a if a < 2 else fib_python(a - 1) + fib_python(a - 2)
-
-
-@codon
-def fib_codon(a: int) -> int:
-    return a if a < 2 else fib_codon(a - 1) + fib_codon(a - 2)
-
-
-iters = 37
-sys.setrecursionlimit(iters ** 2 + 1)
-timed(f"fib({iters})", ("python", fib_python, iters), ("codon", fib_codon, iters))
-
-
-def asum_python(x: int, m: int = 2) -> int:
-    s = 0
-    for i in range(x + 1):
-        s += i * (-1 if i % m == 0 else 1)
-    return s
-
-
-@codon
-def asum_codon(x: int, m: int = 2) -> int:
-    s = 0
-    for i in range(x + 1):
-        s += i * (-1 if i % m == 0 else 1)
-    return s
-
-
-@codon
-def asum_codon_par(x: int, m: int = 2) -> int:
-    s = 0
-    _@par
-    for i in range(x + 1):
-        s += i * (-1 if i % m == 0 else 1)
-    return s
-
-
-iters, step = 50_000_000, 3
-timed(
-    f"asum({iters}, {step})",
-    ("python", asum_python, iters, step),
-    ("codon", asum_codon, iters, step),
-    ("codon @par", asum_codon_par, iters, step),
-)

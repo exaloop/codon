@@ -8,14 +8,10 @@ import warnings
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
-from codon_jit import Jit
+from codon_jit import Jit, JitError
 
 
-separator = "__"  # use interpunct once unicode is supported
-
-
-class CodonError(Exception):
-    pass
+separator = "__"
 
 
 # codon wrapper stubs
@@ -48,6 +44,7 @@ def _wrapper_stub_footer():
 
 
 def _reset_jit():
+    global jit
     jit = Jit()
     lines = inspect.getsourcelines(_wrapper_stub_init)[0][1:]
     jit.execute("".join([l[4:] for l in lines]))
@@ -66,7 +63,6 @@ def _init():
 
 
 jit, module = _init()
-
 
 
 def _obj_to_str(obj) -> str:
@@ -145,29 +141,23 @@ def _build_wrapper(obj, obj_name) -> str:
 
 
 def codon(obj):
-    global jit
     try:
         obj_name, obj_str = _parse_decorated(obj)
         jit.execute(obj_str)
 
         wrap_name, wrap_str = _build_wrapper(obj, obj_name)
         jit.execute(wrap_str)
-    except RuntimeError as e:
-        jit = _reset_jit()
-        raise CodonError() from e
+    except JitError as e:
+        _reset_jit()
+        raise
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    def wrapped(*args, **kwargs):
+        try:
+            module.__codon_args__ = (*args, *kwargs.values())
+            jit.execute(f"{wrap_name}()")
+            return module.__codon_ret__
+        except JitError as e:
+            _reset_jit()
+            raise
 
-        def wrapped(*args, **kwargs):
-            global jit
-            try:
-                module.__codon_args__ = (*args, *kwargs.values())
-                jit.execute(f"{wrap_name}()")
-                return module.__codon_ret__
-            except RuntimeError as e:
-                jit = _reset_jit()
-                raise CodonError() from e
-
-
-        return wrapped
+    return wrapped
