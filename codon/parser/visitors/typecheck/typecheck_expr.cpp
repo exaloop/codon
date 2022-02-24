@@ -36,8 +36,10 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVo
       ctx->allowActivation = false;
     v.setSrcInfo(expr->getSrcInfo());
     expr->accept(v);
-    if (v.resultExpr)
+    if (v.resultExpr) {
+      v.resultExpr->attributes |= expr->attributes;
       expr = v.resultExpr;
+    }
     seqassert(expr->type, "type not set for {}", expr->toString());
     unify(typ, expr->type);
     if (disableActivation)
@@ -1246,6 +1248,8 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
           return -1;
         },
         known);
+  bool hasPartialArgs = partialStarArgs != nullptr,
+       hasPartialKwargs = partialKwstarArgs != nullptr;
   if (isPartial) {
     deactivateUnbounds(expr->args.back().value->getType().get());
     expr->args.pop_back();
@@ -1361,10 +1365,16 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     deactivateUnbounds(calleeFn.get());
     std::vector<ExprPtr> newArgs;
     for (auto &r : args)
-      if (!r.value->getEllipsis())
+      if (!r.value->getEllipsis()) {
         newArgs.push_back(r.value);
+        newArgs.back()->setAttr(ExprAttr::SequenceItem);
+      }
     newArgs.push_back(partialStarArgs);
+    if (hasPartialArgs)
+      newArgs.back()->setAttr(ExprAttr::SequenceItem);
     newArgs.push_back(partialKwstarArgs);
+    if (hasPartialKwargs)
+      newArgs.back()->setAttr(ExprAttr::SequenceItem);
 
     std::string var = ctx->cache->getTemporaryVar("partial");
     ExprPtr call = nullptr;
@@ -1379,8 +1389,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                                     N<CallExpr>(N<IdExpr>(partialTypeName), newArgs)),
                       N<IdExpr>(var));
     }
-    const_cast<StmtExpr *>(call->getStmtExpr())
-        ->setAttr(ir::PartialFunctionAttribute::AttributeName);
+    call->setAttr(ExprAttr::Partial);
     call = transform(call, false, allowVoidExpr);
     seqassert(call->type->getPartial(), "expected partial type");
     return call;
@@ -1720,8 +1729,7 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
                                 N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
                                             N<CallExpr>(N<IdExpr>(kwName)))),
                   N<IdExpr>(var));
-  const_cast<StmtExpr *>(call->getStmtExpr())
-      ->setAttr(ir::PartialFunctionAttribute::AttributeName);
+  call->setAttr(ExprAttr::Partial);
   call = transform(call, false, allowVoidExpr);
   seqassert(call->type->getPartial(), "expected partial type");
   return call;

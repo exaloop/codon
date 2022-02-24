@@ -78,6 +78,9 @@ struct Expr : public codon::SrcObject {
   /// type-checking procedure was successful).
   bool done;
 
+  /// Set of attributes.
+  int attributes;
+
 public:
   Expr();
   Expr(const Expr &expr) = default;
@@ -123,6 +126,10 @@ public:
   virtual const StringExpr *getString() const { return nullptr; }
   virtual const TupleExpr *getTuple() const { return nullptr; }
   virtual const UnaryExpr *getUnary() const { return nullptr; }
+
+  /// Attribute helpers
+  bool hasAttr(int attr) const;
+  void setAttr(int attr);
 
 protected:
   /// Add a type to S-expression string.
@@ -600,8 +607,6 @@ struct RangeExpr : public Expr {
 struct StmtExpr : public Expr {
   std::vector<std::shared_ptr<Stmt>> stmts;
   ExprPtr expr;
-  /// Set of attributes.
-  std::set<std::string> attributes;
 
   StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr);
   StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr);
@@ -612,10 +617,6 @@ struct StmtExpr : public Expr {
   ACCEPT(ASTVisitor);
 
   const StmtExpr *getStmtExpr() const override { return this; }
-
-  /// Attribute helpers
-  bool hasAttr(const std::string &attr) const;
-  void setAttr(const std::string &attr);
 };
 
 /// Pointer expression (__ptr__(expr)).
@@ -671,6 +672,16 @@ struct StackAllocExpr : Expr {
 };
 
 #undef ACCEPT
+
+enum ExprAttr {
+  SequenceItem,
+  StarSequenceItem,
+  List,
+  Set,
+  Dict,
+  Partial,
+  __LAST__
+};
 
 } // namespace ast
 } // namespace codon
