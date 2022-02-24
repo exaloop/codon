@@ -53,17 +53,6 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
       });
   if (failed.empty()) {
     std::string out = *result;
-    // std::string out;
-    // for (int i = 0; i < msg.size(); i++) {
-    //   uint8_t c = msg[i];
-    //   if (c <= 127) {
-    //     out.push_back(c);
-    //   } else {
-    //     out.push_back((c >> 6) | 0xC0);
-    //     out.push_back((c & 0x3F) | 0x80);
-    //   }
-    // }
-
     nl::json pub_data;
     if (ast::startswith(out, "\x00\x00__codon/mime__\x00")) {
       std::string mime = "";

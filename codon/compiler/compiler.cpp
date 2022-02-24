@@ -64,9 +64,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath =
-      (file != "-") ? std::experimental::filesystem::absolute(std::experimental::filesystem::path(file)).string()
-                    : file;
+  std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
     Timer t1("parse");
     ast::StmtPtr codeStmt = isCode

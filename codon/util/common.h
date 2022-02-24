@@ -1,7 +1,7 @@
 #pragma once
 
+#include "llvm/Support/Path.h"
 #include <chrono>
-#include <experimental/filesystem>
 #include <iostream>
 #include <ostream>
 
@@ -123,7 +123,7 @@ struct SrcInfo {
   SrcInfo() : SrcInfo("", 0, 0, 0) {}
 
   friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
-    out << std::experimental::filesystem::path(src.file).filename() << ":" << src.line << ":"
+    out << llvm::sys::path::filename(src.file).str() << ":" << src.line << ":"
         << src.col;
     return out;
   }

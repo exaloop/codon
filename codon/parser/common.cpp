@@ -5,6 +5,8 @@
 
 #include "codon/parser/common.h"
 #include "codon/util/fmt/format.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 
 namespace codon {
 namespace ast {
@@ -194,28 +196,29 @@ std::string executable_path(const char *argv0) {
 std::string executable_path(const char *argv0) { return std::string(argv0); }
 #endif
 
-namespace fs = std::experimental::filesystem;
-
 namespace {
-void addPath(std::vector<fs::path> &paths, const fs::path &path) {
-  if (fs::exists(path))
-    paths.push_back(fs::canonical(path));
+
+void addPath(std::vector<std::string> &paths, const std::string &path) {
+  if (llvm::sys::fs::exists(path))
+    paths.push_back(getAbsolutePath(path));
 }
 
-std::vector<fs::path> getStdLibPaths(const std::string &argv0,
-                                     const std::vector<std::string> &plugins) {
-  std::vector<fs::path> paths;
+std::vector<std::string> getStdLibPaths(const std::string &argv0,
+                                        const std::vector<std::string> &plugins) {
+  std::vector<std::string> paths;
   if (auto c = getenv("CODON_PATH")) {
-    addPath(paths, fs::path(std::string(c)));
+    addPath(paths, c);
   }
   if (!argv0.empty()) {
-    auto base = fs::path(executable_path(argv0.c_str()));
+    auto base = executable_path(argv0.c_str());
     for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
-      addPath(paths, base.parent_path() / loci);
+      auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
+      llvm::sys::path::append(path, loci);
+      addPath(paths, std::string(path));
     }
   }
   for (auto &path : plugins) {
-    addPath(paths, fs::path(path));
+    addPath(paths, path);
   }
   return paths;
 }
@@ -243,28 +246,44 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
 }
 } // namespace
 
+std::string getAbsolutePath(const std::string &path) {
+  llvm::SmallString<128> p(path);
+  llvm::sys::fs::make_absolute(p);
+  return std::string(p);
+}
+
 std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib, const std::string &module0,
                                           const std::vector<std::string> &plugins) {
-  std::vector<fs::path> paths;
+  std::vector<std::string> paths;
   if (what != "<jit>") {
-    auto parentRelativeTo = fs::path(relativeTo).parent_path();
+    auto parentRelativeTo = llvm::sys::path::parent_path(relativeTo);
     if (!forceStdlib) {
-      addPath(paths, (parentRelativeTo / what).replace_extension("codon"));
-      addPath(paths, parentRelativeTo / what / "__init__.codon");
+      auto path = llvm::SmallString<128>(parentRelativeTo);
+      llvm::sys::path::append(path, what);
+      llvm::sys::path::replace_extension(path, "codon");
+      addPath(paths, std::string(path));
+      path = llvm::SmallString<128>(parentRelativeTo);
+      llvm::sys::path::append(path, what, "__init__.codon");
+      addPath(paths, std::string(path));
     }
   }
   for (auto &p : getStdLibPaths(argv0, plugins)) {
-    addPath(paths, (p / what).replace_extension("codon"));
-    addPath(paths, p / what / "__init__.codon");
+    auto path = llvm::SmallString<128>(p);
+    llvm::sys::path::append(path, what);
+    llvm::sys::path::replace_extension(path, "codon");
+    addPath(paths, std::string(path));
+    path = llvm::SmallString<128>(p);
+    llvm::sys::path::append(path, what, "__init__.codon");
+    addPath(paths, std::string(path));
   }
 
-  auto module0Root = fs::path(module0).parent_path().string();
+  auto module0Root = llvm::sys::path::parent_path(module0).str();
   return paths.empty() ? nullptr
                        : std::make_shared<ImportFile>(
-                             getRoot(argv0, plugins, module0Root, paths[0].string()));
+                             getRoot(argv0, plugins, module0Root, paths[0]));
 }
 
 } // namespace ast

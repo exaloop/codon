@@ -334,7 +334,7 @@ llvm_map_components_to_libnames(LLVM_LIBS
 if(APPLE)
     target_link_libraries(codonc PRIVATE ${LLVM_LIBS} dl codonrt)
 else()
-    target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt stdc++fs)
+    target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt)
 endif()
 
 # Gather headers
