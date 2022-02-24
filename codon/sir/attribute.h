@@ -177,7 +177,9 @@ private:
 /// Attribute attached to IR structures corresponding to dict literals
 struct DictLiteralAttribute : public Attribute {
   struct KeyValuePair {
+    /// the key in the literal
     Value *key;
+    /// the value in the literal, or null if key is being star-unpacked
     Value *value;
   };
 
@@ -200,15 +202,15 @@ private:
 struct PartialFunctionAttribute : public Attribute {
   static const std::string AttributeName;
 
-  /// function being called
-  Func *func;
+  /// base name of the function being used in the partial
+  std::string name;
 
   /// partial arguments, or null if none
   /// e.g. "f(a, ..., b)" has elements [a, null, b]
   std::vector<Value *> args;
 
-  PartialFunctionAttribute(Func *func, std::vector<Value *> args)
-      : func(func), args(std::move(args)) {}
+  PartialFunctionAttribute(const std::string &name, std::vector<Value *> args)
+      : name(name), args(std::move(args)) {}
 
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;

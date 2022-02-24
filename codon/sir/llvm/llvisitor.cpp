@@ -874,8 +874,6 @@ void LLVMVisitor::visit(const InternalFunc *x) {
     }
   }
 
-  if (!result)
-  internalFuncMatchesIgnoreArgs<RecordType>("__new__", x);
   seqassert(result, "internal function {} not found", *x);
   B->CreateRet(result);
 }
