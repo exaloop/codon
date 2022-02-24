@@ -66,7 +66,8 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
     }
     if (expr->hasAttr(ExprAttr::Partial))
       p = expr->type->getPartial().get();
-    // LOG("{} {}: {}", std::string(ctx->seqItems.size(), ' '), expr->attributes, expr->toString());
+    // LOG("{} {}: {}", std::string(ctx->seqItems.size(), ' '), expr->attributes,
+    // expr->toString());
   }
 
   expr->accept(v);
@@ -119,8 +120,8 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
           v.push_back({nullptr});
         }
       }
-      // seqassert(j == ctx->seqItems.back().size(), "invalid partial element");
-      ir->setAttribute(std::make_unique<ir::PartialFunctionAttribute>(nullptr, v));
+      ir->setAttribute(
+          std::make_unique<ir::PartialFunctionAttribute>(p->func->ast->name, v));
       ctx->seqItems.pop_back();
     }
     if (expr->hasAttr(ExprAttr::SequenceItem)) {
