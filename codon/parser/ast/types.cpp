@@ -538,15 +538,7 @@ PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
                          std::shared_ptr<FuncType> func, std::vector<char> known)
     : RecordType(*baseType), func(move(func)), known(move(known)) {}
 int PartialType::unify(Type *typ, Unification *us) {
-  int s1 = 0, s;
-  // if (auto tc = typ->getPartial()) {
-  //   // Check names.
-  //   if ((s = func->unify(tc->func.get(), us)) == -1)
-  //     return -1;
-  //   s1 += s;
-  // }
-  s = this->RecordType::unify(typ, us);
-  return s == -1 ? s : s1 + s;
+  return this->RecordType::unify(typ, us);
 }
 TypePtr PartialType::generalize(int atLevel) {
   return std::make_shared<PartialType>(

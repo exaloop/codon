@@ -1649,8 +1649,6 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
     generateTupleStub(tupleSize + 2, typeName, {}, false);
   }
-  // LOG("[p] {} -> {}", typeName,
-  // ctx->cache->partials[typeName].first->debugString(1));
   return typeName;
 }
 
