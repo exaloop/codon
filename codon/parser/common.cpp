@@ -247,9 +247,12 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
 } // namespace
 
 std::string getAbsolutePath(const std::string &path) {
-  llvm::SmallString<128> p(path);
-  llvm::sys::fs::make_absolute(p);
-  return std::string(p);
+  char *c = realpath(path.c_str(), nullptr);
+  if (!c)
+    return path;
+  std::string result(c);
+  free(c);
+  return result;
 }
 
 std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
