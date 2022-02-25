@@ -95,6 +95,7 @@ public:
     EMPTY,
     DEBUG,
     RELEASE,
+    JIT,
   };
 
   static const int PASS_IT_MAX;
@@ -102,16 +103,7 @@ public:
   explicit PassManager(Init init, std::vector<std::string> disabled = {})
       : km(), passes(), analyses(), executionOrder(), results(),
         disabled(std::move(disabled)) {
-    switch (init) {
-    case Init::EMPTY:
-      break;
-    case Init::DEBUG:
-      registerStandardPasses(true);
-      break;
-    case Init::RELEASE:
-      registerStandardPasses(false);
-      break;
-    }
+    registerStandardPasses(init);
   }
 
   explicit PassManager(bool debug = false, std::vector<std::string> disabled = {})
@@ -156,7 +148,7 @@ public:
 
 private:
   void runPass(Module *module, const std::string &name);
-  void registerStandardPasses(bool debug = false);
+  void registerStandardPasses(Init init);
   void runAnalysis(Module *module, const std::string &name);
   void invalidate(const std::string &key);
 };

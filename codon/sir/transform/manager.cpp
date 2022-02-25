@@ -139,12 +139,18 @@ void PassManager::invalidate(const std::string &key) {
   }
 }
 
-void PassManager::registerStandardPasses(bool debug) {
-  if (debug) {
+void PassManager::registerStandardPasses(PassManager::Init init) {
+  switch (init) {
+  case Init::EMPTY:
+    break;
+  case Init::DEBUG: {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
-  } else {
+    break;
+  }
+  case Init::RELEASE:
+  case Init::JIT: {
     // Pythonic
     registerPass(std::make_unique<pythonic::DictArithmeticOptimization>());
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
@@ -174,10 +180,19 @@ void PassManager::registerStandardPasses(bool debug) {
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>());
 
-    registerPass(std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
-                                                             /*runGlobalDemoton=*/true),
-                 /*insertBefore=*/"", {seKey2, rdKey, globalKey},
-                 {seKey2, rdKey, cfgKey, globalKey});
+    if (init != Init::JIT) {
+      // Don't demote globals in JIT mode, since they might be used later
+      // by another user input.
+      registerPass(
+          std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
+                                                      /*runGlobalDemoton=*/true),
+          /*insertBefore=*/"", {seKey2, rdKey, globalKey},
+          {seKey2, rdKey, cfgKey, globalKey});
+    }
+    break;
+  }
+  default:
+    seqassert(false, "unknown PassManager init value");
   }
 }
 

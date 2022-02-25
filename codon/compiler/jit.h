@@ -28,8 +28,7 @@ public:
   Engine *getEngine() const { return engine.get(); }
 
   llvm::Error init();
-  llvm::Expected<std::string> run(const ir::Func *input,
-                                  const std::vector<ir::Var *> &newGlobals = {});
+  llvm::Expected<std::string> run(const ir::Func *input);
   llvm::Expected<std::string> exec(const std::string &code);
 };
 

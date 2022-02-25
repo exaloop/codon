@@ -217,7 +217,7 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_node.h
     codon/util/toml++/toml_parser.hpp
     codon/util/toml++/toml_utf8_streams.h
-    extra/jupyter/src/codon.h)
+    extra/jupyter/jupyter.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/debug_listener.cpp
@@ -296,7 +296,7 @@ set(CODON_CPPFILES
     codon/sir/var.cpp
     codon/util/common.cpp
     codon/util/fmt/format.cpp
-    extra/jupyter/src/codon.cpp)
+    extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CODON_JUPYTER)
