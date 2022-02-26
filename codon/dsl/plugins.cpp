@@ -7,7 +7,7 @@
 #include "codon/util/semver/semver.h"
 #include "codon/util/toml++/toml.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Support/Filesystem.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
 namespace codon {
