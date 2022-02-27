@@ -87,7 +87,6 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
     }
     if (expr->hasAttr(ExprAttr::Dict)) {
       std::vector<ir::DictLiteralAttribute::KeyValuePair> v;
-      LOG("{} {}", expr->toString(), expr->getSrcInfo());
       for (int pi = 0; pi < ctx->seqItems.back().size(); pi++) {
         auto &p = ctx->seqItems.back()[pi];
         if (p.first == ExprAttr::StarSequenceItem) {
