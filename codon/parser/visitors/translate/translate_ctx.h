@@ -51,7 +51,7 @@ struct TranslateContext : public Context<TranslateItem> {
   /// Stack of IR series (blocks).
   std::vector<codon::ir::SeriesFlow *> series;
   /// Stack of sequence items for attribute initialization.
-  std::vector<std::vector<std::pair<ExprAttr, ir::Value*>>> seqItems;
+  std::vector<std::vector<std::pair<ExprAttr, ir::Value *>>> seqItems;
 
 public:
   TranslateContext(Cache *cache);
