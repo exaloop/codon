@@ -54,9 +54,6 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
-  // Disable libopenmp 12+'s hidden helper threads that
-  // cause segfaults with omp_critical in Codon
-  setenv("LIBOMP_NUM_HIDDEN_HELPER_THREADS", "0", true);
   // equivalent to: #pragma omp parallel { register_thread }
   __kmpc_fork_call(&dummy_loc, 0, (kmpc_micro)register_thread);
   seq_exc_init();
