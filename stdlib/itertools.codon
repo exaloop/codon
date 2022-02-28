@@ -46,30 +46,30 @@ def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
 # Iterators terminating on the shortest input sequence
 
 
-@tuple
-class accumulate:
-    @inline
-    def __new__(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
-        """
-        Make an iterator that returns accumulated sums, or accumulated results
-        of other binary functions (specified via the optional func argument).
-        """
-        total = initial
+@inline
+def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
+    """
+    Make an iterator that returns accumulated sums, or accumulated results
+    of other binary functions (specified via the optional func argument).
+    """
+    total = initial
+    yield total
+    for element in iterable:
+        total = func(total, element)
         yield total
-        for element in iterable:
-            total = func(total, element)
-            yield total
 
-    @inline
-    def __new__(iterable: Generator[T], func=lambda a, b: a + b, T: type):
-        """
-        Make an iterator that returns accumulated sums, or accumulated results
-        of other binary functions (specified via the optional func argument).
-        """
-        total = None
-        for element in iterable:
-            total = element if total is None else func(unwrap(total), element)
-            yield unwrap(total)
+
+@inline
+@overload
+def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
+    """
+    Make an iterator that returns accumulated sums, or accumulated results
+    of other binary functions (specified via the optional func argument).
+    """
+    total = None
+    for element in iterable:
+        total = element if total is None else func(unwrap(total), element)
+        yield unwrap(total)
 
 
 @tuple
@@ -156,70 +156,70 @@ def groupby(iterable, key=Optional[int]()):
         yield unwrap(currkey), group
 
 
-@tuple
-class islice:
-    def __new__(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
-        """
-        Make an iterator that returns selected elements from the iterable.
-        """
-        if stop and unwrap(stop) < 0:
-            raise ValueError(
-                "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
-            )
-        i = 0
-        for x in iterable:
-            if stop and i >= unwrap(stop):
+def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
+    """
+    Make an iterator that returns selected elements from the iterable.
+    """
+    if stop and unwrap(stop) < 0:
+        raise ValueError(
+            "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
+        )
+    i = 0
+    for x in iterable:
+        if stop and i >= unwrap(stop):
+            break
+        yield x
+        i += 1
+
+
+@overload
+def islice(
+    iterable: Generator[T],
+    start: Optional[int],
+    stop: Optional[int],
+    step: Optional[int] = None,
+    T: type,
+) -> Generator[T]:
+    """
+    Make an iterator that returns selected elements from the iterable.
+    """
+    from sys import maxsize
+
+    start: int = 0 if not start else start
+    stop: int = maxsize if not stop else stop
+    step: int = 1 if not step else step
+    have_stop = False
+
+    if start < 0 or stop < 0:
+        raise ValueError(
+            "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
+        )
+    elif step < 0:
+        raise ValueError("Step for islice() must be a positive integer or None.")
+
+    it = range(start, stop, step)
+    N = len(it)
+    idx = 0
+    b = -1
+
+    if N == 0:
+        for i, element in zip(range(start), iterable):
+            pass
+        return
+
+    nexti = it[0]
+    for i, element in enumerate(iterable):
+        if i == nexti:
+            yield element
+            idx += 1
+            if idx >= N:
+                b = i
                 break
-            yield x
-            i += 1
+            nexti = it[idx]
 
-    def __new__(
-        iterable: Generator[T],
-        start: Optional[int],
-        stop: Optional[int],
-        step: Optional[int] = None,
-        T: type,
-    ) -> Generator[T]:
-        """
-        Make an iterator that returns selected elements from the iterable.
-        """
-        from sys import maxsize
-
-        start: int = 0 if not start else start
-        stop: int = maxsize if not stop else stop
-        step: int = 1 if not step else step
-        have_stop = False
-
-        if start < 0 or stop < 0:
-            raise ValueError(
-                "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
-            )
-        elif step < 0:
-            raise ValueError("Step for islice() must be a positive integer or None.")
-
-        it = range(start, stop, step)
-        N = len(it)
-        idx = 0
-        b = -1
-
-        if N == 0:
-            for i, element in zip(range(start), iterable):
-                pass
-            return
-
-        nexti = it[0]
-        for i, element in enumerate(iterable):
-            if i == nexti:
-                yield element
-                idx += 1
-                if idx >= N:
-                    b = i
-                    break
-                nexti = it[idx]
-
-        if b >= 0:
-            for i, element in zip(range(b + 1, stop), iterable):
-                pass
+    if b >= 0:
+        for i, element in zip(range(b + 1, stop), iterable):
+            pass
 
 
 @inline
@@ -271,83 +271,83 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
     return [gen(d) for d in deques]
 
 
-@tuple
-class zip_longest:
-    @inline
-    def __new__(*iterables, fillvalue):
-        """
-        Make an iterator that aggregates elements from each of the iterables.
-        If the iterables are of uneven length, missing values are filled-in
-        with fillvalue. Iteration continues until the longest iterable is
-        exhausted.
-        """
-        if staticlen(iterables) == 2:
-            a = iter(iterables[0])
-            b = iter(iterables[1])
-            a_done = False
-            b_done = False
+@inline
+def zip_longest(*iterables, fillvalue):
+    """
+    Make an iterator that aggregates elements from each of the iterables.
+    If the iterables are of uneven length, missing values are filled-in
+    with fillvalue. Iteration continues until the longest iterable is
+    exhausted.
+    """
+    if staticlen(iterables) == 2:
+        a = iter(iterables[0])
+        b = iter(iterables[1])
+        a_done = False
+        b_done = False
 
-            while not a.done():
-                a_val = a.next()
-                b_val = fillvalue
-                if not b_done:
-                    b_done = b.done()
-                if not b_done:
-                    b_val = b.next()
-                yield a_val, b_val
-
+        while not a.done():
+            a_val = a.next()
+            b_val = fillvalue
             if not b_done:
-                while not b.done():
-                    yield fillvalue, b.next()
+                b_done = b.done()
+            if not b_done:
+                b_val = b.next()
+            yield a_val, b_val
 
-            a.destroy()
-            b.destroy()
-        else:
-            iterators = tuple(iter(it) for it in iterables)
-            num_active = len(iterators)
-            if not num_active:
-                return
-            while True:
-                values = []
-                for it in iterators:
-                    if it.__done__():  # already done
-                        values.append(fillvalue)
-                    elif it.done():  # resume and check
-                        num_active -= 1
-                        if not num_active:
-                            return
-                        values.append(fillvalue)
-                    else:
-                        values.append(it.next())
-                yield values
+        if not b_done:
+            while not b.done():
+                yield fillvalue, b.next()
 
-    @inline
-    def __new__(*args):
-        """
-        Make an iterator that aggregates elements from each of the iterables.
-        If the iterables are of uneven length, missing values are filled-in
-        with fillvalue. Iteration continues until the longest iterable is
-        exhausted.
-        """
-
-        def get_next(it):
-            if it.__done__() or it.done():
-                return None
-            return it.next()
-
-        iters = tuple(iter(arg) for arg in args)
+        a.destroy()
+        b.destroy()
+    else:
+        iterators = tuple(iter(it) for it in iterables)
+        num_active = len(iterators)
+        if not num_active:
+            return
         while True:
-            done_count = 0
-            result = tuple(get_next(it) for it in iters)
-            all_none = True
-            for a in result:
-                if a is not None:
-                    all_none = False
-            if all_none:
-                return
-            yield result
-        for it in iters:
-            it.destroy()
+            values = []
+            for it in iterators:
+                if it.__done__():  # already done
+                    values.append(fillvalue)
+                elif it.done():  # resume and check
+                    num_active -= 1
+                    if not num_active:
+                        return
+                    values.append(fillvalue)
+                else:
+                    values.append(it.next())
+            yield values
+
+
+@inline
+@overload
+def zip_longest(*args):
+    """
+    Make an iterator that aggregates elements from each of the iterables.
+    If the iterables are of uneven length, missing values are filled-in
+    with fillvalue. Iteration continues until the longest iterable is
+    exhausted.
+    """
+
+    def get_next(it):
+        if it.__done__() or it.done():
+            return None
+        return it.next()
+
+    iters = tuple(iter(arg) for arg in args)
+    while True:
+        done_count = 0
+        result = tuple(get_next(it) for it in iters)
+        all_none = True
+        for a in result:
+            if a is not None:
+                all_none = False
+        if all_none:
+            return
+        yield result
+    for it in iters:
+        it.destroy()
 
 
 # Combinatoric iterators
@@ -466,31 +466,31 @@ def permutations(
         return permutations_helper([a for a in pool], r)
 
 
-@tuple
-class product:
-    @inline
-    def __new__(*args):
-        """
-        Cartesian product of input iterables.
-        """
-        if staticlen(args) == 0:
-            yield ()
-        else:
-            for a in args[0]:
-                rest = args[1:]
-                for b in product(*rest):
-                    yield (a, *b)
+@inline
+def product(*args):
+    """
+    Cartesian product of input iterables.
+    """
+    if staticlen(args) == 0:
+        yield ()
+    else:
+        for a in args[0]:
+            rest = args[1:]
+            for b in product(*rest):
+                yield (a, *b)
 
-    @inline
-    def __new__(*args, repeat: int):
-        """
-        Cartesian product of input iterables.
-        """
-        if repeat < 0:
-            raise ValueError("repeat argument cannot be negative")
-        pools = [list(pool) for _ in range(repeat) for pool in args]
-        result = [List[type(pools[0][0])]()]
-        for pool in pools:
-            result = [x + [y] for x in result for y in pool]
-        for prod in result:
-            yield prod
+
+@inline
+@overload
+def product(*args, repeat: int):
+    """
+    Cartesian product of input iterables.
+    """
+    if repeat < 0:
+        raise ValueError("repeat argument cannot be negative")
+    pools = [list(pool) for _ in range(repeat) for pool in args]
+    result = [List[type(pools[0][0])]()]
+    for pool in pools:
+        result = [x + [y] for x in result for y in pool]
+    for prod in result:
+        yield prod
