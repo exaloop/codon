@@ -300,3 +300,61 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
             it.destroy()
         result.sort()
         return [elem for k, order, elem in reversed(result)]
+
+
+@tuple
+class _MergeItem:
+    value: T
+    order: int
+    gen: Generator[T]
+    key: S
+    T: type
+    S: type
+
+    def __lt__(self, other):
+        if isinstance(self.key, Optional):
+            return (self.value, self.order) < (other.value, other.order)
+        else:
+            return (self.key(self.value), self.order, self.value) < (
+                other.key(other.value),
+                other.order,
+                other.value,
+            )
+
+
+def merge(*iterables, key=Optional[int](), reverse: bool = False):
+    items = []
+
+    # TODO: unify types of different compatible functions
+    # TODO: lambdas with void?
+    def _heapify(x):
+        if reverse:
+            _heapify_max(x)
+        else:
+            heapify(x)
+
+    _heappop = lambda x: _heappop_max(x) if reverse else heappop(x)
+    _heapreplace = lambda x, s: _heapreplace_max(x, s) if reverse else heapreplace(x, s)
+    direction = -1 if reverse else 1
+
+    order = 0
+    for it in iterables:
+        gen = iter(it)
+        if not gen.done():
+            items.append(_MergeItem(gen.next(), order * direction, gen, key))
+        order += 1
+    _heapify(items)
+    while len(items) > 1:
+        while True:
+            # TODO: @tuple unpacking does not work
+            value, order, gen = items[0].value, items[0].order, items[0].gen
+            yield value
+            if gen.done():
+                _heappop(items)
+                break
+            _heapreplace(items, _MergeItem(gen.next(), order, gen, key))
+    if items:
+        # fast case when only a single iterator remains
+        value, order, gen = items[0].value, items[0].order, items[0].gen
+        yield value
+        yield from gen
