@@ -288,7 +288,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         irType->setAstType(type->getFunc());
         r->ir->realize(irType, names);
 
-        // LOG("-> {}", *(r->ir));
         ctx->cache->functions[type->ast->name].realizations[type->realizedName()] = r;
       } else {
         ctx->cache->functions[type->ast->name].realizations[oldKey] =

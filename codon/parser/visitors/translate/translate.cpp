@@ -64,8 +64,6 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
     }
     if (expr->hasAttr(ExprAttr::Partial))
       p = expr->type->getPartial().get();
-    // LOG("{} {}: {}", std::string(ctx->seqItems.size(), ' '), expr->attributes,
-    // expr->toString());
   }
 
   expr->accept(v);
@@ -501,7 +499,6 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->attributes.module;
   for (auto &a : ast->attributes.customAttr) {
-    // LOG("{} -> {}", ast->name, a);
     attr[a] = "";
   }
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));

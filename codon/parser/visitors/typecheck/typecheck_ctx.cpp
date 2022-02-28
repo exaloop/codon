@@ -78,8 +78,8 @@ std::shared_ptr<types::LinkType>
 TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) {
   auto t = std::make_shared<types::LinkType>(
       types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
-  // if (t->id == 7815)
-  // LOG("debug");
+  // Keep it for debugging purposes:
+  // if (t->id == 7815) LOG("debug");
   t->setSrcInfo(expr->getSrcInfo());
   LOG_TYPECHECK("[ub] new {}: {} ({})", t->debugString(true), expr->toString(),
                 setActive);
@@ -202,17 +202,11 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   int starArgIndex = -1, kwstarArgIndex = -1;
   for (int i = 0; i < func->ast->args.size(); i++) {
-    // if (!known.empty() && known[i] && !partial)
-    // continue;
     if (startswith(func->ast->args[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
     else if (startswith(func->ast->args[i].name, "*"))
       starArgIndex = i, score -= 2;
   }
-  // seqassert(known.empty() || starArgIndex == -1 || !known[starArgIndex],
-  //           "partial *args");
-  // seqassert(known.empty() || kwstarArgIndex == -1 || !known[kwstarArgIndex],
-  //           "partial **kwargs");
 
   // 1. Assign positional arguments to slots
   // Each slot contains a list of arg's indices

@@ -868,9 +868,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(
           N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
     } else {
-      // For debugging purposes:
-      if (expr->member == "ticker")
-        ctx->findMethod(typ->name, expr->member);
+      // For debugging purposes: ctx->findMethod(typ->name, expr->member);
       error("cannot find '{}' in {}", expr->member, typ->toString());
     }
   }
@@ -1020,7 +1018,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       ai--;
     } else {
       // Case 3: Normal argument
-      // LOG("-> {}", expr->args[ai].value->toString());
       expr->args[ai].value = transform(expr->args[ai].value, true);
       // Unbound inType might become a generator that will need to be extracted, so
       // don't unify it yet.
@@ -1046,8 +1043,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                             ctx->bases.back().supers, expr->args);
     if (m.empty())
       error("no matching superf methods are available");
-    // LOG("found {} <- {}", ctx->bases.back().type->getFunc()->toString(),
-    // m[0]->toString());
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
     return transform(e, false, true);
   }
@@ -1285,7 +1280,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     }
     auto e = transform(expr->expr);
     unify(expr->type, e->getType());
-    // LOG("-- {} / {}", e->toString(), e->type->debugString(true));
     return e;
   }
 
@@ -1397,19 +1391,6 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     // Case 2. Normal function call.
     expr->args = args;
     unify(expr->type, calleeFn->args[0]); // function return type
-
-    // HACK: Intercept Partial.__new__ and replace it with partial type
-    // TODO: needs cleaner logic for this. Maybe just use normal record type
-    // and just track partialized function args, not the whole function as it's done
-    // now. Major caveat: needs rewiring of the function generic partialization logic.
-    // if (startswith(calleeFn->ast->name, TYPE_PARTIAL) &&
-    //     endswith(calleeFn->ast->name, ".__new__:0")) {
-    //   seqassert(expr->type->getRecord(), "expected a partial record");
-    //   auto r = expr->type->getRecord();
-    //   expr->type = std::make_shared<PartialType>(r,
-    //   ctx->cache->partials[r->name].first,
-    //                                              ctx->cache->partials[r->name].second);
-    // }
     return nullptr;
   }
 }
@@ -1837,12 +1818,6 @@ TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
       }
     }
     if (score != -1) {
-      // std::vector<std::string> ar;
-      // for (auto &a: args) {
-      //   if (a.first.empty()) ar.push_back(a.second->toString());
-      //   else ar.push_back(format("{}: {}", a.first, a.second->toString()));
-      // }
-      // LOG("- {} vs {}", m->toString(), join(ar, "; "));
       results.push_back(methods[mi]);
     }
   }
@@ -1969,7 +1944,6 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
   ctx->cache->functions[name].ast = ast;
   ctx->cache->functions[name].type = typ;
   prependStmts->push_back(ast);
-  // LOG("dispatch: {}", ast->toString(1));
   return typ;
 }
 

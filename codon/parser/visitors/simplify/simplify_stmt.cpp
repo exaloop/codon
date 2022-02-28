@@ -883,7 +883,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   StmtPtr autoDeducedInit = nullptr;
   Stmt *firstInit = nullptr;
   if (deduce && args.empty() && !extension) {
-    // LOG("deducing {}", stmt->name);
     for (auto sp : getClassMethods(stmt->suite))
       if (sp && sp->getFunction()) {
         firstInit = sp.get();
@@ -910,7 +909,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             ctx->cache->classes[canonicalName].fields.push_back({m, nullptr});
             args.emplace_back(Param{m, N<IdExpr>(varName), nullptr});
             argSubstitutions.push_back(substitutions.size() - 1);
-            // LOG("deduction: {}: {} <-> {}", stmt->name, m, name);
           }
           ctx->bases.back().deducedMembers = nullptr;
           break;
@@ -1069,8 +1067,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     preamble->globals.push_back(c->clone());
     c->suite = clone(suite);
-    // if (stmt->baseClasses.size())
-    // LOG("{} -> {}", stmt->name, c->toString(0));
+
   }
   stmts[0] = N<ClassStmt>(canonicalName, std::vector<Param>{}, N<SuiteStmt>(),
                           Attr({Attr::Extend}), std::vector<ExprPtr>{},

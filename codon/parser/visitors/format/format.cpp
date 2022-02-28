@@ -406,15 +406,6 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
 }
 
 void FormatVisitor::visit(ClassStmt *stmt) {
-  // if (cache &&
-  //     cache->realizationAsts.find(fstmt->name) != cache->realizationAsts.end()) {
-  //   fstmt = (const FunctionStmt *)(cache->realizationAsts[fstmt->name].get());
-  // } else if (cache) {
-  //   for (auto &real : cache->realizations[fstmt->name])
-  //     result += simplify(cache->realizationAsts[real.first]);
-  //   return;
-  // }
-
   std::vector<std::string> attrs;
 
   if (!stmt->attributes.has(Attr::Extend))

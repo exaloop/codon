@@ -111,7 +111,6 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
       }
     }
   }
-  // LOG("--> realizing {}", type->debugString(1));
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
   auto tv = TypecheckVisitor(typeCtx);

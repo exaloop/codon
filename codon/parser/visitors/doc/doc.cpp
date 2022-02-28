@@ -118,7 +118,6 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
     auto path = getAbsolutePath(f);
     ctx->setFilename(path);
     ast = ast::parseFile(shared->cache, path);
-    // LOG("parsing {}", f);
     DocVisitor(ctx).transformModule(std::move(ast));
   }
 
