@@ -1,29 +1,32 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @extend
 class str:
-# Magic methods
+    # Magic methods
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         h = 0
         p, n = self.ptr, self.len
         i = 0
         while i < n:
-            h = 31*h + int(p[i])
+            h = 31 * h + int(p[i])
             i += 1
         return h
 
-    def __lt__(self, other: str):
+    def __lt__(self, other: str) -> bool:
         return self._cmp(other) < 0
 
-    def __le__(self, other: str):
+    def __le__(self, other: str) -> bool:
         return self._cmp(other) <= 0
 
-    def __gt__(self, other: str):
+    def __gt__(self, other: str) -> bool:
         return self._cmp(other) > 0
 
-    def __ge__(self, other: str):
+    def __ge__(self, other: str) -> bool:
         return self._cmp(other) >= 0
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         v = List[str](len(self) + 2)
 
         q, qe = "'", "\\'"
@@ -41,32 +44,37 @@ class str:
         v.append(q)
         for c in self:
             d = c
-            if c == '\n': d = "\\n"
-            elif c == '\r': d = "\\r"
-            elif c == '\t': d = "\\t"
-            elif c == '\\': d = "\\\\"
-            elif c == q: d = qe
+            if c == "\n":
+                d = "\\n"
+            elif c == "\r":
+                d = "\\r"
+            elif c == "\t":
+                d = "\\t"
+            elif c == "\\":
+                d = "\\\\"
+            elif c == q:
+                d = qe
             else:
                 b = int(c.ptr[0])
                 if not (32 <= b <= 126):
-                    h = '0123456789abcdef'
+                    h = "0123456789abcdef"
                     v.append("\\x")
                     v.append(h[b // 16])
                     v.append(h[b % 16])
-                    d = ''
+                    d = ""
             if d:
                 v.append(d)
         v.append(q)
         return str.cat(v)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> str:
         if idx < 0:
             idx += len(self)
         if not (0 <= idx < len(self)):
             raise IndexError("string index out of range")
         return str(self.ptr + idx, 1)
 
-    def __getitem__(self, s: Slice):
+    def __getitem__(self, s: Slice) -> str:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
@@ -76,7 +84,7 @@ class str:
             start, stop, step, length = s.adjust_indices(len(self))
             return self._make_from_range(start, stop, step, length)
 
-    def _make_from_range(self, start: int, stop: int, step: int, length: int):
+    def _make_from_range(self, start: int, stop: int, step: int, length: int) -> str:
         p = Ptr[byte](length)
         j = 0
         for i in range(start, stop, step):
@@ -84,20 +92,20 @@ class str:
             j += 1
         return str(p, length)
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[str]:
         i = 0
         n = len(self)
         while i < n:
             yield self[i]
             i += 1
 
-    def __reversed__(self):
+    def __reversed__(self) -> Generator[str]:
         i = len(self) - 1
         while i >= 0:
             yield self[i]
             i -= 1
 
-    def __mul__(self, x: int):
+    def __mul__(self, x: int) -> str:
         total = x * self.len
         p = cobj(total)
         n = 0
@@ -106,7 +114,7 @@ class str:
             n += self.len
         return str(p, total)
 
-    def _cmp(self, other: str):
+    def _cmp(self, other: str) -> int:
         n = min(self.len, other.len)
         i = 0
         while i < n:
@@ -117,22 +125,24 @@ class str:
             i += 1
         return self.len - other.len
 
+
 import algorithms.strings as algorithms
+
 
 @extend
 class str:
-    def __contains__(self, pattern: str):
+    def __contains__(self, pattern: str) -> bool:
         return self.find(pattern, 0, len(self)) >= 0
 
-# Helper methods
+    # Helper methods
 
-    def _slice(self, i: int, j: int):
+    def _slice(self, i: int, j: int) -> str:
         return str(self.ptr + i, j - i)
 
-    def join(self, l: Generator[str]):
+    def join(self, l: Generator[str]) -> str:
         if len(self) == 0:
             return str.cat(list(l))
-        v = List[str]()
+        v = []
         for a in l:
             v.append(a)
             v.append(self)
@@ -140,9 +150,9 @@ class str:
             del v[-1]
         return str.cat(v)
 
-    def join(self, l: List[str]):
+    def join(self, l: List[str]) -> str:
         if len(l) == 0:
-            return ''
+            return ""
         if len(l) == 1:
             return l[0]
         if len(self) == 0:
@@ -356,10 +366,10 @@ class str:
                     s.append(str(chr(_C.tolower(int(self.ptr[i])))))
                 else:
                     s.append(self[i])
-            return ''.join(s)
+            return "".join(s)
 
         # Empty string
-        return ''
+        return ""
 
     def isdecimal(self) -> bool:
         """
@@ -388,7 +398,7 @@ class str:
         # Empty string
         n = len(self)
         if n == 0:
-            return ''
+            return ""
         p = Ptr[byte](n)
         for i in range(n):
             p[i] = byte(_C.tolower(int(self.ptr[i])))
@@ -403,7 +413,7 @@ class str:
         # Empty string
         n = len(self)
         if n == 0:
-            return ''
+            return ""
         p = Ptr[byte](n)
         for i in range(n):
             p[i] = byte(_C.toupper(int(self.ptr[i])))
@@ -441,7 +451,7 @@ class str:
         # Empty string
         n = len(self)
         if n == 0:
-            return ''
+            return ""
         p = Ptr[byte](n)
         for i in range(n):
             if _C.islower(int(self.ptr[i])):
@@ -464,7 +474,7 @@ class str:
         # Empty string
         n = len(self)
         if n == 0:
-            return ''
+            return ""
 
         p = Ptr[byte](n)
         for i in range(n):
@@ -499,7 +509,7 @@ class str:
         """
         return self.isdecimal()
 
-    def ljust(self, width: int, fillchar: str = ' ') -> str:
+    def ljust(self, width: int, fillchar: str = " ") -> str:
         """
         ljust(width[, fillchar]) -> string
 
@@ -511,7 +521,7 @@ class str:
             return self
         return self + (fillchar * (width - len(self)))
 
-    def rjust(self, width: int, fillchar: str = ' ') -> str:
+    def rjust(self, width: int, fillchar: str = " ") -> str:
         """
         rjust(width[, fillchar]) -> string
 
@@ -523,7 +533,7 @@ class str:
             return self
         return (fillchar * (width - len(self))) + self
 
-    def center(self, width: int, fillchar: str = ' ') -> str:
+    def center(self, width: int, fillchar: str = " ") -> str:
         """
         str.center(width[, fillchar]) -> string
 
@@ -537,7 +547,7 @@ class str:
         left_pad = pad // 2
         right_pad = width - len(self) - left_pad
 
-        return ''.join([fillchar * left_pad, self, fillchar * right_pad])
+        return "".join([fillchar * left_pad, self, fillchar * right_pad])
 
     def zfill(self, width: int) -> str:
         """
@@ -551,23 +561,23 @@ class str:
         if width <= len(self):
             return self
 
-        s = List[str]()
-        if self and (self[0] == '+' or self[0] == '-'):
+        s = []
+        if self and (self[0] == "+" or self[0] == "-"):
             # move sign to beginning of string
             s.append(self[0])
             sign = True
 
         fill = width - len(self)
 
-        s.append('0' * fill)
+        s.append("0" * fill)
 
         if sign:
             s.append(self[1:])
         else:
             s.append(self)
-        return ''.join(s)
+        return "".join(s)
 
-    def count(self, sub: str, start: int = 0, end: int = 0x7fffffffffffffff) -> int:
+    def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.count(sub[, start[, end]]) -> int
 
@@ -575,13 +585,14 @@ class str:
         bytes str[start:end].  Optional arguments start and end are interpreted
         as in slice notation.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         count = 0
         for _ in algorithms.filter_overlaps(self[start:end]._search(sub), len(sub)):
             count += 1
         return count
 
-    def find(self, sub: str, start: int = 0, end: int = 0x7fffffffffffffff) -> int:
+    def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.find(sub [,start [,end]]) -> int
 
@@ -591,21 +602,22 @@ class str:
 
         Return -1 on failure.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         pos = str._getfirst(self[start:end]._search(sub))
 
         if pos < 0:
             return -1
 
-        if sub == '' and start > len(self):
+        if sub == "" and start > len(self):
             return -1
 
-        if sub == '' and (start <= end <= len(self)):
+        if sub == "" and (start <= end <= len(self)):
             return start
 
         return pos + start  # add start position because of truncation
 
-    def rfind(self, sub: str, start: int = 0, end: int = 0x7fffffffffffffff) -> int:
+    def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.rfind(sub [,start [,end]]) -> int
 
@@ -615,13 +627,14 @@ class str:
 
         Return -1 on failure.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         pos = str._getfirst(self[start:end]._rsearch(sub))
 
         if pos < 0:
             return -1
 
-        if sub == '' and start > len(self):
+        if sub == "" and start > len(self):
             return -1
 
         return pos + start  # add start position because of truncation
@@ -639,14 +652,14 @@ class str:
 
         # is not a letter or _
         if not self[0].isalpha():
-            if self[0] != '_':
+            if self[0] != "_":
                 return False
 
-        if self[0].isalpha() or self[0] == '_':
+        if self[0].isalpha() or self[0] == "_":
             for i in range(1, len(self)):
                 if not self[i].isalpha():
                     if not self[i].isdecimal():
-                        if self[i] != '_':
+                        if self[i] != "_":
                             return False
 
         return True
@@ -663,7 +676,7 @@ class str:
                 return False
         return True
 
-    def _has_char(self, chars: str):
+    def _has_char(self, chars: str) -> bool:
         if chars:
             for c in chars:
                 if self[0] == c:
@@ -696,7 +709,7 @@ class str:
         i = len(self) - 1
         while i >= 0 and self[i]._has_char(chars):
             i -= 1
-        return self[:i+1]
+        return self[: i + 1]
 
     def strip(self, chars: str = "") -> str:
         """
@@ -720,12 +733,12 @@ class str:
         pos = str._getfirst(self._search(sep))
 
         if pos < 0:
-            return self,'',''
+            return self, "", ""
 
         if not pos:
-            return '',  sep, self[pos+len(sep):]
+            return "", sep, self[pos + len(sep) :]
 
-        return self[:pos],sep,self[pos+len(sep):]
+        return self[:pos], sep, self[pos + len(sep) :]
 
     def rpartition(self, sep: str) -> Tuple[str, str, str]:
         """
@@ -741,12 +754,12 @@ class str:
             pos1 = pos
 
         if pos0 < 0:
-            return '', '', self
+            return "", "", self
 
         if not pos0:
-            return '',  sep, self[pos1+len(sep):]
+            return "", sep, self[pos1 + len(sep) :]
 
-        return self[:pos1], sep, self[pos1+len(sep):]
+        return self[:pos1], sep, self[pos1 + len(sep) :]
 
     def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
         """
@@ -759,17 +772,19 @@ class str:
         from the result.
         """
         if not sep:
-            return self._split_whitespace(maxsplit if maxsplit >= 0 else 0x7fffffffffffffff)
-        sepx = ~sep
+            return self._split_whitespace(
+                maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
+            )
+        sep: str = sep
 
-        li = list(algorithms.filter_overlaps(self._search(sepx), len(sepx)))
-        str_split = List[str]()
+        li = list(algorithms.filter_overlaps(self._search(sep), len(sep)))
+        str_split = []
 
         # no delimiter found
         if len(li) == 0:
             return [self]
 
-        if len(sepx) > len(self):
+        if len(sep) > len(self):
             return [self]
 
         if maxsplit == 0:
@@ -782,22 +797,22 @@ class str:
         # append first part of string
         # if sep is found at index 0, add '' to separate
         if li[0] == 0:
-            str_split.append('')
+            str_split.append("")
         else:
-            str_split.append(self[:li[0]])
+            str_split.append(self[: li[0]])
 
         # split the rest of the string according to separator
         if len(li) > 1 and maxsplit > 1:
             for j in range(1, maxsplit):
                 # when separators are beside each other, append '' to list
                 if li[j] - 1 == prev:
-                    str_split.append('')
+                    str_split.append("")
                 else:
-                    str_split.append(self[prev+len(sepx):li[j]])
+                    str_split.append(self[prev + len(sep) : li[j]])
                 prev = li[j]
 
         if prev != len(self):
-            str_split.append(self[prev+len(sepx):])
+            str_split.append(self[prev + len(sep) :])
 
         return str_split
 
@@ -812,16 +827,20 @@ class str:
         is a separator.
         """
         if not sep:
-            return self._rsplit_whitespace(maxsplit if maxsplit >= 0 else 0x7fffffffffffffff)
-        sepx = ~sep
+            return self._rsplit_whitespace(
+                maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
+            )
+        sep: str = sep
 
-        li = list(algorithms.rfilter_overlaps(reversed(list(self._search(sepx))), len(sepx)))
-        str_split = List[str]()
+        li = list(
+            algorithms.rfilter_overlaps(reversed(list(self._search(sep))), len(sep))
+        )
+        str_split = []
         end_of_li = len(li) - 1
 
         if len(li) == 0:
             return [self]
-        if len(sepx) > len(self):
+        if len(sep) > len(self):
             return [self]
         if maxsplit == 0:
             return [self]
@@ -832,19 +851,19 @@ class str:
         prev = li[0]
         # append first part of string
         # if sep is found in the last index, add '' to separate
-        if prev == len(self) - len(sepx):
-            str_split.append('')
+        if prev == len(self) - len(sep):
+            str_split.append("")
         else:
-            str_split.append(self[prev+len(sepx):])
+            str_split.append(self[prev + len(sep) :])
 
         # split the rest of the string according to separator
         if len(li) > 1 and maxsplit > 1:
             for j in range(1, maxsplit):
                 # when separators are beside each other, append '' to list
                 if li[j] + 1 == prev:
-                    str_split.append('')
+                    str_split.append("")
                 else:
-                    str_split.append(self[li[j]+len(sepx):prev])
+                    str_split.append(self[li[j] + len(sep) : prev])
                 prev = li[j]
 
         if prev != 0:
@@ -852,9 +871,9 @@ class str:
         else:
             # NOT PICKING UP '' at start of string so manually putting it in
             if li[end_of_li] == 0:
-                str_split.append('')
+                str_split.append("")
             else:
-                str_split.append(self[:li[0]])
+                str_split.append(self[: li[0]])
         str_split.reverse()
         return str_split
 
@@ -866,78 +885,79 @@ class str:
         Line breaks are not included in the resulting list unless keepends
         is given and true.
         """
-        line_split = List[str]()
+        line_split = []
 
         prev = 0
         for i in range(len(self)):
             # finding '\n' by itself and dealing with '\r\n'
             if i != 0:
                 # not equal to '\r\n'
-                if self[i] == '\n' and self[i-1] != '\r':
+                if self[i] == "\n" and self[i - 1] != "\r":
                     if keepends:
-                        line_split.append(self[prev:i+1])
+                        line_split.append(self[prev : i + 1])
                     else:
                         # empty string
                         if len(self[prev:i]) == 0:
-                            line_split.append('')
+                            line_split.append("")
                         else:
                             line_split.append(self[prev:i])
-                    prev = i+1
+                    prev = i + 1
                     continue
                 # equal to '\r\n'
-                elif self[i] == '\n' and self[i-1] == '\r':
+                elif self[i] == "\n" and self[i - 1] == "\r":
                     if keepends:
-                        line_split.append(self[prev:i+1])
+                        line_split.append(self[prev : i + 1])
 
                     else:
                         # empty string
-                        if len(self[prev:i-1]) == 0:
-                            line_split.append('')
+                        if len(self[prev : i - 1]) == 0:
+                            line_split.append("")
                         else:
-                            line_split.append(self[prev:i-1])
-                    prev = i+1
+                            line_split.append(self[prev : i - 1])
+                    prev = i + 1
                     continue
             # '\n' exisits at the beginning of string
-            elif self[i] == '\n':
+            elif self[i] == "\n":
                 if keepends:
                     line_split.append(self[i])
                 else:
-                    line_split.append('')
-                prev = i+1
+                    line_split.append("")
+                prev = i + 1
                 continue
 
             # finding '\r' by itself
-            if i != len(self)-1:
+            if i != len(self) - 1:
                 # not equal to '\r\n'
-                if self[i] == '\r' and self[i+1] != '\n':
+                if self[i] == "\r" and self[i + 1] != "\n":
                     if keepends:
-                        line_split.append(self[prev:i+1])
+                        line_split.append(self[prev : i + 1])
                     else:
                         # empty string
                         if len(self[prev:i]) == 0:
-                            line_split.append('')
+                            line_split.append("")
                         else:
                             line_split.append(self[prev:i])
-                    prev = i+1
+                    prev = i + 1
                     continue
             # '\r' exisits at the end of string
-            elif self[i] == '\r':
-                if self[i-1] == '\n' or self[i-1] == '\r':
+            elif self[i] == "\r":
+                if self[i - 1] == "\n" or self[i - 1] == "\r":
                     if keepends:
                         line_split.append(self[i])
                     else:
-                        line_split.append('')
-                    prev = i+1
+                        line_split.append("")
+                    prev = i + 1
                     break
-                prev = i+1
+                prev = i + 1
                 break
         if prev < len(self):
             line_split.append(self[prev:])
 
         return line_split
 
-
-    def startswith(self, prefix: str, start: int = 0, end: int = 0x7fffffffffffffff) -> bool:
+    def startswith(
+        self, prefix: str, start: int = 0, end: Optional[int] = None
+    ) -> bool:
         """
         str.startswith(prefix[, start[, end]]) -> bool
 
@@ -945,6 +965,7 @@ class str:
         With optional start, test str beginning at that position.
         With optional end, stop comparing str at that position.
         """
+        end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
         elif start < 0:
@@ -959,12 +980,12 @@ class str:
             return False
 
         # prefix is an empty string
-        if prefix == '':
+        if prefix == "":
             return True
 
-        return prefix == self[start:start + len(prefix)]
+        return prefix == self[start : start + len(prefix)]
 
-    def endswith(self, suffix: str, start: int = 0, end: int = 0x7fffffffffffffff) -> bool:
+    def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
         """
         str.endswith(prefix[, start[, end]]) -> bool
 
@@ -972,6 +993,7 @@ class str:
         With optional start, test str beginning at that position.
         With optional end, stop comparing str at that position.
         """
+        end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
         elif start < 0:
@@ -991,17 +1013,18 @@ class str:
             return False
 
         # prefix is an empty string
-        if suffix == '':
+        if suffix == "":
             return True
 
-        return suffix == self[start:start + len(suffix)]
+        return suffix == self[start : start + len(suffix)]
 
-    def index(self, sub: str, start: int = 0, end: int = 0x7fffffffffffffff) -> int:
+    def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.index(sub [,start [,end]]) -> int
 
         Like str.find() but raise ValueError when the substring is not found.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         i = self.find(sub, start, end)
         if i == -1:
@@ -1009,12 +1032,13 @@ class str:
         else:
             return i
 
-    def rindex(self, sub: str, start: int = 0, end: int = 0x7fffffffffffffff) -> int:
+    def rindex(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
         str.index(sub [,start [,end]]) -> int
 
         Like str.find() but raise ValueError when the substring is not found.
         """
+        end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         i = self.rfind(sub, start, end)
         if i == -1:
@@ -1065,26 +1089,26 @@ class str:
         If tabsize is not given, a tab size of 8 characters is assumed.
         """
         incr = 0
-        i = 0   # chars up to and including most recent \n or \r
-        j = 0   # chars since most recent \n or \r (use in tab calculations)
-        u = List[str]()
-        j = 0   # same as first pass
+        i = 0  # chars up to and including most recent \n or \r
+        j = 0  # chars since most recent \n or \r (use in tab calculations)
+        u = []
+        j = 0  # same as first pass
 
         # create output string and fill it
         for p in range(len(self)):
-            if self[p] == '\t':
+            if self[p] == "\t":
                 if tabsize > 0:
                     i = tabsize - (j % tabsize)
                     j += i
                     while i != 0:
-                        u.append(' ')
+                        u.append(" ")
                         i -= 1
             else:
                 u.append(self[p])
                 j += 1
-                if self[p] == '\n' or self[p] == '\r':
+                if self[p] == "\n" or self[p] == "\r":
                     j = 0
-        return ''.join(u)
+        return "".join(u)
 
     def translate(self, table) -> str:
         """
@@ -1101,16 +1125,22 @@ class str:
             if li[i] in table:
                 li[i] = table[li[i]]
 
-        translate_str = ''.join(li)
+        translate_str = "".join(li)
         return translate_str
 
-# Internal helpers
+    # Internal helpers
 
-    def _isspace(b: byte):
-        return b == byte(32) or b == byte(9) or b == byte(10) or \
-               b == byte(11) or b == byte(12) or b == byte(13)
+    def _isspace(b: byte) -> bool:
+        return (
+            b == byte(32)
+            or b == byte(9)
+            or b == byte(10)
+            or b == byte(11)
+            or b == byte(12)
+            or b == byte(13)
+        )
 
-    def _search(self, pattern: str):
+    def _search(self, pattern: str) -> Generator[int]:
         if len(pattern) == 1:
             c = pattern.ptr[0]
             i = 0
@@ -1122,9 +1152,9 @@ class str:
             if len(pattern) <= 5:
                 yield from algorithms.string_search_slow(self, pattern)
             else:
-                yield from algorithms.string_search_KMP(self, pattern)
+                yield from algorithms.string_search_kmp(self, pattern)
 
-    def _rsearch(self, pattern: str):
+    def _rsearch(self, pattern: str) -> Generator[int]:
         if len(pattern) == 1:
             c = pattern.ptr[0]
             i = len(self) - 1
@@ -1134,14 +1164,14 @@ class str:
                 i -= 1
         yield from algorithms.rstring_search_slow(self, pattern)
 
-    def _getfirst(v: Generator[int]):
+    def _getfirst(v: Generator[int]) -> int:
         n = -1
         if not v.done():
             n = v.next()
         v.destroy()
         return n
 
-    def _correct_indices(self, start: int, end: int):
+    def _correct_indices(self, start: int, end: int) -> Tuple[int, int]:
         n = len(self)
         if start < 0:
             start += n
@@ -1153,7 +1183,7 @@ class str:
                 end = 0
         return (start, end)
 
-    def _split_whitespace(self, maxcount: int):
+    def _split_whitespace(self, maxcount: int) -> List[str]:
         PREALLOC_MAX = 12
         l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
@@ -1180,7 +1210,7 @@ class str:
 
         return l
 
-    def _rsplit_whitespace(self, maxcount: int):
+    def _rsplit_whitespace(self, maxcount: int) -> List[str]:
         PREALLOC_MAX = 12
         l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
@@ -1197,13 +1227,13 @@ class str:
             i -= 1
             while i >= 0 and not str._isspace(self.ptr[i]):
                 i -= 1
-            l.append(self._slice(i+1, j+1))
+            l.append(self._slice(i + 1, j + 1))
 
         if i >= 0:
             while i >= 0 and str._isspace(self.ptr[i]):
                 i -= 1
             if i >= 0:
-                l.append(self._slice(0, i+1))
+                l.append(self._slice(0, i + 1))
 
         l.reverse()
         return l

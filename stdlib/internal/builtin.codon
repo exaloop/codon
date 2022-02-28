@@ -1,18 +1,26 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.gc import alloc_atomic, free
+from internal.types.optional import unwrap
+
 
 @tuple
 class object:
-    def __repr__(self):
-        return '<object>'
+    def __repr__(self) -> str:
+        return "<object>"
 
-def id(x):
+
+def id(x) -> int:
     if isinstance(x, ByRef):
         return int(x.__raw__())
     else:
         return 0
 
+
 _stdout = _C.seq_stdout()
-def print(*args, sep: str = ' ', end: str = '\n', file=_stdout, flush: bool = False):
+
+
+def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
     """
     Print args to the text stream file.
     """
@@ -31,6 +39,7 @@ def print(*args, sep: str = ' ', end: str = '\n', file=_stdout, flush: bool = Fa
     if flush:
         _C.fflush(fp)
 
+
 def min(*args):
     if staticlen(args) == 0:
         raise ValueError("empty sequence")
@@ -40,7 +49,8 @@ def min(*args):
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i < s: s = i
+                if i < s:
+                    s = i
             x.destroy()
             return s
         else:
@@ -52,8 +62,10 @@ def min(*args):
     else:
         m = args[0]
         for i in args:
-            if i < m: m = i
+            if i < m:
+                m = i
         return m
+
 
 def max(*args):
     if staticlen(args) == 0:
@@ -64,7 +76,8 @@ def max(*args):
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i > s: s = i
+                if i > s:
+                    s = i
             x.destroy()
             return s
         else:
@@ -76,14 +89,17 @@ def max(*args):
     else:
         m = args[0]
         for i in args:
-            if i > m: m = i
+            if i > m:
+                m = i
         return m
 
-def len(x):
+
+def len(x) -> int:
     """
     Return the length of x
     """
     return x.__len__()
+
 
 def iter(x):
     """
@@ -91,11 +107,13 @@ def iter(x):
     """
     return x.__iter__()
 
+
 def copy(x):
     """
     Return a copy of x
     """
     return x.__copy__()
+
 
 def abs(x):
     """
@@ -103,19 +121,24 @@ def abs(x):
     """
     return x.__abs__()
 
-def hash(x):
+
+def hash(x) -> int:
     """
     Returns hashed value only for immutable objects
     """
     return x.__hash__()
 
-def ord(s: str):
+
+def ord(s: str) -> int:
     """
     Return an integer representing the Unicode code point of s
     """
     if len(s) != 1:
-        raise TypeError("ord() expected a character, but string of length " + str(len(s)) + " found")
+        raise TypeError(
+            f"ord() expected a character, but string of length {len(s)} found"
+        )
     return int(s.ptr[0])
+
 
 def divmod(a, b):
     if hasattr(a, "__divmod__"):
@@ -123,7 +146,8 @@ def divmod(a, b):
     else:
         return (a // b, a % b)
 
-def chr(i: int):
+
+def chr(i: int) -> str:
     """
     Return a string representing a character whose Unicode
     code point is an integer
@@ -132,18 +156,20 @@ def chr(i: int):
     p[0] = byte(i)
     return str(p, 1)
 
-def next[T](g: Generator[T], default: Optional[T] = None):
+
+def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     """
     Return the next item from g
     """
     if g.done():
         if default:
-            return ~default
+            return unwrap(default)
         else:
             raise StopIteration()
     return g.next()
 
-def any(x):
+
+def any(x: Generator[T], T: type) -> bool:
     """
     Returns True if any item in x is true,
     False otherwise
@@ -153,7 +179,8 @@ def any(x):
             return True
     return False
 
-def all(x):
+
+def all(x: Generator[T], T: type) -> bool:
     """
     Returns True when all elements in x are true,
     False otherwise
@@ -162,6 +189,7 @@ def all(x):
         if not a:
             return False
     return True
+
 
 def zip(*args):
     """
@@ -182,13 +210,15 @@ def zip(*args):
         for i in iters:
             i.destroy()
 
-def filter[T](f: Callable[[T], bool], x: Generator[T]):
+
+def filter(f: Callable[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     """
     Returns all a from the iterable x that are filtered by f
     """
     for a in x:
         if f(a):
             yield a
+
 
 def map(f, *args):
     """
@@ -203,6 +233,7 @@ def map(f, *args):
         for a in zip(*args):
             yield f(*a)
 
+
 def enumerate(x, start: int = 0):
     """
     Creates a tuple containing a count (from start which defaults
@@ -210,8 +241,9 @@ def enumerate(x, start: int = 0):
     """
     i = start
     for a in x:
-        yield (i,a)
+        yield (i, a)
         i += 1
+
 
 def echo(x):
     """
@@ -219,6 +251,7 @@ def echo(x):
     """
     print x
     return x
+
 
 def reversed(x):
     """
@@ -232,13 +265,15 @@ def reversed(x):
             yield x[i]
             i -= 1
 
-def round(x, n = 0):
+
+def round(x, n=0):
     """
     Return the x rounded off to the given
     n digits after the decimal point.
     """
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
+
 
 def sum(xi):
     """
@@ -254,14 +289,15 @@ def sum(xi):
     else:
         x.destroy()
 
+
 def repr(x):
-    """    Return the string representation of x
-    """
+    """Return the string representation of x"""
     return x.__repr__()
 
-def _int_format(a: int, base: int, prefix: str = ''):
+
+def _int_format(a: int, base: int, prefix: str = ""):
     assert base == 2 or base == 8 or base == 10 or base == 16
-    chars = '0123456789abcdef-'
+    chars = "0123456789abcdef-"
 
     b = a
     digits = 0
@@ -295,25 +331,30 @@ def _int_format(a: int, base: int, prefix: str = ''):
 
     return str(p, sz)
 
+
 def bin(n):
-    return _int_format(n.__index__(), 2, '0b')
+    return _int_format(n.__index__(), 2, "0b")
+
 
 def oct(n):
-    return _int_format(n.__index__(), 8, '0o')
+    return _int_format(n.__index__(), 8, "0o")
+
 
 def hex(n):
-    return _int_format(n.__index__(), 16, '0x')
+    return _int_format(n.__index__(), 16, "0x")
+
 
 @extend
 class int:
     def _from_str(s: str, base: int):
         from C import strtoll(cobj, Ptr[cobj], i32) -> int
+
         if base < 0 or base > 36 or base == 1:
             raise ValueError("int() base must be >= 2 and <= 36, or 0")
 
         buf = __array__[byte](32)
         n = len(s)
-        need_dyn_alloc = (n >= len(buf))
+        need_dyn_alloc = n >= len(buf)
 
         p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
         str.memcpy(p, s.ptr, n)
@@ -326,7 +367,9 @@ class int:
             free(p)
 
         if end != p + n:
-            raise ValueError("invalid literal for int() with base " + str(base) + ": " + s)
+            raise ValueError(
+                f"invalid literal for int() with base {base}: {s}"
+            )
 
         return result
 

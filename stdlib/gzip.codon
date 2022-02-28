@@ -1,2 +1,7 @@
-def open(path: str, mode: str = 'r'):
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+from internal.file import gzFile
+
+
+def open(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)

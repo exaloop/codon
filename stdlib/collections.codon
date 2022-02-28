@@ -1,8 +1,14 @@
-class deque[T]:
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+from internal.types.optional import unwrap
+
+
+class deque:
     _arr: Array[T]
     _head: int
     _tail: int
     _maxlen: int
+    T: type
 
     def __init__(self, arr: Array[T], head: int, tail: int, maxlen: int):
         self._arr = arr
@@ -34,7 +40,7 @@ class deque[T]:
             self.append(i)
 
     @property
-    def maxlen(self):
+    def maxlen(self) -> int:
         return self._maxlen
 
     def _double_cap(self):
@@ -55,10 +61,10 @@ class deque[T]:
         if not self:
             raise IndexError("pop from an empty deque")
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self._head != self._tail
 
-    def __len__(self):
+    def __len__(self) -> int:
         return (self._tail - self._head) & (len(self._arr) - 1)
 
     def appendleft(self, x: T):
@@ -77,13 +83,13 @@ class deque[T]:
         if self._head == self._tail:
             self._double_cap()
 
-    def popleft(self):
+    def popleft(self) -> T:
         self._check_not_empty()
         res = self._arr[self._head]
         self._head = (self._head + 1) & (len(self._arr) - 1)
         return res
 
-    def pop(self):
+    def pop(self) -> T:
         self._check_not_empty()
         self._tail = (self._tail - 1) & (len(self._arr) - 1)
         return self._arr[self._tail]
@@ -92,28 +98,28 @@ class deque[T]:
         self._head = 0
         self._tail = 0
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[T]:
         i = self._head
         while i != self._tail:
             yield self._arr[i]
             i = (i + 1) & (len(self._arr) - 1)
 
-    def __contains__(self, x: T):
+    def __contains__(self, x: T) -> bool:
         for i in self:
             if i == x:
                 return True
         return False
 
-    def __deepcopy__(self):
+    def __deepcopy__(self) -> deque[T]:
         return deque(i.__deepcopy__() for i in self)
 
-    def __copy__(self):
+    def __copy__(self) -> deque[T]:
         return deque[T](copy(self._arr), self._head, self._tail, self._maxlen)
 
-    def copy(self):
+    def copy(self) -> deque[T]:
         return self.__copy__()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(List[T](iter(self)))
 
     def _idx_check(self, idx: int, msg: str):
@@ -121,11 +127,11 @@ class deque[T]:
             raise IndexError(msg)
 
     @property
-    def left(self):
+    def left(self) -> T:
         self._idx_check(0, "list index out of range")
         return self._arr[self._head]
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> T:
         if idx < 0:
             idx += len(self)
         self._idx_check(idx, "list index out of range")
@@ -138,32 +144,34 @@ class deque[T]:
             assert 0 <= idx < self._tail
             return self._arr[idx]
 
+
 @tuple
-class _CounterItem[T]:
+class _CounterItem:
     element: T
     count: int
+    T: type
 
-    def __eq__(self, other: _CounterItem[T]):
+    def __eq__(self, other: _CounterItem[T]) -> bool:
         return self.count == other.count
 
-    def __ne__(self, other: _CounterItem[T]):
+    def __ne__(self, other: _CounterItem[T]) -> bool:
         return self.count != other.count
 
-    def __lt__(self, other: _CounterItem[T]):
+    def __lt__(self, other: _CounterItem[T]) -> bool:
         return self.count < other.count
 
-    def __gt__(self, other: _CounterItem[T]):
+    def __gt__(self, other: _CounterItem[T]) -> bool:
         return self.count > other.count
 
-    def __le__(self, other: _CounterItem[T]):
+    def __le__(self, other: _CounterItem[T]) -> bool:
         return self.count <= other.count
 
-    def __ge__(self, other: _CounterItem[T]):
+    def __ge__(self, other: _CounterItem[T]) -> bool:
         return self.count >= other.count
 
-class Counter[T](Dict[T,int]):
-    def _add(self, element: T):
-        self.increment(element)
+
+class Counter(Dict[T, int]):
+    T: type
 
     def __init__(self, elements: Generator[T]):
         self._init()
@@ -172,15 +180,15 @@ class Counter[T](Dict[T,int]):
     def __init__(self, other: Counter[T]):
         self._init_from(other)
 
-    def __init__(self, other: Dict[T,int]):
+    def __init__(self, other: Dict[T, int]):
         self._init_from(other)
 
-    def elements(self):
-        for k,v in self.items():
+    def elements(self) -> Generator[T]:
+        for k, v in self.items():
             for i in range(v):
                 yield k
 
-    def most_common(self, n: Optional[int] = None) -> List[Tuple[T,int]]:
+    def most_common(self, n: Optional[int] = None) -> List[Tuple[T, int]]:
         if len(self) == 0:
             return List[_CounterItem](capacity=0)
 
@@ -192,23 +200,24 @@ class Counter[T](Dict[T,int]):
             return v
         else:
             from heapq import heapify, heapreplace
-            m = ~n
 
-            if m == 1:
+            n: int = n
+
+            if n == 1:
                 top: Optional[_CounterItem] = None
                 for t in self.items():
                     if top is None or t[1] > top.count:
                         top = t
-                return [~top]
+                return [unwrap(top)]
 
-            if m <= 0:
+            if n <= 0:
                 return List[_CounterItem](capacity=0)
 
-            result = List[_CounterItem](capacity=m)
+            result = List[_CounterItem](capacity=n)
             for t in self.items():
-                if len(result) < m:
+                if len(result) < n:
                     result.append(t)
-                    if len(result) == m:
+                    if len(result) == n:
                         heapify(result)
                 else:
                     if result[0] < t:
@@ -217,41 +226,40 @@ class Counter[T](Dict[T,int]):
             result.sort(reverse=True)
             return result
 
-
     def subtract(self, elements: Generator[T]):
         for a in elements:
             self.increment(a, -1)
 
     def subtract(self, other: Counter[T]):
-        for k,v in other.items():
+        for k, v in other.items():
             self.increment(k, -v)
 
-    def subtract(self, other: Dict[T,int]):
-        for k,v in other.items():
+    def subtract(self, other: Dict[T, int]):
+        for k, v in other.items():
             self.increment(k, -v)
 
     def update(self, elements: Generator[T]):
         for a in elements:
-            self._add(a)
+            self.increment(a)
 
     def update(self, other: Counter[T]):
-        for k,v in other.items():
+        for k, v in other.items():
             self.increment(k, by=v)
 
-    def update(self, other: Dict[T,int]):
-        for k,v in other.items():
+    def update(self, other: Dict[T, int]):
+        for k, v in other.items():
             self.increment(k, by=v)
 
     def update(self):
         pass
 
-    def total(self):
+    def total(self) -> int:
         m = 0
         for v in self.values():
             m += v
         return m
 
-    def __getitem__(self, key: T):
+    def __getitem__(self, key: T) -> int:
         return self.get(key, 0)
 
     def __delitem__(self, key: T):
@@ -259,93 +267,93 @@ class Counter[T](Dict[T,int]):
         if x != self._kh_end():
             self._kh_del(x)
 
-    def __eq__(self, other: Counter[T]):
+    def __eq__(self, other: Counter[T]) -> bool:
         if self.__len__() != other.__len__():
             return False
-        for k,v in self.items():
+        for k, v in self.items():
             if k not in other or other[k] != v:
                 return False
         return True
 
-    def __ne__(self, other: Counter[T]):
+    def __ne__(self, other: Counter[T]) -> bool:
         return not (self == other)
 
-    def __copy__(self):
+    def __copy__(self) -> Counter[T]:
         return Counter[T](self)
 
-    def _del_non_positives(self):
-        for k,v in self.items():
-            if v <= 0:
-                del self[k]
-
-    def __iadd__(self, other: Counter[T]):
-        for k,v in other.items():
+    def __iadd__(self, other: Counter[T]) -> Counter[T]:
+        for k, v in other.items():
             self.increment(k, by=v)
         self._del_non_positives()
         return self
 
-    def __isub__(self, other: Counter[T]):
-        for k,v in other.items():
+    def __isub__(self, other: Counter[T]) -> Counter[T]:
+        for k, v in other.items():
             self.increment(k, by=-v)
         self._del_non_positives()
         return self
 
-    def __iand__(self, other: Counter[T]):
-        for k,v in other.items():
+    def __iand__(self, other: Counter[T]) -> Counter[T]:
+        for k, v in other.items():
             self[k] = min(self.get(k, 0), v)
         self._del_non_positives()
         return self
 
-    def __ior__(self, other: Counter[T]):
+    def __ior__(self, other: Counter[T]) -> Counter[T]:
         self._del_non_positives()
-        for k,v in other.items():
+        for k, v in other.items():
             self[k] = max(self.get(k, 0), v)
         self._del_non_positives()
         return self
 
-    def __pos__(self):
+    def __pos__(self) -> Counter[T]:
         result = Counter[T]()
         result.resize(self._n_buckets)
-        for k,v in self.items():
+        for k, v in self.items():
             if v > 0:
                 result[k] = v
         return result
 
-    def __neg__(self):
+    def __neg__(self) -> Counter[T]:
         result = Counter[T]()
         result.resize(self._n_buckets)
-        for k,v in self.items():
+        for k, v in self.items():
             if v < 0:
                 result[k] = -v
         return result
 
-    def __add__(self, other: Counter[T]):
+    def __add__(self, other: Counter[T]) -> Counter[T]:
         result = copy(self)
         result += other
         return result
 
-    def __sub__(self, other: Counter[T]):
+    def __sub__(self, other: Counter[T]) -> Counter[T]:
         result = copy(self)
         result -= other
         return result
 
-    def __and__(self, other: Counter[T]):
+    def __and__(self, other: Counter[T]) -> Counter[T]:
         result = copy(self)
         result &= other
         return result
 
-    def __or__(self, other: Counter[T]):
+    def __or__(self, other: Counter[T]) -> Counter[T]:
         result = copy(self)
         result |= other
         return result
 
-    def __dict_do_op_throws__[F, Z](self, key: T, other: Z, op: F):
+    def __dict_do_op_throws__(self, key: T, other: Z, op: F, F: type, Z: type):
         self.__dict_do_op__(key, other, 0, op)
+
+    def _del_non_positives(self):
+        for k, v in self.items():
+            if v <= 0:
+                del self[k]
 
 
 @extend
 class Dict:
-    def __init__(self: Dict[K,int], other: Counter[K]):
+    def __init__(self: Dict[K, int], other: Counter[K]):
         self._init_from(other)
 
 

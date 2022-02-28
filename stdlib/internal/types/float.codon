@@ -1,24 +1,30 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.attributes import commutative
 from internal.gc import alloc_atomic, free
 from internal.types.complex import complex
 
+
 @pure
 @C
-def seq_str_float(a: float) -> str: pass
+def seq_str_float(a: float) -> str:
+    pass
+
 
 @extend
 class float:
     def __new__() -> float:
         return 0.0
 
-    def __new__(what):
+    def __new__(what) -> float:
         return what.__float__()
 
     def __new__(s: str) -> float:
         from C import strtod(cobj, Ptr[cobj]) -> float
+
         buf = __array__[byte](32)
         n = s.__len__()
-        need_dyn_alloc = (n >= buf.__len__())
+        need_dyn_alloc = n >= buf.__len__()
 
         p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
         str.memcpy(p, s.ptr, n)
@@ -31,7 +37,7 @@ class float:
             free(p)
 
         if end != p + n:
-            raise ValueError("could not convert string to float: " + s)
+            raise ValueError(f"could not convert string to float: {s}")
 
         return result
 
@@ -51,7 +57,7 @@ class float:
         %0 = fptosi double %self to i64
         ret i64 %0
 
-    def __float__(self):
+    def __float__(self) -> float:
         return self
 
     @pure
@@ -61,7 +67,7 @@ class float:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
-    def __complex__(self):
+    def __complex__(self) -> complex:
         return complex(self, 0.0)
 
     def __pos__(self) -> float:
@@ -96,7 +102,6 @@ class float:
     def __floordiv__(self, other: float) -> float:
         return self.__truediv__(other).__floor__()
 
-
     @pure
     @llvm
     def __truediv__(a: float, b: float) -> float:
@@ -109,7 +114,7 @@ class float:
         %tmp = frem double %a, %b
         ret double %tmp
 
-    def __divmod__(self, other: float):
+    def __divmod__(self, other: float) -> Tuple[float, float]:
         mod = self % other
         div = (self - mod) / other
         if mod:
@@ -327,7 +332,7 @@ class float:
         %tmp = atomicrmw fsub double* %d, double %b seq_cst
         ret double %tmp
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         from C import frexp(float, Ptr[Int[32]]) -> float
 
         HASH_BITS = 61
@@ -363,7 +368,7 @@ class float:
             if x >= HASH_MODULUS:
                 x -= HASH_MODULUS
 
-        e = e % HASH_BITS if e >= 0 else HASH_BITS - 1 - ((-1-e) % HASH_BITS)
+        e = e % HASH_BITS if e >= 0 else HASH_BITS - 1 - ((-1 - e) % HASH_BITS)
         x = ((x << e) & HASH_MODULUS) | x >> (HASH_BITS - e)
 
         x = x * sign
@@ -371,13 +376,13 @@ class float:
             x = -2
         return x
 
-    def __match__(self, i: float):
+    def __match__(self, i: float) -> bool:
         return self == i
 
     @property
-    def real(self):
+    def real(self) -> float:
         return self
 
     @property
-    def imag(self):
+    def imag(self) -> float:
         return 0.0

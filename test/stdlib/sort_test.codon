@@ -4,28 +4,35 @@ from algorithms.pdqsort import pdq_sort_inplace
 from algorithms.timsort import tim_sort_inplace
 from time import time
 
+
 def key(n: int):
     return -n
 
+
 def gen_list(n: int):
     import random
+
     v = List[int](n)
     for _ in range(n):
         v.append(random.randint(0, 10000))
     return v
+
 
 def copy_to(a, b):
     b.clear()
     for i in a:
         b.append(i)
 
+
 @test
 def ensure_sorted(v):
     for i in range(len(v) - 1):
         assert key(v[i]) <= key(v[i + 1])
 
+
 v0 = gen_list(100)
 v1 = List[int](len(v0))
+
 
 def test_sort1(name, sort):
     copy_to(v0, v1)
@@ -35,17 +42,20 @@ def test_sort1(name, sort):
     print name, t1 - t0
     ensure_sorted(v1)
 
-test_sort1('qsort   :', qsort_inplace)
-test_sort1('heapsort:', heap_sort_inplace)
-test_sort1('pdqsort :', pdq_sort_inplace)
-# test_sort1('timsort :', tim_sort_inplace[int,int])
+
+test_sort1("qsort   :", qsort_inplace)
+test_sort1("heapsort:", heap_sort_inplace)
+test_sort1("pdqsort :", pdq_sort_inplace)
+test_sort1("timsort :", tim_sort_inplace)
+
 
 @test
 def test_sort2(name, sort):
     from random import shuffle
+
     fail = False
     print name
-    for N in (0, 1, 10, 100, 1000, 10000): #, 100000): # too slow; maybe add later?
+    for N in (0, 1, 10, 100, 1000, 10000):  # , 100000): # too slow; maybe add later?
         print N
         for i in range(1000):
             v = list(range(N))
@@ -55,10 +65,11 @@ def test_sort2(name, sort):
                 fail = True
     assert not fail
 
-test_sort2('qsort   :', qsort_inplace)
-test_sort2('heapsort:', heap_sort_inplace)
-test_sort2('pdqsort :', pdq_sort_inplace)
-# test_sort2('timsort :', tim_sort_inplace[int,int])
+
+test_sort2("qsort   :", qsort_inplace)
+test_sort2("heapsort:", heap_sort_inplace)
+test_sort2("pdqsort :", pdq_sort_inplace)
+test_sort2("timsort :", tim_sort_inplace)
 
 # test standard sort routines
 @test
@@ -79,5 +90,6 @@ def test_standard_sort():
     v2.sort(key=key)
     for i in range(len(v2) - 1):
         assert key(v2[i]) <= key(v2[i + 1])
+
 
 test_standard_sort()

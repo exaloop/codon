@@ -1,3 +1,6 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @extend
 class Generator:
     @__internal__
@@ -16,10 +19,12 @@ class Generator:
 
     def __iter__(self) -> Generator[T]:
         return self
+
     @pure
     @llvm
     def __raw__(self) -> Ptr[byte]:
         ret i8* %self
+
     @pure
     @llvm
     def __done__(self) -> bool:
@@ -27,11 +32,13 @@ class Generator:
         %0 = call i1 @llvm.coro.done(i8* %self)
         %1 = zext i1 %0 to i8
         ret i8 %1
+
     @llvm
     def __resume__(self) -> void:
         declare void @llvm.coro.resume(i8*)
         call void @llvm.coro.resume(i8* %self)
         ret void
+
     def __repr__(self) -> str:
         return __internal__.raw_type_str(self.__raw__(), "generator")
 
@@ -46,5 +53,6 @@ class Generator:
         declare void @llvm.coro.destroy(i8*)
         call void @llvm.coro.destroy(i8* %self)
         ret void
+
 
 generator = Generator

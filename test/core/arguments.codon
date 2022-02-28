@@ -19,8 +19,8 @@ def t2():
 t2()
 
 def g[T](a: T, b: optional[T] = None):
-    b_ = ~b if b else T()
-    return a, b_
+    b: T = b if b else T()
+    return a, b
 
 @test
 def t3():

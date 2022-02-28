@@ -1,83 +1,99 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.file import _gz_errcheck
 from internal.gc import sizeof, atomic
 
-def pickle[T](x: T, jar: Jar):
+
+def pickle(x: T, jar: Jar, T: type):
     x.__pickle__(jar)
 
-def unpickle[T](jar: Jar):
+
+def unpickle(jar: Jar, T: type) -> T:
     return T.__unpickle__(jar)
 
-def dump[T](x: T, f):
+
+def dump(x: T, f, T: type):
     x.__pickle__(f.fp)
 
-def load[T](f) -> T:
+
+def load(f, T: type) -> T:
     return T.__unpickle__(f.fp)
 
+
 def _write_raw(jar: Jar, p: cobj, n: int):
-    LIMIT = 0x7fffffff
+    LIMIT = 0x7FFFFFFF
     while n > 0:
         b = n if n < LIMIT else LIMIT
         status = int(_C.gzwrite(jar, p, u32(b)))
         if status != b:
             _gz_errcheck(jar)
-            raise IOError("pickle error: gzwrite returned " + str(status))
+            raise IOError(f"pickle error: gzwrite returned {status}")
         p += b
         n -= b
 
+
 def _read_raw(jar: Jar, p: cobj, n: int):
-    LIMIT = 0x7fffffff
+    LIMIT = 0x7FFFFFFF
     while n > 0:
         b = n if n < LIMIT else LIMIT
         status = int(_C.gzread(jar, p, u32(b)))
         if status != b:
             _gz_errcheck(jar)
-            raise IOError("pickle error: gzread returned " + str(status))
+            raise IOError(f"pickle error: gzread returned {status}")
         p += b
         n -= b
 
-def _write[T](jar: Jar, x: T):
+
+def _write(jar: Jar, x: T, T: type):
     y = __ptr__(x)
     _write_raw(jar, y.as_byte(), sizeof(T))
 
-def _read[T](jar: Jar):
+
+def _read(jar: Jar, T: type) -> T:
     x = T()
     y = __ptr__(x)
     _read_raw(jar, y.as_byte(), sizeof(T))
     return x
 
+
 # Extend core types to allow pickling
+
 
 @extend
 class int:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> int:
         return _read(jar, int)
+
 
 @extend
 class float:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> float:
         return _read(jar, float)
+
 
 @extend
 class bool:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> bool:
         return _read(jar, bool)
+
 
 @extend
 class byte:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> byte:
         return _read(jar, byte)
+
 
 @extend
 class str:
@@ -85,11 +101,12 @@ class str:
         _write(jar, self.len)
         _write_raw(jar, self.ptr, self.len)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> str:
         n = _read(jar, int)
         p = Ptr[byte](n)
         _read_raw(jar, p, n)
         return str(p, n)
+
 
 @extend
 class List:
@@ -102,7 +119,7 @@ class List:
             for i in range(n):
                 pickle(self.arr[i], jar)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> List[T]:
         n = unpickle(jar, int)
         arr = Array[T](n)
         if atomic(T):
@@ -112,10 +129,12 @@ class List:
                 arr[i] = unpickle(jar, T)
         return List[T](arr, n)
 
+
 @extend
 class Dict:
     def __pickle__(self, jar: Jar):
         import internal.khash as khash
+
         if atomic(K) and atomic(V):
             pickle(self._n_buckets, jar)
             pickle(self._size, jar)
@@ -130,13 +149,14 @@ class Dict:
             size = len(self)
             pickle(size, jar)
 
-            for k,v in self.items():
+            for k, v in self.items():
                 pickle(k, jar)
                 pickle(v, jar)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> Dict[K, V]:
         import internal.khash as khash
-        d = Dict[K,V]()
+
+        d = {}
         if atomic(K) and atomic(V):
             n_buckets = unpickle(jar, int)
             size = unpickle(jar, int)
@@ -169,10 +189,12 @@ class Dict:
                 i += 1
         return d
 
+
 @extend
 class Set:
     def __pickle__(self, jar: Jar):
         import internal.khash as khash
+
         if atomic(K):
             pickle(self._n_buckets, jar)
             pickle(self._size, jar)
@@ -189,9 +211,10 @@ class Set:
             for k in self:
                 pickle(k, jar)
 
-    def __unpickle__(jar: Jar):
+    def __unpickle__(jar: Jar) -> Set[K]:
         import internal.khash as khash
-        s = Set[K]()
+
+        s = set[K]()
         if atomic(K):
             n_buckets = unpickle(jar, int)
             size = unpickle(jar, int)

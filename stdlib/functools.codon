@@ -1,2 +1,5 @@
-def partial(): # internal
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
+def partial():  # internal
     pass

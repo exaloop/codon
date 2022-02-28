@@ -1,6 +1,11 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @pure
 @C
-def seq_str_ptr(a: Ptr[byte]) -> str: pass
+def seq_str_ptr(a: Ptr[byte]) -> str:
+    pass
+
 
 @extend
 class Ptr:
@@ -173,6 +178,7 @@ class Ptr:
     def as_byte(self) -> Ptr[byte]:
         %0 = bitcast {=T}* %self to i8*
         ret i8* %0
+
     def __repr__(self) -> str:
         return seq_str_ptr(self.as_byte())
 
@@ -185,14 +191,16 @@ cobj = Ptr[byte]
 # Forward declarations
 @__internal__
 @tuple
-class Array[T]:
+class Array:
     len: int
     ptr: Ptr[T]
+    T: type
 
 
-class List[T]:
-    arr: Array[T]
+class List:
     len: int
+    arr: Array[T]
+    T: type
 
 
 @extend

@@ -1,15 +1,19 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from algorithms.pdqsort import pdq_sort_inplace
 from algorithms.insertionsort import insertion_sort_inplace
 from algorithms.heapsort import heap_sort_inplace
 from algorithms.qsort import qsort_inplace
+from algorithms.timsort import tim_sort_inplace
+
 
 def sorted(
     v: Generator[T],
-    key = Optional[int](),
+    key=Optional[int](),
     algorithm: Optional[str] = None,
     reverse: bool = False,
-    T: type
-):
+    T: type,
+) -> List[T]:
     """
     Return a sorted list of the elements in v
     """
@@ -20,30 +24,36 @@ def sorted(
         newlist.sort(algorithm=algorithm, reverse=reverse)
     return newlist
 
-def _sort_list(self, key, algorithm: str):
-    if algorithm == 'pdq':
+
+def _sort_list(
+    self: List[T], key: Callable[[T], S], algorithm: str, T: type, S: type
+):
+    if algorithm == "tim":
+        tim_sort_inplace(self, key)
+    elif algorithm == "pdq":
         pdq_sort_inplace(self, key)
-    elif algorithm == 'insertion':
+    elif algorithm == "insertion":
         insertion_sort_inplace(self, key)
-    elif algorithm == 'heap':
+    elif algorithm == "heap":
         heap_sort_inplace(self, key)
-    elif algorithm == 'quick':
+    elif algorithm == "quick":
         qsort_inplace(self, key)
     else:
-        raise ValueError("Algorithm '" + algorithm + "' does not exist")
+        raise ValueError(f"Algorithm '{algorithm}' does not exist")
+
 
 @extend
 class List:
     def sort(
         self,
-        key = Optional[int](),
+        key=Optional[int](),
         algorithm: Optional[str] = None,
-        reverse: bool = False
+        reverse: bool = False,
     ):
-        alg = ~algorithm if algorithm else 'pdq'
+        algorithm: str = algorithm if algorithm else "tim"
         if isinstance(key, Optional):
-            _sort_list(self, lambda x: x, alg)
+            _sort_list(self, lambda x: x, algorithm)
         else:
-            _sort_list(self, key, alg)
+            _sort_list(self, key, algorithm)
         if reverse:
             self.reverse()

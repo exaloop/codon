@@ -1,11 +1,13 @@
-ascii_letters   = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-ascii_lowercase = 'abcdefghijklmnopqrstuvwxyz'
-ascii_uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+# (c) 2022 Exaloop Inc. All rights reserved.
 
-digits    = '0123456789'
-hexdigits = '0123456789abcdefABCDEF'
-octdigits = '01234567'
+ascii_letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ascii_lowercase = "abcdefghijklmnopqrstuvwxyz"
+ascii_uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-punctuation = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
-printable   = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c'
-whitespace  = ' \t\n\r\x0b\x0c'
+digits = "0123456789"
+hexdigits = "0123456789abcdefABCDEF"
+octdigits = "01234567"
+
+punctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+printable = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c"
+whitespace = " \t\n\r\x0b\x0c"

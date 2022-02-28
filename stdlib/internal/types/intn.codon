@@ -1,3 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from internal.attributes import commutative, associative, distributive
 
 
@@ -54,7 +56,7 @@ class Int:
         else:
             return __internal__.int_sext(self, N, 64)
 
-    def __index__(self):
+    def __index__(self) -> int:
         return int(self)
 
     def __copy__(self) -> Int[N]:
@@ -137,9 +139,9 @@ class Int:
         %0 = srem i{=N} %self, %other
         ret i{=N} %0
 
-    def __divmod__(self, other: Int[N]):
+    def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
         d = self // other
-        m = self - d*other
+        m = self - d * other
         if m and ((other ^ m) < Int[N](0)):
             m += other
             d -= Int[N](1)
@@ -246,7 +248,7 @@ class Int:
         ret i{=N} %3
 
     def __repr__(self) -> str:
-        return str.cat(('Int[', seq_str_int(N), '](', seq_str_int(int(self)), ')'))
+        return str.cat(("Int[", seq_str_int(N), "](", seq_str_int(int(self)), ")"))
 
     def __str__(self) -> str:
         return seq_str_int(int(self))
@@ -258,7 +260,7 @@ class Int:
         %0 = call i{=N} @llvm.ctpop.i{=N}(i{=N} %self)
         ret i{=N} %0
 
-    def popcnt(self):
+    def popcnt(self) -> int:
         return int(self._popcnt())
 
     def len() -> int:
@@ -301,7 +303,7 @@ class UInt:
         else:
             return __internal__.int_zext(self, N, 64)
 
-    def __index__(self):
+    def __index__(self) -> int:
         return int(self)
 
     def __copy__(self) -> UInt[N]:
@@ -384,7 +386,7 @@ class UInt:
         %0 = urem i{=N} %self, %other
         ret i{=N} %0
 
-    def __divmod__(self, other: UInt[N]):
+    def __divmod__(self, other: UInt[N]) -> Tuple[UInt[N], UInt[N]]:
         return (self // other, self % other)
 
     @pure
@@ -488,16 +490,17 @@ class UInt:
         ret i{=N} %3
 
     def __repr__(self) -> str:
-        return str.cat(('UInt[', seq_str_int(N), '](', seq_str_uint(int(self)), ')'))
+        return str.cat(("UInt[", seq_str_int(N), "](", seq_str_uint(int(self)), ")"))
 
     def __str__(self) -> str:
         return seq_str_uint(int(self))
 
-    def popcnt(self):
+    def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())
 
     def len() -> int:
         return N
+
 
 i8 = Int[8]
 i16 = Int[16]

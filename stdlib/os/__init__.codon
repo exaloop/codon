@@ -1,16 +1,21 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 def system(cmd: str) -> int:
     return _C.system(cmd.c_str())
+
 
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
 
+
 @tuple
 class EnvMap:
-    _map: Dict[str,str]
+    _map: Dict[str, str]
 
     def __new__() -> EnvMap:
-        return (Dict[str,str](),)
+        return (Dict[str, str](),)
 
     def _init_if_needed(self):
         if len(self._map) == 0:
@@ -28,30 +33,32 @@ class EnvMap:
                             break
                         j += 1
                     k = s[0:j] if found else s
-                    v = s[j+1:] if found else ""
+                    v = s[j + 1 :] if found else ""
                     self._map[k] = v
                 i += 1
                 p = env[i]
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> str:
         self._init_if_needed()
         return self._map[key]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         self._init_if_needed()
         return repr(self._map)
 
-    def __contains__(self, key: str):
+    def __contains__(self, key: str) -> bool:
         self._init_if_needed()
         return key in self._map
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[Tuple[str, str]]:
         self._init_if_needed()
         return self._map.items()
 
+
 environ = EnvMap()
 
-def getenv(key: str, default: str = ""):
+
+def getenv(key: str, default: str = "") -> str:
     return environ[key] if key in environ else default
 
 

@@ -1,22 +1,25 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 from bisect import bisect_right, bisect_left, insort
 from collections import deque
 
 
 DEFAULT_LOAD_FACTOR = 1000
-class SortedList[T]:
+
+
+class SortedList:
     _len: int
     _load: int
     _lists: List[List[T]]
     _maxes: List[T]
     _offset: int
-    # _index:
+    T: type
 
     def __init__(self):
         self._len = 0
         self._load = DEFAULT_LOAD_FACTOR
-        self._lists = List[List[T]]()
-        self._maxes = List[T]()
-        # self._index = []
+        self._lists = []
+        self._maxes = []
         self._offset = 0
 
     def clear(self):
@@ -28,10 +31,9 @@ class SortedList[T]:
         self._lists.clear()
         self._maxes.clear()
         self._offset = 0
-        # self._index.clear()
 
     @property
-    def left(self):
+    def left(self) -> T:
         if not self._lists:
             raise IndexError("list index out of range")
         return self._lists[0][0]
@@ -62,7 +64,6 @@ class SortedList[T]:
             self._maxes.append(value)
         self._len += 1
 
-
     def _expand(self, pos: int):
         """
         Split sublists with length greater than double the load-factor.
@@ -75,13 +76,12 @@ class SortedList[T]:
             _maxes = self._maxes
 
             _lists_pos = self._lists[pos]
-            half = _lists_pos[self._load:]
-            del _lists_pos[self._load:]
+            half = _lists_pos[self._load :]
+            del _lists_pos[self._load :]
             _maxes[pos] = _lists_pos[-1]
 
             self._lists.insert(pos + 1, half)
             _maxes.insert(pos + 1, half[-1])
-
 
     def _delete(self, pos: int, idx: int):
         """
@@ -120,15 +120,12 @@ class SortedList[T]:
             del self._lists[pos]
             del self._maxes[pos]
 
-
-    def __iter__(self):
+    def __iter__(self) -> Generator[T]:
         for l in self._lists:
             yield from l
 
-
-    def __len__(self):
+    def __len__(self) -> int:
         return self._len
 
-
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self._len > 0

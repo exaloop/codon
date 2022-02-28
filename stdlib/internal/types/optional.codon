@@ -1,3 +1,6 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+
 @extend
 class Optional:
     def __new__() -> Optional[T]:
@@ -25,19 +28,21 @@ class Optional:
             return __internal__.opt_ref_invert(self, T)
 
     def __str__(self) -> str:
-        return 'None' if not self else str(~self)
+        return "None" if not self else str(~self)
 
     def __repr__(self) -> str:
-        return 'None' if not self else (~self).__repr__()
+        return "None" if not self else (~self).__repr__()
 
-    def __is_optional__(self, other: Optional[T]):
+    def __is_optional__(self, other: Optional[T]) -> bool:
         if (not self) or (not other):
             return (not self) and (not other)
         return self.__invert__() is other.__invert__()
 
+
 optional = Optional
 
-def unwrap[T](opt: Optional[T]) -> T:
-    if not opt:
-        raise ValueError('optional is None')
+
+def unwrap(opt: Optional[T], T: type) -> T:
+    if opt is None:
+        raise ValueError("optional is None")
     return ~opt
