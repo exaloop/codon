@@ -31,6 +31,8 @@ ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes,
   ctx->canAssign = oldAssign;
   if (!allowTypes && v.resultExpr && v.resultExpr->isType())
     error("unexpected type expression");
+  if (v.resultExpr)
+    v.resultExpr->attributes |= expr->attributes;
   return v.resultExpr;
 }
 
@@ -179,15 +181,21 @@ void SimplifyVisitor::visit(ListExpr *expr) {
   for (const auto &it : expr->items) {
     if (auto star = it->getStar()) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
+      auto st = star->what->clone();
+      st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), star->what->clone(),
+          clone(forVar), st,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(forVar))))));
     } else {
-      stmts.push_back(transform(
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(it)))));
+      auto st = clone(it);
+      st->setAttr(ExprAttr::SequenceItem);
+      stmts.push_back(
+          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), st))));
     }
   }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ExprAttr::List);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -200,14 +208,20 @@ void SimplifyVisitor::visit(SetExpr *expr) {
   for (auto &it : expr->items)
     if (auto star = it->getStar()) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
+      auto st = star->what->clone();
+      st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), star->what->clone(),
+          clone(forVar), st,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(forVar))))));
     } else {
-      stmts.push_back(transform(
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(it)))));
+      auto st = clone(it);
+      st->setAttr(ExprAttr::SequenceItem);
+      stmts.push_back(
+          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), st))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ExprAttr::Set);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -220,16 +234,24 @@ void SimplifyVisitor::visit(DictExpr *expr) {
   for (auto &it : expr->items)
     if (auto star = CAST(it.value, KeywordStarExpr)) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
+      auto st = star->what->clone();
+      st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), N<CallExpr>(N<DotExpr>(star->what->clone(), "items")),
+          clone(forVar), N<CallExpr>(N<DotExpr>(st, "items")),
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(0)),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(1)))))));
     } else {
-      stmts.push_back(transform(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(clone(var), "__setitem__"), clone(it.key), clone(it.value)))));
+      auto k = clone(it.key);
+      k->setAttr(ExprAttr::SequenceItem);
+      auto v = clone(it.value);
+      v->setAttr(ExprAttr::SequenceItem);
+      stmts.push_back(transform(
+          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"), k, v))));
     }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
+  auto e = N<StmtExpr>(stmts, transform(var));
+  e->setAttr(ExprAttr::Dict);
+  resultExpr = e;
   ctx->popBlock();
 }
 
@@ -308,10 +330,10 @@ void SimplifyVisitor::visit(UnaryExpr *expr) {
 void SimplifyVisitor::visit(BinaryExpr *expr) {
   auto lhs = (startswith(expr->op, "is") && expr->lexpr->getNone())
                  ? clone(expr->lexpr)
-                 : transform(expr->lexpr);
+                 : transform(expr->lexpr, startswith(expr->op, "is"));
   auto rhs = (startswith(expr->op, "is") && expr->rexpr->getNone())
                  ? clone(expr->rexpr)
-                 : transform(expr->rexpr, false,
+                 : transform(expr->rexpr, startswith(expr->op, "is"),
                              /*allowAssign*/ expr->op != "&&" && expr->op != "||");
   resultExpr = N<BinaryExpr>(lhs, expr->op, rhs, expr->inPlace);
 }
@@ -493,9 +515,9 @@ void SimplifyVisitor::visit(CallExpr *expr) {
       ctx->add(SimplifyItem::Var, varName, varName);
       var = N<IdExpr>(varName);
       ctx->addBlock(); // prevent tmp vars from being toplevel vars
-      ex = N<StmtExpr>(
-          transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true)),
-          transform(ex));
+      auto head =
+          transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var), nullptr, true));
+      ex = N<StmtExpr>(head, transform(ex));
       ctx->popBlock();
     }
     std::vector<GeneratorBody> body;
@@ -688,7 +710,9 @@ void SimplifyVisitor::visit(StmtExpr *expr) {
   for (auto &s : expr->stmts)
     stmts.emplace_back(transform(s));
   auto e = transform(expr->expr);
-  resultExpr = N<StmtExpr>(stmts, e);
+  auto s = N<StmtExpr>(stmts, e);
+  s->attributes = expr->attributes;
+  resultExpr = s;
 }
 
 /**************************************************************************************/

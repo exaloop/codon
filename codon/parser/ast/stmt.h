@@ -398,6 +398,7 @@ struct Attr {
   // Internal attributes
   const static std::string Internal;
   const static std::string ForceRealize;
+  const static std::string RealizeWithoutSelf;
   // Compiler-generated attributes
   const static std::string C;
   const static std::string CVarArg;
@@ -408,6 +409,7 @@ struct Attr {
   const static std::string Tuple;
   // Standard library attributes
   const static std::string Test;
+  const static std::string Overload;
   // Function module
   std::string module;
   // Parent class (set for methods only)

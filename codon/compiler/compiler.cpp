@@ -1,7 +1,5 @@
 #include "compiler.h"
 
-#include <filesystem>
-
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -11,13 +9,29 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon {
+namespace {
+ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool isTest) {
+  using ir::transform::PassManager;
+  switch (mode) {
+  case Compiler::Mode::DEBUG:
+    return isTest ? PassManager::Init::RELEASE : PassManager::Init::DEBUG;
+  case Compiler::Mode::RELEASE:
+    return PassManager::Init::RELEASE;
+  case Compiler::Mode::JIT:
+    return PassManager::Init::JIT;
+  default:
+    return PassManager::Init::EMPTY;
+  }
+}
+} // namespace
 
-Compiler::Compiler(const std::string &argv0, bool debug,
+Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                    const std::vector<std::string> &disabledPasses, bool isTest)
-    : argv0(argv0), debug(debug), input(), plm(std::make_unique<PluginManager>()),
+    : argv0(argv0), debug(mode == Mode::DEBUG), input(),
+      plm(std::make_unique<PluginManager>()),
       cache(std::make_unique<ast::Cache>(argv0)),
       module(std::make_unique<ir::Module>()),
-      pm(std::make_unique<ir::transform::PassManager>(debug && !isTest,
+      pm(std::make_unique<ir::transform::PassManager>(getPassManagerInit(mode, isTest),
                                                       disabledPasses)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
@@ -50,9 +64,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath =
-      (file != "-") ? std::filesystem::absolute(std::filesystem::path(file)).string()
-                    : file;
+  std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
     Timer t1("parse");
     ast::StmtPtr codeStmt = isCode

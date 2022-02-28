@@ -339,6 +339,9 @@ class Counter[T](Dict[T,int]):
         result |= other
         return result
 
+    def __dict_do_op_throws__[F, Z](self, key: T, other: Z, op: F):
+        self.__dict_do_op__(key, other, 0, op)
+
 
 @extend
 class Dict:

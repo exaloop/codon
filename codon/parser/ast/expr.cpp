@@ -18,7 +18,7 @@ namespace ast {
 
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
-      done(false) {}
+      done(false), attributes(0) {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 bool Expr::isType() const { return isTypeExpr; }
@@ -31,6 +31,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
       done ? "*" : "");
 }
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
+bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
+void Expr::setAttr(int attr) { attributes |= (1 << attr); }
 
 StaticValue::StaticValue(StaticValue::Type t) : value(), type(t), evaluated(false) {}
 StaticValue::StaticValue(int64_t i) : value(i), type(INT), evaluated(true) {}

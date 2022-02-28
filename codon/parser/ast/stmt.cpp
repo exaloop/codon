@@ -285,6 +285,8 @@ const std::string Attr::Atomic = "atomic";
 const std::string Attr::Property = "property";
 const std::string Attr::Internal = "__internal__";
 const std::string Attr::ForceRealize = "__force__";
+const std::string Attr::RealizeWithoutSelf =
+    "std.internal.attributes.realize_without_self";
 const std::string Attr::C = "std.internal.attributes.C";
 const std::string Attr::CVarArg = ".__vararg__";
 const std::string Attr::Method = ".__method__";
@@ -292,6 +294,7 @@ const std::string Attr::Capture = ".__capture__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
 const std::string Attr::Test = "std.internal.attributes.test";
+const std::string Attr::Overload = "std.internal.attributes.overload";
 
 FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args,
                            StmtPtr suite, Attr attributes,

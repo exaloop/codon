@@ -1,6 +1,5 @@
 #include "translate.h"
 
-#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -35,8 +34,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
     main->setJIT();
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-    auto path =
-        std::filesystem::canonical(std::filesystem::path(cache->module0)).string();
+    auto path = getAbsolutePath(cache->module0);
     main->setSrcInfo({path, 0, 0, 0});
   }
 
@@ -57,8 +55,79 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
 ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
+
+  types::PartialType *p = nullptr;
+  if (expr->attributes) {
+    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
+        expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
+      ctx->seqItems.push_back(std::vector<std::pair<ExprAttr, ir::Value *>>());
+    }
+    if (expr->hasAttr(ExprAttr::Partial))
+      p = expr->type->getPartial().get();
+  }
+
   expr->accept(v);
-  return v.result;
+  ir::Value *ir = v.result;
+
+  if (expr->attributes) {
+    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set)) {
+      std::vector<ir::LiteralElement> v;
+      for (auto &p : ctx->seqItems.back()) {
+        seqassert(p.first <= ExprAttr::StarSequenceItem, "invalid list/set element");
+        v.push_back(
+            ir::LiteralElement{p.second, p.first == ExprAttr::StarSequenceItem});
+      }
+      if (expr->hasAttr(ExprAttr::List))
+        ir->setAttribute(std::make_unique<ir::ListLiteralAttribute>(v));
+      else
+        ir->setAttribute(std::make_unique<ir::SetLiteralAttribute>(v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::Dict)) {
+      std::vector<ir::DictLiteralAttribute::KeyValuePair> v;
+      for (int pi = 0; pi < ctx->seqItems.back().size(); pi++) {
+        auto &p = ctx->seqItems.back()[pi];
+        if (p.first == ExprAttr::StarSequenceItem) {
+          v.push_back({p.second, nullptr});
+        } else {
+          seqassert(p.first == ExprAttr::SequenceItem &&
+                        pi + 1 < ctx->seqItems.back().size() &&
+                        ctx->seqItems.back()[pi + 1].first == ExprAttr::SequenceItem,
+                    "invalid dict element");
+          v.push_back({p.second, ctx->seqItems.back()[pi + 1].second});
+          pi++;
+        }
+      }
+      ir->setAttribute(std::make_unique<ir::DictLiteralAttribute>(v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::Partial)) {
+      std::vector<ir::Value *> v;
+      seqassert(p, "invalid partial element");
+      int j = 0;
+      for (int i = 0; i < p->known.size(); i++) {
+        if (p->known[i] && !p->func->ast->args[i].generic) {
+          seqassert(j < ctx->seqItems.back().size() &&
+                        ctx->seqItems.back()[j].first == ExprAttr::SequenceItem,
+                    "invalid partial element");
+          v.push_back(ctx->seqItems.back()[j++].second);
+        } else if (!p->func->ast->args[i].generic) {
+          v.push_back({nullptr});
+        }
+      }
+      ir->setAttribute(
+          std::make_unique<ir::PartialFunctionAttribute>(p->func->ast->name, v));
+      ctx->seqItems.pop_back();
+    }
+    if (expr->hasAttr(ExprAttr::SequenceItem)) {
+      ctx->seqItems.back().push_back({ExprAttr::SequenceItem, ir});
+    }
+    if (expr->hasAttr(ExprAttr::StarSequenceItem)) {
+      ctx->seqItems.back().push_back({ExprAttr::StarSequenceItem, ir});
+    }
+  }
+
+  return ir;
 }
 
 void TranslateVisitor::defaultVisit(Expr *n) {
@@ -91,8 +160,10 @@ void TranslateVisitor::visit(IdExpr *expr) {
 }
 
 void TranslateVisitor::visit(IfExpr *expr) {
-  result = make<ir::TernaryInstr>(expr, transform(expr->cond), transform(expr->ifexpr),
-                                  transform(expr->elsexpr));
+  auto cond = transform(expr->cond);
+  auto ifexpr = transform(expr->ifexpr);
+  auto elsexpr = transform(expr->elsexpr);
+  result = make<ir::TernaryInstr>(expr, cond, ifexpr, elsexpr);
 }
 
 void TranslateVisitor::visit(CallExpr *expr) {
@@ -428,13 +499,12 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->attributes.module;
   for (auto &a : ast->attributes.customAttr) {
-    // LOG("{} -> {}", ast->name, a);
     attr[a] = "";
   }
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
-  func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
+  // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
   if (!ast->attributes.has(Attr::C) && !ast->attributes.has(Attr::Internal)) {
     ctx->addBlock();
     for (auto i = 0; i < names.size(); i++)
@@ -511,7 +581,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   f->setLLVMBody(join(lines, "\n"));
   f->setLLVMDeclarations(declare);
   f->setLLVMLiterals(literals);
-  func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
+  // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 }
 
 } // namespace ast

@@ -167,7 +167,7 @@ private:
 
   // General function helpers
   llvm::Value *call(llvm::FunctionCallee callee, llvm::ArrayRef<llvm::Value *> args);
-  void makeLLVMFunction(const Func *);
+  llvm::Function *makeLLVMFunction(const Func *);
   void makeYield(llvm::Value *value = nullptr, bool finalYield = false);
   std::string buildLLVMCodeString(const LLVMFunc *);
   void callStage(const PipelineFlow::Stage *stage);
@@ -290,10 +290,11 @@ public:
   /// Returns the current module/LLVM context and replaces them
   /// with new, fresh ones. References to variables or functions
   /// from the old module will be included as "external".
+  /// @param module the IR module
   /// @param src source information for the new module
   /// @return the current module/context, replaced internally
   std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
-  takeModule(const SrcInfo *src = nullptr);
+  takeModule(Module *module, const SrcInfo *src = nullptr);
 
   /// Sets current debug info based on a given node.
   /// @param node the node whose debug info to use

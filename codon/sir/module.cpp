@@ -142,7 +142,8 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
   try {
     return cache->realizeFunction(func, arg, gens);
   } catch (const exc::ParserException &e) {
-    LOG_IR("getOrRealizeFunc parser error: {}", e.what());
+    for (int i = 0; i < e.messages.size(); i++)
+      LOG_IR("getOrRealizeFunc parser error at {}: {}", e.locations[i], e.messages[i]);
     return nullptr;
   }
 }

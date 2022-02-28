@@ -1,12 +1,14 @@
 #include "plugins.h"
 
 #include <cstdlib>
-#include <filesystem>
 
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 #include "codon/util/semver/semver.h"
 #include "codon/util/toml++/toml.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 
 namespace codon {
 namespace {
@@ -17,8 +19,6 @@ llvm::Expected<Plugin *> pluginError(const std::string &msg) {
 typedef std::unique_ptr<DSL> LoadFunc();
 } // namespace
 
-namespace fs = std::filesystem;
-
 llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
 #if __APPLE__
   const std::string libExt = "dylib";
@@ -27,35 +27,42 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
 #endif
 
   const std::string config = "plugin.toml";
-  fs::path tomlPath = fs::path(path) / config;
-  if (!fs::exists(tomlPath)) {
+
+  llvm::SmallString<128> tomlPath(path);
+  llvm::sys::path::append(tomlPath, config);
+  if (!llvm::sys::fs::exists(tomlPath)) {
     // try default install path
-    if (auto *homeDir = std::getenv("HOME"))
-      tomlPath = fs::path(homeDir) / ".codon/plugins" / path / config;
+    if (auto *homeDir = std::getenv("HOME")) {
+      tomlPath = homeDir;
+      llvm::sys::path::append(tomlPath, ".codon", "plugins", path, config);
+    }
   }
 
   toml::parse_result tml;
   try {
-    tml = toml::parse_file(tomlPath.string());
+    tml = toml::parse_file(tomlPath.str());
   } catch (const toml::parse_error &e) {
     return pluginError(
-        fmt::format("[toml::parse_file(\"{}\")] {}", tomlPath.string(), e.what()));
+        fmt::format("[toml::parse_file(\"{}\")] {}", tomlPath.str(), e.what()));
   }
   auto about = tml["about"];
   auto library = tml["library"];
 
   std::string cppLib = library["cpp"].value_or("");
-  std::string dylibPath;
-  if (!cppLib.empty())
-    dylibPath = fs::path(tomlPath)
-                    .replace_filename(library["cpp"].value_or("lib"))
-                    .replace_extension(libExt)
-                    .string();
+  llvm::SmallString<128> dylibPath;
+  if (!cppLib.empty()) {
+    dylibPath = llvm::sys::path::parent_path(tomlPath);
+    auto fn = std::string(library["cpp"].value_or("lib")) + "." + libExt;
+    llvm::sys::path::append(dylibPath, fn);
+  }
 
   std::string codonLib = library["codon"].value_or("");
   std::string stdlibPath;
-  if (!codonLib.empty())
-    stdlibPath = fs::path(tomlPath).replace_filename(codonLib).string();
+  if (!codonLib.empty()) {
+    llvm::SmallString<128> p = llvm::sys::path::parent_path(tomlPath.str());
+    llvm::sys::path::append(p, codonLib);
+    stdlibPath = p.str();
+  }
 
   DSL::Info info = {about["name"].value_or(""),      about["description"].value_or(""),
                     about["version"].value_or(""),   about["url"].value_or(""),
@@ -80,13 +87,13 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
                                                                  &libLoadErrorMsg);
     if (!handle.isValid())
       return pluginError(fmt::format(
-          "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}", dylibPath,
-          libLoadErrorMsg));
+          "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}",
+          dylibPath.str(), libLoadErrorMsg));
 
     auto *entry = (LoadFunc *)handle.getAddressOfSymbol("load");
     if (!entry)
-      return pluginError(
-          fmt::format("could not find 'load' in plugin shared library: {}", dylibPath));
+      return pluginError(fmt::format(
+          "could not find 'load' in plugin shared library: {}", dylibPath.str()));
 
     auto dsl = (*entry)();
     plugins.push_back(std::make_unique<Plugin>(std::move(dsl), info, handle));

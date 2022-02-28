@@ -185,7 +185,7 @@ std::string LinkType::debugString(bool debug) const {
   // fmt::format("{}->{}", id, type->debugString(debug));
 }
 std::string LinkType::realizedName() const {
-  if (kind == Unbound)
+  if (kind == Unbound || kind == Generic)
     return "?";
   seqassert(kind == Link, "unexpected generic link");
   return type->realizedName();
@@ -476,12 +476,18 @@ std::vector<TypePtr> FuncType::getUnbounds() const {
 }
 bool FuncType::canRealize() const {
   // Important: return type does not have to be realized.
-  for (int ai = 1; ai < args.size(); ai++)
+
+  bool force = ast->hasAttr(Attr::RealizeWithoutSelf);
+
+  int ai = 1 + force;
+  for (; ai < args.size(); ai++)
     if (!args[ai]->getFunc() && !args[ai]->canRealize())
       return false;
-  return std::all_of(funcGenerics.begin(), funcGenerics.end(),
-                     [](auto &a) { return !a.type || a.type->canRealize(); }) &&
-         (!funcParent || funcParent->canRealize());
+  bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
+                              [](auto &a) { return !a.type || a.type->canRealize(); });
+  if (!force)
+    generics &= (!funcParent || funcParent->canRealize());
+  return generics;
 }
 bool FuncType::isInstantiated() const {
   TypePtr removed = nullptr;
@@ -532,15 +538,7 @@ PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
                          std::shared_ptr<FuncType> func, std::vector<char> known)
     : RecordType(*baseType), func(move(func)), known(move(known)) {}
 int PartialType::unify(Type *typ, Unification *us) {
-  int s1 = 0, s;
-  if (auto tc = typ->getPartial()) {
-    // Check names.
-    if ((s = func->unify(tc->func.get(), us)) == -1)
-      return -1;
-    s1 += s;
-  }
-  s = this->RecordType::unify(typ, us);
-  return s == -1 ? s : s1 + s;
+  return this->RecordType::unify(typ, us);
 }
 TypePtr PartialType::generalize(int atLevel) {
   return std::make_shared<PartialType>(
@@ -549,10 +547,9 @@ TypePtr PartialType::generalize(int atLevel) {
 }
 TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
                                  std::unordered_map<int, TypePtr> *cache) {
-  return std::make_shared<PartialType>(
-      std::static_pointer_cast<RecordType>(
-          this->RecordType::instantiate(atLevel, unboundCount, cache)),
-      func, known);
+  auto rec = std::static_pointer_cast<RecordType>(
+      this->RecordType::instantiate(atLevel, unboundCount, cache));
+  return std::make_shared<PartialType>(rec, func, known);
 }
 std::string PartialType::debugString(bool debug) const {
   std::vector<std::string> gs;
@@ -573,7 +570,7 @@ std::string PartialType::debugString(bool debug) const {
 }
 std::string PartialType::realizedName() const {
   std::vector<std::string> gs;
-  gs.push_back(func->realizedName());
+  gs.push_back(func->ast->name);
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
@@ -755,12 +752,24 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           zeros.emplace_back(pi - 9);
       if (zeros.size() + 1 != args.size())
         return -1;
-      if (args[0]->unify(pt->func->args[0].get(), us) == -1)
-        return -1;
+
+      int ic = 0;
+      std::unordered_map<int, TypePtr> c;
+      auto pf = pt->func->instantiate(0, &ic, &c)->getFunc();
+      // For partial functions, we just check can we unify without actually performing
+      // unification
       for (int pi = 0, gi = 1; pi < pt->known.size(); pi++)
-        if (!pt->known[pi] && !pt->func->ast->args[pi].generic)
-          if (args[gi++]->unify(pt->func->args[pi + 1].get(), us) == -1)
+        if (!pt->known[pi] && !pf->ast->args[pi].generic)
+          if (args[gi++]->unify(pf->args[pi + 1].get(), us) == -1)
             return -1;
+      if (us && us->realizator && pf->canRealize()) {
+        // Realize if possible to allow deduction of return type [and possible
+        // unification!]
+        auto rf = us->realizator->realize(pf);
+        pf->unify(rf.get(), us);
+      }
+      if (args[0]->unify(pf->args[0].get(), us) == -1)
+        return -1;
       return 1;
     }
   } else if (auto tl = typ->getLink()) {

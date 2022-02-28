@@ -32,12 +32,11 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
   } else if (auto c = typ->getClass()) {
     auto t = realizeType(c.get());
     if (auto p = typ->getPartial()) {
-      if (auto rt = realize(p->func))
-        unify(rt, p->func);
+      //   if (auto rt = realize(p->func))
+      //     unify(rt, p->func);
       return std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
-    } else {
-      return t;
     }
+    return t;
   } else {
     return nullptr;
   }
@@ -117,8 +116,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   try {
     auto it =
         ctx->cache->functions[type->ast->name].realizations.find(type->realizedName());
-    if (it != ctx->cache->functions[type->ast->name].realizations.end())
+    if (it != ctx->cache->functions[type->ast->name].realizations.end()) {
       return it->second->type;
+    }
 
     // Set up bases. Ensure that we have proper parent bases even during a realization
     // of mutually recursive functions.
@@ -150,6 +150,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
                 type->realizedName(), ctx->getBase(), depth);
     {
+      // Timer trx(fmt::format("fn {}", type->realizedName()));
       getLogger().level++;
       ctx->realizationDepth++;
       ctx->addBlock();
@@ -161,11 +162,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
                             type->args[0],
                             {},
                             findSuperMethods(type->getFunc())});
-      // if (startswith(type->ast->name, "Foo")) {
-      //   LOG(": {}", type->toString());
-      //   for (auto  &s: ctx->bases.back().supers)
-      //     LOG("  - {}", s->toString());
-      // }
       auto clonedAst = ctx->cache->functions[type->ast->name].ast->clone();
       auto *ast = (FunctionStmt *)clonedAst.get();
       addFunctionGenerics(type);
@@ -177,13 +173,16 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       if (!isInternal)
         for (int i = 0, j = 1; i < ast->args.size(); i++)
           if (!ast->args[i].generic) {
-            seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
-                      "unbound argument {}", type->args[j]->toString());
             std::string varName = ast->args[i].name;
             trimStars(varName);
             ctx->add(TypecheckItem::Var, varName,
-                     std::make_shared<LinkType>(
-                         type->args[j++]->generalize(ctx->typecheckLevel)));
+                     std::make_shared<LinkType>(type->args[j++]));
+            // N.B. this used to be:
+            // seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
+            // "unbound argument {}", type->args[j]->toString());
+            // type->args[j++]->generalize(ctx->typecheckLevel)
+            // no idea why... most likely an old artefact, BUT if seq or sequre
+            // fail with weird type errors try returning this and see if it works
           }
 
       // Need to populate realization table in advance to make recursive functions
@@ -223,7 +222,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Realize the return type.
       if (auto t = realize(type->args[0]))
         unify(type->args[0], t);
-      LOG_REALIZE("done with {} / {}", type->realizedName(), oldKey);
+      LOG_REALIZE("[realize] done with {} / {} =>{}", type->realizedName(), oldKey,
+                  time);
+      // trx.log();
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.
@@ -239,6 +240,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         } else {
           r->ir = ctx->cache->module->Nr<ir::BodiedFunc>(type->realizedName());
         }
+        r->ir->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 
         auto parent = type->funcParent;
         if (!ast->attributes.parentClass.empty() &&
@@ -408,6 +410,8 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
 
 ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   auto realizedName = t->realizedTypeName();
+  if (!in(ctx->cache->classes[t->name].realizations, realizedName))
+    realizeType(const_cast<types::ClassType *>(t));
   if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir)
     return l;
   auto getLLVM = [&](const TypePtr &tt) {

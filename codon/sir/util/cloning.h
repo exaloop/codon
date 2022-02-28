@@ -82,7 +82,7 @@ public:
       for (auto it = other->attributes_begin(); it != other->attributes_end(); ++it) {
         const auto *attr = other->getAttribute(*it);
         if (attr->needsClone()) {
-          ctx[id]->setAttribute(attr->clone(), *it);
+          ctx[id]->setAttribute(attr->clone(*this), *it);
         }
       }
     }
@@ -125,7 +125,7 @@ public:
       for (auto it = other->attributes_begin(); it != other->attributes_end(); ++it) {
         const auto *attr = other->getAttribute(*it);
         if (attr->needsClone()) {
-          ctx[id]->setAttribute(attr->clone(), *it);
+          ctx[id]->setAttribute(attr->forceClone(*this), *it);
         }
       }
     }

@@ -67,6 +67,9 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// Tracks function attributes (e.g. if it has @atomic or @test attributes).
     int attributes;
 
+    std::shared_ptr<std::vector<std::string>> deducedMembers;
+    std::string selfName;
+
     explicit Base(std::string name, ExprPtr ast = nullptr, int attributes = 0);
     bool isType() const { return ast != nullptr; }
   };

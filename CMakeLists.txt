@@ -16,8 +16,16 @@ if(CODON_JUPYTER)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -pedantic -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
-set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-limit-debug-info")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic -fvisibility-inlines-hidden -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments")
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-type")
+endif()
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-limit-debug-info")
+endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
@@ -74,8 +82,8 @@ else()
         -Wl,--no-whole-archive)
 endif()
 if(ASAN)
-    target_compile_options(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
-    target_link_libraries(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+    target_compile_options(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address" "-fsanitize-recover=address")
+    target_link_libraries(codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address" "-fsanitize-recover=address")
 endif()
 add_custom_command(TARGET codonrt POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp> ${CMAKE_BINARY_DIR})
@@ -209,7 +217,7 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_node.h
     codon/util/toml++/toml_parser.hpp
     codon/util/toml++/toml_utf8_streams.h
-    extra/jupyter/src/codon.h)
+    extra/jupyter/jupyter.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/debug_listener.cpp
@@ -288,7 +296,7 @@ set(CODON_CPPFILES
     codon/sir/var.cpp
     codon/util/common.cpp
     codon/util/fmt/format.cpp
-    extra/jupyter/src/codon.cpp)
+    extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CODON_JUPYTER)
@@ -297,8 +305,8 @@ if(CODON_JUPYTER)
     target_link_libraries(codonc PRIVATE xeus-static)
 endif()
 if(ASAN)
-    target_compile_options(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
-    target_link_libraries(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address")
+    target_compile_options(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address" "-fsanitize-recover=address")
+    target_link_libraries(codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address" "-fsanitize-recover=address")
 endif()
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     set_source_files_properties(codon_rules.cpp codon/parser/peg/peg.cpp PROPERTIES COMPILE_FLAGS "-O2")

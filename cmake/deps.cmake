@@ -66,10 +66,11 @@ if(bdwgc_ADDED)
 endif()
 
 CPMAddPackage(
-    GITHUB_REPOSITORY "llvm-mirror/openmp"
-    VERSION 9.0
-    GIT_TAG release_90
-    OPTIONS "OPENMP_ENABLE_LIBOMPTARGET OFF"
+    NAME openmp
+    GITHUB_REPOSITORY "exaloop/openmp"
+    VERSION 13.0.0-patch1
+    OPTIONS "CMAKE_BUILD_TYPE Release"
+            "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
 
 CPMAddPackage(
@@ -125,8 +126,8 @@ if(CODON_JUPYTER)
         NAME libzmq
         VERSION 4.3.4
         URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-        OPTIONS "WITH_PERF_TOOL OFF" 
-                "ZMQ_BUILD_TESTS OFF" 
+        OPTIONS "WITH_PERF_TOOL OFF"
+                "ZMQ_BUILD_TESTS OFF"
                 "ENABLE_CPACK OFF"
                 "BUILD_SHARED ON"
                 "WITH_LIBSODIUM OFF")
@@ -144,16 +145,17 @@ if(CODON_JUPYTER)
     CPMAddPackage(
         NAME json
         GITHUB_REPOSITORY "nlohmann/json"
-        VERSION 3.10.4)
+        VERSION 3.10.1)
     CPMAddPackage(
         NAME xeus
         GITHUB_REPOSITORY "jupyter-xeus/xeus"
         VERSION 2.2.0
         GIT_TAG 2.2.0
-        PATCH_COMMAND sed -i bak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
+        PATCH_COMMAND sed -ibak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
         OPTIONS "BUILD_EXAMPLES OFF"
                 "XEUS_BUILD_SHARED_LIBS OFF"
-                "XEUS_STATIC_DEPENDENCIES ON")
+                "XEUS_STATIC_DEPENDENCIES ON"
+                "CMAKE_POSITION_INDEPENDENT_CODE ON")
     if (xeus_ADDED)
         install(TARGETS nlohmann_json EXPORT xeus-targets)
     endif()

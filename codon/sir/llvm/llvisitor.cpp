@@ -88,8 +88,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     return;
 
   if (auto *f = cast<Func>(var)) {
-    makeLLVMFunction(f);
-    insertFunc(f, func);
+    insertFunc(f, makeLLVMFunction(f));
   } else {
     llvm::Type *llvmType = getLLVMType(var->getType());
     if (llvmType->isVoidTy()) {
@@ -145,6 +144,7 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       }
     } else {
       registerGlobal(var);
+      it = vars.find(var->getId());
       return it->second;
     }
   }
@@ -177,6 +177,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
       }
     } else {
       registerGlobal(func);
+      it = funcs.find(func->getId());
       return it->second;
     }
   }
@@ -210,7 +211,34 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
 }
 
 std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
-LLVMVisitor::takeModule(const SrcInfo *src) {
+LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
+  // process any new functions or globals
+  if (module) {
+    std::unordered_set<id_t> funcsToProcess;
+    for (auto *var : *module) {
+      auto id = var->getId();
+      if (auto *func = cast<Func>(var)) {
+        if (funcs.find(id) != funcs.end())
+          continue;
+        else
+          funcsToProcess.insert(id);
+      } else {
+        if (vars.find(id) != vars.end())
+          continue;
+      }
+
+      registerGlobal(var);
+    }
+
+    for (auto *var : *module) {
+      if (auto *func = cast<Func>(var)) {
+        if (funcsToProcess.find(func->getId()) != funcsToProcess.end()) {
+          process(func);
+        }
+      }
+    }
+  }
+
   db.builder->finalize();
   auto currentContext = std::move(context);
   auto currentModule = std::move(M);
@@ -220,10 +248,25 @@ LLVMVisitor::takeModule(const SrcInfo *src) {
   func = nullptr;
   block = nullptr;
   value = nullptr;
-  for (auto &it : vars)
-    it.second = nullptr;
-  for (auto &it : funcs)
-    it.second = nullptr;
+
+  for (auto it = funcs.begin(); it != funcs.end();) {
+    if (it->second && it->second->hasPrivateLinkage()) {
+      it = funcs.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
+  for (auto it = vars.begin(); it != vars.end();) {
+    if (it->second && !llvm::isa<llvm::GlobalValue>(it->second)) {
+      it = vars.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
   coro.reset();
   loops.clear();
   trycatch.clear();
@@ -575,8 +618,7 @@ void LLVMVisitor::visit(const Module *x) {
   }
 
   const Func *main = x->getMainFunc();
-  makeLLVMFunction(main);
-  llvm::FunctionCallee realMain = func;
+  llvm::FunctionCallee realMain = makeLLVMFunction(main);
   process(main);
   setDebugInfoForNode(nullptr);
 
@@ -712,12 +754,15 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
   return subprogram;
 }
 
-void LLVMVisitor::makeLLVMFunction(const Func *x) {
+llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
   // process LLVM functions in full immediately
   if (auto *llvmFunc = cast<LLVMFunc>(x)) {
+    auto *oldFunc = func;
     process(llvmFunc);
     setDebugInfoForNode(nullptr);
-    return;
+    auto *newFunc = func;
+    func = oldFunc;
+    return newFunc;
   }
 
   auto *funcType = cast<types::FuncType>(x->getType());
@@ -730,11 +775,12 @@ void LLVMVisitor::makeLLVMFunction(const Func *x) {
   auto *llvmFuncType =
       llvm::FunctionType::get(returnType, argTypes, funcType->isVariadic());
   const std::string functionName = getNameForFunction(x);
-  func = llvm::cast<llvm::Function>(
+  auto *f = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(functionName, llvmFuncType).getCallee());
   if (!cast<ExternalFunc>(x)) {
-    func->setSubprogram(getDISubprogramForFunc(x));
+    f->setSubprogram(getDISubprogramForFunc(x));
   }
+  return f;
 }
 
 void LLVMVisitor::makeYield(llvm::Value *value, bool finalYield) {
@@ -801,7 +847,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   auto *funcType = cast<FuncType>(x->getType());
   std::vector<Type *> argTypes(funcType->begin(), funcType->end());
 
-  func->setLinkage(getDefaultLinkage());
+  func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   std::vector<llvm::Value *> args;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
@@ -964,7 +1010,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   seqassert(!fail, "linking failed");
   func = M->getFunction(getNameForFunction(x));
   seqassert(func, "function not linked in");
-  func->setLinkage(getDefaultLinkage());
+  func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   func->setSubprogram(getDISubprogramForFunc(x));
 
@@ -988,10 +1034,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   setDebugInfoForNode(x);
 
   auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
-  if (fnAttributes && fnAttributes->has("std.internal.attributes.export")) {
+  if (x->isJIT() ||
+      (fnAttributes && fnAttributes->has("std.internal.attributes.export"))) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
-    func->setLinkage(getDefaultLinkage());
+    func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
   if (fnAttributes && fnAttributes->has("std.internal.attributes.inline")) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);

@@ -78,6 +78,9 @@ struct Expr : public codon::SrcObject {
   /// type-checking procedure was successful).
   bool done;
 
+  /// Set of attributes.
+  int attributes;
+
 public:
   Expr();
   Expr(const Expr &expr) = default;
@@ -123,6 +126,10 @@ public:
   virtual const StringExpr *getString() const { return nullptr; }
   virtual const TupleExpr *getTuple() const { return nullptr; }
   virtual const UnaryExpr *getUnary() const { return nullptr; }
+
+  /// Attribute helpers
+  bool hasAttr(int attr) const;
+  void setAttr(int attr);
 
 protected:
   /// Add a type to S-expression string.
@@ -665,6 +672,8 @@ struct StackAllocExpr : Expr {
 };
 
 #undef ACCEPT
+
+enum ExprAttr { SequenceItem, StarSequenceItem, List, Set, Dict, Partial, __LAST__ };
 
 } // namespace ast
 } // namespace codon

@@ -24,7 +24,8 @@ SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
       allowTypeOf(true), substitutions(nullptr) {}
 
 SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, int attributes)
-    : name(move(name)), ast(move(ast)), attributes(attributes) {}
+    : name(move(name)), ast(move(ast)), attributes(attributes), deducedMembers(nullptr),
+      selfName() {}
 
 std::shared_ptr<SimplifyItem> SimplifyContext::add(SimplifyItem::Kind kind,
                                                    const std::string &name,

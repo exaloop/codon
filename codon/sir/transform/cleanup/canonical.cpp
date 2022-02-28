@@ -280,7 +280,7 @@ struct CanonConstSub : public RewriteRule {
     Value *newCall = nullptr;
     if (util::isConst<int64_t>(rhs)) {
       auto c = util::getConst<int64_t>(rhs);
-      if (c != -(static_cast<int64_t>(1) << 63)) // ensure no overflow
+      if (c != -(1ull << 63)) // ensure no overflow
         newCall = *lhs + *(M->getInt(-c));
     } else if (util::isConst<double>(rhs)) {
       auto c = util::getConst<double>(rhs);

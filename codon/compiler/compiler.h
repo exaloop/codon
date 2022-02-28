@@ -15,6 +15,13 @@
 namespace codon {
 
 class Compiler {
+public:
+  enum Mode {
+    DEBUG,
+    RELEASE,
+    JIT,
+  };
+
 private:
   std::string argv0;
   bool debug;
@@ -30,8 +37,13 @@ private:
                     const std::unordered_map<std::string, std::string> &defines);
 
 public:
-  Compiler(const std::string &argv0, bool debug = false,
+  Compiler(const std::string &argv0, Mode mode,
            const std::vector<std::string> &disabledPasses = {}, bool isTest = false);
+
+  explicit Compiler(const std::string &argv0, bool debug = false,
+                    const std::vector<std::string> &disabledPasses = {},
+                    bool isTest = false)
+      : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest) {}
 
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }

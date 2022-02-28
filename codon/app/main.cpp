@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -55,6 +56,12 @@ void display(const codon::error::ParserErrorInfo &e) {
   }
 }
 
+void initLogFlags(const llvm::cl::opt<std::string> &log) {
+  codon::getLogger().parse(log);
+  if (auto *d = getenv("CODON_DEBUG"))
+    codon::getLogger().parse(std::string(d));
+}
+
 enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
 enum OptMode { Debug, Release };
 } // namespace
@@ -84,10 +91,11 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
                                                bool standalone) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
+  auto regs = llvm::cl::getRegisteredOptions();
   llvm::cl::opt<OptMode> optMode(
       llvm::cl::desc("optimization mode"),
       llvm::cl::values(
-          clEnumValN(Debug, "debug",
+          clEnumValN(Debug, regs.find("debug") != regs.end() ? "default" : "debug",
                      "Turn off compiler optimizations and show backtraces"),
           clEnumValN(Release, "release",
                      "Turn on compiler optimizations and disable debug info")),
@@ -102,9 +110,7 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
-  codon::getLogger().parse(log);
-  if (auto *d = getenv("CODON_DEBUG"))
-    codon::getLogger().parse(std::string(d));
+  initLogFlags(log);
 
   auto &exts = supportedExtensions();
   if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
@@ -206,7 +212,9 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
 int jitMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  initLogFlags(log);
   codon::jit::JIT jit(args[0]);
 
   // load plugins
@@ -230,13 +238,13 @@ int jitMode(const std::vector<const char *> &args) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
-      fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
+      fmt::print("{}[done]\n", jitExec(&jit, code));
       code = "";
       fflush(stdout);
     }
   }
   if (!code.empty())
-    fmt::print("{}\n\n[done]\n\n", jitExec(&jit, code));
+    fmt::print("{}[done]\n", jitExec(&jit, code));
   return EXIT_SUCCESS;
 }
 

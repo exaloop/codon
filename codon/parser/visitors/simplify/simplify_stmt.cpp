@@ -180,7 +180,9 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
         transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true));
   }
   ctx->loops.push_back(breakVar); // needed for transforming break in loop..else blocks
-  StmtPtr whileStmt = N<WhileStmt>(transform(cond), transform(stmt->suite));
+
+  cond = transform(cond);
+  StmtPtr whileStmt = N<WhileStmt>(cond, transform(stmt->suite));
   ctx->loops.pop_back();
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     resultStmt =
@@ -232,8 +234,9 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   ctx->addBlock();
   if (auto i = stmt->var->getId()) {
     ctx->add(SimplifyItem::Var, i->value, ctx->generateCanonicalName(i->value));
-    forStmt = N<ForStmt>(transform(stmt->var), clone(iter), transform(stmt->suite),
-                         nullptr, decorator, ompArgs);
+    auto var = transform(stmt->var);
+    forStmt = N<ForStmt>(var, clone(iter), transform(stmt->suite), nullptr, decorator,
+                         ompArgs);
   } else {
     std::string varName = ctx->cache->getTemporaryVar("for");
     ctx->add(SimplifyItem::Var, varName, varName);
@@ -259,8 +262,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
 
 void SimplifyVisitor::visit(IfStmt *stmt) {
   seqassert(stmt->cond, "invalid if statement");
-  resultStmt = N<IfStmt>(transform(stmt->cond), transform(stmt->ifSuite),
-                         transform(stmt->elseSuite));
+  auto cond = transform(stmt->cond);
+  resultStmt = N<IfStmt>(cond, transform(stmt->ifSuite), transform(stmt->elseSuite));
 }
 
 void SimplifyVisitor::visit(MatchStmt *stmt) {
@@ -473,7 +476,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     // TODO: error on decorators
     return;
   }
-
+  bool overload = attr.has(Attr::Overload);
   bool isClassMember = ctx->inClass();
   std::string rootName;
   if (isClassMember) {
@@ -481,10 +484,11 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     auto i = m.find(stmt->name);
     if (i != m.end())
       rootName = i->second;
-  } else if (auto c = ctx->find(stmt->name)) {
-    if (c->isFunc() && c->getModule() == ctx->getModule() &&
-        c->getBase() == ctx->getBase())
-      rootName = c->canonicalName;
+  } else if (overload) {
+    if (auto c = ctx->find(stmt->name))
+      if (c->isFunc() && c->getModule() == ctx->getModule() &&
+          c->getBase() == ctx->getBase())
+        rootName = c->canonicalName;
   }
   if (rootName.empty())
     rootName = ctx->generateCanonicalName(stmt->name, true);
@@ -504,7 +508,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (isClassMember)
     ctx->bases.push_back(oldBases[0]);
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
-  ctx->addBlock();                                               // ... and a block!
+  if (isClassMember && ctx->bases[0].deducedMembers)
+    ctx->bases.back().deducedMembers = ctx->bases[0].deducedMembers;
+  ctx->addBlock(); // ... and a block!
   // Set atomic flag if @atomic attribute is present.
   if (attr.has(Attr::Atomic))
     ctx->bases.back().attributes |= FLAG_ATOMIC;
@@ -540,9 +546,12 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       error("non-default argument '{}' after a default argument", varName);
     defaultsStarted |= bool(a.deflt);
 
+    auto name = ctx->generateCanonicalName(varName);
+
     auto typeAst = a.type;
     if (!typeAst && isClassMember && ia == 0 && a.name == "self") {
       typeAst = ctx->bases[ctx->bases.size() - 2].ast;
+      ctx->bases.back().selfName = name;
       attr.set(".changedSelf");
       attr.set(Attr::Method);
     }
@@ -557,9 +566,14 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
 
     // First add all generics!
-    auto name = ctx->generateCanonicalName(varName);
-    args.emplace_back(
-        Param{std::string(stars, '*') + name, typeAst, a.deflt, a.generic});
+    auto deflt = a.deflt;
+    if (typeAst && typeAst->getIndex() && typeAst->getIndex()->expr->isId("Callable") &&
+        deflt && deflt->getNone())
+      deflt = N<CallExpr>(N<IdExpr>("NoneType"));
+    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) && deflt &&
+        deflt->getNone())
+      deflt = N<IdExpr>("NoneType");
+    args.emplace_back(Param{std::string(stars, '*') + name, typeAst, deflt, a.generic});
     if (a.generic) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
         ctx->add(SimplifyItem::Var, varName, name);
@@ -677,12 +691,15 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   Attr attr = stmt->attributes;
   std::vector<char> hasMagic(10, 2);
   hasMagic[Init] = hasMagic[Pickle] = 1;
+  bool deduce = false;
   // @tuple(init=, repr=, eq=, order=, hash=, pickle=, container=, python=, add=,
   // internal=...)
   // @dataclass(...)
   // @extend
   for (auto &d : stmt->decorators) {
-    if (auto c = d->getCall()) {
+    if (d->isId("deduce")) {
+      deduce = true;
+    } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple))
         attr.set(Attr::Tuple);
       else if (!c->expr->isId("dataclass"))
@@ -861,6 +878,43 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
     argSubstitutions.push_back(substitutions.size() - 1);
   }
+
+  // Auto-detect fields
+  StmtPtr autoDeducedInit = nullptr;
+  Stmt *firstInit = nullptr;
+  if (deduce && args.empty() && !extension) {
+    for (auto sp : getClassMethods(stmt->suite))
+      if (sp && sp->getFunction()) {
+        firstInit = sp.get();
+        auto f = sp->getFunction();
+        if (f->name == "__init__" && f->args.size() >= 1 && f->args[0].name == "self") {
+          ctx->bases.back().deducedMembers =
+              std::make_shared<std::vector<std::string>>();
+          transform(sp);
+          autoDeducedInit = preamble->functions.back();
+          std::dynamic_pointer_cast<FunctionStmt>(autoDeducedInit)
+              ->attributes.set(Attr::RealizeWithoutSelf);
+          ctx->cache->functions[autoDeducedInit->getFunction()->name]
+              .ast->attributes.set(Attr::RealizeWithoutSelf);
+
+          int i = 0;
+          for (auto &m : *(ctx->bases.back().deducedMembers)) {
+            auto varName = ctx->generateCanonicalName(format("T{}", ++i));
+            auto name = ctx->cache->reverseIdentifierLookup[varName];
+            ctx->add(SimplifyItem::Type, name, varName, true);
+            genAst.push_back(N<IdExpr>(varName));
+            args.emplace_back(Param{varName, N<IdExpr>("type"), nullptr, true});
+            argSubstitutions.push_back(substitutions.size() - 1);
+
+            ctx->cache->classes[canonicalName].fields.push_back({m, nullptr});
+            args.emplace_back(Param{m, N<IdExpr>(varName), nullptr});
+            argSubstitutions.push_back(substitutions.size() - 1);
+          }
+          ctx->bases.back().deducedMembers = nullptr;
+          break;
+        }
+      }
+  }
   if (!genAst.empty())
     ctx->bases.back().ast =
         std::make_shared<IndexExpr>(N<IdExpr>(name), N<TupleExpr>(genAst));
@@ -925,7 +979,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         magics = {"len", "hash"};
       else
         magics = {"new", "raw"};
-      if (hasMagic[Init])
+      if (hasMagic[Init] && !firstInit)
         magics.emplace_back(isRecord ? "new" : "init");
       if (hasMagic[Eq])
         for (auto &i : {"eq", "ne"})
@@ -959,7 +1013,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
   }
   for (int ai = 0; ai < baseASTs.size(); ai++) {
-    // FUNCS
     for (auto &mm : ctx->cache->classes[baseASTs[ai]->name].methods)
       for (auto &mf : ctx->cache->overloads[mm.second]) {
         auto f = ctx->cache->functions[mf.name].ast;
@@ -999,6 +1052,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   }
   for (auto sp : getClassMethods(stmt->suite))
     if (sp && !sp->getClass()) {
+      if (firstInit && firstInit == sp.get())
+        continue;
       transform(sp);
       suite->stmts.push_back(preamble->functions.back());
     }
@@ -1012,8 +1067,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     preamble->globals.push_back(c->clone());
     c->suite = clone(suite);
-    // if (stmt->baseClasses.size())
-    // LOG("{} -> {}", stmt->name, c->toString(0));
+
   }
   stmts[0] = N<ClassStmt>(canonicalName, std::vector<Param>{}, N<SuiteStmt>(),
                           Attr({Attr::Extend}), std::vector<ExprPtr>{},
@@ -1046,7 +1100,15 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
                                              clone(ei->index), rhs->clone())));
   } else if (auto ed = lhs->getDot()) {
     seqassert(!type, "unexpected type annotation");
-    return N<AssignMemberStmt>(transform(ed->expr), ed->member, transform(rhs, false));
+    auto l = transform(ed->expr);
+    if (ctx->bases.size() && ctx->bases.back().deducedMembers &&
+        l->isId(ctx->bases.back().selfName)) {
+      if (std::find(ctx->bases.back().deducedMembers->begin(),
+                    ctx->bases.back().deducedMembers->end(),
+                    ed->member) == ctx->bases.back().deducedMembers->end())
+        ctx->bases.back().deducedMembers->push_back(ed->member);
+    }
+    return N<AssignMemberStmt>(l, ed->member, transform(rhs, false));
   } else if (auto e = lhs->getId()) {
     ExprPtr t = transformType(type, false);
     if (!shadow && !t) {
