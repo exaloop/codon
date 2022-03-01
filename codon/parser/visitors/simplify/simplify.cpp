@@ -98,7 +98,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->isStdlibLoading = true;
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     auto baseTypeCode =
-        "@__internal__\n@tuple\nclass pyobj:\n  p: Ptr[byte]\n"
+        "@__internal__\nclass pyobj:\n  p: Ptr[byte]\n"
         "@__internal__\n@tuple\nclass str:\n  ptr: Ptr[byte]\n  len: int\n";
     SimplifyVisitor(stdlib, preamble)
         .transform(parseCode(stdlib->cache, stdlibPath->path, baseTypeCode));
