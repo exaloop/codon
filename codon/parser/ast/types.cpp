@@ -580,7 +580,6 @@ std::string PartialType::realizedName() const {
 
 StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx)
     : expr(e->clone()), typeCtx(move(ctx)) {
-  // seqassert(expr->isStatic(), "{} is not a static expression", expr->toString());
   if (!expr->isStatic() || !expr->staticValue.evaluated) {
     std::unordered_set<std::string> seen;
     parseExpr(expr, seen);
@@ -589,8 +588,6 @@ StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx
 StaticType::StaticType(std::vector<ClassType::Generic> generics,
                        std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> typeCtx)
     : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {
-  // seqassert(!expr || !expr->getInt(), "invalid complex static expression: {}",
-  //           expr ? expr->toString() : "-");
 }
 StaticType::StaticType(int64_t i)
     : expr(std::make_shared<IntExpr>(i)), typeCtx(nullptr) {}
