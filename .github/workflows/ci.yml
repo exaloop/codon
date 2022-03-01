@@ -167,10 +167,10 @@ jobs:
           build/codon_test
           build/codon run test/core/helloworld.codon
           build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-          python extra/cython/test.py
+          python test/python/cython.py
         env:
           CODON_PATH: ./stdlib
-          PYTHONPATH: ./test/python
+          PYTHONPATH: ./extra:./test/python
 
       - name: Build Documentation
         run: |

@@ -35,7 +35,8 @@ ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-python extra/cython/test.py
+export PYTHONPATH=$(pwd)/extra:$PYTHONPATH
+python test/python/cython.py
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
