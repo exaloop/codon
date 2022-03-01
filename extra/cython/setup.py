@@ -5,13 +5,26 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 
-def get_output(command):
-    ps = subprocess.run(command.split(" "), stdout=subprocess.PIPE)
+def exists(executable):
+    ps = subprocess.run(["which", executable], stdout=subprocess.PIPE)
+    return ps.returncode == 0
+
+
+def get_output(*args):
+    ps = subprocess.run(args, stdout=subprocess.PIPE)
     return ps.stdout.decode("utf8").strip()
 
 
-llvm_include_dir = get_output("llvm-config-12 --includedir")
-llvm_lib_dir = get_output("llvm-config-12 --libdir")
+llvm_config: str
+if exists("llvm-config-12"):
+    llvm_config = "llvm-config-12"
+elif exists("llvm-config"):
+    llvm_config = "llvm-config"
+else:
+    raise Error("Cannot find llvm-config; is llvm installed?4")
+
+llvm_include_dir = get_output(llvm_config, "--includedir")
+llvm_lib_dir = get_output(llvm_config, "--libdir")
 
 extensions = [
     Extension(
