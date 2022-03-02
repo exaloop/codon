@@ -1067,7 +1067,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     preamble->globals.push_back(c->clone());
     c->suite = clone(suite);
-
   }
   stmts[0] = N<ClassStmt>(canonicalName, std::vector<Param>{}, N<SuiteStmt>(),
                           Attr({Attr::Extend}), std::vector<ExprPtr>{},
