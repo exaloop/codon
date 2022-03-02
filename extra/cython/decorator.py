@@ -2,9 +2,7 @@ import ctypes
 import inspect
 import importlib
 import importlib.util
-import re
 import sys
-import warnings
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
@@ -21,6 +19,7 @@ def _wrapper_stub_init():
     from internal.python import (
         pyobj,
         ensure_initialized,
+        Py_None,
         PyImport_AddModule,
         PyObject_GetAttrString,
         PyObject_SetAttrString,
@@ -36,8 +35,13 @@ def _wrapper_stub_header():
     argt = PyObject_GetAttrString(module, "__codon_args__".c_str())
 
 
-def _wrapper_stub_footer():
+def _wrapper_stub_footer_ret():
     PyObject_SetAttrString(module, "__codon_ret__".c_str(), ret.p)
+
+
+def _wrapper_stub_footer_void():
+    pyobj.incref(Py_None)
+    PyObject_SetAttrString(module, "__codon_ret__".c_str(), Py_None)
 
 
 # helpers
@@ -122,7 +126,7 @@ def _type_str(typ) -> str:
 
 
 def _build_wrapper(obj, obj_name) -> str:
-    arg_types, _ = _get_type_info(obj)
+    arg_types, ret_type = _get_type_info(obj)
     arg_count = len(arg_types)
     wrap_name = f"{obj_name}{separator}wrapped"
     wrap = [f"def {wrap_name}():\n"]
@@ -132,8 +136,12 @@ def _build_wrapper(obj, obj_name) -> str:
         for i in range(arg_count)
     ]
     args = ", ".join([f"arg_{i}" for i in range(arg_count)])
-    wrap += [f"    ret = {obj_name}({args}).__to_py__()\n"]
-    wrap += inspect.getsourcelines(_wrapper_stub_footer)[0][1:]
+    if ret_type != inspect._empty:
+        wrap += [f"    ret = {obj_name}({args}).__to_py__()\n"]
+        wrap += inspect.getsourcelines(_wrapper_stub_footer_ret)[0][1:]
+    else:
+        wrap += [f"    {obj_name}({args})\n"]
+        wrap += inspect.getsourcelines(_wrapper_stub_footer_void)[0][1:]
     return wrap_name, "".join(wrap)
 
 
@@ -154,7 +162,8 @@ def codon(obj):
     def wrapped(*args, **kwargs):
         try:
             module.__codon_args__ = (*args, *kwargs.values())
-            jit.execute(f"{wrap_name}()")
+            stdout = jit.execute(f"{wrap_name}()")
+            print(stdout, end="")
             return module.__codon_ret__
         except JitError as e:
             _reset_jit()

@@ -16,7 +16,7 @@ def get_output(*args):
 
 
 llvm_config: str
-llvm_config_candidates = {"llvm-config-12", "llvm-config", "llvm/bin/llvm-config"}
+llvm_config_candidates = ["llvm-config-12", "llvm-config", "llvm/bin/llvm-config"]
 for candidate in llvm_config_candidates:
     if exists(candidate):
         llvm_config = candidate

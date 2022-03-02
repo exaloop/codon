@@ -1,19 +1,42 @@
+from io import StringIO
 import sys
+from io import StringIO
 from time import time
 from typing import Dict, List, Tuple
 
 from extra.cython import JitError, codon
+
+
+# test error handling
+
+
+def test_stdout():
+    @codon
+    def run():
+        print("hello world!")
+
+    try:
+        output = StringIO()
+        sys.stdout = output
+        run()
+        assert output.getvalue() == "hello world!\n"
+    finally:
+        sys.stdout = sys.__stdout__
+
+
+test_stdout()
+
 
 # test error handling
 
 
 def test_error_handling():
     @codon
-    def get() -> int:
+    def run() -> int:
         return "not int"
 
     try:
-        r = get()
+        r = run()
     except JitError:
         assert True
     except BaseException:
@@ -30,10 +53,10 @@ test_error_handling()
 
 def test_return_type():
     @codon
-    def get() -> Tuple[int, str, float, List[int], Dict[str, int]]:
+    def run() -> Tuple[int, str, float, List[int], Dict[str, int]]:
         return (1, "str", 2.45, [1, 2, 3], {"a": 1, "b": 2})
 
-    r = get()
+    r = run()
     assert type(r) == tuple
     assert type(r[0]) == int
     assert type(r[1]) == str
@@ -52,13 +75,13 @@ test_return_type()
 
 def test_param_types():
     @codon
-    def get(a: int, b: Tuple[int, int], c: List[int], d: Dict[str, int]) -> int:
+    def run(a: int, b: Tuple[int, int], c: List[int], d: Dict[str, int]) -> int:
         s = 0
         for v in [a, *b, *c, *d.values()]:
             s += v
         return s
 
-    r = get(1, (2, 3), [4, 5, 6], dict(a=7, b=8, c=9))
+    r = run(1, (2, 3), [4, 5, 6], dict(a=7, b=8, c=9))
     assert type(r) == int
     assert r == 45
 
