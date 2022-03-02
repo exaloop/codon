@@ -21,7 +21,7 @@ if exists("llvm-config-12"):
 elif exists("llvm-config"):
     llvm_config = "llvm-config"
 else:
-    raise Error("Cannot find llvm-config; is llvm installed?4")
+    raise FileNotFoundError("Cannot find llvm-config; is llvm installed?")
 
 llvm_include_dir = get_output(llvm_config, "--includedir")
 llvm_lib_dir = get_output(llvm_config, "--libdir")
