@@ -4,6 +4,8 @@ import importlib
 import importlib.util
 import sys
 
+from typing import List, Tuple
+
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 from codon_jit import Jit, JitError
@@ -111,7 +113,7 @@ def _parse_decorated(obj):
     return _obj_name(obj), _obj_to_str(obj)
 
 
-def _get_type_info(obj) -> tuple[list[str], str]:
+def _get_type_info(obj) -> Tuple[List[str], str]:
     sgn = inspect.signature(obj)
     par = [p.annotation for p in sgn.parameters.values()]
     ret = sgn.return_annotation

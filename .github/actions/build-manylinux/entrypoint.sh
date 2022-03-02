@@ -32,6 +32,7 @@ python3 -m pip install cython
 python3 extra/cython/setup.py build_ext --inplace --force
 
 # test
+export CODON_PATH=$(pwd)/stdlib
 ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
