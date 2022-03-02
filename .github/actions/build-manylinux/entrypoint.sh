@@ -36,6 +36,7 @@ ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+export PYTHONPATH=$(pwd):$PYTHONPATH
 python3 test/python/cython_jit.py
 
 # package
