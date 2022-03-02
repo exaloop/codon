@@ -170,7 +170,8 @@ jobs:
           python test/python/cython_jit.py
         env:
           CODON_PATH: ./stdlib
-          PYTHONPATH: .:./test/python
+          PYTHONPATH: ./test/python
+          LD_LIBRARY_PATH: ./build
 
       - name: Build Documentation
         run: |

@@ -27,7 +27,7 @@ export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
 cmake --build build --config Release -- VERBOSE=1
 
 # build cython
-export PYTHONPATH=$(pwd):$PYTHONPATH
+export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
 python3 -m pip install cython
 python3 extra/cython/setup.py build_ext --inplace --force
 
