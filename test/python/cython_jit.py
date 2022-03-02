@@ -1,4 +1,3 @@
-from io import StringIO
 import sys
 from io import StringIO
 from time import time
@@ -7,7 +6,7 @@ from typing import Dict, List, Tuple
 from extra.cython import JitError, codon
 
 
-# test error handling
+# test stdout
 
 
 def test_stdout():
