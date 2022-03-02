@@ -1,1 +1,1 @@
-from decorator import codon, JitError
+from .decorator import codon, JitError

@@ -2,12 +2,11 @@ import sys
 from time import time
 from typing import Dict, List, Tuple
 
-from cython import JitError, codon
+from extra.cython import JitError, codon
 
 # test error handling
 
 
-@test
 def test_error_handling():
     @codon
     def get() -> int:
@@ -29,7 +28,6 @@ test_error_handling()
 # test type validity
 
 
-@test
 def test_return_type():
     @codon
     def get() -> Tuple[int, str, float, List[int], Dict[str, int]]:
@@ -52,7 +50,6 @@ def test_return_type():
 test_return_type()
 
 
-@test
 def test_param_types():
     @codon
     def get(a: int, b: Tuple[int, int], c: List[int], d: Dict[str, int]) -> int:

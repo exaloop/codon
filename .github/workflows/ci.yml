@@ -170,7 +170,7 @@ jobs:
           python test/python/cython.py
         env:
           CODON_PATH: ./stdlib
-          PYTHONPATH: ./extra:./test/python
+          PYTHONPATH: .:./test/python
 
       - name: Build Documentation
         run: |

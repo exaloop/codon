@@ -27,6 +27,7 @@ export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
 cmake --build build --config Release -- VERBOSE=1
 
 # build cython
+export PYTHONPATH=$(pwd):$PYTHONPATH
 python3 -m pip install cython
 python3 extra/cython/setup.py build_ext --inplace --force
 
@@ -35,7 +36,6 @@ ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-export PYTHONPATH=$(pwd)/extra:$PYTHONPATH
 python3 test/python/cython.py
 
 # package

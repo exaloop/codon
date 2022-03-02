@@ -16,10 +16,11 @@ def get_output(*args):
 
 
 llvm_config: str
-if exists("llvm-config-12"):
-    llvm_config = "llvm-config-12"
-elif exists("llvm-config"):
-    llvm_config = "llvm-config"
+llvm_config_candidates = {"llvm-config-12", "llvm-config", "llvm/bin/llvm-config"}
+for candidate in llvm_config_candidates:
+    if exists(candidate):
+        llvm_config = candidate
+        break
 else:
     raise FileNotFoundError("Cannot find llvm-config; is llvm installed?")
 
