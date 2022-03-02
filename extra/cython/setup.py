@@ -1,3 +1,4 @@
+import os
 import subprocess
 
 from Cython.Distutils import build_ext
@@ -34,6 +35,7 @@ extensions = [
         libraries=["codonc", "codonrt"],
         language="c++",
         extra_compile_args=["-w", "-std=c++17"],
+        extra_link_args=[f"-Wl,-rpath,{os.getcwd()}/build"],
         include_dirs=[llvm_include_dir, "./build/include"],
         library_dirs=[llvm_lib_dir, "./build"],
     )
