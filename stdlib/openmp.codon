@@ -323,23 +323,29 @@ def _fork_call(microtask: cobj, args):
 
 
 def _static_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
+    @nonpure
     def _loop_step():
         return 1
 
+    @nonpure
     def _loop_loc_and_gtid(
         loc_ref: Ptr[Ident], reduction_loc_ref: Ptr[Ident], gtid: int
     ):
         pass
 
+    @nonpure
     def _loop_body_stub(i, args):
         pass
 
+    @nonpure
     def _loop_schedule():
         return (1 << 30) | 35  # nonmonotonic, dynamic chunked
 
+    @nonpure
     def _loop_shared_updates(args):
         pass
 
+    @nonpure
     def _loop_reductions(args):
         pass
 
@@ -371,23 +377,29 @@ def _static_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
 
 
 def _static_chunked_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
+    @nonpure
     def _loop_step():
         return 1
 
+    @nonpure
     def _loop_loc_and_gtid(
         loc_ref: Ptr[Ident], reduction_loc_ref: Ptr[Ident], gtid: int
     ):
         pass
 
+    @nonpure
     def _loop_body_stub(i, args):
         pass
 
+    @nonpure
     def _loop_schedule():
         return (1 << 30) | 35  # nonmonotonic, dynamic chunked
 
+    @nonpure
     def _loop_shared_updates(args):
         pass
 
+    @nonpure
     def _loop_reductions(args):
         pass
 
@@ -425,26 +437,33 @@ def _static_chunked_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32]
 
 
 def _dynamic_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
+    @nonpure
     def _loop_step():
         return 1
 
+    @nonpure
     def _loop_loc_and_gtid(
         loc_ref: Ptr[Ident], reduction_loc_ref: Ptr[Ident], gtid: int
     ):
         pass
 
+    @nonpure
     def _loop_body_stub(i, args):
         pass
 
+    @nonpure
     def _loop_schedule():
         return (1 << 30) | 35  # nonmonotonic, dynamic chunked
 
+    @nonpure
     def _loop_shared_updates(args):
         pass
 
+    @nonpure
     def _loop_reductions(args):
         pass
 
+    @nonpure
     def _loop_ordered():
         return False
 
@@ -510,6 +529,7 @@ def _spawn_and_run_task(
 # spawns a new task for each loop iteration.
 def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
     def _routine_stub(gtid: i32, data: cobj, P: type, S: type):
+        @nonpure
         def _task_loop_body_stub(priv, shared):
             pass
 
