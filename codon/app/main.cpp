@@ -207,6 +207,21 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
   }
   return *result;
 }
+
+void jitLoop(codon::jit::JIT *jit, std::istream &fp) {
+  std::string code;
+  for (std::string line; std::getline(fp, line);) {
+    if (line != "#%%") {
+      code += line + "\n";
+    } else {
+      fmt::print("{}[done]\n", jitExec(jit, code));
+      code = "";
+      fflush(stdout);
+    }
+  }
+  if (!code.empty())
+    fmt::print("{}[done]\n", jitExec(jit, code));
+}
 } // namespace
 
 int jitMode(const std::vector<const char *> &args) {
@@ -235,26 +250,11 @@ int jitMode(const std::vector<const char *> &args) {
 
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
-  std::string code;
-  std::istream *fp = nullptr;
-  if (input == "-")
-    fp = &(std::cin);
-  else
-    fp = new std::ifstream(args[1]);
-  for (std::string line; std::getline(*fp, line);) {
-    if (line != "#%%") {
-      code += line + "\n";
-    } else {
-      fmt::print("{}[done]\n", jitExec(&jit, code));
-      code = "";
-      fflush(stdout);
-    }
-  }
-  if (!code.empty())
-    fmt::print("{}[done]\n", jitExec(&jit, code));
-  if (input != "-") {
-    static_cast<std::ifstream*>(fp)->close();
-    delete fp;
+  if (input == "-") {
+    jitLoop(&jit, std::cin);
+  } else {
+    std::ifstream fileInput(input);
+    jitLoop(&jit, fileInput);
   }
   return EXIT_SUCCESS;
 }
