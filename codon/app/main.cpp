@@ -210,6 +210,8 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
 } // namespace
 
 int jitMode(const std::vector<const char *> &args) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
   llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
@@ -234,7 +236,12 @@ int jitMode(const std::vector<const char *> &args) {
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   std::string code;
-  for (std::string line; std::getline(std::cin, line);) {
+  std::istream *fp = nullptr;
+  if (input == "-")
+    fp = &(std::cin);
+  else
+    fp = new std::ifstream(args[1]);
+  for (std::string line; std::getline(*fp, line);) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
@@ -245,6 +252,10 @@ int jitMode(const std::vector<const char *> &args) {
   }
   if (!code.empty())
     fmt::print("{}[done]\n", jitExec(&jit, code));
+  if (input != "-") {
+    static_cast<std::ifstream*>(fp)->close();
+    delete fp;
+  }
   return EXIT_SUCCESS;
 }
 
