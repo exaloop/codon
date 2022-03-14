@@ -1,9 +1,8 @@
 import sys
 from io import StringIO
-from time import time
 from typing import Dict, List, Tuple
 
-from extra.cython import JitError, codon
+from codon import codon, JitError
 
 
 # test stdout

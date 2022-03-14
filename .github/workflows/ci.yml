@@ -153,8 +153,7 @@ jobs:
 
       - name: Build Cython
         run: |
-          python -m pip install cython
-          python extra/cython/setup.py build_ext --inplace --force
+          python -m pip install -v extra/python
         env:
           CC: clang
           CXX: clang++

@@ -6,7 +6,7 @@
 from cython.operator import dereference as dref
 from libcpp.string cimport string
 
-from jit cimport JIT, JITResult
+from src.jit cimport JIT, JITResult
 
 
 class JitError(Exception):
