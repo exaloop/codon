@@ -155,7 +155,8 @@ if(CODON_JUPYTER)
         OPTIONS "BUILD_EXAMPLES OFF"
                 "XEUS_BUILD_SHARED_LIBS OFF"
                 "XEUS_STATIC_DEPENDENCIES ON"
-                "CMAKE_POSITION_INDEPENDENT_CODE ON")
+                "CMAKE_POSITION_INDEPENDENT_CODE ON"
+                "XEUS_DISABLE_ARCH_NATIVE ON")
     if (xeus_ADDED)
         install(TARGETS nlohmann_json EXPORT xeus-targets)
     endif()

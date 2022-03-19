@@ -109,6 +109,28 @@ public:
   explicit PassManager(bool debug = false, std::vector<std::string> disabled = {})
       : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled)) {}
 
+  /// Checks if the given pass is included in this manager.
+  /// @param key the pass key
+  /// @return true if manager has the given pass
+  bool hasPass(const std::string &key) {
+    for (auto &pair : passes) {
+      if (pair.first == key)
+        return true;
+    }
+    return false;
+  }
+
+  /// Checks if the given analysis is included in this manager.
+  /// @param key the analysis key
+  /// @return true if manager has the given analysis
+  bool hasAnalysis(const std::string &key) {
+    for (auto &pair : analyses) {
+      if (pair.first == key)
+        return true;
+    }
+    return false;
+  }
+
   /// Registers a pass and appends it to the execution order.
   /// @param pass the pass
   /// @param insertBefore insert pass before the pass with this given key

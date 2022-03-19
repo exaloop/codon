@@ -12,7 +12,7 @@ private:
   /// the clone context
   std::unordered_map<int, Node *> ctx;
   /// the result
-  Node *result = nullptr;
+  Node *result;
   /// the module
   Module *module;
   /// true if break/continue loops should be cloned
@@ -22,7 +22,8 @@ public:
   /// Constructs a clone visitor.
   /// @param module the module
   /// @param cloneLoop true if break/continue loops should be cloned
-  explicit CloneVisitor(Module *module, bool cloneLoop = true) : module(module) {}
+  explicit CloneVisitor(Module *module, bool cloneLoop = true)
+      : ctx(), result(nullptr), module(module), cloneLoop(cloneLoop) {}
 
   virtual ~CloneVisitor() noexcept = default;
 
@@ -69,38 +70,14 @@ public:
 
   /// Clones a value, returning the previous value if other has already been cloned.
   /// @param other the original
+  /// @param cloneTo the function to clone locals to, or null if none
   /// @return the clone
-  Value *clone(const Value *other) {
-    if (!other)
-      return nullptr;
-
-    auto id = other->getId();
-    if (ctx.find(id) == ctx.end()) {
-      other->accept(*this);
-      ctx[id] = result;
-
-      for (auto it = other->attributes_begin(); it != other->attributes_end(); ++it) {
-        const auto *attr = other->getAttribute(*it);
-        if (attr->needsClone()) {
-          ctx[id]->setAttribute(attr->clone(*this), *it);
-        }
-      }
-    }
-    return cast<Value>(ctx[id]);
-  }
+  Value *clone(const Value *other, BodiedFunc *cloneTo = nullptr);
 
   /// Returns the original unless the variable has been force cloned.
   /// @param other the original
   /// @return the original or the previous clone
-  Var *clone(const Var *other) {
-    if (!other)
-      return nullptr;
-    auto id = other->getId();
-    if (ctx.find(id) != ctx.end())
-      return cast<Var>(ctx[id]);
-
-    return const_cast<Var *>(other);
-  }
+  Var *clone(const Var *other);
 
   /// Clones a flow, returning the previous value if other has already been cloned.
   /// @param other the original

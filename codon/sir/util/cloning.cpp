@@ -1,8 +1,61 @@
 #include "cloning.h"
 
+#include "codon/sir/util/operator.h"
+
 namespace codon {
 namespace ir {
 namespace util {
+namespace {
+struct GatherLocals : public util::Operator {
+  std::vector<Var *> locals;
+  void preHook(Node *node) override {
+    for (auto *v : node->getUsedVariables()) {
+      if (!v->isGlobal())
+        locals.push_back(v);
+    }
+  }
+};
+} // namespace
+
+Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo) {
+  if (!other)
+    return nullptr;
+
+  if (cloneTo) {
+    auto *M = cloneTo->getModule();
+    GatherLocals gl;
+    const_cast<Value *>(other)->accept(gl);
+    for (auto *v : gl.locals) {
+      auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
+      cloneTo->push_back(clonedVar);
+      forceRemap(v, clonedVar);
+    }
+  }
+
+  auto id = other->getId();
+  if (ctx.find(id) == ctx.end()) {
+    other->accept(*this);
+    ctx[id] = result;
+
+    for (auto it = other->attributes_begin(); it != other->attributes_end(); ++it) {
+      const auto *attr = other->getAttribute(*it);
+      if (attr->needsClone()) {
+        ctx[id]->setAttribute(attr->clone(*this), *it);
+      }
+    }
+  }
+  return cast<Value>(ctx[id]);
+}
+
+Var *CloneVisitor::clone(const Var *other) {
+  if (!other)
+    return nullptr;
+  auto id = other->getId();
+  if (ctx.find(id) != ctx.end())
+    return cast<Var>(ctx[id]);
+
+  return const_cast<Var *>(other);
+}
 
 void CloneVisitor::visit(const Var *v) {
   result = module->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
