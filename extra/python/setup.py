@@ -16,8 +16,8 @@ def get_output(*args):
     return ps.stdout.decode("utf8").strip()
 
 
-from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
-
+ext_dir = os.path.dirname(os.path.realpath(__file__))
+from_root = lambda relpath: os.path.realpath(f"{ext_dir}/../../{relpath}")
 
 llvm_config: str
 llvm_config_candidates = ["llvm-config-12", "llvm-config", from_root("llvm/bin/llvm-config")]
