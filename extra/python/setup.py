@@ -19,7 +19,7 @@ def get_output(*args):
 from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
 
 llvm_config: str
-llvm_config_candidates = ["llvm-config-12", "llvm-config"]
+llvm_config_candidates = ["llvm-config-12", "llvm-config", from_root("llvm/bin/llvm-config")]
 for candidate in llvm_config_candidates:
     if exists(candidate):
         llvm_config = candidate
