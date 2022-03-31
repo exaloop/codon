@@ -31,7 +31,7 @@ def dlerror() -> str:
 
 
 def dlopen(name: str, flag: int = RTLD_NOW | RTLD_GLOBAL) -> cobj:
-    h = c_dlopen(cobj(0) if name == "" else name.c_str(), flag)
+    h = c_dlopen(cobj() if name == "" else name.c_str(), flag)
     if h == cobj():
         raise CError(dlerror())
     return h

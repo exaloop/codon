@@ -100,7 +100,7 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return getCapturedOutput();
 }
 
-llvm::Expected<std::string> JIT::exec(const std::string &code) {
+llvm::Expected<std::string> JIT::execute(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
@@ -158,6 +158,15 @@ llvm::Expected<std::string> JIT::exec(const std::string &code) {
     *(cache->codegenCtx) = bTranslate;
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
+}
+
+JITResult JIT::executeSafe(const std::string &code) {
+  auto result = this->execute(code);
+  if (auto err = result.takeError()) {
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
+  }
+  return JITResult::success(result.get());
 }
 
 } // namespace jit

@@ -15,6 +15,29 @@
 namespace codon {
 namespace jit {
 
+struct JITResult {
+  std::string data;
+  bool isError;
+
+  JITResult():
+    data(""), isError(false) {}
+
+  JITResult(const std::string &data, bool isError):
+    data(data), isError(isError) {}
+
+  operator bool() {
+    return !this->isError;
+  }
+
+  static JITResult success(const std::string &output) {
+    return JITResult(output, false);
+  }
+
+  static JITResult error(const std::string &errorInfo) {
+    return JITResult(errorInfo, true);
+  }
+};
+
 class JIT {
 private:
   std::unique_ptr<Compiler> compiler;
@@ -29,7 +52,8 @@ public:
 
   llvm::Error init();
   llvm::Expected<std::string> run(const ir::Func *input);
-  llvm::Expected<std::string> exec(const std::string &code);
+  llvm::Expected<std::string> execute(const std::string &code);
+  JITResult executeSafe(const std::string &code);
 };
 
 } // namespace jit
