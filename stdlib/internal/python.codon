@@ -194,16 +194,18 @@ class pyobj:
     def __raw__(self) -> Ptr[byte]:
         return __internal__.class_raw(self)
 
-    def __init__(self, p: Ptr[byte]):
+    def __init__(self, p: Ptr[byte], steal: bool = False):
         self.p = p
+        if not steal:
+            self.incref()
 
     def __del__(self):
         self.decref()
 
     def _getattr(self, name: str) -> pyobj:
-        return pyobj.exc_wrap(pyobj(PyObject_GetAttrString(self.p, name.c_str())))
+        return pyobj.exc_wrap(pyobj(PyObject_GetAttrString(self.p, name.c_str()), steal=True))
 
-    def __setitem__(self, name: str, val: pyobj) -> pyobj:
+    def __setitem__(self, name: str, val: pyobj) -> pyobj:  # XXX: ???
         return pyobj.exc_wrap(
             pyobj(PyObject_SetAttrString(self.p, name.c_str(), val.p))
         )
@@ -228,7 +230,7 @@ class pyobj:
         if not it:
             raise ValueError("Python object is not iterable")
         while i := PyIter_Next(it):
-            yield pyobj(pyobj.exc_wrap(i))
+            yield pyobj(pyobj.exc_wrap(i), steal=True)
         pyobj.decref(it)
         pyobj.exc_check()
 
@@ -237,8 +239,9 @@ class pyobj:
         if obj == cobj():
             return empty
         bts = PyBytes_AsString(obj)
+        res = str.from_ptr(bts)
         pyobj.decref(obj)
-        return str.from_ptr(bts)
+        return res
 
     def exc_check():
         ptype, pvalue, ptraceback = cobj(), cobj(), cobj()
@@ -261,50 +264,51 @@ class pyobj:
 
     def incref(self):
         Py_IncRef(self.p)
+        return self
 
     def incref(obj: pyobj):
         Py_IncRef(obj.p)
+        return obj
 
     def incref(ptr: Ptr[byte]):
         Py_IncRef(ptr)
 
     def decref(self):
         Py_DecRef(self.p)
+        return self
 
     def decref(obj: pyobj):
         Py_DecRef(obj.p)
+        return obj
 
     def decref(ptr: Ptr[byte]):
         Py_DecRef(ptr)
 
-    def __call__(self, *args, **kwargs) -> pyobj:
-        names = iter(kwargs.__dict__())
-        kws = dict[str, pyobj]()
+    def __call__(self, *args, **kwargs):
+        args_py = args.__to_py__().p
+        kws_py = Ptr[byte]()
         if staticlen(kwargs) > 0:
+            names = iter(kwargs.__dict__())
             kws = {next(names): i.__to_py__() for i in kwargs}
-        return pyobj.exc_wrap(
-            pyobj(PyObject_Call(self.p, args.__to_py__().p, kws.__to_py__().p))
-        )
+            kws_py = kws.__to_py__().p
+        return pyobj.exc_wrap(pyobj(PyObject_Call(self.p, args_py, kws_py), steal=True))
 
-    def _tuple_new(length: int) -> pyobj:
-        t = PyTuple_New(length)
-        pyobj.exc_check()
-        return pyobj(t)
+    def _tuple_new(length: int):
+        return pyobj(pyobj.exc_wrap(PyTuple_New(length)), steal=True)
 
     def _tuple_set(self, idx: int, val: pyobj):
+        val.incref()
         PyTuple_SetItem(self.p, idx, val.p)
         pyobj.exc_check()
 
     def _tuple_get(self, idx: int) -> pyobj:
-        t = PyTuple_GetItem(self.p, idx)
-        pyobj.exc_check()
-        return pyobj(t)
+        return pyobj.exc_wrap(pyobj(PyTuple_GetItem(self.p, idx)))
 
     def _import(name: str) -> pyobj:
         ensure_initialized()
         if name in _PY_MODULE_CACHE:
             return _PY_MODULE_CACHE[name]
-        m = pyobj.exc_wrap(pyobj(PyImport_ImportModule(name.c_str())))
+        m = pyobj.exc_wrap(pyobj(PyImport_ImportModule(name.c_str()), steal=True))
         _PY_MODULE_CACHE[name] = m
         return m
 
@@ -332,11 +336,6 @@ def none():
 
 # Type conversions
 
-
-def py(x) -> pyobj:
-    return x.__to_py__()
-
-
 def get(x: pyobj, T: type) -> T:
     return T.__from_py__(x)
 
@@ -344,7 +343,7 @@ def get(x: pyobj, T: type) -> T:
 @extend
 class int:
     def __to_py__(self) -> pyobj:
-        return pyobj.exc_wrap(pyobj(PyLong_FromLong(self)))
+        return pyobj.exc_wrap(pyobj(PyLong_FromLong(self), steal=True))
 
     def __from_py__(i: pyobj) -> int:
         return pyobj.exc_wrap(PyLong_AsLong(i.p))
@@ -353,7 +352,7 @@ class int:
 @extend
 class float:
     def __to_py__(self) -> pyobj:
-        return pyobj.exc_wrap(pyobj(PyFloat_FromDouble(self)))
+        return pyobj.exc_wrap(pyobj(PyFloat_FromDouble(self), steal=True))
 
     def __from_py__(d: pyobj) -> float:
         return pyobj.exc_wrap(PyFloat_AsDouble(d.p))
@@ -362,7 +361,7 @@ class float:
 @extend
 class bool:
     def __to_py__(self) -> pyobj:
-        return pyobj.exc_wrap(pyobj(PyBool_FromLong(int(self))))
+        return pyobj.exc_wrap(pyobj(PyBool_FromLong(int(self)), steal=True))
 
     def __from_py__(b: pyobj) -> bool:
         return pyobj.exc_wrap(PyObject_IsTrue(b.p)) != 0
@@ -380,14 +379,10 @@ class byte:
 @extend
 class str:
     def __to_py__(self) -> pyobj:
-        return pyobj.exc_wrap(
-            pyobj(PyUnicode_DecodeFSDefaultAndSize(self.ptr, self.len))
-        )
+        return pyobj.exc_wrap(pyobj(PyUnicode_DecodeFSDefaultAndSize(self.ptr, self.len), steal=True))
 
     def __from_py__(s: pyobj) -> str:
-        r = s.to_str("strict")
-        pyobj.exc_check()
-        return r
+        return pyobj.exc_wrap(s.to_str("strict"))
 
 
 @extend
@@ -397,7 +392,7 @@ class List:
         pyobj.exc_check()
         idx = 0
         for a in self:
-            PyList_SetItem(pylist, idx, py(a).p)
+            PyList_SetItem(pylist, idx, a.__to_py__().incref().p)
             pyobj.exc_check()
             idx += 1
         return pyobj(pylist)
@@ -418,7 +413,7 @@ class Dict:
         pydict = PyDict_New()
         pyobj.exc_check()
         for k, v in self.items():
-            PyDict_SetItem(pydict, py(k).p, py(v).p)
+            PyDict_SetItem(pydict, k.__to_py__().incref().p, v.__to_py__().incref().p)
             pyobj.exc_check()
         return pyobj(pydict)
 
@@ -441,6 +436,20 @@ class Set:
         pyset = PySet_New(cobj())
         pyobj.exc_check()
         for a in self:
-            PySet_Add(pyset, py(a).p)
+            PySet_Add(pyset, a.__to_py__().incref().p)
             pyobj.exc_check()
         return pyobj(pyset)
+
+    def __from_py__(s: pyobj) -> Set[K]:
+        s = set[K]()
+        s_iter = PyObject_GetIter(s.p)
+        pyobj.exc_check()
+        while True:
+            k_ptr = PyIter_Next(s_iter)
+            pyobj.exc_check()
+            if not k_ptr:
+                break
+            k = get(pyobj(k_ptr), K)
+            s.add(k)
+        pyobj.decref(s_iter)
+        return s
