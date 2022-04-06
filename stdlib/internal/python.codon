@@ -247,12 +247,14 @@ class pyobj:
         if ptype != cobj():
             py_msg = PyObject_Str(pvalue) if pvalue != cobj() else pvalue
             msg = pyobj.to_str(py_msg, "ignore", "<empty Python message>")
-            typ = pyobj(PyObject_GetAttrString(ptype, "__name__".c_str())).to_str("ignore")
+            py_typ = PyObject_GetAttrString(ptype, "__name__".c_str())
+            typ = pyobj.to_str(py_typ, "ignore")
 
             pyobj.decref(ptype)
             pyobj.decref(pvalue)
             pyobj.decref(ptraceback)
             pyobj.decref(py_msg)
+            pyobj.decref(py_typ)
 
             raise PyError(msg, typ)
 
@@ -375,9 +377,7 @@ class List:
         pyobj.exc_check()
         idx = 0
         for a in self:
-            elem = a.__to_py__()
-            pyobj.incref(elem)
-            PyList_SetItem(pylist, idx, elem)
+            PyList_SetItem(pylist, idx, a.__to_py__())
             pyobj.exc_check()
             idx += 1
         return pylist
@@ -398,11 +398,7 @@ class Dict:
         pydict = PyDict_New()
         pyobj.exc_check()
         for k, v in self.items():
-            kpy = k.__to_py__()
-            vpy = v.__to_py__()
-            pyobj.incref(kpy)
-            pyobj.incref(vpy)
-            PyDict_SetItem(pydict, kpy, vpy)
+            PyDict_SetItem(pydict, k.__to_py__(), v.__to_py__())
             pyobj.exc_check()
         return pydict
 
@@ -425,9 +421,7 @@ class Set:
         pyset = PySet_New(cobj())
         pyobj.exc_check()
         for a in self:
-            k = a.__to_py__()
-            pyobj.incref(k)
-            PySet_Add(pyset, k)
+            PySet_Add(pyset, a.__to_py__())
             pyobj.exc_check()
         return pyset
 
