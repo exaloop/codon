@@ -44,3 +44,23 @@ def test_pyargs():
     assert str(mymodule.print_args_var(1, z=5, b=2)) == "a=1, b=2, c=1, args=(), kwargs={'z': 5}"
     assert str(mymodule.print_args_var(1, *(1,2,3,4,5), z=5)) == "a=1, b=1, c=2, args=(3, 4, 5), kwargs={'z': 5}"
 test_pyargs()
+
+@test
+def test_roundtrip(x: T, T: type):
+    assert T.__from_py__(x.__to_py__()) == x
+
+test_roundtrip(42)
+test_roundtrip(3.14)
+test_roundtrip(True)
+test_roundtrip(False)
+test_roundtrip(byte(99))
+test_roundtrip('hello world')
+test_roundtrip('')
+test_roundtrip(List[int]())
+test_roundtrip([11, 22, 33])
+test_roundtrip(Set[int]())
+test_roundtrip({11, 22, 33})
+test_roundtrip(Dict[str,int]())
+test_roundtrip({'aa': 11, 'bb': 22, 'cc': 33})
+test_roundtrip((11, 1.1, '11', [1, 1], {1}, {1: 1}))
+test_roundtrip(())

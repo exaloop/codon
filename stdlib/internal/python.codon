@@ -328,10 +328,6 @@ def none():
 # Type conversions
 
 
-def py(x) -> pyobj:
-    return x.__to_py__()
-
-
 def get(x: pyobj, T: type) -> T:
     return T.__from_py__(x)
 
@@ -369,7 +365,7 @@ class byte:
         return str.__to_py__(str(__ptr__(self), 1))
 
     def __from_py__(c: pyobj) -> byte:
-        return str.__from_py__(c).p[0]
+        return str.__from_py__(c).ptr[0]
 
 
 @extend
