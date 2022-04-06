@@ -156,6 +156,7 @@ std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool
 
 std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
   DocVisitor v(ctx);
+  v.setSrcInfo(expr->getSrcInfo());
   v.resultExpr = std::make_shared<json>();
   expr->accept(v);
   return v.resultExpr;
@@ -163,6 +164,7 @@ std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
 
 std::string DocVisitor::transform(const StmtPtr &stmt) {
   DocVisitor v(ctx);
+  v.setSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
   return v.resultStmt;
 }
@@ -290,6 +292,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   for (auto &d : stmt->decorators)
     if (auto e = d->getId())
       isExtend |= (e->value == "extend");
+
   if (isExtend) {
     j->set("type", "extension");
     auto i = ctx->find(stmt->name);
