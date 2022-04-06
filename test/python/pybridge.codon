@@ -23,7 +23,7 @@ def test_conversions():
         {'ACGT'},
         [['abc'], ['1.1', '2.2'], list[str]()]
     )
-    assert T.__from_py__(t) == ({'a': 3.14, 'b': 2.123}, (222, 3.14))
+    assert T.__from_py__(t.p) == ({'a': 3.14, 'b': 2.123}, (222, 3.14))
 test_conversions()
 
 @test
