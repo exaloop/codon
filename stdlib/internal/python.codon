@@ -308,8 +308,7 @@ class pyobj:
         PyRun_SimpleString(code.c_str())
 
     def _main_module() -> pyobj:
-        m = PyImport_AddModule("__main__".c_str())
-        return pyobj(m)
+        return pyobj(pyobj.exc_wrap(PyImport_AddModule("__main__".c_str())))
 
     def _repr_mimebundle_(self, bundle=Set[str]()) -> Dict[str, str]:
         fn = pyobj._main_module()._getattr("__codon_repr__")
