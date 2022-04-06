@@ -327,6 +327,11 @@ def none():
 
 # Type conversions
 
+
+def py(x) -> pyobj:
+    return x.__to_py__()
+
+
 def get(x: pyobj, T: type) -> T:
     return T.__from_py__(x)
 
@@ -432,15 +437,14 @@ class Set:
         return pyobj(pyset)
 
     def __from_py__(s: pyobj) -> Set[K]:
-        s = set[K]()
-        s_iter = PyObject_GetIter(s.p)
-        pyobj.exc_check()
+        b = set[K]()
+        s_iter = pyobj.exc_wrap(PyObject_GetIter(s.p))
         while True:
-            k_ptr = PyIter_Next(s_iter)
-            pyobj.exc_check()
+            k_ptr = pyobj.exc_wrap(PyIter_Next(s_iter))
             if not k_ptr:
                 break
             k = get(pyobj(k_ptr), K)
-            s.add(k)
+            pyobj.decref(k_ptr)
+            b.add(k)
         pyobj.decref(s_iter)
-        return s
+        return b
