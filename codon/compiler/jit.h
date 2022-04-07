@@ -19,15 +19,11 @@ struct JITResult {
   std::string data;
   bool isError;
 
-  JITResult():
-    data(""), isError(false) {}
+  JITResult() : data(""), isError(false) {}
 
-  JITResult(const std::string &data, bool isError):
-    data(data), isError(isError) {}
+  JITResult(const std::string &data, bool isError) : data(data), isError(isError) {}
 
-  operator bool() {
-    return !this->isError;
-  }
+  operator bool() { return !this->isError; }
 
   static JITResult success(const std::string &output) {
     return JITResult(output, false);

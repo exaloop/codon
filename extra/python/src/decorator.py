@@ -38,7 +38,7 @@ def _wrapper_stub_header():
 
 
 def _wrapper_stub_footer_ret():
-    PyObject_SetAttrString(module, "__codon_ret__".c_str(), ret.p)
+    PyObject_SetAttrString(module, "__codon_ret__".c_str(), ret)
 
 
 def _wrapper_stub_footer_void():
@@ -134,7 +134,7 @@ def _build_wrapper(obj, obj_name) -> str:
     wrap = [f"def {wrap_name}():\n"]
     wrap += inspect.getsourcelines(_wrapper_stub_header)[0][1:]
     wrap += [
-        f"    arg_{i} = {_type_str(arg_types[i])}.__from_py__(pyobj(PyTuple_GetItem(argt, {i})))\n"
+        f"    arg_{i} = {_type_str(arg_types[i])}.__from_py__(PyTuple_GetItem(argt, {i}))\n"
         for i in range(arg_count)
     ]
     args = ", ".join([f"arg_{i}" for i in range(arg_count)])
