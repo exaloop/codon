@@ -16,6 +16,7 @@
 *.pyc
 build/
 build_*/
+extra/python/src/jit.cpp
 extra/jupyter/build/
 
 # Packages #
@@ -29,6 +30,7 @@ extra/jupyter/build/
 *.rar
 *.tar
 *.zip
+**/**.egg-info
 
 # Logs and databases #
 ######################

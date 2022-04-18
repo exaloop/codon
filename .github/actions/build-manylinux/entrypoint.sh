@@ -26,11 +26,22 @@ export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
                       -DCMAKE_CXX_COMPILER=${CXX})
 cmake --build build --config Release -- VERBOSE=1
 
+# build cython
+export PATH=$PATH:$(pwd)/llvm/bin
+export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+export CODON_INCLUDE_DIR=$(pwd)/build/include
+export CODON_LIB_DIR=$(pwd)/build
+python3 -m pip install cython
+python3 -m pip install -v extra/python
+
 # test
+export CODON_PATH=$(pwd)/stdlib
 ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+export PYTHONPATH=$(pwd):$PYTHONPATH
+python3 test/python/cython_jit.py
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz

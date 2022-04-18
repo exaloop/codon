@@ -1067,7 +1067,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     preamble->globals.push_back(c->clone());
     c->suite = clone(suite);
-
   }
   stmts[0] = N<ClassStmt>(canonicalName, std::vector<Param>{}, N<SuiteStmt>(),
                           Attr({Attr::Extend}), std::vector<ExprPtr>{},
@@ -1400,7 +1399,8 @@ StmtPtr SimplifyVisitor::transformPythonImport(const Expr *what,
   // or return retType.__from_py__(f(args...))
   ExprPtr retExpr = N<CallExpr>(N<IdExpr>("f"), callArgs);
   if (ret && !ret->isId("void"))
-    retExpr = N<CallExpr>(N<DotExpr>(ret->clone(), "__from_py__"), retExpr);
+    retExpr =
+        N<CallExpr>(N<DotExpr>(ret->clone(), "__from_py__"), N<DotExpr>(retExpr, "p"));
   StmtPtr retStmt = nullptr;
   if (ret && ret->isId("void"))
     retStmt = N<ExprStmt>(retExpr);
@@ -1746,30 +1746,30 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     ret = I("int");
     stmts.emplace_back(N<ReturnStmt>(N<IntExpr>(args.size())));
   } else if (op == "to_py") {
-    // def __to_py__(self: T) -> pyobj:
+    // def __to_py__(self: T) -> cobj:
     //   o = pyobj._tuple_new(N)  (number of args)
-    //   o._tuple_set(1, self.arg1.__to_py__()) ...
+    //   pyobj._tuple_set(o, 1, self.arg1.__to_py__()) ...
     //   return o
     fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = I("pyobj");
+    ret = I("cobj");
     stmts.emplace_back(
         N<AssignStmt>(I("o"), N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_new"),
                                           N<IntExpr>(args.size()))));
     for (int i = 0; i < args.size(); i++)
       stmts.push_back(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(I("o"), "_tuple_set"), N<IntExpr>(i),
+          N<DotExpr>(I("pyobj"), "_tuple_set"), I("o"), N<IntExpr>(i),
           N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__to_py__")))));
     stmts.emplace_back(N<ReturnStmt>(I("o")));
   } else if (op == "from_py") {
-    // def __from_py__(src: pyobj) -> T:
-    //   return T(T1.__from_py__(src._tuple_get(1)), ...)
-    fargs.emplace_back(Param{"src", I("pyobj")});
+    // def __from_py__(src: cobj) -> T:
+    //   return T(T1.__from_py__(pyobj._tuple_get(src, 1)), ...)
+    fargs.emplace_back(Param{"src", I("cobj")});
     ret = typExpr->clone();
     std::vector<ExprPtr> ar;
     for (int i = 0; i < args.size(); i++)
-      ar.push_back(
-          N<CallExpr>(N<DotExpr>(clone(args[i].type), "__from_py__"),
-                      N<CallExpr>(N<DotExpr>(I("src"), "_tuple_get"), N<IntExpr>(i))));
+      ar.push_back(N<CallExpr>(
+          N<DotExpr>(clone(args[i].type), "__from_py__"),
+          N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_get"), I("src"), N<IntExpr>(i))));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
   } else if (op == "repr") {
     // def __repr__(self: T) -> str:

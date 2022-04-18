@@ -113,8 +113,10 @@ VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) 
   const bool global = (parent == nullptr);
   auto *M = x->getModule();
   auto *v = M->Nr<Var>(x->getType(), global);
-  if (global)
-    v->setName("_anon_global");
+  if (global) {
+    static int counter = 1;
+    v->setName("_anon_global_" + std::to_string(counter++));
+  }
   auto *a = M->Nr<AssignInstr>(v, x);
   if (prepend) {
     flow->insert(flow->begin(), a);

@@ -189,7 +189,7 @@ int runMode(const std::vector<const char *> &args) {
 
 namespace {
 std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
-  auto result = jit->exec(code);
+  auto result = jit->execute(code);
   if (auto err = result.takeError()) {
     std::string output;
     llvm::handleAllErrors(
@@ -207,9 +207,26 @@ std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
   }
   return *result;
 }
+
+void jitLoop(codon::jit::JIT *jit, std::istream &fp) {
+  std::string code;
+  for (std::string line; std::getline(fp, line);) {
+    if (line != "#%%") {
+      code += line + "\n";
+    } else {
+      fmt::print("{}[done]\n", jitExec(jit, code));
+      code = "";
+      fflush(stdout);
+    }
+  }
+  if (!code.empty())
+    fmt::print("{}[done]\n", jitExec(jit, code));
+}
 } // namespace
 
 int jitMode(const std::vector<const char *> &args) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
   llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
@@ -233,18 +250,12 @@ int jitMode(const std::vector<const char *> &args) {
 
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
-  std::string code;
-  for (std::string line; std::getline(std::cin, line);) {
-    if (line != "#%%") {
-      code += line + "\n";
-    } else {
-      fmt::print("{}[done]\n", jitExec(&jit, code));
-      code = "";
-      fflush(stdout);
-    }
+  if (input == "-") {
+    jitLoop(&jit, std::cin);
+  } else {
+    std::ifstream fileInput(input);
+    jitLoop(&jit, fileInput);
   }
-  if (!code.empty())
-    fmt::print("{}[done]\n", jitExec(&jit, code));
   return EXIT_SUCCESS;
 }
 

@@ -15,7 +15,7 @@ llvm::Expected<llvm::orc::ThreadSafeModule>
 Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
                        const llvm::orc::MaterializationResponsibility &R) {
   module.withModuleDo([](llvm::Module &module) {
-    ir::optimize(&module, /*debug=*/true, /*jit=*/true);
+    ir::optimize(&module, /*debug=*/false, /*jit=*/true);
   });
   return std::move(module);
 }

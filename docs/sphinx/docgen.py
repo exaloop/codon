@@ -23,7 +23,7 @@ def load_json(directory):
     files=[]
     for root,_,items in os.walk(directory):
         for f in items:
-            if f.endswith('.codon'):
+            if f.endswith('.codon') and "__init_test__.codon" not in f:
                 files.append(os.path.abspath(os.path.join(root,f)))
     files='\n'.join(files)
     s=sp.run(['../../build/codon','doc'],stdout=sp.PIPE,input=files.encode('utf-8'))
@@ -34,6 +34,7 @@ def load_json(directory):
 
 j=load_json(root)
 print(f" - Done with codon")
+sys.exit(0)
 # with open('x.json','w') as f:
 #     json.dump(j,f,indent=2)
 
