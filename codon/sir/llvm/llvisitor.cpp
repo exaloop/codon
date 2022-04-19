@@ -78,11 +78,6 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeTypePromotionPass(registry);
 }
 
-llvm::GlobalValue::LinkageTypes LLVMVisitor::getDefaultLinkage() {
-  return db.jit ? llvm::GlobalValue::ExternalLinkage
-                : llvm::GlobalValue::PrivateLinkage;
-}
-
 void LLVMVisitor::registerGlobal(const Var *var) {
   if (!var->isGlobal())
     return;
@@ -94,8 +89,10 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     if (llvmType->isVoidTy()) {
       insertVar(var, getDummyVoidValue());
     } else {
+      auto linkage = (db.jit || var->isExternal()) ? llvm::GlobalValue::ExternalLinkage
+                                                   : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
-          *M, llvmType, /*isConstant=*/false, getDefaultLinkage(),
+          *M, llvmType, /*isConstant=*/false, linkage,
           llvm::Constant::getNullValue(llvmType), var->getName());
       insertVar(var, storage);
 
@@ -106,8 +103,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
       llvm::DIGlobalVariableExpression *debugVar =
           db.builder->createGlobalVariableExpression(
               scope, getDebugNameForVariable(var), var->getName(), file, srcInfo->line,
-              getDIType(var->getType()),
-              /*IsLocalToUnit=*/true);
+              getDIType(var->getType()), !var->isExternal());
       storage->addDebugInfo(debugVar);
     }
   }

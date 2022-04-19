@@ -105,8 +105,9 @@ public:
   void defaultVisit(const Node *) override { os << "(unknown_node)"; }
 
   void visit(const Var *v) override {
-    fmt::print(os, FMT_STRING("(var '\"{}\" {} (global {}))"), v->referenceString(),
-               makeFormatter(v->getType()), v->isGlobal());
+    fmt::print(os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}))"),
+               v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
+               v->isExternal());
   }
 
   void visit(const BodiedFunc *v) override {

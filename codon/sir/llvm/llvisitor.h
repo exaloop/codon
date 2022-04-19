@@ -275,10 +275,6 @@ public:
   /// @param var the global variable (or function) to register
   void registerGlobal(const Var *var);
 
-  /// Returns the default LLVM linkage type for the module.
-  /// @return LLVM linkage type
-  llvm::GlobalValue::LinkageTypes getDefaultLinkage();
-
   /// Returns a new LLVM module initialized for the host
   /// architecture.
   /// @param context LLVM context used for creating module

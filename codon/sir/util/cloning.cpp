@@ -26,7 +26,8 @@ Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo) {
     GatherLocals gl;
     const_cast<Value *>(other)->accept(gl);
     for (auto *v : gl.locals) {
-      auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
+      auto *clonedVar =
+          M->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
       cloneTo->push_back(clonedVar);
       forceRemap(v, clonedVar);
     }
@@ -58,7 +59,8 @@ Var *CloneVisitor::clone(const Var *other) {
 }
 
 void CloneVisitor::visit(const Var *v) {
-  result = module->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
+  result =
+      module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
 }
 
 void CloneVisitor::visit(const BodiedFunc *v) {

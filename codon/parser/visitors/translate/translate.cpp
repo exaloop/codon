@@ -319,7 +319,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   } else if (!stmt->rhs || !stmt->rhs->isType()) {
     auto *newVar =
         make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
-                      in(ctx->cache->globals, var), var);
+                      in(ctx->cache->globals, var), false, var);
     if (!in(ctx->cache->globals, var))
       ctx->getBase()->push_back(newVar);
     else
@@ -380,7 +380,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
 
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var->toString());
   auto varName = stmt->var->getId()->value;
-  auto var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
+  auto var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, false, varName);
   ctx->getBase()->push_back(var);
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
 
@@ -430,7 +430,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
-      catchVar = make<ir::Var>(stmt, excType, false, c.var);
+      catchVar = make<ir::Var>(stmt, excType, false, false, c.var);
       ctx->add(TranslateItem::Var, c.var, catchVar);
       ctx->getBase()->push_back(catchVar);
     }
