@@ -54,9 +54,11 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
   if (failed.empty()) {
     std::string out = *result;
     nl::json pub_data;
-    if (ast::startswith(out, "\x00\x00__codon/mime__\x00")) {
+    using std::string_literals::operator""s;
+    std::string codonMimeMagic = "\x00\x00__codon/mime__\x00"s;
+    if (ast::startswith(out, codonMimeMagic)) {
       std::string mime = "";
-      int i = 17;
+      int i = codonMimeMagic.size();
       for (; i < out.size() && out[i]; i++)
         mime += out[i];
       if (i < out.size() && !out[i]) {
@@ -70,7 +72,8 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
     } else {
       pub_data["text/plain"] = out;
     }
-    publish_execution_result(execution_counter, move(pub_data), nl::json::object());
+    if (!out.empty())
+      publish_execution_result(execution_counter, move(pub_data), nl::json::object());
     return nl::json{{"status", "ok"},
                     {"payload", nl::json::array()},
                     {"user_expressions", nl::json::object()}};
