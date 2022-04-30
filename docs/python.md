@@ -1,6 +1,5 @@
----
-title: Calling Python from Codon
----
+Calling Python from Codon
+=========================
 
 Calling Python from Codon is possible in two ways:
 

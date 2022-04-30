@@ -1,6 +1,5 @@
----
-title: "**Codon** - a high-performance Python compiler"
----
+Codon - a high-performance Python compiler
+==========================================
 
 # What is Codon?
 
@@ -25,10 +24,6 @@ messages to help identify and resolve any incompatibilities.
 
 Questions, comments or suggestions? Visit our [Discord
 server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect).
-
-::: {.toctree maxdepth="1"}
-intro primer parallel pipelines python embed build stdlib/index
-:::
 
 # Frequently Asked Questions
 
@@ -55,8 +50,7 @@ thereby to take full advantage of parallelism and multithreading.
 Interoperability is and will continue to be a priority for the Codon
 project. We don\'t want using Codon to render you unable to use all the
 other great frameworks and libraries that exist. Codon already supports
-interoperability with C/C++ and Python (see `interop`{.interpreted-text
-role="ref"}).
+interoperability with C/C++ and Python.
 
 > *I want to contribute! How do I get started?*
 
