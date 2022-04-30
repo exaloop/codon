@@ -1,6 +1,3 @@
-Pipelines
-=========
-
 Codon extends the core Python language with a pipe operator. You can
 chain multiple functions and generators to form a pipeline. Pipeline
 stages can be regular functions or generators. In the case of standard

@@ -1,6 +1,3 @@
-Parallelism and Multithreading
-==============================
-
 Codon supports parallelism and multithreading via OpenMP out of the box.
 Here\'s an example:
 

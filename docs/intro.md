@@ -1,6 +1,3 @@
-Getting Started
-===============
-
 # Install
 
 ## Pre-built binaries

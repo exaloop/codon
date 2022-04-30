@@ -1,6 +1,3 @@
-Codon - a high-performance Python compiler
-==========================================
-
 # What is Codon?
 
 Codon is a high-performance Python compiler that compiles Python code to
