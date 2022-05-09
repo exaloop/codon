@@ -14,7 +14,7 @@ This will install Codon in a new `.codon` directory within your home directory.
 
 ### Building from source
 
-See [Building from source](intro.md#building-from-source).
+See [Building from source](../advanced/build.md).
 
 ## Usage
 
