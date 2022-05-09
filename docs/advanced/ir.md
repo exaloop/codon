@@ -88,7 +88,7 @@ used as building blocks to create new passes. Examples include:
 - Constant propagation and folding
 - Canonicalization
 - Inlining and outlining
-- Python-specific optimizations targetting several common Python idioms
+- Python-specific optimizations targeting several common Python idioms
 
 We're regularly adding new standard passes, so this list is always growing.
 
