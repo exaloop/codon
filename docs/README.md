@@ -10,12 +10,12 @@ Typical speedups over Python are on the order of 10-100x or more, on a
 single thread. Codon supports native multithreading which can lead to
 speedups many times higher still.
 
-# What isn\'t Codon?
+# What isn't Codon?
 
-While Codon supports nearly all of Python\'s syntax, it is not a drop-in
+While Codon supports nearly all of Python's syntax, it is not a drop-in
 replacement, and large codebases might require modifications to be run
-through the Codon compiler. For example, some of Python\'s modules are
-not yet implemented within Codon, and a few of Python\'s dynamic
+through the Codon compiler. For example, some of Python's modules are
+not yet implemented within Codon, and a few of Python's dynamic
 features are disallowed. The Codon compiler produces detailed error
 messages to help identify and resolve any incompatibilities.
 
@@ -36,16 +36,16 @@ development of such software across a range of domains.
 Unlike other performance-oriented Python implementations, such as PyPy
 or Numba, Codon is a standalone system implemented entirely
 independently of regular Python. Since it does not need to interoperate
-with CPython\'s runtime, Codon has far greater flexibility to generate
+with CPython's runtime, Codon has far greater flexibility to generate
 optimized code. In fact, Codon will frequently generate the same code as
 that from an equivalent C or C++ program. This design choice also allows
-Codon to circumvent issues like Python\'s global interpretter lock, and
+Codon to circumvent issues like Python's global interpretter lock, and
 thereby to take full advantage of parallelism and multithreading.
 
 > *What about interoperability with other languages and frameworks?*
 
 Interoperability is and will continue to be a priority for the Codon
-project. We don\'t want using Codon to render you unable to use all the
+project. We don't want using Codon to render you unable to use all the
 other great frameworks and libraries that exist. Codon already supports
 interoperability with C/C++ and Python.
 
@@ -54,7 +54,7 @@ interoperability with C/C++ and Python.
 Great! Check out our [contribution
 guidelines](https://github.com/exaloop/codon/blob/master/CONTRIBUTING.md)
 and [open issues](https://github.com/exaloop/codon/issues) to get
-started. Also don\'t hesitate to drop by our [Discord
+started. Also don't hesitate to drop by our [Discord
 server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect)
 if you have any questions.
 
