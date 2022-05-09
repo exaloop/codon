@@ -15,7 +15,7 @@ directory.
 
 ## Building from source
 
-See [Building from Source](build.html).
+See [Building from Source](/advanced/build).
 
 # Usage
 
