@@ -1,19 +1,19 @@
-# Codon tutorial
+If you know Python, you already know 99% of Codon. The following primer
+assumes some familiarity with Python or at least one "modern"
+programming language (QBASIC doesn't count).
 
-If you know Python, you already know 99% of Codon. The following primer assumes some familiarity with Python or at least one "modern" programming language (QBASIC doesn't count).
+# Printing
 
-## Printing
-
-```python
+``` python
 print('hello world')
 
 from sys import stderr
 print('hello world', end='', file=stderr)
 ```
 
-## Comments
+# Comments
 
-```python
+``` python
 # Codon comments start with "# 'and go until the end of the line
 
 """
@@ -22,35 +22,32 @@ if you really need them.
 """
 ```
 
-## Literals
+# Literals
 
-Codon is a strongly typed language like C++, Java, or C#. That means each expression must have a type that can be inferred at the compile-time.
-
-```python
+``` python
 # Booleans
-True  # type: bool
+True   # type: bool
 False
 
 # Numbers
-a = 1  # type: int. It's 64-bit signed integer.
-b = 1.12  # type: float. Codon's float is identical to C's double.
-c = 5u  # type: int, but unsigned
-d = Int[8](12)  # 8-bit signed integer; you can go all the way to Int[2048]
+a = 1             # type: int; a signed 64-bit integer
+b = 1.12          # type: float; a 64-bit float (just like "double" in C)
+c = 5u            # unsigned int; an unsigned 64-bit int
+d = Int[8](12)    # 8-bit signed integer; you can go all the way to Int[2048]
 e = UInt[8](200)  # 8-bit unsigned integer
-f = byte(3)  # a byte is C's char; equivalent to Int[8]
+f = byte(3)       # Codon's byte is equivalent to C's char; equivalent to Int[8]
 
-h = 0x12AF  # hexadecimal integers are also welcome
-h = 0XAF12
+h = 0x12AF   # hexadecimal integers are also welcome
 g = 3.11e+9  # scientific notation is also supported
-g = .223  # and this is also float
-g = .11E-1  # and this as well
+g = .223     # and this is also float
+g = .11E-1   # and this as well
 
 # Strings
-s = 'hello! "^_^" '  # type: str.
+s = 'hello! "^_^" '              # type: str
 t = "hello there! \t \\ '^_^' "  # \t is a tab character; \\ stands for \
-raw = r"hello\n"  # raw strings do not escape slashes; this would print "hello\n"
-fstr = f"a is {a + 1}"  # an F-string; prints "a is 2"
-fstr = f"hi! {a+1=}"  # an F-string; prints "hi! a+1=2"
+raw = r"hello\n"                 # raw strings do not escape slashes; this would print "hello\n"
+fstr = f"a is {a + 1}"           # an f-string; prints "a is 2"
+fstr = f"hi! {a+1=}"             # an f-string; prints "hi! a+1=2"
 t = """
 hello!
 multiline string
@@ -61,20 +58,24 @@ multiline string
 #   \xHHH (HHH is hex code), \OOO (OOO is octal code)
 ```
 
-### Tuples
+## Tuples
 
-```python
+``` python
 # Tuples
-t = (1, 2.3, 'hi')  # type: Tuple[int, float, str].
-t[1]  # type: float
-u = (1, )  # type: Tuple[int]
+t = (1, 2.3, 'hi')  # type: Tuple[int, float, str]
+t[1]                # type: float
+u = (1, )           # type: Tuple[int]
 ```
 
-As all types must be known at compile time, tuple indexing works only if a tuple is homogenous (all types are the same) or if the value of the index is known at compile-time.
+As all types must be known at compile time, tuple indexing works only if
+a tuple is homogenous (all types are the same) or if the value of the
+index is known at compile time.
 
-You can, however, iterate over heterogenous tuples in Codon. This is achieved by unrolling the loop to accommodate the different types.
+You can, however, iterate over heterogenous tuples in Codon. This is
+achieved behind the scenes by unrolling the loop to accommodate the
+different types.
 
-```python
+``` python
 t = (1, 2.3, 'hi')
 t[1]  # works because 1 is a constant int
 
@@ -83,8 +84,8 @@ t[x]  # compile error: x is not known at compile time
 
 # This is a homogenous tuple (all member types are the same)
 u = (1, 2, 3)  # type: Tuple[int, int, int].
-u[x]  # works because tuple members share the same type regardless of x
-for i in u:  # works
+u[x]           # works because tuple members share the same type regardless of x
+for i in u:    # works
     print(i)
 
 # Also works
@@ -94,28 +95,28 @@ for i in v:
 ```
 
 {% hint style="warning" %}
-Tuples are **immutable** `a = (1, 2); a[1] = 1` will not compile.
+Just like in Python, tuples are immutable, so `a = (1, 2); a[1] = 1` will not compile.
 {% endhint %}
 
-### Containers
+## Collections
 
-```python
-l = [1, 2, 3]  # type: List[int]; a list of integers
-s = {1.1, 3.3, 2.2, 3.3}  # type: Set[float]; a set of floats
+``` python
+l = [1, 2, 3]                         # type: List[int]; a list of integers
+s = {1.1, 3.3, 2.2, 3.3}              # type: Set[float]; a set of floats
 d = {1: 'hi', 2: 'ola', 3: 'zdravo'}  # type: Dict[int, str]; a simple dictionary
 
-ln = []  # an empty list whose type is inferred based on usage
-ln = List[int]()  # an empty list with explicit element types
-dn = {}  # an empty dict whose type is inferred based on usage
-dn = Dict[int, float]()  # an empty dictionary with explicit element types
+ln = []                               # an empty list whose type is inferred based on usage
+ln = List[int]()                      # an empty list with explicit element type
+dn = {}                               # an empty dict whose type is inferred based on usage
+dn = Dict[int, float]()               # an empty dictionary with explicit element types
 ```
 
 Because Codon is strongly typed, these won't compile:
 
-```python
-l = [1, 's']  # is it a List[int] or List[str]? you cannot mix-and-match types
+``` python
+l = [1, 's']   # is it a List[int] or List[str]? you cannot mix-and-match types
 d = {1: 'hi'}
-d[2] = 3  # d is a Dict[int, str]; the assigned value must be a str
+d[2] = 3       # d is a Dict[int, str]; the assigned value must be a str
 
 t = (1, 2.2)  # Tuple[int, float]
 lt = list(t)  # compile error: t is not homogenous
@@ -125,70 +126,94 @@ lp = [1, 2.1, 3, 5]  # compile error: Codon will not automatically cast a float 
 
 This will work, though:
 
-```python
+``` python
 u = (1, 2, 3)
 lu = list(u)  # works: u is homogenous
 ```
 
-::: note ::: title Note :::
+{% hint style="info" %}
+Dictionaries and sets are unordered and are based on [klib](https://github.com/attractivechaos/klib).
+{% endhint %}
 
-Dictionaries and sets are unordered and are based on [klib](https://github.com/attractivechaos/klib). :::
+# Assignments and operators
 
-## Assignments and operators <a href="#operators" id="operators"></a>
-
-```python
-a = 1 + 2  # this is 3
-a = (1).__add__(2)  # you can use a function call instead of an operator; this is also 3
+``` python
+a = 1 + 2              # this is 3
+a = (1).__add__(2)     # you can use a function call instead of an operator; this is also 3
 a = int.__add__(1, 2)  # this is equivalent to the previous line
-b = 5 / 2.0  # this is 2.5
-c = 5 // 2  # this is 2; // is an integer division
-a *= 2  # a is now 6
+b = 5 / 2.0            # this is 2.5
+c = 5 // 2             # this is 2; // is an integer division
+a *= 2                 # a is now 6
 ```
 
-This is the list of binary operators and their magic methods:
+Here is the list of binary operators and each one's associated magic method:
 
-Operator Magic method Description
-
-***
-
-`+` `__add__` addition `-` `__sub__` subtraction `*` `__mul__` multiplication `/` `__truediv__` float (true) division `//` `__floordiv__` integer (floor) division `**` `__pow__` exponentiation `%` `__mod__` modulo `@` `__matmul__` matrix multiplication; `&` `__and__` bitwise and `|` `__or__` bitwise or `^` `__xor__` bitwise xor `<<` `__lshift__` left bit shift `>>` `__rshift__` right bit shift `<` `__lt__` less than `<=` `__le__` less or equal than `>` `__gt__` greater than `>=` `__ge__` greater or equal than `==` `__eq__` equal to `!=` `__ne__` not equal to `in` `__contains__` belongs to `and` none boolean and (short-circuits) `or` none boolean or (short-circuits)
+  | Operator  | Magic method   | Description                  |
+  |-----------|----------------|------------------------------|
+  | `+`       | `__add__`      | addition                     |
+  | `-`       | `__sub__`      | subtraction                  |
+  | `*`       | `__mul__`      | multiplication               |
+  | `/`       | `__truediv__`  | float (true) division        |
+  | `//`      | `__floordiv__` | integer (floor) division     |
+  | `**`      | `__pow__`      | exponentiation               |
+  | `%`       | `__mod__`      | modulo                       |
+  | `@`       | `__matmul__`   | matrix multiplication        |
+  | `&`       | `__and__`      | bitwise and                  |
+  | `|`       | `__or__`       | bitwise or                   |
+  | `^`       | `__xor__`      | bitwise xor                  |
+  | `<<`      | `__lshift__`   | left bit shift               |
+  | `>>`      | `__rshift__`   | right bit shift              |
+  | `<`       | `__lt__`       | less than                    |
+  | `<=`      | `__le__`       | less than or equal to        |
+  | `>`       | `__gt__`       | greater than                 |
+  | `>=`      | `__ge__`       | greater than or equal to     |
+  | `==`      | `__eq__`       | equal to                     |
+  | `!=`      | `__ne__`       | not equal to                 |
+  | `in`      | `__contains__` | belongs to                   |
+  | `and`     | none           | boolean and (short-circuits) |
+  | `or`      | none           | boolean or (short-circuits)  |
 
 Codon also has the following unary operators:
 
-\+----------+--------------+-------------------------------------------------+ | Operator | Magic method | Description | +==========+==============+=================================================+ | `~` | `__invert__` | bitwise inversion; | | | | | | | | : reverse complement; `Optional[T]` unpacking | +----------+--------------+-------------------------------------------------+ | `+` | `__pos__` | unary positive | +----------+--------------+-------------------------------------------------+ | `-` | `__neg__` | unary negation | +----------+--------------+-------------------------------------------------+ | `not` | none | boolean negation | +----------+--------------+-------------------------------------------------+
+| Operator | Magic method | Description      |
+|----------|--------------|------------------|
+| `~`      | `__invert__` | bitwise not      |
+| `+`      | `__pos__`    | unary positive   |
+| `-`      | `__neg__`    | unary negation   |
+| `not`    | none         | boolean negation |
 
-### Tuple unpacking
+## Tuple unpacking
 
 Codon supports most of Python's tuple unpacking syntax:
 
-```python
-x, y = 1, 2  # x is 1, y is 2
-(x, (y, z)) = 1, (2, 3)  # x is 1, y is 2, z is 3
+``` python
+x, y = 1, 2                # x is 1, y is 2
+(x, (y, z)) = 1, (2, 3)    # x is 1, y is 2, z is 3
 [x, (y, z)] = (1, [2, 3])  # x is 1, y is 2, z is 3
 
-l = range(1, 8)  # l is [1, 2, 3, 4, 5, 6, 7]
+l = range(1, 8)    # l is [1, 2, 3, 4, 5, 6, 7]
 a, b, *mid, c = l  # a is 1, b is 2, mid is [3, 4, 5, 6], c is 7
-a, *end = l  # a is 1, end is [2, 3, 4, 5, 6, 7]
-*beg, c = l  # c is 7, beg is [1, 2, 3, 4, 5, 6]
+a, *end = l        # a is 1, end is [2, 3, 4, 5, 6, 7]
+*beg, c = l        # c is 7, beg is [1, 2, 3, 4, 5, 6]
 (*x, ) = range(3)  # x is [0, 1, 2]
-*x = range(3)  # error: this does not work
+*x = range(3)      # error: this does not work
 
-*sth, a, b = (1, 2, 3, 4)  # sth is (1, 2), a is 3, b is 4
+*sth, a, b = (1, 2, 3, 4)      # sth is (1, 2), a is 3, b is 4
 *sth, a, b = (1.1, 2, 3.3, 4)  # error: this only works on homogenous tuples for now
 
 (x, y), *pff, z = [1, 2], 'this'
-print(x, y, pff, z) # x is 1, y is 2, pff is an empty tuple --- () ---, and z is "this"
+print(x, y, pff, z)               # x is 1, y is 2, pff is an empty tuple --- () ---, and z is "this"
 
 s, *q = 'XYZ'  # works on strings as well; s is "X" and q is "YZ"
 ```
 
-## Control flow
+# Control flow
 
-### Conditionals
+## Conditionals
 
 Codon supports the standard Python conditional syntax:
 
-```python
+``` python
 if a or b or some_cond():
     print(1)
 elif whatever() or 1 < a <= b < c < 4:  # chained comparisons are supported
@@ -201,20 +226,23 @@ if x: y()
 a = b if sth() else c  # ternary conditional operator
 ```
 
-Codon extends the Python conditional syntax with a `match` statement, which is inspired by Rust's:
+Codon extends the Python conditional syntax with a `match` statement,
+which is inspired by Rust's:
 
-```python
+``` python
 match a + some_heavy_expr():  # assuming that the type of this expression is int
-    case 1:  # is it 1?
+    case 1:         # is it 1?
         print('hi')
     case 2 ... 10:  # is it 2, 3, 4, 5, 6, 7, 8, 9 or 10?
         print('wow!')
-    case _:  # "default" case
+    case _:         # "default" case
         print('meh...')
 
 match bool_expr():  # now it's a bool expression
-    case True: ...
-    case False: ...
+    case True:
+        print('yay')
+    case False:
+        print('nay')
 
 match str_expr():  # now it's a str expression
     case 'abc': print("it's ABC time!")
@@ -231,27 +259,28 @@ match some_tuple:  # assuming type of some_tuple is Tuple[int, int]
         print('complex!')
 
 match list_foo():
-    case []:  # [] matches an empty list
-        ...
-    case [1, 2, 3]:  # make sure that list_foo() returns List[int] though!
-        ...
-    case [1, 2, ..., 5]:  # matches any list that starts with 1 and 2 and ends with 5
-        ...
+    case []:                   # [] matches an empty list
+        print('A')
+    case [1, 2, 3]:            # make sure that list_foo() returns List[int] though!
+        print('B')
+    case [1, 2, ..., 5]:       # matches any list that starts with 1 and 2 and ends with 5
+        print('C')
     case [..., 6] | [6, ...]:  # matches a list that starts or ends with 6
-        ...
-    case [..., w] if w < 0:  # matches a list that ends with a negative integer
-        ...
-    case [...]:  # any other list
-        ...
+        print('D')
+    case [..., w] if w < 0:    # matches a list that ends with a negative integer
+        print('E')
+    case [...]:                # any other list
+        print('F')
 ```
 
-You can mix, match and chain match rules as long as the match type matches the expression type.
+You can mix, match and chain match rules as long as the match type
+matches the expression type.
 
-### Loops
+## Loops
 
 Standard fare:
 
-```python
+``` python
 a = 10
 while a > 0:  # prints even numbers from 9 to 1
     a -= 1
@@ -261,36 +290,44 @@ while a > 0:  # prints even numbers from 9 to 1
 
 for i in range(10):  # prints numbers from 0 to 7, inclusive
     print(i)
-    if i > 6: break
+    if i > 6:
+        break
 ```
 
-`for` construct can iterate over any generator, which means any object that implements the `__iter__` magic method. In practice, generators, lists, sets, dictionaries, homogenous tuples, ranges, and many more types implement this method, so you don't need to worry. If you need to implement one yourself, just keep in mind that `__iter__` is a generator and not a function.
+`for` construct can iterate over any generator, which means any object
+that implements the `__iter__` magic method. In practice, generators,
+lists, sets, dictionaries, homogenous tuples, ranges, and many more
+types implement this method. If you need to implement one yourself,
+just keep in mind that `__iter__` is a generator and not a function.
 
-### Comprehensions
+## Comprehensions
 
-Technically, comprehensions are not statements (they are expressions). Comprehensions are a nifty, Pythonic way to create collections:
+Technically, comprehensions are not statements (they are expressions).
+Comprehensions are a nifty, Pythonic way to create collections:
 
-```python
-l = [i for i in range(5)]  # type: List[int]; l is [0, 1, 2, 3, 4]
-l = [i for i in range(15) if i % 2 == 1 if i > 10]  # type: List[int]; l is [11, 13]
+``` python
+l = [i for i in range(5)]                                  # type: List[int]; l is [0, 1, 2, 3, 4]
+l = [i for i in range(15) if i % 2 == 1 if i > 10]         # type: List[int]; l is [11, 13]
 l = [i * j for i in range(5) for j in range(5) if i == j]  # l is [0, 1, 4, 9, 16]
 
 s = {abs(i - j) for i in range(5) for j in range(5)}  # s is {0, 1, 2, 3, 4}
-d = {i: f'item {i+1}' for i in range(3)}  # d is {0: "item 1", 1: "item 2", 2: "item 3"}
+d = {i: f'item {i+1}' for i in range(3)}              # d is {0: "item 1", 1: "item 2", 2: "item 3"}
 ```
 
-You can also use collections to create generators (more about them later on):
+You can also use collections to create generators (more about them later
+on):
 
-```python
+``` python
 g = (i for i in range(10))
 print(list(g))  # prints number from 0 to 9, inclusive
 ```
 
-### Exception handling
+## Exception handling
 
-Again, if you know how to do this in Python, you know how to do it in Codon:
+Again, if you know how to do this in Python, you know how to do it in
+Codon:
 
-```python
+``` python
 def throwable():
      raise ValueError("doom and gloom")
 
@@ -304,27 +341,38 @@ finally:
     print("whatever, it's done")
 ```
 
-::: note ::: title Note :::
+{% hint style="warning" %}
+Right now, Codon cannot catch multiple exceptions in one statement. Thus
+`catch (Exc1, Exc2, Exc3) as var` will not compile, since the type of `var`
+needs to be known ahead of time.
+{% endhint %}
 
-Right now, Codon cannot catch multiple exceptions in one statement. Thus `catch (Exc1, Exc2, Exc3) as var` will not compile. :::
+If you have an object that implements `__enter__` and `__exit__` methods
+to manage its lifetime (say, a `File`), you can use a `with` statement
+to make your life easy:
 
-If you have an object that implements `__enter__` and `__exit__` methods to manage its lifetime (say, a `File`), you can use a `with` statement to make your life easy:
-
-```python
+``` python
 with open('foo.txt') as f, open('foo_copy.txt', 'w') as fo:
     for l in f:
         fo.write(l)
 ```
 
-## Variables and scoping
+# Variables and scoping
 
-You have probably noticed by now that blocks in Codon are defined by their indentation level (as in Python). We recommend using 2 or 4 spaces to indent blocks. Do not mix indentation levels, and do not mix tabs and spaces; stick to any _consistent_ way of indenting your code.
+You have probably noticed by now that blocks in Codon are defined by
+their indentation level (as in Python). We recommend using 2 or 4 spaces
+to indent blocks. Do not mix indentation levels, and do not mix tabs and
+spaces; stick to any *consistent* way of indenting your code.
 
-One of the major differences between Codon and Python lies in variable scoping rules. Codon variables cannot _leak_ to outer blocks. Every variable is accessible only within its own block (after the variable is defined, of course), and within any block that is nested within the variable's own block.
+One of the major differences between Codon and Python lies in variable
+scoping rules. Codon variables cannot *leak* to outer blocks. Every
+variable is accessible only within its own block (after the variable is
+defined, of course), and within any block that is nested within the
+variable's own block.
 
 That means that the following Pythonic pattern won't compile:
 
-```python
+``` python
 if cond():
      x = 1
 else:
@@ -338,7 +386,7 @@ print(i)  # error: i is only accessible within the for loop block
 
 In Codon, you can rewrite that as:
 
-```python
+``` python
 x = 2
 if cond():
      x = 1
@@ -349,16 +397,19 @@ x = 1 if cond() else 2
 print(x)
 ```
 
-Another important difference between Codon and Python is that, in Codon, variables cannot change types. So this won't compile:
+Another important difference between Codon and Python is that, in Codon,
+variables cannot change types. So this won't compile:
 
-```python
+``` python
 a = 's'
 a = 1  # error: expected string, but got int
 ```
 
-A note about function scoping: functions cannot modify variables that are not defined within the function block. You need to use `global` to modify such variables:
+A note about function scoping: functions cannot modify variables that
+are not defined within the function block. You need to use `global` to
+modify such variables:
 
-```python
+``` python
 g = 5
 def foo():
     print(g)
@@ -376,13 +427,14 @@ foo3()  # works, prints 7
 foo3()  # works, prints 9
 ```
 
-As a rule, use `global` whenever you need to access variables that are not defined within the function.
+As a rule, use `global` whenever you need to access variables that are
+not defined within the function.
 
-## Imports
+# Imports
 
 You can import functions and classes from another Codon module by doing:
 
-```python
+``` python
 # Create foo.codon with a bunch of useful methods
 import foo
 
@@ -397,13 +449,14 @@ from bar import z as bar_z
 bar_z()
 ```
 
-`import foo` looks for `foo.codon` or `foo/__init__.codon` in the current directory.
+`import foo` looks for `foo.codon` or `foo/__init__.codon` in the
+current directory.
 
-## Functions
+# Functions
 
 Functions are defined as follows:
 
-```python
+``` python
 def foo(a, b, c):
     return a + b + c
 print(foo(1, 2, 3))  # prints 6
@@ -411,7 +464,7 @@ print(foo(1, 2, 3))  # prints 6
 
 How about procedures? Well, don't return anything meaningful:
 
-```python
+``` python
 def proc(a, b):
     print(a, 'followed by', b)
 proc(1, 's')
@@ -424,9 +477,10 @@ proc2(1, 's')
 proc2(5, 's')  # this prints nothing
 ```
 
-Codon is a strongly-typed language, so you can restrict argument and return types:
+Codon is a strongly-typed language, so you can restrict argument and
+return types:
 
-```python
+``` python
 def fn(a: int, b: float):
     return a + b  # this works because int implements __add__(float)
 fn(1, 2.2)  # 3.2
@@ -447,7 +501,7 @@ fn3('s', 'u')  # error: 's'+'u' returns 'su' which is str,
 
 Default arguments? Named arguments? You bet:
 
-```python
+``` python
 def foo(a, b: int, c: float = 1.0, d: str = 'hi'):
     print(a, b, c, d)
 foo(1, 2)  # prints "1 2 1 hi"
@@ -456,7 +510,7 @@ foo(1, d='foo', b=1)  # prints "1 1 1 foo"
 
 How about optional arguments? We support that too:
 
-```python
+``` python
 # type of b promoted to Optional[int]
 def foo(a, b: int = None):
     print(a, b + 1)
@@ -465,21 +519,26 @@ foo(1, 2)  # prints "1 3"
 foo(1)  # raises ValueError, since b is None
 ```
 
-### Generics
+## Generics
 
-As we've said several times: Codon is a strongly typed language. As such, it is not as flexible as Python when it comes to types (e.g. you can't have lists with elements of different types). However, Codon tries to mimic Python's _"I don't care about types until I do"_ attitude as much as possible by utilizing a technique known as _monomorphization_. If there is a function that has an argument without a type definition, Codon will consider it a _generic_ function, and will generate different functions for each invocation of that generic function:
+Codon emulates Python's lax runtime type checking using a technique known as
+*monomorphization*. If a function has an argument without a type definition,
+Codon will treat it as a *generic* function, and will generate different instantiations
+for each different invocation:
 
-```python
+``` python
 def foo(x):
-    print(x)  # print relies on typeof(x).__str__(x) method to print the representation of x
-foo(1)  # Codon automatically generates foo(x: int) and calls int.__str__ when needed
-foo('s')  # Codon automatically generates foo(x: str) and calls str.__str__ when needed
-foo([1, 2])  # Codon automatically generates foo(x: List[int]) and calls List[int].__str__ when needed
+    print(x)  # print relies on typeof(x).__repr__(x) method to print the representation of x
+foo(1)  # Codon automatically generates foo(x: int) and calls int.__repr__ when needed
+foo('s')  # Codon automatically generates foo(x: str) and calls str.__repr__ when needed
+foo([1, 2])  # Codon automatically generates foo(x: List[int]) and calls List[int].__repr__ when needed
 ```
 
-But what if you need to mix type definitions and generic types? Say, your function can take a list of _anything_? Well, you can use generic specifiers:
+But what if you need to mix type definitions and generic types? Say,
+your function can take a list of *anything*? Well, you can use generic
+specifiers:
 
-```python
+``` python
 def foo(x: List[T], T: type):
     print(x)
 foo([1, 2])           # prints [1, 2]
@@ -494,15 +553,16 @@ foo(4, int)  # prints 4, returns 1
 foo(4, str)  # error: return type is str, but foo returns int!
 ```
 
-::: note ::: title Note :::
+{% hint style="info" %}
+Coming from C++? `foo(x: List[T], T: type): ...` is roughly the same as
+`template<typename T, typename U> U foo(T x) { ... }`.
+{% endhint %}
 
-Coming from C++? `foo(x: List[T], T: type): ...` is roughly the same as `template<typename T, typename U> U foo(T x) { ... }`. :::
-
-### Generators
+## Generators
 
 Codon supports generators, and they are fast! Really, really fast!
 
-```python
+``` python
 def gen(i):
     while i < 10:
         yield i
@@ -511,9 +571,11 @@ print(list(gen(0)))  # prints [0, 1, ..., 9]
 print(list(gen(10)))  # prints []
 ```
 
-You can also use `yield` to implement coroutines: `yield` suspends the function, while `(yield)` (yes, parentheses are required) receives a value, as in Python.
+You can also use `yield` to implement coroutines: `yield` suspends the
+function, while `(yield)` (yes, parentheses are required) receives a
+value, as in Python.
 
-```python
+``` python
 def mysum[T](start: T):
     m = start
     while True:
@@ -529,13 +591,13 @@ for i in range(10):
 print(iadder.send(-1))  # prints 45
 ```
 
-### Foreign function interface (FFI) <a href="#interop" id="interop"></a>
+## Foreign function interface (FFI) {#interop}
 
 Codon can easily call functions from C and Python.
 
 Let's import some C functions:
 
-```python
+``` python
 from C import pow(float, float) -> float
 pow(2.0, 2.0)  # 4.0
 
@@ -545,11 +607,13 @@ print_line("hi!".c_str())  # prints "hi!".
                            # Note .c_str() at the end of string--- needed to cast Codon's string to char*.
 ```
 
-`from C import` only works if the symbol is available to the program. If you are running your programs via `codon`, you can link dynamic libraries by running `codon run -l path/to/dynamic/library.so ...`.
+`from C import` only works if the symbol is available to the program. If
+you are running your programs via `codon`, you can link dynamic
+libraries by running `codon run -l path/to/dynamic/library.so ...`.
 
-Hate linking? You can also use dyld library loading as follows:
+Hate linking? You can also use shared library loading as follows:
 
-```python
+``` python
 LIBRARY = "mycoollib.so"
 from C import LIBRARY.mymethod(int, float) -> cobj
 from C import LIBRARY.myothermethod(int, float) -> cobj as my2
@@ -557,20 +621,23 @@ foo = mymethod(1, 2.2)
 foo2 = my2(4, 3.2)
 ```
 
-::: note ::: title Note :::
+{% hint style="warning" %}
+When importing external non-Codon functions, you must explicitly specify
+argument and return types.
+{% endhint %}
 
-When importing external non-Codon functions, you must explicitly specify argument and return types. :::
+How about Python? If you have set the `CODON_PYTHON` environment
+variable as described in the first section, you can do:
 
-How about Python? If you have set the `CODON_PYTHON` environment variable as described in the first section, you can do:
-
-```python
+``` python
 from python import mymodule.myfunction(str) -> int as foo
 print(foo("bar"))
 ```
 
-Often you want to execute more complex Python code within Codon. To that end, you can use Codon's `@python` annotation:
+Often you want to execute more complex Python code within Codon. To that
+end, you can use Codon's `@python` annotation:
 
-```python
+``` python
 @python
 def scipy_here_i_come(i: List[List[float]]) -> List[float]:
     # Code within this block is executed by the Python interpreter,
@@ -583,13 +650,17 @@ def scipy_here_i_come(i: List[List[float]]) -> List[float]:
 print(scipy_here_i_come([[1.0, 2.0], [3.0, 4.0]]))  # [-0.372281, 5.37228] with some warnings...
 ```
 
-Codon will automatically bridge any object that implements the `__to_py__` and `__from_py__` magic methods. All standard Codon types already implement these methods.
+Codon will automatically bridge any object that implements the
+`__to_py__` and `__from_py__` magic methods. All standard Codon types
+already implement these methods.
 
-## Classes and types
+# Classes and types
 
-Of course, Codon supports classes! However, you must declare class members and their types in the preamble of each class (like you would do with Python's dataclasses).
+Of course, Codon supports classes! However, you must declare class
+members and their types in the preamble of each class (like you would do
+with Python's dataclasses).
 
-```python
+``` python
 class Foo:
     x: int
     y: int
@@ -604,13 +675,9 @@ f = Foo(1, 2)
 f.method()  # prints "1 2"
 ```
 
-::: note ::: title Note :::
-
-Codon does not (yet!) support inheritance and polymorphism. :::
-
 Unlike Python, Codon supports method overloading:
 
-```python
+``` python
 class Foo:
     x: int
     y: int
@@ -635,7 +702,7 @@ Foo(1.1, 2.3).method()  # error: there is no Foo.__init__(float, float)
 
 Classes can also be generic:
 
-```python
+``` python
 class Container[T]:
     l: List[T]
     def __init__(self, l: List[T]):
@@ -645,7 +712,7 @@ class Container[T]:
 
 Classes create objects that are passed by reference:
 
-```python
+``` python
 class Point:
     x: int
     y: int
@@ -657,11 +724,27 @@ p.x = 2
 print((p.x, p.y), (q.x, q.y))  # (2, 2), (2, 2)
 ```
 
-If you need to copy an object's contents, implement the `__copy__` magic method and use `q = copy(p)` instead.
+If you need to copy an object's contents, implement the `__copy__`
+magic method and use `q = copy(p)` instead.
+
+Classes can inherit from other classes:
+
+```python
+class NamedPoint(Point):
+    name: str
+
+    def __init__(self, x: int, y: int, name: str):
+        super().__init__(x, y)
+        self.name = name
+```
+
+{% hint style="warning" %}
+Currently, inheritance in Codon is static and polymorphism is not supported.
+{% endhint %}
 
 Codon also supports pass-by-value types via the `@tuple` annotation:
 
-```python
+``` python
 @tuple
 class Point:
     x: int
@@ -672,40 +755,47 @@ q = p  # this is a copy!
 print((p.x, p.y), (q.x, q.y))  # (1, 2), (1, 2)
 ```
 
-However, **by-value objects are immutable!**. The following code will not compile:
+However, *by-value objects are immutable*. The following code will
+not compile:
 
-```python
+``` python
 p = Point(1, 2)
 p.x = 2  # error! immutable type
 ```
 
-Under the hood, types are basically named tuples (equivalent to Python's `collections.namedtuple`).
+Under the hood, types are basically named tuples (equivalent to
+Python's `collections.namedtuple`).
 
 You can also add methods to types:
 
-```python
+``` python
 @tuple
 class Point:
     x: int
     y: int
 
     def __new__():          # types are constructed via __new__, not __init__
-        return Point(0, 1) # and __new__ returns a tuple representation of type's members
+        return Point(0, 1)  # and __new__ returns a tuple representation of type's members
 
     def some_method(self):
         return self.x + self.y
 
-p = Point()  # p is (0, 1)
+p = Point()             # p is (0, 1)
 print(p.some_method())  # 1
 ```
 
-### Type extensions
+## Type extensions
 
-Suppose you have a class that lacks a method or an operator that might be really useful.
+Suppose you have a class that lacks a method or an operator that might
+be really useful.
 
-Codon provides an `@extend` annotation that allows programmers to add and modify methods of various types at compile time, including built-in types like `int` or `str`. This actually allows much of the functionality of built-in types to be implemented in Codon as type extensions in the standard library.
+Codon provides an `@extend` annotation that allows programmers to add
+and modify methods of various types at compile time, including built-in
+types like `int` or `str`. This actually allows much of the
+functionality of built-in types to be implemented in Codon as type
+extensions in the standard library.
 
-```python
+``` python
 class Foo:
     ...
 
@@ -728,31 +818,49 @@ class int:
 print(5 + '4')  # 9
 ```
 
-Note that all type extensions are performed strictly at compile time and incur no runtime overhead.
+Note that all type extensions are performed strictly at compile time and
+incur no runtime overhead.
 
-### Magic methods
+## Magic methods
 
-Here is a list of useful magic methods that you might want to add and overload:
+Here is a list of useful magic methods that you might want to add and
+overload:
 
-Magic method Description
+  | Magic method  | Description                                                                         |
+  |---------------|-------------------------------------------------------------------------------------|
+  | operators     | overload unary and binary [operators](#assignments-and-operators)                   |
+  | `__copy__`    | copy-constructor for `copy` method                                                  |
+  | `__len__`     | for `len` method                                                                    |
+  | `__bool__`    | for `bool` method and condition checking                                            |
+  | `__getitem__` | overload `obj[key]`                                                                 |
+  | `__setitem__` | overload `obj[key] = value`                                                         |
+  | `__delitem__` | overload `del obj[key]`                                                             |
+  | `__iter__`    | support iterating over the object                                                   |
+  | `__repr__`    | support printing and `str` conversion                                               |
 
-***
+## Other types
 
-operators overload unary and binary operators (see `operators`{.interpreted-text role="ref"}) `__copy__` copy-constructor for `copy` method `__len__` for `len` method `__bool__` for `bool` method and condition checking `__getitem__` overload `obj[key]` `__setitem__` overload `obj[key] = value` `__delitem__` overload `del obj[key]` `__iter__` support iterating over the object `__str__` support printing and `str` method
+Codon provides arbitrary-width signed and unsigned integers, e.g.
+`Int[32]` is a signed 32-bit integer while `UInt[128]` is an unsigned
+128-bit integer, respectively (note that `int` is an `Int[64]`).
+Typedefs for common bit widths are provided in the standard library,
+such as `i8`, `i16`, `u32`, `u64` etc.
 
-### Other types
+The `Ptr[T]` type in Codon also corresponds to a raw C pointer (e.g.
+`Ptr[byte]` is equivalent to `char*` in C). The `Array[T]` type
+represents a fixed-length array (essentially a pointer with a length).
 
-Codon provides arbitrary-width signed and unsigned integers, e.g. `Int[32]` is a signed 32-bit integer while `UInt[128]` is an unsigned 128-bit integer, respectively (note that `int` is an `Int[64]`). Typedefs for common bit widths are provided in the standard library, such as `i8`, `i16`, `u32`, `u64` etc.
+Codon also provides `__ptr__` for obtaining a pointer to a variable (as
+in `__ptr__(myvar)`) and `__array__` for declaring stack-allocated
+arrays (as in `__array__[int](10)`).
 
-The `Ptr[T]` type in Codon also corresponds to a raw C pointer (e.g. `Ptr[byte]` is equivalent to `char*` in C). The `Array[T]` type represents a fixed-length array (essentially a pointer with a length).
+## LLVM functions
 
-Codon also provides `__ptr__` for obtaining a pointer to a variable (as in `__ptr__(myvar)`) and `__array__` for declaring stack-allocated arrays (as in `__array__[int](10)`).
+In certain cases, you might want to use LLVM features that are not
+directly accessible with Codon. This can be done with the `@llvm`
+attribute:
 
-### LLVM functions
-
-In certain cases, you might want to use LLVM features that are not directly accessible with Codon. This can be done with the `@llvm` attribute:
-
-```python
+``` python
 @llvm
 def llvm_add[T](a: T, b: T) -> T:
     %res = add {=T} %a, %b
@@ -761,7 +869,3 @@ def llvm_add[T](a: T, b: T) -> T:
 print(llvm_add(3, 4))  # 7
 print(llvm_add(i8(5), i8(6)))  # 11
 ```
-
-***
-
-Issues, feedback, or comments regarding this tutorial? Let us know [on GitHub](https://github.com/exaloop/codon).
