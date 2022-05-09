@@ -1,16 +1,19 @@
-# Summary
+# Table of contents
 
 * [Welcome to Codon](README.md)
 
-### Basics
+## Basics
+
 * [Getting started](intro/intro.md)
 * [Codon tutorial](intro/tutorial.md)
 
-### Interoperability
+## Interoperability
+
 * [Python integration](interop/python.md)
 * [C/C++ integration](interop/cpp.md)
 
-### Advanced
+## Advanced
+
 * [Parallelism and multithreading](advanced/parallel.md)
 * [Pipelines](advanced/pipelines.md)
 * [Building from source](advanced/build.md)

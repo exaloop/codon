@@ -1,41 +1,38 @@
-# Install
+# Getting started
 
-## Pre-built binaries
+## Install
 
-Pre-built binaries for Linux and macOS on x86_64 are available alongside
-[each release](https://github.com/exaloop/codon/releases). We also have
-a script for downloading and installing pre-built versions:
+### Pre-built binaries
 
-``` bash
+Pre-built binaries for Linux and macOS on x86\_64 are available alongside [each release](https://github.com/exaloop/codon/releases). We also have a script for downloading and installing pre-built versions:
+
+```bash
 /bin/bash -c "$(curl -fsSL https://codon.dev/install.sh)"
 ```
 
-This will install Codon in a new `.codon` directory within your home
-directory.
+This will install Codon in a new `.codon` directory within your home directory.
 
-## Building from source
+### Building from source
 
-See [Building from Source](/advanced/build).
+See [Building from source](intro.md#building-from-source).
 
-# Usage
+## Usage
 
 The `codon` program can either directly `run` Codon source in JIT mode:
 
-``` bash
+```bash
 codon run myprogram.codon
 ```
 
-The default compilation and run mode is *debug* (`-debug`). Compile and
-run with optimizations with the `-release` option:
+The default compilation and run mode is _debug_ (`-debug`). Compile and run with optimizations with the `-release` option:
 
-``` bash
+```bash
 codon run -release myprogram.codon
 ```
 
-`codon` can also `build` executables (ensure you have `clang` installed,
-as it is used for linking):
+`codon` can also `build` executables (ensure you have `clang` installed, as it is used for linking):
 
-``` bash
+```bash
 # generate 'myprogram' executable
 codon build -exe myprogram.codon
 
@@ -45,7 +42,7 @@ codon build -o foo myprogram.codon
 
 `codon` can produce object files:
 
-``` bash
+```bash
 # generate 'myprogram.o' object file
 codon build -obj myprogram.codon
 
@@ -55,7 +52,7 @@ codon build -o foo.o myprogram.codon
 
 `codon` can produce LLVM IR:
 
-``` bash
+```bash
 # generate 'myprogram.ll' object file
 codon build -llvm myprogram.codon
 
@@ -63,14 +60,12 @@ codon build -llvm myprogram.codon
 codon build -o foo.ll myprogram.codon
 ```
 
-# Compile-time definitions
+## Compile-time definitions
 
-`codon` allows for compile-time definitions via the `-D` flag. For
-example, in the following code:
+`codon` allows for compile-time definitions via the `-D` flag. For example, in the following code:
 
-``` python
+```python
 print(Int[BIT_WIDTH]())
 ```
 
-`BIT_WIDTH` can be specified on the command line as such:
-`codon run -DBIT_WIDTH=10 myprogram.codon`.
+`BIT_WIDTH` can be specified on the command line as such: `codon run -DBIT_WIDTH=10 myprogram.codon`.
