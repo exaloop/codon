@@ -1,5 +1,6 @@
-# Summary
+# Table of contents
 
+* [README](README.md)
 * [Getting started](intro.md)
 * [Codon tutorial](primer.md)
 * [Python integration](python.md)
