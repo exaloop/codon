@@ -16,4 +16,5 @@
 
 * [Parallelism and multithreading](advanced/parallel.md)
 * [Pipelines](advanced/pipelines.md)
+* [Intermediate representation](advanced/ir.md)
 * [Building from source](advanced/build.md)
