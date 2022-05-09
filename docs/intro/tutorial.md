@@ -1,4 +1,4 @@
-If you know Python, you already know 99% of Codon. The following primer
+If you know Python, you already know 99% of Codon. The following tutorial
 assumes some familiarity with Python or at least one "modern"
 programming language (QBASIC doesn't count).
 
@@ -17,8 +17,8 @@ print('hello world', end='', file=stderr)
 # Codon comments start with "# 'and go until the end of the line
 
 """
-There are no multi-line comments. You can (ab)use the docstring operator (''')
-if you really need them.
+Multi-line comments are
+possible like this.
 """
 ```
 
@@ -159,7 +159,7 @@ Here is the list of binary operators and each one's associated magic method:
   | `%`       | `__mod__`      | modulo                       |
   | `@`       | `__matmul__`   | matrix multiplication        |
   | `&`       | `__and__`      | bitwise and                  |
-  | `|`       | `__or__`       | bitwise or                   |
+  | <code>|<code> | `__or__`   | bitwise or                   |
   | `^`       | `__xor__`      | bitwise xor                  |
   | `<<`      | `__lshift__`   | left bit shift               |
   | `>>`      | `__rshift__`   | right bit shift              |
@@ -576,7 +576,7 @@ function, while `(yield)` (yes, parentheses are required) receives a
 value, as in Python.
 
 ``` python
-def mysum[T](start: T):
+def mysum(start):
     m = start
     while True:
         a = (yield)  # receives the input of coroutine.send() call
@@ -591,7 +591,7 @@ for i in range(10):
 print(iadder.send(-1))  # prints 45
 ```
 
-## Foreign function interface (FFI) {#interop}
+## Foreign function interface (FFI)
 
 Codon can easily call functions from C and Python.
 
@@ -609,7 +609,7 @@ print_line("hi!".c_str())  # prints "hi!".
 
 `from C import` only works if the symbol is available to the program. If
 you are running your programs via `codon`, you can link dynamic
-libraries by running `codon run -l path/to/dynamic/library.so ...`.
+libraries by running `codon run -l /path/to/library.so ...`.
 
 Hate linking? You can also use shared library loading as follows:
 

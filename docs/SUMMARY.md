@@ -1,10 +1,16 @@
-# Table of contents
+# Summary
 
-* [README](README.md)
-* [Getting started](intro.md)
-* [Codon tutorial](primer.md)
-* [Python integration](python.md)
-* [C/C++ integration](embed.md)
-* [Parallelism and multithreading](parallel.md)
-* [Pipelines](pipelines.md)
-* [Building from source](build.md)
+* [Welcome to Codon](README.md)
+
+### Basics
+* [Getting started](intro/intro.md)
+* [Codon tutorial](intro/tutorial.md)
+
+### Interoperability
+* [Python integration](interop/python.md)
+* [C/C++ integration](interop/cpp.md)
+
+### Advanced
+* [Parallelism and multithreading](advanced/parallel.md)
+* [Pipelines](advanced/pipelines.md)
+* [Building from source](advanced/build.md)
