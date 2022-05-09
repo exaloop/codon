@@ -148,39 +148,39 @@ a *= 2                 # a is now 6
 
 Here is the list of binary operators and each one's associated magic method:
 
-  | Operator  | Magic method   | Description                  |
-  |-----------|----------------|------------------------------|
-  | `+`       | `__add__`      | addition                     |
-  | `-`       | `__sub__`      | subtraction                  |
-  | `*`       | `__mul__`      | multiplication               |
-  | `/`       | `__truediv__`  | float (true) division        |
-  | `//`      | `__floordiv__` | integer (floor) division     |
-  | `**`      | `__pow__`      | exponentiation               |
-  | `%`       | `__mod__`      | modulo                       |
-  | `@`       | `__matmul__`   | matrix multiplication        |
-  | `&`       | `__and__`      | bitwise and                  |
-  | <code>|<code> | `__or__`   | bitwise or                   |
-  | `^`       | `__xor__`      | bitwise xor                  |
-  | `<<`      | `__lshift__`   | left bit shift               |
-  | `>>`      | `__rshift__`   | right bit shift              |
-  | `<`       | `__lt__`       | less than                    |
-  | `<=`      | `__le__`       | less than or equal to        |
-  | `>`       | `__gt__`       | greater than                 |
-  | `>=`      | `__ge__`       | greater than or equal to     |
-  | `==`      | `__eq__`       | equal to                     |
-  | `!=`      | `__ne__`       | not equal to                 |
-  | `in`      | `__contains__` | belongs to                   |
-  | `and`     | none           | boolean and (short-circuits) |
-  | `or`      | none           | boolean or (short-circuits)  |
+  | Operator           | Magic method   | Description                  |
+  |--------------------|----------------|------------------------------|
+  | `+`                | `__add__`      | addition                     |
+  | `-`                | `__sub__`      | subtraction                  |
+  | `*`                | `__mul__`      | multiplication               |
+  | `/`                | `__truediv__`  | float (true) division        |
+  | `//`               | `__floordiv__` | integer (floor) division     |
+  | `**`               | `__pow__`      | exponentiation               |
+  | `%`                | `__mod__`      | modulo                       |
+  | `@`                | `__matmul__`   | matrix multiplication        |
+  | `&`                | `__and__`      | bitwise and                  |
+  | <code>&vert;<code> | `__or__`       | bitwise or                   |
+  | `^`                | `__xor__`      | bitwise xor                  |
+  | `<<`               | `__lshift__`   | left bit shift               |
+  | `>>`               | `__rshift__`   | right bit shift              |
+  | `<`                | `__lt__`       | less than                    |
+  | `<=`               | `__le__`       | less than or equal to        |
+  | `>`                | `__gt__`       | greater than                 |
+  | `>=`               | `__ge__`       | greater than or equal to     |
+  | `==`               | `__eq__`       | equal to                     |
+  | `!=`               | `__ne__`       | not equal to                 |
+  | `in`               | `__contains__` | belongs to                   |
+  | `and`              | none           | boolean and (short-circuits) |
+  | `or`               | none           | boolean or (short-circuits)  |
 
 Codon also has the following unary operators:
 
-| Operator | Magic method | Description      |
-|----------|--------------|------------------|
-| `~`      | `__invert__` | bitwise not      |
-| `+`      | `__pos__`    | unary positive   |
-| `-`      | `__neg__`    | unary negation   |
-| `not`    | none         | boolean negation |
+  | Operator | Magic method | Description      |
+  |----------|--------------|------------------|
+  | `~`      | `__invert__` | bitwise not      |
+  | `+`      | `__pos__`    | unary positive   |
+  | `-`      | `__neg__`    | unary negation   |
+  | `not`    | none         | boolean negation |
 
 ## Tuple unpacking
 
