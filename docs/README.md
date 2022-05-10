@@ -24,32 +24,37 @@ server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medi
 
 # Frequently Asked Questions
 
-> *What is the goal of Codon?*
+> **What is the goal of Codon?**
 
 One of the main focuses of Codon is to bridge the gap between usability
 and performance. Codon aims to make writing high-performance software
 substantially easier, and to provide a common, unified framework for the
 development of such software across a range of domains.
 
-> *How does Codon compare to other Python implementations?*
+> **I want to use Codon, but I have a large Python codebase I don't want to port.**
 
-Unlike other performance-oriented Python implementations, such as PyPy
-or Numba, Codon is a standalone system implemented entirely
-independently of regular Python. Since it does not need to interoperate
-with CPython's runtime, Codon has far greater flexibility to generate
-optimized code. In fact, Codon will frequently generate the same code as
-that from an equivalent C or C++ program. This design choice also allows
-Codon to circumvent issues like Python's global interpretter lock, and
-thereby to take full advantage of parallelism and multithreading.
+You can use Codon on a per-function basis via the `@codon` annotation, which
+can be used within Python codebases. This will compile only the annotated functions
+and automatically handle data conversions to and from Codon.
 
-> *What about interoperability with other languages and frameworks?*
+> **How does Codon compare to other Python implementations?**
+
+Unlike many other performance-oriented Python implementations, such as
+PyPy or Numba, Codon is a standalone system implemented entirely
+independently of regular Python or any dynamic runtime, and therefore has
+far greater flexibility to generate optimized code. In fact, Codon will
+frequently generate the same code as that from an equivalent C or C++ program.
+This design choice also allows Codon to circumvent issues like Python's global
+interpretter lock, and thereby to take full advantage of parallelism and multithreading.
+
+> **What about interoperability with other languages and frameworks?**
 
 Interoperability is and will continue to be a priority for the Codon
 project. We don't want using Codon to render you unable to use all the
 other great frameworks and libraries that exist. Codon already supports
-interoperability with C/C++ and Python.
+full interoperability with C/C++ and Python.
 
-> *I want to contribute! How do I get started?*
+> **I want to contribute! How do I get started?**
 
 Great! Check out our [contribution
 guidelines](https://github.com/exaloop/codon/blob/master/CONTRIBUTING.md)
@@ -58,7 +63,7 @@ started. Also don't hesitate to drop by our [Discord
 server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect)
 if you have any questions.
 
-> *What is planned for the future?*
+> **What is planned for the future?**
 
 See the [roadmap](https://github.com/exaloop/codon/wiki/Roadmap) for
 information about this.
