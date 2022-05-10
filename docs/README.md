@@ -22,6 +22,31 @@ messages to help identify and resolve any incompatibilities.
 Questions, comments or suggestions? Visit our [Discord
 server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect).
 
+# Codon at a glance
+
+A simple Python program `fib.py`...
+
+``` python
+from time import time
+
+def fib(n):
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+
+t0 = time()
+ans = fib(40)
+t1 = time()
+print(f'Computed fib(40) = {ans} in {t1 - t0} seconds.')
+```
+
+... run through Python and Codon:
+
+```
+$ python3 fib.py
+Computed fib(40) = 102334155 in 17.979357957839966 seconds.
+$ codon run -release fib.py
+Computed fib(40) = 102334155 in 0.275645 seconds.
+```
+
 # Frequently Asked Questions
 
 > **What is the goal of Codon?**
