@@ -38,17 +38,13 @@ Codon will chain anything that implements `__iter__`, and the compiler
 will optimize out generators whenever possible. Combinations of pipes
 and generators can be used to implement efficient streaming pipelines.
 
-::: caution
-::: title
-Caution
-:::
-
+{% hint style="warning" %}
 The Codon compiler may perform optimizations that change the order of
 elements passed through a pipeline. Therefore, it is best to not rely on
 order when using pipelines. If order needs to be maintained, consider
 using a regular loop or passing an index alongside each element sent
 through the pipeline.
-:::
+{% endhint %}
 
 # Parallel pipelines
 
