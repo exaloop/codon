@@ -257,3 +257,59 @@ validate('a', c)
 
 Notice that we used `getOrRealizeFunc` to create three different instances of `validate`: one for `int`
 arguments, one for `float` arguments and finally one for `str` arguments.
+
+# Extending the IR
+
+SIR is extensible, and it is possible to add new constants, instructions, flows and types. This can be
+done by subclassing the corresponding *custom* base class; to create a custom type, for example, you
+would subclass `CustomType`. Let's look at an example where we extend SIR to add a 32-bit float type:
+
+``` cpp
+using namespace codon::ir;
+
+#include "codon/sir/dsl/nodes.h"
+#include "codon/sir/llvm/llvisitor.h"
+
+class Builder : public dsl::codegen::TypeBuilder {
+public:
+  llvm::Type *buildType(LLVMVisitor *v) override {
+    return v->getBuilder()->getFloatTy();
+  }
+
+  llvm::DIType *buildDebugType(LLVMVisitor *v) override {
+    auto *module = v->getModule();
+    auto &layout = module->getDataLayout();
+    auto &db = v->getDebugInfo();
+    auto *t = buildType(v);
+    return db.builder->createBasicType(
+           "float_32",
+           layout.getTypeAllocSizeInBits(t),
+           llvm::dwarf::DW_ATE_float);
+  }
+};
+
+class Float32 : public dsl::CustomType {
+public:
+  std::unique_ptr<TypeBuilder> getBuilder() const override {
+    return std::make_unique<Builder>();
+  }
+};
+```
+
+Notice that, in order to specify how to generate code for our `Float32` type, we create a `TypeBuilder`
+subclass with methods for building the corresponding LLVM IR type. There is also a `ValueBuilder` for
+new constants and converting them to LLVM IR, as well as a `CFBuilder` for new instructions and creating
+control-flow graphs out of them.
+
+{% hint style="info" %}
+When subclassing nodes other than types (e.g. instructions, flows, etc.), be sure to use the `AcceptorExtend`
+[CRTP](https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern) class, as in
+`class MyNewInstr : public AcceptorExtend<MyNewInstr, dsl::CustomInstr>`.
+{% endhint %}
+
+# Utilities
+
+The `codon/ir/util/` directory has a number of utility and generally helpful functions, for things like
+cloning IR, inlining/outlining, matching and more. `codon/ir/util/irtools.h` in particular has many helpful
+functions for performing various common tasks. If you're working with SIR, be sure to take a look at these
+functions to make your life easier!
