@@ -1,22 +1,4 @@
-# Getting started
-
-## Install
-
-### Pre-built binaries
-
-Pre-built binaries for Linux and macOS on x86\_64 are available alongside [each release](https://github.com/exaloop/codon/releases). We also have a script for downloading and installing pre-built versions:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://codon.dev/install.sh)"
-```
-
-This will install Codon in a new `.codon` directory within your home directory.
-
-### Building from source
-
-See [Building from source](../advanced/build.md).
-
-## Usage
+# Using `codon`
 
 The `codon` program can either directly `run` Codon source in JIT mode:
 
