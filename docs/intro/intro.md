@@ -1,6 +1,6 @@
 # Using `codon`
 
-The `codon` program can either directly `run` Codon source in JIT mode:
+The `codon` program can directly `run` Codon source in JIT mode:
 
 ```bash
 codon run myprogram.codon

@@ -78,8 +78,3 @@ Interoperability is and will continue to be a priority for the Codon
 project. We don't want using Codon to render you unable to use all the
 other great frameworks and libraries that exist. Codon already supports
 full interoperability with C/C++ and Python.
-
-> **What is planned for the future?**
-
-See the [roadmap](https://github.com/exaloop/codon/wiki/Roadmap) for
-information about this.
