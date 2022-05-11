@@ -79,15 +79,6 @@ project. We don't want using Codon to render you unable to use all the
 other great frameworks and libraries that exist. Codon already supports
 full interoperability with C/C++ and Python.
 
-> **I want to contribute! How do I get started?**
-
-Great! Check out our [contribution
-guidelines](https://github.com/exaloop/codon/blob/master/CONTRIBUTING.md)
-and [open issues](https://github.com/exaloop/codon/issues) to get
-started. Also don't hesitate to drop by our [Discord
-server](https://discord.com/invite/8aKr6HEN?utm_source=Discord%20Widget&utm_medium=Connect)
-if you have any questions.
-
 > **What is planned for the future?**
 
 See the [roadmap](https://github.com/exaloop/codon/wiki/Roadmap) for
