@@ -48,12 +48,12 @@ argument of `10`.
 
 The following table shows the conversions between Codon and C/C++ types:
 
-  **Codon**   **C/C++**
-  ----------- --------------------------------------
-  `int`       `long` or `int64_t`
-  `float`     `double`
-  `bool`      `bool`
-  `byte`      `char` or `int8_t`
-  `str`       `{int64_t, char*}` (length and data)
-  `class`     Pointer to corresponding tuple
-  `@tuple`    Struct of fields
+  | Codon     | C/C++                                |
+  |-----------|--------------------------------------|
+  | `int`     | `long` or `int64_t`                  |
+  | `float`   | `double`                             |
+  | `bool`    | `bool`                               |
+  | `byte`    | `char` or `int8_t`                   |
+  | `str`     | `{int64_t, char*}` (length and data) |
+  | `class`   | Pointer to corresponding tuple       |
+  | `@tuple`  | Struct of fields                     |
