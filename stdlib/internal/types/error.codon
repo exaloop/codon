@@ -13,6 +13,20 @@ class ExcHeader:
     col: int
 
 
+class NameError:
+    _hdr: ExcHeader
+
+    def __init__(self):
+        self._hdr = ("NameError", "", "", "", 0, 0)
+
+    def __init__(self, message: str):
+        self._hdr = ("NameError", message, "", "", 0, 0)
+
+    @property
+    def message(self) -> str:
+        return self._hdr.msg
+
+
 class OSError:
     _hdr: ExcHeader
 

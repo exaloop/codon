@@ -299,7 +299,7 @@ public:
   /// Lazily replaces all instances of the node.
   /// @param v the new value
   void replaceAll(Derived *v) {
-    seqassert(replaceable, "node {} not replaceable", *v);
+    seqassertn(replaceable, "node {} not replaceable", *v);
     Node::replacement = v;
   }
 

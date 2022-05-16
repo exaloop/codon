@@ -98,6 +98,13 @@ std::string escapeFStringBraces(const std::string &str, int start, int len) {
       t += str[i];
   return t;
 }
+int findStar(const std::string &s) {
+  int i = 0;
+  for (; i < s.size(); i++)
+    if (s[i] == ' ' || s[i] == ')')
+      break;
+  return i;
+}
 bool startswith(const std::string &str, const std::string &prefix) {
   return str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix;
 }
@@ -236,8 +243,8 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
   if (!isStdLib && startswith(s, module0Root))
     root = module0Root;
   const std::string ext = ".codon";
-  seqassert(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}", s,
-            root);
+  seqassertn(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
+             s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE

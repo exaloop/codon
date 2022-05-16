@@ -70,6 +70,7 @@ std::string escape(const std::string &str);
 std::string unescape(const std::string &str);
 /// Escape an F-string braces (replace { and } with {{ and }}).
 std::string escapeFStringBraces(const std::string &str, int start, int len);
+int findStar(const std::string &s);
 /// True if a string str starts with a prefix.
 bool startswith(const std::string &str, const std::string &prefix);
 /// True if a string str ends with a suffix.
@@ -100,6 +101,13 @@ std::string combine(const std::vector<T> &items, const std::string &delim = " ")
   for (int i = 0; i < items.size(); i++)
     if (items[i])
       s += (i ? delim : "") + items[i]->toString();
+  return s;
+}
+template <typename T>
+std::string combine2(const std::vector<T> &items, const std::string &delim = " ") {
+  std::string s;
+  for (int i = 0; i < items.size(); i++)
+    s += (i ? delim : "") + fmt::format("{}", items[i]);
   return s;
 }
 /// @return True if an item is found in a vector vec.

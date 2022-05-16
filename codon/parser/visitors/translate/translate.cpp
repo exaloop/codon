@@ -380,7 +380,12 @@ void TranslateVisitor::visit(ForStmt *stmt) {
 
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var->toString());
   auto varName = stmt->var->getId()->value;
-  auto var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
+  ir::Var *var = nullptr;
+  if (auto val = ctx->find(varName)) {
+    var = val->getVar();
+  } else {
+    var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
+  }
   ctx->getBase()->push_back(var);
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
 

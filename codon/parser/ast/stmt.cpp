@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -19,7 +18,7 @@ namespace codon {
 namespace ast {
 
 Stmt::Stmt() : done(false), age(-1) {}
-Stmt::Stmt(const codon::SrcInfo &s) : done(false) { setSrcInfo(s); }
+Stmt::Stmt(const codon::SrcInfo &s) : done(false), age(-1) { setSrcInfo(s); }
 std::string Stmt::toString() const { return toString(-1); }
 
 SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts, bool ownBlock)
@@ -33,10 +32,12 @@ std::string SuiteStmt::toString(int indent) const {
   std::string pad = indent >= 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string s;
   for (int i = 0; i < stmts.size(); i++)
-    if (stmts[i])
-      s += (i ? pad : "") +
-           stmts[i]->toString(indent >= 0 ? indent + INDENT_SIZE : -1) +
-           (stmts[i]->done ? "*" : "");
+    if (stmts[i]) {
+      auto is = stmts[i]->toString(indent >= 0 ? indent + INDENT_SIZE : -1);
+      if (stmts[i]->done)
+        is.insert(findStar(is), "*");
+      s += (i ? pad : "") + is;
+    }
   return format("(suite{}{})", ownBlock ? " #:own " : "",
                 s.empty() ? s : " " + pad + s);
 }
@@ -266,8 +267,11 @@ std::string ThrowStmt::toString(int) const {
 }
 ACCEPT_IMPL(ThrowStmt, ASTVisitor);
 
-GlobalStmt::GlobalStmt(std::string var) : Stmt(), var(std::move(var)) {}
-std::string GlobalStmt::toString(int) const { return format("(global '{})", var); }
+GlobalStmt::GlobalStmt(std::string var, bool nonLocal)
+    : Stmt(), var(std::move(var)), nonLocal(nonLocal) {}
+std::string GlobalStmt::toString(int) const {
+  return format("({} '{})", nonLocal ? "nonlocal" : "global", var);
+}
 ACCEPT_IMPL(GlobalStmt, ASTVisitor);
 
 Attr::Attr(const std::vector<std::string> &attrs)
@@ -375,7 +379,7 @@ ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 WithStmt::WithStmt(std::vector<ExprPtr> items, std::vector<std::string> vars,
                    StmtPtr suite)
     : Stmt(), items(std::move(items)), vars(std::move(vars)), suite(std::move(suite)) {
-  seqassert(items.size() == vars.size(), "vector size mismatch");
+  seqassert(this->items.size() == this->vars.size(), "vector size mismatch");
 }
 WithStmt::WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> itemVarPairs, StmtPtr suite)
     : Stmt(), suite(std::move(suite)) {
@@ -386,7 +390,7 @@ WithStmt::WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> itemVarPairs, StmtPt
         throw;
       vars.push_back(i.second->getId()->value);
     } else {
-      vars.push_back("");
+      vars.emplace_back();
     }
   }
 }
@@ -439,6 +443,12 @@ std::string UpdateStmt::toString(int) const {
   return format("(update {} {})", lhs->toString(), rhs->toString());
 }
 ACCEPT_IMPL(UpdateStmt, ASTVisitor);
+
+CommentStmt::CommentStmt(std::string comment) : Stmt(), comment(std::move(comment)) {}
+std::string CommentStmt::toString(int) const {
+  return format("(comment \"{}\")", comment);
+}
+ACCEPT_IMPL(CommentStmt, ASTVisitor);
 
 } // namespace ast
 } // namespace codon

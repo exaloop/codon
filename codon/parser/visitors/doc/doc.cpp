@@ -73,7 +73,7 @@ std::string json::toString() {
 
 std::shared_ptr<json> json::get(const std::string &s) {
   auto i = values.find(s);
-  seqassert(i != values.end(), "cannot find {}", s);
+  seqassertn(i != values.end(), "cannot find {}", s);
   return i->second;
 }
 
@@ -421,7 +421,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
     // TODO: implement this corner case
   } else if (stmt->what->isId("*")) {
     for (auto &i : *ictx)
-      ctx->add(i.first, i.second[0].second);
+      ctx->add(i.first, i.second.front());
   } else {
     auto i = stmt->what->getId();
     if (auto c = ictx->find(i->value))

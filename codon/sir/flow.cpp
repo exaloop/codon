@@ -244,7 +244,7 @@ types::Type *PipelineFlow::Stage::getOutputType() const {
     return callee->getType();
   } else {
     auto *funcType = cast<types::FuncType>(callee->getType());
-    seqassert(funcType, "{} is not a function type", *callee->getType());
+    seqassertn(funcType, "{} is not a function type", *callee->getType());
     return funcType->getReturnType();
   }
 }
@@ -257,16 +257,16 @@ types::Type *PipelineFlow::Stage::getOutputElementType() const {
       return genType->getBase();
     } else {
       auto *funcType = cast<types::FuncType>(callee->getType());
-      seqassert(funcType, "{} is not a function type", *callee->getType());
+      seqassertn(funcType, "{} is not a function type", *callee->getType());
       genType = cast<types::GeneratorType>(funcType->getReturnType());
     }
-    seqassert(genType, "generator type not found");
+    seqassertn(genType, "generator type not found");
     return genType->getBase();
   } else if (args.empty()) {
     return callee->getType();
   } else {
     auto *funcType = cast<types::FuncType>(callee->getType());
-    seqassert(funcType, "{} is not a function type", *callee->getType());
+    seqassertn(funcType, "{} is not a function type", *callee->getType());
     return funcType->getReturnType();
   }
 }

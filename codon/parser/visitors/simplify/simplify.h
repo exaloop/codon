@@ -7,11 +7,10 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify_ctx.h"
+#include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * Visitor that implements the initial AST simplification transformation.
@@ -45,6 +44,7 @@ public:
     std::vector<StmtPtr> globals;
     std::vector<StmtPtr> functions;
   };
+  std::shared_ptr<std::vector<StmtPtr>> prependStmts;
 
 private:
   /// Shared simplification context.
@@ -83,13 +83,15 @@ public:
 
 public:
   explicit SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
-                           std::shared_ptr<Preamble> preamble);
+                           std::shared_ptr<Preamble> preamble,
+                           std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
 
   /// Transform an AST expression node.
   /// @raise ParserException if a node describes a type (use transformType instead).
   ExprPtr transform(const ExprPtr &expr) override;
   /// Transform an AST statement node.
   StmtPtr transform(const StmtPtr &stmt) override;
+  StmtPtr transformInScope(const StmtPtr &stmt);
   /// Transform an AST expression node.
   ExprPtr transform(const ExprPtr &expr, bool allowTypes, bool allowAssign = true);
   /// Transform an AST type expression node.
@@ -461,7 +463,7 @@ private:
   ///   from python import __main__.foo(int, _) -> int
   StmtPtr transformPythonDefinition(const std::string &name,
                                     const std::vector<Param> &args, const Expr *ret,
-                                    const Stmt *codeStmt);
+                                    Stmt *codeStmt);
   /// Transform LLVM code @llvm def foo(x: int) -> float: <llvm code> to:
   ///   def foo(x: int) -> float:
   ///     StringExpr("<llvm code>")
@@ -472,7 +474,7 @@ private:
   /// be replaced with {} so that fmt::format can easily later fill the gaps.
   /// Note that any brace ({ or }) that is not part of {= expr} reference will be
   /// escaped (e.g. { -> {{ and } -> }}) so that fmt::format can print them as-is.
-  StmtPtr transformLLVMDefinition(const Stmt *codeStmt);
+  StmtPtr transformLLVMDefinition(Stmt *codeStmt);
   /// Generate a magic method __op__ for a type described by typExpr and type arguments
   /// args.
   /// Currently able to generate:
@@ -488,10 +490,6 @@ private:
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
-
-  // Generate dispatch method for partial overloaded calls.
-  void generateDispatch(const std::string &name);
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

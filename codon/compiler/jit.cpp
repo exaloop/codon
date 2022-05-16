@@ -23,7 +23,7 @@ JIT::JIT(const std::string &argv0, const std::string &mode)
     engine = std::move(e.get());
   } else {
     engine = {};
-    seqassert(false, "JIT engine creation error");
+    seqassertn(false, "JIT engine creation error");
   }
   compiler->getLLVMVisitor()->setJIT(true);
 }

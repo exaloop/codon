@@ -35,7 +35,9 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVo
     if (disableActivation)
       ctx->allowActivation = false;
     v.setSrcInfo(expr->getSrcInfo());
+    ctx->pushSrcInfo(expr->getSrcInfo());
     expr->accept(v);
+    ctx->popSrcInfo();
     if (v.resultExpr) {
       v.resultExpr->attributes |= expr->attributes;
       expr = v.resultExpr;
@@ -904,6 +906,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     std::vector<std::string> nice;
     for (auto &t : argTypes)
       nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
+    findBestMethod(expr->expr.get(), expr->member, argTypes);
     error("cannot find a method '{}' in {} with arguments {}", expr->member,
           typ->toString(), join(nice, ", "));
   }

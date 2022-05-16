@@ -34,6 +34,7 @@ struct TypecheckItem {
 struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
+  std::vector<SrcInfo> srcInfos;
 
   /// A realization base definition. Each function realization defines a new base scope.
   /// Used to properly realize enclosed functions and to prevent mess with mutually
@@ -143,6 +144,10 @@ public:
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
                        ReorderDoneFn onDone, ReorderErrorFn onError,
                        const std::vector<char> &known = std::vector<char>());
+
+  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
+  void popSrcInfo() { srcInfos.pop_back(); }
+  SrcInfo getSrcInfo() const { return srcInfos.back(); }
 
 private:
   /// Pretty-print the current context state.

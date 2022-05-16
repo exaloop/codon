@@ -229,7 +229,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
 
 void verify(llvm::Module *module) {
   const bool broken = llvm::verifyModule(*module, &llvm::errs());
-  seqassert(!broken, "module broken");
+  seqassertn(!broken, "module broken");
 }
 
 } // namespace

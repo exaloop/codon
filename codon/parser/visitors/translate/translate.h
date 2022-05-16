@@ -62,6 +62,7 @@ public:
   void visit(ThrowStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
+  void visit(CommentStmt *) override {}
 
 private:
   ir::types::Type *getType(const types::TypePtr &t);

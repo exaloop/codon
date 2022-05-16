@@ -288,7 +288,7 @@ struct Outliner : public Operator {
     auto mod = getModVars();
     for (auto id : shared) {
       Var *var = M->getVar(id);
-      seqassert(var, "unknown var id");
+      seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       remap.emplace_back(var, nullptr);
       const bool isMod = (mod.count(id) > 0);
       types::Type *type = isMod ? M->getPointerType(var->getType()) : var->getType();
@@ -318,7 +318,7 @@ struct Outliner : public Operator {
     // Make private vars locals of the new function.
     for (auto id : getPrivateVars()) {
       Var *var = M->getVar(id);
-      seqassert(var, "unknown var id");
+      seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       Var *newVar = M->N<Var>(var->getSrcInfo(), var->getType(), /*global=*/false,
                               var->getName());
       remap.emplace_back(var, newVar);

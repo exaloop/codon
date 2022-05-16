@@ -214,6 +214,9 @@ class __internal__:
         buf[where] = byte(41)  # ')'
         return str(buf, total)
 
+    def undef(v, s):
+        if not v:
+            raise NameError(f"variable '{s}' not yet defined")
 
 @dataclass(init=True)
 class Import:

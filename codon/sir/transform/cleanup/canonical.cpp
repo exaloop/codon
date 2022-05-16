@@ -121,7 +121,7 @@ struct CanonOpChain : public RewriteRule {
         operands.push_back(v->front());
         operands.push_back(v->back());
       }
-      seqassert(operands.size() >= 2, "bad call canonicalization");
+      seqassertn(operands.size() >= 2, "bad call canonicalization");
 
       if (isCommutative)
         orderOperands(operands);
@@ -166,7 +166,7 @@ struct CanonInequality : public RewriteRule {
         } else if (op == Module::GE_MAGIC_NAME) { // lhs >= rhs
           newCall = *rhs <= *lhs;
         } else {
-          seqassert(false, "unknown comparison op: {}", op);
+          seqassertn(false, "unknown comparison op: {}", op);
         }
 
         if (newCall && newCall->getType()->is(type))

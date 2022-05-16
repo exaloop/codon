@@ -13,36 +13,40 @@
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * Simplification context object description.
  * This represents an identifier that can be either a function, a class (type), a
  * variable or an import.
  */
-struct SimplifyItem {
+struct SimplifyItem : public SrcObject {
   /// Object kind (function, class, variable, or import).
   enum Kind { Func, Type, Var } kind;
   /// Object's base function
   std::string base;
   /// Object's unique identifier (canonical name)
   std::string canonicalName;
-  /// True if an object is global.
-  bool global;
-  /// Non-empty string if a variable is import variable
-  std::string importPath;
   /// Full module name
   std::string moduleName;
+  /// Full scope information
+  std::vector<int> scope;
+  /// Non-empty string if a variable is import variable
+  std::string importPath;
+  bool accessChecked;
+  bool noShadow;
 
 public:
-  SimplifyItem(Kind k, std::string base, std::string canonicalName, bool global = false,
-               std::string moduleName = "");
+  SimplifyItem(Kind kind, std::string base, std::string canonicalName,
+               std::string moduleName, std::vector<int> scope,
+               std::string importPath = "")
+      : kind(kind), base(std::move(base)), canonicalName(std::move(canonicalName)),
+        moduleName(std::move(moduleName)), scope(std::move(scope)),
+        importPath(std::move(importPath)), accessChecked(true), noShadow(false) {}
 
   /// Convenience getters.
   std::string getBase() const { return base; }
   std::string getModule() const { return moduleName; }
-  bool isGlobal() const { return global; }
   bool isVar() const { return kind == Var; }
   bool isFunc() const { return kind == Func; }
   bool isType() const { return kind == Type; }
@@ -55,6 +59,14 @@ public:
 struct SimplifyContext : public Context<SimplifyItem> {
   /// A pointer to the shared cache.
   Cache *cache;
+
+  int scopeCnt;
+  /// Sorted hierarchy of scopes!
+  std::vector<int> scope;
+
+  std::map<int, std::vector<StmtPtr>> scopeStmts;
+  std::map<std::string, std::pair<std::string, bool>> scopeRenames;
+  std::vector<std::set<std::string>> scopeOutsides;
 
   /// A base scope definition. Each function or a class defines a new base scope.
   struct Base {
@@ -94,21 +106,32 @@ struct SimplifyContext : public Context<SimplifyItem> {
   ImportFile moduleName;
   /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
   /// and b) to disallow assignment expressions there.
-  bool canAssign;
+  bool shortCircuit;
   /// Allow type() expressions.
   bool allowTypeOf;
   /// Replacement expressions.
   std::unordered_map<std::string, ExprPtr> *substitutions;
 
+  std::vector<SrcInfo> srcInfos;
+
 public:
   SimplifyContext(std::string filename, Cache *cache);
 
-  using Context<SimplifyItem>::add;
   /// Convenience method for adding an object to the context.
-  std::shared_ptr<SimplifyItem> add(SimplifyItem::Kind kind, const std::string &name,
-                                    const std::string &canonicalName = "",
-                                    bool global = false);
+  std::shared_ptr<SimplifyItem> addVar(const std::string &name,
+                                       const std::string &canonicalName,
+                                       const SrcInfo &srcInfo = SrcInfo());
+  std::shared_ptr<SimplifyItem> addType(const std::string &name,
+                                        const std::string &canonicalName,
+                                        const SrcInfo &srcInfo = SrcInfo());
+  std::shared_ptr<SimplifyItem> addFunc(const std::string &name,
+                                        const std::string &canonicalName,
+                                        const SrcInfo &srcInfo = SrcInfo());
+  std::shared_ptr<SimplifyItem>
+  addAlwaysVisible(const std::shared_ptr<SimplifyItem> &item);
+
   std::shared_ptr<SimplifyItem> find(const std::string &name) const override;
+  std::shared_ptr<SimplifyItem> findDominatingBinding(const std::string &name);
 
   /// Return a canonical name of the top-most base, or an empty string if this is a
   /// top-level base.
@@ -116,7 +139,7 @@ public:
   /// Return the current module.
   std::string getModule() const;
   /// Return the current base nesting level (note: bases, not blocks).
-  int getLevel() const { return bases.size(); }
+  int getLevel() const { return int(bases.size()); }
   /// Pretty-print the current context state.
   void dump() override { dump(0); }
 
@@ -127,10 +150,24 @@ public:
   bool inFunction() const { return getLevel() && !bases.back().isType(); }
   bool inClass() const { return getLevel() && bases.back().isType(); }
 
+  void addBlock() override;
+  void popBlock() override;
+
+  void addScope() { scope.push_back(++scopeCnt); }
+  void popScope(std::vector<StmtPtr> *stmts = nullptr) {
+    if (stmts && in(scopeStmts, scope.back()))
+      stmts->insert(stmts->begin(), scopeStmts[scope.back()].begin(),
+                    scopeStmts[scope.back()].end());
+    scope.pop_back();
+  }
+
+  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
+  void popSrcInfo() { srcInfos.pop_back(); }
+  SrcInfo getSrcInfo() const { return srcInfos.back(); }
+
 private:
   /// Pretty-print the current context state.
   void dump(int pad);
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

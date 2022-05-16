@@ -56,7 +56,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     if (has(v))
       return result[v->getId()];
     v->accept(*this);
-    seqassert(has(v), "node not added to results");
+    seqassertn(has(v), "node not added to results");
     return result[v->getId()];
   }
 

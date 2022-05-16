@@ -45,11 +45,17 @@
 #define TIME(name) codon::Timer __timer(name)
 
 #ifndef NDEBUG
-#define seqassert(expr, msg, ...)                                                      \
+#define seqassertn(expr, msg, ...)                                                     \
   ((expr) ? (void)(0)                                                                  \
           : codon::assertionFailure(#expr, __FILE__, __LINE__,                         \
                                     fmt::format(msg, ##__VA_ARGS__)))
+#define seqassert(expr, msg, ...)                                                      \
+  ((expr) ? (void)(0)                                                                  \
+          : codon::assertionFailure(                                                   \
+                #expr, __FILE__, __LINE__,                                             \
+                fmt::format(msg " [{}]", ##__VA_ARGS__, getSrcInfo())))
 #else
+#define seqassertn(expr, msg, ...) ;
 #define seqassert(expr, msg, ...) ;
 #endif
 #pragma clang diagnostic pop

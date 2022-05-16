@@ -9,8 +9,7 @@
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   using Stmt::toString;                                                                \
@@ -57,15 +56,15 @@ public:
   }
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual const AssignStmt *getAssign() const { return nullptr; }
-  virtual const ClassStmt *getClass() const { return nullptr; }
-  virtual const ExprStmt *getExpr() const { return nullptr; }
-  virtual const SuiteStmt *getSuite() const { return nullptr; }
-  virtual const FunctionStmt *getFunction() const { return nullptr; }
+  virtual AssignStmt *getAssign() { return nullptr; }
+  virtual ClassStmt *getClass() { return nullptr; }
+  virtual ExprStmt *getExpr() { return nullptr; }
+  virtual SuiteStmt *getSuite() { return nullptr; }
+  virtual FunctionStmt *getFunction() { return nullptr; }
 
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
-  virtual const Stmt *firstInBlock() const { return this; }
+  virtual Stmt *firstInBlock() { return this; }
 };
 using StmtPtr = std::shared_ptr<Stmt>;
 
@@ -88,8 +87,8 @@ struct SuiteStmt : public Stmt {
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const SuiteStmt *getSuite() const override { return this; }
-  const Stmt *firstInBlock() const override {
+  SuiteStmt *getSuite() override { return this; }
+  Stmt *firstInBlock() override {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
   StmtPtr *lastInBlock();
@@ -130,7 +129,7 @@ struct ExprStmt : public Stmt {
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const ExprStmt *getExpr() const override { return this; }
+  ExprStmt *getExpr() override { return this; }
 };
 
 /// Assignment statement (lhs: type = rhs).
@@ -149,7 +148,7 @@ struct AssignStmt : public Stmt {
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const AssignStmt *getAssign() const override { return this; }
+  AssignStmt *getAssign() override { return this; }
 };
 
 /// Deletion statement (del expr).
@@ -381,8 +380,9 @@ struct ThrowStmt : public Stmt {
 /// @li: global a
 struct GlobalStmt : public Stmt {
   std::string var;
+  bool nonLocal;
 
-  explicit GlobalStmt(std::string var);
+  explicit GlobalStmt(std::string var, bool nonLocal = false);
   GlobalStmt(const GlobalStmt &stmt) = default;
 
   std::string toString(int indent) const override;
@@ -419,7 +419,7 @@ struct Attr {
   // Set of attributes
   std::set<std::string> customAttr;
 
-  Attr(const std::vector<std::string> &attrs = std::vector<std::string>());
+  explicit Attr(const std::vector<std::string> &attrs = std::vector<std::string>());
   void set(const std::string &attr);
   void unset(const std::string &attr);
   bool has(const std::string &attr) const;
@@ -450,7 +450,7 @@ struct FunctionStmt : public Stmt {
   std::string signature() const;
   bool hasAttr(const std::string &attr) const;
 
-  const FunctionStmt *getFunction() const override { return this; }
+  FunctionStmt *getFunction() override { return this; }
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
@@ -478,7 +478,7 @@ struct ClassStmt : public Stmt {
   bool isRecord() const;
   bool hasAttr(const std::string &attr) const;
 
-  const ClassStmt *getClass() const override { return this; }
+  ClassStmt *getClass() override { return this; }
 };
 
 /// Yield-from statement (yield from expr).
@@ -554,7 +554,18 @@ struct UpdateStmt : public Stmt {
   ACCEPT(ASTVisitor);
 };
 
+/// Comment statement (# comment).
+/// Currently used only for pretty-printing.
+struct CommentStmt : public Stmt {
+  std::string comment;
+
+  explicit CommentStmt(std::string comment);
+  CommentStmt(const CommentStmt &stmt) = default;
+
+  std::string toString(int indent) const override;
+  ACCEPT(ASTVisitor);
+};
+
 #undef ACCEPT
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

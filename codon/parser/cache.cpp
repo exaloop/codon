@@ -62,7 +62,7 @@ types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &m
                                      const std::vector<types::TypePtr> &args) {
   auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
-  seqassert(e->type, "not a class");
+  seqassertn(e->type, "not a class");
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
   auto f = TypecheckVisitor(typeCtx).findBestMethod(e.get(), member, args);
@@ -129,16 +129,16 @@ ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto name = tv.generateTupleStub(types.size());
   auto t = typeCtx->find(name);
-  seqassert(t && t->type, "cannot find {}", name);
+  seqassertn(t && t->type, "cannot find {}", name);
   return realizeType(t->type->getClass(), types);
 }
 
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  seqassert(!types.empty(), "types must have at least one argument");
+  seqassertn(!types.empty(), "types must have at least one argument");
   auto name = tv.generateFunctionStub(types.size() - 1);
   auto t = typeCtx->find(name);
-  seqassert(t && t->type, "cannot find {}", name);
+  seqassertn(t && t->type, "cannot find {}", name);
   return realizeType(t->type->getClass(), types);
 }
 

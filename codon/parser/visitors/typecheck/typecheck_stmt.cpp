@@ -5,7 +5,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify_ctx.h"
+#include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 #include "codon/parser/visitors/typecheck/typecheck_ctx.h"
 
@@ -24,7 +24,9 @@ StmtPtr TypecheckVisitor::transform(const StmtPtr &stmt_) {
   v.setSrcInfo(stmt->getSrcInfo());
   auto oldAge = ctx->age;
   stmt->age = ctx->age = std::max(stmt->age, oldAge);
+  ctx->pushSrcInfo(stmt_->getSrcInfo());
   stmt->accept(v);
+  ctx->popSrcInfo();
   ctx->age = oldAge;
   if (v.resultStmt)
     stmt = v.resultStmt;
@@ -108,7 +110,12 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
                : (type->getFunc() ? TypecheckItem::Func : TypecheckItem::Var);
     ctx->add(kind, lhs,
              kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel) : type);
-    stmt->done = stmt->rhs->done;
+    if (stmt->lhs->getId() && stmt->rhs->isType()) { // type renames
+      deactivateUnbounds(type.get());
+      stmt->done = true;
+    } else {
+      stmt->done = stmt->rhs->done;
+    }
   }
   // Save the variable to the local realization context
   ctx->bases.back().visitedAsts[lhs] = {kind, stmt->lhs->type};
@@ -283,7 +290,17 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->iter, "__iter__")));
       stmt->wrapped = true;
     }
-    TypePtr varType = ctx->addUnbound(stmt->var.get(), ctx->typecheckLevel);
+    std::string varName;
+    if (auto e = stmt->var->getId())
+      varName = e->value;
+    seqassert(!varName.empty(), "empty for variable {}", stmt->var->toString());
+    TypePtr varType = nullptr;
+    if (auto val = ctx->find(varName)) {
+      varType = val->type;
+    } else {
+      varType = ctx->addUnbound(stmt->var.get(), ctx->typecheckLevel);
+      ctx->add(TypecheckItem::Var, varName, varType);
+    }
     if ((iterType = stmt->iter->getType()->getClass())) {
       if (iterType->name != "Generator")
         error("for loop expected a generator");
@@ -291,12 +308,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       if (varType->is("void"))
         error("expression with void type");
     }
-    std::string varName;
-    if (auto e = stmt->var->getId())
-      varName = e->value;
-    seqassert(!varName.empty(), "empty for variable {}", stmt->var->toString());
+
     unify(stmt->var->type, varType);
-    ctx->add(TypecheckItem::Var, varName, varType);
+
     stmt->suite = transform(stmt->suite);
     stmt->done = stmt->iter->done && stmt->suite->done;
   }

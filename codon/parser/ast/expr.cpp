@@ -24,11 +24,10 @@ void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 bool Expr::isType() const { return isTypeExpr; }
 void Expr::markType() { isTypeExpr = true; }
 std::string Expr::wrapType(const std::string &sexpr) const {
-  return format(
-      "({}{}){}", sexpr, type ? format(" #:type \"{}\"", type->toString()) : "",
-      // Uncommenting this breaks static unification...
-      // staticValue.type ? format(" #:static {}", staticValue.toString()) : "",
-      done ? "*" : "");
+  auto is = sexpr;
+  if (done)
+    is.insert(findStar(is), "*");
+  return format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
 }
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
@@ -52,11 +51,11 @@ std::string StaticValue::toString() const {
                                      : std::to_string(std::get<int64_t>(value));
 }
 int64_t StaticValue::getInt() const {
-  seqassert(type == StaticValue::INT, "not an int");
+  seqassertn(type == StaticValue::INT, "not an int");
   return std::get<int64_t>(value);
 }
 std::string StaticValue::getString() const {
-  seqassert(type == StaticValue::STRING, "not a string");
+  seqassertn(type == StaticValue::STRING, "not a string");
   return std::get<std::string>(value);
 }
 
@@ -131,7 +130,9 @@ std::string StringExpr::getValue() const {
 ACCEPT_IMPL(StringExpr, ASTVisitor);
 
 IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
-std::string IdExpr::toString() const { return wrapType(format("id '{}", value)); }
+std::string IdExpr::toString() const {
+  return !type ? format("'{}", value) : wrapType(format("'{}", value));
+}
 ACCEPT_IMPL(IdExpr, ASTVisitor);
 
 StarExpr::StarExpr(ExprPtr what) : Expr(), what(std::move(what)) {}

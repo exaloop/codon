@@ -111,21 +111,21 @@ public:
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
   virtual bool isId(const std::string &val) const { return false; }
-  virtual const BinaryExpr *getBinary() const { return nullptr; }
-  virtual const CallExpr *getCall() const { return nullptr; }
-  virtual const DotExpr *getDot() const { return nullptr; }
-  virtual const EllipsisExpr *getEllipsis() const { return nullptr; }
-  virtual const IdExpr *getId() const { return nullptr; }
-  virtual const IfExpr *getIf() const { return nullptr; }
-  virtual const IndexExpr *getIndex() const { return nullptr; }
-  virtual const IntExpr *getInt() const { return nullptr; }
-  virtual const ListExpr *getList() const { return nullptr; }
-  virtual const NoneExpr *getNone() const { return nullptr; }
-  virtual const StarExpr *getStar() const { return nullptr; }
-  virtual const StmtExpr *getStmtExpr() const { return nullptr; }
-  virtual const StringExpr *getString() const { return nullptr; }
-  virtual const TupleExpr *getTuple() const { return nullptr; }
-  virtual const UnaryExpr *getUnary() const { return nullptr; }
+  virtual BinaryExpr *getBinary() { return nullptr; }
+  virtual CallExpr *getCall() { return nullptr; }
+  virtual DotExpr *getDot() { return nullptr; }
+  virtual EllipsisExpr *getEllipsis() { return nullptr; }
+  virtual IdExpr *getId() { return nullptr; }
+  virtual IfExpr *getIf() { return nullptr; }
+  virtual IndexExpr *getIndex() { return nullptr; }
+  virtual IntExpr *getInt() { return nullptr; }
+  virtual ListExpr *getList() { return nullptr; }
+  virtual NoneExpr *getNone() { return nullptr; }
+  virtual StarExpr *getStar() { return nullptr; }
+  virtual StmtExpr *getStmtExpr() { return nullptr; }
+  virtual StringExpr *getString() { return nullptr; }
+  virtual TupleExpr *getTuple() { return nullptr; }
+  virtual UnaryExpr *getUnary() { return nullptr; }
 
   /// Attribute helpers
   bool hasAttr(int attr) const;
@@ -160,7 +160,7 @@ struct NoneExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const NoneExpr *getNone() const override { return this; }
+  NoneExpr *getNone() override { return this; }
 };
 
 /// Bool expression (value).
@@ -195,7 +195,7 @@ struct IntExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const IntExpr *getInt() const override { return this; }
+  IntExpr *getInt() override { return this; }
 };
 
 /// Float expression (value.suffix).
@@ -233,7 +233,7 @@ struct StringExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const StringExpr *getString() const override { return this; }
+  StringExpr *getString() override { return this; }
   std::string getValue() const;
 };
 
@@ -248,7 +248,7 @@ struct IdExpr : public Expr {
   ACCEPT(ASTVisitor);
 
   bool isId(const std::string &val) const override { return this->value == val; }
-  const IdExpr *getId() const override { return this; }
+  IdExpr *getId() override { return this; }
 };
 
 /// Star (unpacking) expression (*what).
@@ -262,7 +262,7 @@ struct StarExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const StarExpr *getStar() const override { return this; }
+  StarExpr *getStar() override { return this; }
 };
 
 /// KeywordStar (unpacking) expression (**what).
@@ -288,7 +288,7 @@ struct TupleExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const TupleExpr *getTuple() const override { return this; }
+  TupleExpr *getTuple() override { return this; }
 };
 
 /// List expression ([items...]).
@@ -302,7 +302,7 @@ struct ListExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const ListExpr *getList() const override { return this; }
+  ListExpr *getList() override { return this; }
 };
 
 /// Set expression ({items...}).
@@ -386,7 +386,7 @@ struct IfExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const IfExpr *getIf() const override { return this; }
+  IfExpr *getIf() override { return this; }
 };
 
 /// Unary expression [op expr].
@@ -401,7 +401,7 @@ struct UnaryExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const UnaryExpr *getUnary() const override { return this; }
+  UnaryExpr *getUnary() override { return this; }
 };
 
 /// Binary expression [lexpr op rexpr].
@@ -420,7 +420,7 @@ struct BinaryExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const BinaryExpr *getBinary() const override { return this; }
+  BinaryExpr *getBinary() override { return this; }
 };
 
 /// Chained binary expression.
@@ -469,7 +469,7 @@ struct IndexExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const IndexExpr *getIndex() const override { return this; }
+  IndexExpr *getIndex() override { return this; }
 };
 
 /// Call expression (expr((name=value)...)).
@@ -499,7 +499,7 @@ struct CallExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const CallExpr *getCall() const override { return this; }
+  CallExpr *getCall() override { return this; }
 };
 
 /// Dot (access) expression (expr.member).
@@ -516,7 +516,7 @@ struct DotExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const DotExpr *getDot() const override { return this; }
+  DotExpr *getDot() override { return this; }
 };
 
 /// Slice expression (st:stop:step).
@@ -547,7 +547,7 @@ struct EllipsisExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const EllipsisExpr *getEllipsis() const override { return this; }
+  EllipsisExpr *getEllipsis() override { return this; }
 };
 
 /// Lambda expression (lambda (vars)...: expr).
@@ -616,7 +616,7 @@ struct StmtExpr : public Expr {
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
-  const StmtExpr *getStmtExpr() const override { return this; }
+  StmtExpr *getStmtExpr() override { return this; }
 };
 
 /// Pointer expression (__ptr__(expr)).

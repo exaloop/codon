@@ -288,7 +288,7 @@ void TypeContext::dump(int pad) {
   LOG("base: {}", getBase());
   for (auto &i : ordered) {
     std::string s;
-    auto t = i.second.front().second;
+    auto t = i.second.front();
     LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type->toString());
   }
 }

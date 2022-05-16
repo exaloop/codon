@@ -18,7 +18,8 @@ void Type::Unification::undo() {
     linked[i]->type = nullptr;
   }
   for (int i = int(leveled.size()) - 1; i >= 0; i--) {
-    seqassert(leveled[i].first->kind == LinkType::Unbound, "not unbound");
+    seqassertn(leveled[i].first->kind == LinkType::Unbound, "not unbound [{}]",
+               leveled[i].first->getSrcInfo());
     leveled[i].first->level = leveled[i].second;
   }
   for (auto &t : traits)

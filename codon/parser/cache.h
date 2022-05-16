@@ -11,14 +11,11 @@
 #include "codon/parser/ctx.h"
 #include "codon/sir/sir.h"
 
-#define TYPECHECK_MAX_ITERATIONS 100
 #define FILE_GENERATED "<generated>"
 #define MODULE_MAIN "__main__"
 #define MAIN_IMPORT ""
 #define STDLIB_IMPORT ":stdlib:"
 #define STDLIB_INTERNAL_MODULE "internal"
-#define ATTR_EXTERN_LLVM "llvm"
-#define ATTR_EXTEND "extend"
 
 #define TYPE_TUPLE "Tuple.N"
 #define TYPE_KWTUPLE "KwTuple.N"
@@ -94,7 +91,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Table of imported files that maps an absolute filename to a Import structure.
   /// By convention, the key of the Codon's standard library is "".
   std::unordered_map<std::string, Import> imports;
-
+  
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step and in JIT.
   std::map<std::string, ir::Var *> globals;

@@ -163,6 +163,7 @@ public:
   void visit(FunctionStmt *) override;
   /// Parse a type stub and create a corresponding generic type.
   void visit(ClassStmt *) override;
+  void visit(CommentStmt *stmt) override { stmt->done = true; }
 
   using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
 

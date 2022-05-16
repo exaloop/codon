@@ -17,6 +17,8 @@ from internal.types.range import *
 from internal.types.complex import *
 from internal.internal import *
 
+__argv__ = Array[str](0)
+
 from internal.types.collections.list import *
 from internal.types.collections.set import *
 from internal.types.collections.dict import *

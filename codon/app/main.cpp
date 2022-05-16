@@ -300,7 +300,7 @@ int buildMode(const std::vector<const char *> &args) {
     extension = "";
     break;
   default:
-    seqassert(0, "unknown build kind");
+    seqassertn(0, "unknown build kind");
   }
   const std::string filename =
       output.empty() ? makeOutputFilename(compiler->getInput(), extension) : output;
@@ -321,7 +321,7 @@ int buildMode(const std::vector<const char *> &args) {
     compiler->getLLVMVisitor()->compile(filename, libsVec);
     break;
   default:
-    seqassert(0, "unknown build kind");
+    seqassertn(0, "unknown build kind");
   }
 
   return EXIT_SUCCESS;

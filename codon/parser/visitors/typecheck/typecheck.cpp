@@ -6,7 +6,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify_ctx.h"
+#include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck_ctx.h"
 #include "codon/util/fmt/format.h"
 

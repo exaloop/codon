@@ -332,11 +332,10 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
     if (iteration == 1 && name == "<top>")
       for (auto &f : ctx->cache->functions) {
         auto &attr = f.second.ast->attributes;
-        if (f.second.realizations.empty() &&
+        if (f.second.type && f.second.realizations.empty() &&
             (attr.has(Attr::ForceRealize) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
-          seqassert(f.second.type && f.second.type->canRealize(), "cannot realize {}",
-                    f.first);
+          seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
           auto t = ctx->instantiate(e.get(), f.second.type, nullptr, false)->getFunc();
           realize(t);
@@ -396,6 +395,11 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
             LOG_TYPECHECK("cannot infer {} / {}", ub.first, ub.second.second);
           }
           LOG_TYPECHECK("-- {}", result->toString(0));
+          if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+            auto fo = fopen("_dump_typecheck_error.sexp", "w");
+            fmt::print(fo, "{}\n", result->toString(0));
+            fclose(fo);
+          }
           error("cannot typecheck the program");
         }
       }
