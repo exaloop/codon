@@ -6,6 +6,7 @@
 
 * [Getting started](intro/intro.md)
 * [Codon tutorial](intro/tutorial.md)
+* [Frequently asked questions](intro/faq.md)
 
 ## Interoperability
 
