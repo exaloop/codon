@@ -12,6 +12,7 @@
 
 * [Python integration](interop/python.md)
 * [C/C++ integration](interop/cpp.md)
+* [Jupyter integration](interop/jupyter.md)
 
 ## Advanced
 
