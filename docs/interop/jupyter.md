@@ -24,7 +24,7 @@ Plugins can also optionally be specified, as in:
     "argv": [
         "/path/to/codon",
         "jupyter",
-        "-plugin", "/path/to/plugin"
+        "-plugin", "/path/to/plugin",
         "{connection_file}"
     ],
     "language": "python"
