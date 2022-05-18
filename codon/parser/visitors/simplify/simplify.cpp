@@ -20,7 +20,6 @@ StmtPtr
 SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones) {
-  std::vector<StmtPtr> stmts;
   auto preamble = std::make_shared<Preamble>();
   seqassertn(cache->module, "cache's module is not set");
 
@@ -99,20 +98,15 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     auto baseTypeCode =
         "@__internal__\nclass pyobj:\n  p: Ptr[byte]\n"
         "@__internal__\n@tuple\nclass str:\n  ptr: Ptr[byte]\n  len: int\n";
-    stmts.emplace_back(
-        SimplifyVisitor(stdlib, preamble)
-            .transform(parseCode(stdlib->cache, stdlibPath->path, baseTypeCode)));
+    auto p = SimplifyVisitor(stdlib, preamble)
+                 .transform(parseCode(stdlib->cache, stdlibPath->path, baseTypeCode));
+    for (auto &n : p->getSuite()->stmts)
+      preamble->globals.emplace_back(n);
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
-    stmts.push_back(SimplifyVisitor(stdlib, preamble)
-                        .transform(parseFile(stdlib->cache, stdlibPath->path)));
-    // Add __argv__ variable as __argv__: Array[str]
-    // preamble->globals.push_back(
-    //     SimplifyVisitor(stdlib, preamble)
-    //         .transform(std::make_shared<AssignStmt>(
-    //             std::make_shared<IdExpr>(VAR_ARGV), nullptr,
-    //             std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Array"),
-    //                                         std::make_shared<IdExpr>("str")))));
+    preamble->globals.push_back(
+        SimplifyVisitor(stdlib, preamble)
+            .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
 
     // The whole standard library has the age of zero to allow back-references.
@@ -125,28 +119,26 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   cache->imports[MAIN_IMPORT] = {file, ctx};
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
-  auto before = std::make_shared<SuiteStmt>();
+  auto suite = std::make_shared<SuiteStmt>();
+  suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
+
   // Load the command-line defines.
   for (auto &d : defines) {
-    before->stmts.push_back(std::make_shared<AssignStmt>(
+    suite->stmts.push_back(std::make_shared<AssignStmt>(
         std::make_shared<IdExpr>(d.first), std::make_shared<IntExpr>(d.second),
         std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
                                     std::make_shared<IdExpr>("int"))));
   }
   // Prepend __name__ = "__main__".
-  before->stmts.push_back(std::make_shared<AssignStmt>(
+  suite->stmts.push_back(std::make_shared<AssignStmt>(
       std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
   // Transform the input node.
-  stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(before));
-  stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
-
-  auto suite = std::make_shared<SuiteStmt>();
-  for (auto &s : preamble->globals)
-    suite->stmts.push_back(s);
-  // for (auto &s : preamble->functions)
-  //   suite->stmts.push_back(s);
-  for (auto &s : stmts)
-    suite->stmts.push_back(s);
+  auto n = SimplifyVisitor(ctx, preamble).transform(node);
+  if (in(ctx->scopeStmts, ctx->scope.back()))
+    suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
+                        ctx->scopeStmts[ctx->scope.back()].end());
+  AssignReplacementVisitor(ctx->cache, ctx->scopeRenames).transform(n);
+  suite->stmts.push_back(n);
   return suite;
 }
 
@@ -164,8 +156,6 @@ StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
   auto suite = std::make_shared<SuiteStmt>();
   for (auto &s : preamble->globals)
     suite->stmts.push_back(s);
-  for (auto &s : preamble->functions)
-    suite->stmts.push_back(s);
   for (auto &s : stmts)
     suite->stmts.push_back(s);
   return suite;
@@ -175,8 +165,8 @@ SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
                                  std::shared_ptr<Preamble> preamble,
                                  std::shared_ptr<std::vector<StmtPtr>> stmts)
     : ctx(std::move(ctx)), preamble(std::move(preamble)) {
-      prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
-    }
+  prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
+}
 
 StmtPtr SimplifyVisitor::transform(const StmtPtr &stmt) {
   if (!stmt)

@@ -158,8 +158,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   }
 
   // Add the class base.
-  auto oldBases = move(ctx->bases);
-  ctx->bases = std::vector<SimplifyContext::Base>();
   ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
   ctx->bases.back().ast = std::make_shared<IdExpr>(name);
 
@@ -423,7 +421,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       stmts.push_back(transform(sp));
     }
   ctx->bases.pop_back();
-  ctx->bases = move(oldBases);
   ctx->popBlock();
   if (!extension && isRecord)
     ctx->add(name, classItem); // as previous popBlock removes it

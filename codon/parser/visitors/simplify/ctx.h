@@ -88,6 +88,11 @@ struct SimplifyContext : public Context<SimplifyItem> {
   /// A stack of bases enclosing the current statement (the topmost base is the last
   /// base). Top-level has no base.
   std::vector<Base> bases;
+
+  // set of seen variables
+  std::unordered_map<std::string, std::unordered_map<std::string, ExprPtr>>
+      seenGlobalIdentifiers;
+
   /// A stack of nested loops enclosing the current statement used for transforming
   /// "break" statement in loop-else constructs. Each loop is defined by a "break"
   /// variable created while parsing a loop-else construct. If a loop has no else block,

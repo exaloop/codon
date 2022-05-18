@@ -93,13 +93,17 @@ SimplifyContext::findDominatingBinding(const std::string &name) {
 
   seqassert(!it->second.empty(), "corrupted SimplifyContext ({})", name);
   auto lastGood = it->second.begin();
+  bool isOutside = (*lastGood)->getBase() != getBase();
   int prefix = int(scope.size());
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
-    prefix = std::min(prefix, int((*i)->scope.size()));
-    while (prefix >= 0 && (*i)->scope[prefix - 1] != scope[prefix - 1])
-      prefix--;
-    if (prefix < 0)
+    int p = std::min(prefix, int((*i)->scope.size()));
+    while (p >= 0 && (*i)->scope[p - 1] != scope[p - 1])
+      p--;
+    if (p < 0)
       break;
+    if (!isOutside && (*i)->getBase() != getBase())
+      break;
+    prefix = p;
     lastGood = i;
     if ((*i)->scope.size() <= scope.size() &&
         (*i)->scope.back() == scope[(*i)->scope.size() - 1]) // complete domination
@@ -115,9 +119,8 @@ SimplifyContext::findDominatingBinding(const std::string &name) {
     // Current access is unambiguously covered by a binding
     canonicalName = (*lastGood)->canonicalName;
   } else {
-    // LOG("-> access {} @ {} ; bound at {} ; prefix {} ; {}", name, combine2(scope,
-    // ","),
-    //     combine2((*lastGood)->scope, ","), prefix, getSrcInfo());
+    // LOG("-> access {} @ {} ; bound at {} ; prefix {} ; {}", name, combine2(scope),
+    //     combine2((*lastGood)->scope), scope[prefix - 1], getSrcInfo());
     // Current access is potentially covered by multiple bindings that are
     // not spanned by a parent binding; create such binding
     canonicalName = generateCanonicalName(name);
@@ -132,8 +135,12 @@ SimplifyContext::findDominatingBinding(const std::string &name) {
     scopeStmts[scope[prefix - 1]].push_back(std::make_unique<AssignStmt>(
         std::make_unique<IdExpr>(canonicalName), nullptr, nullptr));
     scopeStmts[scope[prefix - 1]].push_back(std::make_unique<AssignStmt>(
-        std::make_unique<IdExpr>(fmt::format("{}.__used__", name)),
+        std::make_unique<IdExpr>(fmt::format("{}.__used__", canonicalName)),
         std::make_unique<BoolExpr>(false), nullptr));
+    if (prefix == 1) {
+      cache->globals[canonicalName] = nullptr;
+      cache->globals[fmt::format("{}.__used__", canonicalName)] = nullptr;
+    }
     hasUsed = true;
   }
   // Remove all bindings in the middle (i.e. unify them with the most dominant binding)
@@ -141,6 +148,8 @@ SimplifyContext::findDominatingBinding(const std::string &name) {
     if (i == lastGood)
       break;
     scopeRenames[(*i)->canonicalName] = {canonicalName, hasUsed};
+    scopeRenames[format("{}.__used__", (*i)->canonicalName)] = {
+        format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
     // LOG("   modify {} -> {} @ i", (*i)->canonicalName, canonicalName,

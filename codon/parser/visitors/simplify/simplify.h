@@ -492,4 +492,14 @@ private:
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
 };
 
+struct AssignReplacementVisitor : ReplaceASTVisitor {
+  Cache *cache;
+  std::map<std::string, std::pair<std::string, bool>> &replacements;
+  AssignReplacementVisitor(Cache *c,
+                           std::map<std::string, std::pair<std::string, bool>> &r);
+  void visit(IdExpr *expr) override;
+  void transform(ExprPtr &e) override;
+  void visit(ForStmt *stmt) override;
+  void transform(StmtPtr &e) override;
+};
 } // namespace codon::ast

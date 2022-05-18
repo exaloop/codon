@@ -13,82 +13,78 @@ using fmt::format;
 
 namespace codon::ast {
 
-struct AssignReplacementVisitor : ReplaceASTVisitor {
-  Cache *cache;
-  std::map<std::string, std::pair<std::string, bool>> &replacements;
+AssignReplacementVisitor::AssignReplacementVisitor(
+    Cache *c, std::map<std::string, std::pair<std::string, bool>> &r)
+    : cache(c), replacements(r) {}
 
-  AssignReplacementVisitor(Cache *c,
-                           std::map<std::string, std::pair<std::string, bool>> &r)
-      : cache(c), replacements(r) {}
+void AssignReplacementVisitor::visit(IdExpr *expr) {
+  while (in(replacements, expr->value))
+    expr->value = replacements[expr->value].first;
+}
 
-  void visit(IdExpr *expr) override {
-    while (in(replacements, expr->value))
-      expr->value = replacements[expr->value].first;
+void AssignReplacementVisitor::transform(ExprPtr &e) {
+  if (!e)
+    return;
+  AssignReplacementVisitor v{cache, replacements};
+  e->accept(v);
+}
+
+void AssignReplacementVisitor::visit(ForStmt *stmt) {
+  seqassertn(stmt->var->getId(), "corrupt ForStmt");
+  auto var = stmt->var->getId()->value;
+  bool addGuard = in(replacements, var);
+  transform(stmt->var);
+  transform(stmt->iter);
+  transform(stmt->suite);
+  if (addGuard) {
+    stmt->suite = std::make_shared<SuiteStmt>(
+        std::make_shared<UpdateStmt>(
+            std::make_shared<IdExpr>(format("{}.__used__", var)),
+            std::make_shared<BoolExpr>(true)),
+        stmt->suite);
   }
-  void transform(ExprPtr &e) override {
-    if (!e)
-      return;
-    AssignReplacementVisitor v{cache, replacements};
-    e->accept(v);
-  }
-  void visit(ForStmt *stmt) override {
-    seqassertn(stmt->var->getId(), "corrupt ForStmt");
-    auto var = stmt->var->getId()->value;
-    bool addGuard = in(replacements, var);
-    transform(stmt->var);
-    transform(stmt->iter);
-    transform(stmt->suite);
-    if (addGuard) {
-      stmt->suite = std::make_shared<SuiteStmt>(
-          std::make_shared<UpdateStmt>(
-              std::make_shared<IdExpr>(
-                  format("{}.__used__", cache->reverseIdentifierLookup[var])),
-              std::make_shared<BoolExpr>(true)),
-          stmt->suite);
-    }
-    transform(stmt->elseSuite);
-    transform(stmt->decorator);
-    for (auto &a : stmt->ompArgs)
-      transform(a.value);
-  }
-  void transform(StmtPtr &e) override {
-    if (!e)
-      return;
-    AssignReplacementVisitor v{cache, replacements};
-    if (auto i = CAST(e, AssignStmt)) {
-      if (i->lhs->getId() && in(replacements, i->lhs->getId()->value)) {
-        auto value = i->lhs->getId()->value;
-        bool hasUsed = false;
-        while (in(replacements, value)) {
-          hasUsed = replacements[value].second;
-          value = replacements[value].first;
-        }
+  transform(stmt->elseSuite);
+  transform(stmt->decorator);
+  for (auto &a : stmt->ompArgs)
+    transform(a.value);
+}
 
-        e = std::make_shared<UpdateStmt>(i->lhs, i->rhs);
-        e->setSrcInfo(i->getSrcInfo());
-
-        auto lb = i->lhs->clone();
-        lb->getId()->value = fmt::format(
-            "{}.__used__", cache->reverseIdentifierLookup[i->lhs->getId()->value]);
-        auto f = std::make_shared<UpdateStmt>(lb, std::make_shared<BoolExpr>(true));
-        f->setSrcInfo(i->getSrcInfo());
-
-        if (i->rhs && hasUsed)
-          e = std::make_shared<SuiteStmt>(e, f);
-        else if (i->rhs)
-          e = std::make_shared<SuiteStmt>(e);
-        else if (hasUsed)
-          e = std::make_shared<SuiteStmt>(f);
-        else
-          e = nullptr;
-        if (e)
-          e->setSrcInfo(i->getSrcInfo());
+void AssignReplacementVisitor::transform(StmtPtr &e) {
+  if (!e)
+    return;
+  AssignReplacementVisitor v{cache, replacements};
+  if (auto i = CAST(e, AssignStmt)) {
+    if (i->lhs->getId() && in(replacements, i->lhs->getId()->value)) {
+      auto value = i->lhs->getId()->value;
+      bool hasUsed = false;
+      while (in(replacements, value)) {
+        hasUsed = replacements[value].second;
+        value = replacements[value].first;
       }
+
+      e = std::make_shared<UpdateStmt>(i->lhs, i->rhs);
+      e->setSrcInfo(i->getSrcInfo());
+
+      auto lb = i->lhs->clone();
+      lb->getId()->value = fmt::format("{}.__used__", value);
+      auto f = std::make_shared<UpdateStmt>(lb, std::make_shared<BoolExpr>(true));
+      f->setSrcInfo(i->getSrcInfo());
+
+      if (i->rhs && hasUsed)
+        e = std::make_shared<SuiteStmt>(e, f);
+      else if (i->rhs)
+        e = std::make_shared<SuiteStmt>(e);
+      else if (hasUsed)
+        e = std::make_shared<SuiteStmt>(f);
+      else
+        e = nullptr;
+      if (e)
+        e->setSrcInfo(i->getSrcInfo());
     }
-    if (e)
-      e->accept(v);
   }
-};
+  if (e)
+    e->accept(v);
+}
 
 void SimplifyVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
@@ -105,7 +101,7 @@ void SimplifyVisitor::visit(YieldStmt *stmt) {
 void SimplifyVisitor::visit(GlobalStmt *stmt) {
   if (!ctx->inFunction())
     error("global or nonlocal outside of a function");
-  auto val = ctx->find(stmt->var);
+  auto val = ctx->findDominatingBinding(stmt->var);
   if (!val || !val->isVar())
     error("identifier '{}' not found", stmt->var);
   if (val->getBase() == ctx->getBase())
@@ -120,6 +116,8 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
     ctx->cache->globals[val->canonicalName] = nullptr;
   // TODO: capture otherwise?
   val = ctx->addVar(stmt->var, val->canonicalName, stmt->getSrcInfo());
+  // val->scope = ctx->scope;
+  val->base = ctx->getBase();
   val->noShadow = true;
 }
 
@@ -191,8 +189,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (attr.has(Attr::ForceRealize) && (ctx->getLevel() || isClassMember))
     error("builtins must be defined at the toplevel");
 
-  auto oldBases = move(ctx->bases);
-  ctx->bases = std::vector<SimplifyContext::Base>();
   if (!isClassMember) {
     auto v = ctx->find(stmt->name);
     if (v && v->noShadow)
@@ -200,11 +196,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     v = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
     ctx->addAlwaysVisible(v);
   }
-  if (isClassMember)
-    ctx->bases.push_back(oldBases[0]);
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
-  if (isClassMember && ctx->bases[0].deducedMembers)
-    ctx->bases.back().deducedMembers = ctx->bases[0].deducedMembers;
+  if (isClassMember && ctx->bases[ctx->bases.size() - 2].deducedMembers)
+    ctx->bases.back().deducedMembers = ctx->bases[ctx->bases.size() - 2].deducedMembers;
   ctx->addBlock(); // ... and a block!
   // Set atomic flag if @atomic attribute is present.
   if (attr.has(Attr::Atomic))
@@ -318,7 +312,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // innermost base that was referred to in this function.
   auto isMethod = ctx->bases.back().attributes & FLAG_METHOD;
   ctx->bases.pop_back();
-  ctx->bases = move(oldBases);
   ctx->popBlock();
   attr.module =
       format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",

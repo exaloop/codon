@@ -32,8 +32,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
 
   // If we are accessing a nonlocal variable, capture it or raise an error
   bool captured = false;
-  bool isClassGeneric = ctx->bases.size() == 2 && ctx->bases[0].isType() &&
-                        ctx->bases[0].name == val->getBase();
+  bool isClassGeneric = ctx->bases.size() >= 2 &&
+                        ctx->bases[ctx->bases.size() - 2].isType() &&
+                        ctx->bases[ctx->bases.size() - 2].name == val->getBase();
   auto newName = val->canonicalName;
   if (val->isVar() && ctx->getBase() != val->getBase() && !val->getBase().empty() &&
       !isClassGeneric) {
@@ -55,6 +56,14 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   // Replace the variable with its canonical name. Do not canonize captured
   // variables (they will be later passed as argument names).
   resultExpr = N<IdExpr>(newName);
+  if (val->getBase() != ctx->getBase() &&
+      !in(ctx->seenGlobalIdentifiers[ctx->getBase()],
+          ctx->cache->reverseIdentifierLookup[val->canonicalName])) {
+    // LOG("{} in {}: {}", expr->value, ctx->getBase(), val->getBase());
+    ctx->seenGlobalIdentifiers
+        [ctx->getBase()][ctx->cache->reverseIdentifierLookup[val->canonicalName]] =
+        expr->clone();
+  }
   // Flag the expression as a type expression if it points to a class name or a generic.
   if (val->isType())
     resultExpr->markType();
@@ -63,9 +72,8 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     /// TODO: what if later access removes the check?!
     auto checkStmt = N<ExprStmt>(N<CallExpr>(
         N<DotExpr>("__internal__", "undef"),
-        N<IdExpr>(fmt::format("{}.__used__",
-                              ctx->cache->reverseIdentifierLookup[expr->value])),
-        N<StringExpr>(ctx->cache->reverseIdentifierLookup[expr->value])));
+        N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
+        N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
     if (!ctx->shortCircuit) {
       prependStmts->push_back(checkStmt);
       val->accessChecked = true;
@@ -75,8 +83,8 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   }
 
   // The only variables coming from the enclosing base must be class generics.
-  seqassert(!val->isFunc() || val->getBase().empty(), "{} has invalid base ({})",
-            expr->value, val->getBase());
+  //  seqassert(!val->isFunc() || val->getBase().empty(), "{} has invalid base ({})",
+  //           expr->value, val->getBase());
   if (!val->getBase().empty() && ctx->getBase() != val->getBase()) {
     // Assumption: only 2 bases are available (class -> function)
     if (isClassGeneric) {
