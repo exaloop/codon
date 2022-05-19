@@ -61,6 +61,10 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     }
     return N<AssignMemberStmt>(l, ed->member, transform(rhs, false));
   } else if (auto e = lhs->getId()) {
+    if (in(ctx->seenGlobalIdentifiers[ctx->getBase()], e->value))
+      error(ctx->seenGlobalIdentifiers[ctx->getBase()][e->value],
+            "local variable '{}' referenced before assignment", e->value);
+
     ExprPtr t = transformType(type, false);
     auto r = transform(rhs, true);
 
@@ -76,9 +80,6 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
         error("variable '{}' cannot be updated", e->value);
     }
 
-    if (in(ctx->seenGlobalIdentifiers[ctx->getBase()], e->value))
-      error(ctx->seenGlobalIdentifiers[ctx->getBase()][e->value],
-            "local variable '{}' referenced before assignment", e->value);
     // Generate new canonical variable name for this assignment and use it afterwards.
     auto canonical = ctx->generateCanonicalName(e->value);
     // TODO: fix toplevel detection?!

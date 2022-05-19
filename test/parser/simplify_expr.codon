@@ -8,7 +8,8 @@ class Optional:
 
 a = None
 print a #: OPTIONAL: -
-a = 5
+if True:
+    a = 5
 print a #: OPTIONAL: 5
 
 #%% bool,barebones

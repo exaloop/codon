@@ -97,7 +97,15 @@ struct SimplifyContext : public Context<SimplifyItem> {
   /// "break" statement in loop-else constructs. Each loop is defined by a "break"
   /// variable created while parsing a loop-else construct. If a loop has no else block,
   /// the corresponding loop variable is empty.
-  std::vector<std::string> loops;
+  struct Loop {
+    std::string breakVar;
+    std::vector<int> scope;
+    std::unordered_set<std::string> seenVars;
+  };
+  std::vector<Loop> loops;
+  bool inLoop() const { return !loops.empty(); }
+  Loop *getLoop() { return inLoop() ? &(loops.back()) : nullptr; }
+
   /// A stack of nested maps that capture variables defined in enclosing bases (e.g.
   /// variables not defined in a function). Maps captured canonical names to new
   /// canonical names (used in the inner function). Used for capturing outer variables

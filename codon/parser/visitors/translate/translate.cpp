@@ -316,7 +316,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   if (!stmt->rhs && var == VAR_ARGV) {
     ctx->add(TranslateItem::Var, var, ctx->getModule()->getArgVar());
     ctx->cache->globals[var] = ctx->getModule()->getArgVar();
-  } else if (!stmt->rhs || !stmt->rhs->isType()) {
+  } else if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
     auto *newVar =
         make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
                       in(ctx->cache->globals, var), var);

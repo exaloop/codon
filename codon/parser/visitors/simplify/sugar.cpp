@@ -96,11 +96,18 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> stmts,
   std::string name = ctx->cache->getTemporaryVar("lambda");
   for (auto &s : argNames)
     params.emplace_back(Param{s, nullptr, nullptr});
-  auto s = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(stmts)),
+  auto f = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(stmts)),
                                      Attr({Attr::Capture})));
-  if (s)
-    return N<StmtExpr>(s, transform(N<IdExpr>(name)));
-  return transform(N<IdExpr>(name));
+  if (auto fs = f->getSuite()) {
+    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(),
+              "invalid function transform");
+    preamble->globals.push_back(fs->stmts[0]);
+    return N<StmtExpr>(fs->stmts[1], transform(N<IdExpr>(name)));
+  } else {
+    LOG("{}", f->toString(1));
+    preamble->globals.push_back(f);
+    return transform(N<IdExpr>(name));
+  }
 }
 
 } // namespace codon::ast

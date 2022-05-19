@@ -364,6 +364,11 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
         for (auto &c : ctx->activeUnbounds)
           LOG_TYPECHECK("{}:{}", c.first->debugString(true), c.second);
         LOG_TYPECHECK("{}\n", result->toString(0));
+        if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+          auto fo = fopen("_dump_typecheck_error.sexp", "w");
+          fmt::print(fo, "{}\n", result->toString(0));
+          fclose(fo);
+        }
         error("cannot typecheck the program (compiler bug)");
       }
       break;

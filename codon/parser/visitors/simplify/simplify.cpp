@@ -119,6 +119,8 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   cache->imports[MAIN_IMPORT] = {file, ctx};
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
+  auto n = SimplifyVisitor(ctx, preamble).transform(node);
+
   auto suite = std::make_shared<SuiteStmt>();
   suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
 
@@ -133,7 +135,6 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   suite->stmts.push_back(std::make_shared<AssignStmt>(
       std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
   // Transform the input node.
-  auto n = SimplifyVisitor(ctx, preamble).transform(node);
   if (in(ctx->scopeStmts, ctx->scope.back()))
     suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
                         ctx->scopeStmts[ctx->scope.back()].end());

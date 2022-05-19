@@ -207,3 +207,6 @@ class List:
 class NoneType:
     def __new__() -> NoneType:
         return ()
+
+    def __repr__(self) -> str:
+        return "None"

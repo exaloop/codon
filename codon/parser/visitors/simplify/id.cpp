@@ -81,6 +81,13 @@ void SimplifyVisitor::visit(IdExpr *expr) {
       resultExpr = N<StmtExpr>(checkStmt, resultExpr);
     }
   }
+  if (ctx->inLoop()) {
+    bool inside =
+        val->scope.size() >= ctx->getLoop()->scope.size() &&
+        val->scope[ctx->getLoop()->scope.size() - 1] == ctx->getLoop()->scope.back();
+    if (!inside)
+      ctx->getLoop()->seenVars.insert(expr->value);
+  }
 
   // The only variables coming from the enclosing base must be class generics.
   //  seqassert(!val->isFunc() || val->getBase().empty(), "{} has invalid base ({})",

@@ -110,8 +110,12 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
                : (type->getFunc() ? TypecheckItem::Func : TypecheckItem::Var);
     ctx->add(kind, lhs,
              kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel) : type);
-    if (stmt->lhs->getId() && stmt->rhs->isType()) { // type renames
+    if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
+      // LOG("deactivate {} {}", stmt->getSrcInfo(), type->debugString(1));
       deactivateUnbounds(type.get());
+      if (stmt->type) // cases such as A: Callable = B where type is unbound by nature
+        deactivateUnbounds(stmt->type->type.get());
+      stmt->rhs->type = nullptr;
       stmt->done = true;
     } else {
       stmt->done = stmt->rhs->done;
