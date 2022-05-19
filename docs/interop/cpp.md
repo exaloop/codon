@@ -24,7 +24,7 @@ argument if `libcodonrt` is not installed on a standard path.)
 
 Now we can call `foo` from a C program:
 
-``` C
+``` c
 #include <stdint.h>
 #include <stdio.h>
 
