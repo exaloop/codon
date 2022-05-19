@@ -1,5 +1,5 @@
 <p align="center">
- <img src="docs/sphinx/codon.png?raw=true" width="600" alt="Codon"/>
+ <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
 
 <p align="center">
