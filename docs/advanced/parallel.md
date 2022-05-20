@@ -34,13 +34,19 @@ Other OpenMP parameters like `private`, `shared` or `reduction`, are
 inferred automatically by the compiler. For example, the following loop
 
 ``` python
-total = 0
+a = 0
 @par
 for i in range(N):
     a += foo(i)
 ```
 
 will automatically generate a reduction for variable `a`.
+
+{% hint style="warning" %}
+Modifying shared objects like lists or dictionaries within a parallel
+section needs to be done with a lock or critical section. See below
+for more details.
+{% endhint %}
 
 Here is an example that finds the sum of prime numbers up to a
 user-defined limit, using a parallel loop on 16 threads with a dynamic

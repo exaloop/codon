@@ -4,8 +4,6 @@ project(Codon VERSION "0.11.1"
               DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
-configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
-               "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
 if(CODON_JUPYTER)
