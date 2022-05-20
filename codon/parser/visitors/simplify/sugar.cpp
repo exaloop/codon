@@ -99,13 +99,13 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> stmts,
   auto f = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(stmts)),
                                      Attr({Attr::Capture})));
   if (auto fs = f->getSuite()) {
-    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(),
+    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction() &&
+                  fs->stmts[1]->getAssign(),
               "invalid function transform");
-    preamble->globals.push_back(fs->stmts[0]);
-    return N<StmtExpr>(fs->stmts[1], transform(N<IdExpr>(name)));
+    prependStmts->push_back(fs->stmts[0]);
+    return fs->stmts[1]->getAssign()->rhs;
   } else {
-    LOG("{}", f->toString(1));
-    preamble->globals.push_back(f);
+    prependStmts->push_back(f);
     return transform(N<IdExpr>(name));
   }
 }

@@ -35,6 +35,7 @@ struct SimplifyItem : public SrcObject {
   std::string importPath;
   bool accessChecked;
   bool noShadow;
+  ExprPtr replacement;
 
 public:
   SimplifyItem(Kind kind, std::string base, std::string canonicalName,

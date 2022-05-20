@@ -362,14 +362,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (isClassMember && !decorators.empty())
     error("decorators cannot be applied to class methods");
   for (int j = int(decorators.size()) - 1; j >= 0; j--) {
-    if (auto c = const_cast<CallExpr *>(decorators[j]->getCall())) {
-      c->args.emplace(c->args.begin(),
-                      CallExpr::Arg{"", finalExpr ? finalExpr : N<IdExpr>(stmt->name)});
-      finalExpr = N<CallExpr>(c->expr, c->args);
-    } else {
-      finalExpr =
-          N<CallExpr>(decorators[j], finalExpr ? finalExpr : N<IdExpr>(stmt->name));
-    }
+    finalExpr =
+        N<CallExpr>(decorators[j], finalExpr ? finalExpr : N<IdExpr>(stmt->name));
   }
   if (finalExpr)
     resultStmt = N<SuiteStmt>(
