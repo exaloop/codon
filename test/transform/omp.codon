@@ -244,6 +244,20 @@ def test_omp_ranges():
 
 my_global = 42
 
+class Vector:
+    x: float
+    y: float
+
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+
+    def __add__(self, other: Vector):
+        return Vector(self.x + other.x, self.y + other.y)
+
+    def __str__(self):
+        return f'<{self.x}, {self.y}>'
+
 @test
 def test_omp_reductions():
     def expected(N, a, op):
@@ -448,6 +462,15 @@ def test_omp_reductions():
     assert a == expected(N, 0, int.__add__)
     assert b == expected(N, 0, int.__xor__)
     assert my_global == g + expected(N, 0, int.__add__)
+
+    # custom reductions
+    vectors = [Vector(i, i) for i in range(10)]
+    v = Vector()
+    @par
+    for vv in vectors:
+        v += vv
+    assert v.x == 45.0
+    assert v.y == 45.0
 
 another_global = 0
 @test
