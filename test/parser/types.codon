@@ -838,13 +838,15 @@ print ff(5.5, 's', z=True)
 def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
-def dec(fn, a):
-    print 'decorating', fn.__class__
-    def inner(*args, **kwargs):
-        print 'decorator', args, kwargs
-        return fn(a, *args, **kwargs)
-    return inner
-ff = dec(foo, 10)
+def dec(a):
+    def f(fn):
+        print 'decorating', fn.__class__
+        def inner(*args, **kwargs):
+            print 'decorator', args, kwargs
+            return fn(a, *args, **kwargs)
+        return inner
+    return f
+ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
 #: decorating foo:0[...,...,...]
 #: decorator (5.5, 's') (z: True)
@@ -1000,8 +1002,8 @@ y: Static[int] = 105 - x * 2
 foo2(y-x) #: Int[90] 90
 
 if 1.1+2.2 > 0:
-    x: Static[int] = 88
-    print x #: 88
+    z: Static[int] = 88
+    print z #: 88
 print x #: 5
 x : Static[int] = 3
 print x #: 3
@@ -1066,16 +1068,19 @@ z: Callable[[int],int] = 4 #! cannot unify int and ?
 #%% assign_wrapers,barebones
 a = 1.5
 print a #: 1.5
-a = 1
+if 1:
+    a = 1
 print a, a.__class__ #: 1 float
 
 a: Optional[int] = None
-a = 5
+if 1:
+    a = 5
 print a.__class__, a #: Optional[int] 5
 
 b = 5
 c = Optional(6)
-b = c
+if 1:
+    b = c
 print b.__class__, c.__class__, b, c #: int Optional[int] 6 6
 
 z: Generator[int] = [1, 2]

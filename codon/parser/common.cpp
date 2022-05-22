@@ -290,7 +290,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
     addPath(paths, std::string(path));
   }
 
-  auto module0Root = llvm::sys::path::parent_path(module0).str();
+  auto module0Root = llvm::sys::path::parent_path(getAbsolutePath(module0)).str();
   return paths.empty() ? nullptr
                        : std::make_shared<ImportFile>(
                              getRoot(argv0, plugins, module0Root, paths[0]));

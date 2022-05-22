@@ -28,7 +28,8 @@ print a  #: []
 
 #%% assign_type_err,barebones
 a = 5
-a = 3.3  #! cannot unify float and int
+if 1:
+    a = 3.3  #! cannot unify float and int
 
 #%% assign_atomic,barebones
 i = 1

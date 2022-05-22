@@ -75,7 +75,7 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
                                 "==", N<IntExpr>(et->items.size())),
                   suite));
   } else if (auto el = pattern->getList()) {
-    size_t ellipsis = findEllipsis(el->items), sz = int(el->items.size());
+    int ellipsis = int(findEllipsis(el->items)), sz = int(el->items.size());
     std::string op;
     if (ellipsis == el->items.size())
       op = "==";

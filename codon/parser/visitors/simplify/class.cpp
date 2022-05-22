@@ -129,6 +129,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                                                   ctx->getModule(), ctx->scope);
   classItem->setSrcInfo(stmt->getSrcInfo());
   classItem->moduleName = ctx->getModule();
+  std::vector<std::pair<std::string, std::shared_ptr<SimplifyItem>>> addLater;
   if (!extension) {
     classItem->canonicalName = canonicalName =
         ctx->generateCanonicalName(name, !attr.has(Attr::Internal));
@@ -280,7 +281,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     ctx->bases.back().ast =
         std::make_shared<IndexExpr>(N<IdExpr>(name), N<TupleExpr>(genAst));
 
-  std::vector<StmtPtr> stmts{nullptr}; // Will be filled later!
+  std::vector<StmtPtr> clsStmts; // Will be filled later!
+  std::vector<StmtPtr> fnStmts;  // Will be filled later!
   // Parse nested classes
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getClass()) {
@@ -288,11 +290,19 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
       ctx->bases.back().ast = std::make_shared<IdExpr>(name);
       auto origName = sp->getClass()->name;
-      stmts.emplace_back(transform(sp));
-      auto orig = ctx->find(stmts.back()->getSuite()->stmts[0]->getClass()->name);
-      seqassert(orig, "cannot find '{}'",
-                stmts.back()->getSuite()->stmts[0]->getClass()->name);
+      auto tsp = transform(sp);
+      std::string name;
+      for (auto &s : tsp->getSuite()->stmts)
+        if (auto c = s->getClass()) {
+          clsStmts.push_back(s);
+          name = c->name;
+        } else {
+          fnStmts.push_back(s);
+        }
+      auto orig = ctx->find(name);
+      seqassert(orig, "cannot find '{}'", name);
       ctx->add(origName, orig);
+      addLater.push_back({origName, orig});
       ctx->bases.pop_back();
     }
 
@@ -323,6 +333,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         error("cannot update global/nonlocal");
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
+      addLater.push_back({name, classItem});
     }
     // Create a cached AST.
     attr.module =
@@ -372,7 +383,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
     // Codegen default magic methods and add them to the final AST.
     for (auto &m : magics) {
-      stmts.push_back(transform(
+      fnStmts.push_back(transform(
           codegenMagic(m, ctx->bases.back().ast.get(), memberArgs, isRecord)));
     }
   }
@@ -401,7 +412,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             ReplacementVisitor::replace(std::static_pointer_cast<Stmt>(f), subs));
         subs[nf->name] = N<IdExpr>(newCanonicalName);
         nf->name = newCanonicalName;
-        stmts.push_back(nf);
+        fnStmts.push_back(nf);
         nf->attributes.parentClass = ctx->bases.back().name;
 
         // check original ast...
@@ -414,27 +425,27 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             .methods[ctx->cache->reverseIdentifierLookup[f->name]] = rootName;
       }
   }
+  if (autoDeducedInit)
+    fnStmts.push_back(autoDeducedInit);
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && !sp->getClass()) {
       if (firstInit && firstInit == sp.get())
         continue;
-      stmts.push_back(transform(sp));
+      fnStmts.push_back(transform(sp));
     }
   ctx->bases.pop_back();
   ctx->popBlock();
-  if (!extension && isRecord)
-    ctx->add(name, classItem); // as previous popBlock removes it
+  for (auto &i : addLater)
+    ctx->add(i.first, i.second); // as previous popBlock removes it
 
   auto c = ctx->cache->classes[canonicalName].ast;
   if (!extension) {
     // Update the cached AST.
     seqassert(c, "not a class AST for {}", canonicalName);
-    // preamble->globals.push_back(c->clone());
-    stmts[0] = c;
-  } else {
-    stmts.erase(stmts.begin());
+    clsStmts.push_back(c);
   }
-  resultStmt = N<SuiteStmt>(stmts);
+  clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
+  resultStmt = N<SuiteStmt>(clsStmts);
 }
 
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr,

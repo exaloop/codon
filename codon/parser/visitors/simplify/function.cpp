@@ -190,11 +190,11 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     error("builtins must be defined at the toplevel");
 
   if (!isClassMember) {
-    auto v = ctx->find(stmt->name);
-    if (v && v->noShadow)
+    auto funcVal = ctx->find(stmt->name);
+    if (funcVal && funcVal->noShadow)
       error("cannot update global/nonlocal");
-    v = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
-    ctx->addAlwaysVisible(v);
+    funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
+    ctx->addAlwaysVisible(funcVal);
   }
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
   if (isClassMember && ctx->bases[ctx->bases.size() - 2].deducedMembers)
@@ -263,6 +263,14 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
         deflt->getNone())
       deflt = N<IdExpr>("NoneType");
     args.emplace_back(Param{std::string(stars, '*') + name, typeAst, deflt, a.generic});
+    // if (deflt) {
+    //   defltCanonicalName =
+    //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
+    //   stmts.push_back(N<AssignStmt>(N<IdExpr>(defltCanonicalName), deflt));
+    // }
+    // args.emplace_back(Param{std::string(stars, '*') + name, typeAst,
+    //                         deflt ? N<IdExpr>(defltCanonicalName) : nullptr,
+    //                         a.generic});
     if (a.generic) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
         ctx->addVar(varName, name, stmt->getSrcInfo());
@@ -349,8 +357,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     partialArgs.emplace_back(CallExpr::Arg{"", N<EllipsisExpr>()});
   }
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, attr);
-  // preamble->functions.push_back(
-  // N<FunctionStmt>(canonicalName, clone(f->ret), clone_nop(f->args), suite, attr));
   // Make sure to cache this (generic) AST for later realization.
   ctx->cache->functions[canonicalName].ast = f;
   AssignReplacementVisitor(ctx->cache, ctx->scopeRenames).transform(f->suite);

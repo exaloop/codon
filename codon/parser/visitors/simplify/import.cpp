@@ -261,12 +261,17 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
         if (val->kind == SimplifyItem::Var && val->scope.size() == 1 &&
             val->base.empty() && !isStatic) {
           stmts.push_back(N<UpdateStmt>(a->lhs, a->rhs));
+          preamble->globals.push_back(
+              N<AssignStmt>(a->lhs->clone(), nullptr, clone(a->type)));
         } else {
           stmts.push_back(s);
         }
       } else if (!s->getFunction() && !s->getClass()) {
         stmts.push_back(s);
+      } else {
+        preamble->globals.push_back(s);
       }
+      // stmts.push_back(s);
     };
     processStmt(comment);
     if (auto st = const_cast<SuiteStmt *>(sn->getSuite()))
@@ -281,8 +286,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     ctx->cache->functions[importVar + ":0"].ast =
         N<FunctionStmt>(importVar + ":0", nullptr, std::vector<Param>{},
                         N<SuiteStmt>(stmts), Attr({Attr::ForceRealize}));
-    // preamble->functions.push_back(ctx->cache->functions[importVar +
-    // ":0"].ast->clone());
+    preamble->globals.push_back(ctx->cache->functions[importVar + ":0"].ast->clone());
   }
 }
 

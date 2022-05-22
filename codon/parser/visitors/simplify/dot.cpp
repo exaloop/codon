@@ -58,8 +58,8 @@ void SimplifyVisitor::visit(DotExpr *expr) {
     if (itemName.empty())
       error("identifier '{}' not found in {}", chain[importEnd], importName);
     resultExpr = N<IdExpr>(itemName);
-    //    if (importName.empty())
-    //      resultExpr = transform(resultExpr, true);
+    if (importName.empty()) // <- needed to transform captures!
+      resultExpr = transform(resultExpr, true);
     if (val->isType() && itemEnd == chain.size())
       resultExpr->markType();
     for (int i = itemEnd; i < chain.size(); i++)

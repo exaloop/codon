@@ -29,9 +29,9 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
     resultStmt = N<ExprStmt>(transform(
         N<CallExpr>(N<DotExpr>(clone(eix->expr), "__delitem__"), clone(eix->index))));
   } else if (auto ei = stmt->expr->getId()) {
-    resultStmt = transform(
-        N<AssignStmt>(clone(stmt->expr),
-                      N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)))));
+    resultStmt = N<AssignStmt>(
+        transform(stmt->expr),
+        transform(N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)))));
     // Allow deletion _only_ if the variable is dominated!
     auto val = ctx->find(ei->value);
     if (!val || ctx->scope != val->scope)
@@ -72,7 +72,7 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     mustExist |= val && val->noShadow;
     if (mustExist) {
       val = ctx->findDominatingBinding(e->value);
-      if (val && val->isVar())
+      if (val && val->isVar() && val->getBase() == ctx->getBase())
         return N<UpdateStmt>(transform(lhs, false), transform(rhs, true),
                              !ctx->bases.empty() &&
                                  ctx->bases.back().attributes & FLAG_ATOMIC);
@@ -82,13 +82,19 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
 
     // Generate new canonical variable name for this assignment and use it afterwards.
     auto canonical = ctx->generateCanonicalName(e->value);
-    // TODO: fix toplevel detection?!
-    if (ctx->scope.size() == 1 && !in(ctx->cache->globals, canonical))
-      ctx->cache->globals[canonical] = nullptr;
-    if (r && r->isType())
+    if (r && r->isType()) {
       ctx->addType(e->value, canonical, lhs->getSrcInfo());
-    else
+    } else {
+      // bool isStatic = t && t->getIndex() && t->getIndex()->expr->isId("Static");
+      // if (ctx->scope.size() == 1 && !in(ctx->cache->globals, canonical) && !isStatic)
+      // {
+      //   ctx->cache->globals[canonical] = nullptr;
+      //   preamble->globals.push_back(N<AssignStmt>(N<IdExpr>(canonical), nullptr, t));
+      //   return N<UpdateStmt>(N<IdExpr>(canonical), r);
+      // } else {
+      // }
       ctx->addVar(e->value, canonical, lhs->getSrcInfo());
+    }
     return N<AssignStmt>(N<IdExpr>(canonical), r, t);
   } else {
     error("invalid assignment");

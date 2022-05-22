@@ -148,7 +148,8 @@ void SimplifyVisitor::visit(CallExpr *expr) {
     for (auto &g : generics)
       args.push_back(g);
     auto name = expr->args[0].value->getString()->getValue();
-    transform(N<ClassStmt>(name, args, nullptr, Attr({Attr::Tuple})));
+    prependStmts->push_back(
+        transform(N<ClassStmt>(name, args, nullptr, Attr({Attr::Tuple}))));
     auto i = N<IdExpr>(name);
     resultExpr = transformType(i);
     return;

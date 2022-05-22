@@ -46,6 +46,14 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
   cache->codegenCtx->bases = {main};
   cache->codegenCtx->series = {block};
 
+  for (auto &g : cache->globals)
+    if (!g.second) {
+      g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
+                                     : cache->codegenCtx->getModule()->N<ir::Var>(
+                                           SrcInfo(), nullptr, true, g.first);
+      cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
+    }
+
   TranslateVisitor(cache->codegenCtx).transform(stmts);
   return main;
 }
@@ -313,20 +321,23 @@ void TranslateVisitor::visit(ExprStmt *stmt) { result = transform(stmt->expr); }
 void TranslateVisitor::visit(AssignStmt *stmt) {
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
   auto var = stmt->lhs->getId()->value;
-  if (!stmt->rhs && var == VAR_ARGV) {
-    ctx->add(TranslateItem::Var, var, ctx->getModule()->getArgVar());
-    ctx->cache->globals[var] = ctx->getModule()->getArgVar();
-  } else if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
-    auto *newVar =
-        make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
-                      in(ctx->cache->globals, var), var);
-    if (!in(ctx->cache->globals, var))
-      ctx->getBase()->push_back(newVar);
-    else
-      ctx->cache->globals[var] = newVar;
-    ctx->add(TranslateItem::Var, var, newVar);
+  if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
+    auto isGlobal = in(ctx->cache->globals, var);
+    ir::Var *v;
+    if (isGlobal) {
+      seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
+                var);
+      v = ctx->find(var)->getVar();
+      v->setSrcInfo(stmt->getSrcInfo());
+      v->setType(getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()));
+    } else {
+      v = make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
+                        false, var);
+      ctx->getBase()->push_back(v);
+      ctx->add(TranslateItem::Var, var, v);
+    }
     if (stmt->rhs)
-      result = make<ir::AssignInstr>(stmt, newVar, transform(stmt->rhs));
+      result = make<ir::AssignInstr>(stmt, v, transform(stmt->rhs));
   }
 }
 

@@ -119,22 +119,21 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   cache->imports[MAIN_IMPORT] = {file, ctx};
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
-  auto n = SimplifyVisitor(ctx, preamble).transform(node);
 
   auto suite = std::make_shared<SuiteStmt>();
-  suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
-
-  // Load the command-line defines.
   for (auto &d : defines) {
     suite->stmts.push_back(std::make_shared<AssignStmt>(
         std::make_shared<IdExpr>(d.first), std::make_shared<IntExpr>(d.second),
         std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
                                     std::make_shared<IdExpr>("int"))));
   }
-  // Prepend __name__ = "__main__".
   suite->stmts.push_back(std::make_shared<AssignStmt>(
       std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
-  // Transform the input node.
+  suite->stmts.push_back(node);
+  auto n = SimplifyVisitor(ctx, preamble).transform(suite);
+
+  suite = std::make_shared<SuiteStmt>();
+  suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
   if (in(ctx->scopeStmts, ctx->scope.back()))
     suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
                         ctx->scopeStmts[ctx->scope.back()].end());

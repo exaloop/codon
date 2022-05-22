@@ -26,7 +26,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   }
   auto val = ctx->findDominatingBinding(expr->value);
   if (!val) {
-    ctx->dump();
+    // ctx->dump();
     error("identifier '{}' not found", expr->value);
   }
 
@@ -36,9 +36,13 @@ void SimplifyVisitor::visit(IdExpr *expr) {
                         ctx->bases[ctx->bases.size() - 2].isType() &&
                         ctx->bases[ctx->bases.size() - 2].name == val->getBase();
   auto newName = val->canonicalName;
-  if (val->isVar() && ctx->getBase() != val->getBase() && !val->getBase().empty() &&
-      !isClassGeneric) {
-    if (!ctx->captures.empty()) {
+  if (val->isVar() && ctx->getBase() != val->getBase() && !isClassGeneric) {
+    if (val->getBase().empty()) {
+      val->noShadow = true;
+      if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName))
+        ctx->cache->globals[val->canonicalName] = nullptr;
+    } else if (!ctx->captures.empty()) {
+      // LOG("-- {} -> {} {}", expr->value, val->getBase(), ctx->getBase());
       captured = true;
       if (!in(ctx->captures.back(), val->canonicalName)) {
         ctx->captures.back()[val->canonicalName] = newName =
@@ -46,8 +50,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
         ctx->cache->reverseIdentifierLookup[newName] = newName;
       }
       newName = ctx->captures.back()[val->canonicalName];
+      val->noShadow = true;
     } else {
-      ctx->dump();
+      // ctx->dump();
       error("cannot access nonlocal variable '{}'",
             ctx->cache->reverseIdentifierLookup[expr->value]);
     }
@@ -58,8 +63,8 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   resultExpr = N<IdExpr>(newName);
   if (val->getBase() != ctx->getBase() &&
       !in(ctx->seenGlobalIdentifiers[ctx->getBase()],
-          ctx->cache->reverseIdentifierLookup[val->canonicalName])) {
-    // LOG("{} in {}: {}", expr->value, ctx->getBase(), val->getBase());
+          ctx->cache->reverseIdentifierLookup[val->canonicalName]) &&
+      !isClassGeneric) {
     ctx->seenGlobalIdentifiers
         [ctx->getBase()][ctx->cache->reverseIdentifierLookup[val->canonicalName]] =
         expr->clone();

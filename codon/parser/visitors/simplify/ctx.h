@@ -52,6 +52,8 @@ public:
   bool isFunc() const { return kind == Func; }
   bool isType() const { return kind == Type; }
   bool isImport() const { return !importPath.empty(); }
+
+  bool isGlobal() const { return scope.size() == 1 && base.empty(); }
 };
 
 /**

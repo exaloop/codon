@@ -101,7 +101,7 @@ print a #: s
 #%% assign_err_must_exist,barebones
 a = 1
 def foo():
-    a += 2 #! variable 'a' is not global
+    a += 2 #! variable 'a' cannot be updated
 
 #%% assign_rename,barebones
 y = int
@@ -295,7 +295,7 @@ print a  #: 1 2
 
 #%% global_err,barebones
 a = 1
-global a #! global outside of a function
+global a #! global or nonlocal outside o
 
 #%% global_err_2,barebones
 def foo():
@@ -305,13 +305,13 @@ def foo():
 def foo():
     b = 1
     def bar():
-        global b #! not a top-level variable
+        global b #! not a global variable
 
 #%% global_err_4,barebones
 a = 1
 def foo():
     a += 1
-foo()  #! variable 'a' is not global
+foo()  #! variable 'a' cannot be updated
 
 #%% global_ref,barebones
 a = [1]
@@ -688,7 +688,7 @@ def foo(x):
     class A:
         def bar():
             print x
-#! cannot access non-global variable 'x'
+#! cannot access nonlocal variable 'x'
 
 #%% class_err_12,barebones
 def foo(x):
