@@ -36,7 +36,11 @@ void SimplifyVisitor::visit(IdExpr *expr) {
                         ctx->bases[ctx->bases.size() - 2].isType() &&
                         ctx->bases[ctx->bases.size() - 2].name == val->getBase();
   auto newName = val->canonicalName;
-  if (val->isVar() && ctx->getBase() != val->getBase() && !isClassGeneric) {
+  if (val->isVar() &&
+      (ctx->getBase() != val->getBase() || ctx->getModule() != val->getModule()) &&
+      !isClassGeneric) {
+    // LOG("-> {} : {} {} | {}", expr->value, ctx->getBase(), val->getBase(),
+    //     val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName));
     if (val->getBase().empty()) {
       val->noShadow = true;
       if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName))

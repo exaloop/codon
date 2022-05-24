@@ -446,7 +446,11 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
-      catchVar = make<ir::Var>(stmt, excType, false, c.var);
+      if (auto val = ctx->find(c.var)) {
+        catchVar = val->getVar();
+      } else {
+        catchVar = make<ir::Var>(stmt, excType, false, c.var);
+      }
       ctx->add(TranslateItem::Var, c.var, catchVar);
       ctx->getBase()->push_back(catchVar);
     }

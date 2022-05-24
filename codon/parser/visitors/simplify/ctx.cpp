@@ -83,7 +83,10 @@ std::shared_ptr<SimplifyItem> SimplifyContext::find(const std::string &name) con
 }
 
 std::shared_ptr<SimplifyItem>
-SimplifyContext::findDominatingBinding(const std::string &name) {
+SimplifyContext::findDominatingBinding(const std::string &name_) {
+  std::string name = name_;
+  // if (in(cache->reverseIdentifierLookup, name))
+  //   name = cache->reverseIdentifierLookup[name];
   auto it = map.find(name);
   if (it == map.end()) {
     return find(name);

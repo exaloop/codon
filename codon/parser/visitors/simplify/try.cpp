@@ -20,10 +20,6 @@ void SimplifyVisitor::visit(TryStmt *stmt) {
       ctx->addVar(c.var, var, c.suite->getSrcInfo());
     }
     catches.push_back({var, transformType(c.exc), transformInScope(c.suite)});
-    if (!c.var.empty()) {
-      catches.back().suite =
-          N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(var), nullptr), catches.back().suite);
-    }
     ctx->popScope();
   }
   resultStmt = N<TryStmt>(suite, catches, transformInScope(stmt->finally));

@@ -31,9 +31,9 @@ void AssignReplacementVisitor::transform(ExprPtr &e) {
 
 void AssignReplacementVisitor::visit(ForStmt *stmt) {
   seqassertn(stmt->var->getId(), "corrupt ForStmt");
-  auto var = stmt->var->getId()->value;
-  bool addGuard = in(replacements, var);
+  bool addGuard = in(replacements, stmt->var->getId()->value);
   transform(stmt->var);
+  auto var = stmt->var->getId()->value;
   transform(stmt->iter);
   transform(stmt->suite);
   if (addGuard) {
@@ -47,6 +47,25 @@ void AssignReplacementVisitor::visit(ForStmt *stmt) {
   transform(stmt->decorator);
   for (auto &a : stmt->ompArgs)
     transform(a.value);
+}
+
+void AssignReplacementVisitor::visit(TryStmt *stmt) {
+  transform(stmt->suite);
+  for (auto &c : stmt->catches) {
+    bool addGuard = !c.var.empty() && in(replacements, c.var);
+    transform(c.exc);
+    transform(c.suite);
+    if (addGuard) {
+      while (in(replacements, c.var))
+        c.var = replacements[c.var].first;
+      c.suite = std::make_shared<SuiteStmt>(
+          std::make_shared<UpdateStmt>(
+              std::make_shared<IdExpr>(format("{}.__used__", c.var)),
+              std::make_shared<BoolExpr>(true)),
+          c.suite);
+    }
+  }
+  transform(stmt->finally);
 }
 
 void AssignReplacementVisitor::transform(StmtPtr &e) {

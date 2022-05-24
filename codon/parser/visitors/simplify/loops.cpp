@@ -36,22 +36,22 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   StmtPtr assign = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     breakVar = ctx->cache->getTemporaryVar("no_break");
-    assign =
-        transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true));
+    prependStmts->push_back(transform(
+        N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true)));
   }
   ctx->addScope();
   ctx->loops.push_back({breakVar, ctx->scope, {}});
   cond = transform(cond);
   StmtPtr whileStmt = N<WhileStmt>(cond, transformInScope(stmt->suite));
   ctx->popScope();
-  for (auto &var : ctx->getLoop()->seenVars)
+  for (auto &var : ctx->getLoop()->seenVars) {
     ctx->findDominatingBinding(var);
+  }
   ctx->loops.pop_back();
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
-    resultStmt =
-        N<SuiteStmt>(assign, whileStmt,
-                     N<IfStmt>(transform(N<CallExpr>(N<DotExpr>(breakVar, "__bool__"))),
-                               transformInScope(stmt->elseSuite)));
+    resultStmt = N<SuiteStmt>(
+        whileStmt, N<IfStmt>(transform(N<CallExpr>(N<DotExpr>(breakVar, "__bool__"))),
+                             transformInScope(stmt->elseSuite)));
   } else {
     resultStmt = whileStmt;
   }
@@ -101,10 +101,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
                 stmt->var->getSrcInfo());
     auto var = transform(stmt->var);
-    std::vector<StmtPtr> stmts;
-    stmts.push_back(clone(stmt->suite));
-    forStmt = N<ForStmt>(var, clone(iter), transform(N<SuiteStmt>(stmts)), nullptr,
-                         decorator, ompArgs);
+    forStmt = N<ForStmt>(var, clone(iter), transform(stmt->suite), nullptr, decorator,
+                         ompArgs);
   } else {
     varName = ctx->cache->getTemporaryVar("for");
     ctx->addVar(varName, varName, stmt->var->getSrcInfo());

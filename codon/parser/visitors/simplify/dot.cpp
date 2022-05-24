@@ -57,11 +57,13 @@ void SimplifyVisitor::visit(DotExpr *expr) {
       error("identifier '{}' not found", chain[importEnd]);
     if (itemName.empty())
       error("identifier '{}' not found in {}", chain[importEnd], importName);
-    resultExpr = N<IdExpr>(itemName);
-    if (importName.empty()) // <- needed to transform captures!
-      resultExpr = transform(resultExpr, true);
-    if (val->isType() && itemEnd == chain.size())
-      resultExpr->markType();
+    if (importName.empty() && itemEnd == 1) {
+      resultExpr = transform(N<IdExpr>(chain[0]), true);
+    } else {
+      resultExpr = N<IdExpr>(itemName);
+      if (val->isType() && itemEnd == chain.size())
+        resultExpr->markType();
+    }
     for (int i = itemEnd; i < chain.size(); i++)
       resultExpr = N<DotExpr>(resultExpr, chain[i]);
   } else {

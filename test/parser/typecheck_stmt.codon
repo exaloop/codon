@@ -30,6 +30,7 @@ print a  #: []
 a = 5
 if 1:
     a = 3.3  #! cannot unify float and int
+a
 
 #%% assign_atomic,barebones
 i = 1

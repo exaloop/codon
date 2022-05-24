@@ -2094,7 +2094,7 @@ void LLVMVisitor::visit(const dsl::CustomFlow *x) {
 
 void LLVMVisitor::visit(const AssignInstr *x) {
   llvm::Value *var = getVar(x->getLhs());
-  seqassertn(var, "could not find {} var", *x);
+  seqassertn(var, "could not find {} var", *x->getLhs());
   process(x->getRhs());
   if (var != getDummyVoidValue()) {
     B->SetInsertPoint(block);
