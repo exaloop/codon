@@ -88,8 +88,8 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     for (auto name : {"staticlen", "compile_error", "isinstance", "hasattr", "type",
                       "TypeVar", "Callable", "argv", "super", "superf"})
       stdlib->generateCanonicalName(name);
-    stdlib->addVar("super", "super");
-    stdlib->addVar("superf", "superf");
+    stdlib->addFunc("super", "super");
+    stdlib->addFunc("superf", "superf");
 
     // This code must be placed in a preamble (these are not POD types but are
     // referenced by the various preamble Function.N and Tuple.N stubs)

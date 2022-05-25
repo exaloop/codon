@@ -260,11 +260,12 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
                   s->getAssign()->lhs->getId()->value, file.path);
         if (val->kind == SimplifyItem::Var && val->scope.size() == 1 &&
             val->base.empty() && !isStatic) {
-          stmts.push_back(N<UpdateStmt>(a->lhs, a->rhs));
-          preamble->globals.push_back(
-              N<AssignStmt>(a->lhs->clone(), nullptr, clone(a->type)));
+          // stmts.push_back(N<UpdateStmt>(a->lhs, a->rhs));
+          // preamble->globals.push_back(
+          // N<AssignStmt>(a->lhs->clone(), nullptr, clone(a->type)));
           // Add imports manually to the global pool
           // TODO: make this dynamic in id.cpp
+          stmts.push_back(s);
           if (!in(ctx->cache->globals, val->canonicalName))
             ctx->cache->globals[val->canonicalName] = nullptr;
         } else {

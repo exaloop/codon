@@ -83,13 +83,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   stmt->rhs = transform(stmt->rhs);
   stmt->type = transformType(stmt->type);
   TypecheckItem::Kind kind;
-  if (!stmt->rhs) { // Case 1: forward declaration: x: type
-    unify(stmt->lhs->type, stmt->type
-                               ? stmt->type->getType()
-                               : ctx->addUnbound(stmt->lhs.get(), ctx->typecheckLevel));
-    ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
-    stmt->done = realize(stmt->lhs->type) != nullptr;
-  } else if (stmt->type && stmt->type->getType()->isStaticType()) {
+  seqassert(stmt->rhs, "no forward declarations allowed: {}", stmt->lhs->toString());
+  if (stmt->type && stmt->type->getType()->isStaticType()) {
     if (!stmt->rhs->isStatic())
       error("right-hand side is not a static expression");
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
@@ -98,7 +93,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
     stmt->done = realize(stmt->lhs->type) != nullptr;
   } else { // Case 2: Normal assignment
-    if (stmt->type && stmt->type->getType()->getClass()) {
+    if (stmt->type) {
       auto t = ctx->instantiate(stmt->type.get(), stmt->type->getType());
       unify(stmt->lhs->type, t);
       wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);
@@ -108,13 +103,23 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     kind = stmt->rhs->isType()
                ? TypecheckItem::Type
                : (type->getFunc() ? TypecheckItem::Func : TypecheckItem::Var);
-    ctx->add(kind, lhs,
-             kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel) : type);
+    auto val = std::make_shared<TypecheckItem>(
+        kind,
+        kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel) : type);
+    if (in(ctx->cache->globals, lhs)) {
+      ctx->addToplevel(lhs, val);
+      if (kind != TypecheckItem::Var)
+        ctx->cache->globals.erase(lhs);
+    } else {
+      ctx->add(lhs, val);
+    }
     if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
       // LOG("deactivate {} {}", stmt->getSrcInfo(), type->debugString(1));
       deactivateUnbounds(type.get());
       if (stmt->type) // cases such as A: Callable = B where type is unbound by nature
         deactivateUnbounds(stmt->type->type.get());
+      if (stmt->lhs->type)
+        unify(stmt->lhs->type, ctx->find(lhs)->type);
       stmt->rhs->type = nullptr;
       stmt->done = true;
     } else {
@@ -174,6 +179,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
   }
 
   stmt->rhs = transform(stmt->rhs);
+
   auto rhsClass = stmt->rhs->getType()->getClass();
   // Case 3: check for an atomic assignment.
   if (stmt->isAtomic && lhsClass && rhsClass) {
@@ -299,15 +305,22 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       varName = e->value;
     seqassert(!varName.empty(), "empty for variable {}", stmt->var->toString());
     TypePtr varType = nullptr;
-    if (auto val = ctx->find(varName)) {
-      varType = val->type;
-    } else {
+    if (stmt->ownVar) {
       varType = ctx->addUnbound(stmt->var.get(), ctx->typecheckLevel);
       ctx->add(TypecheckItem::Var, varName, varType);
+    } else {
+      LOG("-- {}", stmt->getSrcInfo());
+      auto val = ctx->find(varName);
+      seqassert(val, "'{}' not found", varName);
+      varType = val->type;
     }
     if ((iterType = stmt->iter->getType()->getClass())) {
       if (iterType->name != "Generator")
         error("for loop expected a generator");
+      if (getSrcInfo().line == 378 && varType->toString() == "List[int]" &&
+          iterType->generics[0].type->toString() == "int") {
+        ctx->find(varName);
+      }
       unify(varType, iterType->generics[0].type);
       if (varType->is("void"))
         error("expression with void type");
@@ -358,8 +371,15 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   stmt->done = stmt->suite->done;
   for (auto &c : stmt->catches) {
     c.exc = transformType(c.exc);
-    if (!c.var.empty())
-      ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
+    if (!c.var.empty()) {
+      if (c.ownVar) {
+        ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
+      } else {
+        auto val = ctx->find(c.var);
+        seqassert(val, "'{}' not found", c.var);
+        unify(val->type, c.exc->getType());
+      }
+    }
     c.suite = transform(c.suite);
     stmt->done &= (c.exc ? c.exc->done : true) && c.suite->done;
   }

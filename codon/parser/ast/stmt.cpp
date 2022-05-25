@@ -151,12 +151,12 @@ ForStmt::ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite,
                  ExprPtr decorator, std::vector<CallExpr::Arg> ompArgs)
     : Stmt(), var(std::move(var)), iter(std::move(iter)), suite(std::move(suite)),
       elseSuite(std::move(elseSuite)), decorator(std::move(decorator)),
-      ompArgs(std::move(ompArgs)), wrapped(false) {}
+      ompArgs(std::move(ompArgs)), wrapped(false), ownVar(true) {}
 ForStmt::ForStmt(const ForStmt &stmt)
     : Stmt(stmt), var(ast::clone(stmt.var)), iter(ast::clone(stmt.iter)),
       suite(ast::clone(stmt.suite)), elseSuite(ast::clone(stmt.elseSuite)),
       decorator(ast::clone(stmt.decorator)), ompArgs(ast::clone_nop(stmt.ompArgs)),
-      wrapped(stmt.wrapped) {}
+      wrapped(stmt.wrapped), ownVar(stmt.ownVar) {}
 std::string ForStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string attr;
@@ -231,7 +231,7 @@ std::string ImportStmt::toString(int) const {
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
 
 TryStmt::Catch TryStmt::Catch::clone() const {
-  return {var, ast::clone(exc), ast::clone(suite)};
+  return {var, ast::clone(exc), ast::clone(suite), ownVar};
 }
 
 TryStmt::TryStmt(StmtPtr suite, std::vector<Catch> catches, StmtPtr finally)

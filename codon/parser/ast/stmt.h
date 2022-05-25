@@ -252,6 +252,7 @@ struct ForStmt : public Stmt {
 
   /// Indicates if iter was wrapped with __iter__() call.
   bool wrapped;
+  bool ownVar;
 
   ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite = nullptr,
           ExprPtr decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
@@ -345,6 +346,7 @@ struct TryStmt : public Stmt {
     /// nullptr if there is no explicit exception type.
     ExprPtr exc;
     StmtPtr suite;
+    bool ownVar = true;
 
     Catch clone() const;
   };

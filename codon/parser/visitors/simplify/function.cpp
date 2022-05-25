@@ -42,6 +42,7 @@ void AssignReplacementVisitor::visit(ForStmt *stmt) {
             std::make_shared<IdExpr>(format("{}.__used__", var)),
             std::make_shared<BoolExpr>(true)),
         stmt->suite);
+    stmt->ownVar = false;
   }
   transform(stmt->elseSuite);
   transform(stmt->decorator);
@@ -63,6 +64,7 @@ void AssignReplacementVisitor::visit(TryStmt *stmt) {
               std::make_shared<IdExpr>(format("{}.__used__", c.var)),
               std::make_shared<BoolExpr>(true)),
           c.suite);
+      c.ownVar = false;
     }
   }
   transform(stmt->finally);

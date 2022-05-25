@@ -111,6 +111,12 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
   auto val = ctx->find(expr->value);
   if (!val) {
+    auto j = ctx->cache->globals.find(expr->value);
+    if (j != ctx->cache->globals.end()) {
+      auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
+      unify(expr->type, typ);
+      return;
+    }
     auto i = ctx->cache->overloads.find(expr->value);
     if (i != ctx->cache->overloads.end()) {
       if (i->second.size() == 1) {

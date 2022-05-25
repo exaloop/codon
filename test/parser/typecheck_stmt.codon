@@ -255,7 +255,7 @@ except MyError:
     print "my"
 except OSError as o:
     print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
-    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 249
+    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 251
 finally:
     print "whoa"  #: whoa
 

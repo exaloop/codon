@@ -82,6 +82,11 @@ public:
   /// Convenience method for adding an object to the context.
   std::shared_ptr<TypecheckItem> add(TypecheckItem::Kind kind, const std::string &name,
                                      types::TypePtr type = nullptr);
+  std::shared_ptr<TypecheckItem>
+  addToplevel(const std::string &name, const std::shared_ptr<TypecheckItem> &item) {
+    map[name].push_front(item);
+    return item;
+  }
   std::shared_ptr<TypecheckItem> find(const std::string &name) const override;
   /// Find an internal type. Assumes that it exists.
   types::TypePtr findInternal(const std::string &name) const;

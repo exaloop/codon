@@ -43,8 +43,10 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     //     val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName));
     if (val->getBase().empty()) {
       val->noShadow = true;
-      if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName))
+      if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName)) {
+        // LOG("-> {}", val->canonicalName);
         ctx->cache->globals[val->canonicalName] = nullptr;
+      }
     } else if (!ctx->captures.empty()) {
       // LOG("-- {} -> {} {}", expr->value, val->getBase(), ctx->getBase());
       captured = true;

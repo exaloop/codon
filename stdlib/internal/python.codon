@@ -164,7 +164,7 @@ def init(python_loaded: bool = False):
     if _PY_INITIALIZED:
         return
 
-    py_handle: cobj
+    py_handle = cobj()
     if python_loaded:
         py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
     else:

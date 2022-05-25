@@ -256,7 +256,8 @@ y = 6
 z = 1 + y if y else None
 print z  #: 7
 z.x()  #: x()! 7
-z = None
+if 1: # otherwise compiler won't compile z.x() later
+    z = None
 try:
     z.x()
 except ValueError:
@@ -1090,10 +1091,10 @@ zx: float = 1
 print zx.__class__, zx #: float 1
 
 def test(v: Optional[int]):
-    v = ~v if v else 3 # TODO: force upcast to int if safe
+    v = ~v if v else 3
     print v.__class__
-test(5) #: Optional[int]
-test(None) #: Optional[int]
+test(5) #: int
+test(None) #: int
 
 #%% methodcaller,barebones
 def foo():

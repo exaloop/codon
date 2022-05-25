@@ -48,6 +48,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
 
   for (auto &g : cache->globals)
     if (!g.second) {
+      // LOG("[r] {}", g.first);
       g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
                                      : cache->codegenCtx->getModule()->N<ir::Var>(
                                            SrcInfo(), nullptr, true, g.first);
@@ -392,10 +393,10 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var->toString());
   auto varName = stmt->var->getId()->value;
   ir::Var *var = nullptr;
-  if (auto val = ctx->find(varName)) {
-    var = val->getVar();
-  } else {
+  if (stmt->ownVar) {
     var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
+  } else {
+    var = ctx->find(varName)->getVar();
   }
   ctx->getBase()->push_back(var);
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
@@ -446,10 +447,10 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
-      if (auto val = ctx->find(c.var)) {
-        catchVar = val->getVar();
-      } else {
+      if (c.ownVar) {
         catchVar = make<ir::Var>(stmt, excType, false, c.var);
+      } else {
+        catchVar = ctx->find(c.var)->getVar();
       }
       ctx->add(TranslateItem::Var, c.var, catchVar);
       ctx->getBase()->push_back(catchVar);
