@@ -297,6 +297,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
         ctx->addVar(varName, name, stmt->getSrcInfo());
       else
         ctx->addType(varName, name, stmt->getSrcInfo());
+      ctx->bases.back().generics.insert(name);
     }
   }
   for (auto &a : args) {

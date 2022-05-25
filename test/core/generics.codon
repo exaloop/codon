@@ -38,7 +38,7 @@ class A[TA,TB,TC]:
         return v[0][0][0]
 
 # explicit realization:
-def m7[T,S]():
+def m7(T: type, S: type):
     print "works"
 
 class B1[T]:

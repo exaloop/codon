@@ -84,6 +84,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
 
     std::shared_ptr<std::vector<std::string>> deducedMembers;
     std::string selfName;
+    std::unordered_set<std::string> generics;
 
     explicit Base(std::string name, ExprPtr ast = nullptr, int attributes = 0);
     bool isType() const { return ast != nullptr; }

@@ -42,6 +42,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     // LOG("-> {} : {} {} | {}", expr->value, ctx->getBase(), val->getBase(),
     //     val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName));
     if (val->getBase().empty()) {
+      // LOG("no shadow: {} @ {}", val->canonicalName, expr->getSrcInfo());
       val->noShadow = true;
       if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName)) {
         // LOG("-> {}", val->canonicalName);
@@ -56,6 +57,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
         ctx->cache->reverseIdentifierLookup[newName] = newName;
       }
       newName = ctx->captures.back()[val->canonicalName];
+      // LOG("no shadow: {} @ {}", val->canonicalName, expr->getSrcInfo());
       val->noShadow = true;
     } else {
       // ctx->dump();
@@ -112,9 +114,22 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   }
   // If that is not the case, we are probably having a class accessing its enclosing
   // function variable (generic or other identifier). We do not like that!
-  if (!captured && ctx->getBase() != val->getBase() && !val->getBase().empty())
-    error("identifier '{}' not found (cannot access outer function identifiers)",
-          expr->value);
+  if (!captured && ctx->getBase() != val->getBase() && !val->getBase().empty()) {
+    bool crossClassBoundary = false;
+    bool outerGeneric = false;
+    for (int i = int(ctx->bases.size()) - 1; i >= 0; i--) {
+      outerGeneric |= in(ctx->bases[i].generics, val->canonicalName);
+      if (ctx->bases[i].name == val->getBase())
+        break;
+      else if (ctx->bases[i].isType()) {
+        crossClassBoundary = true;
+        break;
+      }
+    }
+    if (crossClassBoundary || (outerGeneric && !isClassGeneric))
+      error("identifier '{}' not found (cannot access outer function identifiers)",
+            expr->value);
+  }
 }
 
 } // namespace codon::ast

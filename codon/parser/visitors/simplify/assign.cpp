@@ -69,15 +69,18 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     auto r = transform(rhs, true);
 
     auto val = ctx->find(e->value);
-    mustExist |= val && val->noShadow;
+    mustExist |= val && (val->noShadow && val->getBase() == ctx->getBase());
     if (mustExist) {
       val = ctx->findDominatingBinding(e->value);
-      if (val && val->isVar() && val->getBase() == ctx->getBase())
+      if (val && val->isVar() && val->getBase() == ctx->getBase()) {
         return N<UpdateStmt>(transform(lhs, false), transform(rhs, true),
                              !ctx->bases.empty() &&
                                  ctx->bases.back().attributes & FLAG_ATOMIC);
-      else
+      } else {
+        LOG("-> {} {} {} {}", val->noShadow, val->getBase(), val->isVar(),
+            ctx->getBase());
         error("variable '{}' cannot be updated", e->value);
+      }
     }
 
     // Generate new canonical variable name for this assignment and use it afterwards.

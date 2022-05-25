@@ -105,7 +105,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
                : (type->getFunc() ? TypecheckItem::Func : TypecheckItem::Var);
     auto val = std::make_shared<TypecheckItem>(
         kind,
-        kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel) : type);
+        kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel - 1) : type);
     if (in(ctx->cache->globals, lhs)) {
       ctx->addToplevel(lhs, val);
       if (kind != TypecheckItem::Var)
@@ -114,7 +114,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       ctx->add(lhs, val);
     }
     if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
-      // LOG("deactivate {} {}", stmt->getSrcInfo(), type->debugString(1));
+      // LOG("{} => {} & {} ^ {}", stmt->lhs->toString(), type->debugString(1),
+      //     val->type->debugString(1), kind);
       deactivateUnbounds(type.get());
       if (stmt->type) // cases such as A: Callable = B where type is unbound by nature
         deactivateUnbounds(stmt->type->type.get());
