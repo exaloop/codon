@@ -92,18 +92,21 @@ private:
   using clock_type = std::chrono::high_resolution_clock;
   std::string name;
   std::chrono::time_point<clock_type> start, end;
+
+public:
   bool logged;
 
 public:
   void log() {
     if (!logged) {
-      end = clock_type::now();
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() /
-          1000.0;
-      LOG_TIME("[T] {} = {:.1f}", name, elapsed);
+      LOG_TIME("[T] {} = {:.1f}", name, elapsed());
       logged = true;
     }
+  }
+
+  double elapsed(std::chrono::time_point<clock_type> end = clock_type::now()) const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() /
+          1000.0;
   }
 
   Timer(std::string name) : name(std::move(name)), start(), end(), logged(false) {

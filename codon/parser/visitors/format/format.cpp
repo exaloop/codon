@@ -114,11 +114,6 @@ void FormatVisitor::visit(InstantiateExpr *expr) {
                       transform(expr->typeParams));
 }
 
-void FormatVisitor::visit(StackAllocExpr *expr) {
-  result = renderExpr(expr, "__array__[{}]({})", transform(expr->typeExpr),
-                      transform(expr->expr));
-}
-
 void FormatVisitor::visit(SetExpr *expr) {
   result = renderExpr(expr, "{{{}}}", transform(expr->items));
 }
@@ -217,10 +212,6 @@ void FormatVisitor::visit(SliceExpr *expr) {
 }
 
 void FormatVisitor::visit(EllipsisExpr *expr) { result = renderExpr(expr, "..."); }
-
-void FormatVisitor::visit(PtrExpr *expr) {
-  result = renderExpr(expr, "__ptr__({})", transform(expr->expr));
-}
 
 void FormatVisitor::visit(LambdaExpr *expr) {
   result = renderExpr(expr, "{} {}: {}", keyword("lambda"), join(expr->vars, ", "),

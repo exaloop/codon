@@ -14,12 +14,12 @@ void SimplifyVisitor::visit(AssignStmt *stmt) {
   if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
     /// Case 1: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
-    stmts.push_back(transformAssignment(stmt->lhs, stmt->rhs, nullptr, false, true));
+    stmts.push_back(transformAssignment(stmt->lhs, stmt->rhs, nullptr, true));
   } else if (stmt->type) {
     /// Case 2:
-    stmts.push_back(transformAssignment(stmt->lhs, stmt->rhs, stmt->type, true, false));
+    stmts.push_back(transformAssignment(stmt->lhs, stmt->rhs, stmt->type, false));
   } else {
-    unpackAssignments(stmt->lhs, stmt->rhs, stmts, stmt->shadow, false);
+    unpackAssignments(stmt->lhs, stmt->rhs, stmts, false);
   }
   resultStmt = stmts.size() == 1 ? stmts[0] : N<SuiteStmt>(stmts);
 }
@@ -43,8 +43,7 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
 }
 
 StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
-                                             const ExprPtr &type, bool shadow,
-                                             bool mustExist) {
+                                             const ExprPtr &type, bool mustExist) {
   if (auto ei = lhs->getIndex()) {
     seqassert(!type, "unexpected type annotation");
     return transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(ei->expr), "__setitem__"),
@@ -88,14 +87,6 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     if (r && r->isType()) {
       ctx->addType(e->value, canonical, lhs->getSrcInfo());
     } else {
-      // bool isStatic = t && t->getIndex() && t->getIndex()->expr->isId("Static");
-      // if (ctx->scope.size() == 1 && !in(ctx->cache->globals, canonical) && !isStatic)
-      // {
-      //   ctx->cache->globals[canonical] = nullptr;
-      //   preamble->globals.push_back(N<AssignStmt>(N<IdExpr>(canonical), nullptr, t));
-      //   return N<UpdateStmt>(N<IdExpr>(canonical), r);
-      // } else {
-      // }
       ctx->addVar(e->value, canonical, lhs->getSrcInfo());
     }
     return N<AssignStmt>(N<IdExpr>(canonical), r, t);
@@ -106,8 +97,7 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
 }
 
 void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
-                                        std::vector<StmtPtr> &stmts, bool shadow,
-                                        bool mustExist) {
+                                        std::vector<StmtPtr> &stmts, bool mustExist) {
   std::vector<ExprPtr> leftSide;
   if (auto et = lhs->getTuple()) { // (a, b) = ...
     for (auto &i : et->items)
@@ -116,7 +106,7 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
     for (auto &i : el->items)
       leftSide.push_back(i);
   } else { // A simple assignment.
-    stmts.push_back(transformAssignment(lhs, rhs, nullptr, shadow, mustExist));
+    stmts.push_back(transformAssignment(lhs, rhs, nullptr, mustExist));
     return;
   }
 
@@ -125,7 +115,7 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
   if (!rhs->getId()) { // Store any non-trivial right-side expression (assign = rhs).
     auto var = ctx->cache->getTemporaryVar("assign");
     ExprPtr newRhs = Nx<IdExpr>(srcPos, var);
-    stmts.push_back(transformAssignment(newRhs, rhs, nullptr, shadow, mustExist));
+    stmts.push_back(transformAssignment(newRhs, rhs, nullptr, mustExist));
     rhs = newRhs;
   }
 
@@ -137,7 +127,7 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
     // Transformation: leftSide_st = rhs[st]
     auto rightSide = Nx<IndexExpr>(srcPos, rhs->clone(), Nx<IntExpr>(srcPos, st));
     // Recursively process the assignment (as we can have cases like (a, (b, c)) = d).
-    unpackAssignments(leftSide[st], rightSide, stmts, shadow, mustExist);
+    unpackAssignments(leftSide[st], rightSide, stmts, mustExist);
   }
   // If there is a StarExpr, process it and the remaining assignments after it (if
   // any).
@@ -151,8 +141,7 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
                           ? nullptr
                           : Nx<IntExpr>(srcPos, -leftSide.size() + st + 1),
                       nullptr));
-    unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts, shadow,
-                      mustExist);
+    unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts, mustExist);
     st += 1;
     // Keep going till the very end. Remaining assignments use negative indices (-1,
     // -2 etc) as we are not sure how big is StarExpr.
@@ -161,7 +150,7 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
         error(leftSide[st], "multiple unpack expressions");
       rightSide = Nx<IndexExpr>(srcPos, rhs->clone(),
                                 Nx<IntExpr>(srcPos, -leftSide.size() + st));
-      unpackAssignments(leftSide[st], rightSide, stmts, shadow, mustExist);
+      unpackAssignments(leftSide[st], rightSide, stmts, mustExist);
     }
   }
 }

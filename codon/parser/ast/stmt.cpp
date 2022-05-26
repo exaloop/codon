@@ -77,12 +77,11 @@ std::string ExprStmt::toString(int) const {
 }
 ACCEPT_IMPL(ExprStmt, ASTVisitor);
 
-AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type, bool shadow)
-    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)),
-      shadow(shadow) {}
+AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type)
+    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)) {}
 AssignStmt::AssignStmt(const AssignStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
-      type(ast::clone(stmt.type)), shadow(stmt.shadow) {}
+      type(ast::clone(stmt.type)) {}
 std::string AssignStmt::toString(int) const {
   return format("(assign {}{}{})", lhs->toString(), rhs ? " " + rhs->toString() : "",
                 type ? format(" #:type {}", type->toString()) : "");

@@ -173,8 +173,9 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
     if (auto method = findBestMethod(stmt->lhs.get(),
                                      format("__atomic_{}__", c->expr->getId()->value),
                                      {ptrTyp, rhsTyp})) {
-      resultStmt = transform(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>(method->ast->name), N<PtrExpr>(stmt->lhs), c->args[1].value)));
+      resultStmt = transform(N<ExprStmt>(
+          N<CallExpr>(N<IdExpr>(method->ast->name),
+                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), c->args[1].value)));
       return;
     }
   }
@@ -189,7 +190,8 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
     if (auto m =
             findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
       resultStmt = transform(N<ExprStmt>(
-          N<CallExpr>(N<IdExpr>(m->ast->name), N<PtrExpr>(stmt->lhs), stmt->rhs)));
+          N<CallExpr>(N<IdExpr>(m->ast->name),
+                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)));
       return;
     }
     stmt->isAtomic = false;

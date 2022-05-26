@@ -176,6 +176,24 @@ void TranslateVisitor::visit(IfExpr *expr) {
 }
 
 void TranslateVisitor::visit(CallExpr *expr) {
+  if (expr->expr->isId("__ptr__")) {
+    seqassert(expr->args[0].value->getId(), "expected IdExpr, got {}",
+              expr->args[0].value->toString());
+    auto val = ctx->find(expr->args[0].value->getId()->value);
+    seqassert(val && val->getVar(), "{} is not a variable",
+              expr->args[0].value->getId()->value);
+    result = make<ir::PointerValue>(expr, val->getVar());
+    return;
+  } else if (expr->expr->isId("__array__.__new__:0")) {
+    seqassert(false, "not yet implemented!");
+    // auto type = expr->type->getFunc()->getParent();
+    // auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(type));
+    // arrayType->setAstType(expr->getType());
+    // // TODO
+    // result = make<ir::StackAllocInstr>(expr, arrayType,
+    // expr->expr->getInt()->intValue);
+  }
+
   auto ft = expr->expr->type->getFunc();
   seqassert(ft, "not calling function: {}", ft->toString());
   auto callee = transform(expr->expr);
@@ -197,15 +215,6 @@ void TranslateVisitor::visit(CallExpr *expr) {
   result = make<ir::CallInstr>(expr, callee, std::move(items));
 }
 
-void TranslateVisitor::visit(StackAllocExpr *expr) {
-  auto *arrayType =
-      ctx->getModule()->unsafeGetArrayType(getType(expr->typeExpr->getType()));
-  arrayType->setAstType(expr->getType());
-  seqassert(expr->expr->getInt(), "expected a static integer, got {}",
-            expr->expr->toString());
-  result = make<ir::StackAllocInstr>(expr, arrayType, expr->expr->getInt()->intValue);
-}
-
 void TranslateVisitor::visit(DotExpr *expr) {
   if (expr->member == "__atomic__" || expr->member == "__elemsize__") {
     seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr->toString());
@@ -218,13 +227,6 @@ void TranslateVisitor::visit(DotExpr *expr) {
   } else {
     result = make<ir::ExtractInstr>(expr, transform(expr->expr), expr->member);
   }
-}
-
-void TranslateVisitor::visit(PtrExpr *expr) {
-  seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr->toString());
-  auto val = ctx->find(expr->expr->getId()->value);
-  seqassert(val && val->getVar(), "{} is not a variable", expr->expr->getId()->value);
-  result = make<ir::PointerValue>(expr, val->getVar());
 }
 
 void TranslateVisitor::visit(YieldExpr *expr) {

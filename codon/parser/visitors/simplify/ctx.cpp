@@ -185,6 +185,8 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
     std::string base = getBase();
     if (base.empty())
       base = getModule();
+    if (base == "std.__init__")
+      base = "";
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;

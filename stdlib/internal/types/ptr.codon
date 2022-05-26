@@ -189,14 +189,6 @@ cobj = Ptr[byte]
 
 
 # Forward declarations
-@__internal__
-@tuple
-class Array:
-    len: int
-    ptr: Ptr[T]
-    T: type
-
-
 class List:
     len: int
     arr: Array[T]

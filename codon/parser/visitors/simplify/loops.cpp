@@ -36,8 +36,8 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   StmtPtr assign = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     breakVar = ctx->cache->getTemporaryVar("no_break");
-    prependStmts->push_back(transform(
-        N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true)));
+    prependStmts->push_back(
+        transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true))));
   }
   ctx->addScope();
   ctx->loops.push_back({breakVar, ctx->scope, {}});
@@ -91,8 +91,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   StmtPtr forStmt = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     breakVar = ctx->cache->getTemporaryVar("no_break");
-    assign =
-        transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true), nullptr, true));
+    assign = transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true)));
   }
   ctx->addScope();
   ctx->loops.push_back({breakVar, ctx->scope, {}});
@@ -108,7 +107,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     ctx->addVar(varName, varName, stmt->var->getSrcInfo());
     auto var = N<IdExpr>(varName);
     std::vector<StmtPtr> stmts;
-    stmts.push_back(N<AssignStmt>(clone(stmt->var), clone(var), nullptr, true));
+    stmts.push_back(N<AssignStmt>(clone(stmt->var), clone(var)));
     stmts.push_back(clone(stmt->suite));
     forStmt = N<ForStmt>(clone(var), clone(iter), transform(N<SuiteStmt>(stmts)),
                          nullptr, decorator, ompArgs);

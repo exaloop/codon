@@ -39,9 +39,7 @@ public:
   void visit(IdExpr *) override;
   void visit(IfExpr *) override;
   void visit(CallExpr *) override;
-  void visit(StackAllocExpr *) override;
   void visit(DotExpr *) override;
-  void visit(PtrExpr *) override;
   void visit(YieldExpr *) override;
   void visit(StmtExpr *) override;
   void visit(PipeExpr *) override;

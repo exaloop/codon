@@ -28,7 +28,7 @@ void SimplifyVisitor::visit(MatchStmt *stmt) {
   auto var = ctx->cache->getTemporaryVar("match");
   auto result = N<SuiteStmt>();
   result->stmts.push_back(
-      N<AssignStmt>(N<IdExpr>(var), clone(stmt->what), nullptr, true));
+      N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
   for (auto &c : stmt->cases) {
     ctx->addScope();
     StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());

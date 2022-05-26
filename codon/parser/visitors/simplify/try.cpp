@@ -36,7 +36,7 @@ void SimplifyVisitor::visit(WithStmt *stmt) {
     std::string var =
         stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
     content = std::vector<StmtPtr>{
-        N<AssignStmt>(N<IdExpr>(var), clone(stmt->items[i]), nullptr, true),
+        N<AssignStmt>(N<IdExpr>(var), clone(stmt->items[i])),
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__enter__"))),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content, true) : clone(stmt->suite),
                    std::vector<TryStmt::Catch>{},

@@ -380,7 +380,7 @@ private:
   ///   a : type = b -> AssignStmt
   ///   a = b -> AssignStmt or UpdateStmt if a exists in the same scope (or is global)
   StmtPtr transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
-                              const ExprPtr &type, bool shadow, bool mustExist);
+                              const ExprPtr &type, bool mustExist);
   /// Unpack an assignment expression lhs = rhs into a list of simple assignment
   /// expressions (either a = b, or a.x = b, or a[x] = b).
   /// Used to handle various Python unpacking rules, such as:
@@ -392,7 +392,7 @@ private:
   /// Processes each assignment recursively to support cases like:
   ///   a, (b, c) = d
   void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts,
-                         bool shadow, bool mustExist);
+                         bool mustExist);
   /// Transform a match...case pattern to a series of if statements as follows:
   ///   - Int pattern
   ///     case 1: ... ->
@@ -490,6 +490,9 @@ private:
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
+
+  ExprPtr transformSpecialCall(const ExprPtr &callee,
+                               const std::vector<CallExpr::Arg> &args);
 };
 
 struct AssignReplacementVisitor : ReplaceASTVisitor {

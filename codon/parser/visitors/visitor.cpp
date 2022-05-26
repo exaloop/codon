@@ -30,11 +30,9 @@ void ASTVisitor::visit(PipeExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(IndexExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(TupleIndexExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(CallExpr *expr) { defaultVisit(expr); }
-void ASTVisitor::visit(StackAllocExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(DotExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(SliceExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(EllipsisExpr *expr) { defaultVisit(expr); }
-void ASTVisitor::visit(PtrExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(LambdaExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(YieldExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(AssignExpr *expr) { defaultVisit(expr); }
@@ -142,10 +140,6 @@ void ReplaceASTVisitor::visit(CallExpr *expr) {
   for (auto &a : expr->args)
     transform(a.value);
 }
-void ReplaceASTVisitor::visit(StackAllocExpr *expr) {
-  transform(expr->typeExpr);
-  transform(expr->expr);
-}
 void ReplaceASTVisitor::visit(DotExpr *expr) { transform(expr->expr); }
 void ReplaceASTVisitor::visit(SliceExpr *expr) {
   transform(expr->start);
@@ -153,7 +147,6 @@ void ReplaceASTVisitor::visit(SliceExpr *expr) {
   transform(expr->step);
 }
 void ReplaceASTVisitor::visit(EllipsisExpr *expr) {}
-void ReplaceASTVisitor::visit(PtrExpr *expr) { transform(expr->expr); }
 void ReplaceASTVisitor::visit(LambdaExpr *expr) { transform(expr->expr); }
 void ReplaceASTVisitor::visit(YieldExpr *expr) {}
 void ReplaceASTVisitor::visit(AssignExpr *expr) {

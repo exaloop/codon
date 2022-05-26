@@ -619,18 +619,6 @@ struct StmtExpr : public Expr {
   StmtExpr *getStmtExpr() override { return this; }
 };
 
-/// Pointer expression (__ptr__(expr)).
-/// @li __ptr__(a)
-struct PtrExpr : public Expr {
-  ExprPtr expr;
-
-  explicit PtrExpr(ExprPtr expr);
-  PtrExpr(const PtrExpr &expr);
-
-  std::string toString() const override;
-  ACCEPT(ASTVisitor);
-};
-
 /// Static tuple indexing expression (expr[index]).
 /// @li (1, 2, 3)[2]
 struct TupleIndexExpr : Expr {
@@ -654,18 +642,6 @@ struct InstantiateExpr : Expr {
   /// Convenience constructor for a single type parameter.
   InstantiateExpr(ExprPtr typeExpr, ExprPtr typeParam);
   InstantiateExpr(const InstantiateExpr &expr);
-
-  std::string toString() const override;
-  ACCEPT(ASTVisitor);
-};
-
-/// Stack allocation expression (__array__[type](expr)).
-/// @li __array__[int](5)
-struct StackAllocExpr : Expr {
-  ExprPtr typeExpr, expr;
-
-  StackAllocExpr(ExprPtr typeExpr, ExprPtr expr);
-  StackAllocExpr(const StackAllocExpr &expr);
 
   std::string toString() const override;
   ACCEPT(ASTVisitor);

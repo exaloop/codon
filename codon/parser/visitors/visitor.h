@@ -49,9 +49,7 @@ public:
   virtual void visit(YieldExpr *);
   virtual void visit(AssignExpr *);
   virtual void visit(RangeExpr *);
-  virtual void visit(PtrExpr *);
   virtual void visit(TupleIndexExpr *);
-  virtual void visit(StackAllocExpr *);
   virtual void visit(InstantiateExpr *);
   virtual void visit(StmtExpr *);
 
@@ -174,9 +172,7 @@ struct ReplaceASTVisitor : public ASTVisitor {
   void visit(YieldExpr *) override;
   void visit(AssignExpr *) override;
   void visit(RangeExpr *) override;
-  void visit(PtrExpr *) override;
   void visit(TupleIndexExpr *) override;
-  void visit(StackAllocExpr *) override;
   void visit(InstantiateExpr *) override;
   void visit(StmtExpr *) override;
 

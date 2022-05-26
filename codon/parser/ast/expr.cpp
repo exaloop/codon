@@ -406,13 +406,6 @@ std::string StmtExpr::toString() const {
 }
 ACCEPT_IMPL(StmtExpr, ASTVisitor);
 
-PtrExpr::PtrExpr(ExprPtr expr) : Expr(), expr(std::move(expr)) {}
-PtrExpr::PtrExpr(const PtrExpr &expr) : Expr(expr), expr(ast::clone(expr.expr)) {}
-std::string PtrExpr::toString() const {
-  return wrapType(format("ptr {}", expr->toString()));
-}
-ACCEPT_IMPL(PtrExpr, ASTVisitor);
-
 TupleIndexExpr::TupleIndexExpr(ExprPtr expr, int index)
     : Expr(), expr(std::move(expr)), index(index) {}
 TupleIndexExpr::TupleIndexExpr(const TupleIndexExpr &expr)
@@ -436,15 +429,6 @@ std::string InstantiateExpr::toString() const {
       format("instantiate {} {}", typeExpr->toString(), combine(typeParams)));
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
-
-StackAllocExpr::StackAllocExpr(ExprPtr typeExpr, ExprPtr expr)
-    : Expr(), typeExpr(std::move(typeExpr)), expr(std::move(expr)) {}
-StackAllocExpr::StackAllocExpr(const StackAllocExpr &expr)
-    : Expr(expr), typeExpr(ast::clone(expr.typeExpr)), expr(ast::clone(expr.expr)) {}
-std::string StackAllocExpr::toString() const {
-  return wrapType(format("stack-alloc {} {}", typeExpr->toString(), expr->toString()));
-}
-ACCEPT_IMPL(StackAllocExpr, ASTVisitor);
 
 } // namespace ast
 } // namespace codon

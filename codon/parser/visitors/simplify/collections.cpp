@@ -27,8 +27,7 @@ void SimplifyVisitor::visit(ListExpr *expr) {
   stmts.push_back(transform(N<AssignStmt>(
       clone(var),
       N<CallExpr>(N<IdExpr>("List"),
-                  !expr->items.empty() ? N<IntExpr>(expr->items.size()) : nullptr),
-      nullptr, true)));
+                  !expr->items.empty() ? N<IntExpr>(expr->items.size()) : nullptr))));
   for (const auto &it : expr->items) {
     if (auto star = it->getStar()) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
@@ -54,8 +53,7 @@ void SimplifyVisitor::visit(SetExpr *expr) {
   ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("set"));
-  stmts.push_back(transform(
-      N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")), nullptr, true)));
+  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")))));
   for (auto &it : expr->items)
     if (auto star = it->getStar()) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
@@ -80,8 +78,7 @@ void SimplifyVisitor::visit(DictExpr *expr) {
   ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("dict"));
-  stmts.push_back(transform(
-      N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")), nullptr, true)));
+  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")))));
   for (auto &it : expr->items)
     if (auto star = CAST(it.value, KeywordStarExpr)) {
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
@@ -118,8 +115,7 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
   if (expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
       loops[0].conds.empty()) {
     optimizeVar = ctx->cache->getTemporaryVar("iter");
-    stmts.push_back(
-        transform(N<AssignStmt>(N<IdExpr>(optimizeVar), loops[0].gen, nullptr, true)));
+    stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(optimizeVar), loops[0].gen)));
     loops[0].gen = N<IdExpr>(optimizeVar);
   }
 
@@ -130,15 +126,15 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     // Use special List.__init__(bool, T) constructor.
     if (!optimizeVar.empty())
       args = {N<BoolExpr>(true), N<IdExpr>(optimizeVar)};
-    stmts.push_back(transform(N<AssignStmt>(
-        clone(var), N<CallExpr>(N<IdExpr>("List"), args), nullptr, true)));
+    stmts.push_back(
+        transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"), args))));
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(expr->expr))));
     stmts.push_back(transform(suite));
     resultExpr = N<StmtExpr>(stmts, transform(var));
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
-    stmts.push_back(transform(
-        N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")), nullptr, true)));
+    stmts.push_back(
+        transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")))));
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(expr->expr))));
     stmts.push_back(transform(suite));
@@ -158,8 +154,7 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
 
   std::vector<StmtPtr> stmts;
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
-  stmts.push_back(transform(
-      N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")), nullptr, true)));
+  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")))));
   prev->stmts.push_back(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));

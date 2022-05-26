@@ -102,12 +102,8 @@ public:
   void visit(DotExpr *) override;
   /// See transformCall() below.
   void visit(CallExpr *) override;
-  /// Type-checks __array__[T](...) with Array[T].
-  void visit(StackAllocExpr *) override;
   /// Type-checks it with a new unbound type.
   void visit(EllipsisExpr *) override;
-  /// Type-checks __ptr__(expr) with Ptr[typeof(T)].
-  void visit(PtrExpr *) override;
   /// Unifies a function return type with a Generator[T] where T is a new unbound type.
   /// The expression itself will have type T.
   void visit(YieldExpr *) override;
@@ -323,6 +319,20 @@ private:
   std::string getRootName(const std::string &name);
 
   friend struct Cache;
+
+  struct PartialCallData {
+    bool isPartial;               // is call itself partial?
+    std::string var = "";         // variable if we are calling partialized fn
+    std::vector<char> known = {}; // bitvector of known arguments
+    ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
+  };
+
+  bool callTransformCallArgs(std::vector<CallExpr::Arg> &args,
+                             const types::TypePtr &inType = nullptr);
+  ExprPtr callTransformCallee(ExprPtr &callee, std::vector<CallExpr::Arg> &args,
+                              PartialCallData &part);
+  ExprPtr callReorderArguments(types::ClassTypePtr calleeFn, CallExpr *expr,
+                               int &ellipsisStage, PartialCallData &part);
 };
 
 } // namespace ast

@@ -8,6 +8,8 @@
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
+extern double totalPeg;
+
 namespace codon {
 namespace {
 ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool isTest) {
@@ -66,20 +68,21 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
   input = file;
   std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
-    Timer t1("parse");
     ast::StmtPtr codeStmt = isCode
                                 ? ast::parseCode(cache.get(), abspath, code, startLine)
                                 : ast::parseFile(cache.get(), abspath);
-    t1.log();
 
     cache->module0 = file;
     if (testFlags)
       cache->testFlags = testFlags;
 
     Timer t2("simplify");
+    t2.logged = true;
     auto transformed = ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt),
                                                    abspath, defines, (testFlags > 1));
-    t2.log();
+    LOG_TIME("[T] parse = {:.1f}",  totalPeg);
+    LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
+
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_simplify.sexp", "w");
       fmt::print(fo, "{}\n", transformed->toString(0));

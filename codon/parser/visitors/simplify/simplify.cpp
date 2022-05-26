@@ -39,69 +39,10 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->setFilename(stdlibPath->path);
     cache->imports[STDLIB_IMPORT] = {stdlibPath->path, stdlib};
 
-    // Add __internal__ class that will store functions needed by other internal
-    // classes. We will call them as __internal__.fn because directly calling fn will
-    // result in a unresolved dependency cycle.
-    {
-      auto name = "__internal__";
-      auto canonical = stdlib->generateCanonicalName(name);
-      stdlib->addType(name, canonical);
-      // Generate an AST for each POD type. All of them are tuples.
-      cache->classes[canonical].ast =
-          std::make_shared<ClassStmt>(canonical, std::vector<Param>(), nullptr);
-      preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
-    }
-    // Add simple POD types to the preamble (these types are defined in LLVM and we
-    // cannot properly define them in Seq)
-    for (auto &name : {"void", "bool", "byte", "int", "float", "NoneType"}) {
-      auto canonical = stdlib->generateCanonicalName(name);
-      stdlib->addType(name, canonical);
-      // Generate an AST for each POD type. All of them are tuples.
-      cache->classes[canonical].ast =
-          std::make_shared<ClassStmt>(canonical, std::vector<Param>(), nullptr,
-                                      Attr({Attr::Internal, Attr::Tuple}));
-      preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
-    }
-    // Add generic POD types to the preamble
-    for (auto &name :
-         std::vector<std::string>{"Ptr", "Generator", TYPE_OPTIONAL, "Int", "UInt"}) {
-      auto canonical = stdlib->generateCanonicalName(name);
-      stdlib->addType(name, canonical);
-      std::vector<Param> generics;
-      auto isInt = std::string(name) == "Int" || std::string(name) == "UInt";
-      if (isInt)
-        generics.emplace_back(
-            Param{stdlib->generateCanonicalName("N"),
-                  std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
-                                              std::make_shared<IdExpr>("int")),
-                  nullptr, true});
-      else
-        generics.emplace_back(Param{
-            stdlib->generateCanonicalName("T"), std::make_shared<IdExpr>("type"),
-            name == TYPE_OPTIONAL ? std::make_shared<IdExpr>("NoneType") : nullptr,
-            true});
-      cache->classes[canonical].ast = std::make_shared<ClassStmt>(
-          canonical, generics, nullptr, Attr({Attr::Internal, Attr::Tuple}));
-      preamble->globals.emplace_back(clone(cache->classes[canonical].ast));
-    }
-    // Reserve the following static identifiers.
-    for (auto name : {"staticlen", "compile_error", "isinstance", "hasattr", "type",
-                      "TypeVar", "Callable", "argv", "super", "superf"})
-      stdlib->generateCanonicalName(name);
-    stdlib->addFunc("super", "super");
-    stdlib->addFunc("superf", "superf");
-
     // This code must be placed in a preamble (these are not POD types but are
     // referenced by the various preamble Function.N and Tuple.N stubs)
     stdlib->isStdlibLoading = true;
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
-    auto baseTypeCode =
-        "@__internal__\nclass pyobj:\n  p: Ptr[byte]\n"
-        "@__internal__\n@tuple\nclass str:\n  ptr: Ptr[byte]\n  len: int\n";
-    auto p = SimplifyVisitor(stdlib, preamble)
-                 .transform(parseCode(stdlib->cache, stdlibPath->path, baseTypeCode));
-    for (auto &n : p->getSuite()->stmts)
-      preamble->globals.emplace_back(n);
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
     preamble->globals.push_back(

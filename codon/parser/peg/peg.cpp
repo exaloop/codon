@@ -14,6 +14,8 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/util/cpp-peglib/peglib.h"
 
+double totalPeg = 0.0;
+
 namespace codon {
 namespace ast {
 
@@ -52,6 +54,8 @@ std::shared_ptr<peg::Grammar> initParser() {
 template <typename T>
 T parseCode(Cache *cache, const std::string &file, std::string code, int line_offset,
             int col_offset, const std::string &rule) {
+  Timer t("");
+  t.logged = true;
   // Initialize
   if (!grammar)
     grammar = initParser();
@@ -67,6 +71,7 @@ T parseCode(Cache *cache, const std::string &file, std::string code, int line_of
   auto ret = r.ret && r.len == code.size();
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
+  totalPeg += t.elapsed();
   exc::ParserException ex;
   if (!errors.empty()) {
     for (auto &e : errors)
