@@ -19,11 +19,6 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     }
   }
 
-  if (in(std::set<std::string>{"type", "TypeVar", "Callable"}, expr->value)) {
-    resultExpr = N<IdExpr>(expr->value == "TypeVar" ? "type" : expr->value);
-    resultExpr->markType();
-    return;
-  }
   auto val = ctx->findDominatingBinding(expr->value);
   if (!val) {
     // ctx->dump();

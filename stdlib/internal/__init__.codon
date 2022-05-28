@@ -35,6 +35,11 @@ class NoneType:
 
 @tuple
 @__internal__
+class type:
+    pass
+
+@tuple
+@__internal__
 class Ptr[T]:
     pass
 
@@ -75,9 +80,10 @@ class Array:
     ptr: Ptr[T]
     T: type
 
-
-def type(obj):
-    pass
+@extend
+class type:
+    def __new__(obj):
+        pass
 
 
 # dummy
@@ -114,7 +120,7 @@ def compile_error(msg: Static[str]):
 def isinstance(obj, what):
     pass
 
-def hasattr(obj, attr: Static[str], *args: Static[str]):
+def hasattr(obj, attr: Static[str], *args):
     pass
 
 def getattr(obj, attr: Static[str]):

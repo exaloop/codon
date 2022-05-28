@@ -204,6 +204,7 @@ private:
   ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
   /// Deactivate any unbound that was activated during the instantiation of type t.
   void deactivateUnbounds(types::Type *t);
+  void deactivateUnbounds(const ExprPtr &);
   /// Transform a call expression callee(args...).
   /// Intercepts callees that are expr.dot, expr.dot[T1, T2] etc.
   /// Before any transformation, all arguments are expanded:
