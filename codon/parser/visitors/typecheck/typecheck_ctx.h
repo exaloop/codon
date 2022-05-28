@@ -59,7 +59,10 @@ struct TypeContext : public Context<TypecheckItem> {
   /// Map of active unbound types. Each type points to its name that is reported in case
   /// something goes wrong.
   /// If type checking is successful, all of them should be  resolved.
-  std::map<types::TypePtr, std::string> activeUnbounds;
+  // std::map<types::TypePtr, std::string> activeUnbounds;
+  std::set<types::TypePtr> pendingDefaults;
+  int changedNodes;
+
   /// If set, no type will be activated. Useful for temporary instantiations.
   bool allowActivation;
   /// The age of the currently parsed statement.

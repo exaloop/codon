@@ -46,6 +46,8 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVo
     unify(typ, expr->type);
     if (disableActivation)
       ctx->allowActivation = oldActivation;
+    if (expr->done)
+      ctx->changedNodes++;
   }
   if (auto rt = realize(typ))
     unify(typ, rt);
@@ -976,11 +978,11 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
 }
 
 void TypecheckVisitor::deactivateUnbounds(Type *t) {
-  auto ub = t->getUnbounds();
-  for (auto &u : ub)
-    ctx->activeUnbounds.erase(u);
-  if (auto f = t->getFunc())
-    deactivateUnbounds(f->args[0].get());
+  // auto ub = t->getUnbounds();
+  // for (auto &u : ub)
+  //   ctx->activeUnbounds.erase(u);
+  // if (auto f = t->getFunc())
+  //   deactivateUnbounds(f->args[0].get());
 }
 
 ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &inType,

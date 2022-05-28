@@ -39,6 +39,8 @@ StmtPtr TypecheckVisitor::transform(const StmtPtr &stmt_) {
     stmt = N<SuiteStmt>(*v.prependStmts);
     stmt->done = done;
   }
+  if (stmt->done)
+    ctx->changedNodes++;
   return stmt;
 }
 

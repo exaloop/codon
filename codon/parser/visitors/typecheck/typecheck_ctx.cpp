@@ -20,6 +20,7 @@ TypeContext::TypeContext(Cache *cache)
       returnEarly(false) {
   stack.push_front(std::vector<std::string>());
   bases.push_back({"", nullptr, nullptr});
+  changedNodes = 0;
 }
 
 std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
@@ -84,8 +85,8 @@ TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char static
   t->setSrcInfo(expr->getSrcInfo());
   LOG_TYPECHECK("[ub] new {}: {} ({})", t->debugString(true), expr->toString(),
                 setActive);
-  if (setActive && allowActivation)
-    activeUnbounds[t] = cache->getContent(expr->getSrcInfo());
+  // if (setActive && allowActivation)
+    // activeUnbounds[t] = cache->getContent(expr->getSrcInfo());
   return t;
 }
 
@@ -102,19 +103,21 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
   auto t = type->instantiate(getLevel(), &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
-      if (l->kind != types::LinkType::Unbound)
-        continue;
+      // if (l->kind != types::LinkType::Unbound)
+      //   continue;
       if (expr)
         i.second->setSrcInfo(expr->getSrcInfo());
-      if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
-        LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
-                      i.second->debugString(true), type->debugString(true),
-                      expr ? expr->toString() : "", activate);
-        if (activate && allowActivation)
-          activeUnbounds[i.second] = format(
-              "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
-              type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
-      }
+      if (l->defaultType)
+        pendingDefaults.insert(i.second);
+      // if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
+      //   LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
+      //                 i.second->debugString(true), type->debugString(true),
+      //                 expr ? expr->toString() : "", activate);
+      //   if (activate && allowActivation)
+      //     activeUnbounds[i.second] = format(
+      //         "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
+      //         type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
+      // }
     }
   }
   LOG_TYPECHECK("[inst] {} -> {}", expr ? expr->toString() : "", t->debugString(true));
