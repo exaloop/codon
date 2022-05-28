@@ -89,11 +89,14 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     // Case 2: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
     // Just copy all symbols from import's context here.
-    for (auto &i : *(import.ctx))
-      if (!startswith(i.first, "_") && i.second.front()->scope.size() == 1) {
-        ctx->add(i.first, i.second.front());
-        // ctx->add(i.second.front()->canonicalName, i.second.front());
-      }
+    for (auto &i : *(import.ctx)) {
+      if (i.second.front()->scope.size() == 1)
+        if (!startswith(i.first, "_")) {
+          ctx->add(i.first, i.second.front());
+        } else if (ctx->isStdlibLoading && startswith(i.first, "__")) {
+          ctx->add(i.first, i.second.front());
+        }
+    }
   } else {
     // Case 3: from foo import bar
     auto i = stmt->what->getId();
@@ -221,12 +224,11 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
   ictx->moduleName = file;
   auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
   // __name__ = <import name> (set the Python's __name__ variable)
-  auto sn =
-      SimplifyVisitor(ictx, preamble)
-          .transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>("__name__"),
-                                                N<StringExpr>(ictx->moduleName.module),
-                                                N<IdExpr>("str")),
-                                  parseFile(ctx->cache, file.path)));
+  auto n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
+  if (ictx->moduleName.module == "internal.core")
+    n = nullptr;
+  auto sn = SimplifyVisitor(ictx, preamble)
+                .transform(N<SuiteStmt>(n, parseFile(ctx->cache, file.path)));
 
   // If we are loading standard library, we won't wrap imports in functions as we
   // assume that standard library has no recursive imports. We will just append the

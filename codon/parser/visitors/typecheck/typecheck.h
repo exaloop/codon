@@ -202,9 +202,6 @@ private:
   ///   (TODO: improve this).
   /// Return nullptr if no transformation was made.
   ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
-  /// Deactivate any unbound that was activated during the instantiation of type t.
-  void deactivateUnbounds(types::Type *t);
-  void deactivateUnbounds(const ExprPtr &);
   /// Transform a call expression callee(args...).
   /// Intercepts callees that are expr.dot, expr.dot[T1, T2] etc.
   /// Before any transformation, all arguments are expanded:
@@ -332,8 +329,9 @@ private:
                              const types::TypePtr &inType = nullptr);
   ExprPtr callTransformCallee(ExprPtr &callee, std::vector<CallExpr::Arg> &args,
                               PartialCallData &part);
-  ExprPtr callReorderArguments(types::ClassTypePtr calleeFn, CallExpr *expr,
-                               int &ellipsisStage, PartialCallData &part);
+  ExprPtr callReorderArguments(types::ClassTypePtr callee, types::FuncTypePtr calleeFn,
+                               CallExpr *expr, int &ellipsisStage,
+                               PartialCallData &part);
 };
 
 } // namespace ast

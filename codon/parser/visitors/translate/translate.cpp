@@ -185,13 +185,15 @@ void TranslateVisitor::visit(CallExpr *expr) {
     result = make<ir::PointerValue>(expr, val->getVar());
     return;
   } else if (expr->expr->isId("__array__.__new__:0")) {
-    seqassert(false, "not yet implemented!");
-    // auto type = expr->type->getFunc()->getParent();
-    // auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(type));
-    // arrayType->setAstType(expr->getType());
-    // // TODO
-    // result = make<ir::StackAllocInstr>(expr, arrayType,
-    // expr->expr->getInt()->intValue);
+    auto fnt = expr->expr->type->getFunc();
+    auto szt = fnt->funcGenerics[0].type->getStatic();
+    auto sz = szt->evaluate().getInt();
+    auto typ = fnt->funcParent->getClass()->generics[0].type;
+
+    auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
+    arrayType->setAstType(expr->getType());
+    result = make<ir::StackAllocInstr>(expr, arrayType, sz);
+    return;
   }
 
   auto ft = expr->expr->type->getFunc();

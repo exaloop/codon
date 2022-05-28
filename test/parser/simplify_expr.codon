@@ -292,14 +292,11 @@ p = __ptr__(v)
 print p[0] #: 5
 
 #%% call_ptr_error,barebones
-__ptr__(1) #! __ptr__ only accepts a single argument (variable identifier)
-
-#%% call_ptr_error_2,barebones
-__ptr__(v) #! __ptr__ only accepts a single argument (variable identifier)
+__ptr__(1) #! __ptr__ only accepts a variable identifier
 
 #%% call_ptr_error_3,barebones
 v = 1
-__ptr__(v, 1) #! __ptr__ only accepts a single argument (variable identifier)
+__ptr__(v, 1) #! too many arguments for __ptr__
 
 #%% call_array,barebones
 a = __array__[int](2)
@@ -307,7 +304,7 @@ a[0] = a[1] = 5
 print a[0], a[1] #: 5 5
 
 #%% call_array_error,barebones
-a = __array__[int](2, 3) #! __array__ only accepts a single argument (size)
+a = __array__[int](2, 3) #! cannot find a method '__new__' in __array__
 
 #%% call_err_1,barebones
 seq_print(1, name="56", 2) #! unnamed argument after a named argument

@@ -47,23 +47,7 @@ ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
   if (!callee->getId())
     return nullptr;
   auto val = callee->getId()->value;
-  if (val == "__array__") {
-    LOG("-> {}", callee->toString());
-    for (auto &a : args)
-      LOG("  -> {}", a.value->toString());
-    seqassert(false, "not implemented");
-    // expr->typeExpr = transformType(expr->typeExpr);
-    // expr->expr = transform(expr->expr);
-    // auto t =
-    //     ctx->instantiateGeneric(expr, ctx->findInternal("Array"),
-    //     {expr->typeExpr->type});
-    // unify(expr->type, t);
-    // // Realize the Array[T] type of possible.
-    // if (auto rt = realize(expr->type)) {
-    //   unify(expr->type, rt);
-    //   expr->done = expr->expr->done;
-    // }
-  } else if (val == "tuple") { // tuple(i for i in j)
+  if (val == "tuple") { // tuple(i for i in j)
     GeneratorExpr *g = nullptr;
     if (args.size() != 1 || !(g = CAST(args[0].value, GeneratorExpr)) ||
         g->kind != GeneratorExpr::Generator || g->loops.size() != 1 ||
@@ -119,10 +103,10 @@ ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
   } else if (val == "std.functools.partial") { // partial
     if (args.empty())
       error("invalid partial arguments");
-    std::vector<CallExpr::Arg> args = clone_nop(args);
-    args.erase(args.begin());
-    args.push_back({"", N<EllipsisExpr>()});
-    return transform(N<CallExpr>(clone(args[0].value), args));
+    std::vector<CallExpr::Arg> nargs = clone_nop(args);
+    nargs.erase(nargs.begin());
+    nargs.push_back({"", N<EllipsisExpr>()});
+    return transform(N<CallExpr>(clone(args[0].value), nargs));
   }
   return nullptr;
 }

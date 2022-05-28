@@ -39,6 +39,8 @@ StmtPtr TypecheckVisitor::transform(const StmtPtr &stmt_) {
     stmt = N<SuiteStmt>(*v.prependStmts);
     stmt->done = done;
   }
+  if (stmt->done)
+    ctx->changedNodes++;
   return stmt;
 }
 
@@ -116,9 +118,6 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
       // LOG("{} => {} & {} ^ {}", stmt->lhs->toString(), type->debugString(1),
       //     val->type->debugString(1), kind);
-      deactivateUnbounds(type.get());
-      if (stmt->type) // cases such as A: Callable = B where type is unbound by nature
-        deactivateUnbounds(stmt->type->type.get());
       if (stmt->lhs->type)
         unify(stmt->lhs->type, ctx->find(lhs)->type);
       stmt->rhs->type = nullptr;

@@ -325,7 +325,10 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
   for (int prevSize = std::numeric_limits<int>::max();;) {
     LOG_TYPECHECK("== iter {} ==========================================", iteration);
     ctx->typecheckLevel++;
+    auto old = ctx->changedNodes;
+    ctx->changedNodes = 0;
     result = TypecheckVisitor(ctx).transform(result);
+    std::swap(ctx->changedNodes, old);
     iteration++;
     ctx->typecheckLevel--;
 
@@ -343,72 +346,57 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
         }
       }
 
-    int newUnbounds = 0;
-    std::map<types::TypePtr, std::string> newActiveUnbounds;
-    for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
-      auto l = i->first->getLink();
-      seqassert(l, "link is null");
-      if (l->kind == LinkType::Unbound) {
-        newActiveUnbounds[i->first] = i->second;
-        if (l->id >= minUnbound)
-          newUnbounds++;
-      }
-      ++i;
-    }
-    ctx->activeUnbounds = newActiveUnbounds;
+    // int newUnbounds = 0;
+    // std::map<types::TypePtr, std::string> newActiveUnbounds;
+    // for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
+    //   auto l = i->first->getLink();
+    //   seqassert(l, "link is null");
+    //   if (l->kind == LinkType::Unbound) {
+    //     newActiveUnbounds[i->first] = i->second;
+    //     if (l->id >= minUnbound)
+    //       newUnbounds++;
+    //   }
+    //   ++i;
+    // }
+    // ctx->activeUnbounds = newActiveUnbounds;
     if (result->done) {
-      auto goodState = ctx->activeUnbounds.empty() || !newUnbounds;
-      if (!goodState) {
-        LOG_TYPECHECK("inconsistent stmt->done with unbound count in {} ({} / {})",
-                      name, ctx->activeUnbounds.size(), newUnbounds);
-        for (auto &c : ctx->activeUnbounds)
-          LOG("{}:{} {}", c.first->debugString(true), c.second, c.first->getSrcInfo());
-        LOG_TYPECHECK("{}\n", result->toString(0));
-        if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-          auto fo = fopen("_dump_typecheck_error.sexp", "w");
-          fmt::print(fo, "{}\n", result->toString(0));
-          fclose(fo);
-        }
-        error("cannot typecheck the program (compiler bug)");
-      }
       break;
+    } else if (old) {
+      continue;
     } else {
-      if (newUnbounds >= prevSize) {
-        bool fixed = false;
-        for (auto &ub : ctx->activeUnbounds) {
-          if (auto u = ub.first->getLink()) {
-            if (u->id >= minUnbound && u->defaultType) {
-              fixed = true;
-              LOG_TYPECHECK("applying default generic: {} := {}", u->id,
-                            u->defaultType->toString());
-              unify(u->defaultType, u);
-            }
+      bool fixed = false;
+      for (auto &ub : ctx->pendingDefaults) {
+        if (auto u = ub->getLink()) {
+          types::Type::Unification undo;
+          undo.realizator = this;
+          if (u->unify(u->defaultType.get(), &undo) >= 0) {
+            fixed = true;
           }
-        }
-        if (!fixed) {
-          std::map<int, std::pair<codon::SrcInfo, std::string>> v;
-          for (auto &ub : ctx->activeUnbounds)
-            if (ub.first->getLink()->id >= minUnbound) {
-              v[ub.first->getLink()->id] = {ub.first->getSrcInfo(), ub.second};
-              LOG_TYPECHECK("dangling ?{} ({})", ub.first->getLink()->id, minUnbound);
-            }
-          for (auto &ub : v) {
-            codon::compilationError(
-                format("cannot infer the type of {}", ub.second.second),
-                ub.second.first.file, ub.second.first.line, ub.second.first.col,
-                /*terminate=*/false);
-            LOG_TYPECHECK("cannot infer {} / {}", ub.first, ub.second.second);
-          }
-          LOG_TYPECHECK("-- {}", result->toString(0));
-          if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-            auto fo = fopen("_dump_typecheck_error.sexp", "w");
-            fmt::print(fo, "{}\n", result->toString(0));
-            fclose(fo);
-          }
-          error("cannot typecheck the program");
         }
       }
-      prevSize = newUnbounds;
+      ctx->pendingDefaults.clear();
+      if (fixed)
+        continue;
+      // std::map<int, std::pair<codon::SrcInfo, std::string>> v;
+      // for (auto &ub : ctx->activeUnbounds)
+      //   if (ub.first->getLink()->id >= minUnbound) {
+      //     v[ub.first->getLink()->id] = {ub.first->getSrcInfo(), ub.second};
+      //     LOG_TYPECHECK("dangling ?{} ({})", ub.first->getLink()->id, minUnbound);
+      //   }
+      // for (auto &ub : v) {
+      //   codon::compilationError(
+      //       format("cannot infer the type of {}", ub.second.second),
+      //       ub.second.first.file, ub.second.first.line, ub.second.first.col,
+      //       /*terminate=*/false);
+      //   LOG_TYPECHECK("cannot infer {} / {}", ub.first, ub.second.second);
+      // }
+      // LOG_TYPECHECK("-- {}", result->toString(0));
+      // if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+      //   auto fo = fopen("_dump_typecheck_error.sexp", "w");
+      //   fmt::print(fo, "{}\n", result->toString(0));
+      //   fclose(fo);
+      // }
+      error("cannot typecheck the program");
     }
   }
   if (!keepLast)

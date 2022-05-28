@@ -696,7 +696,7 @@ def foo(x):
     class A:
         def bar():
             print T()
-#! identifier 'T' not found (cannot access outer function identifiers)
+#! cannot access nonlocal variable 'T'
 
 #%% recursive_class,barebones
 class Node[T]:

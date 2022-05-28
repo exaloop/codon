@@ -185,7 +185,7 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
     std::string base = getBase();
     if (base.empty())
       base = getModule();
-    if (base == "std.__init__")
+    if (base == "std.internal.core")
       base = "";
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
