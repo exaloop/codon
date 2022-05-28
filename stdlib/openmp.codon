@@ -75,6 +75,16 @@ class TaskWithPrivates:
     T: type
 
 
+@tuple
+class TaskReductionInput:
+    reduce_shar: cobj
+    reduce_orig: cobj
+    reduce_size: int
+    reduce_init: cobj
+    reduce_fini: cobj
+    reduce_comb: cobj
+    flags: u32
+
 _DEFAULT_IDENT = Ident()
 _STATIC_LOOP_IDENT = Ident(_KMP_IDENT_WORK_LOOP)
 _REDUCTION_IDENT = Ident(_KMP_IDENT_ATOMIC_REDUCE)
@@ -316,6 +326,23 @@ def _end_reduce_nowait(loc_ref: Ptr[Ident], gtid: int, lck: cobj):
     __kmpc_end_reduce_nowait(loc_ref, i32(gtid), lck)
 
 
+def _taskred_init(loc_ref: Ptr[Ident], gtid: int, num: int, data):
+    from C import __kmpc_taskred_modifier_init(Ptr[Ident], i32, i32, i32, cobj) -> cobj
+    return __kmpc_taskred_modifier_init(loc_ref, i32(gtid), i32(0), i32(num), data.as_byte())
+
+
+def _taskred_fini(loc_ref: Ptr[Ident], gtid: int):
+    from C import __kmpc_task_reduction_modifier_fini(Ptr[Ident], i32, i32)
+    __kmpc_task_reduction_modifier_fini(loc_ref, i32(gtid), i32(0))
+
+
+# add tskgrp arg?
+def _taskred_data(gtid: int, data):
+    from C import __kmpc_task_reduction_get_th_data(i32, cobj, cobj) -> cobj
+    T = type(data)
+    return T(__kmpc_task_reduction_get_th_data(i32(gtid), cobj(), data.as_byte()))
+
+
 def _fork_call(microtask: cobj, args):
     from C import __kmpc_fork_call(Ptr[Ident], i32, cobj, ...)
     loc_ref = _default_loc()  # TODO: pass real loc?
@@ -530,21 +557,37 @@ def _spawn_and_run_task(
 def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
     def _routine_stub(gtid: i32, data: cobj, P: type, S: type):
         @nonpure
-        def _task_loop_body_stub(priv, shared):
+        def _task_loop_body_stub(gtid: int, priv, shared):
             pass
 
         task = Ptr[TaskWithPrivates[P]](data)[0]
         priv = task.data
+        gtid64 = int(gtid)
         if staticlen(S()) != 0:
             shared = Ptr[S](task.task.shareds)[0]
-            _task_loop_body_stub(priv, shared)
+            _task_loop_body_stub(gtid64, priv, shared)
         else:
             shared = ()
-            _task_loop_body_stub(priv, shared)
+            _task_loop_body_stub(gtid64, priv, shared)
         return i32(0)
 
-    def _insert_new_loop_var(i, priv, shared):
+    @nonpure
+    def _loop_loc_and_gtid(
+        loc_ref: Ptr[Ident], reduction_loc_ref: Ptr[Ident], gtid: int
+    ):
+        pass
+
+    @nonpure
+    def _fix_privates_and_shareds(i, priv, shared):
         return priv, shared
+
+    @nonpure
+    def _taskred_init(args):
+        pass
+
+    @nonpure
+    def _loop_reductions(args):
+        pass
 
     iterable, priv, shared = args[0]
     P = type(priv)
@@ -552,12 +595,16 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
 
     gtid = int(gtid_ptr[0])
     loc_ref = _default_loc()
+    reduction_loc_ref = _reduction_loc()
+    _loop_loc_and_gtid(loc_ref, reduction_loc_ref, gtid)
+
+    _taskred_init(shared)
 
     if _single_begin(loc_ref, gtid) != 0:
         _taskgroup_begin(loc_ref, gtid)
         try:
             for i in iterable:
-                priv, shared = _insert_new_loop_var(i, priv, shared)
+                priv, shared = _fix_privates_and_shareds(i, priv, shared)
                 _spawn_and_run_task(
                     loc_ref, gtid, _routine_stub(P=P, S=S, ...).__raw__(), priv, shared
                 )
@@ -565,6 +612,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
             _taskgroup_end(loc_ref, gtid)
             _single_end(loc_ref, gtid)
 
+    _loop_reductions(shared)
 
 @pure
 def get_num_threads():
