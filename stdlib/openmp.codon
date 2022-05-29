@@ -619,9 +619,9 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
         _taskgroup_begin(loc_ref, gtid)
         try:
             for i in iterable:
-                priv, shared = _fix_privates_and_shareds(i, priv, shared)
+                priv_fixed, shared_fixed = _fix_privates_and_shareds(i, priv, shared)
                 _spawn_and_run_task(
-                    loc_ref, gtid, _routine_stub(P=P, S=S, ...).__raw__(), priv, shared
+                    loc_ref, gtid, _routine_stub(P=P, S=S, ...).__raw__(), priv_fixed, shared_fixed
                 )
         finally:
             _taskgroup_end(loc_ref, gtid)
