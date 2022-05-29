@@ -701,29 +701,47 @@ struct ImperativeLoopTemplateReplacer : public util::Operator {
 
 struct TaskLoopReductionVarReplacer : public util::Operator {
   std::vector<Var *> reductionArgs;
-  std::vector<std::pair<id_t, Var *>> reductionRemap;
+  std::vector<std::pair<Var *, Var *>> reductionRemap;
   BodiedFunc *parent;
+
+  void setupReductionRemap() {
+    auto *M = parent->getModule();
+
+    for (auto *var : reductionArgs) {
+      auto *newVar = M->Nr<Var>(var->getType(), /*global=*/false);
+      reductionRemap.emplace_back(var, newVar);
+    }
+  }
 
   TaskLoopReductionVarReplacer(std::vector<Var *> reductionArgs, BodiedFunc *parent)
       : util::Operator(), reductionArgs(std::move(reductionArgs)), reductionRemap(),
         parent(parent) {
-    auto *M = parent->getModule();
-    auto *gtid = parent->arg_back();
-
-    for (auto *var : reductionArgs) {
-      auto *taskRedData =
-          M->getOrRealizeFunc("_taskred_data", {M->getIntType(), var->getType()});
-      seqassert(taskRedData, "could not find '_taskred_data'");
-      auto *newVar = util::makeVar(
-          util::call(taskRedData, {M->Nr<VarValue>(gtid), M->Nr<VarValue>(var)}),
-          cast<SeriesFlow>(parent->getBody()), parent, /*prepend=*/true);
-      reductionRemap.emplace_back(var->getId(), util::getVar(newVar));
-    }
+    setupReductionRemap();
   }
 
   void preHook(Node *v) override {
     for (auto &p : reductionRemap) {
-      v->replaceUsedVariable(p.first, p.second);
+      v->replaceUsedVariable(p.first->getId(), p.second);
+    }
+  }
+
+  // need to do this as a separate step since otherwise the old variable
+  // in the assignment will be replaced, which we don't want
+  void finalize() {
+    auto *M = parent->getModule();
+    auto *body = cast<SeriesFlow>(parent->getBody());
+    auto *gtid = parent->arg_back();
+
+    for (auto &p : reductionRemap) {
+      auto *taskRedData = M->getOrRealizeFunc(
+          "_taskred_data", {M->getIntType(), p.first->getType()}, {}, ompModule);
+      seqassert(taskRedData, "could not find '_taskred_data'");
+
+      auto *assign = M->Nr<AssignInstr>(
+          p.second,
+          util::call(taskRedData, {M->Nr<VarValue>(gtid), M->Nr<VarValue>(p.first)}));
+      body->insert(body->begin(), assign);
+      parent->push_back(p.second);
     }
   }
 };
@@ -761,7 +779,9 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
           newArgs.push_back(util::tupleGet(sharedsTuple, sharedsNext++));
           isArgShared.push_back(true);
         } else {
-          seqassert(false, "unknown outline var");
+          // make sure we're on the last arg, which should be gtid
+          // in case of reductions
+          seqassert(hasReductions && arg == replacement->back(), "unknown outline var");
         }
       }
 
@@ -779,6 +799,7 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
         }
         TaskLoopReductionVarReplacer redrep(reductionArgs, outlinedFunc);
         outlinedFunc->accept(redrep);
+        redrep.finalize();
       }
 
       v->replaceAll(util::call(outlinedFunc, newArgs));
@@ -794,7 +815,6 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
   CallInstr *replacement;
   Var *loopVar;
   ReductionIdentifier *reds;
-  std::vector<Reduction> sharedRedux;
   std::vector<SharedInfo> sharedInfo;
   ReductionLocks locks;
   Var *locRef;
@@ -804,15 +824,31 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
   Var *array;  // task reduction input array
   Var *tskgrp; // task group identifier
 
+  void setupSharedInfo(std::vector<Reduction> &sharedRedux) {
+    unsigned sharedsNext = 0;
+    for (auto *val : shareds) {
+      if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
+        if (auto &reduction = sharedRedux[sharedsNext]) {
+          Var *newVar = util::getVar(util::makeVar(
+              reduction.getInitial(), cast<SeriesFlow>(parent->getBody()), parent,
+              /*prepend=*/true));
+          sharedInfo.push_back({sharedsNext, newVar, reduction});
+        }
+      }
+      ++sharedsNext;
+    }
+  }
+
   TaskLoopRoutineStubReplacer(BodiedFunc *parent, std::vector<Value *> privates,
                               std::vector<Value *> shareds, CallInstr *replacement,
                               Var *loopVar, ReductionIdentifier *reds,
                               std::vector<Reduction> sharedRedux)
       : util::Operator(), parent(parent), privates(std::move(privates)),
         shareds(std::move(shareds)), replacement(replacement), loopVar(loopVar),
-        reds(reds), sharedRedux(std::move(sharedRedux)), sharedInfo(), locks(),
-        locRef(nullptr), reductionLocRef(nullptr), gtid(nullptr), array(nullptr),
-        tskgrp(nullptr) {}
+        reds(reds), sharedInfo(), locks(), locRef(nullptr), reductionLocRef(nullptr),
+        gtid(nullptr), array(nullptr), tskgrp(nullptr) {
+    setupSharedInfo(sharedRedux);
+  }
 
   unsigned numReductions() {
     unsigned num = 0;
@@ -871,14 +907,11 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
     auto *size = M->Nr<TypePropertyInstr>(reduction->getType(),
                                           TypePropertyInstr::Property::SIZEOF);
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
-    auto *fini = (*M->getPointerType(M->getByteType()))();
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
-    auto *flags = M->getIntNType(32, /*sign=*/false)->construct({M->getInt(0)});
 
     auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
     seqassert(taskRedInputType, "could not find 'TaskReductionInput' type");
-    auto *result =
-        taskRedInputType->construct({shar, orig, size, init, fini, comb, flags});
+    auto *result = taskRedInputType->construct({shar, orig, size, init, comb});
     seqassert(result, "bad construction of 'TaskReductionInput' type");
     return result;
   }
@@ -940,64 +973,7 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
       gtid = util::getVar(args[2]);
     }
 
-    if (name == "_fix_privates_and_shareds") {
-      std::vector<Value *> args(v->begin(), v->end());
-      seqassert(args.size() == 3, "invalid _fix_privates_and_shareds call found");
-      unsigned numRed = numReductions();
-      auto *newLoopVar = args[0];
-      auto *privatesTuple = args[1];
-      auto *sharedsTuple = args[2];
-
-      unsigned privatesNext = 0;
-      unsigned sharedsNext = 0;
-
-      bool needNewPrivates = false;
-      bool needNewShareds = false;
-
-      std::vector<Value *> newPrivates;
-      std::vector<Value *> newShareds;
-
-      for (auto *val : privates) {
-        if (numRed > 0 && val == privates.back()) { // i.e. task group identifier
-          seqassert(tskgrp, "tskgrp var not set");
-          newPrivates.push_back(M->Nr<VarValue>(tskgrp));
-          needNewPrivates = true;
-        } else if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
-          newPrivates.push_back(util::tupleGet(privatesTuple, privatesNext));
-        } else {
-          newPrivates.push_back(newLoopVar);
-          needNewPrivates = true;
-        }
-        ++privatesNext;
-      }
-
-      for (auto *val : shareds) {
-        if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
-          if (auto &reduction = sharedRedux[sharedsNext]) {
-            Var *newVar = util::getVar(util::makeVar(
-                reduction.getInitial(), cast<SeriesFlow>(parent->getBody()), parent,
-                /*prepend=*/true));
-            sharedInfo.push_back({sharedsNext, newVar, reduction});
-            newShareds.push_back(M->Nr<PointerValue>(newVar));
-            needNewShareds = true;
-          } else {
-            newShareds.push_back(util::tupleGet(sharedsTuple, sharedsNext));
-          }
-        } else {
-          newShareds.push_back(M->Nr<PointerValue>(util::getVar(newLoopVar)));
-          needNewShareds = true;
-        }
-        ++sharedsNext;
-      }
-
-      privatesTuple = needNewPrivates ? util::makeTuple(newPrivates, M) : privatesTuple;
-      sharedsTuple = needNewShareds ? util::makeTuple(newShareds, M) : sharedsTuple;
-
-      Value *result = util::makeTuple({privatesTuple, sharedsTuple}, M);
-      v->replaceAll(result);
-    }
-
-    if (name == "_taskred_init") {
+    if (name == "_taskred_setup") {
       seqassert(reductionLocRef && gtid, "bad visit order in template");
       seqassert(v->numArgs() == 1 && isA<VarValue>(v->front()),
                 "unexpected shared updates stub");
@@ -1012,7 +988,8 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
       auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
       seqassert(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->unsafeGetArrayType(taskRedInputType);
+      auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray", {}, ompModule);
+      seqassert(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
       array = util::getVar(taskRedInputsArray);
@@ -1022,7 +999,7 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
           taskRedInputsArrayType, Module::SETITEM_MAGIC_NAME,
           {taskRedInputsArrayType, M->getIntType(), taskRedInputType});
       seqassert(taskRedSetItem,
-                "could not find 'TaskReductionInput.__setitem__' method");
+                "could not find 'TaskReductionInputArray.__setitem__' method");
       int i = 0;
       for (auto &info : sharedInfo) {
         if (info.reduction) {
@@ -1046,7 +1023,64 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
                                                      M->Nr<VarValue>(gtid),
                                                      M->getInt(numRed), arrayPtr}),
                         taskRedInitSeries, parent);
+      tskgrp = util::getVar(taskRedInitResult);
       v->replaceAll(taskRedInitSeries);
+    }
+
+    if (name == "_fix_privates_and_shareds") {
+      std::vector<Value *> args(v->begin(), v->end());
+      seqassert(args.size() == 3, "invalid _fix_privates_and_shareds call found");
+      unsigned numRed = numReductions();
+      auto *newLoopVar = args[0];
+      auto *privatesTuple = args[1];
+      auto *sharedsTuple = args[2];
+
+      unsigned privatesNext = 0;
+      unsigned sharedsNext = 0;
+      unsigned infoNext = 0;
+
+      bool needNewPrivates = false;
+      bool needNewShareds = false;
+
+      std::vector<Value *> newPrivates;
+      std::vector<Value *> newShareds;
+
+      for (auto *val : privates) {
+        if (numRed > 0 && val == privates.back()) { // i.e. task group identifier
+          seqassert(tskgrp, "tskgrp var not set");
+          newPrivates.push_back(M->Nr<VarValue>(tskgrp));
+          needNewPrivates = true;
+        } else if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
+          newPrivates.push_back(util::tupleGet(privatesTuple, privatesNext));
+        } else {
+          newPrivates.push_back(newLoopVar);
+          needNewPrivates = true;
+        }
+        ++privatesNext;
+      }
+
+      for (auto *val : shareds) {
+        if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
+          auto &info = sharedInfo[infoNext];
+          if (info.memb == sharedsNext && info.reduction) {
+            newShareds.push_back(M->Nr<PointerValue>(info.local));
+            needNewShareds = true;
+            ++infoNext;
+          } else {
+            newShareds.push_back(util::tupleGet(sharedsTuple, sharedsNext));
+          }
+        } else {
+          newShareds.push_back(M->Nr<PointerValue>(util::getVar(newLoopVar)));
+          needNewShareds = true;
+        }
+        ++sharedsNext;
+      }
+
+      privatesTuple = needNewPrivates ? util::makeTuple(newPrivates, M) : privatesTuple;
+      sharedsTuple = needNewShareds ? util::makeTuple(newShareds, M) : sharedsTuple;
+
+      Value *result = util::makeTuple({privatesTuple, sharedsTuple}, M);
+      v->replaceAll(result);
     }
 
     if (name == "_loop_reductions") {

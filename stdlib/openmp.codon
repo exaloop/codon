@@ -85,6 +85,21 @@ class TaskReductionInput:
     reduce_comb: cobj
     flags: u32
 
+    def __new__(reduce_shar, reduce_orig, reduce_size: int,
+                reduce_init: cobj, reduce_comb: cobj):
+        return TaskReductionInput(reduce_shar.as_byte(), reduce_orig.as_byte(), reduce_size,
+                                  reduce_init, cobj(), reduce_comb, u32(0))
+
+
+@tuple
+class TaskReductionInputArray:
+    len: int
+    ptr: Ptr[TaskReductionInput]
+
+    def __setitem__(self, idx: int, x: TaskReductionInput):
+        self.ptr[idx] = x
+
+
 _DEFAULT_IDENT = Ident()
 _STATIC_LOOP_IDENT = Ident(_KMP_IDENT_WORK_LOOP)
 _REDUCTION_IDENT = Ident(_KMP_IDENT_ATOMIC_REDUCE)
@@ -582,7 +597,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
         return priv, shared
 
     @nonpure
-    def _taskred_init(args):
+    def _taskred_setup(args):
         pass
 
     @nonpure
@@ -598,7 +613,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
     reduction_loc_ref = _reduction_loc()
     _loop_loc_and_gtid(loc_ref, reduction_loc_ref, gtid)
 
-    _taskred_init(shared)
+    _taskred_setup(shared)
 
     if _single_begin(loc_ref, gtid) != 0:
         _taskgroup_begin(loc_ref, gtid)
