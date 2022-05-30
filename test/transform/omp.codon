@@ -572,6 +572,7 @@ def test_omp_non_imperative_reductions():
     e = foo(1)
     f = foo(-1)
     g = -1
+    h = Vector(1.5, 1.25)
     @par
     for i in squares(N):
         x = foo(i) + d
@@ -582,11 +583,14 @@ def test_omp_non_imperative_reductions():
         test_generator_based_loops_global += y - d
         f = foo(-1)
         g = max(i, g)
+        h += Vector(i, i)
     assert a == 333833507
     assert b == 332752
     assert c == 333833500.5
     assert test_generator_based_loops_global == 333833500.7
     assert g == (N - 1) ** 2
+    assert h.x == 333833501.5
+    assert h.y == 333833501.25
 
 @test
 def test_omp_transform(a, b, c):
