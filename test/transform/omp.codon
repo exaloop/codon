@@ -619,6 +619,70 @@ def test_omp_transform(a, b, c):
     assert abs(b - b0) < b/1e6
     assert c == v[-1] ** 2
 
+@test
+def test_omp_corner_cases():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    @nonpure
+    def foo(x):
+        return x
+
+    v = list(range(10))
+
+    @par
+    for i in range(10):
+        pass
+
+    @par
+    for i in v:
+        pass
+
+    @par(num_threads=2)
+    for i in range(10):
+        pass
+
+    @par(schedule='dynamic')
+    for i in range(10):
+        pass
+
+    @par(num_threads=2, schedule='dynamic')
+    for i in range(10):
+        pass
+
+    @par
+    for i in squares(10):
+        pass
+
+    @par(num_threads=2)
+    for i in squares(10):
+        pass
+
+    @par
+    for i in range(10):
+        foo(i)
+
+    @par
+    for i in squares(10):
+        foo(i)
+
+    @par
+    for i in range(10):
+        a = foo(i)
+
+    @par
+    for i in squares(10):
+        a = foo(i)
+
+    @par
+    for i in range(10):
+        i += i
+
+    @par
+    for i in squares(10):
+        i += i
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
@@ -628,3 +692,4 @@ test_omp_non_imperative()
 test_omp_non_imperative_reductions()
 test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)
+test_omp_corner_cases()

@@ -315,12 +315,16 @@ struct ReductionFunction {
 
 struct ReductionIdentifier : public util::Operator {
   std::vector<Var *> shareds;
+  Var *loopVarArg;
   std::unordered_map<id_t, Reduction> reductions;
 
-  explicit ReductionIdentifier(std::vector<Var *> shareds)
-      : util::Operator(), shareds(std::move(shareds)), reductions() {}
+  ReductionIdentifier(std::vector<Var *> shareds, Var *loopVarArg)
+      : util::Operator(), shareds(std::move(shareds)), loopVarArg(loopVarArg),
+        reductions() {}
 
   bool isShared(Var *shared) {
+    if (loopVarArg && shared->getId() == loopVarArg->getId())
+      return false;
     for (auto *v : shareds) {
       if (shared->getId() == v->getId())
         return true;
@@ -1225,15 +1229,22 @@ void OpenMPPass::handle(ForFlow *v) {
   auto *sched = v->getSchedule();
   Var *loopVar = v->getVar();
   OMPTypes types(M);
+  std::vector<Value *> outlineCallArgs(outline.call->begin(), outline.call->end());
 
   // shared argument vars
   std::vector<Var *> sharedVars;
+  Var *loopVarArg = nullptr;
   unsigned i = 0;
   for (auto it = outline.func->arg_begin(); it != outline.func->arg_end(); ++it) {
-    if (outline.argKinds[i++] == util::OutlineResult::ArgKind::MODIFIED)
+    // pick out loop variable to pass to reduction identifier, which will
+    // ensure we don't reduce over it
+    if (getVarFromOutlinedArg(outlineCallArgs[i])->getId() == loopVar->getId())
+      loopVarArg = *it;
+    if (outline.argKinds[i] == util::OutlineResult::ArgKind::MODIFIED)
       sharedVars.push_back(*it);
+    ++i;
   }
-  ReductionIdentifier reds(sharedVars);
+  ReductionIdentifier reds(sharedVars, loopVarArg);
   outline.func->accept(reds);
 
   // separate arguments into 'private' and 'shared'
@@ -1350,15 +1361,22 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
   auto *sched = v->getSchedule();
   Var *loopVar = v->getVar();
   OMPTypes types(M);
+  std::vector<Value *> outlineCallArgs(outline.call->begin(), outline.call->end());
 
   // shared argument vars
-  std::vector<Var *> shareds;
+  std::vector<Var *> sharedVars;
+  Var *loopVarArg = nullptr;
   unsigned i = 0;
   for (auto it = outline.func->arg_begin(); it != outline.func->arg_end(); ++it) {
-    if (outline.argKinds[i++] == util::OutlineResult::ArgKind::MODIFIED)
-      shareds.push_back(*it);
+    // pick out loop variable to pass to reduction identifier, which will
+    // ensure we don't reduce over it
+    if (getVarFromOutlinedArg(outlineCallArgs[i])->getId() == loopVar->getId())
+      loopVarArg = *it;
+    if (outline.argKinds[i] == util::OutlineResult::ArgKind::MODIFIED)
+      sharedVars.push_back(*it);
+    ++i;
   }
-  ReductionIdentifier reds(shareds);
+  ReductionIdentifier reds(sharedVars, loopVarArg);
   outline.func->accept(reds);
 
   // gather extra arguments
