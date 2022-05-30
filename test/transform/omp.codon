@@ -509,6 +509,64 @@ def test_omp_non_imperative():
 
     assert all(s == i*i for i,s in enumerate(v))
 
+test_generator_based_loops_global = 0.7
+
+@test
+def test_omp_non_imperative_reductions():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    @omp.critical
+    def add(v, x):
+        v.add(x)
+
+    @nonpure
+    def foo(x):
+        return x
+
+    global test_generator_based_loops_global
+    N = 1001
+
+    # no reductions
+    v = set()
+    @par
+    for i in squares(N):
+        x = i - 1
+        add(v, x)
+    assert v == {i**2 - 1 for i in range(N)}
+
+    # one reduction
+    a = 0
+    @par
+    for i in squares(N):
+        a += i
+    assert a == 333833500
+
+    # kitchen sink
+    a = 7
+    b = 0
+    c = 0.5
+    d = foo(0)
+    e = foo(1)
+    f = foo(-1)
+    g = -1
+    @par
+    for i in squares(N):
+        x = foo(i) + d
+        y = foo(x) + e + f
+        a += x + d
+        b ^= y - d
+        c += x + d
+        test_generator_based_loops_global += y - d
+        f = foo(-1)
+        g = max(i, g)
+    assert a == 333833507
+    assert b == 332752
+    assert c == 333833500.5
+    assert test_generator_based_loops_global == 333833500.7
+    assert g == (N - 1) ** 2
+
 @test
 def test_omp_transform(a, b, c):
     a0, b0, c0 = a, b, c
@@ -542,5 +600,6 @@ test_omp_ranges()
 test_omp_reductions()
 test_omp_critical()
 test_omp_non_imperative()
+test_omp_non_imperative_reductions()
 test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)

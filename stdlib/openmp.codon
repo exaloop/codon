@@ -893,45 +893,49 @@ def _atomic_int_and(a: Ptr[int], b: int) -> void:
     %old = atomicrmw and i64* %a, i64 %b monotonic
     ret void
 
+
 @llvm
 def _atomic_int_or(a: Ptr[int], b: int) -> void:
     %old = atomicrmw or i64* %a, i64 %b monotonic
     ret void
+
 
 @llvm
 def _atomic_int_xor(a: Ptr[int], b: int) -> void:
     %old = atomicrmw xor i64* %a, i64 %b monotonic
     ret void
 
+
 @llvm
 def _atomic_int_min(a: Ptr[int], b: int) -> void:
     %old = atomicrmw min i64* %a, i64 %b monotonic
     ret void
+
 
 @llvm
 def _atomic_int_max(a: Ptr[int], b: int) -> void:
     %old = atomicrmw max i64* %a, i64 %b monotonic
     ret void
 
-@llvm
+
 def _atomic_float_add(a: Ptr[float], b: float) -> void:
-    %old = atomicrmw fadd double* %a, double %b monotonic
-    ret void
+    from C import __kmpc_atomic_float8_add(Ptr[Ident], i32, Ptr[float], float)
+    __kmpc_atomic_float8_add(_default_loc(), i32(0), a, b)
 
 
 def _atomic_float_mul(a: Ptr[float], b: float):
     from C import __kmpc_atomic_float8_mul(Ptr[Ident], i32, Ptr[float], float)
-    __kmpc_atomic_float8_mul(_default_loc(), i32(get_thread_num()), a, b)
+    __kmpc_atomic_float8_mul(_default_loc(), i32(0), a, b)
 
 
 def _atomic_float_min(a: Ptr[float], b: float):
     from C import __kmpc_atomic_float8_min(Ptr[Ident], i32, Ptr[float], float)
-    __kmpc_atomic_float8_min(_default_loc(), i32(get_thread_num()), a, b)
+    __kmpc_atomic_float8_min(_default_loc(), i32(0), a, b)
 
 
 def _atomic_float_max(a: Ptr[float], b: float):
     from C import __kmpc_atomic_float8_max(Ptr[Ident], i32, Ptr[float], float)
-    __kmpc_atomic_float8_max(_default_loc(), i32(get_thread_num()), a, b)
+    __kmpc_atomic_float8_max(_default_loc(), i32(0), a, b)
 
 
 def for_par(

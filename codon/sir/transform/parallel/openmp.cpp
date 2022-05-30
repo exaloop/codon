@@ -345,6 +345,18 @@ struct ReductionIdentifier : public util::Operator {
     return false;
   }
 
+  static void extractAssociativeOpChain(Value *v, const std::string &op,
+                                        types::Type *type,
+                                        std::vector<Value *> &result) {
+    if (util::isCallOf(v, op, {type, type}, type, /*method=*/true)) {
+      auto *call = cast<CallInstr>(v);
+      extractAssociativeOpChain(call->front(), op, type, result);
+      extractAssociativeOpChain(call->back(), op, type, result);
+    } else {
+      result.push_back(v);
+    }
+  }
+
   Reduction getReductionFromCall(CallInstr *v) {
     auto *M = v->getModule();
     auto *func = util::getFunc(v->getCallee());
@@ -392,23 +404,32 @@ struct ReductionIdentifier : public util::Operator {
       }
 
       auto *callRHS = cast<CallInstr>(item);
-      if (!rf.method) {
-        callRHS = cast<CallInstr>(callRHS->front()); // this will be Tuple.__new__
-        if (!callRHS || callRHS->numArgs() != 2)
-          continue;
-      }
-
-      auto *arg1 = callRHS->front();
-      auto *arg2 = callRHS->back();
       Value *deref = nullptr;
-      Value *other = nullptr;
 
-      if (isSharedDeref(shared, arg1)) {
-        deref = arg1;
-        other = arg2;
-      } else if (isSharedDeref(shared, arg2)) {
-        deref = arg2;
-        other = arg1;
+      if (rf.method) {
+        std::vector<Value *> opChain;
+        extractAssociativeOpChain(callRHS, rf.name, callRHS->front()->getType(),
+                                  opChain);
+        if (opChain.size() < 2)
+          continue;
+
+        for (auto *val : opChain) {
+          if (isSharedDeref(shared, val)) {
+            deref = val;
+            break;
+          }
+        }
+      } else {
+        callRHS = cast<CallInstr>(callRHS->front()); // this will be Tuple.__new__
+        if (!callRHS)
+          continue;
+
+        for (auto *val : *callRHS) {
+          if (isSharedDeref(shared, val)) {
+            deref = val;
+            break;
+          }
+        }
       }
 
       if (!deref)
@@ -748,10 +769,10 @@ struct TaskLoopReductionVarReplacer : public util::Operator {
 
 struct TaskLoopBodyStubReplacer : public util::Operator {
   CallInstr *replacement;
-  bool hasReductions;
+  std::vector<bool> reduceArgs;
 
-  TaskLoopBodyStubReplacer(CallInstr *replacement, bool hasReductions)
-      : util::Operator(), replacement(replacement), hasReductions(hasReductions) {}
+  TaskLoopBodyStubReplacer(CallInstr *replacement, std::vector<bool> reduceArgs)
+      : util::Operator(), replacement(replacement), reduceArgs(std::move(reduceArgs)) {}
 
   void handle(CallInstr *v) override {
     auto *func = util::getFunc(v->getCallee());
@@ -769,15 +790,14 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
       unsigned privatesNext = 0;
       unsigned sharedsNext = 0;
       std::vector<Value *> newArgs;
-      std::vector<bool> isArgShared;
+      bool hasReductions =
+          std::any_of(reduceArgs.begin(), reduceArgs.end(), [](bool b) { return b; });
 
       for (auto *arg : *replacement) {
         if (isA<VarValue>(arg)) {
           newArgs.push_back(util::tupleGet(privatesTuple, privatesNext++));
-          isArgShared.push_back(false);
         } else if (isA<PointerValue>(arg)) {
           newArgs.push_back(util::tupleGet(sharedsTuple, sharedsNext++));
-          isArgShared.push_back(true);
         } else {
           // make sure we're on the last arg, which should be gtid
           // in case of reductions
@@ -789,12 +809,11 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
 
       if (hasReductions) {
         newArgs.push_back(gtid);
-        isArgShared.push_back(false);
 
         std::vector<Var *> reductionArgs;
         unsigned i = 0;
         for (auto it = outlinedFunc->arg_begin(); it != outlinedFunc->arg_end(); ++it) {
-          if (isArgShared[i++])
+          if (reduceArgs[i++])
             reductionArgs.push_back(*it);
         }
         TaskLoopReductionVarReplacer redrep(reductionArgs, outlinedFunc);
@@ -947,9 +966,35 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
     auto *M = v->getModule();
     auto *func = util::getFunc(v);
     if (func && func->getUnmangledName() == "_routine_stub") {
+      std::vector<bool> reduceArgs;
+      unsigned sharedsNext = 0;
+      unsigned infoNext = 0;
+
+      for (auto *arg : *replacement) {
+        if (isA<VarValue>(arg)) {
+          reduceArgs.push_back(false);
+        } else if (isA<PointerValue>(arg)) {
+          if (infoNext < sharedInfo.size() &&
+              sharedInfo[infoNext].memb == sharedsNext &&
+              sharedInfo[infoNext].reduction) {
+            reduceArgs.push_back(true);
+            ++infoNext;
+          } else {
+            reduceArgs.push_back(false);
+          }
+          ++sharedsNext;
+        } else {
+          // make sure we're on the last arg, which should be gtid
+          // in case of reductions
+          seqassert(numReductions() > 0 && arg == replacement->back(),
+                    "unknown outline var");
+          reduceArgs.push_back(false);
+        }
+      }
+
       util::CloneVisitor cv(M);
       auto *newRoutine = cv.forceClone(func);
-      TaskLoopBodyStubReplacer rep(replacement, (numReductions() > 0));
+      TaskLoopBodyStubReplacer rep(replacement, reduceArgs);
       newRoutine->accept(rep);
       v->setVar(newRoutine);
     }
