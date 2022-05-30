@@ -265,6 +265,7 @@ def test_omp_reductions():
             a = op(a, type(a)(i))
         return a
 
+    from math import inf
     omp.set_num_threads(4)
     N = 10001
     L = list(range(N))
@@ -448,6 +449,26 @@ def test_omp_reductions():
         b = float(-1 if i == N//2 else i)
         c = min(b, c)
     assert c == -1.
+
+    x_add = 10.
+    x_min = inf
+    x_max = -inf
+    @par
+    for i in L:
+        x_i = float(i)
+        x_add += x_i
+        x_min = min(x_min, x_i)
+        x_max = max(x_i, x_max)
+    assert x_add == expected(N, 10., float.__add__)
+    assert x_min == expected(N, inf, min)
+    assert x_max == expected(N, -inf, max)
+
+    x_mul = 2.
+    @par
+    for i in L[:10]:
+        x_i = float(i)
+        x_mul *= x_i
+    assert x_mul == expected(10, 2., float.__mul__)
 
     # multiple reductions
     global my_global
