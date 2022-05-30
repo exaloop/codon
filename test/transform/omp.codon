@@ -620,6 +620,51 @@ def test_omp_transform(a, b, c):
     assert c == v[-1] ** 2
 
 @test
+def test_omp_nested():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    N = 100
+    v = []
+
+    v.clear()
+    @par
+    for i in range(N):
+        @par
+        for j in range(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in range(N) for j in range(i)}
+
+    v.clear()
+    @par
+    for i in range(N):
+        @par
+        for j in squares(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in range(N) for j in squares(i)}
+
+    v.clear()
+    @par
+    for i in squares(N):
+        @par
+        for j in range(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in squares(N) for j in range(i)}
+
+    v.clear()
+    @par
+    for i in squares(N):
+        @par
+        for j in squares(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in squares(N) for j in squares(i)}
+
+@test
 def test_omp_corner_cases():
     def squares(n):
         for i in range(n):
@@ -692,4 +737,5 @@ test_omp_non_imperative()
 test_omp_non_imperative_reductions()
 test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)
+test_omp_nested()
 test_omp_corner_cases()
