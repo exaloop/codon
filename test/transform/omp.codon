@@ -576,7 +576,7 @@ def test_omp_non_imperative_reductions():
     for i in squares(N):
         x = foo(i) + d
         y = foo(x) + e + f
-        a += x + d
+        a = x + a + d
         b ^= y - d
         c += x + d
         test_generator_based_loops_global += y - d
