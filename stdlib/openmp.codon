@@ -628,6 +628,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
             _single_end(loc_ref, gtid)
 
     _loop_reductions(shared)
+    _barrier(loc_ref, gtid)
 
 @pure
 def get_num_threads():
