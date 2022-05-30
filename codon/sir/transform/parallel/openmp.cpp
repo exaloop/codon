@@ -1061,9 +1061,10 @@ struct TaskLoopRoutineStubReplacer : public util::Operator {
 
       for (auto *val : shareds) {
         if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
-          auto &info = sharedInfo[infoNext];
-          if (info.memb == sharedsNext && info.reduction) {
-            newShareds.push_back(M->Nr<PointerValue>(info.local));
+          if (infoNext < sharedInfo.size() &&
+              sharedInfo[infoNext].memb == sharedsNext &&
+              sharedInfo[infoNext].reduction) {
+            newShareds.push_back(M->Nr<PointerValue>(sharedInfo[infoNext].local));
             needNewShareds = true;
             ++infoNext;
           } else {
