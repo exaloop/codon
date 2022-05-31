@@ -323,6 +323,13 @@ public:
   std::shared_ptr<FuncType> getFunc() override {
     return std::static_pointer_cast<FuncType>(shared_from_this());
   }
+
+  std::vector<TypePtr> &getArgTypes() const {
+    return generics[0].type->getRecord()->args;
+  }
+  TypePtr getRetType() const {
+    return generics[1].type;
+  }
 };
 typedef std::shared_ptr<FuncType> FuncTypePtr;
 
@@ -403,7 +410,7 @@ private:
 };
 
 struct CallableTrait : public Trait {
-  std::vector<TypePtr> args;
+  std::vector<TypePtr> args; // tuple with arg types, ret type
 
 public:
   explicit CallableTrait(std::vector<TypePtr> args);

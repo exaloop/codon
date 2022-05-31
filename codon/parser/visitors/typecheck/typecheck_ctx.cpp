@@ -130,8 +130,12 @@ TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
   auto c = root->getClass();
   seqassert(c, "root class is null");
   auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
-  if (generics.size() != c->generics.size())
-    error(expr->getSrcInfo(), "generics do not match");
+  if (generics.size() != c->generics.size()) {
+    if (expr)
+      error(expr->getSrcInfo(), "generics do not match");
+    else
+      error("generics do not match");
+  }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
     g->generics.push_back(

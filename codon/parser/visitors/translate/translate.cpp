@@ -508,9 +508,9 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
                                          ir::Func *func) {
   std::vector<std::string> names;
   std::vector<int> indices;
-  for (int i = 0, j = 1; i < ast->args.size(); i++)
+  for (int i = 0, j = 0; i < ast->args.size(); i++)
     if (!ast->args[i].generic) {
-      if (!type->args[j]->getFunc()) {
+      if (!type->getArgTypes()[j]->getFunc()) {
         names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
         indices.push_back(i);
       }
@@ -577,8 +577,8 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     if (auto *ei = ss[i]->getExpr()->expr->getInt()) { // static integer expression
       literals.emplace_back(ei->intValue);
     } else {
-      seqassert(ss[i]->getExpr()->expr->isType() && ss[i]->getExpr()->expr->getType(),
-                "invalid LLVM type argument: {}", ss[i]->getExpr()->toString());
+      seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
+                ss[i]->getExpr()->toString());
       literals.emplace_back(getType(ss[i]->getExpr()->expr->getType()));
     }
   }

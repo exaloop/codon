@@ -70,18 +70,6 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
     auto t = index->getTuple();
     e = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
     e->markType();
-  } else if (expr->expr->isId("function") || expr->expr->isId("Function") ||
-             expr->expr->isId("Callable")) {
-    auto t = const_cast<TupleExpr *>(index->getTuple());
-    if (!t || t->items.size() != 2 || !t->items[0]->getList())
-      error("invalid {} type declaration", expr->expr->getId()->value);
-    for (auto &i : const_cast<ListExpr *>(t->items[0]->getList())->items)
-      t->items.emplace_back(i);
-    t->items.erase(t->items.begin());
-    e = N<IdExpr>(
-        format(expr->expr->isId("Callable") ? TYPE_CALLABLE "{}" : TYPE_FUNCTION "{}",
-               int(t->items.size()) - 1));
-    e->markType();
   } else if (expr->expr->isId("Static")) {
     if (!expr->index->isId("int") && !expr->index->isId("str"))
       error("only static integers and strings are supported");
@@ -105,8 +93,11 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
       i = N<StarExpr>(transform(es->what));
     else if (auto ek = CAST(i, KeywordStarExpr))
       i = N<KeywordStarExpr>(transform(ek->what));
-    else
+    else {
+      if (i->getList() && e->isType())
+        i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
       i = transform(i, true);
+    }
   }
   if (e->isType()) {
     resultExpr = N<InstantiateExpr>(e, it);

@@ -699,7 +699,7 @@ print tuple((j, i) for i, j in ((1, 'a'), (2, 'b'), (3, 'c')))
 #: (('a', 1), ('b', 2), ('c', 3))
 
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! unexpected static type
+def foo(x: Callable[[1,2], 3]): pass  #! cannot unify T1 and 1
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! cannot unify T and 1

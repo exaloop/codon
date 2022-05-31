@@ -19,8 +19,7 @@
 
 #define TYPE_TUPLE "Tuple.N"
 #define TYPE_KWTUPLE "KwTuple.N"
-#define TYPE_FUNCTION "Function.N"
-#define TYPE_CALLABLE "Callable.N"
+#define TYPE_CALLABLE "Callable"
 #define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_EXCHEADER "std.internal.types.error.ExcHeader"
@@ -91,7 +90,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Table of imported files that maps an absolute filename to a Import structure.
   /// By convention, the key of the Codon's standard library is "".
   std::unordered_map<std::string, Import> imports;
-  
+
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step and in JIT.
   std::map<std::string, ir::Var *> globals;

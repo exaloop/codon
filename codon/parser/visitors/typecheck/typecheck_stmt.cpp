@@ -116,10 +116,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       ctx->add(lhs, val);
     }
     if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
-      // LOG("{} => {} & {} ^ {}", stmt->lhs->toString(), type->debugString(1),
-      //     val->type->debugString(1), kind);
-      if (stmt->lhs->type)
-        unify(stmt->lhs->type, ctx->find(lhs)->type);
+      // if (stmt->lhs->type)
+        // unify(stmt->lhs->type, ctx->find(lhs)->type);
       stmt->rhs->type = nullptr;
       stmt->done = true;
     } else {
@@ -234,7 +232,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
     if (stmt->expr->getType()->getFunc() &&
         !(base.returnType->getClass() &&
-          startswith(base.returnType->getClass()->name, TYPE_FUNCTION)))
+          startswith(base.returnType->getClass()->name, "Function")))
       stmt->expr = partializeFunction(stmt->expr);
     unify(base.returnType, stmt->expr->type);
     stmt->done = stmt->expr->done;
@@ -468,28 +466,26 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   for (const auto &i : explicits)
     generics.push_back(ctx->find(i.name)->type);
   // Add function arguments.
-  auto baseType = ctx->instantiate(N<IdExpr>(stmt->name).get(),
-                                   ctx->find(generateFunctionStub(stmt->args.size() -
-                                                                  explicits.size()))
-                                       ->type)
-                      ->getRecord();
+  auto baseType = getFuncTypeBase(stmt->args.size() - explicits.size());
   {
     ctx->typecheckLevel++;
     if (stmt->ret) {
-      unify(baseType->args[0], transformType(stmt->ret)->getType());
+      unify(baseType->generics[1].type, transformType(stmt->ret)->getType());
     } else {
-      unify(baseType->args[0],
+      unify(baseType->generics[1].type,
             ctx->addUnbound(N<IdExpr>("<return>").get(), ctx->typecheckLevel));
-      generics.push_back(baseType->args[0]);
+      generics.push_back(baseType->generics[1].type);
     }
-    for (int ai = 0, aj = 1; ai < stmt->args.size(); ai++) {
+    // tuple
+    auto argType = baseType->generics[0].type->getRecord();
+    for (int ai = 0, aj = 0; ai < stmt->args.size(); ai++) {
       if (!stmt->args[ai].generic && !stmt->args[ai].type) {
-        unify(baseType->args[aj], ctx->addUnbound(N<IdExpr>(stmt->args[ai].name).get(),
-                                                  ctx->typecheckLevel));
-        generics.push_back(baseType->args[aj++]);
+        unify(argType->args[aj], ctx->addUnbound(N<IdExpr>(stmt->args[ai].name).get(),
+                                                 ctx->typecheckLevel));
+        generics.push_back(argType->args[aj++]);
       } else if (!stmt->args[ai].generic) {
-        unify(baseType->args[aj], transformType(stmt->args[ai].type)->getType());
-        generics.push_back(baseType->args[aj]);
+        unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
+        generics.push_back(argType->args[aj]);
         aj++;
       }
     }
@@ -621,6 +617,14 @@ std::string TypecheckVisitor::getRootName(const std::string &name) {
   auto p = name.rfind(':');
   seqassert(p != std::string::npos, ": not found in {}", name);
   return name.substr(0, p);
+}
+
+std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
+  auto baseType = ctx->instantiate(nullptr, ctx->find("Function")->type)->getRecord();
+  auto argType =
+      ctx->instantiate(nullptr, ctx->find(generateTupleStub(nargs))->type)->getRecord();
+  unify(baseType->generics[0].type, argType);
+  return baseType;
 }
 
 } // namespace ast

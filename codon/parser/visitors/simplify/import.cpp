@@ -90,12 +90,13 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     seqassert(stmt->as.empty(), "renamed star-import");
     // Just copy all symbols from import's context here.
     for (auto &i : *(import.ctx)) {
-      if (i.second.front()->scope.size() == 1)
+      if (i.second.front()->scope.size() == 1) {
         if (!startswith(i.first, "_")) {
           ctx->add(i.first, i.second.front());
         } else if (ctx->isStdlibLoading && startswith(i.first, "__")) {
           ctx->add(i.first, i.second.front());
         }
+      }
     }
   } else {
     // Case 3: from foo import bar

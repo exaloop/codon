@@ -262,7 +262,6 @@ private:
   ///     def __str__(self: Function.N[TR, T1, ..., TN]) -> str
   /// Return the canonical name of Function.N.
   std::string generateCallableStub(int n);
-  std::string generateFunctionStub(int n);
   /// Generate a partial function type Partial.N01...01 (where 01...01 is a mask
   /// of size N) as follows:
   ///   @tuple @no_total_ordering @no_pickle @no_container @no_python
@@ -275,7 +274,6 @@ private:
   ///     def __new_<old_mask>_<mask>(p, aI: TI...) # (if oldMask[I-1] != mask[I-1]):
   ///       return Partial.N<mask>.__new__(self.ptr, self.a1, a2, ...) # (see above)
   std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
-  void generateFnCall(int n);
   /// Make an empty partial call fn(...) for a function fn.
   ExprPtr partializeFunction(ExprPtr expr);
   /// Picks the best method of a given expression that matches the given argument
@@ -332,6 +330,8 @@ private:
   ExprPtr callReorderArguments(types::ClassTypePtr callee, types::FuncTypePtr calleeFn,
                                CallExpr *expr, int &ellipsisStage,
                                PartialCallData &part);
+
+  std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
 };
 
 } // namespace ast

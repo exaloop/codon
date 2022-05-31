@@ -39,8 +39,19 @@ class type:
 
 @tuple
 @__internal__
+class Function[T, TR]:
+    pass
+
+@tuple
+@__internal__
+class Callable[T, TR]:
+    pass
+
+@tuple
+@__internal__
 class Ptr[T]:
     pass
+cobj = Ptr[byte]
 
 @tuple
 @__internal__
@@ -83,15 +94,11 @@ class Array:
 class type:
     def __new__(obj):
         pass
-
+function = Function
 
 # dummy
 @__internal__
 class TypeVar: pass
-@__internal__
-class Callable: pass
-@__internal__
-class Function: pass
 @__internal__
 class ByVal: pass
 @__internal__

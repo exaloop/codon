@@ -91,11 +91,16 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
   auto e = std::make_shared<IdExpr>(type->ast->name);
   e->type = type;
   type = typeCtx->instantiate(e.get(), type, parentClass.get(), false)->getFunc();
-  if (args.size() != type->args.size())
+  if (args.size() != type->getArgTypes().size() + 1)
     return nullptr;
-  for (int gi = 0; gi < args.size(); gi++) {
+  types::Type::Unification undo;
+  if (type->getRetType()->unify(args[0].get(), &undo) < 0) {
+    undo.undo();
+    return nullptr;
+  }
+  for (int gi = 1; gi < args.size(); gi++) {
     types::Type::Unification undo;
-    if (type->args[gi]->unify(args[gi].get(), &undo) < 0) {
+    if (type->getArgTypes()[gi - 1]->unify(args[gi].get(), &undo) < 0) {
       undo.undo();
       return nullptr;
     }
@@ -136,10 +141,15 @@ ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
-  auto name = tv.generateFunctionStub(types.size() - 1);
-  auto t = typeCtx->find(name);
-  seqassertn(t && t->type, "cannot find {}", name);
-  return realizeType(t->type->getClass(), types);
+
+  auto tup = tv.generateTupleStub(types.size() - 1);
+  auto ret = types[0];
+  auto argType = typeCtx->instantiateGeneric(
+      nullptr, typeCtx->find(tup)->type,
+      std::vector<types::TypePtr>(types.begin() + 1, types.end()));
+  auto t = typeCtx->find("Function");
+  seqassertn(t && t->type, "cannot find 'Function'");
+  return realizeType(t->type->getClass(), {argType, ret});
 }
 
 } // namespace ast

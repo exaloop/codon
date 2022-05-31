@@ -46,6 +46,8 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess
   } else {
     undo.undo();
   }
+  if (a->toString()=="._lambda_125:0[int]")
+    a->unify(b.get(), &undo);
   if (!undoOnSuccess)
     a->unify(b.get(), &undo);
   error("cannot unify {} and {}", a->toString(), b->toString());

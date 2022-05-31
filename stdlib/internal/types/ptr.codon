@@ -185,7 +185,6 @@ class Ptr:
 
 ptr = Ptr
 Jar = Ptr[byte]
-cobj = Ptr[byte]
 
 
 # Forward declarations

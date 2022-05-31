@@ -144,7 +144,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     if (startswith(type->ast->name, TYPE_TUPLE) &&
         (endswith(type->ast->name, ".__iter__") ||
          endswith(type->ast->name, ".__getitem__")) &&
-        type->args[1]->getHeterogenousTuple())
+        type->getArgTypes()[0]->getHeterogenousTuple())
       error("cannot iterate a heterogeneous tuple");
 
     LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
@@ -159,7 +159,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Find parents!
       ctx->bases.push_back({type->ast->name,
                             type->getFunc(),
-                            type->args[0],
+                            type->getRetType(),
                             {},
                             findSuperMethods(type->getFunc())});
       auto clonedAst = ctx->cache->functions[type->ast->name].ast->clone();
@@ -171,12 +171,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       isInternal |= ast->suite == nullptr;
       // Add function arguments.
       if (!isInternal)
-        for (int i = 0, j = 1; i < ast->args.size(); i++)
+        for (int i = 0, j = 0; i < ast->args.size(); i++)
           if (!ast->args[i].generic) {
             std::string varName = ast->args[i].name;
             trimStars(varName);
             ctx->add(TypecheckItem::Var, varName,
-                     std::make_shared<LinkType>(type->args[j++]));
+                     std::make_shared<LinkType>(type->getArgTypes()[j++]));
             // N.B. this used to be:
             // seqassert(type->args[j] && type->args[j]->getUnbounds().empty(),
             // "unbound argument {}", type->args[j]->toString());
@@ -202,7 +202,40 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         auto oldReturnEarly = ctx->returnEarly;
         ctx->blockLevel = 0;
         ctx->returnEarly = false;
-        realized = inferTypes(ast->suite, false, type->realizedName()).second;
+
+        auto suite = ast->suite;
+        if (startswith(type->ast->name, "Function.__call__")) {
+          std::vector<StmtPtr> items;
+          items.push_back(nullptr);
+          std::vector<std::string> ll;
+          std::vector<std::string> lla;
+          auto &as = type->getArgTypes()[1]->getRecord()->args;
+          auto ag = ast->args[1].name;
+          trimStars(ag);
+
+          for (int i = 0; i < as.size(); i++) {
+            ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
+            items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
+          }
+          items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
+          for (int i = 0; i < as.size(); i++) {
+            items.push_back(
+                N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
+            lla.push_back(format("{{}} %{}", i));
+          }
+          items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
+          if (type->getRetType()->getClass()->name == "void") {
+            ll.push_back(format("call {{}} %self({})", combine2(lla)));
+            ll.push_back(format("ret {{}}"));
+          } else {
+            ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
+            ll.push_back(format("ret {{}} %{}", as.size()));
+          }
+          items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
+          suite = N<SuiteStmt>(items);
+        }
+
+        realized = inferTypes(suite, false, type->realizedName()).second;
         ctx->blockLevel = oldBlockLevel;
         ctx->returnEarly = oldReturnEarly;
         if (ast->attributes.has(Attr::LLVM)) {
@@ -211,17 +244,21 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
             seqassert(s->stmts[i]->getExpr(), "invalid LLVM definition {}: {}",
                       type->toString(), s->stmts[i]->toString());
             auto e = s->stmts[i]->getExpr()->expr;
-            if (!e->isType() && !e->isStatic())
-              error(e, "not a type or static expression");
+            // if (!e->isType() && !e->isStatic())
+            //   error(e, "not a type or static expression");
           }
         }
         // Return type was not specified and the function returned nothing.
-        if (!ast->ret && type->args[0]->getUnbound())
-          unify(type->args[0], ctx->findInternal("void"));
+        if (!ast->ret && type->getRetType()->getUnbound()) {
+          auto tt = type->getRetType();
+          unify(tt, ctx->findInternal("void"));
+        }
       }
       // Realize the return type.
-      if (auto t = realize(type->args[0]))
-        unify(type->args[0], t);
+      if (auto t = realize(type->getRetType())) {
+        auto tt = type->getRetType();
+        unify(tt, t);
+      }
       LOG_REALIZE("[realize] done with {} / {} =>{}", type->realizedName(), oldKey,
                   time);
       // trx.log();
@@ -255,7 +292,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         ctx->cache->pendingRealizations.insert({type->ast->name, type->realizedName()});
 
         seqassert(!type || ast->args.size() ==
-                               type->args.size() + type->funcGenerics.size() - 1,
+                               type->getArgTypes().size() + type->funcGenerics.size(),
                   "type/AST argument mismatch");
         std::vector<Param> args;
         for (auto &i : ast->args) {
@@ -269,10 +306,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         // Set up IR node
         std::vector<std::string> names;
         std::vector<codon::ir::types::Type *> types;
-        for (int i = 0, j = 1; i < r->ast->args.size(); i++)
+        for (int i = 0, j = 0; i < r->ast->args.size(); i++)
           if (!r->ast->args[i].generic) {
-            if (!type->args[j]->getFunc()) {
-              types.push_back(getLLVMType(type->args[j]->getClass().get()));
+            if (!type->getArgTypes()[j]->getFunc()) {
+              types.push_back(getLLVMType(type->getArgTypes()[j]->getClass().get()));
               names.push_back(
                   ctx->cache->reverseIdentifierLookup[r->ast->args[i].name]);
             }
@@ -283,8 +320,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           names.pop_back();
         }
         auto irType = ctx->cache->module->unsafeGetFuncType(
-            type->realizedName(), getLLVMType(type->args[0]->getClass().get()), types,
-            r->ast->hasAttr(Attr::CVarArg));
+            type->realizedName(), getLLVMType(type->getRetType()->getClass().get()),
+            types, r->ast->hasAttr(Attr::CVarArg));
         irType->setAstType(type->getFunc());
         r->ir->realize(irType, names);
 
@@ -345,20 +382,6 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
         }
       }
-
-    // int newUnbounds = 0;
-    // std::map<types::TypePtr, std::string> newActiveUnbounds;
-    // for (auto i = ctx->activeUnbounds.begin(); i != ctx->activeUnbounds.end();) {
-    //   auto l = i->first->getLink();
-    //   seqassert(l, "link is null");
-    //   if (l->kind == LinkType::Unbound) {
-    //     newActiveUnbounds[i->first] = i->second;
-    //     if (l->id >= minUnbound)
-    //       newUnbounds++;
-    //   }
-    //   ++i;
-    // }
-    // ctx->activeUnbounds = newActiveUnbounds;
     if (result->done) {
       break;
     } else if (old) {
@@ -465,12 +488,11 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});
     handle = record;
-  } else if (startswith(name, TYPE_FUNCTION)) {
+  } else if (name == "Function") {
     types.clear();
-    for (auto &m : const_cast<ClassType *>(t)->getRecord()->args)
+    for (auto &m : t->generics[0].type->getRecord()->args)
       types.push_back(getLLVM(m));
-    auto ret = types[0];
-    types.erase(types.begin());
+    auto ret = getLLVM(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (auto tr = const_cast<ClassType *>(t)->getRecord()) {
     std::vector<ir::types::Type *> typeArgs;

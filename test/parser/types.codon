@@ -720,8 +720,8 @@ def hai(x, y, z):
 fn = Function[[int, int, int], void](hai)
 fn(1, 2, 3) #: hai(1,2,3)
 print str(fn)[:12] #: <function at
-z = fn(a2=2, a3=3, ...)
-z(3) #: hai(3,2,3)
+z = fn(2, 3, ...)
+z(3) #: hai(2,3,3)
 
 #%% int_float,barebones
 l = [1., 2, 3, 4]
