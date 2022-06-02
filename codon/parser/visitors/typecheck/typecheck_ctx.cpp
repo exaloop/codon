@@ -281,7 +281,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   for (auto i = 0; i < func->ast->args.size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
       if (!func->ast->args[i].generic &&
-          (func->ast->args[i].deflt || (!known.empty() && known[i])))
+          (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
       else if (!partial && !func->ast->args[i].generic)
         return onError(format("missing argument '{}'",

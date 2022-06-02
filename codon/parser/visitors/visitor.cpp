@@ -28,7 +28,6 @@ void ASTVisitor::visit(BinaryExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(ChainBinaryExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(PipeExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(IndexExpr *expr) { defaultVisit(expr); }
-void ASTVisitor::visit(TupleIndexExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(CallExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(DotExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(SliceExpr *expr) { defaultVisit(expr); }
@@ -134,7 +133,6 @@ void ReplaceASTVisitor::visit(IndexExpr *expr) {
   transform(expr->expr);
   transform(expr->index);
 }
-void ReplaceASTVisitor::visit(TupleIndexExpr *expr) { transform(expr->expr); }
 void ReplaceASTVisitor::visit(CallExpr *expr) {
   transform(expr->expr);
   for (auto &a : expr->args)
@@ -230,7 +228,7 @@ void ReplaceASTVisitor::visit(ImportStmt *stmt) {
   transform(stmt->what);
   for (auto &a : stmt->args) {
     transform(a.type);
-    transform(a.deflt);
+    transform(a.defaultValue);
   }
   transform(stmt->ret);
 }
@@ -248,7 +246,7 @@ void ReplaceASTVisitor::visit(FunctionStmt *stmt) {
   transform(stmt->ret);
   for (auto &a : stmt->args) {
     transform(a.type);
-    transform(a.deflt);
+    transform(a.defaultValue);
   }
   transform(stmt->suite);
   for (auto &d : stmt->decorators)
@@ -257,7 +255,7 @@ void ReplaceASTVisitor::visit(FunctionStmt *stmt) {
 void ReplaceASTVisitor::visit(ClassStmt *stmt) {
   for (auto &a : stmt->args) {
     transform(a.type);
-    transform(a.deflt);
+    transform(a.defaultValue);
   }
   transform(stmt->suite);
   for (auto &d : stmt->decorators)

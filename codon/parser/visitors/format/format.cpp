@@ -384,7 +384,7 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
   for (auto &a : fstmt->args)
     args.push_back(fmt::format(
         "{}{}{}", a.name, a.type ? fmt::format(": {}", transform(a.type)) : "",
-        a.deflt ? fmt::format(" = {}", transform(a.deflt)) : ""));
+        a.defaultValue ? fmt::format(" = {}", transform(a.defaultValue)) : ""));
   auto body = transform(fstmt->suite.get(), 1);
   auto name = fmt::format("{}{}{}", typeStart, fstmt->name, typeEnd);
   name = fmt::format("{}{}{}", exprStart, name, exprEnd);

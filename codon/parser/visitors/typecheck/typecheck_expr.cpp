@@ -746,7 +746,7 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
       return true;
     }
     if (auto ei = f->getInt()) {
-      *o = ei->intValue;
+      *o = *(ei->intValue);
       return true;
     }
     return false;
@@ -1054,9 +1054,9 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   if (unificationsDone) {
     for (int i = 0, j = 0; i < calleeFn->ast->args.size(); i++)
       if (calleeFn->ast->args[i].generic) {
-        if (calleeFn->ast->args[i].deflt &&
+        if (calleeFn->ast->args[i].defaultValue &&
             calleeFn->funcGenerics[j].type->getUnbound()) {
-          auto de = transform(calleeFn->ast->args[i].deflt, true);
+          auto de = transform(calleeFn->ast->args[i].defaultValue, true);
           TypePtr t = nullptr;
           if (de->isStatic())
             t = std::make_shared<StaticType>(de, ctx);
@@ -1863,11 +1863,11 @@ ExprPtr TypecheckVisitor::callReorderArguments(ClassTypePtr callee,
                 args.push_back({"", transform(N<EllipsisExpr>())});
                 newMask[si] = 0;
               } else {
-                auto es = calleeFn->ast->args[si].deflt->toString();
+                auto es = calleeFn->ast->args[si].defaultValue->toString();
                 if (in(ctx->defaultCallDepth, es))
                   error("recursive default arguments");
                 ctx->defaultCallDepth.insert(es);
-                args.push_back({"", transform(clone(calleeFn->ast->args[si].deflt))});
+                args.push_back({"", transform(clone(calleeFn->ast->args[si].defaultValue))});
                 ctx->defaultCallDepth.erase(es);
               }
             } else {

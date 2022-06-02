@@ -118,7 +118,7 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
   auto attr = Attr({Attr::C});
   for (int ai = 0; ai < args.size(); ai++) {
     seqassert(args[ai].name.empty(), "unexpected argument name");
-    seqassert(!args[ai].deflt, "unexpected default argument");
+    seqassert(!args[ai].defaultValue, "unexpected default argument");
     seqassert(args[ai].type, "missing type");
     if (dynamic_cast<EllipsisExpr *>(args[ai].type.get()) && ai + 1 == args.size()) {
       attr.set(Attr::CVarArg);
@@ -148,7 +148,7 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::strin
                               ret ? ret->clone() : N<IdExpr>("void")};
   for (const auto &a : args) {
     seqassert(a.name.empty(), "unexpected argument name");
-    seqassert(!a.deflt, "unexpected default argument");
+    seqassert(!a.defaultValue, "unexpected default argument");
     seqassert(a.type, "missing type");
     const_cast<ListExpr *>(fnArgs[0]->getList())->items.emplace_back(clone(a.type));
   }

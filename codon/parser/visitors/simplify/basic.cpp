@@ -17,18 +17,13 @@ void SimplifyVisitor::visit(NoneExpr *expr) {
   resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL)));
 }
 
-void SimplifyVisitor::visit(IntExpr *expr) {
-  resultExpr = transformInt(expr->value, expr->suffix);
-}
+void SimplifyVisitor::visit(IntExpr *expr) { resultExpr = transformInt(expr); }
 
-void SimplifyVisitor::visit(FloatExpr *expr) {
-  resultExpr = transformFloat(expr->value, expr->suffix);
-}
+void SimplifyVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr); }
 
 void SimplifyVisitor::visit(StringExpr *expr) {
   std::vector<ExprPtr> exprs;
-  std::string concat;
-  int realStrings = 0;
+  std::vector<std::string> concat;
   for (auto &p : expr->strings) {
     if (p.second == "f" || p.second == "F") {
       /// F-strings
@@ -40,73 +35,73 @@ void SimplifyVisitor::visit(StringExpr *expr) {
                                 N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
     } else {
       exprs.push_back(N<StringExpr>(p.first));
-      concat += p.first;
-      realStrings++;
+      concat.push_back(p.first);
     }
   }
-  if (realStrings == expr->strings.size())
-    resultExpr = N<StringExpr>(concat);
-  else if (exprs.size() == 1)
+  if (concat.size() == expr->strings.size()) {
+    resultExpr = N<StringExpr>(combine2(concat, ""));
+  } else if (exprs.size() == 1) {
     resultExpr = std::move(exprs[0]);
-  else
+  } else {
     resultExpr = transform(N<CallExpr>(N<DotExpr>("str", "cat"), exprs));
+  }
 }
 
 /**************************************************************************************/
 
-uint64_t toInt(const std::string &s) {
-  if (startswith(s, "0b") || startswith(s, "0B"))
-    return std::stoull(s.substr(2), nullptr, 2);
-  return std::stoull(s, nullptr, 0);
-}
+ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
+  // TODO: use str constructors if available?
+  if (!expr->intValue)
+    error("integer {} out of range", expr->value);
 
-ExprPtr SimplifyVisitor::transformInt(const std::string &value,
-                                      const std::string &suffix) {
-  int64_t val;
-  try {
-    val = (int64_t)toInt(value);
-    if (suffix.empty())
-      return N<IntExpr>(val);
+  std::unique_ptr<int16_t> suffixValue;
+  if (expr->suffix.size() > 1 && (expr->suffix[0] == 'u' || expr->suffix[0] == 'i') &&
+      isdigit(expr->suffix.substr(1))) {
+    try {
+      suffixValue = std::make_unique<int16_t>(std::stoi(expr->suffix.substr(1)));
+    } catch (...) {
+    }
+    if (suffixValue && *suffixValue > MAX_INT_WIDTH)
+      suffixValue = nullptr;
+  }
+
+  if (expr->suffix.empty()) {
+    return N<IntExpr>(*(expr->intValue));
+  } else if (expr->suffix == "u") {
     /// Unsigned numbers: use UInt[64] for that
-    if (suffix == "u")
-      return transform(N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)),
-                                   N<IntExpr>(val)));
+    return transform(N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)),
+                                 N<IntExpr>(*(expr->intValue))));
+  } else if (suffixValue) {
     /// Fixed-precision numbers (uXXX and iXXX)
     /// NOTE: you cannot use binary (0bXXX) format with those numbers.
     /// TODO: implement non-string constructor for these cases.
-    if (suffix[0] == 'u' && isdigit(suffix.substr(1)))
-      return transform(N<CallExpr>(
-          N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(std::stoi(suffix.substr(1)))),
-          N<IntExpr>(val)));
-    if (suffix[0] == 'i' && isdigit(suffix.substr(1)))
-      return transform(N<CallExpr>(
-          N<IndexExpr>(N<IdExpr>("Int"), N<IntExpr>(std::stoi(suffix.substr(1)))),
-          N<IntExpr>(val)));
-  } catch (std::out_of_range &) {
-    error("integer {} out of range", value);
+    return transform(
+        N<CallExpr>(N<IndexExpr>(N<IdExpr>(expr->suffix[0] == 'u' ? "UInt" : "Int"),
+                                 N<IntExpr>(*suffixValue)),
+                    N<IntExpr>(*(expr->intValue))));
+  } else {
+    /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
+    return transform(
+        N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", expr->suffix)),
+                    N<IntExpr>(*(expr->intValue))));
   }
-  /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
-  /// NOTE: you cannot neither use binary (0bXXX) format here.
-  return transform(
-      N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", suffix)), N<IntExpr>(val)));
 }
 
-ExprPtr SimplifyVisitor::transformFloat(const std::string &value,
-                                        const std::string &suffix) {
-  double val;
-  try {
-    val = std::stod(value);
-  } catch (std::out_of_range &) {
-    error("float {} out of range", value);
+ExprPtr SimplifyVisitor::transformFloat(FloatExpr *expr) {
+  if (!expr->floatValue)
+    error("float {} out of range", expr->value);
+
+  if (expr->suffix.empty()) {
+    return N<FloatExpr>(*(expr->floatValue));
+  } else {
+    /// Custom suffix sfx: use float.__suffix_sfx__(str) call.
+    return transform(
+        N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", expr->suffix)),
+                    N<FloatExpr>(*(expr->floatValue))));
   }
-  if (suffix.empty())
-    return N<FloatExpr>(val);
-  /// Custom suffix sfx: use float.__suffix_sfx__(str) call.
-  return transform(N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", suffix)),
-                               N<FloatExpr>(value)));
 }
 
-ExprPtr SimplifyVisitor::transformFString(std::string value) {
+ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
   std::vector<ExprPtr> items;
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {

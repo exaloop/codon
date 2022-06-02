@@ -148,11 +148,11 @@ void TranslateVisitor::visit(BoolExpr *expr) {
 }
 
 void TranslateVisitor::visit(IntExpr *expr) {
-  result = make<ir::IntConst>(expr, expr->intValue, getType(expr->getType()));
+  result = make<ir::IntConst>(expr, *(expr->intValue), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(FloatExpr *expr) {
-  result = make<ir::FloatConst>(expr, expr->floatValue, getType(expr->getType()));
+  result = make<ir::FloatConst>(expr, *(expr->floatValue), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(StringExpr *expr) {
@@ -575,7 +575,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   auto &ss = ast->suite->getSuite()->stmts;
   for (int i = 1; i < ss.size(); i++) {
     if (auto *ei = ss[i]->getExpr()->expr->getInt()) { // static integer expression
-      literals.emplace_back(ei->intValue);
+      literals.emplace_back(*(ei->intValue));
     } else {
       seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
                 ss[i]->getExpr()->toString());

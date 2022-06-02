@@ -31,6 +31,8 @@
 #define FLAG_ATOMIC 2
 #define FLAG_TEST 4
 
+#define MAX_INT_WIDTH 10000
+
 namespace codon {
 namespace ast {
 

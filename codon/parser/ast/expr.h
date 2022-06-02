@@ -137,15 +137,15 @@ protected:
 };
 using ExprPtr = std::shared_ptr<Expr>;
 
-/// Function signature parameter helper node (name: type = deflt).
+/// Function signature parameter helper node (name: type = defaultValue).
 struct Param : public codon::SrcObject {
   std::string name;
   ExprPtr type;
-  ExprPtr deflt;
+  ExprPtr defaultValue;
   bool generic;
 
-  explicit Param(std::string name = "", ExprPtr type = nullptr, ExprPtr deflt = nullptr,
-                 bool generic = false);
+  explicit Param(std::string name = "", ExprPtr type = nullptr,
+                 ExprPtr defaultValue = nullptr, bool generic = false);
 
   std::string toString() const;
   Param clone() const;
@@ -186,11 +186,11 @@ struct IntExpr : public Expr {
   std::string suffix;
 
   /// Parsed value and sign for "normal" 64-bit integers.
-  int64_t intValue;
+  std::unique_ptr<int64_t> intValue;
 
   explicit IntExpr(int64_t intValue);
   explicit IntExpr(const std::string &value, std::string suffix = "");
-  IntExpr(const IntExpr &expr) = default;
+  IntExpr(const IntExpr &expr);
 
   std::string toString() const override;
   ACCEPT(ASTVisitor);
@@ -209,11 +209,11 @@ struct FloatExpr : public Expr {
   std::string suffix;
 
   /// Parsed value for 64-bit floats.
-  double floatValue;
+  std::unique_ptr<double> floatValue;
 
   explicit FloatExpr(double floatValue);
   explicit FloatExpr(const std::string &value, std::string suffix = "");
-  FloatExpr(const FloatExpr &expr) = default;
+  FloatExpr(const FloatExpr &expr);
 
   std::string toString() const override;
   ACCEPT(ASTVisitor);
@@ -496,6 +496,7 @@ struct CallExpr : public Expr {
       : CallExpr(expr, std::vector<ExprPtr>{arg, args...}) {}
   CallExpr(const CallExpr &expr);
 
+  void validate();
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 
@@ -617,19 +618,6 @@ struct StmtExpr : public Expr {
   ACCEPT(ASTVisitor);
 
   StmtExpr *getStmtExpr() override { return this; }
-};
-
-/// Static tuple indexing expression (expr[index]).
-/// @li (1, 2, 3)[2]
-struct TupleIndexExpr : Expr {
-  ExprPtr expr;
-  int index;
-
-  TupleIndexExpr(ExprPtr expr, int index);
-  TupleIndexExpr(const TupleIndexExpr &expr);
-
-  std::string toString() const override;
-  ACCEPT(ASTVisitor);
 };
 
 /// Static tuple indexing expression (expr[index]).

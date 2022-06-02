@@ -74,7 +74,7 @@ small_stmt <-
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomExprStmt(kwd)) {
       auto s = "keyword '" + kwd + "' not recognized";
-      throw peg::parse_error(s.c_str());
+      throw PEGParseError(s.c_str());
     }
     return any(ast<CustomStmt>(LOC, kwd, ac_expr(V1), nullptr));
   }
@@ -416,7 +416,7 @@ custom_stmt <-
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomStmtKeyword(kwd, true)) {
       auto s = "keyword '" + kwd + "' not recognized";
-      throw peg::parse_error(s.c_str());
+      throw PEGParseError(s.c_str());
     }
     return ast<CustomStmt>(LOC, kwd, ac_expr(V1), ac_stmt(V2));
   }
@@ -424,7 +424,7 @@ custom_stmt <-
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomStmtKeyword(kwd, false)) {
       auto s = "keyword '" + kwd + "' not recognized";
-      throw peg::parse_error(s.c_str());
+      throw PEGParseError(s.c_str());
     }
     return ast<CustomStmt>(LOC, kwd, nullptr, ac_stmt(V2));
   }
@@ -702,9 +702,9 @@ STRING <- <NAME? STR> {
     try {
       p.first = unescape(p.first);
     } catch (std::invalid_argument &e) {
-      throw peg::parse_error("invalid code in a string");
+      throw PEGParseError("invalid code in a string");
     } catch (std::out_of_range &) {
-      throw peg::parse_error("invalid code in a string");
+      throw PEGParseError("invalid code in a string");
     }
   else
     p.second = "";
@@ -727,23 +727,23 @@ CHAR <- ('\\' . / .) { return string(VS.sv()); }
       (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top()))
     CTX.indent.push(VS.sv().size());
   else
-    throw peg::parse_error("bad indent");
+    throw PEGParseError("bad indent");
 }
 ~SAMEDENT:NO_PACKRAT <- <[ \t]*> {
   if ((!CTX.indent.size() && VS.sv().size()) ||
       (CTX.indent.size() && VS.sv().size() != CTX.indent.top()))
-    throw peg::parse_error();
+    throw PEGParseError();
 }
 ~DEDENT:NO_PACKRAT <- <[ \t]*> {
   if (CTX.indent.size() && VS.sv().size() < CTX.indent.top())
     CTX.indent.pop();
   else
-    throw peg::parse_error("bad dedent");
+    throw PEGParseError("bad dedent");
 }
 ~EXTERNDENT:NO_PACKRAT <- <[ \t]*> {
   if ((!CTX.indent.size() && VS.sv().size()) ||
       (CTX.indent.size() && VS.sv().size() < CTX.indent.top()))
-    throw peg::parse_error();
+    throw PEGParseError();
 }
 ~EOL <- <[\r][\n] / [\r\n]>
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?

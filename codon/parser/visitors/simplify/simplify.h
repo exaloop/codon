@@ -104,20 +104,43 @@ private:
   void defaultVisit(Stmt *s) override;
 
 public:
+  /* Basic expressions */
+
   /// Transform None to:
   ///   Optional().
   void visit(NoneExpr *) override;
+
   /// See transformInt for details of integer transformation.
   void visit(IntExpr *) override;
+  /// Converts binary integers (0bXXX), unsigned integers (XXXu), fixed-width integers
+  /// (XXXuN and XXXiN), and other suffix integers to a corresponding integer value or a
+  /// constructor:
+  ///   123u -> UInt[64](123)
+  ///   123i56 -> Int[56](123)  (same for UInt)
+  ///   123pf -> int.__suffix_pf__(123)
+  ExprPtr transformInt(IntExpr *expr);
+
   /// See transformFloat for details of integer transformation.
   void visit(FloatExpr *) override;
+  /// Converts a float string to double.
+  ExprPtr transformFloat(FloatExpr *expr);
+
   /// String is transformed if it is an F-string or a custom-prefix string.
   /// Custom prefix strings are transformed to:
   ///   pfx'foo' -> str.__prefix_pfx__[len(foo)]('foo').
   /// For F-strings: see transformFString.
   void visit(StringExpr *) override;
+  /// Converts a Python-like F-string (f"foo {x+1} bar") to a concatenation:
+  ///   str.cat("foo ", str(x + 1), " bar").
+  /// Also supports "{x=}" specifier (that prints the raw expression as well).
+  /// @li f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
+  ExprPtr transformFString(const std::string &value);
+
+  /* Identifier expressions */
+
   /// Each identifier is replaced with its canonical identifier.
   void visit(IdExpr *) override;
+
   /// Transform a star-expression *args to:
   ///   List(args.__iter__()).
   /// This function is called only if other nodes (CallExpr, AssignStmt, ListExpr) do
@@ -187,14 +210,19 @@ public:
   /// Otherwise, if the index expression is a type instantiation, convert it to an
   /// InstantiateExpr. All other cases are handled during the type-checking stage.
   void visit(IndexExpr *) override;
-  /// Perform the following transformations:
-  ///   __ptr__(v) -> PtrExpr(v)
-  ///   __array__[T](sz) -> StackAllocExpr(T, sz)
-  /// All other cases are handled during the type-checking stage.
-  ///
-  /// Also generate Tuple.N (if a call has N arguments) to allow passing arguments as a
-  /// tuple to Python methods later on.
+
+  /* Call expression */
+
   void visit(CallExpr *) override;
+  /// Check for special calls that are handled in simplification stage:
+  ///   - tuple(i for i in tup) (tuple generatoris)
+  ///   - std.collections.namedtuple (sugar for @tuple class)
+  ///   - std.functools.partial (sugar for partial calls)
+  ExprPtr transformSpecialCall(ExprPtr callee, const std::vector<CallExpr::Arg> &args);
+  ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &args);
+  ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &args);
+  ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &args);
+
   /// Perform the import flattening transformation:
   ///   a.b.c becomes canonical name of c in a.b if a.b is an import
   ///   a.B.c becomes canonical name of c in class a.B
@@ -341,20 +369,6 @@ public:
   using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
 
 private:
-  /// Converts binary integers (0bXXX), unsigned integers (XXXu), fixed-width integers
-  /// (XXXuN and XXXiN), and other suffix integers to a corresponding integer value or a
-  /// constructor:
-  ///   123u -> UInt[64](123)
-  ///   123i56 -> Int[56](123)  (same for UInt)
-  ///   123pf -> int.__suffix_pf__(123)
-  ExprPtr transformInt(const std::string &value, const std::string &suffix);
-  /// Converts a float string to double.
-  ExprPtr transformFloat(const std::string &value, const std::string &suffix);
-  /// Converts a Python-like F-string (f"foo {x+1} bar") to a concatenation:
-  ///   str.cat("foo ", str(x + 1), " bar").
-  /// Also supports "{x=}" specifier (that prints the raw expression as well).
-  /// @li f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
-  ExprPtr transformFString(std::string value);
   /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
   /// @li (for i in j if a for k in i if a if b) becomes:
   ///          for i in j: if a: for k in i: if a: if b: <prev>
@@ -490,9 +504,6 @@ private:
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
-
-  ExprPtr transformSpecialCall(const ExprPtr &callee,
-                               const std::vector<CallExpr::Arg> &args);
 };
 
 struct AssignReplacementVisitor : ReplaceASTVisitor {

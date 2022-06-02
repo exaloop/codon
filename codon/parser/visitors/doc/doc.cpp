@@ -255,8 +255,8 @@ void DocVisitor::visit(FunctionStmt *stmt) {
       j->set("name", a.name);
       if (a.type)
         j->set("type", transform(a.type));
-      if (a.deflt) {
-        j->set("default", FormatVisitor::apply(a.deflt));
+      if (a.defaultValue) {
+        j->set("default", FormatVisitor::apply(a.defaultValue));
       }
       args.push_back(j);
     }

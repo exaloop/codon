@@ -439,8 +439,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                                staticType);
       auto typId = ctx->cache->unboundCount - 1;
       t->genericName = ctx->cache->reverseIdentifierLookup[a.name];
-      if (a.deflt) {
-        auto dt = clone(a.deflt);
+      if (a.defaultValue) {
+        auto dt = clone(a.defaultValue);
         dt = transformType(dt);
         t->defaultType = dt->type;
       }
@@ -566,8 +566,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                                  staticType);
         auto typId = ctx->cache->unboundCount - 1;
         t->getLink()->genericName = ctx->cache->reverseIdentifierLookup[a.name];
-        if (a.deflt) {
-          auto dt = clone(a.deflt);
+        if (a.defaultValue) {
+          auto dt = clone(a.defaultValue);
           dt = transformType(dt);
           t->defaultType = dt->type;
         }

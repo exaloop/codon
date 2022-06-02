@@ -205,7 +205,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         if (seenMembers.find(a.name) != seenMembers.end())
           error(a.type, "'{}' declared twice", a.name);
         seenMembers.insert(a.name);
-        args.emplace_back(Param{a.name, a.type, a.deflt});
+        args.emplace_back(Param{a.name, a.type, a.defaultValue});
         argSubstitutions.push_back(int(substitutions.size()) - 1);
         if (!extension)
           ctx->cache->classes[canonicalName].fields.push_back({a.name, nullptr});
@@ -233,9 +233,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       else
         ctx->addType(genName, varName, a.type->getSrcInfo());
       genAst.push_back(N<IdExpr>(varName));
-      args.emplace_back(Param{varName, a.type, a.deflt, a.generic});
+      args.emplace_back(Param{varName, a.type, a.defaultValue, a.generic});
     } else {
-      args.emplace_back(Param{a.name, a.type, a.deflt});
+      args.emplace_back(Param{a.name, a.type, a.defaultValue});
       if (!extension)
         ctx->cache->classes[canonicalName].fields.push_back({a.name, nullptr});
     }
@@ -314,11 +314,11 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     auto &a = args[ai];
     if (argSubstitutions[ai] == substitutions.size() - 1) {
       a.type = transformType(a.type, false);
-      a.deflt = transform(a.deflt, true);
+      a.defaultValue = transform(a.defaultValue, true);
     } else {
       a.type = ReplacementVisitor::replace(a.type, substitutions[argSubstitutions[ai]]);
-      a.deflt =
-          ReplacementVisitor::replace(a.deflt, substitutions[argSubstitutions[ai]]);
+      a.defaultValue =
+          ReplacementVisitor::replace(a.defaultValue, substitutions[argSubstitutions[ai]]);
     }
     if (!a.generic)
       memberArgs.push_back(a);
@@ -465,7 +465,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
       for (auto &a : args)
         fargs.emplace_back(
             Param{a.name, clone(a.type),
-                  a.deflt ? clone(a.deflt) : N<CallExpr>(clone(a.type))});
+                  a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
     attr.set(Attr::Internal);
   } else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
@@ -475,7 +475,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     for (auto &a : args) {
       stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
       fargs.emplace_back(Param{a.name, clone(a.type),
-                               a.deflt ? clone(a.deflt) : N<CallExpr>(clone(a.type))});
+                               a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
     }
   } else if (op == "raw") {
     // Classes: def __raw__(self: T) -> Ptr[byte]:

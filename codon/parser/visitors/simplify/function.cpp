@@ -241,20 +241,20 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     std::string varName = a.name;
     int stars = trimStars(varName);
     if (stars == 2) {
-      if (hasKwArg || a.deflt || ia != stmt->args.size() - 1)
+      if (hasKwArg || a.defaultValue || ia != stmt->args.size() - 1)
         error("invalid **kwargs");
       hasKwArg = true;
     } else if (stars == 1) {
-      if (hasStarArg || a.deflt)
+      if (hasStarArg || a.defaultValue)
         error("invalid *args");
       hasStarArg = true;
     }
     if (in(seenArgs, varName))
       error("'{}' declared twice", varName);
     seenArgs.insert(varName);
-    if (!a.deflt && defaultsStarted && !stars && !a.generic)
+    if (!a.defaultValue && defaultsStarted && !stars && !a.generic)
       error("non-default argument '{}' after a default argument", varName);
-    defaultsStarted |= bool(a.deflt);
+    defaultsStarted |= bool(a.defaultValue);
 
     auto name = ctx->generateCanonicalName(varName);
 
@@ -267,7 +267,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
 
     if (attr.has(Attr::C)) {
-      if (a.deflt)
+      if (a.defaultValue)
         error("C functions do not accept default argument");
       if (stars != 1 && !typeAst)
         error("C functions require explicit type annotations");
@@ -276,21 +276,21 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
 
     // First add all generics!
-    auto deflt = a.deflt;
+    auto defaultValue = a.defaultValue;
     if (typeAst && typeAst->getIndex() && typeAst->getIndex()->expr->isId("Callable") &&
-        deflt && deflt->getNone())
-      deflt = N<CallExpr>(N<IdExpr>("NoneType"));
-    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) && deflt &&
-        deflt->getNone())
-      deflt = N<IdExpr>("NoneType");
-    args.emplace_back(Param{std::string(stars, '*') + name, typeAst, deflt, a.generic});
-    // if (deflt) {
-    //   defltCanonicalName =
+        defaultValue && defaultValue->getNone())
+      defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
+    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) && defaultValue &&
+        defaultValue->getNone())
+      defaultValue = N<IdExpr>("NoneType");
+    args.emplace_back(Param{std::string(stars, '*') + name, typeAst, defaultValue, a.generic});
+    // if (defaultValue) {
+    //   defaultValueCanonicalName =
     //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
-    //   stmts.push_back(N<AssignStmt>(N<IdExpr>(defltCanonicalName), deflt));
+    //   stmts.push_back(N<AssignStmt>(N<IdExpr>(defaultValueCanonicalName), defaultValue));
     // }
     // args.emplace_back(Param{std::string(stars, '*') + name, typeAst,
-    //                         deflt ? N<IdExpr>(defltCanonicalName) : nullptr,
+    //                         defaultValue ? N<IdExpr>(defaultValueCanonicalName) : nullptr,
     //                         a.generic});
     if (a.generic) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
@@ -302,7 +302,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   }
   for (auto &a : args) {
     a.type = transformType(a.type, false);
-    a.deflt = transform(a.deflt, true);
+    a.defaultValue = transform(a.defaultValue, true);
   }
   // Delay adding to context to prevent "def foo(a, b=a)"
   for (auto &a : args) {

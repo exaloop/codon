@@ -12,10 +12,11 @@ namespace codon::ast {
 void SimplifyVisitor::visit(TupleExpr *expr) {
   std::vector<ExprPtr> items;
   for (auto &i : expr->items) {
-    if (auto es = i->getStar())
+    if (auto es = i->getStar()) {
       items.emplace_back(N<StarExpr>(transform(es->what)));
-    else
+    } else {
       items.emplace_back(transform(i));
+    }
   }
   resultExpr = N<TupleExpr>(items);
 }
