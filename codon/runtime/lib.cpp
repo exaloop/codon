@@ -46,6 +46,10 @@ static void register_thread(kmp_int32 *global_tid, kmp_int32 *bound_tid) {
   GC_register_my_thread(&sb);
 }
 
+// OpenMP patch for registering GC roots
+typedef void (*gc_roots_callback)(void *, void *);
+extern "C" void __kmpc_set_gc_callbacks(gc_roots_callback add_roots, gc_roots_callback del_roots);
+
 void seq_exc_init();
 
 int seq_flags;
@@ -54,6 +58,7 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
+  __kmpc_set_gc_callbacks(GC_add_roots, GC_remove_roots);
   // equivalent to: #pragma omp parallel { register_thread }
   __kmpc_fork_call(&dummy_loc, 0, (kmpc_micro)register_thread);
   seq_exc_init();
