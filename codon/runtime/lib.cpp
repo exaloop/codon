@@ -58,12 +58,9 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
-  fprintf(stderr, "A\n");
   __kmpc_set_gc_callbacks(GC_add_roots, GC_remove_roots);
-  fprintf(stderr, "B\n");
   // equivalent to: #pragma omp parallel { register_thread }
   __kmpc_fork_call(&dummy_loc, 0, (kmpc_micro)register_thread);
-  fprintf(stderr, "C\n");
   seq_exc_init();
   seq_flags = flags;
 }
