@@ -172,10 +172,6 @@ jobs:
           PYTHONPATH: .:./test/python
           LD_LIBRARY_PATH: ./build
 
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
-
       - name: Build Documentation
         run: |
           python -m pip install --upgrade pip

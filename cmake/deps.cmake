@@ -68,7 +68,7 @@ endif()
 CPMAddPackage(
     NAME openmp
     GITHUB_REPOSITORY "exaloop/openmp"
-    GIT_TAG b59ae6eac8583037148c0743a3f75617aef4e5d5
+    GIT_TAG 82af9cfcac92b0a48fc6fe4fc2613a6a20a8defe
     OPTIONS "CMAKE_BUILD_TYPE Release"
             "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")

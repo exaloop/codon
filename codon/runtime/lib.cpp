@@ -28,27 +28,13 @@ using namespace std;
  * General
  */
 
-// the following is for manually invoking OpenMP "parallel for"
-typedef int32_t kmp_int32;
-typedef struct {
-  kmp_int32 reserved_1;
-  kmp_int32 flags;
-  kmp_int32 reserved_2;
-  kmp_int32 reserved_3;
-  char const *psource;
-} ident_t;
-typedef void (*kmpc_micro)(kmp_int32 *global_tid, kmp_int32 *bound_tid, ...);
-static ident_t dummy_loc = {0, 2, 0, 0, ";unknown;unknown;0;0;;"};
-extern "C" void __kmpc_fork_call(ident_t *, kmp_int32 nargs, kmpc_micro microtask, ...);
-static void register_thread(kmp_int32 *global_tid, kmp_int32 *bound_tid) {
-  GC_stack_base sb;
-  GC_get_stack_base(&sb);
-  GC_register_my_thread(&sb);
-}
-
-// OpenMP patch for registering GC roots
+// OpenMP patch with GC callbacks
+typedef int (*gc_setup_callback)(GC_stack_base *);
 typedef void (*gc_roots_callback)(void *, void *);
-extern "C" void __kmpc_set_gc_callbacks(gc_roots_callback add_roots, gc_roots_callback del_roots);
+extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
+                                        gc_setup_callback register_thread,
+                                        gc_roots_callback add_roots,
+                                        gc_roots_callback del_roots);
 
 void seq_exc_init();
 
@@ -58,9 +44,8 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
-  __kmpc_set_gc_callbacks(GC_add_roots, GC_remove_roots);
-  // equivalent to: #pragma omp parallel { register_thread }
-  __kmpc_fork_call(&dummy_loc, 0, (kmpc_micro)register_thread);
+  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
+                          GC_add_roots, GC_remove_roots);
   seq_exc_init();
   seq_flags = flags;
 }
