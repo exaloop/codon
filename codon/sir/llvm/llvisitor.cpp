@@ -960,9 +960,8 @@ std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
   }
 
   // build remaining code
-  buf << x->getLLVMDeclarations() << "\n"
-      << signature << " {{\n"
-      << x->getLLVMBody() << "\n}}";
+  auto body = x->getLLVMBody();
+  buf << x->getLLVMDeclarations() << "\n" << signature << " {{\n" << body << "\n}}";
   return buf.str();
 }
 
@@ -1001,6 +1000,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     std::string bufStr;
     llvm::raw_string_ostream buf(bufStr);
     err.print("LLVM", buf);
+    // LOG("-> ERR {}", x->referenceString());
+    // LOG("       {}", code);
     compilationError(buf.str());
   }
   sub->setDataLayout(M->getDataLayout());

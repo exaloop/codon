@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include "codon/sir/sir.h"
 #include "codon/sir/util/visitor.h"
 
@@ -71,8 +73,10 @@ public:
   /// Clones a value, returning the previous value if other has already been cloned.
   /// @param other the original
   /// @param cloneTo the function to clone locals to, or null if none
+  /// @param remaps variable re-mappings
   /// @return the clone
-  Value *clone(const Value *other, BodiedFunc *cloneTo = nullptr);
+  Value *clone(const Value *other, BodiedFunc *cloneTo = nullptr,
+               const std::unordered_map<id_t, Var *> &remaps = {});
 
   /// Returns the original unless the variable has been force cloned.
   /// @param other the original
