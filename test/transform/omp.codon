@@ -265,6 +265,7 @@ def test_omp_reductions():
             a = op(a, type(a)(i))
         return a
 
+    from math import inf
     omp.set_num_threads(4)
     N = 10001
     L = list(range(N))
@@ -449,6 +450,26 @@ def test_omp_reductions():
         c = min(b, c)
     assert c == -1.
 
+    x_add = 10.
+    x_min = inf
+    x_max = -inf
+    @par
+    for i in L:
+        x_i = float(i)
+        x_add += x_i
+        x_min = min(x_min, x_i)
+        x_max = max(x_i, x_max)
+    assert x_add == expected(N, 10., float.__add__)
+    assert x_min == expected(N, inf, min)
+    assert x_max == expected(N, -inf, max)
+
+    x_mul = 2.
+    @par
+    for i in L[:10]:
+        x_i = float(i)
+        x_mul *= x_i
+    assert x_mul == expected(10, 2., float.__mul__)
+
     # multiple reductions
     global my_global
     g = my_global
@@ -509,6 +530,68 @@ def test_omp_non_imperative():
 
     assert all(s == i*i for i,s in enumerate(v))
 
+test_generator_based_loops_global = 0.7
+
+@test
+def test_omp_non_imperative_reductions():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    @omp.critical
+    def add(v, x):
+        v.add(x)
+
+    @nonpure
+    def foo(x):
+        return x
+
+    global test_generator_based_loops_global
+    N = 1001
+
+    # no reductions
+    v = set()
+    @par
+    for i in squares(N):
+        x = i - 1
+        add(v, x)
+    assert v == {i**2 - 1 for i in range(N)}
+
+    # one reduction
+    a = 0
+    @par
+    for i in squares(N):
+        a += i
+    assert a == 333833500
+
+    # kitchen sink
+    a = 7
+    b = 0
+    c = 0.5
+    d = foo(0)
+    e = foo(1)
+    f = foo(-1)
+    g = -1
+    h = Vector(1.5, 1.25)
+    @par
+    for i in squares(N):
+        x = foo(i) + d
+        y = foo(x) + e + f
+        a = x + a + d
+        b ^= y - d
+        c += x + d
+        test_generator_based_loops_global += y - d
+        f = foo(-1)
+        g = max(i, g)
+        h += Vector(i, i)
+    assert a == 333833507
+    assert b == 332752
+    assert c == 333833500.5
+    assert test_generator_based_loops_global == 333833500.7
+    assert g == (N - 1) ** 2
+    assert h.x == 333833501.5
+    assert h.y == 333833501.25
+
 @test
 def test_omp_transform(a, b, c):
     a0, b0, c0 = a, b, c
@@ -536,11 +619,123 @@ def test_omp_transform(a, b, c):
     assert abs(b - b0) < b/1e6
     assert c == v[-1] ** 2
 
+@test
+def test_omp_nested():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    N = 100
+    v = []
+
+    v.clear()
+    @par
+    for i in range(N):
+        @par
+        for j in range(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in range(N) for j in range(i)}
+
+    v.clear()
+    @par
+    for i in range(N):
+        @par
+        for j in squares(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in range(N) for j in squares(i)}
+
+    v.clear()
+    @par
+    for i in squares(N):
+        @par
+        for j in range(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in squares(N) for j in range(i)}
+
+    v.clear()
+    @par
+    for i in squares(N):
+        @par
+        for j in squares(i):
+            with lock:
+                v.append(i + j)
+    assert set(v) == {i + j for i in squares(N) for j in squares(i)}
+
+@test
+def test_omp_corner_cases():
+    def squares(n):
+        for i in range(n):
+            yield i*i
+
+    @nonpure
+    def foo(x):
+        return x
+
+    v = list(range(10))
+
+    @par
+    for i in range(10):
+        pass
+
+    @par
+    for i in v:
+        pass
+
+    @par(num_threads=2)
+    for i in range(10):
+        pass
+
+    @par(schedule='dynamic')
+    for i in range(10):
+        pass
+
+    @par(num_threads=2, schedule='dynamic')
+    for i in range(10):
+        pass
+
+    @par
+    for i in squares(10):
+        pass
+
+    @par(num_threads=2)
+    for i in squares(10):
+        pass
+
+    @par
+    for i in range(10):
+        foo(i)
+
+    @par
+    for i in squares(10):
+        foo(i)
+
+    @par
+    for i in range(10):
+        a = foo(i)
+
+    @par
+    for i in squares(10):
+        a = foo(i)
+
+    @par
+    for i in range(10):
+        i += i
+
+    @par
+    for i in squares(10):
+        i += i
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
 test_omp_reductions()
 test_omp_critical()
 test_omp_non_imperative()
+test_omp_non_imperative_reductions()
 test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)
+test_omp_nested()
+test_omp_corner_cases()

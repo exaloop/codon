@@ -17,7 +17,8 @@ struct GatherLocals : public util::Operator {
 };
 } // namespace
 
-Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo) {
+Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo,
+                           const std::unordered_map<id_t, Var *> &remaps) {
   if (!other)
     return nullptr;
 
@@ -26,9 +27,19 @@ Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo) {
     GatherLocals gl;
     const_cast<Value *>(other)->accept(gl);
     for (auto *v : gl.locals) {
-      auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
-      cloneTo->push_back(clonedVar);
-      forceRemap(v, clonedVar);
+      auto it = remaps.find(v->getId());
+      if (it != remaps.end()) {
+        forceRemap(v, it->second);
+      } else {
+        auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
+        cloneTo->push_back(clonedVar);
+        forceRemap(v, clonedVar);
+      }
+    }
+  } else {
+    auto *M = other->getModule();
+    for (const auto &e : remaps) {
+      forceRemap(M->getVar(e.first), e.second);
     }
   }
 
