@@ -5,8 +5,19 @@
 ## Basics
 
 * [Getting started](intro/intro.md)
-* [Codon tutorial](intro/tutorial.md)
 * [Frequently asked questions](intro/faq.md)
+
+## Language
+
+* [Basics](language/basics.md)
+* [Collections](language/collections.md)
+* [Functions](language/functions.md)
+* [Classes](language/classes.md)
+* [Generators](language/generators.md)
+* [Statics](language/statics.md)
+* [Other types and features](language/extra.md)
+* [Foreign function interface](language/ffi.md)
+* [Inline LLVM IR](language/llvm.md)
 
 ## Interoperability
 
