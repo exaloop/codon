@@ -115,12 +115,12 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
       seqassert(p, "invalid partial element");
       int j = 0;
       for (int i = 0; i < p->known.size(); i++) {
-        if (p->known[i] && !p->func->ast->args[i].generic) {
+        if (p->known[i] && p->func->ast->args[i].status == Param::Normal) {
           seqassert(j < ctx->seqItems.back().size() &&
                         ctx->seqItems.back()[j].first == ExprAttr::SequenceItem,
                     "invalid partial element");
           v.push_back(ctx->seqItems.back()[j++].second);
-        } else if (!p->func->ast->args[i].generic) {
+        } else if (p->func->ast->args[i].status == Param::Normal) {
           v.push_back({nullptr});
         }
       }
@@ -509,7 +509,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   std::vector<std::string> names;
   std::vector<int> indices;
   for (int i = 0, j = 0; i < ast->args.size(); i++)
-    if (!ast->args[i].generic) {
+    if (ast->args[i].status == Param::Normal) {
       if (!type->getArgTypes()[j]->getFunc()) {
         names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
         indices.push_back(i);
@@ -551,7 +551,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::vector<std::string> names;
   std::vector<int> indices;
   for (int i = 0, j = 1; i < ast->args.size(); i++)
-    if (!ast->args[i].generic) {
+    if (ast->args[i].status == Param::Normal) {
       names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
       indices.push_back(i);
       j++;

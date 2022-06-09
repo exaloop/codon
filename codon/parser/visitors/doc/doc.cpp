@@ -242,15 +242,15 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   std::vector<std::shared_ptr<json>> args;
   std::vector<std::string> generics;
   for (auto &a : stmt->args)
-    if (a.generic || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
+    if (a.status != Param::Normal || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
                                  (a.type->getIndex() &&
                                   a.type->getIndex()->expr->isId("Static"))))) {
       ctx->add(a.name, std::make_shared<int>(0));
       generics.push_back(a.name);
-      a.generic = true;
+      a.status = Param::Generic;
     }
   for (auto &a : stmt->args)
-    if (!a.generic) {
+    if (a.status != Param::Normal) {
       auto j = std::make_shared<json>();
       j->set("name", a.name);
       if (a.type)
@@ -304,17 +304,17 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::vector<std::shared_ptr<json>> args;
   for (auto &a : stmt->args)
-    if (a.generic || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
+    if (a.status != Param::Normal || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
                                  (a.type->getIndex() &&
                                   a.type->getIndex()->expr->isId("Static"))))) {
-      a.generic = true;
+      a.status = Param::Generic;
       generics.push_back(a.name);
     }
   ctx->shared->generics[id] = generics;
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
   for (auto &a : stmt->args)
-    if (!a.generic) {
+    if (a.status != Param::Normal) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       if (a.type)

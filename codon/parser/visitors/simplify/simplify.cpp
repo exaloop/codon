@@ -156,21 +156,17 @@ void SimplifyVisitor::visit(SuiteStmt *stmt) {
 }
 
 ExprPtr SimplifyVisitor::transform(const ExprPtr &expr) {
-  return transform(expr, false, true);
+  return transform(expr, false);
 }
 
-ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes,
-                                   bool allowAssign) {
+ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
   SimplifyVisitor v(ctx, preamble);
   v.prependStmts = prependStmts;
   v.setSrcInfo(expr->getSrcInfo());
   ctx->pushSrcInfo(expr->getSrcInfo());
-  auto tmp = ctx->shortCircuit;
-  ctx->shortCircuit = !allowAssign;
   const_cast<Expr *>(expr.get())->accept(v);
-  ctx->shortCircuit = tmp;
   ctx->popSrcInfo();
   if (!allowTypes && v.resultExpr && v.resultExpr->isType())
     error("unexpected type expression");
@@ -194,7 +190,11 @@ void SimplifyVisitor::defaultVisit(Expr *e) { resultExpr = e->clone(); }
 /**************************************************************************************/
 
 void SimplifyVisitor::visit(StarExpr *expr) {
-  error("cannot use star-expression here");
+  resultExpr = N<StarExpr>(transform(expr->what));
+}
+
+void SimplifyVisitor::visit(KeywordStarExpr *expr) {
+  resultExpr = N<KeywordStarExpr>(transform(expr->what));
 }
 
 void SimplifyVisitor::visit(EllipsisExpr *expr) {

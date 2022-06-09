@@ -2604,9 +2604,9 @@ inline size_t Holder::parse_core(const char *s, size_t n, SemanticValues &vs,
 
       try {
         a_val = reduce(chldsv, dt);
-      } catch (const codon::ast::PEGParseError &e) {
+      } catch (const codon::exc::ParserException &e) {
         if (c.log) {
-          if (e.what()) {
+          if (!e.messages.empty()) {
             if (c.error_info.message_pos < s) {
               c.error_info.message_pos = s;
               c.error_info.message = e.what();

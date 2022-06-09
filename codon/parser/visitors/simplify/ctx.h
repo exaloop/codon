@@ -134,6 +134,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
 public:
   SimplifyContext(std::string filename, Cache *cache);
 
+  void add(const std::string &name, std::shared_ptr<SimplifyItem> var) override;
   /// Convenience method for adding an object to the context.
   std::shared_ptr<SimplifyItem> addVar(const std::string &name,
                                        const std::string &canonicalName,
@@ -148,7 +149,9 @@ public:
   addAlwaysVisible(const std::shared_ptr<SimplifyItem> &item);
 
   std::shared_ptr<SimplifyItem> find(const std::string &name) const override;
+  std::shared_ptr<SimplifyItem> forceFind(const std::string &name) const;
   std::shared_ptr<SimplifyItem> findDominatingBinding(const std::string &name);
+
 
   /// Return a canonical name of the top-most base, or an empty string if this is a
   /// top-level base.

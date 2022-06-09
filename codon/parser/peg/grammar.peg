@@ -73,8 +73,7 @@ small_stmt <-
   / NAME SPACE expressions {
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomExprStmt(kwd)) {
-      auto s = "keyword '" + kwd + "' not recognized";
-      throw PEGParseError(s.c_str());
+      throw codon::exc::ParserException(); // just ignore it
     }
     return any(ast<CustomStmt>(LOC, kwd, ac_expr(V1), nullptr));
   }
@@ -341,7 +340,7 @@ generics <- '[' _ tlist(',', param) _ ']' {
   vector<Param> params;
   for (auto &p: VS) {
     auto v = ac<Param>(p);
-    v.generic = true;
+    v.status = Param::Generic;
     if (!v.type) v.type = ast<IdExpr>(LOC, "type");
     params.push_back(v);
   }
@@ -366,6 +365,7 @@ class <- decorators? class_def {
   if (VS.size() == 2) {
     auto fn = ac_stmt(V1);
     dynamic_pointer_cast<ClassStmt>(fn)->decorators = ac<vector<ExprPtr>>(V0);
+    dynamic_pointer_cast<ClassStmt>(fn)->parseDecorators();
     return fn;
   }
   return ac_stmt(V0);
@@ -397,7 +397,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   for (auto &p: generics)
     args.push_back(p);
   return ast<ClassStmt>(LOC,
-    ac<string>(V0), move(args), suite, Attr(), vector<ExprPtr>{}, baseClasses
+    ac<string>(V0), move(args), suite, vector<ExprPtr>{}, baseClasses
   );
 }
 match_stmt <- 'match' SPACE expression _ ':' (_ EOL)+
@@ -415,16 +415,14 @@ custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomStmtKeyword(kwd, true)) {
-      auto s = "keyword '" + kwd + "' not recognized";
-      throw PEGParseError(s.c_str());
+      throw codon::exc::ParserException();
     }
     return ast<CustomStmt>(LOC, kwd, ac_expr(V1), ac_stmt(V2));
   }
   / NAME _ ':' _ suite {
     auto kwd = ac<string>(V0);
     if (!CTX.hasCustomStmtKeyword(kwd, false)) {
-      auto s = "keyword '" + kwd + "' not recognized";
-      throw PEGParseError(s.c_str());
+      throw codon::exc::ParserException();
     }
     return ast<CustomStmt>(LOC, kwd, nullptr, ac_stmt(V2));
   }
@@ -702,9 +700,9 @@ STRING <- <NAME? STR> {
     try {
       p.first = unescape(p.first);
     } catch (std::invalid_argument &e) {
-      throw PEGParseError("invalid code in a string");
+      throw codon::exc::ParserException("invalid code in a string");
     } catch (std::out_of_range &) {
-      throw PEGParseError("invalid code in a string");
+      throw codon::exc::ParserException("invalid code in a string");
     }
   else
     p.second = "";
@@ -727,23 +725,23 @@ CHAR <- ('\\' . / .) { return string(VS.sv()); }
       (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top()))
     CTX.indent.push(VS.sv().size());
   else
-    throw PEGParseError("bad indent");
+    throw codon::exc::ParserException("bad indent");
 }
 ~SAMEDENT:NO_PACKRAT <- <[ \t]*> {
   if ((!CTX.indent.size() && VS.sv().size()) ||
       (CTX.indent.size() && VS.sv().size() != CTX.indent.top()))
-    throw PEGParseError();
+    throw codon::exc::ParserException();
 }
 ~DEDENT:NO_PACKRAT <- <[ \t]*> {
   if (CTX.indent.size() && VS.sv().size() < CTX.indent.top())
     CTX.indent.pop();
   else
-    throw PEGParseError("bad dedent");
+    throw codon::exc::ParserException("bad dedent");
 }
 ~EXTERNDENT:NO_PACKRAT <- <[ \t]*> {
   if ((!CTX.indent.size() && VS.sv().size()) ||
       (CTX.indent.size() && VS.sv().size() < CTX.indent.top()))
-    throw PEGParseError();
+    throw codon::exc::ParserException();
 }
 ~EOL <- <[\r][\n] / [\r\n]>
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?

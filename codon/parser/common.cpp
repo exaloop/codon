@@ -141,6 +141,9 @@ void error(const char *format) { throw exc::ParserException(format); }
 void error(const ::codon::SrcInfo &info, const char *format) {
   throw exc::ParserException(format, info);
 }
+void error(const ::codon::SrcInfo &info, const std::string &format) {
+  throw exc::ParserException(format, info);
+}
 
 /// Path utilities
 

@@ -280,10 +280,10 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->args.size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (!func->ast->args[i].generic &&
+      if (func->ast->args[i].status == Param::Normal  &&
           (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
-      else if (!partial && !func->ast->args[i].generic)
+      else if (!partial && func->ast->args[i].status == Param::Normal)
         return onError(format("missing argument '{}'",
                               cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }

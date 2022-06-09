@@ -79,6 +79,14 @@ void TypecheckVisitor::defaultVisit(Expr *e) {
 
 /**************************************************************************************/
 
+void TypecheckVisitor::visit(StarExpr *) {
+  error("cannot use star-expression");
+}
+
+void TypecheckVisitor::visit(KeywordStarExpr *) {
+  error("cannot use star-expression");
+}
+
 void TypecheckVisitor::visit(BoolExpr *expr) {
   unify(expr->type, ctx->findInternal("bool"));
   expr->done = true;
@@ -988,7 +996,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
     calleeFn = expr->expr->type->getFunc();
     // Fill in generics
     for (int i = 0, j = 0; i < pc->known.size(); i++)
-      if (pc->func->ast->args[i].generic) {
+      if (pc->func->ast->args[i].status == Param::Generic) {
         if (pc->known[i])
           unify(calleeFn->funcGenerics[j].type,
                 ctx->instantiate(expr, pc->func->funcGenerics[j].type));
@@ -1053,7 +1061,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   // TODO: remove once the proper partial handling of overloaded functions land
   if (unificationsDone) {
     for (int i = 0, j = 0; i < calleeFn->ast->args.size(); i++)
-      if (calleeFn->ast->args[i].generic) {
+      if (calleeFn->ast->args[i].status == Param::Generic) {
         if (calleeFn->ast->args[i].defaultValue &&
             calleeFn->funcGenerics[j].type->getUnbound()) {
           auto de = transform(calleeFn->ast->args[i].defaultValue, true);
@@ -1282,6 +1290,8 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
       seqassert(c, "not a class: {}", p->toString());
       for (auto &g : c->generics)
         ctx->add(TypecheckItem::Type, g.name, g.type);
+      for (auto &g : c->hiddenGenerics)
+        ctx->add(TypecheckItem::Type, g.name, g.type);
       break;
     }
   }
@@ -1310,8 +1320,8 @@ std::string TypecheckVisitor::generateTupleStub(int len, const std::string &name
       args.emplace_back(Param(names[i - 1], N<IdExpr>(format("T{}", i)), nullptr));
     for (int i = 1; i <= len; i++)
       args.emplace_back(Param(format("T{}", i), N<IdExpr>("type"), nullptr, true));
-    StmtPtr stmt =
-        std::make_shared<ClassStmt>(typeName, args, nullptr, Attr({Attr::Tuple}));
+    StmtPtr stmt = std::make_shared<ClassStmt>(
+        typeName, args, nullptr, std::vector<ExprPtr>{N<IdExpr>("tuple")});
     stmt->setSrcInfo(ctx->cache->generateSrcInfo());
 
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
@@ -1329,7 +1339,7 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
   for (int i = 0; i < mask.size(); i++)
     if (!mask[i])
       strMask[i] = '0';
-    else if (!fn->ast->args[i].generic)
+    else if (fn->ast->args[i].status == Param::Normal)
       tupleSize++;
     else
       genericSize++;
@@ -1346,7 +1356,7 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
   seqassert(fn, "not a function: {}", expr->getType()->toString());
   std::vector<char> mask(fn->ast->args.size(), 0);
   for (int i = 0, j = 0; i < fn->ast->args.size(); i++)
-    if (fn->ast->args[i].generic) {
+    if (fn->ast->args[i].status == Param::Generic) {
       // TODO: better detection of user-provided args...?
       if (!fn->funcGenerics[j].type->getUnbound())
         mask[i] = 1;
@@ -1440,7 +1450,7 @@ TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
         m.get(), args,
         [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
-            if (m->ast->args[si].generic) {
+            if (m->ast->args[si].status == Param::Generic) {
               // Ignore type arguments
             } else if (si == s || si == k || slots[si].size() != 1) {
               // Ignore *args, *kwargs and default arguments
@@ -1453,8 +1463,9 @@ TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
         },
         [](const std::string &) { return -1; });
     for (int ai = 0, mi = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
-      auto expectTyp = m->ast->args[ai].generic ? m->funcGenerics[gi++].type
-                                                : m->getArgTypes()[mi++];
+      auto expectTyp = m->ast->args[ai].status == Param::Normal
+                           ? m->getArgTypes()[mi++]
+                           : m->funcGenerics[gi++].type;
       auto argType = reordered[ai];
       if (!argType)
         continue;
@@ -1613,30 +1624,28 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   // realize & do bitcast
   // call bitcast() . method
 
-  auto name = cands[0].first;
-  int fields = cands[0].second;
+  auto name = cands[0];
   auto val = ctx->find(name);
   seqassert(val, "cannot find '{}'", name);
   auto ftyp = ctx->instantiate(expr, val->type)->getClass();
 
   if (typ->getRecord()) {
     std::vector<ExprPtr> members;
-    for (int i = 0; i < fields; i++)
-      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name),
-                                   ctx->cache->classes[typ->name].fields[i].name));
+    for (auto &f : ctx->cache->classes[name].fields)
+      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name), f.name));
     ExprPtr e = transform(
         N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
     unify(e->type, ftyp);
     e->type = ftyp;
     return e;
   } else {
-    for (int i = 0; i < fields; i++) {
-      auto t = ctx->cache->classes[typ->name].fields[i].type;
-      t = ctx->instantiate(expr, t, typ.get());
-
-      auto ft = ctx->cache->classes[name].fields[i].type;
-      ft = ctx->instantiate(expr, ft, ftyp.get());
-      unify(t, ft);
+    for (auto &f : ctx->cache->classes[typ->name].fields) {
+      for (auto &nf : ctx->cache->classes[name].fields)
+        if (f.name == nf.name) {
+          auto t = ctx->instantiate(expr, f.type, typ.get());
+          auto ft = ctx->instantiate(expr, nf.type, ftyp.get());
+          unify(t, ft);
+        }
     }
 
     ExprPtr typExpr = N<IdExpr>(name);
@@ -1655,20 +1664,19 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
     return result;
   result.push_back(cls);
   int start = 0;
-  for (auto &cand : ctx->cache->classes[cls->name].parentClasses) {
-    auto name = cand.first;
-    int fields = cand.second;
+  for (auto &name : ctx->cache->classes[cls->name].parentClasses) {
     auto val = ctx->find(name);
     seqassert(val, "cannot find '{}'", name);
     auto ftyp = ctx->instantiate(nullptr, val->type)->getClass();
-    for (int i = start; i < fields; i++) {
-      auto t = ctx->cache->classes[cls->name].fields[i].type;
-      t = ctx->instantiate(nullptr, t, cls.get());
-      auto ft = ctx->cache->classes[name].fields[i].type;
-      ft = ctx->instantiate(nullptr, ft, ftyp.get());
-      unify(t, ft);
+    for (auto &f : ctx->cache->classes[cls->name].fields) {
+      for (auto &nf : ctx->cache->classes[name].fields)
+        if (f.name == nf.name) {
+          auto t = ctx->instantiate(nullptr, f.type, cls.get());
+          auto ft = ctx->instantiate(nullptr, nf.type, ftyp.get());
+          unify(t, ft);
+          break;
+        }
     }
-    start += fields;
     for (auto &t : getSuperTypes(ftyp))
       result.push_back(t);
   }
@@ -1802,7 +1810,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(ClassTypePtr callee,
           ctx->addBlock(); // add generics for default arguments.
           addFunctionGenerics(calleeFn->getFunc().get());
           for (int si = 0, pi = 0; si < slots.size(); si++) {
-            if (calleeFn->ast->args[si].generic) {
+            if (calleeFn->ast->args[si].status == Param::Generic) {
               typeArgs.push_back(slots[si].empty() ? nullptr
                                                    : expr->args[slots[si][0]].value);
               typeArgCount += typeArgs.back() != nullptr;
@@ -1867,7 +1875,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(ClassTypePtr callee,
                 if (in(ctx->defaultCallDepth, es))
                   error("recursive default arguments");
                 ctx->defaultCallDepth.insert(es);
-                args.push_back({"", transform(clone(calleeFn->ast->args[si].defaultValue))});
+                args.push_back(
+                    {"", transform(clone(calleeFn->ast->args[si].defaultValue))});
                 ctx->defaultCallDepth.erase(es);
               }
             } else {

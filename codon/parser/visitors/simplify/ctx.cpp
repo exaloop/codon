@@ -23,6 +23,13 @@ SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, int att
     : name(move(name)), ast(move(ast)), attributes(attributes), deducedMembers(nullptr),
       selfName() {}
 
+void SimplifyContext::add(const std::string &name, std::shared_ptr<SimplifyItem> var) {
+  auto v = find(name);
+  if (v && v->noShadow)
+    error("cannot shadow global or nonlocal statement");
+  Context<SimplifyItem>::add(name, var);
+}
+
 std::shared_ptr<SimplifyItem> SimplifyContext::addVar(const std::string &name,
                                                       const std::string &canonicalName,
                                                       const SrcInfo &srcInfo) {
@@ -80,6 +87,12 @@ std::shared_ptr<SimplifyItem> SimplifyContext::find(const std::string &name) con
   if (stdlib.get() != this)
     t = stdlib->find(name);
   return t;
+}
+
+std::shared_ptr<SimplifyItem> SimplifyContext::forceFind(const std::string &name) const {
+  auto f = find(name);
+  seqassert(f, "cannot find '{}'", name);
+  return f;
 }
 
 std::shared_ptr<SimplifyItem>

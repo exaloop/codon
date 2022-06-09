@@ -20,44 +20,6 @@
 
 namespace codon {
 
-namespace exc {
-
-/**
- * Parser error exception.
- * Used for parsing, transformation and type-checking errors.
- */
-class ParserException : public std::runtime_error {
-public:
-  /// These vectors (stacks) store an error stack-trace.
-  std::vector<SrcInfo> locations;
-  std::vector<std::string> messages;
-
-public:
-  ParserException(const std::string &msg, const SrcInfo &info) noexcept
-      : std::runtime_error(msg) {
-    messages.push_back(msg);
-    locations.push_back(info);
-  }
-  ParserException() noexcept : ParserException("", {}) {}
-  explicit ParserException(const std::string &msg) noexcept
-      : ParserException(msg, {}) {}
-  ParserException(const ParserException &e) noexcept
-      : std::runtime_error(e), locations(e.locations), messages(e.messages) {}
-
-  /// Add an error message to the current stack trace
-  void trackRealize(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back(fmt::format("while realizing {}", msg));
-  }
-
-  /// Add an error message to the current stack trace
-  void track(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back(msg);
-  }
-};
-} // namespace exc
-
 namespace ast {
 
 /// String and collection utilities
@@ -151,6 +113,7 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 void error(const char *format);
 /// Raise a parsing error at a source location p.
 void error(const SrcInfo &info, const char *format);
+void error(const SrcInfo &info, const std::string &format);
 
 /// Clones a pointer even if it is a nullptr.
 template <typename T> auto clone(const std::shared_ptr<T> &t) {

@@ -59,16 +59,23 @@ std::string StaticValue::getString() const {
   return std::get<std::string>(value);
 }
 
-Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, bool generic)
+Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
     : name(std::move(name)), type(std::move(type)),
-      defaultValue(std::move(defaultValue)), generic(generic) {}
+      defaultValue(std::move(defaultValue)) {
+  if (status == 0 && this->type &&
+      (this->type->isId("type") || this->type->isId("TypeVar") ||
+       (this->type->getIndex() && this->type->getIndex()->expr->isId("Static"))))
+    this->status = Generic;
+  else
+    this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
+}
 std::string Param::toString() const {
   return format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
                 defaultValue ? " #:default " + defaultValue->toString() : "",
-                generic ? " #:generic" : "");
+                status != Param::Normal ? " #:generic" : "");
 }
 Param Param::clone() const {
-  return Param(name, ast::clone(type), ast::clone(defaultValue), generic);
+  return Param(name, ast::clone(type), ast::clone(defaultValue), status);
 }
 
 NoneExpr::NoneExpr() : Expr() {}
@@ -94,7 +101,8 @@ IntExpr::IntExpr(const std::string &value, std::string suffix)
       this->value += c;
   try {
     if (startswith(this->value, "0b") || startswith(this->value, "0B"))
-      intValue = std::make_unique<int64_t>(std::stoull(this->value.substr(2), nullptr, 2));
+      intValue =
+          std::make_unique<int64_t>(std::stoull(this->value.substr(2), nullptr, 2));
     else
       intValue = std::make_unique<int64_t>(std::stoull(this->value, nullptr, 0));
   } catch (std::out_of_range &) {
@@ -348,9 +356,9 @@ void CallExpr::validate() {
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
         !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
-      throw PEGParseError("unnamed argument after a named argument");
+      error(getSrcInfo(), "unnamed argument after a named argument");
     if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
-      throw PEGParseError("named star-expressions not allowed");
+      error(getSrcInfo(), "named star-expressions not allowed");
     namesStarted |= !a.name.empty();
   }
 }

@@ -83,8 +83,8 @@ void AssignReplacementVisitor::transform(StmtPtr &e) {
         value = replacements[value].first;
       }
 
-      e = std::make_shared<UpdateStmt>(i->lhs, i->rhs);
-      e->setSrcInfo(i->getSrcInfo());
+      StmtPtr ex = std::make_shared<UpdateStmt>(i->lhs, i->rhs);
+      ex->setSrcInfo(i->getSrcInfo());
 
       auto lb = i->lhs->clone();
       lb->getId()->value = fmt::format("{}.__used__", value);
@@ -92,15 +92,16 @@ void AssignReplacementVisitor::transform(StmtPtr &e) {
       f->setSrcInfo(i->getSrcInfo());
 
       if (i->rhs && hasUsed)
-        e = std::make_shared<SuiteStmt>(e, f);
+        ex = std::make_shared<SuiteStmt>(ex, f);
       else if (i->rhs)
-        e = std::make_shared<SuiteStmt>(e);
+        ex = std::make_shared<SuiteStmt>(ex);
       else if (hasUsed)
-        e = std::make_shared<SuiteStmt>(f);
+        ex = std::make_shared<SuiteStmt>(f);
       else
-        e = nullptr;
-      if (e)
-        e->setSrcInfo(i->getSrcInfo());
+        ex = nullptr;
+      if (ex)
+        ex->setSrcInfo(i->getSrcInfo());
+      e = ex;
     }
   }
   if (e)
@@ -237,7 +238,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     // check if this is a generic!
     if (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
                    (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))))
-      a.generic = true;
+      a.status = Param::Generic;
     std::string varName = a.name;
     int stars = trimStars(varName);
     if (stars == 2) {
@@ -252,7 +253,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (in(seenArgs, varName))
       error("'{}' declared twice", varName);
     seenArgs.insert(varName);
-    if (!a.defaultValue && defaultsStarted && !stars && !a.generic)
+    if (!a.defaultValue && defaultsStarted && !stars && a.status == Param::Normal)
       error("non-default argument '{}' after a default argument", varName);
     defaultsStarted |= bool(a.defaultValue);
 
@@ -260,9 +261,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
     auto typeAst = a.type;
     if (!typeAst && isClassMember && ia == 0 && a.name == "self") {
-      typeAst = ctx->bases[ctx->bases.size() - 2].ast;
+    //   typeAst = ctx->bases[ctx->bases.size() - 2].ast;
       ctx->bases.back().selfName = name;
-      attr.set(".changedSelf");
+    //   attr.set(".changedSelf");
       attr.set(Attr::Method);
     }
 
@@ -280,19 +281,21 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (typeAst && typeAst->getIndex() && typeAst->getIndex()->expr->isId("Callable") &&
         defaultValue && defaultValue->getNone())
       defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
-    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) && defaultValue &&
-        defaultValue->getNone())
+    if (typeAst && (typeAst->isId("type") || typeAst->isId("TypeVar")) &&
+        defaultValue && defaultValue->getNone())
       defaultValue = N<IdExpr>("NoneType");
-    args.emplace_back(Param{std::string(stars, '*') + name, typeAst, defaultValue, a.generic});
+    args.emplace_back(
+        Param{std::string(stars, '*') + name, typeAst, defaultValue, a.status});
     // if (defaultValue) {
     //   defaultValueCanonicalName =
     //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
-    //   stmts.push_back(N<AssignStmt>(N<IdExpr>(defaultValueCanonicalName), defaultValue));
+    //   stmts.push_back(N<AssignStmt>(N<IdExpr>(defaultValueCanonicalName),
+    //   defaultValue));
     // }
     // args.emplace_back(Param{std::string(stars, '*') + name, typeAst,
-    //                         defaultValue ? N<IdExpr>(defaultValueCanonicalName) : nullptr,
-    //                         a.generic});
-    if (a.generic) {
+    //                         defaultValue ? N<IdExpr>(defaultValueCanonicalName) :
+    //                         nullptr, a.generic});
+    if (a.status != Param::Normal) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
         ctx->addVar(varName, name, stmt->getSrcInfo());
       else
@@ -306,7 +309,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   }
   // Delay adding to context to prevent "def foo(a, b=a)"
   for (auto &a : args) {
-    if (!a.generic) {
+    if (a.status == Param::Normal) {
       std::string canName = a.name;
       trimStars(canName);
       ctx->addVar(ctx->cache->reverseIdentifierLookup[canName], canName,
@@ -381,6 +384,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, attr);
   // Make sure to cache this (generic) AST for later realization.
   ctx->cache->functions[canonicalName].ast = f;
+  ctx->cache->functions[canonicalName].origAst =
+      std::static_pointer_cast<FunctionStmt>(stmt->clone());
   AssignReplacementVisitor(ctx->cache, ctx->scopeRenames).transform(f->suite);
   resultStmt = f;
 

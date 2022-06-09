@@ -30,6 +30,12 @@ void compilationMessage(const std::string &header, const std::string &msg,
 std::vector<Logger> loggers;
 } // namespace
 
+
+std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
+  out << llvm::sys::path::filename(src.file).str() << ":" << src.line << ":" << src.col;
+  return out;
+}
+
 void compilationError(const std::string &msg, const std::string &file, int line,
                       int col, bool terminate) {
   compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col);

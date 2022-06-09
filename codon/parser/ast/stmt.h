@@ -45,6 +45,8 @@ public:
   /// Convert a node to an S-expression.
   std::string toString() const;
   virtual std::string toString(int indent) const = 0;
+  /// Validate a node. Throw ParseASTException if a node is not valid.
+  virtual void validate() const;
   /// Deep copy a node.
   virtual std::shared_ptr<Stmt> clone() const = 0;
   /// Accept an AST visitor.
@@ -415,6 +417,9 @@ struct Attr {
   std::string parentClass;
   // True if a function is decorated with __attribute__
   bool isAttribute;
+
+  std::set<std::string> magics;
+
   // Set of attributes
   std::set<std::string> customAttr;
 
@@ -466,11 +471,13 @@ struct ClassStmt : public Stmt {
   std::vector<ExprPtr> baseClasses;
 
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-            Attr attributes = Attr(), std::vector<ExprPtr> decorators = {},
+            std::vector<ExprPtr> decorators = {},
             std::vector<ExprPtr> baseClasses = {});
+  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, const Attr &attr);
   ClassStmt(const ClassStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const override;
   ACCEPT(ASTVisitor);
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
@@ -478,6 +485,8 @@ struct ClassStmt : public Stmt {
   bool hasAttr(const std::string &attr) const;
 
   ClassStmt *getClass() override { return this; }
+
+  void parseDecorators();
 };
 
 /// Yield-from statement (yield from expr).

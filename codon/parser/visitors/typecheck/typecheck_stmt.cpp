@@ -117,7 +117,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     }
     if (stmt->lhs->getId() && kind != TypecheckItem::Var) { // type/function renames
       // if (stmt->lhs->type)
-        // unify(stmt->lhs->type, ctx->find(lhs)->type);
+      // unify(stmt->lhs->type, ctx->find(lhs)->type);
       stmt->rhs->type = nullptr;
       stmt->done = true;
     } else {
@@ -430,7 +430,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   bool isClassMember = !attr.parentClass.empty();
   auto explicits = std::vector<ClassType::Generic>();
   for (const auto &a : stmt->args)
-    if (a.generic) {
+    if (a.status == Param::Generic) {
       char staticType = 0;
       auto idx = a.type->getIndex();
       if (idx && idx->expr->isId("Static"))
@@ -450,18 +450,22 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       ctx->add(TypecheckItem::Type, a.name, t);
     }
   std::vector<TypePtr> generics;
+  ClassTypePtr parentClass = nullptr;
   if (isClassMember && attr.has(Attr::Method)) {
     // Fetch parent class generics.
     auto parentClassAST = ctx->cache->classes[attr.parentClass].ast.get();
-    auto parentClass = ctx->find(attr.parentClass)->type->getClass();
+    parentClass = ctx->find(attr.parentClass)->type->getClass();
+    parentClass =
+        parentClass->instantiate(ctx->typecheckLevel - 1, nullptr, nullptr)->getClass();
     seqassert(parentClass, "parent class not set");
-    for (int i = 0, j = 0; i < parentClassAST->args.size(); i++)
-      if (parentClassAST->args[i].generic) {
-        // Keep the same ID
-        generics.push_back(parentClass->generics[j++].type->instantiate(
-            ctx->typecheckLevel - 1, nullptr, nullptr));
+    for (int i = 0, j = 0, k = 0; i < parentClassAST->args.size(); i++) {
+      if (parentClassAST->args[i].status != Param::Normal) {
+        generics.push_back(parentClassAST->args[i].status == Param::Generic
+                               ? parentClass->generics[j++].type
+                               : parentClass->hiddenGenerics[k++].type);
         ctx->add(TypecheckItem::Type, parentClassAST->args[i].name, generics.back());
       }
+    }
   }
   for (const auto &i : explicits)
     generics.push_back(ctx->find(i.name)->type);
@@ -479,11 +483,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // tuple
     auto argType = baseType->generics[0].type->getRecord();
     for (int ai = 0, aj = 0; ai < stmt->args.size(); ai++) {
-      if (!stmt->args[ai].generic && !stmt->args[ai].type) {
-        unify(argType->args[aj], ctx->addUnbound(N<IdExpr>(stmt->args[ai].name).get(),
-                                                 ctx->typecheckLevel));
+      if (stmt->args[ai].status == Param::Normal && !stmt->args[ai].type) {
+        if (parentClass && ai == 0 &&
+            ctx->cache->reverseIdentifierLookup[stmt->args[ai].name] == "self") {
+          unify(argType->args[aj], parentClass);
+        } else {
+          unify(argType->args[aj], ctx->addUnbound(N<IdExpr>(stmt->args[ai].name).get(),
+                                                   ctx->typecheckLevel));
+        }
         generics.push_back(argType->args[aj++]);
-      } else if (!stmt->args[ai].generic) {
+      } else if (stmt->args[ai].status == Param::Normal) {
         unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
         generics.push_back(argType->args[aj]);
         aj++;
@@ -557,7 +566,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Parse class fields.
     for (const auto &a : stmt->args)
-      if (a.generic) {
+      if (a.status != Param::Normal) { // TODO
         char staticType = 0;
         auto idx = a.type->getIndex();
         if (idx && idx->expr->isId("Static"))
@@ -569,17 +578,25 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (a.defaultValue) {
           auto dt = clone(a.defaultValue);
           dt = transformType(dt);
-          t->defaultType = dt->type;
+          if (a.status == Param::Generic)
+            t->defaultType = dt->type;
+          else
+            unify(dt->type, t);
         }
-        typ->generics.push_back({a.name, ctx->cache->reverseIdentifierLookup[a.name],
-                                 t->generalize(ctx->typecheckLevel), typId});
-        LOG_REALIZE("[generic] {} -> {}", a.name, t->toString());
         ctx->add(TypecheckItem::Type, a.name, t);
+        ClassType::Generic g{a.name, ctx->cache->reverseIdentifierLookup[a.name],
+                             t->generalize(ctx->typecheckLevel), typId};
+        if (a.status == Param::Generic) {
+          typ->generics.push_back(g);
+        } else {
+          typ->hiddenGenerics.push_back(g);
+        }
+        LOG_REALIZE("[generic/{}] {} -> {}", int(a.status), a.name, t->toString());
       }
     {
       ctx->typecheckLevel++;
       for (auto ai = 0, aj = 0; ai < stmt->args.size(); ai++)
-        if (!stmt->args[ai].generic) {
+        if (stmt->args[ai].status == Param::Normal) {
           auto si = stmt->args[ai].type->getSrcInfo();
           ctx->cache->classes[stmt->name].fields[aj].type =
               transformType(stmt->args[ai].type)
@@ -595,14 +612,16 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
     // Remove lingering generics.
     for (const auto &g : stmt->args)
-      if (g.generic) {
+      if (g.status != Param::Normal) {
         auto val = ctx->find(g.name);
         seqassert(val, "cannot find generic {}", g.name);
         auto t = val->type;
-        seqassert(t && t->getLink() && t->getLink()->kind != types::LinkType::Link,
-                  "generic has been unified");
-        if (t->getLink()->kind == LinkType::Unbound)
-          t->getLink()->kind = LinkType::Generic;
+        if (g.status == Param::Generic) {
+          seqassert(t && t->getLink() && t->getLink()->kind != types::LinkType::Link,
+                    "generic has been unified");
+          if (t->getLink()->kind == LinkType::Unbound)
+            t->getLink()->kind = LinkType::Generic;
+        }
         ctx->remove(g.name);
       }
 

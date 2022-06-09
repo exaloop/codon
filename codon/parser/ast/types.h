@@ -231,8 +231,11 @@ struct ClassType : public Type {
   /// List of generics, if present.
   std::vector<Generic> generics;
 
+  std::vector<Generic> hiddenGenerics;
+
   explicit ClassType(std::string name, std::string niceName,
-                     std::vector<Generic> generics = std::vector<Generic>());
+                     std::vector<Generic> generics = {},
+                     std::vector<Generic> hiddenGenerics = {});
   explicit ClassType(const std::shared_ptr<ClassType> &base);
 
 public:
@@ -327,9 +330,7 @@ public:
   std::vector<TypePtr> &getArgTypes() const {
     return generics[0].type->getRecord()->args;
   }
-  TypePtr getRetType() const {
-    return generics[1].type;
-  }
+  TypePtr getRetType() const { return generics[1].type; }
 };
 typedef std::shared_ptr<FuncType> FuncTypePtr;
 

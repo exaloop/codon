@@ -142,10 +142,10 @@ struct Param : public codon::SrcObject {
   std::string name;
   ExprPtr type;
   ExprPtr defaultValue;
-  bool generic;
+  enum { Normal, Generic, HiddenGeneric } status; // 1 for normal generic, 2 for hidden generic
 
   explicit Param(std::string name = "", ExprPtr type = nullptr,
-                 ExprPtr defaultValue = nullptr, bool generic = false);
+                 ExprPtr defaultValue = nullptr, int generic = 0);
 
   std::string toString() const;
   Param clone() const;

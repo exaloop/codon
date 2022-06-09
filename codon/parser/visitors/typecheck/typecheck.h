@@ -109,6 +109,8 @@ public:
   void visit(YieldExpr *) override;
   /// Use type of an inner expression.
   void visit(StmtExpr *) override;
+  void visit(StarExpr *) override;
+  void visit(KeywordStarExpr *) override;
 
   void visit(SuiteStmt *) override;
   void visit(BreakStmt *) override;

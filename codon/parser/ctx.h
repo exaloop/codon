@@ -47,7 +47,7 @@ public:
   virtual ~Context() = default;
 
   /// Add an object to the top of the stack.
-  void add(const std::string &name, std::shared_ptr<T> var) {
+  virtual void add(const std::string &name, std::shared_ptr<T> var) {
     seqassertn(!name.empty(), "adding an empty identifier");
     map[name].push_front(move(var));
     stack.front().push_back(name);

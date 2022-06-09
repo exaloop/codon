@@ -93,7 +93,7 @@ public:
   StmtPtr transform(const StmtPtr &stmt) override;
   StmtPtr transformInScope(const StmtPtr &stmt);
   /// Transform an AST expression node.
-  ExprPtr transform(const ExprPtr &expr, bool allowTypes, bool allowAssign = true);
+  ExprPtr transform(const ExprPtr &expr, bool allowTypes);
   /// Transform an AST type expression node.
   /// @raise ParserException if a node does not describe a type (use transform instead).
   ExprPtr transformType(const ExprPtr &expr, bool allowTypeOf = true);
@@ -141,11 +141,8 @@ public:
   /// Each identifier is replaced with its canonical identifier.
   void visit(IdExpr *) override;
 
-  /// Transform a star-expression *args to:
-  ///   List(args.__iter__()).
-  /// This function is called only if other nodes (CallExpr, AssignStmt, ListExpr) do
-  /// not handle their star-expression cases.
-  void visit(StarExpr *) override;
+  /* Collection and comprehension expressions */
+
   /// Tuples will be handled during the type-checking stage.
   void visit(TupleExpr *) override;
   /// Transform a list [a1, ..., aN] to a statement expression:
@@ -158,6 +155,8 @@ public:
   /// Any star-expression is automatically unrolled:
   ///   {a, *b} becomes set.add(a); for it in b: set.add(it).
   void visit(SetExpr *) override;
+  ExprPtr transformComprehension(const std::string &type, const std::string &fn,
+                                 const std::vector<ExprPtr> &items);
   /// Transform a dictionary {k1: v1, ..., kN: vN} to a statement expression
   ///   dict = Dict(); (dict.__setitem__(k1, v1))...; dict.
   void visit(DictExpr *) override;
@@ -174,6 +173,16 @@ public:
   ///    gen = Dict()
   ///    for i in j: gen.__setitem__(i, a)
   void visit(DictGeneratorExpr *) override;
+  /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
+  /// @li (for i in j if a for k in i if a if b) becomes:
+  ///          for i in j: if a: for k in i: if a: if b: <prev>
+  /// @param prev (out-argument) A pointer to the innermost block (suite) where a
+  /// comprehension (or generator) expression should reside.
+  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &loops,
+                                 SuiteStmt *&prev);
+
+  /* Conditional expressions */
+
   /// Transform a if-expression a if cond else b to:
   ///   a if cond else b
   void visit(IfExpr *) override;
@@ -248,6 +257,12 @@ public:
   void visit(RangeExpr *) override;
   /// Parse all statements in StmtExpr.
   void visit(StmtExpr *) override;
+  /// Transform a star-expression *args to:
+  ///   List(args.__iter__()).
+  /// This function is called only if other nodes (CallExpr, AssignStmt, ListExpr) do
+  /// not handle their star-expression cases.
+  void visit(StarExpr *) override;
+  void visit(KeywordStarExpr *expr) override;
 
   /// Transform all statements in a suite and flatten them (unless a suite is a variable
   /// scope).
@@ -360,22 +375,37 @@ public:
   /// For Python and LLVM definition transformations, see transformPythonDefinition()
   /// and transformLLVMDefinition().
   void visit(FunctionStmt *) override;
+
   /// Transforms type definitions and extensions.
   /// This currently consists of adding default magic methods (described in
   /// codegenMagic() method below).
   void visit(ClassStmt *) override;
+  Attr parseClassDecorators(Attr attr, const std::vector<ExprPtr> &decorators);
+  void parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
+                        std::vector<ClassStmt *> &baseASTs,
+                        std::vector<Param> &hiddenGenerics, const Attr &attr);
+  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
+                                                       std::vector<Param> &args);
+  void transformNestedClasses(ClassStmt *stmt, std::vector<StmtPtr> &clsStmts,
+                              std::vector<StmtPtr> &fnStmts);
+
+  /// Generate a magic method __op__ for a type described by typExpr and type arguments
+  /// args.
+  /// Currently able to generate:
+  ///   Constructors: __new__, __init__
+  ///   Utilities: __raw__, __hash__, __repr__
+  ///   Iteration: __iter__, __getitem__, __len__, __contains__
+  //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
+  //    Pickling: __pickle__, __unpickle__
+  //    Python: __to_py__, __from_py__
+  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
+                       const std::vector<Param> &args, bool isRecord);
+
   void visit(CustomStmt *) override;
 
   using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
 
 private:
-  /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
-  /// @li (for i in j if a for k in i if a if b) becomes:
-  ///          for i in j: if a: for k in i: if a: if b: <prev>
-  /// @param prev (out-argument) A pointer to the innermost block (suite) where a
-  /// comprehension (or generator) expression should reside.
-  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &loops,
-                                 SuiteStmt *&prev);
   /// Make an anonymous function _lambda_XX with provided statements and argument names.
   /// Function definition is prepended to the current statement.
   /// If the statements refer to outer variables, those variables will be captured and
@@ -489,17 +519,6 @@ private:
   /// Note that any brace ({ or }) that is not part of {= expr} reference will be
   /// escaped (e.g. { -> {{ and } -> }}) so that fmt::format can print them as-is.
   StmtPtr transformLLVMDefinition(Stmt *codeStmt);
-  /// Generate a magic method __op__ for a type described by typExpr and type arguments
-  /// args.
-  /// Currently able to generate:
-  ///   Constructors: __new__, __init__
-  ///   Utilities: __raw__, __hash__, __repr__
-  ///   Iteration: __iter__, __getitem__, __len__, __contains__
-  //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
-  //    Pickling: __pickle__, __unpickle__
-  //    Python: __to_py__, __from_py__
-  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
-                       const std::vector<Param> &args, bool isRecord);
   // Return a list of all function statements within a given class suite. Checks each
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.

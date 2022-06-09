@@ -114,6 +114,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       std::string name;
       /// A corresponding generic field type.
       types::TypePtr type;
+
+      ///
+      std::string parentClass;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.
@@ -131,9 +134,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
-    /// List of inherited class. We also keep the number of fields each of inherited
-    /// class.
-    std::vector<std::pair<std::string, int>> parentClasses;
+    /// List of inherited classes.
+    std::vector<std::string> parentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
@@ -144,6 +146,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   struct Function {
     /// Generic (unrealized) function template AST.
     std::shared_ptr<FunctionStmt> ast;
+    /// Non-simplified AST.
+    std::shared_ptr<FunctionStmt> origAst;
 
     /// A function realization.
     struct FunctionRealization {
@@ -162,7 +166,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Unrealized function type.
     types::FuncTypePtr type;
 
-    Function() : ast(nullptr), type(nullptr) {}
+    Function() : ast(nullptr), origAst(nullptr), type(nullptr) {}
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.

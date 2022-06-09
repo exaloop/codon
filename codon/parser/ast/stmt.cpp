@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "codon/parser/cache.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -20,6 +21,7 @@ namespace ast {
 Stmt::Stmt() : done(false), age(-1) {}
 Stmt::Stmt(const codon::SrcInfo &s) : done(false), age(-1) { setSrcInfo(s); }
 std::string Stmt::toString() const { return toString(-1); }
+void Stmt::validate() const {}
 
 SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts, bool ownBlock)
     : Stmt(), ownBlock(ownBlock) {
@@ -335,11 +337,17 @@ bool FunctionStmt::hasAttr(const std::string &attr) const {
 }
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-                     Attr attributes, std::vector<ExprPtr> decorators,
-                     std::vector<ExprPtr> baseClasses)
+                     std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses)
     : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
-      attributes(std::move(attributes)), decorators(std::move(decorators)),
-      baseClasses(std::move(baseClasses)) {}
+      decorators(std::move(decorators)), baseClasses(std::move(baseClasses)) {
+  parseDecorators();
+}
+ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
+                     const Attr &attr)
+    : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
+      attributes(attr) {
+  validate();
+}
 ClassStmt::ClassStmt(const ClassStmt &stmt)
     : Stmt(stmt), name(stmt.name), args(ast::clone_nop(stmt.args)),
       suite(ast::clone(stmt.suite)), attributes(stmt.attributes),
@@ -363,9 +371,114 @@ std::string ClassStmt::toString(int indent) const {
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
+void ClassStmt::validate() const {
+  std::unordered_set<std::string> seen;
+  if (attributes.has(Attr::Extend) && !args.empty())
+    error(getSrcInfo(), "extensions cannot be generic or declare members");
+  if (attributes.has(Attr::Extend) && !baseClasses.empty())
+    error(getSrcInfo(), "extensions cannot inherit other classes");
+  for (auto &a : args) {
+    if (!a.type)
+      error(getSrcInfo(), format("no type provided for '{}'", a.name));
+    if (in(seen, a.name))
+      error(getSrcInfo(), format("'{}' declared twice", a.name));
+    seen.insert(a.name);
+  }
+}
 ACCEPT_IMPL(ClassStmt, ASTVisitor);
 bool ClassStmt::isRecord() const { return hasAttr(Attr::Tuple); }
 bool ClassStmt::hasAttr(const std::string &attr) const { return attributes.has(attr); }
+void ClassStmt::parseDecorators() {
+  // @tuple(init=, repr=, eq=, order=, hash=, pickle=, container=, python=, add=,
+  // internal=...)
+  // @dataclass(...)
+  // @extend
+
+  std::map<std::string, bool> tupleMagics = {
+      {"new", true},      {"repr", false},  {"hash", false},    {"eq", false},
+      {"ne", false},      {"lt", false},    {"le", false},      {"gt", false},
+      {"ge", false},      {"pickle", true}, {"unpickle", true}, {"to_py", false},
+      {"from_py", false}, {"iter", false},  {"getitem", false}, {"len", false}};
+
+  for (auto &d : decorators) {
+    if (d->isId("deduce")) {
+      attributes.customAttr.insert("deduce");
+    } else if (auto c = d->getCall()) {
+      if (c->expr->isId(Attr::Tuple)) {
+        attributes.set(Attr::Tuple);
+        for (auto &m : tupleMagics)
+          m.second = true;
+      } else if (!c->expr->isId("dataclass")) {
+        error(getSrcInfo(), "invalid class attribute");
+      } else if (attributes.has(Attr::Tuple)) {
+        error(getSrcInfo(), "class already marked as tuple");
+      }
+      for (auto &a : c->args) {
+        auto b = CAST(a.value, BoolExpr);
+        if (!b)
+          error(getSrcInfo(), "expected static boolean");
+        char val = char(b->value);
+        if (a.name == "init") {
+          tupleMagics["new"] = val;
+        } else if (a.name == "repr") {
+          tupleMagics["repr"] = val;
+        } else if (a.name == "eq") {
+          tupleMagics["eq"] = tupleMagics["ne"] = val;
+        } else if (a.name == "order") {
+          tupleMagics["lt"] = tupleMagics["le"] = tupleMagics["gt"] =
+              tupleMagics["ge"] = val;
+        } else if (a.name == "hash") {
+          tupleMagics["hash"] = val;
+        } else if (a.name == "pickle") {
+          tupleMagics["pickle"] = tupleMagics["unpickle"] = val;
+        } else if (a.name == "python") {
+          tupleMagics["to_py"] = tupleMagics["from_py"] = val;
+        } else if (a.name == "container") {
+          tupleMagics["iter"] = tupleMagics["getitem"] = val;
+        } else {
+          error(getSrcInfo(), "invalid decorator argument");
+        }
+      }
+    } else if (d->isId(Attr::Tuple)) {
+      if (attributes.has(Attr::Tuple))
+        error(getSrcInfo(), "class already marked as tuple");
+      attributes.set(Attr::Tuple);
+      for (auto &m : tupleMagics)
+        m.second = true;
+    } else if (d->isId(Attr::Extend)) {
+      attributes.set(Attr::Extend);
+      if (decorators.size() != 1)
+        error(getSrcInfo(), "extend cannot be combined with other decorators");
+    } else if (d->isId(Attr::Internal)) {
+      attributes.set(Attr::Internal);
+    } else {
+      error(getSrcInfo(), "invalid class decorator");
+    }
+  }
+  if (startswith(name, TYPE_TUPLE))
+    tupleMagics["contains"] = true;
+  if (attributes.has("deduce"))
+    tupleMagics["new"] = false;
+  if (!attributes.has(Attr::Tuple)) {
+    tupleMagics["init"] = tupleMagics["new"];
+    tupleMagics["new"] = tupleMagics["raw"] = true;
+    tupleMagics["len"] = false;
+  }
+  if (startswith(name, TYPE_TUPLE)) {
+    tupleMagics["add"] = true;
+  } else {
+    tupleMagics["dict"] = true;
+  }
+  // Internal classes do not get any auto-generated members.
+  attributes.magics.clear();
+  if (!attributes.has(Attr::Internal)) {
+    for (auto &m : tupleMagics)
+      if (m.second)
+        attributes.magics.insert(m.first);
+  }
+
+  validate();
+}
 
 YieldFromStmt::YieldFromStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 YieldFromStmt::YieldFromStmt(const YieldFromStmt &stmt)

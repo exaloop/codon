@@ -11,14 +11,20 @@ using fmt::format;
 namespace codon::ast {
 
 void SimplifyVisitor::visit(IfExpr *expr) {
+  // C++ call order is not defined; make sure to transform the conditional first
   auto cond = transform(expr->cond);
-  auto newExpr = N<IfExpr>(cond, transform(expr->ifexpr, false, /*allowAssign*/ false),
-                           transform(expr->elsexpr, false, /*allowAssign*/ false));
-  resultExpr = newExpr;
+  auto tmp = ctx->shortCircuit;
+  ctx->shortCircuit = true;
+  auto ifexpr = transform(expr->ifexpr);
+  auto elsexpr = transform(expr->elsexpr);
+  ctx->shortCircuit = tmp;
+  resultExpr = N<IfExpr>(cond, ifexpr, elsexpr);
 }
 
 void SimplifyVisitor::visit(IfStmt *stmt) {
   seqassert(stmt->cond, "invalid if statement");
+
+  // C++ call order is not defined; make sure to transform the conditional first
   auto cond = transform(stmt->cond);
   resultStmt = N<IfStmt>(cond, transformInScope(stmt->ifSuite),
                          transformInScope(stmt->elseSuite));
@@ -27,8 +33,7 @@ void SimplifyVisitor::visit(IfStmt *stmt) {
 void SimplifyVisitor::visit(MatchStmt *stmt) {
   auto var = ctx->cache->getTemporaryVar("match");
   auto result = N<SuiteStmt>();
-  result->stmts.push_back(
-      N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
+  result->stmts.push_back(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
   for (auto &c : stmt->cases) {
     ctx->addScope();
     StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
@@ -47,7 +52,7 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
   };
   auto findEllipsis = [&](const std::vector<ExprPtr> &items) {
     size_t i = items.size();
-    for (int it = 0; it < items.size(); it++)
+    for (auto it = 0; it < items.size(); it++)
       if (items[it]->getEllipsis()) {
         if (i != items.size())
           error("cannot have multiple ranges in a pattern");
@@ -66,28 +71,32 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
             N<BinaryExpr>(var->clone(), ">=", clone(er->start)),
             N<IfStmt>(N<BinaryExpr>(var->clone(), "<=", clone(er->stop)), suite)));
   } else if (auto et = pattern->getTuple()) {
-    for (int it = int(et->items.size()) - 1; it >= 0; it--)
+    for (auto it = et->items.size(); it-- > 0; ) {
       suite = transformPattern(N<IndexExpr>(var->clone(), N<IntExpr>(it)),
                                clone(et->items[it]), suite);
+    }
     return N<IfStmt>(
         isinstance(var, "Tuple"),
         N<IfStmt>(N<BinaryExpr>(N<CallExpr>(N<IdExpr>("staticlen"), clone(var)),
                                 "==", N<IntExpr>(et->items.size())),
                   suite));
   } else if (auto el = pattern->getList()) {
-    int ellipsis = int(findEllipsis(el->items)), sz = int(el->items.size());
+    auto ellipsis = findEllipsis(el->items), sz = el->items.size();
     std::string op;
-    if (ellipsis == el->items.size())
+    if (ellipsis == el->items.size()) {
       op = "==";
-    else
+    } else {
       op = ">=", sz -= 1;
-    for (int it = int(el->items.size()) - 1; it > ellipsis; it--)
+    }
+    for (auto it = el->items.size(); it-- > ellipsis + 1; ) {
       suite = transformPattern(
           N<IndexExpr>(var->clone(), N<IntExpr>(it - el->items.size())),
           clone(el->items[it]), suite);
-    for (int it = int(ellipsis) - 1; it >= 0; it--)
+    }
+    for (auto it = ellipsis; it-- > 0; ) {
       suite = transformPattern(N<IndexExpr>(var->clone(), N<IntExpr>(it)),
                                clone(el->items[it]), suite);
+    }
     return N<IfStmt>(isinstance(var, "List"),
                      N<IfStmt>(N<BinaryExpr>(N<CallExpr>(N<IdExpr>("len"), clone(var)),
                                              op, N<IntExpr>(sz)),
@@ -105,13 +114,14 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
             transformPattern(clone(var), clone(ea->expr), clone(suite))},
         true);
   } else if (auto ei = pattern->getId()) {
-    if (ei->value != "_")
+    if (ei->value != "_") {
       return N<SuiteStmt>(
           std::vector<StmtPtr>{N<AssignStmt>(clone(pattern), clone(var)), suite}, true);
-    else
+    } else {
       return suite;
+    }
   }
-  pattern = transform(pattern); // basically check for errors
+  pattern = transform(pattern); // call transform to check for errors
   return N<IfStmt>(
       N<CallExpr>(N<IdExpr>("hasattr"), var->clone(), N<StringExpr>("__match__"),
                   N<CallExpr>(N<IdExpr>("type"), pattern->clone())),

@@ -23,10 +23,6 @@ void SimplifyVisitor::visit(CallExpr *expr) {
           (!ee->isPipeArg && i.value.get() != expr->args.back().value.get()))
         error("unexpected ellipsis expression");
       foundEllispis = true;
-    } else if (auto es = i.value->getStar()) {
-      args.push_back({i.name, N<StarExpr>(transform(es->what))});
-    } else if (auto ek = CAST(i.value, KeywordStarExpr)) {
-      args.push_back({i.name, N<KeywordStarExpr>(transform(ek->what))});
     } else {
       args.push_back({i.name, transform(i.value, true)});
     }
@@ -96,8 +92,8 @@ ExprPtr SimplifyVisitor::transformNamedTuple(const std::vector<CallExpr::Arg> &a
   for (auto &g : generics)
     params.push_back(g);
   auto name = args[0].value->getString()->getValue();
-  prependStmts->push_back(
-      transform(N<ClassStmt>(name, params, nullptr, Attr({Attr::Tuple}))));
+  prependStmts->push_back(transform(
+      N<ClassStmt>(name, params, nullptr, std::vector<ExprPtr>{N<IdExpr>("tuple")})));
   auto i = N<IdExpr>(name);
   return transformType(i);
 }

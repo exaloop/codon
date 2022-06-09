@@ -172,7 +172,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       // Add function arguments.
       if (!isInternal)
         for (int i = 0, j = 0; i < ast->args.size(); i++)
-          if (!ast->args[i].generic) {
+          if (ast->args[i].status == Param::Normal) {
             std::string varName = ast->args[i].name;
             trimStars(varName);
             ctx->add(TypecheckItem::Var, varName,
@@ -219,8 +219,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           }
           items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
           for (int i = 0; i < as.size(); i++) {
-            items.push_back(
-                N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
+            items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
             lla.push_back(format("{{}} %{}", i));
           }
           items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
@@ -298,7 +297,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         for (auto &i : ast->args) {
           std::string varName = i.name;
           trimStars(varName);
-          args.emplace_back(Param{varName, nullptr, nullptr, i.generic});
+          args.emplace_back(Param{varName, nullptr, nullptr, i.status});
         }
         r->ast = Nx<FunctionStmt>(ast, type->realizedName(), nullptr, args, realized,
                                   ast->attributes);
@@ -307,7 +306,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         std::vector<std::string> names;
         std::vector<codon::ir::types::Type *> types;
         for (int i = 0, j = 0; i < r->ast->args.size(); i++)
-          if (!r->ast->args[i].generic) {
+          if (r->ast->args[i].status == Param::Normal) {
             if (!type->getArgTypes()[j]->getFunc()) {
               types.push_back(getLLVMType(type->getArgTypes()[j]->getClass().get()));
               names.push_back(
@@ -414,11 +413,11 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
       //   LOG_TYPECHECK("cannot infer {} / {}", ub.first, ub.second.second);
       // }
       // LOG_TYPECHECK("-- {}", result->toString(0));
-      // if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-      //   auto fo = fopen("_dump_typecheck_error.sexp", "w");
-      //   fmt::print(fo, "{}\n", result->toString(0));
-      //   fclose(fo);
-      // }
+      if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+        auto fo = fopen("_dump_typecheck_error.sexp", "w");
+        fmt::print(fo, "{}\n", result->toString(0));
+        fclose(fo);
+      }
       error("cannot typecheck the program");
     }
   }

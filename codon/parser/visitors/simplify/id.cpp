@@ -20,10 +20,8 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   }
 
   auto val = ctx->findDominatingBinding(expr->value);
-  if (!val) {
-    // ctx->dump();
+  if (!val)
     error("identifier '{}' not found", expr->value);
-  }
 
   // If we are accessing a nonlocal variable, capture it or raise an error
   bool captured = false;
@@ -34,8 +32,6 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   if (val->isVar() &&
       (ctx->getBase() != val->getBase() || ctx->getModule() != val->getModule()) &&
       !isClassGeneric) {
-    // LOG("-> {} : {} {} | {}", expr->value, ctx->getBase(), val->getBase(),
-    //     val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName));
     if (val->getBase().empty()) {
       // LOG("no shadow: {} @ {}", val->canonicalName, expr->getSrcInfo());
       val->noShadow = true;
@@ -126,5 +122,67 @@ void SimplifyVisitor::visit(IdExpr *expr) {
             expr->value);
   }
 }
+
+void SimplifyVisitor::visit(DotExpr *expr) {
+  /// First flatten the imports.
+  Expr *e = expr;
+  std::deque<std::string> chain;
+  while (auto d = e->getDot()) {
+    chain.push_front(d->member);
+    e = d->expr.get();
+  }
+  if (auto d = e->getId()) {
+    chain.push_front(d->value);
+
+    /// Check if this is a import or a class access:
+    /// (import1.import2...).(class1.class2...)?.method?
+    int importEnd = 0, itemEnd = 0;
+    std::string importName, itemName;
+    std::shared_ptr<SimplifyItem> val = nullptr;
+    for (int i = int(chain.size()) - 1; i >= 0; i--) {
+      auto s = join(chain, "/", 0, i + 1);
+      val = ctx->find(s);
+      if (val && val->isImport()) {
+        importName = val->importPath;
+        importEnd = i + 1;
+        break;
+      }
+    }
+    // a.b.c is completely import name
+    if (importEnd == chain.size()) {
+      resultExpr = transform(N<IdExpr>(val->canonicalName));
+      return;
+    }
+    auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
+    for (int i = int(chain.size()) - 1; i >= importEnd; i--) {
+      auto s = join(chain, ".", importEnd, i + 1);
+      val = fctx->find(s);
+      // Make sure that we access only global imported variables.
+      if (val && (importName.empty() || val->isType() || val->scope.size() == 1)) {
+        itemName = val->canonicalName;
+        itemEnd = i + 1;
+        //        if (!importName.empty()) TODO: why was this originally here?
+        //          ctx->add(val->canonicalName, val);
+        break;
+      }
+    }
+    if (itemName.empty() && importName.empty())
+      error("identifier '{}' not found", chain[importEnd]);
+    if (itemName.empty())
+      error("identifier '{}' not found in {}", chain[importEnd], importName);
+    if (importName.empty() && itemEnd == 1) {
+      resultExpr = transform(N<IdExpr>(chain[0]), true);
+    } else {
+      resultExpr = N<IdExpr>(itemName);
+      if (val->isType() && itemEnd == chain.size())
+        resultExpr->markType();
+    }
+    for (int i = itemEnd; i < chain.size(); i++)
+      resultExpr = N<DotExpr>(resultExpr, chain[i]);
+  } else {
+    resultExpr = N<DotExpr>(transform(expr->expr, true), expr->member);
+  }
+}
+
 
 } // namespace codon::ast

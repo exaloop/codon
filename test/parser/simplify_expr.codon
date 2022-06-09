@@ -118,7 +118,7 @@ print z
 
 #%% star_err,barebones
 a = (1, 2, 3)
-print *a #! cannot use star-expression
+z = *a #! cannot use star-expression
 
 #%% list,barebones
 a = [4, 5, 6]

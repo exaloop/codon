@@ -19,10 +19,12 @@ void SimplifyVisitor::visit(BinaryExpr *expr) {
   auto lhs = (startswith(expr->op, "is") && expr->lexpr->getNone())
                  ? clone(expr->lexpr)
                  : transform(expr->lexpr, startswith(expr->op, "is"));
+  auto tmp = ctx->shortCircuit;
+  ctx->shortCircuit = expr->op == "&&" || expr->op == "||";
   auto rhs = (startswith(expr->op, "is") && expr->rexpr->getNone())
                  ? clone(expr->rexpr)
-                 : transform(expr->rexpr, startswith(expr->op, "is"),
-                             /*allowAssign*/ expr->op != "&&" && expr->op != "||");
+                 : transform(expr->rexpr, startswith(expr->op, "is"));
+  ctx->shortCircuit = tmp;
   resultExpr = N<BinaryExpr>(lhs, expr->op, rhs, expr->inPlace);
 }
 

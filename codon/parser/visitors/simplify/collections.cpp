@@ -12,76 +12,58 @@ namespace codon::ast {
 void SimplifyVisitor::visit(TupleExpr *expr) {
   std::vector<ExprPtr> items;
   for (auto &i : expr->items) {
-    if (auto es = i->getStar()) {
-      items.emplace_back(N<StarExpr>(transform(es->what)));
-    } else {
-      items.emplace_back(transform(i));
-    }
+    items.emplace_back(transform(i));
   }
   resultExpr = N<TupleExpr>(items);
 }
 
 void SimplifyVisitor::visit(ListExpr *expr) {
-  ctx->addBlock(); // prevent tmp vars from being toplevel vars
-  std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("list"));
-  stmts.push_back(transform(N<AssignStmt>(
-      clone(var),
-      N<CallExpr>(N<IdExpr>("List"),
-                  !expr->items.empty() ? N<IntExpr>(expr->items.size()) : nullptr))));
-  for (const auto &it : expr->items) {
-    if (auto star = it->getStar()) {
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
-      auto st = star->what->clone();
-      st->setAttr(ExprAttr::StarSequenceItem);
-      stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), st,
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(forVar))))));
-    } else {
-      auto st = clone(it);
-      st->setAttr(ExprAttr::SequenceItem);
-      stmts.push_back(
-          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), st))));
-    }
-  }
-  auto e = N<StmtExpr>(stmts, transform(var));
-  e->setAttr(ExprAttr::List);
-  resultExpr = e;
-  ctx->popBlock();
+  resultExpr = transformComprehension("List", "append", expr->items);
+  resultExpr->setAttr(ExprAttr::List);
 }
 
 void SimplifyVisitor::visit(SetExpr *expr) {
-  ctx->addBlock(); // prevent tmp vars from being toplevel vars
+  resultExpr = transformComprehension("Set", "add", expr->items);
+  resultExpr->setAttr(ExprAttr::Set);
+}
+
+ExprPtr SimplifyVisitor::transformComprehension(const std::string &type,
+                                                const std::string &fn,
+                                                const std::vector<ExprPtr> &items) {
   std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("set"));
-  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")))));
-  for (auto &it : expr->items)
+  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
+
+  std::vector<ExprPtr> constructorArgs{};
+  if (type == "List" && !items.empty())
+    constructorArgs.push_back(N<IntExpr>(items.size()));
+  stmts.push_back(transform(
+      N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>(type), constructorArgs))));
+  for (const auto &it : items) {
     if (auto star = it->getStar()) {
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
+      // unpack star-expression by iterating it
+      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
       auto st = star->what->clone();
       st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), st,
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(forVar))))));
+          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
     } else {
       auto st = clone(it);
       st->setAttr(ExprAttr::SequenceItem);
       stmts.push_back(
-          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), st))));
+          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), st))));
     }
-  auto e = N<StmtExpr>(stmts, transform(var));
-  e->setAttr(ExprAttr::Set);
-  resultExpr = e;
-  ctx->popBlock();
+  }
+  return N<StmtExpr>(stmts, transform(var));
 }
 
 void SimplifyVisitor::visit(DictExpr *expr) {
-  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("dict"));
+  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
   stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")))));
-  for (auto &it : expr->items)
+  for (auto &it : expr->items) {
     if (auto star = CAST(it.value, KeywordStarExpr)) {
+      // unpack kwstar-expression by iterating it
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
       auto st = star->what->clone();
       st->setAttr(ExprAttr::StarSequenceItem);
@@ -98,35 +80,34 @@ void SimplifyVisitor::visit(DictExpr *expr) {
       stmts.push_back(transform(
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"), k, v))));
     }
-  auto e = N<StmtExpr>(stmts, transform(var));
-  e->setAttr(ExprAttr::Dict);
-  resultExpr = e;
-  ctx->popBlock();
+  }
+  resultExpr = N<StmtExpr>(stmts, transform(var));
+  resultExpr->setAttr(ExprAttr::Dict);
 }
 
 void SimplifyVisitor::visit(GeneratorExpr *expr) {
-  ctx->addBlock(); // prevent tmp vars from being toplevel vars
-  SuiteStmt *prev;
   std::vector<StmtPtr> stmts;
 
   auto loops = clone_nop(expr->loops);
-  // List comprehension optimization: pass iter.__len__() if we only have a single for
-  // loop without any conditions.
+  // List comprehension optimization:
+  // pass iter.__len__() if we only have a single for loop without any conditions.
   std::string optimizeVar;
   if (expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
       loops[0].conds.empty()) {
-    optimizeVar = ctx->cache->getTemporaryVar("iter");
+    optimizeVar = ctx->cache->getTemporaryVar("i");
     stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(optimizeVar), loops[0].gen)));
     loops[0].gen = N<IdExpr>(optimizeVar);
   }
 
+  SuiteStmt *prev;
   auto suite = transformGeneratorBody(loops, prev);
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
     std::vector<ExprPtr> args;
-    // Use special List.__init__(bool, T) constructor.
-    if (!optimizeVar.empty())
+    if (!optimizeVar.empty()) {
+      // Use special List.__init__(bool, T) constructor.
       args = {N<BoolExpr>(true), N<IdExpr>(optimizeVar)};
+    }
     stmts.push_back(
         transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"), args))));
     prev->stmts.push_back(
@@ -141,15 +122,14 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     stmts.push_back(transform(suite));
     resultExpr = N<StmtExpr>(stmts, transform(var));
   } else {
+    // Standard generators are converted to lambda functions that yield the target expression.
     prev->stmts.push_back(N<YieldStmt>(clone(expr->expr)));
     stmts.push_back(suite);
     resultExpr = N<CallExpr>(N<DotExpr>(N<CallExpr>(makeAnonFn(stmts)), "__iter__"));
   }
-  ctx->popBlock();
 }
 
 void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
-  ctx->addBlock(); // prevent tmp vars from being toplevel vars
   SuiteStmt *prev;
   auto suite = transformGeneratorBody(expr->loops, prev);
 
@@ -160,7 +140,6 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));
   resultExpr = N<StmtExpr>(stmts, transform(var));
-  ctx->popBlock();
 }
 
 StmtPtr SimplifyVisitor::transformGeneratorBody(const std::vector<GeneratorBody> &loops,
