@@ -9,6 +9,7 @@
 
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
+#include "codon/parser/common.h"
 #include "codon/runtime/lib.h"
 #include "codon/sir/dsl/codegen.h"
 #include "codon/sir/llvm/optimize.h"
@@ -368,42 +369,42 @@ void executeCommand(const std::vector<std::string> &args) {
     }
   }
 }
-
-void addEnvVarPathsToLinkerArgs(std::vector<std::string> &args,
-                                const std::string &var) {
-  if (const char *path = getenv(var.c_str())) {
-    llvm::StringRef pathStr(path);
-    llvm::SmallVector<llvm::StringRef, 16> split;
-    pathStr.split(split, ":");
-
-    for (const auto &subPath : split) {
-      args.push_back(("-L" + subPath).str());
-    }
-  }
-}
 } // namespace
 
 void LLVMVisitor::writeToExecutable(const std::string &filename,
+                                    const std::string &argv0,
                                     const std::vector<std::string> &libs) {
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile);
 
-  std::vector<std::string> command = {"clang"};
-  addEnvVarPathsToLinkerArgs(command, "LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "LD_LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "DYLD_LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "CODON_LIBRARY_PATH");
+  const std::string myPath = ast::executable_path(argv0.c_str());
+  const size_t lastSlash = myPath.rfind('/');
+  const std::string myDir =
+      (lastSlash != std::string::npos) ? myPath.substr(0, lastSlash) : ".";
+  std::string rpath = myDir + "/../lib";
+
+  // if we can't find standard install path, assume it's a build and just use codon
+  // binary path
+  if (!llvm::sys::fs::exists(rpath))
+    rpath = myDir;
+
+  llvm::SmallVector<char> rpathVec(128);
+  if (!llvm::sys::fs::real_path(rpath, rpathVec))
+    rpath = std::string(rpathVec.begin(), rpathVec.end());
+
+  std::vector<std::string> command = {"gcc"};
   for (const auto &lib : libs) {
     command.push_back("-l" + lib);
   }
-  std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
-                                        "-lz",       "-lm",   "-lc",       "-o",
-                                        filename,    objFile};
+  std::vector<std::string> extraArgs = {
+      "-L" + rpath, "-lcodonrt",           "-lomp", "-lpthread", "-ldl", "-lz", "-lm",
+      "-lc",        "-Wl,-rpath," + rpath, "-o",    filename,    objFile};
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
   }
 
   executeCommand(command);
+  llvm::sys::fs::remove(objFile);
 
 #if __APPLE__
   if (db.debug) {
@@ -412,7 +413,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 #endif
 }
 
-void LLVMVisitor::compile(const std::string &filename,
+void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
                           const std::vector<std::string> &libs) {
   llvm::StringRef f(filename);
   if (f.endswith(".ll")) {
@@ -422,7 +423,7 @@ void LLVMVisitor::compile(const std::string &filename,
   } else if (f.endswith(".o") || f.endswith(".obj")) {
     writeToObjectFile(filename);
   } else {
-    writeToExecutable(filename, libs);
+    writeToExecutable(filename, argv0, libs);
   }
 }
 
