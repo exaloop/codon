@@ -377,28 +377,39 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile);
 
-  const std::string myPath = ast::executable_path(argv0.c_str());
-  const size_t lastSlash = myPath.rfind('/');
-  const std::string myDir =
-      (lastSlash != std::string::npos) ? myPath.substr(0, lastSlash) : ".";
-  std::string rpath = myDir + "/../lib";
+  const std::string base = ast::executable_path(argv0.c_str());
+  auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
 
-  // if we can't find standard install path, assume it's a build and just use codon
-  // binary path
-  if (!llvm::sys::fs::exists(rpath))
-    rpath = myDir;
+  std::vector<std::string> relatives = {"../lib", "../lib/codon"};
+  std::vector<std::string> rpaths;
+  for (const auto &rel : relatives) {
+    auto newPath = path;
+    llvm::sys::path::append(newPath, rel);
+    llvm::sys::path::remove_dots(newPath, /*remove_dot_dot=*/true);
+    if (llvm::sys::fs::exists(newPath)) {
+      rpaths.push_back(std::string(newPath));
+    }
+  }
 
-  llvm::SmallVector<char> rpathVec(128);
-  if (!llvm::sys::fs::real_path(rpath, rpathVec))
-    rpath = std::string(rpathVec.begin(), rpathVec.end());
+  if (rpaths.empty()) {
+    rpaths.push_back(std::string(path));
+  }
 
   std::vector<std::string> command = {"gcc"};
+
+  for (const auto &rpath : rpaths) {
+    command.push_back("-L" + rpath);
+    command.push_back("-Wl,-rpath," + rpath);
+  }
+
   for (const auto &lib : libs) {
     command.push_back("-l" + lib);
   }
-  std::vector<std::string> extraArgs = {
-      "-L" + rpath, "-lcodonrt",           "-lomp", "-lpthread", "-ldl", "-lz", "-lm",
-      "-lc",        "-Wl,-rpath," + rpath, "-o",    filename,    objFile};
+
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
+                                        "-lz",       "-lm",   "-lc",       "-o",
+                                        filename,    objFile};
+
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
   }
