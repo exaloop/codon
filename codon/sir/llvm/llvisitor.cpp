@@ -373,7 +373,8 @@ void executeCommand(const std::vector<std::string> &args) {
 
 void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0,
-                                    const std::vector<std::string> &libs) {
+                                    const std::vector<std::string> &libs,
+                                    const std::string &lflags) {
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile);
 
@@ -414,6 +415,14 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     command.push_back(arg);
   }
 
+  llvm::SmallVector<llvm::StringRef> userFlags(16);
+  llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  for (const auto &uflag : userFlags) {
+    if (!uflag.empty())
+      command.push_back(uflag.str());
+  }
+
   executeCommand(command);
   llvm::sys::fs::remove(objFile);
 
@@ -425,7 +434,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
-                          const std::vector<std::string> &libs) {
+                          const std::vector<std::string> &libs,
+                          const std::string &lflags) {
   llvm::StringRef f(filename);
   if (f.endswith(".ll")) {
     writeToLLFile(filename);
@@ -434,7 +444,7 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
   } else if (f.endswith(".o") || f.endswith(".obj")) {
     writeToObjectFile(filename);
   } else {
-    writeToExecutable(filename, argv0, libs);
+    writeToExecutable(filename, argv0, libs, lflags);
   }
 }
 

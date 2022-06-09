@@ -322,8 +322,10 @@ public:
   /// @param filename the file to write to
   /// @param argv0 compiler's argv[0] used to set rpath
   /// @param libs library names to link
+  /// @param lflags extra flags to pass linker
   void writeToExecutable(const std::string &filename, const std::string &argv0,
-                         const std::vector<std::string> &libs = {});
+                         const std::vector<std::string> &libs = {},
+                         const std::string &lflags = "");
   /// Runs optimization passes on module and writes the result
   /// to the specified file. The output type is determined by
   /// the file extension (.ll for LLVM IR, .bc for LLVM bitcode
@@ -331,8 +333,10 @@ public:
   /// @param filename name of the file to write to
   /// @param argv0 compiler's argv[0] used to set rpath
   /// @param libs library names to link to, if creating executable
+  /// @param lflags extra flags to pass linker, if creating executable
   void compile(const std::string &filename, const std::string &argv0,
-               const std::vector<std::string> &libs = {});
+               const std::vector<std::string> &libs = {},
+               const std::string &lflags = "");
   /// Runs optimization passes on module and executes it.
   /// @param args vector of arguments to program
   /// @param libs vector of libraries to load
