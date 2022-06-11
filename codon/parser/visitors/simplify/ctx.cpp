@@ -15,60 +15,61 @@ namespace codon::ast {
 SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
     : Context<SimplifyItem>(move(filename)), cache(cache),
       isStdlibLoading(false), moduleName{ImportFile::PACKAGE, "", ""},
-      shortCircuit(false), allowTypeOf(true), substitutions(nullptr) {
+      shortCircuit(false), allowTypeOf(true) {
+  bases.emplace_back(Base(""));
   scope.push_back(scopeCnt = 0);
 }
 
 SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, int attributes)
     : name(move(name)), ast(move(ast)), attributes(attributes), deducedMembers(nullptr),
-      selfName() {}
+      selfName(), captures(nullptr) {}
 
-void SimplifyContext::add(const std::string &name, std::shared_ptr<SimplifyItem> var) {
+void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);
   if (v && v->noShadow)
     error("cannot shadow global or nonlocal statement");
   Context<SimplifyItem>::add(name, var);
 }
 
-std::shared_ptr<SimplifyItem> SimplifyContext::addVar(const std::string &name,
-                                                      const std::string &canonicalName,
-                                                      const SrcInfo &srcInfo) {
+SimplifyContext::Item SimplifyContext::addVar(const std::string &name,
+                                              const std::string &canonicalName,
+                                              const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Var, getBase(), canonicalName,
-                                          getModule(), scope);
+  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Var, getBaseName(),
+                                          canonicalName, getModule(), scope);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
-std::shared_ptr<SimplifyItem> SimplifyContext::addType(const std::string &name,
-                                                       const std::string &canonicalName,
-                                                       const SrcInfo &srcInfo) {
+SimplifyContext::Item SimplifyContext::addType(const std::string &name,
+                                               const std::string &canonicalName,
+                                               const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Type, getBase(), canonicalName,
-                                          getModule(), scope);
+  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Type, getBaseName(),
+                                          canonicalName, getModule(), scope);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
-std::shared_ptr<SimplifyItem> SimplifyContext::addFunc(const std::string &name,
-                                                       const std::string &canonicalName,
-                                                       const SrcInfo &srcInfo) {
+SimplifyContext::Item SimplifyContext::addFunc(const std::string &name,
+                                               const std::string &canonicalName,
+                                               const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Func, getBase(), canonicalName,
-                                          getModule(), scope);
+  auto t = std::make_shared<SimplifyItem>(SimplifyItem::Func, getBaseName(),
+                                          canonicalName, getModule(), scope);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
 
-std::shared_ptr<SimplifyItem>
-SimplifyContext::addAlwaysVisible(const std::shared_ptr<SimplifyItem> &item) {
-  auto i = std::make_shared<SimplifyItem>(item->kind, item->base, item->canonicalName,
-                                          item->moduleName, std::vector<int>{0},
-                                          item->importPath);
+SimplifyContext::Item
+SimplifyContext::addAlwaysVisible(const SimplifyContext::Item &item) {
+  auto i = std::make_shared<SimplifyItem>(item->kind, item->baseName,
+                                          item->canonicalName, item->moduleName,
+                                          std::vector<int>{0}, item->importPath);
   auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
   if (!stdlib->find(i->canonicalName)) {
     stdlib->add(i->canonicalName, i);
@@ -76,7 +77,7 @@ SimplifyContext::addAlwaysVisible(const std::shared_ptr<SimplifyItem> &item) {
   return i;
 }
 
-std::shared_ptr<SimplifyItem> SimplifyContext::find(const std::string &name) const {
+SimplifyContext::Item SimplifyContext::find(const std::string &name) const {
   auto t = Context<SimplifyItem>::find(name);
   if (t)
     return t;
@@ -89,27 +90,22 @@ std::shared_ptr<SimplifyItem> SimplifyContext::find(const std::string &name) con
   return t;
 }
 
-std::shared_ptr<SimplifyItem> SimplifyContext::forceFind(const std::string &name) const {
+SimplifyContext::Item SimplifyContext::forceFind(const std::string &name) const {
   auto f = find(name);
   seqassert(f, "cannot find '{}'", name);
   return f;
 }
 
-std::shared_ptr<SimplifyItem>
-SimplifyContext::findDominatingBinding(const std::string &name_) {
-  std::string name = name_;
-  // if (in(cache->reverseIdentifierLookup, name))
-  //   name = cache->reverseIdentifierLookup[name];
+SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &name) {
   auto it = map.find(name);
-  if (it == map.end()) {
+  if (it == map.end())
     return find(name);
-  }
 
   std::string canonicalName;
 
   seqassert(!it->second.empty(), "corrupted SimplifyContext ({})", name);
   auto lastGood = it->second.begin();
-  bool isOutside = (*lastGood)->getBase() != getBase();
+  bool isOutside = (*lastGood)->getBaseName() != getBaseName();
   int prefix = int(scope.size());
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
     int p = std::min(prefix, int((*i)->scope.size()));
@@ -117,7 +113,7 @@ SimplifyContext::findDominatingBinding(const std::string &name_) {
       p--;
     if (p < 0)
       break;
-    if (!isOutside && (*i)->getBase() != getBase())
+    if (!isOutside && (*i)->getBaseName() != getBaseName())
       break;
     prefix = p;
     lastGood = i;
@@ -143,7 +139,8 @@ SimplifyContext::findDominatingBinding(const std::string &name_) {
     // LOG(" ! generating new {}->{} @ {} @ {}", name, canonicalName, scope[prefix - 1],
     //     getSrcInfo());
     auto item = std::make_shared<SimplifyItem>(
-        (*lastGood)->kind, (*lastGood)->base, canonicalName, (*lastGood)->moduleName,
+        (*lastGood)->kind, (*lastGood)->baseName, canonicalName,
+        (*lastGood)->moduleName,
         std::vector<int>(scope.begin(), scope.begin() + prefix),
         (*lastGood)->importPath);
     item->accessChecked = false;
@@ -175,11 +172,7 @@ SimplifyContext::findDominatingBinding(const std::string &name_) {
   return it->second.front();
 }
 
-std::string SimplifyContext::getBase() const {
-  if (bases.empty())
-    return "";
-  return bases.back().name;
-}
+std::string SimplifyContext::getBaseName() const { return bases.back().name; }
 
 std::string SimplifyContext::getModule() const {
   std::string base = moduleName.status == ImportFile::STDLIB ? "std." : "";
@@ -195,7 +188,7 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
   std::string newName = name;
   bool alreadyGenerated = name.find('.') != std::string::npos;
   if (includeBase && !alreadyGenerated) {
-    std::string base = getBase();
+    std::string base = getBaseName();
     if (base.empty())
       base = getModule();
     if (base == "std.internal.core")
@@ -215,14 +208,14 @@ void SimplifyContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
   LOG("module: {}", getModule());
-  LOG("base: {}", getBase());
+  LOG("base: {}", getBaseName());
   LOG("scope: {}", combine2(scope, ","));
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
     LOG("{}{:.<40} {} {:40} {:30} {}", std::string(pad * 2, ' '), i.first,
         (t->isFunc() ? "F" : (t->isType() ? "T" : (t->isImport() ? "I" : "V"))),
-        t->canonicalName, t->getBase(), combine2(t->scope, ","));
+        t->canonicalName, t->getBaseName(), combine2(t->scope, ","));
   }
 }
 

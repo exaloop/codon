@@ -261,8 +261,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
         auto val = ictx->find(a->lhs->getId()->value);
         seqassert(val, "cannot locate '{}' in imported file {}",
                   s->getAssign()->lhs->getId()->value, file.path);
-        if (val->kind == SimplifyItem::Var && val->scope.size() == 1 &&
-            val->base.empty() && !isStatic) {
+        if (val->kind == SimplifyItem::Var && val->isGlobal() && !isStatic) {
           stmts.push_back(s);
           if (!in(ctx->cache->globals, val->canonicalName))
             ctx->cache->globals[val->canonicalName] = nullptr;

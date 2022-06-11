@@ -51,7 +51,6 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
       !g->loops[0].conds.empty())
     error("tuple only accepts a simple comprehension over a tuple");
 
-  ctx->addBlock();
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
   if (auto i = var->getId()) {
@@ -68,7 +67,6 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
   std::vector<GeneratorBody> body;
   body.push_back({var, transform(g->loops[0].gen), {}});
   auto e = N<GeneratorExpr>(GeneratorExpr::Generator, ex, body);
-  ctx->popBlock();
   return e;
 }
 

@@ -62,7 +62,7 @@ void SimplifyVisitor::visit(AssertStmt *stmt) {
   ExprPtr msg = N<StringExpr>("");
   if (stmt->message)
     msg = N<CallExpr>(N<IdExpr>("str"), clone(stmt->message));
-  if (ctx->getLevel() && (ctx->bases.back().attributes & FLAG_TEST))
+  if (ctx->inFunction() && (ctx->getBase()->attributes & FLAG_TEST))
     resultStmt = transform(
         N<IfStmt>(N<UnaryExpr>("!", clone(stmt->expr)),
                   N<ExprStmt>(N<CallExpr>(N<DotExpr>("__internal__", "seq_assert_test"),

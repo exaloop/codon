@@ -574,7 +574,7 @@ def f[T]():
     def g():
         return T()
     g()
-f(int) #! identifier 'T' not found
+f(int) #! cannot access nonlocal variable 'T'
 
 #%% class_err_1,barebones
 @extend
@@ -672,7 +672,7 @@ class F[T: Static[float]]:
 def foo[T]():
     class A:
         x: T
-#! identifier 'T' not found (cannot access outer function identifiers)
+#! cannot access nonlocal variable 'T'
 
 #%% class_err_11,barebones
 def foo(x):

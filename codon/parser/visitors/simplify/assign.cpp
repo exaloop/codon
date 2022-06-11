@@ -51,33 +51,28 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
   } else if (auto ed = lhs->getDot()) {
     seqassert(!type, "unexpected type annotation");
     auto l = transform(ed->expr);
-    if (!ctx->bases.empty() && ctx->bases.back().deducedMembers &&
-        l->isId(ctx->bases.back().selfName)) {
-      if (std::find(ctx->bases.back().deducedMembers->begin(),
-                    ctx->bases.back().deducedMembers->end(),
-                    ed->member) == ctx->bases.back().deducedMembers->end())
-        ctx->bases.back().deducedMembers->push_back(ed->member);
-    }
+    auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers : nullptr;
+    if (deduced && l->isId(ctx->getBase()->selfName) && !in(*deduced, ed->member))
+      deduced->push_back(ed->member);
     return N<AssignMemberStmt>(l, ed->member, transform(rhs, false));
   } else if (auto e = lhs->getId()) {
-    if (in(ctx->seenGlobalIdentifiers[ctx->getBase()], e->value))
-      error(ctx->seenGlobalIdentifiers[ctx->getBase()][e->value],
+    if (in(ctx->seenGlobalIdentifiers[ctx->getBaseName()], e->value))
+      error(ctx->seenGlobalIdentifiers[ctx->getBaseName()][e->value],
             "local variable '{}' referenced before assignment", e->value);
 
     ExprPtr t = transformType(type, false);
     auto r = transform(rhs, true);
 
     auto val = ctx->find(e->value);
-    mustExist |= val && (val->noShadow && val->getBase() == ctx->getBase());
+    mustExist |= val && (val->noShadow && val->getBaseName() == ctx->getBaseName());
     if (mustExist) {
       val = ctx->findDominatingBinding(e->value);
-      if (val && val->isVar() && val->getBase() == ctx->getBase()) {
+      if (val && val->isVar() && val->getBaseName() == ctx->getBaseName()) {
         return N<UpdateStmt>(transform(lhs, false), transform(rhs, true),
-                             !ctx->bases.empty() &&
-                                 ctx->bases.back().attributes & FLAG_ATOMIC);
+                             ctx->getBase()->attributes & FLAG_ATOMIC);
       } else {
-        LOG("-> {} {} {} {}", val->noShadow, val->getBase(), val->isVar(),
-            ctx->getBase());
+        LOG("-> {} {} {} {}", val->noShadow, val->getBaseName(), val->isVar(),
+            ctx->getBaseName());
         error("variable '{}' cannot be updated", e->value);
       }
     }

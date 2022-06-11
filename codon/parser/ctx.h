@@ -21,8 +21,11 @@ namespace ast {
  * @tparam T Variable type.
  */
 template <typename T> class Context : public std::enable_shared_from_this<Context<T>> {
+public:
+  typedef std::shared_ptr<T> Item;
+
 protected:
-  typedef std::unordered_map<std::string, std::list<std::shared_ptr<T>>> Map;
+  typedef std::unordered_map<std::string, std::list<Item>> Map;
   /// Maps a identifier to a stack of objects that share the same identifier.
   /// Each object is represented by a nesting level and a pointer to that object.
   /// Top of the stack is the current block; the bottom is the outer-most block.
@@ -47,7 +50,7 @@ public:
   virtual ~Context() = default;
 
   /// Add an object to the top of the stack.
-  virtual void add(const std::string &name, std::shared_ptr<T> var) {
+  virtual void add(const std::string &name, const Item &var) {
     seqassertn(!name.empty(), "adding an empty identifier");
     map[name].push_front(move(var));
     stack.front().push_back(name);
@@ -65,7 +68,7 @@ public:
     seqassertn(false, "cannot find {} in the stack", name);
   }
   /// Return a top-most object with a given identifier or nullptr if it does not exist.
-  virtual std::shared_ptr<T> find(const std::string &name) const {
+  virtual Item find(const std::string &name) const {
     auto it = map.find(name);
     return it != map.end() ? it->second.front() : nullptr;
   }
@@ -78,8 +81,6 @@ public:
     stack.pop_front();
   }
 
-  /// True if only the top-level block is present.
-  bool isToplevel() const { return stack.size() == 1; }
   /// The absolute path of a current module.
   std::string getFilename() const { return filename; }
   /// Sets the absolute path of a current module.

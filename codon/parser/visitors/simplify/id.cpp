@@ -11,158 +11,193 @@ using fmt::format;
 namespace codon::ast {
 
 void SimplifyVisitor::visit(IdExpr *expr) {
-  if (ctx->substitutions) {
-    auto it = ctx->substitutions->find(expr->value);
-    if (it != ctx->substitutions->end()) {
-      resultExpr = transform(it->second, true);
-      return;
-    }
-  }
-
   auto val = ctx->findDominatingBinding(expr->value);
   if (!val)
     error("identifier '{}' not found", expr->value);
 
-  // If we are accessing a nonlocal variable, capture it or raise an error
-  bool captured = false;
-  bool isClassGeneric = ctx->bases.size() >= 2 &&
-                        ctx->bases[ctx->bases.size() - 2].isType() &&
-                        ctx->bases[ctx->bases.size() - 2].name == val->getBase();
-  auto newName = val->canonicalName;
-  if (val->isVar() &&
-      (ctx->getBase() != val->getBase() || ctx->getModule() != val->getModule()) &&
-      !isClassGeneric) {
-    if (val->getBase().empty()) {
-      // LOG("no shadow: {} @ {}", val->canonicalName, expr->getSrcInfo());
-      val->noShadow = true;
-      if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName)) {
-        // LOG("-> {}", val->canonicalName);
-        ctx->cache->globals[val->canonicalName] = nullptr;
-      }
-    } else if (!ctx->captures.empty()) {
-      // LOG("-- {} -> {} {}", expr->value, val->getBase(), ctx->getBase());
-      captured = true;
-      if (!in(ctx->captures.back(), val->canonicalName)) {
-        ctx->captures.back()[val->canonicalName] = newName =
-            ctx->generateCanonicalName(val->canonicalName);
-        ctx->cache->reverseIdentifierLookup[newName] = newName;
-      }
-      newName = ctx->captures.back()[val->canonicalName];
-      // LOG("no shadow: {} @ {}", val->canonicalName, expr->getSrcInfo());
-      val->noShadow = true;
-    } else {
-      // ctx->dump();
-      error("cannot access nonlocal variable '{}'",
-            ctx->cache->reverseIdentifierLookup[expr->value]);
-    }
-  }
+  // If we are accessing an outside variable, capture it or raise an error
+  auto captured = checkCapture(val);
+  if (captured)
+    val = ctx->forceFind(expr->value);
 
-  // Replace the variable with its canonical name. Do not canonize captured
-  // variables (they will be later passed as argument names).
-  resultExpr = N<IdExpr>(newName);
-  if (val->getBase() != ctx->getBase() &&
-      !in(ctx->seenGlobalIdentifiers[ctx->getBase()],
-          ctx->cache->reverseIdentifierLookup[val->canonicalName]) &&
-      !isClassGeneric) {
-    ctx->seenGlobalIdentifiers
-        [ctx->getBase()][ctx->cache->reverseIdentifierLookup[val->canonicalName]] =
+  // Replace the variable with its canonical name
+  resultExpr = N<IdExpr>(val->canonicalName);
+
+  // Mark global as "seen" to prevent later creation of local variables
+  // with the same name. Example:
+  // x = 1
+  // def foo():
+  //   print(x)  # mark x as seen
+  //   x = 2     # so that this is an error
+  if (!val->isGeneric() && ctx->isOuter(val) &&
+      !in(ctx->seenGlobalIdentifiers[ctx->getBaseName()],
+          ctx->rev(val->canonicalName))) {
+    ctx->seenGlobalIdentifiers[ctx->getBaseName()][ctx->rev(val->canonicalName)] =
         expr->clone();
   }
-  // Flag the expression as a type expression if it points to a class name or a generic.
+
+  // Flag the expression as a type expression if it points to a class or a generic
   if (val->isType())
     resultExpr->markType();
+
+  // Variable binding check for variables that are defined within conditional blocks
   if (!val->accessChecked) {
-    // LOG("{} {}", expr->toString(), expr->getSrcInfo());
-    /// TODO: what if later access removes the check?!
+    // Prepend access with __internal__.undef([var]__used__, "[var name]")
     auto checkStmt = N<ExprStmt>(N<CallExpr>(
         N<DotExpr>("__internal__", "undef"),
         N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
         N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
     if (!ctx->shortCircuit) {
+      // If the expression is not conditional, we can just do the check once
       prependStmts->push_back(checkStmt);
       val->accessChecked = true;
     } else {
+      // Otherwise, this check must be always called
       resultExpr = N<StmtExpr>(checkStmt, resultExpr);
     }
   }
-  if (ctx->inLoop()) {
-    bool inside =
-        val->scope.size() >= ctx->getLoop()->scope.size() &&
-        val->scope[ctx->getLoop()->scope.size() - 1] == ctx->getLoop()->scope.back();
-    if (!inside)
-      ctx->getLoop()->seenVars.insert(expr->value);
-  }
 
-  // The only variables coming from the enclosing base must be class generics.
-  //  seqassert(!val->isFunc() || val->getBase().empty(), "{} has invalid base ({})",
-  //           expr->value, val->getBase());
-  if (!val->getBase().empty() && ctx->getBase() != val->getBase()) {
-    // Assumption: only 2 bases are available (class -> function)
-    if (isClassGeneric) {
-      ctx->bases.back().attributes |= FLAG_METHOD;
-      return;
-    }
-  }
-  // If that is not the case, we are probably having a class accessing its enclosing
-  // function variable (generic or other identifier). We do not like that!
-  if (!captured && ctx->getBase() != val->getBase() && !val->getBase().empty()) {
-    bool crossClassBoundary = false;
-    bool outerGeneric = false;
-    for (int i = int(ctx->bases.size()) - 1; i >= 0; i--) {
-      outerGeneric |= in(ctx->bases[i].generics, val->canonicalName);
-      if (ctx->bases[i].name == val->getBase())
-        break;
-      else if (ctx->bases[i].isType()) {
-        crossClassBoundary = true;
-        break;
-      }
-    }
-    if (crossClassBoundary || (outerGeneric && !isClassGeneric))
-      error("identifier '{}' not found (cannot access outer function identifiers)",
-            expr->value);
+  // Track loop variables to dominate them later. Example:
+  // x = 1
+  // while True:
+  //   if x > 10: break
+  //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
+  if (auto loop = ctx->getBase()->getLoop()) {
+    bool inside = val->scope.size() >= loop->scope.size() &&
+                  val->scope[loop->scope.size() - 1] == loop->scope.back();
+    if (!inside)
+      loop->seenVars.insert(expr->value);
   }
 }
 
+/// Flatten imports.
+/// @example
+///   `a.b.c` -> canonical name of `c` in `a.b` if `a.b` is an import
+///   `a.B.c` -> canonical name of `c` in class `a.B`
+/// Other cases are handled during the type checking.
 void SimplifyVisitor::visit(DotExpr *expr) {
-  /// First flatten the imports.
-  Expr *e = expr;
+  // First flatten the imports:
+  // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
   std::deque<std::string> chain;
-  while (auto d = e->getDot()) {
-    chain.push_front(d->member);
-    e = d->expr.get();
+  Expr *root = expr;
+  while (auto dot = root->getDot()) {
+    chain.push_front(dot->member);
+    root = dot->expr.get();
   }
-  if (auto d = e->getId()) {
-    chain.push_front(d->value);
 
-    /// Check if this is a import or a class access:
-    /// (import1.import2...).(class1.class2...)?.method?
-    int importEnd = 0, itemEnd = 0;
-    std::string importName, itemName;
-    std::shared_ptr<SimplifyItem> val = nullptr;
-    for (int i = int(chain.size()) - 1; i >= 0; i--) {
-      auto s = join(chain, "/", 0, i + 1);
-      val = ctx->find(s);
-      if (val && val->isImport()) {
-        importName = val->importPath;
-        importEnd = i + 1;
-        break;
-      }
+  if (auto id = root->getId()) {
+    // Case: a.bar.baz
+    chain.push_front(id->value);
+    auto p = getImport(chain);
+
+    if (p.second->getModule() == ctx->getModule() && p.first == 1) {
+      resultExpr = transform(N<IdExpr>(chain[0]), true);
+    } else {
+      resultExpr = N<IdExpr>(p.second->canonicalName);
+      if (p.second->isType() && p.first == chain.size())
+        resultExpr->markType();
     }
-    // a.b.c is completely import name
-    if (importEnd == chain.size()) {
-      resultExpr = transform(N<IdExpr>(val->canonicalName));
-      return;
+    for (auto i = p.first; i < chain.size(); i++)
+      resultExpr = N<DotExpr>(resultExpr, chain[i]);
+  } else {
+    // Case: a[x].foo.bar
+    resultExpr = N<DotExpr>(transform(expr->expr, true), expr->member);
+  }
+}
+
+/// Access identifiers from outside of the current function/class scope.
+/// Either use them as-is (globals), capture them if allowed (nonlocals),
+/// or raise an error.
+bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
+  if (!ctx->isOuter(val))
+    return false;
+
+  // Ensure that outer variables can be captured (i.e., do not cross no-capture
+  // boundary). Example:
+  // def foo():
+  //   x = 1
+  //   class T:      # <- boundary (class methods cannot capture locals)
+  //     def bar():
+  //       print(x)  # x cannot be accessed
+  bool crossCaptureBoundary = false;
+  auto i = ctx->bases.size();
+  for (; i-- > 0;) {
+    if (ctx->bases[i].name == val->getBaseName())
+      break;
+    if (!ctx->bases[i].captures)
+      crossCaptureBoundary = true;
+  }
+  seqassert(i < ctx->bases.size(), "invalid base for '{}'", val->canonicalName);
+
+  // Disallow outer generics except for class generics in methods
+  if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size()))
+    error("cannot access nonlocal variable '{}'", ctx->rev(val->canonicalName));
+
+  // Mark methods (class functions that access class generics)
+  if (val->isGeneric() && ctx->bases[i].isType() && i + 2 == ctx->bases.size())
+    ctx->getBase()->attributes |= FLAG_METHOD;
+
+  // Check if a real variable (not a static) is defined outside the current scope
+  if (!val->isVar() || val->isGeneric())
+    return false;
+
+  // Case: a global variable that has not been marked with `global` statement
+  if (val->getBaseName().empty()) { /// TODO: use isGlobal instead?
+    val->noShadow = true;
+    if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName))
+      ctx->cache->globals[val->canonicalName] = nullptr;
+    return false;
+  }
+
+  // Case: a nonlocal variable that has not been marked with `nonlocal` statement
+  //       and capturing is enabled
+  auto captures = ctx->getBase()->captures;
+  if (!crossCaptureBoundary && captures && !in(*captures, val->canonicalName)) {
+    // Captures are transformed to function arguments; generate new name for that
+    // argument
+    auto newName = (*captures)[val->canonicalName] =
+        ctx->generateCanonicalName(val->canonicalName);
+    ctx->cache->reverseIdentifierLookup[newName] = newName;
+    // Add newly generated argument to the context
+    auto newVal = ctx->addVar(ctx->rev(val->canonicalName), newName, getSrcInfo());
+    newVal->baseName = ctx->getBaseName();
+    newVal->noShadow = true;
+    return true;
+  }
+
+  // Case: a nonlocal variable that has not been marked with `nonlocal` statement
+  //       and capturing is *not* enabled
+  error("cannot access nonlocal variable '{}'", ctx->rev(val->canonicalName));
+  return false;
+}
+
+/// Check if a access chain (a.b.c.d...) contains an import or class prefix.
+std::pair<size_t, SimplifyContext::Item>
+SimplifyVisitor::getImport(const std::deque<std::string> &chain) {
+  size_t importEnd = 0;
+  std::string importName;
+
+  // Find the longest prefix that corresponds to the existing import
+  // (e.g., `a.b.c.d` -> `a.b.c` if there is `import a.b.c`)
+  SimplifyContext::Item val = nullptr;
+  for (auto i = chain.size(); i-- > 0;) {
+    val = ctx->find(join(chain, "/", 0, i + 1));
+    if (val && val->isImport()) {
+      importName = val->importPath, importEnd = i + 1;
+      break;
     }
+  }
+
+  if (importEnd != chain.size()) { // false when a.b.c points to import itself
+    // Find the longest prefix that corresponds to the existing class
+    // (e.g., `a.b.c` -> `a.b` if there is `class a: class b:`)
+    std::string itemName;
+    size_t itemEnd = 0;
     auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
-    for (int i = int(chain.size()) - 1; i >= importEnd; i--) {
-      auto s = join(chain, ".", importEnd, i + 1);
-      val = fctx->find(s);
-      // Make sure that we access only global imported variables.
-      if (val && (importName.empty() || val->isType() || val->scope.size() == 1)) {
-        itemName = val->canonicalName;
-        itemEnd = i + 1;
-        //        if (!importName.empty()) TODO: why was this originally here?
-        //          ctx->add(val->canonicalName, val);
+    for (int i = chain.size(); i-- > importEnd;) {
+      val = fctx->find(join(chain, ".", importEnd, i + 1));
+      if (val && (importName.empty() || val->isType() || !val->isConditional())) {
+        itemName = val->canonicalName, itemEnd = i + 1;
         break;
       }
     }
@@ -170,19 +205,9 @@ void SimplifyVisitor::visit(DotExpr *expr) {
       error("identifier '{}' not found", chain[importEnd]);
     if (itemName.empty())
       error("identifier '{}' not found in {}", chain[importEnd], importName);
-    if (importName.empty() && itemEnd == 1) {
-      resultExpr = transform(N<IdExpr>(chain[0]), true);
-    } else {
-      resultExpr = N<IdExpr>(itemName);
-      if (val->isType() && itemEnd == chain.size())
-        resultExpr->markType();
-    }
-    for (int i = itemEnd; i < chain.size(); i++)
-      resultExpr = N<DotExpr>(resultExpr, chain[i]);
-  } else {
-    resultExpr = N<DotExpr>(transform(expr->expr, true), expr->member);
+    importEnd = itemEnd;
   }
+  return {importEnd, val};
 }
-
 
 } // namespace codon::ast

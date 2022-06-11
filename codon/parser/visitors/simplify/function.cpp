@@ -126,11 +126,11 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
   auto val = ctx->findDominatingBinding(stmt->var);
   if (!val || !val->isVar())
     error("identifier '{}' not found", stmt->var);
-  if (val->getBase() == ctx->getBase())
+  if (val->getBaseName() == ctx->getBaseName())
     error("identifier '{}' already defined", stmt->var);
-  if (!stmt->nonLocal && !val->getBase().empty())
+  if (!stmt->nonLocal && !val->getBaseName().empty())
     error("not a global variable");
-  else if (stmt->nonLocal && val->getBase().empty())
+  else if (stmt->nonLocal && val->getBaseName().empty())
     error("not a nonlocal variable");
   seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
             stmt->var);
@@ -138,8 +138,7 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
     ctx->cache->globals[val->canonicalName] = nullptr;
   // TODO: capture otherwise?
   val = ctx->addVar(stmt->var, val->canonicalName, stmt->getSrcInfo());
-  // val->scope = ctx->scope;
-  val->base = ctx->getBase();
+  val->baseName = ctx->getBaseName();
   val->noShadow = true;
 }
 
@@ -191,14 +190,14 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   bool isClassMember = ctx->inClass();
   std::string rootName;
   if (isClassMember) {
-    auto &m = ctx->cache->classes[ctx->bases.back().name].methods;
+    auto &m = ctx->cache->classes[ctx->getBase()->name].methods;
     auto i = m.find(stmt->name);
     if (i != m.end())
       rootName = i->second;
   } else if (overload) {
     if (auto c = ctx->find(stmt->name))
       if (c->isFunc() && c->getModule() == ctx->getModule() &&
-          c->getBase() == ctx->getBase())
+          c->getBaseName() == ctx->getBaseName())
         rootName = c->canonicalName;
   }
   if (rootName.empty())
@@ -208,7 +207,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
   bool isEnclosedFunc = ctx->inFunction();
 
-  if (attr.has(Attr::ForceRealize) && (ctx->getLevel() || isClassMember))
+  if (attr.has(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))
     error("builtins must be defined at the toplevel");
 
   if (!isClassMember) {
@@ -218,15 +217,15 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
     ctx->addAlwaysVisible(funcVal);
   }
+
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName}); // Add new base...
-  if (isClassMember && ctx->bases[ctx->bases.size() - 2].deducedMembers)
-    ctx->bases.back().deducedMembers = ctx->bases[ctx->bases.size() - 2].deducedMembers;
+  ctx->getBase()->scope = ctx->scope;
   ctx->addBlock(); // ... and a block!
   // Set atomic flag if @atomic attribute is present.
   if (attr.has(Attr::Atomic))
-    ctx->bases.back().attributes |= FLAG_ATOMIC;
+    ctx->getBase()->attributes |= FLAG_ATOMIC;
   if (attr.has(Attr::Test))
-    ctx->bases.back().attributes |= FLAG_TEST;
+    ctx->getBase()->attributes |= FLAG_TEST;
   // Add generic identifiers to the context
   std::unordered_set<std::string> seenArgs;
   // Parse function arguments and add them to the context.
@@ -261,9 +260,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
     auto typeAst = a.type;
     if (!typeAst && isClassMember && ia == 0 && a.name == "self") {
-    //   typeAst = ctx->bases[ctx->bases.size() - 2].ast;
-      ctx->bases.back().selfName = name;
-    //   attr.set(".changedSelf");
+      ctx->getBase()->selfName = name;
       attr.set(Attr::Method);
     }
 
@@ -297,10 +294,10 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     //                         nullptr, a.generic});
     if (a.status != Param::Normal) {
       if (a.type->getIndex() && a.type->getIndex()->expr->isId("Static"))
-        ctx->addVar(varName, name, stmt->getSrcInfo());
+        ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
       else
-        ctx->addType(varName, name, stmt->getSrcInfo());
-      ctx->bases.back().generics.insert(name);
+        ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
+      ctx->getBase()->generics.insert(name);
     }
   }
   for (auto &a : args) {
@@ -312,8 +309,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (a.status == Param::Normal) {
       std::string canName = a.name;
       trimStars(canName);
-      ctx->addVar(ctx->cache->reverseIdentifierLookup[canName], canName,
-                  stmt->getSrcInfo());
+      ctx->addVar(ctx->rev(canName), canName, stmt->getSrcInfo());
     }
   }
   // Parse the return type.
@@ -322,7 +318,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   auto ret = transformType(stmt->ret, false);
   // Parse function body.
   StmtPtr suite = nullptr;
-  std::map<std::string, std::string> captures;
+  std::unordered_map<std::string, std::string> captures;
   if (!attr.has(Attr::Internal) && !attr.has(Attr::C)) {
     ctx->addBlock();
     if (attr.has(Attr::LLVM)) {
@@ -330,12 +326,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     } else if (attr.has(Attr::C)) {
     } else {
       if ((isEnclosedFunc || attr.has(Attr::Capture)) && !isClassMember)
-        ctx->captures.emplace_back(std::map<std::string, std::string>{});
+        ctx->getBase()->captures = &captures;
       suite = SimplifyVisitor(ctx, preamble).transformInScope(stmt->suite);
-      if ((isEnclosedFunc || attr.has(Attr::Capture)) && !isClassMember) {
-        captures = ctx->captures.back();
-        ctx->captures.pop_back();
-      }
     }
     ctx->popBlock();
   }
@@ -343,7 +335,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // Once the body is done, check if this function refers to a variable (or generic)
   // from outer scope (e.g. it's parent is not -1). If so, store the name of the
   // innermost base that was referred to in this function.
-  auto isMethod = ctx->bases.back().attributes & FLAG_METHOD;
+  auto isMethod = ctx->getBase()->attributes & FLAG_METHOD;
   ctx->bases.pop_back();
   ctx->popBlock();
   attr.module =
@@ -352,9 +344,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   if (isClassMember) { // If this is a method...
     // ... set the enclosing class name...
-    attr.parentClass = ctx->bases.back().name;
+    attr.parentClass = ctx->getBase()->name;
     // ... add the method to class' method list ...
-    ctx->cache->classes[ctx->bases.back().name].methods[stmt->name] = rootName;
+    ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
     // ... and if the function references outer class variable (by definition a
     // generic), mark it as not static as it needs fully instantiated class to be
     // realized. For example, in class A[T]: def foo(): pass, A.foo() can be realized
@@ -374,8 +366,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
     for (auto &c : captures) {
       args.emplace_back(Param{c.second, nullptr, nullptr});
-      partialArgs.emplace_back(CallExpr::Arg{
-          c.second, N<IdExpr>(ctx->cache->reverseIdentifierLookup[c.first])});
+      partialArgs.emplace_back(CallExpr::Arg{c.second, N<IdExpr>(ctx->rev(c.first))});
     }
     if (hasKwArg)
       args.push_back(kw);

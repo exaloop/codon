@@ -13,23 +13,30 @@ using fmt::format;
 
 namespace codon::ast {
 
+/// Transform `None` to `Optional()`
 void SimplifyVisitor::visit(NoneExpr *expr) {
   resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL)));
 }
 
+/// See @c transformInt
 void SimplifyVisitor::visit(IntExpr *expr) { resultExpr = transformInt(expr); }
 
+/// See @c transformFloat
 void SimplifyVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr); }
 
+/// Concatenate string sequence (e.g., `"a" "b" "c"`) into a single string.
+/// Parse f-strings and custom prefix strings.
+/// Also see @c transformFString
 void SimplifyVisitor::visit(StringExpr *expr) {
   std::vector<ExprPtr> exprs;
   std::vector<std::string> concat;
   for (auto &p : expr->strings) {
     if (p.second == "f" || p.second == "F") {
-      /// F-strings
+      /// Transform an F-string
       exprs.push_back(transformFString(p.first));
     } else if (!p.second.empty()) {
-      /// Custom-prefix strings
+      /// Custom prefix strings:
+      /// call `str.__prefix_[prefix]__(str, [static length of str])`
       exprs.push_back(
           transform(N<CallExpr>(N<DotExpr>("str", format("__prefix_{}__", p.second)),
                                 N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
@@ -39,22 +46,34 @@ void SimplifyVisitor::visit(StringExpr *expr) {
     }
   }
   if (concat.size() == expr->strings.size()) {
+    /// Simple case: statically concatenate a sequence of strings without any prefix
     resultExpr = N<StringExpr>(combine2(concat, ""));
   } else if (exprs.size() == 1) {
+    /// Simple case: only one string in a sequence
     resultExpr = std::move(exprs[0]);
   } else {
+    /// Complex case: call `str.cat(str1, ...)`
     resultExpr = transform(N<CallExpr>(N<DotExpr>("str", "cat"), exprs));
   }
 }
 
 /**************************************************************************************/
 
+/// Parse various integer representations depending on the integer suffix.
+/// @example
+///   `123u`   -> `UInt[64](123)`
+///   `123i56` -> `Int[56](123)`
+///   `123pf`  -> `int.__suffix_pf__(123)`
 ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
-  // TODO: use str constructors if available?
-  if (!expr->intValue)
+  if (!expr->intValue) {
+    /// TODO: currently assumes that ints are always 64-bit.
+    /// Should use str constructors if available for ints with a suffix instead.
     error("integer {} out of range", expr->value);
+  }
 
-  std::unique_ptr<int16_t> suffixValue;
+  /// Handle fixed-width integers: suffixValue is a pointer to NN if the suffix
+  /// is `uNNN` or `iNNN`.
+  std::unique_ptr<int16_t> suffixValue = nullptr;
   if (expr->suffix.size() > 1 && (expr->suffix[0] == 'u' || expr->suffix[0] == 'i') &&
       isdigit(expr->suffix.substr(1))) {
     try {
@@ -66,42 +85,54 @@ ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
   }
 
   if (expr->suffix.empty()) {
+    // A normal integer (int64_t)
     return N<IntExpr>(*(expr->intValue));
   } else if (expr->suffix == "u") {
-    /// Unsigned numbers: use UInt[64] for that
+    // Unsigned integer: call `UInt[64](value)`
     return transform(N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)),
                                  N<IntExpr>(*(expr->intValue))));
   } else if (suffixValue) {
-    /// Fixed-precision numbers (uXXX and iXXX)
-    /// NOTE: you cannot use binary (0bXXX) format with those numbers.
-    /// TODO: implement non-string constructor for these cases.
+    // Fixed-width numbers (with `uNNN` and `iNNN` suffixes):
+    // call `UInt[NNN](value)` or `Int[NNN](value)`
     return transform(
         N<CallExpr>(N<IndexExpr>(N<IdExpr>(expr->suffix[0] == 'u' ? "UInt" : "Int"),
                                  N<IntExpr>(*suffixValue)),
                     N<IntExpr>(*(expr->intValue))));
   } else {
-    /// Custom suffix sfx: use int.__suffix_sfx__(str) call.
+    // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(
         N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", expr->suffix)),
                     N<IntExpr>(*(expr->intValue))));
   }
 }
 
+/// Parse various float representations depending on the suffix.
+/// @example
+///   `123.4pf` -> `float.__suffix_pf__(123.4)`
 ExprPtr SimplifyVisitor::transformFloat(FloatExpr *expr) {
-  if (!expr->floatValue)
+  if (!expr->floatValue) {
+    /// TODO: currently assumes that floats are always 64-bit.
+    /// Should use str constructors if available for floats with suffix instead.
     error("float {} out of range", expr->value);
+  }
 
   if (expr->suffix.empty()) {
+    /// A normal float (double)
     return N<FloatExpr>(*(expr->floatValue));
   } else {
-    /// Custom suffix sfx: use float.__suffix_sfx__(str) call.
+    // Custom suffix: call `float.__suffix_[suffix]__(value)`
     return transform(
         N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", expr->suffix)),
                     N<FloatExpr>(*(expr->floatValue))));
   }
 }
 
+/// Parse a Python-like f-string into a concatenation:
+///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
+/// Supports "{x=}" specifier (that prints the raw expression as well):
+///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
 ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
+  // Strings to be concatenated
   std::vector<ExprPtr> items;
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {
@@ -118,9 +149,11 @@ ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
         auto offset = getSrcInfo();
         offset.col += i;
         if (!code.empty() && code.back() == '=') {
+          // Special case: f"{x=}"
           code = code.substr(0, code.size() - 1);
           items.push_back(N<StringExpr>(format("{}=", code)));
         }
+        // Every expression is wrapped within `str`
         items.push_back(
             N<CallExpr>(N<IdExpr>("str"), parseExpr(ctx->cache, code, offset)));
       }

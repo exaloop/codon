@@ -105,87 +105,37 @@ private:
 
 public:
   /* Basic expressions */
-
-  /// Transform None to:
-  ///   Optional().
   void visit(NoneExpr *) override;
-
-  /// See transformInt for details of integer transformation.
   void visit(IntExpr *) override;
-  /// Converts binary integers (0bXXX), unsigned integers (XXXu), fixed-width integers
-  /// (XXXuN and XXXiN), and other suffix integers to a corresponding integer value or a
-  /// constructor:
-  ///   123u -> UInt[64](123)
-  ///   123i56 -> Int[56](123)  (same for UInt)
-  ///   123pf -> int.__suffix_pf__(123)
-  ExprPtr transformInt(IntExpr *expr);
-
-  /// See transformFloat for details of integer transformation.
+  ExprPtr transformInt(IntExpr *);
   void visit(FloatExpr *) override;
-  /// Converts a float string to double.
-  ExprPtr transformFloat(FloatExpr *expr);
-
-  /// String is transformed if it is an F-string or a custom-prefix string.
-  /// Custom prefix strings are transformed to:
-  ///   pfx'foo' -> str.__prefix_pfx__[len(foo)]('foo').
-  /// For F-strings: see transformFString.
+  ExprPtr transformFloat(FloatExpr *);
   void visit(StringExpr *) override;
-  /// Converts a Python-like F-string (f"foo {x+1} bar") to a concatenation:
-  ///   str.cat("foo ", str(x + 1), " bar").
-  /// Also supports "{x=}" specifier (that prints the raw expression as well).
-  /// @li f"{x+1=}" becomes str.cat(["x+1=", str(x+1)]).
-  ExprPtr transformFString(const std::string &value);
+  ExprPtr transformFString(const std::string &);
 
   /* Identifier expressions */
-
-  /// Each identifier is replaced with its canonical identifier.
   void visit(IdExpr *) override;
+  bool checkCapture(const SimplifyContext::Item &);
+  void visit(DotExpr *) override;
+  std::pair<size_t, SimplifyContext::Item> getImport(const std::deque<std::string> &);
 
   /* Collection and comprehension expressions */
-
-  /// Tuples will be handled during the type-checking stage.
   void visit(TupleExpr *) override;
-  /// Transform a list [a1, ..., aN] to a statement expression:
-  ///   list = List(N); (list.append(a1))...; list.
-  /// Any star-expression is automatically unrolled:
-  ///   [a, *b] becomes list.append(a); for it in b: list.append(it).
   void visit(ListExpr *) override;
-  /// Transform a set {a1, ..., aN} to a statement expression:
-  ///   set = Set(); (set.add(a1))...; set.
-  /// Any star-expression is automatically unrolled:
-  ///   {a, *b} becomes set.add(a); for it in b: set.add(it).
   void visit(SetExpr *) override;
-  ExprPtr transformComprehension(const std::string &type, const std::string &fn,
-                                 const std::vector<ExprPtr> &items);
-  /// Transform a dictionary {k1: v1, ..., kN: vN} to a statement expression
-  ///   dict = Dict(); (dict.__setitem__(k1, v1))...; dict.
+  ExprPtr transformComprehension(const std::string &, const std::string &,
+                                 const std::vector<ExprPtr> &);
   void visit(DictExpr *) override;
-  /// Transform a list comprehension [i+a for i in j if a] to a statement expression:
-  ///    gen = List()
-  ///    for i in j: if a: gen.append(i+a)
-  /// Analogous for sets and other comprehension cases.
-  /// Also transform a generator (i+a for i in j if a) to a lambda call:
-  ///    def _lambda(j, a): for i in j: yield i+a
-  ///    _lambda(j, a).__iter__()
-  /// Note: calls List(True, gen) if this is a simple generator [a for a in gen].
   void visit(GeneratorExpr *) override;
-  /// Transform a dictionary comprehension [i: a for i in j] to a statement expression:
-  ///    gen = Dict()
-  ///    for i in j: gen.__setitem__(i, a)
   void visit(DictGeneratorExpr *) override;
-  /// Transforms a list of GeneratorBody loops to a corresponding set of statements.
-  /// @li (for i in j if a for k in i if a if b) becomes:
-  ///          for i in j: if a: for k in i: if a: if b: <prev>
-  /// @param prev (out-argument) A pointer to the innermost block (suite) where a
-  /// comprehension (or generator) expression should reside.
-  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &loops,
-                                 SuiteStmt *&prev);
+  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &, SuiteStmt *&);
 
-  /* Conditional expressions */
-
-  /// Transform a if-expression a if cond else b to:
-  ///   a if cond else b
+  /* Conditional expression and statements */
   void visit(IfExpr *) override;
+  void visit(IfStmt *) override;
+  void visit(MatchStmt *) override;
+  StmtPtr transformPattern(ExprPtr, ExprPtr, StmtPtr);
+
   /// Transform a unary expression to the corresponding magic call
   /// (__invert__, __pos__ or __neg__).
   /// Special case: not a is transformed to
@@ -232,11 +182,6 @@ public:
   ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &args);
   ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &args);
 
-  /// Perform the import flattening transformation:
-  ///   a.b.c becomes canonical name of c in a.b if a.b is an import
-  ///   a.B.c becomes canonical name of c in class a.B
-  /// Other cases are handled during the type-checking stage.
-  void visit(DotExpr *) override;
   // This expression is transformed during the type-checking stage
   // because we need raw SliceExpr to handle static tuple slicing.
   void visit(SliceExpr *) override;
@@ -318,25 +263,7 @@ public:
   ///   for i in it: ...
   ///   if no_break.__bool__(): ...
   void visit(ForStmt *) override;
-  /// Transform if cond: ... elif cond2: ... else: ... to:
-  ///   if cond: ...
-  ///   else:
-  ///     if cond2: ...
-  ///     else: ...
-  void visit(IfStmt *) override;
-  /// Transforms the match e: case P1: ... case P2 if guard: ... statement to:
-  ///   _match = e
-  ///   while True:
-  ///     <P1 transformation>: ...; break
-  ///     <P2 transformation>: if guard: ...; break
-  ///     ...
-  ///     break
-  /// Seq will halt (via break statement) on the first pattern that matches the given
-  /// expression. Pattern transformations extensively use hasattr and isinstance, and
-  /// will not raise a type error unless really needed (e.g. bound pattern type mismatch
-  /// in an or pattern).
-  /// See transformPattern() below for pattern transformation details.
-  void visit(MatchStmt *) override;
+
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
   /// Transform with foo(), bar() as a: ... to:
@@ -437,38 +364,7 @@ private:
   ///   a, (b, c) = d
   void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts,
                          bool mustExist);
-  /// Transform a match...case pattern to a series of if statements as follows:
-  ///   - Int pattern
-  ///     case 1: ... ->
-  ///     if isinstance(var, "int"): if var == 1: ...
-  ///   - Bool pattern
-  ///     case True: ... ->
-  ///     if isinstance(var, "bool"): if var == True: ...
-  ///   - Range pattern
-  ///     case 1 ... 3: ... ->
-  ///     if isinstance(var, "int"): if var >= 1: if var <= 3: ...
-  ///   - Tuple pattern
-  ///     case (1, pat1, pat2) ->
-  ///     if isinstance(var, "Tuple"): if staticlen(var) == 3:
-  ///       match(var[0], 1); match(var[1], pat1); match(var[2], pat2)...
-  ///   - List pattern
-  ///     case [1, pat1, ..., pat2] ->
-  ///     if isinstance(var, "List"): if len(var) >= 3:
-  ///       match(var[0], 1); match(var[1], pat1); match(var[-1], pat2)...
-  ///   - Or pattern (note: pattern suite is cloned for each or condition).
-  ///     case 1 or pat1 or pat2 ->
-  ///     match(var, 1); match(var, pat1); match(var, pat2)...
-  ///   - Bound pattern
-  ///     case (x := pat) ->
-  ///       block:
-  ///         x = var; match(var, pat)
-  ///   - Wildcard pattern
-  ///     case x: -> (only when x is not an underscore '_')
-  ///       block: x := var
-  ///   - Any other expression (e.g. string, seq, call etc.)
-  ///     case foo(): ->
-  ///       if hasattr(typeof(var), "__match__"): var.__match__(foo())
-  StmtPtr transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr suite);
+
   /// Transform a C import (from C import foo(int) -> float as f) to:
   ///   @.c
   ///   def foo(a1: int) -> float: pass
