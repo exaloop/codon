@@ -13,16 +13,16 @@ namespace codon::ast {
 void SimplifyVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
   auto cond = transform(expr->cond);
-  auto tmp = ctx->shortCircuit;
+  auto tmp = ctx->isConditionalExpr;
   // Ensure that ifexpr and elsexpr are set as a potential short-circut expressions.
   // Needed to ensure that variables defined within these expressions are properly
   // checked for their existence afterwards
   // (e.g., `x` will be created within `a if cond else (x := b)`
   // only if `cond` is not true)
-  ctx->shortCircuit = true;
+  ctx->isConditionalExpr = true;
   auto ifexpr = transform(expr->ifexpr);
   auto elsexpr = transform(expr->elsexpr);
-  ctx->shortCircuit = tmp;
+  ctx->isConditionalExpr = tmp;
   resultExpr = N<IfExpr>(cond, ifexpr, elsexpr);
 }
 

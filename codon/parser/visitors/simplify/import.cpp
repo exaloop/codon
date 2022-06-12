@@ -14,23 +14,27 @@ namespace codon::ast {
 
 void SimplifyVisitor::visit(ImportStmt *stmt) {
   seqassert(!ctx->inClass(), "imports within a class");
-  if (stmt->from && stmt->from->isId("C")) {
-    /// Handle C imports
-    if (auto i = stmt->what->getId())
-      resultStmt = transformCImport(i->value, stmt->args, stmt->ret.get(), stmt->as);
-    else if (auto d = stmt->what->getDot())
-      resultStmt = transformCDLLImport(d->expr.get(), d->member, stmt->args,
-                                       stmt->ret.get(), stmt->as);
-    else
-      seqassert(false, "invalid C import statement");
+  if (stmt->from && stmt->from->isId("C") && stmt->what->getId()) {
+    // C imports
+    resultStmt = transformCImport(stmt->what->getId()->value, stmt->args,
+                                  stmt->ret.get(), stmt->as);
     return;
-  } else if (stmt->from && stmt->from->isId("python") && stmt->what) {
+  }
+  if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
+    // dylib C imports
+    resultStmt = transformCDLLImport(stmt->what->getDot()->expr.get(),
+                                     stmt->what->getDot()->member, stmt->args,
+                                     stmt->ret.get(), stmt->as);
+    return;
+  }
+  if (stmt->from && stmt->from->isId("python") && stmt->what) {
+    // Python imports
     resultStmt =
         transformPythonImport(stmt->what.get(), stmt->args, stmt->ret.get(), stmt->as);
     return;
   }
 
-  // Transform import a.b.c.d to "a/b/c/d".
+  // Transform import a.b.c.d to "a/b/c/d"
   std::vector<std::string> dirs; // Path components
   if (stmt->from) {
     Expr *e = stmt->from.get();
@@ -43,14 +47,16 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
       error("invalid import statement");
     dirs.push_back(e->getId()->value);
   }
-  // Handle dots (e.g. .. in from ..m import x).
+
+  // Handle dots (e.g. .. in from ..m import x)
   seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
   for (int i = 0; i < stmt->dots - 1; i++)
     dirs.emplace_back("..");
   std::string path;
   for (int i = int(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
-  // Fetch the import!
+
+  // Fetch the import
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
                             ctx->cache->module0, ctx->cache->pluginImportPaths);
   if (!file)

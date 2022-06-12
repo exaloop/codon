@@ -20,15 +20,6 @@ void SimplifyVisitor::visit(SliceExpr *expr) {
                             transform(expr->step));
 }
 
-void SimplifyVisitor::visit(AssignExpr *expr) {
-  seqassert(expr->var->getId(), "only simple assignment expression are supported");
-  if (ctx->shortCircuit)
-    error("assignment expression in a short-circuiting subexpression");
-  resultExpr = transform(N<StmtExpr>(
-      std::vector<StmtPtr>{N<AssignStmt>(clone(expr->var), clone(expr->expr))},
-      clone(expr->var)));
-}
-
 void SimplifyVisitor::visit(StmtExpr *expr) {
   std::vector<StmtPtr> stmts;
   for (auto &s : expr->stmts)

@@ -128,7 +128,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
   ImportFile moduleName;
   /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
   /// and b) to disallow assignment expressions there.
-  bool shortCircuit;
+  bool isConditionalExpr;
   /// Allow type() expressions.
   bool allowTypeOf;
 

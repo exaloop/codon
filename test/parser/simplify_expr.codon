@@ -387,35 +387,35 @@ if x := foo(4):
     pass
 print x #: 16
 
-#%% walrus_err_1,barebones
+#%% walrus_cond_1,barebones
 def foo(x):
     return x * x
 if False or (x := foo(4)):
     pass
-#! assignment expression in a short-circuiting subexpression
+print(x) #: 16
 
-#%% walrus_err_1b,barebones
+y = (z := foo(5)) if True else 0
+print(z) #: 25
+
+#%% walrus_err,barebones
 def foo(x):
     return x * x
 if False and (x := foo(4)):
     pass
-#! assignment expression in a short-circuiting subexpression
+try:
+    print(x)
+except NameError:
+    print("Error") #: Error
 
-#%% walrus_err_2,barebones
-def foo(x):
-    return x * x
-y = (x := foo(4)) if True else 0
-#! assignment expression in a short-circuiting subexpression
-
-#%% walrus_err_2b,barebones
-def foo(x):
-    return x * x
-y = 0 if True else (x := foo(4))
-#! assignment expression in a short-circuiting subexpression
+t = True
+y = 0 if t else (z := foo(4))
+try:
+    print(z)
+except NameError:
+    print("Error") #: Error
 
 #%% range_err,barebones
 1 ... 3 #! unexpected pattern range expression
-
 
 #%% callable_error,barebones
 def foo(x: Callable[[]]): pass  #! invalid Callable type declaration

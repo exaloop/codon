@@ -218,6 +218,72 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
+    # @pure
+    # @llvm
+    # def __raw__(self) -> Ptr[byte]:
+    #     ret i8* %self
+    # def __iter__(self):
+    #     for _, i in self.__static_list__:
+    #         yield i
+    # def __contains__(self, what):
+    #     for _, i in self.__static_list__:
+    #         if isinstance(what, type(i)):
+    #             if what == i:
+    #                 return True
+    #     return False
+    # def __eq__(self, obj) -> bool:
+    #     for ii, i in self.__static_list__:
+    #         if not i == obj.__static_list__[ii]:
+    #             return False
+    #     return True
+    # def __ne__(self, obj) -> bool:
+    #     return not self == obj
+    # def __lt__(self, obj) -> bool:
+    #     for ii, i in self.__static_list__:
+    #         if i < obj.__static_list__[ii]:
+    #             return True
+    #         elif not i == obj.__static_list__[ii]:
+    #             return False
+    #     return False
+    # def __le__(self, obj) -> bool:
+    #     return self < obj or self == obj
+    # def __ge__(self, obj) -> bool:
+    #     return not self < obj
+    # def __gt__(self, obj) -> bool:
+    #     return not self < obj and not self == obj
+    # def __hash__(self) -> int:
+    #     seed = 0
+    #     for _, i in self.__static_list__:
+    #         seed = seed ^ ((i.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
+    #     return seed
+    # def __pickle__(self, dest: Ptr[byte]) -> void:
+    #     for _, i in self.__static_list__:
+    #         i.__pickle__(dest)
+    # # __unpickle
+    # def __len__(self):
+    #     return staticlen(self)
+    # def __to_py__(self) -> cobj:
+    #     o = pyobj._tuple_new(staticlen(self))
+    #     for ii, i in self.__static_list__:
+    #         pyobj._tuple_set(o, ii + 1, i.__to_py__())
+    #     return o
+    # # __from_py__
+    # def __repr__(self) -> str:
+    #     a = __array__[str](staticlen(self))
+    #     n = __array__[str](staticlen(self))
+    #     for ii, i in self.__static_list__:
+    #         a.__setitem__(ii, i.__repr__())
+    #         n.__setitem__(ii, i.__static_name__)
+    #     return __internal__.tuple_str(a.ptr, n.ptr, staticlen(self))
+    # def __dict__(self) -> str:
+    #     d = List[str](staticlen(self))
+    #     for _, i in self.__static_list__:
+    #         d.append(i.__static_name)
+    #     return d
+    # def __add__(self, obj):
+    #     return (*self, *obj)
+
+
 @dataclass(init=True)
 class Import:
     name: str
@@ -249,74 +315,3 @@ class Function:
     @llvm
     def __call__(self, *args) -> TR:
         noop  # compiler will populate this one
-
-# @tuple
-# @__internal__
-# class Callable[T, TR]:
-#     pass
-
-# class Tuple:
-#     @pure
-#     @llvm
-#     def __raw__(self) -> Ptr[byte]:
-#         ret i8* %self
-#     def __iter__(self):
-#         for i in self:
-#             yield i
-#     def __contains__(self, what):
-#         for i in self:
-#             if isinstance(what, type(i)):
-#                 if what == i:
-#                     return True
-#         return False
-#     def __eq__(self, obj) -> bool:
-#         for i, j in zip(self, obj):
-#             if not (i == j):
-#                 return False
-#         return True
-#     def __ne__(self, obj) -> bool:
-#         return not (self == obj)
-#     def __lt__(self, obj) -> bool:
-#         for i, j in zip(self, obj):
-#             if i < j:
-#                 return True
-#             elif not (i == j):
-#                 return False
-#         return False
-#     def __le__(self, obj) -> bool:
-#         return (self < obj) or (self == obj)
-#     def __ge__(self, obj) -> bool:
-#         return not (self < obj)
-#     def __gt__(self, obj) -> bool:
-#         return not (self < obj) and not (self == obj)
-#     def __hash__(self) -> int:
-#         seed = 0
-#         for i in self:
-#             seed = seed ^ ((i.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
-#         return seed
-#     def __pickle__(self, dest: Ptr[byte]) -> void:
-#         for i in self:
-#             i.__pickle__(dest)
-#     # __unpickle
-#     def __len__(self):
-#         return staticlen(self)
-#     def __to_py__(self) -> cobj:
-#         o = pyobj._tuple_new(staticlen(self))
-#         for ii, i in enumerate(self):
-#             pyobj._tuple_set(o, ii + 1, i.__to_py__())
-#         return o
-#     # __from_py__
-#     def __repr__(self) -> str:
-#         a = __array__[str](staticlen(self))
-#         n = __array__[str](staticlen(self))
-#         for ii, i in enumerate(self):
-#             a.__setitem__(ii, i.__repr__())
-#             n.__setitem__(ii, "arg1")
-#         return __internal__.tuple_str(a.ptr, n.ptr, staticlen(self))
-#     def __dict__(self) -> str:
-#         d = List[str](staticlen(self))
-#         for i in self:
-#             d.append("arg1" i)
-#         return d
-#     def __add__(self, obj):
-#         return (*self, *obj)

@@ -104,7 +104,7 @@ private:
   void defaultVisit(Stmt *s) override;
 
 public:
-  /* Basic expressions */
+  /* Basic type expressions (basic.cpp) */
   void visit(NoneExpr *) override;
   void visit(IntExpr *) override;
   ExprPtr transformInt(IntExpr *);
@@ -113,13 +113,13 @@ public:
   void visit(StringExpr *) override;
   ExprPtr transformFString(const std::string &);
 
-  /* Identifier expressions */
+  /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
   bool checkCapture(const SimplifyContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, SimplifyContext::Item> getImport(const std::deque<std::string> &);
 
-  /* Collection and comprehension expressions */
+  /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
@@ -130,57 +130,49 @@ public:
   void visit(DictGeneratorExpr *) override;
   StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &, SuiteStmt *&);
 
-  /* Conditional expression and statements */
+  /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
   void visit(MatchStmt *) override;
   StmtPtr transformPattern(ExprPtr, ExprPtr, StmtPtr);
 
-  /// Transform a unary expression to the corresponding magic call
-  /// (__invert__, __pos__ or __neg__).
-  /// Special case: not a is transformed to
-  ///   a.__bool__().__invert__()
-  /// Note: static expressions are not transformed.
+  /* Operators (op.cpp) */
   void visit(UnaryExpr *) override;
-  /// Transform the following binary expressions:
-  ///   a and b -> b.__bool__() if a.__bool__() else False
-  ///   a or b -> True if a.__bool__() else b.__bool__()
-  ///   a is not b -> (a is b).__invert__()
-  ///   a not in b -> not (a in b)
-  ///   a in b -> a.__contains__(b)
-  ///   None is None -> True
-  ///   None is b -> b is None.
-  /// Other cases are handled during the type-checking stage.
-  /// Note: static expressions are not transformed.
   void visit(BinaryExpr *) override;
-  /// Transform chain binary expression:
-  ///   a <= b <= c -> (a <= b) and (b <= c).
-  /// Ensures that all expressions (a, b, and c) are executed only once.
   void visit(ChainBinaryExpr *) override;
-  /// Pipes will be handled during the type-checking stage.
   void visit(PipeExpr *) override;
-  /// Perform the following transformations:
-  ///   tuple[T1, ... TN],
-  ///   Tuple[T1, ... TN] -> Tuple.N(T1, ..., TN)
-  ///     (and generate class Tuple.N)
-  ///   function[R, T1, ... TN],
-  ///   Function[R, T1, ... TN] -> Function.N(R, T1, ..., TN)
-  ///     (and generate class Function.N)
-  /// Otherwise, if the index expression is a type instantiation, convert it to an
-  /// InstantiateExpr. All other cases are handled during the type-checking stage.
   void visit(IndexExpr *) override;
 
-  /* Call expression */
-
+  /* Call expression (call.cpp) */
   void visit(CallExpr *) override;
-  /// Check for special calls that are handled in simplification stage:
-  ///   - tuple(i for i in tup) (tuple generatoris)
-  ///   - std.collections.namedtuple (sugar for @tuple class)
-  ///   - std.functools.partial (sugar for partial calls)
   ExprPtr transformSpecialCall(ExprPtr callee, const std::vector<CallExpr::Arg> &args);
   ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &args);
   ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &args);
   ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &args);
+
+  /* Assignments (assign.cpp) */
+  void visit(AssignStmt *) override;
+  StmtPtr transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
+                              const ExprPtr &type = nullptr, bool mustExist = false);
+  void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts);
+  void visit(DelStmt *) override;
+
+  /// Import a module into its own context.
+  /// Unless we are loading the standard library, each import statement is replaced
+  /// with:
+  ///   if not _import_N_done:
+  ///     _import_N()
+  ///     _import_N_done = True
+  /// to make sure that the first _executed_ import statement executes its statements
+  /// (like Python). See transformNewImport() and below for details.
+  ///
+  /// This function also handles FFI imports (C, Python etc). For the details, see
+  /// transformCImport(), transformCDLLImport() and transformPythonImport().
+  void visit(ImportStmt *) override;
+
+
+
+  /* Sugar */
 
   // This expression is transformed during the type-checking stage
   // because we need raw SliceExpr to handle static tuple slicing.
@@ -219,13 +211,7 @@ public:
   ///   loop_var = false; break
   void visit(BreakStmt *) override;
   void visit(ExprStmt *) override;
-  /// Performs assignment and unpacking transformations.
-  /// See transformAssignment() and unpackAssignments() for more details.
-  void visit(AssignStmt *) override;
-  /// Transform del a[x] to:
-  ///   del a -> a = typeof(a)() (and removes a from the context)
-  ///   del a[x] -> a.__delitem__(x)
-  void visit(DelStmt *) override;
+
   /// Transform print a, b to:
   ///   print(a, b)
   /// Add end=' ' if inPlace is set.
@@ -282,18 +268,6 @@ public:
   void visit(WithStmt *) override;
   /// Perform the global checks and remove the statement from the consideration.
   void visit(GlobalStmt *) override;
-  /// Import a module into its own context.
-  /// Unless we are loading the standard library, each import statement is replaced
-  /// with:
-  ///   if not _import_N_done:
-  ///     _import_N()
-  ///     _import_N_done = True
-  /// to make sure that the first _executed_ import statement executes its statements
-  /// (like Python). See transformNewImport() and below for details.
-  ///
-  /// This function also handles FFI imports (C, Python etc). For the details, see
-  /// transformCImport(), transformCDLLImport() and transformPythonImport().
-  void visit(ImportStmt *) override;
   /// Transforms function definitions.
   ///
   /// At this stage, the only meaningful transformation happens for "self" arguments in
@@ -345,25 +319,7 @@ private:
   ExprPtr makeAnonFn(std::vector<StmtPtr> stmts,
                      const std::vector<std::string> &argNames = {});
 
-  /// Transforms a simple assignment:
-  ///   a[x] = b -> a.__setitem__(x, b)
-  ///   a.x = b -> AssignMemberStmt
-  ///   a : type = b -> AssignStmt
-  ///   a = b -> AssignStmt or UpdateStmt if a exists in the same scope (or is global)
-  StmtPtr transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
-                              const ExprPtr &type, bool mustExist);
-  /// Unpack an assignment expression lhs = rhs into a list of simple assignment
-  /// expressions (either a = b, or a.x = b, or a[x] = b).
-  /// Used to handle various Python unpacking rules, such as:
-  ///   (a, b) = c
-  ///   a, b = c
-  ///   [a, *x, b] = c.
-  /// Non-trivial right-hand expressions are first stored in a temporary variable:
-  ///   a, b = c, d + foo() -> tmp = (c, d + foo); a = tmp[0]; b = tmp[1].
-  /// Processes each assignment recursively to support cases like:
-  ///   a, (b, c) = d
-  void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts,
-                         bool mustExist);
+
 
   /// Transform a C import (from C import foo(int) -> float as f) to:
   ///   @.c

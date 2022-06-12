@@ -47,7 +47,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
         N<DotExpr>("__internal__", "undef"),
         N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
         N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
-    if (!ctx->shortCircuit) {
+    if (!ctx->isConditionalExpr) {
       // If the expression is not conditional, we can just do the check once
       prependStmts->push_back(checkStmt);
       val->accessChecked = true;

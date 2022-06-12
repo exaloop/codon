@@ -15,22 +15,32 @@ void SimplifyVisitor::visit(UnaryExpr *expr) {
   resultExpr = N<UnaryExpr>(expr->op, transform(expr->expr));
 }
 
+/// Transform binary expressions with a few special considerations.
+/// The real stuff happens during the type checking.
 void SimplifyVisitor::visit(BinaryExpr *expr) {
+  // Keep None in `is None` for typechecker.
+  // Special case: `is` can take type as well
   auto lhs = (startswith(expr->op, "is") && expr->lexpr->getNone())
                  ? clone(expr->lexpr)
                  : transform(expr->lexpr, startswith(expr->op, "is"));
-  auto tmp = ctx->shortCircuit;
-  ctx->shortCircuit = expr->op == "&&" || expr->op == "||";
+
+  auto tmp = ctx->isConditionalExpr;
+  // The second operand of the and/or expression is conditional
+  ctx->isConditionalExpr = expr->op == "&&" || expr->op == "||";
   auto rhs = (startswith(expr->op, "is") && expr->rexpr->getNone())
                  ? clone(expr->rexpr)
                  : transform(expr->rexpr, startswith(expr->op, "is"));
-  ctx->shortCircuit = tmp;
+  ctx->isConditionalExpr = tmp;
   resultExpr = N<BinaryExpr>(lhs, expr->op, rhs, expr->inPlace);
 }
 
+/// Transform chain binary expression.
+/// @example
+///   `a <= b <= c` -> `(a <= (chain := b)) and (chain <= c)`
+/// The assignment above ensures that all expressions are executed only once.
 void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
   seqassert(expr->exprs.size() >= 2, "not enough expressions in ChainBinaryExpr");
-  std::vector<ExprPtr> e;
+  std::vector<ExprPtr> items;
   std::string prev;
   for (int i = 1; i < expr->exprs.size(); i++) {
     auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
@@ -40,23 +50,24 @@ void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
             ? clone(expr->exprs[i].second)
             : N<StmtExpr>(N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second)),
                           N<IdExpr>(prev));
-    e.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
+    items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
   }
 
-  int i = int(e.size()) - 1;
-  ExprPtr b = e[i];
-  for (i -= 1; i >= 0; i--)
-    b = N<BinaryExpr>(e[i], "&&", b);
-  resultExpr = transform(b);
+  ExprPtr final = items.back();
+  for (auto i = items.size() - 1; i-- > 0; )
+    final = N<BinaryExpr>(items[i], "&&", final);
+  resultExpr = transform(final);
 }
 
+/// Check for ellipses within pipes and mark them with `isPipeArg`.
+/// The rest is handled during the type checking.
 void SimplifyVisitor::visit(PipeExpr *expr) {
   std::vector<PipeExpr::Pipe> p;
   for (auto &i : expr->items) {
     auto e = clone(i.expr);
-    if (auto ec = const_cast<CallExpr *>(e->getCall())) {
+    if (auto ec = e->getCall()) {
       for (auto &a : ec->args)
-        if (auto ee = const_cast<EllipsisExpr *>(a.value->getEllipsis()))
+        if (auto ee = a.value->getEllipsis())
           ee->isPipeArg = true;
     }
     p.push_back({i.op, transform(e)});
@@ -64,48 +75,48 @@ void SimplifyVisitor::visit(PipeExpr *expr) {
   resultExpr = N<PipeExpr>(p);
 }
 
+/// Transform index into an instantiation @c InstantiateExpr if possible.
+/// Generate tuple class `Tuple.N` for `Tuple[T1, ... TN]` (and `tuple[...]`).
+/// The rest is handled during the type checking.
 void SimplifyVisitor::visit(IndexExpr *expr) {
-  ExprPtr e = nullptr;
-  auto index = expr->index->clone();
-  // First handle the tuple[] and function[] cases.
+  ExprPtr ex = nullptr;
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
-    auto t = index->getTuple();
-    e = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
-    e->markType();
+    // Special case: tuples. Change to Tuple.N and generate tuple stub
+    auto t = expr->index->getTuple();
+    ex = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
+    ex->markType();
   } else if (expr->expr->isId("Static")) {
+    // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
       error("only static integers and strings are supported");
     resultExpr = expr->clone();
     resultExpr->markType();
     return;
   } else {
-    e = transform(expr->expr, true);
+    ex = transform(expr->expr, true);
   }
-  // IndexExpr[i1, ..., iN] is internally stored as IndexExpr[TupleExpr[i1, ..., iN]]
-  // for N > 1, so make sure to check that case.
 
-  std::vector<ExprPtr> it;
-  if (auto t = index->getTuple())
+  // IndexExpr[i1, ..., iN] is internally represented as
+  // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
+  std::vector<ExprPtr> items;
+  if (auto t = expr->index->getTuple()) {
     for (auto &i : t->items)
-      it.push_back(i);
-  else
-    it.push_back(index);
-  for (auto &i : it) {
-    if (auto es = i->getStar())
-      i = N<StarExpr>(transform(es->what));
-    else if (auto ek = CAST(i, KeywordStarExpr))
-      i = N<KeywordStarExpr>(transform(ek->what));
-    else {
-      if (i->getList() && e->isType())
-        i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
-      i = transform(i, true);
-    }
+      items.push_back(i);
+  } else {
+    items.push_back(expr->index);
   }
-  if (e->isType()) {
-    resultExpr = N<InstantiateExpr>(e, it);
+  for (auto &i : items) {
+    if (i->getList() && ex->isType()) {
+      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
+      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(clone(i)->getList()->items));
+    }
+    i = transform(clone(i), true);
+  }
+  if (ex->isType()) {
+    resultExpr = N<InstantiateExpr>(ex, items);
     resultExpr->markType();
   } else {
-    resultExpr = N<IndexExpr>(e, it.size() == 1 ? it[0] : N<TupleExpr>(it));
+    resultExpr = N<IndexExpr>(ex, items.size() == 1 ? items[0] : N<TupleExpr>(items));
   }
 }
 

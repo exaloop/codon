@@ -85,8 +85,12 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   stmt->rhs = transform(stmt->rhs);
   stmt->type = transformType(stmt->type);
   TypecheckItem::Kind kind;
-  seqassert(stmt->rhs, "no forward declarations allowed: {}", stmt->lhs->toString());
-  if (stmt->type && stmt->type->getType()->isStaticType()) {
+  if (!stmt->rhs) { // FORWARD DECLARATION FROM DOMINATION
+    seqassert(!stmt->type, "no forward declarations allowed: {}", stmt->lhs->toString());
+    unify(stmt->lhs->type, ctx->addUnbound(stmt->lhs.get(), ctx->typecheckLevel));
+    ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
+    stmt->done = realize(stmt->lhs->type) != nullptr;
+  } else if (stmt->type && stmt->type->getType()->isStaticType()) {
     if (!stmt->rhs->isStatic())
       error("right-hand side is not a static expression");
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
