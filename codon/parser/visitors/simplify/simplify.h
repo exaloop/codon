@@ -145,32 +145,30 @@ public:
 
   /* Call expression (call.cpp) */
   void visit(CallExpr *) override;
-  ExprPtr transformSpecialCall(ExprPtr callee, const std::vector<CallExpr::Arg> &args);
-  ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &args);
-  ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &args);
-  ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &args);
+  ExprPtr transformSpecialCall(ExprPtr, const std::vector<CallExpr::Arg> &);
+  ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &);
+  ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &);
+  ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &);
 
   /* Assignments (assign.cpp) */
   void visit(AssignStmt *) override;
   StmtPtr transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
                               const ExprPtr &type = nullptr, bool mustExist = false);
-  void unpackAssignments(ExprPtr lhs, ExprPtr rhs, std::vector<StmtPtr> &stmts);
+  void unpackAssignments(ExprPtr, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
 
-  /// Import a module into its own context.
-  /// Unless we are loading the standard library, each import statement is replaced
-  /// with:
-  ///   if not _import_N_done:
-  ///     _import_N()
-  ///     _import_N_done = True
-  /// to make sure that the first _executed_ import statement executes its statements
-  /// (like Python). See transformNewImport() and below for details.
-  ///
-  /// This function also handles FFI imports (C, Python etc). For the details, see
-  /// transformCImport(), transformCDLLImport() and transformPythonImport().
+  /* Imports (import.cpp) */
   void visit(ImportStmt *) override;
-
-
+  StmtPtr transformSpecialImport(ImportStmt *);
+  std::vector<std::string> getImportPath(Expr *from, size_t dots = 0);
+  StmtPtr transformCImport(const std::string &, const std::vector<Param> &,
+                           const Expr *, const std::string &);
+  StmtPtr transformCDLLImport(const Expr *, const std::string &,
+                              const std::vector<Param> &, const Expr *,
+                              const std::string &);
+  StmtPtr transformPythonImport(Expr *what, const std::vector<Param> &args,
+                                const Expr *ret, const std::string &altName);
+  void transformNewImport(const ImportFile &file);
 
   /* Sugar */
 
@@ -319,41 +317,6 @@ private:
   ExprPtr makeAnonFn(std::vector<StmtPtr> stmts,
                      const std::vector<std::string> &argNames = {});
 
-
-
-  /// Transform a C import (from C import foo(int) -> float as f) to:
-  ///   @.c
-  ///   def foo(a1: int) -> float: pass
-  ///   f = foo (only if altName is provided).
-  StmtPtr transformCImport(const std::string &name, const std::vector<Param> &args,
-                           const Expr *ret, const std::string &altName);
-  /// Transform a dynamic C import (from C import lib.foo(int) -> float as f) to:
-  ///   def foo(a1: int) -> float:
-  ///     fptr = _dlsym(lib, "foo")
-  ///     f = Function[float, int](fptr)
-  ///     return f(a1)  (if return type is void, just call f(a1))
-  StmtPtr transformCDLLImport(const Expr *dylib, const std::string &name,
-                              const std::vector<Param> &args, const Expr *ret,
-                              const std::string &altName);
-  /// Transform a Python module import (from python import module as f) to:
-  ///   f = pyobj._import("module")
-  /// Transform a Python function import (from python import lib.foo(int) -> float as f)
-  /// to:
-  ///   def f(a0: int) -> float:
-  ///     f = pyobj._import("lib")._getattr("foo")
-  ///     return float.__from_py__(f(a0))
-  /// If a return type is nullptr, the function just returns f (raw pyobj).
-  StmtPtr transformPythonImport(const Expr *what, const std::vector<Param> &args,
-                                const Expr *ret, const std::string &altName);
-  /// Import a new file (with a given module name) into its own context and wrap its
-  /// top-level statements into a function to support Python-style runtime import
-  /// loading. Once import is done, generate:
-  ///   _import_N_done = False
-  ///   def _import_N():
-  ///     global <imported global variables>...
-  ///     __name__ = moduleName
-  ///     <imported top-level statements>.
-  void transformNewImport(const ImportFile &file);
   /// Transform a Python code-block @python def foo(x: int, y) -> int: <python code> to:
   ///   pyobj._exec("def foo(x, y): <python code>")
   ///   from python import __main__.foo(int, _) -> int

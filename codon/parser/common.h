@@ -66,9 +66,12 @@ std::string combine(const std::vector<T> &items, const std::string &delim = " ")
   return s;
 }
 template <typename T>
-std::string combine2(const std::vector<T> &items, const std::string &delim = ",") {
+std::string combine2(const std::vector<T> &items, const std::string &delim = ",",
+                     int start = 0, int end = -1) {
   std::string s;
-  for (int i = 0; i < items.size(); i++)
+  if (end == -1)
+    end = items.size();
+  for (int i = start; i < end; i++)
     s += (i ? delim : "") + fmt::format("{}", items[i]);
   return s;
 }

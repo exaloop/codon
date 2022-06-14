@@ -212,9 +212,9 @@ std::string MatchStmt::toString(int indent) const {
 ACCEPT_IMPL(MatchStmt, ASTVisitor);
 
 ImportStmt::ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args, ExprPtr ret,
-                       std::string as, int dots)
+                       std::string as, size_t dots)
     : Stmt(), from(std::move(from)), what(std::move(what)), as(std::move(as)),
-      dots(dots), args(std::move(args)), ret(std::move(ret)) {}
+      dots(dots), args(std::move(args)), ret(std::move(ret)) { validate(); }
 ImportStmt::ImportStmt(const ImportStmt &stmt)
     : Stmt(stmt), from(ast::clone(stmt.from)), what(ast::clone(stmt.what)), as(stmt.as),
       dots(stmt.dots), args(ast::clone_nop(stmt.args)), ret(ast::clone(stmt.ret)) {}
@@ -228,6 +228,19 @@ std::string ImportStmt::toString(int) const {
                 dots ? format(" #:dots {}", dots) : "",
                 va.empty() ? "" : format(" #:args ({})", join(va)),
                 ret ? format(" #:ret {}", ret->toString()) : "");
+}
+void ImportStmt::validate() const {
+  if (from) {
+    Expr *e = from.get();
+    while (auto d = e->getDot())
+      e = d->expr.get();
+    if (!from->isId("C") && !from->isId("python")) {
+      if (!e->getId() || !args.empty() || ret)
+        error(getSrcInfo(), "invalid import statement");
+      if (what && !what->getId())
+        error(getSrcInfo(), "invalid import statement");
+    }
+  }
 }
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
 

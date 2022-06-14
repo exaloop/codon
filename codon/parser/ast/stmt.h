@@ -318,17 +318,18 @@ struct ImportStmt : public Stmt {
   ExprPtr from, what;
   std::string as;
   /// Number of dots in a relative import (e.g. dots is 3 for "from ...foo").
-  int dots;
+  size_t dots;
   /// Function argument types for C imports.
   std::vector<Param> args;
   /// Function return type for C imports.
   ExprPtr ret;
 
   ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args = {},
-             ExprPtr ret = nullptr, std::string as = "", int dots = 0);
+             ExprPtr ret = nullptr, std::string as = "", size_t dots = 0);
   ImportStmt(const ImportStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const override;
   ACCEPT(ASTVisitor);
 };
 
