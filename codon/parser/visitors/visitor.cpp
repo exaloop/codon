@@ -45,7 +45,6 @@ void ASTVisitor::visit(ContinueStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ExprStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(AssignStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(AssignMemberStmt *stmt) { defaultVisit(stmt); }
-void ASTVisitor::visit(UpdateStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(DelStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(PrintStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ReturnStmt *stmt) { defaultVisit(stmt); }
@@ -178,10 +177,6 @@ void ReplaceASTVisitor::visit(AssignStmt *stmt) {
   transform(stmt->type);
 }
 void ReplaceASTVisitor::visit(AssignMemberStmt *stmt) {
-  transform(stmt->lhs);
-  transform(stmt->rhs);
-}
-void ReplaceASTVisitor::visit(UpdateStmt *stmt) {
   transform(stmt->lhs);
   transform(stmt->rhs);
 }

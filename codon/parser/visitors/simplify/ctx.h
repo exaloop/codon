@@ -101,6 +101,13 @@ struct SimplifyContext : public Context<SimplifyItem> {
     explicit Base(std::string name, ExprPtr ast = nullptr, Attr *attributes = nullptr);
     bool isType() const { return ast != nullptr; }
 
+    struct {
+      std::vector<IdExpr*> ids;
+      std::vector<AssignStmt*> assigns;
+      std::vector<ForStmt*> fors;
+      std::vector<TryStmt*> trys;
+    } replacements;
+
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
     /// variable created while parsing a loop-else construct. If a loop has no else

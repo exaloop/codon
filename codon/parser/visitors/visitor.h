@@ -53,7 +53,6 @@ public:
   virtual void visit(StmtExpr *);
 
   virtual void visit(AssignMemberStmt *);
-  virtual void visit(UpdateStmt *);
   virtual void visit(SuiteStmt *);
   virtual void visit(BreakStmt *);
   virtual void visit(ContinueStmt *);
@@ -175,7 +174,6 @@ struct ReplaceASTVisitor : public ASTVisitor {
   void visit(StmtExpr *) override;
 
   void visit(AssignMemberStmt *) override;
-  void visit(UpdateStmt *) override;
   void visit(SuiteStmt *) override;
   void visit(BreakStmt *) override;
   void visit(ContinueStmt *) override;

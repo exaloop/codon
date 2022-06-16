@@ -257,10 +257,6 @@ void FormatVisitor::visit(AssignMemberStmt *stmt) {
                        transform(stmt->rhs));
 }
 
-void FormatVisitor::visit(UpdateStmt *stmt) {
-  result = fmt::format("{} = {}  # update", transform(stmt->lhs), transform(stmt->rhs));
-}
-
 void FormatVisitor::visit(DelStmt *stmt) {
   result = fmt::format("{} {}", keyword("del"), transform(stmt->expr));
 }

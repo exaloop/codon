@@ -55,7 +55,6 @@ public:
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(IfStmt *) override;
-  void visit(UpdateStmt *) override;
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
   void visit(FunctionStmt *) override;

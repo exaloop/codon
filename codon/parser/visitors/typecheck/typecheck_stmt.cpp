@@ -75,6 +75,11 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
 }
 
 void TypecheckVisitor::visit(AssignStmt *stmt) {
+  if (stmt->isUpdate()) {
+    visitUpdate(stmt);
+    return;
+  }
+
   // Simplify stage ensures that lhs is always IdExpr.
   std::string lhs;
   if (auto e = stmt->lhs->getId())
@@ -131,7 +136,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   ctx->bases.back().visitedAsts[lhs] = {kind, stmt->lhs->type};
 }
 
-void TypecheckVisitor::visit(UpdateStmt *stmt) {
+void TypecheckVisitor::visitUpdate(AssignStmt *stmt) {
   stmt->lhs = transform(stmt->lhs);
   if (stmt->lhs->isStatic())
     error("cannot modify static expression");
@@ -144,7 +149,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
     auto oldRhsType = stmt->rhs->type;
     b->lexpr = transform(b->lexpr);
     b->rexpr = transform(b->rexpr);
-    if (auto nb = transformBinary(b, stmt->isAtomic, &noReturn))
+    if (auto nb = transformBinary(b, stmt->isAtomicUpdate(), &noReturn))
       stmt->rhs = nb;
     unify(oldRhsType, stmt->rhs->type);
     if (stmt->rhs->getBinary()) { // still BinaryExpr: will be transformed later.
@@ -162,7 +167,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
   // NOTE: does not check for a = min(..., a).
   auto lhsClass = stmt->lhs->getType()->getClass();
   CallExpr *c;
-  if (stmt->isAtomic && stmt->lhs->getId() &&
+  if (stmt->isAtomicUpdate() && stmt->lhs->getId() &&
       (c = const_cast<CallExpr *>(stmt->rhs->getCall())) &&
       (c->expr->isId("min") || c->expr->isId("max")) && c->args.size() == 2 &&
       c->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
@@ -184,7 +189,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
 
   auto rhsClass = stmt->rhs->getType()->getClass();
   // Case 3: check for an atomic assignment.
-  if (stmt->isAtomic && lhsClass && rhsClass) {
+  if (stmt->isAtomicUpdate() && lhsClass && rhsClass) {
     auto ptrType =
         ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
     if (auto m =
@@ -194,7 +199,7 @@ void TypecheckVisitor::visit(UpdateStmt *stmt) {
                       N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)));
       return;
     }
-    stmt->isAtomic = false;
+    stmt->setUpdate();  // turn off atomic
   }
   // Case 4: handle optionals if needed.
   wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);

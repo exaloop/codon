@@ -447,11 +447,11 @@ void AssignReplacementVisitor::visit(ForStmt *stmt) {
   transform(stmt->iter);
   transform(stmt->suite);
   if (addGuard) {
-    stmt->suite = std::make_shared<SuiteStmt>(
-        std::make_shared<UpdateStmt>(
-            std::make_shared<IdExpr>(format("{}.__used__", var)),
-            std::make_shared<BoolExpr>(true)),
-        stmt->suite);
+    auto s = std::make_shared<AssignStmt>(
+        std::make_shared<IdExpr>(format("{}.__used__", var)),
+        std::make_shared<BoolExpr>(true));
+    s->setUpdate();
+    stmt->suite = std::make_shared<SuiteStmt>(s, stmt->suite);
     stmt->ownVar = false;
   }
   transform(stmt->elseSuite);
@@ -469,11 +469,11 @@ void AssignReplacementVisitor::visit(TryStmt *stmt) {
     if (addGuard) {
       while (in(replacements, c.var))
         c.var = replacements[c.var].first;
-      c.suite = std::make_shared<SuiteStmt>(
-          std::make_shared<UpdateStmt>(
-              std::make_shared<IdExpr>(format("{}.__used__", c.var)),
-              std::make_shared<BoolExpr>(true)),
-          c.suite);
+      auto s = std::make_shared<AssignStmt>(
+          std::make_shared<IdExpr>(format("{}.__used__", c.var)),
+          std::make_shared<BoolExpr>(true));
+      s->setUpdate();
+      c.suite = std::make_shared<SuiteStmt>(s, c.suite);
       c.ownVar = false;
     }
   }
@@ -485,7 +485,7 @@ void AssignReplacementVisitor::transform(StmtPtr &e) {
     return;
   AssignReplacementVisitor v{cache, replacements};
   if (auto i = CAST(e, AssignStmt)) {
-    if (i->lhs->getId() && in(replacements, i->lhs->getId()->value)) {
+    if (!i->isUpdate() && i->lhs->getId() && in(replacements, i->lhs->getId()->value)) {
       auto value = i->lhs->getId()->value;
       bool hasUsed = false;
       while (in(replacements, value)) {
@@ -493,18 +493,19 @@ void AssignReplacementVisitor::transform(StmtPtr &e) {
         value = replacements[value].first;
       }
 
-      StmtPtr ex = std::make_shared<UpdateStmt>(i->lhs, i->rhs);
-      ex->setSrcInfo(i->getSrcInfo());
+      i->setUpdate();
 
       auto lb = i->lhs->clone();
       lb->getId()->value = fmt::format("{}.__used__", value);
-      auto f = std::make_shared<UpdateStmt>(lb, std::make_shared<BoolExpr>(true));
+      auto f = std::make_shared<AssignStmt>(lb, std::make_shared<BoolExpr>(true));
+      f->setUpdate();
       f->setSrcInfo(i->getSrcInfo());
 
+      StmtPtr ex = nullptr;
       if (i->rhs && hasUsed)
-        ex = std::make_shared<SuiteStmt>(ex, f);
+        ex = std::make_shared<SuiteStmt>(e, f);
       else if (i->rhs)
-        ex = std::make_shared<SuiteStmt>(ex);
+        ex = std::make_shared<SuiteStmt>(e);
       else if (hasUsed)
         ex = std::make_shared<SuiteStmt>(f);
       else

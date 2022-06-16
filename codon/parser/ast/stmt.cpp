@@ -77,12 +77,14 @@ std::string ExprStmt::toString(int) const {
 ACCEPT_IMPL(ExprStmt, ASTVisitor);
 
 AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type)
-    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)) {}
+    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)),
+      update(Assign) {}
 AssignStmt::AssignStmt(const AssignStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
-      type(ast::clone(stmt.type)) {}
+      type(ast::clone(stmt.type)), update(stmt.update) {}
 std::string AssignStmt::toString(int) const {
-  return format("(assign {}{}{})", lhs->toString(), rhs ? " " + rhs->toString() : "",
+  return format("({} {}{}{})", update != Assign ? "update" : "assign", lhs->toString(),
+                rhs ? " " + rhs->toString() : "",
                 type ? format(" #:type {}", type->toString()) : "");
 }
 ACCEPT_IMPL(AssignStmt, ASTVisitor);
@@ -634,16 +636,6 @@ std::string AssignMemberStmt::toString(int) const {
   return format("(assign-member {} {} {})", lhs->toString(), member, rhs->toString());
 }
 ACCEPT_IMPL(AssignMemberStmt, ASTVisitor);
-
-UpdateStmt::UpdateStmt(ExprPtr lhs, ExprPtr rhs, bool isAtomic)
-    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), isAtomic(isAtomic) {}
-UpdateStmt::UpdateStmt(const UpdateStmt &stmt)
-    : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
-      isAtomic(stmt.isAtomic) {}
-std::string UpdateStmt::toString(int) const {
-  return format("(update {} {})", lhs->toString(), rhs->toString());
-}
-ACCEPT_IMPL(UpdateStmt, ASTVisitor);
 
 CommentStmt::CommentStmt(std::string comment) : Stmt(), comment(std::move(comment)) {}
 std::string CommentStmt::toString(int) const {

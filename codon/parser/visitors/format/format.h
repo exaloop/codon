@@ -89,7 +89,6 @@ public:
 
   void visit(SuiteStmt *) override;
   void visit(BreakStmt *) override;
-  void visit(UpdateStmt *) override;
   void visit(ContinueStmt *) override;
   void visit(ExprStmt *) override;
   void visit(AssignStmt *) override;

@@ -324,6 +324,14 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
 void TranslateVisitor::visit(ExprStmt *stmt) { result = transform(stmt->expr); }
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
+  if (stmt->isUpdate()) {
+    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
+    auto val = ctx->find(stmt->lhs->getId()->value);
+    seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
+    result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
+    return;
+  }
+
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
@@ -349,13 +357,6 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
   result = make<ir::InsertInstr>(stmt, transform(stmt->lhs), stmt->member,
                                  transform(stmt->rhs));
-}
-
-void TranslateVisitor::visit(UpdateStmt *stmt) {
-  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
-  auto val = ctx->find(stmt->lhs->getId()->value);
-  seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
-  result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
 }
 
 void TranslateVisitor::visit(ReturnStmt *stmt) {

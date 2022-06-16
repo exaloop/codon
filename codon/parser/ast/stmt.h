@@ -146,6 +146,14 @@ struct AssignStmt : public Stmt {
   ACCEPT(ASTVisitor);
 
   AssignStmt *getAssign() override { return this; }
+
+  bool isUpdate() const { return update != Assign; }
+  bool isAtomicUpdate() const { return update == UpdateAtomic; }
+  void setUpdate() { update = Update; }
+  void setAtomicUpdate() { update = UpdateAtomic; }
+
+private:
+  enum { Assign, Update, UpdateAtomic } update;
 };
 
 /// Deletion statement (del expr).
@@ -545,21 +553,6 @@ struct AssignMemberStmt : public Stmt {
 
   AssignMemberStmt(ExprPtr lhs, std::string member, ExprPtr rhs);
   AssignMemberStmt(const AssignMemberStmt &stmt);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
-};
-
-/// Update assignment statement (lhs = rhs).
-/// Only valid if lhs exists.
-/// @li: lhs = rhs
-struct UpdateStmt : public Stmt {
-  ExprPtr lhs, rhs;
-  /// True if this is an atomic update.
-  bool isAtomic;
-
-  UpdateStmt(ExprPtr lhs, ExprPtr rhs, bool isAtomic = false);
-  UpdateStmt(const UpdateStmt &stmt);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);

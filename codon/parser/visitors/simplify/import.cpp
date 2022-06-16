@@ -47,11 +47,11 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
   if (!ctx->isStdlibLoading && !importVar.empty()) {
-    std::vector<StmtPtr> ifSuite;
-    ifSuite.emplace_back(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))));
-    ifSuite.emplace_back(N<UpdateStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true)));
-    resultStmt = N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
-                           N<SuiteStmt>(ifSuite));
+    auto u = N<AssignStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true));
+    u->setUpdate();
+    resultStmt =
+        N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
+                  N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))), u));
   }
 
   // Import requiested identifiers from the import's scope to the current scope

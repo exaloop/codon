@@ -125,7 +125,7 @@ public:
   /// Transform an atomic update a = b to:
   ///   typeof(a).__atomic_xchg__(__ptr__(a), b).
   /// Transformations are performed only if the appropriate magics are available.
-  void visit(UpdateStmt *) override;
+  void visitUpdate(AssignStmt *);
   /// Transform a.b = c to:
   ///   unwrap(a).b = c
   /// if a is an Optional that does not have field b.
