@@ -206,6 +206,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   bool isJit;
   int jitCell;
 
+  std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
+
 public:
   explicit Cache(std::string argv0 = "");
 

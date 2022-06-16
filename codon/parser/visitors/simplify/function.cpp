@@ -273,9 +273,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->cache->functions[canonicalName].origAst =
       std::static_pointer_cast<FunctionStmt>(stmt->clone());
 
-  /// TODO: REPLACE!!!
-  AssignReplacementVisitor(ctx->cache, ctx->scopeRenames).transform(f->suite);
-
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
@@ -421,102 +418,6 @@ std::string *SimplifyVisitor::isAttribute(ExprPtr e) {
     }
   }
   return nullptr;
-}
-
-AssignReplacementVisitor::AssignReplacementVisitor(
-    Cache *c, std::map<std::string, std::pair<std::string, bool>> &r)
-    : cache(c), replacements(r) {}
-
-void AssignReplacementVisitor::visit(IdExpr *expr) {
-  while (in(replacements, expr->value))
-    expr->value = replacements[expr->value].first;
-}
-
-void AssignReplacementVisitor::transform(ExprPtr &e) {
-  if (!e)
-    return;
-  AssignReplacementVisitor v{cache, replacements};
-  e->accept(v);
-}
-
-void AssignReplacementVisitor::visit(ForStmt *stmt) {
-  seqassertn(stmt->var->getId(), "corrupt ForStmt");
-  bool addGuard = in(replacements, stmt->var->getId()->value);
-  transform(stmt->var);
-  auto var = stmt->var->getId()->value;
-  transform(stmt->iter);
-  transform(stmt->suite);
-  if (addGuard) {
-    auto s = std::make_shared<AssignStmt>(
-        std::make_shared<IdExpr>(format("{}.__used__", var)),
-        std::make_shared<BoolExpr>(true));
-    s->setUpdate();
-    stmt->suite = std::make_shared<SuiteStmt>(s, stmt->suite);
-    stmt->ownVar = false;
-  }
-  transform(stmt->elseSuite);
-  transform(stmt->decorator);
-  for (auto &a : stmt->ompArgs)
-    transform(a.value);
-}
-
-void AssignReplacementVisitor::visit(TryStmt *stmt) {
-  transform(stmt->suite);
-  for (auto &c : stmt->catches) {
-    bool addGuard = !c.var.empty() && in(replacements, c.var);
-    transform(c.exc);
-    transform(c.suite);
-    if (addGuard) {
-      while (in(replacements, c.var))
-        c.var = replacements[c.var].first;
-      auto s = std::make_shared<AssignStmt>(
-          std::make_shared<IdExpr>(format("{}.__used__", c.var)),
-          std::make_shared<BoolExpr>(true));
-      s->setUpdate();
-      c.suite = std::make_shared<SuiteStmt>(s, c.suite);
-      c.ownVar = false;
-    }
-  }
-  transform(stmt->finally);
-}
-
-void AssignReplacementVisitor::transform(StmtPtr &e) {
-  if (!e)
-    return;
-  AssignReplacementVisitor v{cache, replacements};
-  if (auto i = CAST(e, AssignStmt)) {
-    if (!i->isUpdate() && i->lhs->getId() && in(replacements, i->lhs->getId()->value)) {
-      auto value = i->lhs->getId()->value;
-      bool hasUsed = false;
-      while (in(replacements, value)) {
-        hasUsed = replacements[value].second;
-        value = replacements[value].first;
-      }
-
-      i->setUpdate();
-
-      auto lb = i->lhs->clone();
-      lb->getId()->value = fmt::format("{}.__used__", value);
-      auto f = std::make_shared<AssignStmt>(lb, std::make_shared<BoolExpr>(true));
-      f->setUpdate();
-      f->setSrcInfo(i->getSrcInfo());
-
-      StmtPtr ex = nullptr;
-      if (i->rhs && hasUsed)
-        ex = std::make_shared<SuiteStmt>(e, f);
-      else if (i->rhs)
-        ex = std::make_shared<SuiteStmt>(e);
-      else if (hasUsed)
-        ex = std::make_shared<SuiteStmt>(f);
-      else
-        ex = nullptr;
-      if (ex)
-        ex->setSrcInfo(i->getSrcInfo());
-      e = ex;
-    }
-  }
-  if (e)
-    e->accept(v);
 }
 
 } // namespace codon::ast

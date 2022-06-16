@@ -117,6 +117,8 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     expr->markType();
     return;
   }
+  while (auto s = in(ctx->cache->replacements, expr->value))
+    expr->value = s->first;
   auto val = ctx->find(expr->value);
   if (!val) {
     auto j = ctx->cache->globals.find(expr->value);

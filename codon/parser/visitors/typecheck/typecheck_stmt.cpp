@@ -85,6 +85,28 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   if (auto e = stmt->lhs->getId())
     lhs = e->value;
   seqassert(!lhs.empty(), "invalid AssignStmt {}", stmt->lhs->toString());
+
+  if (in(ctx->cache->replacements, lhs)) {
+    auto value = lhs;
+    bool hasUsed = false;
+    while (auto v = in(ctx->cache->replacements, value))
+      value = v->first, hasUsed = v->second;
+    if (stmt->rhs && hasUsed) {
+      auto u = N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", value)),
+                             N<BoolExpr>(true));
+      u->setUpdate();
+      prependStmts->push_back(transform(u));
+    } else if (stmt->rhs) {
+      ;
+    } else if (hasUsed) {
+      stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", value));
+      stmt->rhs = N<BoolExpr>(true);
+    }
+    stmt->setUpdate();
+    visitUpdate(stmt);
+    return;
+  }
+
   stmt->rhs = transform(stmt->rhs);
   stmt->type = transformType(stmt->type);
   TypecheckItem::Kind kind;
@@ -199,7 +221,7 @@ void TypecheckVisitor::visitUpdate(AssignStmt *stmt) {
                       N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)));
       return;
     }
-    stmt->setUpdate();  // turn off atomic
+    stmt->setUpdate(); // turn off atomic
   }
   // Case 4: handle optionals if needed.
   wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);
@@ -311,16 +333,25 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->iter, "__iter__")));
       stmt->wrapped = true;
     }
-    std::string varName;
-    if (auto e = stmt->var->getId())
-      varName = e->value;
-    seqassert(!varName.empty(), "empty for variable {}", stmt->var->toString());
+    seqassert(stmt->var->getId(), "for variable corrupt: {}", stmt->var->toString());
+
+    auto e = stmt->var->getId();
+    bool changed = in(ctx->cache->replacements, e->value);
+    while (auto s = in(ctx->cache->replacements, e->value))
+      e->value = s->first;
+    if (changed) {
+      auto u =
+          N<AssignStmt>(N<IdExpr>(format("{}.__used__", e->value)), N<BoolExpr>(true));
+      u->setUpdate();
+      stmt->suite = N<SuiteStmt>(u, stmt->suite);
+    }
+    std::string varName = e->value;
+
     TypePtr varType = nullptr;
     if (stmt->ownVar) {
       varType = ctx->addUnbound(stmt->var.get(), ctx->typecheckLevel);
       ctx->add(TypecheckItem::Var, varName, varType);
     } else {
-      LOG("-- {}", stmt->getSrcInfo());
       auto val = ctx->find(varName);
       seqassert(val, "'{}' not found", varName);
       varType = val->type;
@@ -385,6 +416,16 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   for (auto &c : stmt->catches) {
     c.exc = transformType(c.exc);
     if (!c.var.empty()) {
+      bool changed = in(ctx->cache->replacements, c.var);
+      while (auto s = in(ctx->cache->replacements, c.var))
+        c.var = s->first;
+      if (changed) {
+        auto u =
+            N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
+        u->setUpdate();
+        c.suite = N<SuiteStmt>(u, c.suite);
+      }
+
       if (c.ownVar) {
         ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
       } else {

@@ -72,7 +72,6 @@ struct SimplifyContext : public Context<SimplifyItem> {
   std::vector<int> scope;
 
   std::map<int, std::vector<StmtPtr>> scopeStmts;
-  std::map<std::string, std::pair<std::string, bool>> scopeRenames;
   std::vector<std::set<std::string>> scopeOutsides;
 
   /// A base scope definition. Each function or a class defines a new base scope.
@@ -100,13 +99,6 @@ struct SimplifyContext : public Context<SimplifyItem> {
 
     explicit Base(std::string name, ExprPtr ast = nullptr, Attr *attributes = nullptr);
     bool isType() const { return ast != nullptr; }
-
-    struct {
-      std::vector<IdExpr*> ids;
-      std::vector<AssignStmt*> assigns;
-      std::vector<ForStmt*> fors;
-      std::vector<TryStmt*> trys;
-    } replacements;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"

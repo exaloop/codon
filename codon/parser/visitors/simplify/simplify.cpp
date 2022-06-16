@@ -78,7 +78,6 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   if (in(ctx->scopeStmts, ctx->scope.back()))
     suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
                         ctx->scopeStmts[ctx->scope.back()].end());
-  AssignReplacementVisitor(ctx->cache, ctx->scopeRenames).transform(n);
   suite->stmts.push_back(n);
   return suite;
 }
@@ -192,6 +191,7 @@ StmtPtr SimplifyVisitor::transformConditionalScope(const StmtPtr &stmt) {
 }
 
 void SimplifyVisitor::defaultVisit(Expr *e) { resultExpr = e->clone(); }
+
 void SimplifyVisitor::defaultVisit(Stmt *s) { resultStmt = s->clone(); }
 
 /**************************************************************************************/

@@ -160,8 +160,8 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
     if (i == lastGood)
       break;
-    scopeRenames[(*i)->canonicalName] = {canonicalName, hasUsed};
-    scopeRenames[format("{}.__used__", (*i)->canonicalName)] = {
+    cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
+    cache->replacements[format("{}.__used__", (*i)->canonicalName)] = {
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
