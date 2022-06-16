@@ -143,7 +143,8 @@ public:
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
 
-  /* Call expression (call.cpp) */
+  /* Calls (call.cpp) */
+  void visit(PrintStmt *) override;
   void visit(CallExpr *) override;
   ExprPtr transformSpecialCall(ExprPtr, const std::vector<CallExpr::Arg> &);
   ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &);
@@ -152,37 +153,84 @@ public:
 
   /* Assignments (assign.cpp) */
   void visit(AssignStmt *) override;
-  StmtPtr transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
-                              const ExprPtr &type = nullptr, bool mustExist = false);
+  StmtPtr transformAssignment(const ExprPtr &, const ExprPtr &,
+                              const ExprPtr & = nullptr, bool = false);
   void unpackAssignments(ExprPtr, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
 
   /* Imports (import.cpp) */
   void visit(ImportStmt *) override;
   StmtPtr transformSpecialImport(ImportStmt *);
-  std::vector<std::string> getImportPath(Expr *from, size_t dots = 0);
+  std::vector<std::string> getImportPath(Expr *, size_t = 0);
   StmtPtr transformCImport(const std::string &, const std::vector<Param> &,
                            const Expr *, const std::string &);
   StmtPtr transformCDLLImport(const Expr *, const std::string &,
                               const std::vector<Param> &, const Expr *,
                               const std::string &);
-  StmtPtr transformPythonImport(Expr *what, const std::vector<Param> &args,
-                                const Expr *ret, const std::string &altName);
-  void transformNewImport(const ImportFile &file);
+  StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, const Expr *,
+                                const std::string &);
+  void transformNewImport(const ImportFile &);
 
-  /* Sugar */
+  /* Loops (loops.cpp) */
+  void visit(ContinueStmt *) override;
+  void visit(BreakStmt *) override;
+  void visit(WhileStmt *) override;
+  void visit(ForStmt *) override;
+  ExprPtr transformForDecorator(ExprPtr);
+
+  /* Errors and exceptions (error.cpp) */
+  void visit(AssertStmt *) override;
+  void visit(TryStmt *) override;
+  void visit(ThrowStmt *) override;
+  void visit(WithStmt *) override;
+
+  /* Functions (function.cpp) */
+  void visit(YieldExpr *) override;
+  void visit(LambdaExpr *) override;
+  void visit(GlobalStmt *) override;
+  void visit(ReturnStmt *) override;
+  void visit(YieldStmt *) override;
+  void visit(YieldFromStmt *) override;
+  void visit(FunctionStmt *) override;
+  ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
+  StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
+                                    const Expr *, Stmt *);
+  StmtPtr transformLLVMDefinition(Stmt *);
+  std::string *isAttribute(ExprPtr);
+
+  /* Classes (class.cpp) */
+  /// Transforms type definitions and extensions.
+  /// This currently consists of adding default magic methods (described in
+  /// codegenMagic() method below).
+  void visit(ClassStmt *) override;
+  Attr parseClassDecorators(Attr attr, const std::vector<ExprPtr> &decorators);
+  void parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
+                        std::vector<ClassStmt *> &baseASTs,
+                        std::vector<Param> &hiddenGenerics, const Attr &attr);
+  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
+                                                       std::vector<Param> &args);
+  void transformNestedClasses(ClassStmt *stmt, std::vector<StmtPtr> &clsStmts,
+                              std::vector<StmtPtr> &fnStmts);
+  /// Generate a magic method __op__ for a type described by typExpr and type arguments
+  /// args.
+  /// Currently able to generate:
+  ///   Constructors: __new__, __init__
+  ///   Utilities: __raw__, __hash__, __repr__
+  ///   Iteration: __iter__, __getitem__, __len__, __contains__
+  //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
+  //    Pickling: __pickle__, __unpickle__
+  //    Python: __to_py__, __from_py__
+  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
+                       const std::vector<Param> &args, bool isRecord);
+
+////////
 
   // This expression is transformed during the type-checking stage
   // because we need raw SliceExpr to handle static tuple slicing.
   void visit(SliceExpr *) override;
   /// Disallow ellipsis except in a call expression.
   void visit(EllipsisExpr *) override;
-  /// Ensure that a yield is in a function.
-  void visit(YieldExpr *) override;
-  /// Transform lambda a, b: a+b+c to:
-  ///   def _lambda(a, b, c): return a+b+c
-  ///   _lambda(..., ..., c)
-  void visit(LambdaExpr *) override;
+
   /// Transform var := expr to a statement expression:
   ///   var = expr; var
   /// Disallowed in dependent parts of short-circuiting expressions
@@ -202,138 +250,16 @@ public:
   /// Transform all statements in a suite and flatten them (unless a suite is a variable
   /// scope).
   void visit(SuiteStmt *) override;
-  /// Ensure that a continue is in a loop.
-  void visit(ContinueStmt *) override;
-  /// Ensure that a break is in a loop.
-  /// If a loop break variable is available (loop-else block), transform a break to:
-  ///   loop_var = false; break
-  void visit(BreakStmt *) override;
+
   void visit(ExprStmt *) override;
 
-  /// Transform print a, b to:
-  ///   print(a, b)
-  /// Add end=' ' if inPlace is set.
-  void visit(PrintStmt *) override;
-  /// Ensure that a return is in a function.
-  void visit(ReturnStmt *) override;
-  /// Ensure that a yield is in a function.
-  void visit(YieldStmt *) override;
-  /// Transform yield from a to:
-  ///   for var in a: yield var
-  void visit(YieldFromStmt *) override;
-  /// Transform assert foo(), "message" to:
-  ///   if not foo(): seq_assert(<file>, <line>, "message")
-  /// Transform assert foo() to:
-  ///   if not foo(): seq_assert(<file>, <line>, "")
-  /// If simplification stage is invoked during unit testing, call seq_assert_test()
-  /// instead.
-  void visit(AssertStmt *) override;
-  /// Transform while cond to:
-  ///   while cond.__bool__()
-  /// Transform while cond: ... else: ... to:
-  ///   no_break = True
-  ///   while cond.__bool__(): ...
-  ///   if no_break.__bool__(): ...
-  void visit(WhileStmt *) override;
-  /// Transform for i in it: ... to:
-  ///   for i in it: ...
-  /// Transform for i, j in it: ... to:
-  ///   for tmp in it:
-  ///      i, j = tmp; ...
-  /// This transformation uses AssignStmt and supports all unpack operations that are
-  /// handled there.
-  /// Transform for i in it: ... else: ... to:
-  ///   no_break = True
-  ///   for i in it: ...
-  ///   if no_break.__bool__(): ...
-  void visit(ForStmt *) override;
 
-  void visit(TryStmt *) override;
-  void visit(ThrowStmt *) override;
-  /// Transform with foo(), bar() as a: ... to:
-  ///   block:
-  ///     tmp = foo()
-  ///     tmp.__enter__()
-  ///     try:
-  ///       a = bar()
-  ///       a.__enter__()
-  ///       try:
-  ///         ...
-  ///       finally:
-  ///         a.__exit__()
-  ///     finally:
-  ///       tmp.__exit__()
-  void visit(WithStmt *) override;
-  /// Perform the global checks and remove the statement from the consideration.
-  void visit(GlobalStmt *) override;
-  /// Transforms function definitions.
-  ///
-  /// At this stage, the only meaningful transformation happens for "self" arguments in
-  /// a class method that have no type annotation (they will get one automatically).
-  ///
-  /// For Python and LLVM definition transformations, see transformPythonDefinition()
-  /// and transformLLVMDefinition().
-  void visit(FunctionStmt *) override;
-
-  /// Transforms type definitions and extensions.
-  /// This currently consists of adding default magic methods (described in
-  /// codegenMagic() method below).
-  void visit(ClassStmt *) override;
-  Attr parseClassDecorators(Attr attr, const std::vector<ExprPtr> &decorators);
-  void parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                        std::vector<ClassStmt *> &baseASTs,
-                        std::vector<Param> &hiddenGenerics, const Attr &attr);
-  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
-                                                       std::vector<Param> &args);
-  void transformNestedClasses(ClassStmt *stmt, std::vector<StmtPtr> &clsStmts,
-                              std::vector<StmtPtr> &fnStmts);
-
-  /// Generate a magic method __op__ for a type described by typExpr and type arguments
-  /// args.
-  /// Currently able to generate:
-  ///   Constructors: __new__, __init__
-  ///   Utilities: __raw__, __hash__, __repr__
-  ///   Iteration: __iter__, __getitem__, __len__, __contains__
-  //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
-  //    Pickling: __pickle__, __unpickle__
-  //    Python: __to_py__, __from_py__
-  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
-                       const std::vector<Param> &args, bool isRecord);
 
   void visit(CustomStmt *) override;
 
   using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
 
 private:
-  /// Make an anonymous function _lambda_XX with provided statements and argument names.
-  /// Function definition is prepended to the current statement.
-  /// If the statements refer to outer variables, those variables will be captured and
-  /// added to the list of arguments. Returns a call expression that calls this
-  /// function with captured variables.
-  /// @li Given a statement a+b and argument names a, this generates
-  ///            def _lambda(a, b): return a+b
-  ///          and returns
-  ///            _lambda(b).
-  ExprPtr makeAnonFn(std::vector<StmtPtr> stmts,
-                     const std::vector<std::string> &argNames = {});
-
-  /// Transform a Python code-block @python def foo(x: int, y) -> int: <python code> to:
-  ///   pyobj._exec("def foo(x, y): <python code>")
-  ///   from python import __main__.foo(int, _) -> int
-  StmtPtr transformPythonDefinition(const std::string &name,
-                                    const std::vector<Param> &args, const Expr *ret,
-                                    Stmt *codeStmt);
-  /// Transform LLVM code @llvm def foo(x: int) -> float: <llvm code> to:
-  ///   def foo(x: int) -> float:
-  ///     StringExpr("<llvm code>")
-  ///     SuiteStmt(referenced_types)
-  /// As LLVM code can reference types and static expressions in {= expr} block,
-  /// all such referenced expression will be stored in the above referenced_types.
-  /// "<llvm code>" will also be transformed accordingly: each {= expr} reference will
-  /// be replaced with {} so that fmt::format can easily later fill the gaps.
-  /// Note that any brace ({ or }) that is not part of {= expr} reference will be
-  /// escaped (e.g. { -> {{ and } -> }}) so that fmt::format can print them as-is.
-  StmtPtr transformLLVMDefinition(Stmt *codeStmt);
   // Return a list of all function statements within a given class suite. Checks each
   // suite recursively, and assumes that each statement is either a function or a
   // doc-string.

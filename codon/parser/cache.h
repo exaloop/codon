@@ -27,10 +27,6 @@
 #define FN_UNWRAP "std.internal.types.optional.unwrap"
 #define VAR_ARGV "__argv__"
 
-#define FLAG_METHOD 1
-#define FLAG_ATOMIC 2
-#define FLAG_TEST 4
-
 #define MAX_INT_WIDTH 10000
 
 namespace codon {

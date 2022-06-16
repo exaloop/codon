@@ -299,8 +299,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           trimStars(varName);
           args.emplace_back(Param{varName, nullptr, nullptr, i.status});
         }
-        r->ast = Nx<FunctionStmt>(ast, type->realizedName(), nullptr, args, realized,
-                                  ast->attributes);
+        r->ast = Nx<FunctionStmt>(ast, type->realizedName(), nullptr, args, realized);
+        r->ast->attributes = ast->attributes; // assign later to prevent validation
 
         // Set up IR node
         std::vector<std::string> names;

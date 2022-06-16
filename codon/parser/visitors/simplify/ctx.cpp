@@ -20,7 +20,7 @@ SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
   scope.push_back(scopeCnt = 0);
 }
 
-SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, int attributes)
+SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, Attr *attributes)
     : name(move(name)), ast(move(ast)), attributes(attributes), deducedMembers(nullptr),
       selfName(), captures(nullptr) {}
 

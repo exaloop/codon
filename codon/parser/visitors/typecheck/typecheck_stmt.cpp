@@ -53,7 +53,6 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 void TypecheckVisitor::visit(SuiteStmt *stmt) {
   std::vector<StmtPtr> stmts;
   stmt->done = true;
-  ctx->blockLevel += int(stmt->ownBlock);
   for (auto &s : stmt->stmts) {
     if (ctx->returnEarly)
       break;
@@ -62,7 +61,6 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
       stmt->done &= stmts.back()->done;
     }
   }
-  ctx->blockLevel -= int(stmt->ownBlock);
   stmt->stmts = stmts;
 }
 
@@ -86,7 +84,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   stmt->type = transformType(stmt->type);
   TypecheckItem::Kind kind;
   if (!stmt->rhs) { // FORWARD DECLARATION FROM DOMINATION
-    seqassert(!stmt->type, "no forward declarations allowed: {}", stmt->lhs->toString());
+    seqassert(!stmt->type, "no forward declarations allowed: {}",
+              stmt->lhs->toString());
     unify(stmt->lhs->type, ctx->addUnbound(stmt->lhs.get(), ctx->typecheckLevel));
     ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
     stmt->done = realize(stmt->lhs->type) != nullptr;
@@ -241,7 +240,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     unify(base.returnType, stmt->expr->type);
     stmt->done = stmt->expr->done;
   } else {
-    if (ctx->blockLevel == 1)
+    if (!ctx->blockLevel)
       ctx->returnEarly = true;
     stmt->done = true;
   }
@@ -260,7 +259,9 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
 
 void TypecheckVisitor::visit(WhileStmt *stmt) {
   stmt->cond = transform(stmt->cond);
+  ctx->blockLevel++;
   stmt->suite = transform(stmt->suite);
+  ctx->blockLevel--;
   stmt->done = stmt->cond->done && stmt->suite->done;
 }
 
@@ -288,16 +289,17 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       stmts.push_back(N<AssignStmt>(clone(stmt->var),
                                     N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))));
       stmts.push_back(clone(stmt->suite));
-      forBlock.push_back(
-          N<IfStmt>(N<BinaryExpr>(N<IdExpr>(cntVar), "==", N<IntExpr>(ai)),
-                    N<SuiteStmt>(stmts, true)));
+      forBlock.push_back(N<IfStmt>(
+          N<BinaryExpr>(N<IdExpr>(cntVar), "==", N<IntExpr>(ai)), N<SuiteStmt>(stmts)));
     }
     block->stmts.push_back(
         N<ForStmt>(N<IdExpr>(cntVar),
                    N<CallExpr>(N<IdExpr>("std.internal.types.range.range"),
                                N<IntExpr>(tuple->args.size())),
                    N<SuiteStmt>(forBlock)));
+    ctx->blockLevel++;
     resultStmt = transform(block);
+    ctx->blockLevel--;
   } else {
     // Case 2: iterating a generator. Standard for loop logic.
     if (iterType->name != "Generator" && !stmt->wrapped) {
@@ -332,7 +334,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
     unify(stmt->var->type, varType);
 
+    ctx->blockLevel++;
     stmt->suite = transform(stmt->suite);
+    ctx->blockLevel--;
     stmt->done = stmt->iter->done && stmt->suite->done;
   }
 }
@@ -350,11 +354,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
       else
         isTrue = stmt->cond->staticValue.getInt();
       resultStmt = isTrue ? stmt->ifSuite : stmt->elseSuite;
-      bool isOwn = // these blocks will not be a real owning blocks after inlining
-          resultStmt && resultStmt->getSuite() && resultStmt->getSuite()->ownBlock;
-      ctx->blockLevel -= isOwn;
       resultStmt = transform(resultStmt);
-      ctx->blockLevel += isOwn;
       if (!resultStmt)
         resultStmt = transform(N<SuiteStmt>());
       return;
@@ -362,8 +362,10 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   } else {
     if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
       stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
+    ctx->blockLevel++;
     stmt->ifSuite = transform(stmt->ifSuite);
     stmt->elseSuite = transform(stmt->elseSuite);
+    ctx->blockLevel--;
     stmt->done = stmt->cond->done && (!stmt->ifSuite || stmt->ifSuite->done) &&
                  (!stmt->elseSuite || stmt->elseSuite->done);
   }
@@ -371,7 +373,9 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 
 void TypecheckVisitor::visit(TryStmt *stmt) {
   std::vector<TryStmt::Catch> catches;
+  ctx->blockLevel++;
   stmt->suite = transform(stmt->suite);
+  ctx->blockLevel--;
   stmt->done = stmt->suite->done;
   for (auto &c : stmt->catches) {
     c.exc = transformType(c.exc);
@@ -384,11 +388,15 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         unify(val->type, c.exc->getType());
       }
     }
+    ctx->blockLevel++;
     c.suite = transform(c.suite);
+    ctx->blockLevel--;
     stmt->done &= (c.exc ? c.exc->done : true) && c.suite->done;
   }
   if (stmt->finally) {
+    ctx->blockLevel++;
     stmt->finally = transform(stmt->finally);
+    ctx->blockLevel--;
     stmt->done &= stmt->finally->done;
   }
 }

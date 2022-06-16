@@ -525,7 +525,7 @@ def f(a, b=a):
 @llvm
 def foo():
     blah
-#! LLVM functions must have a return type
+#! C and LLVM functions must specify a return type
 
 #%% function_llvm_err_2,barebones
 @llvm

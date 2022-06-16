@@ -235,9 +235,6 @@ void FormatVisitor::visit(AssignExpr *expr) {
 void FormatVisitor::visit(SuiteStmt *stmt) {
   for (int i = 0; i < stmt->stmts.size(); i++)
     result += transform(stmt->stmts[i]);
-  if (stmt->ownBlock)
-    result = fmt::format("{}# block_begin{}{}{}# block_end", pad(), newline(), result,
-                         pad());
 }
 
 void FormatVisitor::visit(BreakStmt *stmt) { result = keyword("break"); }

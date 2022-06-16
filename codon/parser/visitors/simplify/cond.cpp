@@ -83,7 +83,8 @@ void SimplifyVisitor::visit(MatchStmt *stmt) {
 ///   `case (x := pat)`    -> `(x = var; if match(var, pat))`
 ///   `case x`             -> `(x := var)`
 ///                           (only when `x` is not '_')
-///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if var.__match__(foo())`
+///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if
+///   var.__match__(foo())`
 ///                           (any expression that does not fit above patterns)
 StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr suite) {
   // Convenience function to generate `isinstance(e, typ)` calls
@@ -156,16 +157,12 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
   } else if (auto ea = CAST(pattern, AssignExpr)) {
     // Bound pattern
     seqassert(ea->var->getId(), "only simple assignment expressions are supported");
-    return N<SuiteStmt>(
-        std::vector<StmtPtr>{
-            N<AssignStmt>(clone(ea->var), clone(var)),
-            transformPattern(clone(var), clone(ea->expr), clone(suite))},
-        true);
+    return N<SuiteStmt>(N<AssignStmt>(clone(ea->var), clone(var)),
+                        transformPattern(clone(var), clone(ea->expr), clone(suite)));
   } else if (auto ei = pattern->getId()) {
     // Wildcard pattern
     if (ei->value != "_") {
-      return N<SuiteStmt>(
-          std::vector<StmtPtr>{N<AssignStmt>(clone(pattern), clone(var)), suite}, true);
+      return N<SuiteStmt>(N<AssignStmt>(clone(pattern), clone(var)), suite);
     } else {
       return suite;
     }

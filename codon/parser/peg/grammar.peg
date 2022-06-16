@@ -196,9 +196,7 @@ from_param <- expression { return Param{"", ac_expr(V0), nullptr}; }
 #TODO expand import logic / param { return ac<Param>(V0); }
 
 suite <- (simple_stmt / (_ EOL)+ &INDENT statements (_ EOL)* &DEDENT) {
-  auto s = ac_stmt(V0);
-  dynamic_pointer_cast<SuiteStmt>(s)->ownBlock = true;
-  return s;
+  return ac_stmt(V0);
 }
 compound_stmt <-
   / function
@@ -292,6 +290,7 @@ function <-
     auto fn = dynamic_pointer_cast<FunctionStmt>(ac_stmt(V1));
     fn->decorators = ac<vector<ExprPtr>>(V0);
     fn->suite = ast<ExprStmt>(LOC, ast<StringExpr>(LOC, ac<string>(V2)));
+    fn->parseDecorators();
     return static_pointer_cast<Stmt>(fn);
   }
   / decorators? function_def _ suite {
@@ -299,6 +298,7 @@ function <-
     if (VS.size() > 2)
       fn->decorators = ac<vector<ExprPtr>>(V0);
     fn->suite = ac_stmt(VS.size() > 2 ? V2 : V1);
+    fn->parseDecorators();
     return static_pointer_cast<Stmt>(fn);
   }
 extern <- (empty_line* EXTERNDENT (!EOL .)* EOL empty_line*)+ {

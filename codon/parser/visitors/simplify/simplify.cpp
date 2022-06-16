@@ -152,7 +152,7 @@ void SimplifyVisitor::visit(SuiteStmt *stmt) {
   std::vector<StmtPtr> r;
   for (const auto &s : stmt->stmts)
     SuiteStmt::flatten(transform(s), r);
-  resultStmt = N<SuiteStmt>(r, stmt->ownBlock);
+  resultStmt = N<SuiteStmt>(r);
 }
 
 ExprPtr SimplifyVisitor::transform(const ExprPtr &expr) {
@@ -199,12 +199,6 @@ void SimplifyVisitor::visit(KeywordStarExpr *expr) {
 
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
   error("unexpected ellipsis expression");
-}
-
-void SimplifyVisitor::visit(YieldExpr *expr) {
-  if (!ctx->inFunction())
-    error("expected function body");
-  defaultVisit(expr);
 }
 
 void SimplifyVisitor::visit(RangeExpr *expr) {

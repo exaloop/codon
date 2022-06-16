@@ -112,9 +112,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
-    auto *e = node->getSuite()
-                  ? const_cast<ast::SuiteStmt *>(node->getSuite())->lastInBlock()
-                  : &node;
+    auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
         *e = std::make_shared<ast::IfStmt>(
@@ -147,7 +145,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
       frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
     }
     auto func =
-        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
+        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
 
     return run(func);

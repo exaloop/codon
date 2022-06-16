@@ -76,32 +76,33 @@ std::string combine2(const std::vector<T> &items, const std::string &delim = ","
   return s;
 }
 /// @return True if an item is found in a vector vec.
-template <typename T, typename U> bool in(const std::vector<T> &vec, const U &item) {
+template <typename T, typename U>
+const T *in(const std::vector<T> &vec, const U &item) {
   auto f = std::find(vec.begin(), vec.end(), item);
-  return f != vec.end();
+  return f != vec.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a set s.
-template <typename T, typename U> bool in(const std::set<T> &s, const U &item) {
+template <typename T, typename U> const T *in(const std::set<T> &s, const U &item) {
   auto f = s.find(item);
-  return f != s.end();
+  return f != s.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in an unordered_set s.
 template <typename T, typename U>
-bool in(const std::unordered_set<T> &s, const U &item) {
+const T *in(const std::unordered_set<T> &s, const U &item) {
   auto f = s.find(item);
-  return f != s.end();
+  return f != s.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a map m.
 template <typename K, typename V, typename U>
-bool in(const std::map<K, V> &m, const U &item) {
+const V *in(const std::map<K, V> &m, const U &item) {
   auto f = m.find(item);
-  return f != m.end();
+  return f != m.end() ? &(f->second) : nullptr;
 }
 /// @return True if an item is found in an unordered_map m.
 template <typename K, typename V, typename U>
-bool in(const std::unordered_map<K, V> &m, const U &item) {
+const V *in(const std::unordered_map<K, V> &m, const U &item) {
   auto f = m.find(item);
-  return f != m.end();
+  return f != m.end() ? &(f->second) : nullptr;
 }
 /// @return vector c transformed by the function f.
 template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {

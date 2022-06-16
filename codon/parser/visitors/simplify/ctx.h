@@ -84,7 +84,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// class Foo[T, N: int]: ..., AST is Foo[T, N: int]
     ExprPtr ast;
     /// Tracks function attributes (e.g. if it has @atomic or @test attributes).
-    int attributes;
+    Attr *attributes;
 
     std::shared_ptr<std::vector<std::string>> deducedMembers;
     std::string selfName;
@@ -98,7 +98,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// nested generator or lambda constructs.
     std::unordered_map<std::string, std::string> *captures;
 
-    explicit Base(std::string name, ExprPtr ast = nullptr, int attributes = 0);
+    explicit Base(std::string name, ExprPtr ast = nullptr, Attr *attributes = nullptr);
     bool isType() const { return ast != nullptr; }
 
     /// A stack of nested loops enclosing the current statement used for transforming

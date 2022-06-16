@@ -242,9 +242,7 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   std::vector<std::shared_ptr<json>> args;
   std::vector<std::string> generics;
   for (auto &a : stmt->args)
-    if (a.status != Param::Normal || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
-                                 (a.type->getIndex() &&
-                                  a.type->getIndex()->expr->isId("Static"))))) {
+    if (a.status != Param::Normal) {
       ctx->add(a.name, std::make_shared<int>(0));
       generics.push_back(a.name);
       a.status = Param::Generic;
@@ -304,9 +302,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::vector<std::shared_ptr<json>> args;
   for (auto &a : stmt->args)
-    if (a.status != Param::Normal || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
-                                 (a.type->getIndex() &&
-                                  a.type->getIndex()->expr->isId("Static"))))) {
+    if (a.status != Param::Normal) {
       a.status = Param::Generic;
       generics.push_back(a.name);
     }

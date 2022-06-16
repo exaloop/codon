@@ -23,13 +23,12 @@ Stmt::Stmt(const codon::SrcInfo &s) : done(false), age(-1) { setSrcInfo(s); }
 std::string Stmt::toString() const { return toString(-1); }
 void Stmt::validate() const {}
 
-SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts, bool ownBlock)
-    : Stmt(), ownBlock(ownBlock) {
+SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts) : Stmt() {
   for (auto &s : stmts)
     flatten(std::move(s), this->stmts);
 }
 SuiteStmt::SuiteStmt(const SuiteStmt &stmt)
-    : Stmt(stmt), stmts(ast::clone(stmt.stmts)), ownBlock(stmt.ownBlock) {}
+    : Stmt(stmt), stmts(ast::clone(stmt.stmts)) {}
 std::string SuiteStmt::toString(int indent) const {
   std::string pad = indent >= 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string s;
@@ -40,18 +39,16 @@ std::string SuiteStmt::toString(int indent) const {
         is.insert(findStar(is), "*");
       s += (i ? pad : "") + is;
     }
-  return format("(suite{}{})", ownBlock ? " #:own " : "",
-                s.empty() ? s : " " + pad + s);
+  return format("(suite{})", s.empty() ? s : " " + pad + s);
 }
 ACCEPT_IMPL(SuiteStmt, ASTVisitor);
 void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
   if (!s)
     return;
-  auto suite = const_cast<SuiteStmt *>(s->getSuite());
-  if (!suite || suite->ownBlock)
+  if (!s->getSuite()) {
     stmts.push_back(s);
-  else {
-    for (auto &ss : suite->stmts)
+  } else {
+    for (auto &ss : s->getSuite()->stmts)
       stmts.push_back(ss);
   }
 }
@@ -214,7 +211,9 @@ ACCEPT_IMPL(MatchStmt, ASTVisitor);
 ImportStmt::ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args, ExprPtr ret,
                        std::string as, size_t dots)
     : Stmt(), from(std::move(from)), what(std::move(what)), as(std::move(as)),
-      dots(dots), args(std::move(args)), ret(std::move(ret)) { validate(); }
+      dots(dots), args(std::move(args)), ret(std::move(ret)) {
+  validate();
+}
 ImportStmt::ImportStmt(const ImportStmt &stmt)
     : Stmt(stmt), from(ast::clone(stmt.from)), what(ast::clone(stmt.what)), as(stmt.as),
       dots(stmt.dots), args(ast::clone_nop(stmt.args)), ret(ast::clone(stmt.ret)) {}
@@ -301,14 +300,16 @@ const std::string Attr::LLVM = "llvm";
 const std::string Attr::Python = "python";
 const std::string Attr::Atomic = "atomic";
 const std::string Attr::Property = "property";
+const std::string Attr::Attribute = "__attribute__";
 const std::string Attr::Internal = "__internal__";
 const std::string Attr::ForceRealize = "__force__";
 const std::string Attr::RealizeWithoutSelf =
     "std.internal.attributes.realize_without_self";
-const std::string Attr::C = "std.internal.attributes.C";
+const std::string Attr::C = "C";
 const std::string Attr::CVarArg = ".__vararg__";
 const std::string Attr::Method = ".__method__";
 const std::string Attr::Capture = ".__capture__";
+const std::string Attr::HasSelf = ".__hasself__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
 const std::string Attr::Test = "std.internal.attributes.test";
@@ -319,7 +320,9 @@ FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> arg
                            std::vector<ExprPtr> decorators)
     : Stmt(), name(std::move(name)), ret(std::move(ret)), args(std::move(args)),
       suite(std::move(suite)), attributes(std::move(attributes)),
-      decorators(std::move(decorators)) {}
+      decorators(std::move(decorators)) {
+  parseDecorators();
+}
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt)
     : Stmt(stmt), name(stmt.name), ret(ast::clone(stmt.ret)),
       args(ast::clone_nop(stmt.args)), suite(ast::clone(stmt.suite)),
@@ -338,6 +341,40 @@ std::string FunctionStmt::toString(int indent) const {
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
+void FunctionStmt::validate() const {
+  if (!ret && (attributes.has(Attr::LLVM) || attributes.has(Attr::C)))
+    error(getSrcInfo(), "C and LLVM functions must specify a return type");
+
+  std::unordered_set<std::string> seenArgs;
+  bool defaultsStarted = false, hasStarArg = false, hasKwArg = false;
+  for (size_t ia = 0; ia < args.size(); ia++) {
+    auto &a = args[ia];
+    auto n = a.name;
+    int stars = trimStars(n);
+    if (stars == 2) {
+      if (hasKwArg || a.defaultValue || ia != args.size() - 1)
+        error(getSrcInfo(), "invalid **kwargs");
+      hasKwArg = true;
+    } else if (stars == 1) {
+      if (hasStarArg || a.defaultValue)
+        error(getSrcInfo(), "invalid *args");
+      hasStarArg = true;
+    }
+    if (in(seenArgs, n))
+      error(getSrcInfo(), format("'{}' declared twice", n));
+    seenArgs.insert(n);
+    if (!a.defaultValue && defaultsStarted && !stars && a.status == Param::Normal)
+      error(getSrcInfo(),
+            format("non-default argument '{}' after a default argument", n));
+    defaultsStarted |= bool(a.defaultValue);
+    if (attributes.has(Attr::C)) {
+      if (a.defaultValue)
+        error(getSrcInfo(), "C functions do not accept default argument");
+      if (stars != 1 && !a.type)
+        error(getSrcInfo(), "C functions require explicit type annotations");
+    }
+  }
+}
 ACCEPT_IMPL(FunctionStmt, ASTVisitor);
 std::string FunctionStmt::signature() const {
   std::vector<std::string> s;
@@ -347,6 +384,45 @@ std::string FunctionStmt::signature() const {
 }
 bool FunctionStmt::hasAttr(const std::string &attr) const {
   return attributes.has(attr);
+}
+void FunctionStmt::parseDecorators() {
+  std::vector<ExprPtr> newDecorators;
+  for (auto &d : decorators) {
+    if (d->isId(Attr::Attribute)) {
+      if (decorators.size() != 1)
+        error(d->getSrcInfo(), "__attribute__ cannot be mixed with other decorators");
+      attributes.isAttribute = true;
+    } else if (d->isId(Attr::LLVM)) {
+      attributes.set(Attr::LLVM);
+    } else if (d->isId(Attr::Python)) {
+      if (decorators.size() != 1)
+        error(d->getSrcInfo(), "@python cannot be mixed with other decorators");
+      attributes.set(Attr::Python);
+    } else if (d->isId(Attr::Internal)) {
+      attributes.set(Attr::Internal);
+    } else if (d->isId(Attr::Atomic)) {
+      attributes.set(Attr::Atomic);
+    } else if (d->isId(Attr::Property)) {
+      attributes.set(Attr::Property);
+    } else if (d->isId(Attr::ForceRealize)) {
+      attributes.set(Attr::ForceRealize);
+    } else if (d->isId(Attr::C)) {
+      attributes.set(Attr::C);
+    } else {
+      newDecorators.emplace_back(d);
+    }
+  }
+  if (attributes.has(Attr::C)) {
+    for (auto &a : args) {
+      if (a.name.size() > 1 && a.name[0] == '*' && a.name[1] != '*')
+        attributes.set(Attr::CVarArg);
+    }
+  }
+  if (!args.empty() && !args[0].type && args[0].name == "self") {
+    attributes.set(Attr::HasSelf);
+  }
+  decorators = newDecorators;
+  validate();
 }
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,

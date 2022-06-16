@@ -134,8 +134,9 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
     error("cannot access nonlocal variable '{}'", ctx->rev(val->canonicalName));
 
   // Mark methods (class functions that access class generics)
-  if (val->isGeneric() && ctx->bases[i].isType() && i + 2 == ctx->bases.size())
-    ctx->getBase()->attributes |= FLAG_METHOD;
+  if (val->isGeneric() && ctx->bases[i].isType() && i + 2 == ctx->bases.size() &&
+      ctx->getBase()->attributes)
+    ctx->getBase()->attributes->set(Attr::Method);
 
   // Check if a real variable (not a static) is defined outside the current scope
   if (!val->isVar() || val->isGeneric())

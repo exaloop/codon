@@ -76,14 +76,12 @@ struct SuiteStmt : public Stmt {
   using Stmt::Stmt;
 
   std::vector<StmtPtr> stmts;
-  /// True if a suite defines new variable-scoping block.
-  bool ownBlock;
 
   /// These constructors flattens the provided statement vector (see flatten() below).
-  explicit SuiteStmt(std::vector<StmtPtr> stmts = {}, bool ownBlock = false);
+  explicit SuiteStmt(std::vector<StmtPtr> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
-  SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}), ownBlock(false) {}
+  SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
   SuiteStmt(const SuiteStmt &stmt);
 
   std::string toString(int indent) const override;
@@ -397,21 +395,23 @@ struct Attr {
   const static std::string Python;
   const static std::string Atomic;
   const static std::string Property;
+  const static std::string Attribute;
+  const static std::string C;
   // Internal attributes
   const static std::string Internal;
   const static std::string ForceRealize;
-  const static std::string RealizeWithoutSelf;
+  const static std::string RealizeWithoutSelf; // not internal
   // Compiler-generated attributes
-  const static std::string C;
   const static std::string CVarArg;
   const static std::string Method;
   const static std::string Capture;
+  const static std::string HasSelf;
   // Class attributes
   const static std::string Extend;
   const static std::string Tuple;
   // Standard library attributes
-  const static std::string Test;
-  const static std::string Overload;
+  const static std::string Test; //<-X
+  const static std::string Overload; //<-X
   // Function module
   std::string module;
   // Parent class (set for methods only)
@@ -447,6 +447,7 @@ struct FunctionStmt : public Stmt {
   FunctionStmt(const FunctionStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const override;
   ACCEPT(ASTVisitor);
 
   /// @return a function signature that consists of generics and arguments in a
@@ -454,6 +455,7 @@ struct FunctionStmt : public Stmt {
   /// @li (T U (int 0))
   std::string signature() const;
   bool hasAttr(const std::string &attr) const;
+  void parseDecorators();
 
   FunctionStmt *getFunction() override { return this; }
 };

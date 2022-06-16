@@ -64,7 +64,7 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
       defaultValue(std::move(defaultValue)) {
   if (status == 0 && this->type &&
       (this->type->isId("type") || this->type->isId("TypeVar") ||
-       (this->type->getIndex() && this->type->getIndex()->expr->isId("Static"))))
+       isStaticGeneric(this->type)))
     this->status = Generic;
   else
     this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
@@ -466,6 +466,10 @@ std::string InstantiateExpr::toString() const {
       format("instantiate {} {}", typeExpr->toString(), combine(typeParams)));
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
+
+bool isStaticGeneric(const ExprPtr &e) {
+  return e && e->getIndex() && e->getIndex()->expr->isId("Static");
+}
 
 } // namespace ast
 } // namespace codon

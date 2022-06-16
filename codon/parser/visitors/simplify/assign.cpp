@@ -114,7 +114,8 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     val = ctx->findDominatingBinding(e->value);
     if (val && val->isVar() && !ctx->isOuter(val)) {
       return N<UpdateStmt>(transform(lhs, false), transform(rhs, true),
-                           ctx->getBase()->attributes & FLAG_ATOMIC);
+                           ctx->getBase()->attributes &&
+                               ctx->getBase()->attributes->has(Attr::Atomic));
     } else {
       error("variable '{}' cannot be updated", e->value);
     }

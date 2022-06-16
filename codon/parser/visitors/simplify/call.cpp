@@ -9,6 +9,19 @@ using fmt::format;
 
 namespace codon::ast {
 
+/// Transform print statement.
+/// @example
+///   `print a, b` -> `print(a, b)`
+///   `print a, b,` -> `print(a, b, end=' ')`
+void SimplifyVisitor::visit(PrintStmt *stmt) {
+  std::vector<CallExpr::Arg> args;
+  for (auto &i : stmt->items)
+    args.emplace_back(CallExpr::Arg{"", transform(i)});
+  if (stmt->isInline)
+    args.emplace_back(CallExpr::Arg{"end", N<StringExpr>(" ")});
+  resultStmt = N<ExprStmt>(N<CallExpr>(transform(N<IdExpr>("print")), args));
+}
+
 /// Transform calls. The real stuff happens during the type checking.
 /// Here just perform some sanity checks and transform some special calls
 /// (see @c transformSpecialCall for details).

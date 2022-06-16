@@ -287,7 +287,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all
     // statements are executed before the user-provided code.
-    resultStmt = N<SuiteStmt>(std::vector<StmtPtr>{comment, n}, true);
+    resultStmt = N<SuiteStmt>(comment, n);
   } else {
     // Generate import identifier
     std::string importVar = import->second.importVar =
@@ -313,10 +313,8 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
         if (s->getAssign() && s->getAssign()->lhs->getId()) {
           // Global `a = ...`
           auto a = s->getAssign();
-          bool isStatic = a->type && a->type->getIndex() &&
-                          a->type->getIndex()->expr->isId("Static");
           auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal() && !isStatic) {
+          if (val->isVar() && val->isGlobal() && !isStaticGeneric(a->type)) {
             // Register global
             if (!in(ctx->cache->globals, val->canonicalName))
               ctx->cache->globals[val->canonicalName] = nullptr;
