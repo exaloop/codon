@@ -12,7 +12,10 @@ using fmt::format;
 
 namespace codon::ast {
 
+/// Transform class and type definitions, as well as extensions.
+/// See below for details.
 void SimplifyVisitor::visit(ClassStmt *stmt) {
+  // Get root name
   std::string name = stmt->name;
   if (ctx->getBase()->isType()) {
     // If class B is nested within A, it's name is always A.B, never B itself.
@@ -68,8 +71,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     // Auto-detect generics and fields
     autoDeducedInit = autoDeduceMembers(stmt, args);
   } else {
-    // Add all generics.
-    // Generics must be added before parent classes, fields and methods.
+    // Add all generics before parent classes, fields and methods
     for (auto &a : originalAST->args) {
       if (a.status != Param::Generic)
         continue;
@@ -86,7 +88,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                               transformType(a.defaultValue, false), a.status});
     }
   }
-  // Form class reference AST (e.g. Foo, or Foo[T, U] for generic classes)
+  // Form class reference AST (e.g. `Foo`, or `Foo[T, U]` for generic classes)
   for (auto &a : args) {
     if (a.status == Param::Generic) {
       if (!ctx->getBase()->ast->getIndex())
@@ -97,8 +99,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   }
 
   // Collect classes (and their fields) that are to be statically inherited
-  std::vector<ClassStmt *> baseASTs;
-  parseBaseClasses(stmt->baseClasses, baseASTs, args, stmt->attributes);
+  auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
 
   // A ClassStmt will be separated into method-free ClassStmts (that include nested
   // classes) and method FunctionStmts
@@ -132,6 +133,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   if (!stmt->attributes.has(Attr::Extend)) {
     // Now that we are done with arguments, add record type to the context
     if (stmt->attributes.has(Attr::Tuple)) {
+      // Ensure that class binding does not shadow anything.
+      // Class bindings cannot be dominated either
       auto v = ctx->find(name);
       if (v && v->noShadow)
         error("cannot update global/nonlocal");
@@ -149,13 +152,12 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
     ctx->cache->classes[canonicalName].ast->validate();
 
-    // Codegen default magic methods and add them to the final AST.
+    // Codegen default magic methods
     for (auto &m : attr.magics) {
-      fnStmts.push_back(
-          transform(codegenMagic(m, ctx->getBase()->ast.get(), memberArgs,
-                                 stmt->attributes.has(Attr::Tuple))));
+      fnStmts.push_back(transform(codegenMagic(m, ctx->getBase()->ast.get(), memberArgs,
+                                               stmt->attributes.has(Attr::Tuple))));
     }
-    // Add inherited methods.
+    // Add inherited methods
     for (int ai = 0; ai < baseASTs.size(); ai++) {
       for (auto &mm : ctx->cache->classes[baseASTs[ai]->name].methods)
         for (auto &mf : ctx->cache->overloads[mm.second]) {
@@ -183,11 +185,11 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
           }
         }
     }
-    // Add auto-deduced __init__ (if available).
+    // Add auto-deduced __init__ (if available)
     if (autoDeducedInit.first)
       fnStmts.push_back(autoDeducedInit.first);
   }
-  // Add class methods.
+  // Add class methods
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getFunction()) {
       if (sp.get() != autoDeducedInit.second)
@@ -195,7 +197,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
   // After popping context block, record types and nested classes will dissapear.
-  // Store their references and re-add them to the context after popping.
+  // Store their references and re-add them to the context after popping
   std::vector<SimplifyContext::Item> addLater;
   for (auto &c : clsStmts)
     addLater.push_back(ctx->find(c->getClass()->name));
@@ -206,6 +208,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   for (auto &i : addLater)
     ctx->add(ctx->rev(i->canonicalName), i);
 
+  // Extensions are not needed as the cache is already populated
   if (!stmt->attributes.has(Attr::Extend)) {
     auto c = ctx->cache->classes[canonicalName].ast;
     seqassert(c, "not a class AST for {}", canonicalName);
@@ -215,15 +218,21 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   resultStmt = N<SuiteStmt>(clsStmts);
 }
 
-void SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                                       std::vector<ClassStmt *> &baseASTs,
-                                       std::vector<Param> &args, const Attr &attr) {
+/// Parse statically inherited classes.
+/// Returns a list of their ASTs. Also updates the class fields.
+/// @param args Class fields that are to be updated with base classes' fields.
+std::vector<ClassStmt *>
+SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
+                                  std::vector<Param> &args, const Attr &attr) {
+  std::vector<ClassStmt *> asts;
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
-    if (auto i = cls->getId())
+    // Get the base class and generic replacements (e.g., if there is Bar[T],
+    // Bar in Foo(Bar[int]) will have `T = int`)
+    if (auto i = cls->getId()) {
       name = i->value;
-    else if (auto e = cls->getIndex()) {
+    } else if (auto e = cls->getIndex()) {
       if (auto ei = e->expr->getId()) {
         name = ei->value;
         subs = e->index->getTuple() ? e->index->getTuple()->items
@@ -233,16 +242,17 @@ void SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
     name = transformType(N<IdExpr>(name))->getId()->value;
     if (name.empty() || !in(ctx->cache->classes, name))
       error(cls.get(), "invalid base class");
-    baseASTs.push_back(ctx->cache->classes[name].ast.get());
+    asts.push_back(ctx->cache->classes[name].ast.get());
 
-    if (!attr.has(Attr::Tuple) && baseASTs.back()->attributes.has(Attr::Tuple))
+    // Sanity checks
+    if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))
       error("reference classes cannot inherit by-value classes");
-    if (baseASTs.back()->attributes.has(Attr::Internal))
+    if (asts.back()->attributes.has(Attr::Internal))
       error("cannot inherit internal types");
 
-    // TODO: ensure that all generics are _defined in inheritance_
+    // Add generics first
     int si = 0;
-    for (auto &a : baseASTs.back()->args) {
+    for (auto &a : asts.back()->args) {
       if (a.status == Param::Generic) {
         if (si == subs.size())
           error(cls.get(), "wrong number of generics");
@@ -261,14 +271,28 @@ void SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
     if (si != subs.size())
       error(cls.get(), "wrong number of generics");
   }
-  for (auto &ast : baseASTs) {
+  // Add normal fields
+  for (auto &ast : asts) {
     for (auto &a : ast->args) {
       if (a.status == Param::Normal)
         args.emplace_back(Param{a.name, a.type, a.defaultValue});
     }
   }
+  return asts;
 }
 
+/// Find the first __init__ with self parameter and use it to deduce class members.
+/// Each deduced member will be treated as generic.
+/// @example
+///   ```@deduce
+///      class Foo:
+///        def __init__(self):
+///          self.x, self.y = 1, 2```
+///   will result in
+///   ```class Foo[T1, T2]:
+///        x: T1
+///        y: T2```
+/// @return the transformed init and the pointer to the original function.
 std::pair<StmtPtr, FunctionStmt *>
 SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
   std::pair<StmtPtr, FunctionStmt *> init{nullptr, nullptr};
@@ -276,12 +300,14 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
     if (sp && sp->getFunction()) {
       auto f = sp->getFunction();
       if (f->name == "__init__" && !f->args.empty() && f->args[0].name == "self") {
+        // Set up deducedMembers that will be populated during AssignStmt evaluation
         ctx->getBase()->deducedMembers = std::make_shared<std::vector<std::string>>();
-        init = {transform(sp), f};
-        init.first->getFunction()->attributes.set(Attr::RealizeWithoutSelf);
-        ctx->cache->functions[init.first->getFunction()->name].ast->attributes.set(
+        auto transformed = transform(sp);
+        transformed->getFunction()->attributes.set(Attr::RealizeWithoutSelf);
+        ctx->cache->functions[transformed->getFunction()->name].ast->attributes.set(
             Attr::RealizeWithoutSelf);
         int i = 0;
+        // Once done, add arguments
         for (auto &m : *(ctx->getBase()->deducedMembers)) {
           auto varName = ctx->generateCanonicalName(format("T{}", ++i));
           auto memberName = ctx->rev(varName);
@@ -290,12 +316,34 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
           args.emplace_back(Param{m, N<IdExpr>(varName)});
         }
         ctx->getBase()->deducedMembers = nullptr;
-        break;
+        return {transformed, f};
       }
     }
-  return init;
+  return {nullptr, nullptr};
 }
 
+/// Return a list of all statements within a given class suite.
+/// Checks each suite recursively, and assumes that each statement is either
+/// a function, a class or a docstring.
+std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
+  std::vector<StmtPtr> v;
+  if (!s)
+    return v;
+  if (auto sp = s->getSuite()) {
+    for (const auto &ss : sp->stmts)
+      for (const auto &u : getClassMethods(ss))
+        v.push_back(u);
+  } else if (s->getExpr() && s->getExpr()->expr->getString()) {
+    /// Those are doc-strings, ignore them.
+  } else if (!s->getFunction() && !s->getClass()) {
+    error("only function and class definitions are allowed within classes");
+  } else {
+    v.push_back(s);
+  }
+  return v;
+}
+
+/// Extract nested classes and transform them before the main class.
 void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
                                              std::vector<StmtPtr> &clsStmts,
                                              std::vector<StmtPtr> &fnStmts) {
@@ -315,6 +363,16 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
     }
 }
 
+/// Generate a magic method `__op__` for each magic `op`
+/// described by @param typExpr and its arguments.
+/// Currently generate:
+/// @li Constructors: __new__, __init__
+/// @li Utilities: __raw__, __hash__, __repr__
+/// @li Iteration: __iter__, __getitem__, __len__, __contains__
+/// @li Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
+/// @li Pickling: __pickle__, __unpickle__
+/// @li Python: __to_py__, __from_py__
+/// TODO: move to Codon as much as possible
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr,
                                       const std::vector<Param> &args, bool isRecord) {
 #define I(s) N<IdExpr>(s)
@@ -609,24 +667,6 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
                                           N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
-}
-
-std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
-  std::vector<StmtPtr> v;
-  if (!s)
-    return v;
-  if (auto sp = s->getSuite()) {
-    for (const auto &ss : sp->stmts)
-      for (const auto &u : getClassMethods(ss))
-        v.push_back(u);
-  } else if (s->getExpr() && s->getExpr()->expr->getString()) {
-    /// Those are doc-strings, ignore them.
-  } else if (!s->getFunction() && !s->getClass()) {
-    error("only function and class definitions are allowed within classes");
-  } else {
-    v.push_back(s);
-  }
-  return v;
 }
 
 } // namespace codon::ast

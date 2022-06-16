@@ -110,7 +110,7 @@ void TypecheckVisitor::visit(StringExpr *expr) {
 void TypecheckVisitor::visit(IdExpr *expr) {
   if (startswith(expr->value, TYPE_TUPLE)) {
     generateTupleStub(std::stoi(expr->value.substr(7)));
-  } else if (expr->value == "Callable") { // Empty Callable references
+  } else if (expr->value == TYPE_CALLABLE) { // Empty Callable references
     auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
     typ->getLink()->trait = std::make_shared<CallableTrait>(std::vector<TypePtr>{});
     unify(expr->type, typ);
@@ -477,7 +477,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 }
 
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
-  if (expr->typeExpr->getId() && expr->typeExpr->getId()->value == "Callable") {
+  if (expr->typeExpr->isId(TYPE_CALLABLE)) {
     std::vector<TypePtr> types;
     if (expr->typeParams.size() != 2)
       error("invalid Callable type declaration");

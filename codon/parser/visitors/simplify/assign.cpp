@@ -9,11 +9,14 @@ using fmt::format;
 
 namespace codon::ast {
 
+/// Transform walrus (assignment) expression.
+/// @example
+///   `(expr := var)` -> `var = expr; var`
 void SimplifyVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
   StmtPtr s = N<AssignStmt>(clone(expr->var), clone(expr->expr));
   if (ctx->isConditionalExpr)
-    s = transformInScope(s);
+    s = transformConditionalScope(s);
   else
     s = transform(s);
   resultExpr = N<StmtExpr>(std::vector<StmtPtr>{s}, transform(expr->var));

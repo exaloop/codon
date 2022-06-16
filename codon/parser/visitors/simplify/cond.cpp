@@ -32,8 +32,8 @@ void SimplifyVisitor::visit(IfStmt *stmt) {
   // C++ call order is not defined; make sure to transform the conditional first
   auto cond = transform(stmt->cond);
   // Ensure that conditional suites are marked and transformed in their own scope
-  resultStmt = N<IfStmt>(cond, transformInScope(stmt->ifSuite),
-                         transformInScope(stmt->elseSuite));
+  resultStmt = N<IfStmt>(cond, transformConditionalScope(stmt->ifSuite),
+                         transformConditionalScope(stmt->elseSuite));
 }
 
 /// Simplify match statement by transforming it into a series of conditional statements.

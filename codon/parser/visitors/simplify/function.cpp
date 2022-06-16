@@ -173,7 +173,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     auto defaultValue = a.defaultValue;
     if (a.type && defaultValue && defaultValue->getNone()) {
       // Special case: `arg: Callable = None` -> `arg: Callable = NoneType()`
-      if (a.type->getIndex() && a.type->getIndex()->expr->isId("Callable"))
+      if (a.type->getIndex() && a.type->getIndex()->expr->isId(TYPE_CALLABLE))
         defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
       // Special case: `arg: type = None` -> `arg: type = NoneType`
       if (a.type->isId("type") || a.type->isId("TypeVar"))
@@ -230,7 +230,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     } else {
       if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
         ctx->getBase()->captures = &captures;
-      suite = SimplifyVisitor(ctx, preamble).transformInScope(stmt->suite);
+      suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
     }
     ctx->popBlock();
   }

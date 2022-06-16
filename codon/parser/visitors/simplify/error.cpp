@@ -36,7 +36,7 @@ void SimplifyVisitor::visit(AssertStmt *stmt) {
 
 void SimplifyVisitor::visit(TryStmt *stmt) {
   std::vector<TryStmt::Catch> catches;
-  auto suite = transformInScope(stmt->suite);
+  auto suite = transformConditionalScope(stmt->suite);
   for (auto &c : stmt->catches) {
     ctx->addScope();
     auto var = c.var;
@@ -44,10 +44,10 @@ void SimplifyVisitor::visit(TryStmt *stmt) {
       var = ctx->generateCanonicalName(c.var);
       ctx->addVar(c.var, var, c.suite->getSrcInfo());
     }
-    catches.push_back({var, transformType(c.exc), transformInScope(c.suite)});
+    catches.push_back({var, transformType(c.exc), transformConditionalScope(c.suite)});
     ctx->popScope();
   }
-  resultStmt = N<TryStmt>(suite, catches, transformInScope(stmt->finally));
+  resultStmt = N<TryStmt>(suite, catches, transformConditionalScope(stmt->finally));
 }
 
 void SimplifyVisitor::visit(ThrowStmt *stmt) {

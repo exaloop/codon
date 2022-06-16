@@ -58,7 +58,7 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   ctx->addScope();
   ctx->getBase()->loops.push_back({breakVar, ctx->scope, {}});
   cond = transform(cond);
-  StmtPtr whileStmt = N<WhileStmt>(cond, transformInScope(stmt->suite));
+  StmtPtr whileStmt = N<WhileStmt>(cond, transformConditionalScope(stmt->suite));
   ctx->popScope();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
@@ -69,7 +69,7 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     resultStmt = N<SuiteStmt>(resultStmt, N<IfStmt>(transform(N<IdExpr>(breakVar)),
-                                                    transformInScope(stmt->elseSuite)));
+                                                    transformConditionalScope(stmt->elseSuite)));
   }
 }
 
@@ -126,7 +126,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     resultStmt = N<SuiteStmt>(
         assign, resultStmt,
-        N<IfStmt>(transform(N<IdExpr>(breakVar)), transformInScope(stmt->elseSuite)));
+        N<IfStmt>(transform(N<IdExpr>(breakVar)), transformConditionalScope(stmt->elseSuite)));
   }
 }
 

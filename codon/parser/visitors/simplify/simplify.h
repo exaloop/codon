@@ -86,17 +86,12 @@ public:
                            std::shared_ptr<Preamble> preamble,
                            std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
 
-  /// Transform an AST expression node.
-  /// @raise ParserException if a node describes a type (use transformType instead).
+public:
   ExprPtr transform(const ExprPtr &expr) override;
-  /// Transform an AST statement node.
-  StmtPtr transform(const StmtPtr &stmt) override;
-  StmtPtr transformInScope(const StmtPtr &stmt);
-  /// Transform an AST expression node.
   ExprPtr transform(const ExprPtr &expr, bool allowTypes);
-  /// Transform an AST type expression node.
-  /// @raise ParserException if a node does not describe a type (use transform instead).
   ExprPtr transformType(const ExprPtr &expr, bool allowTypeOf = true);
+  StmtPtr transform(const StmtPtr &stmt) override;
+  StmtPtr transformConditionalScope(const StmtPtr &stmt);
 
 private:
   /// These functions just clone a given node (nothing to be simplified).
@@ -152,6 +147,7 @@ public:
   ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &);
 
   /* Assignments (assign.cpp) */
+  void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
   StmtPtr transformAssignment(const ExprPtr &, const ExprPtr &,
                               const ExprPtr & = nullptr, bool = false);
@@ -199,71 +195,31 @@ public:
   std::string *isAttribute(ExprPtr);
 
   /* Classes (class.cpp) */
-  /// Transforms type definitions and extensions.
-  /// This currently consists of adding default magic methods (described in
-  /// codegenMagic() method below).
   void visit(ClassStmt *) override;
   Attr parseClassDecorators(Attr attr, const std::vector<ExprPtr> &decorators);
-  void parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                        std::vector<ClassStmt *> &baseASTs,
-                        std::vector<Param> &hiddenGenerics, const Attr &attr);
+  std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
+                                            std::vector<Param> &hiddenGenerics,
+                                            const Attr &attr);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
                                                        std::vector<Param> &args);
+  std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
   void transformNestedClasses(ClassStmt *stmt, std::vector<StmtPtr> &clsStmts,
                               std::vector<StmtPtr> &fnStmts);
-  /// Generate a magic method __op__ for a type described by typExpr and type arguments
-  /// args.
-  /// Currently able to generate:
-  ///   Constructors: __new__, __init__
-  ///   Utilities: __raw__, __hash__, __repr__
-  ///   Iteration: __iter__, __getitem__, __len__, __contains__
-  //    Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
-  //    Pickling: __pickle__, __unpickle__
-  //    Python: __to_py__, __from_py__
   StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
                        const std::vector<Param> &args, bool isRecord);
 
-////////
-
-  // This expression is transformed during the type-checking stage
-  // because we need raw SliceExpr to handle static tuple slicing.
-  void visit(SliceExpr *) override;
-  /// Disallow ellipsis except in a call expression.
-  void visit(EllipsisExpr *) override;
-
-  /// Transform var := expr to a statement expression:
-  ///   var = expr; var
-  /// Disallowed in dependent parts of short-circuiting expressions
-  /// (i.e. b and b2 in "a and b", "a or b" or "b if cond else b2").
-  void visit(AssignExpr *) override;
-  /// Disallow ranges except in match statements.
-  void visit(RangeExpr *) override;
-  /// Parse all statements in StmtExpr.
+  /* The rest (simplify.cpp) */
   void visit(StmtExpr *) override;
-  /// Transform a star-expression *args to:
-  ///   List(args.__iter__()).
-  /// This function is called only if other nodes (CallExpr, AssignStmt, ListExpr) do
-  /// not handle their star-expression cases.
   void visit(StarExpr *) override;
   void visit(KeywordStarExpr *expr) override;
-
-  /// Transform all statements in a suite and flatten them (unless a suite is a variable
-  /// scope).
+  void visit(RangeExpr *) override;
+  void visit(SliceExpr *) override;
+  void visit(EllipsisExpr *) override;
   void visit(SuiteStmt *) override;
-
   void visit(ExprStmt *) override;
-
-
-
   void visit(CustomStmt *) override;
 
   using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
-
-private:
-  // Return a list of all function statements within a given class suite. Checks each
-  // suite recursively, and assumes that each statement is either a function or a
-  // doc-string.
-  std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
 };
 
 struct AssignReplacementVisitor : ReplaceASTVisitor {

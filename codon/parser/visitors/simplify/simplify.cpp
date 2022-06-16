@@ -23,7 +23,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   auto preamble = std::make_shared<Preamble>();
   seqassertn(cache->module, "cache's module is not set");
 
-  // Load standard library if it has not been loaded.
+  // Load standard library if it has not been loaded
   if (!in(cache->imports, STDLIB_IMPORT)) {
     // Load the internal module
     auto stdlib = std::make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
@@ -102,6 +102,8 @@ StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
   return suite;
 }
 
+/**************************************************************************************/
+
 SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
                                  std::shared_ptr<Preamble> preamble,
                                  std::shared_ptr<std::vector<StmtPtr>> stmts)
@@ -109,56 +111,15 @@ SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
   prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }
 
-StmtPtr SimplifyVisitor::transform(const StmtPtr &stmt) {
-  if (!stmt)
-    return nullptr;
-
-  SimplifyVisitor v(ctx, preamble);
-  v.setSrcInfo(stmt->getSrcInfo());
-  ctx->pushSrcInfo(stmt->getSrcInfo());
-  const_cast<Stmt *>(stmt.get())->accept(v);
-  ctx->popSrcInfo();
-  if (v.resultStmt)
-    v.resultStmt->age = ctx->cache->age;
-  if (!v.prependStmts->empty()) {
-    if (v.resultStmt)
-      v.prependStmts->push_back(v.resultStmt);
-    v.resultStmt = N<SuiteStmt>(*v.prependStmts);
-    v.resultStmt->age = ctx->cache->age;
-  }
-  return v.resultStmt;
-}
-
-StmtPtr SimplifyVisitor::transformInScope(const StmtPtr &stmt) {
-  if (stmt) {
-    ctx->addScope();
-    auto s = transform(stmt);
-    SuiteStmt *suite = s->getSuite();
-    if (!suite) {
-      s = N<SuiteStmt>(s);
-      suite = s->getSuite();
-    }
-    ctx->popScope(&suite->stmts);
-    return s;
-  }
-  return nullptr;
-}
-
-void SimplifyVisitor::defaultVisit(Stmt *s) { resultStmt = s->clone(); }
-
 /**************************************************************************************/
-
-void SimplifyVisitor::visit(SuiteStmt *stmt) {
-  std::vector<StmtPtr> r;
-  for (const auto &s : stmt->stmts)
-    SuiteStmt::flatten(transform(s), r);
-  resultStmt = N<SuiteStmt>(r);
-}
 
 ExprPtr SimplifyVisitor::transform(const ExprPtr &expr) {
   return transform(expr, false);
 }
 
+/// Transform an expression node.
+/// @throw @c ParserException if a node is a type and @param allowTypes is not set
+///        (use @c transformType instead).
 ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
@@ -175,6 +136,10 @@ ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes) {
   return v.resultExpr;
 }
 
+/// Transform a type expression node.
+/// @param allowTypeOf Set if `type()` expressions are allowed. Usually disallowed in
+///                    class/function definitions.
+/// @throw @c ParserException if a node is not a type (use @c transform instead).
 ExprPtr SimplifyVisitor::transformType(const ExprPtr &expr, bool allowTypeOf) {
   auto oldTypeOf = ctx->allowTypeOf;
   ctx->allowTypeOf = allowTypeOf;
@@ -185,9 +150,61 @@ ExprPtr SimplifyVisitor::transformType(const ExprPtr &expr, bool allowTypeOf) {
   return e;
 }
 
+/// Transform a statement node.
+StmtPtr SimplifyVisitor::transform(const StmtPtr &stmt) {
+  if (!stmt)
+    return nullptr;
+
+  SimplifyVisitor v(ctx, preamble);
+  v.setSrcInfo(stmt->getSrcInfo());
+  ctx->pushSrcInfo(stmt->getSrcInfo());
+  const_cast<Stmt *>(stmt.get())->accept(v);
+  ctx->popSrcInfo();
+  if (v.resultStmt)
+    v.resultStmt->age = ctx->cache->age;
+  if (!v.prependStmts->empty()) {
+    // Handle prepends
+    if (v.resultStmt)
+      v.prependStmts->push_back(v.resultStmt);
+    v.resultStmt = N<SuiteStmt>(*v.prependStmts);
+    v.resultStmt->age = ctx->cache->age;
+  }
+  return v.resultStmt;
+}
+
+/// Transform a statement in conditional scope.
+/// Because variables and forward declarations within conditiona scopes can be
+/// added later after the domination analysis, ensure that all such declarations
+/// are prepended.
+StmtPtr SimplifyVisitor::transformConditionalScope(const StmtPtr &stmt) {
+  if (stmt) {
+    ctx->addScope();
+    auto s = transform(stmt);
+    SuiteStmt *suite = s->getSuite();
+    if (!suite) {
+      s = N<SuiteStmt>(s);
+      suite = s->getSuite();
+    }
+    ctx->popScope(&suite->stmts);
+    return s;
+  }
+  return nullptr;
+}
+
 void SimplifyVisitor::defaultVisit(Expr *e) { resultExpr = e->clone(); }
+void SimplifyVisitor::defaultVisit(Stmt *s) { resultStmt = s->clone(); }
 
 /**************************************************************************************/
+
+void SimplifyVisitor::visit(StmtExpr *expr) {
+  std::vector<StmtPtr> stmts;
+  for (auto &s : expr->stmts)
+    stmts.emplace_back(transform(s));
+  auto e = transform(expr->expr);
+  auto s = N<StmtExpr>(stmts, e);
+  s->attributes = expr->attributes;
+  resultExpr = s;
+}
 
 void SimplifyVisitor::visit(StarExpr *expr) {
   resultExpr = N<StarExpr>(transform(expr->what));
@@ -197,11 +214,45 @@ void SimplifyVisitor::visit(KeywordStarExpr *expr) {
   resultExpr = N<KeywordStarExpr>(transform(expr->what));
 }
 
+/// Manually handled in @c CallExpr
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
   error("unexpected ellipsis expression");
 }
 
+/// Only allowed in @c MatchStmt
 void SimplifyVisitor::visit(RangeExpr *expr) {
   error("unexpected pattern range expression");
 }
+
+/// Handled during the type checking
+void SimplifyVisitor::visit(SliceExpr *expr) {
+  resultExpr = N<SliceExpr>(transform(expr->start), transform(expr->stop),
+                            transform(expr->step));
+}
+
+void SimplifyVisitor::visit(SuiteStmt *stmt) {
+  std::vector<StmtPtr> r;
+  for (const auto &s : stmt->stmts)
+    SuiteStmt::flatten(transform(s), r);
+  resultStmt = N<SuiteStmt>(r);
+}
+
+void SimplifyVisitor::visit(ExprStmt *stmt) {
+  resultStmt = N<ExprStmt>(transform(stmt->expr, true));
+}
+
+void SimplifyVisitor::visit(CustomStmt *stmt) {
+  if (stmt->suite) {
+    auto fn = ctx->cache->customBlockStmts.find(stmt->keyword);
+    seqassert(fn != ctx->cache->customBlockStmts.end(), "unknown keyword {}",
+              stmt->keyword);
+    resultStmt = fn->second.second(this, stmt);
+  } else {
+    auto fn = ctx->cache->customExprStmts.find(stmt->keyword);
+    seqassert(fn != ctx->cache->customExprStmts.end(), "unknown keyword {}",
+              stmt->keyword);
+    resultStmt = fn->second(this, stmt);
+  }
+}
+
 } // namespace codon::ast
