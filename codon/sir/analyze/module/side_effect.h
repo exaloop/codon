@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include "codon/sir/analyze/analysis.h"
+#include "codon/sir/util/side_effect.h"
 
 namespace codon {
 namespace ir {
@@ -10,10 +11,11 @@ namespace analyze {
 namespace module {
 
 struct SideEffectResult : public Result {
-  /// mapping of ID to bool indicating whether the node has side effects
-  std::unordered_map<id_t, bool> result;
+  /// mapping of ID to corresponding node's side effect status
+  std::unordered_map<id_t, util::SideEffectStatus> result;
 
-  SideEffectResult(std::unordered_map<id_t, bool> result) : result(std::move(result)) {}
+  SideEffectResult(std::unordered_map<id_t, util::SideEffectStatus> result)
+      : result(std::move(result)) {}
 
   /// @param v the value to check
   /// @return true if the node has side effects (false positives allowed)
@@ -32,7 +34,7 @@ public:
   /// @param globalAssignmentHasSideEffects true if global variable assignment
   /// automatically has side effects
   explicit SideEffectAnalysis(bool globalAssignmentHasSideEffects = true)
-      : Analysis(), globalAssignmentHasSideEffects(globalAssignmentHasSideEffects){};
+      : Analysis(), globalAssignmentHasSideEffects(globalAssignmentHasSideEffects) {}
 
   std::string getKey() const override { return KEY; }
 

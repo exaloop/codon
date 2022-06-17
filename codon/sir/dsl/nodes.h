@@ -5,6 +5,7 @@
 #include "codon/sir/base.h"
 #include "codon/sir/const.h"
 #include "codon/sir/instr.h"
+#include "codon/sir/util/side_effect.h"
 
 namespace codon {
 namespace ir {
@@ -87,8 +88,17 @@ public:
   virtual Value *doClone(util::CloneVisitor &cv) const = 0;
   /// @return the control-flow builder
   virtual std::unique_ptr<codegen::CFBuilder> getCFBuilder() const = 0;
-  /// @return true if this flow has side effects
-  virtual bool hasSideEffect() const { return true; }
+  /// Query this custom node for its side effect properties. If "local"
+  /// is true, then the return value should reflect this node and this
+  /// node alone, otherwise the value should reflect functions containing
+  /// this node in their bodies. For example, a "break" instruction has
+  /// side effects locally, but functions containing "break" might still
+  /// be side effect free, hence the distinction.
+  /// @param local true if result should reflect only this node
+  /// @return this node's side effect status
+  virtual util::SideEffectStatus getSideEffectStatus(bool local = true) const {
+    return util::SideEffectStatus::UNKNOWN;
+  }
 
   /// Format the DSL node.
   /// @param os the output stream
@@ -114,8 +124,17 @@ public:
   virtual Value *doClone(util::CloneVisitor &cv) const = 0;
   /// @return the control-flow builder
   virtual std::unique_ptr<codegen::CFBuilder> getCFBuilder() const = 0;
-  /// @return true if this instruction has side effects
-  virtual bool hasSideEffect() const { return true; }
+  /// Query this custom node for its side effect properties. If "local"
+  /// is true, then the return value should reflect this node and this
+  /// node alone, otherwise the value should reflect functions containing
+  /// this node in their bodies. For example, a "break" instruction has
+  /// side effects locally, but functions containing "break" might still
+  /// be side effect free, hence the distinction.
+  /// @param local true if result should reflect only this node
+  /// @return this node's side effect status
+  virtual util::SideEffectStatus getSideEffectStatus(bool local = true) const {
+    return util::SideEffectStatus::UNKNOWN;
+  }
 
   /// Format the DSL node.
   /// @param os the output stream

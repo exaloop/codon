@@ -165,6 +165,7 @@ set(CODON_HPPFILES
     codon/sir/types/types.h
     codon/sir/util/cloning.h
     codon/sir/util/context.h
+    codon/sir/util/escape.h
     codon/sir/util/format.h
     codon/sir/util/inlining.h
     codon/sir/util/irtools.h
@@ -173,6 +174,7 @@ set(CODON_HPPFILES
     codon/sir/util/operator.h
     codon/sir/util/outlining.h
     codon/sir/util/packs.h
+    codon/sir/util/side_effect.h
     codon/sir/util/visitor.h
     codon/sir/value.h
     codon/sir/var.h
@@ -286,6 +288,7 @@ set(CODON_CPPFILES
     codon/sir/transform/pythonic/str.cpp
     codon/sir/types/types.cpp
     codon/sir/util/cloning.cpp
+    codon/sir/util/escape.cpp
     codon/sir/util/format.cpp
     codon/sir/util/inlining.cpp
     codon/sir/util/irtools.cpp
