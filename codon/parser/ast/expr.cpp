@@ -19,6 +19,7 @@ namespace ast {
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
       done(false), attributes(0) {}
+void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 bool Expr::isType() const { return isTypeExpr; }
@@ -27,7 +28,10 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
     is.insert(findStar(is), "*");
-  return format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
+  auto s = format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
+  // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
+  return s;
+
 }
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
@@ -315,9 +319,18 @@ ACCEPT_IMPL(ChainBinaryExpr, ASTVisitor);
 PipeExpr::Pipe PipeExpr::Pipe::clone() const { return {op, ast::clone(expr)}; }
 
 PipeExpr::PipeExpr(std::vector<PipeExpr::Pipe> items)
-    : Expr(), items(std::move(items)) {}
+    : Expr(), items(std::move(items)) {
+  for (auto &i : this->items) {
+    if (auto call = i.expr->getCall()) {
+      for (auto &a : call->args)
+        if (auto el = a.value->getEllipsis())
+          el->isPipeArg = true;
+    }
+  }
+}
 PipeExpr::PipeExpr(const PipeExpr &expr)
     : Expr(expr), items(ast::clone_nop(expr.items)), inTypes(expr.inTypes) {}
+void PipeExpr::validate() const {}
 std::string PipeExpr::toString() const {
   std::vector<std::string> s;
   for (auto &i : items)
@@ -351,14 +364,18 @@ CallExpr::CallExpr(ExprPtr expr, std::vector<ExprPtr> args)
       this->args.push_back({"", std::move(a)});
   validate();
 }
-void CallExpr::validate() {
+void CallExpr::validate() const {
   bool namesStarted = false;
+  bool foundEllispis = false;
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
         !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
       error(getSrcInfo(), "unnamed argument after a named argument");
     if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
       error(getSrcInfo(), "named star-expressions not allowed");
+    if (a.value->getEllipsis() && foundEllispis)
+      error(getSrcInfo(), "unexpected ellipsis expression");
+    foundEllispis |= bool(a.value->getEllipsis());
     namesStarted |= !a.name.empty();
   }
 }

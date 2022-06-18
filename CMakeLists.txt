@@ -242,13 +242,11 @@ set(CODON_CPPFILES
         codon/parser/visitors/simplify/class.cpp
         codon/parser/visitors/simplify/collections.cpp
         codon/parser/visitors/simplify/cond.cpp
-        codon/parser/visitors/simplify/dot.cpp
         codon/parser/visitors/simplify/function.cpp
         codon/parser/visitors/simplify/access.cpp
         codon/parser/visitors/simplify/import.cpp
         codon/parser/visitors/simplify/loops.cpp
         codon/parser/visitors/simplify/op.cpp
-        codon/parser/visitors/simplify/sugar.cpp
         codon/parser/visitors/simplify/error.cpp
         codon/parser/visitors/translate/translate.cpp
         codon/parser/visitors/translate/translate_ctx.cpp

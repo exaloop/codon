@@ -20,8 +20,20 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   if (captured)
     val = ctx->forceFind(expr->value);
 
+  // Track loop variables to dominate them later. Example:
+  // x = 1
+  // while True:
+  //   if x > 10: break
+  //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
+  if (auto loop = ctx->getBase()->getLoop()) {
+    bool inside = val->scope.size() >= loop->scope.size() &&
+                  val->scope[loop->scope.size() - 1] == loop->scope.back();
+    if (!inside)
+      loop->seenVars.insert(expr->value);
+  }
+
   // Replace the variable with its canonical name
-  resultExpr = N<IdExpr>(val->canonicalName);
+  expr->value = val->canonicalName;
 
   // Mark global as "seen" to prevent later creation of local variables
   // with the same name. Example:
@@ -38,7 +50,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
 
   // Flag the expression as a type expression if it points to a class or a generic
   if (val->isType())
-    resultExpr->markType();
+    expr->markType();
 
   // Variable binding check for variables that are defined within conditional blocks
   if (!val->accessChecked) {
@@ -53,20 +65,8 @@ void SimplifyVisitor::visit(IdExpr *expr) {
       val->accessChecked = true;
     } else {
       // Otherwise, this check must be always called
-      resultExpr = N<StmtExpr>(checkStmt, resultExpr);
+      resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
     }
-  }
-
-  // Track loop variables to dominate them later. Example:
-  // x = 1
-  // while True:
-  //   if x > 10: break
-  //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
-  if (auto loop = ctx->getBase()->getLoop()) {
-    bool inside = val->scope.size() >= loop->scope.size() &&
-                  val->scope[loop->scope.size() - 1] == loop->scope.back();
-    if (!inside)
-      loop->seenVars.insert(expr->value);
   }
 }
 
@@ -78,16 +78,15 @@ void SimplifyVisitor::visit(IdExpr *expr) {
 void SimplifyVisitor::visit(DotExpr *expr) {
   // First flatten the imports:
   // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
-  std::deque<std::string> chain;
+  std::vector<std::string> chain;
   Expr *root = expr;
-  while (auto dot = root->getDot()) {
-    chain.push_front(dot->member);
-    root = dot->expr.get();
-  }
+  for (; root->getDot(); root = root->getDot()->expr.get())
+      chain.push_back(root->getDot()->member);
 
   if (auto id = root->getId()) {
     // Case: a.bar.baz
-    chain.push_front(id->value);
+    chain.push_back(id->value);
+    std::reverse(chain.begin(), chain.end());
     auto p = getImport(chain);
 
     if (p.second->getModule() == ctx->getModule() && p.first == 1) {
@@ -101,7 +100,7 @@ void SimplifyVisitor::visit(DotExpr *expr) {
       resultExpr = N<DotExpr>(resultExpr, chain[i]);
   } else {
     // Case: a[x].foo.bar
-    resultExpr = N<DotExpr>(transform(expr->expr, true), expr->member);
+    transform(expr->expr, true);
   }
 }
 
@@ -174,7 +173,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
 
 /// Check if a access chain (a.b.c.d...) contains an import or class prefix.
 std::pair<size_t, SimplifyContext::Item>
-SimplifyVisitor::getImport(const std::deque<std::string> &chain) {
+SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
   size_t importEnd = 0;
   std::string importName;
 

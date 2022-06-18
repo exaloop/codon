@@ -34,8 +34,16 @@ public:
       const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
   /// All of these are non-const in TypeCheck visitor.
-  ExprPtr transform(const ExprPtr &e) override;
-  StmtPtr transform(const StmtPtr &s) override;
+  ExprPtr transform(ExprPtr &e) override;
+  ExprPtr transform(const ExprPtr &expr) override {
+    auto e = expr;
+    return transform(e);
+  }
+  StmtPtr transform(StmtPtr &s) override;
+  StmtPtr transform(const StmtPtr &stmt) override {
+    auto s = stmt;
+    return transform(s);
+  }
   ExprPtr transform(ExprPtr &e, bool allowTypes, bool allowVoid = false,
                     bool disableActivation = false);
   ExprPtr transformType(ExprPtr &expr, bool disableActivation = false);

@@ -16,15 +16,14 @@ namespace ast {
 
 using namespace types;
 
-StmtPtr TypecheckVisitor::transform(const StmtPtr &stmt_) {
-  auto &stmt = const_cast<StmtPtr &>(stmt_);
+StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   if (!stmt || stmt->done)
     return stmt;
   TypecheckVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   auto oldAge = ctx->age;
   stmt->age = ctx->age = std::max(stmt->age, oldAge);
-  ctx->pushSrcInfo(stmt_->getSrcInfo());
+  ctx->pushSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
   ctx->popSrcInfo();
   ctx->age = oldAge;

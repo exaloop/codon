@@ -14,7 +14,7 @@ namespace codon::ast {
 ///   `(expr := var)` -> `var = expr; var`
 void SimplifyVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
-  StmtPtr s = N<AssignStmt>(clone(expr->var), clone(expr->expr));
+  StmtPtr s = N<AssignStmt>(clone(expr->var), expr->expr);
   if (ctx->isConditionalExpr)
     s = transformConditionalScope(s);
   else
@@ -45,14 +45,16 @@ void SimplifyVisitor::visit(AssignStmt *stmt) {
 ///   `del a`    -> `a = type(a)()` and remove `a` from the context
 ///   `del a[x]` -> `a.__delitem__(x)`
 void SimplifyVisitor::visit(DelStmt *stmt) {
-  if (auto eix = stmt->expr->getIndex()) {
-    resultStmt = N<ExprStmt>(transform(
-        N<CallExpr>(N<DotExpr>(clone(eix->expr), "__delitem__"), clone(eix->index))));
+  if (auto idx = stmt->expr->getIndex()) {
+    resultStmt = N<ExprStmt>(
+        transform(N<CallExpr>(N<DotExpr>(idx->expr, "__delitem__"), idx->index)));
   } else if (auto ei = stmt->expr->getId()) {
     // Assign `a` to `type(a)()` to mark it for deletion
     resultStmt = N<AssignStmt>(
-        transform(stmt->expr),
+        transform(clone(stmt->expr)),
         transform(N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)))));
+    resultStmt->getAssign()->setUpdate();
+
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->value);
     if (!val || ctx->scope != val->scope)
@@ -69,25 +71,26 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
 ///   `a.x = b`     -> @c AssignMemberStmt
 ///   `a: type` = b -> @c AssignStmt
 ///   `a = b`       -> @c AssignStmt or @c UpdateStmt (see below)
-StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &rhs,
-                                             const ExprPtr &type, bool mustExist) {
+StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr type,
+                                             bool mustExist) {
   if (auto idx = lhs->getIndex()) {
     // Case: a[x] = b
     seqassert(!type, "unexpected type annotation");
-    return transform(N<ExprStmt>(N<CallExpr>(
-        N<DotExpr>(clone(idx->expr), "__setitem__"), clone(idx->index), rhs->clone())));
+    return transform(N<ExprStmt>(
+        N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, rhs)));
   }
 
   if (auto dot = lhs->getDot()) {
     // Case: a.x = b
     seqassert(!type, "unexpected type annotation");
-    auto l = transform(dot->expr);
+    transform(dot->expr);
     // If we are deducing class members, check if we can deduce a member from this
     // assignment
     auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers : nullptr;
-    if (deduced && l->isId(ctx->getBase()->selfName) && !in(*deduced, dot->member))
+    if (deduced && dot->expr->isId(ctx->getBase()->selfName) &&
+        !in(*deduced, dot->member))
       deduced->push_back(dot->member);
-    return N<AssignMemberStmt>(l, dot->member, transform(rhs, false));
+    return N<AssignMemberStmt>(dot->expr, dot->member, transform(rhs));
   }
 
   // Case: a (: t) = b
@@ -106,8 +109,8 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
     error(ctx->seenGlobalIdentifiers[ctx->getBaseName()][e->value],
           "local variable '{}' referenced before assignment", e->value);
 
-  ExprPtr t = transformType(type, false);
-  auto r = transform(rhs, true);
+  transformType(type, false);
+  transform(rhs, true);
 
   auto val = ctx->find(e->value);
   // Make sure that existing values that cannot be shadowed (e.g. imported globals) are
@@ -116,7 +119,7 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
   if (mustExist) {
     val = ctx->findDominatingBinding(e->value);
     if (val && val->isVar() && !ctx->isOuter(val)) {
-      auto s = N<AssignStmt>(transform(lhs, false), transform(rhs, true));
+      auto s = N<AssignStmt>(transform(lhs, false), rhs);
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
         s->setAtomicUpdate();
       else
@@ -129,12 +132,12 @@ StmtPtr SimplifyVisitor::transformAssignment(const ExprPtr &lhs, const ExprPtr &
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
-  if (r && r->isType()) {
+  if (rhs && rhs->isType()) {
     ctx->addType(e->value, canonical, lhs->getSrcInfo());
   } else {
     ctx->addVar(e->value, canonical, lhs->getSrcInfo());
   }
-  return N<AssignStmt>(N<IdExpr>(canonical), r, t);
+  return N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
 }
 
 /// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
@@ -161,17 +164,17 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
       leftSide.push_back(i);
   } else {
     // Case: simple assignment (a = b, a.x = b, or a[x] = b)
-    stmts.push_back(transformAssignment(lhs, rhs));
+    stmts.push_back(transformAssignment(clone(lhs), clone(rhs)));
     return;
   }
 
   // Prepare the right-side expression
-  auto srcPos = rhs.get();
+  auto srcPos = rhs->getSrcInfo();
   if (!rhs->getId()) {
     // Store any non-trivial right-side expression into a variable
     auto var = ctx->cache->getTemporaryVar("assign");
-    ExprPtr newRhs = Nx<IdExpr>(srcPos, var);
-    stmts.push_back(transformAssignment(newRhs, rhs));
+    ExprPtr newRhs = N<IdExpr>(srcPos, var);
+    stmts.push_back(transformAssignment(newRhs, clone(rhs)));
     rhs = newRhs;
   }
 
@@ -181,21 +184,21 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
     if (leftSide[st]->getStar())
       break;
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide = Nx<IndexExpr>(srcPos, rhs->clone(), Nx<IntExpr>(srcPos, st));
+    auto rightSide = N<IndexExpr>(srcPos, clone(rhs), N<IntExpr>(srcPos, st));
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
     unpackAssignments(leftSide[st], rightSide, stmts);
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && leftSide[st]->getStar()) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    auto rightSide = Nx<IndexExpr>(
-        srcPos, rhs->clone(),
-        Nx<SliceExpr>(srcPos, Nx<IntExpr>(srcPos, st),
-                      // this slice is either [st:] or [st:-lhs_len + st + 1]
-                      leftSide.size() == st + 1
-                          ? nullptr
-                          : Nx<IntExpr>(srcPos, -leftSide.size() + st + 1),
-                      nullptr));
+    auto rightSide = N<IndexExpr>(
+        srcPos, clone(rhs),
+        N<SliceExpr>(srcPos, N<IntExpr>(srcPos, st),
+                     // this slice is either [st:] or [st:-lhs_len + st + 1]
+                     leftSide.size() == st + 1
+                         ? nullptr
+                         : N<IntExpr>(srcPos, -leftSide.size() + st + 1),
+                     nullptr));
     unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
@@ -203,8 +206,8 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
     for (; st < leftSide.size(); st++) {
       if (leftSide[st]->getStar())
         error(leftSide[st], "multiple unpack expressions");
-      rightSide = Nx<IndexExpr>(srcPos, rhs->clone(),
-                                Nx<IntExpr>(srcPos, -int(leftSide.size() - st)));
+      rightSide = N<IndexExpr>(srcPos, clone(rhs),
+                               N<IntExpr>(srcPos, -int(leftSide.size() - st)));
       unpackAssignments(leftSide[st], rightSide, stmts);
     }
   }

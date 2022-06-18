@@ -89,7 +89,13 @@ template <typename TE, typename TS>
  */
 struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
   virtual TE transform(const std::shared_ptr<Expr> &expr) = 0;
+  virtual TE transform(std::shared_ptr<Expr> &expr) {
+    return transform(static_cast<const std::shared_ptr<Expr> &>(expr));
+  }
   virtual TS transform(const std::shared_ptr<Stmt> &stmt) = 0;
+  virtual TS transform(std::shared_ptr<Stmt> &stmt) {
+    return transform(static_cast<const std::shared_ptr<Stmt> &>(stmt));
+  }
 
   /// Convenience method that transforms a vector of nodes.
   template <typename T> auto transform(const std::vector<T> &ts) {
@@ -99,19 +105,19 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
     return r;
   }
 
+  /// Convenience method that constructs a clone of a node.
+  template <typename Tn> auto N(const Tn &ptr) { return std::make_shared<Tn>(ptr); }
+  /// Convenience method that constructs a node.
+  /// @param s source location.
+  template <typename Tn, typename... Ts> auto N(codon::SrcInfo s, Ts &&...args) {
+    auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
+    t->setSrcInfo(s);
+    return t;
+  }
   /// Convenience method that constructs a node with the visitor's source location.
   template <typename Tn, typename... Ts> auto N(Ts &&...args) {
     auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(getSrcInfo());
-    return t;
-  }
-
-  /// Convenience method that constructs a node.
-  /// @param s source location.
-  template <typename Tn, typename... Ts>
-  auto Nx(const codon::SrcObject *s, Ts &&...args) {
-    auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-    t->setSrcInfo(s->getSrcInfo());
     return t;
   }
 
@@ -132,71 +138,211 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
     throw exc::ParserException(
         fmt::format("INTERNAL: {}", fmt::format(format, args...), getSrcInfo()));
   }
-};
 
-/**
- * Replacement AST visitor.
- * Replaces expressions with transformed values.
- */
-struct ReplaceASTVisitor : public ASTVisitor {
-  virtual void transform(std::shared_ptr<Expr> &expr) = 0;
-  virtual void transform(std::shared_ptr<Stmt> &stmt) = 0;
-
-  void visit(NoneExpr *) override;
-  void visit(BoolExpr *) override;
-  void visit(IntExpr *) override;
-  void visit(FloatExpr *) override;
-  void visit(StringExpr *) override;
-  void visit(IdExpr *) override;
-  void visit(StarExpr *) override;
-  void visit(KeywordStarExpr *) override;
-  void visit(TupleExpr *) override;
-  void visit(ListExpr *) override;
-  void visit(SetExpr *) override;
-  void visit(DictExpr *) override;
-  void visit(GeneratorExpr *) override;
-  void visit(DictGeneratorExpr *) override;
-  void visit(IfExpr *) override;
-  void visit(UnaryExpr *) override;
-  void visit(BinaryExpr *) override;
-  void visit(ChainBinaryExpr *) override;
-  void visit(PipeExpr *) override;
-  void visit(IndexExpr *) override;
-  void visit(CallExpr *) override;
-  void visit(DotExpr *) override;
-  void visit(SliceExpr *) override;
-  void visit(EllipsisExpr *) override;
-  void visit(LambdaExpr *) override;
-  void visit(YieldExpr *) override;
-  void visit(AssignExpr *) override;
-  void visit(RangeExpr *) override;
-  void visit(InstantiateExpr *) override;
-  void visit(StmtExpr *) override;
-
-  void visit(AssignMemberStmt *) override;
-  void visit(SuiteStmt *) override;
-  void visit(BreakStmt *) override;
-  void visit(ContinueStmt *) override;
-  void visit(ExprStmt *) override;
-  void visit(AssignStmt *) override;
-  void visit(DelStmt *) override;
-  void visit(PrintStmt *) override;
-  void visit(ReturnStmt *) override;
-  void visit(YieldStmt *) override;
-  void visit(AssertStmt *) override;
-  void visit(WhileStmt *) override;
-  void visit(ForStmt *) override;
-  void visit(IfStmt *) override;
-  void visit(MatchStmt *) override;
-  void visit(ImportStmt *) override;
-  void visit(TryStmt *) override;
-  void visit(GlobalStmt *) override;
-  void visit(ThrowStmt *) override;
-  void visit(FunctionStmt *) override;
-  void visit(ClassStmt *) override;
-  void visit(YieldFromStmt *) override;
-  void visit(WithStmt *) override;
-  void visit(CustomStmt *) override;
+public:
+  virtual void visit(NoneExpr *expr) override {}
+  virtual void visit(BoolExpr *expr) override {}
+  virtual void visit(IntExpr *expr) override {}
+  virtual void visit(FloatExpr *expr) override {}
+  virtual void visit(StringExpr *expr) override {}
+  virtual void visit(IdExpr *expr) override {}
+  virtual void visit(StarExpr *expr) override { transform(expr->what); }
+  virtual void visit(KeywordStarExpr *expr) override { transform(expr->what); }
+  virtual void visit(TupleExpr *expr) override {
+    for (auto &i : expr->items)
+      transform(i);
+  }
+  virtual void visit(ListExpr *expr) override {
+    for (auto &i : expr->items)
+      transform(i);
+  }
+  virtual void visit(SetExpr *expr) override {
+    for (auto &i : expr->items)
+      transform(i);
+  }
+  virtual void visit(DictExpr *expr) override {
+    for (auto &i : expr->items) {
+      transform(i.key);
+      transform(i.value);
+    }
+  }
+  virtual void visit(GeneratorExpr *expr) override {
+    transform(expr->expr);
+    for (auto &l : expr->loops) {
+      transform(l.vars);
+      transform(l.gen);
+      for (auto &c : l.conds)
+        transform(c);
+    }
+  }
+  virtual void visit(DictGeneratorExpr *expr) override {
+    transform(expr->key);
+    transform(expr->expr);
+    for (auto &l : expr->loops) {
+      transform(l.vars);
+      transform(l.gen);
+      for (auto &c : l.conds)
+        transform(c);
+    }
+  }
+  virtual void visit(IfExpr *expr) override {
+    transform(expr->cond);
+    transform(expr->ifexpr);
+    transform(expr->elsexpr);
+  }
+  virtual void visit(UnaryExpr *expr) override { transform(expr->expr); }
+  virtual void visit(BinaryExpr *expr) override {
+    transform(expr->lexpr);
+    transform(expr->rexpr);
+  }
+  virtual void visit(ChainBinaryExpr *expr) override {
+    for (auto &e : expr->exprs)
+      transform(e.second);
+  }
+  virtual void visit(PipeExpr *expr) override {
+    for (auto &e : expr->items)
+      transform(e.expr);
+  }
+  virtual void visit(IndexExpr *expr) override {
+    transform(expr->expr);
+    transform(expr->index);
+  }
+  virtual void visit(CallExpr *expr) override {
+    transform(expr->expr);
+    for (auto &a : expr->args)
+      transform(a.value);
+  }
+  virtual void visit(DotExpr *expr) override { transform(expr->expr); }
+  virtual void visit(SliceExpr *expr) override {
+    transform(expr->start);
+    transform(expr->stop);
+    transform(expr->step);
+  }
+  virtual void visit(EllipsisExpr *expr) override {}
+  virtual void visit(LambdaExpr *expr) override { transform(expr->expr); }
+  virtual void visit(YieldExpr *expr) override {}
+  virtual void visit(AssignExpr *expr) override {
+    transform(expr->var);
+    transform(expr->expr);
+  }
+  virtual void visit(RangeExpr *expr) override {
+    transform(expr->start);
+    transform(expr->stop);
+  }
+  virtual void visit(InstantiateExpr *expr) override {
+    transform(expr->typeExpr);
+    for (auto &e : expr->typeParams)
+      transform(e);
+  }
+  virtual void visit(StmtExpr *expr) override {
+    for (auto &s : expr->stmts)
+      transform(s);
+    transform(expr->expr);
+  }
+  virtual void visit(SuiteStmt *stmt) override {
+    for (auto &s : stmt->stmts)
+      transform(s);
+  }
+  virtual void visit(BreakStmt *stmt) override {}
+  virtual void visit(ContinueStmt *stmt) override {}
+  virtual void visit(ExprStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(AssignStmt *stmt) override {
+    transform(stmt->lhs);
+    transform(stmt->rhs);
+    transform(stmt->type);
+  }
+  virtual void visit(AssignMemberStmt *stmt) override {
+    transform(stmt->lhs);
+    transform(stmt->rhs);
+  }
+  virtual void visit(DelStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(PrintStmt *stmt) override {
+    for (auto &e : stmt->items)
+      transform(e);
+  }
+  virtual void visit(ReturnStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(YieldStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(AssertStmt *stmt) override {
+    transform(stmt->expr);
+    transform(stmt->message);
+  }
+  virtual void visit(WhileStmt *stmt) override {
+    transform(stmt->cond);
+    transform(stmt->suite);
+    transform(stmt->elseSuite);
+  }
+  virtual void visit(ForStmt *stmt) override {
+    transform(stmt->var);
+    transform(stmt->iter);
+    transform(stmt->suite);
+    transform(stmt->elseSuite);
+    transform(stmt->decorator);
+    for (auto &a : stmt->ompArgs)
+      transform(a.value);
+  }
+  virtual void visit(IfStmt *stmt) override {
+    transform(stmt->cond);
+    transform(stmt->ifSuite);
+    transform(stmt->elseSuite);
+  }
+  virtual void visit(MatchStmt *stmt) override {
+    transform(stmt->what);
+    for (auto &m : stmt->cases) {
+      transform(m.pattern);
+      transform(m.guard);
+      transform(m.suite);
+    }
+  }
+  virtual void visit(ImportStmt *stmt) override {
+    transform(stmt->from);
+    transform(stmt->what);
+    for (auto &a : stmt->args) {
+      transform(a.type);
+      transform(a.defaultValue);
+    }
+    transform(stmt->ret);
+  }
+  virtual void visit(TryStmt *stmt) override {
+    transform(stmt->suite);
+    for (auto &a : stmt->catches) {
+      transform(a.exc);
+      transform(a.suite);
+    }
+    transform(stmt->finally);
+  }
+  virtual void visit(GlobalStmt *stmt) override {}
+  virtual void visit(ThrowStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(FunctionStmt *stmt) override {
+    transform(stmt->ret);
+    for (auto &a : stmt->args) {
+      transform(a.type);
+      transform(a.defaultValue);
+    }
+    transform(stmt->suite);
+    for (auto &d : stmt->decorators)
+      transform(d);
+  }
+  virtual void visit(ClassStmt *stmt) override {
+    for (auto &a : stmt->args) {
+      transform(a.type);
+      transform(a.defaultValue);
+    }
+    transform(stmt->suite);
+    for (auto &d : stmt->decorators)
+      transform(d);
+    for (auto &d : stmt->baseClasses)
+      transform(d);
+  }
+  virtual void visit(YieldFromStmt *stmt) override { transform(stmt->expr); }
+  virtual void visit(WithStmt *stmt) override {
+    for (auto &a : stmt->items)
+      transform(a);
+    transform(stmt->suite);
+  }
+  virtual void visit(CustomStmt *stmt) override {
+    transform(stmt->expr);
+    transform(stmt->suite);
+  }
 };
 
 } // namespace ast

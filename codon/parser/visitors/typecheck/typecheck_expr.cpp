@@ -19,8 +19,8 @@ namespace ast {
 
 using namespace types;
 
-ExprPtr TypecheckVisitor::transform(const ExprPtr &expr) {
-  return transform(const_cast<ExprPtr &>(expr), false);
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
+  return transform(expr, false);
 }
 
 ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVoid,
@@ -865,7 +865,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(
           N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
     } else {
-      // For debugging purposes: ctx->findMethod(typ->name, expr->member);
+      // For debugging purposes:
+      ctx->findMethod(typ->name, expr->member);
       error("cannot find '{}' in {}", expr->member, typ->toString());
     }
   }

@@ -16,6 +16,12 @@ namespace codon::ast {
 
 using namespace types;
 
+/// Simplify an AST node. Load standard library if needed.
+/// @param cache     Pointer to the shared cache ( @c Cache )
+/// @param file      Filename to be used for error reporting
+/// @param barebones Use the bare-bones standard library for faster testing
+/// @param defines   User-defined static values (typically passed as `codon run -DX=Y ...`).
+///                  Each value is passed as a string.
 StmtPtr
 SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
@@ -25,22 +31,23 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
 
   // Load standard library if it has not been loaded
   if (!in(cache->imports, STDLIB_IMPORT)) {
-    // Load the internal module
+    // Load the internal.__init__
     auto stdlib = std::make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
     auto stdlibPath =
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     const std::string initFile = "__init__.codon";
     if (!stdlibPath || !endswith(stdlibPath->path, initFile))
       ast::error("cannot load standard library");
-    if (barebones)
+
+    /// Use __init_test__ for faster testing (e.g., #%% name,barebones)
+    /// TODO: get rid of it one day...
+    if (barebones) {
       stdlibPath->path =
           stdlibPath->path.substr(0, stdlibPath->path.size() - initFile.size()) +
           "__init_test__.codon";
+    }
     stdlib->setFilename(stdlibPath->path);
     cache->imports[STDLIB_IMPORT] = {stdlibPath->path, stdlib};
-
-    // This code must be placed in a preamble (these are not POD types but are
-    // referenced by the various preamble Function.N and Tuple.N stubs)
     stdlib->isStdlibLoading = true;
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     // Load the standard library
@@ -50,10 +57,11 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
             .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
 
-    // The whole standard library has the age of zero to allow back-references.
+    // The whole standard library has the age of zero to allow back-references
     cache->age++;
   }
 
+  // Set up the context and the cache
   auto ctx = std::make_shared<SimplifyContext>(file, cache);
   cache->imports[file].filename = file;
   cache->imports[file].ctx = ctx;
@@ -61,13 +69,16 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
 
+  // Prepare the code
   auto suite = std::make_shared<SuiteStmt>();
   for (auto &d : defines) {
+    // Load compile-time defines (e.g., codon run -DFOO=1 ...)
     suite->stmts.push_back(std::make_shared<AssignStmt>(
         std::make_shared<IdExpr>(d.first), std::make_shared<IntExpr>(d.second),
         std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
                                     std::make_shared<IdExpr>("int"))));
   }
+  // Set up __name__
   suite->stmts.push_back(std::make_shared<AssignStmt>(
       std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
   suite->stmts.push_back(node);
@@ -75,6 +86,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
 
   suite = std::make_shared<SuiteStmt>();
   suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
+  // Add dominated assignment declarations
   if (in(ctx->scopeStmts, ctx->scope.back()))
     suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
                         ctx->scopeStmts[ctx->scope.back()].end());
@@ -82,6 +94,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   return suite;
 }
 
+/// Simplify an AST node. Assumes that the standard library is loaded.
 StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
                                const StmtPtr &node, const std::string &file,
                                int atAge) {
@@ -112,107 +125,96 @@ SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
 
 /**************************************************************************************/
 
-ExprPtr SimplifyVisitor::transform(const ExprPtr &expr) {
-  return transform(expr, false);
-}
+ExprPtr SimplifyVisitor::transform(ExprPtr &expr) { return transform(expr, false); }
 
 /// Transform an expression node.
 /// @throw @c ParserException if a node is a type and @param allowTypes is not set
 ///        (use @c transformType instead).
-ExprPtr SimplifyVisitor::transform(const ExprPtr &expr, bool allowTypes) {
+ExprPtr SimplifyVisitor::transform(ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
   SimplifyVisitor v(ctx, preamble);
   v.prependStmts = prependStmts;
   v.setSrcInfo(expr->getSrcInfo());
   ctx->pushSrcInfo(expr->getSrcInfo());
-  const_cast<Expr *>(expr.get())->accept(v);
+  expr->accept(v);
   ctx->popSrcInfo();
-  if (!allowTypes && v.resultExpr && v.resultExpr->isType())
-    error("unexpected type expression");
-  if (v.resultExpr)
+  if (v.resultExpr) {
     v.resultExpr->attributes |= expr->attributes;
-  return v.resultExpr;
+    expr = v.resultExpr;
+  }
+  if (!allowTypes && expr && expr->isType())
+    error("unexpected type expression");
+  return expr;
 }
 
 /// Transform a type expression node.
 /// @param allowTypeOf Set if `type()` expressions are allowed. Usually disallowed in
 ///                    class/function definitions.
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
-ExprPtr SimplifyVisitor::transformType(const ExprPtr &expr, bool allowTypeOf) {
+ExprPtr SimplifyVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
   auto oldTypeOf = ctx->allowTypeOf;
   ctx->allowTypeOf = allowTypeOf;
-  auto e = transform(expr, true);
+  transform(expr, true);
   ctx->allowTypeOf = oldTypeOf;
-  if (e && !e->isType())
+  if (expr && !expr->isType())
     error("expected type expression");
-  return e;
+  return expr;
 }
 
 /// Transform a statement node.
-StmtPtr SimplifyVisitor::transform(const StmtPtr &stmt) {
+StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
   if (!stmt)
     return nullptr;
 
   SimplifyVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
   ctx->pushSrcInfo(stmt->getSrcInfo());
-  const_cast<Stmt *>(stmt.get())->accept(v);
+  stmt->accept(v);
   ctx->popSrcInfo();
   if (v.resultStmt)
-    v.resultStmt->age = ctx->cache->age;
+    stmt = v.resultStmt;
+  stmt->age = ctx->cache->age;
   if (!v.prependStmts->empty()) {
     // Handle prepends
-    if (v.resultStmt)
-      v.prependStmts->push_back(v.resultStmt);
-    v.resultStmt = N<SuiteStmt>(*v.prependStmts);
-    v.resultStmt->age = ctx->cache->age;
+    if (stmt)
+      v.prependStmts->push_back(stmt);
+    stmt = N<SuiteStmt>(*v.prependStmts);
+    stmt->age = ctx->cache->age;
   }
-  return v.resultStmt;
+  return stmt;
 }
 
 /// Transform a statement in conditional scope.
 /// Because variables and forward declarations within conditiona scopes can be
 /// added later after the domination analysis, ensure that all such declarations
 /// are prepended.
-StmtPtr SimplifyVisitor::transformConditionalScope(const StmtPtr &stmt) {
+StmtPtr SimplifyVisitor::transformConditionalScope(StmtPtr &stmt) {
   if (stmt) {
     ctx->addScope();
-    auto s = transform(stmt);
-    SuiteStmt *suite = s->getSuite();
+    transform(stmt);
+    SuiteStmt *suite = stmt->getSuite();
     if (!suite) {
-      s = N<SuiteStmt>(s);
-      suite = s->getSuite();
+      stmt = N<SuiteStmt>(stmt);
+      suite = stmt->getSuite();
     }
     ctx->popScope(&suite->stmts);
-    return s;
+    return stmt;
   }
-  return nullptr;
+  return stmt = nullptr;
 }
-
-void SimplifyVisitor::defaultVisit(Expr *e) { resultExpr = e->clone(); }
-
-void SimplifyVisitor::defaultVisit(Stmt *s) { resultStmt = s->clone(); }
 
 /**************************************************************************************/
 
 void SimplifyVisitor::visit(StmtExpr *expr) {
-  std::vector<StmtPtr> stmts;
   for (auto &s : expr->stmts)
-    stmts.emplace_back(transform(s));
-  auto e = transform(expr->expr);
-  auto s = N<StmtExpr>(stmts, e);
-  s->attributes = expr->attributes;
-  resultExpr = s;
+    transform(s);
+  transform(expr->expr);
 }
 
-void SimplifyVisitor::visit(StarExpr *expr) {
-  resultExpr = N<StarExpr>(transform(expr->what));
-}
+void SimplifyVisitor::visit(StarExpr *expr) { transform(expr->what); }
 
-void SimplifyVisitor::visit(KeywordStarExpr *expr) {
-  resultExpr = N<KeywordStarExpr>(transform(expr->what));
-}
+void SimplifyVisitor::visit(KeywordStarExpr *expr) { transform(expr->what); }
 
 /// Manually handled in @c CallExpr
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
@@ -226,20 +228,18 @@ void SimplifyVisitor::visit(RangeExpr *expr) {
 
 /// Handled during the type checking
 void SimplifyVisitor::visit(SliceExpr *expr) {
-  resultExpr = N<SliceExpr>(transform(expr->start), transform(expr->stop),
-                            transform(expr->step));
+  transform(expr->start);
+  transform(expr->stop);
+  transform(expr->step);
 }
 
 void SimplifyVisitor::visit(SuiteStmt *stmt) {
-  std::vector<StmtPtr> r;
-  for (const auto &s : stmt->stmts)
-    SuiteStmt::flatten(transform(s), r);
-  resultStmt = N<SuiteStmt>(r);
+  for (auto &s : stmt->stmts)
+    transform(s);
+  resultStmt = N<SuiteStmt>(stmt->stmts); // needed for flattening
 }
 
-void SimplifyVisitor::visit(ExprStmt *stmt) {
-  resultStmt = N<ExprStmt>(transform(stmt->expr, true));
-}
+void SimplifyVisitor::visit(ExprStmt *stmt) { transform(stmt->expr, true); }
 
 void SimplifyVisitor::visit(CustomStmt *stmt) {
   if (stmt->suite) {

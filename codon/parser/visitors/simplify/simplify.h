@@ -62,22 +62,9 @@ private:
   StmtPtr resultStmt;
 
 public:
-  /// Static method that applies SimplifyStage on a given AST node.
-  /// Loads standard library if needed.
-  /// @param cache Pointer to the shared transformation cache.
-  /// @param file Filename of a AST node.
-  /// @param barebones Set if a bare-bones standard library is used during testing.
-  /// @param defines
-  ///        User-defined static values (typically passed via seqc -DX=Y).
-  ///        Each value is passed as a string (integer part is ignored).
-  ///        The method will replace this map with a map that links canonical names
-  ///        to their string and integer values.
   static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones = false);
-
-  /// Static method that applies SimplifyStage on a given AST node after the standard
-  /// library was loaded.
   static StmtPtr apply(std::shared_ptr<SimplifyContext> cache, const StmtPtr &node,
                        const std::string &file, int atAge = -1);
 
@@ -87,16 +74,25 @@ public:
                            std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
 
 public:
-  ExprPtr transform(const ExprPtr &expr) override;
-  ExprPtr transform(const ExprPtr &expr, bool allowTypes);
-  ExprPtr transformType(const ExprPtr &expr, bool allowTypeOf = true);
-  StmtPtr transform(const StmtPtr &stmt) override;
-  StmtPtr transformConditionalScope(const StmtPtr &stmt);
-
-private:
-  /// These functions just clone a given node (nothing to be simplified).
-  void defaultVisit(Expr *e) override;
-  void defaultVisit(Stmt *s) override;
+  ExprPtr transform(ExprPtr &expr) override;
+  ExprPtr transform(const ExprPtr &expr) override {
+    auto e = expr;
+    return transform(e);
+  }
+  ExprPtr transform(ExprPtr &expr, bool allowTypes);
+  ExprPtr transform(ExprPtr &&expr, bool allowTypes) {
+    return transform(expr, allowTypes);
+  }
+  ExprPtr transformType(ExprPtr &expr, bool allowTypeOf = true);
+  ExprPtr transformType(ExprPtr &&expr, bool allowTypeOf = true) {
+    return transformType(expr, allowTypeOf);
+  }
+  StmtPtr transform(StmtPtr &stmt) override;
+  StmtPtr transform(const StmtPtr &stmt) override {
+    auto s = stmt;
+    return transform(s);
+  }
+  StmtPtr transformConditionalScope(StmtPtr &stmt);
 
 public:
   /* Basic type expressions (basic.cpp) */
@@ -112,7 +108,7 @@ public:
   void visit(IdExpr *) override;
   bool checkCapture(const SimplifyContext::Item &);
   void visit(DotExpr *) override;
-  std::pair<size_t, SimplifyContext::Item> getImport(const std::deque<std::string> &);
+  std::pair<size_t, SimplifyContext::Item> getImport(const std::vector<std::string> &);
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
@@ -135,8 +131,8 @@ public:
   void visit(UnaryExpr *) override;
   void visit(BinaryExpr *) override;
   void visit(ChainBinaryExpr *) override;
-  void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
+  void visit(InstantiateExpr *) override;
 
   /* Calls (call.cpp) */
   void visit(PrintStmt *) override;
@@ -144,13 +140,12 @@ public:
   ExprPtr transformSpecialCall(ExprPtr, const std::vector<CallExpr::Arg> &);
   ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &);
   ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &);
-  ExprPtr transformFunctoolsPartial(const std::vector<CallExpr::Arg> &);
+  ExprPtr transformFunctoolsPartial(std::vector<CallExpr::Arg>);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
-  StmtPtr transformAssignment(const ExprPtr &, const ExprPtr &,
-                              const ExprPtr & = nullptr, bool = false);
+  StmtPtr transformAssignment(ExprPtr, ExprPtr, ExprPtr = nullptr, bool = false);
   void unpackAssignments(ExprPtr, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
 
@@ -165,7 +160,7 @@ public:
                               const std::string &);
   StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, const Expr *,
                                 const std::string &);
-  void transformNewImport(const ImportFile &);
+  StmtPtr transformNewImport(const ImportFile &);
 
   /* Loops (loops.cpp) */
   void visit(ContinueStmt *) override;

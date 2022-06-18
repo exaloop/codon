@@ -36,7 +36,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
 
   // If the file has not been seen before, load it into cache
   if (ctx->cache->imports.find(file->path) == ctx->cache->imports.end())
-    transformNewImport(*file);
+    resultStmt = transformNewImport(*file);
 
   const auto &import = ctx->cache->imports[file->path];
   std::string importVar = import.importVar;
@@ -90,6 +90,10 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     if (!c || c->isConditional())
       error("symbol '{}' not found in {}", i->value, file->path);
     ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
+  }
+
+  if (!resultStmt) {
+    resultStmt = N<SuiteStmt>(); // erase it
   }
 }
 
@@ -262,7 +266,7 @@ StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
 ///        global [imported global variables]...
 ///        __name__ = [I]
 ///        [imported top-level statements]```
-void SimplifyVisitor::transformNewImport(const ImportFile &file) {
+StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file
   if (ctx->cache->age)
     ctx->cache->age++;
@@ -280,14 +284,13 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
   }
   n = SimplifyVisitor(ictx, preamble)
           .transform(N<SuiteStmt>(n, parseFile(ctx->cache, file.path)));
-
   // Add comment to the top of import for easier dump inspection
   auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
   if (ctx->isStdlibLoading) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all
     // statements are executed before the user-provided code.
-    resultStmt = N<SuiteStmt>(comment, n);
+    return N<SuiteStmt>(comment, n);
   } else {
     // Generate import identifier
     std::string importVar = import->second.importVar =
@@ -300,8 +303,8 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     if (!in(ctx->cache->globals, importDoneVar))
       ctx->cache->globals[importDoneVar] = nullptr;
 
-    // Wrap all imported top-level statements into a function. We also take the
-    // list of global variables so that we can access them via `global` statement.
+    // Wrap all imported top-level statements into a function.
+    // Make sure to register the global variables and set their assignments as updates.
     // Note: signatures/classes/functions are not wrapped
     std::vector<StmtPtr> stmts;
     auto processToplevelStmt = [&](const StmtPtr &s) {
@@ -310,14 +313,15 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
         // Signatures are ignored
         preamble->globals.push_back(s);
       } else {
-        if (s->getAssign() && s->getAssign()->lhs->getId()) {
-          // Global `a = ...`
-          auto a = s->getAssign();
-          auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal() && !isStaticGeneric(a->type)) {
-            // Register global
-            if (!in(ctx->cache->globals, val->canonicalName))
-              ctx->cache->globals[val->canonicalName] = nullptr;
+        if (auto a = s->getAssign()) {
+          if (!a->isUpdate() && a->lhs->getId()) {
+            // Global `a = ...`
+            auto val = ictx->forceFind(a->lhs->getId()->value);
+            if (val->isVar() && val->isGlobal() && !isStaticGeneric(a->type)) {
+              // Register global
+              if (!in(ctx->cache->globals, val->canonicalName))
+                ctx->cache->globals[val->canonicalName] = nullptr;
+            }
           }
         }
         stmts.push_back(s);
@@ -338,6 +342,7 @@ void SimplifyVisitor::transformNewImport(const ImportFile &file) {
     preamble->globals.push_back(ctx->cache->functions[importVar + ":0"].ast->clone());
     ctx->cache->overloads[importVar].push_back({importVar + ":0", ctx->cache->age});
   }
+  return nullptr;
 }
 
 } // namespace codon::ast

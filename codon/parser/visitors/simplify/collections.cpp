@@ -12,11 +12,8 @@ namespace codon::ast {
 /// Simple transformation.
 /// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(TupleExpr *expr) {
-  std::vector<ExprPtr> items;
-  for (auto &i : expr->items) {
-    items.emplace_back(transform(i));
-  }
-  resultExpr = N<TupleExpr>(items);
+  for (auto &i : expr->items)
+    transform(i);
 }
 
 /// Transform a list `[a1, ..., aN]` to the corresponding statement expression.
@@ -65,17 +62,15 @@ ExprPtr SimplifyVisitor::transformComprehension(const std::string &type,
       // `*star` -> `for i in star: cont.[fn](i)`
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
       auto st = star->what->clone();
+      st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), st,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
-      // Set the proper attributes
-      st->setAttr(ExprAttr::StarSequenceItem);
     } else {
       auto st = clone(it);
+      st->setAttr(ExprAttr::SequenceItem);
       stmts.push_back(
           transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), st))));
-      // Set the proper attributes
-      st->setAttr(ExprAttr::SequenceItem);
     }
   }
   return N<StmtExpr>(stmts, transform(var));
@@ -96,21 +91,19 @@ void SimplifyVisitor::visit(DictExpr *expr) {
       // Expand kwstar-expression by iterating over it: see the example above
       ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
       auto st = star->what->clone();
+      st->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), N<CallExpr>(N<DotExpr>(st, "items")),
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(0)),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(1)))))));
-      // Set the proper attributes
-      st->setAttr(ExprAttr::StarSequenceItem);
     } else {
       auto k = clone(it.key);
+      k->setAttr(ExprAttr::SequenceItem);
       auto v = clone(it.value);
+      v->setAttr(ExprAttr::SequenceItem);
       stmts.push_back(transform(
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"), k, v))));
-      // Set the proper attributes
-      k->setAttr(ExprAttr::SequenceItem);
-      v->setAttr(ExprAttr::SequenceItem);
     }
   }
   resultExpr = N<StmtExpr>(stmts, transform(var));

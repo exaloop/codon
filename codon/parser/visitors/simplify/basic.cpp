@@ -47,7 +47,7 @@ void SimplifyVisitor::visit(StringExpr *expr) {
   }
   if (concat.size() == expr->strings.size()) {
     /// Simple case: statically concatenate a sequence of strings without any prefix
-    resultExpr = N<StringExpr>(combine2(concat, ""));
+    expr->strings = {{combine2(concat, ""), ""}};
   } else if (exprs.size() == 1) {
     /// Simple case: only one string in a sequence
     resultExpr = std::move(exprs[0]);

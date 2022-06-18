@@ -87,6 +87,8 @@ public:
 
   /// Convert a node to an S-expression.
   virtual std::string toString() const = 0;
+  /// Validate a node. Throw ParseASTException if a node is not valid.
+  virtual void validate() const;
   /// Deep copy a node.
   virtual std::shared_ptr<Expr> clone() const = 0;
   /// Accept an AST visitor.
@@ -455,6 +457,7 @@ struct PipeExpr : public Expr {
   PipeExpr(const PipeExpr &expr);
 
   std::string toString() const override;
+  void validate() const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -496,7 +499,7 @@ struct CallExpr : public Expr {
       : CallExpr(expr, std::vector<ExprPtr>{arg, args...}) {}
   CallExpr(const CallExpr &expr);
 
-  void validate();
+  void validate() const override;
   std::string toString() const override;
   ACCEPT(ASTVisitor);
 

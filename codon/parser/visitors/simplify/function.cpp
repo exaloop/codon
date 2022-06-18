@@ -17,7 +17,6 @@ namespace codon::ast {
 void SimplifyVisitor::visit(YieldExpr *expr) {
   if (!ctx->inFunction())
     error("expected function body");
-  defaultVisit(expr);
 }
 
 /// Transform lambdas. Capture outer expressions.
@@ -35,14 +34,14 @@ void SimplifyVisitor::visit(LambdaExpr *expr) {
 void SimplifyVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     error("expected function body");
-  resultStmt = N<ReturnStmt>(transform(stmt->expr));
+  transform(stmt->expr);
 }
 
 /// Ensure that `yield` is in a function.
 void SimplifyVisitor::visit(YieldStmt *stmt) {
   if (!ctx->inFunction())
     error("expected function body");
-  resultStmt = N<YieldStmt>(transform(stmt->expr));
+  transform(stmt->expr);
 }
 
 /// Transform `yield from` statements.
@@ -50,8 +49,8 @@ void SimplifyVisitor::visit(YieldStmt *stmt) {
 ///   `yield from a` -> `for var in a: yield var`
 void SimplifyVisitor::visit(YieldFromStmt *stmt) {
   auto var = ctx->cache->getTemporaryVar("yield");
-  resultStmt = transform(
-      N<ForStmt>(N<IdExpr>(var), clone(stmt->expr), N<YieldStmt>(N<IdExpr>(var))));
+  resultStmt =
+      transform(N<ForStmt>(N<IdExpr>(var), stmt->expr, N<YieldStmt>(N<IdExpr>(var))));
 }
 
 /// Process `global` statements. Remove them upon completion.
@@ -82,6 +81,8 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
   val->baseName = ctx->getBaseName();
   // Globals/nonlocals cannot be shadowed in children scopes (as in Python)
   val->noShadow = true;
+  // Erase the statement
+  resultStmt = N<SuiteStmt>();
 }
 
 /// Validate and transform function definitions.

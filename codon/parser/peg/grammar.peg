@@ -91,7 +91,7 @@ assignment <-
   }
   / star_expression _ augassign '=' ^ _ star_expressions {
     return ast<AssignStmt>(LOC,
-      ac_expr(V0), ast<BinaryExpr>(LOC, ac_expr(V0), ac<string>(V1), ac_expr(V2), true)
+      ac_expr(V0), ast<BinaryExpr>(LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true)
     );
   }
 augassign <- <

@@ -11,27 +11,22 @@ using fmt::format;
 
 namespace codon::ast {
 
-void SimplifyVisitor::visit(UnaryExpr *expr) {
-  resultExpr = N<UnaryExpr>(expr->op, transform(expr->expr));
-}
+void SimplifyVisitor::visit(UnaryExpr *expr) { transform(expr->expr); }
 
 /// Transform binary expressions with a few special considerations.
 /// The real stuff happens during the type checking.
 void SimplifyVisitor::visit(BinaryExpr *expr) {
   // Keep None in `is None` for typechecker.
   // Special case: `is` can take type as well
-  auto lhs = (startswith(expr->op, "is") && expr->lexpr->getNone())
-                 ? clone(expr->lexpr)
-                 : transform(expr->lexpr, startswith(expr->op, "is"));
+  if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
+    transform(expr->lexpr, startswith(expr->op, "is"));
 
   auto tmp = ctx->isConditionalExpr;
   // The second operand of the and/or expression is conditional
   ctx->isConditionalExpr = expr->op == "&&" || expr->op == "||";
-  auto rhs = (startswith(expr->op, "is") && expr->rexpr->getNone())
-                 ? clone(expr->rexpr)
-                 : transform(expr->rexpr, startswith(expr->op, "is"));
+  if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
+    transform(expr->rexpr, startswith(expr->op, "is"));
   ctx->isConditionalExpr = tmp;
-  resultExpr = N<BinaryExpr>(lhs, expr->op, rhs, expr->inPlace);
 }
 
 /// Transform chain binary expression.
@@ -54,70 +49,57 @@ void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
   }
 
   ExprPtr final = items.back();
-  for (auto i = items.size() - 1; i-- > 0; )
+  for (auto i = items.size() - 1; i-- > 0;)
     final = N<BinaryExpr>(items[i], "&&", final);
   resultExpr = transform(final);
-}
-
-/// Check for ellipses within pipes and mark them with `isPipeArg`.
-/// The rest is handled during the type checking.
-void SimplifyVisitor::visit(PipeExpr *expr) {
-  std::vector<PipeExpr::Pipe> p;
-  for (auto &i : expr->items) {
-    auto e = clone(i.expr);
-    if (auto ec = e->getCall()) {
-      for (auto &a : ec->args)
-        if (auto ee = a.value->getEllipsis())
-          ee->isPipeArg = true;
-    }
-    p.push_back({i.op, transform(e)});
-  }
-  resultExpr = N<PipeExpr>(p);
 }
 
 /// Transform index into an instantiation @c InstantiateExpr if possible.
 /// Generate tuple class `Tuple.N` for `Tuple[T1, ... TN]` (and `tuple[...]`).
 /// The rest is handled during the type checking.
 void SimplifyVisitor::visit(IndexExpr *expr) {
-  ExprPtr ex = nullptr;
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
-    // Special case: tuples. Change to Tuple.N and generate tuple stub
+    // Special case: tuples. Change to Tuple.N
     auto t = expr->index->getTuple();
-    ex = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
-    ex->markType();
+    expr->expr = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
+    expr->expr->markType();
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
       error("only static integers and strings are supported");
-    resultExpr = expr->clone();
-    resultExpr->markType();
+    expr->markType();
     return;
   } else {
-    ex = transform(expr->expr, true);
+    transform(expr->expr, true);
   }
 
   // IndexExpr[i1, ..., iN] is internally represented as
   // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
   std::vector<ExprPtr> items;
   if (auto t = expr->index->getTuple()) {
-    for (auto &i : t->items)
-      items.push_back(i);
+    items = t->items;
   } else {
     items.push_back(expr->index);
   }
   for (auto &i : items) {
-    if (i->getList() && ex->isType()) {
+    if (i->getList() && expr->expr->isType()) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
-      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(clone(i)->getList()->items));
+      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
     }
-    i = transform(clone(i), true);
+    transform(i, true);
   }
-  if (ex->isType()) {
-    resultExpr = N<InstantiateExpr>(ex, items);
+  if (expr->expr->isType()) {
+    resultExpr = N<InstantiateExpr>(expr->expr, items);
     resultExpr->markType();
   } else {
-    resultExpr = N<IndexExpr>(ex, items.size() == 1 ? items[0] : N<TupleExpr>(items));
+    expr->index = items.size() == 1 ? items[0] : N<TupleExpr>(items);
   }
+}
+
+/// Ignore it. Already transformed. Sometimes called again
+/// during class extension.
+void SimplifyVisitor::visit(InstantiateExpr *expr) {
+
 }
 
 } // namespace codon::ast

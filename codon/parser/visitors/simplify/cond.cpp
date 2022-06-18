@@ -12,7 +12,7 @@ namespace codon::ast {
 
 void SimplifyVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
-  auto cond = transform(expr->cond);
+  transform(expr->cond);
   auto tmp = ctx->isConditionalExpr;
   // Ensure that ifexpr and elsexpr are set as a potential short-circut expressions.
   // Needed to ensure that variables defined within these expressions are properly
@@ -20,20 +20,17 @@ void SimplifyVisitor::visit(IfExpr *expr) {
   // (e.g., `x` will be created within `a if cond else (x := b)`
   // only if `cond` is not true)
   ctx->isConditionalExpr = true;
-  auto ifexpr = transform(expr->ifexpr);
-  auto elsexpr = transform(expr->elsexpr);
+  transform(expr->ifexpr);
+  transform(expr->elsexpr);
   ctx->isConditionalExpr = tmp;
-  resultExpr = N<IfExpr>(cond, ifexpr, elsexpr);
 }
 
 void SimplifyVisitor::visit(IfStmt *stmt) {
   seqassert(stmt->cond, "invalid if statement");
-
-  // C++ call order is not defined; make sure to transform the conditional first
-  auto cond = transform(stmt->cond);
+  transform(stmt->cond);
   // Ensure that conditional suites are marked and transformed in their own scope
-  resultStmt = N<IfStmt>(cond, transformConditionalScope(stmt->ifSuite),
-                         transformConditionalScope(stmt->elseSuite));
+  transformConditionalScope(stmt->ifSuite);
+  transformConditionalScope(stmt->elseSuite);
 }
 
 /// Simplify match statement by transforming it into a series of conditional statements.
