@@ -172,13 +172,14 @@ struct CaptureContext {
   std::unordered_map<id_t, std::vector<CaptureInfo>> results;
 
   std::vector<CaptureInfo> get(Func *func) {
+    // Don't know anything about external/LLVM funcs so use annotations.
     if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
       return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func)
                                          : makeAllCaptureInfo(func);
     }
 
+    // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
     if (isA<InternalFunc>(func)) {
-      // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
       if (func->getUnmangledName() == "__new__" &&
           std::distance(func->arg_begin(), func->arg_end()) == 1 &&
           isA<types::RecordType>(func->arg_front()->getType())) {
@@ -331,6 +332,9 @@ struct DerivedFinder : public Operator {
   }
 
   void forEachDSetOf(Value *v, std::function<void(DerivedSet &)> func) {
+    if (!v)
+      return;
+
     for (auto &dset : dsets) {
       if (dset.isDerived(v))
         func(dset);
@@ -338,6 +342,9 @@ struct DerivedFinder : public Operator {
   }
 
   void forEachDSetOf(Var *v, std::function<void(DerivedSet &)> func) {
+    if (!v)
+      return;
+
     for (auto &dset : dsets) {
       if (dset.isDerived(v))
         func(dset);
@@ -487,25 +494,16 @@ struct DerivedFinder : public Operator {
   // Actual capture points:
 
   void handle(ReturnInstr *v) override {
-    if (!v->getValue())
-      return;
-
     forEachDSetOf(v->getValue(),
                   [&](DerivedSet &dset) { dset.result.returnCaptures = true; });
   }
 
   void handle(YieldInstr *v) override {
-    if (!v->getValue())
-      return;
-
     forEachDSetOf(v->getValue(),
                   [&](DerivedSet &dset) { dset.result.returnCaptures = true; });
   }
 
   void handle(ThrowInstr *v) override {
-    if (!v->getValue())
-      return;
-
     forEachDSetOf(v->getValue(),
                   [&](DerivedSet &dset) { dset.result.externCaptures = true; });
   }
