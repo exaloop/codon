@@ -12,6 +12,14 @@ namespace ir {
 namespace util {
 namespace {
 
+template <typename S, typename T> bool contains(const S &x, T i) {
+  for (auto a : x) {
+    if (a == i)
+      return true;
+  }
+  return false;
+}
+
 template <typename T> bool shouldTrack(T *x) {
   // We only care about things with pointers,
   // since you can't capture primitive types
@@ -73,6 +81,7 @@ struct DerivedVarInfo {
 
 struct DerivedSet {
   unsigned argno;
+  std::vector<id_t> args;
   std::unordered_map<id_t, DerivedValInfo> derivedVals;
   std::unordered_map<id_t, DerivedVarInfo> derivedVars;
   CaptureInfo result;
@@ -88,12 +97,15 @@ struct DerivedSet {
   void setDerived(Var *v, DerivedKind kind, Value *cause) {
     if (v->isGlobal())
       result.externCaptures = true;
-    // TODO: args
 
-    auto it = derivedVars.find(v->getId());
+    auto id = v->getId();
+    if (contains(args, id) && !contains(result.argCaptures, id))
+      result.argCaptures.push_back(id);
+
+    auto it = derivedVars.find(id);
     if (it == derivedVars.end()) {
       DerivedVarInfo info = {{{kind, cause}}};
-      derivedVars.emplace(v->getId(), info);
+      derivedVars.emplace(id, info);
     } else {
       it->second.info.push_back({kind, cause});
     }
@@ -123,25 +135,65 @@ struct DerivedSet {
   explicit DerivedSet(unsigned argno)
       : argno(argno), derivedVals(), derivedVars(), result() {}
 
-  DerivedSet(unsigned argno, Var *var, Value *cause) : DerivedSet(argno) {
+  DerivedSet(unsigned argno, std::vector<id_t> args, Var *var, Value *cause)
+      : argno(argno), args(std::move(args)), derivedVals(), derivedVars(), result() {
     setDerived(var, DerivedKind::ORIGIN, cause);
   }
 };
+
+const std::string PURE_ATTR = "std.internal.attributes.pure";
+const std::string NO_SIDE_EFFECT_ATTR = "std.internal.attributes.no_side_effect";
+const std::string NO_CAPTURE_ATTR = "std.internal.attributes.nocapture";
+
+bool noCaptureByAnnotation(Func *func) {
+  return util::hasAttribute(func, PURE_ATTR) ||
+         util::hasAttribute(func, NO_SIDE_EFFECT_ATTR) ||
+         util::hasAttribute(func, NO_CAPTURE_ATTR);
+}
+
+std::vector<CaptureInfo> makeAllCaptureInfo(Func *func) {
+  std::vector<CaptureInfo> result;
+  for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
+    result.push_back(shouldTrack(*it) ? CaptureInfo::unknown(func)
+                                      : CaptureInfo::nothing());
+  }
+  return result;
+}
+
+std::vector<CaptureInfo> makeNoCaptureInfo(Func *func) {
+  std::vector<CaptureInfo> result;
+  for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
+    result.push_back(CaptureInfo::nothing());
+  }
+  return result;
+}
 
 struct CaptureContext {
   std::unordered_map<id_t, std::vector<CaptureInfo>> results;
 
   std::vector<CaptureInfo> get(Func *func) {
-    // TODO: handle other func types: internal/external/llvm
-    // TODO: handle generators
+    if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
+      return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func)
+                                         : makeAllCaptureInfo(func);
+    }
+
+    if (isA<InternalFunc>(func)) {
+      // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
+      if (func->getUnmangledName() == "__new__" &&
+          std::distance(func->arg_begin(), func->arg_end()) == 1 &&
+          isA<types::RecordType>(func->arg_front()->getType())) {
+        return makeAllCaptureInfo(func);
+      } else if (func->getUnmangledName() == "__promise__" &&
+                 std::distance(func->arg_begin(), func->arg_end()) == 2 &&
+                 isA<types::GeneratorType>(func->arg_front()->getType()) &&
+                 isA<types::GeneratorType>(func->arg_back()->getType())) {
+        return makeNoCaptureInfo(func);
+      }
+    }
+
     auto it = results.find(func->getId());
     if (it == results.end()) {
-      std::vector<CaptureInfo> result;
-      for (auto arg = func->arg_begin(); arg != func->arg_end(); ++arg) {
-        result.push_back(shouldTrack(*arg) ? CaptureInfo::unknown(func)
-                                           : CaptureInfo::nothing());
-      }
-      return result;
+      return makeAllCaptureInfo(func);
     } else {
       return it->second;
     }
@@ -243,6 +295,12 @@ struct DerivedFinder : public Operator {
       }
     }
 
+    // extract arguments
+    std::vector<id_t> args;
+    for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
+      args.push_back((*it)->getId());
+    }
+
     // make a derived set for each function argument
     unsigned argno = 0;
     for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
@@ -252,7 +310,7 @@ struct DerivedFinder : public Operator {
       auto it2 = synthAssigns.find((*it)->getId());
       seqassert(it2 != synthAssigns.end(),
                 "could not find synthetic assignment for arg var");
-      dsets.push_back(DerivedSet(argno++, *it, it2->second));
+      dsets.push_back(DerivedSet(argno++, args, *it, it2->second));
     }
   }
 
@@ -401,9 +459,32 @@ struct DerivedFinder : public Operator {
     }
   }
 
+  void handle(ForFlow *v) override {
+    auto *var = v->getVar();
+    if (!shouldTrack(var))
+      return;
+
+    forEachDSetOf(v->getIter(), [&](DerivedSet &dset) {
+      using analyze::dataflow::SyntheticAssignInstr;
+      bool found = false;
+      for (auto it = cfg->synth_begin(); it != cfg->synth_end(); ++it) {
+        if (auto *synth = cast<SyntheticAssignInstr>(*it)) {
+          if (synth->getKind() == SyntheticAssignInstr::Kind::NEXT_VALUE &&
+              synth->getLhs()->getId() == var->getId()) {
+            seqassert(!found, "found multiple synthetic assignments for loop var");
+            dset.setDerived(var, DerivedKind::ASSIGN, synth);
+            found = true;
+          }
+        }
+      }
+    });
+  }
+
   void handle(dsl::CustomInstr *v) override {
     // TODO
   }
+
+  // Actual capture points:
 
   void handle(ReturnInstr *v) override {
     if (!v->getValue())
