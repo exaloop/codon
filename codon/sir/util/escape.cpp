@@ -169,40 +169,14 @@ std::vector<CaptureInfo> makeNoCaptureInfo(Func *func) {
 }
 
 struct CaptureContext {
+  analyze::dataflow::RDResult *reaching;
   std::unordered_map<id_t, std::vector<CaptureInfo>> results;
 
-  std::vector<CaptureInfo> get(Func *func) {
-    // Don't know anything about external/LLVM funcs so use annotations.
-    if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
-      return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func)
-                                         : makeAllCaptureInfo(func);
-    }
+  explicit CaptureContext(analyze::dataflow::RDResult *reaching)
+      : reaching(reaching), results() {}
 
-    // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
-    if (isA<InternalFunc>(func)) {
-      if (func->getUnmangledName() == "__new__" &&
-          std::distance(func->arg_begin(), func->arg_end()) == 1 &&
-          isA<types::RecordType>(func->arg_front()->getType())) {
-        return makeAllCaptureInfo(func);
-      } else if (func->getUnmangledName() == "__promise__" &&
-                 std::distance(func->arg_begin(), func->arg_end()) == 2 &&
-                 isA<types::GeneratorType>(func->arg_front()->getType()) &&
-                 isA<types::GeneratorType>(func->arg_back()->getType())) {
-        return makeNoCaptureInfo(func);
-      }
-    }
-
-    auto it = results.find(func->getId());
-    if (it == results.end()) {
-      return makeAllCaptureInfo(func);
-    } else {
-      return it->second;
-    }
-  }
-
-  void set(Func *func, const std::vector<CaptureInfo> &result) {
-    results[func->getId()] = result;
-  }
+  std::vector<CaptureInfo> get(Func *func);
+  void set(Func *func, const std::vector<CaptureInfo> &result);
 };
 
 // This visitor answers the questions of what vars are
@@ -272,15 +246,15 @@ bool extractVars(CaptureContext &cc, Value *v, std::vector<Var *> &result) {
   return ev.escapes;
 }
 
-struct DerivedFinder : public Operator {
+struct CaptureTracker : public Operator {
   CaptureContext &cc;
   BodiedFunc *func;
   analyze::dataflow::CFGraph *cfg;
   analyze::dataflow::RDInspector *rd;
   std::vector<DerivedSet> dsets;
 
-  DerivedFinder(CaptureContext &cc, BodiedFunc *func, analyze::dataflow::CFGraph *cfg,
-                analyze::dataflow::RDInspector *rd)
+  CaptureTracker(CaptureContext &cc, BodiedFunc *func, analyze::dataflow::CFGraph *cfg,
+                 analyze::dataflow::RDInspector *rd)
       : Operator(), cc(cc), func(func), cfg(cfg), rd(rd), dsets() {
     using analyze::dataflow::SyntheticAssignInstr;
 
@@ -321,14 +295,6 @@ struct DerivedFinder : public Operator {
       total += dset.size();
     }
     return total;
-  }
-
-  DerivedSet *setFor(Value *v) {
-    for (auto &dset : dsets) {
-      if (dset.isDerived(v))
-        return &dset;
-    }
-    return nullptr;
   }
 
   void forEachDSetOf(Value *v, std::function<void(DerivedSet &)> func) {
@@ -509,6 +475,73 @@ struct DerivedFinder : public Operator {
   }
 };
 
+std::vector<CaptureInfo> CaptureContext::get(Func *func) {
+  // Don't know anything about external/LLVM funcs so use annotations.
+  if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
+    return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func)
+                                       : makeAllCaptureInfo(func);
+  }
+
+  // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
+  if (isA<InternalFunc>(func)) {
+    if (func->getUnmangledName() == "__new__" &&
+        std::distance(func->arg_begin(), func->arg_end()) == 1 &&
+        isA<types::RecordType>(func->arg_front()->getType())) {
+      return makeAllCaptureInfo(func);
+    } else if (func->getUnmangledName() == "__promise__" &&
+               std::distance(func->arg_begin(), func->arg_end()) == 2 &&
+               isA<types::GeneratorType>(func->arg_front()->getType()) &&
+               isA<types::GeneratorType>(func->arg_back()->getType())) {
+      return makeNoCaptureInfo(func);
+    }
+  }
+
+  // Bodied function
+  if (isA<BodiedFunc>(func)) {
+    auto it = results.find(func->getId());
+    if (it != results.end())
+      return it->second;
+
+    set(func, makeAllCaptureInfo(func));
+
+    auto it1 = reaching->cfgResult->graphs.find(func->getId());
+    seqassert(it1 != reaching->cfgResult->graphs.end(),
+              "could not find function in CFG results");
+
+    auto it2 = reaching->results.find(func->getId());
+    seqassert(it2 != reaching->results.end(),
+              "could not find function in reaching-definitions results");
+
+    CaptureTracker ct(*this, cast<BodiedFunc>(func), it1->second.get(),
+                      it2->second.get());
+    unsigned oldSize = 0;
+    do {
+      oldSize = ct.size();
+      func->accept(ct);
+    } while (ct.size() != oldSize);
+
+    std::vector<CaptureInfo> answer;
+    unsigned i = 0;
+    for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
+      if (shouldTrack(*it)) {
+        answer.push_back(ct.dsets[i++].result);
+      } else {
+        answer.push_back(CaptureInfo::nothing());
+      }
+    }
+
+    set(func, answer);
+    return answer;
+  }
+
+  seqassert(false, "unknown function type");
+  return {};
+}
+
+void CaptureContext::set(Func *func, const std::vector<CaptureInfo> &result) {
+  results[func->getId()] = result;
+}
+
 } // namespace
 
 EscapeResult escapes(BodiedFunc *parent, Value *value,
@@ -521,13 +554,13 @@ EscapeResult escapes(BodiedFunc *parent, Value *value,
   seqassert(it2 != reaching->results.end(),
             "could not find parent function in reaching-definitions results");
 
-  CaptureContext cc;
-  DerivedFinder df(cc, parent, it1->second.get(), it2->second.get());
+  CaptureContext cc(reaching);
+  CaptureTracker ct(cc, parent, it1->second.get(), it2->second.get());
   unsigned oldSize = 0;
   do {
-    oldSize = df.size();
-    parent->accept(df);
-  } while (df.size() != oldSize);
+    oldSize = ct.size();
+    parent->accept(ct);
+  } while (ct.size() != oldSize);
 
   return EscapeResult::YES;
 }
