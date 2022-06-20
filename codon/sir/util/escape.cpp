@@ -144,6 +144,7 @@ struct DerivedSet {
 const std::string PURE_ATTR = "std.internal.attributes.pure";
 const std::string NO_SIDE_EFFECT_ATTR = "std.internal.attributes.no_side_effect";
 const std::string NO_CAPTURE_ATTR = "std.internal.attributes.nocapture";
+const std::string DERIVES_ATTR = "std.internal.attributes.derives";
 
 bool noCaptureByAnnotation(Func *func) {
   return util::hasAttribute(func, PURE_ATTR) ||
@@ -160,10 +161,13 @@ std::vector<CaptureInfo> makeAllCaptureInfo(Func *func) {
   return result;
 }
 
-std::vector<CaptureInfo> makeNoCaptureInfo(Func *func) {
+std::vector<CaptureInfo> makeNoCaptureInfo(Func *func, bool derives) {
   std::vector<CaptureInfo> result;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
-    result.push_back(CaptureInfo::nothing());
+    auto info = CaptureInfo::nothing();
+    if (derives && shouldTrack(*it))
+      info.returnCaptures = true;
+    result.push_back(info);
   }
   return result;
 }
@@ -478,22 +482,24 @@ struct CaptureTracker : public Operator {
 std::vector<CaptureInfo> CaptureContext::get(Func *func) {
   // Don't know anything about external/LLVM funcs so use annotations.
   if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
-    return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func)
-                                       : makeAllCaptureInfo(func);
+    bool derives = util::hasAttribute(func, DERIVES_ATTR);
+    auto info = noCaptureByAnnotation(func) ? makeNoCaptureInfo(func, derives)
+                                            : makeAllCaptureInfo(func);
   }
 
   // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
   if (isA<InternalFunc>(func)) {
-    if (func->getUnmangledName() == "__new__" &&
-        std::distance(func->arg_begin(), func->arg_end()) == 1 &&
-        isA<types::RecordType>(func->arg_front()->getType())) {
-      return makeAllCaptureInfo(func);
-    } else if (func->getUnmangledName() == "__promise__" &&
-               std::distance(func->arg_begin(), func->arg_end()) == 2 &&
-               isA<types::GeneratorType>(func->arg_front()->getType()) &&
-               isA<types::GeneratorType>(func->arg_back()->getType())) {
-      return makeNoCaptureInfo(func);
-    }
+    bool isTupleNew = func->getUnmangledName() == "__new__" &&
+                      std::distance(func->arg_begin(), func->arg_end()) == 1 &&
+                      isA<types::RecordType>(func->arg_front()->getType());
+
+    bool isPromise = func->getUnmangledName() == "__promise__" &&
+                     std::distance(func->arg_begin(), func->arg_end()) == 2 &&
+                     isA<types::GeneratorType>(func->arg_front()->getType()) &&
+                     isA<types::GeneratorType>(func->arg_back()->getType());
+
+    return (isTupleNew || isPromise) ? makeAllCaptureInfo(func)
+                                     : makeNoCaptureInfo(func, /*derives=*/false);
   }
 
   // Bodied function

@@ -32,6 +32,21 @@ def nonpure():
 
 
 @__attribute__
+def no_side_effect():
+    pass
+
+
+@__attribute__
+def nocapture():
+    pass
+
+
+@__attribute__
+def derives():
+    pass
+
+
+@__attribute__
 def commutative():
     pass
 

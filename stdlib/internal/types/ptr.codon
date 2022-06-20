@@ -19,11 +19,13 @@ class Ptr:
         pass
 
     @pure
+    @derives
     @llvm
     def __new__(other: Ptr[T]) -> Ptr[T]:
         ret {=T}* %other
 
     @pure
+    @derives
     @llvm
     def __new__(other: Ptr[byte]) -> Ptr[T]:
         %0 = bitcast i8* %other to {=T}*
@@ -48,6 +50,7 @@ class Ptr:
         ret i8 %1
 
     @pure
+    @derives
     @llvm
     def __getitem__(self, index: int) -> T:
         %0 = getelementptr {=T}, {=T}* %self, i64 %index
@@ -117,6 +120,7 @@ class Ptr:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
+    @nocapture
     @llvm
     def __prefetch_r0__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -124,6 +128,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 0, i32 0, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_r1__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -131,6 +136,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 0, i32 1, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_r2__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -138,6 +144,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 0, i32 2, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_r3__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -145,6 +152,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 0, i32 3, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_w0__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -152,6 +160,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 1, i32 0, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_w1__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -159,6 +168,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 1, i32 1, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_w2__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)
@@ -166,6 +176,7 @@ class Ptr:
         call void @llvm.prefetch(i8* %0, i32 1, i32 2, i32 1)
         ret void
 
+    @nocapture
     @llvm
     def __prefetch_w3__(self) -> void:
         declare void @llvm.prefetch(i8* nocapture readonly, i32, i32, i32)

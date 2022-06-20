@@ -363,49 +363,55 @@ class int:
     def popcnt(self) -> int:
         return Int[64](self).popcnt()
 
+    @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[int], b: int) -> void:
         %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
         ret void
 
+    @nocapture
     @llvm
     def __atomic_add__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw add i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
     def __atomic_sub__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw sub i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
     def __atomic_and__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw and i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
     def __atomic_nand__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw nand i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
     def __atomic_or__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw or i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
-    def _atomic_xor(d: Ptr[int], b: int) -> int:
+    def __atomic_xor__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw xor i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
-    def __atomic_xor__(self, b: int) -> int:
-        return int._atomic_xor(__ptr__(self), b)
-
+    @nocapture
     @llvm
     def __atomic_min__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw min i64* %d, i64 %b seq_cst
         ret i64 %tmp
 
+    @nocapture
     @llvm
     def __atomic_max__(d: Ptr[int], b: int) -> int:
         %tmp = atomicrmw max i64* %d, i64 %b seq_cst

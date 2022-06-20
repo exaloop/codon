@@ -139,8 +139,8 @@ class __internal__:
         %0 = bitcast i8* %ptr to {=T}
         ret {=T} %0
 
-    @pure
     def _tuple_offsetof(x, field: Static[int]) -> int:
+        @pure
         @llvm
         def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
             %a = alloca {=T}

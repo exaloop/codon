@@ -29,32 +29,40 @@ def seq_stderr() -> cobj:
     pass
 
 
-@pure
+@no_side_effect
 @C
 def seq_env() -> Ptr[cobj]:
     pass
 
 
-@pure
+@no_side_effect
 @C
 def seq_time() -> int:
     pass
 
 
-@pure
+@no_side_effect
 @C
 def seq_time_monotonic() -> int:
     pass
 
 
-@pure
+@no_side_effect
 @C
 def seq_time_highres() -> int:
     pass
 
 
-from C import seq_localtime(int, cobj) -> bool
-from C import seq_gmtime(int, cobj) -> bool
+@no_side_effect
+@C
+def seq_localtime(a: int, b: cobj) -> bool:
+    pass
+
+
+@no_side_effect
+@C
+def seq_gmtime(a: int, b: cobj) -> bool:
+    pass
 
 
 @pure
@@ -78,8 +86,16 @@ def seq_lock_new() -> cobj:
     pass
 
 
-from C import seq_lock_acquire(cobj, bool, float) -> bool
-from C import seq_lock_release(cobj)
+@nocapture
+@C
+def seq_lock_acquire(a: cobj, b: bool, c: float) -> bool:
+    pass
+
+
+@nocapture
+@C
+def seq_lock_release(a: cobj) -> void:
+    pass
 
 
 @pure
@@ -88,8 +104,16 @@ def seq_rlock_new() -> cobj:
     pass
 
 
-from C import seq_rlock_acquire(cobj, bool, float) -> bool
-from C import seq_rlock_release(cobj)
+@nocapture
+@C
+def seq_rlock_acquire(a: cobj, b: bool, c: float) -> bool:
+    pass
+
+
+@nocapture
+@C
+def seq_rlock_release(a: cobj) -> void:
+    pass
 
 
 @pure
@@ -370,8 +394,17 @@ def hypot(a: float, b: float) -> float:
     pass
 
 
-from C import frexp(float, Ptr[Int[32]]) -> float
-from C import modf(float, Ptr[float]) -> float
+@nocapture
+@C
+def frexp(a: float, b: Ptr[Int[32]]) -> float:
+    pass
+
+
+@nocapture
+@C
+def modf(a: float, b: Ptr[float]) -> float:
+    pass
+
 
 # <stdio.h>
 @pure
@@ -380,21 +413,79 @@ def ferror(a: cobj) -> i32:
     pass
 
 
-from C import fgetc(cobj) -> i32
-from C import fopen(cobj, cobj) -> cobj
-from C import fclose(cobj) -> int
-from C import fread(cobj, int, int, cobj) -> int
-from C import fwrite(cobj, int, int, cobj) -> int
-from C import ftell(cobj) -> int
-from C import fseek(cobj, int, i32) -> i32
-from C import fgets(cobj, int, cobj) -> cobj
-from C import fflush(cobj) -> void
-from C import getline(Ptr[cobj], Ptr[int], cobj) -> int
+@nocapture
+@C
+def fgetc(a: cobj) -> i32:
+    pass
+
+
+@nocapture
+@C
+def fopen(a: cobj, b: cobj) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def fclose(a: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def fread(a: cobj, b: int, c: int, d: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def fwrite(a: cobj, b: int, c: int, d: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def ftell(a: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def fseek(a: cobj, b: int, c: i32) -> i32:
+    pass
+
+
+@nocapture
+@C
+def fgets(a: cobj, b: int, c: cobj) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def fflush(a: cobj) -> void:
+    pass
+
+
+@nocapture
+@C
+def getline(a: Ptr[cobj], b: Ptr[int], c: cobj) -> int: pass
+
 
 # <stdlib.h>
 from C import exit(int)
-from C import system(cobj) -> int
-from C import free(cobj)
+
+
+@nocapture
+@C
+def system(a: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def free(a: cobj) -> void:
+    pass
 
 
 @pure
@@ -404,12 +495,55 @@ def atoi(a: cobj) -> int:
 
 
 # <zlib.h>
-from C import gzopen(cobj, cobj) -> cobj
-from C import gzerror(cobj, Ptr[i32]) -> cobj
-from C import gzgetc(cobj) -> i32
-from C import gzgets(cobj, cobj, i32) -> cobj
-from C import gzclose(cobj) -> int
-from C import gzread(cobj, cobj, u32) -> i32
-from C import gzwrite(cobj, cobj, u32) -> i32
-from C import gztell(cobj) -> int
-from C import gzseek(cobj, int, i32) -> int
+@nocapture
+@C
+def gzopen(a: cobj, b: cobj) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def gzerror(a: cobj, b: Ptr[i32]) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def gzgetc(a: cobj) -> i32:
+    pass
+
+
+@nocapture
+@C
+def gzgets(a: cobj, b: cobj, c: i32) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def gzclose(a: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def gzread(a: cobj, b: cobj, c: u32) -> i32:
+    pass
+
+
+@nocapture
+@C
+def gzwrite(a: cobj, b: cobj, c: u32) -> i32:
+    pass
+
+
+@nocapture
+@C
+def gztell(a: cobj) -> int:
+    pass
+
+
+@nocapture
+@C
+def gzseek(a: cobj, b: int, c: i32) -> int:
+    pass
