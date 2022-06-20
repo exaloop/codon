@@ -119,6 +119,7 @@ set(CODON_HPPFILES
     codon/parser/visitors/typecheck/typecheck_ctx.h
     codon/parser/visitors/visitor.h
     codon/sir/analyze/analysis.h
+    codon/sir/analyze/dataflow/capture.h
     codon/sir/analyze/dataflow/cfg.h
     codon/sir/analyze/dataflow/dominator.h
     codon/sir/analyze/dataflow/reaching.h
@@ -165,7 +166,6 @@ set(CODON_HPPFILES
     codon/sir/types/types.h
     codon/sir/util/cloning.h
     codon/sir/util/context.h
-    codon/sir/util/escape.h
     codon/sir/util/format.h
     codon/sir/util/inlining.h
     codon/sir/util/irtools.h
@@ -250,6 +250,7 @@ set(CODON_CPPFILES
     codon/parser/visitors/visitor.cpp
     codon/sir/attribute.cpp
     codon/sir/analyze/analysis.cpp
+    codon/sir/analyze/dataflow/capture.cpp
     codon/sir/analyze/dataflow/cfg.cpp
     codon/sir/analyze/dataflow/dominator.cpp
     codon/sir/analyze/dataflow/reaching.cpp
@@ -288,7 +289,6 @@ set(CODON_CPPFILES
     codon/sir/transform/pythonic/str.cpp
     codon/sir/types/types.cpp
     codon/sir/util/cloning.cpp
-    codon/sir/util/escape.cpp
     codon/sir/util/format.cpp
     codon/sir/util/inlining.cpp
     codon/sir/util/irtools.cpp

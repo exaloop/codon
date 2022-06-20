@@ -1,15 +1,16 @@
-#include "escape.h"
+#include "capture.h"
 
 #include <algorithm>
 #include <iterator>
-#include <unordered_map>
 #include <utility>
 
+#include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/util/irtools.h"
 
 namespace codon {
 namespace ir {
-namespace util {
+namespace analyze {
+namespace dataflow {
 namespace {
 
 template <typename S, typename T> bool contains(const S &x, T i) {
@@ -34,31 +35,6 @@ enum DerivedKind {
   INSERT,
   CALL,
   REFERENCE,
-};
-
-struct CaptureInfo {
-  std::vector<unsigned> argCaptures; // what other arguments capture this?
-  bool returnCaptures = false;       // does return capture this?
-  bool externCaptures = false;       // is this externally captured by a global?
-
-  operator bool() const {
-    return !argCaptures.empty() || returnCaptures || externCaptures;
-  }
-
-  static CaptureInfo nothing() { return {}; }
-
-  static CaptureInfo unknown(Func *func) {
-    CaptureInfo c;
-    unsigned i = 0;
-    for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
-      if (shouldTrack(*it))
-        c.argCaptures.push_back(i);
-      ++i;
-    }
-    c.returnCaptures = true;
-    c.externCaptures = true;
-    return c;
-  }
 };
 
 struct DerivedValInfo {
@@ -173,11 +149,10 @@ std::vector<CaptureInfo> makeNoCaptureInfo(Func *func, bool derives) {
 }
 
 struct CaptureContext {
-  analyze::dataflow::RDResult *reaching;
+  RDResult *reaching;
   std::unordered_map<id_t, std::vector<CaptureInfo>> results;
 
-  explicit CaptureContext(analyze::dataflow::RDResult *reaching)
-      : reaching(reaching), results() {}
+  explicit CaptureContext(RDResult *reaching) : reaching(reaching), results() {}
 
   std::vector<CaptureInfo> get(Func *func);
   void set(Func *func, const std::vector<CaptureInfo> &result);
@@ -250,18 +225,15 @@ bool extractVars(CaptureContext &cc, Value *v, std::vector<Var *> &result) {
   return ev.escapes;
 }
 
-struct CaptureTracker : public Operator {
+struct CaptureTracker : public util::Operator {
   CaptureContext &cc;
   BodiedFunc *func;
-  analyze::dataflow::CFGraph *cfg;
-  analyze::dataflow::RDInspector *rd;
+  CFGraph *cfg;
+  RDInspector *rd;
   std::vector<DerivedSet> dsets;
 
-  CaptureTracker(CaptureContext &cc, BodiedFunc *func, analyze::dataflow::CFGraph *cfg,
-                 analyze::dataflow::RDInspector *rd)
+  CaptureTracker(CaptureContext &cc, BodiedFunc *func, CFGraph *cfg, RDInspector *rd)
       : Operator(), cc(cc), func(func), cfg(cfg), rd(rd), dsets() {
-    using analyze::dataflow::SyntheticAssignInstr;
-
     // find synthetic assignments in CFG for argument vars
     auto *entry = cfg->getEntryBlock();
     std::unordered_map<id_t, SyntheticAssignInstr *> synthAssigns;
@@ -442,7 +414,6 @@ struct CaptureTracker : public Operator {
       return;
 
     forEachDSetOf(v->getIter(), [&](DerivedSet &dset) {
-      using analyze::dataflow::SyntheticAssignInstr;
       bool found = false;
       for (auto it = cfg->synth_begin(); it != cfg->synth_end(); ++it) {
         if (auto *synth = cast<SyntheticAssignInstr>(*it)) {
@@ -550,27 +521,40 @@ void CaptureContext::set(Func *func, const std::vector<CaptureInfo> &result) {
 
 } // namespace
 
-EscapeResult escapes(BodiedFunc *parent, Value *value,
-                     analyze::dataflow::RDResult *reaching) {
-  auto it1 = reaching->cfgResult->graphs.find(parent->getId());
-  seqassert(it1 != reaching->cfgResult->graphs.end(),
-            "could not find parent function in CFG results");
-
-  auto it2 = reaching->results.find(parent->getId());
-  seqassert(it2 != reaching->results.end(),
-            "could not find parent function in reaching-definitions results");
-
-  CaptureContext cc(reaching);
-  CaptureTracker ct(cc, parent, it1->second.get(), it2->second.get());
-  unsigned oldSize = 0;
-  do {
-    oldSize = ct.size();
-    parent->accept(ct);
-  } while (ct.size() != oldSize);
-
-  return EscapeResult::YES;
+CaptureInfo CaptureInfo::unknown(Func *func) {
+  CaptureInfo c;
+  unsigned i = 0;
+  for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
+    if (shouldTrack(*it))
+      c.argCaptures.push_back(i);
+    ++i;
+  }
+  c.returnCaptures = true;
+  c.externCaptures = true;
+  return c;
 }
 
-} // namespace util
+const std::string CaptureAnalysis::KEY = "core-analyses-capture";
+
+std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
+  auto res = std::make_unique<CaptureResult>();
+  auto *rdResult = getAnalysisResult<RDResult>(rdAnalysisKey);
+  CaptureContext cc(const_cast<RDResult *>(rdResult));
+
+  if (const auto *main = cast<BodiedFunc>(m->getMainFunc())) {
+    res->results.emplace(main->getId(), cc.get(const_cast<BodiedFunc *>(main)));
+  }
+
+  for (const auto *var : *m) {
+    if (const auto *f = cast<Func>(var)) {
+      res->results.emplace(f->getId(), cc.get(const_cast<Func *>(f)));
+    }
+  }
+
+  return res;
+}
+
+} // namespace dataflow
+} // namespace analyze
 } // namespace ir
 } // namespace codon
