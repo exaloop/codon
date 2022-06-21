@@ -36,7 +36,7 @@ public:
   /// @param var the variable being inspected
   /// @param loc the location
   /// @return an unordered set of value ids
-  std::unordered_set<id_t> getReachingDefinitions(Var *var, Value *loc);
+  std::unordered_set<id_t> getReachingDefinitions(const Var *var, const Value *loc);
 
   bool isInvalid(Var *var) const { return invalid.count(var->getId()) != 0; }
 

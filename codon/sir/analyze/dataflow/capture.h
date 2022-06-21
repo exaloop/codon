@@ -37,7 +37,7 @@ struct CaptureInfo {
   /// @param func the function containing this argument
   /// @param arg the argument itself
   /// @return an instance denoting unknown capture status
-  static CaptureInfo unknown(Func *func, Var *arg);
+  static CaptureInfo unknown(const Func *func, const Var *arg);
 };
 
 /// Capture analysis result.
@@ -69,7 +69,7 @@ public:
   std::unique_ptr<Result> run(const Module *m) override;
 };
 
-CaptureInfo escapes(BodiedFunc *func, Value *value, CaptureResult *cr);
+CaptureInfo escapes(const BodiedFunc *func, const Value *value, CaptureResult *cr);
 
 } // namespace dataflow
 } // namespace analyze

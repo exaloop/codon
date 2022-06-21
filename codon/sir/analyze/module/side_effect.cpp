@@ -247,7 +247,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     process(v->getLhs());
     process(v->getRhs());
 
-    auto *func = const_cast<BodiedFunc *>(funcStack.back());
+    auto *func = funcStack.back();
     auto it = cr->results.find(func->getId());
     seqassert(it != cr->results.end(), "function not found in capture results");
     auto captureInfo = it->second;
@@ -263,7 +263,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
     if (pure) {
       // make sure the lhs does not escape
-      auto escapeInfo = escapes(func, const_cast<Value *>(v->getLhs()), cr);
+      auto escapeInfo = escapes(func, v->getLhs(), cr);
       pure = (!escapeInfo || (escapeInfo.returnCaptures && !escapeInfo.externCaptures &&
                               escapeInfo.argCaptures.empty()));
     }
@@ -337,8 +337,7 @@ std::unique_ptr<Result> SideEffectAnalysis::run(const Module *m) {
   auto *capResult = getAnalysisResult<dataflow::CaptureResult>(capAnalysisKey);
   VarUseAnalyzer vua;
   const_cast<Module *>(m)->accept(vua);
-  SideEfectAnalyzer sea(vua, const_cast<dataflow::CaptureResult *>(capResult),
-                        globalAssignmentHasSideEffects);
+  SideEfectAnalyzer sea(vua, capResult, globalAssignmentHasSideEffects);
   m->accept(sea);
   return std::make_unique<SideEffectResult>(sea.result);
 }

@@ -30,25 +30,25 @@ template <typename S, typename T> bool containsId(const S &x, T i) {
   return false;
 }
 
-template <typename T> bool shouldTrack(T *x) {
+template <typename T> bool shouldTrack(const T *x) {
   // We only care about things with pointers,
   // since you can't capture primitive types
   // like int, float, etc.
   return x && !x->getType()->isAtomic();
 }
 
-template <> bool shouldTrack(types::Type *x) { return x && !x->isAtomic(); }
+template <> bool shouldTrack(const types::Type *x) { return x && !x->isAtomic(); }
 
 struct CaptureContext;
 
-bool extractVars(CaptureContext &cc, Value *v, std::vector<Var *> &result);
+bool extractVars(CaptureContext &cc, const Value *v, std::vector<const Var *> &result);
 
 struct DerivedSet {
-  Func *func;
-  Var *root;
+  const Func *func;
+  const Var *root;
   std::vector<id_t> args;
   std::unordered_set<id_t> derivedVals;
-  std::unordered_map<id_t, std::vector<Value *>> derivedVars;
+  std::unordered_map<id_t, std::vector<const Value *>> derivedVars;
   CaptureInfo result;
 
   void setReturnCaptured() {
@@ -61,15 +61,15 @@ struct DerivedSet {
     result.externCaptures = true;
   }
 
-  bool isDerived(Var *v) const {
+  bool isDerived(const Var *v) const {
     return derivedVars.find(v->getId()) != derivedVars.end();
   }
 
-  bool isDerived(Value *v) const {
+  bool isDerived(const Value *v) const {
     return derivedVals.find(v->getId()) != derivedVals.end();
   }
 
-  void setDerived(Var *v, Value *cause) {
+  void setDerived(const Var *v, const Value *cause) {
     if (!shouldTrack(v))
       return;
 
@@ -86,7 +86,7 @@ struct DerivedSet {
 
     auto it = derivedVars.find(id);
     if (it == derivedVars.end()) {
-      std::vector<Value *> info = {cause};
+      std::vector<const Value *> info = {cause};
       derivedVars.emplace(id, info);
     } else {
       if (!containsId(it->second, cause))
@@ -94,7 +94,7 @@ struct DerivedSet {
     }
   }
 
-  void setDerived(Value *v) {
+  void setDerived(const Value *v) {
     if (!shouldTrack(v))
       return;
 
@@ -109,11 +109,12 @@ struct DerivedSet {
     return total;
   }
 
-  explicit DerivedSet(Func *func, Var *root = nullptr)
+  explicit DerivedSet(const Func *func, const Var *root = nullptr)
       : func(func), root(root), args(), derivedVals(), derivedVars(), result() {}
 
   // Set for function argument
-  DerivedSet(Func *func, Var *root, Value *cause) : DerivedSet(func, root) {
+  DerivedSet(const Func *func, const Var *root, const Value *cause)
+      : DerivedSet(func, root) {
     // extract arguments
     for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
       args.push_back((*it)->getId());
@@ -123,8 +124,9 @@ struct DerivedSet {
   }
 
   // Set for function argument
-  DerivedSet(Func *func, Value *value, CaptureContext &cc) : DerivedSet(func) {
-    std::vector<Var *> vars;
+  DerivedSet(const Func *func, const Value *value, CaptureContext &cc)
+      : DerivedSet(func) {
+    std::vector<const Var *> vars;
     bool escapes = extractVars(cc, value, vars);
     if (escapes)
       setExternCaptured();
@@ -136,13 +138,13 @@ struct DerivedSet {
   }
 };
 
-bool noCaptureByAnnotation(Func *func) {
+bool noCaptureByAnnotation(const Func *func) {
   return util::hasAttribute(func, util::PURE_ATTR) ||
          util::hasAttribute(func, util::NO_SIDE_EFFECT_ATTR) ||
          util::hasAttribute(func, util::NO_CAPTURE_ATTR);
 }
 
-std::vector<CaptureInfo> makeAllCaptureInfo(Func *func) {
+std::vector<CaptureInfo> makeAllCaptureInfo(const Func *func) {
   std::vector<CaptureInfo> result;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
     result.push_back(shouldTrack(*it) ? CaptureInfo::unknown(func, *it)
@@ -151,7 +153,7 @@ std::vector<CaptureInfo> makeAllCaptureInfo(Func *func) {
   return result;
 }
 
-std::vector<CaptureInfo> makeNoCaptureInfo(Func *func, bool derives) {
+std::vector<CaptureInfo> makeNoCaptureInfo(const Func *func, bool derives) {
   std::vector<CaptureInfo> result;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
     auto info = CaptureInfo::nothing();
@@ -168,17 +170,17 @@ struct CaptureContext {
 
   explicit CaptureContext(RDResult *reaching) : reaching(reaching), results() {}
 
-  std::vector<CaptureInfo> get(Func *func);
-  void set(Func *func, const std::vector<CaptureInfo> &result);
+  std::vector<CaptureInfo> get(const Func *func);
+  void set(const Func *func, const std::vector<CaptureInfo> &result);
 
-  CFGraph *getCFGraph(Func *func) {
+  CFGraph *getCFGraph(const Func *func) {
     auto it = reaching->cfgResult->graphs.find(func->getId());
     seqassert(it != reaching->cfgResult->graphs.end(),
               "could not find function in CFG results");
     return it->second.get();
   }
 
-  RDInspector *getRDInspector(Func *func) {
+  RDInspector *getRDInspector(const Func *func) {
     auto it = reaching->results.find(func->getId());
     seqassert(it != reaching->results.end(),
               "could not find function in reaching-definitions results");
@@ -191,28 +193,28 @@ struct CaptureContext {
 // example, in "a[i] = x", the expression "a[i]" captures
 // "x"; in this case we need to track "a" but the variable
 // "i" (typically) we would not care about.
-struct ExtractVars : public util::Visitor {
+struct ExtractVars : public util::ConstVisitor {
   CaptureContext &cc;
   std::unordered_set<id_t> vars;
   bool escapes;
 
   explicit ExtractVars(CaptureContext &cc)
-      : util::Visitor(), cc(cc), vars(), escapes(false) {}
+      : util::ConstVisitor(), cc(cc), vars(), escapes(false) {}
 
-  template <typename Node> void process(Node *v) { v->accept(*this); }
+  template <typename Node> void process(const Node *v) { v->accept(*this); }
 
-  void add(Var *v) {
+  void add(const Var *v) {
     if (shouldTrack(v))
       vars.insert(v->getId());
   }
 
-  void defaultVisit(Node *) override {}
+  void defaultVisit(const Node *) override {}
 
-  void visit(VarValue *v) override { add(v->getVar()); }
+  void visit(const VarValue *v) override { add(v->getVar()); }
 
-  void visit(PointerValue *v) override { add(v->getVar()); }
+  void visit(const PointerValue *v) override { add(v->getVar()); }
 
-  void visit(CallInstr *v) override {
+  void visit(const CallInstr *v) override {
     auto capInfo = cc.get(util::getFunc(v->getCallee()));
     unsigned i = 0;
     for (auto *arg : *v) {
@@ -222,28 +224,28 @@ struct ExtractVars : public util::Visitor {
     }
   }
 
-  void visit(YieldInInstr *v) override {
+  void visit(const YieldInInstr *v) override {
     // We have no idea what the yield-in
     // value could be, so just assume we
     // escape in this case.
     escapes = true;
   }
 
-  void visit(TernaryInstr *v) override {
+  void visit(const TernaryInstr *v) override {
     process(v->getTrueValue());
     process(v->getFalseValue());
   }
 
-  void visit(ExtractInstr *v) override { process(v->getVal()); }
+  void visit(const ExtractInstr *v) override { process(v->getVal()); }
 
-  void visit(FlowInstr *v) override { process(v->getValue()); }
+  void visit(const FlowInstr *v) override { process(v->getValue()); }
 
-  void visit(dsl::CustomInstr *v) override {
+  void visit(const dsl::CustomInstr *v) override {
     // TODO
   }
 };
 
-bool extractVars(CaptureContext &cc, Value *v, std::vector<Var *> &result) {
+bool extractVars(CaptureContext &cc, const Value *v, std::vector<const Var *> &result) {
   auto *M = v->getModule();
   ExtractVars ev(cc);
   v->accept(ev);
@@ -259,21 +261,20 @@ struct CaptureTracker : public util::Operator {
   RDInspector *rd;
   std::vector<DerivedSet> dsets;
 
-  CaptureTracker(CaptureContext &cc, Func *func, bool isArg)
+  CaptureTracker(CaptureContext &cc, const Func *func, bool isArg)
       : Operator(), cc(cc), cfg(cc.getCFGraph(func)), rd(cc.getRDInspector(func)),
         dsets() {}
 
-  CaptureTracker(CaptureContext &cc, BodiedFunc *func)
+  CaptureTracker(CaptureContext &cc, const BodiedFunc *func)
       : CaptureTracker(cc, func, /*isArg=*/true) {
     // find synthetic assignments in CFG for argument vars
     auto *entry = cfg->getEntryBlock();
-    std::unordered_map<id_t, SyntheticAssignInstr *> synthAssigns;
+    std::unordered_map<id_t, const SyntheticAssignInstr *> synthAssigns;
 
     for (auto *v : *entry) {
       if (auto *synth = cast<SyntheticAssignInstr>(v)) {
         if (shouldTrack(synth->getLhs()))
-          synthAssigns[synth->getLhs()->getId()] =
-              const_cast<SyntheticAssignInstr *>(synth);
+          synthAssigns[synth->getLhs()->getId()] = synth;
       }
     }
 
@@ -295,7 +296,7 @@ struct CaptureTracker : public util::Operator {
     }
   }
 
-  CaptureTracker(CaptureContext &cc, BodiedFunc *func, Value *value)
+  CaptureTracker(CaptureContext &cc, const BodiedFunc *func, const Value *value)
       : CaptureTracker(cc, func, /*isArg=*/false) {
     dsets.push_back(DerivedSet(func, value, cc));
   }
@@ -382,7 +383,7 @@ struct CaptureTracker : public util::Operator {
   }
 
   void handle(InsertInstr *v) override {
-    std::vector<Var *> vars;
+    std::vector<const Var *> vars;
     bool escapes = extractVars(cc, v->getLhs(), vars);
 
     forEachDSetOf(v->getRhs(), [&](DerivedSet &dset) {
@@ -433,7 +434,7 @@ struct CaptureTracker : public util::Operator {
         // Process all other arguments that capture us.
         for (auto argno : info.argCaptures) {
           Value *arg = args[argno];
-          std::vector<Var *> vars;
+          std::vector<const Var *> vars;
           bool escapes = extractVars(cc, arg, vars);
           if (escapes)
             dset.setExternCaptured();
@@ -509,17 +510,17 @@ struct CaptureTracker : public util::Operator {
 
   // Helper to run to completion
 
-  void runToCompletion(Func *func) {
+  void runToCompletion(const Func *func) {
     unsigned oldSize = 0;
     do {
       oldSize = size();
-      func->accept(*this);
+      const_cast<Func *>(func)->accept(*this);
       reset();
     } while (size() != oldSize);
   }
 };
 
-std::vector<CaptureInfo> CaptureContext::get(Func *func) {
+std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
   // Don't know anything about external/LLVM funcs so use annotations.
   if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
     bool derives = util::hasAttribute(func, util::DERIVES_ATTR);
@@ -583,13 +584,13 @@ std::vector<CaptureInfo> CaptureContext::get(Func *func) {
   return {};
 }
 
-void CaptureContext::set(Func *func, const std::vector<CaptureInfo> &result) {
+void CaptureContext::set(const Func *func, const std::vector<CaptureInfo> &result) {
   results[func->getId()] = result;
 }
 
 } // namespace
 
-CaptureInfo CaptureInfo::unknown(Func *func, Var *arg) {
+CaptureInfo CaptureInfo::unknown(const Func *func, const Var *arg) {
   CaptureInfo c;
   unsigned i = 0;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
@@ -607,18 +608,18 @@ const std::string CaptureAnalysis::KEY = "core-analyses-capture";
 
 std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
   auto res = std::make_unique<CaptureResult>();
-  auto *rdResult = const_cast<RDResult *>(getAnalysisResult<RDResult>(rdAnalysisKey));
+  auto *rdResult = getAnalysisResult<RDResult>(rdAnalysisKey);
   res->rdResult = rdResult;
   CaptureContext cc(rdResult);
 
   if (const auto *main = cast<BodiedFunc>(m->getMainFunc())) {
-    auto ans = cc.get(const_cast<BodiedFunc *>(main));
+    auto ans = cc.get(main);
     res->results.emplace(main->getId(), ans);
   }
 
   for (const auto *var : *m) {
     if (const auto *f = cast<Func>(var)) {
-      auto ans = cc.get(const_cast<Func *>(f));
+      auto ans = cc.get(f);
       res->results.emplace(f->getId(), ans);
 
     }
@@ -627,7 +628,7 @@ std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
   return res;
 }
 
-CaptureInfo escapes(BodiedFunc *func, Value *value, CaptureResult *cr) {
+CaptureInfo escapes(const BodiedFunc *func, const Value *value, CaptureResult *cr) {
   if (!shouldTrack(value))
     return CaptureInfo::nothing();
 
