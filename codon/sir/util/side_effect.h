@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace codon {
 namespace ir {
 namespace util {
@@ -18,6 +20,13 @@ enum SideEffectStatus {
   NO_CAPTURE,
   UNKNOWN,
 };
+
+extern const std::string NON_PURE_ATTR;
+extern const std::string PURE_ATTR;
+extern const std::string NO_SIDE_EFFECT_ATTR;
+extern const std::string NO_CAPTURE_ATTR;
+extern const std::string DERIVES_ATTR;
+extern const std::string SELF_CAPTURES_ATTR;
 
 } // namespace util
 } // namespace ir

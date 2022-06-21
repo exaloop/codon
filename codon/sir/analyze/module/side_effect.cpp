@@ -35,33 +35,28 @@ struct VarUseAnalyzer : public util::Operator {
 struct SideEfectAnalyzer : public util::ConstVisitor {
   using Status = util::SideEffectStatus;
 
-  static const std::string NON_PURE_ATTR;
-  static const std::string PURE_ATTR;
-  static const std::string NO_SIDE_EFFECT_ATTR;
-  static const std::string NO_CAPTURE_ATTR;
-
   static Status getFunctionStatusFromAttributes(const Func *v, bool *force = nullptr) {
     auto attr = [v](const auto &s) { return util::hasAttribute(v, s); };
 
-    if (attr(PURE_ATTR)) {
+    if (attr(util::PURE_ATTR)) {
       if (force)
         *force = true;
       return Status::PURE;
     }
 
-    if (attr(NO_SIDE_EFFECT_ATTR)) {
+    if (attr(util::NO_SIDE_EFFECT_ATTR)) {
       if (force)
         *force = true;
       return Status::NO_SIDE_EFFECT;
     }
 
-    if (attr(NO_CAPTURE_ATTR)) {
+    if (attr(util::NO_CAPTURE_ATTR)) {
       if (force)
         *force = true;
       return Status::NO_CAPTURE;
     }
 
-    if (attr(NON_PURE_ATTR)) {
+    if (attr(util::NON_PURE_ATTR)) {
       if (force)
         *force = true;
       return Status::UNKNOWN;
@@ -301,13 +296,6 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
         v->getSideEffectStatus(/*local=*/false));
   }
 };
-
-const std::string SideEfectAnalyzer::NON_PURE_ATTR = "std.internal.attributes.nonpure";
-const std::string SideEfectAnalyzer::PURE_ATTR = "std.internal.attributes.pure";
-const std::string SideEfectAnalyzer::NO_SIDE_EFFECT_ATTR =
-    "std.internal.attributes.no_side_effect";
-const std::string SideEfectAnalyzer::NO_CAPTURE_ATTR =
-    "std.internal.attributes.nocapture";
 } // namespace
 
 const std::string SideEffectAnalysis::KEY = "core-analyses-side-effect";

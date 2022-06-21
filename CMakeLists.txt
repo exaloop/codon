@@ -294,6 +294,7 @@ set(CODON_CPPFILES
     codon/sir/util/irtools.cpp
     codon/sir/util/matching.cpp
     codon/sir/util/outlining.cpp
+    codon/sir/util/side_effect.cpp
     codon/sir/util/visitor.cpp
     codon/sir/value.cpp
     codon/sir/var.cpp
