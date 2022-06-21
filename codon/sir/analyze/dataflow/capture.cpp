@@ -21,6 +21,14 @@ template <typename S, typename T> bool contains(const S &x, T i) {
   return false;
 }
 
+template <typename S, typename T> bool containsId(const S &x, T i) {
+  for (auto a : x) {
+    if (a->getId() == i->getId())
+      return true;
+  }
+  return false;
+}
+
 template <typename T> bool shouldTrack(T *x) {
   // We only care about things with pointers,
   // since you can't capture primitive types
@@ -28,38 +36,11 @@ template <typename T> bool shouldTrack(T *x) {
   return x && !x->getType()->isAtomic();
 }
 
-enum DerivedKind {
-  ORIGIN = 0,
-  ASSIGN,
-  MEMBER,
-  INSERT,
-  CALL,
-  REFERENCE,
-};
-
-struct DerivedValInfo {
-  struct Element {
-    DerivedKind kind;
-    Var *var;
-  };
-
-  std::vector<Element> info;
-};
-
-struct DerivedVarInfo {
-  struct Element {
-    DerivedKind kind;
-    Value *val;
-  };
-
-  std::vector<Element> info;
-};
-
 struct DerivedSet {
   unsigned argno;
   std::vector<id_t> args;
-  std::unordered_map<id_t, DerivedValInfo> derivedVals;
-  std::unordered_map<id_t, DerivedVarInfo> derivedVars;
+  std::unordered_set<id_t> derivedVals;
+  std::unordered_map<id_t, std::vector<Value *>> derivedVars;
   CaptureInfo result;
 
   bool isDerived(Var *v) const {
@@ -70,40 +51,32 @@ struct DerivedSet {
     return derivedVals.find(v->getId()) != derivedVals.end();
   }
 
-  void setDerived(Var *v, DerivedKind kind, Value *cause) {
+  void setDerived(Var *v, Value *cause) {
     if (v->isGlobal())
       result.externCaptures = true;
 
     auto id = v->getId();
-    if (contains(args, id) && !contains(result.argCaptures, id))
-      result.argCaptures.push_back(id);
+    for (unsigned i = 0; i < args.size(); i++) {
+      if (args[i] == id && !contains(result.argCaptures, i))
+        result.argCaptures.push_back(i);
+    }
 
     auto it = derivedVars.find(id);
     if (it == derivedVars.end()) {
-      DerivedVarInfo info = {{{kind, cause}}};
+      std::vector<Value *> info = {cause};
       derivedVars.emplace(id, info);
     } else {
-      it->second.info.push_back({kind, cause});
+      if (!containsId(it->second, cause))
+        it->second.push_back(cause);
     }
   }
 
-  void setDerived(Value *v, DerivedKind kind, Var *cause = nullptr) {
-    auto it = derivedVals.find(v->getId());
-    if (it == derivedVals.end()) {
-      DerivedValInfo info = {{{kind, cause}}};
-      derivedVals.emplace(v->getId(), info);
-    } else {
-      it->second.info.push_back({kind, cause});
-    }
-  }
+  void setDerived(Value *v) { derivedVals.insert(v->getId()); }
 
   unsigned size() const {
-    unsigned total = 0;
-    for (auto &e : derivedVals) {
-      total += e.second.info.size();
-    }
+    unsigned total = derivedVals.size();
     for (auto &e : derivedVars) {
-      total += e.second.info.size();
+      total += e.second.size();
     }
     return total;
   }
@@ -113,7 +86,7 @@ struct DerivedSet {
 
   DerivedSet(unsigned argno, std::vector<id_t> args, Var *var, Value *cause)
       : argno(argno), args(std::move(args)), derivedVals(), derivedVars(), result() {
-    setDerived(var, DerivedKind::ORIGIN, cause);
+    setDerived(var, cause);
   }
 };
 
@@ -303,9 +276,10 @@ struct CaptureTracker : public util::Operator {
       if (it == dset.derivedVars.end())
         return;
 
-      for (auto &e : it->second.info) {
-        auto otherSet = rd->getReachingDefinitions(var, e.val);
+      for (auto *cause : it->second) {
+        auto otherSet = rd->getReachingDefinitions(var, cause);
         bool derived = false;
+
         for (auto &elem : mySet) {
           if (otherSet.count(elem)) {
             derived = true;
@@ -313,7 +287,7 @@ struct CaptureTracker : public util::Operator {
           }
         }
         if (derived) {
-          dset.setDerived(v, DerivedKind::REFERENCE, var);
+          dset.setDerived(v);
           return;
         }
       }
@@ -325,17 +299,15 @@ struct CaptureTracker : public util::Operator {
   void handle(PointerValue *v) override { handleVarReference(v, v->getVar()); }
 
   void handle(AssignInstr *v) override {
-    forEachDSetOf(v->getRhs(), [&](DerivedSet &dset) {
-      dset.setDerived(v->getLhs(), DerivedKind::ASSIGN, v);
-    });
+    forEachDSetOf(v->getRhs(),
+                  [&](DerivedSet &dset) { dset.setDerived(v->getLhs(), v); });
   }
 
   void handle(ExtractInstr *v) override {
     if (!shouldTrack(v))
       return;
 
-    forEachDSetOf(v->getVal(),
-                  [&](DerivedSet &dset) { dset.setDerived(v, DerivedKind::MEMBER); });
+    forEachDSetOf(v->getVal(), [&](DerivedSet &dset) { dset.setDerived(v); });
   }
 
   void handle(InsertInstr *v) override {
@@ -347,7 +319,7 @@ struct CaptureTracker : public util::Operator {
         dset.result.externCaptures = true;
 
       for (auto *var : vars) {
-        dset.setDerived(var, DerivedKind::INSERT, v);
+        dset.setDerived(var, v);
       }
     });
   }
@@ -392,13 +364,13 @@ struct CaptureTracker : public util::Operator {
             dset.result.externCaptures = true;
 
           for (auto *var : vars) {
-            dset.setDerived(var, DerivedKind::CALL, v);
+            dset.setDerived(var, v);
           }
         }
 
         // Check if the return value captures.
         if (info.returnCaptures)
-          dset.setDerived(v, DerivedKind::CALL);
+          dset.setDerived(v);
 
         // Check if we're externally captured.
         if (info.externCaptures)
@@ -420,7 +392,7 @@ struct CaptureTracker : public util::Operator {
           if (synth->getKind() == SyntheticAssignInstr::Kind::NEXT_VALUE &&
               synth->getLhs()->getId() == var->getId()) {
             seqassert(!found, "found multiple synthetic assignments for loop var");
-            dset.setDerived(var, DerivedKind::ASSIGN, synth);
+            dset.setDerived(var, synth);
             found = true;
           }
         }
@@ -454,8 +426,8 @@ std::vector<CaptureInfo> CaptureContext::get(Func *func) {
   // Don't know anything about external/LLVM funcs so use annotations.
   if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
     bool derives = util::hasAttribute(func, DERIVES_ATTR);
-    auto info = noCaptureByAnnotation(func) ? makeNoCaptureInfo(func, derives)
-                                            : makeAllCaptureInfo(func);
+    return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func, derives)
+                                       : makeAllCaptureInfo(func);
   }
 
   // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
@@ -495,6 +467,7 @@ std::vector<CaptureInfo> CaptureContext::get(Func *func) {
     do {
       oldSize = ct.size();
       func->accept(ct);
+      ct.reset();
     } while (ct.size() != oldSize);
 
     std::vector<CaptureInfo> answer;
@@ -542,12 +515,14 @@ std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
   CaptureContext cc(const_cast<RDResult *>(rdResult));
 
   if (const auto *main = cast<BodiedFunc>(m->getMainFunc())) {
-    res->results.emplace(main->getId(), cc.get(const_cast<BodiedFunc *>(main)));
+    auto ans = cc.get(const_cast<BodiedFunc *>(main));
+    res->results.emplace(main->getId(), ans);
   }
 
   for (const auto *var : *m) {
     if (const auto *f = cast<Func>(var)) {
-      res->results.emplace(f->getId(), cc.get(const_cast<Func *>(f)));
+      auto ans = cc.get(const_cast<Func *>(f));
+      res->results.emplace(f->getId(), ans);
     }
   }
 
