@@ -65,6 +65,7 @@ class Ptr:
         ret void
 
     @pure
+    @derives
     @llvm
     def __add__(self, other: int) -> Ptr[T]:
         %0 = getelementptr {=T}, {=T}* %self, i64 %other
@@ -186,6 +187,7 @@ class Ptr:
         ret void
 
     @pure
+    @derives
     @llvm
     def as_byte(self) -> Ptr[byte]:
         %0 = bitcast {=T}* %self to i8*

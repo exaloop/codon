@@ -36,12 +36,25 @@ template <typename T> bool shouldTrack(T *x) {
   return x && !x->getType()->isAtomic();
 }
 
+template <> bool shouldTrack(types::Type *x) { return x && !x->isAtomic(); }
+
 struct DerivedSet {
+  Func *func;
   unsigned argno;
   std::vector<id_t> args;
   std::unordered_set<id_t> derivedVals;
   std::unordered_map<id_t, std::vector<Value *>> derivedVars;
   CaptureInfo result;
+
+  void setReturnCaptured() {
+    if (shouldTrack(util::getReturnType(func)))
+      result.returnCaptures = true;
+  }
+
+  void setExternCaptured() {
+    setReturnCaptured();
+    result.externCaptures = true;
+  }
 
   bool isDerived(Var *v) const {
     return derivedVars.find(v->getId()) != derivedVars.end();
@@ -52,8 +65,11 @@ struct DerivedSet {
   }
 
   void setDerived(Var *v, Value *cause) {
+    if (!shouldTrack(v))
+      return;
+
     if (v->isGlobal())
-      result.externCaptures = true;
+      setExternCaptured();
 
     auto id = v->getId();
     if (id != args[argno]) {
@@ -73,7 +89,12 @@ struct DerivedSet {
     }
   }
 
-  void setDerived(Value *v) { derivedVals.insert(v->getId()); }
+  void setDerived(Value *v) {
+    if (!shouldTrack(v))
+      return;
+
+    derivedVals.insert(v->getId());
+  }
 
   unsigned size() const {
     unsigned total = derivedVals.size();
@@ -83,11 +104,9 @@ struct DerivedSet {
     return total;
   }
 
-  explicit DerivedSet(unsigned argno)
-      : argno(argno), derivedVals(), derivedVars(), result() {}
-
-  DerivedSet(unsigned argno, std::vector<id_t> args, Var *var, Value *cause)
-      : argno(argno), args(std::move(args)), derivedVals(), derivedVars(), result() {
+  DerivedSet(Func *func, unsigned argno, std::vector<id_t> args, Var *var, Value *cause)
+      : func(func), argno(argno), args(std::move(args)), derivedVals(), derivedVars(),
+        result() {
     setDerived(var, cause);
   }
 };
@@ -237,7 +256,7 @@ struct CaptureTracker : public util::Operator {
       auto it2 = synthAssigns.find((*it)->getId());
       seqassert(it2 != synthAssigns.end(),
                 "could not find synthetic assignment for arg var");
-      dsets.push_back(DerivedSet(argno++, args, *it, it2->second));
+      dsets.push_back(DerivedSet(func, argno++, args, *it, it2->second));
     }
   }
 
@@ -271,6 +290,15 @@ struct CaptureTracker : public util::Operator {
 
   void handleVarReference(Value *v, Var *var) {
     forEachDSetOf(var, [&](DerivedSet &dset) {
+      // We assume global references are always derived
+      // if the var is derived, since they can change
+      // at any point as far as we know. Same goes for
+      // vars untracked by the reaching-def analysis.
+      if (var->isGlobal() || rd->isInvalid(var)) {
+        dset.setDerived(v);
+        return;
+      }
+
       // Make sure the var at this point is reached by
       // at least one definition that has led to a
       // derived value.
@@ -319,7 +347,7 @@ struct CaptureTracker : public util::Operator {
 
     forEachDSetOf(v->getRhs(), [&](DerivedSet &dset) {
       if (escapes)
-        dset.result.externCaptures = true;
+        dset.setExternCaptured();
 
       for (auto *var : vars) {
         dset.setDerived(var, v);
@@ -342,11 +370,12 @@ struct CaptureTracker : public util::Operator {
         ++i;
       }
 
+      const bool returnCaptures = shouldTrack(v);
       for (auto *arg : args) {
         CaptureInfo info = CaptureInfo::nothing();
         if (shouldTrack(arg)) {
           info.argCaptures = argCaptures;
-          info.returnCaptures = true;
+          info.returnCaptures = returnCaptures;
           info.externCaptures = true;
         }
         capInfo.push_back(info);
@@ -364,7 +393,7 @@ struct CaptureTracker : public util::Operator {
           std::vector<Var *> vars;
           bool escapes = extractVars(cc, arg, vars);
           if (escapes)
-            dset.result.externCaptures = true;
+            dset.setExternCaptured();
 
           for (auto *var : vars) {
             dset.setDerived(var, v);
@@ -377,7 +406,7 @@ struct CaptureTracker : public util::Operator {
 
         // Check if we're externally captured.
         if (info.externCaptures)
-          dset.result.externCaptures = true;
+          dset.setExternCaptured();
       });
       ++i;
     }
@@ -429,8 +458,7 @@ struct CaptureTracker : public util::Operator {
   }
 
   void handle(ThrowInstr *v) override {
-    forEachDSetOf(v->getValue(),
-                  [&](DerivedSet &dset) { dset.result.externCaptures = true; });
+    forEachDSetOf(v->getValue(), [&](DerivedSet &dset) { dset.setExternCaptured(); });
   }
 };
 
@@ -523,7 +551,7 @@ CaptureInfo CaptureInfo::unknown(Func *func) {
       c.argCaptures.push_back(i);
     ++i;
   }
-  c.returnCaptures = true;
+  c.returnCaptures = shouldTrack(util::getReturnType(func));
   c.externCaptures = true;
   return c;
 }
