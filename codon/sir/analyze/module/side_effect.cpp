@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "codon/sir/analyze/dataflow/capture.h"
 #include "codon/sir/util/irtools.h"
 #include "codon/sir/util/operator.h"
 
@@ -68,8 +69,10 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   VarUseAnalyzer &vua;
+  dataflow::CaptureResult *cr;
   bool globalAssignmentHasSideEffects;
   std::unordered_map<id_t, Status> result;
+  std::vector<const BodiedFunc *> funcStack;
   Status exprStatus;
   Status funcStatus;
 
@@ -77,10 +80,11 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   // IR passes might introduce globals that we've eliminated
   // or demoted earlier. Hence the distinction with whether
   // global assignments are considered to have side effects.
-  SideEfectAnalyzer(VarUseAnalyzer &vua, bool globalAssignmentHasSideEffects)
-      : util::ConstVisitor(), vua(vua),
+  SideEfectAnalyzer(VarUseAnalyzer &vua, dataflow::CaptureResult *cr,
+                    bool globalAssignmentHasSideEffects)
+      : util::ConstVisitor(), vua(vua), cr(cr),
         globalAssignmentHasSideEffects(globalAssignmentHasSideEffects), result(),
-        exprStatus(Status::PURE), funcStatus(Status::PURE) {}
+        funcStack(), exprStatus(Status::PURE), funcStatus(Status::PURE) {}
 
   template <typename T> bool has(const T *v) {
     return result.find(v->getId()) != result.end();
@@ -116,7 +120,9 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     set(v, s, s); // avoid infinite recursion
     auto oldFuncStatus = funcStatus;
     funcStatus = Status::PURE;
+    funcStack.push_back(v);
     process(v->getBody());
+    funcStack.pop_back();
     if (force)
       funcStatus = s;
     set(v, funcStatus);
@@ -240,7 +246,29 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   void visit(const InsertInstr *v) override {
     process(v->getLhs());
     process(v->getRhs());
-    set(v, Status::UNKNOWN, Status::UNKNOWN);
+
+    auto *func = const_cast<BodiedFunc *>(funcStack.back());
+    auto it = cr->results.find(func->getId());
+    seqassert(it != cr->results.end(), "function not found in capture results");
+    auto captureInfo = it->second;
+
+    bool pure = true;
+
+    for (auto &info : captureInfo) {
+      if (info.externCaptures || info.modified || !info.argCaptures.empty()) {
+        pure = false;
+        break;
+      }
+    }
+
+    if (pure) {
+      // make sure the lhs does not escape
+      auto escapeInfo = escapes(func, const_cast<Value *>(v->getLhs()), cr);
+      pure = (!escapeInfo || (escapeInfo.returnCaptures && !escapeInfo.externCaptures &&
+                              escapeInfo.argCaptures.empty()));
+    }
+
+    set(v, Status::UNKNOWN, pure ? Status::PURE : Status::UNKNOWN);
   }
 
   void visit(const CallInstr *v) override {
@@ -306,9 +334,11 @@ bool SideEffectResult::hasSideEffect(Value *v) const {
 }
 
 std::unique_ptr<Result> SideEffectAnalysis::run(const Module *m) {
+  auto *capResult = getAnalysisResult<dataflow::CaptureResult>(capAnalysisKey);
   VarUseAnalyzer vua;
   const_cast<Module *>(m)->accept(vua);
-  SideEfectAnalyzer sea(vua, globalAssignmentHasSideEffects);
+  SideEfectAnalyzer sea(vua, const_cast<dataflow::CaptureResult *>(capResult),
+                        globalAssignmentHasSideEffects);
   m->accept(sea);
   return std::make_unique<SideEffectResult>(sea.result);
 }

@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "codon/sir/analyze/analysis.h"
+#include "codon/sir/analyze/dataflow/capture.h"
 #include "codon/sir/analyze/dataflow/cfg.h"
 #include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/analyze/module/global_vars.h"
@@ -161,24 +162,31 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
 
     // folding
-    auto seKey1 =
-        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
-            /*globalAssignmentHasSideEffects=*/true));
-    auto seKey2 =
-        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
-            /*globalAssignmentHasSideEffects=*/false));
     auto cfgKey = registerAnalysis(std::make_unique<analyze::dataflow::CFAnalysis>());
     auto rdKey = registerAnalysis(
         std::make_unique<analyze::dataflow::RDAnalysis>(cfgKey), {cfgKey});
+    auto capKey = registerAnalysis(
+        std::make_unique<analyze::dataflow::CaptureAnalysis>(rdKey), {rdKey});
     auto globalKey =
         registerAnalysis(std::make_unique<analyze::module::GlobalVarsAnalyses>());
+    auto seKey1 =
+        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
+                             capKey,
+                             /*globalAssignmentHasSideEffects=*/true),
+                         {capKey});
+    auto seKey2 =
+        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
+                             capKey,
+                             /*globalAssignmentHasSideEffects=*/false),
+                         {capKey});
     registerPass(std::make_unique<folding::FoldingPassGroup>(
                      seKey1, rdKey, globalKey, /*runGlobalDemoton=*/false),
                  /*insertBefore=*/"", {seKey1, rdKey, globalKey},
-                 {seKey1, rdKey, cfgKey, globalKey});
+                 {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
-    registerPass(std::make_unique<parallel::OpenMPPass>());
+    registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
+                 {cfgKey, globalKey});
 
     if (init != Init::JIT) {
       // Don't demote globals in JIT mode, since they might be used later

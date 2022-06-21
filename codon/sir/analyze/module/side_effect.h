@@ -24,6 +24,8 @@ struct SideEffectResult : public Result {
 
 class SideEffectAnalysis : public Analysis {
 private:
+  /// the capture analysis key
+  std::string capAnalysisKey;
   /// true if assigning to a global variable automatically has side effects
   bool globalAssignmentHasSideEffects;
 
@@ -33,8 +35,10 @@ public:
   /// Constructs a side effect analysis.
   /// @param globalAssignmentHasSideEffects true if global variable assignment
   /// automatically has side effects
-  explicit SideEffectAnalysis(bool globalAssignmentHasSideEffects = true)
-      : Analysis(), globalAssignmentHasSideEffects(globalAssignmentHasSideEffects) {}
+  explicit SideEffectAnalysis(const std::string &capAnalysisKey,
+                              bool globalAssignmentHasSideEffects = true)
+      : Analysis(), capAnalysisKey(capAnalysisKey),
+        globalAssignmentHasSideEffects(globalAssignmentHasSideEffects) {}
 
   std::string getKey() const override { return KEY; }
 
