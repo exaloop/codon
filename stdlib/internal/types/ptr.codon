@@ -57,6 +57,7 @@ class Ptr:
         %1 = load {=T}, {=T}* %0
         ret {=T} %1
 
+    @self_captures
     @llvm
     def __setitem__(self, index: int, what: T) -> void:
         %0 = getelementptr {=T}, {=T}* %self, i64 %index

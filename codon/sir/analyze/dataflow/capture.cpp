@@ -56,9 +56,11 @@ struct DerivedSet {
       result.externCaptures = true;
 
     auto id = v->getId();
-    for (unsigned i = 0; i < args.size(); i++) {
-      if (args[i] == id && !contains(result.argCaptures, i))
-        result.argCaptures.push_back(i);
+    if (id != args[argno]) {
+      for (unsigned i = 0; i < args.size(); i++) {
+        if (args[i] == id && !contains(result.argCaptures, i))
+          result.argCaptures.push_back(i);
+      }
     }
 
     auto it = derivedVars.find(id);
@@ -94,6 +96,7 @@ const std::string PURE_ATTR = "std.internal.attributes.pure";
 const std::string NO_SIDE_EFFECT_ATTR = "std.internal.attributes.no_side_effect";
 const std::string NO_CAPTURE_ATTR = "std.internal.attributes.nocapture";
 const std::string DERIVES_ATTR = "std.internal.attributes.derives";
+const std::string SELF_CAPTURES_ATTR = "std.internal.attributes.self_captures";
 
 bool noCaptureByAnnotation(Func *func) {
   return util::hasAttribute(func, PURE_ATTR) ||
@@ -400,6 +403,15 @@ struct CaptureTracker : public util::Operator {
     });
   }
 
+  void handle(TernaryInstr *v) override {
+    forEachDSetOf(v->getTrueValue(), [&](DerivedSet &dset) { dset.setDerived(v); });
+    forEachDSetOf(v->getFalseValue(), [&](DerivedSet &dset) { dset.setDerived(v); });
+  }
+
+  void handle(FlowInstr *v) override {
+    forEachDSetOf(v->getValue(), [&](DerivedSet &dset) { dset.setDerived(v); });
+  }
+
   void handle(dsl::CustomInstr *v) override {
     // TODO
   }
@@ -426,6 +438,15 @@ std::vector<CaptureInfo> CaptureContext::get(Func *func) {
   // Don't know anything about external/LLVM funcs so use annotations.
   if (isA<ExternalFunc>(func) || isA<LLVMFunc>(func)) {
     bool derives = util::hasAttribute(func, DERIVES_ATTR);
+
+    if (util::hasAttribute(func, SELF_CAPTURES_ATTR)) {
+      auto ans = makeNoCaptureInfo(func, derives);
+      for (unsigned i = 1; i < ans.size(); i++) {
+        ans[i].argCaptures.push_back(0);
+      }
+      return ans;
+    }
+
     return noCaptureByAnnotation(func) ? makeNoCaptureInfo(func, derives)
                                        : makeAllCaptureInfo(func);
   }
@@ -523,6 +544,7 @@ std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
     if (const auto *f = cast<Func>(var)) {
       auto ans = cc.get(const_cast<Func *>(f));
       res->results.emplace(f->getId(), ans);
+
     }
   }
 

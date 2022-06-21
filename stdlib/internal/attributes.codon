@@ -47,6 +47,11 @@ def derives():
 
 
 @__attribute__
+def self_captures():
+    pass
+
+
+@__attribute__
 def commutative():
     pass
 

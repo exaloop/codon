@@ -1,0 +1,74 @@
+# entry point for validator
+@nonpure
+def expect_capture(return_captures: bool, extern_captures: bool, arg_captures):
+    return False
+
+g = [0]
+
+@nonpure
+def make_sure_globals_arent_optd_out():
+    g.append(1)
+
+make_sure_globals_arent_optd_out()
+
+@test
+def test_1(a):
+    global g
+    g = a
+    assert expect_capture(False, True, ())  # a
+test_1([42])
+
+@test
+def test_2(a, b, c):
+    x = c
+    b[0] = a
+    y = x
+    assert expect_capture(False, False, (1,))  # a
+    assert expect_capture(False, False, ())    # b
+    assert expect_capture(False, False, ())    # c
+test_2([42], [[1]], ['x'])
+
+@test
+def test_3(a):
+    global g
+    x = [1]
+    p = __ptr__(x)
+    p[0] = a
+    q = p
+    g = p[0]
+    assert expect_capture(False, True, ())  # a
+test_3([42])
+
+@test
+def test_4(a):
+    global g
+    v = [a]
+    g = v[0]
+    assert expect_capture(False, True, ())  # a
+test_4([42])
+
+@test
+def test_5(a):
+    global g
+    v = [a]
+    for i in v:
+        g = i
+    assert expect_capture(False, True, ())  # a
+test_5([42])
+
+@test
+def test_6(a, b, c):
+    a[0] = b
+    c[0] = a
+    assert expect_capture(False, False, (2,))    # a
+    assert expect_capture(False, False, (0, 2))  # b
+    assert expect_capture(False, False, ())      # c
+test_6([[0]], [42], [[[0]]])
+
+@test
+def test_7(a, b, c):
+    assert expect_capture(True, False, ())   # a
+    assert expect_capture(False, False, ())  # b
+    assert expect_capture(True, False, ())   # c
+    return a if b else c
+test_7([11], g, [22])
