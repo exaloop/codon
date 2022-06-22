@@ -89,6 +89,12 @@ jobs:
           asset_name: codon-linux-x86_64.tar.gz
           asset_content_type: application/gzip
 
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: manylinux-x86_64
+          path: codon-linux-x86_64.tar.gz
+
   main:
     strategy:
       matrix:
@@ -179,15 +185,6 @@ jobs:
           (cd docs/sphinx && python docgen.py ../../stdlib)
           make -C docs/sphinx html
 
-      #- name: Deploy Documentation
-      #  if: github.ref == 'refs/heads/master'
-      #  uses: peaceiris/actions-gh-pages@v3
-      #  with:
-      #    github_token: ${{ secrets.GITHUB_TOKEN }}
-      #    publish_dir: ./docs/sphinx/_build/html
-      #    cname: docs.codon.dev
-      #    force_orphan: true
-
       - name: Artifact Environment
         run: |
           echo "CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz" >> $GITHUB_ENV
@@ -230,3 +227,17 @@ jobs:
           asset_path: ./codon-darwin-x86_64.tar.gz
           asset_name: codon-darwin-x86_64.tar.gz
           asset_content_type: application/gzip
+
+      - name: Upload Artifacts
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-darwin-x86_64.tar.gz
+
+      - name: Upload Artifacts
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-linux-x86_64.tar.gz
