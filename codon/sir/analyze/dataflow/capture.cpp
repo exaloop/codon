@@ -147,8 +147,7 @@ bool noCaptureByAnnotation(const Func *func) {
 std::vector<CaptureInfo> makeAllCaptureInfo(const Func *func) {
   std::vector<CaptureInfo> result;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
-    result.push_back(shouldTrack(*it) ? CaptureInfo::unknown(func, *it)
-                                      : CaptureInfo::nothing());
+    result.push_back(CaptureInfo::unknown(func, (*it)->getType()));
   }
   return result;
 }
@@ -215,12 +214,22 @@ struct ExtractVars : public util::ConstVisitor {
   void visit(const PointerValue *v) override { add(v->getVar()); }
 
   void visit(const CallInstr *v) override {
-    auto capInfo = cc.get(util::getFunc(v->getCallee()));
-    unsigned i = 0;
-    for (auto *arg : *v) {
-      if (shouldTrack(arg) && capInfo[i].returnCaptures)
-        process(arg);
-      ++i;
+    if (auto *func = util::getFunc(v->getCallee())) {
+      auto capInfo = cc.get(util::getFunc(v->getCallee()));
+      unsigned i = 0;
+      for (auto *arg : *v) {
+        // note possibly capInfo.size() != v->numArgs() if calling vararg C function
+        auto info = (i < capInfo.size()) ? capInfo[i]
+                                         : CaptureInfo::unknown(func, arg->getType());
+        if (shouldTrack(arg) && capInfo[i].returnCaptures)
+          process(arg);
+        ++i;
+      }
+    } else {
+      for (auto *arg : *v) {
+        if (shouldTrack(arg))
+          process(arg);
+      }
     }
   }
 
@@ -401,8 +410,9 @@ struct CaptureTracker : public util::Operator {
   void handle(CallInstr *v) override {
     std::vector<Value *> args(v->begin(), v->end());
     std::vector<CaptureInfo> capInfo;
+    auto *func = util::getFunc(v->getCallee());
 
-    if (auto *func = util::getFunc(v->getCallee())) {
+    if (func) {
       capInfo = cc.get(func);
     } else {
       std::vector<unsigned> argCaptures;
@@ -429,7 +439,9 @@ struct CaptureTracker : public util::Operator {
     unsigned i = 0;
     for (auto *arg : args) {
       forEachDSetOf(arg, [&](DerivedSet &dset) {
-        auto &info = capInfo[i];
+        // note possibly capInfo.size() != v->numArgs() if calling vararg C function
+        auto info = (i < capInfo.size()) ? capInfo[i]
+                                         : CaptureInfo::unknown(func, arg->getType());
 
         // Process all other arguments that capture us.
         for (auto argno : info.argCaptures) {
@@ -590,7 +602,10 @@ void CaptureContext::set(const Func *func, const std::vector<CaptureInfo> &resul
 
 } // namespace
 
-CaptureInfo CaptureInfo::unknown(const Func *func, const Var *arg) {
+CaptureInfo CaptureInfo::unknown(const Func *func, types::Type *type) {
+  if (!shouldTrack(type))
+    return CaptureInfo::nothing();
+
   CaptureInfo c;
   unsigned i = 0;
   for (auto it = func->arg_begin(); it != func->arg_end(); ++it) {
@@ -600,7 +615,7 @@ CaptureInfo CaptureInfo::unknown(const Func *func, const Var *arg) {
   }
   c.returnCaptures = shouldTrack(util::getReturnType(func));
   c.externCaptures = true;
-  c.modified = shouldTrack(arg);
+  c.modified = true;
   return c;
 }
 

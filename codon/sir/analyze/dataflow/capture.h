@@ -35,9 +35,9 @@ struct CaptureInfo {
 
   /// Returns an instance denoting unknown capture status.
   /// @param func the function containing this argument
-  /// @param arg the argument itself
+  /// @param type the argument's type
   /// @return an instance denoting unknown capture status
-  static CaptureInfo unknown(const Func *func, const Var *arg);
+  static CaptureInfo unknown(const Func *func, types::Type *type);
 };
 
 /// Capture analysis result.
