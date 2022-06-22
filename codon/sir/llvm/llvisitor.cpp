@@ -14,6 +14,7 @@
 #include "codon/sir/dsl/codegen.h"
 #include "codon/sir/llvm/optimize.h"
 #include "codon/util/common.h"
+#include "codon/parser/common.h"
 
 namespace codon {
 namespace ir {
@@ -352,6 +353,7 @@ void executeCommand(const std::vector<std::string> &args) {
   for (auto &arg : args) {
     cArgs.push_back(arg.c_str());
   }
+  LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
   if (fork() == 0) {
@@ -397,6 +399,11 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
   std::vector<std::string> command = {"gcc"};
+  // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE object" 
+  // complaints by gcc when it is built with --enable-default-pie
+  command.push_back("-no-pie");
+  // MUST go before -llib to compile on Linux
+  command.push_back(objFile);
 
   for (const auto &rpath : rpaths) {
     command.push_back("-L" + rpath);
@@ -409,7 +416,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
                                         "-lz",       "-lm",   "-lc",       "-o",
-                                        filename,    objFile};
+                                        filename};
 
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
