@@ -89,6 +89,12 @@ jobs:
           asset_name: codon-linux-x86_64.tar.gz
           asset_content_type: application/gzip
 
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: manylinux-x86_64
+          path: codon-linux-x86_64.tar.gz
+
   main:
     strategy:
       matrix:
@@ -230,3 +236,17 @@ jobs:
           asset_path: ./codon-darwin-x86_64.tar.gz
           asset_name: codon-darwin-x86_64.tar.gz
           asset_content_type: application/gzip
+
+      - name: Upload artefacts
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-darwin-x86_64.tar.gz
+
+      - name: Upload artefacts
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-linux-x86_64.tar.gz
