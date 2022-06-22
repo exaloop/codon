@@ -312,7 +312,8 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   void visit(const ThrowInstr *v) override {
-    set(v, process(v->getValue()), Status::NO_CAPTURE);
+    process(v->getValue());
+    set(v, Status::UNKNOWN, Status::NO_CAPTURE);
   }
 
   void visit(const FlowInstr *v) override {
