@@ -398,6 +398,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
   std::vector<std::string> command = {"gcc"};
+  // Avoid "argument unused during compilation" warning
+  command.push_back("-Wno-unused-command-line-argument");
   // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
   // object" complaints by gcc when it is built with --enable-default-pie
   command.push_back("-no-pie");
