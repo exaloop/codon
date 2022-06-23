@@ -186,7 +186,7 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
 }
 
 /// Transform a statement in conditional scope.
-/// Because variables and forward declarations within conditiona scopes can be
+/// Because variables and forward declarations within conditional scopes can be
 /// added later after the domination analysis, ensure that all such declarations
 /// are prepended.
 StmtPtr SimplifyVisitor::transformConditionalScope(StmtPtr &stmt) {

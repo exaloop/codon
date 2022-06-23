@@ -33,7 +33,7 @@ struct SimplifyItem : public SrcObject {
   std::vector<int> scope;
   /// Non-empty string if a variable is import variable
   std::string importPath;
-  bool accessChecked;
+  std::vector<std::vector<int>> accessChecked;
   bool noShadow;
   bool generic;
   ExprPtr replacement;
@@ -44,8 +44,8 @@ public:
                std::string importPath = "")
       : kind(kind), baseName(std::move(baseName)),
         canonicalName(std::move(canonicalName)), moduleName(std::move(moduleName)),
-        scope(std::move(scope)), importPath(std::move(importPath)), accessChecked(true),
-        noShadow(false), generic(false) {}
+        scope(std::move(scope)), importPath(std::move(importPath)), noShadow(false),
+        generic(false) {}
 
   /// Convenience getters.
   std::string getBaseName() const { return baseName; }

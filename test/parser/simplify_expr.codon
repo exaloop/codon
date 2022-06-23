@@ -427,3 +427,84 @@ print x  #: 1
 a = (2, 3)
 b = (1, *a[1:])
 print a, b  #: (2, 3) (1, 3)
+
+#%% nonlocal,barebones
+def goo(ww):
+  z = 0
+  def foo(x):
+    f = 10
+    def bar(y):
+      nonlocal z
+      f = x + y
+      z += y
+      print('goo.foo.bar', f, z)
+    bar(5)
+    print('goo.foo', f)
+    return bar
+  b = foo(10)
+  print('goo', z)
+  return b
+b = goo('s')
+# goo.foo.bar 15 5
+# goo.foo 10
+# goo 5
+b(11)
+# goo.foo.bar 21 16
+b(12)
+# goo.foo.bar 22 28
+b = goo(1)  # test another instantiation
+# goo.foo.bar 15 5
+# goo.foo 10
+# goo 5
+b(11)
+# goo.foo.bar 21 16
+b(13)
+# goo.foo.bar 23 29
+
+#%% nonlocal_error,barebones
+def goo():
+  z = 0
+  def foo():
+    z += 1
+goo()  #! variable 'z' cannot be updated
+
+#%% new_scoping,barebones
+try:
+    if True and (x := (True or (y := 1 + 2))):
+        pass
+    try:
+        print(x)  #: True
+        print(y)
+    except NameError:
+        print("Error")  #: Error
+    print(x) #: True
+    if len("s") > 0:
+        print(x)  #: True
+        print(y)
+    print(y)  # TODO: test for __used__ usage
+    print(y)  # (right now manual inspection is needed)
+except NameError as e:
+    print(e.message)  #: variable 'y' not yet defined
+
+t = True
+y = 0 if t else (xx := 1)
+try:
+    print(xx)
+except NameError:
+    print("Error")  #: Error
+
+#%% new_scoping_weird,barebones
+def foo():
+    if len("s") == 3:
+        x = 3
+    def bar(y):
+        print(x+y)
+    x=5
+    return bar
+try:
+    f = foo()
+    f(5)
+except NameError:
+    print('error') #: error
+    # TODO: Python works here.
+    # Need to capture these vars conditionally?

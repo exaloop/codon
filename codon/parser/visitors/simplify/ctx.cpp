@@ -131,19 +131,17 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
     // Current access is unambiguously covered by a binding
     canonicalName = (*lastGood)->canonicalName;
   } else {
-    // LOG("-> access {} @ {} ; bound at {} ; prefix {} ; {}", name, combine2(scope),
-    //     combine2((*lastGood)->scope), scope[prefix - 1], getSrcInfo());
     // Current access is potentially covered by multiple bindings that are
     // not spanned by a parent binding; create such binding
     canonicalName = generateCanonicalName(name);
-    // LOG(" ! generating new {}->{} @ {} @ {}", name, canonicalName, scope[prefix - 1],
+    // LOG("GENERATE {} from {} [scope: {}] @ {}", canonicalName, name, scope[prefix - 1],
     //     getSrcInfo());
     auto item = std::make_shared<SimplifyItem>(
         (*lastGood)->kind, (*lastGood)->baseName, canonicalName,
         (*lastGood)->moduleName,
         std::vector<int>(scope.begin(), scope.begin() + prefix),
         (*lastGood)->importPath);
-    item->accessChecked = false;
+    item->accessChecked = {(*lastGood)->scope};
     lastGood = it->second.insert(++lastGood, item);
     scopeStmts[scope[prefix - 1]].push_back(std::make_unique<AssignStmt>(
         std::make_unique<IdExpr>(canonicalName), nullptr, nullptr));
@@ -165,7 +163,7 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
-    // LOG("   modify {} -> {} @ i", (*i)->canonicalName, canonicalName,
+    // LOG("RENAME {} -> {} [{}] @ {}", (*i)->canonicalName, canonicalName, hasUsed,
     //     (*i)->getSrcInfo());
   }
   it->second.erase(it->second.begin(), lastGood);

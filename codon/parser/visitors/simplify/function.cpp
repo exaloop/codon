@@ -74,7 +74,7 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
             stmt->var);
 
   // Register as global if needed
-  if (!stmt->nonLocal && !in(ctx->cache->globals, val->canonicalName))
+  if (!in(ctx->cache->globals, val->canonicalName))
     ctx->cache->globals[val->canonicalName] = nullptr;
 
   val = ctx->addVar(stmt->var, val->canonicalName, stmt->getSrcInfo());

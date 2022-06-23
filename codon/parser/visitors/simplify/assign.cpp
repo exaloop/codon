@@ -15,11 +15,22 @@ namespace codon::ast {
 void SimplifyVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
   StmtPtr s = N<AssignStmt>(clone(expr->var), expr->expr);
-  if (ctx->isConditionalExpr)
-    s = transformConditionalScope(s);
-  else
+  if (ctx->isConditionalExpr) {
+    // Make sure to transform both suite _AND_ the expression in the same scope
+    ctx->addScope();
+    transform(s);
+    transform(expr->var);
+    SuiteStmt *suite = s->getSuite();
+    if (!suite) {
+      s = N<SuiteStmt>(s);
+      suite = s->getSuite();
+    }
+    ctx->popScope(&suite->stmts);
+  } else {
     s = transform(s);
-  resultExpr = N<StmtExpr>(std::vector<StmtPtr>{s}, transform(expr->var));
+    transform(expr->var);
+  }
+  resultExpr = N<StmtExpr>(std::vector<StmtPtr>{s}, expr->var);
 }
 
 /// Unpack assignments.
@@ -109,9 +120,6 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
     error(ctx->seenGlobalIdentifiers[ctx->getBaseName()][e->value],
           "local variable '{}' referenced before assignment", e->value);
 
-  transformType(type, false);
-  transform(rhs, true);
-
   auto val = ctx->find(e->value);
   // Make sure that existing values that cannot be shadowed (e.g. imported globals) are
   // only updated
@@ -119,7 +127,7 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   if (mustExist) {
     val = ctx->findDominatingBinding(e->value);
     if (val && val->isVar() && !ctx->isOuter(val)) {
-      auto s = N<AssignStmt>(transform(lhs, false), rhs);
+      auto s = N<AssignStmt>(transform(lhs, false), transform(rhs));
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
         s->setAtomicUpdate();
       else
@@ -129,6 +137,9 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
       error("variable '{}' cannot be updated", e->value);
     }
   }
+
+  transform(rhs, true);
+  transformType(type, false);
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);

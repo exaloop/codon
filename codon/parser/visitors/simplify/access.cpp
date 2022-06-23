@@ -53,19 +53,28 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     expr->markType();
 
   // Variable binding check for variables that are defined within conditional blocks
-  if (!val->accessChecked) {
-    // Prepend access with __internal__.undef([var]__used__, "[var name]")
-    auto checkStmt = N<ExprStmt>(N<CallExpr>(
-        N<DotExpr>("__internal__", "undef"),
-        N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
-        N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
-    if (!ctx->isConditionalExpr) {
-      // If the expression is not conditional, we can just do the check once
-      prependStmts->push_back(checkStmt);
-      val->accessChecked = true;
-    } else {
-      // Otherwise, this check must be always called
-      resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
+  if (!val->accessChecked.empty()) {
+    bool checked = false;
+    for (auto &a: val->accessChecked) {
+      if (a.size() <= ctx->scope.size() && a[a.size() - 1] == ctx->scope[a.size() - 1]) {
+        checked = true;
+        break;
+      }
+    }
+    if (!checked) {
+      // Prepend access with __internal__.undef([var]__used__, "[var name]")
+      auto checkStmt = N<ExprStmt>(N<CallExpr>(
+          N<DotExpr>("__internal__", "undef"),
+          N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
+          N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
+      if (!ctx->isConditionalExpr) {
+        // If the expression is not conditional, we can just do the check once
+        prependStmts->push_back(checkStmt);
+        val->accessChecked.push_back(ctx->scope);
+      } else {
+        // Otherwise, this check must be always called
+        resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
+      }
     }
   }
 }
