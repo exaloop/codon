@@ -104,7 +104,9 @@ void PassManager::runPass(Module *module, const std::string &name) {
       runAnalysis(module, dep);
     }
 
+    Timer timer("  ir pass    : " + meta.pass->getKey());
     meta.pass->run(module);
+    timer.log();
 
     for (auto &inv : meta.invalidates)
       invalidate(inv);
@@ -122,7 +124,10 @@ void PassManager::runAnalysis(Module *module, const std::string &name) {
   for (auto &dep : meta.reqs) {
     runAnalysis(module, dep);
   }
+
+  Timer timer("  ir analysis: " + meta.analysis->getKey());
   results[name] = meta.analysis->run(module);
+  timer.log();
 }
 
 void PassManager::invalidate(const std::string &key) {
