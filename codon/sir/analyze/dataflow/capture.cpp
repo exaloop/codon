@@ -555,16 +555,14 @@ std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
   // Only Tuple.__new__(...) and Generator.__promise__(self) capture.
   if (isA<InternalFunc>(func)) {
     bool isTupleNew = func->getUnmangledName() == "__new__" &&
-                      std::distance(func->arg_begin(), func->arg_end()) == 1 &&
-                      isA<types::RecordType>(func->arg_front()->getType());
+                      isA<types::RecordType>(util::getReturnType(func));
 
     bool isPromise = func->getUnmangledName() == "__promise__" &&
-                     std::distance(func->arg_begin(), func->arg_end()) == 2 &&
-                     isA<types::GeneratorType>(func->arg_front()->getType()) &&
-                     isA<types::GeneratorType>(func->arg_back()->getType());
+                     std::distance(func->arg_begin(), func->arg_end()) == 1 &&
+                     isA<types::GeneratorType>(func->arg_front()->getType());
 
-    return (isTupleNew || isPromise) ? makeAllCaptureInfo(func)
-                                     : makeNoCaptureInfo(func, /*derives=*/false);
+    bool derives = (isTupleNew || isPromise);
+    return makeNoCaptureInfo(func, derives);
   }
 
   // Bodied function

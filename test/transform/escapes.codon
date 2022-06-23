@@ -170,3 +170,12 @@ def test_17(a):
     assert expect_capture(True, True, ())  # a
     return a[2:-2]
 test_17('hello world')
+
+@test
+def test_18(a, b):
+    if a:
+        x = (b, b)
+        raise ValueError(x[len(b)])
+    assert expect_capture(False, False, ())  # a
+    assert expect_capture(False, True, ())   # b
+test_18([0 for _ in range(0)], 'b')
