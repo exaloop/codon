@@ -179,3 +179,16 @@ def test_18(a, b):
     assert expect_capture(False, False, ())  # a
     assert expect_capture(False, True, ())   # b
 test_18([0 for _ in range(0)], 'b')
+
+def assign(x, y):
+    x[0] = y
+
+@test
+def test_19(a, b, cond, elem):
+    assign(a if cond else b, elem)
+    assert expect_capture(False, False, ())     # a
+    assert expect_capture(True, False, ())      # b
+    assert expect_capture(False, False, ())     # cond
+    assert expect_capture(True, False, (0, 1))  # elem
+    return b
+test_19(['a'], ['b'], [True], 'x')
