@@ -192,3 +192,21 @@ def test_19(a, b, cond, elem):
     assert expect_capture(True, False, (0, 1))  # elem
     return b
 test_19(['a'], ['b'], [True], 'x')
+
+@test
+def test_20(x):
+    a = ['']
+    p = a
+    p[0] = x
+    assert expect_capture(True, False, ()) # x
+    return a
+test_20('x')
+
+@test
+def test_21(x):
+    a = ''
+    p = __ptr__(a)
+    p[0] = x
+    assert expect_capture(True, False, ()) # x
+    return a
+test_21('x')

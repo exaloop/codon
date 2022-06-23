@@ -329,7 +329,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
 const std::string SideEffectAnalysis::KEY = "core-analyses-side-effect";
 
-bool SideEffectResult::hasSideEffect(Value *v) const {
+bool SideEffectResult::hasSideEffect(const Value *v) const {
   auto it = result.find(v->getId());
   return it == result.end() || it->second != util::SideEffectStatus::PURE;
 }

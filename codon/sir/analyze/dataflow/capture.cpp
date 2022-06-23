@@ -61,8 +61,33 @@ struct DerivedSet {
     result.externCaptures = true;
   }
 
-  bool isDerived(const Var *v) const {
-    return derivedVars.find(v->getId()) != derivedVars.end();
+  bool isDerived(const Var *v, const Value *loc, RDInspector *rd) const {
+    auto it = derivedVars.find(v->getId());
+    if (it == derivedVars.end())
+      return false;
+
+    // We assume global references are always derived
+    // if the var is derived, since they can change
+    // at any point as far as we know. Same goes for
+    // vars untracked by the reaching-def analysis.
+    if (v->isGlobal() || rd->isInvalid(v))
+      return true;
+
+    // Make sure the var at this point is reached by
+    // at least one definition that has led to a
+    // derived value.
+    auto mySet = rd->getReachingDefinitions(v, loc);
+    for (auto *cause : it->second) {
+      auto otherSet = rd->getReachingDefinitions(v, cause);
+      bool derived = false;
+
+      for (auto &elem : mySet) {
+        if (otherSet.count(elem))
+          return true;
+      }
+    }
+
+    return false;
   }
 
   bool isDerived(const Value *v) const {
@@ -328,51 +353,18 @@ struct CaptureTracker : public util::Operator {
     }
   }
 
-  void forEachDSetOf(Var *v, std::function<void(DerivedSet &)> func) {
+  void forEachDSetOf(Var *v, Value *loc, std::function<void(DerivedSet &)> func) {
     if (!v)
       return;
 
     for (auto &dset : dsets) {
-      if (dset.isDerived(v))
+      if (dset.isDerived(v, loc, rd))
         func(dset);
     }
   }
 
   void handleVarReference(Value *v, Var *var) {
-    forEachDSetOf(var, [&](DerivedSet &dset) {
-      // We assume global references are always derived
-      // if the var is derived, since they can change
-      // at any point as far as we know. Same goes for
-      // vars untracked by the reaching-def analysis.
-      if (var->isGlobal() || rd->isInvalid(var)) {
-        dset.setDerived(v);
-        return;
-      }
-
-      // Make sure the var at this point is reached by
-      // at least one definition that has led to a
-      // derived value.
-      auto mySet = rd->getReachingDefinitions(var, v);
-      auto it = dset.derivedVars.find(var->getId());
-      if (it == dset.derivedVars.end())
-        return;
-
-      for (auto *cause : it->second) {
-        auto otherSet = rd->getReachingDefinitions(var, cause);
-        bool derived = false;
-
-        for (auto &elem : mySet) {
-          if (otherSet.count(elem)) {
-            derived = true;
-            break;
-          }
-        }
-        if (derived) {
-          dset.setDerived(v);
-          return;
-        }
-      }
-    });
+    forEachDSetOf(var, v, [&](DerivedSet &dset) { dset.setDerived(v); });
   }
 
   void handle(VarValue *v) override { handleVarReference(v, v->getVar()); }
@@ -382,6 +374,18 @@ struct CaptureTracker : public util::Operator {
   void handle(AssignInstr *v) override {
     forEachDSetOf(v->getRhs(),
                   [&](DerivedSet &dset) { dset.setDerived(v->getLhs(), v); });
+
+    std::vector<const Var *> vars;
+    bool escapes = extractVars(cc, v->getRhs(), vars);
+
+    forEachDSetOf(v->getLhs(), v, [&](DerivedSet &dset) {
+      if (escapes)
+        dset.setExternCaptured();
+
+      for (auto *var : vars) {
+        dset.setDerived(var, v);
+      }
+    });
   }
 
   void handle(ExtractInstr *v) override {

@@ -38,7 +38,7 @@ public:
   /// @return an unordered set of value ids
   std::unordered_set<id_t> getReachingDefinitions(const Var *var, const Value *loc);
 
-  bool isInvalid(Var *var) const { return invalid.count(var->getId()) != 0; }
+  bool isInvalid(const Var *var) const { return invalid.count(var->getId()) != 0; }
 
 private:
   void initializeIfNecessary(CFBlock *blk);

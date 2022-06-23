@@ -19,7 +19,7 @@ struct SideEffectResult : public Result {
 
   /// @param v the value to check
   /// @return true if the node has side effects (false positives allowed)
-  bool hasSideEffect(Value *v) const;
+  bool hasSideEffect(const Value *v) const;
 };
 
 class SideEffectAnalysis : public Analysis {
