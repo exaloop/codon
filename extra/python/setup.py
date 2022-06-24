@@ -18,8 +18,12 @@ def get_output(*args):
 
 from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
 
-llvm_config: str
-llvm_config_candidates = ["llvm-config-12", "llvm-config", from_root("llvm/bin/llvm-config")]
+llvm_config = ""
+llvm_config_candidates = [
+    os.environ.get("CODON_LLVM_CONFIG", from_root("llvm/bin/llvm-config")),
+    "llvm-config-12", 
+    "llvm-config", 
+]
 for candidate in llvm_config_candidates:
     if exists(candidate):
         llvm_config = candidate
@@ -30,8 +34,9 @@ else:
 llvm_include_dir = get_output(llvm_config, "--includedir")
 llvm_lib_dir = get_output(llvm_config, "--libdir")
 
-codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", from_root("build/include"))
-codon_lib_dir = os.environ.get("CODON_LIB_DIR", from_root("build"))
+codon_dir = os.environ.get("CODON_DIR", from_root("build"))
+codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir + "/include")
+codon_lib_dir = os.environ.get("CODON_LIB_DIR", codon_dir + "/lib/codon")
 
 print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
 print(f"<codon> {codon_include_dir}, {codon_lib_dir}")

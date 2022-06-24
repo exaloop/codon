@@ -29,10 +29,10 @@ cmake --build build --config Release -- VERBOSE=1
 # build cython
 export PATH=$PATH:$(pwd)/llvm/bin
 export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
-export CODON_INCLUDE_DIR=$(pwd)/build/include
-export CODON_LIB_DIR=$(pwd)/build
+export CODON_DIR=$(pwd)/build
 python3 -m pip install cython
-python3 -m pip install -v extra/python
+(cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
+python3 -m pip install -v extra/python/dist/*.whl
 
 # test
 export CODON_PATH=$(pwd)/stdlib
@@ -51,5 +51,6 @@ cp build/libcodon*.so codon-deploy/lib/codon/
 cp build/libomp.so codon-deploy/lib/codon/
 cp -r build/include codon-deploy/
 cp -r stdlib codon-deploy/lib/codon/
+cp -r extra/python/dist/*.whl codon-deploy/
 tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
 du -sh codon-deploy
