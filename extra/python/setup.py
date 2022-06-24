@@ -1,9 +1,13 @@
 import os
+import sys
 import subprocess
+import shutil
+from pathlib import Path
 
 from Cython.Distutils import build_ext
 from setuptools import setup
 from setuptools.extension import Extension
+import distutils.dir_util
 
 
 def exists(executable):
@@ -14,6 +18,12 @@ def exists(executable):
 def get_output(*args):
     ps = subprocess.run(args, stdout=subprocess.PIPE)
     return ps.stdout.decode("utf8").strip()
+
+
+def package_files(directory):
+    for (path, _, fns) in os.walk(directory):
+        for fn in fns:
+            yield os.path.join(path, fn)
 
 
 from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
@@ -34,29 +44,48 @@ else:
 llvm_include_dir = get_output(llvm_config, "--includedir")
 llvm_lib_dir = get_output(llvm_config, "--libdir")
 
-codon_dir = os.environ.get("CODON_DIR", from_root("build"))
-codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir + "/include")
-codon_lib_dir = os.environ.get("CODON_LIB_DIR", codon_dir + "/lib/codon")
+codon_dir = Path(os.environ.get("CODON_DIR", from_root("build")))
+codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir / "include")
+ext = "dylib" if sys.platform == "darwin" else "so"
+
+root = Path(os.path.dirname(os.path.realpath(__file__)))
+distutils.dir_util.copy_tree(str(codon_dir / ".." / "stdlib"), str(root / "src" / "stdlib"))
+shutil.copy(codon_dir / "lib" / "codon" / ("libcodonc." + ext), root / "src")
+shutil.copy(codon_dir / "lib" / "codon" / ("libcodonrt." + ext), root / "src")
+shutil.copy(codon_dir / "lib" / "codon" / ("libomp." + ext), root / "src")
 
 print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
-print(f"<codon> {codon_include_dir}, {codon_lib_dir}")
+print(f"<codon> {codon_include_dir}")
+
+if sys.platform == "darwin":
+    linker_args = "-Wl,-rpath,@loader_path"
+else:
+    linker_args = "-Wl,-rpath=$ORIGIN"
 
 jit_extension = Extension(
-    "codon_jit",
+    "codon.codon_jit",
     sources=["src/jit.pyx"],
     libraries=["codonc", "codonrt"],
     language="c++",
     extra_compile_args=["-w", "-std=c++17"],
-    extra_link_args=[f"-Wl,-rpath,{codon_lib_dir}"],
-    include_dirs=[llvm_include_dir, codon_include_dir],
-    library_dirs=[llvm_lib_dir, codon_lib_dir],
+    extra_link_args=[linker_args],
+    include_dirs=[llvm_include_dir, str(codon_include_dir)],
+    library_dirs=[llvm_lib_dir, str(root / "src")],
 )
 
 setup(
     name="codon",
-    version="0.1.0",
+    version="0.1.1",
+    python_requires='>=3.6',
+    description="Codon JIT decorator",
+    url="https://exaloop.io/",
+    long_description="Please see https://exaloop.io for more details.",
+    author="Exaloop Inc.",
+    author_email="ibrahim@exaloop.io",
+    license="Commercial",
     cmdclass={"build_ext": build_ext},
     ext_modules=[jit_extension],
     packages=["codon"],
-    package_dir={"codon": "src"}
+    package_dir={"codon": "src"},
+    package_data = {"codon": ["*." + ext, *package_files("stdlib")]},
 )
