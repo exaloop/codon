@@ -158,9 +158,20 @@ jobs:
           CXX: clang++
 
       - name: Build Cython
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel)
           python -m pip install -v extra/python/dist/*.whl
+        env:
+          CC: clang
+          CXX: clang++
+
+      - name: Build Cython
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel --plat-name=macosx_10_16_x86_64)
+          python -m pip install -v extra/python/dist/*.whl
+          python test/python/cython_jit.py
         env:
           CC: clang
           CXX: clang++
@@ -172,7 +183,6 @@ jobs:
           build/codon_test
           build/codon run test/core/helloworld.codon
           build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-          python test/python/cython_jit.py
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: .:./test/python

@@ -35,6 +35,8 @@ python3 -m pip install cython wheel
 python3 -m pip debug --verbose
 (cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
 python3 -m pip install -v extra/python/dist/*.whl
+export PYTHONPATH=$(pwd):$PYTHONPATH
+python3 test/python/cython_jit.py
 
 # test
 export CODON_PATH=$(pwd)/stdlib
@@ -42,8 +44,6 @@ ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-export PYTHONPATH=$(pwd):$PYTHONPATH
-python3 test/python/cython_jit.py
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
