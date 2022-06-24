@@ -5,6 +5,7 @@
 #include "codon/sir/analyze/analysis.h"
 #include "codon/sir/analyze/dataflow/capture.h"
 #include "codon/sir/analyze/dataflow/cfg.h"
+#include "codon/sir/analyze/dataflow/dominator.h"
 #include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/analyze/module/global_vars.h"
 #include "codon/sir/analyze/module/side_effect.h"
@@ -170,8 +171,11 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     auto cfgKey = registerAnalysis(std::make_unique<analyze::dataflow::CFAnalysis>());
     auto rdKey = registerAnalysis(
         std::make_unique<analyze::dataflow::RDAnalysis>(cfgKey), {cfgKey});
+    auto domKey = registerAnalysis(
+        std::make_unique<analyze::dataflow::DominatorAnalysis>(cfgKey), {cfgKey});
     auto capKey = registerAnalysis(
-        std::make_unique<analyze::dataflow::CaptureAnalysis>(rdKey), {rdKey});
+        std::make_unique<analyze::dataflow::CaptureAnalysis>(rdKey, domKey),
+        {rdKey, domKey});
     auto globalKey =
         registerAnalysis(std::make_unique<analyze::module::GlobalVarsAnalyses>());
     auto seKey1 =

@@ -287,8 +287,10 @@ public:
       pm->registerPass(std::make_unique<TestInliner>());
       auto capKey =
           pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
-                                   ir::analyze::dataflow::RDAnalysis::KEY),
-                               {ir::analyze::dataflow::RDAnalysis::KEY});
+                                   ir::analyze::dataflow::RDAnalysis::KEY,
+                                   ir::analyze::dataflow::DominatorAnalysis::KEY),
+                               {ir::analyze::dataflow::RDAnalysis::KEY,
+                                ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
 

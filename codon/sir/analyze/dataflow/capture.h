@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "codon/sir/analyze/analysis.h"
+#include "codon/sir/analyze/dataflow/dominator.h"
 #include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/sir.h"
 
@@ -45,6 +46,9 @@ struct CaptureResult : public Result {
   /// the corresponding reaching definitions result
   RDResult *rdResult = nullptr;
 
+  /// the corresponding dominator result
+  DominatorResult *domResult = nullptr;
+
   /// map from function id to capture information, where
   /// each element of the value vector corresponds to an
   /// argument of the function
@@ -56,6 +60,8 @@ class CaptureAnalysis : public Analysis {
 private:
   /// the reaching definitions analysis key
   std::string rdAnalysisKey;
+  /// the dominator analysis key
+  std::string domAnalysisKey;
 
 public:
   static const std::string KEY;
@@ -63,8 +69,10 @@ public:
 
   /// Initializes a capture analysis.
   /// @param rdAnalysisKey the reaching definitions analysis key
-  explicit CaptureAnalysis(std::string rdAnalysisKey)
-      : rdAnalysisKey(std::move(rdAnalysisKey)) {}
+  /// @param domAnalysisKey the dominator analysis key
+  explicit CaptureAnalysis(std::string rdAnalysisKey, std::string domAnalysisKey)
+      : rdAnalysisKey(std::move(rdAnalysisKey)),
+        domAnalysisKey(std::move(domAnalysisKey)) {}
 
   std::unique_ptr<Result> run(const Module *m) override;
 };

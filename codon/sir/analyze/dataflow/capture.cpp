@@ -43,6 +43,54 @@ struct CaptureContext;
 
 bool extractVars(CaptureContext &cc, const Value *v, std::vector<const Var *> &result);
 
+bool reachable(CFBlock *start, CFBlock *end, std::unordered_set<CFBlock *> &seen) {
+  if (start == end)
+    return true;
+
+  if (seen.count(start))
+    return false;
+
+  seen.insert(start);
+  for (auto it = start->successors_begin(); it != start->successors_end(); ++it) {
+    if (reachable(*it, end, seen))
+      return true;
+  }
+
+  return false;
+}
+
+// Check if one value must always be encountered before another, if
+// it is to be encountered at all. This is NOT the same as domination
+// since we can have "(if _: B) ; A", where B does not dominate A yet
+// must always occur before A is it does occur.
+bool happensBefore(const Value *before, const Value *after, CFGraph *cfg,
+                   DominatorInspector *dom) {
+  auto *beforeBlock = cfg->getBlock(before);
+  auto *afterBlock = cfg->getBlock(after);
+
+  if (!beforeBlock || !afterBlock)
+    return false;
+
+  // If values are in the same block we just need to see
+  // which one shows up first.
+  if (beforeBlock == afterBlock) {
+    for (auto *val : *beforeBlock) {
+      if (val->getId() == before->getId())
+        return true;
+      else if (val->getId() == after->getId())
+        return false;
+    }
+    seqassert(false, "could not find values in CFG block");
+    return false;
+  }
+
+  // If we have different blocks, then either 'before' dominates
+  // 'after', in which case the answer is true, or there must be
+  // no paths from 'afterBlock' to 'beforeBlock'.
+  std::unordered_set<CFBlock *> seen;
+  return dom->isDominated(after, before) || !reachable(afterBlock, beforeBlock, seen);
+}
+
 struct DerivedSet {
   const Func *func;
   const Var *root;
@@ -94,7 +142,7 @@ struct DerivedSet {
     return derivedVals.find(v->getId()) != derivedVals.end();
   }
 
-  void setDerived(const Var *v, const Value *cause) {
+  void setDerived(const Var *v, const Value *cause, bool shouldArgCapture = true) {
     if (!shouldTrack(v))
       return;
 
@@ -102,7 +150,7 @@ struct DerivedSet {
       setExternCaptured();
 
     auto id = v->getId();
-    if (root && id != root->getId()) {
+    if (shouldArgCapture && root && id != root->getId()) {
       for (unsigned i = 0; i < args.size(); i++) {
         if (args[i] == id && !contains(result.argCaptures, i))
           result.argCaptures.push_back(i);
@@ -190,9 +238,11 @@ std::vector<CaptureInfo> makeNoCaptureInfo(const Func *func, bool derives) {
 
 struct CaptureContext {
   RDResult *reaching;
+  DominatorResult *dominating;
   std::unordered_map<id_t, std::vector<CaptureInfo>> results;
 
-  explicit CaptureContext(RDResult *reaching) : reaching(reaching), results() {}
+  CaptureContext(RDResult *reaching, DominatorResult *dominating)
+      : reaching(reaching), dominating(dominating), results() {}
 
   std::vector<CaptureInfo> get(const Func *func);
   void set(const Func *func, const std::vector<CaptureInfo> &result);
@@ -208,6 +258,13 @@ struct CaptureContext {
     auto it = reaching->results.find(func->getId());
     seqassert(it != reaching->results.end(),
               "could not find function in reaching-definitions results");
+    return it->second.get();
+  }
+
+  DominatorInspector *getDomInspector(const Func *func) {
+    auto it = dominating->results.find(func->getId());
+    seqassert(it != dominating->results.end(),
+              "could not find function in dominator results");
     return it->second.get();
   }
 };
@@ -293,11 +350,12 @@ struct CaptureTracker : public util::Operator {
   CaptureContext &cc;
   CFGraph *cfg;
   RDInspector *rd;
+  DominatorInspector *dom;
   std::vector<DerivedSet> dsets;
 
   CaptureTracker(CaptureContext &cc, const Func *func, bool isArg)
       : Operator(), cc(cc), cfg(cc.getCFGraph(func)), rd(cc.getRDInspector(func)),
-        dsets() {}
+        dom(cc.getDomInspector(func)), dsets() {}
 
   CaptureTracker(CaptureContext &cc, const BodiedFunc *func)
       : CaptureTracker(cc, func, /*isArg=*/true) {
@@ -363,30 +421,87 @@ struct CaptureTracker : public util::Operator {
     }
   }
 
-  void handleVarReference(Value *v, Var *var) {
-    forEachDSetOf(var, v, [&](DerivedSet &dset) { dset.setDerived(v); });
-  }
-
-  void handle(VarValue *v) override { handleVarReference(v, v->getVar()); }
-
-  void handle(PointerValue *v) override { handleVarReference(v, v->getVar()); }
-
-  void handle(AssignInstr *v) override {
-    forEachDSetOf(v->getRhs(),
-                  [&](DerivedSet &dset) { dset.setDerived(v->getLhs(), v); });
-
-    std::vector<const Var *> vars;
-    bool escapes = extractVars(cc, v->getRhs(), vars);
-
-    forEachDSetOf(v->getLhs(), v, [&](DerivedSet &dset) {
-      if (escapes)
+  void forwardLink(Value *from, Value *cause, const std::vector<const Var *> &toVars,
+                   bool toEscapes, bool shouldArgCapture) {
+    forEachDSetOf(from, [&](DerivedSet &dset) {
+      if (toEscapes)
         dset.setExternCaptured();
 
-      for (auto *var : vars) {
-        dset.setDerived(var, v);
+      for (auto *toVar : toVars) {
+        dset.setDerived(toVar, cause, shouldArgCapture);
       }
     });
   }
+
+  void backwardLinkFunc(DerivedSet &dset, Value *cause,
+                        const std::vector<const Var *> &toVars,
+                        const std::vector<const Var *> &fromVars, bool fromEscapes) {
+    if (fromEscapes)
+      dset.setExternCaptured();
+
+    for (auto *toVar : toVars) {
+      auto it = dset.derivedVars.find(toVar->getId());
+      if (it == dset.derivedVars.end())
+        continue;
+      auto &toCauses = it->second;
+
+      for (auto *fromVar : fromVars) {
+        for (auto *toCause : toCauses) {
+          if (happensBefore(toCause, cause, cfg, dom))
+            continue;
+
+          bool derived = false;
+          if (toVar->isGlobal() || rd->isInvalid(toVar)) {
+            derived = true;
+          } else {
+            auto mySet = rd->getReachingDefinitions(toVar, cause);
+            auto otherSet = rd->getReachingDefinitions(toVar, toCause);
+            for (auto &elem : mySet) {
+              if (otherSet.count(elem)) {
+                derived = true;
+                break;
+              }
+            }
+          }
+
+          if (derived)
+            dset.setDerived(fromVar, toCause);
+        }
+      }
+    }
+  }
+
+  void link(Value *from, Value *to, Value *cause) {
+    std::vector<const Var *> fromVars, toVars;
+    bool fromEscapes = extractVars(cc, from, fromVars);
+    bool toEscapes = extractVars(cc, to, toVars);
+
+    forwardLink(from, cause, toVars, toEscapes, /*shouldArgCapture=*/true);
+    forEachDSetOf(to, [&](DerivedSet &dset) {
+      backwardLinkFunc(dset, cause, toVars, fromVars, fromEscapes);
+    });
+  }
+
+  void link(Value *from, Var *to, Value *cause) {
+    std::vector<const Var *> fromVars, toVars = {to};
+    bool fromEscapes = extractVars(cc, from, fromVars);
+    bool toEscapes = false;
+
+    forwardLink(from, cause, toVars, toEscapes, /*shouldArgCapture=*/false);
+    forEachDSetOf(to, cause, [&](DerivedSet &dset) {
+      backwardLinkFunc(dset, cause, toVars, fromVars, fromEscapes);
+    });
+  }
+
+  void handle(VarValue *v) override {
+    forEachDSetOf(v->getVar(), v, [&](DerivedSet &dset) { dset.setDerived(v); });
+  }
+
+  void handle(PointerValue *v) override {
+    forEachDSetOf(v->getVar(), v, [&](DerivedSet &dset) { dset.setDerived(v); });
+  }
+
+  void handle(AssignInstr *v) override { link(v->getRhs(), v->getLhs(), v); }
 
   void handle(ExtractInstr *v) override {
     if (!shouldTrack(v))
@@ -396,18 +511,7 @@ struct CaptureTracker : public util::Operator {
   }
 
   void handle(InsertInstr *v) override {
-    std::vector<const Var *> vars;
-    bool escapes = extractVars(cc, v->getLhs(), vars);
-
-    forEachDSetOf(v->getRhs(), [&](DerivedSet &dset) {
-      if (escapes)
-        dset.setExternCaptured();
-
-      for (auto *var : vars) {
-        dset.setDerived(var, v);
-      }
-    });
-
+    link(v->getRhs(), v->getLhs(), v);
     forEachDSetOf(v->getLhs(), [&](DerivedSet &dset) { dset.result.modified = true; });
   }
 
@@ -442,24 +546,15 @@ struct CaptureTracker : public util::Operator {
 
     unsigned i = 0;
     for (auto *arg : args) {
+      // note possibly capInfo.size() != v->numArgs() if calling vararg C function
+      auto info = (i < capInfo.size()) ? capInfo[i]
+                                       : CaptureInfo::unknown(func, arg->getType());
+      for (auto argno : info.argCaptures) {
+        Value *other = args[argno];
+        link(arg, other, v);
+      }
+
       forEachDSetOf(arg, [&](DerivedSet &dset) {
-        // note possibly capInfo.size() != v->numArgs() if calling vararg C function
-        auto info = (i < capInfo.size()) ? capInfo[i]
-                                         : CaptureInfo::unknown(func, arg->getType());
-
-        // Process all other arguments that capture us.
-        for (auto argno : info.argCaptures) {
-          Value *arg = args[argno];
-          std::vector<const Var *> vars;
-          bool escapes = extractVars(cc, arg, vars);
-          if (escapes)
-            dset.setExternCaptured();
-
-          for (auto *var : vars) {
-            dset.setDerived(var, v);
-          }
-        }
-
         // Check if the return value captures.
         if (info.returnCaptures)
           dset.setDerived(v);
@@ -546,8 +641,10 @@ std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
       if (!ans.empty())
         ans[0].modified = true;
 
+      std::vector<Var *> argVars(func->arg_begin(), func->arg_end());
       for (unsigned i = 1; i < ans.size(); i++) {
-        ans[i].argCaptures.push_back(0);
+        if (shouldTrack(argVars[i]))
+          ans[i].argCaptures.push_back(0);
       }
       return ans;
     }
@@ -626,8 +723,10 @@ const std::string CaptureAnalysis::KEY = "core-analyses-capture";
 std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
   auto res = std::make_unique<CaptureResult>();
   auto *rdResult = getAnalysisResult<RDResult>(rdAnalysisKey);
+  auto *domResult = getAnalysisResult<DominatorResult>(domAnalysisKey);
   res->rdResult = rdResult;
-  CaptureContext cc(rdResult);
+  res->domResult = domResult;
+  CaptureContext cc(rdResult, domResult);
 
   if (const auto *main = cast<BodiedFunc>(m->getMainFunc())) {
     auto ans = cc.get(main);
@@ -649,7 +748,7 @@ CaptureInfo escapes(const BodiedFunc *func, const Value *value, CaptureResult *c
   if (!shouldTrack(value))
     return CaptureInfo::nothing();
 
-  CaptureContext cc(cr->rdResult);
+  CaptureContext cc(cr->rdResult, cr->domResult);
   cc.results = cr->results;
   CaptureTracker ct(cc, cast<BodiedFunc>(func), value);
   ct.runToCompletion(func);

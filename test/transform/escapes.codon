@@ -180,12 +180,12 @@ def test_18(a, b):
     assert expect_capture(False, True, ())   # b
 test_18([0 for _ in range(0)], 'b')
 
-def assign(x, y):
+def assign1(x, y):
     x[0] = y
 
 @test
 def test_19(a, b, cond, elem):
-    assign(a if cond else b, elem)
+    assign1(a if cond else b, elem)
     assert expect_capture(False, False, ())     # a
     assert expect_capture(True, False, ())      # b
     assert expect_capture(False, False, ())     # cond
@@ -198,7 +198,7 @@ def test_20(x):
     a = ['']
     p = a
     p[0] = x
-    assert expect_capture(True, False, ()) # x
+    assert expect_capture(True, False, ())  # x
     return a
 test_20('x')
 
@@ -207,6 +207,59 @@ def test_21(x):
     a = ''
     p = __ptr__(a)
     p[0] = x
-    assert expect_capture(True, False, ()) # x
+    assert expect_capture(True, False, ())  # x
     return a
 test_21('x')
+
+class A:
+    a: List[str]
+
+@test
+def test_22(x):
+    a = ['']
+    p = A([])
+    p.a = a
+    p.a[0] = x
+    assert expect_capture(True, False, ())  # x
+    return a
+test_22('x')
+
+def assign(p, a):
+    p.a = a
+
+def test_23(x):
+    a = ['']
+    p = A([])
+    assign(p, a)
+    p.a[0] = x
+    assert expect_capture(True, False, ())  # x
+    return a
+test_23('x')
+
+class S:
+    s: str
+
+@test
+def test_24(a, b, cond):
+    q = S('')
+    if cond:
+        q = a
+    q.s = b
+    assert expect_capture(False, False, ())    # a
+    assert expect_capture(False, False, (0,))  # b
+    assert expect_capture(False, False, ())    # cond
+test_24(S('s'), 'b', True)
+
+@test
+def test_25(a, b, v):
+    q = S('')
+    for i in v:
+        if i:
+            q = a
+        else:
+            q = S('q')
+    q.s = b
+    assert expect_capture(False, False, ())    # a
+    assert expect_capture(False, False, (0,))  # b
+    assert expect_capture(False, False, ())    # v
+test_25(S('s'), 'b', [0,1,0,1])
