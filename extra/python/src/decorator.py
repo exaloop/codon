@@ -9,10 +9,12 @@ from typing import List, Tuple
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
-os.environ["CODON_PATH"] = os.path.dirname(
-    os.path.abspath(inspect.getfile(inspect.currentframe()))
-)
-os.environ["CODON_PATH"] += "/stdlib"
+if "CODON_PATH" not in os.environ:
+    os.environ["CODON_PATH"] = os.path.dirname(
+        os.path.abspath(inspect.getfile(inspect.currentframe()))
+    )
+    os.environ["CODON_PATH"] += "/stdlib"
+    print(os.environ["CODON_PATH"])
 from .codon_jit import Jit, JitError
 
 
