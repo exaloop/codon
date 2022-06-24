@@ -30,7 +30,7 @@ cmake --build build --config Release -- VERBOSE=1
 export PATH=$PATH:$(pwd)/llvm/bin
 export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
 export CODON_DIR=$(pwd)/build
-python3 -m pip install cython
+python3 -m pip install cython wheel
 (cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
 python3 -m pip install -v extra/python/dist/*.whl
 

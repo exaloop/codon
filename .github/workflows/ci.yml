@@ -126,7 +126,7 @@ jobs:
       - name: Set up Python
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy cython
+          python -m pip install numpy cython wheel
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
@@ -159,12 +159,11 @@ jobs:
 
       - name: Build Cython
         run: |
-          (cd extra/python; python3 setup.py sdist bdist_wheel)
+          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel)
           python -m pip install -v extra/python/dist/*.whl
         env:
           CC: clang
           CXX: clang++
-          CODON_DIR: ./build
 
       - name: Test
         run: |
