@@ -445,27 +445,28 @@ struct CaptureTracker : public util::Operator {
         continue;
       auto &toCauses = it->second;
 
-      for (auto *fromVar : fromVars) {
-        for (auto *toCause : toCauses) {
-          if (happensBefore(toCause, cause, cfg, dom))
-            continue;
+      for (auto *toCause : toCauses) {
+        if (happensBefore(toCause, cause, cfg, dom))
+          continue;
 
-          bool derived = false;
-          if (toVar->isGlobal() || rd->isInvalid(toVar)) {
-            derived = true;
-          } else {
-            auto mySet = rd->getReachingDefinitions(toVar, cause);
-            auto otherSet = rd->getReachingDefinitions(toVar, toCause);
-            for (auto &elem : mySet) {
-              if (otherSet.count(elem)) {
-                derived = true;
-                break;
-              }
+        bool derived = false;
+        if (toVar->isGlobal() || rd->isInvalid(toVar)) {
+          derived = true;
+        } else {
+          auto mySet = rd->getReachingDefinitions(toVar, cause);
+          auto otherSet = rd->getReachingDefinitions(toVar, toCause);
+          for (auto &elem : mySet) {
+            if (otherSet.count(elem)) {
+              derived = true;
+              break;
             }
           }
+        }
 
-          if (derived)
+        if (derived) {
+          for (auto *fromVar : fromVars) {
             dset.setDerived(fromVar, toCause);
+          }
         }
       }
     }
