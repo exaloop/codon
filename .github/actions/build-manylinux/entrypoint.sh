@@ -9,6 +9,7 @@ yum -y install python3 python3-devel
 # env
 export PYTHONPATH=$(pwd)/test/python
 export CODON_PYTHON=$(python3 test/python/find-python-library.py)
+python3 -m pip install --upgrade pip
 python3 -m pip install numpy
 
 # deps
@@ -31,6 +32,7 @@ export PATH=$PATH:$(pwd)/llvm/bin
 export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
 export CODON_DIR=$(pwd)/build
 python3 -m pip install cython wheel
+python3 -c "import pip; print(pip.pep425tags.get_supported())"
 (cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
 python3 -m pip install -v extra/python/dist/*.whl
 
