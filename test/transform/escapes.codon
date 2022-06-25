@@ -263,3 +263,18 @@ def test_25(a, b, v):
     assert expect_capture(False, False, (0,))  # b
     assert expect_capture(False, False, ())    # v
 test_25(S('s'), 'b', [0,1,0,1])
+
+@test
+def test_26(a, b, v):
+    q = S('')
+    for i in v:
+        if i:
+            q = a
+        else:
+            q.s = b
+    return q
+    assert expect_capture(True, False, ())    # a
+    assert expect_capture(True, False, (0,))  # b
+    assert expect_capture(False, False, ())   # v
+    return q
+test_26(S('s'), 'b', [0,1,0,1])

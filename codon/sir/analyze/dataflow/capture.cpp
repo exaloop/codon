@@ -446,7 +446,8 @@ struct CaptureTracker : public util::Operator {
       auto &toCauses = it->second;
 
       for (auto *toCause : toCauses) {
-        if (happensBefore(toCause, cause, cfg, dom))
+        if (isA<AssignInstr>(toCause) || isA<SyntheticAssignInstr>(toCause) ||
+            happensBefore(toCause, cause, cfg, dom))
           continue;
 
         bool derived = false;
