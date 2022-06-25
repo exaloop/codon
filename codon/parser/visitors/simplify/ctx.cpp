@@ -17,12 +17,12 @@ SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
       isStdlibLoading(false), moduleName{ImportFile::PACKAGE, "", ""},
       isConditionalExpr(false), allowTypeOf(true) {
   bases.emplace_back(Base(""));
-  scope.push_back(scopeCnt = 0);
+  scope.blocks.push_back(scope.counter = 0);
 }
 
-SimplifyContext::Base::Base(std::string name, std::shared_ptr<Expr> ast, Attr *attributes)
-    : name(move(name)), ast(move(ast)), attributes(attributes), deducedMembers(nullptr),
-      selfName(), captures(nullptr) {}
+SimplifyContext::Base::Base(std::string name, Attr *attributes)
+    : name(move(name)), attributes(attributes), deducedMembers(nullptr), selfName(),
+      captures(nullptr) {}
 
 void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);
@@ -36,29 +36,31 @@ SimplifyContext::Item SimplifyContext::addVar(const std::string &name,
                                               const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   auto t = std::make_shared<SimplifyItem>(SimplifyItem::Var, getBaseName(),
-                                          canonicalName, getModule(), scope);
+                                          canonicalName, getModule(), scope.blocks);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
+
 SimplifyContext::Item SimplifyContext::addType(const std::string &name,
                                                const std::string &canonicalName,
                                                const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   auto t = std::make_shared<SimplifyItem>(SimplifyItem::Type, getBaseName(),
-                                          canonicalName, getModule(), scope);
+                                          canonicalName, getModule(), scope.blocks);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
   return t;
 }
+
 SimplifyContext::Item SimplifyContext::addFunc(const std::string &name,
                                                const std::string &canonicalName,
                                                const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   auto t = std::make_shared<SimplifyItem>(SimplifyItem::Func, getBaseName(),
-                                          canonicalName, getModule(), scope);
+                                          canonicalName, getModule(), scope.blocks);
   t->setSrcInfo(srcInfo);
   Context<SimplifyItem>::add(name, t);
   Context<SimplifyItem>::add(canonicalName, t);
@@ -83,7 +85,7 @@ SimplifyContext::Item SimplifyContext::find(const std::string &name) const {
     return t;
 
   // Item is not found in the current module. Time to look in the standard library!
-  // N.B. Standard library items cannot be dominated!
+  // Note: the standard library items cannot be dominated.
   auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
   if (stdlib.get() != this)
     t = stdlib->find(name);
@@ -100,25 +102,32 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
   auto it = map.find(name);
   if (it == map.end())
     return find(name);
+  seqassert(!it->second.empty(), "corrupted SimplifyContext ({})", name);
+
+  // The item is found. Let's see is it accessible now.
 
   std::string canonicalName;
-
-  seqassert(!it->second.empty(), "corrupted SimplifyContext ({})", name);
   auto lastGood = it->second.begin();
   bool isOutside = (*lastGood)->getBaseName() != getBaseName();
-  int prefix = int(scope.size());
+  int prefix = int(scope.blocks.size());
+  // Iterate through all bindings with the given name and find the closest binding that
+  // dominates the current scope.
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
+    // Find the longest block prefix between the binding and the current scope.
     int p = std::min(prefix, int((*i)->scope.size()));
-    while (p >= 0 && (*i)->scope[p - 1] != scope[p - 1])
+    while (p >= 0 && (*i)->scope[p - 1] != scope.blocks[p - 1])
       p--;
+    // We reached the toplevel. Break.
     if (p < 0)
       break;
+    // We went outside of the function scope. Break.
     if (!isOutside && (*i)->getBaseName() != getBaseName())
       break;
     prefix = p;
     lastGood = i;
-    if ((*i)->scope.size() <= scope.size() &&
-        (*i)->scope.back() == scope[(*i)->scope.size() - 1]) // complete domination
+    // The binding completely dominates the current scope. Break.
+    if ((*i)->scope.size() <= scope.blocks.size() &&
+        (*i)->scope.back() == scope.blocks[(*i)->scope.size() - 1])
       break;
   }
   seqassert(lastGood != it->second.end(), "corrupted scoping ({})", name);
@@ -128,36 +137,40 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
 
   bool hasUsed = false;
   if ((*lastGood)->scope.size() == prefix) {
-    // Current access is unambiguously covered by a binding
+    // The current scope is dominated by a binding. Use that binding.
     canonicalName = (*lastGood)->canonicalName;
   } else {
-    // Current access is potentially covered by multiple bindings that are
-    // not spanned by a parent binding; create such binding
+    // The current scope is potentially reachable by multiple bindings that are
+    // not dominated by a common binding. Create such binding in the scope that
+    // dominates (covers) all of them.
     canonicalName = generateCanonicalName(name);
-    // LOG("GENERATE {} from {} [scope: {}] @ {}", canonicalName, name, scope[prefix - 1],
-    //     getSrcInfo());
     auto item = std::make_shared<SimplifyItem>(
         (*lastGood)->kind, (*lastGood)->baseName, canonicalName,
         (*lastGood)->moduleName,
-        std::vector<int>(scope.begin(), scope.begin() + prefix),
+        std::vector<int>(scope.blocks.begin(), scope.blocks.begin() + prefix),
         (*lastGood)->importPath);
     item->accessChecked = {(*lastGood)->scope};
     lastGood = it->second.insert(++lastGood, item);
-    scopeStmts[scope[prefix - 1]].push_back(std::make_unique<AssignStmt>(
+    // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
+    // to the dominating scope.
+    scope.stmts[scope.blocks[prefix - 1]].push_back(std::make_unique<AssignStmt>(
         std::make_unique<IdExpr>(canonicalName), nullptr, nullptr));
-    scopeStmts[scope[prefix - 1]].push_back(std::make_unique<AssignStmt>(
+    scope.stmts[scope.blocks[prefix - 1]].push_back(std::make_unique<AssignStmt>(
         std::make_unique<IdExpr>(fmt::format("{}.__used__", canonicalName)),
         std::make_unique<BoolExpr>(false), nullptr));
+    // Reached the toplevel? Register the binding as global.
     if (prefix == 1) {
       cache->globals[canonicalName] = nullptr;
       cache->globals[fmt::format("{}.__used__", canonicalName)] = nullptr;
     }
     hasUsed = true;
   }
-  // Remove all bindings in the middle (i.e. unify them with the most dominant binding)
+  // Remove all bindings after the dominant binding.
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
     if (i == lastGood)
       break;
+    // These bindings (and their canonical identifiers) will be replaced by the
+    // dominating binding during the type checking pass.
     cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
     cache->replacements[format("{}.__used__", (*i)->canonicalName)] = {
         format("{}.__used__", canonicalName), false};
@@ -179,6 +192,8 @@ std::string SimplifyContext::getModule() const {
     base = base.substr(8);
   return base;
 }
+
+void SimplifyContext::dump() { dump(0); }
 
 std::string SimplifyContext::generateCanonicalName(const std::string &name,
                                                    bool includeBase,
@@ -202,12 +217,53 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
   return newName;
 }
 
+void SimplifyContext::enterConditionalBlock() { scope.blocks.push_back(++scope.counter); }
+
+void SimplifyContext::leaveConditionalBlock(std::vector<StmtPtr> *stmts) {
+  if (stmts && in(scope.stmts, scope.blocks.back()))
+    stmts->insert(stmts->begin(), scope.stmts[scope.blocks.back()].begin(),
+                  scope.stmts[scope.blocks.back()].end());
+  scope.blocks.pop_back();
+}
+
+bool SimplifyContext::isGlobal() const { return bases.size() == 1; }
+
+bool SimplifyContext::isConditional() const { return scope.blocks.size() > 1; }
+
+SimplifyContext::Base *SimplifyContext::getBase() {
+  return bases.empty() ? nullptr : &(bases.back());
+}
+
+bool SimplifyContext::inFunction() const {
+  return !isGlobal() && !bases.back().isType();
+}
+
+bool SimplifyContext::inClass() const { return !isGlobal() && bases.back().isType(); }
+
+bool SimplifyContext::isOuter(const Item &val) const {
+  return getBaseName() != val->getBaseName() || getModule() != val->getModule();
+}
+
+std::string SimplifyContext::rev(const std::string &s) {
+  auto i = cache->reverseIdentifierLookup.find(s);
+  if (i != cache->reverseIdentifierLookup.end())
+    return i->second;
+  seqassert(false, "'{}' has no non-canonical name", s);
+  return "";
+}
+
+SimplifyContext::Base *SimplifyContext::getClassBase() {
+  if (bases.size() >= 2 && bases[bases.size() - 2].isType())
+    return &(bases[bases.size() - 2]);
+  return nullptr;
+}
+
 void SimplifyContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
   LOG("module: {}", getModule());
   LOG("base: {}", getBaseName());
-  LOG("scope: {}", combine2(scope, ","));
+  LOG("scope: {}", fmt::join(scope.blocks, ","));
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
@@ -216,8 +272,5 @@ void SimplifyContext::dump(int pad) {
         t->canonicalName, t->getBaseName(), combine2(t->scope, ","));
   }
 }
-
-void SimplifyContext::addBlock() { Context<SimplifyItem>::addBlock(); }
-void SimplifyContext::popBlock() { Context<SimplifyItem>::popBlock(); }
 
 } // namespace codon::ast

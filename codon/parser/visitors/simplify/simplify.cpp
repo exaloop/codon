@@ -20,7 +20,8 @@ using namespace types;
 /// @param cache     Pointer to the shared cache ( @c Cache )
 /// @param file      Filename to be used for error reporting
 /// @param barebones Use the bare-bones standard library for faster testing
-/// @param defines   User-defined static values (typically passed as `codon run -DX=Y ...`).
+/// @param defines   User-defined static values (typically passed as `codon run -DX=Y
+/// ...`).
 ///                  Each value is passed as a string.
 StmtPtr
 SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
@@ -52,9 +53,8 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
-    preamble->push_back(
-        SimplifyVisitor(stdlib, preamble)
-            .transform(parseFile(stdlib->cache, stdlibPath->path)));
+    preamble->push_back(SimplifyVisitor(stdlib, preamble)
+                            .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
 
     // The whole standard library has the age of zero to allow back-references
@@ -87,9 +87,10 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   suite = std::make_shared<SuiteStmt>();
   suite->stmts.push_back(std::make_shared<SuiteStmt>(*preamble));
   // Add dominated assignment declarations
-  if (in(ctx->scopeStmts, ctx->scope.back()))
-    suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
-                        ctx->scopeStmts[ctx->scope.back()].end());
+  if (in(ctx->scope.stmts, ctx->scope.blocks.back()))
+    suite->stmts.insert(suite->stmts.end(),
+                        ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
+                        ctx->scope.stmts[ctx->scope.blocks.back()].end());
   suite->stmts.push_back(n);
   return suite;
 }
@@ -191,14 +192,14 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
 /// are prepended.
 StmtPtr SimplifyVisitor::transformConditionalScope(StmtPtr &stmt) {
   if (stmt) {
-    ctx->addScope();
+    ctx->enterConditionalBlock();
     transform(stmt);
     SuiteStmt *suite = stmt->getSuite();
     if (!suite) {
       stmt = N<SuiteStmt>(stmt);
       suite = stmt->getSuite();
     }
-    ctx->popScope(&suite->stmts);
+    ctx->leaveConditionalBlock(&suite->stmts);
     return stmt;
   }
   return stmt = nullptr;

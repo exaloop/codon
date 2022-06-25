@@ -55,8 +55,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   // Variable binding check for variables that are defined within conditional blocks
   if (!val->accessChecked.empty()) {
     bool checked = false;
-    for (auto &a: val->accessChecked) {
-      if (a.size() <= ctx->scope.size() && a[a.size() - 1] == ctx->scope[a.size() - 1]) {
+    for (auto &a : val->accessChecked) {
+      if (a.size() <= ctx->scope.blocks.size() &&
+          a[a.size() - 1] == ctx->scope.blocks[a.size() - 1]) {
         checked = true;
         break;
       }
@@ -70,7 +71,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
       if (!ctx->isConditionalExpr) {
         // If the expression is not conditional, we can just do the check once
         prependStmts->push_back(checkStmt);
-        val->accessChecked.push_back(ctx->scope);
+        val->accessChecked.push_back(ctx->scope.blocks);
       } else {
         // Otherwise, this check must be always called
         resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
@@ -90,7 +91,7 @@ void SimplifyVisitor::visit(DotExpr *expr) {
   std::vector<std::string> chain;
   Expr *root = expr;
   for (; root->getDot(); root = root->getDot()->expr.get())
-      chain.push_back(root->getDot()->member);
+    chain.push_back(root->getDot()->member);
 
   if (auto id = root->getId()) {
     // Case: a.bar.baz

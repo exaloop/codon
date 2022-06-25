@@ -17,14 +17,6 @@ namespace codon::ast {
 void SimplifyVisitor::visit(ClassStmt *stmt) {
   // Get root name
   std::string name = stmt->name;
-  if (ctx->getBase()->isType()) {
-    // If class B is nested within A, it's name is always A.B, never B itself.
-    // Ensure that parent class name is appended
-    const auto &a = ctx->getBase()->ast;
-    std::string parentName =
-        a->getId() ? a->getId()->value : a->getIndex()->expr->getId()->value;
-    name = parentName + "." + name;
-  }
 
   // Generate/find class' canonical name (unique ID) and AST
   std::string canonicalName;
@@ -32,7 +24,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
   // classItem will be added later when the scope is different
   auto classItem = std::make_shared<SimplifyItem>(SimplifyItem::Type, "", "",
-                                                  ctx->getModule(), ctx->scope);
+                                                  ctx->getModule(), ctx->scope.blocks);
   classItem->setSrcInfo(stmt->getSrcInfo());
   if (!stmt->attributes.has(Attr::Extend)) {
     classItem->canonicalName = canonicalName =
@@ -60,8 +52,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
   // Add the class base.
   ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
-  ctx->getBase()->ast = std::make_shared<IdExpr>(name);
-  ctx->getBase()->scope = ctx->scope;
   ctx->addBlock();
 
   // Parse and add class generics
@@ -89,13 +79,13 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
   }
 
-  // Form class reference AST (e.g. `Foo`, or `Foo[T, U]` for generic classes)
+  // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
+  ExprPtr typeAst = N<IdExpr>(name);
   for (auto &a : args) {
     if (a.status == Param::Generic) {
-      if (!ctx->getBase()->ast->getIndex())
-        ctx->getBase()->ast = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
-      ctx->getBase()->ast->getIndex()->index->getTuple()->items.push_back(
-          N<IdExpr>(a.name));
+      if (!typeAst->getIndex())
+        typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+      typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
     }
   }
 
@@ -154,7 +144,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
     // Codegen default magic methods
     for (auto &m : stmt->attributes.magics) {
-      fnStmts.push_back(transform(codegenMagic(m, ctx->getBase()->ast.get(), memberArgs,
+      fnStmts.push_back(transform(codegenMagic(m, typeAst.get(), memberArgs,
                                                stmt->attributes.has(Attr::Tuple))));
     }
     // Add inherited methods
@@ -350,6 +340,10 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getClass()) {
       auto origName = sp->getClass()->name;
+      // If class B is nested within A, it's name is always A.B, never B itself.
+      // Ensure that parent class name is appended
+      auto parentName = stmt->name;
+      sp->getClass()->name = parentName + "." + origName;
       auto tsp = transform(sp);
       std::string name;
       for (auto &s : tsp->getSuite()->stmts)

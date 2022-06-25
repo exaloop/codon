@@ -17,7 +17,7 @@ void SimplifyVisitor::visit(AssignExpr *expr) {
   StmtPtr s = N<AssignStmt>(clone(expr->var), expr->expr);
   if (ctx->isConditionalExpr) {
     // Make sure to transform both suite _AND_ the expression in the same scope
-    ctx->addScope();
+    ctx->enterConditionalBlock();
     transform(s);
     transform(expr->var);
     SuiteStmt *suite = s->getSuite();
@@ -25,7 +25,7 @@ void SimplifyVisitor::visit(AssignExpr *expr) {
       s = N<SuiteStmt>(s);
       suite = s->getSuite();
     }
-    ctx->popScope(&suite->stmts);
+    ctx->leaveConditionalBlock(&suite->stmts);
   } else {
     s = transform(s);
     transform(expr->var);
@@ -68,7 +68,7 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->value);
-    if (!val || ctx->scope != val->scope)
+    if (!val || ctx->scope.blocks != val->scope)
       error("cannot delete '{}'", ei->value);
     ctx->remove(ei->value);
   } else {

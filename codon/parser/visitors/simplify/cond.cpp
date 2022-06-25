@@ -53,12 +53,12 @@ void SimplifyVisitor::visit(MatchStmt *stmt) {
   auto result = N<SuiteStmt>();
   result->stmts.push_back(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
   for (auto &c : stmt->cases) {
-    ctx->addScope();
+    ctx->enterConditionalBlock();
     StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
     if (c.guard)
       suite = N<IfStmt>(clone(c.guard), suite);
     result->stmts.push_back(transformPattern(N<IdExpr>(var), clone(c.pattern), suite));
-    ctx->popScope();
+    ctx->leaveConditionalBlock();
   }
   // Make sure to break even if there is no case _ to prevent infinite loop
   result->stmts.push_back(N<BreakStmt>());

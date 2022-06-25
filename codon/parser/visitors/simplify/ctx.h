@@ -16,16 +16,15 @@
 namespace codon::ast {
 
 /**
- * Simplification context object description.
- * This represents an identifier that can be either a function, a class (type), a
- * variable or an import.
+ * Simplification context identifier.
+ * Can be either a function, a class (type), or a variable.
  */
 struct SimplifyItem : public SrcObject {
-  /// Object kind (function, class, variable, or import).
+  /// Type of the identifier
   enum Kind { Func, Type, Var } kind;
-  /// Object's base function
+  /// Base name (e.g., foo.bar.baz)
   std::string baseName;
-  /// Object's unique identifier (canonical name)
+  /// Unique identifier (canonical name)
   std::string canonicalName;
   /// Full module name
   std::string moduleName;
@@ -33,10 +32,14 @@ struct SimplifyItem : public SrcObject {
   std::vector<int> scope;
   /// Non-empty string if a variable is import variable
   std::string importPath;
+  /// List of scopes where the identifier is accessible
+  /// without __used__ check
   std::vector<std::vector<int>> accessChecked;
+  /// Set if an identifier cannot be shadowed
+  /// (e.g., global-marked variables)
   bool noShadow;
+  /// Set if an identifier is a class or a function generic
   bool generic;
-  ExprPtr replacement;
 
 public:
   SimplifyItem(Kind kind, std::string baseName, std::string canonicalName,
@@ -47,58 +50,58 @@ public:
         scope(std::move(scope)), importPath(std::move(importPath)), noShadow(false),
         generic(false) {}
 
-  /// Convenience getters.
+  /* Convenience getters */
   std::string getBaseName() const { return baseName; }
   std::string getModule() const { return moduleName; }
   bool isVar() const { return kind == Var; }
   bool isFunc() const { return kind == Func; }
   bool isType() const { return kind == Type; }
   bool isImport() const { return !importPath.empty(); }
-
   bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
+  /// True if an indentifier is within a conditional block
+  /// (i.e., a block that might not be executed during the runtime)
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
 };
 
-/**
- * A variable table (context) for simplification stage.
- */
+/** Context class that tracks identifiers during the simplification. **/
 struct SimplifyContext : public Context<SimplifyItem> {
   /// A pointer to the shared cache.
   Cache *cache;
 
-  int scopeCnt;
-  /// Sorted hierarchy of scopes!
-  std::vector<int> scope;
+  /// Holds the information about current scope.
+  /// A scope is defined as a stack of conditional blocks
+  /// (i.e., blocks that might not get executed during the runtime).
+  /// Used mainly to support Python's variable scoping rules.
+  struct {
+    /// Scope counter. Each conditional block gets a new scope ID.
+    int counter;
+    /// Current hierarchy of conditional blocks.
+    std::vector<int> blocks;
+    /// List of statements that are to be prepended to a block
+    /// after its transformation.
+    std::map<int, std::vector<StmtPtr>> stmts;
+  } scope;
 
-  std::map<int, std::vector<StmtPtr>> scopeStmts;
-  std::vector<std::set<std::string>> scopeOutsides;
-
-  /// A base scope definition. Each function or a class defines a new base scope.
+  /// Holds the information about current base.
+  /// A base is defined as a function or a class block.
   struct Base {
-    /// Canonical name of a base-defining function or a class.
+    /// Canonical name of a function or a class that owns this base.
     std::string name;
-    /// Declaration AST of a base-defining class (or nullptr otherwise) for
-    /// automatically annotating "self" and other parameters. For example, for
-    /// class Foo[T, N: int]: ..., AST is Foo[T, N: int]
-    ExprPtr ast;
     /// Tracks function attributes (e.g. if it has @atomic or @test attributes).
+    /// Only set for functions.
     Attr *attributes;
-
+    /// Set if the base is class base and if class is marked with @deduce.
+    /// Stores the list of class fields in the order of traversal.
     std::shared_ptr<std::vector<std::string>> deducedMembers;
+    /// Canonical name of `self` parameter that is used to deduce class fields
+    /// (e.g., self in self.foo).
     std::string selfName;
-    std::unordered_set<std::string> generics;
-    std::vector<int> scope;
-
-    /// A stack of nested maps that capture variables defined in enclosing bases (e.g.
-    /// variables not defined in a function). Maps captured canonical names to new
-    /// canonical names (used in the inner function). Used for capturing outer variables
-    /// in generators and lambda functions. A stack is needed because there might be
-    /// nested generator or lambda constructs.
+    /// Map of captured identifiers (i.e., identifiers not defined in a function).
+    /// Captured (canonicalized) identifiers are mapped to the new canonical names
+    /// (representing the canonical function argument names that are appended to the
+    /// function after processing).
     std::unordered_map<std::string, std::string> *captures;
-
-    explicit Base(std::string name, ExprPtr ast = nullptr, Attr *attributes = nullptr);
-    bool isType() const { return ast != nullptr; }
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
@@ -107,31 +110,35 @@ struct SimplifyContext : public Context<SimplifyItem> {
     struct Loop {
       std::string breakVar;
       std::vector<int> scope;
+      /// List of variables "seen" before their assignment within a loop.
+      /// Used to dominate variables that are updated within a loop.
       std::unordered_set<std::string> seenVars;
     };
     std::vector<Loop> loops;
+
+  public:
+    explicit Base(std::string name, Attr *attributes = nullptr);
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
+    bool isType() const { return attributes == nullptr; }
   };
-  /// A stack of bases enclosing the current statement (the topmost base is the last
-  /// base). Top-level has no base.
+  /// Current base stack (the last enclosing base is the last base in the stack).
   std::vector<Base> bases;
 
-  // set of seen variables
+  /// Set of seen global identifiers used to prevent later creation of local variables
+  /// with the same name.
   std::unordered_map<std::string, std::unordered_map<std::string, ExprPtr>>
       seenGlobalIdentifiers;
 
-  /// True if standard library is being loaded.
+  /// Set if the standard library is currently being loaded.
   bool isStdlibLoading;
-  /// Current module name (Python's __name__) and its source. The default module is
-  /// __main__.
+  /// Current module. The default module is named `__main__`.
   ImportFile moduleName;
   /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
   /// and b) to disallow assignment expressions there.
   bool isConditionalExpr;
-  /// Allow type() expressions.
+  /// Allow type() expressions. Currently used to disallow type() in class
+  /// and function definitions.
   bool allowTypeOf;
-
-  std::vector<SrcInfo> srcInfos;
 
 public:
   SimplifyContext(std::string filename, Cache *cache);
@@ -144,60 +151,51 @@ public:
                const SrcInfo &srcInfo = SrcInfo());
   Item addFunc(const std::string &name, const std::string &canonicalName,
                const SrcInfo &srcInfo = SrcInfo());
+  /// Add the item to the standard library module, thus ensuring its visibility from all
+  /// modules.
   Item addAlwaysVisible(const Item &item);
 
+  /// Get an item from the context. If the item does not exist, nullptr is returned.
   Item find(const std::string &name) const override;
+  /// Get an item that exists in the context. If the item does not exist, assertion is
+  /// raised.
   Item forceFind(const std::string &name) const;
+  /// Get an item from the context. Perform domination analysis for accessing items
+  /// defined in the conditional blocks (i.e., Python scoping).
   Item findDominatingBinding(const std::string &name);
 
-  /// Return a canonical name of the top-most base, or an empty string if this is a
-  /// top-level base.
+  /// Return a canonical name of the current base.
+  /// An empty string represents the toplevel base.
   std::string getBaseName() const;
   /// Return the current module.
   std::string getModule() const;
   /// Pretty-print the current context state.
-  void dump() override { dump(0); }
+  void dump() override;
 
   /// Generate a unique identifier (name) for a given string.
   std::string generateCanonicalName(const std::string &name, bool includeBase = false,
                                     bool zeroId = false) const;
-
-  bool inFunction() const { return !isGlobal() && !bases.back().isType(); }
-  bool inClass() const { return !isGlobal() && bases.back().isType(); }
-
-  void addBlock() override;
-  void popBlock() override;
-
-  void addScope() { scope.push_back(++scopeCnt); }
-  void popScope(std::vector<StmtPtr> *stmts = nullptr) {
-    if (stmts && in(scopeStmts, scope.back()))
-      stmts->insert(stmts->begin(), scopeStmts[scope.back()].begin(),
-                    scopeStmts[scope.back()].end());
-    scope.pop_back();
-  }
-
-  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
-  void popSrcInfo() { srcInfos.pop_back(); }
-  SrcInfo getSrcInfo() const { return srcInfos.back(); }
-
-  bool isGlobal() const { return bases.size() == 1; }
-  bool isConditional() const { return scope.size() > 1; }
-  Base *getBase() { return bases.empty() ? nullptr : &(bases.back()); }
-  bool isOuter(const Item &val) const {
-    return getBaseName() != val->getBaseName() || getModule() != val->getModule();
-  }
-  std::string rev(const std::string &s) {
-    auto i = cache->reverseIdentifierLookup.find(s);
-    if (i != cache->reverseIdentifierLookup.end())
-      return i->second;
-    seqassert(false, "'{}' has no non-canonical name", s);
-    return "";
-  }
-  Base *getClassBase() {
-    if (bases.size() >= 2 && bases[bases.size() - 2].isType())
-      return &(bases[bases.size() - 2]);
-    return nullptr;
-  }
+  /// Enter a conditional block.
+  void enterConditionalBlock();
+  /// Leave a conditional block. Populate stmts (if set) with the declarations of newly
+  /// added identifiers that dominate the children blocks.
+  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr);
+  /// True if we are at the toplevel.
+  bool isGlobal() const;
+  /// True if we are within a conditional block.
+  bool isConditional() const;
+  /// Get the current base.
+  Base *getBase();
+  /// True if the current base is function.
+  bool inFunction() const;
+  /// True if the current base is class.
+  bool inClass() const;
+  /// True if an item is defined outside of the current base or a module.
+  bool isOuter(const Item &val) const;
+  /// Get the non-canonicalized version of a canonical name.
+  std::string rev(const std::string &s);
+  /// Get the enclosing class base (or nullptr if such does not exist).
+  Base *getClassBase();
 
 private:
   /// Pretty-print the current context state.

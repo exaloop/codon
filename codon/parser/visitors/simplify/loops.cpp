@@ -51,11 +51,11 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
         transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true))));
   }
 
-  ctx->addScope();
-  ctx->getBase()->loops.push_back({breakVar, ctx->scope, {}});
+  ctx->enterConditionalBlock();
+  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
   stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   transformConditionalScope(stmt->suite);
-  ctx->popScope();
+  ctx->leaveConditionalBlock();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
     ctx->findDominatingBinding(var);
@@ -91,8 +91,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     assign = transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true)));
   }
 
-  ctx->addScope();
-  ctx->getBase()->loops.push_back({breakVar, ctx->scope, {}});
+  ctx->enterConditionalBlock();
+  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
   std::string varName;
   if (auto i = stmt->var->getId()) {
     ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
@@ -110,7 +110,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     stmts.push_back(stmt->suite);
     stmt->suite = transform(N<SuiteStmt>(stmts));
   }
-  ctx->popScope();
+  ctx->leaveConditionalBlock();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
     ctx->findDominatingBinding(var);

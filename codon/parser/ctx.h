@@ -41,6 +41,8 @@ private:
   std::unordered_set<std::string> flags;
   /// The absolute path of the current module.
   std::string filename;
+  /// SrcInfo stack used for obtaining source information of the current expression.
+  std::vector<SrcInfo> srcInfos;
 
 public:
   explicit Context(std::string filename) : filename(move(filename)) {
@@ -104,6 +106,12 @@ private:
     if (!i->second.size())
       map.erase(name);
   }
+
+public:
+  /* SrcInfo helpers */
+  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
+  void popSrcInfo() { srcInfos.pop_back(); }
+  SrcInfo getSrcInfo() const { return srcInfos.back(); }
 };
 
 } // namespace ast

@@ -37,14 +37,14 @@ void SimplifyVisitor::visit(AssertStmt *stmt) {
 void SimplifyVisitor::visit(TryStmt *stmt) {
   transformConditionalScope(stmt->suite);
   for (auto &c : stmt->catches) {
-    ctx->addScope();
+    ctx->enterConditionalBlock();
     if (!c.var.empty()) {
       c.var = ctx->generateCanonicalName(c.var);
       ctx->addVar(ctx->rev(c.var), c.var, c.suite->getSrcInfo());
     }
     transformType(c.exc);
     transformConditionalScope(c.suite);
-    ctx->popScope();
+    ctx->leaveConditionalBlock();
   }
   transformConditionalScope(stmt->finally);
 }

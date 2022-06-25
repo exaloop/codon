@@ -153,7 +153,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Set up the base
   ctx->bases.emplace_back(SimplifyContext::Base{canonicalName});
-  ctx->getBase()->scope = ctx->scope;
   ctx->addBlock();
   ctx->getBase()->attributes = &(stmt->attributes);
 
@@ -180,7 +179,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       if (a.type->isId("type") || a.type->isId("TypeVar"))
         defaultValue = N<IdExpr>("NoneType");
     }
-    // TODO: Uncomment for Python-style defaults
+    /// TODO: Uncomment for Python-style defaults
     // if (defaultValue) {
     //   auto defaultValueCanonicalName =
     //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
@@ -197,7 +196,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
         ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
       else
         ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
-      ctx->getBase()->generics.insert(name);
     }
   }
   // Parse arguments to the context. Needs to be done after adding generics

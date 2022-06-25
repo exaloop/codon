@@ -193,8 +193,6 @@ public:
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
   void visit(CustomStmt *) override;
-
-  using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
 };
 
 } // namespace codon::ast
