@@ -91,6 +91,34 @@ bool happensBefore(const Value *before, const Value *after, CFGraph *cfg,
   return dom->isDominated(after, before) || !reachable(afterBlock, beforeBlock, seen);
 }
 
+struct RDManager {
+  struct IDPairHash {
+    template <class T1, class T2>
+    std::size_t operator()(const std::pair<T1, T2> &pair) const {
+      return (std::hash<T1>()(pair.first) << 32) ^ std::hash<T2>()(pair.second);
+    }
+  };
+
+  RDInspector *rd;
+  std::unordered_map<std::pair<id_t, id_t>, std::unordered_set<id_t>, IDPairHash> cache;
+
+  explicit RDManager(RDInspector *rd) : rd(rd), cache() {}
+
+  std::unordered_set<id_t> getReachingDefinitions(const Var *var, const Value *loc) {
+    auto key = std::make_pair(var->getId(), loc->getId());
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+      auto result = rd->getReachingDefinitions(var, loc);
+      cache.emplace(key, result);
+      return result;
+    } else {
+      return it->second;
+    }
+  }
+
+  bool isInvalid(const Var *v) { return rd->isInvalid(v); }
+};
+
 struct DerivedSet {
   const Func *func;
   const Var *root;
@@ -109,7 +137,7 @@ struct DerivedSet {
     result.externCaptures = true;
   }
 
-  bool isDerived(const Var *v, const Value *loc, RDInspector *rd) const {
+  bool isDerived(const Var *v, const Value *loc, RDManager &rd) const {
     auto it = derivedVars.find(v->getId());
     if (it == derivedVars.end())
       return false;
@@ -118,15 +146,15 @@ struct DerivedSet {
     // if the var is derived, since they can change
     // at any point as far as we know. Same goes for
     // vars untracked by the reaching-def analysis.
-    if (v->isGlobal() || rd->isInvalid(v))
+    if (v->isGlobal() || rd.isInvalid(v))
       return true;
 
     // Make sure the var at this point is reached by
     // at least one definition that has led to a
     // derived value.
-    auto mySet = rd->getReachingDefinitions(v, loc);
+    auto mySet = rd.getReachingDefinitions(v, loc);
     for (auto *cause : it->second) {
-      auto otherSet = rd->getReachingDefinitions(v, cause);
+      auto otherSet = rd.getReachingDefinitions(v, cause);
       bool derived = false;
 
       for (auto &elem : mySet) {
@@ -349,7 +377,7 @@ bool extractVars(CaptureContext &cc, const Value *v, std::vector<const Var *> &r
 struct CaptureTracker : public util::Operator {
   CaptureContext &cc;
   CFGraph *cfg;
-  RDInspector *rd;
+  RDManager rd;
   DominatorInspector *dom;
   std::vector<DerivedSet> dsets;
 
@@ -451,11 +479,11 @@ struct CaptureTracker : public util::Operator {
           continue;
 
         bool derived = false;
-        if (toVar->isGlobal() || rd->isInvalid(toVar)) {
+        if (toVar->isGlobal() || rd.isInvalid(toVar)) {
           derived = true;
         } else {
-          auto mySet = rd->getReachingDefinitions(toVar, cause);
-          auto otherSet = rd->getReachingDefinitions(toVar, toCause);
+          auto mySet = rd.getReachingDefinitions(toVar, cause);
+          auto otherSet = rd.getReachingDefinitions(toVar, toCause);
           for (auto &elem : mySet) {
             if (otherSet.count(elem)) {
               derived = true;
