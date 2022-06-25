@@ -278,3 +278,13 @@ def test_26(a, b, v):
     assert expect_capture(False, False, ())   # v
     return q
 test_26(S('s'), 'b', [0,1,0,1])
+
+@test
+def test_27(x):
+    a = ''
+    p = __ptr__(a)
+    q = __ptr__(p)
+    q[0][0] = x
+    assert expect_capture(True, False, ())  # x
+    return a
+test_27('x')
