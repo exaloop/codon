@@ -26,7 +26,7 @@ StmtPtr
 SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones) {
-  auto preamble = std::make_shared<Preamble>();
+  auto preamble = std::make_shared<std::vector<StmtPtr>>();
   seqassertn(cache->module, "cache's module is not set");
 
   // Load standard library if it has not been loaded
@@ -52,7 +52,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
-    preamble->globals.push_back(
+    preamble->push_back(
         SimplifyVisitor(stdlib, preamble)
             .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
@@ -85,7 +85,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   auto n = SimplifyVisitor(ctx, preamble).transform(suite);
 
   suite = std::make_shared<SuiteStmt>();
-  suite->stmts.push_back(std::make_shared<SuiteStmt>(preamble->globals));
+  suite->stmts.push_back(std::make_shared<SuiteStmt>(*preamble));
   // Add dominated assignment declarations
   if (in(ctx->scopeStmts, ctx->scope.back()))
     suite->stmts.insert(suite->stmts.end(), ctx->scopeStmts[ctx->scope.back()].begin(),
@@ -102,12 +102,12 @@ StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
   int oldAge = ctx->cache->age;
   if (atAge != -1)
     ctx->cache->age = atAge;
-  auto preamble = std::make_shared<Preamble>();
+  auto preamble = std::make_shared<std::vector<StmtPtr>>();
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
   if (atAge != -1)
     ctx->cache->age = oldAge;
   auto suite = std::make_shared<SuiteStmt>();
-  for (auto &s : preamble->globals)
+  for (auto &s : *preamble)
     suite->stmts.push_back(s);
   for (auto &s : stmts)
     suite->stmts.push_back(s);
@@ -117,7 +117,7 @@ StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
 /**************************************************************************************/
 
 SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
-                                 std::shared_ptr<Preamble> preamble,
+                                 std::shared_ptr<std::vector<StmtPtr>> preamble,
                                  std::shared_ptr<std::vector<StmtPtr>> stmts)
     : ctx(std::move(ctx)), preamble(std::move(preamble)) {
   prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();

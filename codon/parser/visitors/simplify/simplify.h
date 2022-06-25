@@ -26,39 +26,19 @@ namespace codon::ast {
  * ➡️ Note: This visitor *copies* the incoming AST and does not modify it.
  */
 class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
-public:
-  /// Simplification step will divide the input AST into four sub-ASTs that are stored
-  /// here:
-  ///   - Type (class) signatures
-  ///   - Global variable signatures (w/o rhs)
-  ///   - Functions
-  ///   - Top-level statements.
-  /// Each of these divisions will be populated via first-come first-serve method.
-  /// This way, type and global signatures will be exposed to all executable statements,
-  /// and we can assume that there won't be any back-references (any signatures depends
-  /// only on the previously seen signatures). We also won't have to maintain complex
-  /// structures to access global variables, or worry about recursive imports.
-  /// This approach also allows us to generate global types without having to
-  /// worry about initialization order.
-  struct Preamble {
-    std::vector<StmtPtr> globals;
-    std::vector<StmtPtr> functions;
-  };
-  std::shared_ptr<std::vector<StmtPtr>> prependStmts;
-
-private:
   /// Shared simplification context.
   std::shared_ptr<SimplifyContext> ctx;
+  /// Preamble contains definition statements shared across all visitors
+  /// in all modules. It is executed before simplified statements.
+  std::shared_ptr<std::vector<StmtPtr>> preamble;
+  /// Statements to prepend before the current statement.
+  std::shared_ptr<std::vector<StmtPtr>> prependStmts;
 
-  /// Preamble contains shared definition statements and is shared across all visitors
-  /// (in all modules). See Preamble (type) for more details.
-  std::shared_ptr<Preamble> preamble;
-
-  /// Each new expression is stored here (as visit() does not return anything) and
-  /// later returned by a transform() call.
+  /// Each new expression is stored here (as @c visit does not return anything) and
+  /// later returned by a @c transform call.
   ExprPtr resultExpr;
-  /// Each new statement is stored here (as visit() does not return anything) and
-  /// later returned by a transform() call.
+  /// Each new statement is stored here (as @c visit does not return anything) and
+  /// later returned by a @c transform call.
   StmtPtr resultStmt;
 
 public:
@@ -70,7 +50,7 @@ public:
 
 public:
   explicit SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
-                           std::shared_ptr<Preamble> preamble,
+                           std::shared_ptr<std::vector<StmtPtr>> preamble,
                            std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
 
 public:

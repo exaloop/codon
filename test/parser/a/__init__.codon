@@ -6,3 +6,10 @@ print 'a'
 
 zoo = 5
 _zoo = 3
+
+class B:
+    pass
+tt = Ptr[B]
+@tuple
+class Foo:
+    t: tt

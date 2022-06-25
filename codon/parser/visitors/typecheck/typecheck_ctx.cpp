@@ -156,7 +156,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
       std::vector<types::FuncTypePtr> vv;
       for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
         auto &m = mt[mti];
-        if (endswith(m.name, ":dispatch"))
+        if (endswith(m.name, ":dispatch") || !cache->functions[m.name].type)
           continue;
         if (m.age <= age) {
           if (hideShadowed) {

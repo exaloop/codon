@@ -105,7 +105,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
-  auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+  auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
   ast::Cache bCache = *cache;
   ast::SimplifyContext bSimplify = *sctx;
@@ -126,9 +126,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();
-    for (auto &s : preamble->globals)
-      simplified->stmts.push_back(s);
-    for (auto &s : preamble->functions)
+    for (auto &s : *preamble)
       simplified->stmts.push_back(s);
     simplified->stmts.push_back(s);
     // TODO: unroll on errors...

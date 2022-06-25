@@ -143,12 +143,13 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
+  auto assign = N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
   if (rhs && rhs->isType()) {
     ctx->addType(e->value, canonical, lhs->getSrcInfo());
   } else {
     ctx->addVar(e->value, canonical, lhs->getSrcInfo());
   }
-  return N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
+  return assign;
 }
 
 /// Unpack an assignment expression `lhs = rhs` into a list of simple assignment

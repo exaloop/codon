@@ -298,8 +298,8 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
-    preamble->globals.push_back(N<AssignStmt>(
-        N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false)));
+    preamble->push_back(N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
+                                      N<BoolExpr>(false)));
     if (!in(ctx->cache->globals, importDoneVar))
       ctx->cache->globals[importDoneVar] = nullptr;
 
@@ -309,23 +309,18 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     std::vector<StmtPtr> stmts;
     auto processToplevelStmt = [&](const StmtPtr &s) {
       // Process toplevel statement
-      if (s->getFunction() || s->getClass()) {
-        // Signatures are ignored
-        preamble->globals.push_back(s);
-      } else {
-        if (auto a = s->getAssign()) {
-          if (!a->isUpdate() && a->lhs->getId()) {
-            // Global `a = ...`
-            auto val = ictx->forceFind(a->lhs->getId()->value);
-            if (val->isVar() && val->isGlobal() && !isStaticGeneric(a->type)) {
-              // Register global
-              if (!in(ctx->cache->globals, val->canonicalName))
-                ctx->cache->globals[val->canonicalName] = nullptr;
-            }
+      if (auto a = s->getAssign()) {
+        if (!a->isUpdate() && a->lhs->getId()) {
+          // Global `a = ...`
+          auto val = ictx->forceFind(a->lhs->getId()->value);
+          if (val->isVar() && val->isGlobal() && !isStaticGeneric(a->type)) {
+            // Register global
+            if (!in(ctx->cache->globals, val->canonicalName))
+              ctx->cache->globals[val->canonicalName] = nullptr;
           }
         }
-        stmts.push_back(s);
       }
+      stmts.push_back(s);
     };
     processToplevelStmt(comment);
     if (auto st = n->getSuite()) {
@@ -339,7 +334,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     ctx->cache->functions[importVar + ":0"].ast =
         N<FunctionStmt>(importVar + ":0", nullptr, std::vector<Param>{},
                         N<SuiteStmt>(stmts), Attr({Attr::ForceRealize}));
-    preamble->globals.push_back(ctx->cache->functions[importVar + ":0"].ast->clone());
+    preamble->push_back(ctx->cache->functions[importVar + ":0"].ast->clone());
     ctx->cache->overloads[importVar].push_back({importVar + ":0", ctx->cache->age});
   }
   return nullptr;
