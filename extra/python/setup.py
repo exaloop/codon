@@ -31,8 +31,8 @@ from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
 llvm_config = ""
 llvm_config_candidates = [
     os.environ.get("CODON_LLVM_CONFIG", from_root("llvm/bin/llvm-config")),
-    "llvm-config-12", 
-    "llvm-config", 
+    "llvm-config-12",
+    "llvm-config",
 ]
 for candidate in llvm_config_candidates:
     if exists(candidate):
@@ -87,5 +87,5 @@ setup(
     ext_modules=[jit_extension],
     packages=["codon"],
     package_dir={"codon": "src"},
-    package_data = {"codon": ["*." + ext, *package_files("stdlib")]},
+    include_package_data=True
 )
