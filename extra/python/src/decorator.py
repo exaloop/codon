@@ -14,7 +14,8 @@ if "CODON_PATH" not in os.environ:
         os.path.abspath(inspect.getfile(inspect.currentframe()))
     )
     os.environ["CODON_PATH"] += "/stdlib"
-    print(os.environ["CODON_PATH"])
+
+
 from .codon_jit import Jit, JitError
 
 
