@@ -6,13 +6,14 @@ The `codon` program can directly `run` Codon source in JIT mode:
 codon run myprogram.codon
 ```
 
-The default compilation and run mode is _debug_ (`-debug`). Compile and run with optimizations with the `-release` option:
+The default compilation and run mode is _debug_ (`-debug`).
+Compile and run with optimizations with the `-release` option:
 
 ```bash
 codon run -release myprogram.codon
 ```
 
-`codon` can also `build` executables (ensure you have `clang` installed, as it is used for linking):
+`codon` can also `build` executables:
 
 ```bash
 # generate 'myprogram' executable
@@ -44,10 +45,12 @@ codon build -o foo.ll myprogram.codon
 
 ## Compile-time definitions
 
-`codon` allows for compile-time definitions via the `-D` flag. For example, in the following code:
+`codon` allows for compile-time definitions via the `-D` flag.
+For example, in the following code:
 
 ```python
 print(Int[BIT_WIDTH]())
 ```
 
-`BIT_WIDTH` can be specified on the command line as such: `codon run -DBIT_WIDTH=10 myprogram.codon`.
+`BIT_WIDTH` can be specified on the command line as such:
+`codon run -DBIT_WIDTH=10 myprogram.codon`.

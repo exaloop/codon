@@ -15,12 +15,8 @@ can create a shared library containing `foo` (assuming source file
 *foo.codon*):
 
 ``` bash
-codon build -o foo.o foo.codon
-gcc -shared -lcodonrt -lomp foo.o -o libfoo.so
+codon build -o libfoo.so foo.codon
 ```
-
-(The last command might require an additional `-L/path/to/codonrt/lib/`
-argument if `libcodonrt` is not installed on a standard path.)
 
 Now we can call `foo` from a C program:
 

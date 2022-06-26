@@ -36,3 +36,32 @@ def popcnt(n: int) -> int:
 
 print(popcnt(42))  # 3
 ```
+
+# Annotations
+
+Sometimes it can be helpful to annotate `@llvm` functions to give
+the compiler more information as to how they behave. Codon has
+a number of default annotations for LLVM functions (all of
+which also apply to external/C functions):
+
+- `@pure`: Function does not capture arguments (aside from
+  return value capturing as in `def foo(x): return x`), does not
+  modify arguments, and has no side effects. This is a
+  mathematically "pure" function.
+
+- `@no_side_effect`: Very similar to `@pure` but function may
+  return different results on different calls, such as the C
+  function `time()`.
+
+- `@nocapture`: Function does not capture any of its arguments
+  (again excluding return value capturing).
+
+- `@self_captures`: Function's first (`self`) argument captures
+  the other arguments, an example being `List.__setitem__()`.
+
+These are mutually-exclusive annotations. Another complementary
+annotation `@derives` can be used to indicate that the return
+value of the function captures its arguments.
+
+These annotations are completely optional and do not affect
+program semantics.
