@@ -13,6 +13,7 @@
 #include "codon/runtime/lib.h"
 #include "codon/sir/dsl/codegen.h"
 #include "codon/sir/llvm/optimize.h"
+#include "codon/sir/util/irtools.h"
 #include "codon/util/common.h"
 
 namespace codon {
@@ -406,9 +407,10 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
                  llvm::ConstantPointerNull::get(B->getInt8PtrTy()->getPointerTo())});
   B->CreateRetVoid();
 
+  const int priority = 65535; // default
   auto *ctorEntry = llvm::ConstantStruct::get(
       ctorEntryTy,
-      {B->getInt32(65535), ctor, llvm::ConstantPointerNull::get(B->getInt8PtrTy())});
+      {B->getInt32(priority), ctor, llvm::ConstantPointerNull::get(B->getInt8PtrTy())});
   new llvm::GlobalVariable(*M, ctorArrayTy,
                            /*isConstant=*/true, llvm::GlobalValue::AppendingLinkage,
                            llvm::ConstantArray::get(ctorArrayTy, {ctorEntry}),

@@ -3,7 +3,6 @@
 #include "codon/dsl/plugins.h"
 #include "codon/sir/llvm/llvm.h"
 #include "codon/sir/sir.h"
-#include "codon/sir/util/irtools.h"
 #include "codon/util/common.h"
 
 #include <string>
