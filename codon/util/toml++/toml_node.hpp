@@ -19,7 +19,7 @@ TOML_NAMESPACE_START
 	node::node(const node& /*other*/) noexcept
 	{
 		// does not copy source information - this is not an error
-		// 
+		//
 		// see https://github.com/marzer/tomlplusplus/issues/49#issuecomment-665089577
 	}
 
@@ -35,7 +35,7 @@ TOML_NAMESPACE_START
 	node& node::operator= (const node& /*rhs*/) noexcept
 	{
 		// does not copy source information - this is not an error
-		// 
+		//
 		// see https://github.com/marzer/tomlplusplus/issues/49#issuecomment-665089577
 
 		source_ = {};
@@ -62,7 +62,7 @@ TOML_NAMESPACE_START
 	TOML_MEMBER_ATTR(const) bool node::is_time()			const noexcept { return false; }
 	TOML_MEMBER_ATTR(const) bool node::is_date_time()		const noexcept { return false; }
 	TOML_MEMBER_ATTR(const) bool node::is_array_of_tables()	const noexcept { return false; }
-	
+
 	TOML_MEMBER_ATTR(const) table* node::as_table()						noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) array* node::as_array()						noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) value<std::string>* node::as_string()		noexcept { return nullptr; }
@@ -72,7 +72,7 @@ TOML_NAMESPACE_START
 	TOML_MEMBER_ATTR(const) value<date>* node::as_date()				noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) value<time>* node::as_time()				noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) value<date_time>* node::as_date_time()		noexcept { return nullptr; }
-	
+
 	TOML_MEMBER_ATTR(const) const table* node::as_table()					const noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) const array* node::as_array()					const noexcept { return nullptr; }
 	TOML_MEMBER_ATTR(const) const value<std::string>* node::as_string()		const noexcept { return nullptr; }
