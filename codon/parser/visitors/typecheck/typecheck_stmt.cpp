@@ -141,6 +141,9 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       ctx->addToplevel(lhs, val);
       if (kind != TypecheckItem::Var)
         ctx->cache->globals.erase(lhs);
+    } else if (startswith(ctx->bases.back().name, "._import_") &&
+               kind == TypecheckItem::Type) { // import toplevel type aliases
+      ctx->addToplevel(lhs, val);
     } else {
       ctx->add(lhs, val);
     }

@@ -58,6 +58,10 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       realizedType = it->second->type->getClass();
     } else {
       realizedType = type->getClass();
+      if (type->getFunc()) { // make sure to realize function stub only and cache fn stub
+        realizedType = std::make_shared<RecordType>(realizedType, type->getFunc()->args);
+      }
+
       // Realize generics
       for (auto &e : realizedType->generics)
         if (!realize(e.type))

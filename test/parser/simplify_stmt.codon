@@ -423,6 +423,8 @@ print zoo, _zoo, __name__  #: 5 1 __main__
 f = Foo(Ptr[B]())
 print f.__class__, f.t.__class__  #: Foo Ptr[B]
 
+a.ha()  #: B
+
 #%% import_order,barebones
 def foo():
     import a

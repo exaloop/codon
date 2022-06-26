@@ -111,8 +111,10 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
-    if (auto n = isAttribute(stmt->decorators[i]))
+    if (auto n = isAttribute(stmt->decorators[i])) {
       stmt->attributes.set(*n);
+      stmt->decorators[i] = nullptr;  // remove it from further consideration
+    }
   }
 
   bool isClassMember = ctx->inClass(), isEnclosedFunc = ctx->inFunction();
@@ -280,7 +282,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
-    if (!isAttribute(stmt->decorators[i])) {
+    if (stmt->decorators[i]) {
       if (isClassMember)
         error("decorators cannot be applied to class methods");
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
