@@ -9,6 +9,7 @@ yum -y install python3 python3-devel
 # env
 export PYTHONPATH=$(pwd)/test/python
 export CODON_PYTHON=$(python3 test/python/find-python-library.py)
+python3 -m pip install --upgrade pip
 python3 -m pip install numpy
 
 # deps
@@ -29,10 +30,13 @@ cmake --build build --config Release -- VERBOSE=1
 # build cython
 export PATH=$PATH:$(pwd)/llvm/bin
 export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
-export CODON_INCLUDE_DIR=$(pwd)/build/include
-export CODON_LIB_DIR=$(pwd)/build
-python3 -m pip install cython
-python3 -m pip install -v extra/python
+export CODON_DIR=$(pwd)/build
+python3 -m pip install cython wheel
+python3 -m pip debug --verbose
+(cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
+python3 -m pip install -v extra/python/dist/*.whl
+export PYTHONPATH=$(pwd):$PYTHONPATH
+python3 test/python/cython_jit.py
 
 # test
 export CODON_PATH=$(pwd)/stdlib
@@ -40,8 +44,6 @@ ln -s build/libcodonrt.so .
 build/codon_test
 build/codon run test/core/helloworld.codon
 build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-export PYTHONPATH=$(pwd):$PYTHONPATH
-python3 test/python/cython_jit.py
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
@@ -51,5 +53,6 @@ cp build/libcodon*.so codon-deploy/lib/codon/
 cp build/libomp.so codon-deploy/lib/codon/
 cp -r build/include codon-deploy/
 cp -r stdlib codon-deploy/lib/codon/
+cp -r extra/python/dist/*.whl codon-deploy/
 tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
 du -sh codon-deploy

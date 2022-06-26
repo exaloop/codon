@@ -465,7 +465,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Construct the type.
   auto typ = std::make_shared<FuncType>(
       baseType, ctx->cache->functions[stmt->name].ast.get(), explicits);
-  if (attr.has(Attr::ForceRealize) || (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))
+  if (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
+      (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))
     if (!typ->canRealize())
       error("builtins and external functions must be realizable");
   if (isClassMember && attr.has(Attr::Method))

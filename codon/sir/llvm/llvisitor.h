@@ -182,6 +182,9 @@ private:
   TryCatchData *getInnermostTryCatch();
   TryCatchData *getInnermostTryCatchBeforeLoop();
 
+  // Shared library setup
+  void setupGlobalCtorForSharedLibrary();
+
   // LLVM passes
   void runLLVMPipeline();
 
@@ -195,13 +198,7 @@ private:
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
 
 public:
-  static std::string getNameForFunction(const Func *x) {
-    if (isA<ExternalFunc>(x)) {
-      return x->getUnmangledName();
-    } else {
-      return x->referenceString();
-    }
-  }
+  static std::string getNameForFunction(const Func *x);
 
   static std::string getDebugNameForVariable(const Var *x) {
     std::string name = x->getName();
@@ -321,9 +318,11 @@ public:
   /// external linker to generate the final executable.
   /// @param filename the file to write to
   /// @param argv0 compiler's argv[0] used to set rpath
+  /// @param library whether to make a shared library
   /// @param libs library names to link
   /// @param lflags extra flags to pass linker
   void writeToExecutable(const std::string &filename, const std::string &argv0,
+                         bool library = false,
                          const std::vector<std::string> &libs = {},
                          const std::string &lflags = "");
   /// Runs optimization passes on module and writes the result

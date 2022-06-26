@@ -66,7 +66,7 @@ small_stmt <-
   / del_stmt
   / return_stmt &(SPACE / ';' / EOL)
   / raise_stmt &(SPACE / ';' / EOL)
-  / print_stmt 
+  / print_stmt
   / import_stmt
   / expressions &(_ ';' / _ EOL)  { return any(ast<ExprStmt>(LOC, ac_expr(V0))); }
   / NAME SPACE expressions {
@@ -331,7 +331,7 @@ param <-
 param_name <- <'**' / '*'>? _ NAME {
   return (!VS.tokens.empty() ? VS.token_to_string() : "") + ac<string>(V0);
 }
-generics <- '[' _ tlist(',', param) _ ']' { 
+generics <- '[' _ tlist(',', param) _ ']' {
   vector<Param> params;
   for (auto &p: VS) {
     auto v = ac<Param>(p);
@@ -339,7 +339,7 @@ generics <- '[' _ tlist(',', param) _ ']' {
     if (!v.type) v.type = ast<IdExpr>(LOC, "type");
     params.push_back(v);
   }
-  return params; 
+  return params;
 }
 decorators <- decorator+ {
   return VS.transform<ExprPtr>();
@@ -390,7 +390,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   }
   for (auto &p: generics)
     args.push_back(p);
-  return ast<ClassStmt>(LOC, 
+  return ast<ClassStmt>(LOC,
     ac<string>(V0), move(args), suite, Attr(), vector<ExprPtr>{}, baseClasses
   );
 }
@@ -435,7 +435,7 @@ expression <-
   }
   / pipe { return ac_expr(V0); }
 # TODO: make it more pythonic
-lambdef <- 
+lambdef <-
   / 'lambda' SPACE list(',', NAME) _ ':' _ expression {
     return ast<LambdaExpr>(LOC,
       VS.transform<string>(0, VS.size() - 1), ac_expr(VS.back())
