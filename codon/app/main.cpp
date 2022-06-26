@@ -20,6 +20,14 @@ void versMsg(llvm::raw_ostream &out) {
       << "\n";
 }
 
+bool isMacOS() {
+#ifdef __APPLE__
+  return true;
+#else
+  return false;
+#endif
+}
+
 const std::vector<std::string> &supportedExtensions() {
   static const std::vector<std::string> extensions = {".codon", ".py"};
   return extensions;
@@ -62,7 +70,7 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
     codon::getLogger().parse(std::string(d));
 }
 
-enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
+enum BuildKind { LLVM, Bitcode, Object, Executable, Library, Detect };
 enum OptMode { Debug, Release };
 } // namespace
 
@@ -175,13 +183,13 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 int runMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> libs(
       "l", llvm::cl::desc("Load and link the specified library"));
-  llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
-                                      llvm::cl::desc("<program arguments>..."));
+  llvm::cl::list<std::string> progArgs(llvm::cl::ConsumeAfter,
+                                       llvm::cl::desc("<program arguments>..."));
   auto compiler = processSource(args, /*standalone=*/false);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
-  std::vector<std::string> argsVec(seqArgs);
+  std::vector<std::string> argsVec(progArgs);
   argsVec.insert(argsVec.begin(), compiler->getInput());
   compiler->getLLVMVisitor()->run(argsVec, libsVec);
   return EXIT_SUCCESS;
@@ -259,15 +267,18 @@ int jitMode(const std::vector<const char *> &args) {
   return EXIT_SUCCESS;
 }
 
-int buildMode(const std::vector<const char *> &args) {
+int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::list<std::string> libs(
       "l", llvm::cl::desc("Link the specified library (only for executables)"));
+  llvm::cl::opt<std::string> lflags("linker-flags",
+                                    llvm::cl::desc("Pass given flags to linker"));
   llvm::cl::opt<BuildKind> buildKind(
       llvm::cl::desc("output type"),
       llvm::cl::values(clEnumValN(LLVM, "llvm", "Generate LLVM IR"),
                        clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
                        clEnumValN(Object, "obj", "Generate native object file"),
                        clEnumValN(Executable, "exe", "Generate executable"),
+                       clEnumValN(Library, "lib", "Generate shared library"),
                        clEnumValN(Detect, "detect",
                                   "Detect output type based on output file extension")),
       llvm::cl::init(Detect));
@@ -295,6 +306,9 @@ int buildMode(const std::vector<const char *> &args) {
   case BuildKind::Object:
     extension = ".o";
     break;
+  case BuildKind::Library:
+    extension = isMacOS() ? ".dylib" : ".so";
+    break;
   case BuildKind::Executable:
   case BuildKind::Detect:
     extension = "";
@@ -315,10 +329,15 @@ int buildMode(const std::vector<const char *> &args) {
     compiler->getLLVMVisitor()->writeToObjectFile(filename);
     break;
   case BuildKind::Executable:
-    compiler->getLLVMVisitor()->writeToExecutable(filename, libsVec);
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, false, libsVec,
+                                                  lflags);
+    break;
+  case BuildKind::Library:
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, true, libsVec,
+                                                  lflags);
     break;
   case BuildKind::Detect:
-    compiler->getLLVMVisitor()->compile(filename, libsVec);
+    compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
     break;
   default:
     seqassert(0, "unknown build kind");
@@ -352,7 +371,7 @@ int jupyterMode(const std::vector<const char *> &args) {
 }
 
 void showCommandsAndExit() {
-  codon::compilationError("Available commands: seqc <run|build|doc>");
+  codon::compilationError("Available commands: codon <run|build|doc>");
 }
 
 int otherMode(const std::vector<const char *> &args) {
@@ -384,8 +403,9 @@ int main(int argc, const char **argv) {
     return runMode(args);
   }
   if (mode == "build") {
+    const char *oldArgv0 = args[0];
     args[0] = argv0.data();
-    return buildMode(args);
+    return buildMode(args, oldArgv0);
   }
   if (mode == "doc") {
     const char *oldArgv0 = args[0];

@@ -458,7 +458,7 @@ TOML_IMPL_NAMESPACE_START
 			std::vector<table*> implicit_tables;
 			std::vector<table*> dotted_key_tables;
 			std::vector<array*> table_arrays;
-			std::string recording_buffer; //for diagnostics 
+			std::string recording_buffer; //for diagnostics
 			bool recording = false, recording_whitespace = true;
 			std::string_view current_scope;
 			size_t nested_values = {};
@@ -920,7 +920,7 @@ TOML_IMPL_NAMESPACE_START
 							);
 
 						// handle surrogates in strings (1.0.0 and later)
-						if constexpr (TOML_LANG_AT_LEAST(1, 0, 0)) 
+						if constexpr (TOML_LANG_AT_LEAST(1, 0, 0))
 						{
 							if (is_unicode_surrogate(*cp))
 								set_error_and_return_default(
@@ -1083,7 +1083,7 @@ TOML_IMPL_NAMESPACE_START
 
 					set_error_and_return_default("encountered end-of-file"sv);
 				}
-					
+
 				// if the first three characters are all the same string delimiter then
 				// it's a multi-line string.
 				else if (first == second && first == third)
@@ -1514,7 +1514,7 @@ TOML_IMPL_NAMESPACE_START
 				return (fragments[0].value + fragments[1].value)
 					* pow(2.0, fragments[2].value * exponent_sign)
 					* sign;
-			
+
 				#else // !TOML_LANG_UNRELEASED
 
 				set_error_and_return_default(
@@ -1570,7 +1570,7 @@ TOML_IMPL_NAMESPACE_START
 				size_t length = {};
 				const utf8_codepoint* prev = {};
 				while (!is_eof() && !is_value_terminator(*cp))
-				{				
+				{
 					if (*cp == U'_')
 					{
 						if (!prev || !traits::is_digit(*prev))
@@ -1979,7 +1979,7 @@ TOML_IMPL_NAMESPACE_START
 					// detect the value type and parse accordingly,
 					// starting with value types that can be detected
 					// unambiguously from just one character.
-					
+
 					val = parse_value_known_prefixes();
 					return_if_error({});
 					if (val)
@@ -2492,7 +2492,7 @@ TOML_IMPL_NAMESPACE_START
 						set_error_and_return_default(
 							"expected bare key starting character or string delimiter, saw '"sv, to_sv(*cp), "'"sv
 						);
-						
+
 					// whitespace following the key segment
 					consume_leading_whitespace();
 
@@ -2583,7 +2583,7 @@ TOML_IMPL_NAMESPACE_START
 					// check for a premature closing ']'
 					if (*cp == U']')
 						set_error_and_return_default("tables with blank bare keys are explicitly prohibited"sv);
-				
+
 					// get the actual key
 					start_recording();
 					key = parse_key();
@@ -2672,7 +2672,7 @@ TOML_IMPL_NAMESPACE_START
 							).first->second->ref_cast<array>();
 						table_arrays.push_back(tab_arr);
 						tab_arr->source_ = { header_begin_pos, header_end_pos, reader.source_path() };
-						
+
 						tab_arr->elements.emplace_back(new toml::table{});
 						tab_arr->elements.back()->source_ = { header_begin_pos, header_end_pos, reader.source_path() };
 						return &tab_arr->elements.back()->ref_cast<table>();
@@ -2803,7 +2803,7 @@ TOML_IMPL_NAMESPACE_START
 				assert_not_error();
 				assert_not_eof();
 				push_parse_scope("root table"sv);
-					
+
 				table* current_table = &root;
 
 				do

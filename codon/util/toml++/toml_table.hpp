@@ -142,7 +142,7 @@ TOML_NAMESPACE_START
 	{
 		if (map.empty())
 			return false;
-		
+
 		if (ntype == node_type::none)
 			ntype = map.cbegin()->second->type();
 

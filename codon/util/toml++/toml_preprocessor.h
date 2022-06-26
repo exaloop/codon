@@ -239,7 +239,7 @@
 //#====================================================================================================================
 
 #if TOML_ICC
-	
+
 	#define TOML_PUSH_WARNINGS \
 		__pragma(warning(push)) \
 		static_assert(true)
@@ -345,7 +345,7 @@
 #ifdef TOML_CONFIG_HEADER
 	#include TOML_CONFIG_HEADER
 #endif
- 
+
 #ifdef DOXYGEN
 	#define TOML_HEADER_ONLY 0
 	#define TOML_WINDOWS_COMPAT 1
@@ -803,9 +803,9 @@ TOML_ENABLE_WARNINGS;
 /// // global_header_that_includes_toml++.h
 /// #define TOML_HEADER_ONLY 0
 /// #include <toml.hpp>
-/// 
+///
 /// // some_code_file.cpp
-/// #define TOML_IMPLEMENTATION 
+/// #define TOML_IMPLEMENTATION
 /// #include "global_header_that_includes_toml++.h"
 /// \ecpp
 

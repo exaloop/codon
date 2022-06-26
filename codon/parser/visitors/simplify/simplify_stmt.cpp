@@ -452,6 +452,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       attr.set(Attr::Property);
     } else if (d->isId(Attr::ForceRealize)) {
       attr.set(Attr::ForceRealize);
+    } else if (d->isId(Attr::Export)) {
+      attr.set(Attr::Export);
     } else {
       // Let's check if this is a attribute
       auto dt = transform(clone(d));
