@@ -270,7 +270,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
                        clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
                        clEnumValN(Object, "obj", "Generate native object file"),
                        clEnumValN(Executable, "exe", "Generate executable"),
-                       clEnumValN(Library, "lib", "Generate executable"),
+                       clEnumValN(Library, "lib", "Generate shared library"),
                        clEnumValN(Detect, "detect",
                                   "Detect output type based on output file extension")),
       llvm::cl::init(Detect));
