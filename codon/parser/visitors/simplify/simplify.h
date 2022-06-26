@@ -15,15 +15,16 @@ namespace codon::ast {
 /**
  * Visitor that implements the initial AST simplification transformation.
  * In this stage. the following steps are done:
- *  - All imports are flattened making the resulting AST a self-containing (but fairly
- *    large) AST.
- *  - All identifiers are normalized (no two distinct objects share the same name).
- *  - Variadic classes (Tuple.N and Function.N) are generated.
- *  - Any AST node that can be trivially represented as a set of "simpler" nodes
- *    type is transformed accordingly. If a transformation requires a type information,
- *    it is delayed until the next transformation stage (type-checking).
+ *  - All imports are flattened resulting in a single self-containing
+ *    (and fairly large) AST
+ *  - All identifiers are normalized (no two distinct objects share the same name)
+ *  - Variadic classes (e.g., Tuple.N) are generated
+ *  - Any AST node that can be trivially expressed as a set of "simpler" nodes
+ *    type is simplified. If a transformation requires a type information,
+ *    it is done during the type checking.
  *
- * ➡️ Note: This visitor *copies* the incoming AST and does not modify it.
+ * -> Note: this stage *modifies* the provided AST. Clone it before simplification
+ *    if you need it intact.
  */
 class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   /// Shared simplification context.

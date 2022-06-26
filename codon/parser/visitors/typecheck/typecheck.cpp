@@ -496,13 +496,6 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
   return typ;
 }
 
-
-std::string TypecheckVisitor::getRootName(const std::string &name) {
-  auto p = name.rfind(':');
-  seqassert(p != std::string::npos, ": not found in {}", name);
-  return name.substr(0, p);
-}
-
 std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
   auto baseType = ctx->instantiate(nullptr, ctx->find("Function")->type)->getRecord();
   auto argType =

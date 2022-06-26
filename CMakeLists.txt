@@ -261,7 +261,6 @@ set(CODON_CPPFILES
         codon/parser/visitors/typecheck/cond.cpp
         codon/parser/visitors/typecheck/function.cpp
         codon/parser/visitors/typecheck/access.cpp
-        codon/parser/visitors/typecheck/import.cpp
         codon/parser/visitors/typecheck/loops.cpp
         codon/parser/visitors/typecheck/op.cpp
         codon/parser/visitors/typecheck/error.cpp

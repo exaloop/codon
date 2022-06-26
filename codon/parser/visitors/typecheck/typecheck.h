@@ -17,12 +17,27 @@
 namespace codon {
 namespace ast {
 
+/**
+ * Visitor that infers expression types and performs type-guided transformations.
+ *
+ * -> Note: this stage *modifies* the provided AST. Clone it before simplification
+ *    if you need it intact.
+ */
 class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+  /// Shared simplification context.
   std::shared_ptr<TypeContext> ctx;
+  /// Statements to prepend before the current statement.
   std::shared_ptr<std::vector<StmtPtr>> prependStmts;
+
+  /// Set if a void expression is allowed. If unset and an expression is assigned a void type, a compiler error will be generated.
+  /// TODO: get rid of it
   bool allowVoidExpr;
 
+  /// Each new expression is stored here (as @c visit does not return anything) and
+  /// later returned by a @c transform call.
   ExprPtr resultExpr;
+  /// Each new statement is stored here (as @c visit does not return anything) and
+  /// later returned by a @c transform call.
   StmtPtr resultStmt;
 
 public:
@@ -33,7 +48,7 @@ public:
       std::shared_ptr<TypeContext> ctx,
       const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
-  /// All of these are non-const in TypeCheck visitor.
+public:
   ExprPtr transform(ExprPtr &e) override;
   ExprPtr transform(const ExprPtr &expr) override {
     auto e = expr;
@@ -54,6 +69,7 @@ private:
   void defaultVisit(Stmt *s) override;
 
 public:
+  /* Basic type expressions (basic.cpp) */
   /// Set type to bool.
   void visit(BoolExpr *) override;
   /// Set type to int.
@@ -62,12 +78,33 @@ public:
   void visit(FloatExpr *) override;
   /// Set type to str.
   void visit(StringExpr *) override;
+
+  /* Identifier access expressions (access.cpp) */
   /// Get the type from dictionary. If static variable (e.g. N), evaluate it and
   /// transform the evaluated number to IntExpr.
   /// Correct the identifier with a realized identifier (e.g. replace Id("Ptr") with
   /// Id("Ptr[byte]")).
   /// Also generates stubs for Tuple.N, Callable.N and Function.N.
   void visit(IdExpr *) override;
+  /// See transformDot() below.
+  void visit(DotExpr *) override;
+  /// Transforms a DotExpr expr.member to:
+  ///   string(realized type of expr) if member is __class__.
+  ///   unwrap(expr).member if expr is of type Optional,
+  ///   expr._getattr("member") if expr is of type pyobj,
+  ///   DotExpr(expr, member) if a member is a class field,
+  ///   IdExpr(method_name) if expr.member is a class method, and
+  ///   member(expr, ...) partial call if expr.member is an object method.
+  /// If args are set, this method will use it to pick the best overloaded method and
+  /// return its IdExpr without making the call partial (the rest will be handled by
+  /// CallExpr).
+  /// If there are multiple valid overloaded methods, pick the first one
+  ///   (TODO: improve this).
+  /// Return nullptr if no transformation was made.
+  ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
+  types::FuncTypePtr findDispatch(const std::string &fn);
+
+  /* Collection and comprehension expressions (collections.cpp) */
   /// Transform a tuple (a1, ..., aN) to:
   ///   Tuple.N.__new__(a1, ..., aN).
   /// If Tuple.N has not been seen before, generate a stub class for it.
@@ -75,11 +112,24 @@ public:
   /// Transform a tuple generator tuple(expr for i in tuple) to:
   ///   Tuple.N.__new__(expr...).
   void visit(GeneratorExpr *) override;
+
+  /* Conditional expression and statements (cond.cpp) */
   /// Set type to the unification of both sides.
   /// Wrap a side with Optional.__new__() if other side is optional.
   /// Wrap conditional with .__bool__() if it is not a bool.
   /// Also evaluates static if expressions.
   void visit(IfExpr *) override;
+  /// Check if a condition is static expression. If it is and evaluates to zero,
+  /// DO NOT parse the enclosed suite.
+  /// Otherwise, transform if cond to:
+  ///   if cond.__bool__()
+  /// if cond is not of type bool (no pun intended).
+  void visit(IfStmt *) override;
+  /// If a target type is Optional but the type of a given expression is not,
+  /// replace the given expression with Optional(expr).
+  void wrapOptionalIfNeeded(const types::TypePtr &targetType, ExprPtr &e);
+
+  /* Operators (op.cpp) */
   /// Evaluate static unary expressions.
   void visit(UnaryExpr *) override;
   /// See transformBinary() below.
@@ -106,77 +156,6 @@ public:
   ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
   ///   or expr.__getitem__(index).
   void visit(IndexExpr *) override;
-  /// See transformDot() below.
-  void visit(DotExpr *) override;
-  /// See transformCall() below.
-  void visit(CallExpr *) override;
-  /// Type-checks it with a new unbound type.
-  void visit(EllipsisExpr *) override;
-  /// Unifies a function return type with a Generator[T] where T is a new unbound type.
-  /// The expression itself will have type T.
-  void visit(YieldExpr *) override;
-  /// Use type of an inner expression.
-  void visit(StmtExpr *) override;
-  void visit(StarExpr *) override;
-  void visit(KeywordStarExpr *) override;
-
-  void visit(SuiteStmt *) override;
-  void visit(BreakStmt *) override;
-  void visit(ContinueStmt *) override;
-  void visit(ExprStmt *) override;
-  void visit(AssignStmt *) override;
-  /// Transform an atomic or an in-place statement a += b to:
-  ///   a.__iadd__(a, b)
-  ///   typeof(a).__atomic_add__(__ptr__(a), b)
-  /// Transform an atomic statement a = min(a, b) (and max(a, b)) to:
-  ///   typeof(a).__atomic_min__(__ptr__(a), b).
-  /// Transform an atomic update a = b to:
-  ///   typeof(a).__atomic_xchg__(__ptr__(a), b).
-  /// Transformations are performed only if the appropriate magics are available.
-  void visitUpdate(AssignStmt *);
-  /// Transform a.b = c to:
-  ///   unwrap(a).b = c
-  /// if a is an Optional that does not have field b.
-  void visit(AssignMemberStmt *) override;
-  /// Wrap return a to:
-  ///   return Optional(a)
-  /// if a is of type T and return type is of type Optional[T]/
-  void visit(ReturnStmt *) override;
-  void visit(YieldStmt *) override;
-  void visit(WhileStmt *) override;
-  /// Unpack heterogeneous tuple iteration: for i in t: <suite> to:
-  ///   i = t[0]; <suite>
-  ///   i = t[1]; <suite> ...
-  /// Transform for i in t to:
-  ///   for i in t.__iter__()
-  /// if t is not a generator.
-  void visit(ForStmt *) override;
-  /// Check if a condition is static expression. If it is and evaluates to zero,
-  /// DO NOT parse the enclosed suite.
-  /// Otherwise, transform if cond to:
-  ///   if cond.__bool__()
-  /// if cond is not of type bool (no pun intended).
-  void visit(IfStmt *) override;
-  void visit(TryStmt *) override;
-  /// Transform raise Exception() to:
-  ///   _e = Exception()
-  ///   _e._hdr = ExcHeader("<func>", "<file>", <line>, <col>)
-  ///   raise _e
-  /// Also ensure that the raised type is a tuple whose first element is ExcHeader.
-  void visit(ThrowStmt *) override;
-  /// Parse a function stub and create a corresponding generic function type.
-  /// Also realize built-ins and extern C functions.
-  void visit(FunctionStmt *) override;
-  /// Parse a type stub and create a corresponding generic type.
-  void visit(ClassStmt *) override;
-  void visit(CommentStmt *stmt) override { stmt->done = true; }
-
-  using CallbackASTVisitor<ExprPtr, StmtPtr>::transform;
-
-private:
-  /// If a target type is Optional but the type of a given expression is not,
-  /// replace the given expression with Optional(expr).
-  void wrapOptionalIfNeeded(const types::TypePtr &targetType, ExprPtr &e);
   /// Transforms a binary operation a op b to a corresponding magic method call:
   ///   a.__magic__(b)
   /// Checks for the following methods:
@@ -198,20 +177,19 @@ private:
   /// Supports both StaticExpr and IntExpr as static expressions.
   ExprPtr transformStaticTupleIndex(types::ClassType *tuple, ExprPtr &expr,
                                     ExprPtr &index);
-  /// Transforms a DotExpr expr.member to:
-  ///   string(realized type of expr) if member is __class__.
-  ///   unwrap(expr).member if expr is of type Optional,
-  ///   expr._getattr("member") if expr is of type pyobj,
-  ///   DotExpr(expr, member) if a member is a class field,
-  ///   IdExpr(method_name) if expr.member is a class method, and
-  ///   member(expr, ...) partial call if expr.member is an object method.
-  /// If args are set, this method will use it to pick the best overloaded method and
-  /// return its IdExpr without making the call partial (the rest will be handled by
-  /// CallExpr).
-  /// If there are multiple valid overloaded methods, pick the first one
-  ///   (TODO: improve this).
-  /// Return nullptr if no transformation was made.
-  ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
+  int64_t translateIndex(int64_t idx, int64_t len, bool clamp = false);
+  int64_t sliceAdjustIndices(int64_t length, int64_t *start, int64_t *stop,
+                             int64_t step);
+
+  /* Calls (call.cpp) */
+  struct PartialCallData {
+    bool isPartial;               // is call itself partial?
+    std::string var = "";         // variable if we are calling partialized fn
+    std::vector<char> known = {}; // bitvector of known arguments
+    ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
+  };
+  /// See transformCall() below.
+  void visit(CallExpr *) override;
   /// Transform a call expression callee(args...).
   /// Intercepts callees that are expr.dot, expr.dot[T1, T2] etc.
   /// Before any transformation, all arguments are expanded:
@@ -254,24 +232,15 @@ private:
   ExprPtr transformCall(CallExpr *expr, const types::TypePtr &inType = nullptr,
                         ExprPtr *extraStage = nullptr);
   std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *expr);
+  bool callTransformCallArgs(std::vector<CallExpr::Arg> &args,
+                             const types::TypePtr &inType = nullptr);
+  ExprPtr callTransformCallee(ExprPtr &callee, std::vector<CallExpr::Arg> &args,
+                              PartialCallData &part);
+  ExprPtr callReorderArguments(types::ClassTypePtr callee, types::FuncTypePtr calleeFn,
+                               CallExpr *expr, int &ellipsisStage,
+                               PartialCallData &part);
   /// Find all generics on which a given function depends and add them to the context.
   void addFunctionGenerics(const types::FuncType *t);
-
-  /// Generate a tuple class Tuple.N[T1,...,TN](a1: T1, ..., aN: TN).
-  /// Also used to generate a named tuple class Name.N[T1,...,TN] with field names
-  /// provided in names parameter.
-  std::string
-  generateTupleStub(int len, const std::string &name = "Tuple",
-                    std::vector<std::string> names = std::vector<std::string>{},
-                    bool hasSuffix = true);
-  /// Generate a function type Function.N[TR, T1, ..., TN] as follows:
-  ///   @internal @tuple @trait
-  ///   class Function.N[TR, T1, ..., TN]:
-  ///     def __new__(what: Ptr[byte]) -> Function.N[TR, T1, ..., TN]
-  ///     def __raw__(self: Function.N[TR, T1, ..., TN]) -> Ptr[byte]
-  ///     def __str__(self: Function.N[TR, T1, ..., TN]) -> str
-  /// Return the canonical name of Function.N.
-  std::string generateCallableStub(int n);
   /// Generate a partial function type Partial.N01...01 (where 01...01 is a mask
   /// of size N) as follows:
   ///   @tuple @no_total_ordering @no_pickle @no_container @no_python
@@ -284,8 +253,85 @@ private:
   ///     def __new_<old_mask>_<mask>(p, aI: TI...) # (if oldMask[I-1] != mask[I-1]):
   ///       return Partial.N<mask>.__new__(self.ptr, self.a1, a2, ...) # (see above)
   std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
+  ExprPtr transformSuper(const CallExpr *expr);
+  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
+
+  /* Assignments (assign.cpp) */
+  void visit(AssignStmt *) override;
+  /// Transform an atomic or an in-place statement a += b to:
+  ///   a.__iadd__(a, b)
+  ///   typeof(a).__atomic_add__(__ptr__(a), b)
+  /// Transform an atomic statement a = min(a, b) (and max(a, b)) to:
+  ///   typeof(a).__atomic_min__(__ptr__(a), b).
+  /// Transform an atomic update a = b to:
+  ///   typeof(a).__atomic_xchg__(__ptr__(a), b).
+  /// Transformations are performed only if the appropriate magics are available.
+  void visitUpdate(AssignStmt *);
+  /// Transform a.b = c to:
+  ///   unwrap(a).b = c
+  /// if a is an Optional that does not have field b.
+  void visit(AssignMemberStmt *) override;
+
+  /* Loops (loops.cpp) */
+  void visit(BreakStmt *) override;
+  void visit(ContinueStmt *) override;
+  void visit(WhileStmt *) override;
+  /// Unpack heterogeneous tuple iteration: for i in t: <suite> to:
+  ///   i = t[0]; <suite>
+  ///   i = t[1]; <suite> ...
+  /// Transform for i in t to:
+  ///   for i in t.__iter__()
+  /// if t is not a generator.
+  void visit(ForStmt *) override;
+
+  /* Errors and exceptions (error.cpp) */
+  void visit(TryStmt *) override;
+  /// Transform raise Exception() to:
+  ///   _e = Exception()
+  ///   _e._hdr = ExcHeader("<func>", "<file>", <line>, <col>)
+  ///   raise _e
+  /// Also ensure that the raised type is a tuple whose first element is ExcHeader.
+  void visit(ThrowStmt *) override;
+
+  /* Functions (function.cpp) */
+  /// Unifies a function return type with a Generator[T] where T is a new unbound type.
+  /// The expression itself will have type T.
+  void visit(YieldExpr *) override;
+  /// Wrap return a to:
+  ///   return Optional(a)
+  /// if a is of type T and return type is of type Optional[T]/
+  void visit(ReturnStmt *) override;
+  void visit(YieldStmt *) override;
+  /// Parse a function stub and create a corresponding generic function type.
+  /// Also realize built-ins and extern C functions.
+  void visit(FunctionStmt *) override;
   /// Make an empty partial call fn(...) for a function fn.
   ExprPtr partializeFunction(ExprPtr expr);
+  std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
+
+  /* Classes (class.cpp) */
+  /// Parse a type stub and create a corresponding generic type.
+  void visit(ClassStmt *) override;
+  /// Generate a tuple class Tuple.N[T1,...,TN](a1: T1, ..., aN: TN).
+  /// Also used to generate a named tuple class Name.N[T1,...,TN] with field names
+  /// provided in names parameter.
+  std::string
+  generateTupleStub(int len, const std::string &name = "Tuple",
+                    std::vector<std::string> names = std::vector<std::string>{},
+                    bool hasSuffix = true);
+
+  /* The rest (typecheck.cpp) */
+  void visit(SuiteStmt *) override;
+  void visit(ExprStmt *) override;
+  /// Type-checks it with a new unbound type.
+  void visit(EllipsisExpr *) override;
+  /// Use type of an inner expression.
+  void visit(StmtExpr *) override;
+  void visit(StarExpr *) override;
+  void visit(KeywordStarExpr *) override;
+  void visit(CommentStmt *stmt) override { stmt->done = true; }
+
+public:
   /// Picks the best method of a given expression that matches the given argument
   /// types. Prefers methods whose signatures are closer to the given arguments:
   /// e.g. foo(int) will match (int) better that a foo(T).
@@ -294,6 +340,7 @@ private:
   /// Return nullptr if no methods were found.
   types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
                                     const std::vector<types::TypePtr> &args);
+private:
   types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
                                     const std::vector<CallExpr::Arg> &args);
   types::FuncTypePtr findBestMethod(const std::string &fn,
@@ -303,9 +350,8 @@ private:
   findMatchingMethods(types::ClassType *typ,
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
-
-  ExprPtr transformSuper(const CallExpr *expr);
-  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
+  bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
+                const types::FuncTypePtr &callee, bool undoOnSuccess = false);
 
 private:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
@@ -316,32 +362,7 @@ private:
                                      const std::string &name);
   codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
-  bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
-                const types::FuncTypePtr &callee, bool undoOnSuccess = false);
-  int64_t translateIndex(int64_t idx, int64_t len, bool clamp = false);
-  int64_t sliceAdjustIndices(int64_t length, int64_t *start, int64_t *stop,
-                             int64_t step);
-  types::FuncTypePtr findDispatch(const std::string &fn);
-  std::string getRootName(const std::string &name);
-
-  friend struct Cache;
-
-  struct PartialCallData {
-    bool isPartial;               // is call itself partial?
-    std::string var = "";         // variable if we are calling partialized fn
-    std::vector<char> known = {}; // bitvector of known arguments
-    ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
-  };
-
-  bool callTransformCallArgs(std::vector<CallExpr::Arg> &args,
-                             const types::TypePtr &inType = nullptr);
-  ExprPtr callTransformCallee(ExprPtr &callee, std::vector<CallExpr::Arg> &args,
-                              PartialCallData &part);
-  ExprPtr callReorderArguments(types::ClassTypePtr callee, types::FuncTypePtr calleeFn,
-                               CallExpr *expr, int &ellipsisStage,
-                               PartialCallData &part);
-
-  std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
+  // friend struct Cache;
 };
 
 } // namespace ast
