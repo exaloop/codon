@@ -20,6 +20,14 @@ void versMsg(llvm::raw_ostream &out) {
       << "\n";
 }
 
+bool isMacOS() {
+#ifdef __APPLE__
+  return true;
+#else
+  return false;
+#endif
+}
+
 const std::vector<std::string> &supportedExtensions() {
   static const std::vector<std::string> extensions = {".codon", ".py"};
   return extensions;
@@ -299,7 +307,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = ".o";
     break;
   case BuildKind::Library:
-    extension = ".so";
+    extension = isMacOS() ? ".dylib" : ".so";
     break;
   case BuildKind::Executable:
   case BuildKind::Detect:

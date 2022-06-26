@@ -499,7 +499,7 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
     writeToBitcodeFile(filename);
   } else if (f.endswith(".o") || f.endswith(".obj")) {
     writeToObjectFile(filename);
-  } else if (f.endswith(".so")) {
+  } else if (f.endswith(".so") || f.endswith(".dylib")) {
     writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
     writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
