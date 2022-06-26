@@ -151,7 +151,7 @@ TOML_NAMESPACE_START
 	{
 		if (elements.empty())
 			return false;
-		
+
 		if (ntype == node_type::none)
 			ntype = elements[0]->type();
 

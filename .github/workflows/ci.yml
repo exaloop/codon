@@ -89,6 +89,12 @@ jobs:
           asset_name: codon-linux-x86_64.tar.gz
           asset_content_type: application/gzip
 
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: manylinux-x86_64
+          path: codon-linux-x86_64.tar.gz
+
   main:
     strategy:
       matrix:
@@ -120,7 +126,7 @@ jobs:
       - name: Set up Python
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy
+          python -m pip install numpy cython wheel
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
@@ -152,12 +158,23 @@ jobs:
           CXX: clang++
 
       - name: Build Cython
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
-          python -m pip install -v extra/python
+          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel)
+          python -m pip install -v extra/python/dist/*.whl
         env:
           CC: clang
           CXX: clang++
-          PYTHONPATH: ./test/python
+
+      - name: Build Cython
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel --plat-name=macosx_10_16_x86_64)
+          python -m pip install -v extra/python/dist/*.whl
+          python test/python/cython_jit.py
+        env:
+          CC: clang
+          CXX: clang++
 
       - name: Test
         run: |
@@ -166,7 +183,6 @@ jobs:
           build/codon_test
           build/codon run test/core/helloworld.codon
           build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
-          python test/python/cython_jit.py
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: .:./test/python
@@ -178,15 +194,6 @@ jobs:
           pip install wheel sphinx sphinxcontrib-napoleon sphinx-book-theme breathe exhale
           (cd docs/sphinx && python docgen.py ../../stdlib)
           make -C docs/sphinx html
-
-      #- name: Deploy Documentation
-      #  if: github.ref == 'refs/heads/master'
-      #  uses: peaceiris/actions-gh-pages@v3
-      #  with:
-      #    github_token: ${{ secrets.GITHUB_TOKEN }}
-      #    publish_dir: ./docs/sphinx/_build/html
-      #    cname: docs.codon.dev
-      #    force_orphan: true
 
       - name: Artifact Environment
         run: |
@@ -200,6 +207,7 @@ jobs:
           cp build/libomp.${LIBEXT} codon-deploy/lib/codon/
           cp -r build/include codon-deploy/
           cp -r stdlib codon-deploy/lib/codon/
+          cp -r extra/python/dist/*.whl codon-deploy/
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
 
@@ -230,3 +238,17 @@ jobs:
           asset_path: ./codon-darwin-x86_64.tar.gz
           asset_name: codon-darwin-x86_64.tar.gz
           asset_content_type: application/gzip
+
+      - name: Upload Artifacts
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-darwin-x86_64.tar.gz
+
+      - name: Upload Artifacts
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-x86_64
+          path: codon-linux-x86_64.tar.gz

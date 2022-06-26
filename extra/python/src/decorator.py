@@ -3,12 +3,20 @@ import inspect
 import importlib
 import importlib.util
 import sys
+import os
 
 from typing import List, Tuple
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
-from codon_jit import Jit, JitError
+if "CODON_PATH" not in os.environ:
+    os.environ["CODON_PATH"] = os.path.dirname(
+        os.path.abspath(inspect.getfile(inspect.currentframe()))
+    )
+    os.environ["CODON_PATH"] += "/stdlib"
+
+
+from .codon_jit import Jit, JitError
 
 
 separator = "__"

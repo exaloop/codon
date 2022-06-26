@@ -218,7 +218,7 @@ TOML_NAMESPACE_END;
 				const char* lpDefaultChar,
 				int* lpUsedDefaultChar
 			);
- 
+
 			__declspec(dllimport)
 			int __stdcall MultiByteToWideChar(
 				unsigned int CodePage,

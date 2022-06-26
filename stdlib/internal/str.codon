@@ -604,6 +604,15 @@ class str:
         """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
+
+        # special case for length-1 pattern
+        if len(sub) == 1:
+            char = sub.ptr[0]
+            for i in range(start, end):
+                if self.ptr[i] == char:
+                    return i
+            return -1
+
         pos = str._getfirst(self[start:end]._search(sub))
 
         if pos < 0:
@@ -629,6 +638,15 @@ class str:
         """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
+
+        # special case for length-1 pattern
+        if len(sub) == 1:
+            char = sub.ptr[0]
+            for i in range(end - 1, start, -1):
+                if self.ptr[i] == char:
+                    return i
+            return -1
+
         pos = str._getfirst(self[start:end]._rsearch(sub))
 
         if pos < 0:
@@ -777,6 +795,10 @@ class str:
             )
         sep: str = sep
 
+        # special case for length-1 pattern
+        if len(sep) == 1:
+            return self._split_char(sep.ptr[0], maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF)
+
         li = list(algorithms.filter_overlaps(self._search(sep), len(sep)))
         str_split = []
 
@@ -831,6 +853,10 @@ class str:
                 maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
             )
         sep: str = sep
+
+        # special case for length-1 pattern
+        if len(sep) == 1:
+            return self._rsplit_char(sep.ptr[0], maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF)
 
         li = list(
             algorithms.rfilter_overlaps(reversed(list(self._search(sep))), len(sep))
@@ -1024,8 +1050,6 @@ class str:
 
         Like str.find() but raise ValueError when the substring is not found.
         """
-        end: int = end if end is not None else len(self)
-        start, end = self._correct_indices(start, end)
         i = self.find(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
@@ -1038,8 +1062,6 @@ class str:
 
         Like str.find() but raise ValueError when the substring is not found.
         """
-        end: int = end if end is not None else len(self)
-        start, end = self._correct_indices(start, end)
         i = self.rfind(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
@@ -1235,5 +1257,42 @@ class str:
             if i >= 0:
                 l.append(self._slice(0, i + 1))
 
+        l.reverse()
+        return l
+
+    def _split_char(self, char: byte, maxcount: int) -> List[str]:
+        PREALLOC_MAX = 12
+        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+
+        str_len = len(self)
+        i = 0
+        j = 0
+
+        while i < str_len and maxcount > 0:
+            if self.ptr[i] == char:
+                l.append(self._slice(j, i))
+                j = i + 1
+                maxcount -= 1
+            i += 1
+
+        l.append(self._slice(j, str_len))
+        return l
+
+    def _rsplit_char(self, char: byte, maxcount: int) -> List[str]:
+        PREALLOC_MAX = 12
+        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+
+        str_len = len(self)
+        i = str_len - 1
+        j = str_len - 1
+
+        while i >= 0 and maxcount > 0:
+            if self.ptr[i] == char:
+                l.append(self._slice(i + 1, j + 1))
+                j = i - 1
+                maxcount -= 1
+            i -= 1
+
+        l.append(self._slice(0, j + 1))
         l.reverse()
         return l
