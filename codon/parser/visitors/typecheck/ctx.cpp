@@ -1,4 +1,4 @@
-#include "typecheck_ctx.h"
+#include "ctx.h"
 
 #include <map>
 #include <memory>

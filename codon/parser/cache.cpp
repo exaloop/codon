@@ -7,7 +7,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/parser/visitors/typecheck/typecheck_ctx.h"
+#include "codon/parser/visitors/typecheck/ctx.h"
 
 namespace codon {
 namespace ast {

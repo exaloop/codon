@@ -113,7 +113,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (auto n = isAttribute(stmt->decorators[i])) {
       stmt->attributes.set(*n);
-      stmt->decorators[i] = nullptr;  // remove it from further consideration
+      stmt->decorators[i] = nullptr; // remove it from further consideration
     }
   }
 

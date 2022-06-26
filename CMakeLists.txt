@@ -116,7 +116,7 @@ set(CODON_HPPFILES
         codon/parser/visitors/translate/translate.h
         codon/parser/visitors/translate/translate_ctx.h
         codon/parser/visitors/typecheck/typecheck.h
-        codon/parser/visitors/typecheck/typecheck_ctx.h
+        codon/parser/visitors/typecheck/ctx.h
         codon/parser/visitors/visitor.h
         codon/sir/analyze/analysis.h
         codon/sir/analyze/dataflow/cfg.h
@@ -251,10 +251,20 @@ set(CODON_CPPFILES
         codon/parser/visitors/translate/translate.cpp
         codon/parser/visitors/translate/translate_ctx.cpp
         codon/parser/visitors/typecheck/typecheck.cpp
-        codon/parser/visitors/typecheck/typecheck_ctx.cpp
-        codon/parser/visitors/typecheck/typecheck_expr.cpp
-        codon/parser/visitors/typecheck/typecheck_infer.cpp
-        codon/parser/visitors/typecheck/typecheck_stmt.cpp
+        codon/parser/visitors/typecheck/infer.cpp
+        codon/parser/visitors/typecheck/ctx.cpp
+        codon/parser/visitors/typecheck/assign.cpp
+        codon/parser/visitors/typecheck/basic.cpp
+        codon/parser/visitors/typecheck/call.cpp
+        codon/parser/visitors/typecheck/class.cpp
+        codon/parser/visitors/typecheck/collections.cpp
+        codon/parser/visitors/typecheck/cond.cpp
+        codon/parser/visitors/typecheck/function.cpp
+        codon/parser/visitors/typecheck/access.cpp
+        codon/parser/visitors/typecheck/import.cpp
+        codon/parser/visitors/typecheck/loops.cpp
+        codon/parser/visitors/typecheck/op.cpp
+        codon/parser/visitors/typecheck/error.cpp
         codon/parser/visitors/visitor.cpp
         codon/sir/attribute.cpp
         codon/sir/analyze/analysis.cpp
