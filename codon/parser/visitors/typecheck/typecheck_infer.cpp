@@ -333,7 +333,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
       for (auto &f : ctx->cache->functions) {
         auto &attr = f.second.ast->attributes;
         if (f.second.realizations.empty() &&
-            (attr.has(Attr::ForceRealize) ||
+            (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
           seqassert(f.second.type && f.second.type->canRealize(), "cannot realize {}",
                     f.first);

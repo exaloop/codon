@@ -17,6 +17,12 @@
 
 namespace codon {
 namespace ir {
+namespace {
+const std::string EXPORT_ATTR = "std.internal.attributes.export";
+const std::string INLINE_ATTR = "std.internal.attributes.inline";
+const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
+} // namespace
+
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
   std::string filename;
   std::string directory;
@@ -29,6 +35,14 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
     directory = ".";
   }
   return builder->createFile(filename, directory);
+}
+
+std::string LLVMVisitor::getNameForFunction(const Func *x) {
+  if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
+    return x->getUnmangledName();
+  } else {
+    return x->referenceString();
+  }
 }
 
 LLVMVisitor::LLVMVisitor()
@@ -373,7 +387,7 @@ void executeCommand(const std::vector<std::string> &args) {
 } // namespace
 
 void LLVMVisitor::writeToExecutable(const std::string &filename,
-                                    const std::string &argv0,
+                                    const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
   const std::string objFile = filename + ".o";
@@ -398,11 +412,16 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
   std::vector<std::string> command = {"gcc"};
+  // Avoid "argument unused during compilation" warning
+  command.push_back("-Wno-unused-command-line-argument");
   // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
   // object" complaints by gcc when it is built with --enable-default-pie
   command.push_back("-no-pie");
   // MUST go before -llib to compile on Linux
   command.push_back(objFile);
+
+  if (library)
+    command.push_back("-shared");
 
   for (const auto &rpath : rpaths) {
     command.push_back("-L" + rpath);
@@ -448,8 +467,10 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
     writeToBitcodeFile(filename);
   } else if (f.endswith(".o") || f.endswith(".obj")) {
     writeToObjectFile(filename);
+  } else if (f.endswith(".so")) {
+    writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
-    writeToExecutable(filename, argv0, libs, lflags);
+    writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
   }
 }
 
@@ -1062,16 +1083,15 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   setDebugInfoForNode(x);
 
   auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
-  if (x->isJIT() ||
-      (fnAttributes && fnAttributes->has("std.internal.attributes.export"))) {
+  if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
     func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
-  if (fnAttributes && fnAttributes->has("std.internal.attributes.inline")) {
+  if (fnAttributes && fnAttributes->has(INLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   }
-  if (fnAttributes && fnAttributes->has("std.internal.attributes.noinline")) {
+  if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
   }
   func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));

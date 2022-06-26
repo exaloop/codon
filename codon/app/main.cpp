@@ -62,7 +62,7 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
     codon::getLogger().parse(std::string(d));
 }
 
-enum BuildKind { LLVM, Bitcode, Object, Executable, Detect };
+enum BuildKind { LLVM, Bitcode, Object, Executable, Library, Detect };
 enum OptMode { Debug, Release };
 } // namespace
 
@@ -175,13 +175,13 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 int runMode(const std::vector<const char *> &args) {
   llvm::cl::list<std::string> libs(
       "l", llvm::cl::desc("Load and link the specified library"));
-  llvm::cl::list<std::string> seqArgs(llvm::cl::ConsumeAfter,
-                                      llvm::cl::desc("<program arguments>..."));
+  llvm::cl::list<std::string> progArgs(llvm::cl::ConsumeAfter,
+                                       llvm::cl::desc("<program arguments>..."));
   auto compiler = processSource(args, /*standalone=*/false);
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
-  std::vector<std::string> argsVec(seqArgs);
+  std::vector<std::string> argsVec(progArgs);
   argsVec.insert(argsVec.begin(), compiler->getInput());
   compiler->getLLVMVisitor()->run(argsVec, libsVec);
   return EXIT_SUCCESS;
@@ -270,6 +270,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
                        clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
                        clEnumValN(Object, "obj", "Generate native object file"),
                        clEnumValN(Executable, "exe", "Generate executable"),
+                       clEnumValN(Library, "lib", "Generate executable"),
                        clEnumValN(Detect, "detect",
                                   "Detect output type based on output file extension")),
       llvm::cl::init(Detect));
@@ -297,6 +298,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   case BuildKind::Object:
     extension = ".o";
     break;
+  case BuildKind::Library:
+    extension = ".so";
+    break;
   case BuildKind::Executable:
   case BuildKind::Detect:
     extension = "";
@@ -317,7 +321,12 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     compiler->getLLVMVisitor()->writeToObjectFile(filename);
     break;
   case BuildKind::Executable:
-    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, libsVec, lflags);
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, false, libsVec,
+                                                  lflags);
+    break;
+  case BuildKind::Library:
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, true, libsVec,
+                                                  lflags);
     break;
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
@@ -354,7 +363,7 @@ int jupyterMode(const std::vector<const char *> &args) {
 }
 
 void showCommandsAndExit() {
-  codon::compilationError("Available commands: seqc <run|build|doc>");
+  codon::compilationError("Available commands: codon <run|build|doc>");
 }
 
 int otherMode(const std::vector<const char *> &args) {

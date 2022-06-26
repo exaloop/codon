@@ -410,6 +410,7 @@ struct Attr {
   // Standard library attributes
   const static std::string Test;
   const static std::string Overload;
+  const static std::string Export;
   // Function module
   std::string module;
   // Parent class (set for methods only)
