@@ -183,6 +183,9 @@ private:
   TryCatchData *getInnermostTryCatch();
   TryCatchData *getInnermostTryCatchBeforeLoop();
 
+  // Shared library setup
+  void setupGlobalCtorForSharedLibrary();
+
   // LLVM passes
   void runLLVMPipeline();
 

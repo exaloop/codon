@@ -386,10 +386,42 @@ void executeCommand(const std::vector<std::string> &args) {
 }
 } // namespace
 
+void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
+  const std::string llvmCtor = "llvm.global_ctors";
+  auto *main = M->getFunction("main");
+  if (M->getNamedValue(llvmCtor) || !main)
+    return;
+
+  auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
+  auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
+                                            B->getInt8PtrTy());
+  auto *ctorArrayTy = llvm::ArrayType::get(ctorEntryTy, 1);
+
+  auto *ctor = cast<llvm::Function>(
+      M->getOrInsertFunction(".main.ctor", ctorFuncTy).getCallee());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
+  B->SetInsertPoint(entry);
+  B->CreateCall({main->getFunctionType(), main},
+                {B->getInt32(0),
+                 llvm::ConstantPointerNull::get(B->getInt8PtrTy()->getPointerTo())});
+  B->CreateRetVoid();
+
+  auto *ctorEntry = llvm::ConstantStruct::get(
+      ctorEntryTy,
+      {B->getInt32(65535), ctor, llvm::ConstantPointerNull::get(B->getInt8PtrTy())});
+  new llvm::GlobalVariable(*M, ctorArrayTy,
+                           /*isConstant=*/true, llvm::GlobalValue::AppendingLinkage,
+                           llvm::ConstantArray::get(ctorArrayTy, {ctorEntry}),
+                           llvmCtor);
+}
+
 void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
+  if (library)
+    setupGlobalCtorForSharedLibrary();
+
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile);
 
