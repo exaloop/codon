@@ -24,8 +24,6 @@ namespace codon {
 namespace ir {
 namespace transform {
 
-const int PassManager::PASS_IT_MAX = 5;
-
 std::string PassManager::KeyManager::getUniqueKey(const std::string &key) {
   // make sure we can't ever produce duplicate "unique'd" keys
   seqassert(key.find(':') == std::string::npos,
@@ -100,7 +98,7 @@ void PassManager::runPass(Module *module, const std::string &name) {
   auto run = true;
   auto it = 0;
 
-  while (run && it < PASS_IT_MAX) {
+  while (run) {
     for (auto &dep : meta.reqs) {
       runAnalysis(module, dep);
     }
@@ -112,8 +110,7 @@ void PassManager::runPass(Module *module, const std::string &name) {
     for (auto &inv : meta.invalidates)
       invalidate(inv);
 
-    ++it;
-    run = meta.pass->shouldRepeat();
+    run = meta.pass->shouldRepeat(++it);
   }
 }
 
@@ -188,10 +185,11 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                              capKey,
                              /*globalAssignmentHasSideEffects=*/false),
                          {capKey});
-    registerPass(std::make_unique<folding::FoldingPassGroup>(
-                     seKey1, rdKey, globalKey, /*runGlobalDemoton=*/false),
-                 /*insertBefore=*/"", {seKey1, rdKey, globalKey},
-                 {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(
+        std::make_unique<folding::FoldingPassGroup>(
+            seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
+        /*insertBefore=*/"", {seKey1, rdKey, globalKey},
+        {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
@@ -202,6 +200,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
       // by another user input.
       registerPass(
           std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
+                                                      /*repeat=*/5,
                                                       /*runGlobalDemoton=*/true),
           /*insertBefore=*/"", {seKey2, rdKey, globalKey},
           {seKey2, rdKey, cfgKey, globalKey});

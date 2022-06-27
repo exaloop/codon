@@ -19,6 +19,7 @@ struct GetUsedGlobals : public util::Operator {
 const std::string GlobalDemotionPass::KEY = "core-cleanup-global-demote";
 
 void GlobalDemotionPass::run(Module *M) {
+  numDemotions = 0;
   std::unordered_map<Var *, Func *> localGlobals;
 
   std::vector<Func *> worklist = {M->getMainFunc()};
