@@ -1,0 +1,22 @@
+@C
+@nocapture
+def seq_re_fullmatch(pattern: str,
+                     string: str) -> bool:
+    pass
+
+@C
+@nocapture
+def seq_re_findall(pattern: str,
+                   string: str,
+                   count: Ptr[int],
+                   capacity: Ptr[int]) -> Ptr[str]:
+    pass
+
+def findall(pattern: str, string: str):
+    count = 0
+    capacity = 0
+    result = seq_re_findall(pattern, string, __ptr__(count), __ptr__(capacity))
+    return List(Array(result, capacity), count)
+
+def fullmatch(pattern: str, string: str):
+    return seq_re_fullmatch(pattern, string)

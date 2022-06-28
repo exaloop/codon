@@ -61,17 +61,22 @@ add_custom_command(
 set(CODONRT_FILES
     codon/runtime/lib.h
     codon/runtime/lib.cpp
+    codon/runtime/re.cpp
     codon/runtime/exc.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma)
-target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR} "${gc_SOURCE_DIR}/include" runtime)
+add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
+target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
+                                           ${re2_SOURCE_DIR}
+                                           "${gc_SOURCE_DIR}/include"
+                                           runtime)
 target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP} LLVMSupport)
 if(APPLE)
     target_link_libraries(codonrt PRIVATE
         -Wl,-force_load,$<TARGET_FILE:zlibstatic>
         -Wl,-force_load,$<TARGET_FILE:gc>
         -Wl,-force_load,$<TARGET_FILE:bz2>
-        -Wl,-force_load,$<TARGET_FILE:liblzma> )
+        -Wl,-force_load,$<TARGET_FILE:liblzma>
+        -Wl,-force_load,$<TARGET_FILE:re2> )
 else()
     target_link_libraries(codonrt PRIVATE
         -Wl,--whole-archive
@@ -79,6 +84,7 @@ else()
         $<TARGET_FILE:gc>
         $<TARGET_FILE:bz2>
         $<TARGET_FILE:liblzma>
+        $<TARGET_FILE:re2>
         -Wl,--no-whole-archive)
 endif()
 if(ASAN)
