@@ -455,6 +455,7 @@ bar()
 #%% import_rec_err,barebones
 from a.b.rec1_err import bar
 #! symbol 'bar' not found in
+#! identifier 'bar' not found
 
 #%% import_err_1,barebones
 class Foo:
@@ -1016,3 +1017,8 @@ class Bar:
 b = Bar(3.1)
 print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
 
+#%% multi_error,barebones
+a = 55
+print z  #! identifier 'z' not found
+print(a, q, w)  #! identifier 'q' not found
+print quit  #! identifier 'quit' not found

@@ -92,6 +92,10 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
                         ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
                         ctx->scope.stmts[ctx->scope.blocks.back()].end());
   suite->stmts.push_back(n);
+
+  if (!ctx->cache->errors.empty())
+    throw exc::ParserException();
+
   return suite;
 }
 
@@ -174,7 +178,11 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
   SimplifyVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
   ctx->pushSrcInfo(stmt->getSrcInfo());
-  stmt->accept(v);
+  try {
+    stmt->accept(v);
+  } catch (const exc::ParserException &e) {
+    ctx->cache->errors.push_back(e);
+  }
   ctx->popSrcInfo();
   if (v.resultStmt)
     stmt = v.resultStmt;

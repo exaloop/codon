@@ -208,6 +208,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
 
+  std::vector<exc::ParserException> errors;
+
 public:
   explicit Cache(std::string argv0 = "");
 
