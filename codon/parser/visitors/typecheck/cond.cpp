@@ -13,73 +13,93 @@ namespace codon::ast {
 
 using namespace types;
 
+template <typename TT, typename TF>
+auto evaluateStaticCondition(ExprPtr cond, TT ready, TF notReady) {
+  // seqassert(cond->isStatic(), "not a static condition");
+  if (cond->staticValue.evaluated) {
+    bool isTrue = false;
+    if (cond->staticValue.type == StaticValue::STRING)
+      isTrue = !cond->staticValue.getString().empty();
+    else
+      isTrue = cond->staticValue.getInt();
+    return ready(isTrue);
+  } else {
+    return notReady();
+  }
+}
+
+/// Typecheck if expressions. Evaluate static if blocks if possible.
+/// Also wrap the condition with `__bool__()` if needed and wrap optionals.
 void TypecheckVisitor::visit(IfExpr *expr) {
   expr->cond = transform(expr->cond);
+
+  // Static if evaluation
   if (expr->cond->isStatic()) {
-    if (expr->cond->staticValue.evaluated) {
-      bool isTrue = false;
-      if (expr->cond->staticValue.type == StaticValue::STRING)
-        isTrue = !expr->cond->staticValue.getString().empty();
-      else
-        isTrue = expr->cond->staticValue.getInt();
-      resultExpr = transform(isTrue ? expr->ifexpr : expr->elsexpr, false);
+    resultExpr = evaluateStaticCondition(
+        expr->cond,
+        [&](bool isTrue) { return transform(isTrue ? expr->ifexpr : expr->elsexpr); },
+        [&]() -> ExprPtr {
+          // Check if both subexpressions are static; if so, this if expression is also
+          // static and should be marked as such
+          auto i = transform(clone(expr->ifexpr));
+          auto e = transform(clone(expr->elsexpr));
+          if (i->isStatic() && e->isStatic()) {
+            expr->staticValue.type = i->staticValue.type;
+            unify(expr->type,
+                  ctx->getType(expr->staticValue.type == StaticValue::INT ? "int"
+                                                                          : "str"));
+          }
+          return nullptr;
+        });
+    if (resultExpr)
       unify(expr->type, resultExpr->getType());
-    } else {
-      auto i = clone(expr->ifexpr), e = clone(expr->elsexpr);
-      i = transform(i, false);
-      e = transform(e, false);
+    else
       unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
-      if (i->isStatic() && e->isStatic()) {
-        expr->staticValue.type = i->staticValue.type;
-        unify(expr->type,
-              ctx->getType(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
-      }
-      expr->done = false; // do not typecheck this suite yet
-    }
     return;
   }
 
-  expr->ifexpr = transform(expr->ifexpr, false);
-  expr->elsexpr = transform(expr->elsexpr, false);
+  expr->ifexpr = transform(expr->ifexpr);
+  expr->elsexpr = transform(expr->elsexpr);
+  // Add __bool__ wrapper
   if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
+  // Add wrappers and unify both sides
   wrapOptionalIfNeeded(expr->ifexpr->getType(), expr->elsexpr);
   wrapOptionalIfNeeded(expr->elsexpr->getType(), expr->ifexpr);
   unify(expr->type, expr->ifexpr->getType());
   unify(expr->type, expr->elsexpr->getType());
-  expr->ifexpr = transform(expr->ifexpr);
-  expr->elsexpr = transform(expr->elsexpr);
-  expr->done = expr->cond->done && expr->ifexpr->done && expr->elsexpr->done;
+
+  if (expr->cond->isDone() && expr->ifexpr->isDone() && expr->elsexpr->isDone())
+    expr->setDone();
 }
 
+/// Typecheck if statements. Evaluate static if blocks if possible.
+/// Also wrap the condition with `__bool__()` if needed.
 void TypecheckVisitor::visit(IfStmt *stmt) {
   stmt->cond = transform(stmt->cond);
+
+  // Static if evaluation
   if (stmt->cond->isStatic()) {
-    if (!stmt->cond->staticValue.evaluated) {
-      stmt->done = false; // do not typecheck this suite yet
-      return;
-    } else {
-      bool isTrue = false;
-      if (stmt->cond->staticValue.type == StaticValue::STRING)
-        isTrue = !stmt->cond->staticValue.getString().empty();
-      else
-        isTrue = stmt->cond->staticValue.getInt();
-      resultStmt = isTrue ? stmt->ifSuite : stmt->elseSuite;
-      resultStmt = transform(resultStmt);
-      if (!resultStmt)
-        resultStmt = transform(N<SuiteStmt>());
-      return;
-    }
-  } else {
-    if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
-      stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
-    ctx->blockLevel++;
-    stmt->ifSuite = transform(stmt->ifSuite);
-    stmt->elseSuite = transform(stmt->elseSuite);
-    ctx->blockLevel--;
-    stmt->done = stmt->cond->done && (!stmt->ifSuite || stmt->ifSuite->done) &&
-                 (!stmt->elseSuite || stmt->elseSuite->done);
+    resultStmt = evaluateStaticCondition(
+        stmt->cond,
+        [&](bool isTrue) {
+          auto t = transform(isTrue ? stmt->ifSuite : stmt->elseSuite);
+          return t ? t : transform(N<SuiteStmt>());
+        },
+        [&]() -> StmtPtr { return nullptr; });
+    return;
   }
+
+  if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
+    stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
+  ctx->blockLevel++;
+  transform(stmt->ifSuite);
+  transform(stmt->elseSuite);
+  ctx->blockLevel--;
+
+  if (stmt->cond->isDone() && (!stmt->ifSuite || stmt->ifSuite->isDone()) &&
+      (!stmt->elseSuite || stmt->elseSuite->isDone()))
+    stmt->setDone();
 }
 
 } // namespace codon::ast

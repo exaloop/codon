@@ -41,14 +41,8 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   if (!val) {
     // Handle overloads
-    if (auto i = in(ctx->cache->overloads, expr->value)) {
-      if (i->size() == 1) {
-        val = ctx->forceFind(i->front().name);
-      } else {
-        auto d = getDispatch(expr->value);
-        val = ctx->forceFind(d->ast->name);
-      }
-    }
+    if (auto i = in(ctx->cache->overloads, expr->value))
+      val = ctx->forceFind(getDispatch(expr->value)->ast->name);
     if (!val)
       seqassert(expr, "cannot find '{}'", expr->value);
   }
@@ -91,22 +85,29 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
 }
 
-/// Find an overload dispatch function for a given overload. If it does not exist,
-/// generate it. Dispatch functions ensure that a function call is being routed to the
-/// correct overload even when dealing with partial functions and decorators.
+/// Find an overload dispatch function for a given overload. If it does not exist and
+/// there is more than one overload, generate it. Dispatch functions ensure that a
+/// function call is being routed to the correct overload even when dealing with partial
+/// functions and decorators.
 /// @example This is how dispatch looks like:
 ///   ```def foo:dispatch(*args, **kwargs):
 ///        return foo(*args, **kwargs)```
 types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
+  auto &overloads = ctx->cache->overloads[fn];
+
+  // Single overload: just return it
+  if (overloads.size() == 1)
+    return ctx->forceFind(overloads.front().name)->type->getFunc();
+
   // Check if dispatch exists
-  for (auto &m : ctx->cache->overloads[fn])
+  for (auto &m : overloads)
     if (endswith(ctx->cache->functions[m.name].ast->name, ":dispatch"))
       return ctx->cache->functions[m.name].type;
 
   // Dispatch does not exist. Generate it
   auto name = fn + ":dispatch";
   ExprPtr root; // Root function name used for calling
-  auto a = ctx->cache->functions[ctx->cache->overloads[fn][0].name].ast;
+  auto a = ctx->cache->functions[overloads[0].name].ast;
   if (!a->attributes.parentClass.empty())
     root = N<DotExpr>(N<IdExpr>(a->attributes.parentClass),
                       ctx->cache->reverseIdentifierLookup[fn]);
@@ -124,7 +125,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
   ctx->add(TypecheckItem::Func, name, typ);
 
-  ctx->cache->overloads[fn].insert(ctx->cache->overloads[fn].begin(), {name, 0});
+  overloads.insert(overloads.begin(), {name, 0});
   ctx->cache->functions[name].ast = ast;
   ctx->cache->functions[name].type = typ;
   prependStmts->push_back(ast);
@@ -310,13 +311,10 @@ TypecheckVisitor::getBestClassMethod(DotExpr *expr,
     // Use the provided arguments to select the best method
     if (auto m = findBestMethod(expr->expr.get(), expr->member, *methodArgs))
       return m;
-  } else if (methods.size() > 1) {
+  } else {
     // If overload is ambiguous, route through dispatch function
     return getDispatch(
         ctx->cache->getMethod(expr->expr->type->getClass(), expr->member));
-  } else if (!methods.empty()) {
-    // Only one overload available
-    return methods.front();
   }
 
   // Print a nice error message

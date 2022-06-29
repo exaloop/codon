@@ -90,16 +90,7 @@ public:
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
-  /// Set type to the unification of both sides.
-  /// Wrap a side with Optional.__new__() if other side is optional.
-  /// Wrap conditional with .__bool__() if it is not a bool.
-  /// Also evaluates static if expressions.
   void visit(IfExpr *) override;
-  /// Check if a condition is static expression. If it is and evaluates to zero,
-  /// DO NOT parse the enclosed suite.
-  /// Otherwise, transform if cond to:
-  ///   if cond.__bool__()
-  /// if cond is not of type bool (no pun intended).
   void visit(IfStmt *) override;
   /// If a target type is Optional but the type of a given expression is not,
   /// replace the given expression with Optional(expr).
