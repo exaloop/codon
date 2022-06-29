@@ -11,7 +11,6 @@ TEST_F(SIRCoreTest, AssignInstrQueryAndReplace) {
 
   ASSERT_EQ(var, instr->getLhs());
   ASSERT_EQ(val, instr->getRhs());
-  ASSERT_EQ(module->getVoidType(), instr->getType());
 
   auto usedVals = instr->getUsedValues();
   ASSERT_EQ(1, usedVals.size());
