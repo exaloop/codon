@@ -221,7 +221,7 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
   auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
   if (!ctx->find(typeName)) {
     ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
-    generateTupleStub(tupleSize + 2, typeName, {}, false);
+    generateTuple(tupleSize + 2, typeName, {}, false);
   }
   return typeName;
 }
@@ -239,7 +239,7 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
     }
   auto partialTypeName = generatePartialStub(mask, fn.get());
   std::string var = ctx->cache->getTemporaryVar("partial");
-  auto kwName = generateTupleStub(0, "KwTuple", {});
+  auto kwName = generateTuple(0, "KwTuple", {});
   ExprPtr call =
       N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
                                 N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
@@ -446,7 +446,7 @@ int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
 std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
   auto baseType = ctx->instantiate(nullptr, ctx->find("Function")->type)->getRecord();
   auto argType =
-      ctx->instantiate(nullptr, ctx->find(generateTupleStub(nargs))->type)->getRecord();
+      ctx->instantiate(nullptr, ctx->find(generateTuple(nargs))->type)->getRecord();
   unify(baseType->generics[0].type, argType);
   return baseType;
 }

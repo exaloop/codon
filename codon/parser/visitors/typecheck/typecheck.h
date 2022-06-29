@@ -276,15 +276,9 @@ public:
   std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
 
   /* Classes (class.cpp) */
-  /// Parse a type stub and create a corresponding generic type.
   void visit(ClassStmt *) override;
-  /// Generate a tuple class Tuple.N[T1,...,TN](a1: T1, ..., aN: TN).
-  /// Also used to generate a named tuple class Name.N[T1,...,TN] with field names
-  /// provided in names parameter.
-  std::string
-  generateTupleStub(int len, const std::string &name = "Tuple",
-                    std::vector<std::string> names = std::vector<std::string>{},
-                    bool hasSuffix = true);
+  std::string generateTuple(size_t, const std::string & = "Tuple",
+                            std::vector<std::string> = {}, bool = true);
 
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;

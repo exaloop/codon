@@ -17,12 +17,12 @@ using namespace types;
 /// replace it with its value (e.g., a @c IntExpr ). Also ensure that the identifier of
 /// a generic function or a type is fully qualified (e.g., replace `Ptr` with
 /// `Ptr[byte]`).
-/// For tuple identifiers, generate appropriate class. See @c generateTupleStub for
+/// For tuple identifiers, generate appropriate class. See @c generateTuple for
 /// details.
 void TypecheckVisitor::visit(IdExpr *expr) {
   // Generate tuple stubs if needed
   if (isTuple(expr->value))
-    generateTupleStub(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
+    generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
   // Handle empty callable references
   if (expr->value == TYPE_CALLABLE) {

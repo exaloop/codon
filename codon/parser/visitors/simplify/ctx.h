@@ -192,8 +192,6 @@ public:
   bool inClass() const;
   /// True if an item is defined outside of the current base or a module.
   bool isOuter(const Item &val) const;
-  /// Get the non-canonicalized version of a canonical name.
-  std::string rev(const std::string &s);
   /// Get the enclosing class base (or nullptr if such does not exist).
   Base *getClassBase();
 

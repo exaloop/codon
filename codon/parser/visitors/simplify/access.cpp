@@ -43,9 +43,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   //   x = 2     # so that this is an error
   if (!val->isGeneric() && ctx->isOuter(val) &&
       !in(ctx->seenGlobalIdentifiers[ctx->getBaseName()],
-          ctx->rev(val->canonicalName))) {
-    ctx->seenGlobalIdentifiers[ctx->getBaseName()][ctx->rev(val->canonicalName)] =
-        expr->clone();
+          ctx->cache->rev(val->canonicalName))) {
+    ctx->seenGlobalIdentifiers[ctx->getBaseName()]
+                              [ctx->cache->rev(val->canonicalName)] = expr->clone();
   }
 
   // Flag the expression as a type expression if it points to a class or a generic
@@ -140,7 +140,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
 
   // Disallow outer generics except for class generics in methods
   if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size()))
-    error("cannot access nonlocal variable '{}'", ctx->rev(val->canonicalName));
+    error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
 
   // Mark methods (class functions that access class generics)
   if (val->isGeneric() && ctx->bases[i].isType() && i + 2 == ctx->bases.size() &&
@@ -169,7 +169,8 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
         ctx->generateCanonicalName(val->canonicalName);
     ctx->cache->reverseIdentifierLookup[newName] = newName;
     // Add newly generated argument to the context
-    auto newVal = ctx->addVar(ctx->rev(val->canonicalName), newName, getSrcInfo());
+    auto newVal =
+        ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
     newVal->baseName = ctx->getBaseName();
     newVal->noShadow = true;
     return true;
@@ -177,7 +178,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled
-  error("cannot access nonlocal variable '{}'", ctx->rev(val->canonicalName));
+  error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
   return false;
 }
 

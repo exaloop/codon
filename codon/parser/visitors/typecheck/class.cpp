@@ -13,124 +13,133 @@ namespace codon::ast {
 
 using namespace types;
 
+/// Parse a class (type) declaration and add a (generic) type to the context.
 void TypecheckVisitor::visit(ClassStmt *stmt) {
-  auto &attr = stmt->attributes;
-  bool extension = attr.has(Attr::Extend);
-  if (ctx->findInVisited(stmt->name).second && !extension)
+  // Extensions are not possible after the simplification
+  seqassert(!stmt->attributes.has(Attr::Extend), "invalid extension '{}'", stmt->name);
+
+  /// TODO: what does this findInVisited do?!
+  if (ctx->findInVisited(stmt->name).second)
     return;
 
+  // Type should be constructed only once
+  stmt->setDone();
+
+  // Generate the type and add it to the context
   ClassTypePtr typ = nullptr;
-  if (!extension) {
-    if (stmt->isRecord())
-      typ = std::make_shared<RecordType>(
-          stmt->name, ctx->cache->reverseIdentifierLookup[stmt->name]);
-    else
-      typ = std::make_shared<ClassType>(
-          stmt->name, ctx->cache->reverseIdentifierLookup[stmt->name]);
-    if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
-      seqassert(in(ctx->cache->partials, stmt->name),
-                "invalid partial initialization: {}", stmt->name);
-      typ = std::make_shared<PartialType>(typ->getRecord(),
-                                          ctx->cache->partials[stmt->name].first,
-                                          ctx->cache->partials[stmt->name].second);
-    }
-    typ->setSrcInfo(stmt->getSrcInfo());
-    ctx->add(TypecheckItem::Type, stmt->name, typ);
-    ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Type, typ};
-
-    // Parse class fields.
-    for (const auto &a : stmt->args)
-      if (a.status != Param::Normal) { // TODO
-        char staticType = 0;
-        auto idx = a.type->getIndex();
-        if (idx && idx->expr->isId("Static"))
-          staticType = idx->index->isId("str") ? 1 : 2;
-        auto t = ctx->addUnbound(N<IdExpr>(a.name).get(), ctx->typecheckLevel, true,
-                                 staticType);
-        auto typId = ctx->cache->unboundCount - 1;
-        t->getLink()->genericName = ctx->cache->reverseIdentifierLookup[a.name];
-        if (a.defaultValue) {
-          auto dt = clone(a.defaultValue);
-          dt = transformType(dt);
-          if (a.status == Param::Generic)
-            t->defaultType = dt->type;
-          else
-            unify(dt->type, t);
-        }
-        ctx->add(TypecheckItem::Type, a.name, t);
-        ClassType::Generic g{a.name, ctx->cache->reverseIdentifierLookup[a.name],
-                             t->generalize(ctx->typecheckLevel), typId};
-        if (a.status == Param::Generic) {
-          typ->generics.push_back(g);
-        } else {
-          typ->hiddenGenerics.push_back(g);
-        }
-        LOG_REALIZE("[generic/{}] {} -> {}", int(a.status), a.name, t->toString());
-      }
-    {
-      ctx->typecheckLevel++;
-      for (auto ai = 0, aj = 0; ai < stmt->args.size(); ai++)
-        if (stmt->args[ai].status == Param::Normal) {
-          auto si = stmt->args[ai].type->getSrcInfo();
-          ctx->cache->classes[stmt->name].fields[aj].type =
-              transformType(stmt->args[ai].type)
-                  ->getType()
-                  ->generalize(ctx->typecheckLevel - 1);
-          ctx->cache->classes[stmt->name].fields[aj].type->setSrcInfo(si);
-          if (stmt->isRecord())
-            typ->getRecord()->args.push_back(
-                ctx->cache->classes[stmt->name].fields[aj].type);
-          aj++;
-        }
-      ctx->typecheckLevel--;
-    }
-    // Remove lingering generics.
-    for (const auto &g : stmt->args)
-      if (g.status != Param::Normal) {
-        auto val = ctx->find(g.name);
-        seqassert(val, "cannot find generic {}", g.name);
-        auto t = val->type;
-        if (g.status == Param::Generic) {
-          seqassert(t && t->getLink() && t->getLink()->kind != types::LinkType::Link,
-                    "generic has been unified");
-          if (t->getLink()->kind == LinkType::Unbound)
-            t->getLink()->kind = LinkType::Generic;
-        }
-        ctx->remove(g.name);
-      }
-
-    LOG_REALIZE("[class] {} -> {}", stmt->name, typ->debugString(1));
-    for (auto &m : ctx->cache->classes[stmt->name].fields)
-      LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(1));
+  if (stmt->isRecord()) {
+    typ = std::make_shared<RecordType>(stmt->name, ctx->cache->rev(stmt->name));
+  } else {
+    typ = std::make_shared<ClassType>(stmt->name, ctx->cache->rev(stmt->name));
   }
-  stmt->done = true;
+  if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
+    // Special handling of partial types (e.g., `Partial.0001.foo`)
+    if (auto p = in(ctx->cache->partials, stmt->name))
+      typ = std::make_shared<PartialType>(typ->getRecord(), p->first, p->second);
+  }
+  typ->setSrcInfo(stmt->getSrcInfo());
+  ctx->add(TypecheckItem::Type, stmt->name, typ);
+  ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Type, typ};
+
+  // Handle generics
+  for (const auto &a : stmt->args) {
+    if (a.status != Param::Normal) {
+      // Generic and static types
+      auto generic = ctx->addUnbound(N<IdExpr>(a.name).get(), ctx->typecheckLevel, true,
+                                     getStaticGeneric(a.type));
+      auto typId = ctx->cache->unboundCount - 1; // addUnbound increments unboundCount
+      generic->getLink()->genericName = ctx->cache->rev(a.name);
+      if (a.defaultValue) {
+        auto defType = transformType(clone(a.defaultValue));
+        if (a.status == Param::Generic) {
+          generic->defaultType = defType->type;
+        } else {
+          // Hidden generics can be outright replaced (e.g., `T=int`). Unify them
+          // immediately.
+          unify(defType->type, generic);
+        }
+      }
+      ctx->add(TypecheckItem::Type, a.name, generic);
+      ClassType::Generic g{a.name, ctx->cache->rev(a.name),
+                           generic->generalize(ctx->typecheckLevel), typId};
+      if (a.status == Param::Generic) {
+        typ->generics.push_back(g);
+      } else {
+        typ->hiddenGenerics.push_back(g);
+      }
+    }
+  }
+
+  // Handle class members
+  ctx->typecheckLevel++; // Needed to avoid unigying generics early
+  auto &fields = ctx->cache->classes[stmt->name].fields;
+  for (auto ai = 0, aj = 0; ai < stmt->args.size(); ai++)
+    if (stmt->args[ai].status == Param::Normal) {
+      fields[aj].type = transformType(stmt->args[ai].type)
+                            ->getType()
+                            ->generalize(ctx->typecheckLevel - 1);
+      fields[aj].type->setSrcInfo(stmt->args[ai].type->getSrcInfo());
+      if (stmt->isRecord())
+        typ->getRecord()->args.push_back(fields[aj].type);
+      aj++;
+    }
+  ctx->typecheckLevel--;
+
+  // Generalize generics and remove them from the context
+  for (const auto &g : stmt->args)
+    if (g.status != Param::Normal) {
+      auto generic = ctx->forceFind(g.name)->type;
+      if (g.status == Param::Generic) {
+        // Generalize generics. Hidden generics are linked to the class generics so
+        // ignore them
+        seqassert(generic && generic->getLink() &&
+                      generic->getLink()->kind != types::LinkType::Link,
+                  "generic has been unified");
+        generic->getLink()->kind = LinkType::Generic;
+      }
+      ctx->remove(g.name);
+    }
+
+  // Debug information
+  LOG_REALIZE("[class] {} -> {}", stmt->name, typ->debugString(true));
+  for (auto &m : ctx->cache->classes[stmt->name].fields)
+    LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(true));
 }
 
-std::string TypecheckVisitor::generateTupleStub(int len, const std::string &name,
-                                                std::vector<std::string> names,
-                                                bool hasSuffix) {
-  static std::map<std::string, int> usedNames;
+/// Generate a tuple class `Tuple.N[T1,...,TN]`.
+/// @param len       Tuple length (`N`)
+/// @param name      Tuple name. `Tuple` by default.
+///                  Can be something else (e.g., `KwTuple`)
+/// @param names     Member names. By default `item1`...`itemN`.
+/// @param hasSuffix Set if the tuple name should have `.N` suffix.
+std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
+                                            std::vector<std::string> names,
+                                            bool hasSuffix) {
   auto key = join(names, ";");
   std::string suffix;
   if (!names.empty()) {
-    if (!in(usedNames, key))
-      usedNames[key] = usedNames.size();
-    suffix = format("_{}", usedNames[key]);
+    // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
+    // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
+    // combination.
+    if (!in(ctx->cache->generatedTuples, key))
+      ctx->cache->generatedTuples[key] = ctx->cache->generatedTuples.size();
+    suffix = format("_{}", ctx->cache->generatedTuples[key]);
   } else {
-    for (int i = 1; i <= len; i++)
+    for (size_t i = 1; i <= len; i++)
       names.push_back(format("item{}", i));
   }
+
   auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
   if (!ctx->find(typeName)) {
+    // Generate the appropriate ClassStmt
     std::vector<Param> args;
-    for (int i = 1; i <= len; i++)
-      args.emplace_back(Param(names[i - 1], N<IdExpr>(format("T{}", i)), nullptr));
-    for (int i = 1; i <= len; i++)
-      args.emplace_back(Param(format("T{}", i), N<IdExpr>("type"), nullptr, true));
-    StmtPtr stmt = std::make_shared<ClassStmt>(
-        typeName, args, nullptr, std::vector<ExprPtr>{N<IdExpr>("tuple")});
-    stmt->setSrcInfo(ctx->cache->generateSrcInfo());
-
+    for (size_t i = 0; i < len; i++)
+      args.emplace_back(Param(names[i], N<IdExpr>(format("T{}", i + 1)), nullptr));
+    for (size_t i = 0; i < len; i++)
+      args.emplace_back(Param(format("T{}", i + 1), N<IdExpr>("type"), nullptr, true));
+    StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
+                                std::vector<ExprPtr>{N<IdExpr>("tuple")});
+    // Simplify in the standard library context and type check
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
                                   FILE_GENERATED, 0);
     stmt = TypecheckVisitor(ctx).transform(stmt);

@@ -218,6 +218,9 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
+    def dispatch(f, *args, **kwargs):
+        return f(*args, **kwargs)
+
     # @pure
     # @llvm
     # def __raw__(self) -> Ptr[byte]:

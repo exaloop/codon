@@ -207,7 +207,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   int jitCell;
 
   std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
-
+  std::unordered_map<std::string, int> generatedTuples;
   std::vector<exc::ParserException> errors;
 
 public:
@@ -216,6 +216,8 @@ public:
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
   std::string getTemporaryVar(const std::string &prefix = "", char sigil = '.');
+  /// Get the non-canonicalized version of a canonical name.
+  std::string rev(const std::string &s);
 
   /// Generate a unique SrcInfo for internally generated AST nodes.
   SrcInfo generateSrcInfo();

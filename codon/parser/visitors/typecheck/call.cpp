@@ -511,7 +511,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(ClassTypePtr callee,
                 if (values.back().value->getEllipsis())
                   ellipsisStage = args.size();
               }
-              auto kwName = generateTupleStub(names.size(), "KwTuple", names);
+              auto kwName = generateTuple(names.size(), "KwTuple", names);
               auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
               if (partial) {
                 part.kwArgs = e;
@@ -557,7 +557,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(ClassTypePtr callee,
     if (!part.args)
       part.args = transform(N<TupleExpr>());
     if (!part.kwArgs) {
-      auto kwName = generateTupleStub(0, "KwTuple", {});
+      auto kwName = generateTuple(0, "KwTuple", {});
       part.kwArgs = transform(N<CallExpr>(N<IdExpr>(kwName)));
     }
   }

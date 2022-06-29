@@ -649,7 +649,7 @@ struct InstantiateExpr : Expr {
 
 enum ExprAttr { SequenceItem, StarSequenceItem, List, Set, Dict, Partial, __LAST__ };
 
-bool isStaticGeneric(const ExprPtr &e);
+char getStaticGeneric(const ExprPtr &e);
 
 } // namespace ast
 } // namespace codon

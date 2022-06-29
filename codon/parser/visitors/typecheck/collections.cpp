@@ -24,7 +24,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       star->what = transform(star->what);
       auto t = star->what->type->getClass();
       if (!t) {
-        return; // Continue later
+        return; // continue later when the type becomes known
       }
 
       if (!t->getRecord())
@@ -40,7 +40,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     } else {
       expr->items[ai] = transform(expr->items[ai]);
     }
-  auto tupleName = generateTupleStub(expr->items.size());
+  auto tupleName = generateTuple(expr->items.size());
   resultExpr =
       transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), clone(expr->items)));
 }

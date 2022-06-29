@@ -246,14 +246,6 @@ bool SimplifyContext::isOuter(const Item &val) const {
   return getBaseName() != val->getBaseName() || getModule() != val->getModule();
 }
 
-std::string SimplifyContext::rev(const std::string &s) {
-  auto i = cache->reverseIdentifierLookup.find(s);
-  if (i != cache->reverseIdentifierLookup.end())
-    return i->second;
-  seqassert(false, "'{}' has no non-canonical name", s);
-  return "";
-}
-
 SimplifyContext::Base *SimplifyContext::getClassBase() {
   if (bases.size() >= 2 && bases[bases.size() - 2].isType())
     return &(bases[bases.size() - 2]);

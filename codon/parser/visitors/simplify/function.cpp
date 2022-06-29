@@ -194,7 +194,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
     // Add generics to the context
     if (a.status != Param::Normal) {
-      if (isStaticGeneric(a.type))
+      if (getStaticGeneric(a.type))
         ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
       else
         ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
@@ -212,7 +212,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     if (a.status == Param::Normal) {
       std::string canName = a.name;
       trimStars(canName);
-      ctx->addVar(ctx->rev(canName), canName, stmt->getSrcInfo());
+      ctx->addVar(ctx->cache->rev(canName), canName, stmt->getSrcInfo());
     }
   }
 
@@ -262,7 +262,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
     for (auto &c : captures) {
       args.emplace_back(Param{c.second, nullptr, nullptr});
-      partialArgs.push_back({c.second, N<IdExpr>(ctx->rev(c.first))});
+      partialArgs.push_back({c.second, N<IdExpr>(ctx->cache->rev(c.first))});
     }
     if (!kw.name.empty())
       args.push_back(kw);

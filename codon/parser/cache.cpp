@@ -22,6 +22,15 @@ std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
                      ++varCount);
 }
 
+std::string Cache::rev(const std::string &s) {
+  auto i = reverseIdentifierLookup.find(s);
+  if (i != reverseIdentifierLookup.end())
+    return i->second;
+  seqassertn(false, "'{}' has no non-canonical name", s);
+  return "";
+}
+
+
 SrcInfo Cache::generateSrcInfo() {
   return {FILE_GENERATED, generatedSrcInfoCount, generatedSrcInfoCount++, 0};
 }
@@ -132,7 +141,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  auto name = tv.generateTupleStub(types.size());
+  auto name = tv.generateTuple(types.size());
   auto t = typeCtx->find(name);
   seqassertn(t && t->type, "cannot find {}", name);
   return realizeType(t->type->getClass(), types);
@@ -142,7 +151,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
-  auto tup = tv.generateTupleStub(types.size() - 1);
+  auto tup = tv.generateTuple(types.size() - 1);
   auto ret = types[0];
   auto argType = typeCtx->instantiateGeneric(
       nullptr, typeCtx->find(tup)->type,

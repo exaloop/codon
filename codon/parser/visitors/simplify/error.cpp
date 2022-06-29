@@ -40,7 +40,7 @@ void SimplifyVisitor::visit(TryStmt *stmt) {
     ctx->enterConditionalBlock();
     if (!c.var.empty()) {
       c.var = ctx->generateCanonicalName(c.var);
-      ctx->addVar(ctx->rev(c.var), c.var, c.suite->getSrcInfo());
+      ctx->addVar(ctx->cache->rev(c.var), c.var, c.suite->getSrcInfo());
     }
     transformType(c.exc);
     transformConditionalScope(c.suite);
