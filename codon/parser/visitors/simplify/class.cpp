@@ -346,14 +346,16 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
       sp->getClass()->name = parentName + "." + origName;
       auto tsp = transform(sp);
       std::string name;
-      for (auto &s : tsp->getSuite()->stmts)
-        if (auto c = s->getClass()) {
-          clsStmts.push_back(s);
-          name = c->name;
-        } else {
-          fnStmts.push_back(s);
-        }
-      ctx->add(origName, ctx->forceFind(name));
+      if (tsp->getSuite()) {
+        for (auto &s : tsp->getSuite()->stmts)
+          if (auto c = s->getClass()) {
+            clsStmts.push_back(s);
+            name = c->name;
+          } else {
+            fnStmts.push_back(s);
+          }
+        ctx->add(origName, ctx->forceFind(name));
+      }
     }
 }
 

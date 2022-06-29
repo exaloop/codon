@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include "codon/compiler/error.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -106,7 +107,19 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
   } catch (const exc::ParserException &e) {
-    return llvm::make_error<error::ParserErrorInfo>(e);
+    std::vector<error::Message> messages;
+    if (e.messages.empty()) {
+      for (auto &e : cache->errors) {
+        for (unsigned i = 0; i < e.messages.size(); i++) {
+          if (!e.messages[i].empty())
+            messages.emplace_back(e.messages[i], e.locations[i].file,
+                                  e.locations[i].line, e.locations[i].col);
+        }
+      }
+      return llvm::make_error<error::ParserErrorInfo>(messages);
+    } else {
+      return llvm::make_error<error::ParserErrorInfo>(e);
+    }
   }
   module->setSrcInfo({abspath, 0, 0, 0});
   return llvm::Error::success();
