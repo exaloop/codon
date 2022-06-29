@@ -72,10 +72,6 @@ void DictArithmeticOptimization::handle(CallInstr *v) {
       std::distance(v->begin(), v->end()) == 3) {
     auto it = v->begin();
 
-    M->parseCode("from re import *");
-    auto *q = M->getOrRealizeFunc("foobar", {}, {}, "std.re");
-    LOG("dict-opt {}", (size_t)q);
-
     // extract all the arguments to the function
     // the dictionary and key must not be calls, and the value must
     // be a call
