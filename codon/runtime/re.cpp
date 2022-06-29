@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <re2/re2.h>
 
-std::unordered_map<std::string, std::unique_ptr<re2::RE2>> cache;
+static std::unordered_map<std::string, std::unique_ptr<re2::RE2>> cache;
 
 static inline re2::RE2& get(std::string &p) {
   auto it = cache.find(p);
@@ -14,6 +14,22 @@ static inline re2::RE2& get(std::string &p) {
   } else {
     return *it->second;
   }
+}
+
+static inline seq_str_t convert(const std::string &p) {
+  seq_int_t n = p.size();
+  auto *s = (char *)seq_alloc_atomic(n);
+  std::memcpy(s, p.data(), n);
+  return {n, s};
+}
+
+static inline re2::StringPiece str2sp(const seq_str_t &s) {
+  return {s.str, static_cast<re2::StringPiece::size_type>(s.len)};
+}
+
+SEQ_FUNC void *make_pattern(seq_str_t p) {
+  auto *mem = seq_alloc_atomic(sizeof(re2::RE2));
+  return new (mem) re2::RE2(str2sp(p));
 }
 
 SEQ_FUNC bool seq_re_fullmatch(seq_str_t p, seq_str_t s) {
@@ -40,15 +56,15 @@ SEQ_FUNC seq_str_t *seq_re_findall(seq_str_t p, seq_str_t s, seq_int_t *count, s
       m = (1 + 3*m) / 2;
       matches = (seq_str_t *)seq_realloc(matches, m * sizeof(seq_str_t));
     }
-
-    seq_int_t match_size = match.size();
-    auto *s = (char *)seq_alloc_atomic(match_size);
-    std::memcpy(s, match.data(), match_size);
-    matches[n++] = {match_size, s};
+    matches[n++] = convert(match);
   }
 
   *count = n;
   *capacity = m;
   return matches;
 #undef INIT_BUFFER_SIZE
+}
+
+SEQ_FUNC void seq_re_purge() {
+  cache.clear();
 }
