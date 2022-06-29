@@ -139,6 +139,4 @@ std::string TypecheckVisitor::generateTupleStub(int len, const std::string &name
   return typeName;
 }
 
-
-
 }

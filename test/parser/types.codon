@@ -540,7 +540,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments  = int,  = int,  = int,  = bool
+print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments 'int', 'int', 'int', 'bool'
 
 #%% nested_deep_class_error_2,barebones
 class A[T]:

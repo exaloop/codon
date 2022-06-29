@@ -77,23 +77,16 @@ public:
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
-  /// See transformDot() below.
   void visit(DotExpr *) override;
-  ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
-  types::FuncTypePtr findDispatch(const std::string &fn);
-  types::FuncTypePtr findDispatch(const std::string &type, const std::string &member) {
-    auto m = ctx->cache->classes.find(type);
-    auto t = m->second.methods.find(member);
-    return findDispatch(t->second);
-  }
+  ExprPtr transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
+  ExprPtr getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
+  types::FuncTypePtr getBestClassMethod(DotExpr *,
+                                        const std::vector<types::FuncTypePtr> &,
+                                        std::vector<CallExpr::Arg> *);
+  types::FuncTypePtr getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */
-  /// Transform a tuple (a1, ..., aN) to:
-  ///   Tuple.N.__new__(a1, ..., aN).
-  /// If Tuple.N has not been seen before, generate a stub class for it.
   void visit(TupleExpr *) override;
-  /// Transform a tuple generator tuple(expr for i in tuple) to:
-  ///   Tuple.N.__new__(expr...).
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
@@ -241,19 +234,9 @@ public:
 
   /* Assignments (assign.cpp) */
   void visit(AssignStmt *) override;
-  /// Transform an atomic or an in-place statement a += b to:
-  ///   a.__iadd__(a, b)
-  ///   typeof(a).__atomic_add__(__ptr__(a), b)
-  /// Transform an atomic statement a = min(a, b) (and max(a, b)) to:
-  ///   typeof(a).__atomic_min__(__ptr__(a), b).
-  /// Transform an atomic update a = b to:
-  ///   typeof(a).__atomic_xchg__(__ptr__(a), b).
-  /// Transformations are performed only if the appropriate magics are available.
-  void visitUpdate(AssignStmt *);
-  /// Transform a.b = c to:
-  ///   unwrap(a).b = c
-  /// if a is an Optional that does not have field b.
+  void transformUpdate(AssignStmt *);
   void visit(AssignMemberStmt *) override;
+  std::pair<bool, ExprPtr> transformInplaceUpdate(AssignStmt *);
 
   /* Loops (loops.cpp) */
   void visit(BreakStmt *) override;
@@ -342,7 +325,7 @@ public:
                        bool undoOnSuccess = false);
 
   types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
-                                  bool undoOnSuccess = false) {
+                       bool undoOnSuccess = false) {
     auto x = a;
     return unify(x, b, undoOnSuccess);
   }
@@ -354,22 +337,7 @@ private:
                                      const std::string &name);
   codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
-  // friend struct Cache;
-
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
-
-  std::string printArguments(const std::vector<types::TypePtr> &args) {
-    std::vector<std::string> nice;
-    for (auto &t : args)
-      nice.emplace_back(fmt::format("{}", t->toString()));
-    return combine2(nice, ", ");
-  }
-  std::string printArguments(const std::vector<CallExpr::Arg> &args) {
-    std::vector<std::string> nice;
-    for (auto &t : args)
-      nice.emplace_back(fmt::format("{} = {}", t.name, t.value->type->toString()));
-    return combine2(nice, ", ");
-  }
 };
 
 } // namespace ast

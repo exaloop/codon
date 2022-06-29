@@ -230,6 +230,14 @@ public:
   /// pointer or a nullptr if a function is not found.
   /// Returns an _uninstantiated_ type.
   types::FuncTypePtr findFunction(const std::string &name) const;
+  /// Find the canonical name of a class method.
+  std::string getMethod(types::ClassTypePtr typ, const std::string &member) {
+    if (auto m = in(classes, typ->name)) {
+      if (auto t = in(m->methods, member))
+        return *t;
+    }
+    return nullptr;
+  }
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
   types::FuncTypePtr findMethod(types::ClassType *typ, const std::string &member,

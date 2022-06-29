@@ -17,7 +17,7 @@ using namespace types;
 void TypecheckVisitor::visit(NoneExpr *expr) {
   unify(expr->type, ctx->instantiate(expr, ctx->getType(TYPE_OPTIONAL)));
   if (realize(expr->type)) {
-    // Realize the appropriate Optional.__new__  for translation stage
+    // Realize the appropriate `Optional.__new__` for the translation stage
     auto cls = expr->type->getClass();
     auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__:0")->type;
     auto t = realize(ctx->instantiate(expr, f, cls.get(), false)->getFunc());
