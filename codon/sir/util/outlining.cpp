@@ -304,7 +304,7 @@ struct Outliner : public Operator {
     if (callIndicatesControl && !allowOutflows)
       return {};
     auto *funcType = M->getFuncType(
-        callIndicatesControl ? M->getIntType() : M->getVoidType(), argTypes);
+        callIndicatesControl ? M->getIntType() : M->getNoneType(), argTypes);
     auto *outlinedFunc = M->Nr<BodiedFunc>("__outlined");
     outlinedFunc->realize(funcType, argNames);
 

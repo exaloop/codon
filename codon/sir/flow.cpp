@@ -22,7 +22,7 @@ int findAndReplace(id_t id, codon::ir::Value *newVal,
 
 const char Flow::NodeId = 0;
 
-types::Type *Flow::doGetType() const { return getModule()->getVoidType(); }
+types::Type *Flow::doGetType() const { return getModule()->getNoneType(); }
 
 const char SeriesFlow::NodeId = 0;
 

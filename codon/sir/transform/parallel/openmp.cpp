@@ -21,7 +21,6 @@ struct OMPTypes {
   types::Type *i32 = nullptr;
   types::Type *i8ptr = nullptr;
   types::Type *i32ptr = nullptr;
-  types::Type *micro = nullptr;
   types::Type *routine = nullptr;
   types::Type *ident = nullptr;
   types::Type *task = nullptr;
@@ -30,7 +29,6 @@ struct OMPTypes {
     i32 = M->getIntNType(32, /*sign=*/true);
     i8ptr = M->getPointerType(M->getByteType());
     i32ptr = M->getPointerType(i32);
-    micro = M->getFuncType(M->getVoidType(), {i32ptr, i32ptr});
     routine = M->getFuncType(i32, {i32ptr, i8ptr});
     ident = M->getOrRealizeType("Ident", {}, ompModule);
     task = M->getOrRealizeType("Task", {}, ompModule);
@@ -387,7 +385,7 @@ struct ReductionIdentifier : public util::Operator {
     // double-check the call
     if (!util::isCallOf(v, Module::SETITEM_MAGIC_NAME,
                         {self->getType(), idx->getType(), item->getType()},
-                        M->getVoidType(), /*method=*/true))
+                        M->getNoneType(), /*method=*/true))
       return {};
 
     const std::vector<ReductionFunction> reductionFunctions = {
@@ -517,7 +515,7 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
     auto *M = parent->getModule();
     auto *tupleType = getReductionTuple()->getType();
     auto *argType = M->getPointerType(tupleType);
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *reducer = M->Nr<BodiedFunc>("__omp_reducer");
     reducer->realize(funcType, {"lhs", "rhs"});
 
@@ -886,7 +884,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   BodiedFunc *makeTaskRedInitFunc(Reduction *reduction) {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *initializer = M->Nr<BodiedFunc>("__red_init");
     initializer->realize(funcType, {"lhs", "rhs"});
 
@@ -901,7 +899,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   BodiedFunc *makeTaskRedCombFunc(Reduction *reduction) {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *reducer = M->Nr<BodiedFunc>("__red_comb");
     reducer->realize(funcType, {"lhs", "rhs"});
 

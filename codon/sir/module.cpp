@@ -249,6 +249,8 @@ types::Type *Module::getTupleType(std::vector<types::Type *> args) {
   return cache->makeTuple(argTypes);
 }
 
+types::Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
+
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }
 
 Value *Module::getFloat(double v) { return Nr<FloatConst>(v, getFloatType()); }
