@@ -162,7 +162,7 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
                 args[ai].type->clone(), nullptr});
     }
   }
-  StmtPtr f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("void"), fnArgs,
+  StmtPtr f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("NoneType"), fnArgs,
                               nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
@@ -182,7 +182,7 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::strin
                                              const Expr *ret,
                                              const std::string &altName) {
   std::vector<ExprPtr> fnArgs{N<ListExpr>(std::vector<ExprPtr>{}),
-                              ret ? ret->clone() : N<IdExpr>("void")};
+                              ret ? ret->clone() : N<IdExpr>("NoneType")};
   for (const auto &a : args) {
     seqassert(a.name.empty(), "unexpected argument name");
     seqassert(!a.defaultValue, "unexpected default argument");
@@ -207,8 +207,7 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::strin
 /// If a return type is nullptr, the function just returns f (raw pyobj).
 StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
                                                const std::vector<Param> &args,
-                                               const Expr *ret,
-                                               const std::string &altName) {
+                                               Expr *ret, const std::string &altName) {
   // Get a module name (e.g., os.path)
   auto components = getImportPath(what);
 
@@ -242,20 +241,14 @@ StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
     params.emplace_back(Param{format("a{}", i), clone(args[i].type), nullptr});
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
   }
-  ExprPtr retExpr = N<CallExpr>(N<IdExpr>("f"), callArgs);
-  // `f(a1, ...), `return f(a1, ...)`, or `return ret.__from_py__(f(a1, ...))`
-  if (ret && !ret->isId("void"))
-    retExpr =
-        N<CallExpr>(N<DotExpr>(ret->clone(), "__from_py__"), N<DotExpr>(retExpr, "p"));
-  StmtPtr retStmt = nullptr;
-  if (ret && ret->isId("void"))
-    retStmt = N<ExprStmt>(retExpr);
-  else
-    retStmt = N<ReturnStmt>(retExpr);
+  // `return ret.__from_py__(f(a1, ...))`
+  auto retType = (ret && !ret->getNone()) ? ret->clone() : N<IdExpr>("NoneType");
+  auto retExpr = N<CallExpr>(N<DotExpr>(retType->clone(), "__from_py__"),
+                             N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
+  auto retStmt = N<ReturnStmt>(retExpr);
   // Create a function
-  return transform(N<FunctionStmt>(altName.empty() ? components.back() : altName,
-                                   ret ? ret->clone() : nullptr, params,
-                                   N<SuiteStmt>(call, retStmt)));
+  return transform(N<FunctionStmt>(altName.empty() ? components.back() : altName, retType,
+                                   params, N<SuiteStmt>(call, retStmt)));
 }
 
 /// Import a new file into its own context and wrap its top-level statements into a

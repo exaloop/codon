@@ -22,7 +22,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
           resultExpr =
               transform(N<BoolExpr>(expr->expr->staticValue.getString().empty()));
         } else {
-          unify(expr->type, ctx->findInternal("bool"));
+          unify(expr->type, ctx->getType("bool"));
           if (!expr->isStatic())
             expr->staticValue.type = StaticValue::INT;
         }
@@ -42,7 +42,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
         else
           resultExpr = transform(N<IntExpr>(value));
       } else {
-        unify(expr->type, ctx->findInternal("int"));
+        unify(expr->type, ctx->getType("int"));
         if (!expr->isStatic())
           expr->staticValue.type = StaticValue::INT;
       }
@@ -88,7 +88,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         } else {
           if (!expr->isStatic())
             expr->staticValue.type = StaticValue::STRING;
-          unify(expr->type, ctx->findInternal("str"));
+          unify(expr->type, ctx->getType("str"));
         }
       } else {
         if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
@@ -98,7 +98,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         } else {
           if (!expr->isStatic())
             expr->staticValue.type = StaticValue::INT;
-          unify(expr->type, ctx->findInternal("bool"));
+          unify(expr->type, ctx->getType("bool"));
         }
       }
     } else {
@@ -146,7 +146,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
       } else {
         if (!expr->isStatic())
           expr->staticValue.type = StaticValue::INT;
-        unify(expr->type, ctx->findInternal("int"));
+        unify(expr->type, ctx->getType("int"));
       }
     }
   } else {
@@ -230,7 +230,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (i < expr->items.size() - 1)
       inType = getIterableType(inType);
   }
-  unify(expr->type, (hasGenerator ? ctx->findInternal("void") : inType));
+  unify(expr->type, (hasGenerator ? ctx->getType("NoneType") : inType));
 }
 
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
@@ -261,6 +261,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       if (expr->typeParams[i]->isStatic()) {
         t = std::make_shared<StaticType>(expr->typeParams[i], ctx);
       } else {
+        if (expr->typeParams[i]->getNone())
+          transformType(expr->typeParams[i]);
         if (!expr->typeParams[i]->isType())
           error("expected type or static parameters");
         t = ctx->instantiate(expr->typeParams[i].get(), expr->typeParams[i]->getType());
@@ -308,7 +310,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     if (!resultExpr) {
       // Case 2: ... and if not, just call __getitem__.
       ExprPtr e = N<CallExpr>(N<DotExpr>(expr->expr, "__getitem__"), expr->index);
-      resultExpr = transform(e, false, allowVoidExpr);
+      resultExpr = transform(e, false);
     }
   } else {
     // Case 3: type is still unknown.
@@ -381,7 +383,7 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
     auto rc = realize(expr->rexpr->getType());
     if (!lc || !rc) {
       // We still do not know the exact types...
-      unify(expr->type, ctx->findInternal("bool"));
+      unify(expr->type, ctx->getType("bool"));
       return nullptr;
     } else if (!lc->getRecord() && !rc->getRecord()) {
       return transform(
@@ -414,7 +416,7 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   // Check if lt.__atomic_op__(Ptr[lt], rt) exists.
   if (isAtomic) {
     auto ptrlt =
-        ctx->instantiateGeneric(expr->lexpr.get(), ctx->findInternal("Ptr"), {lt});
+        ctx->instantiateGeneric(expr->lexpr.get(), ctx->getType("Ptr"), {lt});
     method =
         findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic), {ptrlt, rt});
     if (method) {

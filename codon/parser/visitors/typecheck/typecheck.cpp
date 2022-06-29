@@ -19,7 +19,7 @@ using namespace types;
 
 TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
                                    const std::shared_ptr<std::vector<StmtPtr>> &stmts)
-    : ctx(std::move(ctx)), allowVoidExpr(false) {
+    : ctx(std::move(ctx)) {
   prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }
 
@@ -54,21 +54,14 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess
 
 /**************************************************************************************/
 
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
-  return transform(expr, false);
-}
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr, false); }
 
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVoid,
-                                    bool disableActivation) {
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
   auto typ = expr->type;
   if (!expr->done) {
     TypecheckVisitor v(ctx, prependStmts);
-    v.allowVoidExpr = allowVoid;
-    auto oldActivation = ctx->allowActivation;
-    if (disableActivation)
-      ctx->allowActivation = false;
     v.setSrcInfo(expr->getSrcInfo());
     ctx->pushSrcInfo(expr->getSrcInfo());
     expr->accept(v);
@@ -79,20 +72,20 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowVo
     }
     seqassert(expr->type, "type not set for {}", expr->toString());
     unify(typ, expr->type);
-    if (disableActivation)
-      ctx->allowActivation = oldActivation;
     if (expr->done)
       ctx->changedNodes++;
   }
   if (auto rt = realize(typ))
     unify(typ, rt);
-  if (!expr->isType() && !allowVoid && expr->type && expr->type->is("void"))
-    error("expression with void type");
   return expr;
 }
 
-ExprPtr TypecheckVisitor::transformType(ExprPtr &expr, bool disableActivation) {
-  expr = transform(const_cast<ExprPtr &>(expr), true, false, disableActivation);
+ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
+  if (expr && expr->getNone()) {
+    expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
+    expr->markType();
+  }
+  expr = transform(expr, true);
   if (expr) {
     TypePtr t = nullptr;
     if (!expr->isType()) {
@@ -145,18 +138,13 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 
 /**************************************************************************************/
 
-void TypecheckVisitor::visit(StarExpr *) {
-  error("cannot use star-expression");
-}
+void TypecheckVisitor::visit(StarExpr *) { error("cannot use star-expression"); }
 
-void TypecheckVisitor::visit(KeywordStarExpr *) {
-  error("cannot use star-expression");
-}
+void TypecheckVisitor::visit(KeywordStarExpr *) { error("cannot use star-expression"); }
 
 void TypecheckVisitor::visit(EllipsisExpr *expr) {
   unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
 }
-
 
 void TypecheckVisitor::visit(StmtExpr *expr) {
   expr->done = true;
@@ -164,7 +152,7 @@ void TypecheckVisitor::visit(StmtExpr *expr) {
     s = transform(s);
     expr->done &= s->done;
   }
-  expr->expr = transform(expr->expr, false, allowVoidExpr);
+  expr->expr = transform(expr->expr);
   unify(expr->type, expr->expr->type);
   expr->done &= expr->expr->done;
 }
@@ -183,15 +171,12 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
   stmt->stmts = stmts;
 }
 
-
 void TypecheckVisitor::visit(ExprStmt *stmt) {
-  // Make sure to allow expressions with void type.
-  stmt->expr = transform(stmt->expr, false, true);
+  stmt->expr = transform(stmt->expr, false);
   stmt->done = stmt->expr->done;
 }
 
 /**************************************************************************************/
-
 
 void TypecheckVisitor::wrapOptionalIfNeeded(const TypePtr &targetType, ExprPtr &e) {
   if (!targetType)
@@ -221,7 +206,6 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
   for (auto &g : t->funcGenerics)
     ctx->add(TypecheckItem::Type, g.name, g.type);
 }
-
 
 std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
                                                   types::FuncType *fn) {
@@ -262,7 +246,7 @@ ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
                                             N<CallExpr>(N<IdExpr>(kwName)))),
                   N<IdExpr>(var));
   call->setAttr(ExprAttr::Partial);
-  call = transform(call, false, allowVoidExpr);
+  call = transform(call, false);
   seqassert(call->type->getPartial(), "expected partial type");
   return call;
 }
@@ -478,10 +462,7 @@ types::FuncTypePtr TypecheckVisitor::findDispatch(const std::string &fn) {
                      N<KeywordStarExpr>(N<IdExpr>("kwargs")));
   auto ast = N<FunctionStmt>(
       name, nullptr, std::vector<Param>{Param("*args"), Param("**kwargs")},
-      N<SuiteStmt>(N<IfStmt>(
-          N<CallExpr>(N<IdExpr>("isinstance"), root->clone(), N<IdExpr>("void")),
-          N<ExprStmt>(root->clone()), N<ReturnStmt>(root))),
-      Attr({"autogenerated"}));
+      N<SuiteStmt>(N<ReturnStmt>(root)), Attr({"autogenerated"}));
   ctx->cache->reverseIdentifierLookup[name] = ctx->cache->reverseIdentifierLookup[fn];
 
   auto baseType = getFuncTypeBase(2);

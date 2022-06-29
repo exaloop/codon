@@ -17,4 +17,4 @@ class Foo:
 
 def ha():
     c = C()
-    print(c.__class__)
+    print(c.__class__.__name__)

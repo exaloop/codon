@@ -12,7 +12,7 @@ class Generator:
         return self.__done__()
 
     def next(self: Generator[T]) -> T:
-        if isinstance(T, void):
+        if isinstance(T, None):
             pass
         else:
             return self.__promise__()[0]
@@ -34,10 +34,10 @@ class Generator:
         ret i8 %1
 
     @llvm
-    def __resume__(self) -> void:
+    def __resume__(self) -> None:
         declare void @llvm.coro.resume(i8*)
         call void @llvm.coro.resume(i8* %self)
-        ret void
+        ret {} {}
 
     def __repr__(self) -> str:
         return __internal__.raw_type_str(self.__raw__(), "generator")
@@ -49,10 +49,10 @@ class Generator:
         return p[0]
 
     @llvm
-    def destroy(self) -> void:
+    def destroy(self) -> None:
         declare void @llvm.coro.destroy(i8*)
         call void @llvm.coro.destroy(i8* %self)
-        ret void
+        ret {} {}
 
 
 generator = Generator

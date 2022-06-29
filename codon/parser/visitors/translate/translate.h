@@ -32,6 +32,7 @@ private:
   void defaultVisit(Stmt *expr) override;
 
 public:
+  void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
   void visit(IntExpr *) override;
   void visit(FloatExpr *) override;

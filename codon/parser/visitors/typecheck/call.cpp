@@ -68,7 +68,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   } else if (!callee->getFunc()) {
     // Case 3: callee is not a named function. Route it through a __call__ method.
     ExprPtr newCall = N<CallExpr>(N<DotExpr>(expr->expr, "__call__"), expr->args);
-    return transform(newCall, false, allowVoidExpr);
+    return transform(newCall, false);
   }
 
   // Handle named and default arguments
@@ -177,7 +177,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
                       N<IdExpr>(var));
     }
     call->setAttr(ExprAttr::Partial);
-    call = transform(call, false, allowVoidExpr);
+    call = transform(call, false);
     seqassert(call->type->getPartial(), "expected partial type");
     return call;
   } else {
@@ -203,7 +203,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     if (m.empty())
       error("no matching superf methods are available");
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
-    return {true, transform(e, false, true)};
+    return {true, transform(e)};
   } else if (val == "super:0") {
     auto e = transformSuper(expr);
     return {true, e};
@@ -212,7 +212,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     auto v = id ? ctx->find(id->value) : nullptr;
     if (v && v->kind == TypecheckItem::Var) {
       expr->args[0].value = transform(expr->args[0].value);
-      auto t = ctx->instantiateGeneric(expr, ctx->findInternal("Ptr"),
+      auto t = ctx->instantiateGeneric(expr, ctx->getType("Ptr"),
                                        {expr->args[0].value->type});
       unify(expr->type, t);
       expr->done = expr->args[0].value->done;
@@ -227,7 +227,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
       return {true, nullptr};
     auto sz = szt->evaluate().getInt();
     auto typ = fnt->funcParent->getClass()->generics[0].type;
-    auto t = ctx->instantiateGeneric(expr, ctx->findInternal("Array"), {typ});
+    auto t = ctx->instantiateGeneric(expr, ctx->getType("Array"), {typ});
     unify(expr->type, t);
     // Realize the Array[T] type of possible.
     if (auto rt = realize(expr->type)) {
@@ -239,13 +239,13 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     // Make sure not to activate new unbound here, as we just need to check type
     // equality.
     expr->staticValue.type = StaticValue::INT;
-    expr->type = unify(expr->type, ctx->findInternal("bool"));
-    expr->args[0].value = transform(expr->args[0].value, true, true);
+    expr->type = unify(expr->type, ctx->getType("bool"));
+    expr->args[0].value = transform(expr->args[0].value, true);
     auto typ = expr->args[0].value->type->getClass();
     if (!typ || !typ->canRealize()) {
       return {true, nullptr};
     } else {
-      expr->args[0].value = transform(expr->args[0].value, true, true); // to realize it
+      expr->args[0].value = transform(expr->args[0].value, true); // to realize it
       if (expr->args[1].value->isId("Tuple") || expr->args[1].value->isId("tuple")) {
         return {true, transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)))};
       } else if (expr->args[1].value->isId("ByVal")) {
@@ -316,6 +316,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
       return {true, nullptr};
     error("custom error: {}", szt->evaluate().getString());
   } else if (val == "type.__new__:0") {
+    expr->markType();
     expr->args[0].value = transform(expr->args[0].value);
     unify(expr->type, expr->args[0].value->getType());
     if (auto rt = realize(expr->type)) {
@@ -376,7 +377,7 @@ bool TypecheckVisitor::callTransformCallArgs(std::vector<CallExpr::Arg> &args,
       ai--;
     } else {
       // Case 3: Normal argument
-      args[ai].value = transform(args[ai].value, true, true);
+      args[ai].value = transform(args[ai].value, true);
       // Unbound inType might become a generator that will need to be extracted, so
       // don't unify it yet.
       if (inType && !inType->getUnbound() && args[ai].value->getEllipsis() &&

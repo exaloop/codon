@@ -15,7 +15,7 @@ using namespace types;
 
 void TypecheckVisitor::visit(YieldExpr *expr) {
   seqassert(!ctx->bases.empty(), "yield outside of a function");
-  auto typ = ctx->instantiateGeneric(expr, ctx->findInternal("Generator"),
+  auto typ = ctx->instantiateGeneric(expr, ctx->getType("Generator"),
                                      {ctx->addUnbound(expr, ctx->typecheckLevel)});
   unify(ctx->bases.back().returnType, typ);
   unify(expr->type, typ->getClass()->generics[0].type);
@@ -38,6 +38,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   } else {
     if (!ctx->blockLevel)
       ctx->returnEarly = true;
+    stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType")));
     stmt->done = true;
   }
 }
@@ -45,10 +46,10 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 void TypecheckVisitor::visit(YieldStmt *stmt) {
   if (stmt->expr)
     stmt->expr = transform(stmt->expr);
-  auto baseTyp = stmt->expr ? stmt->expr->getType() : ctx->findInternal("void");
+  auto baseTyp = stmt->expr ? stmt->expr->getType() : ctx->getType("NoneType");
   auto t = ctx->instantiateGeneric(stmt->expr ? stmt->expr.get()
                                               : N<IdExpr>("<yield>").get(),
-                                   ctx->findInternal("Generator"), {baseTyp});
+                                   ctx->getType("Generator"), {baseTyp});
   unify(ctx->bases.back().returnType, t);
   stmt->done = stmt->expr ? stmt->expr->done : true;
 }

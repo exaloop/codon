@@ -106,4 +106,39 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   stmt->done = true;
 }
 
+std::string TypecheckVisitor::generateTupleStub(int len, const std::string &name,
+                                                std::vector<std::string> names,
+                                                bool hasSuffix) {
+  static std::map<std::string, int> usedNames;
+  auto key = join(names, ";");
+  std::string suffix;
+  if (!names.empty()) {
+    if (!in(usedNames, key))
+      usedNames[key] = usedNames.size();
+    suffix = format("_{}", usedNames[key]);
+  } else {
+    for (int i = 1; i <= len; i++)
+      names.push_back(format("item{}", i));
+  }
+  auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
+  if (!ctx->find(typeName)) {
+    std::vector<Param> args;
+    for (int i = 1; i <= len; i++)
+      args.emplace_back(Param(names[i - 1], N<IdExpr>(format("T{}", i)), nullptr));
+    for (int i = 1; i <= len; i++)
+      args.emplace_back(Param(format("T{}", i), N<IdExpr>("type"), nullptr, true));
+    StmtPtr stmt = std::make_shared<ClassStmt>(
+        typeName, args, nullptr, std::vector<ExprPtr>{N<IdExpr>("tuple")});
+    stmt->setSrcInfo(ctx->cache->generateSrcInfo());
+
+    stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
+                                  FILE_GENERATED, 0);
+    stmt = TypecheckVisitor(ctx).transform(stmt);
+    prependStmts->push_back(stmt);
+  }
+  return typeName;
+}
+
+
+
 }

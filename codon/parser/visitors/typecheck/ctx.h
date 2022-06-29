@@ -26,6 +26,7 @@ struct TypecheckItem {
 
   TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(move(type)) {}
   bool isType() const { return kind == Type; }
+  bool isVar() const { return kind == Var; }
 };
 
 /**
@@ -34,7 +35,6 @@ struct TypecheckItem {
 struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
-  std::vector<SrcInfo> srcInfos;
 
   /// A realization base definition. Each function realization defines a new base scope.
   /// Used to properly realize enclosed functions and to prevent mess with mutually
@@ -56,15 +56,9 @@ struct TypeContext : public Context<TypecheckItem> {
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel;
-  /// Map of active unbound types. Each type points to its name that is reported in case
-  /// something goes wrong.
-  /// If type checking is successful, all of them should be  resolved.
-  // std::map<types::TypePtr, std::string> activeUnbounds;
   std::set<types::TypePtr> pendingDefaults;
   int changedNodes;
 
-  /// If set, no type will be activated. Useful for temporary instantiations.
-  bool allowActivation;
   /// The age of the currently parsed statement.
   int age;
   /// Number of nested realizations. Used to prevent infinite instantiations.
@@ -92,7 +86,8 @@ public:
   }
   std::shared_ptr<TypecheckItem> find(const std::string &name) const override;
   /// Find an internal type. Assumes that it exists.
-  types::TypePtr findInternal(const std::string &name) const;
+  std::shared_ptr<TypecheckItem> forceFind(const std::string &name) const;
+  types::TypePtr getType(const std::string &name) const;
   /// Find a type or a function instantiation in the base stack.
   std::pair<TypecheckItem::Kind, types::TypePtr>
   findInVisited(const std::string &name) const;
@@ -115,7 +110,7 @@ public:
   /// @param setActive If True, add it to activeUnbounds.
   /// @param isStatic True if this is a static integer unbound.
   std::shared_ptr<types::LinkType>
-  addUnbound(const Expr *expr, int level, bool setActive = true, char staticType = 0);
+  addUnbound(const Expr *expr, int level, bool setActive = true, char staticType = 0) const;
   /// Call `type->instantiate`.
   /// Prepare the generic instantiation table with the given generics parameter.
   /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
@@ -152,10 +147,6 @@ public:
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
                        ReorderDoneFn onDone, ReorderErrorFn onError,
                        const std::vector<char> &known = std::vector<char>());
-
-  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
-  void popSrcInfo() { srcInfos.pop_back(); }
-  SrcInfo getSrcInfo() const { return srcInfos.back(); }
 
 private:
   /// Pretty-print the current context state.

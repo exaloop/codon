@@ -77,7 +77,6 @@ public:
 
 public:
   /* Basic type expressions (basic.cpp) */
-  void visit(NoneExpr *) override;
   void visit(IntExpr *) override;
   ExprPtr transformInt(IntExpr *);
   void visit(FloatExpr *) override;
@@ -139,7 +138,7 @@ public:
   StmtPtr transformCDLLImport(const Expr *, const std::string &,
                               const std::vector<Param> &, const Expr *,
                               const std::string &);
-  StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, const Expr *,
+  StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, Expr *,
                                 const std::string &);
   StmtPtr transformNewImport(const ImportFile &);
 

@@ -4,16 +4,16 @@ import os
 
 from internal.dlopen import *
 
-Py_DecRef = Function[[cobj], void](cobj())
-Py_IncRef = Function[[cobj], void](cobj())
-Py_Initialize = Function[[], void](cobj())
+Py_DecRef = Function[[cobj], NoneType](cobj())
+Py_IncRef = Function[[cobj], NoneType](cobj())
+Py_Initialize = Function[[], NoneType](cobj())
 Py_None = cobj()
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
-PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], void](cobj())
+PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
 PyFloat_AsDouble = Function[[cobj], float](cobj())
 PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyImport_AddModule = Function[[cobj], cobj](cobj())
@@ -33,12 +33,12 @@ PyObject_IsTrue = Function[[cobj], int](cobj())
 PyObject_Length = Function[[cobj], int](cobj())
 PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyObject_Str = Function[[cobj], cobj](cobj())
-PyRun_SimpleString = Function[[cobj], void](cobj())
+PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
 PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
 PyTuple_New = Function[[int], cobj](cobj())
-PyTuple_SetItem = Function[[cobj, int, cobj], void](cobj())
+PyTuple_SetItem = Function[[cobj, int, cobj], NoneType](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
 PyUnicode_FromString = Function[[cobj], cobj](cobj())
@@ -323,6 +323,13 @@ def none():
 
 # Type conversions
 
+@extend
+class NoneType:
+    # def __to_py__(self) -> cobj:
+    #     return pyobj.exc_wrap(PyLong_FromLong(self))
+
+    def __from_py__(i: cobj) -> None:
+        return
 
 @extend
 class int:

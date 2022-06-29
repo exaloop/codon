@@ -4,11 +4,6 @@ class __internal__:
 
 @tuple
 @__internal__
-class void:
-    pass
-
-@tuple
-@__internal__
 class bool:
     pass
 

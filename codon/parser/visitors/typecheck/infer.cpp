@@ -26,20 +26,19 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     return typ;
   } else if (auto f = typ->getFunc()) {
     auto ret = realizeFunc(f.get());
-    if (ret)
+    if (ret) {
       realizeType(ret->getClass().get());
-    return ret;
+      return unify(ret, typ);
+    }
   } else if (auto c = typ->getClass()) {
     auto t = realizeType(c.get());
     if (auto p = typ->getPartial()) {
-      //   if (auto rt = realize(p->func))
-      //     unify(rt, p->func);
-      return std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
+      t = std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
     }
-    return t;
-  } else {
-    return nullptr;
+    if (t)
+      return unify(t, typ);
   }
+  return nullptr;
 }
 
 types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
@@ -68,7 +67,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
           return nullptr;
       realizedName = realizedType->realizedTypeName();
 
-      LOG_REALIZE("[realize] ty {} -> {}", type->name, realizedName);
+      LOG_TYPECHECK("[realize] ty {} -> {}", realizedType->name, realizedName);
       // Realizations are stored in the top-most base.
       ctx->bases[0].visitedAsts[realizedName] = {TypecheckItem::Type, realizedType};
       auto r = ctx->cache->classes[realizedType->name].realizations[realizedName] =
@@ -112,6 +111,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     e.trackRealize(type->toString(), getSrcInfo());
     throw;
   }
+  return nullptr;
 }
 
 types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
@@ -227,13 +227,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
             lla.push_back(format("{{}} %{}", i));
           }
           items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-          if (type->getRetType()->getClass()->name == "void") {
-            ll.push_back(format("call {{}} %self({})", combine2(lla)));
-            ll.push_back(format("ret {{}}"));
-          } else {
-            ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
-            ll.push_back(format("ret {{}} %{}", as.size()));
-          }
+          ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
+          ll.push_back(format("ret {{}} %{}", as.size()));
           items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
           suite = N<SuiteStmt>(items);
         }
@@ -246,15 +241,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           for (int i = 1; i < s->stmts.size(); i++) {
             seqassert(s->stmts[i]->getExpr(), "invalid LLVM definition {}: {}",
                       type->toString(), s->stmts[i]->toString());
-            auto e = s->stmts[i]->getExpr()->expr;
-            // if (!e->isType() && !e->isStatic())
-            //   error(e, "not a type or static expression");
           }
         }
         // Return type was not specified and the function returned nothing.
         if (!ast->ret && type->getRetType()->getUnbound()) {
           auto tt = type->getRetType();
-          unify(tt, ctx->findInternal("void"));
+          unify(tt, ctx->getType("NoneType"));
         }
       }
       // Realize the return type.
@@ -262,9 +254,18 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
         auto tt = type->getRetType();
         unify(tt, t);
       }
+      if (type->getRetType()->is("NoneType")) {
+        // auto id = N<IdExpr>("NoneType.__new__:0");
+        // id->setType(ctx->cache->functions["NoneType.__new__:0"].realizations["NoneType.__new__:0"]->type);
+        // id->setDone();
+        // auto call = N<CallExpr>(id);
+        // call->setType(ctx->cache->classes["NoneType"].realizations["NoneType"]->type);
+        // call->setDone();
+        // if (auto s = realized->getSuite())
+        //   s->stmts.push_back(N<ReturnStmt>(call));
+      }
       LOG_REALIZE("[realize] done with {} / {} =>{}", type->realizedName(), oldKey,
                   time);
-      // trx.log();
 
       // Create and store IR node and a realized AST to be used
       // during the code generation.
@@ -460,9 +461,7 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   auto name = t->name;
   auto *module = ctx->cache->module;
 
-  if (name == "void") {
-    handle = module->getVoidType();
-  } else if (name == "bool") {
+  if (name == "bool") {
     handle = module->getBoolType();
   } else if (name == "byte") {
     handle = module->getByteType();

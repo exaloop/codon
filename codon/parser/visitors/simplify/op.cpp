@@ -16,16 +16,12 @@ void SimplifyVisitor::visit(UnaryExpr *expr) { transform(expr->expr); }
 /// Transform binary expressions with a few special considerations.
 /// The real stuff happens during the type checking.
 void SimplifyVisitor::visit(BinaryExpr *expr) {
-  // Keep None in `is None` for typechecker.
   // Special case: `is` can take type as well
-  if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
-    transform(expr->lexpr, startswith(expr->op, "is"));
-
+  transform(expr->lexpr, startswith(expr->op, "is"));
   auto tmp = ctx->isConditionalExpr;
   // The second operand of the and/or expression is conditional
   ctx->isConditionalExpr = expr->op == "&&" || expr->op == "||";
-  if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
-    transform(expr->rexpr, startswith(expr->op, "is"));
+  transform(expr->rexpr, startswith(expr->op, "is"));
   ctx->isConditionalExpr = tmp;
 }
 

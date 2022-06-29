@@ -37,9 +37,9 @@ i = 1
 f = 1.1
 
 @llvm
-def xchg(d: Ptr[int], b: int) -> void:
+def xchg(d: Ptr[int], b: int) -> None:
     %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
-    ret void
+    ret {} {}
 @llvm
 def aadd(d: Ptr[int], b: int) -> int:
     %tmp = atomicrmw add i64* %d, i64 %b seq_cst
@@ -198,11 +198,10 @@ for i in 1:
     pass
 #! cannot find '__iter__' in int
 
-#%% for_void_error,barebones
+#%% for_void,barebones
 def foo(): yield
 for i in foo():
-    pass
-#! expression with void type
+    print i.__class__.__name__  #: NoneType
 
 #%% if,barebones
 for a, b in [(1, 2), (3, 3), (5, 4)]:
@@ -255,7 +254,7 @@ except MyError:
     print "my"
 except OSError as o:
     print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
-    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 251
+    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 250
 finally:
     print "whoa"  #: whoa
 

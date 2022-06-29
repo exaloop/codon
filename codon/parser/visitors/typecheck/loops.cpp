@@ -27,7 +27,7 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 
 void TypecheckVisitor::visit(ForStmt *stmt) {
   if (stmt->decorator)
-    stmt->decorator = transform(stmt->decorator, false, true);
+    stmt->decorator = transform(stmt->decorator, false);
 
   stmt->iter = transform(stmt->iter);
   // Extract the type of the for variable.
@@ -97,8 +97,6 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
         ctx->find(varName);
       }
       unify(varType, iterType->generics[0].type);
-      if (varType->is("void"))
-        error("expression with void type");
     }
 
     unify(stmt->var->type, varType);

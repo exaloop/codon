@@ -15,9 +15,8 @@ namespace codon {
 namespace ast {
 
 TypeContext::TypeContext(Cache *cache)
-    : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0),
-      allowActivation(true), age(0), realizationDepth(0), blockLevel(0),
-      returnEarly(false) {
+    : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0), age(0),
+      realizationDepth(0), blockLevel(0), returnEarly(false) {
   stack.push_front(std::vector<std::string>());
   bases.push_back({"", nullptr, nullptr});
   changedNodes = 0;
@@ -35,16 +34,22 @@ std::shared_ptr<TypecheckItem> TypeContext::find(const std::string &name) const 
   if (auto t = Context<TypecheckItem>::find(name))
     return t;
   auto tt = findInVisited(name);
-  if (tt.second) {
+  if (tt.second)
     return std::make_shared<TypecheckItem>(tt.first, tt.second);
-  }
+  if (in(cache->globals, name))
+    return std::make_shared<TypecheckItem>(TypecheckItem::Var,
+                                           addUnbound(nullptr, typecheckLevel));
   return nullptr;
 }
 
-types::TypePtr TypeContext::findInternal(const std::string &name) const {
+std::shared_ptr<TypecheckItem> TypeContext::forceFind(const std::string &name) const {
   auto t = find(name);
   seqassert(t, "cannot find '{}'", name);
-  return t->type;
+  return t;
+}
+
+types::TypePtr TypeContext::getType(const std::string &name) const {
+  return forceFind(name)->type;
 }
 
 std::pair<TypecheckItem::Kind, types::TypePtr>
@@ -77,16 +82,14 @@ std::string TypeContext::getBase() const {
 }
 
 std::shared_ptr<types::LinkType>
-TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) {
+TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) const {
   auto t = std::make_shared<types::LinkType>(
       types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
   // Keep it for debugging purposes:
   // if (t->id == 7815) LOG("debug");
-  t->setSrcInfo(expr->getSrcInfo());
+  t->setSrcInfo(expr ? expr->getSrcInfo() : getSrcInfo());
   LOG_TYPECHECK("[ub] new {}: {} ({})", t->debugString(true), expr->toString(),
                 setActive);
-  // if (setActive && allowActivation)
-    // activeUnbounds[t] = cache->getContent(expr->getSrcInfo());
   return t;
 }
 
@@ -179,9 +182,11 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
   if (member == "__elemsize__")
-    return findInternal("int");
+    return getType("int");
   if (member == "__atomic__")
-    return findInternal("bool");
+    return getType("bool");
+  if (member == "__name__")
+    return getType("str");
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     for (auto &mm : m->second.fields)
@@ -280,7 +285,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->args.size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (func->ast->args[i].status == Param::Normal  &&
+      if (func->ast->args[i].status == Param::Normal &&
           (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
       else if (!partial && func->ast->args[i].status == Param::Normal)

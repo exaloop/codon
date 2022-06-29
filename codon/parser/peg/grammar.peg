@@ -179,7 +179,7 @@ from_id <-
     return tuple(
       ac_expr(V0),
       ac<SemVals>(V1).transform<Param>(),
-      VS.size() > 2 ? ac_expr(V2) : ast<IdExpr>(LOC, "void")
+      VS.size() > 2 ? ac_expr(V2) : ast<IdExpr>(LOC, "NoneType")
     );
   }
   / dot_name { return tuple(ac_expr(V0), vector<Param>{}, (ExprPtr)nullptr); }

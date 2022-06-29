@@ -13,11 +13,6 @@ using fmt::format;
 
 namespace codon::ast {
 
-/// Transform `None` to `Optional()`
-void SimplifyVisitor::visit(NoneExpr *expr) {
-  resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL)));
-}
-
 /// See @c transformInt
 void SimplifyVisitor::visit(IntExpr *expr) { resultExpr = transformInt(expr); }
 

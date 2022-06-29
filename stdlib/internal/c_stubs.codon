@@ -388,7 +388,7 @@ from C import fwrite(cobj, int, int, cobj) -> int
 from C import ftell(cobj) -> int
 from C import fseek(cobj, int, i32) -> i32
 from C import fgets(cobj, int, cobj) -> cobj
-from C import fflush(cobj) -> void
+from C import fflush(cobj)
 from C import getline(Ptr[cobj], Ptr[int], cobj) -> int
 
 # <stdlib.h>

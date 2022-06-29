@@ -115,14 +115,9 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
     auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
-        *e = std::make_shared<ast::IfStmt>(
-            std::make_shared<ast::CallExpr>(std::make_shared<ast::IdExpr>("isinstance"),
-                                            ex->expr->clone(),
-                                            std::make_shared<ast::IdExpr>("void")),
-            ex->clone(),
-            std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
-                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
-                std::make_shared<ast::StringExpr>(mode))));
+        *e = std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
+            std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
+            std::make_shared<ast::StringExpr>(mode)));
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();

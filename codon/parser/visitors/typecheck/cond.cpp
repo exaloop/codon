@@ -23,17 +23,17 @@ void TypecheckVisitor::visit(IfExpr *expr) {
       else
         isTrue = expr->cond->staticValue.getInt();
       resultExpr =
-          transform(isTrue ? expr->ifexpr : expr->elsexpr, false, allowVoidExpr);
+          transform(isTrue ? expr->ifexpr : expr->elsexpr, false);
       unify(expr->type, resultExpr->getType());
     } else {
       auto i = clone(expr->ifexpr), e = clone(expr->elsexpr);
-      i = transform(i, false, allowVoidExpr, /*disableActivation*/ true);
-      e = transform(e, false, allowVoidExpr, /*disableActivation*/ true);
+      i = transform(i, false);
+      e = transform(e, false);
       unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
       if (i->isStatic() && e->isStatic()) {
         expr->staticValue.type = i->staticValue.type;
         unify(expr->type,
-              ctx->findInternal(expr->staticValue.type == StaticValue::INT ? "int"
+              ctx->getType(expr->staticValue.type == StaticValue::INT ? "int"
                                                                            : "str"));
       }
       expr->done = false; // do not typecheck this suite yet
@@ -41,8 +41,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     return;
   }
 
-  expr->ifexpr = transform(expr->ifexpr, false, allowVoidExpr);
-  expr->elsexpr = transform(expr->elsexpr, false, allowVoidExpr);
+  expr->ifexpr = transform(expr->ifexpr, false);
+  expr->elsexpr = transform(expr->elsexpr, false);
   if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
   wrapOptionalIfNeeded(expr->ifexpr->getType(), expr->elsexpr);

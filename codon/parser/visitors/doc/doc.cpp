@@ -97,7 +97,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->modules[""]->setFilename(stdlib->path);
   shared->j = std::make_shared<json>();
-  for (auto &s : std::vector<std::string>{"void", "byte", "float", "bool", "int", "str",
+  for (auto &s : std::vector<std::string>{"byte", "float", "bool", "int", "str",
                                           "pyobj", "Ptr", "Function", "Generator",
                                           "Tuple", "Int", "UInt", TYPE_OPTIONAL,
                                           "Callable", "NoneType", "__internal__"}) {

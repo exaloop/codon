@@ -133,6 +133,9 @@ public:
   bool hasAttr(int attr) const;
   void setAttr(int attr);
 
+  bool isDone() const { return done; }
+  void setDone() { done = true; }
+
 protected:
   /// Add a type to S-expression string.
   std::string wrapType(const std::string &sexpr) const;

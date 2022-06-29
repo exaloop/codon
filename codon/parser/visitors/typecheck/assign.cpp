@@ -136,7 +136,7 @@ void TypecheckVisitor::visitUpdate(AssignStmt *stmt) {
       (c->expr->isId("min") || c->expr->isId("max")) && c->args.size() == 2 &&
       c->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
     auto ptrTyp =
-        ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
+        ctx->instantiateGeneric(stmt->lhs.get(), ctx->getType("Ptr"), {lhsClass});
     c->args[1].value = transform(c->args[1].value);
     auto rhsTyp = c->args[1].value->getType()->getClass();
     if (auto method = findBestMethod(stmt->lhs.get(),
@@ -155,7 +155,7 @@ void TypecheckVisitor::visitUpdate(AssignStmt *stmt) {
   // Case 3: check for an atomic assignment.
   if (stmt->isAtomicUpdate() && lhsClass && rhsClass) {
     auto ptrType =
-        ctx->instantiateGeneric(stmt->lhs.get(), ctx->findInternal("Ptr"), {lhsClass});
+        ctx->instantiateGeneric(stmt->lhs.get(), ctx->getType("Ptr"), {lhsClass});
     if (auto m =
             findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
       resultStmt = transform(N<ExprStmt>(

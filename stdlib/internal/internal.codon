@@ -256,7 +256,7 @@ class __internal__:
     #     for _, i in self.__static_list__:
     #         seed = seed ^ ((i.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
     #     return seed
-    # def __pickle__(self, dest: Ptr[byte]) -> void:
+    # def __pickle__(self, dest: Ptr[byte]) -> None:
     #     for _, i in self.__static_list__:
     #         i.__pickle__(dest)
     # # __unpickle

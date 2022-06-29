@@ -421,7 +421,7 @@ from a import *
 print zoo, _zoo, __name__  #: 5 1 __main__
 
 f = Foo(Ptr[B]())
-print f.__class__, f.t.__class__  #: Foo Ptr[B]
+print f.__class__.__name__, f.t.__class__.__name__  #: Foo Ptr[B]
 
 a.ha()  #: B
 
@@ -789,10 +789,10 @@ print 0 in sponge #: False
 @tuple
 class Foo:
     pass
-print Foo().__getitem__(1)
-#! expression with void type
-#! while realizing __internal__.tuple_getitem
-#! while realizing Foo.__getitem__
+try:
+    print Foo().__getitem__(1)
+except IndexError:
+    print 'error'  #: error
 
 #%% magic_empty_tuple,barebones
 @tuple
@@ -859,7 +859,7 @@ from python import re.split(str, str) -> List[str] as rs
 print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
 #%% python_import_void
-from python import os.system(str) -> void
+from python import os.system(str) -> None
 system("echo 'hello!'")  #: hello!
 
 #%% python_pydef
@@ -931,7 +931,7 @@ class Foo:
 class Bar[T]:
     y: T
     def bar(self):
-        return f'bar {self.y}/{self.y.__class__}'
+        return f'bar {self.y}/{self.y.__class__.__name__}'
 class FooBarBaz[T](Foo, Bar[T]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
@@ -1003,10 +1003,10 @@ class Foo:
         self.y = 1, x
 
 f = Foo(1)
-print(f.x, f.y, f.__class__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
+print(f.x, f.y, f.__class__.__name__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
 
 f: Foo = Foo('s')
-print(f.x, f.y, f.__class__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
+print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
 
 @deduce
 class Bar:
@@ -1014,5 +1014,5 @@ class Bar:
         self.y = Foo(y)
 
 b = Bar(3.1)
-print(b.y.x, b.__class__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
+print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
 

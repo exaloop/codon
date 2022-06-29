@@ -67,6 +67,9 @@ public:
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
   virtual Stmt *firstInBlock() { return this; }
+
+  bool isDone() const { return done; }
+  void setDone() { done = true; }
 };
 using StmtPtr = std::shared_ptr<Stmt>;
 

@@ -29,7 +29,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();
     auto irType = cache->module->unsafeGetFuncType(
-        fnName, cache->classes["void"].realizations["void"]->ir, {}, false);
+        fnName, cache->classes["NoneType"].realizations["NoneType"]->ir, {}, false);
     main->realize(irType, {});
     main->setJIT();
   } else {
@@ -141,6 +141,14 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
 
 void TranslateVisitor::defaultVisit(Expr *n) {
   seqassert(false, "invalid node {}", n->toString());
+}
+
+void TranslateVisitor::visit(NoneExpr *expr) {
+  auto f = expr->type->realizedName() + ":Optional.__new__:0";
+  auto val = ctx->find(f);
+  seqassert(val, "cannot find '{}'", f);
+  result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
+                               std::vector<ir::Value *>{});
 }
 
 void TranslateVisitor::visit(BoolExpr *expr) {

@@ -29,10 +29,6 @@ class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   /// Statements to prepend before the current statement.
   std::shared_ptr<std::vector<StmtPtr>> prependStmts;
 
-  /// Set if a void expression is allowed. If unset and an expression is assigned a void type, a compiler error will be generated.
-  /// TODO: get rid of it
-  bool allowVoidExpr;
-
   /// Each new expression is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
   ExprPtr resultExpr;
@@ -59,9 +55,12 @@ public:
     auto s = stmt;
     return transform(s);
   }
-  ExprPtr transform(ExprPtr &e, bool allowTypes, bool allowVoid = false,
-                    bool disableActivation = false);
-  ExprPtr transformType(ExprPtr &expr, bool disableActivation = false);
+  ExprPtr transform(ExprPtr &e, bool allowTypes);
+  ExprPtr transformType(ExprPtr &expr);
+  ExprPtr transformType(const ExprPtr &expr) {
+    auto e = expr;
+    return transformType(e);
+  }
   types::TypePtr realize(types::TypePtr typ);
 
 private:
@@ -70,39 +69,23 @@ private:
 
 public:
   /* Basic type expressions (basic.cpp) */
-  /// Set type to bool.
+  void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
-  /// Set type to int.
   void visit(IntExpr *) override;
-  /// Set type to float.
   void visit(FloatExpr *) override;
-  /// Set type to str.
   void visit(StringExpr *) override;
 
   /* Identifier access expressions (access.cpp) */
-  /// Get the type from dictionary. If static variable (e.g. N), evaluate it and
-  /// transform the evaluated number to IntExpr.
-  /// Correct the identifier with a realized identifier (e.g. replace Id("Ptr") with
-  /// Id("Ptr[byte]")).
-  /// Also generates stubs for Tuple.N, Callable.N and Function.N.
   void visit(IdExpr *) override;
   /// See transformDot() below.
   void visit(DotExpr *) override;
-  /// Transforms a DotExpr expr.member to:
-  ///   string(realized type of expr) if member is __class__.
-  ///   unwrap(expr).member if expr is of type Optional,
-  ///   expr._getattr("member") if expr is of type pyobj,
-  ///   DotExpr(expr, member) if a member is a class field,
-  ///   IdExpr(method_name) if expr.member is a class method, and
-  ///   member(expr, ...) partial call if expr.member is an object method.
-  /// If args are set, this method will use it to pick the best overloaded method and
-  /// return its IdExpr without making the call partial (the rest will be handled by
-  /// CallExpr).
-  /// If there are multiple valid overloaded methods, pick the first one
-  ///   (TODO: improve this).
-  /// Return nullptr if no transformation was made.
   ExprPtr transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args = nullptr);
   types::FuncTypePtr findDispatch(const std::string &fn);
+  types::FuncTypePtr findDispatch(const std::string &type, const std::string &member) {
+    auto m = ctx->cache->classes.find(type);
+    auto t = m->second.methods.find(member);
+    return findDispatch(t->second);
+  }
 
   /* Collection and comprehension expressions (collections.cpp) */
   /// Transform a tuple (a1, ..., aN) to:
@@ -340,6 +323,7 @@ public:
   /// Return nullptr if no methods were found.
   types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
                                     const std::vector<types::TypePtr> &args);
+
 private:
   types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
                                     const std::vector<CallExpr::Arg> &args);
@@ -353,9 +337,17 @@ private:
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
                 const types::FuncTypePtr &callee, bool undoOnSuccess = false);
 
-private:
+public:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
                        bool undoOnSuccess = false);
+
+  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
+                                  bool undoOnSuccess = false) {
+    auto x = a;
+    return unify(x, b, undoOnSuccess);
+  }
+
+private:
   types::TypePtr realizeType(types::ClassType *typ);
   types::TypePtr realizeFunc(types::FuncType *typ);
   std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
@@ -363,6 +355,21 @@ private:
   codon::ir::types::Type *getLLVMType(const types::ClassType *t);
 
   // friend struct Cache;
+
+  bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
+
+  std::string printArguments(const std::vector<types::TypePtr> &args) {
+    std::vector<std::string> nice;
+    for (auto &t : args)
+      nice.emplace_back(fmt::format("{}", t->toString()));
+    return combine2(nice, ", ");
+  }
+  std::string printArguments(const std::vector<CallExpr::Arg> &args) {
+    std::vector<std::string> nice;
+    for (auto &t : args)
+      nice.emplace_back(fmt::format("{} = {}", t.name, t.value->type->toString()));
+    return combine2(nice, ", ");
+  }
 };
 
 } // namespace ast

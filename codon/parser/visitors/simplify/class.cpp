@@ -389,7 +389,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
   } else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
     //            self.aI = aI ...
-    ret = I("void");
+    ret = I("NoneType");
     fargs.emplace_back(Param{"self", typExpr->clone()});
     for (auto &a : args) {
       stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
@@ -410,7 +410,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     //         (error during a realizeFunc() method if T is a heterogeneous tuple)
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"index", I("int")});
-    ret = !args.empty() ? clone(args[0].type) : I("void");
+    ret = !args.empty() ? clone(args[0].type) : I("NoneType");
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_getitem"), I("self"),
                     I("index"), typExpr->clone(), ret->clone())));
@@ -553,7 +553,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     //   self.arg1.__pickle__(dest) ...
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"dest", N<IndexExpr>(I("Ptr"), I("byte"))});
-    ret = I("void");
+    ret = I("NoneType");
     for (auto &a : args)
       stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(N<DotExpr>(I("self"), a.name), "__pickle__"), I("dest"))));
