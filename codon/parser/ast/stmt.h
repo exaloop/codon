@@ -421,8 +421,9 @@ struct Attr {
   const static std::string Extend;
   const static std::string Tuple;
   // Standard library attributes
-  const static std::string Test; //<-X
-  const static std::string Overload; //<-X
+  const static std::string Test;
+  const static std::string Overload;
+  const static std::string Export;
   // Function module
   std::string module;
   // Parent class (set for methods only)

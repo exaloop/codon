@@ -285,6 +285,7 @@ class __internal__:
 
 
 @dataclass(init=True)
+@tuple
 class Import:
     name: str
     file: str

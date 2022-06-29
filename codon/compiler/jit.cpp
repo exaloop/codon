@@ -143,6 +143,13 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
 
     return run(func);
   } catch (const exc::ParserException &e) {
+    for (auto &f : cache->functions)
+      for (auto &r : f.second.realizations)
+        if (!(in(bCache.functions, f.first) &&
+              in(bCache.functions[f.first].realizations, r.first)) &&
+            r.second->ir) {
+          cache->module->remove(r.second->ir);
+        }
     *cache = bCache;
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
     *(cache->typeCtx) = bType;

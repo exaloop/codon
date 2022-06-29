@@ -57,8 +57,10 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       realizedType = it->second->type->getClass();
     } else {
       realizedType = type->getClass();
-      if (type->getFunc()) { // make sure to realize function stub only and cache fn stub
-        realizedType = std::make_shared<RecordType>(realizedType, type->getFunc()->args);
+      if (type->getFunc()) { // make sure to realize function stub only and cache fn
+                             // stub
+        realizedType =
+            std::make_shared<RecordType>(realizedType, type->getFunc()->args);
       }
 
       // Realize generics
@@ -378,7 +380,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
       for (auto &f : ctx->cache->functions) {
         auto &attr = f.second.ast->attributes;
         if (f.second.type && f.second.realizations.empty() &&
-            (attr.has(Attr::ForceRealize) ||
+            (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           auto e = std::make_shared<IdExpr>(f.second.type->ast->name);

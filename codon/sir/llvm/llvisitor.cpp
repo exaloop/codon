@@ -9,13 +9,21 @@
 
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
+#include "codon/parser/common.h"
 #include "codon/runtime/lib.h"
 #include "codon/sir/dsl/codegen.h"
 #include "codon/sir/llvm/optimize.h"
+#include "codon/sir/util/irtools.h"
 #include "codon/util/common.h"
 
 namespace codon {
 namespace ir {
+namespace {
+const std::string EXPORT_ATTR = "std.internal.attributes.export";
+const std::string INLINE_ATTR = "std.internal.attributes.inline";
+const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
+} // namespace
+
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
   std::string filename;
   std::string directory;
@@ -28,6 +36,14 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
     directory = ".";
   }
   return builder->createFile(filename, directory);
+}
+
+std::string LLVMVisitor::getNameForFunction(const Func *x) {
+  if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
+    return x->getUnmangledName();
+  } else {
+    return x->referenceString();
+  }
 }
 
 LLVMVisitor::LLVMVisitor()
@@ -351,6 +367,7 @@ void executeCommand(const std::vector<std::string> &args) {
   for (auto &arg : args) {
     cArgs.push_back(arg.c_str());
   }
+  LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
   if (fork() == 0) {
@@ -368,42 +385,104 @@ void executeCommand(const std::vector<std::string> &args) {
     }
   }
 }
-
-void addEnvVarPathsToLinkerArgs(std::vector<std::string> &args,
-                                const std::string &var) {
-  if (const char *path = getenv(var.c_str())) {
-    llvm::StringRef pathStr(path);
-    llvm::SmallVector<llvm::StringRef, 16> split;
-    pathStr.split(split, ":");
-
-    for (const auto &subPath : split) {
-      args.push_back(("-L" + subPath).str());
-    }
-  }
-}
 } // namespace
 
+void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
+  const std::string llvmCtor = "llvm.global_ctors";
+  auto *main = M->getFunction("main");
+  if (M->getNamedValue(llvmCtor) || !main)
+    return;
+
+  auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
+  auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
+                                            B->getInt8PtrTy());
+  auto *ctorArrayTy = llvm::ArrayType::get(ctorEntryTy, 1);
+
+  auto *ctor = cast<llvm::Function>(
+      M->getOrInsertFunction(".main.ctor", ctorFuncTy).getCallee());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
+  B->SetInsertPoint(entry);
+  B->CreateCall({main->getFunctionType(), main},
+                {B->getInt32(0),
+                 llvm::ConstantPointerNull::get(B->getInt8PtrTy()->getPointerTo())});
+  B->CreateRetVoid();
+
+  const int priority = 65535; // default
+  auto *ctorEntry = llvm::ConstantStruct::get(
+      ctorEntryTy,
+      {B->getInt32(priority), ctor, llvm::ConstantPointerNull::get(B->getInt8PtrTy())});
+  new llvm::GlobalVariable(*M, ctorArrayTy,
+                           /*isConstant=*/true, llvm::GlobalValue::AppendingLinkage,
+                           llvm::ConstantArray::get(ctorArrayTy, {ctorEntry}),
+                           llvmCtor);
+}
+
 void LLVMVisitor::writeToExecutable(const std::string &filename,
-                                    const std::vector<std::string> &libs) {
+                                    const std::string &argv0, bool library,
+                                    const std::vector<std::string> &libs,
+                                    const std::string &lflags) {
+  if (library)
+    setupGlobalCtorForSharedLibrary();
+
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile);
 
-  std::vector<std::string> command = {"clang"};
-  addEnvVarPathsToLinkerArgs(command, "LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "LD_LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "DYLD_LIBRARY_PATH");
-  addEnvVarPathsToLinkerArgs(command, "CODON_LIBRARY_PATH");
+  const std::string base = ast::executable_path(argv0.c_str());
+  auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
+
+  std::vector<std::string> relatives = {"../lib", "../lib/codon"};
+  std::vector<std::string> rpaths;
+  for (const auto &rel : relatives) {
+    auto newPath = path;
+    llvm::sys::path::append(newPath, rel);
+    llvm::sys::path::remove_dots(newPath, /*remove_dot_dot=*/true);
+    if (llvm::sys::fs::exists(newPath)) {
+      rpaths.push_back(std::string(newPath));
+    }
+  }
+
+  if (rpaths.empty()) {
+    rpaths.push_back(std::string(path));
+  }
+
+  std::vector<std::string> command = {"gcc"};
+  // Avoid "argument unused during compilation" warning
+  command.push_back("-Wno-unused-command-line-argument");
+  // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
+  // object" complaints by gcc when it is built with --enable-default-pie
+  command.push_back("-no-pie");
+  // MUST go before -llib to compile on Linux
+  command.push_back(objFile);
+
+  if (library)
+    command.push_back("-shared");
+
+  for (const auto &rpath : rpaths) {
+    command.push_back("-L" + rpath);
+    command.push_back("-Wl,-rpath," + rpath);
+  }
+
   for (const auto &lib : libs) {
     command.push_back("-l" + lib);
   }
-  std::vector<std::string> extraArgs = {"-lcodonrt", "-lomp", "-lpthread", "-ldl",
-                                        "-lz",       "-lm",   "-lc",       "-o",
-                                        filename,    objFile};
+
+  std::vector<std::string> extraArgs = {
+      "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
+
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
   }
 
+  llvm::SmallVector<llvm::StringRef> userFlags(16);
+  llvm::StringRef(lflags).split(userFlags, " ", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  for (const auto &uflag : userFlags) {
+    if (!uflag.empty())
+      command.push_back(uflag.str());
+  }
+
   executeCommand(command);
+  llvm::sys::fs::remove(objFile);
 
 #if __APPLE__
   if (db.debug) {
@@ -412,8 +491,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 #endif
 }
 
-void LLVMVisitor::compile(const std::string &filename,
-                          const std::vector<std::string> &libs) {
+void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
+                          const std::vector<std::string> &libs,
+                          const std::string &lflags) {
   llvm::StringRef f(filename);
   if (f.endswith(".ll")) {
     writeToLLFile(filename);
@@ -421,8 +501,10 @@ void LLVMVisitor::compile(const std::string &filename,
     writeToBitcodeFile(filename);
   } else if (f.endswith(".o") || f.endswith(".obj")) {
     writeToObjectFile(filename);
+  } else if (f.endswith(".so") || f.endswith(".dylib")) {
+    writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
-    writeToExecutable(filename, libs);
+    writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
   }
 }
 
@@ -960,9 +1042,8 @@ std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
   }
 
   // build remaining code
-  buf << x->getLLVMDeclarations() << "\n"
-      << signature << " {{\n"
-      << x->getLLVMBody() << "\n}}";
+  auto body = x->getLLVMBody();
+  buf << x->getLLVMDeclarations() << "\n" << signature << " {{\n" << body << "\n}}";
   return buf.str();
 }
 
@@ -1002,6 +1083,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     std::string bufStr;
     llvm::raw_string_ostream buf(bufStr);
     err.print("LLVM", buf);
+    // LOG("-> ERR {}", x->referenceString());
+    // LOG("       {}", code);
     compilationError(buf.str());
   }
   sub->setDataLayout(M->getDataLayout());
@@ -1035,16 +1118,15 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   setDebugInfoForNode(x);
 
   auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
-  if (x->isJIT() ||
-      (fnAttributes && fnAttributes->has("std.internal.attributes.export"))) {
+  if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
     func->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
-  if (fnAttributes && fnAttributes->has("std.internal.attributes.inline")) {
+  if (fnAttributes && fnAttributes->has(INLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
   }
-  if (fnAttributes && fnAttributes->has("std.internal.attributes.noinline")) {
+  if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
   }
   func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));

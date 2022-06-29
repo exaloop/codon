@@ -6,6 +6,7 @@
 
 #include "codon/parser/cache.h"
 #include "codon/sir/module.h"
+#include "codon/sir/util/irtools.h"
 #include "codon/sir/util/iterators.h"
 #include "codon/sir/util/visitor.h"
 #include "codon/sir/value.h"
@@ -120,28 +121,14 @@ const char RefType::NodeId = 0;
 
 Value *RefType::doConstruct(std::vector<Value *> args) {
   auto *module = getModule();
-
-  auto *series = module->Nr<SeriesFlow>();
-  auto *newFn = module->getOrRealizeMethod(this, Module::NEW_MAGIC_NAME, {});
-  if (!newFn)
+  auto *argsTuple = util::makeTuple(args, module);
+  auto *constructFn = module->getOrRealizeFunc("construct_ref", {argsTuple->getType()},
+                                               {this}, "std.internal.gc");
+  if (!constructFn)
     return nullptr;
 
-  auto *newValue = module->Nr<CallInstr>(module->Nr<VarValue>(newFn));
-  series->push_back(newValue);
-
-  std::vector<Type *> argTypes = {newValue->getType()};
-  std::vector<Value *> newArgs = {newValue};
-  for (auto *a : args) {
-    argTypes.push_back(a->getType());
-    newArgs.push_back(a);
-  }
-
-  auto *initFn = module->getOrRealizeMethod(this, Module::INIT_MAGIC_NAME, argTypes);
-  if (!initFn)
-    return nullptr;
-
-  return module->Nr<FlowInstr>(
-      series, module->Nr<CallInstr>(module->Nr<VarValue>(initFn), newArgs));
+  std::vector<Value *> callArgs = {argsTuple};
+  return module->Nr<CallInstr>(module->Nr<VarValue>(constructFn), callArgs);
 }
 
 const char FuncType::NodeId = 0;
