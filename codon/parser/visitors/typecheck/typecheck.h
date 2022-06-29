@@ -92,9 +92,6 @@ public:
   /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
-  /// If a target type is Optional but the type of a given expression is not,
-  /// replace the given expression with Optional(expr).
-  void wrapOptionalIfNeeded(const types::TypePtr &targetType, ExprPtr &e);
 
   /* Operators (op.cpp) */
   /// Evaluate static unary expressions.
@@ -243,11 +240,6 @@ public:
 
   /* Errors and exceptions (error.cpp) */
   void visit(TryStmt *) override;
-  /// Transform raise Exception() to:
-  ///   _e = Exception()
-  ///   _e._hdr = ExcHeader("<func>", "<file>", <line>, <col>)
-  ///   raise _e
-  /// Also ensure that the raised type is a tuple whose first element is ExcHeader.
   void visit(ThrowStmt *) override;
 
   /* Functions (function.cpp) */
@@ -303,7 +295,7 @@ private:
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
-                const types::FuncTypePtr &callee, bool undoOnSuccess = false);
+                const types::FuncTypePtr &callee = nullptr, bool undoOnSuccess = false, bool allowUnwrap = true);
 
 public:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,

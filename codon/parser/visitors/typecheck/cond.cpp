@@ -13,9 +13,11 @@ namespace codon::ast {
 
 using namespace types;
 
+/// Call `ready` and `notReady` depending whether the provided static expression can be
+/// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(ExprPtr cond, TT ready, TF notReady) {
-  // seqassert(cond->isStatic(), "not a static condition");
+  seqassertn(cond->isStatic(), "not a static condition");
   if (cond->staticValue.evaluated) {
     bool isTrue = false;
     if (cond->staticValue.type == StaticValue::STRING)
@@ -64,8 +66,10 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
   // Add wrappers and unify both sides
-  wrapOptionalIfNeeded(expr->ifexpr->getType(), expr->elsexpr);
-  wrapOptionalIfNeeded(expr->elsexpr->getType(), expr->ifexpr);
+  wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, false,
+           /*allowUnwrap*/ false);
+  wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, false,
+           /*allowUnwrap*/ false);
   unify(expr->type, expr->ifexpr->getType());
   unify(expr->type, expr->elsexpr->getType());
 

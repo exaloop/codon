@@ -254,7 +254,7 @@ except MyError:
     print "my"
 except OSError as o:
     print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
-    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 250
+    #: os OSError 9 typecheck_stmt.codon 250
 finally:
     print "whoa"  #: whoa
 
@@ -267,7 +267,9 @@ except MyError as e:
     print e._hdr.typename, e._hdr.msg #: MyError foo!
 
 #%% throw_error,barebones
-raise 'hello' #! cannot throw non-exception (first object member must be of type ExcHeader)
+raise 'hello'
+#! custom error: exception does not have _hdr: ExcHeader
+#! while realizing __internal__.set_header
 
 #%% function_builtin_error,barebones
 @__force__

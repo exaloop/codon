@@ -178,15 +178,6 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
 
 /**************************************************************************************/
 
-void TypecheckVisitor::wrapOptionalIfNeeded(const TypePtr &targetType, ExprPtr &e) {
-  if (!targetType)
-    return;
-  auto t1 = targetType->getClass();
-  auto t2 = e->getType()->getClass();
-  if (t1 && t2 && t1->name == TYPE_OPTIONAL && t1->name != t2->name)
-    e = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), e));
-}
-
 void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
   for (auto p = t->funcParent; p;) {
     if (auto f = p->getFunc()) {
@@ -361,7 +352,8 @@ TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
 }
 
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
-                                const FuncTypePtr &callee, bool undoOnSuccess) {
+                                const FuncTypePtr &callee, bool undoOnSuccess,
+                                bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
   if (callee && expr->isType())
@@ -380,7 +372,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   } else if (expectedClass && expectedClass->name == TYPE_OPTIONAL &&
              exprClass->name != expectedClass->name) {
     expr = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), expr));
-  } else if (expectedClass && exprClass && exprClass->name == TYPE_OPTIONAL &&
+  } else if (allowUnwrap && expectedClass && exprClass && exprClass->name == TYPE_OPTIONAL &&
              exprClass->name != expectedClass->name) { // unwrap optional
     expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr));
   } else if (callee && exprClass && expr->type->getFunc() &&
@@ -390,7 +382,9 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   }
 
   // Special case:
-  unify(expr->type, expectedType, undoOnSuccess);
+  if (allowUnwrap) {
+    unify(expr->type, expectedType, undoOnSuccess);
+  }
   return true;
 }
 

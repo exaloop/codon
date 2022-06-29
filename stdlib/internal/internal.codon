@@ -218,6 +218,14 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
+    def set_header(e, fn, file, line, col):
+        if not hasattr(e, "_hdr"):
+            compile_error("exception does not have _hdr: ExcHeader")
+        if not isinstance(e._hdr, ExcHeader):
+            compile_error("exception does not have _hdr: ExcHeader")
+        e._hdr = ExcHeader(e._hdr.typename, e._hdr.msg, fn, file, line, col)
+        return e
+
     def dispatch(f, *args, **kwargs):
         return f(*args, **kwargs)
 
