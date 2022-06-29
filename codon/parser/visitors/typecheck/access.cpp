@@ -312,7 +312,8 @@ TypecheckVisitor::getBestClassMethod(DotExpr *expr,
       return m;
   } else if (methods.size() > 1) {
     // If overload is ambiguous, route through dispatch function
-    return getDispatch(ctx->cache->getMethod(expr->expr->type->getClass(), expr->member));
+    return getDispatch(
+        ctx->cache->getMethod(expr->expr->type->getClass(), expr->member));
   } else if (!methods.empty()) {
     // Only one overload available
     return methods.front();

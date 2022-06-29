@@ -81,8 +81,9 @@ std::string TypeContext::getBase() const {
   return join(s, ":");
 }
 
-std::shared_ptr<types::LinkType>
-TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) const {
+std::shared_ptr<types::LinkType> TypeContext::addUnbound(const Expr *expr, int level,
+                                                         bool setActive,
+                                                         char staticType) const {
   auto t = std::make_shared<types::LinkType>(
       types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
   // Keep it for debugging purposes:

@@ -83,4 +83,4 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
   }
 }
 
-}
+} // namespace codon::ast

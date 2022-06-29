@@ -31,7 +31,6 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   auto s = format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
   // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
   return s;
-
 }
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }

@@ -217,7 +217,9 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
   return newName;
 }
 
-void SimplifyContext::enterConditionalBlock() { scope.blocks.push_back(++scope.counter); }
+void SimplifyContext::enterConditionalBlock() {
+  scope.blocks.push_back(++scope.counter);
+}
 
 void SimplifyContext::leaveConditionalBlock(std::vector<StmtPtr> *stmts) {
   if (stmts && in(scope.stmts, scope.blocks.back()))

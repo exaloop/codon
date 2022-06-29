@@ -22,8 +22,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         isTrue = !expr->cond->staticValue.getString().empty();
       else
         isTrue = expr->cond->staticValue.getInt();
-      resultExpr =
-          transform(isTrue ? expr->ifexpr : expr->elsexpr, false);
+      resultExpr = transform(isTrue ? expr->ifexpr : expr->elsexpr, false);
       unify(expr->type, resultExpr->getType());
     } else {
       auto i = clone(expr->ifexpr), e = clone(expr->elsexpr);
@@ -33,8 +32,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
       if (i->isStatic() && e->isStatic()) {
         expr->staticValue.type = i->staticValue.type;
         unify(expr->type,
-              ctx->getType(expr->staticValue.type == StaticValue::INT ? "int"
-                                                                           : "str"));
+              ctx->getType(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
       }
       expr->done = false; // do not typecheck this suite yet
     }
@@ -84,4 +82,4 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   }
 }
 
-}
+} // namespace codon::ast

@@ -415,8 +415,7 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   FuncTypePtr method = nullptr;
   // Check if lt.__atomic_op__(Ptr[lt], rt) exists.
   if (isAtomic) {
-    auto ptrlt =
-        ctx->instantiateGeneric(expr->lexpr.get(), ctx->getType("Ptr"), {lt});
+    auto ptrlt = ctx->instantiateGeneric(expr->lexpr.get(), ctx->getType("Ptr"), {lt});
     method =
         findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic), {ptrlt, rt});
     if (method) {
@@ -513,4 +512,4 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &e
   return nullptr;
 }
 
-}
+} // namespace codon::ast

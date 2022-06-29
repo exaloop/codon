@@ -5,8 +5,8 @@
 #include <iostream>
 #include <ostream>
 
-#include "codon/parser/ast/error.h"
 #include "codon/config/config.h"
+#include "codon/parser/ast/error.h"
 #include "codon/util/fmt/format.h"
 #include "codon/util/fmt/ostream.h"
 

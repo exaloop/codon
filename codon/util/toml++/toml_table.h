@@ -251,7 +251,7 @@ TOML_NAMESPACE_START {
     /// https://en.cppreference.com/w/cpp/utility/initializer_list 		 if
     /// you'd like to learn more about this.
     template <size_t N>
-    TOML_NODISCARD_CTOR explicit table(impl::table_init_pair(&&arr)[N]) noexcept
+    TOML_NODISCARD_CTOR explicit table(impl::table_init_pair (&&arr)[N]) noexcept
         : table{arr, N} {
 #if TOML_LIFETIME_HOOKS
       lh_ctor();

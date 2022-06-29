@@ -49,9 +49,7 @@ void SimplifyVisitor::visit(TryStmt *stmt) {
   transformConditionalScope(stmt->finally);
 }
 
-void SimplifyVisitor::visit(ThrowStmt *stmt) {
-  transform(stmt->expr);
-}
+void SimplifyVisitor::visit(ThrowStmt *stmt) { transform(stmt->expr); }
 
 /// Transform with statements.
 /// @example

@@ -334,8 +334,8 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename) {
   llvm::TargetLibraryInfoImpl tlii(llvm::Triple(M->getTargetTriple()));
   pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
   seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_ObjectFile,
-                                          /*DisableVerify=*/true, mmiwp),
-            "could not add passes");
+                                           /*DisableVerify=*/true, mmiwp),
+             "could not add passes");
   const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
       ->Initialize(mmiwp->getMMI().getContext(), *machine);
   pm.run(*M);
@@ -995,7 +995,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   else if (internalFuncMatchesIgnoreArgs<RecordType>("__new__", x)) {
     auto *recordType = cast<RecordType>(parentType);
     seqassertn(args.size() == std::distance(recordType->begin(), recordType->end()),
-              "args size does not match");
+               "args size does not match");
     result = llvm::UndefValue::get(getLLVMType(recordType));
     for (auto i = 0; i < args.size(); i++) {
       result = B->CreateInsertValue(result, args[i], i);
@@ -1139,8 +1139,8 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
   // set up arguments and other symbols
   seqassertn(std::distance(func->arg_begin(), func->arg_end()) ==
-                std::distance(x->arg_begin(), x->arg_end()),
-            "argument length does not match");
+                 std::distance(x->arg_begin(), x->arg_end()),
+             "argument length does not match");
   unsigned argIdx = 1;
   auto argIter = func->arg_begin();
   for (auto varIter = x->arg_begin(); varIter != x->arg_end(); ++varIter) {
@@ -2103,7 +2103,8 @@ void LLVMVisitor::codegenPipeline(
 
   if (generator) {
     auto *generatorType = cast<types::GeneratorType>(prevStage->getOutputType());
-    seqassertn(generatorType, "{} is not a generator type", *prevStage->getOutputType());
+    seqassertn(generatorType, "{} is not a generator type",
+               *prevStage->getOutputType());
     auto *baseType = getLLVMType(generatorType->getBase());
 
     auto *condBlock = llvm::BasicBlock::Create(*context, "pipeline.cond", func);

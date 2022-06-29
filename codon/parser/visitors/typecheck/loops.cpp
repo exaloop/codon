@@ -108,4 +108,4 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 }
 
-}
+} // namespace codon::ast

@@ -94,8 +94,6 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
 
 /// Ignore it. Already transformed. Sometimes called again
 /// during class extension.
-void SimplifyVisitor::visit(InstantiateExpr *expr) {
-
-}
+void SimplifyVisitor::visit(InstantiateExpr *expr) {}
 
 } // namespace codon::ast

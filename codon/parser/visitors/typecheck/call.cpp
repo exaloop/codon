@@ -341,7 +341,6 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   return {false, nullptr};
 }
 
-
 bool TypecheckVisitor::callTransformCallArgs(std::vector<CallExpr::Arg> &args,
                                              const types::TypePtr &inType) {
   for (int ai = 0; ai < args.size(); ai++) {
@@ -669,4 +668,4 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
   return result;
 }
 
-}
+} // namespace codon::ast

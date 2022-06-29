@@ -247,8 +247,8 @@ StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
                              N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
   auto retStmt = N<ReturnStmt>(retExpr);
   // Create a function
-  return transform(N<FunctionStmt>(altName.empty() ? components.back() : altName, retType,
-                                   params, N<SuiteStmt>(call, retStmt)));
+  return transform(N<FunctionStmt>(altName.empty() ? components.back() : altName,
+                                   retType, params, N<SuiteStmt>(call, retStmt)));
 }
 
 /// Import a new file into its own context and wrap its top-level statements into a

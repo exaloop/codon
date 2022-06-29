@@ -76,8 +76,8 @@ ExprPtr SimplifyVisitor::transformComprehension(const std::string &type,
   return N<StmtExpr>(stmts, transform(var));
 }
 
-/// Transform a dictionary `{k1: v1, ..., kN: vN}` to a corresponding statement expression.
-/// Any kwstar-expression within the collection will be expanded.
+/// Transform a dictionary `{k1: v1, ..., kN: vN}` to a corresponding statement
+/// expression. Any kwstar-expression within the collection will be expanded.
 /// @example
 ///   `{a: 1, **d}` -> ```cont = Dict()
 ///                       cont.__setitem__(a, 1)

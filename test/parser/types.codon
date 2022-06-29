@@ -1155,3 +1155,8 @@ def foo(x):
 def foo(x, y):
     return 2, x, y
 foo('hooooooooy!', 1, 2) #! cannot find an overload 'foo' with arguments  = str,  = int,  = int
+
+#%% c_void_return,barebones
+from C import seq_print(str)
+x = seq_print("not ")
+print x  #: not None

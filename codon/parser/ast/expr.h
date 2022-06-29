@@ -147,7 +147,11 @@ struct Param : public codon::SrcObject {
   std::string name;
   ExprPtr type;
   ExprPtr defaultValue;
-  enum { Normal, Generic, HiddenGeneric } status; // 1 for normal generic, 2 for hidden generic
+  enum {
+    Normal,
+    Generic,
+    HiddenGeneric
+  } status; // 1 for normal generic, 2 for hidden generic
 
   explicit Param(std::string name = "", ExprPtr type = nullptr,
                  ExprPtr defaultValue = nullptr, int generic = 0);

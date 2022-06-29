@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace codon {
-  struct SrcInfo {
+struct SrcInfo {
   std::string file;
   int line;
   int col;
@@ -21,7 +21,7 @@ namespace codon {
 
   bool operator==(const SrcInfo &src) const { return id == src.id; }
 };
-}
+} // namespace codon
 
 namespace codon::exc {
 

@@ -80,7 +80,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     t2.logged = true;
     auto transformed = ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt),
                                                    abspath, defines, (testFlags > 1));
-    LOG_TIME("[T] parse = {:.1f}",  totalPeg);
+    LOG_TIME("[T] parse = {:.1f}", totalPeg);
     LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
 
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
