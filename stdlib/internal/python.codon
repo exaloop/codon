@@ -25,6 +25,7 @@ PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
 PyLong_AsLong = Function[[cobj], int](cobj())
 PyLong_FromLong = Function[[int], cobj](cobj())
 PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetIter = Function[[cobj], cobj](cobj())
@@ -102,6 +103,7 @@ def init_dl_handles(py_handle: cobj):
     global PyLong_AsLong
     global PyLong_FromLong
     global PyObject_Call
+    global PyObject_GetItem
     global PyObject_GetAttr
     global PyObject_GetAttrString
     global PyObject_GetIter
@@ -140,6 +142,7 @@ def init_dl_handles(py_handle: cobj):
     PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
     PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
     PyObject_Call = dlsym(py_handle, "PyObject_Call")
+    PyObject_GetItem = dlsym(py_handle, "PyObject_GetItem")
     PyObject_GetAttr = dlsym(py_handle, "PyObject_GetAttr")
     PyObject_GetAttrString = dlsym(py_handle, "PyObject_GetAttrString")
     PyObject_GetIter = dlsym(py_handle, "PyObject_GetIter")
@@ -384,8 +387,19 @@ class List:
     def __from_py__(v: cobj) -> List[T]:
         n = pyobj.exc_wrap(PyObject_Length(v))
         t = List[T](n)
+
+        '''
+        if PyList_Check(v):
+            for i in range(n):
+                elem = PyList_GetItem(v, i)
+                pyobj.exc_check()
+                t.append(T.__from_py__(elem))
+        else:
+        '''
         for i in range(n):
-            elem = PyList_GetItem(v, i)
+            j = PyLong_FromLong(i)
+            elem = PyObject_GetItem(v, j)
+            pyobj.decref(j)
             pyobj.exc_check()
             t.append(T.__from_py__(elem))
         return t
