@@ -58,7 +58,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   if (!stmt->rhs) {
     // Forward declarations (happens with dominating bindings).
     // The type is unknown and will be deduced later
-    unify(stmt->lhs->type, ctx->addUnbound(stmt->lhs.get(), ctx->typecheckLevel));
+    unify(stmt->lhs->type, ctx->getUnbound(stmt->lhs->getSrcInfo()));
     ctx->add((kind = TypecheckItem::Var), lhs, stmt->lhs->type);
     if (realize(stmt->lhs->type))
       stmt->setDone();
@@ -75,7 +75,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   } else {
     // Normal assignments
     if (stmt->type) {
-      unify(stmt->lhs->type, ctx->instantiate(stmt->type.get(), stmt->type->getType()));
+      unify(stmt->lhs->type,
+            ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
       // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
       wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);
       unify(stmt->lhs->type, stmt->rhs->type);
@@ -169,7 +170,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       error("cannot find '{}' in {}", stmt->member, lhsClass->name);
     if (lhsClass->getRecord())
       error("tuple element '{}' is read-only", stmt->member);
-    auto typ = ctx->instantiate(stmt->lhs.get(), member, lhsClass.get());
+    auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
     wrapExpr(stmt->rhs, typ, nullptr);
     unify(stmt->rhs->type, typ);
     if (stmt->rhs->isDone())
@@ -213,8 +214,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
       (call->expr->isId("min") || call->expr->isId("max")) && call->args.size() == 2 &&
       call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
     // `type(a).__atomic_min__(__ptr__(a), b)`
-    auto ptrTyp =
-        ctx->instantiateGeneric(stmt->lhs.get(), ctx->getType("Ptr"), {lhsClass});
+    auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(), ctx->getType("Ptr"),
+                                          {lhsClass});
     call->args[1].value = transform(call->args[1].value);
     auto rhsTyp = call->args[1].value->getType()->getClass();
     if (auto method = findBestMethod(
@@ -231,8 +232,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
     transform(stmt->rhs);
     if (auto rhsClass = stmt->rhs->getType()->getClass()) {
-      auto ptrType =
-          ctx->instantiateGeneric(stmt->lhs.get(), ctx->getType("Ptr"), {lhsClass});
+      auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
+                                             ctx->getType("Ptr"), {lhsClass});
       if (auto m =
               findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
         return {true,

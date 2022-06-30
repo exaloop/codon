@@ -31,7 +31,8 @@ auto evaluateStaticCondition(ExprPtr cond, TT ready, TF notReady) {
 }
 
 /// Typecheck if expressions. Evaluate static if blocks if possible.
-/// Also wrap the condition with `__bool__()` if needed and wrap optionals.
+/// Also wrap the condition with `__bool__()` if needed and wrap both conditional
+/// expressions. See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfExpr *expr) {
   expr->cond = transform(expr->cond);
 
@@ -56,7 +57,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     if (resultExpr)
       unify(expr->type, resultExpr->getType());
     else
-      unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+      unify(expr->type, ctx->getUnbound());
     return;
   }
 
@@ -79,6 +80,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 
 /// Typecheck if statements. Evaluate static if blocks if possible.
 /// Also wrap the condition with `__bool__()` if needed.
+/// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
   stmt->cond = transform(stmt->cond);
 

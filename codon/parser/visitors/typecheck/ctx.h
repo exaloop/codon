@@ -109,22 +109,29 @@ public:
   /// @param level Type-checking level.
   /// @param setActive If True, add it to activeUnbounds.
   /// @param isStatic True if this is a static integer unbound.
-  std::shared_ptr<types::LinkType> addUnbound(const Expr *expr, int level,
-                                              bool setActive = true,
-                                              char staticType = 0) const;
+  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info, int level) const;
+  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info) const;
+  std::shared_ptr<types::LinkType> getUnbound() const;
   /// Call `type->instantiate`.
   /// Prepare the generic instantiation table with the given generics parameter.
   /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
   ///          T=int.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
   /// @param setActive If True, add unbounds to activeUnbounds.
-  types::TypePtr instantiate(const Expr *expr, types::TypePtr type,
-                             types::ClassType *generics = nullptr,
-                             bool setActive = true);
+  types::TypePtr instantiate(const SrcInfo &info, types::TypePtr type,
+                             const types::ClassTypePtr &generics = nullptr);
+  types::TypePtr instantiate(types::TypePtr type,
+                             const types::ClassTypePtr &generics = nullptr) {
+    return instantiate(getSrcInfo(), type, generics);
+  }
   /// Instantiate the generic type root with the provided generics.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  types::TypePtr instantiateGeneric(const Expr *expr, types::TypePtr root,
+  types::TypePtr instantiateGeneric(const SrcInfo &info, types::TypePtr root,
                                     const std::vector<types::TypePtr> &generics);
+  types::TypePtr instantiateGeneric(types::TypePtr root,
+                                    const std::vector<types::TypePtr> &generics) {
+    return instantiateGeneric(getSrcInfo(), root, generics);
+  }
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,

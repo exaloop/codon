@@ -19,6 +19,7 @@ TypeContext::TypeContext(Cache *cache)
       realizationDepth(0), blockLevel(0), returnEarly(false) {
   stack.push_front(std::vector<std::string>());
   bases.push_back({"", nullptr, nullptr});
+  pushSrcInfo(cache->generateSrcInfo());  // Always have srcInfo() around
   changedNodes = 0;
 }
 
@@ -37,8 +38,7 @@ std::shared_ptr<TypecheckItem> TypeContext::find(const std::string &name) const 
   if (tt.second)
     return std::make_shared<TypecheckItem>(tt.first, tt.second);
   if (in(cache->globals, name))
-    return std::make_shared<TypecheckItem>(TypecheckItem::Var,
-                                           addUnbound(nullptr, typecheckLevel));
+    return std::make_shared<TypecheckItem>(TypecheckItem::Var, getUnbound());
   return nullptr;
 }
 
@@ -81,21 +81,24 @@ std::string TypeContext::getBase() const {
   return join(s, ":");
 }
 
-std::shared_ptr<types::LinkType> TypeContext::addUnbound(const Expr *expr, int level,
-                                                         bool setActive,
-                                                         char staticType) const {
-  auto t = std::make_shared<types::LinkType>(
-      types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
-  // Keep it for debugging purposes:
-  // if (t->id == 7815) LOG("debug");
-  t->setSrcInfo(expr ? expr->getSrcInfo() : getSrcInfo());
-  LOG_TYPECHECK("[ub] new {}: {} ({})", t->debugString(true), expr->toString(),
-                setActive);
-  return t;
+std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo,
+                                                         int level) const {
+  auto typ = std::make_shared<types::LinkType>(types::LinkType::Unbound,
+                                               cache->unboundCount++, level, nullptr);
+  typ->setSrcInfo(srcInfo);
+  return typ;
 }
 
-types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
-                                        types::ClassType *generics, bool activate) {
+std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo) const {
+  return getUnbound(srcInfo, typecheckLevel);
+}
+
+std::shared_ptr<types::LinkType> TypeContext::getUnbound() const {
+  return getUnbound(getSrcInfo(), typecheckLevel);
+}
+
+types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, types::TypePtr type,
+                                        const types::ClassTypePtr &generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics)
@@ -107,45 +110,29 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
   auto t = type->instantiate(getLevel(), &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
-      // if (l->kind != types::LinkType::Unbound)
-      //   continue;
-      if (expr)
-        i.second->setSrcInfo(expr->getSrcInfo());
+      i.second->setSrcInfo(srcInfo);
       if (l->defaultType)
         pendingDefaults.insert(i.second);
-      // if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
-      //   LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
-      //                 i.second->debugString(true), type->debugString(true),
-      //                 expr ? expr->toString() : "", activate);
-      //   if (activate && allowActivation)
-      //     activeUnbounds[i.second] = format(
-      //         "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
-      //         type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
-      // }
     }
   }
-  LOG_TYPECHECK("[inst] {} -> {}", expr ? expr->toString() : "", t->debugString(true));
   return t;
 }
 
 types::TypePtr
-TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
+TypeContext::instantiateGeneric(const SrcInfo &srcInfo, types::TypePtr root,
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
   auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
   if (generics.size() != c->generics.size()) {
-    if (expr)
-      error(expr->getSrcInfo(), "generics do not match");
-    else
-      error("generics do not match");
+    error(srcInfo, "generics do not match");
   }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
     g->generics.push_back(
         types::ClassType::Generic("", "", generics[i], c->generics[i].id));
   }
-  return instantiate(expr, root, g.get());
+  return instantiate(srcInfo, root, g);
 }
 
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,

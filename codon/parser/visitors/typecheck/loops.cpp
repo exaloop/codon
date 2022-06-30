@@ -82,7 +82,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
     TypePtr varType = nullptr;
     if (stmt->ownVar) {
-      varType = ctx->addUnbound(stmt->var.get(), ctx->typecheckLevel);
+      varType = ctx->getUnbound(stmt->var->getSrcInfo());
       ctx->add(TypecheckItem::Var, varName, varType);
     } else {
       auto val = ctx->find(varName);

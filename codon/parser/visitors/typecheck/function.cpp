@@ -13,83 +13,100 @@ namespace codon::ast {
 
 using namespace types;
 
+/// Unify the function return type with `Generator[?]`.
+/// The unbound type will be deduced from return/yield statements.
 void TypecheckVisitor::visit(YieldExpr *expr) {
   seqassert(!ctx->bases.empty(), "yield outside of a function");
-  auto typ = ctx->instantiateGeneric(expr, ctx->getType("Generator"),
-                                     {ctx->addUnbound(expr, ctx->typecheckLevel)});
-  unify(ctx->bases.back().returnType, typ);
-  unify(expr->type, typ->getClass()->generics[0].type);
-  expr->done = realize(expr->type) != nullptr;
+
+  unify(expr->type, ctx->getUnbound());
+  unify(ctx->bases.back().returnType,
+        ctx->instantiateGeneric(ctx->getType("Generator"), {expr->type}));
+  if (realize(expr->type))
+    expr->setDone();
 }
 
+/// Typecheck return statements. Empty return is transformed to `return NoneType()`.
+/// Also partialize functions if they are being returned.
+/// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
-  stmt->expr = transform(stmt->expr);
-  if (stmt->expr) {
+  if (transform(stmt->expr)) {
     auto &base = ctx->bases.back();
-    if (!base.returnType->getUnbound())
-      wrapExpr(stmt->expr, base.returnType, nullptr);
 
+    // Wrap expression to match the returh type
+    if (!base.returnType->getUnbound())
+      wrapExpr(stmt->expr, base.returnType);
+
+    // Special case: partialize functions if we are returning them
     if (stmt->expr->getType()->getFunc() &&
-        !(base.returnType->getClass() &&
-          startswith(base.returnType->getClass()->name, "Function")))
-      stmt->expr = partializeFunction(stmt->expr);
+        !(base.returnType->getClass() && base.returnType->is("Function"))) {
+      stmt->expr = partializeFunction(stmt->expr->type->getFunc());
+    }
+
     unify(base.returnType, stmt->expr->type);
-    stmt->done = stmt->expr->done;
   } else {
+    // If we are not within conditional block, ignore later statements in this function.
+    // Useful with static if statements.
     if (!ctx->blockLevel)
       ctx->returnEarly = true;
+
+    // Just set the expr for the translation stage. However, do not unify the return
+    // type! This might be a `return` in a generator.
     stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType")));
-    stmt->done = true;
   }
+
+  if (stmt->expr->isDone())
+    stmt->setDone();
 }
 
+/// Typecheck yield statements. Empty yields assume `NoneType`.
 void TypecheckVisitor::visit(YieldStmt *stmt) {
-  if (stmt->expr)
-    stmt->expr = transform(stmt->expr);
-  auto baseTyp = stmt->expr ? stmt->expr->getType() : ctx->getType("NoneType");
-  auto t = ctx->instantiateGeneric(stmt->expr ? stmt->expr.get()
-                                              : N<IdExpr>("<yield>").get(),
-                                   ctx->getType("Generator"), {baseTyp});
-  unify(ctx->bases.back().returnType, t);
-  stmt->done = stmt->expr ? stmt->expr->done : true;
+  stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
+  unify(ctx->bases.back().returnType,
+        ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type}));
+
+  if (stmt->expr->isDone())
+    stmt->setDone();
 }
 
+/// Parse a function stub and create a corresponding generic function type.
+/// Also realize built-ins and extern C functions.
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
-  auto &attr = stmt->attributes;
+  // Handle recursive calls and declarations.
   if (ctx->findInVisited(stmt->name).second) {
-    stmt->done = true;
+    stmt->setDone();
     return;
   }
 
-  // Parse preamble.
-  bool isClassMember = !attr.parentClass.empty();
+  // Function should be constructed only once
+  stmt->setDone();
+
+  // Handle generics
+  bool isClassMember = !stmt->attributes.parentClass.empty();
   auto explicits = std::vector<ClassType::Generic>();
-  for (const auto &a : stmt->args)
+  for (const auto &a : stmt->args) {
     if (a.status == Param::Generic) {
-      char staticType = 0;
-      auto idx = a.type->getIndex();
-      if (idx && idx->expr->isId("Static"))
-        staticType = idx->index->isId("str") ? 1 : 2;
-      auto t = ctx->addUnbound(N<IdExpr>(a.name).get(), ctx->typecheckLevel, true,
-                               staticType);
-      auto typId = ctx->cache->unboundCount - 1;
-      t->genericName = ctx->cache->reverseIdentifierLookup[a.name];
+      // Generic and static types
+      auto generic = ctx->getUnbound();
+      generic->isStatic = getStaticGeneric(a.type);
+      auto typId = generic->getLink()->id;
+      generic->genericName = ctx->cache->rev(a.name);
       if (a.defaultValue) {
-        auto dt = clone(a.defaultValue);
-        dt = transformType(dt);
-        t->defaultType = dt->type;
+        auto defType = transformType(clone(a.defaultValue));
+        generic->defaultType = defType->type;
       }
-      explicits.push_back({a.name, ctx->cache->reverseIdentifierLookup[a.name],
-                           t->generalize(ctx->typecheckLevel), typId});
-      LOG_REALIZE("[generic] {} -> {}", a.name, t->toString());
-      ctx->add(TypecheckItem::Type, a.name, t);
+      ctx->add(TypecheckItem::Type, a.name, generic);
+      explicits.push_back({a.name, ctx->cache->rev(a.name),
+                           generic->generalize(ctx->typecheckLevel), typId});
     }
+  }
+
+  // Prepare list of all generic types
   std::vector<TypePtr> generics;
   ClassTypePtr parentClass = nullptr;
-  if (isClassMember && attr.has(Attr::Method)) {
-    // Fetch parent class generics.
-    auto parentClassAST = ctx->cache->classes[attr.parentClass].ast.get();
-    parentClass = ctx->find(attr.parentClass)->type->getClass();
+  if (isClassMember && stmt->attributes.has(Attr::Method)) {
+    // Get class generics (e.g., T for `class Cls[T]: def foo:`)
+    auto parentClassAST = ctx->cache->classes[stmt->attributes.parentClass].ast.get();
+    parentClass = ctx->forceFind(stmt->attributes.parentClass)->type->getClass();
     parentClass =
         parentClass->instantiate(ctx->typecheckLevel - 1, nullptr, nullptr)->getClass();
     seqassert(parentClass, "parent class not set");
@@ -102,77 +119,122 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       }
     }
   }
+  // Add function generics
   for (const auto &i : explicits)
     generics.push_back(ctx->find(i.name)->type);
-  // Add function arguments.
+
+  // Handle function arguments
+  // Base type: `Function[[args,...], ret]`
   auto baseType = getFuncTypeBase(stmt->args.size() - explicits.size());
-  {
-    ctx->typecheckLevel++;
-    if (stmt->ret) {
-      unify(baseType->generics[1].type, transformType(stmt->ret)->getType());
-    } else {
-      unify(baseType->generics[1].type,
-            ctx->addUnbound(N<IdExpr>("<return>").get(), ctx->typecheckLevel));
-      generics.push_back(baseType->generics[1].type);
-    }
-    // tuple
-    auto argType = baseType->generics[0].type->getRecord();
-    for (int ai = 0, aj = 0; ai < stmt->args.size(); ai++) {
-      if (stmt->args[ai].status == Param::Normal && !stmt->args[ai].type) {
-        if (parentClass && ai == 0 &&
-            ctx->cache->reverseIdentifierLookup[stmt->args[ai].name] == "self") {
-          unify(argType->args[aj], parentClass);
-        } else {
-          unify(argType->args[aj], ctx->addUnbound(N<IdExpr>(stmt->args[ai].name).get(),
-                                                   ctx->typecheckLevel));
-        }
-        generics.push_back(argType->args[aj++]);
-      } else if (stmt->args[ai].status == Param::Normal) {
-        unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
-        generics.push_back(argType->args[aj]);
-        aj++;
-      }
-    }
-    ctx->typecheckLevel--;
+  ctx->typecheckLevel++;
+  if (stmt->ret) {
+    unify(baseType->generics[1].type, transformType(stmt->ret)->getType());
+  } else {
+    generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
   }
-  // Generalize generics.
+  // Unify base type generics with argument types
+  auto argType = baseType->generics[0].type->getRecord();
+  for (int ai = 0, aj = 0; ai < stmt->args.size(); ai++) {
+    if (stmt->args[ai].status == Param::Normal && !stmt->args[ai].type) {
+      if (parentClass && ai == 0 && ctx->cache->rev(stmt->args[ai].name) == "self") {
+        // Special case: self in methods
+        unify(argType->args[aj], parentClass);
+      } else {
+        unify(argType->args[aj], ctx->getUnbound());
+      }
+      generics.push_back(argType->args[aj++]);
+    } else if (stmt->args[ai].status == Param::Normal) {
+      unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
+      generics.push_back(argType->args[aj++]);
+    }
+  }
+  ctx->typecheckLevel--;
+
+  // Generalize generics and remove them from the context
   for (auto g : generics) {
-    // seqassert(g && g->getLink() && g->getLink()->kind != types::LinkType::Link,
-    // "generic has been unified");
     for (auto &u : g->getUnbounds())
       u->getUnbound()->kind = LinkType::Generic;
   }
-  // Construct the type.
-  auto typ = std::make_shared<FuncType>(
+
+  // Construct the type
+  auto funcTyp = std::make_shared<FuncType>(
       baseType, ctx->cache->functions[stmt->name].ast.get(), explicits);
-  if (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
-      (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))
-    if (!typ->canRealize())
-      error("builtins and external functions must be realizable");
-  if (isClassMember && attr.has(Attr::Method))
-    typ->funcParent = ctx->find(attr.parentClass)->type;
-  typ->setSrcInfo(stmt->getSrcInfo());
-  typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
-  // Check if this is a class method; if so, update the class method lookup table.
+
+  funcTyp->setSrcInfo(getSrcInfo());
+  if (isClassMember && stmt->attributes.has(Attr::Method))
+    funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
+  funcTyp =
+      std::static_pointer_cast<FuncType>(funcTyp->generalize(ctx->typecheckLevel));
+
+  // If this is a class method, update the method lookup table
   if (isClassMember) {
-    auto m = ctx->cache->classes[attr.parentClass]
-                 .methods[ctx->cache->reverseIdentifierLookup[stmt->name]];
+    auto m =
+        ctx->cache->getMethod(ctx->find(stmt->attributes.parentClass)->type->getClass(),
+                              ctx->cache->rev(stmt->name));
     bool found = false;
     for (auto &i : ctx->cache->overloads[m])
       if (i.name == stmt->name) {
-        ctx->cache->functions[i.name].type = typ;
+        ctx->cache->functions[i.name].type = funcTyp;
         found = true;
         break;
       }
     seqassert(found, "cannot find matching class method for {}", stmt->name);
   }
-  // Update visited table.
-  ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Func, typ};
-  ctx->add(TypecheckItem::Func, stmt->name, typ);
-  ctx->cache->functions[stmt->name].type = typ;
-  LOG_TYPECHECK("[stmt] added func {}: {} (base={})", stmt->name, typ->debugString(1),
-                ctx->getBase());
-  stmt->done = true;
+
+  // Update the visited table
+  ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Func, funcTyp};
+
+  // Add to the context
+  ctx->add(TypecheckItem::Func, stmt->name, funcTyp);
+  ctx->cache->functions[stmt->name].type = funcTyp;
+
+  // Ensure that functions with @C, @force_realize, and @export attributes can be
+  // realized
+  if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
+      (stmt->attributes.has(Attr::C) && !stmt->attributes.has(Attr::CVarArg))) {
+    if (!funcTyp->canRealize())
+      error("builtins and external functions must be realizable");
+  }
+
+  // Debug information
+  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp->debugString(true));
+}
+
+/// Make an empty partial call `fn(...)` for a given function.
+ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
+  // Create function mask
+  std::vector<char> mask(fn->ast->args.size(), 0);
+  for (int i = 0, j = 0; i < fn->ast->args.size(); i++)
+    if (fn->ast->args[i].status == Param::Generic) {
+      if (!fn->funcGenerics[j].type->getUnbound())
+        mask[i] = 1;
+      j++;
+    }
+
+  // Generate partial class
+  auto partialTypeName = generatePartialStub(mask, fn.get());
+  std::string var = ctx->cache->getTemporaryVar("partial");
+  // Generate kwtuple for potential **kwargs
+  auto kwName = generateTuple(0, "KwTuple", {});
+  // `partial = Partial.MASK((), KwTuple())`
+  // (`()` for *args and `KwTuple()` for **kwargs)
+  ExprPtr call =
+      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
+                                N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
+                                            N<CallExpr>(N<IdExpr>(kwName)))),
+                  N<IdExpr>(var));
+  call->setAttr(ExprAttr::Partial);
+  call = transform(call);
+  seqassert(call->type->getPartial(), "expected partial type");
+  return call;
+}
+
+/// Generate and return `Function[Tuple.N[args...], ret]` type
+std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
+  auto baseType = ctx->instantiate(ctx->forceFind("Function")->type)->getRecord();
+  unify(baseType->generics[0].type,
+        ctx->instantiate(ctx->forceFind(generateTuple(nargs))->type)->getRecord());
+  return baseType;
 }
 
 } // namespace codon::ast

@@ -243,19 +243,11 @@ public:
   void visit(ThrowStmt *) override;
 
   /* Functions (function.cpp) */
-  /// Unifies a function return type with a Generator[T] where T is a new unbound type.
-  /// The expression itself will have type T.
   void visit(YieldExpr *) override;
-  /// Wrap return a to:
-  ///   return Optional(a)
-  /// if a is of type T and return type is of type Optional[T]/
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
-  /// Parse a function stub and create a corresponding generic function type.
-  /// Also realize built-ins and extern C functions.
   void visit(FunctionStmt *) override;
-  /// Make an empty partial call fn(...) for a function fn.
-  ExprPtr partializeFunction(ExprPtr expr);
+  ExprPtr partializeFunction(const types::FuncTypePtr &);
   std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
 
   /* Classes (class.cpp) */
@@ -291,11 +283,12 @@ private:
                                     const std::vector<CallExpr::Arg> &args);
   std::vector<types::FuncTypePtr> findSuperMethods(const types::FuncTypePtr &func);
   std::vector<types::FuncTypePtr>
-  findMatchingMethods(types::ClassType *typ,
+  findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
-                const types::FuncTypePtr &callee = nullptr, bool undoOnSuccess = false, bool allowUnwrap = true);
+                const types::FuncTypePtr &callee = nullptr, bool undoOnSuccess = false,
+                bool allowUnwrap = true);
 
 public:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,

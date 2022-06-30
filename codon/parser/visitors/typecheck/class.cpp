@@ -45,17 +45,17 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   for (const auto &a : stmt->args) {
     if (a.status != Param::Normal) {
       // Generic and static types
-      auto generic = ctx->addUnbound(N<IdExpr>(a.name).get(), ctx->typecheckLevel, true,
-                                     getStaticGeneric(a.type));
-      auto typId = ctx->cache->unboundCount - 1; // addUnbound increments unboundCount
+      auto generic = ctx->getUnbound();
+      generic->isStatic = getStaticGeneric(a.type);
+      auto typId = generic->id;
       generic->getLink()->genericName = ctx->cache->rev(a.name);
       if (a.defaultValue) {
         auto defType = transformType(clone(a.defaultValue));
         if (a.status == Param::Generic) {
           generic->defaultType = defType->type;
         } else {
-          // Hidden generics can be outright replaced (e.g., `T=int`). Unify them
-          // immediately.
+          // Hidden generics can be outright replaced (e.g., `T=int`).
+          // Unify them immediately.
           unify(defType->type, generic);
         }
       }
@@ -71,7 +71,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   }
 
   // Handle class members
-  ctx->typecheckLevel++; // Needed to avoid unigying generics early
+  ctx->typecheckLevel++; // to avoid unifying generics early
   auto &fields = ctx->cache->classes[stmt->name].fields;
   for (auto ai = 0, aj = 0; ai < stmt->args.size(); ai++)
     if (stmt->args[ai].status == Param::Normal) {

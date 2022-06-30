@@ -94,7 +94,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
       else
         error("expected type expression");
     } else {
-      t = ctx->instantiate(expr.get(), expr->getType());
+      t = ctx->instantiate(expr->getType());
     }
     expr->setType(t);
   }
@@ -143,7 +143,7 @@ void TypecheckVisitor::visit(StarExpr *) { error("cannot use star-expression"); 
 void TypecheckVisitor::visit(KeywordStarExpr *) { error("cannot use star-expression"); }
 
 void TypecheckVisitor::visit(EllipsisExpr *expr) {
-  unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+  unify(expr->type, ctx->getUnbound());
 }
 
 void TypecheckVisitor::visit(StmtExpr *expr) {
@@ -217,30 +217,6 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
   return typeName;
 }
 
-ExprPtr TypecheckVisitor::partializeFunction(ExprPtr expr) {
-  auto fn = expr->getType()->getFunc();
-  seqassert(fn, "not a function: {}", expr->getType()->toString());
-  std::vector<char> mask(fn->ast->args.size(), 0);
-  for (int i = 0, j = 0; i < fn->ast->args.size(); i++)
-    if (fn->ast->args[i].status == Param::Generic) {
-      // TODO: better detection of user-provided args...?
-      if (!fn->funcGenerics[j].type->getUnbound())
-        mask[i] = 1;
-      j++;
-    }
-  auto partialTypeName = generatePartialStub(mask, fn.get());
-  std::string var = ctx->cache->getTemporaryVar("partial");
-  auto kwName = generateTuple(0, "KwTuple", {});
-  ExprPtr call =
-      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
-                                N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
-                                            N<CallExpr>(N<IdExpr>(kwName)))),
-                  N<IdExpr>(var));
-  call->setAttr(ExprAttr::Partial);
-  call = transform(call, false);
-  seqassert(call->type->getPartial(), "expected partial type");
-  return call;
-}
 
 types::FuncTypePtr
 TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
@@ -259,7 +235,7 @@ TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
   auto typ = expr->getType()->getClass();
   seqassert(typ, "not a class");
   auto methods = ctx->findMethod(typ->name, member, false);
-  auto m = findMatchingMethods(typ.get(), methods, args);
+  auto m = findMatchingMethods(typ, methods, args);
   return m.empty() ? nullptr : m[0];
 }
 
@@ -304,13 +280,13 @@ TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
 }
 
 std::vector<types::FuncTypePtr>
-TypecheckVisitor::findMatchingMethods(types::ClassType *typ,
+TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<types::FuncTypePtr> &methods,
                                       const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
   for (int mi = 0; mi < methods.size(); mi++) {
-    auto m = ctx->instantiate(nullptr, methods[mi], typ, false)->getFunc();
+    auto m = ctx->instantiate(methods[mi], typ)->getFunc();
     std::vector<types::TypePtr> reordered;
     auto score = ctx->reorderNamedArgs(
         m.get(), args,
@@ -372,13 +348,14 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   } else if (expectedClass && expectedClass->name == TYPE_OPTIONAL &&
              exprClass->name != expectedClass->name) {
     expr = transform(N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), expr));
-  } else if (allowUnwrap && expectedClass && exprClass && exprClass->name == TYPE_OPTIONAL &&
+  } else if (allowUnwrap && expectedClass && exprClass &&
+             exprClass->name == TYPE_OPTIONAL &&
              exprClass->name != expectedClass->name) { // unwrap optional
     expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr));
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
-    expr = partializeFunction(expr);
+    expr = partializeFunction(expr->type->getFunc());
   }
 
   // Special case:
@@ -435,14 +412,6 @@ int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
     }
   }
   return 0;
-}
-
-std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
-  auto baseType = ctx->instantiate(nullptr, ctx->find("Function")->type)->getRecord();
-  auto argType =
-      ctx->instantiate(nullptr, ctx->find(generateTuple(nargs))->type)->getRecord();
-  unify(baseType->generics[0].type, argType);
-  return baseType;
 }
 
 } // namespace ast

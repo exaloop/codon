@@ -85,7 +85,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       std::vector<std::string> names;
       std::map<std::string, SrcInfo> memberInfo;
       for (auto &m : ctx->cache->classes[realizedType->name].fields) {
-        auto mt = ctx->instantiate(N<IdExpr>(m.name).get(), m.type, realizedType.get());
+        auto mt = ctx->instantiate(m.type, realizedType);
         LOG_REALIZE("- member: {} -> {}: {}", m.name, m.type->toString(),
                     mt->toString());
         auto tf = realize(mt);
@@ -384,7 +384,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
-          auto t = ctx->instantiate(e.get(), f.second.type, nullptr, false)->getFunc();
+          auto t = ctx->instantiate(f.second.type)->getFunc();
           realize(t);
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
         }

@@ -26,7 +26,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 
   // Handle empty callable references
   if (expr->value == TYPE_CALLABLE) {
-    auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
+    auto typ = ctx->getUnbound();
     typ->getLink()->trait = std::make_shared<CallableTrait>(std::vector<TypePtr>{});
     unify(expr->type, typ);
     expr->markType();
@@ -46,7 +46,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     if (!val)
       seqassert(expr, "cannot find '{}'", expr->value);
   }
-  unify(expr->type, ctx->instantiate(expr, val->type));
+  unify(expr->type, ctx->instantiate(val->type));
 
   if (val->type->isStaticType()) {
     // Evaluate static expression if possible
@@ -82,7 +82,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   if ((resultExpr = transformDot(expr)))
     unify(expr->type, resultExpr->type);
   else if (!expr->type)
-    unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+    unify(expr->type, ctx->getUnbound());
 }
 
 /// Find an overload dispatch function for a given overload. If it does not exist and
@@ -122,7 +122,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 
   auto baseType = getFuncTypeBase(2);
   auto typ = std::make_shared<FuncType>(baseType, ast.get());
-  typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel));
+  typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
   ctx->add(TypecheckItem::Func, name, typ);
 
   overloads.insert(overloads.begin(), {name, 0});
@@ -183,7 +183,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (expr->expr->isType() || args) {
     // Static access: `cls.method`
     ExprPtr e = N<IdExpr>(bestMethod->ast->name);
-    unify(e->type, unify(expr->type, ctx->instantiate(expr, bestMethod, typ.get())));
+    unify(e->type, unify(expr->type, ctx->instantiate(bestMethod, typ)));
     return transform(e); // Realize if needed
   } else {
     // Instance access: `obj.method`
@@ -212,7 +212,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: object member access (`obj.member`)
   if (auto member = ctx->findMember(typ->name, expr->member)) {
-    unify(expr->type, ctx->instantiate(expr, member, typ.get()));
+    unify(expr->type, ctx->instantiate(member, typ));
     if (expr->expr->isDone() && realize(expr->type))
       expr->setDone();
     return nullptr;

@@ -240,7 +240,8 @@ public:
       if (auto t = in(m->methods, member))
         return *t;
     }
-    return nullptr;
+    seqassertn(false, "cannot find '{}' in '{}'", member, typ->toString());
+    return "";
   }
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.

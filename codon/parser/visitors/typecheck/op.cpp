@@ -244,12 +244,13 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         error("unexpected static type");
       types.push_back(expr->typeParams[i]->type);
     }
-    auto typ = ctx->addUnbound(expr, ctx->typecheckLevel);
+    auto typ = ctx->getUnbound();
     typ->getLink()->trait = std::make_shared<CallableTrait>(types);
     unify(expr->type, typ);
   } else {
     expr->typeExpr = transformType(expr->typeExpr);
-    TypePtr typ = ctx->instantiate(expr->typeExpr.get(), expr->typeExpr->getType());
+    TypePtr typ =
+        ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
     seqassert(typ->getClass(), "unknown type");
     auto &generics = typ->getClass()->generics;
     if (expr->typeParams.size() != generics.size())
@@ -265,7 +266,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
           transformType(expr->typeParams[i]);
         if (!expr->typeParams[i]->isType())
           error("expected type or static parameters");
-        t = ctx->instantiate(expr->typeParams[i].get(), expr->typeParams[i]->getType());
+        t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
+                             expr->typeParams[i]->getType());
       }
       unify(generics[i].type, t);
     }
@@ -294,8 +296,8 @@ void TypecheckVisitor::visit(SliceExpr *expr) {
 
 void TypecheckVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("Static")) {
-    TypePtr typ =
-        ctx->addUnbound(expr, ctx->getLevel(), true, expr->index->isId("str") ? 1 : 2);
+    auto typ = ctx->getUnbound();
+    typ->isStatic = expr->index->isId("str") ? 1 : 2;
     unify(expr->type, typ);
     expr->done = true;
     return;
@@ -315,7 +317,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   } else {
     // Case 3: type is still unknown.
     // expr->index = transform(expr->index);
-    unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+    unify(expr->type, ctx->getUnbound());
   }
 }
 
@@ -359,7 +361,7 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
       (expr->op != "is" && expr->rexpr->getType()->getUnbound())) {
     // Case 1: If operand types are unknown, continue later (no transformation).
     // Mark the type as unbound.
-    unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+    unify(expr->type, ctx->getUnbound());
     return nullptr;
   }
 
@@ -415,7 +417,8 @@ ExprPtr TypecheckVisitor::transformBinary(BinaryExpr *expr, bool isAtomic,
   FuncTypePtr method = nullptr;
   // Check if lt.__atomic_op__(Ptr[lt], rt) exists.
   if (isAtomic) {
-    auto ptrlt = ctx->instantiateGeneric(expr->lexpr.get(), ctx->getType("Ptr"), {lt});
+    auto ptrlt =
+        ctx->instantiateGeneric(expr->lexpr->getSrcInfo(), ctx->getType("Ptr"), {lt});
     method =
         findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic), {ptrlt, rt});
     if (method) {

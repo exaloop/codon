@@ -32,7 +32,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
   FuncTypePtr calleeFn = callee ? callee->getFunc() : nullptr;
   if (!callee) {
     // Case 1: Unbound callee, will be resolved later.
-    unify(expr->type, ctx->addUnbound(expr, ctx->typecheckLevel));
+    unify(expr->type, ctx->getUnbound());
     return nullptr;
   } else if (expr->expr->isType()) {
     if (callee->getRecord()) {
@@ -60,7 +60,7 @@ ExprPtr TypecheckVisitor::transformCall(CallExpr *expr, const types::TypePtr &in
       if (pc->func->ast->args[i].status == Param::Generic) {
         if (pc->known[i])
           unify(calleeFn->funcGenerics[j].type,
-                ctx->instantiate(expr, pc->func->funcGenerics[j].type));
+                ctx->instantiate(pc->func->funcGenerics[j].type));
         j++;
       }
     part.known = pc->known;
@@ -197,9 +197,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     if (ctx->bases.back().supers.empty())
       error("no matching superf methods are available");
     auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
-    auto m =
-        findMatchingMethods(parentCls ? CAST(parentCls, types::ClassType) : nullptr,
-                            ctx->bases.back().supers, expr->args);
+    auto m = findMatchingMethods(parentCls ? parentCls->getClass() : nullptr,
+                                 ctx->bases.back().supers, expr->args);
     if (m.empty())
       error("no matching superf methods are available");
     ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
@@ -212,8 +211,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     auto v = id ? ctx->find(id->value) : nullptr;
     if (v && v->kind == TypecheckItem::Var) {
       expr->args[0].value = transform(expr->args[0].value);
-      auto t = ctx->instantiateGeneric(expr, ctx->getType("Ptr"),
-                                       {expr->args[0].value->type});
+      auto t =
+          ctx->instantiateGeneric(ctx->getType("Ptr"), {expr->args[0].value->type});
       unify(expr->type, t);
       expr->done = expr->args[0].value->done;
       return {true, nullptr};
@@ -227,7 +226,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
       return {true, nullptr};
     auto sz = szt->evaluate().getInt();
     auto typ = fnt->funcParent->getClass()->generics[0].type;
-    auto t = ctx->instantiateGeneric(expr, ctx->getType("Array"), {typ});
+    auto t = ctx->instantiateGeneric(ctx->getType("Array"), {typ});
     unify(expr->type, t);
     // Realize the Array[T] type of possible.
     if (auto rt = realize(expr->type)) {
@@ -420,7 +419,7 @@ ExprPtr TypecheckVisitor::callTransformCallee(ExprPtr &callee,
       if (i != ctx->cache->overloads.end() && i->second.size() != 1) {
         if (auto bestMethod = findBestMethod(ei->value, args)) {
           ExprPtr e = N<IdExpr>(bestMethod->ast->name);
-          auto t = ctx->instantiate(callee.get(), bestMethod);
+          auto t = ctx->instantiate(bestMethod);
           unify(e->type, t);
           unify(ei->type, e->type);
           *lhs = e;
@@ -612,7 +611,7 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
   auto name = cands[0];
   auto val = ctx->find(name);
   seqassert(val, "cannot find '{}'", name);
-  auto ftyp = ctx->instantiate(expr, val->type)->getClass();
+  auto ftyp = ctx->instantiate(val->type)->getClass();
 
   if (typ->getRecord()) {
     std::vector<ExprPtr> members;
@@ -627,8 +626,8 @@ ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
     for (auto &f : ctx->cache->classes[typ->name].fields) {
       for (auto &nf : ctx->cache->classes[name].fields)
         if (f.name == nf.name) {
-          auto t = ctx->instantiate(expr, f.type, typ.get());
-          auto ft = ctx->instantiate(expr, nf.type, ftyp.get());
+          auto t = ctx->instantiate(f.type, typ);
+          auto ft = ctx->instantiate(nf.type, ftyp);
           unify(t, ft);
         }
     }
@@ -652,12 +651,12 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
   for (auto &name : ctx->cache->classes[cls->name].parentClasses) {
     auto val = ctx->find(name);
     seqassert(val, "cannot find '{}'", name);
-    auto ftyp = ctx->instantiate(nullptr, val->type)->getClass();
+    auto ftyp = ctx->instantiate(val->type)->getClass();
     for (auto &f : ctx->cache->classes[cls->name].fields) {
       for (auto &nf : ctx->cache->classes[name].fields)
         if (f.name == nf.name) {
-          auto t = ctx->instantiate(nullptr, f.type, cls.get());
-          auto ft = ctx->instantiate(nullptr, nf.type, ftyp.get());
+          auto t = ctx->instantiate(f.type, cls);
+          auto ft = ctx->instantiate(nf.type, ftyp);
           unify(t, ft);
           break;
         }

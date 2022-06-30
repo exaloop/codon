@@ -30,7 +30,6 @@ std::string Cache::rev(const std::string &s) {
   return "";
 }
 
-
 SrcInfo Cache::generateSrcInfo() {
   return {FILE_GENERATED, generatedSrcInfoCount, generatedSrcInfoCount++, 0};
 }
@@ -83,7 +82,7 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
                                     const std::vector<types::TypePtr> &generics) {
   auto e = std::make_shared<IdExpr>(type->name);
   e->type = type;
-  type = typeCtx->instantiateGeneric(e.get(), type, generics)->getClass();
+  type = typeCtx->instantiateGeneric(type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(type)) {
     return classes[rtv->getClass()->name]
@@ -99,7 +98,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
                                  types::ClassTypePtr parentClass) {
   auto e = std::make_shared<IdExpr>(type->ast->name);
   e->type = type;
-  type = typeCtx->instantiate(e.get(), type, parentClass.get(), false)->getFunc();
+  type = typeCtx->instantiate(type, parentClass)->getFunc();
   if (args.size() != type->getArgTypes().size() + 1)
     return nullptr;
   types::Type::Unification undo;
@@ -154,7 +153,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tup = tv.generateTuple(types.size() - 1);
   auto ret = types[0];
   auto argType = typeCtx->instantiateGeneric(
-      nullptr, typeCtx->find(tup)->type,
+      typeCtx->find(tup)->type,
       std::vector<types::TypePtr>(types.begin() + 1, types.end()));
   auto t = typeCtx->find("Function");
   seqassertn(t && t->type, "cannot find 'Function'");

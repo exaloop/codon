@@ -10,12 +10,6 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/docs/sphinx/config/config.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
-if(CODON_JUPYTER)
-  configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json.in"
-    "${CMAKE_CURRENT_SOURCE_DIR}/extra/jupyter/share/jupyter/kernels/codon/kernel.json"
-  )
-endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
