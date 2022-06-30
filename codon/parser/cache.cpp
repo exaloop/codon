@@ -149,7 +149,7 @@ void Cache::parseCode(const std::string &code) {
   auto sctx = imports[MAIN_IMPORT].ctx;
   node = ast::SimplifyVisitor::apply(sctx, node, "<internal>", 99999);
   node = ast::TypecheckVisitor::apply(this, node);
-  ast::TranslateVisitor::apply(this, node);
+  ast::TranslateVisitor(codegenCtx).transform(node);
 }
 
 } // namespace ast

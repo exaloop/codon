@@ -20,4 +20,3 @@ def findall(pattern: str, string: str):
 
 def fullmatch(pattern: str, string: str):
     return seq_re_fullmatch(pattern, string)
-    
