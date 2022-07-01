@@ -34,7 +34,7 @@ auto evaluateStaticCondition(ExprPtr cond, TT ready, TF notReady) {
 /// Also wrap the condition with `__bool__()` if needed and wrap both conditional
 /// expressions. See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfExpr *expr) {
-  expr->cond = transform(expr->cond);
+  transform(expr->cond);
 
   // Static if evaluation
   if (expr->cond->isStatic()) {
@@ -61,8 +61,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     return;
   }
 
-  expr->ifexpr = transform(expr->ifexpr);
-  expr->elsexpr = transform(expr->elsexpr);
+  transform(expr->ifexpr);
+  transform(expr->elsexpr);
   // Add __bool__ wrapper
   if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
@@ -82,7 +82,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 /// Also wrap the condition with `__bool__()` if needed.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
-  stmt->cond = transform(stmt->cond);
+  transform(stmt->cond);
 
   // Static if evaluation
   if (stmt->cond->isStatic()) {

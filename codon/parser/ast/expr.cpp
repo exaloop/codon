@@ -67,7 +67,7 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
       defaultValue(std::move(defaultValue)) {
   if (status == 0 && this->type &&
       (this->type->isId("type") || this->type->isId("TypeVar") ||
-       getStaticGeneric(this->type)))
+       getStaticGeneric(this->type.get())))
     this->status = Generic;
   else
     this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
@@ -483,7 +483,7 @@ std::string InstantiateExpr::toString() const {
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
-char getStaticGeneric(const ExprPtr &e) {
+char getStaticGeneric(Expr *e) {
   if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
     if (e->getIndex()->index && e->getIndex()->index->isId("str"))
       return 1;

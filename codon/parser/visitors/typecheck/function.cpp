@@ -87,7 +87,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     if (a.status == Param::Generic) {
       // Generic and static types
       auto generic = ctx->getUnbound();
-      generic->isStatic = getStaticGeneric(a.type);
+      generic->isStatic = getStaticGeneric(a.type.get());
       auto typId = generic->getLink()->id;
       generic->genericName = ctx->cache->rev(a.name);
       if (a.defaultValue) {
@@ -224,7 +224,7 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
                                             N<CallExpr>(N<IdExpr>(kwName)))),
                   N<IdExpr>(var));
   call->setAttr(ExprAttr::Partial);
-  call = transform(call);
+  transform(call);
   seqassert(call->type->getPartial(), "expected partial type");
   return call;
 }

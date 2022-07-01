@@ -154,7 +154,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return transformType(NT<CallExpr>(NT<IdExpr>("type"), expr->expr));
   }
 
-  expr->expr = transform(expr->expr, true);
+  transform(expr->expr, true);
 
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions

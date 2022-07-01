@@ -13,99 +13,119 @@ namespace codon::ast {
 
 using namespace types;
 
-void TypecheckVisitor::visit(BreakStmt *stmt) { stmt->done = true; }
+/// Nothing to typecheck; just call setDone
+void TypecheckVisitor::visit(BreakStmt *stmt) { stmt->setDone(); }
 
-void TypecheckVisitor::visit(ContinueStmt *stmt) { stmt->done = true; }
+/// Nothing to typecheck; just call setDone
+void TypecheckVisitor::visit(ContinueStmt *stmt) { stmt->setDone(); }
 
+/// Typecheck while statements.
 void TypecheckVisitor::visit(WhileStmt *stmt) {
-  stmt->cond = transform(stmt->cond);
+  transform(stmt->cond);
   ctx->blockLevel++;
-  stmt->suite = transform(stmt->suite);
+  transform(stmt->suite);
   ctx->blockLevel--;
-  stmt->done = stmt->cond->done && stmt->suite->done;
+
+  if (stmt->cond->isDone() && stmt->suite->isDone())
+    stmt->setDone();
 }
 
+/// Typecheck for statements. Wrap the iterator expression with `__iter__` if needed.
+/// See @c transformHeterogenousTupleFor for iterating heterogenous tuples.
 void TypecheckVisitor::visit(ForStmt *stmt) {
-  if (stmt->decorator)
-    stmt->decorator = transform(stmt->decorator, false);
+  transform(stmt->decorator);
+  transform(stmt->iter);
 
-  stmt->iter = transform(stmt->iter);
-  // Extract the type of the for variable.
-  if (!stmt->iter->getType()->canRealize())
-    return; // continue after the iterator is realizable
-
+  // Extract the iterator type of the for
   auto iterType = stmt->iter->getType()->getClass();
-  if (auto tuple = iterType->getHeterogenousTuple()) {
-    // Case 1: iterating heterogeneous tuple.
-    // Unroll a separate suite for each tuple member.
-    auto block = N<SuiteStmt>();
-    auto tupleVar = ctx->cache->getTemporaryVar("tuple");
-    block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), stmt->iter));
+  if (!iterType || !iterType->canRealize())
+    return; // wait until the iterator is realizable
 
-    auto cntVar = ctx->cache->getTemporaryVar("idx");
-    std::vector<StmtPtr> forBlock;
-    for (int ai = 0; ai < tuple->args.size(); ai++) {
-      std::vector<StmtPtr> stmts;
-      stmts.push_back(N<AssignStmt>(clone(stmt->var),
-                                    N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))));
-      stmts.push_back(clone(stmt->suite));
-      forBlock.push_back(N<IfStmt>(
-          N<BinaryExpr>(N<IdExpr>(cntVar), "==", N<IntExpr>(ai)), N<SuiteStmt>(stmts)));
-    }
-    block->stmts.push_back(
-        N<ForStmt>(N<IdExpr>(cntVar),
-                   N<CallExpr>(N<IdExpr>("std.internal.types.range.range"),
-                               N<IntExpr>(tuple->args.size())),
-                   N<SuiteStmt>(forBlock)));
-    ctx->blockLevel++;
-    resultStmt = transform(block);
-    ctx->blockLevel--;
-  } else {
-    // Case 2: iterating a generator. Standard for loop logic.
-    if (iterType->name != "Generator" && !stmt->wrapped) {
-      stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->iter, "__iter__")));
-      stmt->wrapped = true;
-    }
-    seqassert(stmt->var->getId(), "for variable corrupt: {}", stmt->var->toString());
-
-    auto e = stmt->var->getId();
-    bool changed = in(ctx->cache->replacements, e->value);
-    while (auto s = in(ctx->cache->replacements, e->value))
-      e->value = s->first;
-    if (changed) {
-      auto u =
-          N<AssignStmt>(N<IdExpr>(format("{}.__used__", e->value)), N<BoolExpr>(true));
-      u->setUpdate();
-      stmt->suite = N<SuiteStmt>(u, stmt->suite);
-    }
-    std::string varName = e->value;
-
-    TypePtr varType = nullptr;
-    if (stmt->ownVar) {
-      varType = ctx->getUnbound(stmt->var->getSrcInfo());
-      ctx->add(TypecheckItem::Var, varName, varType);
-    } else {
-      auto val = ctx->find(varName);
-      seqassert(val, "'{}' not found", varName);
-      varType = val->type;
-    }
-    if ((iterType = stmt->iter->getType()->getClass())) {
-      if (iterType->name != "Generator")
-        error("for loop expected a generator");
-      if (getSrcInfo().line == 378 && varType->toString() == "List[int]" &&
-          iterType->generics[0].type->toString() == "int") {
-        ctx->find(varName);
-      }
-      unify(varType, iterType->generics[0].type);
-    }
-
-    unify(stmt->var->type, varType);
-
-    ctx->blockLevel++;
-    stmt->suite = transform(stmt->suite);
-    ctx->blockLevel--;
-    stmt->done = stmt->iter->done && stmt->suite->done;
+  // Case: iterating a heterogenous tuple
+  if (iterType->getHeterogenousTuple()) {
+    resultStmt = transformHeterogenousTupleFor(stmt);
+    return;
   }
+
+  // Case: iterating a non-generator. Wrap with `__iter__`
+  if (iterType->name != "Generator" && !stmt->wrapped) {
+    stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->iter, "__iter__")));
+    iterType = stmt->iter->getType()->getClass();
+    stmt->wrapped = true;
+  }
+
+  auto var = stmt->var->getId();
+  seqassert(var, "corrupt for variable: {}", stmt->var->toString());
+
+  // Handle dominated for bindings
+  bool changed = in(ctx->cache->replacements, var->value);
+  while (auto s = in(ctx->cache->replacements, var->value))
+    var->value = s->first;
+  if (changed) {
+    auto u =
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
+    u->setUpdate();
+    stmt->suite = N<SuiteStmt>(u, stmt->suite);
+    var->setAttr(ExprAttr::Dominated);
+  }
+
+  // Unify iterator variable and the iterator type
+  auto val = ctx->find(var->value);
+  if (!changed)
+    val = ctx->add(TypecheckItem::Var, var->value,
+                   ctx->getUnbound(stmt->var->getSrcInfo()));
+  if (iterType && iterType->name != "Generator")
+    error("for loop expected a generator");
+  unify(stmt->var->type,
+        iterType ? unify(val->type, iterType->generics[0].type) : val->type);
+
+  ctx->blockLevel++;
+  transform(stmt->suite);
+  ctx->blockLevel--;
+
+  if (stmt->iter->isDone() && stmt->suite->isDone())
+    stmt->setDone();
+}
+
+/// Handle heterogeneous tuple iteration.
+/// @example
+///   `for i in tuple_expr: <suite>` ->
+///   ```tuple = tuple_expr
+///      for cnt in range(<tuple length>):
+///        if cnt == 0:
+///          i = t[0]; <suite>
+///        if cnt == 1:
+///          i = t[1]; <suite> ...```
+/// A separate suite is generated  for each tuple member.
+StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
+  auto block = N<SuiteStmt>();
+  // `tuple = <tuple expression>`
+  auto tupleVar = ctx->cache->getTemporaryVar("tuple");
+  block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), stmt->iter));
+
+  auto tupleArgs = stmt->iter->getType()->getHeterogenousTuple()->args;
+  auto cntVar = ctx->cache->getTemporaryVar("idx");
+  std::vector<StmtPtr> forBlock;
+  for (size_t ai = 0; ai < tupleArgs.size(); ai++) {
+    // `if cnt == ai: (var = tuple[ai]; <suite>)`
+    forBlock.push_back(N<IfStmt>(
+        N<BinaryExpr>(N<IdExpr>(cntVar), "==", N<IntExpr>(ai)),
+        N<SuiteStmt>(N<AssignStmt>(clone(stmt->var),
+                                   N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))),
+                     clone(stmt->suite))));
+  }
+  // `for cnt in range(tuple_size): ...`
+  block->stmts.push_back(
+      N<ForStmt>(N<IdExpr>(cntVar),
+                 N<CallExpr>(N<IdExpr>("std.internal.types.range.range"),
+                             N<IntExpr>(tupleArgs.size())),
+                 N<SuiteStmt>(forBlock)));
+
+  ctx->blockLevel++;
+  transform(block);
+  ctx->blockLevel--;
+
+  return block;
 }
 
 } // namespace codon::ast

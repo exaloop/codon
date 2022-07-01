@@ -194,7 +194,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
     // Add generics to the context
     if (a.status != Param::Normal) {
-      if (getStaticGeneric(a.type))
+      if (getStaticGeneric(a.type.get()))
         ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
       else
         ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;

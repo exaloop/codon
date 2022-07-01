@@ -406,7 +406,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var->toString());
   auto varName = stmt->var->getId()->value;
   ir::Var *var = nullptr;
-  if (stmt->ownVar) {
+  if (!ctx->find(varName) || !stmt->var->hasAttr(ExprAttr::Dominated)) {
     var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
   } else {
     var = ctx->find(varName)->getVar();
@@ -460,7 +460,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
-      if (c.ownVar) {
+      if (!ctx->find(c.var) || !c.exc->hasAttr(ExprAttr::Dominated)) {
         catchVar = make<ir::Var>(stmt, excType, false, c.var);
       } else {
         catchVar = ctx->find(c.var)->getVar();

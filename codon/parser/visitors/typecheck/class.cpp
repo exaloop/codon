@@ -46,7 +46,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (a.status != Param::Normal) {
       // Generic and static types
       auto generic = ctx->getUnbound();
-      generic->isStatic = getStaticGeneric(a.type);
+      generic->isStatic = getStaticGeneric(a.type.get());
       auto typId = generic->id;
       generic->getLink()->genericName = ctx->cache->rev(a.name);
       if (a.defaultValue) {

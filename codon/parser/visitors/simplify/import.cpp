@@ -306,7 +306,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
         if (!a->isUpdate() && a->lhs->getId()) {
           // Global `a = ...`
           auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal() && !getStaticGeneric(a->type)) {
+          if (val->isVar() && val->isGlobal() && !getStaticGeneric(a->type.get())) {
             // Register global
             if (!in(ctx->cache->globals, val->canonicalName))
               ctx->cache->globals[val->canonicalName] = nullptr;

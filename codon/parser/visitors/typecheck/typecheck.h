@@ -94,56 +94,22 @@ public:
   void visit(IfStmt *) override;
 
   /* Operators (op.cpp) */
-  /// Evaluate static unary expressions.
   void visit(UnaryExpr *) override;
-  /// See transformBinary() below.
-  /// Also evaluates static binary expressions.
+  ExprPtr evaluateStaticUnary(UnaryExpr *);
   void visit(BinaryExpr *) override;
-  /// Type-checks a pipe expression.
-  /// Transform a stage CallExpr foo(x) without an ellipsis into:
-  ///   foo(..., x).
-  /// Transform any non-CallExpr stage foo into a CallExpr stage:
-  ///   foo(...).
-  /// If necessary, add stages (e.g. unwrap, float.__new__ or Optional.__new__)
-  /// to support function call type adjustments.
+  ExprPtr evaluateStaticBinary(BinaryExpr *);
+  ExprPtr transformBinarySimple(BinaryExpr *);
+  ExprPtr transformBinaryIs(BinaryExpr *);
+  std::string getMagic(const std::string &);
+  ExprPtr transformBinaryInplaceMagic(BinaryExpr *, bool);
+  ExprPtr transformBinaryMagic(BinaryExpr *);
   void visit(PipeExpr *) override;
-  /// Transform an instantiation Instantiate(foo, {bar, baz}) to a canonical name:
-  ///   IdExpr("foo[bar,baz]").
-  void visit(InstantiateExpr *) override;
-  /// Transform a slice start:stop:step to:
-  ///   Slice(start, stop, step).
-  /// Start, stop and step parameters can be nullptr; in that case, just use
-  /// Optional.__new__() in place of a corresponding parameter.
-  void visit(SliceExpr *) override;
-  /// Transform an index expression expr[index] to:
-  ///   InstantiateExpr(expr, index) if an expr is a function,
-  ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
-  ///   or expr.__getitem__(index).
   void visit(IndexExpr *) override;
-  /// Transforms a binary operation a op b to a corresponding magic method call:
-  ///   a.__magic__(b)
-  /// Checks for the following methods:
-  ///   __atomic_op__ (atomic inline operation: a += b),
-  ///   __iop__ (inline operation: a += b),
-  ///   __op__, and
-  ///   __rop__.
-  /// Also checks for the following special cases:
-  ///   a and/or b -> preserves BinaryExpr to allow short-circuits later
-  ///   a is None -> a.__bool__().__invert__() (if a is Optional), or False
-  ///   a is b -> a.__raw__() == b.__raw__() (if a and b share the same reference type),
-  ///             or a == b
-  /// Return nullptr if no transformation was made.
-  ExprPtr transformBinary(BinaryExpr *expr, bool isAtomic = false,
-                          bool *noReturn = nullptr);
-  /// Given a tuple type and the expression expr[index], check if an index is a static
-  /// expression. If so, and if the type of expr is Tuple, statically extract the
-  /// specified tuple item (or a sub-tuple if index is a slice).
-  /// Supports both StaticExpr and IntExpr as static expressions.
-  ExprPtr transformStaticTupleIndex(types::ClassType *tuple, ExprPtr &expr,
-                                    ExprPtr &index);
-  int64_t translateIndex(int64_t idx, int64_t len, bool clamp = false);
-  int64_t sliceAdjustIndices(int64_t length, int64_t *start, int64_t *stop,
-                             int64_t step);
+  ExprPtr transformStaticTupleIndex(types::ClassType *, ExprPtr &, ExprPtr &);
+  int64_t translateIndex(int64_t, int64_t, bool = false);
+  int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
+  void visit(InstantiateExpr *) override;
+  void visit(SliceExpr *) override;
 
   /* Calls (call.cpp) */
   struct PartialCallData {
@@ -152,6 +118,10 @@ public:
     std::vector<char> known = {}; // bitvector of known arguments
     ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
   };
+  /// Type-checks it with a new unbound type.
+  void visit(EllipsisExpr *) override;
+  void visit(StarExpr *) override;
+  void visit(KeywordStarExpr *) override;
   /// See transformCall() below.
   void visit(CallExpr *) override;
   /// Transform a call expression callee(args...).
@@ -230,13 +200,8 @@ public:
   void visit(BreakStmt *) override;
   void visit(ContinueStmt *) override;
   void visit(WhileStmt *) override;
-  /// Unpack heterogeneous tuple iteration: for i in t: <suite> to:
-  ///   i = t[0]; <suite>
-  ///   i = t[1]; <suite> ...
-  /// Transform for i in t to:
-  ///   for i in t.__iter__()
-  /// if t is not a generator.
   void visit(ForStmt *) override;
+  StmtPtr transformHeterogenousTupleFor(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
   void visit(TryStmt *) override;
@@ -258,12 +223,8 @@ public:
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
-  /// Type-checks it with a new unbound type.
-  void visit(EllipsisExpr *) override;
   /// Use type of an inner expression.
   void visit(StmtExpr *) override;
-  void visit(StarExpr *) override;
-  void visit(KeywordStarExpr *) override;
   void visit(CommentStmt *stmt) override { stmt->done = true; }
 
 public:

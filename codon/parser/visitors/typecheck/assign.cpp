@@ -52,8 +52,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
-  stmt->rhs = transform(stmt->rhs);
-  stmt->type = transformType(stmt->type);
+  transform(stmt->rhs);
+  transformType(stmt->type);
   TypecheckItem::Kind kind;
   if (!stmt->rhs) {
     // Forward declarations (happens with dominating bindings).
@@ -129,12 +129,12 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   if (stmt->lhs->isStatic())
     error("cannot modify static expression");
 
-  // Chec
-  auto p = transformInplaceUpdate(stmt);
-  if (p.first) {
-    if (p.second) {
-      resultStmt = N<ExprStmt>(p.second);
-      if (p.second->isDone())
+  // Check inplace updates
+  auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
+  if (inPlace) {
+    if (inPlaceExpr) {
+      resultStmt = N<ExprStmt>(inPlaceExpr);
+      if (inPlaceExpr->isDone())
         resultStmt->setDone();
     }
     return;
@@ -154,8 +154,8 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  stmt->lhs = transform(stmt->lhs);
-  stmt->rhs = transform(stmt->rhs);
+  transform(stmt->lhs);
+  transform(stmt->rhs);
 
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass->name, stmt->member);
@@ -185,25 +185,27 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 ///   `a = b`         -> `type(a).__atomic_xchg__(__ptr__(a), b)`
 ///   `a += b`        -> `type(a).__atomic_add__(__ptr__(a), b)`
 ///   `a = min(a, b)` -> `type(a).__atomic_min__(__ptr__(a), b)` (same for `max`)
+/// @return a tuple indicating whether (1) the update statement can be replaced with an
+///         expression, and (2) the replacement expression.
 std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
-  // Case: atomic and in-place operators.
-  // In-place updates (e.g., `a += b`) are stored as `Update(a, Binary(a + b,
-  // inPlace=true))`
+  // Case: in-place updates (e.g., `a += b`).
+  // They are stored as `Update(a, Binary(a + b, inPlace=true))`
   auto bin = stmt->rhs->getBinary();
   if (bin && bin->inPlace) {
-    bool noReturn = false;
-    bin->lexpr = transform(bin->lexpr);
-    bin->rexpr = transform(bin->rexpr);
-    if (auto nb = transformBinary(bin, stmt->isAtomicUpdate(), &noReturn)) {
-      unify(stmt->rhs->type, nb->type);
-      stmt->rhs = nb;
+    transform(bin->lexpr);
+    transform(bin->rexpr);
+    if (bin->lexpr->type->getClass() && bin->rexpr->type->getClass()) {
+      if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
+        unify(stmt->rhs->type, transformed->type);
+        return {true, transformed};
+      } else if (!stmt->isAtomicUpdate()) {
+        // If atomic, call normal magic and then use __atomic_xchg__ below
+        return {false, nullptr};
+      }
+    } else { // Not yet completed
+      unify(stmt->lhs->type, unify(stmt->rhs->type, ctx->getUnbound()));
+      return {true, nullptr};
     }
-    if (stmt->rhs->getBinary()) { // Not yet completed
-      unify(stmt->lhs->type, stmt->rhs->type);
-    } else if (noReturn) {
-      return {true, stmt->rhs};
-    }
-    return {true, nullptr};
   }
 
   // Case: atomic min/max operations.

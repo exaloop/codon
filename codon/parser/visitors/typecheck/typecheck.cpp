@@ -85,7 +85,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
     expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
     expr->markType();
   }
-  expr = transform(expr, true);
+  transform(expr, true);
   if (expr) {
     TypePtr t = nullptr;
     if (!expr->isType()) {
@@ -149,10 +149,10 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 void TypecheckVisitor::visit(StmtExpr *expr) {
   expr->done = true;
   for (auto &s : expr->stmts) {
-    s = transform(s);
+    transform(s);
     expr->done &= s->done;
   }
-  expr->expr = transform(expr->expr);
+  transform(expr->expr);
   unify(expr->type, expr->expr->type);
   expr->done &= expr->expr->done;
 }
@@ -172,7 +172,7 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
 }
 
 void TypecheckVisitor::visit(ExprStmt *stmt) {
-  stmt->expr = transform(stmt->expr, false);
+  transform(stmt->expr);
   stmt->done = stmt->expr->done;
 }
 
@@ -216,7 +216,6 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
   }
   return typeName;
 }
-
 
 types::FuncTypePtr
 TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
@@ -363,55 +362,6 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
     unify(expr->type, expectedType, undoOnSuccess);
   }
   return true;
-}
-
-int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
-  if (idx < 0)
-    idx += len;
-  if (clamp) {
-    if (idx < 0)
-      idx = 0;
-    if (idx > len)
-      idx = len;
-  } else if (idx < 0 || idx >= len) {
-    error("tuple index {} out of bounds (len: {})", idx, len);
-  }
-  return idx;
-}
-
-int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
-                                             int64_t *stop, int64_t step) {
-  if (step == 0)
-    error("slice step cannot be 0");
-
-  if (*start < 0) {
-    *start += length;
-    if (*start < 0) {
-      *start = (step < 0) ? -1 : 0;
-    }
-  } else if (*start >= length) {
-    *start = (step < 0) ? length - 1 : length;
-  }
-
-  if (*stop < 0) {
-    *stop += length;
-    if (*stop < 0) {
-      *stop = (step < 0) ? -1 : 0;
-    }
-  } else if (*stop >= length) {
-    *stop = (step < 0) ? length - 1 : length;
-  }
-
-  if (step < 0) {
-    if (*stop < *start) {
-      return (*start - *stop - 1) / (-step) + 1;
-    }
-  } else {
-    if (*start < *stop) {
-      return (*stop - *start - 1) / step + 1;
-    }
-  }
-  return 0;
 }
 
 } // namespace ast

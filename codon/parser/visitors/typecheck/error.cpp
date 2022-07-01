@@ -16,12 +16,12 @@ using namespace types;
 /// Typecheck try-except statements.
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
-  stmt->suite = transform(stmt->suite);
+  transform(stmt->suite);
   ctx->blockLevel--;
 
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
-    c.exc = transformType(c.exc);
+    transformType(c.exc);
     if (!c.var.empty()) {
       // Handle dominated except bindings
       bool changed = in(ctx->cache->replacements, c.var);
@@ -32,21 +32,21 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
         update->setUpdate();
         c.suite = N<SuiteStmt>(update, c.suite);
+        c.exc->setAttr(ExprAttr::Dominated);
       }
-      if (c.ownVar) {
-        ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
-      } else {
-        unify(ctx->forceFind(c.var)->type, c.exc->getType());
-      }
+      auto val = ctx->find(c.var);
+      if (!changed)
+        val = ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
+      unify(val->type, c.exc->getType());
     }
     ctx->blockLevel++;
-    c.suite = transform(c.suite);
+    transform(c.suite);
     ctx->blockLevel--;
     done &= (c.exc ? c.exc->isDone() : true) && c.suite->isDone();
   }
   if (stmt->finally) {
     ctx->blockLevel++;
-    stmt->finally = transform(stmt->finally);
+    transform(stmt->finally);
     ctx->blockLevel--;
     done &= stmt->finally->isDone();
   }
@@ -59,7 +59,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 /// @example
 ///   `raise exc` -> ```raise __internal__.set_header(exc, "fn", "file", line, col)```
 void TypecheckVisitor::visit(ThrowStmt *stmt) {
-  stmt->expr = transform(stmt->expr);
+  transform(stmt->expr);
 
   if (!(stmt->expr->getCall() &&
         stmt->expr->getCall()->expr->isId("__internal__.set_header:0"))) {

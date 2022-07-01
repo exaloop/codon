@@ -21,7 +21,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
   for (int ai = 0; ai < expr->items.size(); ai++)
     if (auto star = expr->items[ai]->getStar()) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
-      star->what = transform(star->what);
+      transform(star->what);
       auto t = star->what->type->getClass();
       if (!t) {
         return; // continue later when the type becomes known

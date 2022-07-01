@@ -647,9 +647,9 @@ struct InstantiateExpr : Expr {
 
 #undef ACCEPT
 
-enum ExprAttr { SequenceItem, StarSequenceItem, List, Set, Dict, Partial, __LAST__ };
+enum ExprAttr { SequenceItem, StarSequenceItem, List, Set, Dict, Partial, Dominated, __LAST__ };
 
-char getStaticGeneric(const ExprPtr &e);
+char getStaticGeneric(Expr *e);
 
 } // namespace ast
 } // namespace codon

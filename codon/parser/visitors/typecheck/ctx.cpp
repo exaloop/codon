@@ -19,7 +19,7 @@ TypeContext::TypeContext(Cache *cache)
       realizationDepth(0), blockLevel(0), returnEarly(false) {
   stack.push_front(std::vector<std::string>());
   bases.push_back({"", nullptr, nullptr});
-  pushSrcInfo(cache->generateSrcInfo());  // Always have srcInfo() around
+  pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
   changedNodes = 0;
 }
 
