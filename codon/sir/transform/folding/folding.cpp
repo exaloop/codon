@@ -12,9 +12,11 @@ const std::string FoldingPassGroup::KEY = "core-folding-pass-group";
 
 FoldingPassGroup::FoldingPassGroup(const std::string &sideEffectsPass,
                                    const std::string &reachingDefPass,
-                                   const std::string &globalVarPass,
-                                   bool runGlobalDemotion) {
-  auto gdUnique = std::make_unique<cleanup::GlobalDemotionPass>();
+                                   const std::string &globalVarPass, int repeat,
+                                   bool runGlobalDemotion)
+    : PassGroup(repeat) {
+  auto gdUnique = runGlobalDemotion ? std::make_unique<cleanup::GlobalDemotionPass>()
+                                    : std::unique_ptr<cleanup::GlobalDemotionPass>();
   auto canonUnique = std::make_unique<cleanup::CanonicalizationPass>(sideEffectsPass);
   auto fpUnique = std::make_unique<FoldingPass>();
   auto dceUnique = std::make_unique<cleanup::DeadCodeCleanupPass>(sideEffectsPass);
@@ -32,9 +34,10 @@ FoldingPassGroup::FoldingPassGroup(const std::string &sideEffectsPass,
   push_back(std::move(dceUnique));
 }
 
-bool FoldingPassGroup::shouldRepeat() const {
-  return gd->getNumDemotions() != 0 || canon->getNumReplacements() != 0 ||
-         fp->getNumReplacements() != 0 || dce->getNumReplacements() != 0;
+bool FoldingPassGroup::shouldRepeat(int num) const {
+  return PassGroup::shouldRepeat(num) &&
+         ((gd && gd->getNumDemotions() != 0) || canon->getNumReplacements() != 0 ||
+          fp->getNumReplacements() != 0 || dce->getNumReplacements() != 0);
 }
 
 } // namespace folding

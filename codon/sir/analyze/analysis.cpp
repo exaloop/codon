@@ -6,7 +6,7 @@ namespace codon {
 namespace ir {
 namespace analyze {
 
-const Result *Analysis::doGetAnalysis(const std::string &key) {
+Result *Analysis::doGetAnalysis(const std::string &key) {
   return manager ? manager->getAnalysisResult(key) : nullptr;
 }
 

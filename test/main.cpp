@@ -16,8 +16,11 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/common.h"
+#include "codon/sir/analyze/dataflow/capture.h"
+#include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/util/inlining.h"
 #include "codon/sir/util/irtools.h"
+#include "codon/sir/util/operator.h"
 #include "codon/sir/util/outlining.h"
 #include "codon/util/common.h"
 
@@ -92,6 +95,86 @@ class TestInliner : public ir::transform::OperatorPass {
       for (auto *var : res.newVars)
         ir::cast<ir::BodiedFunc>(getParentFunc())->push_back(var);
       v->replaceAll(ir::util::call(neg, {res.result}));
+    }
+  }
+};
+
+struct PartitionArgsByEscape : public ir::util::Operator {
+  std::vector<ir::analyze::dataflow::CaptureInfo> expected;
+  std::vector<ir::Value *> calls;
+
+  void handle(ir::CallInstr *v) override {
+    using namespace codon::ir;
+    if (auto *f = cast<Func>(util::getFunc(v->getCallee()))) {
+      if (f->getUnmangledName() == "expect_capture") {
+        // Format is:
+        //   - Return captures (bool)
+        //   - Extern captures (bool)
+        //   - Captured arg indices (int tuple)
+        std::vector<Value *> args(v->begin(), v->end());
+        seqassert(args.size() == 3, "bad escape-test call (size)");
+        seqassert(isA<BoolConst>(args[0]) && isA<BoolConst>(args[1]),
+                  "bad escape-test call (arg types)");
+
+        ir::analyze::dataflow::CaptureInfo info;
+        info.returnCaptures = cast<BoolConst>(args[0])->getVal();
+        info.externCaptures = cast<BoolConst>(args[1])->getVal();
+        auto *tuple = cast<CallInstr>(args[2]);
+        seqassert(tuple,
+                  "last escape-test call argument should be a const tuple literal");
+
+        for (auto *arg : *tuple) {
+          seqassert(isA<IntConst>(arg), "final args should be int");
+          info.argCaptures.push_back(cast<IntConst>(arg)->getVal());
+        }
+
+        expected.push_back(info);
+        calls.push_back(v);
+      }
+    }
+  }
+};
+
+struct EscapeValidator : public ir::transform::Pass {
+  const std::string KEY = "test-escape-validator-pass";
+  std::string getKey() const override { return KEY; }
+
+  std::string capAnalysisKey;
+
+  explicit EscapeValidator(const std::string &capAnalysisKey)
+      : ir::transform::Pass(), capAnalysisKey(capAnalysisKey) {}
+
+  void run(ir::Module *m) override {
+    using namespace codon::ir;
+    auto *capResult =
+        getAnalysisResult<ir::analyze::dataflow::CaptureResult>(capAnalysisKey);
+    for (auto *var : *m) {
+      if (auto *f = cast<Func>(var)) {
+        PartitionArgsByEscape pabe;
+        f->accept(pabe);
+        auto expected = pabe.expected;
+        if (expected.empty())
+          continue;
+
+        auto it = capResult->results.find(f->getId());
+        seqassert(it != capResult->results.end(),
+                  "function not found in capture results");
+        auto received = it->second;
+        seqassert(expected.size() == received.size(),
+                  "size mismatch in capture results");
+
+        for (unsigned i = 0; i < expected.size(); i++) {
+          auto exp = expected[i];
+          auto got = received[i];
+          std::sort(exp.argCaptures.begin(), exp.argCaptures.end());
+          std::sort(got.argCaptures.begin(), got.argCaptures.end());
+
+          bool good = (exp.returnCaptures == got.returnCaptures) &&
+                      (exp.externCaptures == got.externCaptures) &&
+                      (exp.argCaptures == got.argCaptures);
+          pabe.calls[i]->replaceAll(m->getBool(good));
+        }
+      }
     }
   }
 };
@@ -202,6 +285,14 @@ public:
       auto *pm = compiler->getPassManager();
       pm->registerPass(std::make_unique<TestOutliner>());
       pm->registerPass(std::make_unique<TestInliner>());
+      auto capKey =
+          pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
+                                   ir::analyze::dataflow::RDAnalysis::KEY,
+                                   ir::analyze::dataflow::DominatorAnalysis::KEY),
+                               {ir::analyze::dataflow::RDAnalysis::KEY,
+                                ir::analyze::dataflow::DominatorAnalysis::KEY});
+      pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
+                       {capKey});
 
       llvm::cantFail(compiler->compile());
       compiler->getLLVMVisitor()->run({file});
@@ -377,6 +468,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(
             "transform/canonical.codon",
             "transform/dict_opt.codon",
+            "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",
             "transform/io_opt.codon",

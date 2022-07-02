@@ -15,13 +15,46 @@ def seq_alloc_atomic(a: int) -> cobj:
     pass
 
 
-from C import seq_realloc(cobj, int) -> cobj
-from C import seq_free(cobj)
-from C import seq_register_finalizer(cobj, cobj)
-from C import seq_gc_add_roots(cobj, cobj)
-from C import seq_gc_remove_roots(cobj, cobj)
-from C import seq_gc_clear_roots()
-from C import seq_gc_exclude_static_roots(cobj, cobj)
+@nocapture
+@derives
+@C
+def seq_realloc(p: cobj, a: int) -> cobj:
+    pass
+
+
+@nocapture
+@C
+def seq_free(p: cobj) -> void:
+    pass
+
+
+@nocapture
+@C
+def seq_register_finalizer(p: cobj, f: cobj) -> void:
+    pass
+
+
+@nocapture
+@C
+def seq_gc_add_roots(p: cobj, q: cobj) -> void:
+    pass
+
+
+@nocapture
+@C
+def seq_gc_remove_roots(p: cobj, q: cobj) -> void:
+    pass
+
+
+@C
+def seq_gc_clear_roots() -> void:
+    pass
+
+
+@nocapture
+@C
+def seq_gc_exclude_static_roots(p: cobj, q: cobj) -> void:
+    pass
 
 
 def sizeof(T: type):

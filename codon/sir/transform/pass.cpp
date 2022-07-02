@@ -6,7 +6,7 @@ namespace codon {
 namespace ir {
 namespace transform {
 
-const analyze::Result *Pass::doGetAnalysis(const std::string &key) {
+analyze::Result *Pass::doGetAnalysis(const std::string &key) {
   return manager ? manager->getAnalysisResult(key) : nullptr;
 }
 

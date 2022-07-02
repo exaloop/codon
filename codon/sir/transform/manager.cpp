@@ -3,7 +3,9 @@
 #include <unordered_set>
 
 #include "codon/sir/analyze/analysis.h"
+#include "codon/sir/analyze/dataflow/capture.h"
 #include "codon/sir/analyze/dataflow/cfg.h"
+#include "codon/sir/analyze/dataflow/dominator.h"
 #include "codon/sir/analyze/dataflow/reaching.h"
 #include "codon/sir/analyze/module/global_vars.h"
 #include "codon/sir/analyze/module/side_effect.h"
@@ -21,8 +23,6 @@
 namespace codon {
 namespace ir {
 namespace transform {
-
-const int PassManager::PASS_IT_MAX = 5;
 
 std::string PassManager::KeyManager::getUniqueKey(const std::string &key) {
   // make sure we can't ever produce duplicate "unique'd" keys
@@ -98,18 +98,19 @@ void PassManager::runPass(Module *module, const std::string &name) {
   auto run = true;
   auto it = 0;
 
-  while (run && it < PASS_IT_MAX) {
+  while (run) {
     for (auto &dep : meta.reqs) {
       runAnalysis(module, dep);
     }
 
+    Timer timer("  ir pass    : " + meta.pass->getKey());
     meta.pass->run(module);
+    timer.log();
 
     for (auto &inv : meta.invalidates)
       invalidate(inv);
 
-    ++it;
-    run = meta.pass->shouldRepeat();
+    run = meta.pass->shouldRepeat(++it);
   }
 }
 
@@ -121,7 +122,10 @@ void PassManager::runAnalysis(Module *module, const std::string &name) {
   for (auto &dep : meta.reqs) {
     runAnalysis(module, dep);
   }
+
+  Timer timer("  ir analysis: " + meta.analysis->getKey());
   results[name] = meta.analysis->run(module);
+  timer.log();
 }
 
 void PassManager::invalidate(const std::string &key) {
@@ -161,30 +165,42 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
 
     // folding
-    auto seKey1 =
-        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
-            /*globalAssignmentHasSideEffects=*/true));
-    auto seKey2 =
-        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
-            /*globalAssignmentHasSideEffects=*/false));
     auto cfgKey = registerAnalysis(std::make_unique<analyze::dataflow::CFAnalysis>());
     auto rdKey = registerAnalysis(
         std::make_unique<analyze::dataflow::RDAnalysis>(cfgKey), {cfgKey});
+    auto domKey = registerAnalysis(
+        std::make_unique<analyze::dataflow::DominatorAnalysis>(cfgKey), {cfgKey});
+    auto capKey = registerAnalysis(
+        std::make_unique<analyze::dataflow::CaptureAnalysis>(rdKey, domKey),
+        {rdKey, domKey});
     auto globalKey =
         registerAnalysis(std::make_unique<analyze::module::GlobalVarsAnalyses>());
-    registerPass(std::make_unique<folding::FoldingPassGroup>(
-                     seKey1, rdKey, globalKey, /*runGlobalDemoton=*/false),
-                 /*insertBefore=*/"", {seKey1, rdKey, globalKey},
-                 {seKey1, rdKey, cfgKey, globalKey});
+    auto seKey1 =
+        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
+                             capKey,
+                             /*globalAssignmentHasSideEffects=*/true),
+                         {capKey});
+    auto seKey2 =
+        registerAnalysis(std::make_unique<analyze::module::SideEffectAnalysis>(
+                             capKey,
+                             /*globalAssignmentHasSideEffects=*/false),
+                         {capKey});
+    registerPass(
+        std::make_unique<folding::FoldingPassGroup>(
+            seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
+        /*insertBefore=*/"", {seKey1, rdKey, globalKey},
+        {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
-    registerPass(std::make_unique<parallel::OpenMPPass>());
+    registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
+                 {cfgKey, globalKey});
 
     if (init != Init::JIT) {
       // Don't demote globals in JIT mode, since they might be used later
       // by another user input.
       registerPass(
           std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
+                                                      /*repeat=*/5,
                                                       /*runGlobalDemoton=*/true),
           /*insertBefore=*/"", {seKey2, rdKey, globalKey},
           {seKey2, rdKey, cfgKey, globalKey});

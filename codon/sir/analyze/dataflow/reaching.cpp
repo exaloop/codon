@@ -42,7 +42,8 @@ void RDInspector::analyze() {
   }
 }
 
-std::unordered_set<id_t> RDInspector::getReachingDefinitions(Var *var, Value *loc) {
+std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
+                                                             const Value *loc) {
   if (invalid.find(var->getId()) != invalid.end() || var->isGlobal())
     return std::unordered_set<id_t>();
 
