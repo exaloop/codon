@@ -29,34 +29,47 @@ public:
   /// @param module the module
   virtual void run(Module *module) = 0;
 
+  /// Determine if pass should repeat.
+  /// @param num how many times this pass has already run
   /// @return true if pass should repeat
-  virtual bool shouldRepeat() const { return false; }
+  virtual bool shouldRepeat(int num) const { return false; }
 
   /// Sets the manager.
   /// @param mng the new manager
   virtual void setManager(PassManager *mng) { manager = mng; }
   /// Returns the result of a given analysis.
   /// @param key the analysis key
+  /// @return the analysis result
   template <typename AnalysisType>
-  const AnalysisType *getAnalysisResult(const std::string &key) {
-    return static_cast<const AnalysisType *>(doGetAnalysis(key));
+  AnalysisType *getAnalysisResult(const std::string &key) {
+    return static_cast<AnalysisType *>(doGetAnalysis(key));
   }
 
 private:
-  const analyze::Result *doGetAnalysis(const std::string &key);
+  analyze::Result *doGetAnalysis(const std::string &key);
 };
 
 class PassGroup : public Pass {
 private:
+  int repeat;
   std::vector<std::unique_ptr<Pass>> passes;
 
 public:
-  explicit PassGroup(std::vector<std::unique_ptr<Pass>> passes = {})
-      : passes(std::move(passes)) {}
+  explicit PassGroup(int repeat = 0, std::vector<std::unique_ptr<Pass>> passes = {})
+      : Pass(), repeat(repeat), passes(std::move(passes)) {}
 
   virtual ~PassGroup() noexcept = default;
 
   void push_back(std::unique_ptr<Pass> p) { passes.push_back(std::move(p)); }
+
+  /// @return default number of times pass should repeat
+  int getRepeat() const { return repeat; }
+
+  /// Sets the default number of times pass should repeat.
+  /// @param r number of repeats
+  void setRepeat(int r) { repeat = r; }
+
+  bool shouldRepeat(int num) const override { return num < repeat; }
 
   void run(Module *module) override;
 

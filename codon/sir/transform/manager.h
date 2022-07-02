@@ -98,8 +98,6 @@ public:
     JIT,
   };
 
-  static const int PASS_IT_MAX;
-
   explicit PassManager(Init init, std::vector<std::string> disabled = {})
       : km(), passes(), analyses(), executionOrder(), results(),
         disabled(std::move(disabled)) {

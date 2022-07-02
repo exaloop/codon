@@ -95,7 +95,7 @@ public:
       auto elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() /
           1000.0;
-      LOG_TIME("[T] {} = {:.1f}", name, elapsed);
+      LOG_TIME("[T] {} = {:.3f}", name, elapsed);
       logged = true;
     }
   }

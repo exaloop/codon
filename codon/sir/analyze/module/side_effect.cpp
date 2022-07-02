@@ -1,5 +1,9 @@
 #include "side_effect.h"
 
+#include <type_traits>
+#include <utility>
+
+#include "codon/sir/analyze/dataflow/capture.h"
 #include "codon/sir/util/irtools.h"
 #include "codon/sir/util/operator.h"
 
@@ -8,6 +12,14 @@ namespace ir {
 namespace analyze {
 namespace module {
 namespace {
+template <typename T> T max(T &&t) { return std::forward<T>(t); }
+
+template <typename T0, typename T1, typename... Ts>
+typename std::common_type<T0, T1, Ts...>::type max(T0 &&val1, T1 &&val2, Ts &&...vs) {
+  return (val1 > val2) ? max(val1, std::forward<Ts>(vs)...)
+                       : max(val2, std::forward<Ts>(vs)...);
+}
+
 struct VarUseAnalyzer : public util::Operator {
   std::unordered_map<id_t, long> varCounts;
   std::unordered_map<id_t, long> varAssignCounts;
@@ -22,37 +34,70 @@ struct VarUseAnalyzer : public util::Operator {
 };
 
 struct SideEfectAnalyzer : public util::ConstVisitor {
-  static const std::string PURE_ATTR;
-  static const std::string NON_PURE_ATTR;
+  using Status = util::SideEffectStatus;
+
+  static Status getFunctionStatusFromAttributes(const Func *v, bool *force = nullptr) {
+    auto attr = [v](const auto &s) { return util::hasAttribute(v, s); };
+
+    if (attr(util::PURE_ATTR)) {
+      if (force)
+        *force = true;
+      return Status::PURE;
+    }
+
+    if (attr(util::NO_SIDE_EFFECT_ATTR)) {
+      if (force)
+        *force = true;
+      return Status::NO_SIDE_EFFECT;
+    }
+
+    if (attr(util::NO_CAPTURE_ATTR)) {
+      if (force)
+        *force = true;
+      return Status::NO_CAPTURE;
+    }
+
+    if (attr(util::NON_PURE_ATTR)) {
+      if (force)
+        *force = true;
+      return Status::UNKNOWN;
+    }
+
+    if (force)
+      *force = false;
+    return Status::UNKNOWN;
+  }
 
   VarUseAnalyzer &vua;
+  dataflow::CaptureResult *cr;
   bool globalAssignmentHasSideEffects;
-  std::unordered_map<id_t, bool> result;
-  bool exprSE;
-  bool funcSE;
+  std::unordered_map<id_t, Status> result;
+  std::vector<const BodiedFunc *> funcStack;
+  Status exprStatus;
+  Status funcStatus;
 
   // We have to sometimes be careful with globals since future
   // IR passes might introduce globals that we've eliminated
   // or demoted earlier. Hence the distinction with whether
   // global assignments are considered to have side effects.
-  SideEfectAnalyzer(VarUseAnalyzer &vua, bool globalAssignmentHasSideEffects)
-      : util::ConstVisitor(), vua(vua),
+  SideEfectAnalyzer(VarUseAnalyzer &vua, dataflow::CaptureResult *cr,
+                    bool globalAssignmentHasSideEffects)
+      : util::ConstVisitor(), vua(vua), cr(cr),
         globalAssignmentHasSideEffects(globalAssignmentHasSideEffects), result(),
-        exprSE(true), funcSE(false) {}
+        funcStack(), exprStatus(Status::PURE), funcStatus(Status::PURE) {}
 
   template <typename T> bool has(const T *v) {
     return result.find(v->getId()) != result.end();
   }
 
-  template <typename T>
-  void set(const T *v, bool hasSideEffect, bool hasFuncSideEffect = false) {
-    result[v->getId()] = exprSE = hasSideEffect;
-    funcSE |= hasFuncSideEffect;
+  template <typename T> void set(const T *v, Status expr, Status func = Status::PURE) {
+    result[v->getId()] = exprStatus = expr;
+    funcStatus = max(funcStatus, func);
   }
 
-  template <typename T> bool process(const T *v) {
+  template <typename T> Status process(const T *v) {
     if (!v)
-      return false;
+      return Status::PURE;
     if (has(v))
       return result[v->getId()];
     v->accept(*this);
@@ -67,112 +112,117 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     }
   }
 
-  void visit(const Var *v) override { set(v, false); }
+  void visit(const Var *v) override { set(v, Status::PURE); }
 
   void visit(const BodiedFunc *v) override {
-    const bool pure = util::hasAttribute(v, PURE_ATTR);
-    const bool nonPure = util::hasAttribute(v, NON_PURE_ATTR);
-    set(v, !pure, !pure); // avoid infinite recursion
-    bool oldFuncSE = funcSE;
-    funcSE = false;
+    bool force;
+    auto s = getFunctionStatusFromAttributes(v, &force);
+    set(v, s, s); // avoid infinite recursion
+    auto oldFuncStatus = funcStatus;
+    funcStatus = Status::PURE;
+    funcStack.push_back(v);
     process(v->getBody());
-    set(v, nonPure || (funcSE && !pure));
-    funcSE = oldFuncSE;
+    funcStack.pop_back();
+    if (force)
+      funcStatus = s;
+    set(v, funcStatus);
+    funcStatus = oldFuncStatus;
   }
 
   void visit(const ExternalFunc *v) override {
-    set(v, !util::hasAttribute(v, PURE_ATTR));
+    set(v, getFunctionStatusFromAttributes(v));
   }
 
-  void visit(const InternalFunc *v) override { set(v, false); }
+  void visit(const InternalFunc *v) override { set(v, Status::PURE); }
 
-  void visit(const LLVMFunc *v) override { set(v, !util::hasAttribute(v, PURE_ATTR)); }
+  void visit(const LLVMFunc *v) override { set(v, getFunctionStatusFromAttributes(v)); }
 
-  void visit(const VarValue *v) override { set(v, false); }
+  void visit(const VarValue *v) override { set(v, Status::PURE); }
 
-  void visit(const PointerValue *v) override { set(v, false); }
+  void visit(const PointerValue *v) override { set(v, Status::PURE); }
 
   void visit(const SeriesFlow *v) override {
-    bool s = false;
+    Status s = Status::PURE;
     for (auto *x : *v) {
-      s |= process(x);
+      s = max(s, process(x));
     }
     set(v, s);
   }
 
   void visit(const IfFlow *v) override {
-    set(v, process(v->getCond()) | process(v->getTrueBranch()) |
-               process(v->getFalseBranch()));
+    set(v, max(process(v->getCond()), process(v->getTrueBranch()),
+               process(v->getFalseBranch())));
   }
 
   void visit(const WhileFlow *v) override {
-    set(v, process(v->getCond()) | process(v->getBody()));
+    set(v, max(process(v->getCond()), process(v->getBody())));
   }
 
   void visit(const ForFlow *v) override {
-    bool s = process(v->getIter()) | process(v->getBody());
+    auto s = max(process(v->getIter()), process(v->getBody()));
     if (auto *sched = v->getSchedule()) {
       for (auto *x : sched->getUsedValues()) {
-        s |= process(x);
+        s = max(s, process(x));
       }
     }
     set(v, s);
   }
 
   void visit(const ImperativeForFlow *v) override {
-    bool s = process(v->getStart()) | process(v->getEnd()) | process(v->getBody());
+    auto s = max(process(v->getStart()), process(v->getEnd()), process(v->getBody()));
     if (auto *sched = v->getSchedule()) {
       for (auto *x : sched->getUsedValues()) {
-        s |= process(x);
+        s = max(s, process(x));
       }
     }
     set(v, s);
   }
 
   void visit(const TryCatchFlow *v) override {
-    bool s = process(v->getBody()) | process(v->getFinally());
+    auto s = max(process(v->getBody()), process(v->getFinally()));
     for (auto &x : *v) {
-      s |= process(x.getHandler());
+      s = max(s, process(x.getHandler()));
     }
     set(v, s);
   }
 
   void visit(const PipelineFlow *v) override {
-    bool s = false;
-    bool callSE = false;
+    auto s = Status::PURE;
+    auto callStatus = Status::PURE;
     for (auto &stage : *v) {
       // make sure we're treating this as a call
       if (auto *f = util::getFunc(stage.getCallee())) {
-        bool stageCallSE = process(f);
-        callSE |= stageCallSE;
-        s |= stageCallSE;
+        auto stageCallStatus = process(f);
+        callStatus = max(callStatus, stageCallStatus);
+        s = max(s, stageCallStatus);
       } else {
         // unknown function
         process(stage.getCallee());
-        s = true;
+        callStatus = Status::UNKNOWN;
+        s = Status::UNKNOWN;
       }
 
       for (auto *arg : stage) {
-        s |= process(arg);
+        s = max(s, process(arg));
       }
     }
-    set(v, s, callSE);
+    set(v, s, callStatus);
   }
 
   void visit(const dsl::CustomFlow *v) override {
-    bool s = v->hasSideEffect();
-    set(v, s, s);
+    set(v, v->getSideEffectStatus(/*local=*/true),
+        v->getSideEffectStatus(/*local=*/false));
   }
 
-  void visit(const IntConst *v) override { set(v, false); }
+  void visit(const IntConst *v) override { set(v, Status::PURE); }
 
-  void visit(const FloatConst *v) override { set(v, false); }
+  void visit(const FloatConst *v) override { set(v, Status::PURE); }
 
-  void visit(const BoolConst *v) override { set(v, false); }
+  void visit(const BoolConst *v) override { set(v, Status::PURE); }
 
-  void visit(const StringConst *v) override { set(v, false); }
+  void visit(const StringConst *v) override { set(v, Status::PURE); }
 
-  void visit(const dsl::CustomConst *v) override { set(v, false); }
+  void visit(const dsl::CustomConst *v) override { set(v, Status::PURE); }
 
   void visit(const AssignInstr *v) override {
     auto id = v->getLhs()->getId();
@@ -183,10 +233,11 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
     bool g = v->getLhs()->isGlobal();
     bool s = (count1 != count2);
+    auto se2stat = [](bool b) { return b ? Status::NO_CAPTURE : Status::PURE; };
     if (globalAssignmentHasSideEffects) {
-      set(v, s | g | process(v->getRhs()), g);
+      set(v, se2stat(s | g | process(v->getRhs())), se2stat(g));
     } else {
-      set(v, s | process(v->getRhs()), s & g);
+      set(v, se2stat(s | process(v->getRhs())), se2stat(s & g));
     }
   }
 
@@ -195,81 +246,99 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   void visit(const InsertInstr *v) override {
     process(v->getLhs());
     process(v->getRhs());
-    set(v, true, true);
+
+    auto *func = funcStack.back();
+    auto it = cr->results.find(func->getId());
+    seqassert(it != cr->results.end(), "function not found in capture results");
+    auto captureInfo = it->second;
+
+    bool pure = true;
+
+    for (auto &info : captureInfo) {
+      if (info.externCaptures || info.modified || !info.argCaptures.empty()) {
+        pure = false;
+        break;
+      }
+    }
+
+    if (pure) {
+      // make sure the lhs does not escape
+      auto escapeInfo = escapes(func, v->getLhs(), cr);
+      pure = (!escapeInfo || (escapeInfo.returnCaptures && !escapeInfo.externCaptures &&
+                              escapeInfo.argCaptures.empty()));
+    }
+
+    set(v, Status::UNKNOWN, pure ? Status::PURE : Status::UNKNOWN);
   }
 
   void visit(const CallInstr *v) override {
-    bool s = false;
-    bool callSE = true;
+    auto s = Status::PURE;
+    auto callStatus = Status::UNKNOWN;
     for (auto *x : *v) {
-      s |= process(x);
+      s = max(s, process(x));
     }
     if (auto *f = util::getFunc(v->getCallee())) {
-      callSE = process(f);
-      s |= callSE;
+      callStatus = process(f);
+      s = max(s, callStatus);
     } else {
       // unknown function
       process(v->getCallee());
-      s = true;
+      s = Status::UNKNOWN;
     }
-    set(v, s, callSE);
+    set(v, s, callStatus);
   }
 
-  void visit(const StackAllocInstr *v) override { set(v, false); }
+  void visit(const StackAllocInstr *v) override { set(v, Status::PURE); }
 
-  void visit(const TypePropertyInstr *v) override { set(v, false); }
+  void visit(const TypePropertyInstr *v) override { set(v, Status::PURE); }
 
-  void visit(const YieldInInstr *v) override { set(v, true); }
+  void visit(const YieldInInstr *v) override { set(v, Status::NO_CAPTURE); }
 
   void visit(const TernaryInstr *v) override {
-    set(v, process(v->getCond()) | process(v->getTrueValue()) |
-               process(v->getFalseValue()));
+    set(v, max(process(v->getCond()), process(v->getTrueValue()),
+               process(v->getFalseValue())));
   }
 
-  void visit(const BreakInstr *v) override { set(v, true); }
+  void visit(const BreakInstr *v) override { set(v, Status::NO_CAPTURE); }
 
-  void visit(const ContinueInstr *v) override { set(v, true); }
+  void visit(const ContinueInstr *v) override { set(v, Status::NO_CAPTURE); }
 
   void visit(const ReturnInstr *v) override {
-    process(v->getValue());
-    set(v, true);
+    set(v, max(Status::NO_CAPTURE, process(v->getValue())));
   }
 
   void visit(const YieldInstr *v) override {
-    process(v->getValue());
-    set(v, true);
+    set(v, max(Status::NO_CAPTURE, process(v->getValue())));
   }
 
   void visit(const ThrowInstr *v) override {
     process(v->getValue());
-    set(v, true, true);
+    set(v, Status::UNKNOWN, Status::NO_CAPTURE);
   }
 
   void visit(const FlowInstr *v) override {
-    set(v, process(v->getFlow()) | process(v->getValue()));
+    set(v, max(process(v->getFlow()), process(v->getValue())));
   }
 
   void visit(const dsl::CustomInstr *v) override {
-    bool s = v->hasSideEffect();
-    set(v, s, s);
+    set(v, v->getSideEffectStatus(/*local=*/true),
+        v->getSideEffectStatus(/*local=*/false));
   }
 };
-
-const std::string SideEfectAnalyzer::PURE_ATTR = "std.internal.attributes.pure";
-const std::string SideEfectAnalyzer::NON_PURE_ATTR = "std.internal.attributes.nonpure";
 } // namespace
 
 const std::string SideEffectAnalysis::KEY = "core-analyses-side-effect";
 
-bool SideEffectResult::hasSideEffect(Value *v) const {
+bool SideEffectResult::hasSideEffect(const Value *v) const {
   auto it = result.find(v->getId());
-  return it == result.end() || it->second;
+  return it == result.end() || it->second != util::SideEffectStatus::PURE;
 }
 
 std::unique_ptr<Result> SideEffectAnalysis::run(const Module *m) {
+  auto *capResult = getAnalysisResult<dataflow::CaptureResult>(capAnalysisKey);
   VarUseAnalyzer vua;
   const_cast<Module *>(m)->accept(vua);
-  SideEfectAnalyzer sea(vua, globalAssignmentHasSideEffects);
+  SideEfectAnalyzer sea(vua, capResult, globalAssignmentHasSideEffects);
   m->accept(sea);
   return std::make_unique<SideEffectResult>(sea.result);
 }
