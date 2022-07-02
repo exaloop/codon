@@ -33,6 +33,7 @@ class Generator:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
+    @nocapture
     @llvm
     def __resume__(self) -> void:
         declare void @llvm.coro.resume(i8*)
@@ -48,6 +49,7 @@ class Generator:
         self.__resume__()
         return p[0]
 
+    @nocapture
     @llvm
     def destroy(self) -> void:
         declare void @llvm.coro.destroy(i8*)

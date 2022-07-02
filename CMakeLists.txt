@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(Codon VERSION "0.11.1"
+project(Codon VERSION "0.12.0"
               HOMEPAGE_URL "https://github.com/exaloop/codon"
               DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
@@ -117,6 +117,7 @@ set(CODON_HPPFILES
     codon/parser/visitors/typecheck/typecheck_ctx.h
     codon/parser/visitors/visitor.h
     codon/sir/analyze/analysis.h
+    codon/sir/analyze/dataflow/capture.h
     codon/sir/analyze/dataflow/cfg.h
     codon/sir/analyze/dataflow/dominator.h
     codon/sir/analyze/dataflow/reaching.h
@@ -171,6 +172,7 @@ set(CODON_HPPFILES
     codon/sir/util/operator.h
     codon/sir/util/outlining.h
     codon/sir/util/packs.h
+    codon/sir/util/side_effect.h
     codon/sir/util/visitor.h
     codon/sir/value.h
     codon/sir/var.h
@@ -246,6 +248,7 @@ set(CODON_CPPFILES
     codon/parser/visitors/visitor.cpp
     codon/sir/attribute.cpp
     codon/sir/analyze/analysis.cpp
+    codon/sir/analyze/dataflow/capture.cpp
     codon/sir/analyze/dataflow/cfg.cpp
     codon/sir/analyze/dataflow/dominator.cpp
     codon/sir/analyze/dataflow/reaching.cpp
@@ -289,6 +292,7 @@ set(CODON_CPPFILES
     codon/sir/util/irtools.cpp
     codon/sir/util/matching.cpp
     codon/sir/util/outlining.cpp
+    codon/sir/util/side_effect.cpp
     codon/sir/util/visitor.cpp
     codon/sir/value.cpp
     codon/sir/var.cpp

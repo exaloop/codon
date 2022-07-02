@@ -16,11 +16,13 @@ from C import exit(int)
 @extend
 class __internal__:
     @pure
+    @derives
     @llvm
     def class_raw(obj) -> Ptr[byte]:
         ret i8* %obj
 
     @pure
+    @derives
     @llvm
     def _tuple_getitem_llvm(t: T, idx: int, T: type, E: type) -> E:
         %x = alloca {=T}
@@ -43,12 +45,14 @@ class __internal__:
         )
 
     @pure
+    @derives
     @llvm
     def fn_new(ptr: Ptr[byte], T: type) -> T:
         %0 = bitcast i8* %ptr to {=T}
         ret {=T} %0
 
     @pure
+    @derives
     @llvm
     def fn_raw(fn: T, T: type) -> Ptr[byte]:
         %0 = bitcast {=T} %fn to i8*
@@ -98,12 +102,14 @@ class __internal__:
         ret i8* null
 
     @pure
+    @derives
     @llvm
     def opt_tuple_new_arg(what: T, T: type) -> Optional[T]:
         %0 = insertvalue { i1, {=T} } { i1 true, {=T} undef }, {=T} %what, 1
         ret { i1, {=T} } %0
 
     @pure
+    @derives
     @llvm
     def opt_ref_new_arg(what: T, T: type) -> Optional[T]:
         ret i8* %what
@@ -123,24 +129,27 @@ class __internal__:
         ret i8 %1
 
     @pure
+    @derives
     @llvm
     def opt_tuple_invert(what: Optional[T], T: type) -> T:
         %0 = extractvalue { i1, {=T} } %what, 1
         ret {=T} %0
 
     @pure
+    @derives
     @llvm
     def opt_ref_invert(what: Optional[T], T: type) -> T:
         ret i8* %what
 
     @pure
+    @derives
     @llvm
     def to_class_ptr(ptr: Ptr[byte], T: type) -> T:
         %0 = bitcast i8* %ptr to {=T}
         ret {=T} %0
 
-    @pure
     def _tuple_offsetof(x, field: Static[int]) -> int:
+        @pure
         @llvm
         def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
             %a = alloca {=T}

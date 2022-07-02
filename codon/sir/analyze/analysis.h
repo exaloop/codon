@@ -35,12 +35,12 @@ public:
   /// Returns the result of a given analysis.
   /// @param key the analysis key
   template <typename AnalysisType>
-  const AnalysisType *getAnalysisResult(const std::string &key) {
-    return static_cast<const AnalysisType *>(doGetAnalysis(key));
+  AnalysisType *getAnalysisResult(const std::string &key) {
+    return static_cast<AnalysisType *>(doGetAnalysis(key));
   }
 
 private:
-  const analyze::Result *doGetAnalysis(const std::string &key);
+  analyze::Result *doGetAnalysis(const std::string &key);
 };
 
 } // namespace analyze

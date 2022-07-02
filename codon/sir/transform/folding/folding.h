@@ -27,11 +27,13 @@ public:
   /// @param sideEffectsPass the key of the side effects pass
   /// @param reachingDefPass the key of the reaching definitions pass
   /// @param globalVarPass the key of the global variables pass
+  /// @param repeat default number of times to repeat the pass
+  /// @param runGlobalDemotion whether to demote globals if possible
   FoldingPassGroup(const std::string &sideEffectsPass,
                    const std::string &reachingDefPass, const std::string &globalVarPass,
-                   bool runGlobalDemotion = true);
+                   int repeat = 5, bool runGlobalDemotion = true);
 
-  bool shouldRepeat() const override;
+  bool shouldRepeat(int num) const override;
 };
 
 } // namespace folding
