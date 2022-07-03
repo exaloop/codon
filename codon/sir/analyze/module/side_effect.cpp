@@ -249,7 +249,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
     auto *func = funcStack.back();
     auto it = cr->results.find(func->getId());
-    seqassert(it != cr->results.end(), "function not found in capture results");
+    seqassertn(it != cr->results.end(), "function not found in capture results");
     auto captureInfo = it->second;
 
     bool pure = true;

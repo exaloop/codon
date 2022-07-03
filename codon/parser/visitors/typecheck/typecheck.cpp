@@ -138,7 +138,6 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 
 /**************************************************************************************/
 
-
 void TypecheckVisitor::visit(StmtExpr *expr) {
   expr->done = true;
   for (auto &s : expr->stmts) {

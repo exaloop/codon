@@ -112,19 +112,19 @@ struct PartitionArgsByEscape : public ir::util::Operator {
         //   - Extern captures (bool)
         //   - Captured arg indices (int tuple)
         std::vector<Value *> args(v->begin(), v->end());
-        seqassert(args.size() == 3, "bad escape-test call (size)");
-        seqassert(isA<BoolConst>(args[0]) && isA<BoolConst>(args[1]),
-                  "bad escape-test call (arg types)");
+        seqassertn(args.size() == 3, "bad escape-test call (size)");
+        seqassertn(isA<BoolConst>(args[0]) && isA<BoolConst>(args[1]),
+                   "bad escape-test call (arg types)");
 
         ir::analyze::dataflow::CaptureInfo info;
         info.returnCaptures = cast<BoolConst>(args[0])->getVal();
         info.externCaptures = cast<BoolConst>(args[1])->getVal();
         auto *tuple = cast<CallInstr>(args[2]);
-        seqassert(tuple,
-                  "last escape-test call argument should be a const tuple literal");
+        seqassertn(tuple,
+                   "last escape-test call argument should be a const tuple literal");
 
         for (auto *arg : *tuple) {
-          seqassert(isA<IntConst>(arg), "final args should be int");
+          seqassertn(isA<IntConst>(arg), "final args should be int");
           info.argCaptures.push_back(cast<IntConst>(arg)->getVal());
         }
 
@@ -157,11 +157,11 @@ struct EscapeValidator : public ir::transform::Pass {
           continue;
 
         auto it = capResult->results.find(f->getId());
-        seqassert(it != capResult->results.end(),
-                  "function not found in capture results");
+        seqassertn(it != capResult->results.end(),
+                   "function not found in capture results");
         auto received = it->second;
-        seqassert(expected.size() == received.size(),
-                  "size mismatch in capture results");
+        seqassertn(expected.size() == received.size(),
+                   "size mismatch in capture results");
 
         for (unsigned i = 0; i < expected.size(); i++) {
           auto exp = expected[i];

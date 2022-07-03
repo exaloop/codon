@@ -80,7 +80,7 @@ bool happensBefore(const Value *before, const Value *after, CFGraph *cfg,
       else if (val->getId() == after->getId())
         return false;
     }
-    seqassert(false, "could not find values in CFG block");
+    seqassertn(false, "could not find values in CFG block");
     return false;
   }
 
@@ -277,22 +277,22 @@ struct CaptureContext {
 
   CFGraph *getCFGraph(const Func *func) {
     auto it = reaching->cfgResult->graphs.find(func->getId());
-    seqassert(it != reaching->cfgResult->graphs.end(),
-              "could not find function in CFG results");
+    seqassertn(it != reaching->cfgResult->graphs.end(),
+               "could not find function in CFG results");
     return it->second.get();
   }
 
   RDInspector *getRDInspector(const Func *func) {
     auto it = reaching->results.find(func->getId());
-    seqassert(it != reaching->results.end(),
-              "could not find function in reaching-definitions results");
+    seqassertn(it != reaching->results.end(),
+               "could not find function in reaching-definitions results");
     return it->second.get();
   }
 
   DominatorInspector *getDomInspector(const Func *func) {
     auto it = dominating->results.find(func->getId());
-    seqassert(it != dominating->results.end(),
-              "could not find function in dominator results");
+    seqassertn(it != dominating->results.end(),
+               "could not find function in dominator results");
     return it->second.get();
   }
 };
@@ -410,8 +410,8 @@ struct CaptureTracker : public util::Operator {
         continue;
 
       auto it2 = synthAssigns.find((*it)->getId());
-      seqassert(it2 != synthAssigns.end(),
-                "could not find synthetic assignment for arg var");
+      seqassertn(it2 != synthAssigns.end(),
+                 "could not find synthetic assignment for arg var");
       dsets.push_back(DerivedSet(func, *it, it2->second));
     }
   }
@@ -611,7 +611,7 @@ struct CaptureTracker : public util::Operator {
         if (auto *synth = cast<SyntheticAssignInstr>(*it)) {
           if (synth->getKind() == SyntheticAssignInstr::Kind::NEXT_VALUE &&
               synth->getLhs()->getId() == var->getId()) {
-            seqassert(!found, "found multiple synthetic assignments for loop var");
+            seqassertn(!found, "found multiple synthetic assignments for loop var");
             dset.setDerived(var, synth);
             found = true;
           }
@@ -721,7 +721,7 @@ std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
     return answer;
   }
 
-  seqassert(false, "unknown function type");
+  seqassertn(false, "unknown function type");
   return {};
 }
 
@@ -767,7 +767,6 @@ std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
     if (const auto *f = cast<Func>(var)) {
       auto ans = cc.get(f);
       res->results.emplace(f->getId(), ans);
-
     }
   }
 
@@ -782,7 +781,7 @@ CaptureInfo escapes(const BodiedFunc *func, const Value *value, CaptureResult *c
   cc.results = cr->results;
   CaptureTracker ct(cc, cast<BodiedFunc>(func), value);
   ct.runToCompletion(func);
-  seqassert(ct.dsets.size() == 1, "unexpected dsets size");
+  seqassertn(ct.dsets.size() == 1, "unexpected dsets size");
   return ct.dsets[0].result;
 }
 
