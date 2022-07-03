@@ -9,6 +9,7 @@
 #include "codon/sir/analyze/module/side_effect.h"
 #include "codon/sir/transform/rewrite.h"
 #include "codon/sir/util/irtools.h"
+#include "codon/sir/util/matching.h"
 
 namespace codon {
 namespace ir {
@@ -131,7 +132,8 @@ struct CanonOpChain : public RewriteRule {
         newCall = util::call(fn, {newCall, *it});
       }
 
-      return setResult(newCall);
+      if (!util::match(v, newCall, /*checkNames=*/false, /*varIdMatch=*/true))
+        return setResult(newCall);
     }
   }
 };
@@ -169,7 +171,8 @@ struct CanonInequality : public RewriteRule {
           seqassertn(false, "unknown comparison op: {}", op);
         }
 
-        if (newCall && newCall->getType()->is(type))
+        if (newCall && newCall->getType()->is(type) &&
+            !util::match(v, newCall, /*checkNames=*/false, /*varIdMatch=*/true))
           return setResult(newCall);
       }
     }
@@ -259,7 +262,8 @@ struct CanonAddMul : public RewriteRule {
     }
 
     if (newCall && isDistributiveOp(getOp(newCall)) &&
-        newCall->getType()->is(v->getType()))
+        newCall->getType()->is(v->getType()) &&
+        !util::match(v, newCall, /*checkNames=*/false, /*varIdMatch=*/true))
       return setResult(newCall);
   }
 };
@@ -287,7 +291,8 @@ struct CanonConstSub : public RewriteRule {
       newCall = *lhs + *(M->getFloat(-c));
     }
 
-    if (newCall && newCall->getType()->is(type))
+    if (newCall && newCall->getType()->is(type) &&
+        !util::match(v, newCall, /*checkNames=*/false, /*varIdMatch=*/true))
       return setResult(newCall);
   }
 };

@@ -100,7 +100,7 @@ public:
 public:
   void log() {
     if (!logged) {
-      LOG_TIME("[T] {} = {:.1f}", name, elapsed());
+      LOG_TIME("[T] {} = {:.3f}", name, elapsed());
       logged = true;
     }
   }

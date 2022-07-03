@@ -317,23 +317,28 @@ class float:
         %tmp = call double @llvm.fma.f64(double %a, double %b, double %c)
         ret double %tmp
 
+    @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[float], b: float) -> None:
         %tmp = atomicrmw xchg double* %d, double %b seq_cst
         ret {} {}
 
+    @nocapture
     @llvm
     def __atomic_add__(d: Ptr[float], b: float) -> float:
         %tmp = atomicrmw fadd double* %d, double %b seq_cst
         ret double %tmp
 
+    @nocapture
     @llvm
     def __atomic_sub__(d: Ptr[float], b: float) -> float:
         %tmp = atomicrmw fsub double* %d, double %b seq_cst
         ret double %tmp
 
     def __hash__(self) -> int:
-        from C import frexp(float, Ptr[Int[32]]) -> float
+        @nocapture
+        @C
+        def frexp(a: float, b: Ptr[Int[32]]) -> float: pass
 
         HASH_BITS = 61
         HASH_MODULUS = (1 << HASH_BITS) - 1

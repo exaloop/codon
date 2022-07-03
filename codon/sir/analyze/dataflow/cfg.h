@@ -307,6 +307,15 @@ public:
   /// @return an iterator beyond the last block
   auto end() const { return util::raw_ptr_adaptor(blocks.end()); }
 
+  /// @return an iterator to the synthetic value
+  auto synth_begin() { return util::raw_ptr_adaptor(syntheticValues.begin()); }
+  /// @return an iterator beyond the last synthetic value
+  auto synth_end() { return util::raw_ptr_adaptor(syntheticValues.end()); }
+  /// @return an iterator to the first synthetic value
+  auto synth_begin() const { return util::raw_ptr_adaptor(syntheticValues.begin()); }
+  /// @return an iterator beyond the last synthetic value
+  auto synth_end() const { return util::raw_ptr_adaptor(syntheticValues.end()); }
+
   /// @return the entry block
   CFBlock *getEntryBlock() { return blocks.front().get(); }
   /// @return the entry block
