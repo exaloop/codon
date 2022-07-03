@@ -367,7 +367,7 @@ std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLa
   ctx->addBlock();
   int iteration = 0;
   for (int prevSize = std::numeric_limits<int>::max();;) {
-    LOG_TYPECHECK("== iter {} ==========================================", iteration);
+    // LOG("== iter {} ==========================================", iteration);
     ctx->typecheckLevel++;
     auto old = ctx->changedNodes;
     ctx->changedNodes = 0;

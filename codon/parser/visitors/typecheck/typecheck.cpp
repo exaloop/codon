@@ -138,13 +138,6 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 
 /**************************************************************************************/
 
-void TypecheckVisitor::visit(StarExpr *) { error("cannot use star-expression"); }
-
-void TypecheckVisitor::visit(KeywordStarExpr *) { error("cannot use star-expression"); }
-
-void TypecheckVisitor::visit(EllipsisExpr *expr) {
-  unify(expr->type, ctx->getUnbound());
-}
 
 void TypecheckVisitor::visit(StmtExpr *expr) {
   expr->done = true;

@@ -647,7 +647,19 @@ struct InstantiateExpr : Expr {
 
 #undef ACCEPT
 
-enum ExprAttr { SequenceItem, StarSequenceItem, List, Set, Dict, Partial, Dominated, __LAST__ };
+enum ExprAttr {
+  SequenceItem,
+  StarSequenceItem,
+  List,
+  Set,
+  Dict,
+  Partial,
+  Dominated,
+  StarArgument,
+  KwStarArgument,
+  OrderedCall,
+  __LAST__
+};
 
 char getStaticGeneric(Expr *e);
 

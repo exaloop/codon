@@ -88,18 +88,41 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   }
 }
 
-/// Type-checks a pipe expression.
-/// Transform a stage CallExpr foo(x) without an ellipsis into:
-///   foo(..., x).
-/// Transform any non-CallExpr stage foo into a CallExpr stage:
-///   foo(...).
-/// If necessary, add stages (e.g. unwrap, float.__new__ or Optional.__new__)
-/// to support function call type adjustments.
-/// TODO: LATER
+/// Helper function that locates the pipe ellipsis within a collection of (possibly
+/// nested) CallExprs.
+/// @return  List of CallExprs and their locations within the parent CallExpr
+///          needed to access the ellipsis.
+/// @example `foo(bar(1, baz(...)))` returns `[{0, baz}, {1, bar}, {0, foo}]`
+std::vector<std::pair<size_t, ExprPtr>> findEllipsis(ExprPtr expr) {
+  auto call = expr->getCall();
+  if (!call)
+    return {};
+  for (size_t ai = 0; ai < call->args.size(); ai++) {
+    if (auto el = call->args[ai].value->getEllipsis()) {
+      if (el->isPipeArg)
+        return {{ai, expr}};
+    } else if (call->args[ai].value->getCall()) {
+      auto v = findEllipsis(call->args[ai].value);
+      if (!v.empty()) {
+        v.push_back({ai, expr});
+        return v;
+      }
+    }
+  }
+  return {};
+}
+
+/// Typecheck pipe expressions.
+/// Each stage call `foo(x)` without an ellipsis will be transformed to `foo(..., x)`.
+/// Stages that are not in the form of CallExpr will be transformed to it (e.g., `foo`
+/// -> `foo(...)`).
+/// Special care is taken of stages that can expand to multiple stages (e.g., `a |> foo`
+/// might become `a |> unwrap |> foo` to satisfy type constraints; see @c wrapExpr for
+/// details).
 void TypecheckVisitor::visit(PipeExpr *expr) {
   bool hasGenerator = false;
 
-  // Returns T if t is of type Generator[T].
+  // Return T if t is of type `Generator[T]`; otherwise just `type(t)`
   auto getIterableType = [&](TypePtr t) {
     if (t->is("Generator")) {
       hasGenerator = true;
@@ -107,72 +130,84 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     }
     return t;
   };
-  // List of output types (for a|>b|>c, this list is type(a), type(a|>b),
-  // type(a|>b|>c). These types are raw types (i.e. generator types are preserved).
-  expr->inTypes.clear();
-  transform(expr->items[0].expr);
 
-  // The input type to the next stage.
-  TypePtr inType = expr->items[0].expr->getType();
+  // List of output types
+  // (e.g., for `a|>b|>c` it is `[type(a), type(a|>b), type(a|>b|>c)]`).
+  // Note: the generator types are completely preserved (i.e., not extracted)
+  expr->inTypes.clear();
+
+  // Process the pipeline head
+  auto inType = transform(expr->items[0].expr)->type; // input type to the next stage
   expr->inTypes.push_back(inType);
   inType = getIterableType(inType);
-  expr->done = expr->items[0].expr->done;
-  for (int i = 1; i < expr->items.size(); i++) {
-    ExprPtr prepend = nullptr; // An optional preceding stage
-                               // (e.g. prepend  (|> unwrap |>) if an optional argument
-                               //  needs unpacking).
-    int inTypePos = -1;
+  auto done = expr->items[0].expr->isDone();
+  for (size_t pi = 1; pi < expr->items.size(); pi++) {
+    int inTypePos = -1;                    // ellipsis position
+    ExprPtr *ec = &(expr->items[pi].expr); // a pointer so that we can replace it
+    while (auto se = (*ec)->getStmtExpr()) // handle StmtExpr (e.g., in partial calls)
+      ec = &(se->expr);
 
-    // Get the stage expression (take heed of StmtExpr!):
-    auto ec = &expr->items[i].expr; // This is a pointer to a CallExprPtr
-    while ((*ec)->getStmtExpr())
-      ec = &const_cast<StmtExpr *>((*ec)->getStmtExpr())->expr;
-    if (auto ecc = const_cast<CallExpr *>((*ec)->getCall())) {
-      // Find the input argument position (a position of ... in the argument list):
-      for (int ia = 0; ia < ecc->args.size(); ia++)
-        if (auto ee = ecc->args[ia].value->getEllipsis()) {
-          if (inTypePos == -1) {
-            const_cast<EllipsisExpr *>(ee)->isPipeArg = true;
-            inTypePos = ia;
-            break;
-          }
+    if (auto call = (*ec)->getCall()) {
+      // Case: a call. Find the position of the pipe ellipsis within it
+      for (size_t ia = 0; inTypePos == -1 && ia < call->args.size(); ia++)
+        if (call->args[ia].value->getEllipsis()) {
+          inTypePos = ia;
         }
-      // If there is no ... in the argument list, use the first argument as the input
-      // argument and add an ellipsis there
+      // No ellipses found? Prepend it as the first argument
       if (inTypePos == -1) {
-        ecc->args.insert(ecc->args.begin(), {"", N<EllipsisExpr>(true)});
+        call->args.insert(call->args.begin(), {"", N<EllipsisExpr>()});
         inTypePos = 0;
       }
     } else {
-      // If this is not a CallExpr, make it a call expression with a single input
-      // argument:
-      expr->items[i].expr = N<CallExpr>(expr->items[i].expr, N<EllipsisExpr>(true));
-      ec = &expr->items[i].expr;
+      // Case: not a call. Convert it to a call with a single ellipsis
+      expr->items[pi].expr = N<CallExpr>(expr->items[pi].expr, N<EllipsisExpr>());
+      ec = &expr->items[pi].expr;
       inTypePos = 0;
     }
 
-    if (auto nn = transformCall((CallExpr *)(ec->get()), inType, &prepend))
-      *ec = nn;
-    if (prepend) { // Prepend the stage and rewind the loop (yes, the current
-                   // expression will get parsed twice).
-      expr->items.insert(expr->items.begin() + i, {"|>", prepend});
-      i--;
+    // Set the ellipsis type
+    auto el = (*ec)->getCall()->args[inTypePos].value->getEllipsis();
+    el->isPipeArg = true;
+    // Don't unify unbound inType yet (it might become a generator that needs to be
+    // extracted)
+    if (inType && !inType->getUnbound())
+      unify(el->type, inType);
+
+    // Transform the call. Because a transformation might wrap the ellipsis in layers,
+    // make sure to extract these layers and move them to the pipeline.
+    // Example: `foo(...)` that is transformed to `foo(unwrap(...))` will become
+    // `unwrap(...) |> foo(...)`
+    transform(*ec);
+    auto layers = findEllipsis(*ec);
+    seqassert(!layers.empty(), "can't find the ellipsis");
+    if (layers.size() > 1) {
+      // Prepend layers
+      for (auto &[pos, prepend] : layers) {
+        prepend->getCall()->args[pos].value = N<EllipsisExpr>(true);
+        expr->items.insert(expr->items.begin() + pi++, {"|>", prepend});
+      }
+      // Rewind the loop (yes, the current expression will get transformed again)
+      /// TODO: avoid reevaluation
+      expr->items.erase(expr->items.begin() + pi);
+      pi = pi - layers.size() - 1;
       continue;
     }
+
     if ((*ec)->type)
-      unify(expr->items[i].expr->type, (*ec)->type);
-    expr->items[i].expr = *ec;
-    inType = expr->items[i].expr->getType();
-    if (auto rt = realize(inType))
-      unify(inType, rt);
-    else
-      expr->done = false;
+      unify(expr->items[pi].expr->type, (*ec)->type);
+    expr->items[pi].expr = *ec;
+    inType = expr->items[pi].expr->getType();
+    if (!realize(inType))
+      done = false;
     expr->inTypes.push_back(inType);
-    // Do not extract the generator type in the last stage of a pipeline.
-    if (i < expr->items.size() - 1)
+
+    // Do not extract the generator in the last stage of a pipeline
+    if (pi + 1 < expr->items.size())
       inType = getIterableType(inType);
   }
   unify(expr->type, (hasGenerator ? ctx->getType("NoneType") : inType));
+  if (done)
+    expr->setDone();
 }
 
 /// Transform index expressions.
@@ -201,7 +236,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
 
   // Case: static tuple access
-  resultExpr = transformStaticTupleIndex(cls.get(), expr->expr, expr->index);
+  resultExpr = transformStaticTupleIndex(cls, expr->expr, expr->index);
 
   // Case: normal __getitem__
   if (!resultExpr)
@@ -585,8 +620,8 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 /// (integer or slice). If so, statically extract the specified tuple item or a
 /// sub-tuple (if the index is a slice).
 /// Works only on normal tuples and partial functions.
-ExprPtr TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, ExprPtr &expr,
-                                                    ExprPtr &index) {
+ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
+                                                    ExprPtr &expr, ExprPtr &index) {
   if (!tuple->getRecord())
     return nullptr;
   if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL))

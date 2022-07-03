@@ -1029,7 +1029,7 @@ class Foo[T,U: Static[int]]:
     f: UInt[b]
 print Foo[float,6].__class__.__name__ #! expected 4 generics and/or statics
 
-#%% partial_star_args,barebones
+#%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print
 #: A
 #: C

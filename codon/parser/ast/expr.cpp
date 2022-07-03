@@ -415,7 +415,9 @@ std::string SliceExpr::toString() const {
 ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
 EllipsisExpr::EllipsisExpr(bool isPipeArg) : Expr(), isPipeArg(isPipeArg) {}
-std::string EllipsisExpr::toString() const { return wrapType("ellipsis"); }
+std::string EllipsisExpr::toString() const {
+  return wrapType(format("ellipsis{}", isPipeArg ? " #:pipe" : ""));
+}
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, ExprPtr expr)

@@ -56,6 +56,10 @@ public:
     return transform(s);
   }
   ExprPtr transform(ExprPtr &e, bool allowTypes);
+  ExprPtr transform(const ExprPtr &expr, bool allowTypes) {
+    auto e = expr;
+    return transform(e, allowTypes);
+  }
   ExprPtr transformType(ExprPtr &expr);
   ExprPtr transformType(const ExprPtr &expr) {
     auto e = expr;
@@ -105,7 +109,7 @@ public:
   ExprPtr transformBinaryMagic(BinaryExpr *);
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
-  ExprPtr transformStaticTupleIndex(types::ClassType *, ExprPtr &, ExprPtr &);
+  ExprPtr transformStaticTupleIndex(const types::ClassTypePtr &, ExprPtr &, ExprPtr &);
   int64_t translateIndex(int64_t, int64_t, bool = false);
   int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
   void visit(InstantiateExpr *) override;
@@ -118,61 +122,17 @@ public:
     std::vector<char> known = {}; // bitvector of known arguments
     ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
   };
-  /// Type-checks it with a new unbound type.
-  void visit(EllipsisExpr *) override;
   void visit(StarExpr *) override;
   void visit(KeywordStarExpr *) override;
-  /// See transformCall() below.
+  void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
-  /// Transform a call expression callee(args...).
-  /// Intercepts callees that are expr.dot, expr.dot[T1, T2] etc.
-  /// Before any transformation, all arguments are expanded:
-  ///   *args -> args[0], ..., args[N]
-  ///   **kwargs -> name0=kwargs.name0, ..., nameN=kwargs.nameN
-  /// Performs the following transformations:
-  ///   Tuple(args...) -> Tuple.__new__(args...) (tuple constructor)
-  ///   Class(args...) -> c = Class.__new__(); c.__init__(args...); c (StmtExpr)
-  ///   Partial(args...) -> StmtExpr(p = Partial; PartialFn(args...))
-  ///   obj(args...) -> obj.__call__(args...) (non-functions)
-  /// This method will also handle the following use-cases:
-  ///   named arguments,
-  ///   default arguments,
-  ///   default generics, and
-  ///   *args / **kwargs.
-  /// Any partial call will be transformed as follows:
-  ///   callee(arg1, ...) -> StmtExpr(_v = Partial.callee.N10(arg1); _v).
-  /// If callee is partial and it is satisfied, it will be replaced with the originating
-  /// function call.
-  /// Arguments are unified with the signature types. The following exceptions are
-  /// supported:
-  ///   Optional[T] -> T (via unwrap())
-  ///   int -> float (via float.__new__())
-  ///   T -> Optional[T] (via Optional.__new__())
-  ///   T -> Generator[T] (via T.__iter__())
-  ///   T -> Callable[T] (via T.__call__())
-  ///
-  /// Pipe notes: if inType and extraStage are set, this method will use inType as a
-  /// pipe ellipsis type. extraStage will be set if an Optional conversion/unwrapping
-  /// stage needs to be inserted before the current pipeline stage.
-  ///
-  /// Static call expressions: the following static expressions are supported:
-  ///   isinstance(var, type) -> evaluates to bool
-  ///   hasattr(type, string) -> evaluates to bool
-  ///   staticlen(var) -> evaluates to int
-  ///   compile_error(string) -> raises a compiler error
-  ///   type(type) -> IdExpr(instantiated_type_name)
-  ///
-  /// Note: This is the most evil method in the whole parser suite. 🤦🏻‍
-  ExprPtr transformCall(CallExpr *expr, const types::TypePtr &inType = nullptr,
-                        ExprPtr *extraStage = nullptr);
-  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *expr);
-  bool callTransformCallArgs(std::vector<CallExpr::Arg> &args,
-                             const types::TypePtr &inType = nullptr);
-  ExprPtr callTransformCallee(ExprPtr &callee, std::vector<CallExpr::Arg> &args,
-                              PartialCallData &part);
-  ExprPtr callReorderArguments(types::ClassTypePtr callee, types::FuncTypePtr calleeFn,
-                               CallExpr *expr, int &ellipsisStage,
-                               PartialCallData &part);
+  bool transformCallArgs(std::vector<CallExpr::Arg> &);
+  void transformCallee(ExprPtr &, std::vector<CallExpr::Arg> &, PartialCallData &);
+  std::pair<types::FuncTypePtr, ExprPtr> getCalleeFn(CallExpr *, PartialCallData &);
+  ExprPtr callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
+  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
+  bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
+
   /// Find all generics on which a given function depends and add them to the context.
   void addFunctionGenerics(const types::FuncType *t);
   /// Generate a partial function type Partial.N01...01 (where 01...01 is a mask
