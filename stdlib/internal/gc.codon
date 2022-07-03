@@ -24,36 +24,36 @@ def seq_realloc(p: cobj, a: int) -> cobj:
 
 @nocapture
 @C
-def seq_free(p: cobj) -> void:
+def seq_free(p: cobj) -> None:
     pass
 
 
 @nocapture
 @C
-def seq_register_finalizer(p: cobj, f: cobj) -> void:
+def seq_register_finalizer(p: cobj, f: cobj) -> None:
     pass
 
 
 @nocapture
 @C
-def seq_gc_add_roots(p: cobj, q: cobj) -> void:
+def seq_gc_add_roots(p: cobj, q: cobj) -> None:
     pass
 
 
 @nocapture
 @C
-def seq_gc_remove_roots(p: cobj, q: cobj) -> void:
+def seq_gc_remove_roots(p: cobj, q: cobj) -> None:
     pass
 
 
 @C
-def seq_gc_clear_roots() -> void:
+def seq_gc_clear_roots() -> None:
     pass
 
 
 @nocapture
 @C
-def seq_gc_exclude_static_roots(p: cobj, q: cobj) -> void:
+def seq_gc_exclude_static_roots(p: cobj, q: cobj) -> None:
     pass
 
 

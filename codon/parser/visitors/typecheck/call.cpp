@@ -82,6 +82,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   if ((resultExpr = newExpr))
     return;
+  if (!calleeFn)
+    return;
 
   // Handle named and default arguments
   if ((resultExpr = callReorderArguments(calleeFn, expr, part)))
@@ -177,8 +179,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       args.erase(args.begin() + ai);
     } else {
       // Case: normal argument (no expansion)
-      transform(args[ai].value, true); // can be type as well
-      ai++;
+      transform(args[ai++].value, true); // can be type as well
     }
   }
 
