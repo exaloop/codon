@@ -205,9 +205,7 @@ void TypecheckVisitor::transformCallee(ExprPtr &callee,
     // avoids partial calls). This intercept passes the call arguments to transformDot
     // to select the best overload as well.
     ExprPtr *lhs = &callee;
-    if (auto ei = callee->getIndex()) {
-      lhs = &(ei->expr);
-    } else if (auto inst = CAST(callee, InstantiateExpr)) {
+    if (auto inst = CAST(callee, InstantiateExpr)) {
       // Special case: type instantiation (`foo.bar[T]`)
       /// TODO: get rid of?
       lhs = &(inst->typeExpr);
