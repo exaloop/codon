@@ -6,6 +6,7 @@
 
 * [Getting started](intro/intro.md)
 * [Frequently asked questions](intro/faq.md)
+* [Differences with Python](intro/differences.md)
 
 ## Language
 
