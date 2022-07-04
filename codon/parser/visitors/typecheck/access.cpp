@@ -41,7 +41,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   if (!val) {
     // Handle overloads
-    if (auto i = in(ctx->cache->overloads, expr->value))
+    if (in(ctx->cache->overloads, expr->value))
       val = ctx->forceFind(getDispatch(expr->value)->ast->name);
     if (!val)
       seqassert(expr, "cannot find '{}'", expr->value);
@@ -193,8 +193,6 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       methodArgs.push_back(N<EllipsisExpr>());
     return transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
   }
-
-  return nullptr;
 }
 
 /// Select the requested class member.

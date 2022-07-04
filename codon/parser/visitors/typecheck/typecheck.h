@@ -14,8 +14,7 @@
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * Visitor that infers expression types and performs type-guided transformations.
@@ -116,7 +115,7 @@ private: // Node typechecking rules
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
     bool isPartial = false;                   // true if the call is partial
-    std::string var = "";                     // set if calling a partial type itself
+    std::string var;                          // set if calling a partial type itself
     std::vector<char> known = {};             // mask of known arguments
     ExprPtr args = nullptr, kwArgs = nullptr; // partial *args/**kwargs expressions
   };
@@ -130,7 +129,7 @@ private: // Node typechecking rules
   bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
   std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
   ExprPtr transformSuperF(CallExpr *expr);
-  ExprPtr transformSuper(CallExpr *expr);
+  ExprPtr transformSuper();
   ExprPtr transformPtr(CallExpr *expr);
   ExprPtr transformArray(CallExpr *expr);
   ExprPtr transformIsInstance(CallExpr *expr);
@@ -219,5 +218,4 @@ public:
   friend class types::CallableTrait;
 };
 
-} // namespace ast
 } // namespace codon

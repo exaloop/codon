@@ -30,7 +30,6 @@ void SimplifyVisitor::visit(CallExpr *expr) {
   if ((resultExpr = transformSpecialCall(expr->expr, expr->args)))
     return;
 
-  bool foundEllispis = false;
   for (auto &i : expr->args) {
     if (auto el = i.value->getEllipsis()) {
       if (el->isPipeArg || &(i) == &(expr->args.back()))
@@ -41,7 +40,7 @@ void SimplifyVisitor::visit(CallExpr *expr) {
 }
 
 /// Simplify the following special call expressions:
-///   `tuple(i for i in tup)`      (tuple generatoris)
+///   `tuple(i for i in tup)`      (tuple generators)
 ///   `std.collections.namedtuple` (sugar for @tuple class)
 ///   `std.functools.partial`      (sugar for partial calls)
 /// Check validity of `type()` call. See below for more details.

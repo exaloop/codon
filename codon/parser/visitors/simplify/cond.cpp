@@ -14,7 +14,7 @@ void SimplifyVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
   transform(expr->cond);
   auto tmp = ctx->isConditionalExpr;
-  // Ensure that ifexpr and elsexpr are set as a potential short-circut expressions.
+  // Ensure that ifexpr and elsexpr are set as a potential short-circuit expressions.
   // Needed to ensure that variables defined within these expressions are properly
   // checked for their existence afterwards
   // (e.g., `x` will be created within `a if cond else (x := b)`
@@ -164,7 +164,7 @@ StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr 
       return suite;
     }
   }
-  pattern = transform(pattern); // Call transform to check for pattern errors
+  pattern = transform(pattern); // transform to check for pattern errors
   // Fallback (`__match__`) pattern
   return N<IfStmt>(
       N<CallExpr>(N<IdExpr>("hasattr"), var->clone(), N<StringExpr>("__match__"),

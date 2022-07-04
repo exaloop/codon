@@ -38,9 +38,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
           N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
       u->setUpdate();
       prependStmts->push_back(transform(u));
-    } else if (stmt->rhs) {
-      ;
-    } else if (hasUsed) {
+    } else if (hasUsed && !stmt->rhs) {
       // This assignment was a declaration only. Just mark the dominating binding as
       // used: `var.__used__ = True`
       stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));

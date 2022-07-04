@@ -11,8 +11,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 TypeContext::TypeContext(Cache *cache)
     : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0), age(0),
@@ -294,5 +293,4 @@ void TypeContext::dump(int pad) {
   }
 }
 
-} // namespace ast
 } // namespace codon

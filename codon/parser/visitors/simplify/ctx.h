@@ -58,7 +58,7 @@ public:
   bool isType() const { return kind == Type; }
   bool isImport() const { return !importPath.empty(); }
   bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
-  /// True if an indentifier is within a conditional block
+  /// True if an identifier is within a conditional block
   /// (i.e., a block that might not be executed during the runtime)
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
@@ -98,7 +98,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// (e.g., self in self.foo).
     std::string selfName;
     /// Map of captured identifiers (i.e., identifiers not defined in a function).
-    /// Captured (canonicalized) identifiers are mapped to the new canonical names
+    /// Captured (canonical) identifiers are mapped to the new canonical names
     /// (representing the canonical function argument names that are appended to the
     /// function after processing).
     std::unordered_map<std::string, std::string> *captures;

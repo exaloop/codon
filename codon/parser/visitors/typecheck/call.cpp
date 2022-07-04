@@ -132,7 +132,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 /// objects.
 /// @return false if expansion could not be completed; true otherwise
 bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
-  for (size_t ai = 0; ai < args.size();) {
+  for (auto ai = 0; ai < args.size();) {
     if (auto star = args[ai].value->getStar()) {
       // Case: *args expansion
       transform(star->what);
@@ -496,7 +496,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   if (val == "superf") {
     return {true, transformSuperF(expr)};
   } else if (val == "super:0") {
-    return {true, transformSuper(expr)};
+    return {true, transformSuper()};
   } else if (val == "__ptr__") {
     return {true, transformPtr(expr)};
   } else if (val == "__array__.__new__:0") {
@@ -541,7 +541,7 @@ ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
 /// Typecheck and transform super method. Replace it with the current self object cast
 /// to the first inherited type.
 /// TODO: only an empty super() is currently supported.
-ExprPtr TypecheckVisitor::transformSuper(CallExpr *expr) {
+ExprPtr TypecheckVisitor::transformSuper() {
   if (ctx->bases.empty() || !ctx->bases.back().type)
     error("no parent classes available");
   auto funcTyp = ctx->bases.back().type->getFunc();

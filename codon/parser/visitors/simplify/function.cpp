@@ -121,7 +121,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (stmt->attributes.has(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))
     error("builtins must be defined at the toplevel");
 
-  // All overloads share the same canonical name with exception of the number at the
+  // All overloads share the same canonical name except for the number at the
   // end (e.g., `foo.1:0`, `foo.1:1` etc.)
   std::string rootName;
   if (isClassMember) {

@@ -120,7 +120,7 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
     // We reached the toplevel. Break.
     if (p < 0)
       break;
-    // We went outside of the function scope. Break.
+    // We went outside the function scope. Break.
     if (!isOutside && (*i)->getBaseName() != getBaseName())
       break;
     prefix = p;

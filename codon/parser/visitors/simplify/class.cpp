@@ -65,15 +65,15 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &a : argsToParse) {
       if (a.status != Param::Generic)
         continue;
-      std::string name, varName;
+      std::string genName, varName;
       if (stmt->attributes.has(Attr::Extend))
-        varName = a.name, name = ctx->cache->rev(a.name);
+        varName = a.name, genName = ctx->cache->rev(a.name);
       else
-        varName = ctx->generateCanonicalName(a.name), name = a.name;
+        varName = ctx->generateCanonicalName(a.name), genName = a.name;
       if (getStaticGeneric(a.type.get()))
-        ctx->addVar(name, varName, a.type->getSrcInfo())->generic = true;
+        ctx->addVar(genName, varName, a.type->getSrcInfo())->generic = true;
       else
-        ctx->addType(name, varName, a.type->getSrcInfo())->generic = true;
+        ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
       args.emplace_back(Param{varName, transformType(clone(a.type), false),
                               transformType(clone(a.defaultValue), false), a.status});
     }
@@ -187,7 +187,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         fnStmts.push_back(transform(sp));
     }
 
-  // After popping context block, record types and nested classes will dissapear.
+  // After popping context block, record types and nested classes will disappear.
   // Store their references and re-add them to the context after popping
   std::vector<SimplifyContext::Item> addLater;
   for (auto &c : clsStmts)
@@ -247,10 +247,10 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
       if (a.status == Param::Generic) {
         if (si == subs.size())
           error(cls.get(), "wrong number of generics");
-        args.push_back(Param{a.name, a.type, transformType(subs[si++], false),
+        args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
                              Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {
-        args.push_back(a);
+        args.emplace_back(a);
       }
       if (a.status != Param::Normal) {
         if (getStaticGeneric(a.type.get()))
@@ -344,7 +344,7 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
       // If class B is nested within A, it's name is always A.B, never B itself.
       // Ensure that parent class name is appended
       auto parentName = stmt->name;
-      sp->getClass()->name = parentName + "." + origName;
+      sp->getClass()->name = fmt::format("{}.{}", parentName, origName);
       auto tsp = transform(sp);
       std::string name;
       if (tsp->getSuite()) {

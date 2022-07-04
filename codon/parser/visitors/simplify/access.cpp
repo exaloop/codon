@@ -205,7 +205,7 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     std::string itemName;
     size_t itemEnd = 0;
     auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
-    for (int i = chain.size(); i-- > importEnd;) {
+    for (auto i = chain.size(); i-- > importEnd;) {
       val = fctx->find(join(chain, ".", importEnd, i + 1));
       if (val && (importName.empty() || val->isType() || !val->isConditional())) {
         itemName = val->canonicalName, itemEnd = i + 1;

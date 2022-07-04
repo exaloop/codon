@@ -1,8 +1,4 @@
-#include <string>
-#include <tuple>
-
 #include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -42,7 +38,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     ctx->blockLevel++;
     transform(c.suite);
     ctx->blockLevel--;
-    done &= (c.exc ? c.exc->isDone() : true) && c.suite->isDone();
+    done &= (!c.exc || c.exc->isDone()) && c.suite->isDone();
   }
   if (stmt->finally) {
     ctx->blockLevel++;

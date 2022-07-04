@@ -54,7 +54,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
                   N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))), u));
   }
 
-  // Import requiested identifiers from the import's scope to the current scope
+  // Import requested identifiers from the import's scope to the current scope
   if (!stmt->what) {
     // Case: import foo
     auto name = stmt->as.empty() ? path : stmt->as;
@@ -231,7 +231,7 @@ StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
       N<CallExpr>(
           N<DotExpr>(N<CallExpr>(N<DotExpr>("pyobj", "_import"),
                                  N<StringExpr>(combine2(components, ".", 0,
-                                                        components.size() - 1))),
+                                                        int(components.size()) - 1))),
                      "_getattr"),
           N<StringExpr>(components.back())));
   // f(a1, ...)
@@ -272,7 +272,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   StmtPtr n =
       N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
   if (ictx->moduleName.module == "internal.core") {
-    // str is not defined when loading internal.core; __name__ is not needed anyways
+    // str is not defined when loading internal.core; __name__ is not needed anyway
     n = nullptr;
   }
   n = SimplifyVisitor(ictx, preamble)

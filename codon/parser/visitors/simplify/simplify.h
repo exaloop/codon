@@ -171,7 +171,6 @@ private: // Node simplification rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  Attr parseClassDecorators(Attr attr, const std::vector<ExprPtr> &decorators);
   std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
                                             std::vector<Param> &hiddenGenerics,
                                             const Attr &attr);

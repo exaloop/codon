@@ -75,12 +75,12 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   } else if (expr->op == "is") {
     // Case: is operator
     resultExpr = transformBinaryIs(expr);
-  } else if (auto e = transformBinaryInplaceMagic(expr, false)) {
+  } else if (auto ei = transformBinaryInplaceMagic(expr, false)) {
     // Case: in-place magic methods
-    resultExpr = e;
-  } else if (auto e = transformBinaryMagic(expr)) {
+    resultExpr = ei;
+  } else if (auto em = transformBinaryMagic(expr)) {
     // Case: normal magic methods
-    resultExpr = e;
+    resultExpr = em;
   } else {
     // Nothing found: report an error
     error("cannot find magic '{}' in {}", getMagic(expr->op),
@@ -257,11 +257,11 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     /// TODO: move to Codon?
     if (expr->typeParams.size() != 2)
       error("invalid Callable type declaration");
-    for (size_t i = 0; i < expr->typeParams.size(); i++) {
-      transformType(expr->typeParams[i]);
-      if (expr->typeParams[i]->type->isStaticType())
+    for (auto &typeParam: expr->typeParams) {
+      transformType(typeParam);
+      if (typeParam->type->isStaticType())
         error("unexpected static type");
-      types.push_back(expr->typeParams[i]->type);
+      types.push_back(typeParam->type);
     }
     auto typ = ctx->getUnbound();
     // Set up the Callable trait
@@ -339,7 +339,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static integers
   if (expr->op == "-" || expr->op == "+" || expr->op == "!") {
     if (expr->expr->staticValue.evaluated) {
-      int value = expr->expr->staticValue.getInt();
+      int64_t value = expr->expr->staticValue.getInt();
       if (expr->op == "+")
         ;
       else if (expr->op == "-")
@@ -647,7 +647,7 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
   int64_t start = 0, stop = sz, step = 1;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
-    int i = translateIndex(start, stop);
+    auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
       error("tuple index out of range (expected 0..{}, got {})", stop, i);
     return transform(N<DotExpr>(expr, classItem->fields[i].name));
@@ -666,7 +666,7 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
 
     // Generate a sub-tuple
     std::vector<ExprPtr> te;
-    for (auto i = start; (step >= 0) ? (i < stop) : (i >= stop); i += step) {
+    for (auto i = start; (step >= 0) == (i < stop); i += step) {
       if (i < 0 || i >= sz)
         error("tuple index out of range (expected 0..{}, got {})", sz, i);
       te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));

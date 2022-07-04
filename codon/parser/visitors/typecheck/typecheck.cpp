@@ -12,8 +12,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 using namespace types;
 
@@ -299,5 +298,4 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess
 
 /**************************************************************************************/
 
-} // namespace ast
 } // namespace codon

@@ -2,7 +2,6 @@
 #include <tuple>
 
 #include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -32,7 +31,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (transform(stmt->expr)) {
     auto &base = ctx->bases.back();
 
-    // Wrap expression to match the returh type
+    // Wrap expression to match the return type
     if (!base.returnType->getUnbound())
       wrapExpr(stmt->expr, base.returnType);
 
@@ -151,7 +150,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   ctx->typecheckLevel--;
 
   // Generalize generics and remove them from the context
-  for (auto g : generics) {
+  for (const auto &g : generics) {
     for (auto &u : g->getUnbounds())
       u->getUnbound()->kind = LinkType::Generic;
   }

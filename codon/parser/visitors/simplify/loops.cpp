@@ -43,7 +43,6 @@ void SimplifyVisitor::visit(BreakStmt *stmt) {
 void SimplifyVisitor::visit(WhileStmt *stmt) {
   // Check for while-else clause
   std::string breakVar;
-  StmtPtr assign = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     // no_break = True
     breakVar = ctx->cache->getTemporaryVar("no_break");
