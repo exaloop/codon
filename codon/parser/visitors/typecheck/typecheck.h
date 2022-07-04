@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -180,8 +179,14 @@ private: // Node typechecking rules
 
 private:
   /* Type inference (infer.cpp) */
-  std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
-                                     const std::string &name);
+  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
+                       bool undoOnSuccess = false);
+  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
+                       bool undoOnSuccess = false) {
+    auto x = a;
+    return unify(x, b, undoOnSuccess);
+  }
+  StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
   types::TypePtr realize(types::TypePtr typ);
   types::TypePtr realizeFunc(types::FuncType *typ);
   types::TypePtr realizeType(types::ClassType *typ);
@@ -192,9 +197,6 @@ private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
                                     const std::string &member,
                                     const std::vector<types::TypePtr> &args);
-  types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
-                                    const std::string &member,
-                                    const std::vector<CallExpr::Arg> &args);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
@@ -204,18 +206,10 @@ private:
                 bool allowUnwrap = true);
 
 public:
-  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
-                       bool undoOnSuccess = false);
-  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
-                       bool undoOnSuccess = false) {
-    auto x = a;
-    return unify(x, b, undoOnSuccess);
-  }
-
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
 
   friend class Cache;
   friend class types::CallableTrait;
 };
 
-} // namespace codon
+} // namespace codon::ast

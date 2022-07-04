@@ -17,13 +17,10 @@ namespace codon::ast {
 using namespace types;
 
 StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
-  if (!cache->typeCtx) {
-    auto ctx = std::make_shared<TypeContext>(cache);
-    cache->typeCtx = ctx;
-  }
+  if (!cache->typeCtx)
+    cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
-  auto infer = v.inferTypes(stmts->clone(), true, "<top>");
-  return std::move(infer.second);
+  return v.inferTypes(clone(stmts), true);
 }
 
 /**************************************************************************************/
@@ -169,8 +166,7 @@ void TypecheckVisitor::visit(CommentStmt *stmt) { stmt->setDone(); }
 /**************************************************************************************/
 
 /// Select the best method indicated of an object that matches the given argument
-/// types.
-/// See @c findBestMethod for details.
+/// types. See @c findMatchingMethods for details.
 types::FuncTypePtr
 TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
                                  const std::vector<types::TypePtr> &args) {
@@ -179,32 +175,27 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
     callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  return findBestMethod(typ, member, callArgs);
-}
-
-types::FuncTypePtr
-TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
-                                 const std::vector<CallExpr::Arg> &args) {
-  seqassert(typ, "not a class");
   auto methods = ctx->findMethod(typ->name, member, false);
-  auto m = findMatchingMethods(typ, methods, args);
+  auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
 
+/// Select the best method among the provided methods given the list of arguments.
+/// See @c reorderNamedArgs for details.
 std::vector<types::FuncTypePtr>
 TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<types::FuncTypePtr> &methods,
                                       const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
-  for (int mi = 0; mi < methods.size(); mi++) {
-    auto m = ctx->instantiate(methods[mi], typ)->getFunc();
+  for (size_t mi = 0; mi < methods.size(); mi++) {
+    auto method = ctx->instantiate(methods[mi], typ)->getFunc();
     std::vector<types::TypePtr> reordered;
     auto score = ctx->reorderNamedArgs(
-        m.get(), args,
+        method.get(), args,
         [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
-            if (m->ast->args[si].status == Param::Generic) {
+            if (method->ast->args[si].status == Param::Generic) {
               // Ignore type arguments
             } else if (si == s || si == k || slots[si].size() != 1) {
               // Ignore *args, *kwargs and default arguments
@@ -216,10 +207,10 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
           return 0;
         },
         [](const std::string &) { return -1; });
-    for (int ai = 0, mi = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
-      auto expectTyp = m->ast->args[ai].status == Param::Normal
-                           ? m->getArgTypes()[mi++]
-                           : m->funcGenerics[gi++].type;
+    for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+      auto expectTyp = method->ast->args[ai].status == Param::Normal
+                           ? method->getArgTypes()[mai++]
+                           : method->funcGenerics[gi++].type;
       auto argType = reordered[ai];
       if (!argType)
         continue;
@@ -227,8 +218,9 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
         ExprPtr dummy = std::make_shared<IdExpr>("");
         dummy->type = argType;
         dummy->done = true;
-        wrapExpr(dummy, expectTyp, m, /*undoOnSuccess*/ true);
+        wrapExpr(dummy, expectTyp, method, /*undoOnSuccess*/ true);
       } catch (const exc::ParserException &) {
+        // Ignore failed wraps
         score = -1;
       }
     }
@@ -239,6 +231,15 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
   return results;
 }
 
+/// Wrap an expression to coerce it to the expected type if the type of the expression
+/// does not match it. Also unify types.
+/// @example
+///   expected `Generator`                -> `expr.__iter__()`
+///   expected `float`, got `int`         -> `float(expr)`
+///   expected `Optional[T]`, got `T`     -> `Optional(expr)`
+///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
+///   expected `Function`, got a function -> partialize function
+/// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
                                 const FuncTypePtr &callee, bool undoOnSuccess,
                                 bool allowUnwrap) {
@@ -277,25 +278,4 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   return true;
 }
 
-TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
-  if (!a)
-    return a = b;
-  seqassert(b, "rhs is nullptr");
-  types::Type::Unification undo;
-  undo.realizator = this;
-  if (a->unify(b.get(), &undo) >= 0) {
-    if (undoOnSuccess)
-      undo.undo();
-    return a;
-  } else {
-    undo.undo();
-  }
-  if (!undoOnSuccess)
-    a->unify(b.get(), &undo);
-  error("cannot unify {} and {}", a->toString(), b->toString());
-  return nullptr;
-}
-
-/**************************************************************************************/
-
-} // namespace codon
+} // namespace codon::ast

@@ -19,6 +19,103 @@ namespace ast {
 
 using namespace types;
 
+/// Unify types @param a (passed by reference) and @param b and return @param a.
+/// Destructive operation as it modifies both a and b. If types cannot be unified, raise
+/// an error.
+/// @param undoOnSuccess set if unification is to be undone upon completion.
+/// TODO: check is undoOnSuccess needed anymore
+TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
+  if (!a)
+    return a = b;
+  seqassert(b, "rhs is nullptr");
+  types::Type::Unification undo;
+  undo.realizator = this;
+  if (a->unify(b.get(), &undo) >= 0) {
+    if (undoOnSuccess)
+      undo.undo();
+    return a;
+  } else {
+    undo.undo();
+  }
+  if (!undoOnSuccess)
+    a->unify(b.get(), &undo);
+  error("cannot unify {} and {}", a->toString(), b->toString());
+  return nullptr;
+}
+
+/// Infer all types within a StmtPtr. Implements the LTS-DI typechecking.
+/// @param isToplevel set if typechecking the program toplevel.
+StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
+  if (!result)
+    return nullptr;
+
+  ctx->addBlock(); // Needed to clean up the context after
+  for (size_t iteration = 1;; iteration++) {
+    // Keep iterating until:
+    //   (1) success: the statement is marked as done; or
+    //   (2) failure: no expression or statements were marked as done during an
+    //                iteration (i.e., changedNodes is zero)
+    ctx->typecheckLevel++;
+    auto changedNodes = ctx->changedNodes;
+    ctx->changedNodes = 0;
+    TypecheckVisitor(ctx).transform(result);
+    std::swap(ctx->changedNodes, changedNodes);
+    ctx->typecheckLevel--;
+
+    if (iteration == 1 && isToplevel) {
+      // Realize all @force_realize functions
+      for (auto &f : ctx->cache->functions) {
+        auto &attr = f.second.ast->attributes;
+        if (f.second.type && f.second.realizations.empty() &&
+            (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
+             (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
+          seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
+          auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
+          auto t = ctx->instantiate(f.second.type)->getFunc();
+          realize(t);
+          seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
+        }
+      }
+    }
+
+    if (result->isDone()) {
+      break;
+    } else if (changedNodes) {
+      continue;
+    } else {
+      // Special case: nothing was changed, however there are unbound types that have
+      // default values (e.g., generics with default values). Unify those types with
+      // their default values and then run another round to see if anything changed.
+      bool anotherRound = false;
+      for (auto &unbound : ctx->pendingDefaults) {
+        if (auto u = unbound->getLink()) {
+          types::Type::Unification undo;
+          undo.realizator = this;
+          if (u->unify(u->defaultType.get(), &undo) >= 0)
+            anotherRound = true;
+        }
+      }
+      ctx->pendingDefaults.clear();
+      if (anotherRound)
+        continue;
+
+      // Nothing helps. Raise an error.
+      /// TODO: print which expressions could not be type-checked
+      if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+        // Dump the problematic block
+        auto fo = fopen("_dump_typecheck_error.sexp", "w");
+        fmt::print(fo, "{}\n", result->toString(0));
+        fclose(fo);
+      }
+      error("cannot typecheck the program");
+    }
+  }
+
+  if (!isToplevel)
+    ctx->popBlock();
+  return result;
+}
+
 types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
   if (!typ || !typ->canRealize()) {
     return nullptr;
@@ -235,7 +332,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
           suite = N<SuiteStmt>(items);
         }
 
-        realized = inferTypes(suite, false, type->realizedName()).second;
+        realized = inferTypes(suite);
         ctx->blockLevel = oldBlockLevel;
         ctx->returnEarly = oldReturnEarly;
         if (ast->attributes.has(Attr::LLVM)) {
@@ -353,86 +450,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
                    getSrcInfo());
     throw;
   }
-}
-
-std::pair<int, StmtPtr> TypecheckVisitor::inferTypes(StmtPtr result, bool keepLast,
-                                                     const std::string &name) {
-  if (!result)
-    return {0, nullptr};
-
-  // We keep running typecheck transformations until there are no more unbound
-  // types. It is assumed that the unbound count will decrease in each
-  // iteration--- if not, the program cannot be type-checked.
-  int minUnbound = ctx->cache->unboundCount;
-  ctx->addBlock();
-  int iteration = 0;
-  for (int prevSize = std::numeric_limits<int>::max();;) {
-    // LOG("== iter {} ==========================================", iteration);
-    ctx->typecheckLevel++;
-    auto old = ctx->changedNodes;
-    ctx->changedNodes = 0;
-    result = TypecheckVisitor(ctx).transform(result);
-    std::swap(ctx->changedNodes, old);
-    iteration++;
-    ctx->typecheckLevel--;
-
-    if (iteration == 1 && name == "<top>")
-      for (auto &f : ctx->cache->functions) {
-        auto &attr = f.second.ast->attributes;
-        if (f.second.type && f.second.realizations.empty() &&
-            (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
-             (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
-          seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
-          auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
-          auto t = ctx->instantiate(f.second.type)->getFunc();
-          realize(t);
-          seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
-        }
-      }
-    if (result->done) {
-      break;
-    } else if (old) {
-      continue;
-    } else {
-      bool fixed = false;
-      for (auto &ub : ctx->pendingDefaults) {
-        if (auto u = ub->getLink()) {
-          types::Type::Unification undo;
-          undo.realizator = this;
-          if (u->unify(u->defaultType.get(), &undo) >= 0) {
-            fixed = true;
-          }
-        }
-      }
-      ctx->pendingDefaults.clear();
-      if (fixed)
-        continue;
-      // std::map<int, std::pair<codon::SrcInfo, std::string>> v;
-      // for (auto &ub : ctx->activeUnbounds)
-      //   if (ub.first->getLink()->id >= minUnbound) {
-      //     v[ub.first->getLink()->id] = {ub.first->getSrcInfo(), ub.second};
-      //     LOG_TYPECHECK("dangling ?{} ({})", ub.first->getLink()->id, minUnbound);
-      //   }
-      // for (auto &ub : v) {
-      //   codon::compilationError(
-      //       format("cannot infer the type of {}", ub.second.second),
-      //       ub.second.first.file, ub.second.first.line, ub.second.first.col,
-      //       /*terminate=*/false);
-      //   LOG_TYPECHECK("cannot infer {} / {}", ub.first, ub.second.second);
-      // }
-      // LOG_TYPECHECK("-- {}", result->toString(0));
-      if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-        auto fo = fopen("_dump_typecheck_error.sexp", "w");
-        fmt::print(fo, "{}\n", result->toString(0));
-        fclose(fo);
-      }
-      error("cannot typecheck the program");
-    }
-  }
-  if (!keepLast)
-    ctx->popBlock();
-
-  return {iteration, result};
 }
 
 ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
@@ -555,7 +572,6 @@ TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
   std::reverse(result.begin(), result.end());
   return result;
 }
-
 
 } // namespace ast
 } // namespace codon
