@@ -145,7 +145,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
 /// @return nullptr if no transformation was made
-/// See @c getClassMember and @c getBestClassMethod
+/// See @c getClassMember and @c getBestOverload
 ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
                                        std::vector<CallExpr::Arg> *args) {
   // Special case: obj.__class__
@@ -174,10 +174,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return nullptr;
 
   // Check if this is a method or member access
-  auto methods = ctx->findMethod(typ->name, expr->member);
-  if (methods.empty())
+  if (ctx->findMethod(typ->name, expr->member).empty())
     return getClassMember(expr, args);
-  auto bestMethod = getBestClassMethod(expr, methods, args);
+  auto bestMethod = getBestOverload(expr, args);
 
   // Check if a method is a static or an instance method and transform accordingly
   if (expr->expr->isType() || args) {
@@ -267,35 +266,34 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   return nullptr;
 }
 
-/// Select the requested class method. If overloaded, select the best overload.
+/// Select the best overloaded function or method.
+/// @param expr    a DotExpr (for methods) or an IdExpr (for overloaded functions)
 /// @param methods List of available methods.
 /// @param args    (optional) list of class method arguments used to select the best
 ///                overload if the member is optional. nullptr if not available.
-FuncTypePtr
-TypecheckVisitor::getBestClassMethod(DotExpr *expr,
-                                     const std::vector<FuncTypePtr> &methods,
-                                     std::vector<CallExpr::Arg> *args) {
+FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
+                                              std::vector<CallExpr::Arg> *args) {
   // Prepare the list of method arguments if possible
   std::unique_ptr<std::vector<CallExpr::Arg>> methodArgs;
 
   if (args) {
     // Case: arguments explicitly provided (by CallExpr)
-    if (!expr->expr->isType()) {
+    if (expr->getDot() && !expr->getDot()->expr->isType()) {
       // Add `self` as the first argument
-      args->insert(args->begin(), {"", expr->expr});
+      args->insert(args->begin(), {"", expr->getDot()->expr});
     }
     methodArgs = std::make_unique<std::vector<CallExpr::Arg>>();
     for (auto &a : *args)
       methodArgs->push_back(a);
-  } else if (methods.size() > 1) {
+  } else {
     // Partially deduced type thus far
     auto typeSoFar = expr->getType() ? expr->getType()->getClass() : nullptr;
     if (typeSoFar && typeSoFar->getFunc()) {
       // Case: arguments available from the previous type checking round
       methodArgs = std::make_unique<std::vector<CallExpr::Arg>>();
-      if (!expr->expr->isType()) { // Add `self`
+      if (expr->getDot() && !expr->getDot()->expr->isType()) { // Add `self`
         auto n = N<NoneExpr>();
-        n->setType(expr->expr->type);
+        n->setType(expr->getDot()->expr->type);
         methodArgs->push_back({"", n});
       }
       for (auto &a : typeSoFar->getFunc()->getArgTypes()) {
@@ -306,15 +304,36 @@ TypecheckVisitor::getBestClassMethod(DotExpr *expr,
     }
   }
 
-  FuncTypePtr bestMethod = nullptr;
   if (methodArgs) {
+    FuncTypePtr bestMethod = nullptr;
     // Use the provided arguments to select the best method
-    if (auto m = findBestMethod(expr->expr.get(), expr->member, *methodArgs))
-      return m;
+    if (auto dot = expr->getDot()) {
+      // Case: method overloads (DotExpr)
+      auto methods =
+          ctx->findMethod(dot->expr->type->getClass()->name, dot->member, false);
+      auto m = findMatchingMethods(dot->expr->type->getClass(), methods, *methodArgs);
+      bestMethod = m.empty() ? nullptr : m[0];
+    } else if (auto id = expr->getId()) {
+      // Case: function overloads (IdExpr)
+      std::vector<types::FuncTypePtr> methods;
+      for (auto &m : ctx->cache->overloads[id->value])
+        if (!endswith(m.name, ":dispatch"))
+          methods.push_back(ctx->cache->functions[m.name].type);
+      std::reverse(methods.begin(), methods.end());
+      auto m = findMatchingMethods(nullptr, methods, *methodArgs);
+      bestMethod = m.empty() ? nullptr : m[0];
+    }
+    if (bestMethod)
+      return bestMethod;
   } else {
-    // If overload is ambiguous, route through dispatch function
-    return getDispatch(
-        ctx->cache->getMethod(expr->expr->type->getClass(), expr->member));
+    // If overload is ambiguous, route through a dispatch function
+    std::string name;
+    if (auto dot = expr->getDot()) {
+      name = ctx->cache->getMethod(dot->expr->type->getClass(), dot->member);
+    } else {
+      name = expr->getId()->value;
+    }
+    return getDispatch(name);
   }
 
   // Print a nice error message
@@ -325,8 +344,13 @@ TypecheckVisitor::getBestClassMethod(DotExpr *expr,
       a.emplace_back(fmt::format("'{}'", t.value->type->toString()));
     argsNice = fmt::format(" with arguments {}", fmt::join(a, ", "));
   }
-  error("cannot find a method '{}' in {}{}", expr->member, expr->expr->type->toString(),
-        argsNice);
+  std::string nameNice;
+  if (auto dot = expr->getDot()) {
+    nameNice = fmt::format("'{}' in {}", dot->member, dot->expr->type->toString());
+  } else {
+    nameNice = fmt::format("'{}'", expr->getId()->value);
+  }
+  error("cannot find a method {}{}", nameNice, argsNice);
   return nullptr;
 }
 

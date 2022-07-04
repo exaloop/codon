@@ -84,9 +84,7 @@ public:
   void visit(DotExpr *) override;
   ExprPtr transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
   ExprPtr getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
-  types::FuncTypePtr getBestClassMethod(DotExpr *,
-                                        const std::vector<types::FuncTypePtr> &,
-                                        std::vector<CallExpr::Arg> *);
+  types::FuncTypePtr getBestOverload(Expr *, std::vector<CallExpr::Arg> *);
   types::FuncTypePtr getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */
@@ -116,39 +114,35 @@ public:
   void visit(SliceExpr *) override;
 
   /* Calls (call.cpp) */
+  /// Holds partial call information for a CallExpr.
   struct PartialCallData {
-    bool isPartial;               // is call itself partial?
-    std::string var = "";         // variable if we are calling partialized fn
-    std::vector<char> known = {}; // bitvector of known arguments
-    ExprPtr args = nullptr, kwArgs = nullptr; // true if *args/**kwargs are partialized
+    bool isPartial = false;                   // true if the call is partial
+    std::string var = "";                     // set if calling a partial type itself
+    std::vector<char> known = {};             // mask of known arguments
+    ExprPtr args = nullptr, kwArgs = nullptr; // partial *args/**kwargs expressions
   };
   void visit(StarExpr *) override;
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   bool transformCallArgs(std::vector<CallExpr::Arg> &);
-  void transformCallee(ExprPtr &, std::vector<CallExpr::Arg> &, PartialCallData &);
   std::pair<types::FuncTypePtr, ExprPtr> getCalleeFn(CallExpr *, PartialCallData &);
   ExprPtr callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
-  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
   bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
-
-  /// Find all generics on which a given function depends and add them to the context.
-  void addFunctionGenerics(const types::FuncType *t);
-  /// Generate a partial function type Partial.N01...01 (where 01...01 is a mask
-  /// of size N) as follows:
-  ///   @tuple @no_total_ordering @no_pickle @no_container @no_python
-  ///   class Partial.N01...01[T0, T1, ..., TN]:
-  ///     ptr: Function[T0, T1,...,TN]
-  ///     aI: TI ... # (if mask[I-1] is zero for I >= 1)
-  ///     def __call__(self, aI: TI...) -> T0: # (if mask[I-1] is one for I >= 1)
-  ///       return self.ptr(self.a1, a2, self.a3...) # (depending on a mask pattern)
-  /// The following partial constructor is added if an oldMask is set:
-  ///     def __new_<old_mask>_<mask>(p, aI: TI...) # (if oldMask[I-1] != mask[I-1]):
-  ///       return Partial.N<mask>.__new__(self.ptr, self.a1, a2, ...) # (see above)
-  std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
-  ExprPtr transformSuper(const CallExpr *expr);
+  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
+  ExprPtr transformSuperF(CallExpr *expr);
+  ExprPtr transformSuper(CallExpr *expr);
+  ExprPtr transformPtr(CallExpr *expr);
+  ExprPtr transformArray(CallExpr *expr);
+  ExprPtr transformIsInstance(CallExpr *expr);
+  ExprPtr transformStaticLen(CallExpr *expr);
+  ExprPtr transformHasAttr(CallExpr *expr);
+  ExprPtr transformGetAttr(CallExpr *expr);
+  ExprPtr transformCompileError(CallExpr *expr);
+  ExprPtr transformTypeFn(CallExpr *expr);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
+  void addFunctionGenerics(const types::FuncType *t);
+  std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
 
   /* Assignments (assign.cpp) */
   void visit(AssignStmt *) override;
@@ -214,7 +208,6 @@ private:
 public:
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
                        bool undoOnSuccess = false);
-
   types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
                        bool undoOnSuccess = false) {
     auto x = a;

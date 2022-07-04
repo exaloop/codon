@@ -165,7 +165,10 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   }
 
   bool failed = false;
-  llvm::handleAllErrors(compiler->parseFile(input, /*isTest=*/0, defmap),
+  int testFlags = 0;
+  if (auto *tf = getenv("CODON_TEST_FLAGS"))
+    testFlags = std::atoi(tf);
+  llvm::handleAllErrors(compiler->parseFile(input, /*testFlags=*/testFlags, defmap),
                         [&failed](const codon::error::ParserErrorInfo &e) {
                           display(e);
                           failed = true;

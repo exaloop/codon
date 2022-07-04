@@ -170,45 +170,6 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
 
 /**************************************************************************************/
 
-void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
-  for (auto p = t->funcParent; p;) {
-    if (auto f = p->getFunc()) {
-      for (auto &g : f->funcGenerics)
-        ctx->add(TypecheckItem::Type, g.name, g.type);
-      p = f->funcParent;
-    } else {
-      auto c = p->getClass();
-      seqassert(c, "not a class: {}", p->toString());
-      for (auto &g : c->generics)
-        ctx->add(TypecheckItem::Type, g.name, g.type);
-      for (auto &g : c->hiddenGenerics)
-        ctx->add(TypecheckItem::Type, g.name, g.type);
-      break;
-    }
-  }
-  for (auto &g : t->funcGenerics)
-    ctx->add(TypecheckItem::Type, g.name, g.type);
-}
-
-std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
-                                                  types::FuncType *fn) {
-  std::string strMask(mask.size(), '1');
-  int tupleSize = 0, genericSize = 0;
-  for (int i = 0; i < mask.size(); i++)
-    if (!mask[i])
-      strMask[i] = '0';
-    else if (fn->ast->args[i].status == Param::Normal)
-      tupleSize++;
-    else
-      genericSize++;
-  auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
-  if (!ctx->find(typeName)) {
-    ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
-    generateTuple(tupleSize + 2, typeName, {}, false);
-  }
-  return typeName;
-}
-
 types::FuncTypePtr
 TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
                                  const std::vector<types::TypePtr> &args) {

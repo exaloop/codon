@@ -27,46 +27,12 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
     expr->setDone();
 }
 
-/// Typecheck a call expression---the most complex expression to typecheck.
-/// Transform a call expression callee(args...).
-/// Intercepts callees that are expr.dot, expr.dot[T1, T2] etc.
-/// Before any transformation, all arguments are expanded:
-///   *args -> args[0], ..., args[N]
-///   **kwargs -> name0=kwargs.name0, ..., nameN=kwargs.nameN
-/// Performs the following transformations:
-///   Tuple(args...) -> Tuple.__new__(args...) (tuple constructor)
-///   Class(args...) -> c = Class.__new__(); c.__init__(args...); c (StmtExpr)
-///   Partial(args...) -> StmtExpr(p = Partial; PartialFn(args...))
-///   obj(args...) -> obj.__call__(args...) (non-functions)
-/// This method will also handle the following use-cases:
-///   named arguments,
-///   default arguments,
-///   default generics, and
-///   *args / **kwargs.
-/// Any partial call will be transformed as follows:
-///   callee(arg1, ...) -> StmtExpr(_v = Partial.callee.N10(arg1); _v).
-/// If callee is partial and it is satisfied, it will be replaced with the originating
-/// function call.
-/// Arguments are unified with the signature types. The following exceptions are
-/// supported:
-///   Optional[T] -> T (via unwrap())
-///   int -> float (via float.__new__())
-///   T -> Optional[T] (via Optional.__new__())
-///   T -> Generator[T] (via T.__iter__())
-///   T -> Callable[T] (via T.__call__())
-///
-/// Pipe notes: if inType and extraStage are set, this method will use inType as a
-/// pipe ellipsis type. extraStage will be set if an Optional conversion/unwrapping
-/// stage needs to be inserted before the current pipeline stage.
-///
-/// Static call expressions: the following static expressions are supported:
-///   isinstance(var, type) -> evaluates to bool
-///   hasattr(type, string) -> evaluates to bool
-///   staticlen(var) -> evaluates to int
-///   compile_error(string) -> raises a compiler error
-///   type(type) -> IdExpr(instantiated_type_name)
-///
-/// Note: This is the most evil method in the whole parser suite. 🤦🏻‍
+/// Typecheck a call expression. This is the most complex expression to typecheck.
+/// @example
+///   `fn(1, 2, x=3, y=4)` -> `func(a=1, x=3, args=(2,), kwargs=KwArgs(y=4), T=int)`
+///   `fn(arg1, ...)`      -> `(_v = Partial.N10(arg1); _v)`
+/// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
+///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
   // Transform and expand arguments. Return early if it cannot be done yet
   if (!transformCallArgs(expr->args))
@@ -76,9 +42,28 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis() &&
                        !expr->args.back().value->getEllipsis()->isPipeArg &&
                        expr->args.back().name.empty()};
-
-  // Transform callee
-  transformCallee(expr->expr, expr->args, part);
+  // Transform the callee
+  if (!part.isPartial) {
+    // Intercept method calls (e.g. `obj.method`) for faster compilation (because it
+    // avoids partial calls). This intercept passes the call arguments to
+    // @c transformDot to select the best overload as well
+    if (auto dot = expr->expr->getDot()) {
+      // Pick the best method overload
+      if (auto edt = transformDot(dot, &expr->args))
+        expr->expr = edt;
+    } else if (auto id = expr->expr->getId()) {
+      // Pick the best function overload
+      auto overloads = in(ctx->cache->overloads, id->value);
+      if (overloads && overloads->size() > 1) {
+        if (auto bestMethod = getBestOverload(id, &expr->args)) {
+          auto t = id->type;
+          expr->expr = N<IdExpr>(bestMethod->ast->name);
+          expr->expr->setType(unify(t, ctx->instantiate(bestMethod)));
+        }
+      }
+    }
+  }
+  transform(expr->expr, true); // can be type as well
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   if ((resultExpr = newExpr))
     return;
@@ -195,48 +180,6 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
   return true;
 }
 
-/// Transform a call expression callee.
-/// TODO: handle intercept
-void TypecheckVisitor::transformCallee(ExprPtr &callee,
-                                       std::vector<CallExpr::Arg> &args,
-                                       PartialCallData &part) {
-  if (!part.isPartial) {
-    // Intercept method calls (e.g. `obj.method`) for faster compilation (because it
-    // avoids partial calls). This intercept passes the call arguments to transformDot
-    // to select the best overload as well.
-    ExprPtr *lhs = &callee;
-    if (auto inst = CAST(callee, InstantiateExpr)) {
-      // Special case: type instantiation (`foo.bar[T]`)
-      /// TODO: get rid of?
-      lhs = &(inst->typeExpr);
-    }
-    if (auto dot = (*lhs)->getDot()) {
-      // Pick the best overload!
-      if (auto edt = transformDot(dot, &args))
-        *lhs = edt;
-    } else if (auto id = (*lhs)->getId()) {
-      // If this is an overloaded identifier, pick the best overload
-      auto overloads = in(ctx->cache->overloads, id->value);
-      if (overloads && overloads->size() > 1) {
-        if (auto bestMethod = findBestMethod(id->value, args)) {
-          ExprPtr e = N<IdExpr>(bestMethod->ast->name);
-          e->setType(ctx->instantiate(bestMethod));
-          unify(id->type, e->type);
-          *lhs = e;
-        } else {
-          /// TODO refactor to use getBestClassMethod
-          std::vector<std::string> nice;
-          for (auto &t : args)
-            nice.emplace_back(format("{} = {}", t.name, t.value->type->toString()));
-          error("cannot find an overload '{}' with arguments {}", id->value,
-                join(nice, ", "));
-        }
-      }
-    }
-  }
-  transform(callee, true); // can be type as well
-}
-
 /// Extract the @c FuncType that represents the function to be called by the callee.
 /// Also handle special callees: constructors and partial functions.
 /// @return a pair with the callee's @c FuncType and the replacement expression
@@ -302,6 +245,11 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
   return {calleeFn, nullptr};
 }
 
+/// Reorder the call arguments to match the signature order. Ensure that every @c
+/// CallExpr::Arg has a set name. Form *args/**kwargs tuples if needed, and use partial
+/// and default values where needed.
+/// @example
+///   `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs=KwArgs(baf=4))`
 ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *expr,
                                                PartialCallData &part) {
   std::vector<CallExpr::Arg> args; // stores ordered and processed arguments
@@ -470,7 +418,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   if (part.isPartial && cnt && cnt == expr->args.size()) {
     transform(expr->expr); // transform again because it might have been changed
     unify(expr->type, expr->expr->getType());
-    return expr->expr; /// TODO: why short circuit? continue instead?
+    // Return the callee with the corrected type and do not go further
+    return expr->expr;
   }
 
   expr->args = args;
@@ -479,161 +428,13 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   return nullptr;
 }
 
-std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
-  if (!expr->expr->getId())
-    return {false, nullptr};
-
-  auto val = expr->expr->getId()->value;
-  // LOG("-- {}", val);
-  if (val == "superf") {
-    if (ctx->bases.back().supers.empty())
-      error("no matching superf methods are available");
-    auto parentCls = ctx->bases.back().type->getFunc()->funcParent;
-    auto m = findMatchingMethods(parentCls ? parentCls->getClass() : nullptr,
-                                 ctx->bases.back().supers, expr->args);
-    if (m.empty())
-      error("no matching superf methods are available");
-    ExprPtr e = N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args);
-    return {true, transform(e)};
-  } else if (val == "super:0") {
-    auto e = transformSuper(expr);
-    return {true, e};
-  } else if (val == "__ptr__") {
-    auto id = expr->args[0].value->getId();
-    auto v = id ? ctx->find(id->value) : nullptr;
-    if (v && v->kind == TypecheckItem::Var) {
-      expr->args[0].value = transform(expr->args[0].value);
-      auto t =
-          ctx->instantiateGeneric(ctx->getType("Ptr"), {expr->args[0].value->type});
-      unify(expr->type, t);
-      expr->done = expr->args[0].value->done;
-      return {true, nullptr};
-    } else {
-      error("__ptr__ only accepts a variable identifier");
-    }
-  } else if (val == "__array__.__new__:0") {
-    auto fnt = expr->expr->type->getFunc();
-    auto szt = fnt->funcGenerics[0].type->getStatic();
-    if (!szt->canRealize())
-      return {true, nullptr};
-    auto sz = szt->evaluate().getInt();
-    auto typ = fnt->funcParent->getClass()->generics[0].type;
-    auto t = ctx->instantiateGeneric(ctx->getType("Array"), {typ});
-    unify(expr->type, t);
-    // Realize the Array[T] type of possible.
-    if (auto rt = realize(expr->type)) {
-      unify(expr->type, rt);
-      expr->done = true;
-    }
-    return {true, nullptr};
-  } else if (val == "isinstance") {
-    // Make sure not to activate new unbound here, as we just need to check type
-    // equality.
-    expr->staticValue.type = StaticValue::INT;
-    expr->type = unify(expr->type, ctx->getType("bool"));
-    expr->args[0].value = transform(expr->args[0].value, true);
-    auto typ = expr->args[0].value->type->getClass();
-    if (!typ || !typ->canRealize()) {
-      return {true, nullptr};
-    } else {
-      expr->args[0].value = transform(expr->args[0].value, true); // to realize it
-      if (expr->args[1].value->isId("Tuple") || expr->args[1].value->isId("tuple")) {
-        return {true, transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)))};
-      } else if (expr->args[1].value->isId("ByVal")) {
-        return {true, transform(N<BoolExpr>(typ->getRecord() != nullptr))};
-      } else if (expr->args[1].value->isId("ByRef")) {
-        return {true, transform(N<BoolExpr>(typ->getRecord() == nullptr))};
-      } else {
-        expr->args[1].value = transformType(expr->args[1].value);
-        auto t = expr->args[1].value->type;
-        auto hierarchy = getSuperTypes(typ->getClass());
-
-        for (auto &tx : hierarchy) {
-          auto unifyOK = tx->unify(t.get(), nullptr) >= 0;
-          if (unifyOK) {
-            return {true, transform(N<BoolExpr>(true))};
-          }
-        }
-        return {true, transform(N<BoolExpr>(false))};
-      }
-    }
-  } else if (val == "staticlen") {
-    expr->staticValue.type = StaticValue::INT;
-    expr->args[0].value = transform(expr->args[0].value);
-    auto typ = expr->args[0].value->getType();
-    if (auto s = typ->getStatic()) {
-      if (s->expr->staticValue.type != StaticValue::STRING)
-        error("expected a static string");
-      if (!s->expr->staticValue.evaluated)
-        return {true, nullptr};
-      return {true, transform(N<IntExpr>(s->expr->staticValue.getString().size()))};
-    }
-    if (!typ->getClass())
-      return {true, nullptr};
-    else if (!typ->getRecord())
-      error("{} is not a tuple type", typ->toString());
-    else
-      return {true, transform(N<IntExpr>(typ->getRecord()->args.size()))};
-  } else if (startswith(val, "hasattr:")) {
-    expr->staticValue.type = StaticValue::INT;
-    auto typ = expr->args[0].value->getType()->getClass();
-    if (!typ)
-      return {true, nullptr};
-    auto member = expr->expr->type->getFunc()
-                      ->funcGenerics[0]
-                      .type->getStatic()
-                      ->evaluate()
-                      .getString();
-    std::vector<TypePtr> args{typ};
-    if (val == "hasattr:0") {
-      auto tup = expr->args[1].value->getTuple();
-      seqassert(tup, "not a tuple");
-      for (auto &a : tup->items) {
-        a = transformType(a);
-        if (!a->getType()->getClass())
-          return {true, nullptr};
-        args.push_back(a->getType());
-      }
-    }
-    bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
-                  ctx->findMember(typ->getClass()->name, member);
-    if (exists && args.size() > 1)
-      exists &= findBestMethod(expr->args[0].value.get(), member, args) != nullptr;
-    return {true, transform(N<BoolExpr>(exists))};
-  } else if (val == "compile_error") {
-    auto fnt = expr->expr->type->getFunc();
-    auto szt = fnt->funcGenerics[0].type->getStatic();
-    if (!szt->canRealize())
-      return {true, nullptr};
-    error("custom error: {}", szt->evaluate().getString());
-  } else if (val == "type.__new__:0") {
-    expr->markType();
-    expr->args[0].value = transform(expr->args[0].value);
-    unify(expr->type, expr->args[0].value->getType());
-    if (auto rt = realize(expr->type)) {
-      unify(expr->type, rt);
-      auto resultExpr = N<IdExpr>(expr->type->realizedName());
-      unify(resultExpr->type, expr->type);
-      resultExpr->done = true;
-      resultExpr->markType();
-      return {true, resultExpr};
-    }
-    return {true, nullptr};
-  } else if (val == "getattr") {
-    auto fnt = expr->expr->type->getFunc();
-    auto szt = fnt->funcGenerics[0].type->getStatic();
-    if (!szt->canRealize())
-      return {true, nullptr};
-    expr->args[0].value = transform(expr->args[0].value);
-    auto e = transform(N<DotExpr>(expr->args[0].value, szt->evaluate().getString()));
-    // LOG("-> {}", e->toString());
-    return {true, e};
-  }
-  return {false, nullptr};
-}
+/// Unify the call arguments' types with the function declaration signatures.
+/// Also apply argument transformations to ensure the type compatibility and handle
+/// default generics.
+/// @example
+///   `foo(1, 2)` -> `foo(1, Optional(2), T=int)`
 bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
                                          std::vector<CallExpr::Arg> &args) {
-  // Unify the arguments with the corresponding signatures
   bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
   for (size_t si = 0; si < calleeFn->getArgTypes().size(); si++) {
@@ -676,82 +477,337 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
   return done;
 }
 
-ExprPtr TypecheckVisitor::transformSuper(const CallExpr *expr) {
-  // For now, we just support casting to the _FIRST_ overload (i.e. empty super())
+/// Transform and typecheck the following special call expressions:
+///   `superf(fn)`
+///   `super()`
+///   `__ptr__(var)`
+///   `__array__[int](sz)`
+///   `isinstance(obj, type)`
+///   `staticlen(tup)`
+///   `hasattr(obj, "attr")`
+///   `getattr(obj, "attr")`
+///   `type(obj)`
+///   `compile_err("msg")`
+/// See below for more details.
+std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
+  if (!expr->expr->getId())
+    return {false, nullptr};
+  auto val = expr->expr->getId()->value;
+  if (val == "superf") {
+    return {true, transformSuperF(expr)};
+  } else if (val == "super:0") {
+    return {true, transformSuper(expr)};
+  } else if (val == "__ptr__") {
+    return {true, transformPtr(expr)};
+  } else if (val == "__array__.__new__:0") {
+    return {true, transformArray(expr)};
+  } else if (val == "isinstance") {
+    return {true, transformIsInstance(expr)};
+  } else if (val == "staticlen") {
+    return {true, transformStaticLen(expr)};
+  } else if (startswith(val, "hasattr:")) {
+    return {true, transformHasAttr(expr)};
+  } else if (val == "getattr") {
+    return {true, transformGetAttr(expr)};
+  } else if (val == "type.__new__:0") {
+    return {true, transformTypeFn(expr)};
+  } else if (val == "compile_error") {
+    return {true, transformCompileError(expr)};
+  }
+  return {false, nullptr};
+}
+
+/// Typecheck superf method. This method provides the access to the previous matching
+/// overload.
+/// @example
+///   ```class cls:
+///        def foo(): print('foo 1')
+///        def foo():
+///          superf()  # access the previous foo
+///          print('foo 2')
+///      cls.foo()```
+///   prints "foo 1" followed by "foo 2"
+ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
+  if (ctx->bases.back().supers.empty())
+    error("no matching superf methods are available");
+  auto parent = ctx->bases.back().type->getFunc()->funcParent;
+  auto m = findMatchingMethods(parent ? parent->getClass() : nullptr,
+                               ctx->bases.back().supers, expr->args);
+  if (m.empty())
+    error("no matching superf methods are available");
+  return transform(N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args));
+}
+
+/// Typecheck and transform super method. Replace it with the current self object cast
+/// to the first inherited type.
+/// TODO: only an empty super() is currently supported.
+ExprPtr TypecheckVisitor::transformSuper(CallExpr *expr) {
   if (ctx->bases.empty() || !ctx->bases.back().type)
     error("no parent classes available");
-  auto fptyp = ctx->bases.back().type->getFunc();
-  if (!fptyp || !fptyp->ast->hasAttr(Attr::Method))
+  auto funcTyp = ctx->bases.back().type->getFunc();
+  if (!funcTyp || !funcTyp->ast->hasAttr(Attr::Method))
     error("no parent classes available");
-  if (fptyp->getArgTypes().empty())
+  if (funcTyp->getArgTypes().empty())
     error("no parent classes available");
-  ClassTypePtr typ = fptyp->getArgTypes()[0]->getClass();
+
+  ClassTypePtr typ = funcTyp->getArgTypes()[0]->getClass();
   auto &cands = ctx->cache->classes[typ->name].parentClasses;
   if (cands.empty())
     error("no parent classes available");
 
-  // find parent typ
-  // unify top N args with parent typ args
-  // realize & do bitcast
-  // call bitcast() . method
-
-  auto name = cands[0];
-  auto val = ctx->find(name);
-  seqassert(val, "cannot find '{}'", name);
-  auto ftyp = ctx->instantiate(val->type)->getClass();
-
+  auto name = cands.front(); // the first inherited type
+  auto superTyp = ctx->instantiate(ctx->forceFind(name)->type)->getClass();
   if (typ->getRecord()) {
+    // Case: tuple types. Return `tuple(obj.args...)`
     std::vector<ExprPtr> members;
-    for (auto &f : ctx->cache->classes[name].fields)
-      members.push_back(N<DotExpr>(N<IdExpr>(fptyp->ast->args[0].name), f.name));
+    for (auto &field : ctx->cache->classes[name].fields)
+      members.push_back(N<DotExpr>(N<IdExpr>(funcTyp->ast->args[0].name), field.name));
     ExprPtr e = transform(
         N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
-    unify(e->type, ftyp);
-    e->type = ftyp;
+    e->type = unify(superTyp, e->type); // see super_tuple test for this line
     return e;
   } else {
-    for (auto &f : ctx->cache->classes[typ->name].fields) {
-      for (auto &nf : ctx->cache->classes[name].fields)
-        if (f.name == nf.name) {
-          auto t = ctx->instantiate(f.type, typ);
-          auto ft = ctx->instantiate(nf.type, ftyp);
-          unify(t, ft);
+    // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
+    for (auto &field : ctx->cache->classes[typ->name].fields) {
+      for (auto &parentField : ctx->cache->classes[name].fields)
+        if (field.name == parentField.name) {
+          unify(ctx->instantiate(field.type, typ),
+                ctx->instantiate(parentField.type, superTyp));
         }
     }
 
-    ExprPtr typExpr = N<IdExpr>(name);
-    typExpr->setType(ftyp);
-    auto self = fptyp->ast->args[0].name;
-    ExprPtr e = transform(
-        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                    N<CallExpr>(N<DotExpr>(N<IdExpr>(self), "__raw__")), typExpr));
-    return e;
+    auto typExpr = N<IdExpr>(name);
+    typExpr->setType(superTyp);
+    auto self = N<IdExpr>(funcTyp->ast->args[0].name);
+    return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                                 N<CallExpr>(N<DotExpr>(self, "__raw__")), typExpr));
   }
 }
 
+/// Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
+/// the argument is a variable binding.
+ExprPtr TypecheckVisitor::transformPtr(CallExpr *expr) {
+  auto id = expr->args[0].value->getId();
+  auto val = id ? ctx->find(id->value) : nullptr;
+  if (!val || val->kind != TypecheckItem::Var)
+    error("__ptr__ only accepts a variable identifier");
+
+  transform(expr->args[0].value);
+  unify(expr->type,
+        ctx->instantiateGeneric(ctx->getType("Ptr"), {expr->args[0].value->type}));
+  if (expr->args[0].value->isDone())
+    expr->setDone();
+  return nullptr;
+}
+
+/// Typecheck __array__ method. This method creates a stack-allocated array via alloca.
+ExprPtr TypecheckVisitor::transformArray(CallExpr *expr) {
+  auto arrTyp = expr->expr->type->getFunc();
+  unify(expr->type,
+        ctx->instantiateGeneric(ctx->getType("Array"),
+                                {arrTyp->funcParent->getClass()->generics[0].type}));
+  if (realize(expr->type))
+    expr->setDone();
+  return nullptr;
+}
+
+/// Transform isinstance method to a static boolean expression.
+/// Special cases:
+///   `isinstance(obj, ByVal)` is True if `type(obj)` is a tuple type
+///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
+ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
+  expr->staticValue.type = StaticValue::INT;
+  expr->setType(unify(expr->type, ctx->getType("bool")));
+  transform(expr->args[0].value, true);
+  auto typ = expr->args[0].value->type->getClass();
+  if (!typ || !typ->canRealize())
+    return nullptr;
+
+  transform(expr->args[0].value, true); // transform again to realize it
+
+  auto &typExpr = expr->args[1].value;
+  if (typExpr->isId("Tuple") || typExpr->isId("tuple")) {
+    return transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)));
+  } else if (typExpr->isId("ByVal")) {
+    return transform(N<BoolExpr>(typ->getRecord() != nullptr));
+  } else if (typExpr->isId("ByRef")) {
+    return transform(N<BoolExpr>(typ->getRecord() == nullptr));
+  } else {
+    transformType(typExpr);
+    // Check super types (i.e., statically inherited) as well
+    for (auto &tx : getSuperTypes(typ->getClass())) {
+      if (tx->unify(typExpr->type.get(), nullptr) >= 0)
+        return transform(N<BoolExpr>(true));
+    }
+    return transform(N<BoolExpr>(false));
+  }
+}
+
+/// Transform staticlen method to a static integer expression. This method supports only
+/// static strings and tuple types.
+ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
+  expr->staticValue.type = StaticValue::INT;
+  transform(expr->args[0].value);
+  auto typ = expr->args[0].value->getType();
+
+  if (auto s = typ->getStatic()) {
+    // Case: staticlen on static strings
+    if (s->expr->staticValue.type != StaticValue::STRING)
+      error("expected a static string");
+    if (!s->expr->staticValue.evaluated)
+      return nullptr;
+    return transform(N<IntExpr>(s->expr->staticValue.getString().size()));
+  }
+  if (!typ->getClass())
+    return nullptr;
+  if (!typ->getRecord())
+    error("{} is not a tuple type", typ->toString());
+  return transform(N<IntExpr>(typ->getRecord()->args.size()));
+}
+
+/// Transform hasattr method to a static boolean expression.
+/// This method also supports supports additional argument types that are used to check
+/// for a matching overload (not available in Python).
+ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
+  expr->staticValue.type = StaticValue::INT;
+  auto typ = expr->args[0].value->getType()->getClass();
+  if (!typ)
+    return nullptr;
+
+  auto member = expr->expr->type->getFunc()
+                    ->funcGenerics[0]
+                    .type->getStatic()
+                    ->evaluate()
+                    .getString();
+  std::vector<TypePtr> args{typ};
+  if (expr->expr->isId("hasattr:0")) {
+    // Case: the first hasattr overload allows passing argument types via *args
+    auto tup = expr->args[1].value->getTuple();
+    seqassert(tup, "not a tuple");
+    for (auto &a : tup->items) {
+      transformType(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      args.push_back(a->getType());
+    }
+  }
+
+  bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
+                ctx->findMember(typ->getClass()->name, member);
+  if (exists && args.size() > 1)
+    exists &= findBestMethod(expr->args[0].value.get(), member, args) != nullptr;
+  return transform(N<BoolExpr>(exists));
+}
+
+/// Transform getattr method to a DotExpr.
+ExprPtr TypecheckVisitor::transformGetAttr(CallExpr *expr) {
+  auto funcTyp = expr->expr->type->getFunc();
+  auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
+  if (!staticTyp->canRealize())
+    return nullptr;
+  return transform(N<DotExpr>(expr->args[0].value, staticTyp->evaluate().getString()));
+}
+
+/// Raise a compiler error.
+ExprPtr TypecheckVisitor::transformCompileError(CallExpr *expr) {
+  auto funcTyp = expr->expr->type->getFunc();
+  auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
+  if (staticTyp->canRealize())
+    error("custom error: {}", staticTyp->evaluate().getString());
+  return nullptr;
+}
+
+/// Transform type function to a type IdExpr identifier.
+ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
+  expr->markType();
+  transform(expr->args[0].value);
+  unify(expr->type, expr->args[0].value->getType());
+
+  if (!realize(expr->type))
+    return nullptr;
+
+  auto e = N<IdExpr>(expr->type->realizedName());
+  e->setType(expr->type);
+  e->setDone();
+  e->markType();
+  return e;
+}
+
+/// Get the list that describes the inheritance hierarchy of a given type.
+/// The first type in the list is the most recently inherited type.
 std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cls) {
   std::vector<ClassTypePtr> result;
   if (!cls)
     return result;
+
   result.push_back(cls);
-  int start = 0;
   for (auto &name : ctx->cache->classes[cls->name].parentClasses) {
-    auto val = ctx->find(name);
-    seqassert(val, "cannot find '{}'", name);
-    auto ftyp = ctx->instantiate(val->type)->getClass();
-    for (auto &f : ctx->cache->classes[cls->name].fields) {
-      for (auto &nf : ctx->cache->classes[name].fields)
-        if (f.name == nf.name) {
-          auto t = ctx->instantiate(f.type, cls);
-          auto ft = ctx->instantiate(nf.type, ftyp);
-          unify(t, ft);
+    auto parentTyp = ctx->instantiate(ctx->forceFind(name)->type)->getClass();
+    for (auto &field : ctx->cache->classes[cls->name].fields) {
+      for (auto &parentField : ctx->cache->classes[name].fields)
+        if (field.name == parentField.name) {
+          unify(ctx->instantiate(field.type, cls),
+                ctx->instantiate(parentField.type, parentTyp));
           break;
         }
     }
-    for (auto &t : getSuperTypes(ftyp))
+    for (auto &t : getSuperTypes(parentTyp))
       result.push_back(t);
   }
   return result;
+}
+
+/// Find all generics on which a function depends on and add them to the current
+/// context.
+void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
+  for (auto parent = t->funcParent; parent;) {
+    if (auto f = parent->getFunc()) {
+      // Add parent function generics
+      for (auto &g : f->funcGenerics)
+        ctx->add(TypecheckItem::Type, g.name, g.type);
+      parent = f->funcParent;
+    } else {
+      // Add parent class generics
+      seqassert(parent->getClass(), "not a class: {}", parent->toString());
+      for (auto &g : parent->getClass()->generics)
+        ctx->add(TypecheckItem::Type, g.name, g.type);
+      for (auto &g : parent->getClass()->hiddenGenerics)
+        ctx->add(TypecheckItem::Type, g.name, g.type);
+      break;
+    }
+  }
+  // Add function generics
+  for (auto &g : t->funcGenerics)
+    ctx->add(TypecheckItem::Type, g.name, g.type);
+}
+
+/// Generate a partial type `Partial.N<mask>` for a given function.
+/// @param mask a 0-1 vector whose size matches the number of function arguments.
+///             1 indicates that the argument has been provided and is cached within
+///             the partial object.
+/// @example
+///   ```@tuple
+///      class Partial.N101[T0, T2]:
+///        item0: T0  # the first cached argument
+///        item2: T2  # the third cached argument
+std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
+                                                  types::FuncType *fn) {
+  std::string strMask(mask.size(), '1');
+  int tupleSize = 0, genericSize = 0;
+  for (size_t i = 0; i < mask.size(); i++) {
+    if (!mask[i])
+      strMask[i] = '0';
+    else if (fn->ast->args[i].status == Param::Normal)
+      tupleSize++;
+    else
+      genericSize++;
+  }
+  auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
+  if (!ctx->find(typeName)) {
+    ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
+    generateTuple(tupleSize + 2, typeName, {}, false);
+  }
+  return typeName;
 }
 
 } // namespace codon::ast
