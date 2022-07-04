@@ -695,7 +695,7 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
                 ctx->findMember(typ->getClass()->name, member);
   if (exists && args.size() > 1)
-    exists &= findBestMethod(expr->args[0].value.get(), member, args) != nullptr;
+    exists &= findBestMethod(typ, member, args) != nullptr;
   return transform(N<BoolExpr>(exists));
 }
 

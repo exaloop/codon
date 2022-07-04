@@ -528,5 +528,34 @@ ir::types::Type *TypecheckVisitor::getLLVMType(const types::ClassType *t) {
   return ctx->cache->classes[t->name].realizations[realizedName]->ir = handle;
 }
 
+std::vector<types::FuncTypePtr>
+TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
+  if (func->ast->attributes.parentClass.empty() ||
+      endswith(func->ast->name, ":dispatch"))
+    return {};
+  auto p = ctx->find(func->ast->attributes.parentClass)->type;
+  if (!p || !p->getClass())
+    return {};
+
+  auto methodName = ctx->cache->reverseIdentifierLookup[func->ast->name];
+  auto m = ctx->cache->classes.find(p->getClass()->name);
+  std::vector<types::FuncTypePtr> result;
+  if (m != ctx->cache->classes.end()) {
+    auto t = m->second.methods.find(methodName);
+    if (t != m->second.methods.end()) {
+      for (auto &m : ctx->cache->overloads[t->second]) {
+        if (endswith(m.name, ":dispatch"))
+          continue;
+        if (m.name == func->ast->name)
+          break;
+        result.emplace_back(ctx->cache->functions[m.name].type);
+      }
+    }
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+
 } // namespace ast
 } // namespace codon

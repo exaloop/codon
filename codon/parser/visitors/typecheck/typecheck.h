@@ -44,7 +44,7 @@ public:
       std::shared_ptr<TypeContext> ctx,
       const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
-public:
+public: // Convenience transformators
   ExprPtr transform(ExprPtr &e) override;
   ExprPtr transform(const ExprPtr &expr) override {
     auto e = expr;
@@ -65,13 +65,12 @@ public:
     auto e = expr;
     return transformType(e);
   }
-  types::TypePtr realize(types::TypePtr typ);
 
 private:
   void defaultVisit(Expr *e) override;
   void defaultVisit(Stmt *s) override;
 
-public:
+private: // Node typechecking rules
   /* Basic type expressions (basic.cpp) */
   void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
@@ -177,26 +176,26 @@ public:
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
-  /// Use type of an inner expression.
   void visit(StmtExpr *) override;
-  void visit(CommentStmt *stmt) override { stmt->done = true; }
-
-public:
-  /// Picks the best method of a given expression that matches the given argument
-  /// types. Prefers methods whose signatures are closer to the given arguments:
-  /// e.g. foo(int) will match (int) better that a foo(T).
-  /// Also takes care of the Optional arguments.
-  /// If multiple equally good methods are found, return the first one.
-  /// Return nullptr if no methods were found.
-  types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
-                                    const std::vector<types::TypePtr> &args);
+  void visit(CommentStmt *stmt) override;
 
 private:
-  types::FuncTypePtr findBestMethod(const Expr *expr, const std::string &member,
-                                    const std::vector<CallExpr::Arg> &args);
-  types::FuncTypePtr findBestMethod(const std::string &fn,
-                                    const std::vector<CallExpr::Arg> &args);
+  /* Type inference (infer.cpp) */
+  std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
+                                     const std::string &name);
+  types::TypePtr realize(types::TypePtr typ);
+  types::TypePtr realizeFunc(types::FuncType *typ);
+  types::TypePtr realizeType(types::ClassType *typ);
+  codon::ir::types::Type *getLLVMType(const types::ClassType *t);
   std::vector<types::FuncTypePtr> findSuperMethods(const types::FuncTypePtr &func);
+
+private:
+  types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
+                                    const std::string &member,
+                                    const std::vector<types::TypePtr> &args);
+  types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
+                                    const std::string &member,
+                                    const std::vector<CallExpr::Arg> &args);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
@@ -214,14 +213,10 @@ public:
     return unify(x, b, undoOnSuccess);
   }
 
-private:
-  types::TypePtr realizeType(types::ClassType *typ);
-  types::TypePtr realizeFunc(types::FuncType *typ);
-  std::pair<int, StmtPtr> inferTypes(StmtPtr stmt, bool keepLast,
-                                     const std::string &name);
-  codon::ir::types::Type *getLLVMType(const types::ClassType *t);
-
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
+
+  friend class Cache;
+  friend class types::CallableTrait;
 };
 
 } // namespace ast

@@ -154,7 +154,6 @@ ExprPtr SimplifyVisitor::transform(ExprPtr &expr, bool allowTypes) {
 }
 
 /// Transform a type expression node.
-/// Special case: replace `None` with `NoneType`
 /// @param allowTypeOf Set if `type()` expressions are allowed. Usually disallowed in
 ///                    class/function definitions.
 /// @throw @c ParserException if a node is not a type (use @c transform instead).

@@ -221,7 +221,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     call->args[1].value = transform(call->args[1].value);
     auto rhsTyp = call->args[1].value->getType()->getClass();
     if (auto method = findBestMethod(
-            stmt->lhs.get(), format("__atomic_{}__", call->expr->getId()->value),
+            lhsClass, format("__atomic_{}__", call->expr->getId()->value),
             {ptrTyp, rhsTyp})) {
       return {true, transform(N<CallExpr>(N<IdExpr>(method->ast->name),
                                           N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),
@@ -237,7 +237,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
       auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
                                              ctx->getType("Ptr"), {lhsClass});
       if (auto m =
-              findBestMethod(stmt->lhs.get(), "__atomic_xchg__", {ptrType, rhsClass})) {
+              findBestMethod(lhsClass, "__atomic_xchg__", {ptrType, rhsClass})) {
         return {true,
                 N<CallExpr>(N<IdExpr>(m->ast->name),
                             N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)};

@@ -563,15 +563,14 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
     auto ptr = ctx->instantiateGeneric(ctx->getType("Ptr"), {lt});
-    if ((method = findBestMethod(expr->lexpr.get(), format("__atomic_{}__", magic),
-                                 {ptr, rt}))) {
+    if ((method = findBestMethod(lt, format("__atomic_{}__", magic), {ptr, rt}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->lexpr);
     }
   }
 
   // In-place operations: check if `lhs.__iop__(lhs, rhs)` exists
   if (!method && expr->inPlace) {
-    method = findBestMethod(expr->lexpr.get(), format("__i{}__", magic), {lt, rt});
+    method = findBestMethod(lt, format("__i{}__", magic), {lt, rt});
   }
 
   if (method)
@@ -590,11 +589,10 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   seqassert(lt && rt, "lhs and rhs types not known");
 
   // Normal operations: check if `lhs.__op__(lhs, rhs)` exists
-  auto method = findBestMethod(expr->lexpr.get(), format("__{}__", magic), {lt, rt});
+  auto method = findBestMethod(lt, format("__{}__", magic), {lt, rt});
 
   // Right-side magics: check if `rhs.__rop__(rhs, lhs)` exists
-  if (!method && (method = findBestMethod(expr->rexpr.get(), format("__r{}__", magic),
-                                          {rt, lt}))) {
+  if (!method && (method = findBestMethod(rt, format("__r{}__", magic), {rt, lt}))) {
     swap(expr->lexpr, expr->rexpr);
   }
 

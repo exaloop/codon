@@ -54,7 +54,7 @@ public:
                            std::shared_ptr<std::vector<StmtPtr>> preamble,
                            std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
 
-public:
+public: // Convenience transformators
   ExprPtr transform(ExprPtr &expr) override;
   ExprPtr transform(const ExprPtr &expr) override {
     auto e = expr;
@@ -75,7 +75,7 @@ public:
   }
   StmtPtr transformConditionalScope(StmtPtr &stmt);
 
-public:
+private: // Node simplification rules
   /* Basic type expressions (basic.cpp) */
   void visit(IntExpr *) override;
   ExprPtr transformInt(IntExpr *);

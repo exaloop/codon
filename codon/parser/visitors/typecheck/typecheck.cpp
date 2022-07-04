@@ -17,12 +17,6 @@ namespace ast {
 
 using namespace types;
 
-TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
-                                   const std::shared_ptr<std::vector<StmtPtr>> &stmts)
-    : ctx(std::move(ctx)) {
-  prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
-}
-
 StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
   if (!cache->typeCtx) {
     auto ctx = std::make_shared<TypeContext>(cache);
@@ -33,32 +27,25 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
   return std::move(infer.second);
 }
 
-TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
-  if (!a)
-    return a = b;
-  seqassert(b, "rhs is nullptr");
-  types::Type::Unification undo;
-  undo.realizator = this;
-  if (a->unify(b.get(), &undo) >= 0) {
-    if (undoOnSuccess)
-      undo.undo();
-    return a;
-  } else {
-    undo.undo();
-  }
-  if (!undoOnSuccess)
-    a->unify(b.get(), &undo);
-  error("cannot unify {} and {}", a->toString(), b->toString());
-  return nullptr;
+/**************************************************************************************/
+
+TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
+                                   const std::shared_ptr<std::vector<StmtPtr>> &stmts)
+    : ctx(std::move(ctx)) {
+  prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }
 
 /**************************************************************************************/
 
 ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr, false); }
 
+/// Transform an expression node.
+/// @throw @c ParserException if a node is a type and @param allowTypes is not set
+///        (use @c transformType instead).
 ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
+
   auto typ = expr->type;
   if (!expr->done) {
     TypecheckVisitor v(ctx, prependStmts);
@@ -75,11 +62,13 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
     if (expr->done)
       ctx->changedNodes++;
   }
-  if (auto rt = realize(typ))
-    unify(typ, rt);
+  realize(typ);
   return expr;
 }
 
+/// Transform a type expression node.
+/// Special case: replace `None` with `NoneType`
+/// @throw @c ParserException if a node is not a type (use @c transform instead).
 ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
   if (expr && expr->getNone()) {
     expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
@@ -87,16 +76,13 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
   }
   transform(expr, true);
   if (expr) {
-    TypePtr t = nullptr;
-    if (!expr->isType()) {
-      if (expr->isStatic())
-        t = std::make_shared<StaticType>(expr, ctx);
-      else
-        error("expected type expression");
+    if (!expr->isType() && expr->isStatic()) {
+      expr->setType(std::make_shared<StaticType>(expr, ctx));
+    } else if (!expr->isType()) {
+      error("expected type expression");
     } else {
-      t = ctx->instantiate(expr->getType());
+      expr->setType(ctx->instantiate(expr->getType()));
     }
-    expr->setType(t);
   }
   return expr;
 }
@@ -105,9 +91,11 @@ void TypecheckVisitor::defaultVisit(Expr *e) {
   seqassert(false, "unexpected AST node {}", e->toString());
 }
 
+/// Transform a statement node.
 StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   if (!stmt || stmt->done)
     return stmt;
+
   TypecheckVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   auto oldAge = ctx->age;
@@ -138,97 +126,70 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 
 /**************************************************************************************/
 
+/// Typecheck statement expressions.
 void TypecheckVisitor::visit(StmtExpr *expr) {
-  expr->done = true;
+  auto done = true;
   for (auto &s : expr->stmts) {
     transform(s);
-    expr->done &= s->done;
+    done &= s->isDone();
   }
   transform(expr->expr);
   unify(expr->type, expr->expr->type);
-  expr->done &= expr->expr->done;
+  if (done && expr->expr->isDone())
+    expr->setDone();
 }
 
+/// Typecheck a list of statements.
 void TypecheckVisitor::visit(SuiteStmt *stmt) {
-  std::vector<StmtPtr> stmts;
-  stmt->done = true;
+  std::vector<StmtPtr> stmts; // for filtering out nullptr statements
+  auto done = true;
   for (auto &s : stmt->stmts) {
-    if (ctx->returnEarly)
+    if (ctx->returnEarly) {
+      // If returnEarly is set (e.g., in the function) ignore the rest
       break;
-    if (auto t = transform(s)) {
-      stmts.push_back(t);
-      stmt->done &= stmts.back()->done;
+    }
+    if (transform(s)) {
+      stmts.push_back(s);
+      done &= stmts.back()->isDone();
     }
   }
   stmt->stmts = stmts;
+  if (done)
+    stmt->setDone();
 }
 
+/// Typecheck expression statements.
 void TypecheckVisitor::visit(ExprStmt *stmt) {
   transform(stmt->expr);
-  stmt->done = stmt->expr->done;
+  if (stmt->expr->isDone())
+    stmt->setDone();
 }
+
+void TypecheckVisitor::visit(CommentStmt *stmt) { stmt->setDone(); }
 
 /**************************************************************************************/
 
+/// Select the best method indicated of an object that matches the given argument
+/// types.
+/// See @c findBestMethod for details.
 types::FuncTypePtr
-TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
                                  const std::vector<types::TypePtr> &args) {
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args) {
     callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  return findBestMethod(expr, member, callArgs);
+  return findBestMethod(typ, member, callArgs);
 }
 
 types::FuncTypePtr
-TypecheckVisitor::findBestMethod(const Expr *expr, const std::string &member,
+TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
                                  const std::vector<CallExpr::Arg> &args) {
-  auto typ = expr->getType()->getClass();
   seqassert(typ, "not a class");
   auto methods = ctx->findMethod(typ->name, member, false);
   auto m = findMatchingMethods(typ, methods, args);
   return m.empty() ? nullptr : m[0];
-}
-
-types::FuncTypePtr
-TypecheckVisitor::findBestMethod(const std::string &fn,
-                                 const std::vector<CallExpr::Arg> &args) {
-  std::vector<types::FuncTypePtr> methods;
-  for (auto &m : ctx->cache->overloads[fn])
-    if (!endswith(m.name, ":dispatch"))
-      methods.push_back(ctx->cache->functions[m.name].type);
-  std::reverse(methods.begin(), methods.end());
-  auto m = findMatchingMethods(nullptr, methods, args);
-  return m.empty() ? nullptr : m[0];
-}
-
-std::vector<types::FuncTypePtr>
-TypecheckVisitor::findSuperMethods(const types::FuncTypePtr &func) {
-  if (func->ast->attributes.parentClass.empty() ||
-      endswith(func->ast->name, ":dispatch"))
-    return {};
-  auto p = ctx->find(func->ast->attributes.parentClass)->type;
-  if (!p || !p->getClass())
-    return {};
-
-  auto methodName = ctx->cache->reverseIdentifierLookup[func->ast->name];
-  auto m = ctx->cache->classes.find(p->getClass()->name);
-  std::vector<types::FuncTypePtr> result;
-  if (m != ctx->cache->classes.end()) {
-    auto t = m->second.methods.find(methodName);
-    if (t != m->second.methods.end()) {
-      for (auto &m : ctx->cache->overloads[t->second]) {
-        if (endswith(m.name, ":dispatch"))
-          continue;
-        if (m.name == func->ast->name)
-          break;
-        result.emplace_back(ctx->cache->functions[m.name].type);
-      }
-    }
-  }
-  std::reverse(result.begin(), result.end());
-  return result;
 }
 
 std::vector<types::FuncTypePtr>
@@ -316,6 +277,27 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
   }
   return true;
 }
+
+TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
+  if (!a)
+    return a = b;
+  seqassert(b, "rhs is nullptr");
+  types::Type::Unification undo;
+  undo.realizator = this;
+  if (a->unify(b.get(), &undo) >= 0) {
+    if (undoOnSuccess)
+      undo.undo();
+    return a;
+  } else {
+    undo.undo();
+  }
+  if (!undoOnSuccess)
+    a->unify(b.get(), &undo);
+  error("cannot unify {} and {}", a->toString(), b->toString());
+  return nullptr;
+}
+
+/**************************************************************************************/
 
 } // namespace ast
 } // namespace codon
