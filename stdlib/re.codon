@@ -1,13 +1,48 @@
-@tuple
-class Pattern:
-    pattern: str
-    flags: int
-    _p: cobj
+_ANCHOR_NONE  = 0
+_ANCHOR_START = 1
+_ANCHOR_BOTH  = 2
 
 @tuple
 class Span:
     start: int
     stop: int
+
+    def __bool__(self):
+        return not (self.start == -1 and self.stop == -1)
+
+@C
+@nocapture
+def seq_re_match(re: cobj,
+                 anchor: int,
+                 string: str,
+                 pos: int,
+                 endpos: int) -> Ptr[Span]:
+    pass
+
+@C
+@nocapture
+def seq_re_match_one(re: cobj,
+                     anchor: int,
+                     string: str,
+                     pos: int,
+                     endpos: int,
+                     span: Ptr[Span]) -> void:
+    pass
+
+@C
+@pure
+def seq_re_pattern_groups(re: cobj) -> int:
+    pass
+
+@C
+def seq_re_compile(pattern: str) -> cobj:
+    pass
+
+@tuple
+class Pattern:
+    pattern: str
+    flags: int
+    _re: cobj
 
 @tuple
 class Match:
@@ -17,29 +52,70 @@ class Match:
     re: Pattern
     string: str
 
-_ANCHOR_UNANCHORED   = 0
-_ANCHOR_ANCHOR_START = 1
-_ANCHOR_ANCHOR_BOTH  = 2
+@extend
+class Pattern:
+    @property
+    def groups(self):
+        return seq_re_pattern_groups(self._re)
 
-@C
-@nocapture
-def seq_re_fullmatch(pattern: str,
-                     string: str) -> bool:
-    pass
+    def _match_one(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
+        posx = 0 if pos is None else max(0, min(~pos, len(string)))
+        endposx = len(string) if endpos is None else max(0, min(~endpos, len(string)))
 
-@C
-@nocapture
-def seq_re_findall(pattern: str,
-                   string: str,
-                   count: Ptr[int],
-                   capacity: Ptr[int]) -> Ptr[str]:
-    pass
+        if posx > endposx:
+            return None
 
-def findall(pattern: str, string: str):
-    count = 0
-    capacity = 0
-    result = seq_re_findall(pattern, string, __ptr__(count), __ptr__(capacity))
-    return List(Array(result, capacity), count)
+        span = Span(-1, -1)
+        seq_re_match_one(self._re, anchor, string, posx, endposx, __ptr__(span))
+        print span
+        if not span:
+            return None
 
-def fullmatch(pattern: str, string: str):
-    return seq_re_fullmatch(pattern, string)
+        spans = Ptr[Span](1)
+        spans[0] = span
+        return Match(spans, posx, endposx, self, string)
+
+    def _match(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
+        posx = 0 if pos is None else max(0, min(~pos, len(string)))
+        endposx = len(string) if endpos is None else max(0, min(~endpos, len(string)))
+
+        if posx > endposx:
+            return
+
+        while True:
+            spans = seq_re_match(self._re, anchor, string, posx, endposx)
+
+            if not spans[0]:
+                break
+
+            yield Match(spans, posx, endposx, self, string)
+
+            if posx == endposx:
+                break
+
+            elif posx == spans[0][1]:
+                # We matched the empty string at pos and would be stuck, so in order
+                # to make forward progress, increment the bytes offset.
+                posx += 1
+            else:
+                posx = spans[0][1]
+
+    def search(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+        return self._match_one(_ANCHOR_NONE, string, pos, endpos)
+
+    def match(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+        return self._match_one(_ANCHOR_START, string, pos, endpos)
+
+    def fullmatch(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+        return self._match_one(_ANCHOR_BOTH, string, pos, endpos)
+
+    def finditer(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+        return self._match(_ANCHOR_NONE, string, pos, endpos)
+
+
+def compile(pattern: str, flags: int = 0):
+    re = seq_re_compile(pattern)
+    return Pattern(pattern, flags, re)
+
+def fullmatch(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).fullmatch(string)

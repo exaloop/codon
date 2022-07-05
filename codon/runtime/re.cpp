@@ -33,27 +33,50 @@ struct Match {
   seq_str_t string;
 };
 
-static std::unordered_map<std::string, std::unique_ptr<Regex>> cache;
+template <class Key, class Value>
+struct GCMapAllocator : public std::allocator<std::pair<const Key, Value>> {
+  using value_type = std::pair<const Key, Value>;
 
-static inline Regex &get(std::string &p) {
-  auto it = cache.find(p);
-  if (it == cache.end()) {
-    auto result = cache.emplace(p, std::make_unique<Regex>(p));
-    return *result.first->second;
-  } else {
-    return *it->second;
+  value_type *allocate(std::size_t n) {
+    return (value_type *)seq_alloc(n * sizeof(value_type));
   }
-}
+
+  void deallocate(value_type *p, std::size_t n) { seq_gc_free(p); }
+};
 
 static inline seq_str_t convert(const std::string &p) {
   seq_int_t n = p.size();
-  auto *s = (char *)seq_alloc_atomic(n);
+  auto *s = (char *)seq_alloc(n);
   std::memcpy(s, p.data(), n);
   return {n, s};
 }
 
 static inline StringPiece str2sp(const seq_str_t &s) {
   return StringPiece(s.str, s.len);
+}
+
+struct StrEqual {
+  bool operator()(const seq_str_t &a, const seq_str_t &b) const {
+    return str2sp(a) == str2sp(b);
+  }
+};
+
+struct StrHash {
+  std::size_t operator()(const seq_str_t &k) const { return 0; }
+};
+
+static thread_local std::unordered_map<seq_str_t, Regex, StrHash, StrEqual,
+                                       GCMapAllocator<seq_str_t, Regex>>
+    cache;
+
+static inline Regex *get(const seq_str_t &p) {
+  auto it = cache.find(p);
+  if (it == cache.end()) {
+    auto result = cache.emplace(p, str2sp(p));
+    return &result.first->second;
+  } else {
+    return &it->second;
+  }
 }
 
 /*
@@ -88,14 +111,14 @@ SEQ_FUNC Span *seq_re_match(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t 
   return spans;
 }
 
-SEQ_FUNC Span seq_re_match_one(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t pos,
-                               seq_int_t endpos) {
+SEQ_FUNC void seq_re_match_one(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t pos,
+                               seq_int_t endpos, Span *span) {
   StringPiece m;
   if (!re->Match(str2sp(s), pos, endpos, static_cast<Regex::Anchor>(anchor), &m, 1))
-    return {-1, -1};
-
-  return {static_cast<seq_int_t>(m.data() - s.str),
-          static_cast<seq_int_t>(m.data() - s.str + m.size())};
+    *span = {-1, -1};
+  else
+    *span = {static_cast<seq_int_t>(m.data() - s.str),
+             static_cast<seq_int_t>(m.data() - s.str + m.size())};
 }
 
 /*
@@ -106,9 +129,7 @@ SEQ_FUNC seq_str_t seq_re_escape(seq_str_t p) {
   return convert(Regex::QuoteMeta(str2sp(p)));
 }
 
-SEQ_FUNC void *seq_re_compile(seq_str_t p) {
-  return new (seq_alloc_atomic(sizeof(Regex))) Regex(str2sp(p));
-}
+SEQ_FUNC Regex *seq_re_compile(seq_str_t p) { return get(p); }
 
 SEQ_FUNC void seq_re_purge() { cache.clear(); }
 
@@ -147,50 +168,4 @@ SEQ_FUNC seq_int_t seq_re_pattern_groupindex(Regex *pattern, seq_str_t **names,
   }
 
   return num_groups;
-}
-
-SEQ_FUNC bool seq_re_pattern_search(Regex *pattern, seq_str_t string, seq_int_t pos,
-                                    seq_int_t endpos) {
-  return Regex::FullMatch(str2sp(string), *pattern);
-}
-
-SEQ_FUNC bool seq_re_pattern_fullmatch(Regex *re, seq_str_t s) {
-  return Regex::FullMatch(str2sp(s), *re);
-}
-
-/*
- * Module-level functions
- */
-
-SEQ_FUNC bool seq_re_fullmatch(seq_str_t p, seq_str_t s) {
-  std::string pattern(p.str, p.len);
-  return seq_re_pattern_fullmatch(&get(pattern), s);
-}
-
-SEQ_FUNC seq_str_t *seq_re_findall(seq_str_t p, seq_str_t s, seq_int_t *count,
-                                   seq_int_t *capacity) {
-#define INIT_BUFFER_SIZE 3
-  std::string pattern(p.str, p.len);
-  std::string string(s.str, s.len);
-  pattern = "(" + pattern + ")";
-  auto &regex = get(pattern);
-  re2::StringPiece input(string);
-  std::string match;
-
-  seq_int_t n = 0;
-  seq_int_t m = INIT_BUFFER_SIZE;
-  auto *matches = (seq_str_t *)seq_alloc_atomic(m * sizeof(seq_str_t));
-
-  while (RE2::FindAndConsume(&input, regex, &match)) {
-    if (n == m) {
-      m = (1 + 3 * m) / 2;
-      matches = (seq_str_t *)seq_realloc(matches, m * sizeof(seq_str_t));
-    }
-    matches[n++] = convert(match);
-  }
-
-  *count = n;
-  *capacity = m;
-  return matches;
-#undef INIT_BUFFER_SIZE
 }
