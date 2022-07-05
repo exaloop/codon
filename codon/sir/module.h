@@ -263,7 +263,6 @@ public:
   /// @param c the cache
   void setCache(ast::Cache *c) { cache = c; }
 
-  
   /// Parse a codon code block.
   void parseCode(const std::string &code);
 

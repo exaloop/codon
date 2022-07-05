@@ -110,10 +110,7 @@ Module::Module(const std::string &name) : AcceptorExtend(name) {
   argVar->setReplaceable(false);
 }
 
-void Module::parseCode(const std::string &code) {
-  cache->parseCode(code);
-}
-
+void Module::parseCode(const std::string &code) { cache->parseCode(code); }
 
 Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodName,
                                  std::vector<types::Type *> args,
