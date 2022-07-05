@@ -1,3 +1,26 @@
+@tuple
+class Pattern:
+    pattern: str
+    flags: int
+    _p: cobj
+
+@tuple
+class Span:
+    start: int
+    stop: int
+
+@tuple
+class Match:
+    spans: Ptr[Span]
+    pos: int
+    endpos: int
+    re: Pattern
+    string: str
+
+_ANCHOR_UNANCHORED   = 0
+_ANCHOR_ANCHOR_START = 1
+_ANCHOR_ANCHOR_BOTH  = 2
+
 @C
 @nocapture
 def seq_re_fullmatch(pattern: str,
