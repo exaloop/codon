@@ -142,15 +142,6 @@ SEQ_FUNC Regex *seq_re_compile(seq_str_t p, seq_int_t flags) { return get(p, fla
 SEQ_FUNC void seq_re_purge() { cache.clear(); }
 
 /*
- * Match methods
- */
-
-SEQ_FUNC seq_str_t seq_re_match_expand(Match *match, seq_str_t templ) {
-  // TODO
-  return {0, nullptr};
-}
-
-/*
  * Pattern methods
  */
 

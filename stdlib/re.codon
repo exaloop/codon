@@ -209,7 +209,6 @@ class Match:
             index = template.find(backslash)
 
         pieces[-1] += template
-        print(pieces)
         return pieces
 
     def _unescape(s: str):
