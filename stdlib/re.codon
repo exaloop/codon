@@ -152,11 +152,14 @@ class Match:
         else:
             compile_error("match group indices must be int or str")
 
-    def _get_match(self, g, n: int):
-        span = self._get_group(g, n)
+    def _span_match(self, span: Span):
         if not span:
             return ""
         return self.string._slice(span.start, span.end)
+
+    def _get_match(self, g, n: int):
+        span = self._get_group(g, n)
+        return self._span_match(span)
 
     def _group_multi(self, n: int, *args):
         if staticlen(args) == 1:
@@ -314,6 +317,10 @@ class Match:
         if not max_group:
             return ''
         return seq_re_group_index_to_name(max_group)
+
+    def groups(self, default: str = ''):
+        n = self.re.groups
+        return [self._span_match(self._spans[i]) for i in range(1, n + 1)]
 
     def __copy__(self):
         return self
