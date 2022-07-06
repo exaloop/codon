@@ -2,7 +2,9 @@
 #include <cstring>
 #include <re2/re2.h>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 /*
@@ -55,24 +57,30 @@ static inline StringPiece str2sp(const seq_str_t &s) {
   return StringPiece(s.str, s.len);
 }
 
-struct StrEqual {
-  bool operator()(const seq_str_t &a, const seq_str_t &b) const {
-    return str2sp(a) == str2sp(b);
+using Key = std::pair<seq_str_t, seq_int_t>;
+
+struct KeyEqual {
+  bool operator()(const Key &a, const Key &b) const {
+    return a.second == b.second && str2sp(a.first) == str2sp(b.first);
   }
 };
 
-struct StrHash {
-  std::size_t operator()(const seq_str_t &k) const { return 0; }
+struct KeyHash {
+  std::size_t operator()(const Key &k) const {
+    using sv = std::string_view;
+    return std::hash<sv>()(sv(k.first.str, k.first.len)) ^ k.second;
+  }
 };
 
-static thread_local std::unordered_map<seq_str_t, Regex, StrHash, StrEqual,
-                                       GCMapAllocator<seq_str_t, Regex>>
+static thread_local std::unordered_map<Key, Regex, KeyHash, KeyEqual,
+                                       GCMapAllocator<Key, Regex>>
     cache;
 
-static inline Regex *get(const seq_str_t &p) {
-  auto it = cache.find(p);
+static inline Regex *get(const seq_str_t &p, seq_int_t flags) {
+  auto key = std::make_pair(p, flags);
+  auto it = cache.find(key);
   if (it == cache.end()) {
-    auto result = cache.emplace(p, str2sp(p));
+    auto result = cache.emplace(key, str2sp(p));
     return &result.first->second;
   } else {
     return &it->second;
@@ -129,7 +137,7 @@ SEQ_FUNC seq_str_t seq_re_escape(seq_str_t p) {
   return convert(Regex::QuoteMeta(str2sp(p)));
 }
 
-SEQ_FUNC Regex *seq_re_compile(seq_str_t p) { return get(p); }
+SEQ_FUNC Regex *seq_re_compile(seq_str_t p, seq_int_t flags) { return get(p, flags); }
 
 SEQ_FUNC void seq_re_purge() { cache.clear(); }
 
@@ -150,6 +158,12 @@ SEQ_FUNC seq_int_t seq_re_pattern_groups(Regex *pattern) {
   return pattern->NumberOfCapturingGroups();
 }
 
+SEQ_FUNC seq_int_t seq_re_group_name_to_index(Regex *pattern, seq_str_t name) {
+  const auto &mapping = pattern->NamedCapturingGroups();
+  auto it = mapping.find(std::string(name.str, name.len));
+  return (it != mapping.end()) ? it->second : -1;
+}
+
 SEQ_FUNC seq_int_t seq_re_pattern_groupindex(Regex *pattern, seq_str_t **names,
                                              seq_int_t **indices) {
   const int num_groups = pattern->NumberOfCapturingGroups();
@@ -158,7 +172,7 @@ SEQ_FUNC seq_int_t seq_re_pattern_groupindex(Regex *pattern, seq_str_t **names,
 
   *names = (seq_str_t *)seq_alloc_atomic(num_groups * sizeof(seq_str_t));
   *indices = (seq_int_t *)seq_alloc_atomic(num_groups * sizeof(seq_int_t));
-  auto mapping = pattern->NamedCapturingGroups();
+  const auto &mapping = pattern->NamedCapturingGroups();
   unsigned i = 0;
 
   for (const auto &it : mapping) {

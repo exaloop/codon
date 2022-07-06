@@ -35,7 +35,28 @@ def seq_re_pattern_groups(re: cobj) -> int:
     pass
 
 @C
-def seq_re_compile(pattern: str) -> cobj:
+@pure
+def seq_re_group_name_to_index(re: cobj, name: str) -> int:
+    pass
+
+@C
+@nocapture
+def seq_re_pattern_groupindex(re: cobj,
+                              names: Ptr[Ptr[str]],
+                              indices: Ptr[Ptr[int]]) -> int:
+    pass
+
+@C
+@pure
+def seq_re_escape(pattern: str) -> str:
+    pass
+
+@C
+def seq_re_purge() -> void:
+    pass
+
+@C
+def seq_re_compile(pattern: str, flags: int) -> cobj:
     pass
 
 @tuple
@@ -46,17 +67,66 @@ class Pattern:
 
 @tuple
 class Match:
-    spans: Ptr[Span]
+    _spans: Ptr[Span]
     pos: int
     endpos: int
     re: Pattern
     string: str
+
+    def _get_group_int(self, g: int, n: int):
+        if not (0 <= g <= n):
+            raise IndexError("no such group")
+        span = self._spans[g]
+        if not span:
+            return ""
+        return self.string._slice(span.start, span.stop)
+
+    def _get_group_str(self, g: str, n: int):
+        return self._get_group_int(seq_re_group_name_to_index(self.re._re, g), n)
+
+    def _get_group(self, g, n: int):
+        if isinstance(g, int):
+            return self._get_group_int(g, n)
+        elif isinstance(g, str):
+            return self._get_group_str(g, n)
+        else:
+            compile_error("match group indices must be int or str")
+
+    def _group_multi(self, n: int, *args):
+        if staticlen(args) == 1:
+            return (self._get_group(args[0], n),)
+        else:
+            return (self._get_group(args[0], n), *self._group_multi(n, *args[1:]))
+
+    def group(self, *args):
+        if staticlen(args) == 0:
+            return self._get_group(0, 1)
+        elif staticlen(args) == 1:
+            n = self.re.groups
+            return self._get_group(args[0], n)
+        else:
+            n = self.re.groups
+            return self._group_multi(n, *args)
+
+
 
 @extend
 class Pattern:
     @property
     def groups(self):
         return seq_re_pattern_groups(self._re)
+
+    @property
+    def groupindex(self):
+        names = Ptr[str]()
+        indices = Ptr[int]()
+        n = seq_re_pattern_groupindex(self._re, __ptr__(names), __ptr__(indices))
+
+        d = Dict[str, int](capacity=n)
+        for i in range(n):
+            d[names[i]] = indices[i]
+
+        return d
 
     def _match_one(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
         posx = 0 if pos is None else max(0, min(~pos, len(string)))
@@ -67,7 +137,6 @@ class Pattern:
 
         span = Span(-1, -1)
         seq_re_match_one(self._re, anchor, string, posx, endposx, __ptr__(span))
-        print span
         if not span:
             return None
 
@@ -112,10 +181,30 @@ class Pattern:
     def finditer(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
         return self._match(_ANCHOR_NONE, string, pos, endpos)
 
+    def findall(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+        return [m.group() for m in self.finditer(string, pos, endpos)]
 
 def compile(pattern: str, flags: int = 0):
-    re = seq_re_compile(pattern)
+    re = seq_re_compile(pattern, flags)
     return Pattern(pattern, flags, re)
+
+def search(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).search(string)
+
+def match(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).match(string)
 
 def fullmatch(pattern: str, string: str, flags: int = 0):
     return compile(pattern, flags).fullmatch(string)
+
+def finditer(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).finditer(string)
+
+def findall(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).findall(string)
+
+def escape(pattern: str):
+    return seq_re_escape(pattern)
+
+def purge():
+    seq_re_purge()
