@@ -172,7 +172,7 @@ class Match:
 
     def _span_match(self, span: Span):
         if not span:
-            return ""
+            return None
         return self.string._slice(span.start, span.end)
 
     def _get_match(self, g, n: int):
@@ -321,7 +321,7 @@ class Match:
     @property
     def lastindex(self):
         max_end = -1
-        max_group = 0
+        max_group = None
         for group in range(1, self.re.groups + 1):
             end = self._spans[group].end
             if max_end < end:
@@ -332,13 +332,20 @@ class Match:
     @property
     def lastgroup(self):
         max_group = self.lastindex
-        if not max_group:
-            return ''
-        return seq_re_group_index_to_name(max_group)
+        if max_group is None:
+            return None
+        return seq_re_group_index_to_name(self.re._re, max_group)
 
-    def groups(self, default: str = ''):
+    def groups(self, default: Optional[str] = None):
         n = self.re.groups
         return [self._span_match(self._spans[i]) for i in range(1, n + 1)]
+
+    def groupdict(self, default: Optional[str] = None):
+        d = {}
+        for group, index in self.re.groupindex.items():
+            item = self[index]
+            d[group] = item if item is not None else default
+        return d
 
     def __copy__(self):
         return self
@@ -358,7 +365,8 @@ class Pattern:
         indices = Ptr[int]()
         n = seq_re_pattern_groupindex(self._re, __ptr__(names), __ptr__(indices))
 
-        d = Dict[str, int](capacity=n)
+        d = Dict[str, int]()
+        d.resize(n)
         for i in range(n):
             d[names[i]] = indices[i]
 
