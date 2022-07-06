@@ -89,6 +89,40 @@ class Pattern:
     flags: int
     _re: cobj
 
+def compile(pattern: str, flags: int = 0):
+    re = seq_re_compile(pattern, flags)
+    return Pattern(pattern, flags, re)
+
+def search(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).search(string)
+
+def match(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).match(string)
+
+def fullmatch(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).fullmatch(string)
+
+def finditer(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).finditer(string)
+
+def findall(pattern: str, string: str, flags: int = 0):
+    return compile(pattern, flags).findall(string)
+
+def split(pattern: str, string: str, maxsplit: int =0, flags: int = 0):
+    return compile(pattern, flags).split(string, maxsplit)
+
+def sub(pattern: str, repl, string: str, count: int =0, flags: int = 0):
+    return compile(pattern, flags).sub(repl, string, count)
+
+def subn(pattern: str, repl, string: str, count: int =0, flags: int = 0):
+    return compile(pattern, flags).subn(repl, string, count)
+
+def escape(pattern: str):
+    return seq_re_escape(pattern)
+
+def purge():
+    seq_re_purge()
+
 @tuple
 class Match:
     _spans: Ptr[Span]
@@ -148,6 +182,117 @@ class Match:
         start, end = self._get_group(group, self.re.groups)
         return start, end
 
+    def _split(template: str):
+        backslash = '\\'
+        pieces = ['']
+        index = template.find(backslash)
+
+        OCTAL = compile(r'\\[0-7][0-7][0-7]')
+        GROUP = compile(r'\\[1-9][0-9]?|\\g<\w+>')
+
+        while index != -1:
+            piece, template = template[:index], template[index:]
+            pieces[-1] += piece
+
+            octal_match = OCTAL.match(template)
+            group_match = GROUP.match(template)
+
+            if (not octal_match) and group_match:
+                index = group_match.end()
+                piece, template = template[:index], template[index:]
+                pieces.extend((piece, ''))
+            else:
+                index = 2
+                piece, template = template[:index], template[index:]
+                pieces[-1] += piece
+
+            index = template.find(backslash)
+
+        pieces[-1] += template
+        print(pieces)
+        return pieces
+
+    def _unescape(s: str):
+        r = []
+        n = len(s)
+        i = 0
+        while i < n:
+            if s[i] == '\\' and i + 1 < n:
+                c = s[i + 1]
+                if c == 'a':
+                    r.append('\a')
+                    i += 1
+                elif c == 'b':
+                    r.append('\b')
+                    i += 1
+                elif c == 'f':
+                    r.append('\f')
+                    i += 1
+                elif c == 'n':
+                    r.append('\n')
+                    i += 1
+                elif c == 'r':
+                    r.append('\r')
+                    i += 1
+                elif c == 't':
+                    r.append('\t')
+                    i += 1
+                elif c == 'v':
+                    r.append('\b')
+                    i += 1
+                elif c == '"':
+                    r.append('\"')
+                    i += 1
+                elif c == '\'':
+                    r.append('\'')
+                    i += 1
+                elif c == '\\':
+                    r.append('\\')
+                    i += 1
+                elif c == 'x':
+                    if i + 3 > n:
+                        raise ValueError(f"invalid \\x escape at position {i}")
+                    code = int(s[i+2:i+4], 16)
+                    p = Ptr[byte](1)
+                    p[0] = byte(code)
+                    r.append(str(p, 1))
+                    i += 3
+                else:
+                    if '0' <= c <= '7':
+                        k = i + 2
+                        while k < n and k - i <= 4 and '0' <= s[k] <= '7':
+                            k += 1
+                        code = int(s[i+1:k], 8)
+                        p = Ptr[byte](1)
+                        p[0] = byte(code)
+                        r.append(str(p, 1))
+                        i = k
+                    else:
+                        r.append(s[i])
+            else:
+                r.append(s[i])
+            i += 1
+
+        return str.cat(r)
+
+    def expand(self, template: str):
+        pieces = list(Match._split(template))
+        INT = compile(r'[+-]?\d+')
+
+        for index, piece in enumerate(pieces):
+            if not (index % 2):
+                pieces[index] = Match._unescape(piece)
+            else:
+                if len(piece) <= 3:
+                    pieces[index] = self[int(piece[1:])]
+                else:
+                    group = piece[3:-1]
+                    if INT.fullmatch(group):
+                        pieces[index] = self[int(piece)]
+                    else:
+                        pieces[index] = self[group]
+        return str.cat(pieces)
+
 @extend
 class Pattern:
     @property
@@ -173,13 +318,10 @@ class Pattern:
         if posx > endposx:
             return None
 
-        span = Span(-1, -1)
-        seq_re_match_one(self._re, anchor, string, posx, endposx, __ptr__(span))
-        if not span:
+        spans = seq_re_match(self._re, anchor, string, posx, endposx)
+        if not spans[0]:
             return None
 
-        spans = Ptr[Span](1)
-        spans[0] = span
         return Match(spans, posx, endposx, self, string)
 
     def _match(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
@@ -253,43 +395,9 @@ class Pattern:
     def subn(self, repl, string: str, count: int = 0):
         cb = lambda match: [Pattern._repl(match, repl)]
         pieces, numsplit = self._split(cb, string, count)
-        joined_pieces = ''.join(pieces)
+        joined_pieces = str.cat(pieces)
         return joined_pieces, numsplit
 
     def sub(self, repl, string: str, count: int = 0):
         joined_pieces, _ = self.subn(repl, string, count)
         return joined_pieces
-
-def compile(pattern: str, flags: int = 0):
-    re = seq_re_compile(pattern, flags)
-    return Pattern(pattern, flags, re)
-
-def search(pattern: str, string: str, flags: int = 0):
-    return compile(pattern, flags).search(string)
-
-def match(pattern: str, string: str, flags: int = 0):
-    return compile(pattern, flags).match(string)
-
-def fullmatch(pattern: str, string: str, flags: int = 0):
-    return compile(pattern, flags).fullmatch(string)
-
-def finditer(pattern: str, string: str, flags: int = 0):
-    return compile(pattern, flags).finditer(string)
-
-def findall(pattern: str, string: str, flags: int = 0):
-    return compile(pattern, flags).findall(string)
-
-def split(pattern: str, string: str, maxsplit: int =0, flags: int = 0):
-    return compile(pattern, flags).split(string, maxsplit)
-
-def sub(pattern: str, repl, string: str, count: int =0, flags: int = 0):
-    return compile(pattern, flags).sub(repl, string, count)
-
-def subn(pattern: str, repl, string: str, count: int =0, flags: int = 0):
-    return compile(pattern, flags).subn(repl, string, count)
-
-def escape(pattern: str):
-    return seq_re_escape(pattern)
-
-def purge():
-    seq_re_purge()

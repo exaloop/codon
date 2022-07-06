@@ -16,7 +16,7 @@ using re2::StringPiece;
 
 struct Span {
   seq_int_t start;
-  seq_str_t end;
+  seq_int_t end;
 };
 
 // Caution: must match Codon's implementations
