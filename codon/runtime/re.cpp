@@ -24,6 +24,7 @@ using re2::StringPiece;
 
 static inline Regex::Options flags2opt(seq_int_t flags) {
   Regex::Options opt;
+  opt.set_log_errors(false);
   opt.set_encoding(Regex::Options::Encoding::EncodingLatin1);
 
   if (flags & ASCII) {
@@ -237,4 +238,10 @@ SEQ_FUNC bool seq_re_check_rewrite_string(Regex *pattern, seq_str_t rewrite,
   if (!ans)
     *error = convert(e);
   return ans;
+}
+
+SEQ_FUNC seq_str_t seq_re_pattern_error(Regex *pattern) {
+  if (pattern->ok())
+    return {0, nullptr};
+  return convert(pattern->error());
 }

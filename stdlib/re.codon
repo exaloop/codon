@@ -70,10 +70,8 @@ def seq_re_pattern_groupindex(re: cobj,
     pass
 
 @C
-@nocapture
-def seq_re_check_rewrite_string(re: cobj,
-                                rewrite: str,
-                                error: Ptr[str]) -> bool:
+@pure
+def seq_re_pattern_error(re: cobj) -> str:
     pass
 
 @C
@@ -91,12 +89,15 @@ def seq_re_compile(pattern: str, flags: int) -> cobj:
 
 class error:
     _hdr: ExcHeader
+    pattern: str
 
     def __init__(self):
         self._hdr = ("re.error", "", "", "", 0, 0)
+        self.pattern = ''
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, pattern: str = ''):
         self._hdr = ("re.error", message, "", "", 0, 0)
+        self.pattern = pattern
 
     @property
     def message(self) -> str:
@@ -114,6 +115,9 @@ class Pattern:
 
 def compile(pattern: str, flags: int = 0):
     re = seq_re_compile(pattern, flags)
+    err_msg = seq_re_pattern_error(re)
+    if err_msg:
+        raise error(err_msg, pattern)
     return Pattern(pattern, flags, re)
 
 def search(pattern: str, string: str, flags: int = 0):
