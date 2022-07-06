@@ -40,6 +40,11 @@ def seq_re_group_name_to_index(re: cobj, name: str) -> int:
     pass
 
 @C
+@pure
+def seq_re_group_index_to_name(re: cobj, index: int) -> str:
+    pass
+
+@C
 @nocapture
 def seq_re_pattern_groupindex(re: cobj,
                               names: Ptr[Ptr[str]],
@@ -291,6 +296,30 @@ class Match:
                     else:
                         pieces[index] = self[group]
         return str.cat(pieces)
+
+    @property
+    def lastindex(self):
+        max_end = -1
+        max_group = 0
+        for group in range(1, self.re.groups + 1):
+            end = self._spans[group].end
+            if max_end < end:
+                max_end = end
+                max_group = group
+        return max_group
+
+    @property
+    def lastgroup(self):
+        max_group = self.lastindex
+        if not max_group:
+            return ''
+        return seq_re_group_index_to_name(max_group)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self):
+        return self
 
 @extend
 class Pattern:

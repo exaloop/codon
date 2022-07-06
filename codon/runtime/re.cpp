@@ -155,6 +155,13 @@ SEQ_FUNC seq_int_t seq_re_group_name_to_index(Regex *pattern, seq_str_t name) {
   return (it != mapping.end()) ? it->second : -1;
 }
 
+SEQ_FUNC seq_str_t seq_re_group_index_to_name(Regex *pattern, seq_int_t index) {
+  const auto &mapping = pattern->CapturingGroupNames();
+  auto it = mapping.find(index);
+  seq_str_t empty = {0, nullptr};
+  return (it != mapping.end()) ? convert(it->second) : empty;
+}
+
 SEQ_FUNC seq_int_t seq_re_pattern_groupindex(Regex *pattern, seq_str_t **names,
                                              seq_int_t **indices) {
   const int num_groups = pattern->NumberOfCapturingGroups();
