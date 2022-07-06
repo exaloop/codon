@@ -16,7 +16,7 @@ using re2::StringPiece;
 
 struct Span {
   seq_int_t start;
-  seq_str_t stop;
+  seq_str_t end;
 };
 
 // Caution: must match Codon's implementations
@@ -182,4 +182,13 @@ SEQ_FUNC seq_int_t seq_re_pattern_groupindex(Regex *pattern, seq_str_t **names,
   }
 
   return num_groups;
+}
+
+SEQ_FUNC bool seq_re_check_rewrite_string(Regex *pattern, seq_str_t rewrite,
+                                          seq_str_t *error) {
+  std::string e;
+  bool ans = pattern->CheckRewriteString(str2sp(rewrite), &e);
+  if (!ans)
+    *error = convert(e);
+  return ans;
 }
