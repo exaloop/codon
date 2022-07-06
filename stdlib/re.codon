@@ -1,3 +1,21 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+# Adapted in part from Google's Python re2 wrapper
+# https://github.com/google/re2/blob/abseil/python/re2.py
+
+A          = (1 << 0)
+ASCII      = (1 << 0)
+DEBUG      = (1 << 1)
+I          = (1 << 2)
+IGNORECASE = (1 << 2)
+L          = (1 << 3)
+LOCALE     = (1 << 3)
+M          = (1 << 4)
+MULTILINE  = (1 << 4)
+S          = (1 << 5)
+DOTALL     = (1 << 5)
+X          = (1 << 6)
+VERBOSE    = (1 << 6)
+
 _ANCHOR_NONE  = 0
 _ANCHOR_START = 1
 _ANCHOR_BOTH  = 2

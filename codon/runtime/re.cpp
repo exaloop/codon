@@ -7,19 +7,66 @@
 #include <utility>
 #include <vector>
 
+using Regex = re2::RE2;
+using re2::StringPiece;
+
+/*
+ * Flags -- (!) must match Codon's
+ */
+
+#define ASCII (1 << 0)
+#define DEBUG (1 << 1)
+#define IGNORECASE (1 << 2)
+#define LOCALE (1 << 3)
+#define MULTILINE (1 << 4)
+#define DOTALL (1 << 5)
+#define VERBOSE (1 << 6)
+
+static inline Regex::Options flags2opt(seq_int_t flags) {
+  Regex::Options opt;
+  opt.set_encoding(Regex::Options::Encoding::EncodingLatin1);
+
+  if (flags & ASCII) {
+    // nothing
+  }
+
+  if (flags & DEBUG) {
+    // nothing
+  }
+
+  if (flags & IGNORECASE) {
+    opt.set_case_sensitive(false);
+  }
+
+  if (flags & LOCALE) {
+    // nothing
+  }
+
+  if (flags & MULTILINE) {
+    opt.set_one_line(false);
+  }
+
+  if (flags & DOTALL) {
+    opt.set_dot_nl(true);
+  }
+
+  if (flags & VERBOSE) {
+    // nothing
+  }
+
+  return opt;
+}
+
 /*
  * Internal helpers & utilities
  */
-
-using Regex = re2::RE2;
-using re2::StringPiece;
 
 struct Span {
   seq_int_t start;
   seq_int_t end;
 };
 
-// Caution: must match Codon's implementations
+// (!) must match Codon's implementations
 
 struct Pattern {
   seq_str_t pattern;
@@ -80,7 +127,8 @@ static inline Regex *get(const seq_str_t &p, seq_int_t flags) {
   auto key = std::make_pair(p, flags);
   auto it = cache.find(key);
   if (it == cache.end()) {
-    auto result = cache.emplace(key, str2sp(p));
+    auto result = cache.emplace(std::piecewise_construct, std::forward_as_tuple(key),
+                                std::forward_as_tuple(str2sp(p), flags2opt(flags)));
     return &result.first->second;
   } else {
     return &it->second;
