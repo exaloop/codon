@@ -528,11 +528,32 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
 ///      cls.foo()```
 ///   prints "foo 1" followed by "foo 2"
 ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
-  if (ctx->bases.back().supers.empty())
+  auto func = ctx->bases.back().type->getFunc();
+
+  // Find list of matching superf methods
+  std::vector<types::FuncTypePtr> supers;
+  if (!func->ast->attributes.parentClass.empty() &&
+      !endswith(func->ast->name, ":dispatch")) {
+    auto p = ctx->find(func->ast->attributes.parentClass)->type;
+    if (p && p->getClass()) {
+      if (auto c = in(ctx->cache->classes, p->getClass()->name)) {
+        if (auto m = in(c->methods, ctx->cache->rev(func->ast->name))) {
+          for (auto &overload : ctx->cache->overloads[*m]) {
+            if (endswith(overload.name, ":dispatch"))
+              continue;
+            if (overload.name == func->ast->name)
+              break;
+            supers.emplace_back(ctx->cache->functions[overload.name].type);
+          }
+        }
+      }
+      std::reverse(supers.begin(), supers.end());
+    }
+  }
+  if (supers.empty())
     error("no matching superf methods are available");
-  auto parent = ctx->bases.back().type->getFunc()->funcParent;
-  auto m = findMatchingMethods(parent ? parent->getClass() : nullptr,
-                               ctx->bases.back().supers, expr->args);
+  auto m = findMatchingMethods(
+      func->funcParent ? func->funcParent->getClass() : nullptr, supers, expr->args);
   if (m.empty())
     error("no matching superf methods are available");
   return transform(N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args));

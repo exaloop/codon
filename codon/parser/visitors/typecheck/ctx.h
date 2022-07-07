@@ -49,8 +49,6 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Map of locally realized types and functions.
     std::unordered_map<std::string, std::pair<TypecheckItem::Kind, types::TypePtr>>
         visitedAsts;
-    /// List of functions that can be accessed via super()
-    std::vector<types::FuncTypePtr> supers;
   };
   std::vector<RealizationBase> bases;
 

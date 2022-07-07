@@ -187,11 +187,11 @@ private:
     return unify(x, b, undoOnSuccess);
   }
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
-  types::TypePtr realize(types::TypePtr typ);
-  types::TypePtr realizeFunc(types::FuncType *typ);
-  types::TypePtr realizeType(types::ClassType *typ);
-  codon::ir::types::Type *getLLVMType(const types::ClassType *t);
-  std::vector<types::FuncTypePtr> findSuperMethods(const types::FuncTypePtr &func);
+  types::TypePtr realize(types::TypePtr);
+  types::TypePtr realizeFunc(types::FuncType *);
+  types::TypePtr realizeType(types::ClassType *);
+  codon::ir::types::Type *makeIRType(types::ClassType *);
+  codon::ir::Func *makeIRFunction(std::shared_ptr<Cache::Function::FunctionRealization>);
 
 private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
