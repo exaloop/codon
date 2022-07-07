@@ -267,7 +267,7 @@ class Match:
                     r.append('\t')
                     i += 1
                 elif c == 'v':
-                    r.append('\b')
+                    r.append('\v')
                     i += 1
                 elif c == '"':
                     r.append('\"')
