@@ -113,10 +113,6 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       stmt->setDone();
     }
   }
-
-  // Save the binding to the local realization context
-  /// TODO: what was this all about?!
-  ctx->bases.back().visitedAsts[lhs] = {kind, stmt->lhs->type};
 }
 
 /// Transform binding updates. Special handling is done for atomic or in-place

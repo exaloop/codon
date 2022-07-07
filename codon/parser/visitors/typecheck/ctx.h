@@ -46,9 +46,6 @@ struct TypeContext : public Context<TypecheckItem> {
     types::TypePtr type;
     /// The return type of currently realized function
     types::TypePtr returnType;
-    /// Map of locally realized types and functions.
-    std::unordered_map<std::string, std::pair<TypecheckItem::Kind, types::TypePtr>>
-        visitedAsts;
   };
   std::vector<RealizationBase> bases;
 
@@ -86,9 +83,6 @@ public:
   /// Find an internal type. Assumes that it exists.
   std::shared_ptr<TypecheckItem> forceFind(const std::string &name) const;
   types::TypePtr getType(const std::string &name) const;
-  /// Find a type or a function instantiation in the base stack.
-  std::pair<TypecheckItem::Kind, types::TypePtr>
-  findInVisited(const std::string &name) const;
 
   /// Pretty-print the current context state.
   void dump() override { dump(0); }
@@ -140,9 +134,8 @@ public:
   types::TypePtr findMember(const std::string &typeName,
                             const std::string &member) const;
 
-  typedef std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>
-      ReorderDoneFn;
-  typedef std::function<int(std::string)> ReorderErrorFn;
+  using ReorderDoneFn = std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
+  using ReorderErrorFn = std::function<int(std::string)>;
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
   /// Returns the reordered vector and an associated reordering score (missing

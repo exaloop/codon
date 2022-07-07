@@ -17,11 +17,6 @@ using namespace types;
 void TypecheckVisitor::visit(ClassStmt *stmt) {
   // Extensions are not possible after the simplification
   seqassert(!stmt->attributes.has(Attr::Extend), "invalid extension '{}'", stmt->name);
-
-  /// TODO: what does this findInVisited do?!
-  if (ctx->findInVisited(stmt->name).second)
-    return;
-
   // Type should be constructed only once
   stmt->setDone();
 
@@ -38,8 +33,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       typ = std::make_shared<PartialType>(typ->getRecord(), p->first, p->second);
   }
   typ->setSrcInfo(stmt->getSrcInfo());
-  ctx->add(TypecheckItem::Type, stmt->name, typ);
-  ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Type, typ};
+  // Classes should always be visible, so add them to the toplevel
+  ctx->addToplevel(stmt->name,
+                   std::make_shared<TypecheckItem>(TypecheckItem::Type, typ));
 
   // Handle generics
   for (const auto &a : stmt->args) {

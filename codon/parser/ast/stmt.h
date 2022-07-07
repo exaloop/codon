@@ -29,7 +29,7 @@ struct FunctionStmt;
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
 struct Stmt : public codon::SrcObject {
-  typedef Stmt base_type;
+  using base_type = Stmt;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).

@@ -9,8 +9,7 @@
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   ExprPtr clone() const override;                                                      \
@@ -55,7 +54,7 @@ struct StaticValue {
  * Each AST expression is intended to be instantiated as a shared_ptr.
  */
 struct Expr : public codon::SrcObject {
-  typedef Expr base_type;
+  using base_type = Expr;
 
   // private:
   /// Type of the expression. nullptr by default.
@@ -663,5 +662,4 @@ enum ExprAttr {
 
 char getStaticGeneric(Expr *e);
 
-} // namespace ast
 } // namespace codon

@@ -70,12 +70,6 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
-  // Handle recursive calls and declarations.
-  if (ctx->findInVisited(stmt->name).second) {
-    stmt->setDone();
-    return;
-  }
-
   // Function should be constructed only once
   stmt->setDone();
 
@@ -181,10 +175,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   // Update the visited table
-  ctx->bases[0].visitedAsts[stmt->name] = {TypecheckItem::Func, funcTyp};
-
-  // Add to the context
-  ctx->add(TypecheckItem::Func, stmt->name, funcTyp);
+  // Functions should always be visible, so add them to the toplevel
+  ctx->addToplevel(stmt->name,
+                   std::make_shared<TypecheckItem>(TypecheckItem::Func, funcTyp));
   ctx->cache->functions[stmt->name].type = funcTyp;
 
   // Ensure that functions with @C, @force_realize, and @export attributes can be

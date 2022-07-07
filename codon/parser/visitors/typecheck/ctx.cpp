@@ -33,9 +33,6 @@ std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
 std::shared_ptr<TypecheckItem> TypeContext::find(const std::string &name) const {
   if (auto t = Context<TypecheckItem>::find(name))
     return t;
-  auto tt = findInVisited(name);
-  if (tt.second)
-    return std::make_shared<TypecheckItem>(tt.first, tt.second);
   if (in(cache->globals, name))
     return std::make_shared<TypecheckItem>(TypecheckItem::Var, getUnbound());
   return nullptr;
@@ -49,17 +46,6 @@ std::shared_ptr<TypecheckItem> TypeContext::forceFind(const std::string &name) c
 
 types::TypePtr TypeContext::getType(const std::string &name) const {
   return forceFind(name)->type;
-}
-
-std::pair<TypecheckItem::Kind, types::TypePtr>
-TypeContext::findInVisited(const std::string &name) const {
-  for (int bi = int(bases.size()) - 1; bi >= 0; bi--) {
-    auto t = bases[bi].visitedAsts.find(name);
-    if (t == bases[bi].visitedAsts.end())
-      continue;
-    return t->second;
-  }
-  return {TypecheckItem::Var, nullptr};
 }
 
 int TypeContext::findBase(const std::string &b) {

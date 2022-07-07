@@ -46,7 +46,6 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
   if (!result)
     return nullptr;
 
-  ctx->addBlock(); // Needed to clean up the context after
   for (size_t iteration = 1;; iteration++) {
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or
@@ -108,8 +107,6 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     }
   }
 
-  if (!isToplevel)
-    ctx->popBlock();
   return result;
 }
 
@@ -188,9 +185,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   LOG_TYPECHECK("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
 
-  // Realizations are stored in the top-most base
-  ctx->bases[0].visitedAsts[realized->realizedTypeName()] = {TypecheckItem::Type,
-                                                             realized};
+  // Realizations should always be visible, so add them to the toplevel
+  ctx->addToplevel(realized->realizedTypeName(),
+                   std::make_shared<TypecheckItem>(TypecheckItem::Type, realized));
   auto realization =
       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()] =
           std::make_shared<Cache::Class::ClassRealization>();
@@ -276,7 +273,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   ctx->typecheckLevel++;
 
   // Find function parents
-  ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType(), {}});
+  ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
 
   // Clone the generic AST that is to be realized
   auto ast = std::dynamic_pointer_cast<FunctionStmt>(
@@ -298,8 +295,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   auto key = type->realizedName(); // note: the key might change later
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
-  // Realizations are stored in the top-most base
-  ctx->bases[0].visitedAsts[key] = {TypecheckItem::Func, type->getFunc()};
+
+  // Realizations should always be visible, so add them to the toplevel
+  ctx->addToplevel(
+      key, std::make_shared<TypecheckItem>(TypecheckItem::Func, type->getFunc()));
 
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
@@ -360,8 +359,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   } else {
     realizations[key] = realizations[type->realizedName()];
   }
-  ctx->bases[0].visitedAsts[type->realizedName()] = {TypecheckItem::Func,
-                                                     type->getFunc()};
+  ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
+                                             TypecheckItem::Func, type->getFunc()));
   ctx->bases.pop_back();
   ctx->popBlock();
   ctx->typecheckLevel--;

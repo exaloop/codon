@@ -7,8 +7,7 @@
 
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 struct Expr;
 struct StaticValue;
@@ -114,12 +113,12 @@ public:
   virtual bool is(const std::string &s);
   char isStaticType();
 };
-typedef std::shared_ptr<Type> TypePtr;
+using TypePtr = std::shared_ptr<Type>;
 
 struct Trait : public Type {
   bool canRealize() const override;
   bool isInstantiated() const override;
-  virtual std::string debugString(bool debug) const override;
+  std::string debugString(bool debug) const override;
   std::string realizedName() const override;
 };
 
@@ -257,7 +256,7 @@ public:
     return std::static_pointer_cast<ClassType>(shared_from_this());
   }
 };
-typedef std::shared_ptr<ClassType> ClassTypePtr;
+using ClassTypePtr = std::shared_ptr<ClassType>;
 
 /**
  * A generic class tuple (record) type. All Seq tuples inherit from this class.
@@ -332,7 +331,7 @@ public:
   }
   TypePtr getRetType() const { return generics[1].type; }
 };
-typedef std::shared_ptr<FuncType> FuncTypePtr;
+using FuncTypePtr = std::shared_ptr<FuncType>;
 
 /**
  * A generic type that represents a partial Seq function instantiation.
@@ -365,7 +364,7 @@ public:
     return std::static_pointer_cast<PartialType>(shared_from_this());
   }
 };
-typedef std::shared_ptr<FuncType> FuncTypePtr;
+using PartialTypePtr = std::shared_ptr<PartialType>;
 
 /**
  * A static integer type (e.g. N in def foo[N: int]). Usually an integer, but can point
@@ -423,5 +422,4 @@ public:
 };
 
 } // namespace types
-} // namespace ast
 } // namespace codon
