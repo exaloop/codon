@@ -236,24 +236,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   if (auto r = in(realizations, type->realizedName()))
     return (*r)->type;
 
-  // Set up realization bases.
-  // Ensure that the bases are correct even when realizing mutually recursive
-  // functions.
-  /// TODO: still needed?
-  int depth = 1;
-  for (auto parent = type->funcParent; parent;) {
-    if (auto f = parent->getFunc()) {
-      depth++;
-      parent = f->funcParent;
-    } else {
-      break;
-    }
-  }
-  auto oldBases = std::vector<TypeContext::RealizationBase>(ctx->bases.begin() + depth,
-                                                            ctx->bases.end());
-  while (ctx->bases.size() > depth)
-    ctx->bases.pop_back();
-  if (ctx->realizationDepth > 500)
+  if (ctx->bases.size() > 500)
     codon::compilationError(
         "maximum realization depth exceeded (recursive static function?)",
         getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
@@ -266,9 +249,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     error("cannot iterate a heterogeneous tuple");
 
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
-              type->realizedName(), ctx->getBase(), depth);
+              type->realizedName(), ctx->getBase(), ctx->bases.size());
   getLogger().level++;
-  ctx->realizationDepth++;
+  // ctx->realizationDepth++;
   ctx->addBlock();
   ctx->typecheckLevel++;
 
@@ -364,11 +347,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   ctx->bases.pop_back();
   ctx->popBlock();
   ctx->typecheckLevel--;
-  ctx->realizationDepth--;
+  // ctx->realizationDepth--;
   getLogger().level--;
 
   // Restore old bases back.
-  ctx->bases.insert(ctx->bases.end(), oldBases.begin(), oldBases.end());
   return type->getFunc();
 }
 
