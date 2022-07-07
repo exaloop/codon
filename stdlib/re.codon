@@ -172,7 +172,7 @@ class Match:
         elif isinstance(g, str):
             return self._get_group_str(g, n)
         else:
-            compile_error("match group indices must be int or str")
+            return self._get_group(g.__index__(), n)
 
     def _span_match(self, span: Span):
         if not span:
@@ -193,11 +193,9 @@ class Match:
         if staticlen(args) == 0:
             return ~(self._get_match(0, 1))
         elif staticlen(args) == 1:
-            n = self.re.groups
-            return self._get_match(args[0], n)
+            return self._get_match(args[0], self.re.groups)
         else:
-            n = self.re.groups
-            return self._group_multi(n, *args)
+            return self._group_multi(self.re.groups, *args)
 
     def __getitem__(self, g):
         return self._get_match(g, self.re.groups)

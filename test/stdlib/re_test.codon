@@ -58,7 +58,7 @@ def test_basic_re_sub():
     assert re.sub('a', r'\t\n\v\r\f\a\b', 'a') == '\t\n\v\r\f\a\b'
     assert re.sub('a', '\t\n\v\r\f\a\b', 'a') == '\t\n\v\r\f\a\b'
     assert re.sub('a', '\t\n\v\r\f\a\b', 'a') == (chr(9)+chr(10)+chr(11)+chr(13)+chr(12)+chr(7)+chr(8))
-    '''
+    ''' TODO: uncomment
     for c in 'cdehijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ':
         try:
             re.sub('a', '\\' + c, 'a')
@@ -274,3 +274,38 @@ def test_re_match():
     assert cmp_tuple(pat.match('b').group('a1', 'b2', 'c3'), (Optional[str](), Optional('b'), Optional[str]()))
     assert cmp_tuple(pat.match('ac').group(1, 'b2', 3), (Optional('a'), Optional[str](), Optional('c')))
 test_re_match()
+
+def raises(exception: type, function, *args, **kwargs):
+    try:
+        function(*args, **kwargs)
+    except exception:
+        return True
+    except:
+        pass
+    return False
+
+@test
+def test_group():
+    class Index:
+        value: int
+        def __init__(self, value):
+            self.value = value
+        def __index__(self):
+            return self.value
+    # A single group
+    m = re.match('(a)(b)', 'ab')
+    assert m.group() == 'ab'
+    assert m.group(0) == 'ab'
+    assert m.group(1) == 'a'
+    assert m.group(Index(1)) == 'a'
+    ''' TODO: uncomment
+    assert raises(IndexError, m.group, -1)
+    assert raises(IndexError, m.group, 3)
+    assert raises(IndexError, m.group, 1<<1000)
+    assert raises(IndexError, m.group, Index(1<<1000))
+    assert raises(IndexError, m.group, 'x')
+    '''
+    # Multiple groups
+    assert cmp_tuple(m.group(2, 1), ('b', 'a'))
+    assert cmp_tuple(m.group(Index(2), Index(1)), ('b', 'a'))
+test_group()
