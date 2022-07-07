@@ -305,6 +305,9 @@ class Match:
         return str.cat(r)
 
     def expand(self, template: str):
+        def get_or_empty(s: Optional[str]):
+            return s if s is not None else ''
+
         pieces = list(Match._split(template))
         INT = compile(r'[+-]?\d+')
 
@@ -313,13 +316,13 @@ class Match:
                 pieces[index] = Match._unescape(piece)
             else:
                 if len(piece) <= 3:
-                    pieces[index] = self[int(piece[1:])]
+                    pieces[index] = get_or_empty(self[int(piece[1:])])
                 else:
                     group = piece[3:-1]
                     if INT.fullmatch(group):
-                        pieces[index] = self[int(group)]
+                        pieces[index] = get_or_empty(self[int(group)])
                     else:
-                        pieces[index] = self[group]
+                        pieces[index] = get_or_empty(self[group])
         return str.cat(pieces)
 
     @property

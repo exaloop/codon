@@ -143,3 +143,12 @@ test_qualified_re_sub()
 def test_bug_114660():
     assert re.sub(r'(\S)\s+(\S)', r'\1 \2', 'hello  there') == 'hello there'
 test_bug_114660()
+
+@test
+def test_symbolic_refs():
+    assert re.sub('(?P<a>x)|(?P<b>y)', r'\g<b>', 'xx') == ''
+    assert re.sub('(?P<a>x)|(?P<b>y)', r'\2', 'xx') == ''
+    # Support > 100 groups.
+    pat = '|'.join(f'x(?P<a{i}>{hex(i)[2:]})y' for i in range(1, 200 + 1))
+    assert re.sub(pat, r'\g<200>', 'xc8yzxc8y') == 'c8zc8'
+test_symbolic_refs()
