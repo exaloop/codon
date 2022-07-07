@@ -66,9 +66,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
             (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
-          auto e = std::make_shared<IdExpr>(f.second.type->ast->name);
-          auto t = ctx->instantiate(f.second.type)->getFunc();
-          realize(t);
+          realize(ctx->instantiate(f.second.type)->getFunc());
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
         }
       }
@@ -236,7 +234,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   if (auto r = in(realizations, type->realizedName()))
     return (*r)->type;
 
-  if (ctx->bases.size() > 500)
+  if (ctx->getRealizationDepth() > 500)
     codon::compilationError(
         "maximum realization depth exceeded (recursive static function?)",
         getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
@@ -249,14 +247,15 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     error("cannot iterate a heterogeneous tuple");
 
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
-              type->realizedName(), ctx->getBase(), ctx->bases.size());
+              type->realizedName(), ctx->getRealizationStackName(),
+              ctx->getRealizationDepth());
   getLogger().level++;
-  // ctx->realizationDepth++;
   ctx->addBlock();
   ctx->typecheckLevel++;
 
   // Find function parents
-  ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
+  ctx->realizationBases.push_back(
+      {type->ast->name, type->getFunc(), type->getRetType()});
 
   // Clone the generic AST that is to be realized
   auto ast = std::dynamic_pointer_cast<FunctionStmt>(
@@ -344,13 +343,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   }
   ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
                                              TypecheckItem::Func, type->getFunc()));
-  ctx->bases.pop_back();
+  ctx->realizationBases.pop_back();
   ctx->popBlock();
   ctx->typecheckLevel--;
-  // ctx->realizationDepth--;
   getLogger().level--;
 
-  // Restore old bases back.
   return type->getFunc();
 }
 

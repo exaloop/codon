@@ -531,7 +531,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
 ///      cls.foo()```
 ///   prints "foo 1" followed by "foo 2"
 ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
-  auto func = ctx->bases.back().type->getFunc();
+  auto func = ctx->getRealizationBase()->type->getFunc();
 
   // Find list of matching superf methods
   std::vector<types::FuncTypePtr> supers;
@@ -566,9 +566,9 @@ ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
 /// to the first inherited type.
 /// TODO: only an empty super() is currently supported.
 ExprPtr TypecheckVisitor::transformSuper() {
-  if (ctx->bases.empty() || !ctx->bases.back().type)
+  if (!ctx->getRealizationBase()->type)
     error("no parent classes available");
-  auto funcTyp = ctx->bases.back().type->getFunc();
+  auto funcTyp = ctx->getRealizationBase()->type->getFunc();
   if (!funcTyp || !funcTyp->ast->hasAttr(Attr::Method))
     error("no parent classes available");
   if (funcTyp->getArgTypes().empty())

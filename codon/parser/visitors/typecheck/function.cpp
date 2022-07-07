@@ -15,10 +15,8 @@ using namespace types;
 /// Unify the function return type with `Generator[?]`.
 /// The unbound type will be deduced from return/yield statements.
 void TypecheckVisitor::visit(YieldExpr *expr) {
-  seqassert(!ctx->bases.empty(), "yield outside of a function");
-
   unify(expr->type, ctx->getUnbound());
-  unify(ctx->bases.back().returnType,
+  unify(ctx->getRealizationBase()->returnType,
         ctx->instantiateGeneric(ctx->getType("Generator"), {expr->type}));
   if (realize(expr->type))
     expr->setDone();
@@ -29,19 +27,18 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (transform(stmt->expr)) {
-    auto &base = ctx->bases.back();
-
     // Wrap expression to match the return type
-    if (!base.returnType->getUnbound())
-      wrapExpr(stmt->expr, base.returnType);
+    if (!ctx->getRealizationBase()->returnType->getUnbound())
+      wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType);
 
     // Special case: partialize functions if we are returning them
     if (stmt->expr->getType()->getFunc() &&
-        !(base.returnType->getClass() && base.returnType->is("Function"))) {
+        !(ctx->getRealizationBase()->returnType->getClass() &&
+          ctx->getRealizationBase()->returnType->is("Function"))) {
       stmt->expr = partializeFunction(stmt->expr->type->getFunc());
     }
 
-    unify(base.returnType, stmt->expr->type);
+    unify(ctx->getRealizationBase()->returnType, stmt->expr->type);
   } else {
     // If we are not within conditional block, ignore later statements in this function.
     // Useful with static if statements.
@@ -60,7 +57,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 /// Typecheck yield statements. Empty yields assume `NoneType`.
 void TypecheckVisitor::visit(YieldStmt *stmt) {
   stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
-  unify(ctx->bases.back().returnType,
+  unify(ctx->getRealizationBase()->returnType,
         ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type}));
 
   if (stmt->expr->isDone())

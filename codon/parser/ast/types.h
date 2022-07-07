@@ -422,4 +422,4 @@ public:
 };
 
 } // namespace types
-} // namespace codon
+} // namespace codon::ast

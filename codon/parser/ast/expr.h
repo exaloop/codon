@@ -662,4 +662,4 @@ enum ExprAttr {
 
 char getStaticGeneric(Expr *e);
 
-} // namespace codon
+} // namespace codon::ast

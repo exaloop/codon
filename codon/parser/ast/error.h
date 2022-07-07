@@ -1,8 +1,8 @@
 #pragma once
 
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <stdexcept>
 
 namespace codon {
 struct SrcInfo {

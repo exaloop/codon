@@ -257,7 +257,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     /// TODO: move to Codon?
     if (expr->typeParams.size() != 2)
       error("invalid Callable type declaration");
-    for (auto &typeParam: expr->typeParams) {
+    for (auto &typeParam : expr->typeParams) {
       transformType(typeParam);
       if (typeParam->type->isStaticType())
         error("unexpected static type");

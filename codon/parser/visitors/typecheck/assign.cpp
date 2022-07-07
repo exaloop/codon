@@ -97,7 +97,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       ctx->addToplevel(lhs, val);
       if (kind != TypecheckItem::Var)
         ctx->cache->globals.erase(lhs);
-    } else if (startswith(ctx->bases.back().name, "._import_") &&
+    } else if (startswith(ctx->getRealizationBase()->name, "._import_") &&
                kind == TypecheckItem::Type) {
       // Make import toplevel type aliases (e.g., `a = Ptr[byte]`) visible
       ctx->addToplevel(lhs, val);
@@ -230,8 +230,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     if (auto rhsClass = stmt->rhs->getType()->getClass()) {
       auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
                                              ctx->getType("Ptr"), {lhsClass});
-      if (auto m =
-              findBestMethod(lhsClass, "__atomic_xchg__", {ptrType, rhsClass})) {
+      if (auto m = findBestMethod(lhsClass, "__atomic_xchg__", {ptrType, rhsClass})) {
         return {true,
                 N<CallExpr>(N<IdExpr>(m->ast->name),
                             N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)};

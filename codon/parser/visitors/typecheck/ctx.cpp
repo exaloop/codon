@@ -17,7 +17,7 @@ TypeContext::TypeContext(Cache *cache)
     : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0), age(0),
       realizationDepth(0), blockLevel(0), returnEarly(false) {
   stack.push_front(std::vector<std::string>());
-  bases.push_back({"", nullptr, nullptr});
+  realizationBases.push_back({"", nullptr, nullptr});
   pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
   changedNodes = 0;
 }
@@ -48,19 +48,17 @@ types::TypePtr TypeContext::getType(const std::string &name) const {
   return forceFind(name)->type;
 }
 
-int TypeContext::findBase(const std::string &b) {
-  for (int i = int(bases.size()) - 1; i >= 0; i--)
-    if (b == bases[i].name)
-      return i;
-  seqassert(false, "cannot find base '{}'", b);
-  return -1;
+TypeContext::RealizationBase *TypeContext::getRealizationBase() {
+  return &(realizationBases.back());
 }
 
-std::string TypeContext::getBase() const {
-  if (bases.empty())
+size_t TypeContext::getRealizationDepth() const { return realizationBases.size(); }
+
+std::string TypeContext::getRealizationStackName() const {
+  if (realizationBases.empty())
     return "";
   std::vector<std::string> s;
-  for (auto &b : bases)
+  for (auto &b : realizationBases)
     if (b.type)
       s.push_back(b.type->realizedName());
   return join(s, ":");
@@ -92,7 +90,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, types::TypePtr t
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
-  auto t = type->instantiate(getLevel(), &(cache->unboundCount), &genericCache);
+  auto t = type->instantiate(typecheckLevel, &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
@@ -271,7 +269,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 void TypeContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
-  LOG("base: {}", getBase());
+  LOG("base: {}", getRealizationStackName());
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
@@ -279,4 +277,4 @@ void TypeContext::dump(int pad) {
   }
 }
 
-} // namespace codon
+} // namespace codon::ast

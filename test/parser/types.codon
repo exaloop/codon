@@ -241,6 +241,13 @@ try:
 except ValueError:
     print 'unwrap failed'  #: unwrap failed
 
+class Cls:
+    x: int
+c = None
+for i in range(2):
+    if c: c.x += 1  # check for unwrap() dot access
+    c = Cls(1)
+print(c.x)  #: 1
 
 #%% optional_methods,barebones
 @extend

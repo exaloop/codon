@@ -248,7 +248,7 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
         if (si == subs.size())
           error(cls.get(), "wrong number of generics");
         args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
-                             Param::HiddenGeneric});
+                                Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {
         args.emplace_back(a);
       }

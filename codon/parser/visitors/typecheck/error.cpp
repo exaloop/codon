@@ -61,8 +61,9 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
         stmt->expr->getCall()->expr->isId("__internal__.set_header:0"))) {
     stmt->expr = transform(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "set_header"), stmt->expr,
-        N<StringExpr>(ctx->bases.back().name), N<StringExpr>(stmt->getSrcInfo().file),
-        N<IntExpr>(stmt->getSrcInfo().line), N<IntExpr>(stmt->getSrcInfo().col)));
+        N<StringExpr>(ctx->getRealizationBase()->name),
+        N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
+        N<IntExpr>(stmt->getSrcInfo().col)));
   }
   if (stmt->expr->isDone())
     stmt->setDone();

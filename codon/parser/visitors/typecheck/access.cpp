@@ -76,12 +76,12 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
 }
 
-/// See @c transformDot for details
+/// See @c transformDot for details.
 void TypecheckVisitor::visit(DotExpr *expr) {
   // Make sure to unify the current type with the transformed type
   if ((resultExpr = transformDot(expr)))
     unify(expr->type, resultExpr->type);
-  else if (!expr->type)
+  if (!expr->type)
     unify(expr->type, ctx->getUnbound());
 }
 
@@ -248,6 +248,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   if (typ->is(TYPE_OPTIONAL)) {
     auto dot = N<DotExpr>(transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr)),
                           expr->member);
+    dot->setType(ctx->getUnbound()); // as dot is not transformed
     if (auto d = transformDot(dot.get(), args))
       return d;
     return dot;
