@@ -152,3 +152,125 @@ def test_symbolic_refs():
     pat = '|'.join(f'x(?P<a{i}>{hex(i)[2:]})y' for i in range(1, 200 + 1))
     assert re.sub(pat, r'\g<200>', 'xc8yzxc8y') == 'c8zc8'
 test_symbolic_refs()
+
+@test
+def test_re_subn():
+    assert re.subn("(?i)b+", "x", "bbbb BBBB") == ('x x', 2)
+    assert re.subn("b+", "x", "bbbb BBBB") == ('x BBBB', 1)
+    assert re.subn("b+", "x", "xyz") == ('xyz', 0)
+    assert re.subn("b*", "x", "xyz") == ('xxxyxzx', 4)
+    assert re.subn("b*", "x", "xyz", 2) == ('xxxyz', 2)
+    assert re.subn("b*", "x", "xyz", count=2) == ('xxxyz', 2)
+test_re_subn()
+
+# TODO: Current version does not allow None == None,
+#       so use this as a workaround.
+def cmp_opt(x, y):
+    if x is None:
+        return y is None
+    elif y is None:
+        return x is None
+    else:
+        return x == y
+
+def cmp_list(a, b):
+    if len(a) != len(b):
+        return False
+
+    for i in range(len(a)):
+        if not cmp_opt(a[i], b[i]):
+            return False
+
+    return True
+
+def cmp_tuple(a, b):
+    if staticlen(a) != staticlen(b):
+        return False
+    elif staticlen(a) == 0:
+        return True
+    else:
+        if not cmp_opt(a[0], b[0]):
+            return False
+        return cmp_tuple(a[1:], b[1:])
+
+@test
+def test_re_split():
+    assert cmp_list(re.split(":", ":a:b::c"), ['', 'a', 'b', '', 'c'])
+    assert cmp_list(re.split(":+", ":a:b::c"), ['', 'a', 'b', 'c'])
+    assert cmp_list(re.split("(:+)", ":a:b::c"), ['', ':', 'a', ':', 'b', '::', 'c'])
+
+    assert cmp_list(re.split("(?::+)", ":a:b::c"), ['', 'a', 'b', 'c'])
+    assert cmp_list(re.split("(:)+", ":a:b::c"), ['', ':', 'a', ':', 'b', ':', 'c'])
+    assert cmp_list(re.split("([b:]+)", ":a:b::c"), ['', ':', 'a', ':b::', 'c'])
+    assert cmp_list(re.split("(b)|(:+)", ":a:b::c"), [None, '', None, ':', 'a', None, ':', '', 'b', None, '', None, '::', 'c'][1:])
+    assert cmp_list(re.split("(?:b)|(?::+)", ":a:b::c"), ['', 'a', '', '', 'c'])
+
+    for sep, expected in [
+        (':*', [None, '', '', 'a', '', 'b', '', 'c', ''][1:]),
+        ('(?::*)', [None, '', '', 'a', '', 'b', '', 'c', ''][1:]),
+        ('(:*)', [None, '', ':', '', '', 'a', ':', '', '', 'b', '::', '', '', 'c', '', ''][1:]),
+        ('(:)*', [None, '', ':', '', None, 'a', ':', '', None, 'b', ':', '', None, 'c', None, ''][1:]),
+    ]:
+        assert cmp_list(re.split(sep, ':a:b::c'), expected)
+
+    for sep, expected in [
+        ('', ['', ':', 'a', ':', 'b', ':', ':', 'c', '']),
+        # (r'\b', [':', 'a', ':', 'b', '::', 'c', '']),  # TODO: this fails; re2 difference maybe?
+    ]:
+        assert cmp_list(re.split(sep, ':a:b::c'), expected)
+test_re_split()
+
+@test
+def test_qualified_re_split():
+    assert cmp_list(re.split(":", ":a:b::c", 2), ['', 'a', 'b::c'])
+    assert cmp_list(re.split(":", ":a:b::c", maxsplit=2), ['', 'a', 'b::c'])
+    assert cmp_list(re.split(':', 'a:b:c:d', maxsplit=2), ['a', 'b', 'c:d'])
+    assert cmp_list(re.split("(:)", ":a:b::c", maxsplit=2), ['', ':', 'a', ':', 'b::c'])
+    assert cmp_list(re.split("(:+)", ":a:b::c", maxsplit=2), ['', ':', 'a', ':', 'b::c'])
+    assert cmp_list(re.split("(:*)", ":a:b::c", maxsplit=2), ['', ':', '', '', 'a:b::c'])
+test_qualified_re_split()
+
+@test
+def test_re_findall():
+    assert re.findall(":+", "abc") == []
+    assert re.findall(":+", "a:b::c:::d") == [":", "::", ":::"]
+    assert re.findall("(:+)", "a:b::c:::d") == [":", "::", ":::"]
+    # (!) Note: this is different in Codon, as we always return the full match even
+    #           if there are capturing groups.
+    assert re.findall("(:)(:*)", "a:b::c:::d") == [":", "::", ":::"]
+
+    x = "\xe0"
+    xx = x * 2
+    xxx = x * 3
+    string = f"a{x}b{xx}c{xxx}d"
+    assert re.findall(f"{x}+", string) == [x, xx, xxx]
+    assert re.findall(f"({x}+)", string) == [x, xx, xxx]
+    # (!) Note: same as above.
+    assert re.findall(f"({x})({x}*)", string) == [x, xx, xxx]
+test_re_findall()
+
+@test
+def test_re_match():
+    assert cmp_list(re.match('a', 'a').groups(), List[Optional[str]]())
+    assert re.match('(a)', 'a').groups() == [None, 'a',][1:]
+    assert re.match('(a)', 'a').group(0) == 'a'
+    assert re.match('(a)', 'a').group(1) == 'a'
+    assert re.match('(a)', 'a').group(1, 1) == (Optional('a'), Optional('a'))
+    assert cmp_list(re.match('\xe0', '\xe0').groups(), List[Optional[str]]())
+    assert cmp_list(re.match('(\xe0)', '\xe0').groups(), ['\xe0'])
+    assert re.match('(\xe0)', '\xe0').group(0) == '\xe0'
+    assert re.match('(\xe0)', '\xe0').group(1) == '\xe0'
+    assert re.match('(\xe0)', '\xe0').group(1, 1) == (Optional('\xe0'), Optional('\xe0'))
+
+    pat = re.compile('((a)|(b))(c)?')
+    assert cmp_list(pat.match('a').groups(), [None, 'a', 'a', None, None][1:])
+    assert cmp_list(pat.match('b').groups(), [None, 'b', None, 'b', None][1:])
+    assert cmp_list(pat.match('ac').groups(), [None, 'a', 'a', None, 'c'][1:])
+    assert cmp_list(pat.match('bc').groups(), [None, 'b', None, 'b', 'c'][1:])
+    assert cmp_list(pat.match('bc').groups(""), [None, 'b', "", 'b', 'c'][1:])
+
+    pat = re.compile('(?:(?P<a1>a)|(?P<b2>b))(?P<c3>c)?')
+    assert cmp_tuple(pat.match('a').group(1, 2, 3), (Optional('a'), Optional[str](), Optional[str]()))
+    assert cmp_tuple(pat.match('b').group('a1', 'b2', 'c3'), (Optional[str](), Optional('b'), Optional[str]()))
+    assert cmp_tuple(pat.match('ac').group(1, 'b2', 3), (Optional('a'), Optional[str](), Optional('c')))
+test_re_match()
