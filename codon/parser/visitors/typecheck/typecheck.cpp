@@ -217,8 +217,15 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
       try {
         ExprPtr dummy = std::make_shared<IdExpr>("");
         dummy->type = argType;
-        dummy->done = true;
-        wrapExpr(dummy, expectTyp, method, /*undoOnSuccess*/ true);
+        dummy->setDone();
+        wrapExpr(dummy, expectTyp, method);
+        types::Type::Unification undo;
+        undo.realizator = this;
+        if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
+          undo.undo();
+        } else {
+          score = -1;
+        }
       } catch (const exc::ParserException &) {
         // Ignore failed wraps
         score = -1;
@@ -241,8 +248,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 ///   expected `Function`, got a function -> partialize function
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
-                                const FuncTypePtr &callee, bool undoOnSuccess,
-                                bool allowUnwrap) {
+                                const FuncTypePtr &callee, bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
   if (callee && expr->isType())
@@ -269,11 +275,6 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
-  }
-
-  // Special case:
-  if (allowUnwrap) {
-    unify(expr->type, expectedType, undoOnSuccess);
   }
   return true;
 }

@@ -214,7 +214,7 @@ def rec3(x, y): #- ('a, 'b) -> 'b
     else:
         return y
 rec3(1, 's')
-#! cannot unify str and int
+#! cannot unify int and str
 #! while realizing rec3:0 (arguments rec3:0[int,str])
 
 #%% instantiate_function_2,barebones
@@ -1069,7 +1069,7 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
 print t(6, Optional(1)) #! cannot unify Optional[int] and Optional[T]
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! cannot unify int and ?
+z: Callable[[int],int] = 4 #! cannot unify ? and int
 
 #%% assign_wrapers,barebones
 a = 1.5

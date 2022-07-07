@@ -19,26 +19,23 @@ namespace ast {
 
 using namespace types;
 
-/// Unify types @param a (passed by reference) and @param b and return @param a.
+/// Unify types a (passed by reference) and b.
 /// Destructive operation as it modifies both a and b. If types cannot be unified, raise
 /// an error.
-/// @param undoOnSuccess set if unification is to be undone upon completion.
-/// TODO: check is undoOnSuccess needed anymore
-TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b, bool undoOnSuccess) {
+/// @param a Type (by reference)
+/// @param b Type
+/// @return a
+TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
   if (!a)
     return a = b;
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
   undo.realizator = this;
   if (a->unify(b.get(), &undo) >= 0) {
-    if (undoOnSuccess)
-      undo.undo();
     return a;
   } else {
     undo.undo();
   }
-  if (!undoOnSuccess)
-    a->unify(b.get(), &undo);
   error("cannot unify {} and {}", a->toString(), b->toString());
   return nullptr;
 }

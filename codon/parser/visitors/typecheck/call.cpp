@@ -438,8 +438,11 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
   bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
   for (size_t si = 0; si < calleeFn->getArgTypes().size(); si++) {
-    if (!wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn))
+    if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
+      unify(args[si].value->type, calleeFn->getArgTypes()[si]);
+    } else {
       wrappingDone = false;
+    }
     replacements.push_back(!calleeFn->getArgTypes()[si]->getClass()
                                ? args[si].value->type
                                : calleeFn->getArgTypes()[si]);

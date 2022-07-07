@@ -76,7 +76,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       unify(stmt->lhs->type,
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
       // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);
+      wrapExpr(stmt->rhs, stmt->lhs->getType());
       unify(stmt->lhs->type, stmt->rhs->type);
     }
     auto type = stmt->rhs->getType();
@@ -140,7 +140,7 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 
   transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
-  wrapExpr(stmt->rhs, stmt->lhs->getType(), nullptr);
+  wrapExpr(stmt->rhs, stmt->lhs->getType());
   unify(stmt->lhs->type, stmt->rhs->type);
   if (stmt->rhs->done)
     stmt->setDone();
@@ -169,7 +169,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     if (lhsClass->getRecord())
       error("tuple element '{}' is read-only", stmt->member);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
-    wrapExpr(stmt->rhs, typ, nullptr);
+    wrapExpr(stmt->rhs, typ);
     unify(stmt->rhs->type, typ);
     if (stmt->rhs->isDone())
       stmt->setDone();

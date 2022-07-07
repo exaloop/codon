@@ -63,10 +63,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
   // Add wrappers and unify both sides
-  wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, false,
-           /*allowUnwrap*/ false);
-  wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, false,
-           /*allowUnwrap*/ false);
+  wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
+  wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
   unify(expr->type, expr->ifexpr->getType());
   unify(expr->type, expr->elsexpr->getType());
 

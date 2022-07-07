@@ -179,19 +179,18 @@ private: // Node typechecking rules
 
 private:
   /* Type inference (infer.cpp) */
-  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b,
-                       bool undoOnSuccess = false);
-  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b,
-                       bool undoOnSuccess = false) {
+  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b);
+  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b) {
     auto x = a;
-    return unify(x, b, undoOnSuccess);
+    return unify(x, b);
   }
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
   types::TypePtr realize(types::TypePtr);
   types::TypePtr realizeFunc(types::FuncType *);
   types::TypePtr realizeType(types::ClassType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
-  codon::ir::Func *makeIRFunction(std::shared_ptr<Cache::Function::FunctionRealization>);
+  codon::ir::Func *
+      makeIRFunction(std::shared_ptr<Cache::Function::FunctionRealization>);
 
 private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
@@ -202,8 +201,7 @@ private:
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
-                const types::FuncTypePtr &callee = nullptr, bool undoOnSuccess = false,
-                bool allowUnwrap = true);
+                const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
 
 public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
