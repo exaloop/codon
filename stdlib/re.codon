@@ -295,7 +295,7 @@ class Match:
                         p = Ptr[byte](1)
                         p[0] = byte(code)
                         r.append(str(p, 1))
-                        i = k
+                        i = k - 1
                     else:
                         r.append(s[i])
             else:
