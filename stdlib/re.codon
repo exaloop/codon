@@ -317,7 +317,7 @@ class Match:
                 else:
                     group = piece[3:-1]
                     if INT.fullmatch(group):
-                        pieces[index] = self[int(piece)]
+                        pieces[index] = self[int(group)]
                     else:
                         pieces[index] = self[group]
         return str.cat(pieces)
