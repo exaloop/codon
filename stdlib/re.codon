@@ -284,8 +284,10 @@ class Match:
                         p[0] = byte(code)
                         r.append(str(p, 1))
                         i = k - 1
-                else:
+                elif c.isalpha():
                     raise error(f"bad escape \\{c} at position {i}")
+                else:
+                    r.append(s[i])
             else:
                 r.append(s[i])
             i += 1
