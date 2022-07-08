@@ -309,3 +309,117 @@ def test_group():
     assert cmp_tuple(m.group(2, 1), ('b', 'a'))
     assert cmp_tuple(m.group(Index(2), Index(1)), ('b', 'a'))
 test_group()
+
+@test
+def test_match_getitem():
+    pat = re.compile('(?:(?P<a1>a)|(?P<b2>b))(?P<c3>c)?')
+
+    m = pat.match('a')
+    assert m['a1'] == 'a'
+    assert m['b2'] is None
+    assert m['c3'] is None
+    assert m[0] == 'a'
+    assert m[1] == 'a'
+    assert m[2] is None
+    assert m[3] is None
+
+    ''' TODO: uncomment
+    assert raises(IndexError, m.__getitem__, 'X')
+    assert raises(IndexError, m.__getitem__, -1)
+    assert raises(IndexError, m.__getitem__, 4)
+    '''
+
+    m = pat.match('ac')
+    assert m['a1'] == 'a'
+    assert m['b2'] is None
+    assert m['c3'] == 'c'
+    assert m[0] == 'ac'
+    assert m[1] == 'a'
+    assert m[2] is None
+    assert m[3] == 'c'
+test_match_getitem()
+
+@test
+def test_re_fullmatch():
+    assert re.fullmatch(r"a", "a").span() == (0, 1)
+    assert re.fullmatch(r"a|ab", "ab").span() == (0, 2)
+    assert re.fullmatch("\xe0|\xe0\xdf", "\xe0\xdf").span() == (0, 2)
+
+    assert re.fullmatch(r".*?$", "abc").span() == (0, 3)
+    assert re.fullmatch(r".*?", "abc").span() == (0, 3)
+    assert re.fullmatch(r"a.*?b", "ab").span() == (0, 2)
+    assert re.fullmatch(r"a.*?b", "abb").span() == (0, 3)
+    assert re.fullmatch(r"a.*?b", "axxb").span() == (0, 4)
+    assert re.fullmatch(r"a+", "ab") is None
+    assert re.fullmatch(r"abc$", "abc\n") is None
+    assert re.fullmatch(r"(?m)abc$", "abc\n") is None
+
+    assert re.compile(r"bc").fullmatch("abcd", pos=1, endpos=3).span() == (1, 3)
+    # TODO: following fails; $ does not respect endpos in re2?
+    #assert re.compile(r".*?$").fullmatch("abcd", pos=1, endpos=3).span() == (1, 3)
+    assert re.compile(r".*?").fullmatch("abcd", pos=1, endpos=3).span() == (1, 3)
+test_re_fullmatch()
+
+@test
+def test_finditer():
+    iter = re.finditer(r":+", "a:b::c:::d")
+    assert cmp_list([item.group(0) for item in iter], [":", "::", ":::"])
+
+    pat = re.compile(r":+")
+    iter = pat.finditer("a:b::c:::d", 1, 10)
+    assert cmp_list([item.group(0) for item in iter], [":", "::", ":::"])
+
+    pat = re.compile(r":+")
+    iter = pat.finditer("a:b::c:::d", pos=1, endpos=10)
+    assert cmp_list([item.group(0) for item in iter], [":", "::", ":::"])
+
+    pat = re.compile(r":+")
+    iter = pat.finditer("a:b::c:::d", endpos=10, pos=1)
+    assert cmp_list([item.group(0) for item in iter], [":", "::", ":::"])
+
+    pat = re.compile(r":+")
+    iter = pat.finditer("a:b::c:::d", pos=3, endpos=8)
+    assert cmp_list([item.group(0) for item in iter], ["::", "::"])
+test_finditer()
+
+@test
+def test_constants():
+    assert re.I == re.IGNORECASE
+    assert re.L == re.LOCALE
+    assert re.M == re.MULTILINE
+    assert re.S == re.DOTALL
+    assert re.X == re.VERBOSE
+test_constants()
+
+@test
+def test_anyall():
+    assert re.match("a.b", "a\nb", re.DOTALL).group(0) == "a\nb"
+    assert re.match("a.*b", "a\n\nb", re.DOTALL).group(0) == "a\n\nb"
+test_anyall()
+
+@test
+def test_groupdict():
+    d = re.match('(?P<first>first) (?P<second>second)', 'first second').groupdict()
+    assert len(d) == 2 and d['first'] == 'first' and d['second'] == 'second'
+test_groupdict()
+
+@test
+def test_expand():
+    assert re.match("(?P<first>first) (?P<second>second)", "first second").expand(r"\2 \1 \g<second> \g<first>") == "second first second first"
+    assert re.match("(?P<first>first)|(?P<second>second)", "first").expand(r"\2 \g<second>") == " "
+test_expand()
+
+@test
+def test_getattr():
+    assert re.compile("(?i)(a)(b)").pattern == "(?i)(a)(b)"
+    # TODO: Codon does not support flags like this
+    # self.assertEqual(re.compile("(?i)(a)(b)").flags, re.I | re.U)
+    assert re.compile("(?i)(a)(b)").groups == 2
+    assert re.compile("(?i)(a)(b)").groupindex == {}
+    assert re.compile("(?i)(?P<first>a)(?P<other>b)").groupindex == {'first': 1, 'other': 2}
+
+    assert re.match("(a)", "a").pos == 0
+    assert re.match("(a)", "a").endpos == 1
+    assert re.match("(a)", "a").string == "a"
+    assert re.match("(a)", "a").re
+test_getattr()

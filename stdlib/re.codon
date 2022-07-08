@@ -362,6 +362,9 @@ class Match:
     def __deepcopy__(self):
         return self
 
+    def __bool__(self):
+        return True
+
 @extend
 class Pattern:
     @property
@@ -370,15 +373,11 @@ class Pattern:
 
     @property
     def groupindex(self):
-        names = Ptr[str]()
-        indices = Ptr[int]()
-        n = seq_re_pattern_groupindex(self._re, __ptr__(names), __ptr__(indices))
-
-        d = Dict[str, int]()
-        d.resize(n)
-        for i in range(n):
-            d[names[i]] = indices[i]
-
+        d = {}
+        for i in range(1, self.groups + 1):
+            name = seq_re_group_index_to_name(self._re, i)
+            if name:
+                d[name] = i
         return d
 
     def _match_one(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
@@ -471,3 +470,6 @@ class Pattern:
     def sub(self, repl, string: str, count: int = 0):
         joined_pieces, _ = self.subn(repl, string, count)
         return joined_pieces
+
+    def __bool__(self):
+        return True
