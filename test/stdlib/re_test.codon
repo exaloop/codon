@@ -1,4 +1,5 @@
 import re
+import string
 
 @test
 def test_search_star_plus():
@@ -58,14 +59,12 @@ def test_basic_re_sub():
     assert re.sub('a', r'\t\n\v\r\f\a\b', 'a') == '\t\n\v\r\f\a\b'
     assert re.sub('a', '\t\n\v\r\f\a\b', 'a') == '\t\n\v\r\f\a\b'
     assert re.sub('a', '\t\n\v\r\f\a\b', 'a') == (chr(9)+chr(10)+chr(11)+chr(13)+chr(12)+chr(7)+chr(8))
-    ''' TODO: uncomment
     for c in 'cdehijklmopqsuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ':
         try:
             re.sub('a', '\\' + c, 'a')
             assert False
         except re.error:
             pass
-    '''
     assert re.sub(r'^\s*', 'X', 'test') == 'Xtest'
 test_basic_re_sub()
 
@@ -298,13 +297,11 @@ def test_group():
     assert m.group(0) == 'ab'
     assert m.group(1) == 'a'
     assert m.group(Index(1)) == 'a'
-    ''' TODO: uncomment
     assert raises(IndexError, m.group, -1)
     assert raises(IndexError, m.group, 3)
     assert raises(IndexError, m.group, 1<<1000)
     assert raises(IndexError, m.group, Index(1<<1000))
     assert raises(IndexError, m.group, 'x')
-    '''
     # Multiple groups
     assert cmp_tuple(m.group(2, 1), ('b', 'a'))
     assert cmp_tuple(m.group(Index(2), Index(1)), ('b', 'a'))
@@ -323,11 +320,9 @@ def test_match_getitem():
     assert m[2] is None
     assert m[3] is None
 
-    ''' TODO: uncomment
-    assert raises(IndexError, m.__getitem__, 'X')
-    assert raises(IndexError, m.__getitem__, -1)
-    assert raises(IndexError, m.__getitem__, 4)
-    '''
+    assert raises(IndexError, lambda i: m[i], 'X')
+    assert raises(IndexError, lambda i: m[i], -1)
+    assert raises(IndexError, lambda i: m[i], 4)
 
     m = pat.match('ac')
     assert m['a1'] == 'a'
@@ -423,3 +418,29 @@ def test_getattr():
     assert re.match("(a)", "a").string == "a"
     assert re.match("(a)", "a").re
 test_getattr()
+
+def match(pattern, text, match: Optional[str] = None, span: Optional[re.Span] = None, matcher = re.fullmatch):
+    if match is None and span is None:
+        # the pattern matches the whole text
+        match = text
+        span = (0, len(text))
+    elif match is None or span is None:
+        raise ValueError('If match is not None, span should be specified '
+                         '(and vice versa).')
+    m = matcher(pattern, text)
+    return bool(m) and m.group() == match and m.span() == span
+
+LITERAL_CHARS = string.ascii_letters + string.digits
+
+@test
+def test_re_escape():
+    p = ''.join(chr(i) for i in range(256))
+    for c in p:
+        assert match(re.escape(c), c)
+        assert match('[' + re.escape(c) + ']', c)
+    assert match(re.escape(p), p)
+    for c in '-.]{}':
+        assert re.escape(c)[:1] == '\\'
+    literal_chars = LITERAL_CHARS
+    assert re.escape(literal_chars) == literal_chars
+test_re_escape()
