@@ -273,7 +273,7 @@ class List:
         self.arr[self.len] = x
         self.len += 1
 
-    def extend(self, itr: Generator[T]):
+    def extend(self, itr):
         for a in itr:
             self.append(a)
 

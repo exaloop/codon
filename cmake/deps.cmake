@@ -121,6 +121,15 @@ if(backtrace_ADDED)
         POSITION_INDEPENDENT_CODE ON)
 endif()
 
+CPMAddPackage(
+    NAME re2
+    GITHUB_REPOSITORY "google/re2"
+    VERSION 2022-06-01
+    GIT_TAG 5723bb8950318135ed9cf4fc76bed988a087f536
+    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+            "BUILD_SHARED_LIBS OFF"
+            "RE2_BUILD_TESTING OFF")
+
 if(CODON_JUPYTER)
     CPMAddPackage(
         NAME libzmq
