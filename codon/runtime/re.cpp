@@ -67,22 +67,6 @@ struct Span {
   seq_int_t end;
 };
 
-// (!) must match Codon's implementations
-
-struct Pattern {
-  seq_str_t pattern;
-  seq_int_t flags;
-  Regex *re;
-};
-
-struct Match {
-  Span *spans;
-  seq_int_t pos;
-  seq_int_t endpos;
-  Pattern re;
-  seq_str_t string;
-};
-
 template <class Key, class Value>
 struct GCMapAllocator : public std::allocator<std::pair<const Key, Value>> {
   using value_type = std::pair<const Key, Value>;
@@ -168,14 +152,14 @@ SEQ_FUNC Span *seq_re_match(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t 
   return spans;
 }
 
-SEQ_FUNC void seq_re_match_one(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t pos,
-                               seq_int_t endpos, Span *span) {
+SEQ_FUNC Span seq_re_match_one(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t pos,
+                               seq_int_t endpos) {
   StringPiece m;
   if (!re->Match(str2sp(s), pos, endpos, static_cast<Regex::Anchor>(anchor), &m, 1))
-    *span = {-1, -1};
+    return {-1, -1};
   else
-    *span = {static_cast<seq_int_t>(m.data() - s.str),
-             static_cast<seq_int_t>(m.data() - s.str + m.size())};
+    return {static_cast<seq_int_t>(m.data() - s.str),
+            static_cast<seq_int_t>(m.data() - s.str + m.size())};
 }
 
 /*
