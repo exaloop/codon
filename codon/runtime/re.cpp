@@ -96,7 +96,7 @@ struct GCMapAllocator : public std::allocator<std::pair<const Key, Value>> {
 
 static inline seq_str_t convert(const std::string &p) {
   seq_int_t n = p.size();
-  auto *s = (char *)seq_alloc(n);
+  auto *s = (char *)seq_alloc_atomic(n);
   std::memcpy(s, p.data(), n);
   return {n, s};
 }
