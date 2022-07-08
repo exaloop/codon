@@ -48,7 +48,6 @@ ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
 
   for (auto &g : cache->globals)
     if (!g.second) {
-      // LOG("[r] {}", g.first);
       g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
                                      : cache->codegenCtx->getModule()->N<ir::Var>(
                                            SrcInfo(), nullptr, true, g.first);
