@@ -29,7 +29,7 @@ class Span:
         return not (self.start == -1 and self.end == -1)
 
 @C
-@nocapture
+@pure
 def seq_re_match(re: cobj,
                  anchor: int,
                  string: str,
@@ -62,13 +62,6 @@ def seq_re_group_index_to_name(re: cobj, index: int) -> str:
     pass
 
 @C
-@nocapture
-def seq_re_pattern_groupindex(re: cobj,
-                              names: Ptr[Ptr[str]],
-                              indices: Ptr[Ptr[int]]) -> int:
-    pass
-
-@C
 @pure
 def seq_re_pattern_error(re: cobj) -> str:
     pass
@@ -83,6 +76,7 @@ def seq_re_purge() -> void:
     pass
 
 @C
+@pure
 def seq_re_compile(pattern: str, flags: int) -> cobj:
     pass
 
@@ -134,13 +128,13 @@ def finditer(pattern: str, string: str, flags: int = 0):
 def findall(pattern: str, string: str, flags: int = 0):
     return compile(pattern, flags).findall(string)
 
-def split(pattern: str, string: str, maxsplit: int =0, flags: int = 0):
+def split(pattern: str, string: str, maxsplit: int = 0, flags: int = 0):
     return compile(pattern, flags).split(string, maxsplit)
 
-def sub(pattern: str, repl, string: str, count: int =0, flags: int = 0):
+def sub(pattern: str, repl, string: str, count: int = 0, flags: int = 0):
     return compile(pattern, flags).sub(repl, string, count)
 
-def subn(pattern: str, repl, string: str, count: int =0, flags: int = 0):
+def subn(pattern: str, repl, string: str, count: int = 0, flags: int = 0):
     return compile(pattern, flags).subn(repl, string, count)
 
 def escape(pattern: str):

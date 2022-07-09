@@ -141,7 +141,7 @@ SEQ_FUNC Span *seq_re_match(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t 
   auto *spans = (Span *)seq_alloc_atomic(num_groups * sizeof(Span));
   unsigned i = 0;
   for (const auto &it : groups) {
-    if (it.data() == NULL) {
+    if (it.data() == nullptr) {
       spans[i++] = {-1, -1};
     } else {
       spans[i++] = {static_cast<seq_int_t>(it.data() - s.str),
