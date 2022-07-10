@@ -75,6 +75,250 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   }
 }
 
+/// Lowers allocations of known, small size to alloca when possible.
+/// Also removes unused allocations.
+struct AllocationRemover : public llvm::FunctionPass {
+  std::string alloc;
+  std::string allocAtomic;
+  std::string realloc;
+  std::string free;
+
+  static char ID;
+  AllocationRemover(const std::string &alloc = "seq_alloc",
+                    const std::string &allocAtomic = "seq_alloc_atomic",
+                    const std::string &realloc = "seq_realloc",
+                    const std::string &free = "seq_free")
+      : llvm::FunctionPass(ID), alloc(alloc), allocAtomic(allocAtomic),
+        realloc(realloc), free(free) {}
+
+  static const llvm::Function *getCalledFunction(const llvm::Value *value) {
+    // Don't care about intrinsics in this case.
+    if (llvm::isa<llvm::IntrinsicInst>(value))
+      return nullptr;
+
+    const auto *cb = llvm::dyn_cast<llvm::CallBase>(value);
+    if (!cb)
+      return nullptr;
+
+    if (const llvm::Function *callee = cb->getCalledFunction())
+      return callee;
+    return nullptr;
+  }
+
+  bool isAlloc(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      return func->arg_size() == 1 &&
+             (func->getName() == alloc || func->getName() == allocAtomic);
+    }
+    return false;
+  }
+
+  bool isRealloc(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      return func->arg_size() == 2 && func->getName() == realloc;
+    }
+    return false;
+  }
+
+  bool isFree(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      return func->arg_size() == 1 && func->getName() == free;
+    }
+    return false;
+  }
+
+  static bool getFixedArg(llvm::CallBase &cb, uint64_t &size) {
+    if (cb.arg_empty())
+      return false;
+
+    if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(*cb.arg_begin())) {
+      size = ci->getZExtValue();
+      return true;
+    }
+
+    return false;
+  }
+
+  bool isNeverEqualToUnescapedAlloc(llvm::Value *value, llvm::Instruction *ai) {
+    using namespace llvm;
+
+    if (isa<ConstantPointerNull>(value))
+      return true;
+    if (auto *li = dyn_cast<LoadInst>(value))
+      return isa<GlobalVariable>(li->getPointerOperand());
+    // Two distinct allocations will never be equal.
+    return isAlloc(value) && value != ai;
+  }
+
+  bool isAllocSiteRemovable(llvm::Instruction *ai,
+                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &users) {
+    using namespace llvm;
+
+    // Should never be an invoke, so just check right away.
+    if (isa<InvokeInst>(ai))
+      return false;
+
+    SmallVector<Instruction *, 4> worklist;
+    worklist.push_back(ai);
+
+    do {
+      Instruction *pi = worklist.pop_back_val();
+      for (User *u : pi->users()) {
+        Instruction *instr = cast<Instruction>(u);
+        switch (instr->getOpcode()) {
+        default:
+          // Give up the moment we see something we can't handle.
+          return false;
+
+        case Instruction::AddrSpaceCast:
+        case Instruction::BitCast:
+        case Instruction::GetElementPtr:
+          users.emplace_back(instr);
+          worklist.push_back(instr);
+          continue;
+
+        case Instruction::ICmp: {
+          ICmpInst *cmp = cast<ICmpInst>(instr);
+          // We can fold eq/ne comparisons with null to false/true, respectively.
+          // We also fold comparisons in some conditions provided the alloc has
+          // not escaped (see isNeverEqualToUnescapedAlloc).
+          if (!cmp->isEquality())
+            return false;
+          unsigned otherIndex = (cmp->getOperand(0) == pi) ? 1 : 0;
+          if (!isNeverEqualToUnescapedAlloc(cmp->getOperand(otherIndex), ai))
+            return false;
+          users.emplace_back(instr);
+          continue;
+        }
+
+        case Instruction::Call:
+          // Ignore no-op and store intrinsics.
+          if (IntrinsicInst *intrinsic = dyn_cast<IntrinsicInst>(instr)) {
+            switch (intrinsic->getIntrinsicID()) {
+            default:
+              return false;
+
+            case Intrinsic::memmove:
+            case Intrinsic::memcpy:
+            case Intrinsic::memset: {
+              MemIntrinsic *MI = cast<MemIntrinsic>(intrinsic);
+              if (MI->isVolatile() || MI->getRawDest() != pi)
+                return false;
+              LLVM_FALLTHROUGH;
+            }
+            case Intrinsic::assume:
+            case Intrinsic::invariant_start:
+            case Intrinsic::invariant_end:
+            case Intrinsic::lifetime_start:
+            case Intrinsic::lifetime_end:
+              users.emplace_back(instr);
+              continue;
+            case Intrinsic::launder_invariant_group:
+            case Intrinsic::strip_invariant_group:
+              users.emplace_back(instr);
+              worklist.push_back(instr);
+              continue;
+            }
+          }
+
+          if (isFree(instr)) {
+            users.emplace_back(instr);
+            continue;
+          }
+
+          if (isRealloc(instr)) {
+            users.emplace_back(instr);
+            worklist.push_back(instr);
+            continue;
+          }
+
+          return false;
+
+        case Instruction::Store: {
+          StoreInst *si = cast<StoreInst>(instr);
+          if (si->isVolatile() || si->getPointerOperand() != pi)
+            return false;
+          users.emplace_back(instr);
+          continue;
+        }
+        }
+        seqassert(false, "missing a return?");
+      }
+    } while (!worklist.empty());
+    return true;
+  }
+
+  void getErasesAndReplacementsForAlloc(
+      llvm::Instruction &mi, llvm::SmallVectorImpl<llvm::Instruction *> &erase,
+      llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace) {
+    using namespace llvm;
+
+    SmallVector<WeakTrackingVH, 64> users;
+    if (isAllocSiteRemovable(&mi, users)) {
+      for (unsigned i = 0, e = users.size(); i != e; ++i) {
+        if (!users[i])
+          continue;
+
+        Instruction *instr = cast<Instruction>(&*users[i]);
+        if (ICmpInst *cmp = dyn_cast<ICmpInst>(instr)) {
+          replace.emplace_back(cmp, ConstantInt::get(Type::getInt1Ty(cmp->getContext()),
+                                                     cmp->isFalseWhenEqual()));
+        } else if (!isa<StoreInst>(instr)) {
+          // Casts, GEP, or anything else: we're about to delete this instruction,
+          // so it can not have any valid uses.
+          replace.emplace_back(instr, PoisonValue::get(instr->getType()));
+        }
+        erase.push_back(instr);
+      }
+      erase.push_back(&mi);
+    }
+  }
+
+  bool runOnFunction(llvm::Function &func) override {
+    using namespace llvm;
+
+    llvm::SmallVector<Instruction *, 32> erase;
+    llvm::SmallVector<std::pair<Instruction *, llvm::Value *>, 32> replace;
+    for (inst_iterator instr = inst_begin(func), end = inst_end(func); instr != end;
+         ++instr) {
+      auto *cb = dyn_cast<CallBase>(&*instr);
+      if (!cb || !isAlloc(cb))
+        continue;
+
+      uint64_t size = 0;
+      if (getFixedArg(*cb, size) && size <= 1024 &&
+          !PointerMayBeCaptured(cb, /*ReturnCaptures=*/true, /*StoreCaptures=*/false,
+                                /*MaxUsesToExplore=*/10)) {
+        // Replace allocation with alloca.
+        IRBuilder<> B(func.getEntryBlock().getFirstNonPHI());
+        auto *replacement = B.CreateAlloca(B.getInt8Ty(), B.getInt64(size));
+        cb->replaceAllUsesWith(replacement);
+        erase.push_back(cb);
+      } else {
+        getErasesAndReplacementsForAlloc(*cb, erase, replace);
+      }
+    }
+
+    for (auto &P : replace) {
+      P.first->replaceAllUsesWith(P.second);
+    }
+
+    for (auto *I : erase) {
+      I->eraseFromParent();
+    }
+
+    return !erase.empty();
+  }
+};
+
+void addAllocationRemover(const llvm::PassManagerBuilder &builder,
+                          llvm::legacy::PassManagerBase &pm) {
+  pm.add(new AllocationRemover());
+}
+
+char AllocationRemover::ID = 0;
+llvm::RegisterPass<AllocationRemover> X1("alloc-remove", "Allocation Remover");
+
 /// Sometimes coroutine lowering produces hard-to-analyze loops involving
 /// function pointer comparisons. This pass puts them into a somewhat
 /// easier-to-analyze form.
@@ -157,8 +401,8 @@ void addCoroutineBranchSimplifier(const llvm::PassManagerBuilder &builder,
 }
 
 char CoroBranchSimplifier::ID = 0;
-llvm::RegisterPass<CoroBranchSimplifier> X("coro-br-simpl",
-                                           "Coroutine Branch Simplifier");
+llvm::RegisterPass<CoroBranchSimplifier> X2("coro-br-simpl",
+                                            "Coroutine Branch Simplifier");
 
 void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
                                PluginManager *plugins) {
@@ -207,6 +451,8 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   if (!debug) {
     pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
                      addCoroutineBranchSimplifier);
+    pmb.addExtension(llvm::PassManagerBuilder::EP_LoopOptimizerEnd,
+                     addAllocationRemover);
   }
 
   if (plugins) {
