@@ -292,7 +292,7 @@ struct AllocationRemover : public llvm::FunctionPass {
         // Replace allocation with alloca.
         IRBuilder<> B(func.getEntryBlock().getFirstNonPHI());
         auto *replacement = B.CreateAlloca(B.getInt8Ty(), B.getInt64(size));
-        cb->replaceAllUsesWith(replacement);
+        replace.emplace_back(cb, replacement);
         erase.push_back(cb);
       } else {
         getErasesAndReplacementsForAlloc(*cb, erase, replace);
@@ -307,7 +307,7 @@ struct AllocationRemover : public llvm::FunctionPass {
       I->eraseFromParent();
     }
 
-    return !erase.empty();
+    return !erase.empty() || !replace.empty();
   }
 };
 
