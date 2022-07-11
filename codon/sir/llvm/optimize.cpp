@@ -256,7 +256,7 @@ struct AllocationRemover : public llvm::FunctionPass {
     if (isa<InvokeInst>(ai))
       return false;
 
-    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && size <= 1024))
+    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && 0 < size && size <= 1024))
       return false;
 
     SmallVector<Instruction *, 4> worklist;
@@ -348,7 +348,7 @@ struct AllocationRemover : public llvm::FunctionPass {
   }
 
   void getErasesAndReplacementsForAlloc(
-      llvm::Instruction &mi, llvm::SmallVectorImpl<llvm::Instruction *> &erase,
+      llvm::Instruction &mi, llvm::SmallPtrSetImpl<llvm::Instruction *> &erase,
       llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace,
       llvm::SmallVectorImpl<llvm::AllocaInst *> &alloca,
       llvm::SmallVectorImpl<llvm::CallInst *> &untail) {
@@ -371,9 +371,9 @@ struct AllocationRemover : public llvm::FunctionPass {
           // so it can not have any valid uses.
           replace.emplace_back(instr, PoisonValue::get(instr->getType()));
         }
-        erase.push_back(instr);
+        erase.insert(instr);
       }
-      erase.push_back(&mi);
+      erase.insert(&mi);
       return;
     } else {
       users.clear();
@@ -385,7 +385,7 @@ struct AllocationRemover : public llvm::FunctionPass {
           ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
       alloca.push_back(replacement);
       replace.emplace_back(&mi, replacement);
-      erase.push_back(&mi);
+      erase.insert(&mi);
 
       for (unsigned i = 0, e = users.size(); i != e; ++i) {
         if (!users[i])
@@ -393,7 +393,7 @@ struct AllocationRemover : public llvm::FunctionPass {
 
         Instruction *instr = cast<Instruction>(&*users[i]);
         if (isFree(instr)) {
-          erase.push_back(instr);
+          erase.insert(instr);
         } else if (auto *ci = dyn_cast<CallInst>(&*instr)) {
           if (ci->isTailCall() || ci->isMustTailCall())
             untail.push_back(ci);
@@ -405,10 +405,10 @@ struct AllocationRemover : public llvm::FunctionPass {
   bool runOnFunction(llvm::Function &func) override {
     using namespace llvm;
 
-    llvm::SmallVector<Instruction *, 32> erase;
-    llvm::SmallVector<std::pair<Instruction *, llvm::Value *>, 32> replace;
-    llvm::SmallVector<AllocaInst *, 32> alloca;
-    llvm::SmallVector<CallInst *, 32> untail;
+    SmallSet<Instruction *, 32> erase;
+    SmallVector<std::pair<Instruction *, llvm::Value *>, 32> replace;
+    SmallVector<AllocaInst *, 32> alloca;
+    SmallVector<CallInst *, 32> untail;
 
     for (inst_iterator instr = inst_begin(func), end = inst_end(func); instr != end;
          ++instr) {
@@ -429,6 +429,10 @@ struct AllocationRemover : public llvm::FunctionPass {
 
     for (auto &P : replace) {
       P.first->replaceAllUsesWith(P.second);
+    }
+
+    for (auto *I : erase) {
+      I->dropAllReferences();
     }
 
     for (auto *I : erase) {
