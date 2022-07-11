@@ -1,5 +1,7 @@
 #include "optimize.h"
 
+#include <algorithm>
+
 #include "codon/sir/llvm/coro/Coroutines.h"
 #include "codon/util/common.h"
 #include "llvm/CodeGen/CommandFlags.h"
@@ -91,6 +93,8 @@ struct AllocationRemover : public llvm::FunctionPass {
       : llvm::FunctionPass(ID), alloc(alloc), allocAtomic(allocAtomic),
         realloc(realloc), free(free) {}
 
+  static bool sizeOkToDemote(uint64_t size) { return 0 < size && size <= 1024; }
+
   static const llvm::Function *getCalledFunction(const llvm::Value *value) {
     // Don't care about intrinsics in this case.
     if (llvm::isa<llvm::IntrinsicInst>(value))
@@ -127,11 +131,11 @@ struct AllocationRemover : public llvm::FunctionPass {
     return false;
   }
 
-  static bool getFixedArg(llvm::CallBase &cb, uint64_t &size) {
+  static bool getFixedArg(llvm::CallBase &cb, uint64_t &size, unsigned idx = 0) {
     if (cb.arg_empty())
       return false;
 
-    if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(*cb.arg_begin())) {
+    if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(cb.getArgOperand(idx))) {
       size = ci->getZExtValue();
       return true;
     }
@@ -256,7 +260,7 @@ struct AllocationRemover : public llvm::FunctionPass {
     if (isa<InvokeInst>(ai))
       return false;
 
-    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && 0 < size && size <= 1024))
+    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && sizeOkToDemote(size)))
       return false;
 
     SmallVector<Instruction *, 4> worklist;
@@ -322,6 +326,23 @@ struct AllocationRemover : public llvm::FunctionPass {
 
           if (isFree(instr)) {
             users.emplace_back(instr);
+            continue;
+          }
+
+          if (isRealloc(instr)) {
+            // If the realloc also has constant small size,
+            // then we can just update the assumed size to be
+            // max of original alloc's and this realloc's.
+            uint64_t newSize = 0;
+            if (getFixedArg(*dyn_cast<CallBase>(instr), newSize, 1) &&
+                sizeOkToDemote(newSize)) {
+              size = std::max(size, newSize);
+            } else {
+              return false;
+            }
+
+            users.emplace_back(instr);
+            worklist.push_back(instr);
             continue;
           }
 
@@ -393,6 +414,9 @@ struct AllocationRemover : public llvm::FunctionPass {
 
         Instruction *instr = cast<Instruction>(&*users[i]);
         if (isFree(instr)) {
+          erase.insert(instr);
+        } else if (isRealloc(instr)) {
+          replace.emplace_back(instr, replacement);
           erase.insert(instr);
         } else if (auto *ci = dyn_cast<CallInst>(&*instr)) {
           if (ci->isTailCall() || ci->isMustTailCall())
