@@ -248,12 +248,113 @@ struct AllocationRemover : public llvm::FunctionPass {
     return true;
   }
 
-  void getErasesAndReplacementsForAlloc(
-      llvm::Instruction &mi, llvm::SmallVectorImpl<llvm::Instruction *> &erase,
-      llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace) {
+  bool isAllocSiteDemotable(llvm::Instruction *ai, uint64_t &size,
+                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &frees) {
     using namespace llvm;
 
+    // Should never be an invoke, so just check right away.
+    if (isa<InvokeInst>(ai))
+      return false;
+
+    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && size <= 1024))
+      return false;
+
+    SmallVector<Instruction *, 4> worklist;
+    worklist.push_back(ai);
+
+    do {
+      Instruction *pi = worklist.pop_back_val();
+      for (User *u : pi->users()) {
+        Instruction *instr = cast<Instruction>(u);
+        switch (instr->getOpcode()) {
+        default:
+          // Give up the moment we see something we can't handle.
+          return false;
+
+        case Instruction::AddrSpaceCast:
+        case Instruction::BitCast:
+        case Instruction::GetElementPtr:
+          worklist.push_back(instr);
+          continue;
+
+        case Instruction::ICmp: {
+          ICmpInst *cmp = cast<ICmpInst>(instr);
+          // We can fold eq/ne comparisons with null to false/true, respectively.
+          // We also fold comparisons in some conditions provided the alloc has
+          // not escaped (see isNeverEqualToUnescapedAlloc).
+          if (!cmp->isEquality())
+            return false;
+          unsigned otherIndex = (cmp->getOperand(0) == pi) ? 1 : 0;
+          if (!isNeverEqualToUnescapedAlloc(cmp->getOperand(otherIndex), ai))
+            return false;
+          continue;
+        }
+
+        case Instruction::Call:
+          // Ignore no-op and store intrinsics.
+          if (IntrinsicInst *intrinsic = dyn_cast<IntrinsicInst>(instr)) {
+            switch (intrinsic->getIntrinsicID()) {
+            default:
+              return false;
+
+            case Intrinsic::memmove:
+            case Intrinsic::memcpy:
+            case Intrinsic::memset: {
+              MemIntrinsic *MI = cast<MemIntrinsic>(intrinsic);
+              if (MI->isVolatile())
+                return false;
+              LLVM_FALLTHROUGH;
+            }
+            case Intrinsic::assume:
+            case Intrinsic::invariant_start:
+            case Intrinsic::invariant_end:
+            case Intrinsic::lifetime_start:
+            case Intrinsic::lifetime_end:
+              continue;
+            case Intrinsic::launder_invariant_group:
+            case Intrinsic::strip_invariant_group:
+              worklist.push_back(instr);
+              continue;
+            }
+          }
+
+          if (isFree(instr)) {
+            frees.emplace_back(instr);
+            continue;
+          }
+
+          return false;
+
+        case Instruction::Store: {
+          StoreInst *si = cast<StoreInst>(instr);
+          if (si->isVolatile() || si->getPointerOperand() != pi)
+            return false;
+          continue;
+        }
+
+        case Instruction::Load: {
+          LoadInst *li = cast<LoadInst>(instr);
+          if (li->isVolatile())
+            return false;
+          continue;
+        }
+        }
+        seqassert(false, "missing a return?");
+      }
+    } while (!worklist.empty());
+    return true;
+  }
+
+  void getErasesAndReplacementsForAlloc(
+      llvm::Instruction &mi, llvm::SmallVectorImpl<llvm::Instruction *> &erase,
+      llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace,
+      llvm::SmallVectorImpl<llvm::AllocaInst *> &alloca) {
+    using namespace llvm;
+
+    uint64_t size = 0;
     SmallVector<WeakTrackingVH, 64> users;
+    SmallVector<WeakTrackingVH, 64> frees;
+
     if (isAllocSiteRemovable(&mi, users)) {
       for (unsigned i = 0, e = users.size(); i != e; ++i) {
         if (!users[i])
@@ -271,6 +372,21 @@ struct AllocationRemover : public llvm::FunctionPass {
         erase.push_back(instr);
       }
       erase.push_back(&mi);
+    } else if (isAllocSiteDemotable(&mi, size, frees)) {
+      auto *replacement = new AllocaInst(
+          Type::getInt8Ty(mi.getContext()), 0,
+          ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
+      alloca.push_back(replacement);
+      replace.emplace_back(&mi, replacement);
+      erase.push_back(&mi);
+
+      for (unsigned i = 0, e = frees.size(); i != e; ++i) {
+        if (!frees[i])
+          continue;
+
+        Instruction *instr = cast<Instruction>(&*frees[i]);
+        erase.push_back(instr);
+      }
     }
   }
 
@@ -279,24 +395,19 @@ struct AllocationRemover : public llvm::FunctionPass {
 
     llvm::SmallVector<Instruction *, 32> erase;
     llvm::SmallVector<std::pair<Instruction *, llvm::Value *>, 32> replace;
+    llvm::SmallVector<AllocaInst *, 32> alloca;
+
     for (inst_iterator instr = inst_begin(func), end = inst_end(func); instr != end;
          ++instr) {
       auto *cb = dyn_cast<CallBase>(&*instr);
       if (!cb || !isAlloc(cb))
         continue;
 
-      uint64_t size = 0;
-      if (getFixedArg(*cb, size) && size <= 1024 &&
-          !PointerMayBeCaptured(cb, /*ReturnCaptures=*/true, /*StoreCaptures=*/false,
-                                /*MaxUsesToExplore=*/10)) {
-        // Replace allocation with alloca.
-        IRBuilder<> B(func.getEntryBlock().getFirstNonPHI());
-        auto *replacement = B.CreateAlloca(B.getInt8Ty(), B.getInt64(size));
-        replace.emplace_back(cb, replacement);
-        erase.push_back(cb);
-      } else {
-        getErasesAndReplacementsForAlloc(*cb, erase, replace);
-      }
+      getErasesAndReplacementsForAlloc(*cb, erase, replace, alloca);
+    }
+
+    for (auto *A : alloca) {
+      A->insertBefore(func.getEntryBlock().getFirstNonPHI());
     }
 
     for (auto &P : replace) {
@@ -307,7 +418,7 @@ struct AllocationRemover : public llvm::FunctionPass {
       I->eraseFromParent();
     }
 
-    return !erase.empty() || !replace.empty();
+    return !erase.empty() || !replace.empty() || !alloca.empty();
   }
 };
 
