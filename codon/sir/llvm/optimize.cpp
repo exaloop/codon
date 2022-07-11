@@ -249,7 +249,7 @@ struct AllocationRemover : public llvm::FunctionPass {
   }
 
   bool isAllocSiteDemotable(llvm::Instruction *ai, uint64_t &size,
-                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &frees) {
+                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &users) {
     using namespace llvm;
 
     // Should never be an invoke, so just check right away.
@@ -310,16 +310,18 @@ struct AllocationRemover : public llvm::FunctionPass {
             case Intrinsic::invariant_end:
             case Intrinsic::lifetime_start:
             case Intrinsic::lifetime_end:
+              users.emplace_back(instr);
               continue;
             case Intrinsic::launder_invariant_group:
             case Intrinsic::strip_invariant_group:
+              users.emplace_back(instr);
               worklist.push_back(instr);
               continue;
             }
           }
 
           if (isFree(instr)) {
-            frees.emplace_back(instr);
+            users.emplace_back(instr);
             continue;
           }
 
@@ -348,12 +350,12 @@ struct AllocationRemover : public llvm::FunctionPass {
   void getErasesAndReplacementsForAlloc(
       llvm::Instruction &mi, llvm::SmallVectorImpl<llvm::Instruction *> &erase,
       llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace,
-      llvm::SmallVectorImpl<llvm::AllocaInst *> &alloca) {
+      llvm::SmallVectorImpl<llvm::AllocaInst *> &alloca,
+      llvm::SmallVectorImpl<llvm::CallInst *> &untail) {
     using namespace llvm;
 
     uint64_t size = 0;
     SmallVector<WeakTrackingVH, 64> users;
-    SmallVector<WeakTrackingVH, 64> frees;
 
     if (isAllocSiteRemovable(&mi, users)) {
       for (unsigned i = 0, e = users.size(); i != e; ++i) {
@@ -372,7 +374,12 @@ struct AllocationRemover : public llvm::FunctionPass {
         erase.push_back(instr);
       }
       erase.push_back(&mi);
-    } else if (isAllocSiteDemotable(&mi, size, frees)) {
+      return;
+    } else {
+      users.clear();
+    }
+
+    if (isAllocSiteDemotable(&mi, size, users)) {
       auto *replacement = new AllocaInst(
           Type::getInt8Ty(mi.getContext()), 0,
           ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
@@ -380,12 +387,17 @@ struct AllocationRemover : public llvm::FunctionPass {
       replace.emplace_back(&mi, replacement);
       erase.push_back(&mi);
 
-      for (unsigned i = 0, e = frees.size(); i != e; ++i) {
-        if (!frees[i])
+      for (unsigned i = 0, e = users.size(); i != e; ++i) {
+        if (!users[i])
           continue;
 
-        Instruction *instr = cast<Instruction>(&*frees[i]);
-        erase.push_back(instr);
+        Instruction *instr = cast<Instruction>(&*users[i]);
+        if (isFree(instr)) {
+          erase.push_back(instr);
+        } else if (auto *ci = dyn_cast<CallInst>(&*instr)) {
+          if (ci->isTailCall() || ci->isMustTailCall())
+            untail.push_back(ci);
+        }
       }
     }
   }
@@ -396,6 +408,7 @@ struct AllocationRemover : public llvm::FunctionPass {
     llvm::SmallVector<Instruction *, 32> erase;
     llvm::SmallVector<std::pair<Instruction *, llvm::Value *>, 32> replace;
     llvm::SmallVector<AllocaInst *, 32> alloca;
+    llvm::SmallVector<CallInst *, 32> untail;
 
     for (inst_iterator instr = inst_begin(func), end = inst_end(func); instr != end;
          ++instr) {
@@ -403,11 +416,15 @@ struct AllocationRemover : public llvm::FunctionPass {
       if (!cb || !isAlloc(cb))
         continue;
 
-      getErasesAndReplacementsForAlloc(*cb, erase, replace, alloca);
+      getErasesAndReplacementsForAlloc(*cb, erase, replace, alloca, untail);
     }
 
     for (auto *A : alloca) {
       A->insertBefore(func.getEntryBlock().getFirstNonPHI());
+    }
+
+    for (auto *C : untail) {
+      C->setTailCall(false);
     }
 
     for (auto &P : replace) {
@@ -418,7 +435,7 @@ struct AllocationRemover : public llvm::FunctionPass {
       I->eraseFromParent();
     }
 
-    return !erase.empty() || !replace.empty() || !alloca.empty();
+    return !erase.empty() || !replace.empty() || !alloca.empty() || !untail.empty();
   }
 };
 
