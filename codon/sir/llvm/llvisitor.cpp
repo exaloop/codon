@@ -1566,6 +1566,7 @@ void LLVMVisitor::visit(const StringConst *x) {
       *M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
       /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantDataArray::getString(*context, s), "str_literal");
+  strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
   llvm::Value *ptr = B->CreateBitCast(strVar, B->getInt8PtrTy());
   llvm::Value *len = B->getInt64(s.length());
