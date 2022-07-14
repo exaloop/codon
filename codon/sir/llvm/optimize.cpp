@@ -607,7 +607,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   if (!debug) {
     pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
                      addCoroutineBranchSimplifier);
-    pmb.addExtension(llvm::PassManagerBuilder::EP_LoopOptimizerEnd,
+    pmb.addExtension(llvm::PassManagerBuilder::EP_Peephole,
                      addAllocationRemover);
   }
 
