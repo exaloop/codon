@@ -43,8 +43,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     // Handle overloads
     if (in(ctx->cache->overloads, expr->value))
       val = ctx->forceFind(getDispatch(expr->value)->ast->name);
-    if (!val)
-      seqassert(expr, "cannot find '{}'", expr->value);
+    seqassert(val, "cannot find '{}'", expr->value);
   }
   unify(expr->type, ctx->instantiate(val->type));
 
