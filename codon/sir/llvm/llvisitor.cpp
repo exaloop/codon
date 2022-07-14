@@ -1715,23 +1715,26 @@ void LLVMVisitor::visit(const ImperativeForFlow *x) {
   auto *exitBlock = llvm::BasicBlock::Create(*context, "imp_for.exit", func);
 
   process(x->getStart());
-  B->SetInsertPoint(block);
-  B->CreateStore(value, loopVar);
+  llvm::Value *start = value;
+
   process(x->getEnd());
-  auto *end = value;
+  llvm::Value *end = value;
+
   B->SetInsertPoint(block);
   B->CreateBr(condBlock);
   B->SetInsertPoint(condBlock);
 
-  llvm::Value *done;
-  if (x->getStep() > 0)
-    done = B->CreateICmpSGE(B->CreateLoad(loopVar), end);
-  else
-    done = B->CreateICmpSLE(B->CreateLoad(loopVar), end);
+  llvm::PHINode *phi = B->CreatePHI(B->getInt64Ty(), 2);
+  phi->addIncoming(start, block);
 
+  llvm::Value *done =
+      (x->getStep() > 0) ? B->CreateICmpSGE(phi, end) : B->CreateICmpSLE(phi, end);
   B->CreateCondBr(done, exitBlock, bodyBlock);
 
+  B->SetInsertPoint(bodyBlock);
+  B->CreateStore(phi, loopVar);
   block = bodyBlock;
+
   enterLoop(
       {/*breakBlock=*/exitBlock, /*continueBlock=*/updateBlock, /*loopId=*/x->getId()});
   process(x->getBody());
@@ -1740,8 +1743,7 @@ void LLVMVisitor::visit(const ImperativeForFlow *x) {
   B->CreateBr(updateBlock);
 
   B->SetInsertPoint(updateBlock);
-  B->CreateStore(B->CreateAdd(B->CreateLoad(loopVar), B->getInt64(x->getStep())),
-                 loopVar);
+  phi->addIncoming(B->CreateAdd(phi, B->getInt64(x->getStep())), updateBlock);
   B->CreateBr(condBlock);
 
   block = exitBlock;
