@@ -29,16 +29,16 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   // Special case: this assignment has been dominated and is not a true assignment but
   //               an update of the dominating binding.
   if (in(ctx->cache->replacements, lhs)) {
-    bool hasUsed = false;
-    while (auto v = in(ctx->cache->replacements, lhs))
-      lhs = v->first, hasUsed = v->second;
-    if (stmt->rhs && hasUsed) {
+    const std::pair<std::string, bool> *changed = nullptr;
+    while ((changed = in(ctx->cache->replacements, lhs)))
+      lhs = changed->first;
+    if (stmt->rhs && changed && changed->second) {
       // Mark the dominating binding as used: `var.__used__ = True`
       auto u =
           N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
       u->setUpdate();
       prependStmts->push_back(transform(u));
-    } else if (hasUsed && !stmt->rhs) {
+    } else if (changed && changed->second && !stmt->rhs) {
       // This assignment was a declaration only. Just mark the dominating binding as
       // used: `var.__used__ = True`
       stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));

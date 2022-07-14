@@ -20,10 +20,10 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     transformType(c.exc);
     if (!c.var.empty()) {
       // Handle dominated except bindings
-      bool changed = in(ctx->cache->replacements, c.var);
+      auto changed = in(ctx->cache->replacements, c.var);
       while (auto s = in(ctx->cache->replacements, c.var))
-        c.var = s->first;
-      if (changed) {
+        c.var = s->first, changed = s;
+      if (changed && changed->second) {
         auto update =
             N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
         update->setUpdate();

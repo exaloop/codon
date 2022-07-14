@@ -508,3 +508,32 @@ except NameError:
     print('error') #: error
     # TODO: Python works here.
     # Need to capture these vars conditionally?
+
+#%% new_scoping_loops_try,barebones
+for i in range(10):
+    pass
+print(i) #: 9
+
+j = 6
+for j in range(0):
+    pass
+print(j) #: 6
+
+for j in range(1):
+    pass
+print(j) #: 0
+
+try:
+    raise ValueError("hi")
+except ValueError as e:
+    pass
+print(e.message) #: hi
+
+try:
+    pass
+except ValueError as f:
+    pass
+try:
+    print(f.message)
+except NameError:
+    print('error') #: error

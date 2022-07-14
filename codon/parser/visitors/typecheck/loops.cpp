@@ -57,10 +57,10 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   seqassert(var, "corrupt for variable: {}", stmt->var->toString());
 
   // Handle dominated for bindings
-  bool changed = in(ctx->cache->replacements, var->value);
+  auto changed = in(ctx->cache->replacements, var->value);
   while (auto s = in(ctx->cache->replacements, var->value))
-    var->value = s->first;
-  if (changed) {
+    var->value = s->first, changed = s;
+  if (changed && changed->second) {
     auto u =
         N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
     u->setUpdate();
