@@ -222,6 +222,14 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
       return transform(N<IdExpr>(*var));
     }
 
+  // Case: special members
+  if (auto typ = findSpecialMember(expr->member)) {
+    unify(expr->type, typ);
+    if (expr->expr->isDone() && realize(expr->type))
+      expr->setDone();
+    return nullptr;
+  }
+
   // Case: object generic access (`obj.T`)
   TypePtr generic = nullptr;
   for (auto &g : typ->generics)
@@ -269,6 +277,16 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);
   error("cannot find '{}' in {}", expr->member, typ->toString());
+  return nullptr;
+}
+
+TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
+  if (member == "__elemsize__")
+    return ctx->getType("int");
+  if (member == "__atomic__")
+    return ctx->getType("bool");
+  if (member == "__name__")
+    return ctx->getType("str");
   return nullptr;
 }
 

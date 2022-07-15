@@ -81,6 +81,7 @@ private: // Node typechecking rules
   void visit(DotExpr *) override;
   ExprPtr transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
   ExprPtr getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
+  types::TypePtr findSpecialMember(const std::string &);
   types::FuncTypePtr getBestOverload(Expr *, std::vector<CallExpr::Arg> *);
   types::FuncTypePtr getDispatch(const std::string &);
 

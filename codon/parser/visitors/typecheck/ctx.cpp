@@ -152,12 +152,6 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
-  if (member == "__elemsize__")
-    return getType("int");
-  if (member == "__atomic__")
-    return getType("bool");
-  if (member == "__name__")
-    return getType("str");
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     for (auto &mm : m->second.fields)
