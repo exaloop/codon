@@ -94,7 +94,7 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   if (auto dot = lhs->getDot()) {
     // Case: a.x = b
     seqassert(!type, "unexpected type annotation");
-    transform(dot->expr);
+    transform(dot->expr, true);
     // If we are deducing class members, check if we can deduce a member from this
     // assignment
     auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers : nullptr;

@@ -177,8 +177,8 @@ private: // Node simplification rules
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
                                                        std::vector<Param> &args);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
-  void transformNestedClasses(ClassStmt *stmt, std::vector<StmtPtr> &clsStmts,
-                              std::vector<StmtPtr> &fnStmts);
+  void transformNestedClasses(ClassStmt *, std::vector<StmtPtr> &,
+                              std::vector<StmtPtr> &, std::vector<StmtPtr> &);
   StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
                        const std::vector<Param> &args, bool isRecord);
 

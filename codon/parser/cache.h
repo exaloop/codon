@@ -115,6 +115,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// the order of the fields matters.
     std::vector<ClassField> fields;
 
+    /// Dictionary of class variables: a name maps to a canonical name.
+    std::unordered_map<std::string, std::string> classVars;
+
     /// A class realization.
     struct ClassRealization {
       /// Realized class type.

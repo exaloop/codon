@@ -92,11 +92,12 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   // Collect classes (and their fields) that are to be statically inherited
   auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
 
-  // A ClassStmt will be separated into method-free ClassStmts (that include nested
-  // classes) and method FunctionStmts
+  // A ClassStmt will be separated into class variable assignments, method-free
+  // ClassStmts (that include nested classes) and method FunctionStmts
   std::vector<StmtPtr> clsStmts; // Will be filled later!
+  std::vector<StmtPtr> varStmts; // Will be filled later!
   std::vector<StmtPtr> fnStmts;  // Will be filled later!
-  transformNestedClasses(stmt, clsStmts, fnStmts);
+  transformNestedClasses(stmt, clsStmts, varStmts, fnStmts);
 
   // Collect class fields
   for (auto &a : argsToParse) {
@@ -108,16 +109,33 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   // ASTs for member arguments to be used for populating magic methods
   std::vector<Param> memberArgs;
   for (auto &a : args) {
-    if (a.status == Param::Normal)
+    if (a.status == Param::Normal && !ClassStmt::isClassVar(a))
       memberArgs.push_back(a.clone());
   }
 
   if (!stmt->attributes.has(Attr::Extend)) {
-    // Ensure that all fields are registered
-    for (auto &a : args)
-      if (a.status == Param::Normal) {
-        ctx->cache->classes[canonicalName].fields.push_back({a.name, nullptr});
+    // Ensure that all fields and class variables are registered
+    for (size_t ai = 0; ai < args.size();) {
+      if (args[ai].status == Param::Normal) {
+        if (ClassStmt::isClassVar(args[ai])) {
+          // Handle class variables
+          auto name = format("{}.{}", canonicalName, args[ai].name);
+          preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
+          auto assign = N<AssignStmt>(
+              N<IdExpr>(name), args[ai].defaultValue,
+              args[ai].type ? CAST(args[ai].type, InstantiateExpr)->typeParams[0]
+                            : nullptr);
+          assign->setUpdate();
+          varStmts.push_back(assign);
+          ctx->cache->classes[canonicalName].classVars[args[ai].name] = name;
+          args.erase(args.begin() + ai);
+          continue;
+        } else {
+          ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
+        }
       }
+      ai++;
+    }
   }
 
   // Parse class members (arguments) and methods
@@ -205,6 +223,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     clsStmts.push_back(c);
   }
+  clsStmts.insert(clsStmts.end(), varStmts.begin(), varStmts.end());
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
   resultStmt = N<SuiteStmt>(clsStmts);
 }
@@ -337,6 +356,7 @@ std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
 /// Extract nested classes and transform them before the main class.
 void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
                                              std::vector<StmtPtr> &clsStmts,
+                                             std::vector<StmtPtr> &varStmts,
                                              std::vector<StmtPtr> &fnStmts) {
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getClass()) {
@@ -352,6 +372,8 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
           if (auto c = s->getClass()) {
             clsStmts.push_back(s);
             name = c->name;
+          } else if (auto a = s->getAssign()) {
+            varStmts.push_back(s);
           } else {
             fnStmts.push_back(s);
           }

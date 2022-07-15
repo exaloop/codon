@@ -1022,3 +1022,23 @@ a = 55
 print z  #! identifier 'z' not found
 print(a, q, w)  #! identifier 'q' not found
 print quit  #! identifier 'quit' not found
+
+#%% class_var,barebones
+class Foo:
+    cx = 15
+    x: int = 10
+    cy: ClassVar[str] = "ho"
+    class Bar:
+        bx = 1.1
+print(Foo.cx)  #: 15
+f = Foo()
+print(Foo.cy, f.cy)  #: ho ho
+print(Foo.Bar.bx)  #: 1.1
+
+Foo.cx = 10
+print(Foo.cx)  #: 10
+
+#%% dot_access_error,barebones
+class Foo:
+    x: int = 1
+Foo.x #! cannot find 'x' in Foo

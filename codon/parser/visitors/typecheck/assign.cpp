@@ -147,13 +147,22 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  transform(stmt->lhs);
-  transform(stmt->rhs);
+  transform(stmt->lhs, true);
 
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass->name, stmt->member);
+
+    if (!member && stmt->lhs->isType()) {
+      // Case: class variables
+      if (auto cls = in(ctx->cache->classes, lhsClass->name))
+        if (auto var = in(cls->classVars, stmt->member)) {
+          auto a = N<AssignStmt>(N<IdExpr>(*var), stmt->rhs);
+          resultStmt = transform(a);
+          return;
+        }
+    }
     if (!member && lhsClass->is(TYPE_OPTIONAL)) {
-      // Unwrap optional and look up there:
+      // Unwrap optional and look up there
       resultStmt = transform(N<AssignMemberStmt>(
           N<CallExpr>(N<IdExpr>(FN_UNWRAP), stmt->lhs), stmt->member, stmt->rhs));
       return;
@@ -163,6 +172,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       error("cannot find '{}' in {}", stmt->member, lhsClass->name);
     if (lhsClass->getRecord())
       error("tuple element '{}' is read-only", stmt->member);
+
+    transform(stmt->rhs);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
     wrapExpr(stmt->rhs, typ);
     unify(stmt->rhs->type, typ);

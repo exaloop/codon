@@ -207,12 +207,20 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   seqassert(typ, "not a class");
 
   // Case: object member access (`obj.member`)
-  if (auto member = ctx->findMember(typ->name, expr->member)) {
-    unify(expr->type, ctx->instantiate(member, typ));
-    if (expr->expr->isDone() && realize(expr->type))
-      expr->setDone();
-    return nullptr;
+  if (!expr->expr->isType()) {
+    if (auto member = ctx->findMember(typ->name, expr->member)) {
+      unify(expr->type, ctx->instantiate(member, typ));
+      if (expr->expr->isDone() && realize(expr->type))
+        expr->setDone();
+      return nullptr;
+    }
   }
+
+  // Case: class variable (`Cls.var`)
+  if (auto cls = in(ctx->cache->classes, typ->name))
+    if (auto var = in(cls->classVars, expr->member)) {
+      return transform(N<IdExpr>(*var));
+    }
 
   // Case: object generic access (`obj.T`)
   TypePtr generic = nullptr;

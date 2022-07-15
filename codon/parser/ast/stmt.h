@@ -500,6 +500,7 @@ struct ClassStmt : public Stmt {
   ClassStmt *getClass() override { return this; }
 
   void parseDecorators();
+  static bool isClassVar(const Param &p);
 };
 
 /// Yield-from statement (yield from expr).

@@ -470,8 +470,8 @@ void ClassStmt::validate() const {
   if (attributes.has(Attr::Extend) && !baseClasses.empty())
     error(getSrcInfo(), "extensions cannot inherit other classes");
   for (auto &a : args) {
-    if (!a.type)
-      error(getSrcInfo(), format("no type provided for '{}'", a.name));
+    // if (!a.type)
+    //   error(getSrcInfo(), format("no type provided for '{}'", a.name));
     if (in(seen, a.name))
       error(getSrcInfo(), format("'{}' declared twice", a.name));
     seen.insert(a.name);
@@ -570,6 +570,14 @@ void ClassStmt::parseDecorators() {
   }
 
   validate();
+}
+bool ClassStmt::isClassVar(const Param &p) {
+  if (!p.type)
+    return true;
+  if (CAST(p.type, InstantiateExpr) &&
+      CAST(p.type, InstantiateExpr)->typeExpr->isId("ClassVar"))
+    return true;
+  return false;
 }
 
 YieldFromStmt::YieldFromStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}

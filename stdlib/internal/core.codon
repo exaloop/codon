@@ -101,6 +101,10 @@ class ByRef: pass
 @__internal__
 class Tuple: pass
 
+@__internal__
+class ClassVar[T]:
+    pass
+
 @tuple
 @__internal__
 class __array__:
