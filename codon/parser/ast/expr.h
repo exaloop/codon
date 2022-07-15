@@ -36,7 +36,7 @@ struct Stmt;
 
 struct StaticValue {
   std::variant<int64_t, std::string> value;
-  enum Type { NOT_STATIC = 0, STRING = 1, INT = 2 } type;
+  enum Type { NOT_STATIC = 0, STRING = 1, INT = 2, NOT_SUPPORTED = 3 } type;
   bool evaluated;
 
   explicit StaticValue(Type);
@@ -660,6 +660,6 @@ enum ExprAttr {
   __LAST__
 };
 
-char getStaticGeneric(Expr *e);
+StaticValue::Type getStaticGeneric(Expr *e);
 
 } // namespace codon::ast

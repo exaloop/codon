@@ -395,6 +395,28 @@ class Foo[T, A: Static[int], B: Static[int]]:
 print Foo[int, 3, 4](), Foo[int, 5, 4]()
 #: <~7 ~-1 ~4 :: 0> <~9 ~1 ~5 :: 0>
 
+#%% static_int,barebones
+def foo(n: Static[int]):
+    print n
+
+a: Static[int] = 5
+foo(a < 1)   #: 0
+foo(a <= 1)  #: 0
+foo(a > 1)   #: 1
+foo(a >= 1)  #: 1
+foo(a == 1)  #: 0
+foo(a != 1)  #: 1
+foo(a and 1) #: 1
+foo(a or 1)  #: 1
+foo(a + 1)   #: 6
+foo(a - 1)   #: 4
+foo(a * 1)   #: 5
+foo(a // 2)  #: 2
+foo(a % 2)   #: 1
+foo(a & 2)   #: 0
+foo(a | 2)   #: 7
+foo(a ^ 1)   #: 4
+
 #%% static_str,barebones
 class X:
     s: Static[str]

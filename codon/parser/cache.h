@@ -110,9 +110,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       std::string name;
       /// A corresponding generic field type.
       types::TypePtr type;
-
-      ///
-      std::string parentClass;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.

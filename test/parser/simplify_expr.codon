@@ -523,6 +523,15 @@ for j in range(1):
     pass
 print(j) #: 0
 
+z = 6
+for z in []:
+    pass
+print(z) #: 6
+
+for z in [1, 2]:
+    pass
+print(z) #: 2
+
 try:
     raise ValueError("hi")
 except ValueError as e:

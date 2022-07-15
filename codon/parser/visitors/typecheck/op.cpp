@@ -55,10 +55,10 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
     transform(expr->rexpr);
 
   static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
-      staticOps = {
-          {StaticValue::INT,
-           {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%"}},
-          {StaticValue::STRING, {"==", "!=", "+"}}};
+      staticOps = {{StaticValue::INT,
+                    {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//",
+                     "%", "&", "|", "^"}},
+                   {StaticValue::STRING, {"==", "!=", "+"}}};
   if (expr->lexpr->isStatic() && expr->rexpr->isStatic() &&
       expr->lexpr->staticValue.type == expr->rexpr->staticValue.type &&
       in(staticOps[expr->rexpr->staticValue.type], expr->op)) {
@@ -364,7 +364,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 /// Evaluate a static binary expression and return the resulting static expression.
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) +, ==, !=
-///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %
+///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %, ^, |, &
 ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
   // Case: static strings
   if (expr->rexpr->staticValue.type == StaticValue::STRING) {
@@ -421,6 +421,12 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       lvalue = lvalue - rvalue;
     else if (expr->op == "*")
       lvalue = lvalue * rvalue;
+    else if (expr->op == "^")
+      lvalue = lvalue ^ rvalue;
+    else if (expr->op == "&")
+      lvalue = lvalue & rvalue;
+    else if (expr->op == "|")
+      lvalue = lvalue | rvalue;
     else if (expr->op == "//") {
       if (!rvalue)
         error("static division by zero");

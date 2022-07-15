@@ -59,10 +59,6 @@ public:
     locations.push_back(info);
     messages.push_back(msg);
   }
-
-  // const char *what() const noexcept override {
-  //   return messages.empty() ? nullptr : messages[0].c_str();
-  // }
 };
 
 } // namespace codon::exc

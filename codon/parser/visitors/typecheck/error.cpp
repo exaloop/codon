@@ -28,8 +28,9 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
         update->setUpdate();
         c.suite = N<SuiteStmt>(update, c.suite);
-        c.exc->setAttr(ExprAttr::Dominated);
       }
+      if (changed)
+        c.exc->setAttr(ExprAttr::Dominated);
       auto val = ctx->find(c.var);
       if (!changed)
         val = ctx->add(TypecheckItem::Var, c.var, c.exc->getType());

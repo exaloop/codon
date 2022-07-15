@@ -235,9 +235,7 @@ class __internal__:
         e._hdr = ExcHeader(e._hdr.typename, e._hdr.msg, fn, file, line, col)
         return e
 
-    def dispatch(f, *args, **kwargs):
-        return f(*args, **kwargs)
-
+    # TODO: keep this commented until static for lands
     # @pure
     # @llvm
     # def __raw__(self) -> Ptr[byte]:

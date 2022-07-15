@@ -28,10 +28,9 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 
   // Special case: this assignment has been dominated and is not a true assignment but
   //               an update of the dominating binding.
-  if (in(ctx->cache->replacements, lhs)) {
-    const std::pair<std::string, bool> *changed = nullptr;
-    while ((changed = in(ctx->cache->replacements, lhs)))
-      lhs = changed->first;
+  if (auto changed = in(ctx->cache->replacements, lhs)) {
+    while (auto s = in(ctx->cache->replacements, lhs))
+      lhs = changed->first, changed = s;
     if (stmt->rhs && changed && changed->second) {
       // Mark the dominating binding as used: `var.__used__ = True`
       auto u =

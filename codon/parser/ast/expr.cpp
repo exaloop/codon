@@ -485,15 +485,15 @@ std::string InstantiateExpr::toString() const {
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
-char getStaticGeneric(Expr *e) {
+StaticValue::Type getStaticGeneric(Expr *e) {
   if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
     if (e->getIndex()->index && e->getIndex()->index->isId("str"))
-      return 1;
+      return StaticValue::Type::STRING;
     if (e->getIndex()->index && e->getIndex()->index->isId("int"))
-      return 2;
-    return 3;
+      return StaticValue::Type::INT;
+    return StaticValue::Type::NOT_SUPPORTED;
   }
-  return 0;
+  return StaticValue::Type::NOT_STATIC;
 }
 
 } // namespace ast

@@ -37,11 +37,13 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   // Extract the iterator type of the for
   auto iterType = stmt->iter->getType()->getClass();
-  if (!iterType || !iterType->canRealize())
-    return; // wait until the iterator is realizable
+  if (!iterType)
+    return; // wait until the iterator is known
 
-  // Case: iterating a heterogenous tuple
-  if (iterType->getHeterogenousTuple()) {
+  if (isTuple(iterType->name) && !iterType->canRealize()) {
+    return; // wait until the tuple is fully realizable
+  } else if (iterType->getHeterogenousTuple()) {
+    // Case: iterating a heterogenous tuple
     resultStmt = transformHeterogenousTupleFor(stmt);
     return;
   }
@@ -65,8 +67,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
         N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
     u->setUpdate();
     stmt->suite = N<SuiteStmt>(u, stmt->suite);
-    var->setAttr(ExprAttr::Dominated);
   }
+  if (changed)
+    var->setAttr(ExprAttr::Dominated);
 
   // Unify iterator variable and the iterator type
   auto val = ctx->find(var->value);
