@@ -105,6 +105,25 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     return result[v->getId()];
   }
 
+  void handleVarAssign(const Value *v, const Var *var, Status base) {
+    auto id = var->getId();
+    auto it1 = vua.varCounts.find(id);
+    auto it2 = vua.varAssignCounts.find(id);
+    auto count1 = (it1 != vua.varCounts.end()) ? it1->second : 0;
+    auto count2 = (it2 != vua.varAssignCounts.end()) ? it2->second : 0;
+
+    bool global = var->isGlobal();
+    bool used = (count1 != count2);
+    Status defaultStatus = global ? Status::UNKNOWN : Status::NO_CAPTURE;
+    auto se2stat = [&](bool b) { return b ? defaultStatus : Status::PURE; };
+
+    if (globalAssignmentHasSideEffects) {
+      set(v, max(se2stat(used || global), base), se2stat(global));
+    } else {
+      set(v, max(se2stat(used), base), se2stat(used && global));
+    }
+  }
+
   void visit(const Module *v) override {
     process(v->getMainFunc());
     for (auto *x : *v) {
@@ -165,7 +184,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
         s = max(s, process(x));
       }
     }
-    set(v, s);
+    handleVarAssign(v, v->getVar(), s);
   }
 
   void visit(const ImperativeForFlow *v) override {
@@ -175,7 +194,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
         s = max(s, process(x));
       }
     }
-    set(v, s);
+    handleVarAssign(v, v->getVar(), s);
   }
 
   void visit(const TryCatchFlow *v) override {
@@ -225,20 +244,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   void visit(const dsl::CustomConst *v) override { set(v, Status::PURE); }
 
   void visit(const AssignInstr *v) override {
-    auto id = v->getLhs()->getId();
-    auto it1 = vua.varCounts.find(id);
-    auto it2 = vua.varAssignCounts.find(id);
-    auto count1 = (it1 != vua.varCounts.end()) ? it1->second : 0;
-    auto count2 = (it2 != vua.varAssignCounts.end()) ? it2->second : 0;
-
-    bool g = v->getLhs()->isGlobal();
-    bool s = (count1 != count2);
-    auto se2stat = [](bool b) { return b ? Status::NO_CAPTURE : Status::PURE; };
-    if (globalAssignmentHasSideEffects) {
-      set(v, se2stat(s | g | process(v->getRhs())), se2stat(g));
-    } else {
-      set(v, se2stat(s | process(v->getRhs())), se2stat(s & g));
-    }
+    handleVarAssign(v, v->getLhs(), process(v->getRhs()));
   }
 
   void visit(const ExtractInstr *v) override { set(v, process(v->getVal())); }
