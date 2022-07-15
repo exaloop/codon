@@ -122,6 +122,11 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     }
   }
   module->setSrcInfo({abspath, 0, 0, 0});
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_ir.sexp", "w");
+    fmt::print(fo, "{}\n", *module);
+    fclose(fo);
+  }
   return llvm::Error::success();
 }
 
@@ -141,6 +146,11 @@ Compiler::parseCode(const std::string &file, const std::string &code, int startL
 
 llvm::Error Compiler::compile() {
   pm->run(module.get());
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_ir_opt.sexp", "w");
+    fmt::print(fo, "{}\n", *module);
+    fclose(fo);
+  }
   llvisitor->visit(module.get());
   return llvm::Error::success();
 }
