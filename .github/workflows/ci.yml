@@ -181,8 +181,7 @@ jobs:
           echo $CODON_PYTHON
           ln -s build/libcodonrt.${LIBEXT} .
           build/codon_test
-          build/codon run test/core/helloworld.codon
-          build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+          test/app/test.sh build
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: .:./test/python
