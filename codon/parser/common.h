@@ -34,9 +34,9 @@ std::string unescape(const std::string &str);
 std::string escapeFStringBraces(const std::string &str, int start, int len);
 int findStar(const std::string &s);
 /// True if a string str starts with a prefix.
-bool startswith(const std::string &str, const std::string &prefix);
+size_t startswith(const std::string &str, const std::string &prefix);
 /// True if a string str ends with a suffix.
-bool endswith(const std::string &str, const std::string &suffix);
+size_t endswith(const std::string &str, const std::string &suffix);
 /// Trims whitespace at the beginning of the string.
 void ltrim(std::string &str);
 /// Trims whitespace at the end of the string.
@@ -47,10 +47,10 @@ int trimStars(std::string &str);
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.
 template <typename T>
-std::string join(const T &items, const std::string &delim = " ", int start = 0,
-                 int end = -1) {
+std::string join(const T &items, const std::string &delim = " ", size_t start = 0,
+                 size_t end = (1ull << 31)) {
   std::string s;
-  if (end == -1)
+  if (end > items.size())
     end = items.size();
   for (int i = start; i < end; i++)
     s += (i > start ? delim : "") + items[i];

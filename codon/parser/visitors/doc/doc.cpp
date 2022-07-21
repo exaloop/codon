@@ -12,8 +12,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 // clang-format off
 std::string json_escape(const std::string &str) {
@@ -141,7 +140,7 @@ std::string getDocstr(const StmtPtr &s) {
 
 std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool deep) {
   std::vector<StmtPtr> stmts;
-  if (auto s = const_cast<SuiteStmt *>(stmt->getSuite())) {
+  if (auto s = stmt->getSuite()) {
     for (int i = 0; i < (deep ? s->stmts.size() : 1); i++) {
       for (auto &x : flatten(std::move(s->stmts[i]), i ? nullptr : docstr, deep))
         stmts.push_back(std::move(x));
@@ -269,7 +268,7 @@ void DocVisitor::visit(FunctionStmt *stmt) {
     j->set("return", transform(stmt->ret));
   j->set("args", std::make_shared<json>(args));
   std::string docstr;
-  flatten(std::move(const_cast<FunctionStmt *>(stmt)->suite), &docstr);
+  flatten(std::move(stmt->suite), &docstr);
   for (auto &g : generics)
     ctx->remove(g);
   if (!docstr.empty() && !isLLVM)
@@ -323,7 +322,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::string docstr;
   std::vector<std::string> members;
-  for (auto &f : flatten(std::move(const_cast<ClassStmt *>(stmt)->suite), &docstr)) {
+  for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
     if (auto ff = CAST(f, FunctionStmt)) {
       auto i = transform(f);
       if (i != "")
@@ -440,5 +439,4 @@ void DocVisitor::visit(AssignStmt *stmt) {
   resultStmt = std::to_string(id);
 }
 
-} // namespace ast
 } // namespace codon

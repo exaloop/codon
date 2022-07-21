@@ -3,13 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/common.h"
 #include "codon/util/fmt/format.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /// String and collection utilities
 
@@ -105,12 +103,16 @@ int findStar(const std::string &s) {
       break;
   return i;
 }
-bool startswith(const std::string &str, const std::string &prefix) {
-  return str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix;
+size_t startswith(const std::string &str, const std::string &prefix) {
+  return (str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix)
+             ? prefix.size()
+             : 0;
 }
-bool endswith(const std::string &str, const std::string &suffix) {
-  return str.size() >= suffix.size() &&
-         str.substr(str.size() - suffix.size()) == suffix;
+size_t endswith(const std::string &str, const std::string &suffix) {
+  return (str.size() >= suffix.size() &&
+          str.substr(str.size() - suffix.size()) == suffix)
+             ? suffix.size()
+             : 0;
 }
 void ltrim(std::string &str) {
   str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char ch) {
@@ -245,5 +247,4 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                              getRoot(argv0, plugins, module0Root, paths[0]));
 }
 
-} // namespace ast
 } // namespace codon

@@ -44,7 +44,7 @@ void SimplifyVisitor::visit(CallExpr *expr) {
 ///   `std.collections.namedtuple` (sugar for @tuple class)
 ///   `std.functools.partial`      (sugar for partial calls)
 /// Check validity of `type()` call. See below for more details.
-ExprPtr SimplifyVisitor::transformSpecialCall(ExprPtr callee,
+ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
                                               const std::vector<CallExpr::Arg> &args) {
   if (callee->isId("tuple")) {
     // tuple(i for i in j)

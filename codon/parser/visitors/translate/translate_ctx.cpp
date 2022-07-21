@@ -8,11 +8,10 @@
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 TranslateContext::TranslateContext(Cache *cache)
-    : Context<TranslateItem>(""), cache(std::move(cache)) {
+    : Context<TranslateItem>(""), cache(cache) {
   stack.push_front(std::vector<std::string>());
 }
 
@@ -62,5 +61,4 @@ codon::ir::Module *TranslateContext::getModule() const {
 codon::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
 codon::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
 
-} // namespace ast
 } // namespace codon

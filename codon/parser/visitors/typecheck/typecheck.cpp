@@ -16,7 +16,7 @@ namespace codon::ast {
 
 using namespace types;
 
-StmtPtr TypecheckVisitor::apply(Cache *cache, StmtPtr stmts) {
+StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!cache->typeCtx)
     cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
@@ -33,12 +33,8 @@ TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
 
 /**************************************************************************************/
 
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr, false); }
-
 /// Transform an expression node.
-/// @throw @c ParserException if a node is a type and @param allowTypes is not set
-///        (use @c transformType instead).
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
   if (!expr)
     return nullptr;
 
@@ -70,7 +66,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
     expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
     expr->markType();
   }
-  transform(expr, true);
+  transform(expr);
   if (expr) {
     if (!expr->isType() && expr->isStatic()) {
       expr->setType(std::make_shared<StaticType>(expr, ctx));
@@ -188,8 +184,8 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
-  for (size_t mi = 0; mi < methods.size(); mi++) {
-    auto method = ctx->instantiate(methods[mi], typ)->getFunc();
+  for (const auto &mi : methods) {
+    auto method = ctx->instantiate(mi, typ)->getFunc();
     std::vector<types::TypePtr> reordered;
     auto score = ctx->reorderNamedArgs(
         method.get(), args,
@@ -232,7 +228,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
       }
     }
     if (score != -1) {
-      results.push_back(methods[mi]);
+      results.push_back(mi);
     }
   }
   return results;
@@ -247,7 +243,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 ///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
 ///   expected `Function`, got a function -> partialize function
 /// @param allowUnwrap allow optional unwrapping.
-bool TypecheckVisitor::wrapExpr(ExprPtr &expr, TypePtr expectedType,
+bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();

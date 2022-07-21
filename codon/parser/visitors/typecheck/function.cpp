@@ -85,8 +85,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         generic->defaultType = defType->type;
       }
       ctx->add(TypecheckItem::Type, a.name, generic);
-      explicits.push_back({a.name, ctx->cache->rev(a.name),
-                           generic->generalize(ctx->typecheckLevel), typId});
+      explicits.emplace_back(a.name, ctx->cache->rev(a.name),
+                             generic->generalize(ctx->typecheckLevel), typId);
     }
   }
 
@@ -219,7 +219,7 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
 }
 
 /// Generate and return `Function[Tuple.N[args...], ret]` type
-std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(int nargs) {
+std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
   auto baseType = ctx->instantiate(ctx->forceFind("Function")->type)->getRecord();
   unify(baseType->generics[0].type,
         ctx->instantiate(ctx->forceFind(generateTuple(nargs))->type)->getRecord());

@@ -100,7 +100,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
 }
 
 /// Simplify an AST node. Assumes that the standard library is loaded.
-StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
+StmtPtr SimplifyVisitor::apply(const std::shared_ptr<SimplifyContext> &ctx,
                                const StmtPtr &node, const std::string &file,
                                int atAge) {
   std::vector<StmtPtr> stmts;
@@ -123,7 +123,7 @@ StmtPtr SimplifyVisitor::apply(std::shared_ptr<SimplifyContext> ctx,
 
 SimplifyVisitor::SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
                                  std::shared_ptr<std::vector<StmtPtr>> preamble,
-                                 std::shared_ptr<std::vector<StmtPtr>> stmts)
+                                 const std::shared_ptr<std::vector<StmtPtr>> &stmts)
     : ctx(std::move(ctx)), preamble(std::move(preamble)) {
   prependStmts = stmts ? stmts : std::make_shared<std::vector<StmtPtr>>();
 }

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "codon/parser/cache.h"
@@ -15,8 +16,7 @@ using fmt::format;
 
 const int INDENT_SIZE = 2;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 Stmt::Stmt() : done(false), age(-1) {}
 Stmt::Stmt(const codon::SrcInfo &s) : done(false), age(-1) { setSrcInfo(s); }
@@ -42,7 +42,7 @@ std::string SuiteStmt::toString(int indent) const {
   return format("(suite{})", s.empty() ? s : " " + pad + s);
 }
 ACCEPT_IMPL(SuiteStmt, ASTVisitor);
-void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
+void SuiteStmt::flatten(const StmtPtr &s, std::vector<StmtPtr> &stmts) {
   if (!s)
     return;
   if (!s->getSuite()) {
@@ -55,7 +55,7 @@ void SuiteStmt::flatten(StmtPtr s, std::vector<StmtPtr> &stmts) {
 StmtPtr *SuiteStmt::lastInBlock() {
   if (stmts.empty())
     return nullptr;
-  if (auto s = const_cast<SuiteStmt *>(stmts.back()->getSuite())) {
+  if (auto s = stmts.back()->getSuite()) {
     auto l = s->lastInBlock();
     if (l)
       return l;
@@ -435,9 +435,9 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
   parseDecorators();
 }
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-                     const Attr &attr)
+                     Attr attr)
     : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
-      attributes(attr) {
+      attributes(std::move(attr)) {
   validate();
 }
 ClassStmt::ClassStmt(const ClassStmt &stmt)
@@ -572,11 +572,12 @@ void ClassStmt::parseDecorators() {
   validate();
 }
 bool ClassStmt::isClassVar(const Param &p) {
+  if (!p.defaultValue)
+    return false;
   if (!p.type)
     return true;
-  if (CAST(p.type, InstantiateExpr) &&
-      CAST(p.type, InstantiateExpr)->typeExpr->isId("ClassVar"))
-    return true;
+  if (auto i = p.type->getIndex())
+    return i->expr->isId("ClassVar");
   return false;
 }
 
@@ -612,6 +613,7 @@ WithStmt::WithStmt(const WithStmt &stmt)
 std::string WithStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;
+  as.reserve(items.size());
   for (int i = 0; i < items.size(); i++) {
     as.push_back(!vars[i].empty()
                      ? format("({} #:var '{})", items[i]->toString(), vars[i])
@@ -652,5 +654,4 @@ std::string CommentStmt::toString(int) const {
 }
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 
-} // namespace ast
 } // namespace codon

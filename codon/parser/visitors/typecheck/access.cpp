@@ -153,7 +153,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return transformType(NT<CallExpr>(NT<IdExpr>("type"), expr->expr));
   }
 
-  transform(expr->expr, true);
+  transform(expr->expr);
 
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
@@ -223,8 +223,8 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
     }
 
   // Case: special members
-  if (auto typ = findSpecialMember(expr->member)) {
-    unify(expr->type, typ);
+  if (auto mtyp = findSpecialMember(expr->member)) {
+    unify(expr->type, mtyp);
     if (expr->expr->isDone() && realize(expr->type))
       expr->setDone();
     return nullptr;

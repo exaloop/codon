@@ -13,8 +13,7 @@
 #include "codon/parser/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 struct json {
   // values={str -> null} -> string value
@@ -37,13 +36,13 @@ struct json {
 
 struct DocContext;
 struct DocShared {
-  int itemID;
+  int itemID = 1;
   std::shared_ptr<json> j;
   std::unordered_map<std::string, std::shared_ptr<DocContext>> modules;
   std::string argv0;
-  Cache *cache;
+  Cache *cache = nullptr;
   std::unordered_map<int, std::vector<std::string>> generics;
-  DocShared() : itemID(1) {}
+  DocShared() {}
 };
 
 struct DocContext : public Context<int> {
@@ -83,5 +82,4 @@ public:
   void visit(ImportStmt *) override;
 };
 
-} // namespace ast
 } // namespace codon

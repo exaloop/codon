@@ -306,6 +306,7 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> suite,
                                     const std::vector<std::string> &argNames) {
   std::vector<Param> params;
   std::string name = ctx->cache->getTemporaryVar("lambda");
+  params.reserve(argNames.size());
   for (auto &s : argNames)
     params.emplace_back(Param(s));
   auto f = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(suite)),
@@ -339,6 +340,7 @@ StmtPtr SimplifyVisitor::transformPythonDefinition(const std::string &name,
 
   auto code = codeStmt->getExpr()->expr->getString()->getValue();
   std::vector<std::string> pyargs;
+  pyargs.reserve(args.size());
   for (const auto &a : args)
     pyargs.emplace_back(a.name);
   code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
@@ -406,7 +408,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 }
 
 /// Check if a decorator is actually an attribute (a function with `@__attribute__`)
-std::string *SimplifyVisitor::isAttribute(ExprPtr e) {
+std::string *SimplifyVisitor::isAttribute(const ExprPtr &e) {
   auto dt = transform(clone(e));
   if (dt && dt->getId()) {
     auto ci = ctx->find(dt->getId()->value);

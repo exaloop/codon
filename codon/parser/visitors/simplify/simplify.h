@@ -46,13 +46,14 @@ public:
   static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
                        bool barebones = false);
-  static StmtPtr apply(std::shared_ptr<SimplifyContext> cache, const StmtPtr &node,
-                       const std::string &file, int atAge = -1);
+  static StmtPtr apply(const std::shared_ptr<SimplifyContext> &cache,
+                       const StmtPtr &node, const std::string &file, int atAge = -1);
 
 public:
-  explicit SimplifyVisitor(std::shared_ptr<SimplifyContext> ctx,
-                           std::shared_ptr<std::vector<StmtPtr>> preamble,
-                           std::shared_ptr<std::vector<StmtPtr>> stmts = nullptr);
+  explicit SimplifyVisitor(
+      std::shared_ptr<SimplifyContext> ctx,
+      std::shared_ptr<std::vector<StmtPtr>> preamble,
+      const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
 public: // Convenience transformators
   ExprPtr transform(ExprPtr &expr) override;
@@ -105,7 +106,7 @@ private: // Node simplification rules
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
   void visit(MatchStmt *) override;
-  StmtPtr transformPattern(ExprPtr, ExprPtr, StmtPtr);
+  StmtPtr transformPattern(const ExprPtr &, ExprPtr, StmtPtr);
 
   /* Operators (op.cpp) */
   void visit(UnaryExpr *) override;
@@ -117,7 +118,7 @@ private: // Node simplification rules
   /* Calls (call.cpp) */
   void visit(PrintStmt *) override;
   void visit(CallExpr *) override;
-  ExprPtr transformSpecialCall(ExprPtr, const std::vector<CallExpr::Arg> &);
+  ExprPtr transformSpecialCall(const ExprPtr &, const std::vector<CallExpr::Arg> &);
   ExprPtr transformTupleGenerator(const std::vector<CallExpr::Arg> &);
   ExprPtr transformNamedTuple(const std::vector<CallExpr::Arg> &);
   ExprPtr transformFunctoolsPartial(std::vector<CallExpr::Arg>);
@@ -126,7 +127,7 @@ private: // Node simplification rules
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
   StmtPtr transformAssignment(ExprPtr, ExprPtr, ExprPtr = nullptr, bool = false);
-  void unpackAssignments(ExprPtr, ExprPtr, std::vector<StmtPtr> &);
+  void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
 
   /* Imports (import.cpp) */
@@ -147,7 +148,7 @@ private: // Node simplification rules
   void visit(BreakStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
-  ExprPtr transformForDecorator(ExprPtr);
+  ExprPtr transformForDecorator(const ExprPtr &);
 
   /* Errors and exceptions (error.cpp) */
   void visit(AssertStmt *) override;
@@ -167,20 +168,19 @@ private: // Node simplification rules
   StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
                                     const Expr *, Stmt *);
   StmtPtr transformLLVMDefinition(Stmt *);
-  std::string *isAttribute(ExprPtr);
+  std::string *isAttribute(const ExprPtr &);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                                            std::vector<Param> &hiddenGenerics,
-                                            const Attr &attr);
-  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *stmt,
-                                                       std::vector<Param> &args);
+  std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &,
+                                            std::vector<Param> &, const Attr &);
+  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
+                                                       std::vector<Param> &);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
   void transformNestedClasses(ClassStmt *, std::vector<StmtPtr> &,
                               std::vector<StmtPtr> &, std::vector<StmtPtr> &);
-  StmtPtr codegenMagic(const std::string &op, const Expr *typExpr,
-                       const std::vector<Param> &args, bool isRecord);
+  StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
+                       bool);
 
   /* The rest (simplify.cpp) */
   void visit(StmtExpr *) override;

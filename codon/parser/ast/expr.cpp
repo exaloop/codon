@@ -13,8 +13,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
@@ -43,7 +42,7 @@ StaticValue::StaticValue(std::string s)
 bool StaticValue::operator==(const StaticValue &s) const {
   if (type != s.type || s.evaluated != evaluated)
     return false;
-  return s.evaluated ? value == s.value : true;
+  return !s.evaluated || value == s.value;
 }
 std::string StaticValue::toString() const {
   if (type == StaticValue::NOT_STATIC)
@@ -392,7 +391,7 @@ ACCEPT_IMPL(CallExpr, ASTVisitor);
 
 DotExpr::DotExpr(ExprPtr expr, std::string member)
     : Expr(), expr(std::move(expr)), member(std::move(member)) {}
-DotExpr::DotExpr(std::string left, std::string member)
+DotExpr::DotExpr(const std::string &left, std::string member)
     : Expr(), expr(std::make_shared<IdExpr>(left)), member(std::move(member)) {}
 DotExpr::DotExpr(const DotExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), member(expr.member) {}
@@ -496,5 +495,4 @@ StaticValue::Type getStaticGeneric(Expr *e) {
   return StaticValue::Type::NOT_STATIC;
 }
 
-} // namespace ast
 } // namespace codon

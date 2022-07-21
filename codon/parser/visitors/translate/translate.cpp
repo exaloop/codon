@@ -15,14 +15,13 @@ using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Func *TranslateVisitor::apply(Cache *cache, StmtPtr stmts) {
-  ir::BodiedFunc *main;
+ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
+  ir::BodiedFunc *main = nullptr;
   if (cache->isJit) {
     auto fnName = format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
@@ -68,7 +67,7 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   if (expr->attributes) {
     if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
         expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
-      ctx->seqItems.push_back(std::vector<std::pair<ExprAttr, ir::Value *>>());
+      ctx->seqItems.emplace_back();
     }
     if (expr->hasAttr(ExprAttr::Partial))
       p = expr->type->getPartial().get();
@@ -343,7 +342,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
     auto isGlobal = in(ctx->cache->globals, var);
-    ir::Var *v;
+    ir::Var *v = nullptr;
     if (isGlobal) {
       seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
                 var);
@@ -617,5 +616,4 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 }
 
-} // namespace ast
 } // namespace codon

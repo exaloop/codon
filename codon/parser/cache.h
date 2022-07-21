@@ -22,15 +22,14 @@
 #define TYPE_CALLABLE "Callable"
 #define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"
-#define TYPE_EXCHEADER "std.internal.types.error.ExcHeader"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap"
 #define VAR_ARGV "__argv__"
 
 #define MAX_INT_WIDTH 10000
+#define MAX_REALIZATION_DEPTH 200
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /// Forward declarations
 struct SimplifyContext;
@@ -63,8 +62,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Stores the count of imported files. Used to track class method ages
   /// and to prevent using extended methods before they were seen.
   int age;
-  /// Test flags for seqtest test cases. Zero if seqtest is not parsing the code.
-  int testFlags;
 
   /// Holds module import data.
   struct Import {
@@ -216,7 +213,7 @@ public:
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
   std::string getTemporaryVar(const std::string &prefix = "", char sigil = '.');
-  /// Get the non-canonicalized version of a canonical name.
+  /// Get the non-canonical version of a canonical name.
   std::string rev(const std::string &s);
 
   /// Generate a unique SrcInfo for internally generated AST nodes.
@@ -235,7 +232,7 @@ public:
   /// Returns an _uninstantiated_ type.
   types::FuncTypePtr findFunction(const std::string &name) const;
   /// Find the canonical name of a class method.
-  std::string getMethod(types::ClassTypePtr typ, const std::string &member) {
+  std::string getMethod(const types::ClassTypePtr &typ, const std::string &member) {
     if (auto m = in(classes, typ->name)) {
       if (auto t = in(m->methods, member))
         return *t;
@@ -260,11 +257,10 @@ public:
   ir::Func *realizeFunction(types::FuncTypePtr type,
                             const std::vector<types::TypePtr> &args,
                             const std::vector<types::TypePtr> &generics = {},
-                            types::ClassTypePtr parentClass = nullptr);
+                            const types::ClassTypePtr &parentClass = nullptr);
 
   ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
 };
 
-} // namespace ast
 } // namespace codon

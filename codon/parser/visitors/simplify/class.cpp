@@ -31,7 +31,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         ctx->generateCanonicalName(name, !stmt->attributes.has(Attr::Internal));
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
-    // recursive record types (note: these are allowed for reference types).
+    // recursive record types (note: these are allowed for reference types)
     if (!stmt->attributes.has(Attr::Tuple)) {
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
@@ -50,7 +50,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     argsToParse = astIter->second.ast->args;
   }
 
-  // Add the class base.
+  // Add the class base
   ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
   ctx->addBlock();
 
@@ -102,38 +102,36 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   // Collect class fields
   for (auto &a : argsToParse) {
     if (a.status == Param::Normal) {
-      args.emplace_back(Param{a.name, transformType(clone(a.type), false),
-                              transform(clone(a.defaultValue), true)});
+      if (!ClassStmt::isClassVar(a)) {
+        args.emplace_back(Param{a.name, transformType(clone(a.type), false),
+                                transform(clone(a.defaultValue), true)});
+      } else if (!stmt->attributes.has(Attr::Extend)) {
+        // Handle class variables. Transform them later to allow self-references
+        auto name = format("{}.{}", canonicalName, a.name);
+        preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
+        if (!in(ctx->cache->globals, name))
+          ctx->cache->globals[name] = nullptr;
+        auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
+                                    a.type ? a.type->getIndex()->index : nullptr);
+        assign->setUpdate();
+        varStmts.push_back(assign);
+        ctx->cache->classes[canonicalName].classVars[a.name] = name;
+      }
     }
   }
+
   // ASTs for member arguments to be used for populating magic methods
   std::vector<Param> memberArgs;
   for (auto &a : args) {
-    if (a.status == Param::Normal && !ClassStmt::isClassVar(a))
+    if (a.status == Param::Normal)
       memberArgs.push_back(a.clone());
   }
 
+  // Ensure that all fields and class variables are registered
   if (!stmt->attributes.has(Attr::Extend)) {
-    // Ensure that all fields and class variables are registered
     for (size_t ai = 0; ai < args.size();) {
-      if (args[ai].status == Param::Normal) {
-        if (ClassStmt::isClassVar(args[ai])) {
-          // Handle class variables
-          auto name = format("{}.{}", canonicalName, args[ai].name);
-          preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
-          auto assign = N<AssignStmt>(
-              N<IdExpr>(name), args[ai].defaultValue,
-              args[ai].type ? CAST(args[ai].type, InstantiateExpr)->typeParams[0]
-                            : nullptr);
-          assign->setUpdate();
-          varStmts.push_back(assign);
-          ctx->cache->classes[canonicalName].classVars[args[ai].name] = name;
-          args.erase(args.begin() + ai);
-          continue;
-        } else {
-          ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
-        }
-      }
+      if (args[ai].status == Param::Normal)
+        ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
       ai++;
     }
   }
@@ -162,8 +160,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
     // Codegen default magic methods
     for (auto &m : stmt->attributes.magics) {
-      fnStmts.push_back(transform(codegenMagic(m, typeAst.get(), memberArgs,
-                                               stmt->attributes.has(Attr::Tuple))));
+      fnStmts.push_back(transform(
+          codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
     }
     // Add inherited methods
     for (auto &base : baseASTs) {
@@ -208,6 +206,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   // After popping context block, record types and nested classes will disappear.
   // Store their references and re-add them to the context after popping
   std::vector<SimplifyContext::Item> addLater;
+  addLater.reserve(clsStmts.size() + 1);
   for (auto &c : clsStmts)
     addLater.push_back(ctx->find(c->getClass()->name));
   if (stmt->attributes.has(Attr::Tuple))
@@ -223,8 +222,16 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     clsStmts.push_back(c);
   }
-  clsStmts.insert(clsStmts.end(), varStmts.begin(), varStmts.end());
+
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
+  for (auto &a : varStmts) {
+    // Transform class variables here to allow self-references
+    if (auto assign = a->getAssign()) {
+      transform(assign->rhs);
+      transformType(assign->type);
+    }
+    clsStmts.push_back(a);
+  }
   resultStmt = N<SuiteStmt>(clsStmts);
 }
 
@@ -284,7 +291,7 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
   // Add normal fields
   for (auto &ast : asts) {
     for (auto &a : ast->args) {
-      if (a.status == Param::Normal)
+      if (a.status == Param::Normal && !ClassStmt::isClassVar(a))
         args.emplace_back(Param{a.name, a.type, a.defaultValue});
     }
   }
@@ -392,7 +399,7 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
 /// @li Pickling: __pickle__, __unpickle__
 /// @li Python: __to_py__, __from_py__
 /// TODO: move to Codon as much as possible
-StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr,
+StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typExpr,
                                       const std::vector<Param> &args, bool isRecord) {
 #define I(s) N<IdExpr>(s)
   seqassert(typExpr, "typExpr is null");
@@ -588,6 +595,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     fargs.emplace_back(Param{"src", N<IndexExpr>(I("Ptr"), I("byte"))});
     ret = typExpr->clone();
     std::vector<ExprPtr> ar;
+    ar.reserve(args.size());
     for (auto &a : args)
       ar.emplace_back(N<CallExpr>(N<DotExpr>(clone(a.type), "__unpickle__"), I("src")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
@@ -618,6 +626,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
     fargs.emplace_back(Param{"src", I("cobj")});
     ret = typExpr->clone();
     std::vector<ExprPtr> ar;
+    ar.reserve(args.size());
     for (int i = 0; i < args.size(); i++)
       ar.push_back(N<CallExpr>(
           N<DotExpr>(clone(args[i].type), "__from_py__"),
@@ -644,9 +653,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const Expr *typExpr
             N<DotExpr>(I("a"), "__setitem__"), N<IntExpr>(i),
             N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__repr__")))));
 
-        auto name = const_cast<Expr *>(typExpr)->getIndex()
-                        ? const_cast<Expr *>(typExpr)->getIndex()->expr->getId()
-                        : nullptr;
+        auto name = typExpr->getIndex() ? typExpr->getIndex()->expr->getId() : nullptr;
         stmts.push_back(N<ExprStmt>(N<CallExpr>(
             N<DotExpr>(I("n"), "__setitem__"), N<IntExpr>(i),
             N<StringExpr>(

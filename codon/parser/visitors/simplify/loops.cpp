@@ -127,7 +127,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
 /// @example
 ///   `@par(num_threads=2, openmp="schedule(static)")` ->
 ///   `for_par(num_threads=2, schedule="static")`
-ExprPtr SimplifyVisitor::transformForDecorator(ExprPtr decorator) {
+ExprPtr SimplifyVisitor::transformForDecorator(const ExprPtr &decorator) {
   if (!decorator)
     return nullptr;
   ExprPtr callee = decorator;

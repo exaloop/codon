@@ -1038,6 +1038,28 @@ print(Foo.Bar.bx)  #: 1.1
 Foo.cx = 10
 print(Foo.cx)  #: 10
 
+def x():
+    class Foo:
+        i = 0
+        f = Foo()
+        def __init__(self):
+            Foo.i += 1
+        def __repr__(self):
+            return 'heh-cls'
+    Foo(), Foo(), Foo()
+    print Foo.f, Foo.i  #: heh-cls 4
+    return Foo()
+f = x()
+print f.f, f.i  #: heh-cls 5
+
+@tuple
+class Fot:
+    f = Fot()
+    def __repr__(self):
+        return 'heh-tup'
+print Fot.f  #: heh-tup
+
+
 #%% dot_access_error,barebones
 class Foo:
     x: int = 1

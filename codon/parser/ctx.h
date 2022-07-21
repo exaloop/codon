@@ -12,8 +12,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * A variable table (transformation context).
@@ -22,10 +21,10 @@ namespace ast {
  */
 template <typename T> class Context : public std::enable_shared_from_this<Context<T>> {
 public:
-  typedef std::shared_ptr<T> Item;
+  using Item = std::shared_ptr<T>;
 
 protected:
-  typedef std::unordered_map<std::string, std::list<Item>> Map;
+  using Map = std::unordered_map<std::string, std::list<Item>>;
   /// Maps a identifier to a stack of objects that share the same identifier.
   /// Each object is represented by a nesting level and a pointer to that object.
   /// Top of the stack is the current block; the bottom is the outer-most block.
@@ -114,5 +113,4 @@ public:
   SrcInfo getSrcInfo() const { return srcInfos.back(); }
 };
 
-} // namespace ast
 } // namespace codon

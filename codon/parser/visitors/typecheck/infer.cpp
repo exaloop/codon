@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 #include <vector>
 
 #include "codon/parser/ast.h"
@@ -14,8 +13,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 using namespace types;
 
@@ -234,7 +232,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   if (auto r = in(realizations, type->realizedName()))
     return (*r)->type;
 
-  if (ctx->getRealizationDepth() > 500)
+  if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH)
     codon::compilationError(
         "maximum realization depth exceeded (recursive static function?)",
         getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
@@ -445,7 +443,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
 
 /// Make IR node for a realized function.
 ir::Func *TypecheckVisitor::makeIRFunction(
-    std::shared_ptr<Cache::Function::FunctionRealization> r) {
+    const std::shared_ptr<Cache::Function::FunctionRealization> &r) {
   ir::Func *fn = nullptr;
   // Create and store a function IR node and a realized AST for IR passes
   if (r->ast->attributes.has(Attr::Internal)) {
@@ -501,5 +499,4 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   return fn;
 }
 
-} // namespace ast
 } // namespace codon

@@ -13,8 +13,7 @@
 #include "codon/parser/visitors/visitor.h"
 #include "codon/sir/sir.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
   std::shared_ptr<TranslateContext> ctx;
@@ -22,7 +21,7 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 
 public:
   explicit TranslateVisitor(std::shared_ptr<TranslateContext> ctx);
-  static codon::ir::Func *apply(Cache *cache, StmtPtr stmts);
+  static codon::ir::Func *apply(Cache *cache, const StmtPtr &stmts);
 
   ir::Value *transform(const ExprPtr &expr) override;
   ir::Value *transform(const StmtPtr &stmt) override;
@@ -74,5 +73,4 @@ private:
   }
 };
 
-} // namespace ast
 } // namespace codon

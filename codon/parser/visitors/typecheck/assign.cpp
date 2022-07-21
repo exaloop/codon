@@ -31,13 +31,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   if (auto changed = in(ctx->cache->replacements, lhs)) {
     while (auto s = in(ctx->cache->replacements, lhs))
       lhs = changed->first, changed = s;
-    if (stmt->rhs && changed && changed->second) {
+    if (stmt->rhs && changed->second) {
       // Mark the dominating binding as used: `var.__used__ = True`
       auto u =
           N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
       u->setUpdate();
       prependStmts->push_back(transform(u));
-    } else if (changed && changed->second && !stmt->rhs) {
+    } else if (changed->second && !stmt->rhs) {
       // This assignment was a declaration only. Just mark the dominating binding as
       // used: `var.__used__ = True`
       stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
@@ -51,12 +51,11 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 
   transform(stmt->rhs);
   transformType(stmt->type);
-  TypecheckItem::Kind kind;
   if (!stmt->rhs) {
     // Forward declarations (happens with dominating bindings).
     // The type is unknown and will be deduced later
     unify(stmt->lhs->type, ctx->getUnbound(stmt->lhs->getSrcInfo()));
-    ctx->add((kind = TypecheckItem::Var), lhs, stmt->lhs->type);
+    ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (realize(stmt->lhs->type))
       stmt->setDone();
   } else if (stmt->type && stmt->type->getType()->isStaticType()) {
@@ -66,7 +65,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
     unify(stmt->lhs->type,
           unify(stmt->type->type, std::make_shared<StaticType>(stmt->rhs, ctx)));
-    ctx->add(kind = TypecheckItem::Var, lhs, stmt->lhs->type);
+    ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (realize(stmt->lhs->type))
       stmt->setDone();
   } else {
@@ -79,12 +78,11 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       unify(stmt->lhs->type, stmt->rhs->type);
     }
     auto type = stmt->rhs->getType();
+    auto kind = TypecheckItem::Var;
     if (stmt->rhs->isType())
       kind = TypecheckItem::Type;
     else if (type->getFunc())
       kind = TypecheckItem::Func;
-    else
-      kind = TypecheckItem::Var;
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
     auto val = std::make_shared<TypecheckItem>(
@@ -142,12 +140,12 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 }
 
 /// Typecheck instance member assignments (e.g., `a.b = c`) and handle optional
-/// instances. Disallow
+/// instances. Disallow tuple updates.
 /// @example
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  transform(stmt->lhs, true);
+  transform(stmt->lhs);
 
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass->name, stmt->member);
@@ -156,7 +154,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       // Case: class variables
       if (auto cls = in(ctx->cache->classes, lhsClass->name))
         if (auto var = in(cls->classVars, stmt->member)) {
-          auto a = N<AssignStmt>(N<IdExpr>(*var), stmt->rhs);
+          auto a = N<AssignStmt>(N<IdExpr>(*var), transform(stmt->rhs));
+          a->setUpdate();
           resultStmt = transform(a);
           return;
         }

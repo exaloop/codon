@@ -188,8 +188,8 @@ std::string SimplifyContext::getBaseName() const { return bases.back().name; }
 std::string SimplifyContext::getModule() const {
   std::string base = moduleName.status == ImportFile::STDLIB ? "std." : "";
   base += moduleName.module;
-  if (startswith(base, "__main__"))
-    base = base.substr(8);
+  if (auto sz = startswith(base, "__main__"))
+    base = base.substr(sz);
   return base;
 }
 

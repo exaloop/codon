@@ -5,14 +5,14 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * Typecheck context identifier.
@@ -73,7 +73,7 @@ public:
   using Context<TypecheckItem>::add;
   /// Convenience method for adding an object to the context.
   std::shared_ptr<TypecheckItem> add(TypecheckItem::Kind kind, const std::string &name,
-                                     types::TypePtr type = nullptr);
+                                     const types::TypePtr &type = nullptr);
   std::shared_ptr<TypecheckItem>
   addToplevel(const std::string &name, const std::shared_ptr<TypecheckItem> &item) {
     map[name].push_front(item);
@@ -107,20 +107,20 @@ public:
   ///          T=int.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
   /// @param setActive If True, add unbounds to activeUnbounds.
-  types::TypePtr instantiate(const SrcInfo &info, types::TypePtr type,
+  types::TypePtr instantiate(const SrcInfo &info, const types::TypePtr &type,
                              const types::ClassTypePtr &generics = nullptr);
   types::TypePtr instantiate(types::TypePtr type,
                              const types::ClassTypePtr &generics = nullptr) {
-    return instantiate(getSrcInfo(), type, generics);
+    return instantiate(getSrcInfo(), std::move(type), generics);
   }
 
   /// Instantiate the generic type root with the provided generics.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  types::TypePtr instantiateGeneric(const SrcInfo &info, types::TypePtr root,
+  types::TypePtr instantiateGeneric(const SrcInfo &info, const types::TypePtr &root,
                                     const std::vector<types::TypePtr> &generics);
   types::TypePtr instantiateGeneric(types::TypePtr root,
                                     const std::vector<types::TypePtr> &generics) {
-    return instantiateGeneric(getSrcInfo(), root, generics);
+    return instantiateGeneric(getSrcInfo(), std::move(root), generics);
   }
 
   /// Returns the list of generic methods that correspond to typeName.method.
@@ -143,7 +143,7 @@ public:
   /// @param known Bitmask that indicated if an argument is already provided
   ///              (partial function) or not.
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
-                       ReorderDoneFn onDone, ReorderErrorFn onError,
+                       const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
                        const std::vector<char> &known = std::vector<char>());
 
 private:
@@ -151,5 +151,4 @@ private:
   void dump(int pad);
 };
 
-} // namespace ast
 } // namespace codon

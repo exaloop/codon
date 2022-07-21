@@ -83,7 +83,8 @@ void SimplifyVisitor::visit(MatchStmt *stmt) {
 ///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if
 ///   var.__match__(foo())`
 ///                           (any expression that does not fit above patterns)
-StmtPtr SimplifyVisitor::transformPattern(ExprPtr var, ExprPtr pattern, StmtPtr suite) {
+StmtPtr SimplifyVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
+                                          StmtPtr suite) {
   // Convenience function to generate `isinstance(e, typ)` calls
   auto isinstance = [&](const ExprPtr &e, const std::string &typ) -> ExprPtr {
     return N<CallExpr>(N<IdExpr>("isinstance"), e->clone(), N<IdExpr>(typ));

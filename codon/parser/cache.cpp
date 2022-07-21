@@ -9,13 +9,12 @@
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 Cache::Cache(std::string argv0)
-    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0), testFlags(0),
-      argv0(move(argv0)), module(nullptr), typeCtx(nullptr), codegenCtx(nullptr),
-      isJit(false), jitCell(0) {}
+    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0),
+      argv0(move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
+      jitCell(0) {}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
@@ -95,7 +94,7 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
 ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
                                  const std::vector<types::TypePtr> &args,
                                  const std::vector<types::TypePtr> &generics,
-                                 types::ClassTypePtr parentClass) {
+                                 const types::ClassTypePtr &parentClass) {
   auto e = std::make_shared<IdExpr>(type->ast->name);
   e->type = type;
   type = typeCtx->instantiate(type, parentClass)->getFunc();
@@ -107,7 +106,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
     return nullptr;
   }
   for (int gi = 1; gi < args.size(); gi++) {
-    types::Type::Unification undo;
+    undo = types::Type::Unification();
     if (type->getArgTypes()[gi - 1]->unify(args[gi].get(), &undo) < 0) {
       undo.undo();
       return nullptr;
@@ -117,7 +116,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
     if (generics.size() != type->funcGenerics.size())
       return nullptr;
     for (int gi = 0; gi < generics.size(); gi++) {
-      types::Type::Unification undo;
+      undo = types::Type::Unification();
       if (type->funcGenerics[gi].type->unify(generics[gi].get(), &undo) < 0) {
         undo.undo();
         return nullptr;
@@ -151,7 +150,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   seqassertn(!types.empty(), "types must have at least one argument");
 
   auto tup = tv.generateTuple(types.size() - 1);
-  auto ret = types[0];
+  const auto &ret = types[0];
   auto argType = typeCtx->instantiateGeneric(
       typeCtx->find(tup)->type,
       std::vector<types::TypePtr>(types.begin() + 1, types.end()));
@@ -160,5 +159,4 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return realizeType(t->type->getClass(), {argType, ret});
 }
 
-} // namespace ast
 } // namespace codon

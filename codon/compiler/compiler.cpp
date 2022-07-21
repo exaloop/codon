@@ -74,8 +74,6 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                                 : ast::parseFile(cache.get(), abspath);
 
     cache->module0 = file;
-    if (testFlags)
-      cache->testFlags = testFlags;
 
     Timer t2("simplify");
     t2.logged = true;

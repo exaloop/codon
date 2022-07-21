@@ -1,8 +1,6 @@
 #include "peg.h"
 
 #include <any>
-#include <cstdio>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -16,8 +14,7 @@
 
 double totalPeg = 0.0;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 static std::shared_ptr<peg::Grammar> grammar(nullptr);
 static std::shared_ptr<peg::Grammar> ompGrammar(nullptr);
@@ -52,8 +49,8 @@ std::shared_ptr<peg::Grammar> initParser() {
 }
 
 template <typename T>
-T parseCode(Cache *cache, const std::string &file, std::string code, int line_offset,
-            int col_offset, const std::string &rule) {
+T parseCode(Cache *cache, const std::string &file, const std::string &code,
+            int line_offset, int col_offset, const std::string &rule) {
   Timer t("");
   t.logged = true;
   // Initialize
@@ -62,7 +59,7 @@ T parseCode(Cache *cache, const std::string &file, std::string code, int line_of
 
   std::vector<std::tuple<size_t, size_t, std::string>> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg) {
-    errors.push_back({line, col, msg});
+    errors.emplace_back(line, col, msg);
   };
   T result = nullptr;
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
@@ -138,7 +135,7 @@ std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
 
   std::vector<std::tuple<size_t, size_t, std::string>> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg) {
-    errors.push_back({line, col, msg});
+    errors.emplace_back(line, col, msg);
   };
   std::vector<CallExpr::Arg> result;
   auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
@@ -155,5 +152,4 @@ std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
   return result;
 }
 
-} // namespace ast
 } // namespace codon

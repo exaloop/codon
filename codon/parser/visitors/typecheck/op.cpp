@@ -104,7 +104,7 @@ std::vector<std::pair<size_t, ExprPtr>> findEllipsis(ExprPtr expr) {
     } else if (call->args[ai].value->getCall()) {
       auto v = findEllipsis(call->args[ai].value);
       if (!v.empty()) {
-        v.push_back({ai, expr});
+        v.emplace_back(ai, expr);
         return v;
       }
     }
@@ -151,7 +151,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
       // Case: a call. Find the position of the pipe ellipsis within it
       for (size_t ia = 0; inTypePos == -1 && ia < call->args.size(); ia++)
         if (call->args[ia].value->getEllipsis()) {
-          inTypePos = ia;
+          inTypePos = int(ia);
         }
       // No ellipses found? Prepend it as the first argument
       if (inTypePos == -1) {
@@ -226,7 +226,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     return;
   }
 
-  transform(expr->expr, true);
+  transform(expr->expr);
   seqassert(!expr->expr->isType(), "index not converted to instantiate");
   auto cls = expr->expr->getType()->getClass();
   if (!cls) {
@@ -278,7 +278,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       error("expected {} generics and/or statics", generics.size());
 
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
-      transform(expr->typeParams[i], true);
+      transform(expr->typeParams[i]);
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
         t = std::make_shared<StaticType>(expr->typeParams[i], ctx);

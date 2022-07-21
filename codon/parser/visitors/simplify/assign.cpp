@@ -168,7 +168,7 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
 /// @example
 ///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
+void SimplifyVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
                                         std::vector<StmtPtr> &stmts) {
   std::vector<ExprPtr> leftSide;
   if (auto et = lhs->getTuple()) {
@@ -196,8 +196,8 @@ void SimplifyVisitor::unpackAssignments(ExprPtr lhs, ExprPtr rhs,
   }
 
   // Process assignments until the fist StarExpr (if any)
-  size_t st;
-  for (st = 0; st < leftSide.size(); st++) {
+  size_t st = 0;
+  for (; st < leftSide.size(); st++) {
     if (leftSide[st]->getStar())
       break;
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer

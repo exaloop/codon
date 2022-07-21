@@ -65,6 +65,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
   // `a := tuple[i]` for each i
   std::vector<ExprPtr> items;
+  items.reserve(tuple->args.size());
   for (int ai = 0; ai < tuple->args.size(); ai++) {
     items.emplace_back(
         N<StmtExpr>(N<AssignStmt>(clone(expr->loops[0].vars),

@@ -1,7 +1,6 @@
 #include "format.h"
 
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 using fmt::format;

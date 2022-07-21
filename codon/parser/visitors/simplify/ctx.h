@@ -37,9 +37,9 @@ struct SimplifyItem : public SrcObject {
   std::vector<std::vector<int>> accessChecked;
   /// Set if an identifier cannot be shadowed
   /// (e.g., global-marked variables)
-  bool noShadow;
+  bool noShadow = false;
   /// Set if an identifier is a class or a function generic
-  bool generic;
+  bool generic = false;
 
 public:
   SimplifyItem(Kind kind, std::string baseName, std::string canonicalName,
@@ -47,8 +47,7 @@ public:
                std::string importPath = "")
       : kind(kind), baseName(std::move(baseName)),
         canonicalName(std::move(canonicalName)), moduleName(std::move(moduleName)),
-        scope(std::move(scope)), importPath(std::move(importPath)), noShadow(false),
-        generic(false) {}
+        scope(std::move(scope)), importPath(std::move(importPath)) {}
 
   /* Convenience getters */
   std::string getBaseName() const { return baseName; }

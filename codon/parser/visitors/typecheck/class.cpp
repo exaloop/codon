@@ -118,7 +118,7 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
     // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
     // combination.
     if (!in(ctx->cache->generatedTuples, key))
-      ctx->cache->generatedTuples[key] = ctx->cache->generatedTuples.size();
+      ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size());
     suffix = format("_{}", ctx->cache->generatedTuples[key]);
   } else {
     for (size_t i = 1; i <= len; i++)

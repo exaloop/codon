@@ -8,9 +8,7 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-namespace codon {
-namespace ast {
-namespace types {
+namespace codon::ast::types {
 
 void Type::Unification::undo() {
   for (int i = int(linked.size()) - 1; i >= 0; i--) {
@@ -173,9 +171,7 @@ bool LinkType::canRealize() const {
   else
     return type->canRealize();
 }
-bool LinkType::isInstantiated() const {
-  return kind == Link ? type->isInstantiated() : false;
-}
+bool LinkType::isInstantiated() const { return kind == Link && type->isInstantiated(); }
 std::string LinkType::debugString(bool debug) const {
   if (kind == Unbound || kind == Generic)
     return debug ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
@@ -248,7 +244,7 @@ int ClassType::unify(Type *typ, Unification *us) {
     if (name != tc->name)
       return -1;
     // Check generics.
-    int s1 = 3, s;
+    int s1 = 3, s = 0;
     if (generics.size() != tc->generics.size())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
@@ -316,7 +312,7 @@ std::string ClassType::debugString(bool debug) const {
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
   if (debug && !hiddenGenerics.empty()) {
-    gs.push_back("//");
+    gs.emplace_back("//");
     for (auto &a : hiddenGenerics)
       if (!a.name.empty())
         gs.push_back(a.type->debugString(debug));
@@ -353,7 +349,7 @@ int RecordType::unify(Type *typ, Unification *us) {
       auto t64 = std::make_shared<StaticType>(64);
       return generics[0].type->unify(t64.get(), us);
     }
-    int s1 = 2, s;
+    int s1 = 2, s = 0;
     if (args.size() != tr->args.size())
       return -1;
     for (int i = 0; i < args.size(); i++) {
@@ -578,8 +574,8 @@ std::string PartialType::debugString(bool debug) const {
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
   std::vector<std::string> as;
-  int i, gi;
-  for (i = 0, gi = 0; i < known.size(); i++)
+  int i = 0, gi = 0;
+  for (; i < known.size(); i++)
     if (func->ast->args[i].status == Param::Normal) {
       if (!known[i])
         as.emplace_back("...");
@@ -599,7 +595,7 @@ std::string PartialType::realizedName() const {
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx)
+StaticType::StaticType(const std::shared_ptr<Expr> &e, std::shared_ptr<TypeContext> ctx)
     : expr(e->clone()), typeCtx(move(ctx)) {
   if (!expr->isStatic() || !expr->staticValue.evaluated) {
     std::unordered_set<std::string> seen;
@@ -607,7 +603,8 @@ StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx
   }
 }
 StaticType::StaticType(std::vector<ClassType::Generic> generics,
-                       std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> typeCtx)
+                       const std::shared_ptr<Expr> &e,
+                       std::shared_ptr<TypeContext> typeCtx)
     : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {}
 StaticType::StaticType(int64_t i)
     : expr(std::make_shared<IntExpr>(i)), typeCtx(nullptr) {}
@@ -636,7 +633,7 @@ int StaticType::unify(Type *typ, Unification *us) {
     if (generics.size() != t->generics.size())
       return -1;
 
-    int s1 = 2, s;
+    int s1 = 2, s = 0;
     if (!(expr->getId() && t->expr->getId()) && expr->toString() != t->expr->toString())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
@@ -834,6 +831,4 @@ std::string CallableTrait::debugString(bool debug) const {
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
-} // namespace types
-} // namespace ast
 } // namespace codon

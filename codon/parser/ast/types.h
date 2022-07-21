@@ -380,10 +380,11 @@ struct StaticType : public Type {
   /// Type context needed for evaluation
   std::shared_ptr<TypeContext> typeCtx;
 
-  StaticType(std::vector<ClassType::Generic> generics, std::shared_ptr<Expr> expr,
+  StaticType(std::vector<ClassType::Generic> generics,
+             const std::shared_ptr<Expr> &expr,
              std::shared_ptr<TypeContext> typeCtx = nullptr);
   /// Convenience function that parses expr and populates static type generics.
-  StaticType(std::shared_ptr<Expr> expr, std::shared_ptr<TypeContext> ctx);
+  StaticType(const std::shared_ptr<Expr> &expr, std::shared_ptr<TypeContext> ctx);
   /// Convenience function for static types whose evaluation is already known.
   explicit StaticType(int64_t i);
 

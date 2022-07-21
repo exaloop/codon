@@ -63,7 +63,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       }
     }
   }
-  transform(expr->expr, true); // can be type as well
+  transform(expr->expr);
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   if ((resultExpr = newExpr))
     return;
@@ -164,7 +164,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       args.erase(args.begin() + ai);
     } else {
       // Case: normal argument (no expansion)
-      transform(args[ai++].value, true); // can be type as well
+      transform(args[ai++].value);
     }
   }
 
@@ -257,7 +257,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   auto newMask = std::vector<char>(calleeFn->ast->args.size(), 1);
 
   // Extract pi-th partial argument from a partial object
-  auto getPartialArg = [&](int pi) {
+  auto getPartialArg = [&](size_t pi) {
     auto id = transform(N<IdExpr>(part.var));
     ExprPtr it = N<IntExpr>(pi);
     // Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
@@ -463,7 +463,7 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
     if (calleeFn->ast->args[i].status == Param::Generic) {
       if (calleeFn->ast->args[i].defaultValue &&
           calleeFn->funcGenerics[j].type->getUnbound()) {
-        auto def = transform(clone(calleeFn->ast->args[i].defaultValue), true);
+        auto def = transform(clone(calleeFn->ast->args[i].defaultValue));
         unify(calleeFn->funcGenerics[j].type,
               def->isStatic() ? std::make_shared<StaticType>(def, ctx)
                               : def->getType());
@@ -642,12 +642,12 @@ ExprPtr TypecheckVisitor::transformArray(CallExpr *expr) {
 ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   expr->staticValue.type = StaticValue::INT;
   expr->setType(unify(expr->type, ctx->getType("bool")));
-  transform(expr->args[0].value, true);
+  transform(expr->args[0].value);
   auto typ = expr->args[0].value->type->getClass();
   if (!typ || !typ->canRealize())
     return nullptr;
 
-  transform(expr->args[0].value, true); // transform again to realize it
+  transform(expr->args[0].value); // transform again to realize it
 
   auto &typExpr = expr->args[1].value;
   if (typExpr->isId("Tuple") || typExpr->isId("tuple")) {

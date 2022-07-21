@@ -14,17 +14,16 @@ using fmt::format;
 namespace codon::ast {
 
 TypeContext::TypeContext(Cache *cache)
-    : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0), age(0),
-      realizationDepth(0), blockLevel(0), returnEarly(false) {
+    : Context<TypecheckItem>(""), cache(cache), typecheckLevel(0), age(0),
+      blockLevel(0), returnEarly(false), changedNodes(0) {
   stack.push_front(std::vector<std::string>());
   realizationBases.push_back({"", nullptr, nullptr});
   pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
-  changedNodes = 0;
 }
 
 std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
                                                 const std::string &name,
-                                                types::TypePtr type) {
+                                                const types::TypePtr& type) {
   auto t = std::make_shared<TypecheckItem>(kind, type);
   add(name, t);
   return t;
@@ -80,7 +79,7 @@ std::shared_ptr<types::LinkType> TypeContext::getUnbound() const {
   return getUnbound(getSrcInfo(), typecheckLevel);
 }
 
-types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, types::TypePtr type,
+types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, const types::TypePtr& type,
                                         const types::ClassTypePtr &generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
@@ -102,7 +101,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, types::TypePtr t
 }
 
 types::TypePtr
-TypeContext::instantiateGeneric(const SrcInfo &srcInfo, types::TypePtr root,
+TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr& root,
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
@@ -112,8 +111,7 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, types::TypePtr root,
   }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
-    g->generics.push_back(
-        types::ClassType::Generic("", "", generics[i], c->generics[i].id));
+    g->generics.emplace_back("", "", generics[i], c->generics[i].id);
   }
   return instantiate(srcInfo, root, g);
 }
@@ -129,18 +127,18 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
       std::unordered_set<std::string> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
       for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
-        auto &m = mt[mti];
-        if (endswith(m.name, ":dispatch") || !cache->functions[m.name].type)
+        auto &method = mt[mti];
+        if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
           continue;
-        if (m.age <= age) {
+        if (method.age <= age) {
           if (hideShadowed) {
-            auto sig = cache->functions[m.name].ast->signature();
+            auto sig = cache->functions[method.name].ast->signature();
             if (!in(signatureLoci, sig)) {
               signatureLoci.insert(sig);
-              vv.emplace_back(cache->functions[m.name].type);
+              vv.emplace_back(cache->functions[method.name].type);
             }
           } else {
-            vv.emplace_back(cache->functions[m.name].type);
+            vv.emplace_back(cache->functions[method.name].type);
           }
         }
       }
@@ -163,7 +161,7 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,
                                   const std::vector<CallExpr::Arg> &args,
-                                  ReorderDoneFn onDone, ReorderErrorFn onError,
+                                  const ReorderDoneFn& onDone, const ReorderErrorFn& onError,
                                   const std::vector<char> &known) {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:

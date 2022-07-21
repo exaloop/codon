@@ -35,7 +35,7 @@ class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(Cache *cache, StmtPtr stmts);
+  static StmtPtr apply(Cache *cache, const StmtPtr &stmts);
 
 public:
   explicit TypecheckVisitor(
@@ -52,11 +52,6 @@ public: // Convenience transformators
   StmtPtr transform(const StmtPtr &stmt) override {
     auto s = stmt;
     return transform(s);
-  }
-  ExprPtr transform(ExprPtr &e, bool allowTypes);
-  ExprPtr transform(const ExprPtr &expr, bool allowTypes) {
-    auto e = expr;
-    return transform(e, allowTypes);
   }
   ExprPtr transformType(ExprPtr &expr);
   ExprPtr transformType(const ExprPtr &expr) {
@@ -165,7 +160,7 @@ private: // Node typechecking rules
   void visit(YieldStmt *) override;
   void visit(FunctionStmt *) override;
   ExprPtr partializeFunction(const types::FuncTypePtr &);
-  std::shared_ptr<types::RecordType> getFuncTypeBase(int nargs);
+  std::shared_ptr<types::RecordType> getFuncTypeBase(size_t);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
@@ -191,7 +186,7 @@ private:
   types::TypePtr realizeType(types::ClassType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
-      makeIRFunction(std::shared_ptr<Cache::Function::FunctionRealization>);
+  makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
 
 private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
@@ -201,7 +196,7 @@ private:
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
-  bool wrapExpr(ExprPtr &expr, types::TypePtr expectedType,
+  bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
 
 public:

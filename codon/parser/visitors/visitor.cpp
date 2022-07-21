@@ -2,8 +2,7 @@
 
 #include "codon/parser/ast.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 void ASTVisitor::defaultVisit(Expr *expr) {}
 void ASTVisitor::defaultVisit(Stmt *stmt) {}
@@ -65,5 +64,4 @@ void ASTVisitor::visit(WithStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CustomStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CommentStmt *stmt) { defaultVisit(stmt); }
 
-} // namespace ast
 } // namespace codon

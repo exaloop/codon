@@ -135,7 +135,7 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     loops[0].gen = N<IdExpr>(optimizeVar);
   }
 
-  SuiteStmt *prev;
+  SuiteStmt *prev = nullptr;
   auto suite = transformGeneratorBody(loops, prev);
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
@@ -172,7 +172,7 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
 ///   `{i+a: j+1 for i in j if a}` -> ```gen = Dict()
 ///                                      for i in j: if a: gen.__setitem__(i+a, j+1)```
 void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
-  SuiteStmt *prev;
+  SuiteStmt *prev = nullptr;
   auto suite = transformGeneratorBody(expr->loops, prev);
 
   std::vector<StmtPtr> stmts;
@@ -193,16 +193,16 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
 StmtPtr SimplifyVisitor::transformGeneratorBody(const std::vector<GeneratorBody> &loops,
                                                 SuiteStmt *&prev) {
   StmtPtr suite = N<SuiteStmt>(), newSuite = nullptr;
-  prev = (SuiteStmt *)suite.get();
+  prev = dynamic_cast<SuiteStmt *>(suite.get());
   for (auto &l : loops) {
     newSuite = N<SuiteStmt>();
-    auto nextPrev = (SuiteStmt *)newSuite.get();
+    auto nextPrev = dynamic_cast<SuiteStmt *>(newSuite.get());
 
     prev->stmts.push_back(N<ForStmt>(l.vars->clone(), l.gen->clone(), newSuite));
     prev = nextPrev;
     for (auto &cond : l.conds) {
       newSuite = N<SuiteStmt>();
-      nextPrev = (SuiteStmt *)newSuite.get();
+      nextPrev = dynamic_cast<SuiteStmt *>(newSuite.get());
       prev->stmts.push_back(N<IfStmt>(cond->clone(), newSuite));
       prev = nextPrev;
     }

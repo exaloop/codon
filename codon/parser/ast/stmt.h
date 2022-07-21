@@ -46,7 +46,7 @@ public:
   std::string toString() const;
   virtual std::string toString(int indent) const = 0;
   /// Validate a node. Throw ParseASTException if a node is not valid.
-  virtual void validate() const;
+  void validate() const;
   /// Deep copy a node.
   virtual std::shared_ptr<Stmt> clone() const = 0;
   /// Accept an AST visitor.
@@ -98,7 +98,7 @@ struct SuiteStmt : public Stmt {
 
   /// Flatten all nested SuiteStmt objects that do not own a block in the statement
   /// vector. This is shallow flattening.
-  static void flatten(StmtPtr s, std::vector<StmtPtr> &stmts);
+  static void flatten(const StmtPtr &s, std::vector<StmtPtr> &stmts);
 };
 
 /// Break statement.
@@ -337,7 +337,7 @@ struct ImportStmt : public Stmt {
   ImportStmt(const ImportStmt &stmt);
 
   std::string toString(int indent) const override;
-  void validate() const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 };
 
@@ -457,7 +457,7 @@ struct FunctionStmt : public Stmt {
   FunctionStmt(const FunctionStmt &stmt);
 
   std::string toString(int indent) const override;
-  void validate() const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 
   /// @return a function signature that consists of generics and arguments in a
@@ -486,11 +486,11 @@ struct ClassStmt : public Stmt {
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
             std::vector<ExprPtr> decorators = {},
             std::vector<ExprPtr> baseClasses = {});
-  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, const Attr &attr);
+  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
   ClassStmt(const ClassStmt &stmt);
 
   std::string toString(int indent) const override;
-  void validate() const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)

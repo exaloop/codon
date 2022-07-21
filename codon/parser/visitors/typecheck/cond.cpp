@@ -12,7 +12,7 @@ using namespace types;
 /// Call `ready` and `notReady` depending whether the provided static expression can be
 /// evaluated or not.
 template <typename TT, typename TF>
-auto evaluateStaticCondition(ExprPtr cond, TT ready, TF notReady) {
+auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
   seqassertn(cond->isStatic(), "not a static condition");
   if (cond->staticValue.evaluated) {
     bool isTrue = false;
