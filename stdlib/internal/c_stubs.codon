@@ -11,6 +11,24 @@ def seq_strdup(a: cobj) -> str:
     pass
 
 
+@pure
+@C
+def seq_stdin() -> cobj:
+    pass
+
+
+@pure
+@C
+def seq_stdout() -> cobj:
+    pass
+
+
+@pure
+@C
+def seq_stderr() -> cobj:
+    pass
+
+
 @no_side_effect
 @C
 def seq_env() -> Ptr[cobj]:

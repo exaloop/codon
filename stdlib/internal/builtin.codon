@@ -16,8 +16,11 @@ def id(x) -> int:
     else:
         return 0
 
-_c_stdout = CVar[cobj]("stdout")
-def print(*args, sep: str = " ", end: str = "\n", file = _c_stdout, flush: bool = False):
+
+_stdout = _C.seq_stdout()
+
+
+def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
     """
     Print args to the text stream file.
     """

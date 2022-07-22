@@ -2,12 +2,9 @@
 
 argv = list(__argv__, len(__argv__))
 
-_c_stdin = CVar[cobj]("stdin")
-stdin = File(_c_stdin)
-_c_stdout = CVar[cobj]("stdout")
-stdout = File(_c_stdout)
-_c_stderr = CVar[cobj]("stderr")
-stderr = File(_c_stderr)
+stdin = File(_C.seq_stdin())
+stdout = File(_C.seq_stdout())
+stderr = File(_C.seq_stderr())
 
 
 def exit(status: int = 0):
