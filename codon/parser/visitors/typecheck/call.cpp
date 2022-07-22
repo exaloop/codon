@@ -516,8 +516,11 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformTypeFn(expr)};
   } else if (val == "compile_error") {
     return {true, transformCompileError(expr)};
+  } else if (val == "tuple") {
+    return {true, transformTupleFn(expr)};
+  } else {
+    return {false, nullptr};
   }
-  return {false, nullptr};
 }
 
 /// Typecheck superf method. This method provides the access to the previous matching
@@ -739,6 +742,22 @@ ExprPtr TypecheckVisitor::transformCompileError(CallExpr *expr) {
   if (staticTyp->canRealize())
     error("custom error: {}", staticTyp->evaluate().getString());
   return nullptr;
+}
+
+/// Convert a class to a tuple.
+ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
+  auto cls = expr->args.front().value->type->getClass();
+  if (!cls)
+    return nullptr;
+
+  std::vector<ExprPtr> args;
+  args.reserve(ctx->cache->classes[cls->name].fields.size());
+  std::string var = ctx->cache->getTemporaryVar("tup");
+  for (auto &field : ctx->cache->classes[cls->name].fields)
+    args.emplace_back(N<DotExpr>(N<IdExpr>(var), field.name));
+  return transform(N<StmtExpr>(
+      N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
+      N<CallExpr>(N<IdExpr>(format("{}{}", TYPE_TUPLE, args.size())), args)));
 }
 
 /// Transform type function to a type IdExpr identifier.

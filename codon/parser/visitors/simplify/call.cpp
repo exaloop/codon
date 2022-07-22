@@ -46,7 +46,8 @@ void SimplifyVisitor::visit(CallExpr *expr) {
 /// Check validity of `type()` call. See below for more details.
 ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
                                               const std::vector<CallExpr::Arg> &args) {
-  if (callee->isId("tuple")) {
+  if (callee->isId("tuple") && args.size() == 1 &&
+      CAST(args.front().value, GeneratorBody)) {
     // tuple(i for i in j)
     return transformTupleGenerator(args);
   } else if (callee->isId("type") && !ctx->allowTypeOf) {

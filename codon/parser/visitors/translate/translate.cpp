@@ -341,8 +341,6 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
-  // CVar.__new__:0
-
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
@@ -361,6 +359,18 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       ctx->getBase()->push_back(v);
       ctx->add(TranslateItem::Var, var, v);
     }
+    // Check if it is a C variable
+    if (stmt->rhs && stmt->rhs->getCall()) {
+      auto f = stmt->rhs->getCall()->expr->type->getFunc();
+      if (f && f->ast->name == "CVar.__new__:0") {
+        // v->setExternal();
+        // auto t = f->funcParent->getClass()->generics.front().type;
+        auto s = f->funcGenerics.front().type->getStatic()->evaluate().getString();
+        v->setName(s);
+        return;  // no need for AssignInstr
+      }
+    }
+
     if (stmt->rhs)
       result = make<ir::AssignInstr>(stmt, v, transform(stmt->rhs));
   }

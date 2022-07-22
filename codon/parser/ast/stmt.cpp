@@ -535,8 +535,10 @@ void ClassStmt::parseDecorators() {
       if (attributes.has(Attr::Tuple))
         error(getSrcInfo(), "class already marked as tuple");
       attributes.set(Attr::Tuple);
-      for (auto &m : tupleMagics)
-        m.second = true;
+      for (auto &m : tupleMagics) {
+        if (m.first != "iter" && m.first != "getitem")
+          m.second = true;
+      }
     } else if (d->isId(Attr::Extend)) {
       attributes.set(Attr::Extend);
       if (decorators.size() != 1)
@@ -548,7 +550,7 @@ void ClassStmt::parseDecorators() {
     }
   }
   if (startswith(name, TYPE_TUPLE))
-    tupleMagics["contains"] = true;
+    tupleMagics["contains"] = tupleMagics["iter"] = tupleMagics["getitem"] = true;
   if (attributes.has("deduce"))
     tupleMagics["new"] = false;
   if (!attributes.has(Attr::Tuple)) {
@@ -654,4 +656,4 @@ std::string CommentStmt::toString(int) const {
 }
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 
-} // namespace codon
+} // namespace codon::ast

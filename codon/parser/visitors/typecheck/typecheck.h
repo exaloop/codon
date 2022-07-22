@@ -132,6 +132,7 @@ private: // Node typechecking rules
   ExprPtr transformHasAttr(CallExpr *expr);
   ExprPtr transformGetAttr(CallExpr *expr);
   ExprPtr transformCompileError(CallExpr *expr);
+  ExprPtr transformTupleFn(CallExpr *expr);
   ExprPtr transformTypeFn(CallExpr *expr);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
   void addFunctionGenerics(const types::FuncType *t);
