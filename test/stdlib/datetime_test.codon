@@ -254,16 +254,13 @@ class TestTimeDelta(TestCase):
             "timedelta(seconds=1, microseconds=100)",
         )
 
-    """
     def test_resolution_info(self):
-        self.assertIsInstance(timedelta.min, timedelta)
-        self.assertIsInstance(timedelta.max, timedelta)
-        self.assertIsInstance(timedelta.resolution, timedelta)
         self.assertTrue(timedelta.max > timedelta.min)
-        self.assertEqual(timedelta.min, timedelta(-999999999))
-        self.assertEqual(timedelta.max, timedelta(999999999, 24*3600-1, 1e6-1))
+        #self.assertEqual(timedelta.min, timedelta(-999999999))
+        #self.assertEqual(timedelta.max, timedelta(999999999, 24*3600-1, 1e6-1))
         self.assertEqual(timedelta.resolution, timedelta(0, 0, 1))
 
+    """
     def test_overflow(self):
         tiny = timedelta(microseconds=1)  # timedelta.resolution
 
@@ -740,18 +737,10 @@ class TestDate(TestCase):
         t = self.theclass(2002, 3, 2)
         self.assertEqual(t.ctime(), "Sat Mar  2 00:00:00 2002")
 
-    """
     def test_resolution_info(self):
-        # XXX: Should min and max respect subclassing?
-        if issubclass(self.theclass, datetime):
-            expected_class = datetime
-        else:
-            expected_class = date
-        self.assertIsInstance(self.theclass.min, expected_class)
-        self.assertIsInstance(self.theclass.max, expected_class)
-        self.assertIsInstance(self.theclass.resolution, timedelta)
         self.assertTrue(self.theclass.max > self.theclass.min)
 
+    """
     def test_extreme_timedelta(self):
         big = self.theclass.max - self.theclass.min
         # 3652058 days, 23 hours, 59 minutes, 59 seconds, 999999 microseconds
@@ -1856,13 +1845,8 @@ class TestTime(TestCase):
         )
         self.assertEqual(repr(self.theclass(23, 15, 0, 0)), "time(hour=23, minute=15)")
 
-    """
     def test_resolution_info(self):
-        self.assertIsInstance(self.theclass.min, self.theclass)
-        self.assertIsInstance(self.theclass.max, self.theclass)
-        self.assertIsInstance(self.theclass.resolution, timedelta)
         self.assertTrue(self.theclass.max > self.theclass.min)
-    """
 
     def test_bool(self):
         # time is always True.
@@ -1898,6 +1882,7 @@ class TestTime(TestCase):
 case_td = TestTimeDelta()
 case_td.test_computations()
 case_td.test_constructor()
+case_td.test_resolution_info()
 case_td.test_basic_attributes()
 case_td.test_total_seconds()
 case_td.test_carries()
@@ -1985,6 +1970,25 @@ case_tx.test_hash_equality()
 case_tx.test_isoformat()
 case_tx.test_str()
 case_tx.test_repr()
-# case_tx.test_resolution_info()
+case_tx.test_resolution_info()
 case_tx.test_bool()
 case_tx.test_replace()
+
+@test
+def test_constants():
+    assert str(timedelta.min) == '-106751992 days, 19:59:05.224192'  # note: diff w/ Python
+    assert str(timedelta.max) == '106751991 days, 4:00:54.775807'    # note: diff w/ Python
+    assert str(timedelta.resolution) == '0:00:00.000001'
+
+    assert str(date.min) == '0001-01-01'
+    assert str(date.max) == '9999-12-31'
+    assert str(date.resolution) == '1 day, 0:00:00'
+
+    assert str(time.min) == '00:00:00'
+    assert str(time.max) == '23:59:59.999999'
+    assert str(time.resolution) == '0:00:00.000001'
+
+    assert str(datetime.min) == '0001-01-01 00:00:00'
+    assert str(datetime.max) == '9999-12-31 23:59:59.999999'
+    assert str(datetime.resolution) == '0:00:00.000001'
+test_constants()
