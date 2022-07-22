@@ -360,15 +360,12 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       ctx->add(TranslateItem::Var, var, v);
     }
     // Check if it is a C variable
-    if (stmt->rhs && stmt->rhs->getCall()) {
-      auto f = stmt->rhs->getCall()->expr->type->getFunc();
-      if (f && f->ast->name == "CVar.__new__:0") {
-        v->setExternal();
-        auto s = f->funcGenerics.front().type->getStatic()->evaluate().getString();
-        v->setName(s);
-        v->setGlobal();
-        return; // no need for AssignInstr
-      }
+    if (stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
+      v->setExternal();
+      seqassert(stmt->rhs && stmt->rhs->getString(), "bad extern var");
+      v->setName(stmt->rhs->getString()->getValue());
+      v->setGlobal();
+      return;
     }
 
     if (stmt->rhs)

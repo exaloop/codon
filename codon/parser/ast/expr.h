@@ -657,6 +657,7 @@ enum ExprAttr {
   StarArgument,
   KwStarArgument,
   OrderedCall,
+  ExternVar,
   __LAST__
 };
 

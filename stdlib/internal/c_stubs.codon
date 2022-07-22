@@ -427,6 +427,12 @@ def fopen(a: cobj, b: cobj) -> cobj:
 
 @nocapture
 @C
+def fdopen(a: int, b: cobj) -> cobj:
+    pass
+
+
+@nocapture
+@C
 def fclose(a: cobj) -> int:
     pass
 

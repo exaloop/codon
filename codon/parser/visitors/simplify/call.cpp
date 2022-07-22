@@ -47,7 +47,7 @@ void SimplifyVisitor::visit(CallExpr *expr) {
 ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
                                               const std::vector<CallExpr::Arg> &args) {
   if (callee->isId("tuple") && args.size() == 1 &&
-      CAST(args.front().value, GeneratorBody)) {
+      CAST(args.front().value, GeneratorExpr)) {
     // tuple(i for i in j)
     return transformTupleGenerator(args);
   } else if (callee->isId("type") && !ctx->allowTypeOf) {
@@ -73,7 +73,6 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
       g->kind != GeneratorExpr::Generator || g->loops.size() != 1 ||
       !g->loops[0].conds.empty())
     error("tuple only accepts a simple comprehension over a tuple");
-
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
   if (auto i = var->getId()) {

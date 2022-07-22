@@ -100,15 +100,19 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
 /// Transform special `from C` and `from python` imports.
 /// See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
 StmtPtr SimplifyVisitor::transformSpecialImport(ImportStmt *stmt) {
-  if (stmt->from && stmt->from->isId("C") && stmt->what->getId()) {
-    // C imports
+  if (stmt->from && stmt->from->isId("C") && stmt->what->getId() && stmt->isFunction) {
+    // C function imports
     return transformCImport(stmt->what->getId()->value, stmt->args, stmt->ret.get(),
                             stmt->as);
+  }
+  if (stmt->from && stmt->from->isId("C") && stmt->what->getId()) {
+    // C variable imports
+    return transformCVarImport(stmt->what->getId()->value, stmt->ret.get(), stmt->as);
   } else if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
     // dylib C imports
     return transformCDLLImport(stmt->what->getDot()->expr.get(),
                                stmt->what->getDot()->member, stmt->args,
-                               stmt->ret.get(), stmt->as);
+                               stmt->ret.get(), stmt->as, stmt->isFunction);
   } else if (stmt->from && stmt->from->isId("python") && stmt->what) {
     // Python imports
     return transformPythonImport(stmt->what.get(), stmt->args, stmt->ret.get(),
@@ -135,7 +139,7 @@ std::vector<std::string> SimplifyVisitor::getImportPath(Expr *from, size_t dots)
   return components;
 }
 
-/// Transform a C import.
+/// Transform a C function import.
 /// @example
 ///   `from C import foo(int) -> float as f` ->
 ///   ```@.c
@@ -172,6 +176,18 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
   return f;
 }
 
+/// Transform a C variable import.
+/// @example
+///   `from C import foo: int as f` ->
+///   ```f: int = "foo"```
+StmtPtr SimplifyVisitor::transformCVarImport(const std::string &name, const Expr *type,
+                                             const std::string &altName) {
+  auto s = transform(N<AssignStmt>(N<IdExpr>(altName.empty() ? name : altName),
+                                   N<StringExpr>(name), type->clone()));
+  s->getAssign()->lhs->setAttr(ExprAttr::ExternVar);
+  return s;
+}
+
 /// Transform a dynamic C import.
 /// @example
 ///   `from C import lib.foo(int) -> float as f` ->
@@ -180,16 +196,24 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
 StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::string &name,
                                              const std::vector<Param> &args,
                                              const Expr *ret,
-                                             const std::string &altName) {
-  std::vector<ExprPtr> fnArgs{N<ListExpr>(std::vector<ExprPtr>{}),
-                              ret ? ret->clone() : N<IdExpr>("NoneType")};
-  for (const auto &a : args) {
-    seqassert(a.name.empty(), "unexpected argument name");
-    seqassert(!a.defaultValue, "unexpected default argument");
-    seqassert(a.type, "missing type");
-    fnArgs[0]->getList()->items.emplace_back(clone(a.type));
+                                             const std::string &altName,
+                                             bool isFunction) {
+  ExprPtr type = nullptr;
+  if (isFunction) {
+    std::vector<ExprPtr> fnArgs{N<ListExpr>(std::vector<ExprPtr>{}),
+                                ret ? ret->clone() : N<IdExpr>("NoneType")};
+    for (const auto &a : args) {
+      seqassert(a.name.empty(), "unexpected argument name");
+      seqassert(!a.defaultValue, "unexpected default argument");
+      seqassert(a.type, "missing type");
+      fnArgs[0]->getList()->items.emplace_back(clone(a.type));
+    }
+
+    type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
+  } else {
+    type = ret->clone();
   }
-  auto type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
+
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),

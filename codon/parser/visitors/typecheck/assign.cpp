@@ -74,8 +74,10 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       unify(stmt->lhs->type,
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
       // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      wrapExpr(stmt->rhs, stmt->lhs->getType());
-      unify(stmt->lhs->type, stmt->rhs->type);
+      if (!stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
+        wrapExpr(stmt->rhs, stmt->lhs->getType());
+        unify(stmt->lhs->type, stmt->rhs->type);
+      }
     }
     auto type = stmt->rhs->getType();
     auto kind = TypecheckItem::Var;

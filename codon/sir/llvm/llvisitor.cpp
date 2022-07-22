@@ -105,14 +105,9 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     if (llvmType->isVoidTy()) {
       insertVar(var, getDummyVoidValue());
     } else {
-<<<<<<< HEAD
-      auto linkage = (db.jit || var->isExternal()) ? llvm::GlobalValue::ExternalLinkage
-                                                   : llvm::GlobalValue::PrivateLinkage;
-=======
       bool external = var->isExternal();
       auto linkage = (db.jit || external) ? llvm::GlobalValue::ExternalLinkage
                                           : llvm::GlobalValue::PrivateLinkage;
->>>>>>> f3b3a385c5f8dede2077253ef13beeaad704c8bc
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
           external ? nullptr : llvm::Constant::getNullValue(llvmType), var->getName());

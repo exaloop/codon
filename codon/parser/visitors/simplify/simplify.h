@@ -136,9 +136,10 @@ private: // Node simplification rules
   std::vector<std::string> getImportPath(Expr *, size_t = 0);
   StmtPtr transformCImport(const std::string &, const std::vector<Param> &,
                            const Expr *, const std::string &);
+  StmtPtr transformCVarImport(const std::string &, const Expr *, const std::string &);
   StmtPtr transformCDLLImport(const Expr *, const std::string &,
                               const std::vector<Param> &, const Expr *,
-                              const std::string &);
+                              const std::string &, bool);
   StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, Expr *,
                                 const std::string &);
   StmtPtr transformNewImport(const ImportFile &);

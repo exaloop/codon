@@ -161,9 +161,9 @@ import_from <-
         ac<SemVals>(VS.size() == 2 ? V1 : V0),
         [&](const any &i) {
           auto p = ac<pair<any, string>>(i);
-          auto t = ac<tuple<ExprPtr, vector<Param>, ExprPtr>>(p.first);
+          auto t = ac<tuple<ExprPtr, vector<Param>, ExprPtr, bool>>(p.first);
           return ast<ImportStmt>(LOC,
-            f, get<0>(t), move(get<1>(t)), get<2>(t), p.second, int(VS.tokens.size())
+            f, get<0>(t), move(get<1>(t)), get<2>(t), p.second, int(VS.tokens.size()), get<3>(t)
           );
         }
       )
@@ -175,14 +175,18 @@ from_as <- from_id (SPACE 'as' SPACE NAME)? {
   return pair(V0, VS.size() > 1 ? ac<string>(V1) : "");
 }
 from_id <-
+  / dot_name _ ':' _ expression {
+    return tuple(ac_expr(V0), vector<Param>(), ac_expr(V1), false);
+  }
   / dot_name _ from_params (_ '->' _ expression)? {
     return tuple(
       ac_expr(V0),
       ac<SemVals>(V1).transform<Param>(),
-      VS.size() > 2 ? ac_expr(V2) : ast<IdExpr>(LOC, "NoneType")
+      VS.size() > 2 ? ac_expr(V2) : ast<IdExpr>(LOC, "NoneType"),
+      true
     );
   }
-  / dot_name { return tuple(ac_expr(V0), vector<Param>{}, (ExprPtr)nullptr); }
+  / dot_name { return tuple(ac_expr(V0), vector<Param>{}, (ExprPtr)nullptr, true); }
 dot_name <- id (_ '.' _ NAME)* {
   if (VS.size() == 1)
     return ac_expr(V0);

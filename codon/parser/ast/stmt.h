@@ -331,9 +331,12 @@ struct ImportStmt : public Stmt {
   std::vector<Param> args;
   /// Function return type for C imports.
   ExprPtr ret;
+  /// Set if this is a function C import (not variable import)
+  bool isFunction;
 
   ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args = {},
-             ExprPtr ret = nullptr, std::string as = "", size_t dots = 0);
+             ExprPtr ret = nullptr, std::string as = "", size_t dots = 0,
+             bool isFunction = true);
   ImportStmt(const ImportStmt &stmt);
 
   std::string toString(int indent) const override;

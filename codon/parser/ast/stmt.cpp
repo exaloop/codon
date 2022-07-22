@@ -211,14 +211,15 @@ std::string MatchStmt::toString(int indent) const {
 ACCEPT_IMPL(MatchStmt, ASTVisitor);
 
 ImportStmt::ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args, ExprPtr ret,
-                       std::string as, size_t dots)
+                       std::string as, size_t dots, bool isFunction)
     : Stmt(), from(std::move(from)), what(std::move(what)), as(std::move(as)),
-      dots(dots), args(std::move(args)), ret(std::move(ret)) {
+      dots(dots), args(std::move(args)), ret(std::move(ret)), isFunction(isFunction) {
   validate();
 }
 ImportStmt::ImportStmt(const ImportStmt &stmt)
     : Stmt(stmt), from(ast::clone(stmt.from)), what(ast::clone(stmt.what)), as(stmt.as),
-      dots(stmt.dots), args(ast::clone_nop(stmt.args)), ret(ast::clone(stmt.ret)) {}
+      dots(stmt.dots), args(ast::clone_nop(stmt.args)), ret(ast::clone(stmt.ret)),
+      isFunction(stmt.isFunction) {}
 std::string ImportStmt::toString(int) const {
   std::vector<std::string> va;
   for (auto &a : args)
@@ -241,6 +242,8 @@ void ImportStmt::validate() const {
       if (what && !what->getId())
         error(getSrcInfo(), "invalid import statement");
     }
+    if (!isFunction && !args.empty())
+      error(getSrcInfo(), "invalid import statement");
   }
 }
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
