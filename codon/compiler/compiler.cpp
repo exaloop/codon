@@ -150,6 +150,15 @@ llvm::Error Compiler::compile() {
     fclose(fo);
   }
   llvisitor->visit(module.get());
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_llvm.ll", "w");
+    std::string str;
+    llvm::raw_string_ostream os(str);
+    os << *(llvisitor->getModule());
+    os.flush();
+    fmt::print(fo, "{}\n", str);
+    fclose(fo);
+  }
   return llvm::Error::success();
 }
 
