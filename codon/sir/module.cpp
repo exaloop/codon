@@ -105,7 +105,8 @@ Module::Module(const std::string &name) : AcceptorExtend(name) {
   mainFunc->realize(cast<types::FuncType>(unsafeGetDummyFuncType()), {});
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
-  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), true, "argv");
+  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
+                                 /*external=*/false, "argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
 }
