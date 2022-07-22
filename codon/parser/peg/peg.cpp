@@ -152,4 +152,4 @@ std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
   return result;
 }
 
-} // namespace codon
+} // namespace codon::ast

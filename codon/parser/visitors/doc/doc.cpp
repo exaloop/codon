@@ -439,4 +439,4 @@ void DocVisitor::visit(AssignStmt *stmt) {
   resultStmt = std::to_string(id);
 }
 
-} // namespace codon
+} // namespace codon::ast

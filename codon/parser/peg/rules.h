@@ -35,7 +35,7 @@ struct ParseContext {
   }
 };
 
-} // namespace codon
+} // namespace codon::ast
 
 void init_codon_rules(peg::Grammar &);
 void init_codon_actions(peg::Grammar &);

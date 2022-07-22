@@ -831,4 +831,4 @@ std::string CallableTrait::debugString(bool debug) const {
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
-} // namespace codon
+} // namespace codon::ast::types

@@ -350,4 +350,4 @@ public:
   }
 };
 
-} // namespace codon
+} // namespace codon::ast

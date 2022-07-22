@@ -247,4 +247,4 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                              getRoot(argv0, plugins, module0Root, paths[0]));
 }
 
-} // namespace codon
+} // namespace codon::ast

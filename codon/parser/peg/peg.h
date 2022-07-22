@@ -22,4 +22,4 @@ StmtPtr parseFile(Cache *cache, const std::string &file);
 std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
                                        const codon::SrcInfo &loc);
 
-} // namespace codon
+} // namespace codon::ast

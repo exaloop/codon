@@ -495,4 +495,4 @@ StaticValue::Type getStaticGeneric(Expr *e) {
   return StaticValue::Type::NOT_STATIC;
 }
 
-} // namespace codon
+} // namespace codon::ast

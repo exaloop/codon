@@ -82,4 +82,4 @@ public:
   void visit(ImportStmt *) override;
 };
 
-} // namespace codon
+} // namespace codon::ast

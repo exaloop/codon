@@ -159,4 +159,4 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return realizeType(t->type->getClass(), {argType, ret});
 }
 
-} // namespace codon
+} // namespace codon::ast

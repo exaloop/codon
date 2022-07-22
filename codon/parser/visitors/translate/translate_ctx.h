@@ -71,4 +71,4 @@ public:
   codon::ir::SeriesFlow *getSeries() const;
 };
 
-} // namespace codon
+} // namespace codon::ast
