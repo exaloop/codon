@@ -36,7 +36,7 @@ void Func::realize(types::Type *newType, const std::vector<std::string> &names) 
 
   auto i = 0;
   for (auto *t : *funcType) {
-    args.push_back(getModule()->Nr<Var>(t, false, names[i]));
+    args.push_back(getModule()->Nr<Var>(t, false, false, names[i]));
     ++i;
   }
 }

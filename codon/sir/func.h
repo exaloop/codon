@@ -33,7 +33,7 @@ public:
   /// Constructs an unrealized SIR function.
   /// @param name the function's name
   explicit Func(std::string name = "")
-      : AcceptorExtend(nullptr, true, std::move(name)), generator(false),
+      : AcceptorExtend(nullptr, true, false, std::move(name)), generator(false),
         parentType(nullptr) {}
 
   /// Re-initializes the function with a new type and names.

@@ -69,7 +69,8 @@ Var *CloneVisitor::clone(const Var *other) {
 }
 
 void CloneVisitor::visit(const Var *v) {
-  result = module->N<Var>(v, v->getType(), v->isGlobal(), v->getName());
+  result =
+      module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
 }
 
 void CloneVisitor::visit(const BodiedFunc *v) {

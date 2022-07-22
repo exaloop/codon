@@ -320,7 +320,7 @@ struct Outliner : public Operator {
       Var *var = M->getVar(id);
       seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       Var *newVar = M->N<Var>(var->getSrcInfo(), var->getType(), /*global=*/false,
-                              var->getName());
+                              /*external=*/false, var->getName());
       remap.emplace_back(var, newVar);
       outlinedFunc->push_back(newVar);
     }
