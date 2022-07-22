@@ -105,6 +105,12 @@ class Tuple: pass
 class ClassVar[T]:
     pass
 
+@__internal__
+@tuple
+class CVar[T]:
+    def __new__(name: Static[str]) -> T:
+        return ()
+
 @tuple
 @__internal__
 class __array__:

@@ -330,6 +330,9 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
 void TranslateVisitor::visit(ExprStmt *stmt) { result = transform(stmt->expr); }
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
+  if (stmt->lhs && stmt->lhs->isId(VAR_ARGV))
+    return;
+
   if (stmt->isUpdate()) {
     seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
     auto val = ctx->find(stmt->lhs->getId()->value);
@@ -338,11 +341,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
+  // CVar.__new__:0
+
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
     auto isGlobal = in(ctx->cache->globals, var);
     ir::Var *v = nullptr;
+
     if (isGlobal) {
       seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
                 var);
