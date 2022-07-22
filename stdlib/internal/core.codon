@@ -109,7 +109,7 @@ class ClassVar[T]:
 @tuple
 class CVar[T]:
     def __new__(name: Static[str]) -> T:
-        return ()
+        return T()
 
 @tuple
 @__internal__

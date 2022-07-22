@@ -16,16 +16,13 @@ def id(x) -> int:
     else:
         return 0
 
-
-_stdout = _C.seq_stdout()
-
-
-def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
+_c_stdout = CVar[cobj]("stdout")
+def print(*args, sep: str = " ", end: str = "\n", file = _c_stdout, flush: bool = False):
     """
     Print args to the text stream file.
     """
     fp = cobj()
-    if isinstance(file, Ptr[byte]):
+    if isinstance(file, cobj):
         fp = file
     else:
         fp = file.fp

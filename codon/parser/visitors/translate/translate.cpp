@@ -49,7 +49,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     if (!g.second) {
       g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
                                      : cache->codegenCtx->getModule()->N<ir::Var>(
-                                           SrcInfo(), nullptr, true, g.first);
+                                           SrcInfo(), nullptr, true, false, g.first);
       cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
     }
 
@@ -355,7 +355,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
       v->setType(getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()));
     } else {
       v = make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
-                        false, var);
+                        false, false, var);
       ctx->getBase()->push_back(v);
       ctx->add(TranslateItem::Var, var, v);
     }
@@ -363,11 +363,11 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     if (stmt->rhs && stmt->rhs->getCall()) {
       auto f = stmt->rhs->getCall()->expr->type->getFunc();
       if (f && f->ast->name == "CVar.__new__:0") {
-        // v->setExternal();
-        // auto t = f->funcParent->getClass()->generics.front().type;
+        v->setExternal();
         auto s = f->funcGenerics.front().type->getStatic()->evaluate().getString();
         v->setName(s);
-        return;  // no need for AssignInstr
+        v->setGlobal();
+        return; // no need for AssignInstr
       }
     }
 
@@ -421,7 +421,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   auto varName = stmt->var->getId()->value;
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->var->hasAttr(ExprAttr::Dominated)) {
-    var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, varName);
+    var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, false, varName);
   } else {
     var = ctx->find(varName)->getVar();
   }
@@ -475,7 +475,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
       if (!ctx->find(c.var) || !c.exc->hasAttr(ExprAttr::Dominated)) {
-        catchVar = make<ir::Var>(stmt, excType, false, c.var);
+        catchVar = make<ir::Var>(stmt, excType, false, false, c.var);
       } else {
         catchVar = ctx->find(c.var)->getVar();
       }
@@ -632,4 +632,4 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
 }
 
-} // namespace codon
+} // namespace codon::ast
