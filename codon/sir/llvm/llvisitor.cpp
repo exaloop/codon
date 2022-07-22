@@ -107,8 +107,6 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     } else {
       auto linkage = (db.jit || var->isExternal()) ? llvm::GlobalValue::ExternalLinkage
                                                    : llvm::GlobalValue::PrivateLinkage;
-      if (var->isExternal())
-        LOG("{} -> {}", *var, var->getName());
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
           llvm::Constant::getNullValue(llvmType), var->getName());

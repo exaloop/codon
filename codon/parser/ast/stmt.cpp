@@ -536,8 +536,7 @@ void ClassStmt::parseDecorators() {
         error(getSrcInfo(), "class already marked as tuple");
       attributes.set(Attr::Tuple);
       for (auto &m : tupleMagics) {
-        if (m.first != "iter" && m.first != "getitem")
-          m.second = true;
+        m.second = true;
       }
     } else if (d->isId(Attr::Extend)) {
       attributes.set(Attr::Extend);
@@ -550,7 +549,7 @@ void ClassStmt::parseDecorators() {
     }
   }
   if (startswith(name, TYPE_TUPLE))
-    tupleMagics["contains"] = tupleMagics["iter"] = tupleMagics["getitem"] = true;
+    tupleMagics["contains"] = true;
   if (attributes.has("deduce"))
     tupleMagics["new"] = false;
   if (!attributes.has(Attr::Tuple)) {

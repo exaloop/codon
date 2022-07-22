@@ -40,9 +40,11 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!iterType)
     return; // wait until the iterator is known
 
-  if (isTuple(iterType->name) && !iterType->canRealize()) {
+  bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE) ||
+                           startswith(iterType->name, TYPE_KWTUPLE);
+  if (maybeHeterogenous && !iterType->canRealize()) {
     return; // wait until the tuple is fully realizable
-  } else if (iterType->getHeterogenousTuple()) {
+  } else if (maybeHeterogenous && iterType->getHeterogenousTuple()) {
     // Case: iterating a heterogenous tuple
     resultStmt = transformHeterogenousTupleFor(stmt);
     return;

@@ -410,9 +410,7 @@ std::string RecordType::debugString(bool debug) const {
 }
 std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
-  // This is only relevant for Tuples and KwTuples.
-  if ((startswith(name, TYPE_TUPLE) || startswith(name, TYPE_KWTUPLE)) &&
-      args.size() > 1) {
+  if (args.size() > 1) {
     std::string first = args[0]->realizedName();
     for (int i = 1; i < args.size(); i++)
       if (args[i]->realizedName() != first)
@@ -831,4 +829,4 @@ std::string CallableTrait::debugString(bool debug) const {
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
-} // namespace codon
+} // namespace codon::ast::types
