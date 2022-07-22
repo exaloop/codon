@@ -105,22 +105,32 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     if (llvmType->isVoidTy()) {
       insertVar(var, getDummyVoidValue());
     } else {
+<<<<<<< HEAD
       auto linkage = (db.jit || var->isExternal()) ? llvm::GlobalValue::ExternalLinkage
                                                    : llvm::GlobalValue::PrivateLinkage;
+=======
+      bool external = var->isExternal();
+      auto linkage = (db.jit || external) ? llvm::GlobalValue::ExternalLinkage
+                                          : llvm::GlobalValue::PrivateLinkage;
+>>>>>>> f3b3a385c5f8dede2077253ef13beeaad704c8bc
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
-          llvm::Constant::getNullValue(llvmType), var->getName());
+          external ? nullptr : llvm::Constant::getNullValue(llvmType), var->getName());
       insertVar(var, storage);
 
-      // debug info
-      auto *srcInfo = getSrcInfo(var);
-      llvm::DIFile *file = db.getFile(srcInfo->file);
-      llvm::DIScope *scope = db.unit;
-      llvm::DIGlobalVariableExpression *debugVar =
-          db.builder->createGlobalVariableExpression(
-              scope, getDebugNameForVariable(var), var->getName(), file, srcInfo->line,
-              getDIType(var->getType()), !var->isExternal());
-      storage->addDebugInfo(debugVar);
+      if (external) {
+        storage->setDSOLocal(true);
+      } else {
+        // debug info
+        auto *srcInfo = getSrcInfo(var);
+        llvm::DIFile *file = db.getFile(srcInfo->file);
+        llvm::DIScope *scope = db.unit;
+        llvm::DIGlobalVariableExpression *debugVar =
+            db.builder->createGlobalVariableExpression(
+                scope, getDebugNameForVariable(var), var->getName(), file,
+                srcInfo->line, getDIType(var->getType()), !var->isExternal());
+        storage->addDebugInfo(debugVar);
+      }
     }
   }
 }

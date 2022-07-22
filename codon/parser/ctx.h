@@ -113,4 +113,4 @@ public:
   SrcInfo getSrcInfo() const { return srcInfos.back(); }
 };
 
-} // namespace codon
+} // namespace codon::ast

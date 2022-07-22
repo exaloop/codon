@@ -23,7 +23,7 @@ TypeContext::TypeContext(Cache *cache)
 
 std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
                                                 const std::string &name,
-                                                const types::TypePtr& type) {
+                                                const types::TypePtr &type) {
   auto t = std::make_shared<TypecheckItem>(kind, type);
   add(name, t);
   return t;
@@ -79,7 +79,8 @@ std::shared_ptr<types::LinkType> TypeContext::getUnbound() const {
   return getUnbound(getSrcInfo(), typecheckLevel);
 }
 
-types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, const types::TypePtr& type,
+types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
+                                        const types::TypePtr &type,
                                         const types::ClassTypePtr &generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
@@ -101,7 +102,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, const types::Typ
 }
 
 types::TypePtr
-TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr& root,
+TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &root,
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
@@ -161,7 +162,8 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,
                                   const std::vector<CallExpr::Arg> &args,
-                                  const ReorderDoneFn& onDone, const ReorderErrorFn& onError,
+                                  const ReorderDoneFn &onDone,
+                                  const ReorderErrorFn &onError,
                                   const std::vector<char> &known) {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:

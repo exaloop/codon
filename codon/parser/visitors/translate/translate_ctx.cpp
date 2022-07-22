@@ -61,4 +61,4 @@ codon::ir::Module *TranslateContext::getModule() const {
 codon::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
 codon::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
 
-} // namespace codon
+} // namespace codon::ast

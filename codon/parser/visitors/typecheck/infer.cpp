@@ -499,4 +499,4 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   return fn;
 }
 
-} // namespace codon
+} // namespace codon::ast

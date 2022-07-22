@@ -117,7 +117,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     Status defaultStatus = global ? Status::UNKNOWN : Status::NO_CAPTURE;
     auto se2stat = [&](bool b) { return b ? defaultStatus : Status::PURE; };
 
-    if (globalAssignmentHasSideEffects) {
+    if (globalAssignmentHasSideEffects || var->isExternal()) {
       set(v, max(se2stat(used || global), base), se2stat(global));
     } else {
       set(v, max(se2stat(used), base), se2stat(used && global));

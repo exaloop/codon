@@ -46,7 +46,8 @@ void GlobalDemotionPass::run(Module *M) {
   }
 
   for (auto it : localGlobals) {
-    if (!it.second || it.first->getId() == M->getArgVar()->getId())
+    if (!it.second || it.first->getId() == M->getArgVar()->getId() ||
+        it.first->isExternal())
       continue;
     seqassertn(it.first->isGlobal(), "var was not global [{}]", it.first->getSrcInfo());
     it.first->setGlobal(false);

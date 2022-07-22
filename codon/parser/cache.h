@@ -263,4 +263,4 @@ public:
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
 };
 
-} // namespace codon
+} // namespace codon::ast

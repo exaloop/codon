@@ -73,4 +73,4 @@ private:
   }
 };
 
-} // namespace codon
+} // namespace codon::ast

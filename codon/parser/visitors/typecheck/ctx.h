@@ -151,4 +151,4 @@ private:
   void dump(int pad);
 };
 
-} // namespace codon
+} // namespace codon::ast
