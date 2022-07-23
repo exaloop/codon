@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "codon/parser/common.h"
+#include "codon/parser/peg/peg.h"
+#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -157,6 +159,14 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto t = typeCtx->find("Function");
   seqassertn(t && t->type, "cannot find 'Function'");
   return realizeType(t->type->getClass(), {argType, ret});
+}
+
+void Cache::parseCode(const std::string &code) {
+  auto node = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
+  auto sctx = imports[MAIN_IMPORT].ctx;
+  node = ast::SimplifyVisitor::apply(sctx, node, "<internal>", 99999);
+  node = ast::TypecheckVisitor::apply(this, node);
+  ast::TranslateVisitor(codegenCtx).transform(node);
 }
 
 } // namespace codon::ast

@@ -444,6 +444,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Combine(
       testing::Values(
         "stdlib/str_test.codon",
+        "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
         "stdlib/datetime_test.codon",

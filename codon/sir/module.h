@@ -263,6 +263,9 @@ public:
   /// @param c the cache
   void setCache(ast::Cache *c) { cache = c; }
 
+  /// Parse a codon code block.
+  void parseCode(const std::string &code);
+
   /// Gets or realizes a method.
   /// @param parent the parent class
   /// @param methodName the method name

@@ -483,13 +483,13 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
   executeCommand(command);
-  llvm::sys::fs::remove(objFile);
 
 #if __APPLE__
-  if (db.debug) {
+  if (db.debug)
     executeCommand({"dsymutil", filename});
-  }
 #endif
+
+  llvm::sys::fs::remove(objFile);
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
