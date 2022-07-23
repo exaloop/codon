@@ -52,9 +52,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   transform(stmt->rhs);
   transformType(stmt->type);
   if (!stmt->rhs) {
-    // Forward declarations (happens with dominating bindings).
+    // Forward declarations (e.g., dominating bindings, C imports etc.).
     // The type is unknown and will be deduced later
     unify(stmt->lhs->type, ctx->getUnbound(stmt->lhs->getSrcInfo()));
+    if (stmt->type) {
+      unify(stmt->lhs->type,
+            ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
+    }
     ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (realize(stmt->lhs->type))
       stmt->setDone();
@@ -74,10 +78,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       unify(stmt->lhs->type,
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
       // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      if (!stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
-        wrapExpr(stmt->rhs, stmt->lhs->getType());
-        unify(stmt->lhs->type, stmt->rhs->type);
-      }
+      wrapExpr(stmt->rhs, stmt->lhs->getType());
+      unify(stmt->lhs->type, stmt->rhs->type);
     }
     auto type = stmt->rhs->getType();
     auto kind = TypecheckItem::Var;

@@ -698,6 +698,34 @@ print t #: (2, 3, 4)
 print tuple((j, i) for i, j in ((1, 'a'), (2, 'b'), (3, 'c')))
 #: (('a', 1), ('b', 2), ('c', 3))
 
+#%% tuple_fn,barebones
+@tuple
+class unpackable_plain:
+  a: int
+  b: str
+
+u = unpackable_plain(1, 'str')
+a, b = tuple(u)
+print a, b #: 1 str
+
+@tuple
+class unpackable_gen:
+  a: int
+  b: T
+  T: type
+
+u2 = unpackable_gen(1, 'str')
+a2, b2 = tuple(u2)
+print a2,b2  #: 1 str
+
+class plain:
+  a: int
+  b: str
+
+c = plain(3, 'heh')
+z = tuple(c)
+print z, z.__class__.__name__  #: (3, 'heh') Tuple[int,str]
+
 #%% static_unify,barebones
 def foo(x: Callable[[1,2], 3]): pass  #! cannot unify T1 and 1
 

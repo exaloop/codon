@@ -362,8 +362,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     // Check if it is a C variable
     if (stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
       v->setExternal();
-      seqassert(stmt->rhs && stmt->rhs->getString(), "bad extern var");
-      v->setName(stmt->rhs->getString()->getValue());
+      v->setName(ctx->cache->rev(var));
       v->setGlobal();
       return;
     }

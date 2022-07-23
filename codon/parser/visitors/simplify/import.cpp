@@ -182,9 +182,11 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
 ///   ```f: int = "foo"```
 StmtPtr SimplifyVisitor::transformCVarImport(const std::string &name, const Expr *type,
                                              const std::string &altName) {
-  auto s = transform(N<AssignStmt>(N<IdExpr>(altName.empty() ? name : altName),
-                                   N<StringExpr>(name), type->clone()));
-  s->getAssign()->lhs->setAttr(ExprAttr::ExternVar);
+  auto canonical = ctx->generateCanonicalName(name);
+  auto val = ctx->addVar(altName.empty() ? name : altName, canonical);
+  val->noShadow = true;
+  auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, transformType(type->clone()));
+  s->lhs->setAttr(ExprAttr::ExternVar);
   return s;
 }
 
