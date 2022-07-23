@@ -378,7 +378,7 @@ def log(x: float) -> float:
     pass
 print log(5.5)  #: 1.70475
 
-from C import seq_test_global_var: int as e
+from C import codon_test_global_var: int as e
 print e  #: 42
 
 
