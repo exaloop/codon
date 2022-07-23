@@ -133,6 +133,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         unify(argType->args[aj], ctx->getUnbound());
       }
       generics.push_back(argType->args[aj++]);
+    } else if (stmt->args[ai].status == Param::Normal &&
+               startswith(stmt->args[ai].name, "*")) {
+      // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
+      // signature (as the real type is `Tuple[type, ...]`); it will be used during call
+      // typechecking
+      unify(argType->args[aj], ctx->getUnbound());
+      generics.push_back(argType->args[aj++]);
     } else if (stmt->args[ai].status == Param::Normal) {
       unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
       generics.push_back(argType->args[aj++]);

@@ -407,6 +407,7 @@ struct Attr {
   const static std::string Python;
   const static std::string Atomic;
   const static std::string Property;
+  const static std::string StaticMethod;
   const static std::string Attribute;
   const static std::string C;
   // Internal attributes

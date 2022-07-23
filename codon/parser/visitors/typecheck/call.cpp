@@ -438,14 +438,31 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
   bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
   for (size_t si = 0; si < calleeFn->getArgTypes().size(); si++) {
-    if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
-      unify(args[si].value->type, calleeFn->getArgTypes()[si]);
+    if (startswith(calleeFn->ast->args[si].name, "*") && calleeFn->ast->args[si].type) {
+      // Special case: `*args: type` and `**kwargs: type`
+      seqassert(args[si].value->getCall(), "not a tuple call");
+      auto typ = transform(clone(calleeFn->ast->args[si].type))->type;
+      for (auto &ca : args[si].value->getCall()->args) {
+        if (wrapExpr(ca.value, typ, calleeFn)) {
+          unify(ca.value->type, typ);
+        } else {
+          wrappingDone = false;
+        }
+      }
+      auto name = args[si].value->type->getClass()->name;
+      args[si].value =
+          transform(N<CallExpr>(N<IdExpr>(name), args[si].value->getCall()->args));
+      replacements.push_back(args[si].value->type);
     } else {
-      wrappingDone = false;
+      if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
+        unify(args[si].value->type, calleeFn->getArgTypes()[si]);
+      } else {
+        wrappingDone = false;
+      }
+      replacements.push_back(!calleeFn->getArgTypes()[si]->getClass()
+                                 ? args[si].value->type
+                                 : calleeFn->getArgTypes()[si]);
     }
-    replacements.push_back(!calleeFn->getArgTypes()[si]->getClass()
-                               ? args[si].value->type
-                               : calleeFn->getArgTypes()[si]);
   }
 
   // Realize arguments

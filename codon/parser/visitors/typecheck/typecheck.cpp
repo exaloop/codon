@@ -255,7 +255,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&
              exprClass->name != expectedClass->name && !expr->getEllipsis()) {
-    // Note: do not do this in pipelines (TODO: why?).
+    // Note: do not do this in pipelines (TODO: why?)
     expr = transform(N<CallExpr>(N<DotExpr>(expr, "__iter__")));
   } else if (expectedClass && expectedClass->name == "float" &&
              exprClass->name == "int") {
