@@ -106,6 +106,9 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   std::pair<Status, Status> getVarAssignStatus(const Var *var) {
+    if (!var)
+      return {Status::PURE, Status::PURE};
+
     auto id = var->getId();
     auto it1 = vua.varCounts.find(id);
     auto it2 = vua.varAssignCounts.find(id);
