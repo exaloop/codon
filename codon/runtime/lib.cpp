@@ -24,8 +24,6 @@
 
 using namespace std;
 
-SEQ_FUNC int seq_test_global_var = 42;  // used for testing extern C variables
-
 /*
  * General
  */

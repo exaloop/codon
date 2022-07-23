@@ -105,7 +105,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     return result[v->getId()];
   }
 
-  void handleVarAssign(const Value *v, const Var *var, Status base) {
+  std::pair<Status, Status> getVarAssignStatus(const Var *var) {
     auto id = var->getId();
     auto it1 = vua.varCounts.find(id);
     auto it2 = vua.varAssignCounts.find(id);
@@ -118,10 +118,15 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     auto se2stat = [&](bool b) { return b ? defaultStatus : Status::PURE; };
 
     if (globalAssignmentHasSideEffects || var->isExternal()) {
-      set(v, max(se2stat(used || global), base), se2stat(global));
+      return {se2stat(used || global), se2stat(global)};
     } else {
-      set(v, max(se2stat(used), base), se2stat(used && global));
+      return {se2stat(used), se2stat(used && global)};
     }
+  }
+
+  void handleVarAssign(const Value *v, const Var *var, Status base) {
+    auto pair = getVarAssignStatus(var);
+    set(v, max(pair.first, base), pair.second);
   }
 
   void visit(const Module *v) override {
@@ -199,10 +204,15 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
   void visit(const TryCatchFlow *v) override {
     auto s = max(process(v->getBody()), process(v->getFinally()));
+    auto callStatus = Status::PURE;
+
     for (auto &x : *v) {
-      s = max(s, process(x.getHandler()));
+      auto pair = getVarAssignStatus(x.getVar());
+      s = max(s, pair.first, process(x.getHandler()));
+      callStatus = max(callStatus, pair.second);
     }
-    set(v, s);
+
+    set(v, s, callStatus);
   }
 
   void visit(const PipelineFlow *v) override {
