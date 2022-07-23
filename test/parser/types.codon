@@ -308,6 +308,13 @@ def foo(x:int):
     print x
 z = 1 & foo #! cannot find magic 'and' in int
 
+#%% tuple_type_late,barebones
+coords = []
+for i in range(2):
+    coords.append( ('c', i, []) )
+coords[0][2].append((1, 's'))
+print(coords)  #: [('c', 0, [(1, 's')]), ('c', 1, [])]
+
 #%% void,barebones
 def foo():
     print 'foo'

@@ -186,7 +186,10 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   } else {
     // Instance access: `obj.method`
     // Transform y.method to a partial call `type(obj).method(args, ...)`
-    std::vector<ExprPtr> methodArgs{expr->expr};
+    std::vector<ExprPtr> methodArgs;
+    // Do not add self if a method is marked with @staticmethod
+    if (!bestMethod->ast->attributes.has(Attr::StaticMethod))
+      methodArgs.push_back(expr->expr);
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>());
@@ -301,8 +304,17 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   std::unique_ptr<std::vector<CallExpr::Arg>> methodArgs;
 
   if (args) {
+    // Case: method overloads (DotExpr)
+    bool addSelf = true;
+    if (auto dot = expr->getDot()) {
+      auto methods =
+          ctx->findMethod(dot->expr->type->getClass()->name, dot->member, false);
+      if (!methods.empty() && methods.front()->ast->attributes.has(Attr::StaticMethod))
+        addSelf = false;
+    }
+
     // Case: arguments explicitly provided (by CallExpr)
-    if (expr->getDot() && !expr->getDot()->expr->isType()) {
+    if (addSelf && expr->getDot() && !expr->getDot()->expr->isType()) {
       // Add `self` as the first argument
       args->insert(args->begin(), {"", expr->getDot()->expr});
     }

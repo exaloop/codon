@@ -305,6 +305,7 @@ const std::string Attr::LLVM = "llvm";
 const std::string Attr::Python = "python";
 const std::string Attr::Atomic = "atomic";
 const std::string Attr::Property = "property";
+const std::string Attr::StaticMethod = "staticmethod";
 const std::string Attr::Attribute = "__attribute__";
 const std::string Attr::Internal = "__internal__";
 const std::string Attr::ForceRealize = "__force__";
@@ -410,6 +411,8 @@ void FunctionStmt::parseDecorators() {
       attributes.set(Attr::Atomic);
     } else if (d->isId(Attr::Property)) {
       attributes.set(Attr::Property);
+    } else if (d->isId(Attr::StaticMethod)) {
+      attributes.set(Attr::StaticMethod);
     } else if (d->isId(Attr::ForceRealize)) {
       attributes.set(Attr::ForceRealize);
     } else if (d->isId(Attr::C)) {

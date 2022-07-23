@@ -345,3 +345,16 @@ class Foo:
 Foo.foo(1)
 #! no matching superf methods are available
 #! while realizing Foo.foo:0
+
+#%% staticmethod,barebones
+class Foo:
+    def __repr__(self):
+        return 'Foo'
+    def m(self):
+        print 'm', self
+    @staticmethod
+    def sm(i):
+        print 'sm', i
+Foo.sm(1)  #: sm 1
+Foo().sm(2)  #: sm 2
+Foo().m()  #: m Foo
