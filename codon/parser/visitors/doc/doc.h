@@ -48,9 +48,7 @@ struct DocShared {
 struct DocContext : public Context<int> {
   std::shared_ptr<DocShared> shared;
   explicit DocContext(std::shared_ptr<DocShared> shared)
-      : Context<int>(""), shared(move(shared)) {
-    stack.push_front(std::vector<std::string>());
-  }
+      : Context<int>(""), shared(move(shared)) {}
   std::shared_ptr<int> find(const std::string &s) const override;
 };
 

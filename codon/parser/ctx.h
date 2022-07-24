@@ -33,7 +33,7 @@ protected:
   Map map;
   /// Stack of blocks and their corresponding identifiers. Top of the stack is the
   /// current block.
-  std::deque<std::vector<std::string>> stack;
+  std::deque<std::list<std::string>> stack;
 
 private:
   /// Set of current context flags.
@@ -46,7 +46,7 @@ private:
 public:
   explicit Context(std::string filename) : filename(move(filename)) {
     /// Add a top-level block to the stack.
-    stack.push_front(std::vector<std::string>());
+    stack.push_front(std::list<std::string>());
   }
   virtual ~Context() = default;
 
@@ -74,7 +74,7 @@ public:
     return it != map.end() ? it->second.front() : nullptr;
   }
   /// Add a new block (i.e. adds a stack level).
-  virtual void addBlock() { stack.push_front(std::vector<std::string>()); }
+  virtual void addBlock() { stack.push_front(std::list<std::string>()); }
   /// Remove the top-most block and all variables it holds.
   virtual void popBlock() {
     for (auto &name : stack.front())

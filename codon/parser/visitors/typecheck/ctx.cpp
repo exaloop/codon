@@ -16,7 +16,6 @@ namespace codon::ast {
 TypeContext::TypeContext(Cache *cache)
     : Context<TypecheckItem>(""), cache(cache), typecheckLevel(0), age(0),
       blockLevel(0), returnEarly(false), changedNodes(0) {
-  stack.push_front(std::vector<std::string>());
   realizationBases.push_back({"", nullptr, nullptr});
   pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
 }

@@ -178,6 +178,9 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
               getSrcInfo(), canonicalName);
     // LOG("RENAME {} -> {} [{}] @ {}", (*i)->canonicalName, canonicalName, hasUsed,
     //     (*i)->getSrcInfo());
+    auto it = std::find(stack.front().begin(), stack.front().end(), name);
+    if (it != stack.front().end())
+      stack.front().erase(it);
   }
   it->second.erase(it->second.begin(), lastGood);
   return it->second.front();
@@ -255,15 +258,23 @@ SimplifyContext::Base *SimplifyContext::getClassBase() {
 void SimplifyContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
-  LOG("module: {}", getModule());
-  LOG("base: {}", getBaseName());
-  LOG("scope: {}", fmt::join(scope.blocks, ","));
+  LOG("location: {}", getSrcInfo());
+  LOG("module:   {}", getModule());
+  LOG("base:     {}", getBaseName());
+  LOG("scope:    {}", fmt::join(scope.blocks, ","));
+  for (auto &s: stack.front())
+    LOG("-> {}", s);
   for (auto &i : ordered) {
     std::string s;
-    auto t = i.second.front();
-    LOG("{}{:.<40} {} {:40} {:30} {}", std::string(pad * 2, ' '), i.first,
-        (t->isFunc() ? "F" : (t->isType() ? "T" : (t->isImport() ? "I" : "V"))),
-        t->canonicalName, t->getBaseName(), combine2(t->scope, ","));
+    // auto t = i.second.front();
+    bool f = true;
+    for (auto &t : i.second) {
+      LOG("{}{} {} {:40} {:30} {}", std::string(pad * 2, ' '),
+          !f ? std::string(40, ' ') : format("{:.<40}", i.first),
+          (t->isFunc() ? "F" : (t->isType() ? "T" : (t->isImport() ? "I" : "V"))),
+          t->canonicalName, t->getBaseName(), combine2(t->scope, ","));
+      f = false;
+    }
   }
 }
 

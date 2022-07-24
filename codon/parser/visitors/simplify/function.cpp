@@ -223,7 +223,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   StmtPtr suite = nullptr;
   std::unordered_map<std::string, std::string> captures;
   if (!stmt->attributes.has(Attr::Internal) && !stmt->attributes.has(Attr::C)) {
-    ctx->addBlock();
     if (stmt->attributes.has(Attr::LLVM)) {
       suite = transformLLVMDefinition(stmt->suite->firstInBlock());
     } else if (stmt->attributes.has(Attr::C)) {
@@ -233,7 +232,6 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
         ctx->getBase()->captures = &captures;
       suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
     }
-    ctx->popBlock();
   }
 
   ctx->bases.pop_back();

@@ -1069,3 +1069,14 @@ print Fot.f  #: heh-tup
 class Foo:
     x: int = 1
 Foo.x #! cannot find 'x' in Foo
+
+#%% scoping_same_name,barebones
+def match(pattern: str, string: str, flags: int = 0):
+    pass
+
+def match(match):
+    if True:
+        match = 0
+    match
+
+match(1)
