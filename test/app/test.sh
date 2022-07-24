@@ -5,7 +5,7 @@ export testdir=$(dirname $0)
 export codon="$arg/codon"
 
 # argv test
-[ "$($codon run "$dir/argv.codon" aa bb cc)" == "aa,bb,cc" ] || exit 1
+[ "$($codon run "$testdir/argv.codon" aa bb cc)" == "aa,bb,cc" ] || exit 1
 
 # build test
 $codon build -release -o "$arg/test_binary" "$testdir/build.codon"
