@@ -178,7 +178,6 @@ jobs:
 
       - name: Test
         run: |
-          echo $CODON_PYTHON
           ln -s build/libcodonrt.${LIBEXT} .
           build/codon_test
           test/app/test.sh build
