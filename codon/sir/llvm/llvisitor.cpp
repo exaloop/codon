@@ -449,11 +449,6 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   std::vector<std::string> command = {"gcc"};
   // Avoid "argument unused during compilation" warning
   command.push_back("-Wno-unused-command-line-argument");
-  if (!library) {
-    // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
-    // object" complaints by gcc when it is built with --enable-default-pie
-    command.push_back("-no-pie");
-  }
   // MUST go before -llib to compile on Linux
   command.push_back(objFile);
 
@@ -483,6 +478,10 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     if (!uflag.empty())
       command.push_back(uflag.str());
   }
+
+  // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
+  // object" complaints by gcc when it is built with --enable-default-pie
+  command.push_back("-no-pie");
 
   executeCommand(command);
 
