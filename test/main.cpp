@@ -26,8 +26,6 @@
 
 #include "gtest/gtest.h"
 
-extern "C" long codon_test_global_var = 42;
-
 using namespace codon;
 using namespace std;
 

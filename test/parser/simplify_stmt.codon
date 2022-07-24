@@ -378,8 +378,9 @@ def log(x: float) -> float:
     pass
 print log(5.5)  #: 1.70475
 
-from C import codon_test_global_var: int as e
-print e  #: 42
+from C import seq_flags: Int[32] as e
+# debug | standalone == 5
+print e  #: 5
 
 
 #%% import_c_dylib,barebones

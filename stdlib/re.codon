@@ -72,7 +72,7 @@ def seq_re_escape(pattern: str) -> str:
     pass
 
 @C
-def seq_re_purge() -> void:
+def seq_re_purge() -> None:
     pass
 
 @C
