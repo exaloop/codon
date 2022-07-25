@@ -303,7 +303,8 @@ public:
   void dump(const std::string &filename = "_dump.ll");
   /// Writes module as native object file.
   /// @param filename the .o file to write to
-  void writeToObjectFile(const std::string &filename);
+  /// @param pic true to write position-independent code
+  void writeToObjectFile(const std::string &filename, bool pic = false);
   /// Writes module as LLVM bitcode file.
   /// @param filename the .bc file to write to
   void writeToBitcodeFile(const std::string &filename);

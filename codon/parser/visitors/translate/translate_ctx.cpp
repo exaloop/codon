@@ -11,8 +11,7 @@
 namespace codon::ast {
 
 TranslateContext::TranslateContext(Cache *cache)
-    : Context<TranslateItem>(""), cache(cache) {
-}
+    : Context<TranslateItem>(""), cache(cache) {}
 
 std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) const {
   if (auto t = Context<TranslateItem>::find(name))

@@ -11,7 +11,8 @@ namespace ir {
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
-                 llvm::StringRef featuresStr, const llvm::TargetOptions &options) {
+                 llvm::StringRef featuresStr, const llvm::TargetOptions &options,
+                 bool pic) {
   std::string err;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), triple, err);
@@ -21,12 +22,12 @@ getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
 
   return std::unique_ptr<llvm::TargetMachine>(target->createTargetMachine(
       triple.getTriple(), cpuStr, featuresStr, options,
-      llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
-      llvm::CodeGenOpt::Aggressive));
+      pic ? llvm::Reloc::Model::PIC_ : llvm::codegen::getExplicitRelocModel(),
+      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOpt::Aggressive));
 }
 
-std::unique_ptr<llvm::TargetMachine> getTargetMachine(llvm::Module *module,
-                                                      bool setFunctionAttributes) {
+std::unique_ptr<llvm::TargetMachine>
+getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
   llvm::Triple moduleTriple(module->getTargetTriple());
   std::string cpuStr, featuresStr;
   const llvm::TargetOptions options =

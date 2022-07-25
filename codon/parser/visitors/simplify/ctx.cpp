@@ -262,7 +262,7 @@ void SimplifyContext::dump(int pad) {
   LOG("module:   {}", getModule());
   LOG("base:     {}", getBaseName());
   LOG("scope:    {}", fmt::join(scope.blocks, ","));
-  for (auto &s: stack.front())
+  for (auto &s : stack.front())
     LOG("-> {}", s);
   for (auto &i : ordered) {
     std::string s;

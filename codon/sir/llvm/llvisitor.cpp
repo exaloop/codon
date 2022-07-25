@@ -317,7 +317,7 @@ void LLVMVisitor::runLLVMPipeline() {
   optimize(M.get(), db.debug, db.jit, plugins);
 }
 
-void LLVMVisitor::writeToObjectFile(const std::string &filename) {
+void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
   runLLVMPipeline();
 
   std::error_code err;
@@ -327,7 +327,7 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename) {
     compilationError(err.message());
   llvm::raw_pwrite_stream *os = &out->os();
 
-  auto machine = getTargetMachine(M.get());
+  auto machine = getTargetMachine(M.get(), /*setFunctionAttributes=*/false, pic);
   auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
   auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
   llvm::legacy::PassManager pm;
@@ -426,7 +426,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     setupGlobalCtorForSharedLibrary();
 
   const std::string objFile = filename + ".o";
-  writeToObjectFile(objFile);
+  writeToObjectFile(objFile, /*pic=*/library);
 
   const std::string base = ast::executable_path(argv0.c_str());
   auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
