@@ -481,7 +481,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
   // object" complaints by gcc when it is built with --enable-default-pie
-  command.push_back("-no-pie");
+  if (!library)
+    command.push_back("-no-pie");
 
   executeCommand(command);
 
