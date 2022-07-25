@@ -12,7 +12,7 @@ $codon build -release -o "$arg/test_binary" "$testdir/build.codon"
 [ "$($arg/test_binary)" == "hello" ] || exit 2
 
 # library test
-$codon build -release -o "$arg/libcodon_export_test.so" "$testdir/export.codon"
+$codon build -relocation-model=pic -o "$arg/libcodon_export_test.so" "$testdir/export.codon"
 gcc "$testdir/test.c" -L"$arg" -lcodon_export_test -o "$arg/test_binary"
 [ "$($arg/test_binary)" == "abcabcabc" ] || exit 3
 
