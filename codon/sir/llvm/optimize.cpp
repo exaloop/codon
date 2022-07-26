@@ -250,7 +250,7 @@ struct AllocationRemover : public llvm::FunctionPass {
           continue;
         }
         }
-        seqassert(false, "missing a return?");
+        seqassertn(false, "missing a return?");
       }
     } while (!worklist.empty());
     return true;
@@ -366,7 +366,7 @@ struct AllocationRemover : public llvm::FunctionPass {
           continue;
         }
         }
-        seqassert(false, "missing a return?");
+        seqassertn(false, "missing a return?");
       }
     } while (!worklist.empty());
     return true;
@@ -611,8 +611,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   if (!debug) {
     pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
                      addCoroutineBranchSimplifier);
-    pmb.addExtension(llvm::PassManagerBuilder::EP_Peephole,
-                     addAllocationRemover);
+    pmb.addExtension(llvm::PassManagerBuilder::EP_Peephole, addAllocationRemover);
   }
 
   if (plugins) {
