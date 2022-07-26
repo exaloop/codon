@@ -13,18 +13,9 @@ from math import (
 )
 
 
-class StatisticsError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("StatisticsError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("StatisticsError", message, "", "", 0, 0)
-
-    @property
-    def message(self):
-        return self._hdr.msg
+class StatisticsError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("StatisticsError", message)
 
 
 def median(data: List[T], T: type) -> float:

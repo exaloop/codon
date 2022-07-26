@@ -227,12 +227,14 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
-    def set_header(e, fn, file, line, col):
-        if not hasattr(e, "_hdr"):
-            compile_error("exception does not have _hdr: ExcHeader")
-        if not isinstance(e._hdr, ExcHeader):
-            compile_error("exception does not have _hdr: ExcHeader")
-        e._hdr = ExcHeader(e._hdr.typename, e._hdr.msg, fn, file, line, col)
+    def set_header(e, func, file, line, col):
+        if not isinstance(e, BaseException):
+            compile_error("exceptions must derive from BaseException")
+
+        e.func = func
+        e.file = file
+        e.line = line
+        e.col = col
         return e
 
     # TODO: keep this commented until static for lands

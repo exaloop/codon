@@ -65,18 +65,9 @@ Adapted from https://raw.githubusercontent.com/python/cpython/2.7/Lib/getopt.py
 import os
 
 
-class GetoptError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("GetoptError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("GetoptError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class GetoptError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("GetoptError", message)
 
 
 def long_has_args(opt: str, longopts: List[str]) -> Tuple[bool, str]:
