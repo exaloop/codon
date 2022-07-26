@@ -1,7 +1,6 @@
 #include "format.h"
 
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 using fmt::format;
@@ -114,11 +113,6 @@ void FormatVisitor::visit(InstantiateExpr *expr) {
                       transform(expr->typeParams));
 }
 
-void FormatVisitor::visit(StackAllocExpr *expr) {
-  result = renderExpr(expr, "__array__[{}]({})", transform(expr->typeExpr),
-                      transform(expr->expr));
-}
-
 void FormatVisitor::visit(SetExpr *expr) {
   result = renderExpr(expr, "{{{}}}", transform(expr->items));
 }
@@ -218,10 +212,6 @@ void FormatVisitor::visit(SliceExpr *expr) {
 
 void FormatVisitor::visit(EllipsisExpr *expr) { result = renderExpr(expr, "..."); }
 
-void FormatVisitor::visit(PtrExpr *expr) {
-  result = renderExpr(expr, "__ptr__({})", transform(expr->expr));
-}
-
 void FormatVisitor::visit(LambdaExpr *expr) {
   result = renderExpr(expr, "{} {}: {}", keyword("lambda"), join(expr->vars, ", "),
                       transform(expr->expr));
@@ -244,9 +234,6 @@ void FormatVisitor::visit(AssignExpr *expr) {
 void FormatVisitor::visit(SuiteStmt *stmt) {
   for (int i = 0; i < stmt->stmts.size(); i++)
     result += transform(stmt->stmts[i]);
-  if (stmt->ownBlock)
-    result = fmt::format("{}# block_begin{}{}{}# block_end", pad(), newline(), result,
-                         pad());
 }
 
 void FormatVisitor::visit(BreakStmt *stmt) { result = keyword("break"); }
@@ -267,10 +254,6 @@ void FormatVisitor::visit(AssignStmt *stmt) {
 void FormatVisitor::visit(AssignMemberStmt *stmt) {
   result = fmt::format("{}.{} = {}", transform(stmt->lhs), stmt->member,
                        transform(stmt->rhs));
-}
-
-void FormatVisitor::visit(UpdateStmt *stmt) {
-  result = fmt::format("{} = {}  # update", transform(stmt->lhs), transform(stmt->rhs));
 }
 
 void FormatVisitor::visit(DelStmt *stmt) {
@@ -393,7 +376,7 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
   for (auto &a : fstmt->args)
     args.push_back(fmt::format(
         "{}{}{}", a.name, a.type ? fmt::format(": {}", transform(a.type)) : "",
-        a.deflt ? fmt::format(" = {}", transform(a.deflt)) : ""));
+        a.defaultValue ? fmt::format(" = {}", transform(a.defaultValue)) : ""));
   auto body = transform(fstmt->suite.get(), 1);
   auto name = fmt::format("{}{}{}", typeStart, fstmt->name, typeEnd);
   name = fmt::format("{}{}{}", exprStart, name, exprEnd);

@@ -9,8 +9,7 @@
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   using Stmt::toString;                                                                \
@@ -30,7 +29,7 @@ struct FunctionStmt;
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
 struct Stmt : public codon::SrcObject {
-  typedef Stmt base_type;
+  using base_type = Stmt;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).
@@ -46,6 +45,8 @@ public:
   /// Convert a node to an S-expression.
   std::string toString() const;
   virtual std::string toString(int indent) const = 0;
+  /// Validate a node. Throw ParseASTException if a node is not valid.
+  void validate() const;
   /// Deep copy a node.
   virtual std::shared_ptr<Stmt> clone() const = 0;
   /// Accept an AST visitor.
@@ -57,15 +58,18 @@ public:
   }
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual const AssignStmt *getAssign() const { return nullptr; }
-  virtual const ClassStmt *getClass() const { return nullptr; }
-  virtual const ExprStmt *getExpr() const { return nullptr; }
-  virtual const SuiteStmt *getSuite() const { return nullptr; }
-  virtual const FunctionStmt *getFunction() const { return nullptr; }
+  virtual AssignStmt *getAssign() { return nullptr; }
+  virtual ClassStmt *getClass() { return nullptr; }
+  virtual ExprStmt *getExpr() { return nullptr; }
+  virtual SuiteStmt *getSuite() { return nullptr; }
+  virtual FunctionStmt *getFunction() { return nullptr; }
 
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
-  virtual const Stmt *firstInBlock() const { return this; }
+  virtual Stmt *firstInBlock() { return this; }
+
+  bool isDone() const { return done; }
+  void setDone() { done = true; }
 };
 using StmtPtr = std::shared_ptr<Stmt>;
 
@@ -75,28 +79,26 @@ struct SuiteStmt : public Stmt {
   using Stmt::Stmt;
 
   std::vector<StmtPtr> stmts;
-  /// True if a suite defines new variable-scoping block.
-  bool ownBlock;
 
   /// These constructors flattens the provided statement vector (see flatten() below).
-  explicit SuiteStmt(std::vector<StmtPtr> stmts = {}, bool ownBlock = false);
+  explicit SuiteStmt(std::vector<StmtPtr> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
-  SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}), ownBlock(false) {}
+  SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
   SuiteStmt(const SuiteStmt &stmt);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const SuiteStmt *getSuite() const override { return this; }
-  const Stmt *firstInBlock() const override {
+  SuiteStmt *getSuite() override { return this; }
+  Stmt *firstInBlock() override {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
   StmtPtr *lastInBlock();
 
   /// Flatten all nested SuiteStmt objects that do not own a block in the statement
   /// vector. This is shallow flattening.
-  static void flatten(StmtPtr s, std::vector<StmtPtr> &stmts);
+  static void flatten(const StmtPtr &s, std::vector<StmtPtr> &stmts);
 };
 
 /// Break statement.
@@ -130,7 +132,7 @@ struct ExprStmt : public Stmt {
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const ExprStmt *getExpr() const override { return this; }
+  ExprStmt *getExpr() override { return this; }
 };
 
 /// Assignment statement (lhs: type = rhs).
@@ -139,17 +141,22 @@ struct ExprStmt : public Stmt {
 /// @li a, b, c = 5, *z
 struct AssignStmt : public Stmt {
   ExprPtr lhs, rhs, type;
-  /// True if assignment always shadows existing variables. For internal use (e.g.
-  /// ForStmt).
-  bool shadow;
 
-  AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr, bool shadow = false);
+  AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr);
   AssignStmt(const AssignStmt &stmt);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
 
-  const AssignStmt *getAssign() const override { return this; }
+  AssignStmt *getAssign() override { return this; }
+
+  bool isUpdate() const { return update != Assign; }
+  bool isAtomicUpdate() const { return update == UpdateAtomic; }
+  void setUpdate() { update = Update; }
+  void setAtomicUpdate() { update = UpdateAtomic; }
+
+private:
+  enum { Assign, Update, UpdateAtomic } update;
 };
 
 /// Deletion statement (del expr).
@@ -319,17 +326,21 @@ struct ImportStmt : public Stmt {
   ExprPtr from, what;
   std::string as;
   /// Number of dots in a relative import (e.g. dots is 3 for "from ...foo").
-  int dots;
+  size_t dots;
   /// Function argument types for C imports.
   std::vector<Param> args;
   /// Function return type for C imports.
   ExprPtr ret;
+  /// Set if this is a function C import (not variable import)
+  bool isFunction;
 
   ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args = {},
-             ExprPtr ret = nullptr, std::string as = "", int dots = 0);
+             ExprPtr ret = nullptr, std::string as = "", size_t dots = 0,
+             bool isFunction = true);
   ImportStmt(const ImportStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 };
 
@@ -381,8 +392,9 @@ struct ThrowStmt : public Stmt {
 /// @li: global a
 struct GlobalStmt : public Stmt {
   std::string var;
+  bool nonLocal;
 
-  explicit GlobalStmt(std::string var);
+  explicit GlobalStmt(std::string var, bool nonLocal = false);
   GlobalStmt(const GlobalStmt &stmt) = default;
 
   std::string toString(int indent) const override;
@@ -395,15 +407,18 @@ struct Attr {
   const static std::string Python;
   const static std::string Atomic;
   const static std::string Property;
+  const static std::string StaticMethod;
+  const static std::string Attribute;
+  const static std::string C;
   // Internal attributes
   const static std::string Internal;
   const static std::string ForceRealize;
-  const static std::string RealizeWithoutSelf;
+  const static std::string RealizeWithoutSelf; // not internal
   // Compiler-generated attributes
-  const static std::string C;
   const static std::string CVarArg;
   const static std::string Method;
   const static std::string Capture;
+  const static std::string HasSelf;
   // Class attributes
   const static std::string Extend;
   const static std::string Tuple;
@@ -417,10 +432,13 @@ struct Attr {
   std::string parentClass;
   // True if a function is decorated with __attribute__
   bool isAttribute;
+
+  std::set<std::string> magics;
+
   // Set of attributes
   std::set<std::string> customAttr;
 
-  Attr(const std::vector<std::string> &attrs = std::vector<std::string>());
+  explicit Attr(const std::vector<std::string> &attrs = std::vector<std::string>());
   void set(const std::string &attr);
   void unset(const std::string &attr);
   bool has(const std::string &attr) const;
@@ -443,6 +461,7 @@ struct FunctionStmt : public Stmt {
   FunctionStmt(const FunctionStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 
   /// @return a function signature that consists of generics and arguments in a
@@ -450,8 +469,9 @@ struct FunctionStmt : public Stmt {
   /// @li (T U (int 0))
   std::string signature() const;
   bool hasAttr(const std::string &attr) const;
+  void parseDecorators();
 
-  const FunctionStmt *getFunction() const override { return this; }
+  FunctionStmt *getFunction() override { return this; }
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
@@ -468,18 +488,23 @@ struct ClassStmt : public Stmt {
   std::vector<ExprPtr> baseClasses;
 
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-            Attr attributes = Attr(), std::vector<ExprPtr> decorators = {},
+            std::vector<ExprPtr> decorators = {},
             std::vector<ExprPtr> baseClasses = {});
+  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
   ClassStmt(const ClassStmt &stmt);
 
   std::string toString(int indent) const override;
+  void validate() const;
   ACCEPT(ASTVisitor);
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
   bool hasAttr(const std::string &attr) const;
 
-  const ClassStmt *getClass() const override { return this; }
+  ClassStmt *getClass() override { return this; }
+
+  void parseDecorators();
+  static bool isClassVar(const Param &p);
 };
 
 /// Yield-from statement (yield from expr).
@@ -540,16 +565,13 @@ struct AssignMemberStmt : public Stmt {
   ACCEPT(ASTVisitor);
 };
 
-/// Update assignment statement (lhs = rhs).
-/// Only valid if lhs exists.
-/// @li: lhs = rhs
-struct UpdateStmt : public Stmt {
-  ExprPtr lhs, rhs;
-  /// True if this is an atomic update.
-  bool isAtomic;
+/// Comment statement (# comment).
+/// Currently used only for pretty-printing.
+struct CommentStmt : public Stmt {
+  std::string comment;
 
-  UpdateStmt(ExprPtr lhs, ExprPtr rhs, bool isAtomic = false);
-  UpdateStmt(const UpdateStmt &stmt);
+  explicit CommentStmt(std::string comment);
+  CommentStmt(const CommentStmt &stmt) = default;
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -557,5 +579,4 @@ struct UpdateStmt : public Stmt {
 
 #undef ACCEPT
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

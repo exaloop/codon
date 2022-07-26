@@ -319,9 +319,9 @@ class float:
 
     @nocapture
     @llvm
-    def __atomic_xchg__(d: Ptr[float], b: float) -> void:
+    def __atomic_xchg__(d: Ptr[float], b: float) -> None:
         %tmp = atomicrmw xchg double* %d, double %b seq_cst
-        ret void
+        ret {} {}
 
     @nocapture
     @llvm

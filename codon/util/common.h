@@ -6,6 +6,7 @@
 #include <ostream>
 
 #include "codon/config/config.h"
+#include "codon/parser/ast/error.h"
 #include "codon/util/fmt/format.h"
 #include "codon/util/fmt/ostream.h"
 
@@ -45,11 +46,17 @@
 #define TIME(name) codon::Timer __timer(name)
 
 #ifndef NDEBUG
-#define seqassert(expr, msg, ...)                                                      \
+#define seqassertn(expr, msg, ...)                                                     \
   ((expr) ? (void)(0)                                                                  \
           : codon::assertionFailure(#expr, __FILE__, __LINE__,                         \
                                     fmt::format(msg, ##__VA_ARGS__)))
+#define seqassert(expr, msg, ...)                                                      \
+  ((expr) ? (void)(0)                                                                  \
+          : codon::assertionFailure(                                                   \
+                #expr, __FILE__, __LINE__,                                             \
+                fmt::format(msg " [{}]", ##__VA_ARGS__, getSrcInfo())))
 #else
+#define seqassertn(expr, msg, ...) ;
 #define seqassert(expr, msg, ...) ;
 #endif
 #pragma clang diagnostic pop
@@ -86,18 +93,21 @@ private:
   using clock_type = std::chrono::high_resolution_clock;
   std::string name;
   std::chrono::time_point<clock_type> start, end;
+
+public:
   bool logged;
 
 public:
   void log() {
     if (!logged) {
-      end = clock_type::now();
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() /
-          1000.0;
-      LOG_TIME("[T] {} = {:.3f}", name, elapsed);
+      LOG_TIME("[T] {} = {:.3f}", name, elapsed());
       logged = true;
     }
+  }
+
+  double elapsed(std::chrono::time_point<clock_type> end = clock_type::now()) const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() /
+           1000.0;
   }
 
   Timer(std::string name) : name(std::move(name)), start(), end(), logged(false) {
@@ -107,29 +117,7 @@ public:
   ~Timer() { log(); }
 };
 
-struct SrcInfo {
-  std::string file;
-  int line;
-  int col;
-  int len;
-  int id; /// used to differentiate different instances
-
-  SrcInfo(std::string file, int line, int col, int len)
-      : file(std::move(file)), line(line), col(col), len(len), id(0) {
-    static int nextId = 0;
-    id = nextId++;
-  };
-
-  SrcInfo() : SrcInfo("", 0, 0, 0) {}
-
-  friend std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
-    out << llvm::sys::path::filename(src.file).str() << ":" << src.line << ":"
-        << src.col;
-    return out;
-  }
-
-  bool operator==(const SrcInfo &src) const { return id == src.id; }
-};
+std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src);
 
 struct SrcObject {
 private:

@@ -7,11 +7,6 @@
 
 using namespace codon::ir;
 
-TEST_F(SIRCoreTest, FlowTypeIsVoid) {
-  auto *f = module->Nr<SeriesFlow>();
-  ASSERT_EQ(module->getVoidType(), f->getType());
-}
-
 TEST_F(SIRCoreTest, SeriesFlowInsertionEraseAndIterators) {
   auto FIRST_VALUE = 2;
   auto SECOND_VALUE = 1;

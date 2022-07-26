@@ -7,8 +7,7 @@
 
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 struct Expr;
 struct StaticValue;
@@ -114,12 +113,12 @@ public:
   virtual bool is(const std::string &s);
   char isStaticType();
 };
-typedef std::shared_ptr<Type> TypePtr;
+using TypePtr = std::shared_ptr<Type>;
 
 struct Trait : public Type {
   bool canRealize() const override;
   bool isInstantiated() const override;
-  virtual std::string debugString(bool debug) const override;
+  std::string debugString(bool debug) const override;
   std::string realizedName() const override;
 };
 
@@ -231,8 +230,11 @@ struct ClassType : public Type {
   /// List of generics, if present.
   std::vector<Generic> generics;
 
+  std::vector<Generic> hiddenGenerics;
+
   explicit ClassType(std::string name, std::string niceName,
-                     std::vector<Generic> generics = std::vector<Generic>());
+                     std::vector<Generic> generics = {},
+                     std::vector<Generic> hiddenGenerics = {});
   explicit ClassType(const std::shared_ptr<ClassType> &base);
 
 public:
@@ -254,7 +256,7 @@ public:
     return std::static_pointer_cast<ClassType>(shared_from_this());
   }
 };
-typedef std::shared_ptr<ClassType> ClassTypePtr;
+using ClassTypePtr = std::shared_ptr<ClassType>;
 
 /**
  * A generic class tuple (record) type. All Seq tuples inherit from this class.
@@ -323,8 +325,13 @@ public:
   std::shared_ptr<FuncType> getFunc() override {
     return std::static_pointer_cast<FuncType>(shared_from_this());
   }
+
+  std::vector<TypePtr> &getArgTypes() const {
+    return generics[0].type->getRecord()->args;
+  }
+  TypePtr getRetType() const { return generics[1].type; }
 };
-typedef std::shared_ptr<FuncType> FuncTypePtr;
+using FuncTypePtr = std::shared_ptr<FuncType>;
 
 /**
  * A generic type that represents a partial Seq function instantiation.
@@ -357,7 +364,7 @@ public:
     return std::static_pointer_cast<PartialType>(shared_from_this());
   }
 };
-typedef std::shared_ptr<FuncType> FuncTypePtr;
+using PartialTypePtr = std::shared_ptr<PartialType>;
 
 /**
  * A static integer type (e.g. N in def foo[N: int]). Usually an integer, but can point
@@ -373,10 +380,11 @@ struct StaticType : public Type {
   /// Type context needed for evaluation
   std::shared_ptr<TypeContext> typeCtx;
 
-  StaticType(std::vector<ClassType::Generic> generics, std::shared_ptr<Expr> expr,
+  StaticType(std::vector<ClassType::Generic> generics,
+             const std::shared_ptr<Expr> &expr,
              std::shared_ptr<TypeContext> typeCtx = nullptr);
   /// Convenience function that parses expr and populates static type generics.
-  StaticType(std::shared_ptr<Expr> expr, std::shared_ptr<TypeContext> ctx);
+  StaticType(const std::shared_ptr<Expr> &expr, std::shared_ptr<TypeContext> ctx);
   /// Convenience function for static types whose evaluation is already known.
   explicit StaticType(int64_t i);
 
@@ -403,7 +411,7 @@ private:
 };
 
 struct CallableTrait : public Trait {
-  std::vector<TypePtr> args;
+  std::vector<TypePtr> args; // tuple with arg types, ret type
 
 public:
   explicit CallableTrait(std::vector<TypePtr> args);
@@ -415,5 +423,4 @@ public:
 };
 
 } // namespace types
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

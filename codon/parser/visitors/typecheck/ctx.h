@@ -5,32 +5,33 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
- * Type-checking context object description.
- * This represents an identifier that can be either a function, a class (type), or a
- * variable.
+ * Typecheck context identifier.
+ * Can be either a function, a class (type), or a variable.
  */
 struct TypecheckItem {
+  /// Identifier kind
   enum Kind { Func, Type, Var } kind;
-  /// Item's type.
+  /// Type
   types::TypePtr type;
 
   TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(move(type)) {}
+
+  /* Convenience getters */
   bool isType() const { return kind == Type; }
+  bool isVar() const { return kind == Var; }
 };
 
-/**
- * A variable table (context) for type-checking stage.
- */
+/** Context class that tracks identifiers during the typechecking. **/
 struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
@@ -44,23 +45,15 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Function type
     types::TypePtr type;
     /// The return type of currently realized function
-    types::TypePtr returnType;
-    /// Map of locally realized types and functions.
-    std::unordered_map<std::string, std::pair<TypecheckItem::Kind, types::TypePtr>>
-        visitedAsts;
-    /// List of functions that can be accessed via super()
-    std::vector<types::FuncTypePtr> supers;
+    types::TypePtr returnType = nullptr;
   };
-  std::vector<RealizationBase> bases;
+  std::vector<RealizationBase> realizationBases;
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel;
-  /// Map of active unbound types. Each type points to its name that is reported in case
-  /// something goes wrong.
-  /// If type checking is successful, all of them should be  resolved.
-  std::map<types::TypePtr, std::string> activeUnbounds;
-  /// If set, no type will be activated. Useful for temporary instantiations.
-  bool allowActivation;
+  std::set<types::TypePtr> pendingDefaults;
+  int changedNodes;
+
   /// The age of the currently parsed statement.
   int age;
   /// Number of nested realizations. Used to prevent infinite instantiations.
@@ -80,46 +73,55 @@ public:
   using Context<TypecheckItem>::add;
   /// Convenience method for adding an object to the context.
   std::shared_ptr<TypecheckItem> add(TypecheckItem::Kind kind, const std::string &name,
-                                     types::TypePtr type = nullptr);
+                                     const types::TypePtr &type = nullptr);
+  std::shared_ptr<TypecheckItem>
+  addToplevel(const std::string &name, const std::shared_ptr<TypecheckItem> &item) {
+    map[name].push_front(item);
+    return item;
+  }
   std::shared_ptr<TypecheckItem> find(const std::string &name) const override;
   /// Find an internal type. Assumes that it exists.
-  types::TypePtr findInternal(const std::string &name) const;
-  /// Find a type or a function instantiation in the base stack.
-  std::pair<TypecheckItem::Kind, types::TypePtr>
-  findInVisited(const std::string &name) const;
+  std::shared_ptr<TypecheckItem> forceFind(const std::string &name) const;
+  types::TypePtr getType(const std::string &name) const;
 
   /// Pretty-print the current context state.
   void dump() override { dump(0); }
 
 public:
-  /// Find a base with a given name.
-  int findBase(const std::string &b);
-  /// Return the name of the current realization stack (e.g. fn1:fn2:...).
-  std::string getBase() const;
-  /// Return the current base nesting level (note: bases, not blocks).
-  int getLevel() const { return bases.size(); }
+  /// Get the current realization depth (i.e., the number of nested realizations).
+  size_t getRealizationDepth() const;
+  /// Get the current base.
+  RealizationBase *getRealizationBase();
+  /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
+  std::string getRealizationStackName() const;
 
 public:
-  /// Create an unbound type.
-  /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  /// @param level Type-checking level.
-  /// @param setActive If True, add it to activeUnbounds.
-  /// @param isStatic True if this is a static integer unbound.
-  std::shared_ptr<types::LinkType>
-  addUnbound(const Expr *expr, int level, bool setActive = true, char staticType = 0);
+  /// Create an unbound type with the provided typechecking level.
+  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info, int level) const;
+  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info) const;
+  std::shared_ptr<types::LinkType> getUnbound() const;
+
   /// Call `type->instantiate`.
   /// Prepare the generic instantiation table with the given generics parameter.
   /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
   ///          T=int.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
   /// @param setActive If True, add unbounds to activeUnbounds.
-  types::TypePtr instantiate(const Expr *expr, types::TypePtr type,
-                             types::ClassType *generics = nullptr,
-                             bool setActive = true);
+  types::TypePtr instantiate(const SrcInfo &info, const types::TypePtr &type,
+                             const types::ClassTypePtr &generics = nullptr);
+  types::TypePtr instantiate(types::TypePtr type,
+                             const types::ClassTypePtr &generics = nullptr) {
+    return instantiate(getSrcInfo(), std::move(type), generics);
+  }
+
   /// Instantiate the generic type root with the provided generics.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  types::TypePtr instantiateGeneric(const Expr *expr, types::TypePtr root,
+  types::TypePtr instantiateGeneric(const SrcInfo &info, const types::TypePtr &root,
                                     const std::vector<types::TypePtr> &generics);
+  types::TypePtr instantiateGeneric(types::TypePtr root,
+                                    const std::vector<types::TypePtr> &generics) {
+    return instantiateGeneric(getSrcInfo(), std::move(root), generics);
+  }
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
@@ -130,9 +132,9 @@ public:
   types::TypePtr findMember(const std::string &typeName,
                             const std::string &member) const;
 
-  typedef std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>
-      ReorderDoneFn;
-  typedef std::function<int(std::string)> ReorderErrorFn;
+  using ReorderDoneFn =
+      std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
+  using ReorderErrorFn = std::function<int(std::string)>;
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
   /// Returns the reordered vector and an associated reordering score (missing
@@ -141,7 +143,7 @@ public:
   /// @param known Bitmask that indicated if an argument is already provided
   ///              (partial function) or not.
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
-                       ReorderDoneFn onDone, ReorderErrorFn onError,
+                       const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
                        const std::vector<char> &known = std::vector<char>());
 
 private:
@@ -149,5 +151,4 @@ private:
   void dump(int pad);
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

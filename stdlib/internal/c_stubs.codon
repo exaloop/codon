@@ -94,7 +94,7 @@ def seq_lock_acquire(a: cobj, b: bool, c: float) -> bool:
 
 @nocapture
 @C
-def seq_lock_release(a: cobj) -> void:
+def seq_lock_release(a: cobj) -> None:
     pass
 
 
@@ -112,7 +112,7 @@ def seq_rlock_acquire(a: cobj, b: bool, c: float) -> bool:
 
 @nocapture
 @C
-def seq_rlock_release(a: cobj) -> void:
+def seq_rlock_release(a: cobj) -> None:
     pass
 
 
@@ -427,6 +427,12 @@ def fopen(a: cobj, b: cobj) -> cobj:
 
 @nocapture
 @C
+def fdopen(a: int, b: cobj) -> cobj:
+    pass
+
+
+@nocapture
+@C
 def fclose(a: cobj) -> int:
     pass
 
@@ -463,13 +469,14 @@ def fgets(a: cobj, b: int, c: cobj) -> cobj:
 
 @nocapture
 @C
-def fflush(a: cobj) -> void:
+def fflush(a: cobj) -> None:
     pass
 
 
 @nocapture
 @C
-def getline(a: Ptr[cobj], b: Ptr[int], c: cobj) -> int: pass
+def getline(a: Ptr[cobj], b: Ptr[int], c: cobj) -> int:
+    pass
 
 
 # <stdlib.h>
@@ -484,7 +491,7 @@ def system(a: cobj) -> int:
 
 @nocapture
 @C
-def free(a: cobj) -> void:
+def free(a: cobj) -> None:
     pass
 
 

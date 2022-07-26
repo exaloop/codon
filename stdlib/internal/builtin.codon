@@ -25,7 +25,7 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
     Print args to the text stream file.
     """
     fp = cobj()
-    if isinstance(file, Ptr[byte]):
+    if isinstance(file, cobj):
         fp = file
     else:
         fp = file.fp
@@ -375,6 +375,8 @@ class int:
 
 
 def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
+    if isinstance(x, None):
+        return
     if hasattr(x, "_repr_mimebundle_") and s == "jupyter":
         d = x._repr_mimebundle_(bundle)
         # TODO: pick appropriate mime

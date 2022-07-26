@@ -30,6 +30,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "codon/parser/ast/error.h"
 
 #if !defined(__cplusplus) || __cplusplus < 201703L
 #error "Requires complete C++17 support"
@@ -619,17 +620,6 @@ private:
 /*
  * Semantic predicate
  */
-// Note: 'parse_error' exception class should be be used in sematic action
-// handlers to reject the rule.
-struct parse_error {
-  parse_error() = default;
-  parse_error(const char *s) : s_(s) {}
-  const char *what() const { return s_.empty() ? nullptr : s_.data(); }
-
-private:
-  std::string s_;
-};
-
 /*
  * Parse result helper
  */
@@ -2614,9 +2604,9 @@ inline size_t Holder::parse_core(const char *s, size_t n, SemanticValues &vs,
 
       try {
         a_val = reduce(chldsv, dt);
-      } catch (const parse_error &e) {
+      } catch (const codon::exc::ParserException &e) {
         if (c.log) {
-          if (e.what()) {
+          if (!e.messages.empty()) {
             if (c.error_info.message_pos < s) {
               c.error_info.message_pos = s;
               c.error_info.message = e.what();

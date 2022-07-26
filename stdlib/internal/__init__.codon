@@ -1,5 +1,6 @@
 # Core library
 
+from internal.core import *
 from internal.attributes import *
 from internal.types.ptr import *
 from internal.types.str import *
@@ -16,6 +17,8 @@ from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *
 from internal.internal import *
+
+__argv__ = Array[str](0)
 
 from internal.types.collections.list import *
 from internal.types.collections.set import *

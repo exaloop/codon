@@ -2,6 +2,7 @@
 
 # Core library
 
+from internal.core import *
 from internal.attributes import *
 from internal.types.ptr import *
 from internal.types.str import *

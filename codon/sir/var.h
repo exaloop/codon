@@ -24,6 +24,8 @@ private:
   types::Type *type;
   /// true if the variable is global
   bool global;
+  /// true if the variable is external
+  bool external;
 
 public:
   static const char NodeId;
@@ -31,9 +33,12 @@ public:
   /// Constructs a variable.
   /// @param type the variable's type
   /// @param global true if the variable is global
+  /// @param external true if the variable is external
   /// @param name the variable's name
-  explicit Var(types::Type *type, bool global = false, std::string name = "")
-      : ReplaceableNodeBase(std::move(name)), type(type), global(global) {}
+  explicit Var(types::Type *type, bool global = false, bool external = false,
+               std::string name = "")
+      : ReplaceableNodeBase(std::move(name)), type(type), global(global),
+        external(external) {}
 
   virtual ~Var() noexcept = default;
 
@@ -76,6 +81,12 @@ public:
   /// Sets the global flag.
   /// @param v the new value
   void setGlobal(bool v = true) { getActual()->global = v; }
+
+  /// @return true if the variable is external
+  bool isExternal() const { return getActual()->external; }
+  /// Sets the external flag.
+  /// @param v the new value
+  void setExternal(bool v = true) { getActual()->external = v; }
 
   std::string referenceString() const final {
     return fmt::format(FMT_STRING("{}.{}"), getName(), getId());

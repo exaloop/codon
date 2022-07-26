@@ -26,8 +26,8 @@ namespace transform {
 
 std::string PassManager::KeyManager::getUniqueKey(const std::string &key) {
   // make sure we can't ever produce duplicate "unique'd" keys
-  seqassert(key.find(':') == std::string::npos,
-            "pass key '{}' contains invalid character ':'", key);
+  seqassertn(key.find(':') == std::string::npos,
+             "pass key '{}' contains invalid character ':'", key);
   auto it = keys.find(key);
   if (it == keys.end()) {
     keys.emplace(key, 1);
@@ -48,7 +48,7 @@ std::string PassManager::registerPass(std::unique_ptr<Pass> pass,
   key = km.getUniqueKey(key);
 
   for (const auto &req : reqs) {
-    seqassert(deps.find(req) != deps.end(), "required key '{}' not found", req);
+    seqassertn(deps.find(req) != deps.end(), "required key '{}' not found", req);
     deps[req].push_back(key);
   }
 
@@ -59,8 +59,8 @@ std::string PassManager::registerPass(std::unique_ptr<Pass> pass,
     executionOrder.push_back(key);
   } else {
     auto it = std::find(executionOrder.begin(), executionOrder.end(), insertBefore);
-    seqassert(it != executionOrder.end(), "pass with key '{}' not found in manager",
-              insertBefore);
+    seqassertn(it != executionOrder.end(), "pass with key '{}' not found in manager",
+               insertBefore);
     executionOrder.insert(it, key);
   }
   return key;
@@ -75,7 +75,7 @@ std::string PassManager::registerAnalysis(std::unique_ptr<analyze::Analysis> ana
   key = km.getUniqueKey(key);
 
   for (const auto &req : reqs) {
-    seqassert(deps.find(req) != deps.end(), "required key '{}' not found", req);
+    seqassertn(deps.find(req) != deps.end(), "required key '{}' not found", req);
     deps[req].push_back(key);
   }
 
@@ -208,7 +208,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     break;
   }
   default:
-    seqassert(false, "unknown PassManager init value");
+    seqassertn(false, "unknown PassManager init value");
   }
 }
 

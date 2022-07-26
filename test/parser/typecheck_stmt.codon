@@ -28,16 +28,18 @@ print a  #: []
 
 #%% assign_type_err,barebones
 a = 5
-a = 3.3  #! cannot unify float and int
+if 1:
+    a = 3.3  #! cannot unify int and float
+a
 
 #%% assign_atomic,barebones
 i = 1
 f = 1.1
 
 @llvm
-def xchg(d: Ptr[int], b: int) -> void:
+def xchg(d: Ptr[int], b: int) -> None:
     %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
-    ret void
+    ret {} {}
 @llvm
 def aadd(d: Ptr[int], b: int) -> int:
     %tmp = atomicrmw add i64* %d, i64 %b seq_cst
@@ -196,11 +198,10 @@ for i in 1:
     pass
 #! cannot find '__iter__' in int
 
-#%% for_void_error,barebones
+#%% for_void,barebones
 def foo(): yield
 for i in foo():
-    pass
-#! expression with void type
+    print i.__class__.__name__  #: NoneType
 
 #%% if,barebones
 for a, b in [(1, 2), (3, 3), (5, 4)]:
@@ -237,23 +238,22 @@ print foo(N=3, x=(1, 2)) #: ()
 print foo(N=1, x=(1, 2, 3)) #: (3)
 
 #%% try_throw,barebones
-class MyError:
-    _hdr: ExcHeader
+class MyError(Exception):
     def __init__(self, message: str):
-        self._hdr = ('MyError', message, '', '', 0, 0)
+        super().__init__('MyError', message)
 try:
     raise MyError("hello!")
 except MyError as e:
-    print e._hdr.msg  #: hello!
+    print str(e)  #: hello!
 try:
     raise OSError("hello os!")
 # TODO: except (MyError, OSError) as e:
-#     print e._hdr.msg
+#     print str(e)
 except MyError:
     print "my"
 except OSError as o:
-    print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
-    #: os std.internal.types.error.OSError 9 typecheck_stmt.codon 249
+    print "os", o.typename, len(o.message), o.file[-20:], o.line
+    #: os OSError 9 typecheck_stmt.codon 249
 finally:
     print "whoa"  #: whoa
 
@@ -263,10 +263,12 @@ def foo():
 try:
     foo()
 except MyError as e:
-    print e._hdr.typename, e._hdr.msg #: MyError foo!
+    print e.typename, e.message #: MyError foo!
 
 #%% throw_error,barebones
-raise 'hello' #! cannot throw non-exception (first object member must be of type ExcHeader)
+raise 'hello'
+#! custom error: exceptions must derive from BaseException
+#! while realizing __internal__.set_header
 
 #%% function_builtin_error,barebones
 @__force__
@@ -342,3 +344,16 @@ class Foo:
 Foo.foo(1)
 #! no matching superf methods are available
 #! while realizing Foo.foo:0
+
+#%% staticmethod,barebones
+class Foo:
+    def __repr__(self):
+        return 'Foo'
+    def m(self):
+        print 'm', self
+    @staticmethod
+    def sm(i):
+        print 'sm', i
+Foo.sm(1)  #: sm 1
+Foo().sm(2)  #: sm 2
+Foo().m()  #: m Foo

@@ -165,7 +165,10 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   }
 
   bool failed = false;
-  llvm::handleAllErrors(compiler->parseFile(input, /*isTest=*/0, defmap),
+  int testFlags = 0;
+  if (auto *tf = getenv("CODON_TEST_FLAGS"))
+    testFlags = std::atoi(tf);
+  llvm::handleAllErrors(compiler->parseFile(input, /*testFlags=*/testFlags, defmap),
                         [&failed](const codon::error::ParserErrorInfo &e) {
                           display(e);
                           failed = true;
@@ -314,7 +317,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = "";
     break;
   default:
-    seqassert(0, "unknown build kind");
+    seqassertn(0, "unknown build kind");
   }
   const std::string filename =
       output.empty() ? makeOutputFilename(compiler->getInput(), extension) : output;
@@ -340,7 +343,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
     break;
   default:
-    seqassert(0, "unknown build kind");
+    seqassertn(0, "unknown build kind");
   }
 
   return EXIT_SUCCESS;

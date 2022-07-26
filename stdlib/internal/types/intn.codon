@@ -226,7 +226,7 @@ class Int:
         ret i{=N} %0
 
     @llvm
-    def __pickle__(self, dest: Ptr[byte]) -> void:
+    def __pickle__(self, dest: Ptr[byte]) -> None:
         declare i32 @gzwrite(i8*, i8*, i32)
         %0 = alloca i{=N}
         store i{=N} %self, i{=N}* %0
@@ -234,7 +234,7 @@ class Int:
         %sz = getelementptr i{=N}, i{=N}* null, i32 1
         %szi = ptrtoint i{=N}* %sz to i32
         %2 = call i32 @gzwrite(i8* %dest, i8* %1, i32 %szi)
-        ret void
+        ret {} {}
 
     @llvm
     def __unpickle__(src: Ptr[byte]) -> Int[N]:
@@ -468,7 +468,7 @@ class UInt:
         ret i{=N} %0
 
     @llvm
-    def __pickle__(self, dest: Ptr[byte]) -> void:
+    def __pickle__(self, dest: Ptr[byte]) -> None:
         declare i32 @gzwrite(i8*, i8*, i32)
         %0 = alloca i{=N}
         store i{=N} %self, i{=N}* %0
@@ -476,7 +476,7 @@ class UInt:
         %sz = getelementptr i{=N}, i{=N}* null, i32 1
         %szi = ptrtoint i{=N}* %sz to i32
         %2 = call i32 @gzwrite(i8* %dest, i8* %1, i32 %szi)
-        ret void
+        ret {} {}
 
     @llvm
     def __unpickle__(src: Ptr[byte]) -> UInt[N]:

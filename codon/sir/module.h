@@ -339,6 +339,9 @@ public:
   /// @param args the arg types
   /// @return the tuple type
   types::Type *getTupleType(std::vector<types::Type *> args);
+  /// Gets the "none" type (i.e. empty tuple).
+  /// @return none type
+  types::Type *getNoneType();
 
   /// @param v the value
   /// @return an int constant

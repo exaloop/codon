@@ -6,15 +6,12 @@
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
 #include "codon/parser/visitors/translate/translate.h"
-#include "codon/parser/visitors/typecheck/typecheck_ctx.h"
+#include "codon/parser/visitors/typecheck/ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 TranslateContext::TranslateContext(Cache *cache)
-    : Context<TranslateItem>(""), cache(std::move(cache)) {
-  stack.push_front(std::vector<std::string>());
-}
+    : Context<TranslateItem>(""), cache(cache) {}
 
 std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) const {
   if (auto t = Context<TranslateItem>::find(name))
@@ -23,14 +20,14 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   auto tt = cache->typeCtx->find(name);
   if (tt && tt->isType() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Type, bases[0]);
-    seqassert(in(cache->classes, tt->type->getClass()->name) &&
-                  in(cache->classes[tt->type->getClass()->name].realizations, name),
-              "cannot find type realization {}", name);
+    seqassertn(in(cache->classes, tt->type->getClass()->name) &&
+                   in(cache->classes[tt->type->getClass()->name].realizations, name),
+               "cannot find type realization {}", name);
     ret->handle.type =
         cache->classes[tt->type->getClass()->name].realizations[name]->ir;
   } else if (tt && tt->type->getFunc() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Func, bases[0]);
-    seqassert(
+    seqassertn(
         in(cache->functions, tt->type->getFunc()->ast->name) &&
             in(cache->functions[tt->type->getFunc()->ast->name].realizations, name),
         "cannot find type realization {}", name);
@@ -62,5 +59,4 @@ codon::ir::Module *TranslateContext::getModule() const {
 codon::ir::BodiedFunc *TranslateContext::getBase() const { return bases.back(); }
 codon::ir::SeriesFlow *TranslateContext::getSeries() const { return series.back(); }
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

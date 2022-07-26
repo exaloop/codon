@@ -72,7 +72,7 @@ def seq_re_escape(pattern: str) -> str:
     pass
 
 @C
-def seq_re_purge() -> void:
+def seq_re_purge() -> None:
     pass
 
 @C
@@ -80,21 +80,12 @@ def seq_re_purge() -> void:
 def seq_re_compile(pattern: str, flags: int) -> cobj:
     pass
 
-class error:
-    _hdr: ExcHeader
+class error(Exception):
     pattern: str
 
-    def __init__(self):
-        self._hdr = ("re.error", "", "", "", 0, 0)
-        self.pattern = ''
-
-    def __init__(self, message: str, pattern: str = ''):
-        self._hdr = ("re.error", message, "", "", 0, 0)
+    def __init__(self, message: str = "", pattern: str = ""):
+        super().__init__("re.error", message)
         self.pattern = pattern
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
 
     @property
     def msg(self):

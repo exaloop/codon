@@ -20,44 +20,6 @@
 
 namespace codon {
 
-namespace exc {
-
-/**
- * Parser error exception.
- * Used for parsing, transformation and type-checking errors.
- */
-class ParserException : public std::runtime_error {
-public:
-  /// These vectors (stacks) store an error stack-trace.
-  std::vector<SrcInfo> locations;
-  std::vector<std::string> messages;
-
-public:
-  ParserException(const std::string &msg, const SrcInfo &info) noexcept
-      : std::runtime_error(msg) {
-    messages.push_back(msg);
-    locations.push_back(info);
-  }
-  ParserException() noexcept : ParserException("", {}) {}
-  explicit ParserException(const std::string &msg) noexcept
-      : ParserException(msg, {}) {}
-  ParserException(const ParserException &e) noexcept
-      : std::runtime_error(e), locations(e.locations), messages(e.messages) {}
-
-  /// Add an error message to the current stack trace
-  void trackRealize(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back(fmt::format("while realizing {}", msg));
-  }
-
-  /// Add an error message to the current stack trace
-  void track(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back(msg);
-  }
-};
-} // namespace exc
-
 namespace ast {
 
 /// String and collection utilities
@@ -70,10 +32,11 @@ std::string escape(const std::string &str);
 std::string unescape(const std::string &str);
 /// Escape an F-string braces (replace { and } with {{ and }}).
 std::string escapeFStringBraces(const std::string &str, int start, int len);
+int findStar(const std::string &s);
 /// True if a string str starts with a prefix.
-bool startswith(const std::string &str, const std::string &prefix);
+size_t startswith(const std::string &str, const std::string &prefix);
 /// True if a string str ends with a suffix.
-bool endswith(const std::string &str, const std::string &suffix);
+size_t endswith(const std::string &str, const std::string &suffix);
 /// Trims whitespace at the beginning of the string.
 void ltrim(std::string &str);
 /// Trims whitespace at the end of the string.
@@ -84,10 +47,10 @@ int trimStars(std::string &str);
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.
 template <typename T>
-std::string join(const T &items, const std::string &delim = " ", int start = 0,
-                 int end = -1) {
+std::string join(const T &items, const std::string &delim = " ", size_t start = 0,
+                 size_t end = (1ull << 31)) {
   std::string s;
-  if (end == -1)
+  if (end > items.size())
     end = items.size();
   for (int i = start; i < end; i++)
     s += (i > start ? delim : "") + items[i];
@@ -102,33 +65,44 @@ std::string combine(const std::vector<T> &items, const std::string &delim = " ")
       s += (i ? delim : "") + items[i]->toString();
   return s;
 }
+template <typename T>
+std::string combine2(const std::vector<T> &items, const std::string &delim = ",",
+                     int start = 0, int end = -1) {
+  std::string s;
+  if (end == -1)
+    end = items.size();
+  for (int i = start; i < end; i++)
+    s += (i ? delim : "") + fmt::format("{}", items[i]);
+  return s;
+}
 /// @return True if an item is found in a vector vec.
-template <typename T, typename U> bool in(const std::vector<T> &vec, const U &item) {
+template <typename T, typename U>
+const T *in(const std::vector<T> &vec, const U &item) {
   auto f = std::find(vec.begin(), vec.end(), item);
-  return f != vec.end();
+  return f != vec.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a set s.
-template <typename T, typename U> bool in(const std::set<T> &s, const U &item) {
+template <typename T, typename U> const T *in(const std::set<T> &s, const U &item) {
   auto f = s.find(item);
-  return f != s.end();
+  return f != s.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in an unordered_set s.
 template <typename T, typename U>
-bool in(const std::unordered_set<T> &s, const U &item) {
+const T *in(const std::unordered_set<T> &s, const U &item) {
   auto f = s.find(item);
-  return f != s.end();
+  return f != s.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a map m.
 template <typename K, typename V, typename U>
-bool in(const std::map<K, V> &m, const U &item) {
+const V *in(const std::map<K, V> &m, const U &item) {
   auto f = m.find(item);
-  return f != m.end();
+  return f != m.end() ? &(f->second) : nullptr;
 }
 /// @return True if an item is found in an unordered_map m.
 template <typename K, typename V, typename U>
-bool in(const std::unordered_map<K, V> &m, const U &item) {
+const V *in(const std::unordered_map<K, V> &m, const U &item) {
   auto f = m.find(item);
-  return f != m.end();
+  return f != m.end() ? &(f->second) : nullptr;
 }
 /// @return vector c transformed by the function f.
 template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
@@ -143,6 +117,7 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 void error(const char *format);
 /// Raise a parsing error at a source location p.
 void error(const SrcInfo &info, const char *format);
+void error(const SrcInfo &info, const std::string &format);
 
 /// Clones a pointer even if it is a nullptr.
 template <typename T> auto clone(const std::shared_ptr<T> &t) {

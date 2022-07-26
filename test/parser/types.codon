@@ -16,10 +16,10 @@ class XX[T]:
 a = XX()
 def f(i: int) -> int:
     return i
-print a.y.__class__ #: int
+print a.y.__class__.__name__ #: int
 f(a.y)
-print a.__class__ #: XX[int]
-print XX[bool].__class__ #: XX[bool]
+print a.__class__.__name__ #: XX[int]
+print XX[bool].__class__.__name__ #: XX[bool]
 
 #%% nested_generic,barebones
 x = Array[Array[int]](0)
@@ -180,7 +180,7 @@ def rec2(x, y):
         return rec2(y, x)
     else:
         return 1.0
-print rec2(1, False).__class__ #: float
+print rec2(1, False).__class__.__name__ #: float
 
 def pq(x):
     return True
@@ -189,20 +189,20 @@ def rec3(x, y):
         return rec3(y, x)
     else:
         return y
-print rec3('x', 's').__class__  #: str
+print rec3('x', 's').__class__.__name__  #: str
 
 # Nested mutually recursive function
 def f[T](x: T) -> T:
     def g[T](z):
         return z(T())
     return g(f, T=T)
-print f(1.2).__class__ #: float
-print f('s').__class__ #: str
+print f(1.2).__class__.__name__ #: float
+print f('s').__class__.__name__ #: str
 
 def f2[T](x: T):
     return f2(x - 1, T) if x else 1
 print f2(1) #: 1
-print f2(1.1).__class__ #: int
+print f2(1.1).__class__.__name__ #: int
 
 
 #%% recursive_error,barebones
@@ -214,7 +214,7 @@ def rec3(x, y): #- ('a, 'b) -> 'b
     else:
         return y
 rec3(1, 's')
-#! cannot unify str and int
+#! cannot unify int and str
 #! while realizing rec3:0 (arguments rec3:0[int,str])
 
 #%% instantiate_function_2,barebones
@@ -222,7 +222,7 @@ def fx[T](x: T) -> T:
     def g[T](z):
         return z(T())
     return g(fx, T)
-print fx(1.1).__class__, fx(1).__class__ #: float int
+print fx(1.1).__class__.__name__, fx(1).__class__.__name__ #: float int
 
 #%% optionals,barebones
 y = None
@@ -241,6 +241,13 @@ try:
 except ValueError:
     print 'unwrap failed'  #: unwrap failed
 
+class Cls:
+    x: int
+c = None
+for i in range(2):
+    if c: c.x += 1  # check for unwrap() dot access
+    c = Cls(1)
+print(c.x)  #: 1
 
 #%% optional_methods,barebones
 @extend
@@ -256,7 +263,8 @@ y = 6
 z = 1 + y if y else None
 print z  #: 7
 z.x()  #: x()! 7
-z = None
+if 1: # otherwise compiler won't compile z.x() later
+    z = None
 try:
     z.x()
 except ValueError:
@@ -300,24 +308,36 @@ def foo(x:int):
     print x
 z = 1 & foo #! cannot find magic 'and' in int
 
-#%% void_error,barebones
+#%% tuple_type_late,barebones
+coords = []
+for i in range(2):
+    coords.append( ('c', i, []) )
+coords[0][2].append((1, 's'))
+print(coords)  #: [('c', 0, [(1, 's')]), ('c', 1, [])]
+
+#%% void,barebones
 def foo():
     print 'foo'
 def bar(x):
-    print 'bar'
-a = foo()
-bar(a) #! expression with void type
+    print 'bar', x.__class__.__name__
+a = foo()  #: foo
+bar(a)  #: bar NoneType
 
-#%% void_error_2,barebones
+def x():
+  pass
+b = lambda: x()
+b()
+x() if True else x()
+
+#%% void_2,barebones
 def foo():
     i = 0
     while i < 10:
-        print i
+        print i  #: 0
         yield
-        i += 1
+        i += 10
 a = list(foo())
-#! expression with void type
-#! while realizing std.internal.types.ptr.List.__init__
+print(a)  #: [None]
 
 #%% instantiate_swap,barebones
 class Foo[T, U]:
@@ -345,13 +365,13 @@ class XX[N_: Static[int]]:
     def __init__(self):
         self.a = Num()
 y = XX[5]()
-print y.a, y.__class__, y.a.__class__ #: [10] XX[5] Num[10]
+print y.a, y.__class__.__name__, y.a.__class__.__name__ #: [10] XX[5] Num[10]
 
 @tuple
 class FooBar[N: Static[int]]:
     x: Int[N]
 z = FooBar(i32(5))
-print z, z.__class__, z.x.__class__ #: (x: Int[32](5)) FooBar[32] Int[32]
+print z, z.__class__.__name__, z.x.__class__.__name__ #: (x: Int[32](5)) FooBar[32] Int[32]
 
 @tuple
 class Foo[N: Static[int]]:
@@ -359,7 +379,7 @@ class Foo[N: Static[int]]:
     def __new__(x: Int[2*N]) -> Foo[N]:
         return (x,)
 foo = Foo[10](Int[20](0))
-print foo.__class__, foo.x.__class__ #: Foo[10] Int[20]
+print foo.__class__.__name__, foo.x.__class__.__name__ #: Foo[10] Int[20]
 
 #%% static_2,barebones
 class Num[N: Static[int]]:
@@ -382,13 +402,35 @@ class Foo[T, A: Static[int], B: Static[int]]:
 print Foo[int, 3, 4](), Foo[int, 5, 4]()
 #: <~7 ~-1 ~4 :: 0> <~9 ~1 ~5 :: 0>
 
+#%% static_int,barebones
+def foo(n: Static[int]):
+    print n
+
+a: Static[int] = 5
+foo(a < 1)   #: 0
+foo(a <= 1)  #: 0
+foo(a > 1)   #: 1
+foo(a >= 1)  #: 1
+foo(a == 1)  #: 0
+foo(a != 1)  #: 1
+foo(a and 1) #: 1
+foo(a or 1)  #: 1
+foo(a + 1)   #: 6
+foo(a - 1)   #: 4
+foo(a * 1)   #: 5
+foo(a // 2)  #: 2
+foo(a % 2)   #: 1
+foo(a & 2)   #: 0
+foo(a | 2)   #: 7
+foo(a ^ 1)   #: 4
+
 #%% static_str,barebones
 class X:
     s: Static[str]
     i: Int[1 + (s == "abc")]
     def __init__(self: X[s], s: Static[str]):
         i = Int[1+(s=="abc")]()
-        print s, self.s, self.i.__class__
+        print s, self.s, self.i.__class__.__name__
 def foo(x: Static[str], y: Static[str]):
     print x+y
 z: Static[str] = "woo"
@@ -397,7 +439,7 @@ X(s='lolo') #: lolo lolo Int[1]
 X('abc') #: abc abc Int[2]
 
 #%% static_getitem
-print Int[staticlen("ee")].__class__ #: Int[2]
+print Int[staticlen("ee")].__class__.__name__ #: Int[2]
 
 y = [1, 2]
 print getattr(y, "len") #: 2
@@ -452,44 +494,44 @@ def f2[U](x: U, y):
         return (x, y)
     return g(y, x)
 x, y = 1, 'haha'
-print f2(x, y).__class__ #: Tuple[str,int]
-print f2('aa', 1.1, U=str).__class__ #: Tuple[float,str]
+print f2(x, y).__class__.__name__ #: Tuple[str,int]
+print f2('aa', 1.1, U=str).__class__.__name__ #: Tuple[float,str]
 
 #%% nested_fn_generic_error,barebones
 def f[U](x: U, y): # ('u, 'a) -> tuple['a, 'u]
     def g[T, U](x: T, y: U): # ('t, 'u) -> tuple['t, 'u]
         return (x, y)
     return g(y, x)
-print f(1.1, 1, int).__class__ #! cannot unify float and int
+print f(1.1, 1, int).__class__.__name__ #! cannot unify float and int
 
 #%% fn_realization,barebones
 def ff[T](x: T, y: tuple[T]):
-      print ff(T=str,...).__class__ #: ff:0[str,Tuple[str],str]
+      print ff(T=str,...).__class__.__name__ #: ff:0[str,Tuple[str],str]
       return x
 x = ff(1, (1,))
-print x, x.__class__ #: 1 int
-# print f.__class__  # TODO ERRORS
+print x, x.__class__.__name__ #: 1 int
+# print f.__class__.__name__  # TODO ERRORS
 
 def fg[T](x:T):
     def g[T](y):
         z = T()
         return z
-    print fg(T=str,...).__class__  #: fg:0[str,str]
-    print g(1, T).__class__ #: int
+    print fg(T=str,...).__class__.__name__  #: fg:0[str,str]
+    print g(1, T).__class__.__name__ #: int
 fg(1)
-print fg(1).__class__ #: void
+print fg(1).__class__.__name__ #: NoneType
 
 def f[T](x: T):
-    print f(x, T).__class__  #: int
-    print f(x).__class__      #: int
-    print f(x, int).__class__ #: int
+    print f(x, T).__class__.__name__  #: int
+    print f(x).__class__.__name__      #: int
+    print f(x, int).__class__.__name__ #: int
     return x
-print f(1), f(1).__class__ #: 1 int
-print f(1, int).__class__ #: int
+print f(1), f(1).__class__.__name__ #: 1 int
+print f(1, int).__class__.__name__ #: int
 
 #%% fn_realization_error,barebones
 def f[T](x: T):
-    print f(x, int).__class__
+    print f(x, int).__class__.__name__
     return x
 f('s')
 #! cannot unify str and int
@@ -515,14 +557,14 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[bool].foo(W=str, ...).__class__ #: A.B.C.foo:0[bool,bool,bool,str,str]
+print A.B.C[bool].foo(W=str, ...).__class__.__name__ #: A.B.C.foo:0[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 
 x = A.B.C[bool]()
-print x.__class__ #: A.B.C[bool]
+print x.__class__.__name__ #: A.B.C[bool]
 
 #%% nested_deep_class_error,barebones
 class A[T]:
@@ -534,7 +576,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments  = int,  = int,  = int,  = bool
+print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments 'int', 'int', 'int', 'bool'
 
 #%% nested_deep_class_error_2,barebones
 class A[T]:
@@ -555,8 +597,8 @@ def f(x):
     b = g('s')
     c = g(x)
     return a, b, c
-print f(1.1).__class__ #: Tuple[int,str,float]
-print f(False).__class__ #: Tuple[int,str,bool]
+print f(1.1).__class__.__name__ #: Tuple[int,str,float]
+print f(False).__class__.__name__ #: Tuple[int,str,bool]
 
 class A[T]:
     a: T
@@ -571,15 +613,15 @@ class A[T]:
                 b = g('s')
                 c = g(x)
                 return a, b, c
-print A.B.C.f(1.1).__class__ #: Tuple[int,str,float]
-print A.B.C[Optional[int]].f(False).__class__ #: Tuple[int,str,bool]
+print A.B.C.f(1.1).__class__.__name__ #: Tuple[int,str,float]
+print A.B.C[Optional[int]].f(False).__class__.__name__ #: Tuple[int,str,bool]
 
 #%% rec_class_1,barebones
 class A:
     y: A
     def __init__(self): pass  # necessary to prevent recursive instantiation!
 x = A()
-print x.__class__, x.y.__class__ #: A A
+print x.__class__.__name__, x.y.__class__.__name__ #: A A
 
 #%% rec_class_2,barebones
 class A[T]:
@@ -588,9 +630,9 @@ class A[T]:
     c: A[str]
     def __init__(self): pass
 a = A[int]()
-print a.__class__, a.b.__class__, a.c.__class__, a.b.b.__class__, a.b.c.__class__
+print a.__class__.__name__, a.b.__class__.__name__, a.c.__class__.__name__, a.b.b.__class__.__name__, a.b.c.__class__.__name__
 #: A[int] A[int] A[str] A[int] A[str]
-print a.c.b.__class__, a.c.c.__class__, a.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.__class__
+print a.c.b.__class__.__name__, a.c.c.__class__.__name__, a.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.__class__.__name__
 #: A[str] A[str] A[int]
 
 #%% rec_class_3,barebones
@@ -606,7 +648,7 @@ class X:
             print y
             return self.y
 x, y = X(), X.Y()
-print x.__class__, y.__class__
+print x.__class__.__name__, y.__class__.__name__
 #: X X.Y
 print X.foo(x, 4), x.foo(5)
 #: 4 5
@@ -633,14 +675,14 @@ class B[T]:
         m: T
         n: U
 b = B[float]()
-print b.__class__, b.a.__class__, b.b.__class__, b.c.__class__, b.c.b.c.a.__class__
+print b.__class__.__name__, b.a.__class__.__name__, b.b.__class__.__name__, b.c.__class__.__name__, b.c.b.c.a.__class__.__name__
 #: B[float] float A[float] B[float] str
 
 n1 = B.Nest1[int]()
-print n1.n, n1.__class__, n1.n.__class__ #: 0 B.Nest1[int] int
+print n1.n, n1.__class__.__name__, n1.n.__class__.__name__ #: 0 B.Nest1[int] int
 
 n1: B.Nest2 = B.Nest2[float, int]()
-print (n1.m, n1.n), n1.__class__, n1.m.__class__, n1.n.__class__ #: (0, 0) B.Nest2[float,int] float int
+print (n1.m, n1.n), n1.__class__.__name__, n1.m.__class__.__name__, n1.n.__class__.__name__ #: (0, 0) B.Nest2[float,int] float int
 
 #%% func_arg_instantiate,barebones
 class A[T]:
@@ -651,19 +693,19 @@ class A[T]:
     def bar(self, y):
         return y
 a = A()
-print a.__class__ #: A[int]
+print a.__class__.__name__ #: A[int]
 a.y = 5
-print a.__class__ #: A[int]
+print a.__class__.__name__ #: A[int]
 
 b = A()
 print b.foo(5) #: 5
-print b.__class__, b.y #: A[int] 5
-print b.bar('s'), b.bar('s').__class__ #: s str
-print b.bar(5), b.bar(5).__class__ #: 5 int
+print b.__class__.__name__, b.y #: A[int] 5
+print b.bar('s'), b.bar('s').__class__.__name__ #: s str
+print b.bar(5), b.bar(5).__class__.__name__ #: 5 int
 
 aa = A()
 print aa.foo('s') #: s
-print aa.__class__, aa.y, aa.bar(5.1).__class__ #: A[str] s float
+print aa.__class__.__name__, aa.y, aa.bar(5.1).__class__.__name__ #: A[str] s float
 
 #%% no_func_arg_instantiate_err,barebones
 # TODO: allow unbound self?
@@ -680,12 +722,12 @@ def fun[T, R](x, y: T) -> R:
    	yy = ffi(False, byte(2), 's', T=bool, Z=str, R=R)
    	yz = ffi(1, byte(2), 's', T=int, Z=str, R=R)
    	return byte(1)
-print fun(2, 1.1, float, byte).__class__ #: byte
+print fun(2, 1.1, float, byte).__class__.__name__ #: byte
 
 #%% return_auto_deduction_err,barebones
 def fun[T, R](x, y: T) -> R:
    	return byte(1)
-print fun(2, 1.1).__class__ #! cannot typecheck the program
+print fun(2, 1.1).__class__.__name__ #! cannot typecheck the program
 
 #%% random
 # shuffle used to fail before for some reason (sth about unbound variables)...
@@ -699,7 +741,7 @@ foo()
 #%% function_type,barebones
 class F:
     f: Function[[int], int]
-    g: function[[int], void]
+    g: function[[int], None]
     x: int
 def foo(x: int):
     return x+1
@@ -716,15 +758,15 @@ f.g(f.x)  #: 5
 
 def hai(x, y, z):
     print f'hai({x},{y},{z})'
-fn = Function[[int, int, int], void](hai)
+fn = Function[[int, int, int], None](hai)
 fn(1, 2, 3) #: hai(1,2,3)
 print str(fn)[:12] #: <function at
-z = fn(a2=2, a3=3, ...)
-z(3) #: hai(3,2,3)
+z = fn(2, 3, ...)
+z(3) #: hai(2,3,3)
 
 #%% int_float,barebones
 l = [1., 2, 3, 4]
-print l, l.__class__ #: [1, 2, 3, 4] List[float]
+print l, l.__class__.__name__ #: [1, 2, 3, 4] List[float]
 
 #%% forward_fn,barebones
 def test(name, sort, key):
@@ -744,8 +786,8 @@ class X[T]:
     def foo[U](self, x: T, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-print y.__class__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__ #: X.foo:0[X[float],float,int,int]
+print y.__class__.__name__ #: X[X[int]]
+print X[float].foo(U=int, ...).__class__.__name__ #: X.foo:0[X[float],float,int,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
@@ -754,15 +796,15 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 # TODO: should this even be the case?
-# print y.foo(U=float,...).__class__  ->  X.foo:0[X[X[int]],...,...]
+# print y.foo(U=float,...).__class__.__name__  ->  X.foo:0[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones
 def foo(f, x):
     f(x, type(x))
-    print f.__class__
+    print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__
+    print x, T.__class__.__name__
 foo(bar, 1)
 #: 1 int
 #: bar:0[...]
@@ -782,9 +824,9 @@ zz(1)
 #%% forward_error,barebones
 def foo(f, x):
     f(x, type(x))
-    print f.__class__
+    print f.__class__.__name__
 def bar[T](x):
-    print x, T.__class__
+    print x, T.__class__.__name__
 foo(bar(T=int,...), 1)
 #! too many arguments for bar:0[T1,int] (expected maximum 2, got 2)
 #! while realizing foo:0 (arguments foo:0[bar:0[...],int])
@@ -804,18 +846,18 @@ def frec(x, y):
     def grec(x, y):
         return frec(y, x)
     return grec(x, y) if bl(y) else 2
-print frec(1, 2).__class__, frec('s', 1).__class__
-#! expression with void type
+print frec(1, 2).__class__.__name__, frec('s', 1).__class__.__name__
+#! cannot unify NoneType and int
 #! while realizing frec:0 (arguments frec:0[int,int])
 
 #%% return_fn,barebones
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__ #: retfn:0.inner:0[...,...,int,...]
+    print inner.__class__.__name__ #: retfn:0.inner:0[...,...,int,...]
     return inner(15, ...)
 f = retfn(1)
-print f.__class__ #: retfn:0.inner:0[int,...,int,...]
+print f.__class__.__name__ #: retfn:0.inner:0[int,...,int,...]
 f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
@@ -823,7 +865,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
 def dec(fn, a):
-    print 'decorating', fn.__class__ #: decorating foo:0[...,...,...]
+    print 'decorating', fn.__class__.__name__ #: decorating foo:0[...,...,...]
     def inner(*args, **kwargs):
         print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
@@ -838,13 +880,15 @@ print ff(5.5, 's', z=True)
 def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
-def dec(fn, a):
-    print 'decorating', fn.__class__
-    def inner(*args, **kwargs):
-        print 'decorator', args, kwargs
-        return fn(a, *args, **kwargs)
-    return inner
-ff = dec(foo, 10)
+def dec(a):
+    def f(fn):
+        print 'decorating', fn.__class__.__name__
+        def inner(*args, **kwargs):
+            print 'decorator', args, kwargs
+            return fn(a, *args, **kwargs)
+        return inner
+    return f
+ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
 #: decorating foo:0[...,...,...]
 #: decorator (5.5, 's') (z: True)
@@ -880,7 +924,7 @@ def timeme(func):
     def inner(*args, **kwargs):
         begin = 1
         end = func(*args, **kwargs) - begin
-        print('time needed for', func.__class__, 'is', end)
+        print('time needed for', func.__class__.__name__, 'is', end)
     return inner
 @timeme
 def factorial(num):
@@ -937,12 +981,12 @@ for i in e:
 #%% type_loc,barebones
 a = 1
 T = type(a)
-print T.__class__  #: int
+print T.__class__.__name__  #: int
 
 #%% empty_tuple,barebones
 T = type(())  # only errors with empty tuple type
 p = Ptr[T](cobj())
-print p.__class__  #: Ptr[Tuple]
+print p.__class__.__name__  #: Ptr[Tuple]
 
 print [a for a in ()]  #: []
 
@@ -974,11 +1018,11 @@ a, b = tee(it) #! cannot typecheck the program
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Static[int] = 10):
-    print T.__class__, U.__class__, x.__class__, y.__class__, Int[z+1].__class__
+    print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
-print foo(T=int,U=str,...).__class__ #: foo:0[T1,x,z,int,str]
-print foo(T=int,U=str,z=5,x=bool,...).__class__ #: foo:0[T1,bool,5,int,str]
-print foo(float,3,T=int,U=str,z=5).__class__ #: List[float]
+print foo(T=int,U=str,...).__class__.__name__ #: foo:0[T1,x,z,int,str]
+print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo:0[T1,bool,5,int,str]
+print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 
 
@@ -989,25 +1033,25 @@ class Foo[T,U: Static[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[5,int,float,6].__class__ #: Foo[5,int,float,6]
-print Foo(1.1, 10i32, [False], 10u66).__class__ #: Foo[66,bool,float,32]
+print Foo[5,int,float,6].__class__.__name__ #: Foo[5,int,float,6]
+print Foo(1.1, 10i32, [False], 10u66).__class__.__name__ #: Foo[66,bool,float,32]
 
 
 def foo2[N: Static[int]]():
-    print Int[N].__class__, N
+    print Int[N].__class__.__name__, N
 x: Static[int] = 5
 y: Static[int] = 105 - x * 2
 foo2(y-x) #: Int[90] 90
 
 if 1.1+2.2 > 0:
-    x: Static[int] = 88
-    print x #: 88
+    z: Static[int] = 88
+    print z #: 88
 print x #: 5
 x : Static[int] = 3
 print x #: 3
 
 def fox(N: Static[int] = 4):
-    print Int[N].__class__, N
+    print Int[N].__class__.__name__, N
 fox(5) #: Int[5] 5
 fox() #: Int[4] 4
 
@@ -1019,9 +1063,9 @@ class Foo[T,U: Static[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[float,6].__class__ #! expected 4 generics and/or statics
+print Foo[float,6].__class__.__name__ #! expected 4 generics and/or statics
 
-#%% partial_star_args,barebones
+#%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print
 #: A
 #: C
@@ -1061,34 +1105,37 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
 print t(6, Optional(1)) #! cannot unify Optional[int] and Optional[T]
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! cannot unify int and ?
+z: Callable[[int],int] = 4 #! cannot unify ? and int
 
 #%% assign_wrapers,barebones
 a = 1.5
 print a #: 1.5
-a = 1
-print a, a.__class__ #: 1 float
+if 1:
+    a = 1
+print a, a.__class__.__name__ #: 1 float
 
 a: Optional[int] = None
-a = 5
-print a.__class__, a #: Optional[int] 5
+if 1:
+    a = 5
+print a.__class__.__name__, a #: Optional[int] 5
 
 b = 5
 c = Optional(6)
-b = c
-print b.__class__, c.__class__, b, c #: int Optional[int] 6 6
+if 1:
+    b = c
+print b.__class__.__name__, c.__class__.__name__, b, c #: int Optional[int] 6 6
 
 z: Generator[int] = [1, 2]
-print z.__class__ #: Generator[int]
+print z.__class__.__name__ #: Generator[int]
 
 zx: float = 1
-print zx.__class__, zx #: float 1
+print zx.__class__.__name__, zx #: float 1
 
 def test(v: Optional[int]):
-    v = ~v if v else 3 # TODO: force upcast to int if safe
-    print v.__class__
-test(5) #: Optional[int]
-test(None) #: Optional[int]
+    v = ~v if v else 3
+    print v.__class__.__name__
+test(5) #: int
+test(None) #: int
 
 #%% methodcaller,barebones
 def foo():
@@ -1099,7 +1146,7 @@ foo()(1, 2) #: bar 1 2
 
 def methodcaller(foo: Static[str]):
     def caller(foo: Static[str], obj, *args, **kwargs):
-        if isinstance(getattr(obj, foo)(*args, **kwargs), void):
+        if isinstance(getattr(obj, foo)(*args, **kwargs), None):
             getattr(obj, foo)(*args, **kwargs)
         else:
             return getattr(obj, foo)(*args, **kwargs)
@@ -1143,4 +1190,9 @@ def foo(x):
 @overload
 def foo(x, y):
     return 2, x, y
-foo('hooooooooy!', 1, 2) #! cannot find an overload 'foo' with arguments  = str,  = int,  = int
+foo('hooooooooy!', 1, 2) #! cannot find a method 'foo' with arguments 'str', 'int', 'int'
+
+#%% c_void_return,barebones
+from C import seq_print(str)
+x = seq_print("not ")
+print x  #: not None

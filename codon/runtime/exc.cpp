@@ -202,8 +202,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
   void *obj = base->obj;
   auto *hdr = (SeqExcHeader_t *)obj;
 
-  if (std::string(hdr->type.str, hdr->type.len) ==
-      "std.internal.types.error.SystemExit") {
+  if (std::string(hdr->type.str, hdr->type.len) == "SystemExit") {
     seq_int_t status = *(seq_int_t *)(hdr + 1);
     exit((int)status);
   }

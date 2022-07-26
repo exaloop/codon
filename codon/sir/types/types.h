@@ -64,7 +64,7 @@ public:
     return getActual()->doGetUsedTypes();
   }
   int replaceUsedType(const std::string &name, Type *newType) final {
-    seqassert(false, "types not replaceable");
+    seqassertn(false, "types not replaceable");
     return -1;
   }
   using Node::replaceUsedType;

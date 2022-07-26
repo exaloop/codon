@@ -13,7 +13,7 @@ std::vector<codon::ast::types::TypePtr>
 translateGenerics(std::vector<types::Generic> &generics) {
   std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : generics) {
-    seqassert(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
+    seqassertn(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
     ret.push_back(std::make_shared<codon::ast::types::LinkType>(
         g.isStatic()
             ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
@@ -26,7 +26,7 @@ std::vector<codon::ast::types::TypePtr>
 generateDummyNames(std::vector<types::Type *> &types) {
   std::vector<codon::ast::types::TypePtr> ret;
   for (auto *t : types) {
-    seqassert(t->getAstType(), "{} must have an ast type", *t);
+    seqassertn(t->getAstType(), "{} must have an ast type", *t);
     ret.emplace_back(t->getAstType());
   }
   return ret;
@@ -38,7 +38,7 @@ translateArgs(std::vector<types::Type *> &types) {
       std::make_shared<codon::ast::types::LinkType>(
           codon::ast::types::LinkType::Kind::Unbound, 0)};
   for (auto *t : types) {
-    seqassert(t->getAstType(), "{} must have an ast type", *t);
+    seqassertn(t->getAstType(), "{} must have an ast type", *t);
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
@@ -105,7 +105,8 @@ Module::Module(const std::string &name) : AcceptorExtend(name) {
   mainFunc->realize(cast<types::FuncType>(unsafeGetDummyFuncType()), {});
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
-  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), true, "argv");
+  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
+                                 /*external=*/false, ".argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
 }
@@ -245,11 +246,13 @@ types::Type *Module::getIntNType(unsigned int len, bool sign) {
 types::Type *Module::getTupleType(std::vector<types::Type *> args) {
   std::vector<ast::types::TypePtr> argTypes;
   for (auto *t : args) {
-    seqassert(t->getAstType(), "{} must have an ast type", *t);
+    seqassertn(t->getAstType(), "{} must have an ast type", *t);
     argTypes.push_back(t->getAstType());
   }
   return cache->makeTuple(argTypes);
 }
+
+types::Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
 
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }
 

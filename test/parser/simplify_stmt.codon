@@ -101,7 +101,7 @@ print a #: s
 #%% assign_err_must_exist,barebones
 a = 1
 def foo():
-    a += 2 #! variable 'a' is not global
+    a += 2 #! variable 'a' cannot be updated
 
 #%% assign_rename,barebones
 y = int
@@ -295,7 +295,7 @@ print a  #: 1 2
 
 #%% global_err,barebones
 a = 1
-global a #! global outside of a function
+global a #! global or nonlocal outside o
 
 #%% global_err_2,barebones
 def foo():
@@ -305,13 +305,13 @@ def foo():
 def foo():
     b = 1
     def bar():
-        global b #! not a top-level variable
+        global b #! not a global variable
 
 #%% global_err_4,barebones
 a = 1
 def foo():
     a += 1
-foo()  #! variable 'a' is not global
+foo()  #! variable 'a' cannot be updated
 
 #%% global_ref,barebones
 a = [1]
@@ -378,6 +378,11 @@ def log(x: float) -> float:
     pass
 print log(5.5)  #: 1.70475
 
+from C import seq_flags: Int[32] as e
+# debug | standalone == 5
+print e  #: 5
+
+
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
 RT = "./libcodonrt." + dlext()
@@ -420,6 +425,11 @@ fx() #: a.foo
 from a import *
 print zoo, _zoo, __name__  #: 5 1 __main__
 
+f = Foo(Ptr[B]())
+print f.__class__.__name__, f.t.__class__.__name__  #: Foo Ptr[B]
+
+a.ha()  #: B
+
 #%% import_order,barebones
 def foo():
     import a
@@ -450,6 +460,7 @@ bar()
 #%% import_rec_err,barebones
 from a.b.rec1_err import bar
 #! symbol 'bar' not found in
+#! identifier 'bar' not found
 
 #%% import_err_1,barebones
 class Foo:
@@ -525,22 +536,13 @@ def f(a, b=a):
 @llvm
 def foo():
     blah
-#! LLVM functions must have a return type
+#! C and LLVM functions must specify a return type
 
 #%% function_llvm_err_2,barebones
 @llvm
 def foo() -> int:
     a{={=}}
 #! invalid LLVM substitution
-
-#%% function_llvm_err_3,barebones
-a = 5
-@llvm
-def foo() -> int:
-    a{=a}
-foo()
-#! not a type or static expression
-#! while realizing foo:0 (arguments foo:0)
 
 #%% function_llvm_err_4,barebones
 a = 5
@@ -560,7 +562,7 @@ print f.foo() #: F
 class Foo:
     def foo(self):
         return 'F'
-Foo.foo(1) #! cannot find a method 'foo' in Foo with arguments  = int
+Foo.foo(1) #! cannot find a method 'foo' in Foo with arguments 'int'
 
 #%% function_nested,barebones
 def foo(v):
@@ -583,7 +585,7 @@ def f[T]():
     def g():
         return T()
     g()
-f(int) #! identifier 'T' not found
+f(int) #! cannot access nonlocal variable 'T'
 
 #%% class_err_1,barebones
 @extend
@@ -681,14 +683,14 @@ class F[T: Static[float]]:
 def foo[T]():
     class A:
         x: T
-#! identifier 'T' not found (cannot access outer function identifiers)
+#! cannot access nonlocal variable 'T'
 
 #%% class_err_11,barebones
 def foo(x):
     class A:
         def bar():
             print x
-#! cannot access non-global variable 'x'
+#! cannot access nonlocal variable 'x'
 
 #%% class_err_12,barebones
 def foo(x):
@@ -696,7 +698,7 @@ def foo(x):
     class A:
         def bar():
             print T()
-#! identifier 'T' not found (cannot access outer function identifiers)
+#! cannot access nonlocal variable 'T'
 
 #%% recursive_class,barebones
 class Node[T]:
@@ -793,10 +795,10 @@ print 0 in sponge #: False
 @tuple
 class Foo:
     pass
-print Foo().__getitem__(1)
-#! expression with void type
-#! while realizing __internal__.tuple_getitem
-#! while realizing Foo.__getitem__
+try:
+    print Foo().__getitem__(1)
+except IndexError:
+    print 'error'  #: error
 
 #%% magic_empty_tuple,barebones
 @tuple
@@ -863,7 +865,7 @@ from python import re.split(str, str) -> List[str] as rs
 print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
 #%% python_import_void
-from python import os.system(str) -> void
+from python import os.system(str) -> None
 system("echo 'hello!'")  #: hello!
 
 #%% python_pydef
@@ -907,7 +909,7 @@ b: type(a) = 1 #! type() not allowed in definitions
 _ = 5
 _ = 's'
 
-#%% inherit_class,barebones
+#%% inherit_class_4,barebones
 class defdict[K,V](Dict[K,V]):
     fx: Function[[],V]
     def __init__(self, d: Dict[K,V], fx: Function[[], V]):
@@ -935,7 +937,7 @@ class Foo:
 class Bar[T]:
     y: T
     def bar(self):
-        return f'bar {self.y}/{self.y.__class__}'
+        return f'bar {self.y}/{self.y.__class__.__name__}'
 class FooBarBaz[T](Foo, Bar[T]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
@@ -943,12 +945,12 @@ print FooBarBaz[str]().foo() #: foo 0
 print FooBarBaz[float]().bar() #: bar 0/float
 print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
 
-#%% inherit_class_err_2,barebones
+#%% inherit_class_err_5,barebones
 class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
-z[1.1] #! cannot find a method '__getitem__' in defdict with arguments  = defdict,  = float
+z[1.1] #! cannot find a method '__getitem__' in defdict with arguments 'defdict', 'float'
 
 #%% inherit_tuple,barebones
 class Foo:
@@ -1007,10 +1009,10 @@ class Foo:
         self.y = 1, x
 
 f = Foo(1)
-print(f.x, f.y, f.__class__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
+print(f.x, f.y, f.__class__.__name__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
 
 f: Foo = Foo('s')
-print(f.x, f.y, f.__class__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
+print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
 
 @deduce
 class Bar:
@@ -1018,5 +1020,63 @@ class Bar:
         self.y = Foo(y)
 
 b = Bar(3.1)
-print(b.y.x, b.__class__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
+print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
 
+#%% multi_error,barebones
+a = 55
+print z  #! identifier 'z' not found
+print(a, q, w)  #! identifier 'q' not found
+print quit  #! identifier 'quit' not found
+
+#%% class_var,barebones
+class Foo:
+    cx = 15
+    x: int = 10
+    cy: ClassVar[str] = "ho"
+    class Bar:
+        bx = 1.1
+print(Foo.cx)  #: 15
+f = Foo()
+print(Foo.cy, f.cy)  #: ho ho
+print(Foo.Bar.bx)  #: 1.1
+
+Foo.cx = 10
+print(Foo.cx)  #: 10
+
+def x():
+    class Foo:
+        i = 0
+        f = Foo()
+        def __init__(self):
+            Foo.i += 1
+        def __repr__(self):
+            return 'heh-cls'
+    Foo(), Foo(), Foo()
+    print Foo.f, Foo.i  #: heh-cls 4
+    return Foo()
+f = x()
+print f.f, f.i  #: heh-cls 5
+
+@tuple
+class Fot:
+    f = Fot()
+    def __repr__(self):
+        return 'heh-tup'
+print Fot.f  #: heh-tup
+
+
+#%% dot_access_error,barebones
+class Foo:
+    x: int = 1
+Foo.x #! cannot find 'x' in Foo
+
+#%% scoping_same_name,barebones
+def match(pattern: str, string: str, flags: int = 0):
+    pass
+
+def match(match):
+    if True:
+        match = 0
+    match
+
+match(1)

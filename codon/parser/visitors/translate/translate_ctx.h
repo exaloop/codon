@@ -11,8 +11,7 @@
 #include "codon/sir/sir.h"
 #include "codon/sir/types/types.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * IR context object description.
@@ -72,5 +71,4 @@ public:
   codon::ir::SeriesFlow *getSeries() const;
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

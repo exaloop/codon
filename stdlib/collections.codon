@@ -357,5 +357,5 @@ class Dict:
         self._init_from(other)
 
 
-def namedtuple():  # internal
+def namedtuple(name: Static[str], args):  # internal
     pass

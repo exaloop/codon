@@ -46,9 +46,10 @@ void GlobalDemotionPass::run(Module *M) {
   }
 
   for (auto it : localGlobals) {
-    if (!it.second || it.first->getId() == M->getArgVar()->getId())
+    if (!it.second || it.first->getId() == M->getArgVar()->getId() ||
+        it.first->isExternal())
       continue;
-    seqassert(it.first->isGlobal(), "var was not global");
+    seqassertn(it.first->isGlobal(), "var was not global [{}]", it.first->getSrcInfo());
     it.first->setGlobal(false);
     if (auto *func = cast<BodiedFunc>(it.second)) {
       func->push_back(it.first);

@@ -8,9 +8,7 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-namespace codon {
-namespace ast {
-namespace types {
+namespace codon::ast::types {
 
 void Type::Unification::undo() {
   for (int i = int(linked.size()) - 1; i >= 0; i--) {
@@ -18,7 +16,8 @@ void Type::Unification::undo() {
     linked[i]->type = nullptr;
   }
   for (int i = int(leveled.size()) - 1; i >= 0; i--) {
-    seqassert(leveled[i].first->kind == LinkType::Unbound, "not unbound");
+    seqassertn(leveled[i].first->kind == LinkType::Unbound, "not unbound [{}]",
+               leveled[i].first->getSrcInfo());
     leveled[i].first->level = leveled[i].second;
   }
   for (auto &t : traits)
@@ -172,9 +171,7 @@ bool LinkType::canRealize() const {
   else
     return type->canRealize();
 }
-bool LinkType::isInstantiated() const {
-  return kind == Link ? type->isInstantiated() : false;
-}
+bool LinkType::isInstantiated() const { return kind == Link && type->isInstantiated(); }
 std::string LinkType::debugString(bool debug) const {
   if (kind == Unbound || kind == Generic)
     return debug ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
@@ -235,17 +232,19 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
 }
 
 ClassType::ClassType(std::string name, std::string niceName,
-                     std::vector<Generic> generics)
-    : name(move(name)), niceName(move(niceName)), generics(move(generics)) {}
+                     std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
+    : name(move(name)), niceName(move(niceName)), generics(move(generics)),
+      hiddenGenerics(move(hiddenGenerics)) {}
 ClassType::ClassType(const ClassTypePtr &base)
-    : name(base->name), niceName(base->niceName), generics(base->generics) {}
+    : name(base->name), niceName(base->niceName), generics(base->generics),
+      hiddenGenerics(base->hiddenGenerics) {}
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
     // Check names.
     if (name != tc->name)
       return -1;
     // Check generics.
-    int s1 = 3, s;
+    int s1 = 3, s = 0;
     if (generics.size() != tc->generics.size())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
@@ -261,19 +260,23 @@ int ClassType::unify(Type *typ, Unification *us) {
   }
 }
 TypePtr ClassType::generalize(int atLevel) {
-  auto g = generics;
+  auto g = generics, hg = hiddenGenerics;
   for (auto &t : g)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
-  auto c = std::make_shared<ClassType>(name, niceName, g);
+  for (auto &t : hg)
+    t.type = t.type ? t.type->generalize(atLevel) : nullptr;
+  auto c = std::make_shared<ClassType>(name, niceName, g, hg);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) {
-  auto g = generics;
+  auto g = generics, hg = hiddenGenerics;
   for (auto &t : g)
     t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto c = std::make_shared<ClassType>(name, niceName, g);
+  for (auto &t : hg)
+    t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
+  auto c = std::make_shared<ClassType>(name, niceName, g, hg);
   c->setSrcInfo(getSrcInfo());
   return c;
 }
@@ -284,14 +287,23 @@ std::vector<TypePtr> ClassType::getUnbounds() const {
       auto tu = t.type->getUnbounds();
       u.insert(u.begin(), tu.begin(), tu.end());
     }
+  for (auto &t : hiddenGenerics)
+    if (t.type) {
+      auto tu = t.type->getUnbounds();
+      u.insert(u.begin(), tu.begin(), tu.end());
+    }
   return u;
 }
 bool ClassType::canRealize() const {
   return std::all_of(generics.begin(), generics.end(),
+                     [](auto &t) { return !t.type || t.type->canRealize(); }) &&
+         std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
                      [](auto &t) { return !t.type || t.type->canRealize(); });
 }
 bool ClassType::isInstantiated() const {
   return std::all_of(generics.begin(), generics.end(),
+                     [](auto &t) { return !t.type || t.type->isInstantiated(); }) &&
+         std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
                      [](auto &t) { return !t.type || t.type->isInstantiated(); });
 }
 std::string ClassType::debugString(bool debug) const {
@@ -299,12 +311,16 @@ std::string ClassType::debugString(bool debug) const {
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
+  if (debug && !hiddenGenerics.empty()) {
+    gs.emplace_back("//");
+    for (auto &a : hiddenGenerics)
+      if (!a.name.empty())
+        gs.push_back(a.type->debugString(debug));
+  }
   // Special formatting for Functions and Tuples
   auto n = niceName;
   if (startswith(n, TYPE_TUPLE))
     n = "Tuple";
-  if (startswith(n, TYPE_FUNCTION))
-    n = "Function";
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
 std::string ClassType::realizedName() const {
@@ -333,7 +349,7 @@ int RecordType::unify(Type *typ, Unification *us) {
       auto t64 = std::make_shared<StaticType>(64);
       return generics[0].type->unify(t64.get(), us);
     }
-    int s1 = 2, s;
+    int s1 = 2, s = 0;
     if (args.size() != tr->args.size())
       return -1;
     for (int i = 0; i < args.size(); i++) {
@@ -394,9 +410,7 @@ std::string RecordType::debugString(bool debug) const {
 }
 std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
-  // This is only relevant for Tuples and KwTuples.
-  if ((startswith(name, TYPE_TUPLE) || startswith(name, TYPE_KWTUPLE)) &&
-      args.size() > 1) {
+  if (args.size() > 1) {
     std::string first = args[0]->realizedName();
     for (int i = 1; i < args.size(); i++)
       if (args[i]->realizedName() != first)
@@ -468,40 +482,40 @@ std::vector<TypePtr> FuncType::getUnbounds() const {
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   // Important: return type unbounds are not important, so skip them.
-  for (int ai = 1; ai < args.size(); ai++) {
-    auto tu = args[ai]->getUnbounds();
+  for (auto &a : getArgTypes()) {
+    auto tu = a->getUnbounds();
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   return u;
 }
 bool FuncType::canRealize() const {
   // Important: return type does not have to be realized.
+  bool skipSelf = ast->hasAttr(Attr::RealizeWithoutSelf);
 
-  bool force = ast->hasAttr(Attr::RealizeWithoutSelf);
-
-  int ai = 1 + force;
-  for (; ai < args.size(); ai++)
+  auto args = getArgTypes();
+  for (int ai = skipSelf; ai < args.size(); ai++)
     if (!args[ai]->getFunc() && !args[ai]->canRealize())
       return false;
   bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
                               [](auto &a) { return !a.type || a.type->canRealize(); });
-  if (!force)
+  if (!skipSelf)
     generics &= (!funcParent || funcParent->canRealize());
   return generics;
 }
 bool FuncType::isInstantiated() const {
   TypePtr removed = nullptr;
-  if (args[0]->getFunc() && args[0]->getFunc()->funcParent.get() == this) {
-    removed = args[0]->getFunc()->funcParent;
-    args[0]->getFunc()->funcParent = nullptr;
+  auto retType = getRetType();
+  if (retType->getFunc() && retType->getFunc()->funcParent.get() == this) {
+    removed = retType->getFunc()->funcParent;
+    retType->getFunc()->funcParent = nullptr;
   }
-  auto ret = std::all_of(funcGenerics.begin(), funcGenerics.end(),
+  auto res = std::all_of(funcGenerics.begin(), funcGenerics.end(),
                          [](auto &a) { return !a.type || a.type->isInstantiated(); }) &&
              (!funcParent || funcParent->isInstantiated()) &&
              this->RecordType::isInstantiated();
   if (removed)
-    args[0]->getFunc()->funcParent = removed;
-  return ret;
+    retType->getFunc()->funcParent = removed;
+  return res;
 }
 std::string FuncType::debugString(bool debug) const {
   std::vector<std::string> gs;
@@ -511,8 +525,10 @@ std::string FuncType::debugString(bool debug) const {
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
-  for (int ai = debug ? 0 : 1; ai < args.size(); ai++)
-    as.push_back(args[ai]->debugString(debug));
+  if (debug)
+    as.push_back(getRetType()->debugString(debug));
+  for (auto &a : getArgTypes())
+    as.push_back(a->debugString(debug));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}", ast->name, s.empty() ? "" : fmt::format("[{}]", s));
@@ -525,9 +541,8 @@ std::string FuncType::realizedName() const {
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
-  for (int ai = 1; ai < args.size(); ai++)
-    as.push_back(args[ai]->getFunc() ? args[ai]->getFunc()->realizedName()
-                                     : args[ai]->realizedName());
+  for (auto &a : getArgTypes())
+    as.push_back(a->getFunc() ? a->getFunc()->realizedName() : a->realizedName());
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
@@ -557,9 +572,9 @@ std::string PartialType::debugString(bool debug) const {
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
   std::vector<std::string> as;
-  int i, gi;
-  for (i = 0, gi = 0; i < known.size(); i++)
-    if (!func->ast->args[i].generic) {
+  int i = 0, gi = 0;
+  for (; i < known.size(); i++)
+    if (func->ast->args[i].status == Param::Normal) {
       if (!known[i])
         as.emplace_back("...");
       else
@@ -578,20 +593,17 @@ std::string PartialType::realizedName() const {
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-StaticType::StaticType(std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> ctx)
+StaticType::StaticType(const std::shared_ptr<Expr> &e, std::shared_ptr<TypeContext> ctx)
     : expr(e->clone()), typeCtx(move(ctx)) {
-  // seqassert(expr->isStatic(), "{} is not a static expression", expr->toString());
   if (!expr->isStatic() || !expr->staticValue.evaluated) {
     std::unordered_set<std::string> seen;
     parseExpr(expr, seen);
   }
 }
 StaticType::StaticType(std::vector<ClassType::Generic> generics,
-                       std::shared_ptr<Expr> e, std::shared_ptr<TypeContext> typeCtx)
-    : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {
-  // seqassert(!expr || !expr->getInt(), "invalid complex static expression: {}",
-  //           expr ? expr->toString() : "-");
-}
+                       const std::shared_ptr<Expr> &e,
+                       std::shared_ptr<TypeContext> typeCtx)
+    : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {}
 StaticType::StaticType(int64_t i)
     : expr(std::make_shared<IntExpr>(i)), typeCtx(nullptr) {}
 int StaticType::unify(Type *typ, Unification *us) {
@@ -619,7 +631,7 @@ int StaticType::unify(Type *typ, Unification *us) {
     if (generics.size() != t->generics.size())
       return -1;
 
-    int s1 = 2, s;
+    int s1 = 2, s = 0;
     if (!(expr->getId() && t->expr->getId()) && expr->toString() != t->expr->toString())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
@@ -734,13 +746,17 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (tr->name == "NoneType")
       return 1;
     if (args.empty())
-      return (startswith(tr->name, TYPE_FUNCTION) || tr->getPartial()) ? 1 : -1;
-    if (startswith(tr->name, TYPE_FUNCTION)) {
+      return (tr->name == "Function" || tr->getPartial()) ? 1 : -1;
+    auto &inargs = args[0]->getRecord()->args;
+    if (tr->name == "Function") {
       // Handle Callable[...]<->Function[...].
-      if (args.size() != tr->args.size())
+      if (args.size() != tr->generics.size())
         return -1;
-      for (int i = 0; i < args.size(); i++) {
-        if (args[i]->unify(tr->args[i].get(), us) == -1)
+      if (inargs.size() != tr->generics[0].type->getRecord()->args.size())
+        return -1;
+      for (int i = 0; i < inargs.size(); i++) {
+        if (inargs[i]->unify(tr->generics[0].type->getRecord()->args[i].get(), us) ==
+            -1)
           return -1;
       }
       return 1;
@@ -750,7 +766,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       for (int pi = 9; pi < tr->name.size() && tr->name[pi] != '.'; pi++)
         if (tr->name[pi] == '0')
           zeros.emplace_back(pi - 9);
-      if (zeros.size() + 1 != args.size())
+      if (zeros.size() != inargs.size())
         return -1;
 
       int ic = 0;
@@ -758,9 +774,9 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       auto pf = pt->func->instantiate(0, &ic, &c)->getFunc();
       // For partial functions, we just check can we unify without actually performing
       // unification
-      for (int pi = 0, gi = 1; pi < pt->known.size(); pi++)
-        if (!pt->known[pi] && !pf->ast->args[pi].generic)
-          if (args[gi++]->unify(pf->args[pi + 1].get(), us) == -1)
+      for (int pi = 0, gi = 0; pi < pt->known.size(); pi++)
+        if (!pt->known[pi] && pf->ast->args[pi].status == Param::Normal)
+          if (inargs[gi++]->unify(pf->getArgTypes()[pi].get(), us) == -1)
             return -1;
       if (us && us->realizator && pf->canRealize()) {
         // Realize if possible to allow deduction of return type [and possible
@@ -768,7 +784,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         auto rf = us->realizator->realize(pf);
         pf->unify(rf.get(), us);
       }
-      if (args[0]->unify(pf->args[0].get(), us) == -1)
+      if (args[1]->unify(pf->getRetType().get(), us) == -1)
         return -1;
       return 1;
     }
@@ -813,6 +829,4 @@ std::string CallableTrait::debugString(bool debug) const {
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
-} // namespace types
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast::types

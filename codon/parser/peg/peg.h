@@ -8,8 +8,7 @@
 #include "codon/parser/cache.h"
 #include "codon/util/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /// Parse a Seq code block with the appropriate file and position offsets.
 StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code,
@@ -23,5 +22,4 @@ StmtPtr parseFile(Cache *cache, const std::string &file);
 std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
                                        const codon::SrcInfo &loc);
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast
