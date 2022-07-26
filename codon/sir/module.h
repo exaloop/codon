@@ -269,7 +269,6 @@ public:
   /// Gets or realizes a method.
   /// @param parent the parent class
   /// @param methodName the method name
-  /// @param rType the return type
   /// @param args the argument types
   /// @param generics the generics
   /// @return the method or nullptr
@@ -279,7 +278,6 @@ public:
 
   /// Gets or realizes a function.
   /// @param funcName the function name
-  /// @param rType the return type
   /// @param args the argument types
   /// @param generics the generics
   /// @param module the module of the function

@@ -1,5 +1,5 @@
 <p align="center">
- <img src="docs/sphinx/codon.png?raw=true" width="600" alt="Codon"/>
+ <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
 
 <p align="center">
@@ -95,13 +95,13 @@ Pre-built binaries for Linux and macOS on x86_64 are available alongside [each r
 We also have a script for downloading and installing pre-built versions:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://codon.dev/install.sh)"
+/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
 ```
 
 ### Build from source
 
-See [Building from Source](docs/sphinx/build.rst).
+See [Building from Source](docs/advanced/build.md).
 
 ## Documentation
 
-Please check [docs.codon.dev](https://docs.codon.dev) for in-depth documentation.
+Please see [docs.exaloop.io](https://docs.exaloop.io/codon) for in-depth documentation.
