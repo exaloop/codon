@@ -238,23 +238,22 @@ print foo(N=3, x=(1, 2)) #: ()
 print foo(N=1, x=(1, 2, 3)) #: (3)
 
 #%% try_throw,barebones
-class MyError:
-    _hdr: ExcHeader
+class MyError(Exception):
     def __init__(self, message: str):
-        self._hdr = ('MyError', message, '', '', 0, 0)
+        super().__init__('MyError', message)
 try:
     raise MyError("hello!")
 except MyError as e:
-    print e._hdr.msg  #: hello!
+    print str(e)  #: hello!
 try:
     raise OSError("hello os!")
 # TODO: except (MyError, OSError) as e:
-#     print e._hdr.msg
+#     print str(e)
 except MyError:
     print "my"
 except OSError as o:
-    print "os", o._hdr.typename, len(o._hdr.msg), o._hdr.file[-20:], o._hdr.line
-    #: os OSError 9 typecheck_stmt.codon 250
+    print "os", o.typename, len(o.message), o.file[-20:], o.line
+    #: os OSError 9 typecheck_stmt.codon 249
 finally:
     print "whoa"  #: whoa
 
@@ -264,11 +263,11 @@ def foo():
 try:
     foo()
 except MyError as e:
-    print e._hdr.typename, e._hdr.msg #: MyError foo!
+    print e.typename, e.message #: MyError foo!
 
 #%% throw_error,barebones
 raise 'hello'
-#! custom error: exception does not have _hdr: ExcHeader
+#! custom error: exceptions must derive from BaseException
 #! while realizing __internal__.set_header
 
 #%% function_builtin_error,barebones
