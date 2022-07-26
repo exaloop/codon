@@ -767,7 +767,6 @@ std::unique_ptr<Result> CaptureAnalysis::run(const Module *m) {
     if (const auto *f = cast<Func>(var)) {
       auto ans = cc.get(f);
       res->results.emplace(f->getId(), ans);
-
     }
   }
 
