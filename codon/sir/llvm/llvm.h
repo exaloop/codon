@@ -1,9 +1,12 @@
 #pragma once
 
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/RegionPass.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
