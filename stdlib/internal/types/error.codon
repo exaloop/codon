@@ -23,7 +23,7 @@ class BaseException:
         return self.message
 
     def __repr__(self):
-        f'{self.typename}({self.message.__repr__()})'
+        return f'{self.typename}({self.message.__repr__()})'
 
 
 class Exception(BaseException):
