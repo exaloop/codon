@@ -13,22 +13,23 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
       done(false), attributes(0) {}
+void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 bool Expr::isType() const { return isTypeExpr; }
 void Expr::markType() { isTypeExpr = true; }
 std::string Expr::wrapType(const std::string &sexpr) const {
-  return format(
-      "({}{}){}", sexpr, type ? format(" #:type \"{}\"", type->toString()) : "",
-      // Uncommenting this breaks static unification...
-      // staticValue.type ? format(" #:static {}", staticValue.toString()) : "",
-      done ? "*" : "");
+  auto is = sexpr;
+  if (done)
+    is.insert(findStar(is), "*");
+  auto s = format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
+  // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
+  return s;
 }
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
@@ -41,7 +42,7 @@ StaticValue::StaticValue(std::string s)
 bool StaticValue::operator==(const StaticValue &s) const {
   if (type != s.type || s.evaluated != evaluated)
     return false;
-  return s.evaluated ? value == s.value : true;
+  return !s.evaluated || value == s.value;
 }
 std::string StaticValue::toString() const {
   if (type == StaticValue::NOT_STATIC)
@@ -52,24 +53,31 @@ std::string StaticValue::toString() const {
                                      : std::to_string(std::get<int64_t>(value));
 }
 int64_t StaticValue::getInt() const {
-  seqassert(type == StaticValue::INT, "not an int");
+  seqassertn(type == StaticValue::INT, "not an int");
   return std::get<int64_t>(value);
 }
 std::string StaticValue::getString() const {
-  seqassert(type == StaticValue::STRING, "not a string");
+  seqassertn(type == StaticValue::STRING, "not a string");
   return std::get<std::string>(value);
 }
 
-Param::Param(std::string name, ExprPtr type, ExprPtr deflt, bool generic)
-    : name(std::move(name)), type(std::move(type)), deflt(std::move(deflt)),
-      generic(generic) {}
+Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
+    : name(std::move(name)), type(std::move(type)),
+      defaultValue(std::move(defaultValue)) {
+  if (status == 0 && this->type &&
+      (this->type->isId("type") || this->type->isId("TypeVar") ||
+       getStaticGeneric(this->type.get())))
+    this->status = Generic;
+  else
+    this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
+}
 std::string Param::toString() const {
   return format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
-                deflt ? " #:default " + deflt->toString() : "",
-                generic ? " #:generic" : "");
+                defaultValue ? " #:default " + defaultValue->toString() : "",
+                status != Param::Normal ? " #:generic" : "");
 }
 Param Param::clone() const {
-  return Param(name, ast::clone(type), ast::clone(deflt), generic);
+  return Param(name, ast::clone(type), ast::clone(defaultValue), status);
 }
 
 NoneExpr::NoneExpr() : Expr() {}
@@ -84,15 +92,28 @@ std::string BoolExpr::toString() const {
 }
 ACCEPT_IMPL(BoolExpr, ASTVisitor);
 
-IntExpr::IntExpr(int64_t intValue)
-    : Expr(), value(std::to_string(intValue)), intValue(intValue) {
+IntExpr::IntExpr(int64_t intValue) : Expr(), value(std::to_string(intValue)) {
+  this->intValue = std::make_unique<int64_t>(intValue);
   staticValue = StaticValue(intValue);
 }
 IntExpr::IntExpr(const std::string &value, std::string suffix)
-    : Expr(), value(), suffix(std::move(suffix)), intValue(0) {
+    : Expr(), value(), suffix(std::move(suffix)) {
   for (auto c : value)
     if (c != '_')
       this->value += c;
+  try {
+    if (startswith(this->value, "0b") || startswith(this->value, "0B"))
+      intValue =
+          std::make_unique<int64_t>(std::stoull(this->value.substr(2), nullptr, 2));
+    else
+      intValue = std::make_unique<int64_t>(std::stoull(this->value, nullptr, 0));
+  } catch (std::out_of_range &) {
+    intValue = nullptr;
+  }
+}
+IntExpr::IntExpr(const IntExpr &expr)
+    : Expr(expr), value(expr.value), suffix(expr.suffix) {
+  intValue = expr.intValue ? std::make_unique<int64_t>(*(expr.intValue)) : nullptr;
 }
 std::string IntExpr::toString() const {
   return wrapType(format("int {}{}", value,
@@ -101,9 +122,21 @@ std::string IntExpr::toString() const {
 ACCEPT_IMPL(IntExpr, ASTVisitor);
 
 FloatExpr::FloatExpr(double floatValue)
-    : Expr(), value(fmt::format("{:g}", floatValue)), floatValue(floatValue) {}
+    : Expr(), value(fmt::format("{:g}", floatValue)) {
+  this->floatValue = std::make_unique<double>(floatValue);
+}
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
-    : Expr(), value(value), suffix(std::move(suffix)), floatValue(0.0) {}
+    : Expr(), value(value), suffix(std::move(suffix)) {
+  try {
+    floatValue = std::make_unique<double>(std::stod(value));
+  } catch (std::out_of_range &) {
+    floatValue = nullptr;
+  }
+}
+FloatExpr::FloatExpr(const FloatExpr &expr)
+    : Expr(expr), value(expr.value), suffix(expr.suffix) {
+  floatValue = expr.floatValue ? std::make_unique<double>(*(expr.floatValue)) : nullptr;
+}
 std::string FloatExpr::toString() const {
   return wrapType(format("float {}{}", value,
                          suffix.empty() ? "" : format(" #:suffix \"{}\"", suffix)));
@@ -131,7 +164,9 @@ std::string StringExpr::getValue() const {
 ACCEPT_IMPL(StringExpr, ASTVisitor);
 
 IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
-std::string IdExpr::toString() const { return wrapType(format("id '{}", value)); }
+std::string IdExpr::toString() const {
+  return !type ? format("'{}", value) : wrapType(format("'{}", value));
+}
 ACCEPT_IMPL(IdExpr, ASTVisitor);
 
 StarExpr::StarExpr(ExprPtr what) : Expr(), what(std::move(what)) {}
@@ -282,9 +317,18 @@ ACCEPT_IMPL(ChainBinaryExpr, ASTVisitor);
 PipeExpr::Pipe PipeExpr::Pipe::clone() const { return {op, ast::clone(expr)}; }
 
 PipeExpr::PipeExpr(std::vector<PipeExpr::Pipe> items)
-    : Expr(), items(std::move(items)) {}
+    : Expr(), items(std::move(items)) {
+  for (auto &i : this->items) {
+    if (auto call = i.expr->getCall()) {
+      for (auto &a : call->args)
+        if (auto el = a.value->getEllipsis())
+          el->isPipeArg = true;
+    }
+  }
+}
 PipeExpr::PipeExpr(const PipeExpr &expr)
     : Expr(expr), items(ast::clone_nop(expr.items)), inTypes(expr.inTypes) {}
+void PipeExpr::validate() const {}
 std::string PipeExpr::toString() const {
   std::vector<std::string> s;
   for (auto &i : items)
@@ -308,12 +352,30 @@ CallExpr::CallExpr(const CallExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), args(ast::clone_nop(expr.args)),
       ordered(expr.ordered) {}
 CallExpr::CallExpr(ExprPtr expr, std::vector<CallExpr::Arg> args)
-    : Expr(), expr(std::move(expr)), args(std::move(args)), ordered(false) {}
+    : Expr(), expr(std::move(expr)), args(std::move(args)), ordered(false) {
+  validate();
+}
 CallExpr::CallExpr(ExprPtr expr, std::vector<ExprPtr> args)
     : expr(std::move(expr)), ordered(false) {
   for (auto &a : args)
     if (a)
       this->args.push_back({"", std::move(a)});
+  validate();
+}
+void CallExpr::validate() const {
+  bool namesStarted = false;
+  bool foundEllispis = false;
+  for (auto &a : args) {
+    if (a.name.empty() && namesStarted &&
+        !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
+      error(getSrcInfo(), "unnamed argument after a named argument");
+    if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
+      error(getSrcInfo(), "named star-expressions not allowed");
+    if (a.value->getEllipsis() && foundEllispis)
+      error(getSrcInfo(), "unexpected ellipsis expression");
+    foundEllispis |= bool(a.value->getEllipsis());
+    namesStarted |= !a.name.empty();
+  }
 }
 std::string CallExpr::toString() const {
   std::string s;
@@ -329,7 +391,7 @@ ACCEPT_IMPL(CallExpr, ASTVisitor);
 
 DotExpr::DotExpr(ExprPtr expr, std::string member)
     : Expr(), expr(std::move(expr)), member(std::move(member)) {}
-DotExpr::DotExpr(std::string left, std::string member)
+DotExpr::DotExpr(const std::string &left, std::string member)
     : Expr(), expr(std::make_shared<IdExpr>(left)), member(std::move(member)) {}
 DotExpr::DotExpr(const DotExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), member(expr.member) {}
@@ -352,7 +414,9 @@ std::string SliceExpr::toString() const {
 ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
 EllipsisExpr::EllipsisExpr(bool isPipeArg) : Expr(), isPipeArg(isPipeArg) {}
-std::string EllipsisExpr::toString() const { return wrapType("ellipsis"); }
+std::string EllipsisExpr::toString() const {
+  return wrapType(format("ellipsis{}", isPipeArg ? " #:pipe" : ""));
+}
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, ExprPtr expr)
@@ -405,22 +469,6 @@ std::string StmtExpr::toString() const {
 }
 ACCEPT_IMPL(StmtExpr, ASTVisitor);
 
-PtrExpr::PtrExpr(ExprPtr expr) : Expr(), expr(std::move(expr)) {}
-PtrExpr::PtrExpr(const PtrExpr &expr) : Expr(expr), expr(ast::clone(expr.expr)) {}
-std::string PtrExpr::toString() const {
-  return wrapType(format("ptr {}", expr->toString()));
-}
-ACCEPT_IMPL(PtrExpr, ASTVisitor);
-
-TupleIndexExpr::TupleIndexExpr(ExprPtr expr, int index)
-    : Expr(), expr(std::move(expr)), index(index) {}
-TupleIndexExpr::TupleIndexExpr(const TupleIndexExpr &expr)
-    : Expr(expr), expr(ast::clone(expr.expr)), index(expr.index) {}
-std::string TupleIndexExpr::toString() const {
-  return wrapType(format("tuple-idx {} {}", expr->toString(), index));
-}
-ACCEPT_IMPL(TupleIndexExpr, ASTVisitor);
-
 InstantiateExpr::InstantiateExpr(ExprPtr typeExpr, std::vector<ExprPtr> typeParams)
     : Expr(), typeExpr(std::move(typeExpr)), typeParams(std::move(typeParams)) {}
 InstantiateExpr::InstantiateExpr(ExprPtr typeExpr, ExprPtr typeParam)
@@ -436,14 +484,15 @@ std::string InstantiateExpr::toString() const {
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
-StackAllocExpr::StackAllocExpr(ExprPtr typeExpr, ExprPtr expr)
-    : Expr(), typeExpr(std::move(typeExpr)), expr(std::move(expr)) {}
-StackAllocExpr::StackAllocExpr(const StackAllocExpr &expr)
-    : Expr(expr), typeExpr(ast::clone(expr.typeExpr)), expr(ast::clone(expr.expr)) {}
-std::string StackAllocExpr::toString() const {
-  return wrapType(format("stack-alloc {} {}", typeExpr->toString(), expr->toString()));
+StaticValue::Type getStaticGeneric(Expr *e) {
+  if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
+    if (e->getIndex()->index && e->getIndex()->index->isId("str"))
+      return StaticValue::Type::STRING;
+    if (e->getIndex()->index && e->getIndex()->index->isId("int"))
+      return StaticValue::Type::INT;
+    return StaticValue::Type::NOT_SUPPORTED;
+  }
+  return StaticValue::Type::NOT_STATIC;
 }
-ACCEPT_IMPL(StackAllocExpr, ASTVisitor);
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

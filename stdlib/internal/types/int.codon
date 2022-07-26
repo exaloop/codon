@@ -365,9 +365,9 @@ class int:
 
     @nocapture
     @llvm
-    def __atomic_xchg__(d: Ptr[int], b: int) -> void:
+    def __atomic_xchg__(d: Ptr[int], b: int) -> None:
         %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
-        ret void
+        ret {} {}
 
     @nocapture
     @llvm

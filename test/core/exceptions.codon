@@ -1,63 +1,36 @@
-class Exc1:
-    _hdr: ExcHeader
-    def __init__(self: Exc1, msg: str):
-        self._hdr = ('Exc1', msg, '', '', 0, 0)
+class Exc1(Exception):
+    def __init__(self, msg: str):
+        super().__init__('Exc1', msg)
+
     def show(self):
-        print self._hdr.msg
-    @property
-    def message(self: Exc1):
-        return self._hdr.msg
+        print self.message
 
+class Exc2(Exception):
+    def __init__(self, msg: str):
+        super().__init__('Exc2', msg)
 
-class Exc2:
-    _hdr: ExcHeader
-    def __init__(self: Exc2, msg: str):
-        self._hdr = ('Exc2', msg, '', '', 0, 0)
     def show(self):
-        print self._hdr.msg
-    @property
-    def message(self: Exc2):
-        return self._hdr.msg
+        print self.message
 
-class A:
-    _hdr: ExcHeader
-    def __init__(self: A, msg: str):
-        self._hdr = ('A', msg, '', '', 0, 0)
-    @property
-    def message(self: A):
-        return self._hdr.msg
+class A(Exception):
+    def __init__(self, msg: str):
+        super().__init__('A', msg)
 
-class B:
-    _hdr: ExcHeader
-    def __init__(self: B, msg: str):
-        self._hdr = ('B', msg, '', '', 0, 0)
-    @property
-    def message(self: B):
-        return self._hdr.msg
+class B(Exception):
+    def __init__(self, msg: str):
+        super().__init__('B', msg)
 
-class C:
-    _hdr: ExcHeader
-    def __init__(self: C, msg: str):
-        self._hdr = ('C', msg, '', '', 0, 0)
-    @property
-    def message(self: C):
-        return self._hdr.msg
+class C(Exception):
+    def __init__(self, msg: str):
+        super().__init__('C', msg)
 
-class D:
-    _hdr: ExcHeader
-    def __init__(self: D, msg: str):
-        self._hdr = ('D', msg, '', '', 0, 0)
-    @property
-    def message(self: D):
-        return self._hdr.msg
+class D(Exception):
+    def __init__(self, msg: str):
+        super().__init__('D', msg)
 
-class E:
-    _hdr: ExcHeader
-    def __init__(self: E, msg: str):
-        self._hdr = ('E', msg, '', '', 0, 0)
-    @property
-    def message(self: E):
-        return self._hdr.msg
+class E(Exception):
+    def __init__(self, msg: str):
+        super().__init__('E', msg)
 
 def foo1(x):
     if x:

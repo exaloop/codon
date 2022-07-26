@@ -23,7 +23,7 @@ JIT::JIT(const std::string &argv0, const std::string &mode)
     engine = std::move(e.get());
   } else {
     engine = {};
-    seqassert(false, "JIT engine creation error");
+    seqassertn(false, "JIT engine creation error");
   }
   compiler->getLLVMVisitor()->setJIT(true);
 }
@@ -105,32 +105,23 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
-  auto preamble = std::make_shared<ast::SimplifyVisitor::Preamble>();
+  auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
   ast::Cache bCache = *cache;
   ast::SimplifyContext bSimplify = *sctx;
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
-    auto *e = node->getSuite()
-                  ? const_cast<ast::SuiteStmt *>(node->getSuite())->lastInBlock()
-                  : &node;
+    auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
-        *e = std::make_shared<ast::IfStmt>(
-            std::make_shared<ast::CallExpr>(std::make_shared<ast::IdExpr>("isinstance"),
-                                            ex->expr->clone(),
-                                            std::make_shared<ast::IdExpr>("void")),
-            ex->clone(),
-            std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
-                std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
-                std::make_shared<ast::StringExpr>(mode))));
+        *e = std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
+            std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
+            std::make_shared<ast::StringExpr>(mode)));
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
     auto simplified = std::make_shared<ast::SuiteStmt>();
-    for (auto &s : preamble->globals)
-      simplified->stmts.push_back(s);
-    for (auto &s : preamble->functions)
+    for (auto &s : *preamble)
       simplified->stmts.push_back(s);
     simplified->stmts.push_back(s);
     // TODO: unroll on errors...
@@ -147,7 +138,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
       frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
     }
     auto func =
-        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v, false));
+        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
 
     return run(func);

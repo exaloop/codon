@@ -11,7 +11,8 @@ namespace ir {
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
-                 llvm::StringRef featuresStr, const llvm::TargetOptions &options) {
+                 llvm::StringRef featuresStr, const llvm::TargetOptions &options,
+                 bool pic) {
   std::string err;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), triple, err);
@@ -21,12 +22,12 @@ getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
 
   return std::unique_ptr<llvm::TargetMachine>(target->createTargetMachine(
       triple.getTriple(), cpuStr, featuresStr, options,
-      llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
-      llvm::CodeGenOpt::Aggressive));
+      pic ? llvm::Reloc::Model::PIC_ : llvm::codegen::getExplicitRelocModel(),
+      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOpt::Aggressive));
 }
 
-std::unique_ptr<llvm::TargetMachine> getTargetMachine(llvm::Module *module,
-                                                      bool setFunctionAttributes) {
+std::unique_ptr<llvm::TargetMachine>
+getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
   llvm::Triple moduleTriple(module->getTargetTriple());
   std::string cpuStr, featuresStr;
   const llvm::TargetOptions options =
@@ -53,8 +54,11 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   if (debug) {
     // remove tail calls and fix linkage for stack traces
     for (auto &f : *module) {
+#ifdef __APPLE__
+      // needed for debug symbols
       if (!jit)
         f.setLinkage(llvm::GlobalValue::ExternalLinkage);
+#endif
       if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline))
         f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
       f.setHasUWTable();
@@ -229,7 +233,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
 
 void verify(llvm::Module *module) {
   const bool broken = llvm::verifyModule(*module, &llvm::errs());
-  seqassert(!broken, "module broken");
+  seqassertn(!broken, "module broken");
 }
 
 } // namespace

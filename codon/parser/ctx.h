@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <list>
 #include <memory>
 #include <stack>
 #include <string>
@@ -11,8 +12,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /**
  * A variable table (transformation context).
@@ -20,10 +20,11 @@ namespace ast {
  * @tparam T Variable type.
  */
 template <typename T> class Context : public std::enable_shared_from_this<Context<T>> {
+public:
+  using Item = std::shared_ptr<T>;
+
 protected:
-  typedef std::unordered_map<std::string,
-                             std::deque<std::pair<int, std::shared_ptr<T>>>>
-      Map;
+  using Map = std::unordered_map<std::string, std::list<Item>>;
   /// Maps a identifier to a stack of objects that share the same identifier.
   /// Each object is represented by a nesting level and a pointer to that object.
   /// Top of the stack is the current block; the bottom is the outer-most block.
@@ -32,53 +33,28 @@ protected:
   Map map;
   /// Stack of blocks and their corresponding identifiers. Top of the stack is the
   /// current block.
-  std::deque<std::vector<std::string>> stack;
+  std::deque<std::list<std::string>> stack;
 
 private:
   /// Set of current context flags.
   std::unordered_set<std::string> flags;
   /// The absolute path of the current module.
   std::string filename;
+  /// SrcInfo stack used for obtaining source information of the current expression.
+  std::vector<SrcInfo> srcInfos;
 
 public:
   explicit Context(std::string filename) : filename(move(filename)) {
     /// Add a top-level block to the stack.
-    stack.push_front(std::vector<std::string>());
+    stack.push_front(std::list<std::string>());
   }
   virtual ~Context() = default;
 
   /// Add an object to the top of the stack.
-  void add(const std::string &name, std::shared_ptr<T> var) {
-    seqassert(!name.empty(), "adding an empty identifier");
-    map[name].push_front({stack.size(), move(var)});
+  virtual void add(const std::string &name, const Item &var) {
+    seqassertn(!name.empty(), "adding an empty identifier");
+    map[name].push_front(move(var));
     stack.front().push_back(name);
-  }
-  /// Add an object to the top of the previous block.
-  void addPrevBlock(const std::string &name, std::shared_ptr<T> var) {
-    seqassert(!name.empty(), "adding an empty identifier");
-    seqassert(stack.size() > 1, "adding an empty identifier");
-    auto &m = map[name];
-    int pos = 0;
-    /// Make sure to add it to the appropriate place in the Map
-    /// (because each stack is not stacked itself, we have to use pos to find top-level
-    /// position).
-    while (pos < m.size() && m[pos].first == stack.size())
-      pos++;
-    m.insert(m.begin() + pos, {stack.size() - 1, move(var)});
-    stack[1].push_back(name);
-  }
-  /// Add an object to the top-level (bottom of the stack).
-  void addToplevel(const std::string &name, std::shared_ptr<T> var) {
-    seqassert(!name.empty(), "adding an empty identifier");
-    auto &m = map[name];
-    int pos = m.size();
-    /// Make sure to add it to the appropriate place in the Map
-    /// (because each stack is not stacked itself, we have to use pos to find top-level
-    /// position).
-    while (pos > 0 && m[pos - 1].first == 1)
-      pos--;
-    m.insert(m.begin() + pos, {1, move(var)});
-    stack.back().push_back(name); // add to the latest "level"
   }
   /// Remove the top-most object with a given identifier.
   void remove(const std::string &name) {
@@ -90,24 +66,22 @@ public:
         return;
       }
     }
-    seqassert(false, "cannot find {} in the stack", name);
+    seqassertn(false, "cannot find {} in the stack", name);
   }
   /// Return a top-most object with a given identifier or nullptr if it does not exist.
-  virtual std::shared_ptr<T> find(const std::string &name) const {
+  virtual Item find(const std::string &name) const {
     auto it = map.find(name);
-    return it != map.end() ? it->second.front().second : nullptr;
+    return it != map.end() ? it->second.front() : nullptr;
   }
   /// Add a new block (i.e. adds a stack level).
-  void addBlock() { stack.push_front(std::vector<std::string>()); }
+  virtual void addBlock() { stack.push_front(std::list<std::string>()); }
   /// Remove the top-most block and all variables it holds.
-  void popBlock() {
+  virtual void popBlock() {
     for (auto &name : stack.front())
       removeFromMap(name);
     stack.pop_front();
   }
 
-  /// True if only the top-level block is present.
-  bool isToplevel() const { return stack.size() == 1; }
   /// The absolute path of a current module.
   std::string getFilename() const { return filename; }
   /// Sets the absolute path of a current module.
@@ -124,13 +98,19 @@ private:
   /// Remove an identifier from the map only.
   void removeFromMap(const std::string &name) {
     auto i = map.find(name);
-    seqassert(!(i == map.end() || !i->second.size()),
-              "identifier {} not found in the map", name);
+    if (i == map.end())
+      return;
+    seqassertn(i->second.size(), "identifier {} not found in the map", name);
     i->second.pop_front();
     if (!i->second.size())
       map.erase(name);
   }
+
+public:
+  /* SrcInfo helpers */
+  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
+  void popSrcInfo() { srcInfos.pop_back(); }
+  SrcInfo getSrcInfo() const { return srcInfos.back(); }
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

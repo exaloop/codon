@@ -95,7 +95,7 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
       step = stepConst->getVal();
       break;
     default:
-      seqassert(false, "unknown range constructor");
+      seqassertn(false, "unknown range constructor");
     }
     if (step == 0)
       return;
@@ -123,7 +123,7 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
     auto *ptrVar = util::makeVar(ptrVal, series, parent);
 
     auto *body = cast<SeriesFlow>(v->getBody());
-    seqassert(body, "loop body is not a series flow");
+    seqassertn(body, "loop body is not a series flow [{}]", v->getSrcInfo());
     auto *oldLoopVar = v->getVar();
     auto *newLoopVar = M->Nr<Var>(M->getIntType());
     parent->push_back(newLoopVar);

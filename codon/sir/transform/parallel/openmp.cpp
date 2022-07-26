@@ -21,7 +21,6 @@ struct OMPTypes {
   types::Type *i32 = nullptr;
   types::Type *i8ptr = nullptr;
   types::Type *i32ptr = nullptr;
-  types::Type *micro = nullptr;
   types::Type *routine = nullptr;
   types::Type *ident = nullptr;
   types::Type *task = nullptr;
@@ -30,12 +29,11 @@ struct OMPTypes {
     i32 = M->getIntNType(32, /*sign=*/true);
     i8ptr = M->getPointerType(M->getByteType());
     i32ptr = M->getPointerType(i32);
-    micro = M->getFuncType(M->getVoidType(), {i32ptr, i32ptr});
     routine = M->getFuncType(i32, {i32ptr, i8ptr});
     ident = M->getOrRealizeType("Ident", {}, ompModule);
     task = M->getOrRealizeType("Task", {}, ompModule);
-    seqassert(ident, "openmp.Ident type not found");
-    seqassert(task, "openmp.Task type not found");
+    seqassertn(ident, "openmp.Ident type not found");
+    seqassertn(task, "openmp.Task type not found");
   }
 };
 
@@ -45,7 +43,7 @@ Var *getVarFromOutlinedArg(Value *arg) {
   } else if (auto *val = cast<PointerValue>(arg)) {
     return val->getVar();
   } else {
-    seqassert(false, "unknown outline var");
+    seqassertn(false, "unknown outline var");
   }
   return nullptr;
 }
@@ -54,7 +52,7 @@ Value *ptrFromFunc(Func *func) {
   auto *M = func->getModule();
   auto *funcType = func->getType();
   auto *rawMethod = M->getOrRealizeMethod(funcType, "__raw__", {funcType});
-  seqassert(rawMethod, "cannot find function __raw__ method");
+  seqassertn(rawMethod, "cannot find function __raw__ method");
   return util::call(rawMethod, {M->Nr<VarValue>(func)});
 }
 
@@ -102,7 +100,7 @@ struct Reduction {
 
   types::Type *getType() {
     auto *ptrType = cast<types::PointerType>(shared->getType());
-    seqassert(ptrType, "expected shared var to be of pointer type");
+    seqassertn(ptrType, "expected shared var to be of pointer type");
     return ptrType->getBase();
   }
 
@@ -175,14 +173,14 @@ struct Reduction {
     case Kind::MIN: {
       auto *tup = util::makeTuple({lhs, arg});
       auto *fn = M->getOrRealizeFunc("min", {tup->getType()}, {}, builtinModule);
-      seqassert(fn, "min function not found");
+      seqassertn(fn, "min function not found");
       result = util::call(fn, {tup});
       break;
     }
     case Kind::MAX: {
       auto *tup = util::makeTuple({lhs, arg});
       auto *fn = M->getOrRealizeFunc("max", {tup->getType()}, {}, builtinModule);
-      seqassert(fn, "max function not found");
+      seqassertn(fn, "max function not found");
       result = util::call(fn, {tup});
       break;
     }
@@ -246,7 +244,7 @@ struct Reduction {
     if (!func.empty()) {
       auto *atomicOp =
           M->getOrRealizeFunc(func, {ptr->getType(), arg->getType()}, {}, ompModule);
-      seqassert(atomicOp, "atomic op '{}' not found", func);
+      seqassertn(atomicOp, "atomic op '{}' not found", func);
       return util::call(atomicOp, {ptr, arg});
     }
 
@@ -283,16 +281,16 @@ struct Reduction {
         return util::call(atomicOp, {ptr, arg});
     }
 
-    seqassert(loc && gtid, "loc and/or gtid are null");
+    seqassertn(loc && gtid, "loc and/or gtid are null");
     auto *lck = locks.getCritLock(M);
     auto *critBegin = M->getOrRealizeFunc(
         "_critical_begin", {loc->getType(), gtid->getType(), lck->getType()}, {},
         ompModule);
-    seqassert(critBegin, "critical begin function not found");
+    seqassertn(critBegin, "critical begin function not found");
     auto *critEnd = M->getOrRealizeFunc(
         "_critical_end", {loc->getType(), gtid->getType(), lck->getType()}, {},
         ompModule);
-    seqassert(critEnd, "critical end function not found");
+    seqassertn(critEnd, "critical end function not found");
 
     auto *critEnter = util::call(
         critBegin, {M->Nr<VarValue>(loc), M->Nr<VarValue>(gtid), M->Nr<VarValue>(lck)});
@@ -338,7 +336,7 @@ struct ReductionIdentifier : public util::Operator {
   bool isSharedDeref(Var *shared, Value *v) {
     auto *M = v->getModule();
     auto *ptrType = cast<types::PointerType>(shared->getType());
-    seqassert(ptrType, "expected shared var to be of pointer type");
+    seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
 
     if (util::isCallOf(v, Module::GETITEM_MAGIC_NAME, {ptrType, M->getIntType()}, type,
@@ -381,13 +379,13 @@ struct ReductionIdentifier : public util::Operator {
       return {};
 
     auto *ptrType = cast<types::PointerType>(shared->getType());
-    seqassert(ptrType, "expected shared var to be of pointer type");
+    seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
 
     // double-check the call
     if (!util::isCallOf(v, Module::SETITEM_MAGIC_NAME,
                         {self->getType(), idx->getType(), item->getType()},
-                        M->getVoidType(), /*method=*/true))
+                        M->getNoneType(), /*method=*/true))
       return {};
 
     const std::vector<ReductionFunction> reductionFunctions = {
@@ -517,7 +515,7 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
     auto *M = parent->getModule();
     auto *tupleType = getReductionTuple()->getType();
     auto *argType = M->getPointerType(tupleType);
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *reducer = M->Nr<BodiedFunc>("__omp_reducer");
     reducer->realize(funcType, {"lhs", "rhs"});
 
@@ -548,10 +546,10 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
     auto name = func->getUnmangledName();
 
     if (name == "_loop_loc_and_gtid") {
-      seqassert(v->numArgs() == 3 &&
-                    std::all_of(v->begin(), v->end(),
-                                [](auto x) { return isA<VarValue>(x); }),
-                "unexpected loop loc and gtid stub");
+      seqassertn(v->numArgs() == 3 &&
+                     std::all_of(v->begin(), v->end(),
+                                 [](auto x) { return isA<VarValue>(x); }),
+                 "unexpected loop loc and gtid stub");
       std::vector<Value *> args(v->begin(), v->end());
       locRef = util::getVar(args[0]);
       reductionLocRef = util::getVar(args[1]);
@@ -559,9 +557,9 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
     }
 
     if (name == "_loop_reductions") {
-      seqassert(reductionLocRef && gtid, "bad visit order in template");
-      seqassert(v->numArgs() == 1 && isA<VarValue>(v->front()),
-                "unexpected shared updates stub");
+      seqassertn(reductionLocRef && gtid, "bad visit order in template");
+      seqassertn(v->numArgs() == 1 && isA<VarValue>(v->front()),
+                 "unexpected shared updates stub");
       if (numReductions() == 0)
         return;
 
@@ -577,11 +575,11 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
           {reductionLocRef->getType(), gtid->getType(), reductionTuple->getType(),
            rawReducer->getType(), lck->getType()},
           {}, ompModule);
-      seqassert(reduceNoWait, "reduce nowait function not found");
+      seqassertn(reduceNoWait, "reduce nowait function not found");
       auto *reduceNoWaitEnd = M->getOrRealizeFunc(
           "_end_reduce_nowait",
           {reductionLocRef->getType(), gtid->getType(), lck->getType()}, {}, ompModule);
-      seqassert(reduceNoWaitEnd, "end reduce nowait function not found");
+      seqassertn(reduceNoWaitEnd, "end reduce nowait function not found");
 
       auto *series = M->Nr<SeriesFlow>();
       auto *tupleVal = util::makeVar(reductionTuple, series, parent);
@@ -589,7 +587,7 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
                                                    M->Nr<VarValue>(gtid), tupleVal,
                                                    rawReducer, M->Nr<VarValue>(lck)});
       auto *codeVar = util::makeVar(reduceCode, series, parent)->getVar();
-      seqassert(codeVar->getType()->is(M->getIntType()), "wrong reduce code type");
+      seqassertn(codeVar->getType()->is(M->getIntType()), "wrong reduce code type");
 
       auto *sectionNonAtomic = M->Nr<SeriesFlow>();
       auto *sectionAtomic = M->Nr<SeriesFlow>();
@@ -649,10 +647,10 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
     }
 
     if (name == "_loop_body_stub") {
-      seqassert(replacement, "unexpected double replacement");
-      seqassert(v->numArgs() == 2 && isA<VarValue>(v->front()) &&
-                    isA<VarValue>(v->back()),
-                "unexpected loop body stub");
+      seqassertn(replacement, "unexpected double replacement");
+      seqassertn(v->numArgs() == 2 && isA<VarValue>(v->front()) &&
+                     isA<VarValue>(v->back()),
+                 "unexpected loop body stub");
 
       auto *outlinedFunc = util::getFunc(replacement->getCallee());
 
@@ -681,8 +679,8 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
             Reduction reduction = reds->getReduction(*outlinedArgs);
             if (reduction) {
               initVal = reduction.getInitial();
-              seqassert(initVal && initVal->getType()->is(base),
-                        "unknown reduction init value");
+              seqassertn(initVal && initVal->getType()->is(base),
+                         "unknown reduction init value");
             }
 
             VarValue *newVar = util::makeVar(
@@ -702,7 +700,7 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
           } else if (isA<PointerValue>(arg)) {
             newArgs.push_back(M->Nr<PointerValue>(newLoopVar));
           } else {
-            seqassert(false, "unknown outline var");
+            seqassertn(false, "unknown outline var");
           }
         }
 
@@ -716,8 +714,8 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
     if (name == "_loop_shared_updates") {
       // for all non-reduction shareds, set the final values
       // this will be similar to OpenMP's "lastprivate"
-      seqassert(v->numArgs() == 1 && isA<VarValue>(v->front()),
-                "unexpected shared updates stub");
+      seqassertn(v->numArgs() == 1 && isA<VarValue>(v->front()),
+                 "unexpected shared updates stub");
       auto *extras = util::getVar(v->front());
       auto *series = M->Nr<SeriesFlow>();
 
@@ -780,7 +778,7 @@ struct TaskLoopReductionVarReplacer : public util::Operator {
     for (auto &p : reductionRemap) {
       auto *taskRedData = M->getOrRealizeFunc(
           "_taskred_data", {M->getIntType(), p.first->getType()}, {}, ompModule);
-      seqassert(taskRedData, "could not find '_taskred_data'");
+      seqassertn(taskRedData, "could not find '_taskred_data'");
 
       auto *assign = M->Nr<AssignInstr>(
           p.second,
@@ -801,10 +799,10 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
   void handle(CallInstr *v) override {
     auto *func = util::getFunc(v->getCallee());
     if (func && func->getUnmangledName() == "_task_loop_body_stub") {
-      seqassert(replacement, "unexpected double replacement");
-      seqassert(v->numArgs() == 3 && isA<VarValue>(v->front()) &&
-                    isA<VarValue>(v->back()),
-                "unexpected loop body stub");
+      seqassertn(replacement, "unexpected double replacement");
+      seqassertn(v->numArgs() == 3 && isA<VarValue>(v->front()) &&
+                     isA<VarValue>(v->back()),
+                 "unexpected loop body stub");
 
       // the template passes gtid, privs and shareds to the body stub for convenience
       std::vector<Value *> args(v->begin(), v->end());
@@ -825,7 +823,8 @@ struct TaskLoopBodyStubReplacer : public util::Operator {
         } else {
           // make sure we're on the last arg, which should be gtid
           // in case of reductions
-          seqassert(hasReductions && arg == replacement->back(), "unknown outline var");
+          seqassertn(hasReductions && arg == replacement->back(),
+                     "unknown outline var");
         }
       }
 
@@ -885,7 +884,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   BodiedFunc *makeTaskRedInitFunc(Reduction *reduction) {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *initializer = M->Nr<BodiedFunc>("__red_init");
     initializer->realize(funcType, {"lhs", "rhs"});
 
@@ -900,7 +899,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   BodiedFunc *makeTaskRedCombFunc(Reduction *reduction) {
     auto *M = parent->getModule();
     auto *argType = M->getPointerType(reduction->getType());
-    auto *funcType = M->getFuncType(M->getVoidType(), {argType, argType});
+    auto *funcType = M->getFuncType(M->getNoneType(), {argType, argType});
     auto *reducer = M->Nr<BodiedFunc>("__red_comb");
     reducer->realize(funcType, {"lhs", "rhs"});
 
@@ -923,9 +922,9 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 
     auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
-    seqassert(taskRedInputType, "could not find 'TaskReductionInput' type");
+    seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
     auto *result = taskRedInputType->construct({shar, orig, size, init, comb});
-    seqassert(result, "bad construction of 'TaskReductionInput' type");
+    seqassertn(result, "bad construction of 'TaskReductionInput' type");
     return result;
   }
 
@@ -953,8 +952,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
         } else {
           // make sure we're on the last arg, which should be gtid
           // in case of reductions
-          seqassert(numReductions() > 0 && arg == replacement->back(),
-                    "unknown outline var");
+          seqassertn(numReductions() > 0 && arg == replacement->back(),
+                     "unknown outline var");
           reduceArgs.push_back(false);
         }
       }
@@ -976,9 +975,9 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto name = func->getUnmangledName();
 
     if (name == "_taskred_setup") {
-      seqassert(reductionLocRef && gtid, "bad visit order in template");
-      seqassert(v->numArgs() == 1 && isA<VarValue>(v->front()),
-                "unexpected shared updates stub");
+      seqassertn(reductionLocRef && gtid, "bad visit order in template");
+      seqassertn(v->numArgs() == 1 && isA<VarValue>(v->front()),
+                 "unexpected shared updates stub");
       unsigned numRed = numReductions();
       if (numRed == 0)
         return;
@@ -989,9 +988,9 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       // add task reduction inputs
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
       auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
-      seqassert(taskRedInputType, "could not find 'TaskReductionInput' type");
+      seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
       auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray", {}, ompModule);
-      seqassert(irArrayType, "could not find 'TaskReductionInputArray' type");
+      seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
       array = util::getVar(taskRedInputsArray);
@@ -1000,8 +999,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       auto *taskRedSetItem = M->getOrRealizeMethod(
           taskRedInputsArrayType, Module::SETITEM_MAGIC_NAME,
           {taskRedInputsArrayType, M->getIntType(), taskRedInputType});
-      seqassert(taskRedSetItem,
-                "could not find 'TaskReductionInputArray.__setitem__' method");
+      seqassertn(taskRedSetItem,
+                 "could not find 'TaskReductionInputArray.__setitem__' method");
       int i = 0;
       for (auto &info : sharedInfo) {
         if (info.reduction) {
@@ -1019,7 +1018,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
                               {reductionLocRef->getType(), gtid->getType(),
                                M->getIntType(), arrayPtr->getType()},
                               {}, ompModule);
-      seqassert(taskRedInitFunc, "task red init function not found");
+      seqassertn(taskRedInitFunc, "task red init function not found");
       auto *taskRedInitResult =
           util::makeVar(util::call(taskRedInitFunc, {M->Nr<VarValue>(reductionLocRef),
                                                      M->Nr<VarValue>(gtid),
@@ -1031,7 +1030,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
     if (name == "_fix_privates_and_shareds") {
       std::vector<Value *> args(v->begin(), v->end());
-      seqassert(args.size() == 3, "invalid _fix_privates_and_shareds call found");
+      seqassertn(args.size() == 3, "invalid _fix_privates_and_shareds call found");
       unsigned numRed = numReductions();
       auto *newLoopVar = args[0];
       auto *privatesTuple = args[1];
@@ -1049,7 +1048,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
       for (auto *val : privates) {
         if (numRed > 0 && val == privates.back()) { // i.e. task group identifier
-          seqassert(tskgrp, "tskgrp var not set");
+          seqassertn(tskgrp, "tskgrp var not set");
           newPrivates.push_back(M->Nr<VarValue>(tskgrp));
           needNewPrivates = true;
         } else if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
@@ -1087,14 +1086,14 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     }
 
     if (name == "_taskred_finish") {
-      seqassert(reductionLocRef && gtid, "bad visit order in template");
+      seqassertn(reductionLocRef && gtid, "bad visit order in template");
       if (numReductions() == 0)
         return;
 
       auto *taskRedFini = M->getOrRealizeFunc(
           "_taskred_fini", {reductionLocRef->getType(), gtid->getType()}, {},
           ompModule);
-      seqassert(taskRedFini, "taskred finish function not found not found");
+      seqassertn(taskRedFini, "taskred finish function not found not found");
       v->replaceAll(util::call(
           taskRedFini, {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid)}));
     }
@@ -1160,14 +1159,14 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
   auto *forkExtra = util::makeTuple(forkExtraArgs, M);
   std::vector<types::Type *> forkArgTypes = {types.i8ptr, forkExtra->getType()};
   auto *forkFunc = M->getOrRealizeFunc("_fork_call", forkArgTypes, {}, ompModule);
-  seqassert(forkFunc, "fork call function not found");
+  seqassertn(forkFunc, "fork call function not found");
   result.fork = util::call(forkFunc, {rawTemplateFunc, forkExtra});
 
   auto *intType = M->getIntType();
   if (sched->threads && sched->threads->getType()->is(intType)) {
     auto *pushNumThreadsFunc =
         M->getOrRealizeFunc("_push_num_threads", {intType}, {}, ompModule);
-    seqassert(pushNumThreadsFunc, "push num threads func not found");
+    seqassertn(pushNumThreadsFunc, "push num threads func not found");
     result.pushNumThreads = util::call(pushNumThreadsFunc, {sched->threads});
   }
   return result;
@@ -1260,7 +1259,7 @@ void OpenMPPass::handle(ForFlow *v) {
                            sharedsTuple->getType()}))};
   auto *templateFunc = M->getOrRealizeFunc("_task_loop_outline_template",
                                            templateFuncArgs, {}, ompModule);
-  seqassert(templateFunc, "task loop outline template not found");
+  seqassertn(templateFunc, "task loop outline template not found");
 
   templateFunc = cv.forceClone(templateFunc);
   TaskLoopRoutineStubReplacer rep(cast<BodiedFunc>(templateFunc), outline.call, loopVar,
@@ -1317,7 +1316,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
           {intType, intType, intType, M->getTupleType(extraArgTypes)}))};
   auto *templateFunc =
       M->getOrRealizeFunc(templateFuncName, templateFuncArgs, {}, ompModule);
-  seqassert(templateFunc, "imperative loop outline template not found");
+  seqassertn(templateFunc, "imperative loop outline template not found");
 
   util::CloneVisitor cv(M);
   templateFunc = cast<Func>(cv.forceClone(templateFunc));

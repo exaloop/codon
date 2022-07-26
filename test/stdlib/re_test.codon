@@ -30,6 +30,7 @@ def test_branching():
     assert re.match('((a)|(b)|(c))', 'c').span() == (0, 1)
 test_branching()
 
+@test
 def test_basic_re_sub():
     def bump_num(matchobj):
         int_value = int(matchobj.group(0))
@@ -419,7 +420,7 @@ def test_getattr():
     assert re.match("(a)", "a").re
 test_getattr()
 
-def match(pattern, text, match: Optional[str] = None, span: Optional[re.Span] = None, matcher = re.fullmatch):
+def check_match(pattern, text, match: Optional[str] = None, span: Optional[re.Span] = None, matcher = re.fullmatch):
     if match is None and span is None:
         # the pattern matches the whole text
         match = text
@@ -436,9 +437,9 @@ LITERAL_CHARS = string.ascii_letters + string.digits
 def test_re_escape():
     p = ''.join(chr(i) for i in range(256))
     for c in p:
-        assert match(re.escape(c), c)
-        assert match('[' + re.escape(c) + ']', c)
-    assert match(re.escape(p), p)
+        assert check_match(re.escape(c), c)
+        assert check_match('[' + re.escape(c) + ']', c)
+    assert check_match(re.escape(p), p)
     for c in '-.]{}':
         assert re.escape(c)[:1] == '\\'
     literal_chars = LITERAL_CHARS

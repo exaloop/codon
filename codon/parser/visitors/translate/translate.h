@@ -13,8 +13,7 @@
 #include "codon/parser/visitors/visitor.h"
 #include "codon/sir/sir.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
   std::shared_ptr<TranslateContext> ctx;
@@ -22,7 +21,7 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 
 public:
   explicit TranslateVisitor(std::shared_ptr<TranslateContext> ctx);
-  static codon::ir::Func *apply(Cache *cache, StmtPtr stmts);
+  static codon::ir::Func *apply(Cache *cache, const StmtPtr &stmts);
 
   ir::Value *transform(const ExprPtr &expr) override;
   ir::Value *transform(const StmtPtr &stmt) override;
@@ -32,6 +31,7 @@ private:
   void defaultVisit(Stmt *expr) override;
 
 public:
+  void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
   void visit(IntExpr *) override;
   void visit(FloatExpr *) override;
@@ -39,9 +39,7 @@ public:
   void visit(IdExpr *) override;
   void visit(IfExpr *) override;
   void visit(CallExpr *) override;
-  void visit(StackAllocExpr *) override;
   void visit(DotExpr *) override;
-  void visit(PtrExpr *) override;
   void visit(YieldExpr *) override;
   void visit(StmtExpr *) override;
   void visit(PipeExpr *) override;
@@ -57,11 +55,11 @@ public:
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(IfStmt *) override;
-  void visit(UpdateStmt *) override;
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
+  void visit(CommentStmt *) override {}
 
 private:
   ir::types::Type *getType(const types::TypePtr &t);
@@ -75,5 +73,4 @@ private:
   }
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

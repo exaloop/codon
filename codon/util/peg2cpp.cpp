@@ -1011,7 +1011,7 @@ int main(int argc, char **argv) {
       g.c_str(), g.size(), dummy, start, enablePackratParsing, preamble, log);
   assert(grammar);
 
-  string rules, actions;
+  string rules, actions, actionFns;
   string action_preamble = "  auto &CTX = any_cast<ParseContext &>(DT);\n";
   string loc_preamble = "  auto LI = VS.line_info();\n"
                         "  auto LOC = codon::SrcInfo(\n"
@@ -1061,8 +1061,9 @@ int main(int argc, char **argv) {
         code = loc_preamble + code;
       if (code.find("CTX") != std::string::npos)
         code = action_preamble + code;
-      actions += fmt::format(
-          "P[\"{}\"] = [](peg::SemanticValues &VS, any &DT) {{\n{}\n}};\n", name, code);
+      actions += fmt::format("P[\"{}\"] = fn_{};\n", name, name);
+      actionFns += fmt::format(
+          "auto fn_{}(peg::SemanticValues &VS, any &DT) {{\n{}\n}};\n", name, code);
     }
   };
 
@@ -1077,14 +1078,9 @@ int main(int argc, char **argv) {
                           "  using vc = vector<pair<char32_t, char32_t>>;\n";
   fmt::print(fout, "void init_{}_rules(peg::Grammar &P) {{\n{}\n{}\n}}\n", argv[3],
              rules_preamble, rules);
-  string act;
-  for (auto &c : actions)
-    if (c == '\n')
-      act += "\n  ";
-    else
-      act += c;
+  fmt::print(fout, "{}\n", actionFns);
   fmt::print(fout, "void init_{}_actions(peg::Grammar &P) {{\n  {}\n}}\n", argv[3],
-             act);
+             actions);
   fmt::print(fout, "// clang-format on\n");
   fmt::print(fout, "#pragma clang diagnostic pop\n");
   fclose(fout);

@@ -3,235 +3,122 @@
 
 # Warning(!): This type must be consistent with the exception
 # header type defined in runtime/exc.cpp.
-@tuple
-class ExcHeader:
+class BaseException:
     typename: str
-    msg: str
+    message: str
     func: str
     file: str
     line: int
     col: int
 
+    def __init__(self, typename: str, message: str = ""):
+        self.typename = typename
+        self.message = message
+        self.func = ""
+        self.file = ""
+        self.line = 0
+        self.col = 0
 
-class OSError:
-    _hdr: ExcHeader
+    def __str__(self):
+        return self.message
 
-    def __init__(self):
-        self._hdr = ("OSError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("OSError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
-
-
-class IOError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("IOError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("IOError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+    def __repr__(self):
+        return f'{self.typename}({self.message.__repr__()})'
 
 
-class ValueError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("ValueError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("ValueError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class Exception(BaseException):
+    def __init__(self, typename: str, msg: str = ""):
+        super().__init__(typename, msg)
 
 
-class IndexError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("IndexError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("IndexError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class NameError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("NameError", message)
 
 
-class KeyError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("KeyError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("KeyError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class OSError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("OSError", message)
 
 
-class OverflowError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("OverflowError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("OverflowError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class IOError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("IOError", message)
 
 
-class CError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("CError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("CError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class ValueError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("ValueError", message)
 
 
-class PyError:
-    _hdr: ExcHeader
+class IndexError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("IndexError", message)
+
+
+class KeyError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("KeyError", message)
+
+
+class OverflowError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("OverflowError", message)
+
+
+class CError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("CError", message)
+
+
+class PyError(Exception):
     pytype: str
 
     def __init__(self, message: str, pytype: str):
-        self._hdr = ("PyError", message, "", "", 0, 0)
+        super().__init__("PyError", message)
         self.pytype = pytype
 
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+
+class TypeError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("TypeError", message)
 
 
-class TypeError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("TypeError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("TypeError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class ZeroDivisionError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("ZeroDivisionError", message)
 
 
-class ZeroDivisionError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("ZeroDivisionError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("ZeroDivisionError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class AttributeError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("AttributeError", message)
 
 
-class AttributeError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("AttributeError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("AttributeError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class NotImplementedError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("NotImplementedError", message)
 
 
-class NotImplementedError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("NotImplementedError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("NotImplementedError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class StopIteration(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("StopIteration", message)
 
 
-class StopIteration:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("StopIteration", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("StopIteration", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
+class AssertionError(Exception):
+    def __init__(self, message: str = ""):
+        super().__init__("AssertionError", message)
 
 
-class AssertionError:
-    _hdr: ExcHeader
-
-    def __init__(self):
-        self._hdr = ("AssertionError", "", "", "", 0, 0)
-
-    def __init__(self, message: str):
-        self._hdr = ("AssertionError", message, "", "", 0, 0)
-
-    @property
-    def message(self) -> str:
-        return self._hdr.msg
-
-
-class SystemExit:
-    _hdr: ExcHeader
+class SystemExit(BaseException):
     _status: int
 
-    def __init__(self):
-        self._hdr = ("SystemExit", "", "", "", 0, 0)
-        self._status = 0
+    def __init__(self, message: str = "", status: int = 0):
+        super().__init__("SystemExit", message)
+        self._status = status
 
     def __init__(self, status: int):
-        self._hdr = ("SystemExit", "", "", "", 0, 0)
-        self._status = status
-
-    def __init__(self, message: str):
-        self._hdr = ("SystemExit", message, "", "", 0, 0)
-        self._status = 0
-
-    def __init__(self, message: str, status: int):
-        self._hdr = ("SystemExit", message, "", "", 0, 0)
-        self._status = status
+        self.__init__("", status)
 
     @property
-    def message(self) -> str:
-        return self._hdr.msg
-
-    @property
-    def status(self) -> int:
+    def status(self):
         return self._status

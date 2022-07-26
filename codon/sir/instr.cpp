@@ -21,7 +21,7 @@ int findAndReplace(id_t id, codon::ir::Value *newVal,
 
 const char Instr::NodeId = 0;
 
-types::Type *Instr::doGetType() const { return getModule()->getVoidType(); }
+types::Type *Instr::doGetType() const { return getModule()->getNoneType(); }
 
 const char AssignInstr::NodeId = 0;
 
@@ -115,7 +115,7 @@ types::Type *TypePropertyInstr::doGetType() const {
   case Property::SIZEOF:
     return getModule()->getIntType();
   default:
-    return getModule()->getVoidType();
+    return getModule()->getNoneType();
   }
 }
 

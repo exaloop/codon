@@ -67,15 +67,6 @@ def distributive():
 
 
 @__attribute__
-def C():
-    pass
-
-
-@__attribute__
 def realize_without_self():
     pass
 
-
-@__attribute__
-def overload():
-    pass

@@ -3,13 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/common.h"
 #include "codon/util/fmt/format.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 /// String and collection utilities
 
@@ -98,12 +96,23 @@ std::string escapeFStringBraces(const std::string &str, int start, int len) {
       t += str[i];
   return t;
 }
-bool startswith(const std::string &str, const std::string &prefix) {
-  return str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix;
+int findStar(const std::string &s) {
+  int i = 0;
+  for (; i < s.size(); i++)
+    if (s[i] == ' ' || s[i] == ')')
+      break;
+  return i;
 }
-bool endswith(const std::string &str, const std::string &suffix) {
-  return str.size() >= suffix.size() &&
-         str.substr(str.size() - suffix.size()) == suffix;
+size_t startswith(const std::string &str, const std::string &prefix) {
+  return (str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix)
+             ? prefix.size()
+             : 0;
+}
+size_t endswith(const std::string &str, const std::string &suffix) {
+  return (str.size() >= suffix.size() &&
+          str.substr(str.size() - suffix.size()) == suffix)
+             ? suffix.size()
+             : 0;
 }
 void ltrim(std::string &str) {
   str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char ch) {
@@ -132,6 +141,9 @@ bool isdigit(const std::string &str) {
 
 void error(const char *format) { throw exc::ParserException(format); }
 void error(const ::codon::SrcInfo &info, const char *format) {
+  throw exc::ParserException(format, info);
+}
+void error(const ::codon::SrcInfo &info, const std::string &format) {
   throw exc::ParserException(format, info);
 }
 
@@ -182,8 +194,8 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
   if (!isStdLib && startswith(s, module0Root))
     root = module0Root;
   const std::string ext = ".codon";
-  seqassert(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}", s,
-            root);
+  seqassertn(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
+             s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
@@ -229,11 +241,10 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
     addPath(paths, std::string(path));
   }
 
-  auto module0Root = llvm::sys::path::parent_path(module0).str();
+  auto module0Root = llvm::sys::path::parent_path(getAbsolutePath(module0)).str();
   return paths.empty() ? nullptr
                        : std::make_shared<ImportFile>(
                              getRoot(argv0, plugins, module0Root, paths[0]));
 }
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

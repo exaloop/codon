@@ -13,8 +13,7 @@
 #include "codon/parser/common.h"
 #include "codon/util/cpp-peglib/peglib.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 struct ParseContext {
   Cache *cache;
@@ -36,8 +35,7 @@ struct ParseContext {
   }
 };
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast
 
 void init_codon_rules(peg::Grammar &);
 void init_codon_actions(peg::Grammar &);

@@ -95,7 +95,7 @@ bool isMagicMethodCall(const Value *value) {
 
 Value *makeTuple(const std::vector<Value *> &args, Module *M) {
   if (!M) {
-    seqassert(!args.empty(), "unknown module for empty tuple construction");
+    seqassertn(!args.empty(), "unknown module for empty tuple construction");
     M = args[0]->getModule();
   }
 
@@ -105,7 +105,7 @@ Value *makeTuple(const std::vector<Value *> &args, Module *M) {
   }
   auto *tupleType = M->getTupleType(types);
   auto *newFunc = M->getOrRealizeMethod(tupleType, "__new__", types);
-  seqassert(newFunc, "could not realize {} new function", *tupleType);
+  seqassertn(newFunc, "could not realize {} new function", *tupleType);
   return M->Nr<CallInstr>(M->Nr<VarValue>(newFunc), args);
 }
 
@@ -183,7 +183,7 @@ const Func *getFunc(const Value *x) {
 Value *ptrLoad(Value *ptr) {
   auto *M = ptr->getModule();
   auto *deref = (*ptr)[*M->getInt(0)];
-  seqassert(deref, "pointer getitem not found");
+  seqassertn(deref, "pointer getitem not found [{}]", ptr->getSrcInfo());
   return deref;
 }
 
@@ -192,7 +192,7 @@ Value *ptrStore(Value *ptr, Value *val) {
   auto *setitem =
       M->getOrRealizeMethod(ptr->getType(), Module::SETITEM_MAGIC_NAME,
                             {ptr->getType(), M->getIntType(), val->getType()});
-  seqassert(setitem, "pointer setitem not found");
+  seqassertn(setitem, "pointer setitem not found [{}]", ptr->getSrcInfo());
   return call(setitem, {ptr, M->getInt(0), val});
 }
 
@@ -204,7 +204,7 @@ Value *tupleGet(Value *tuple, unsigned index) {
 Value *tupleStore(Value *tuple, unsigned index, Value *val) {
   auto *M = tuple->getModule();
   auto *type = cast<types::RecordType>(tuple->getType());
-  seqassert(type, "argument is not a tuple");
+  seqassertn(type, "argument is not a tuple [{}]", tuple->getSrcInfo());
   std::vector<Value *> newElements;
   for (unsigned i = 0; i < std::distance(type->begin(), type->end()); i++) {
     newElements.push_back(i == index ? val : tupleGet(tuple, i));
@@ -243,7 +243,7 @@ types::Type *getReturnType(const Func *func) {
 void setReturnType(Func *func, types::Type *rType) {
   auto *M = func->getModule();
   auto *t = cast<types::FuncType>(func->getType());
-  seqassert(t, "{} is not a function type", *func->getType());
+  seqassertn(t, "{} is not a function type [{}]", *func->getType(), func->getSrcInfo());
   std::vector<types::Type *> argTypes(t->begin(), t->end());
   func->setType(M->getFuncType(rType, argTypes));
 }

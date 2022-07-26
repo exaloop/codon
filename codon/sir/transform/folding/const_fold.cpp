@@ -6,9 +6,9 @@
 #include "codon/sir/util/irtools.h"
 
 #define BINOP(o)                                                                       \
-  [](auto x, auto y) -> auto { return x o y; }
+  [](auto x, auto y) -> auto{ return x o y; }
 #define UNOP(o)                                                                        \
-  [](auto x) -> auto { return o x; }
+  [](auto x) -> auto{ return o x; }
 
 namespace codon {
 namespace ir {

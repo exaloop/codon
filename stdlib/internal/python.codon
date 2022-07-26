@@ -4,16 +4,15 @@ import os
 
 from internal.dlopen import *
 
-Py_DecRef = Function[[cobj], void](cobj())
-Py_IncRef = Function[[cobj], void](cobj())
-Py_Initialize = Function[[], void](cobj())
-Py_None = cobj()
+Py_DecRef = Function[[cobj], NoneType](cobj())
+Py_IncRef = Function[[cobj], NoneType](cobj())
+Py_Initialize = Function[[], NoneType](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
-PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], void](cobj())
+PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
 PyFloat_AsDouble = Function[[cobj], float](cobj())
 PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyImport_AddModule = Function[[cobj], cobj](cobj())
@@ -33,15 +32,18 @@ PyObject_IsTrue = Function[[cobj], int](cobj())
 PyObject_Length = Function[[cobj], int](cobj())
 PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyObject_Str = Function[[cobj], cobj](cobj())
-PyRun_SimpleString = Function[[cobj], void](cobj())
+PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
 PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
 PyTuple_New = Function[[int], cobj](cobj())
-PyTuple_SetItem = Function[[cobj, int, cobj], void](cobj())
+PyTuple_SetItem = Function[[cobj, int, cobj], NoneType](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
 PyUnicode_FromString = Function[[cobj], cobj](cobj())
+Py_None = cobj()
+Py_True = cobj()
+Py_False = cobj()
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
 
@@ -84,7 +86,6 @@ def init_dl_handles(py_handle: cobj):
     global Py_DecRef
     global Py_IncRef
     global Py_Initialize
-    global Py_None
     global PyBool_FromLong
     global PyBytes_AsString
     global PyDict_New
@@ -119,10 +120,13 @@ def init_dl_handles(py_handle: cobj):
     global PyUnicode_AsEncodedString
     global PyUnicode_DecodeFSDefaultAndSize
     global PyUnicode_FromString
+    global Py_None
+    global Py_True
+    global Py_False
+
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
     Py_Initialize = dlsym(py_handle, "Py_Initialize")
-    Py_None = dlsym(py_handle, "_Py_NoneStruct")
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
     PyBytes_AsString = dlsym(py_handle, "PyBytes_AsString")
     PyDict_New = dlsym(py_handle, "PyDict_New")
@@ -158,13 +162,17 @@ def init_dl_handles(py_handle: cobj):
     PyUnicode_DecodeFSDefaultAndSize = dlsym(py_handle, "PyUnicode_DecodeFSDefaultAndSize")
     PyUnicode_FromString = dlsym(py_handle, "PyUnicode_FromString")
 
+    Py_None = dlsym(py_handle, "_Py_NoneStruct")
+    Py_True = dlsym(py_handle, "_Py_TrueStruct")
+    Py_False = dlsym(py_handle, "_Py_FalseStruct")
+
 
 def init(python_loaded: bool = False):
     global _PY_INITIALIZED
     if _PY_INITIALIZED:
         return
 
-    py_handle: cobj
+    py_handle = cobj()
     if python_loaded:
         py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
     else:
@@ -316,13 +324,19 @@ class pyobj:
         mime, txt = Tuple[str, str].__from_py__(fn.__call__(self).p)
         return {mime: txt}
 
-
-def none():
-    raise NotImplementedError()
+    def __bool__(self):
+        return bool.__from_py__(self._getattr("__bool__").__call__().p)
 
 
 # Type conversions
 
+@extend
+class NoneType:
+    def __to_py__(self) -> cobj:
+        return pyobj.exc_wrap(Py_IncRef(Py_None))
+
+    def __from_py__(i: cobj) -> None:
+        return
 
 @extend
 class int:

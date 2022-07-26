@@ -178,22 +178,13 @@ jobs:
 
       - name: Test
         run: |
-          echo $CODON_PYTHON
           ln -s build/libcodonrt.${LIBEXT} .
           build/codon_test
-          build/codon run test/core/helloworld.codon
-          build/codon run test/core/exit.codon || if [[ $? -ne 42 ]]; then false; fi
+          test/app/test.sh build
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: .:./test/python
           LD_LIBRARY_PATH: ./build
-
-      - name: Build Documentation
-        run: |
-          python -m pip install --upgrade pip
-          pip install wheel sphinx sphinxcontrib-napoleon sphinx-book-theme breathe exhale
-          (cd docs/sphinx && python docgen.py ../../stdlib)
-          make -C docs/sphinx html
 
       - name: Artifact Environment
         run: |

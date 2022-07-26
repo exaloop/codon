@@ -34,7 +34,7 @@ struct seq_time_t {
   int8_t isdst;
 };
 
-extern int seq_flags;
+SEQ_FUNC int seq_flags;
 
 SEQ_FUNC void seq_init(int flags);
 

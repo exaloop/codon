@@ -73,7 +73,6 @@ public:
   void visit(GeneratorExpr *) override;
   void visit(DictGeneratorExpr *) override;
   void visit(InstantiateExpr *expr) override;
-  void visit(StackAllocExpr *expr) override;
   void visit(IfExpr *) override;
   void visit(UnaryExpr *) override;
   void visit(BinaryExpr *) override;
@@ -83,7 +82,6 @@ public:
   void visit(DotExpr *) override;
   void visit(SliceExpr *) override;
   void visit(EllipsisExpr *) override;
-  void visit(PtrExpr *) override;
   void visit(LambdaExpr *) override;
   void visit(YieldExpr *) override;
   void visit(StmtExpr *expr) override;
@@ -91,7 +89,6 @@ public:
 
   void visit(SuiteStmt *) override;
   void visit(BreakStmt *) override;
-  void visit(UpdateStmt *) override;
   void visit(ContinueStmt *) override;
   void visit(ExprStmt *) override;
   void visit(AssignStmt *) override;

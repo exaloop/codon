@@ -223,6 +223,86 @@ class __internal__:
         buf[where] = byte(41)  # ')'
         return str(buf, total)
 
+    def undef(v, s):
+        if not v:
+            raise NameError(f"variable '{s}' not yet defined")
+
+    def set_header(e, func, file, line, col):
+        if not isinstance(e, BaseException):
+            compile_error("exceptions must derive from BaseException")
+
+        e.func = func
+        e.file = file
+        e.line = line
+        e.col = col
+        return e
+
+    # TODO: keep this commented until static for lands
+    # @pure
+    # @llvm
+    # def __raw__(self) -> Ptr[byte]:
+    #     ret i8* %self
+    # def __iter__(self):
+    #     for _, i in self.__static_list__:
+    #         yield i
+    # def __contains__(self, what):
+    #     for _, i in self.__static_list__:
+    #         if isinstance(what, type(i)):
+    #             if what == i:
+    #                 return True
+    #     return False
+    # def __eq__(self, obj) -> bool:
+    #     for ii, i in self.__static_list__:
+    #         if not i == obj.__static_list__[ii]:
+    #             return False
+    #     return True
+    # def __ne__(self, obj) -> bool:
+    #     return not self == obj
+    # def __lt__(self, obj) -> bool:
+    #     for ii, i in self.__static_list__:
+    #         if i < obj.__static_list__[ii]:
+    #             return True
+    #         elif not i == obj.__static_list__[ii]:
+    #             return False
+    #     return False
+    # def __le__(self, obj) -> bool:
+    #     return self < obj or self == obj
+    # def __ge__(self, obj) -> bool:
+    #     return not self < obj
+    # def __gt__(self, obj) -> bool:
+    #     return not self < obj and not self == obj
+    # def __hash__(self) -> int:
+    #     seed = 0
+    #     for _, i in self.__static_list__:
+    #         seed = seed ^ ((i.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
+    #     return seed
+    # def __pickle__(self, dest: Ptr[byte]) -> None:
+    #     for _, i in self.__static_list__:
+    #         i.__pickle__(dest)
+    # # __unpickle
+    # def __len__(self):
+    #     return staticlen(self)
+    # def __to_py__(self) -> cobj:
+    #     o = pyobj._tuple_new(staticlen(self))
+    #     for ii, i in self.__static_list__:
+    #         pyobj._tuple_set(o, ii + 1, i.__to_py__())
+    #     return o
+    # # __from_py__
+    # def __repr__(self) -> str:
+    #     a = __array__[str](staticlen(self))
+    #     n = __array__[str](staticlen(self))
+    #     for ii, i in self.__static_list__:
+    #         a.__setitem__(ii, i.__repr__())
+    #         n.__setitem__(ii, i.__static_name__)
+    #     return __internal__.tuple_str(a.ptr, n.ptr, staticlen(self))
+    # def __dict__(self) -> str:
+    #     d = List[str](staticlen(self))
+    #     for _, i in self.__static_list__:
+    #         d.append(i.__static_name)
+    #     return d
+    # def __add__(self, obj):
+    #     return (*self, *obj)
+
 
 @dataclass(init=True)
 @tuple
@@ -232,3 +312,27 @@ class Import:
 
     def __repr__(self) -> str:
         return f"<module '{self.name}' from '{self.file}'>"
+
+@extend
+class Function:
+    @pure
+    @llvm
+    def __new__(what: Ptr[byte]) -> Function[T, TR]:
+        %0 = bitcast i8* %what to {=Function[T, TR]}
+        ret {=Function[T, TR]} %0
+
+    def __new__(what: Function[T, TR]) -> Function[T, TR]:
+       return what
+
+    @pure
+    @llvm
+    def __raw__(self) -> Ptr[byte]:
+        %0 = bitcast {=Function[T, TR]} %self to i8*
+        ret i8* %0
+
+    def __repr__(self) -> str:
+       return __internal__.raw_type_str(self.__raw__(), "function")
+
+    @llvm
+    def __call__(self, *args) -> TR:
+        noop  # compiler will populate this one

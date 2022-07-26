@@ -28,7 +28,7 @@ test_conversions()
 
 @test
 def test_pythrow():
-    from python import mymodule.throw_exc() -> void as te
+    from python import mymodule.throw_exc() -> None as te
     try:
         te()
     except PyError as e:

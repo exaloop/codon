@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include "codon/compiler/error.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -7,6 +8,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+
+extern double totalPeg;
 
 namespace codon {
 namespace {
@@ -66,20 +69,19 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
   input = file;
   std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
-    Timer t1("parse");
     ast::StmtPtr codeStmt = isCode
                                 ? ast::parseCode(cache.get(), abspath, code, startLine)
                                 : ast::parseFile(cache.get(), abspath);
-    t1.log();
 
     cache->module0 = file;
-    if (testFlags)
-      cache->testFlags = testFlags;
 
     Timer t2("simplify");
+    t2.logged = true;
     auto transformed = ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt),
                                                    abspath, defines, (testFlags > 1));
-    t2.log();
+    LOG_TIME("[T] parse = {:.1f}", totalPeg);
+    LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
+
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_simplify.sexp", "w");
       fmt::print(fo, "{}\n", transformed->toString(0));
@@ -103,9 +105,26 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
   } catch (const exc::ParserException &e) {
-    return llvm::make_error<error::ParserErrorInfo>(e);
+    std::vector<error::Message> messages;
+    if (e.messages.empty()) {
+      for (auto &e : cache->errors) {
+        for (unsigned i = 0; i < e.messages.size(); i++) {
+          if (!e.messages[i].empty())
+            messages.emplace_back(e.messages[i], e.locations[i].file,
+                                  e.locations[i].line, e.locations[i].col);
+        }
+      }
+      return llvm::make_error<error::ParserErrorInfo>(messages);
+    } else {
+      return llvm::make_error<error::ParserErrorInfo>(e);
+    }
   }
   module->setSrcInfo({abspath, 0, 0, 0});
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_ir.sexp", "w");
+    fmt::print(fo, "{}\n", *module);
+    fclose(fo);
+  }
   return llvm::Error::success();
 }
 
@@ -125,7 +144,21 @@ Compiler::parseCode(const std::string &file, const std::string &code, int startL
 
 llvm::Error Compiler::compile() {
   pm->run(module.get());
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_ir_opt.sexp", "w");
+    fmt::print(fo, "{}\n", *module);
+    fclose(fo);
+  }
   llvisitor->visit(module.get());
+  if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+    auto fo = fopen("_dump_llvm.ll", "w");
+    std::string str;
+    llvm::raw_string_ostream os(str);
+    os << *(llvisitor->getModule());
+    os.flush();
+    fmt::print(fo, "{}\n", str);
+    fclose(fo);
+  }
   return llvm::Error::success();
 }
 

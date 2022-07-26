@@ -1,18 +1,18 @@
 #%% bool,barebones
 a = True
-print a.__class__ #: bool
+print a.__class__.__name__ #: bool
 
 #%% int,barebones
 i = 15
-print i.__class__ #: int
+print i.__class__.__name__ #: int
 
 #%% float,barebones
 a = 1.11
-print a.__class__ #: float
+print a.__class__.__name__ #: float
 
 #%% str,barebones
 a = 'hi'
-print a.__class__ #: str
+print a.__class__.__name__ #: str
 
 #%% none_unbound,barebones
 a = None
@@ -33,15 +33,15 @@ fox(6) #: 6
 
 #%% if,barebones
 y = 1 if True else 2
-print y.__class__ #: int
+print y.__class__.__name__ #: int
 
 a = None
 b = 5
 z = a if bool(True) else b # needs bool to prevent static evaluation
-print z, z.__class__ #: None Optional[int]
+print z, z.__class__.__name__ #: None Optional[int]
 
 zz = 1.11 if True else None
-print zz, zz.__class__ #: 1.11 float
+print zz, zz.__class__.__name__ #: 1.11 float
 
 #%% binary,barebones
 @extend
@@ -159,7 +159,7 @@ def foo(a: Optional[int]):
     return 1
 5 |> foo #: 5
 None |> foo #: None
-print (None |> foo).__class__ #: int
+print (None |> foo).__class__.__name__ #: int
 
 def foo2(a: int):
     print a
@@ -223,7 +223,7 @@ a[-3] #! tuple index -1 out of bounds (len: 2)
 #%% index_func_instantiate,barebones
 class X:
     def foo[T](self, x: T):
-        print x.__class__, x
+        print x.__class__.__name__, x
 x = X()
 x.foo(5, int) #: int 5
 
@@ -235,7 +235,7 @@ print l[2] #: 3
 l = []
 print l[::-1] #: []
 l.append(('str', 1, True, 5.15))
-print l, l.__class__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
+print l, l.__class__.__name__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
 
 #%% dot_case_1,barebones
 a = []
@@ -260,7 +260,7 @@ a.foo #! cannot find 'foo' in List[int]
 # of the automatic optional wraps/unwraps and promotions
 class Foo:
     def bar(self, a):
-        print 'generic', a, a.__class__
+        print 'generic', a, a.__class__.__name__
     def bar(self, a: Optional[float]):
         print 'optional', a
     def bar(self, a: int):
@@ -306,7 +306,7 @@ class Foo:
         print 'foo'
     def method(self, a):
         print a
-Foo().clsmethod() #! cannot find a method 'clsmethod' in Foo with arguments  = Foo
+Foo().clsmethod() #! cannot find a method 'clsmethod' in Foo with arguments 'Foo'
 
 #%% call,barebones
 def foo(a, b, c='hi'):
@@ -320,7 +320,7 @@ class Foo:
         return 's'
     def bar[T](self, a: T):
         print 'Foo.bar', a
-        return a.__class__
+        return a.__class__.__name__
     def __call__(self, y):
         print 'Foo.__call__'
         return foo(2, y)
@@ -374,7 +374,7 @@ def foo(i, j, k):
     return i + j + k
 print foo(1.1, 2.2, 3.3)  #: 6.6
 p = foo(6, ...)
-print p.__class__ #: foo:0[int,...,...]
+print p.__class__.__name__ #: foo:0[int,...,...]
 print p(2, 1)  #: 9
 print p(k=3, j=6) #: 15
 q = p(k=1, ...)
@@ -390,33 +390,33 @@ print 42 |> add_two  #: 44
 def moo(a, b, c=3):
     print a, b, c
 m = moo(b=2, ...)
-print m.__class__ #: moo:0[...,int,...]
+print m.__class__.__name__ #: moo:0[...,int,...]
 m('s', 1.1) #: s 2 1.1
 # #
 n = m(c=2.2, ...)
-print n.__class__ #: moo:0[...,int,float]
+print n.__class__.__name__ #: moo:0[...,int,float]
 n('x') #: x 2 2.2
-print n('y').__class__ #: void
+print n('y').__class__.__name__ #: NoneType
 
 def ff(a, b, c):
     return a, b, c
-print ff(1.1, 2, True).__class__ #: Tuple[float,int,bool]
-print ff(1.1, ...)(2, True).__class__ #: Tuple[float,int,bool]
+print ff(1.1, 2, True).__class__.__name__ #: Tuple[float,int,bool]
+print ff(1.1, ...)(2, True).__class__.__name__ #: Tuple[float,int,bool]
 y = ff(1.1, ...)(c=True, ...)
-print y.__class__ #: ff:0[float,...,bool]
-print ff(1.1, ...)(2, ...)(True).__class__ #: Tuple[float,int,bool]
-print y('hei').__class__ #: Tuple[float,str,bool]
+print y.__class__.__name__ #: ff:0[float,...,bool]
+print ff(1.1, ...)(2, ...)(True).__class__.__name__ #: Tuple[float,int,bool]
+print y('hei').__class__.__name__ #: Tuple[float,str,bool]
 z = ff(1.1, ...)(c='s', ...)
-print z.__class__ #: ff:0[float,...,str]
+print z.__class__.__name__ #: ff:0[float,...,str]
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
-    print R.__class__, T.__class__
-    print a.__class__[:8], b.__class__
+    print R.__class__.__name__, T.__class__.__name__
+    print a.__class__.__name__[:8], b.__class__.__name__
     for i in b:
         print a(i)
-    print c, c.__class__
-    print d, d.__class__
+    print c, c.__class__.__name__
+    print d, d.__class__.__name__
 
 l = [1, 2, 3]
 doo(b=l, d=Optional(5), c=l[0], a=lambda x: x+1)
@@ -448,6 +448,28 @@ q(1) #: 1 () (zh: 43)
 r = q(5, 38, ...)
 r() #: 5 (38) (zh: 43)
 r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
+
+#%% call_args_kwargs_type,barebones
+def foo(*args: float, **kwargs: int):
+    print(args, kwargs, args.__class__.__name__)
+
+foo(1, f=1)  #: (1) (f: 1) Tuple[float]
+foo(1, 2.1, 3, z=2)  #: (1, 2.1, 3) (z: 2) Tuple[float,float,float]
+
+def sum(x: Generator[int]):
+    a = 0
+    for i in x:
+        a += i
+    return a
+
+def sum_gens(*x: Generator[int]) -> int:
+    a = 0
+    for i in x:
+        a += sum(i)
+    return a
+print sum_gens([1, 2, 3])  #: 6
+print sum_gens({1, 2, 3})  #: 6
+print sum_gens(iter([1, 2, 3]))  #: 6
 
 #%% call_kwargs,barebones
 def kwhatever(**kwargs):
@@ -632,25 +654,25 @@ compile_error("woo-hoo") #! custom error: woo-hoo
 
 #%% stack_alloc,barebones
 a = __array__[int](2)
-print a.__class__ #: Array[int]
+print a.__class__.__name__ #: Array[int]
 
 #%% typeof,barebones
 a = 5
 z = []
 z.append(6)
-print z.__class__, z, type(1.1).__class__  #: List[int] [6] float
+print z.__class__.__name__, z, type(1.1).__class__.__name__  #: List[int] [6] float
 
 #%% ptr,barebones
 v = 5
 c = __ptr__(v)
-print c.__class__ #: Ptr[int]
+print c.__class__.__name__ #: Ptr[int]
 
 #%% yieldexpr,barebones
 def mysum(start):
     m = start
     while True:
         a = (yield)
-        print a.__class__ #: int
+        print a.__class__.__name__ #: int
         if a == -1:
             break
         m += a
@@ -698,8 +720,36 @@ print t #: (2, 3, 4)
 print tuple((j, i) for i, j in ((1, 'a'), (2, 'b'), (3, 'c')))
 #: (('a', 1), ('b', 2), ('c', 3))
 
+#%% tuple_fn,barebones
+@tuple
+class unpackable_plain:
+  a: int
+  b: str
+
+u = unpackable_plain(1, 'str')
+a, b = tuple(u)
+print a, b #: 1 str
+
+@tuple
+class unpackable_gen:
+  a: int
+  b: T
+  T: type
+
+u2 = unpackable_gen(1, 'str')
+a2, b2 = tuple(u2)
+print a2,b2  #: 1 str
+
+class plain:
+  a: int
+  b: str
+
+c = plain(3, 'heh')
+z = tuple(c)
+print z, z.__class__.__name__  #: (3, 'heh') Tuple[int,str]
+
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! unexpected static type
+def foo(x: Callable[[1,2], 3]): pass  #! cannot unify T1 and 1
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! cannot unify T and 1
@@ -731,7 +781,7 @@ class AX[T]:
 class BX[T,U](AX[T]):
     b: U
     def __init__(self, a: T, b: U):
-        print super().__class__
+        print super().__class__.__name__
         super().__init__(a)
         self.b = b
     def foo(self):
@@ -739,13 +789,13 @@ class BX[T,U](AX[T]):
 class CX[T,U](BX[T,U]):
     c: int
     def __init__(self, a: T, b: U):
-        print super().__class__
+        print super().__class__.__name__
         super().__init__(a, b)
         self.c = 1
     def foo(self):
         return f'CX:{super().foo()}:{self.c}'
 c = CX('a', False)
-print c.__class__, c.foo()
+print c.__class__.__name__, c.foo()
 #: BX[str,bool]
 #: AX[str]
 #: CX[str,bool] CX:[BX:[AX:a]:False]:1

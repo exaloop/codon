@@ -8,20 +8,27 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
+#include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/parser/visitors/typecheck/typecheck_ctx.h"
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 Cache::Cache(std::string argv0)
-    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0), testFlags(0),
-      argv0(move(argv0)), module(nullptr), typeCtx(nullptr), codegenCtx(nullptr),
-      isJit(false), jitCell(0) {}
+    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0),
+      argv0(move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
+      jitCell(0) {}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
                      ++varCount);
+}
+
+std::string Cache::rev(const std::string &s) {
+  auto i = reverseIdentifierLookup.find(s);
+  if (i != reverseIdentifierLookup.end())
+    return i->second;
+  seqassertn(false, "'{}' has no non-canonical name", s);
+  return "";
 }
 
 SrcInfo Cache::generateSrcInfo() {
@@ -64,10 +71,10 @@ types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &m
                                      const std::vector<types::TypePtr> &args) {
   auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
-  seqassert(e->type, "not a class");
+  seqassertn(e->type, "not a class");
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
-  auto f = TypecheckVisitor(typeCtx).findBestMethod(e.get(), member, args);
+  auto f = TypecheckVisitor(typeCtx).findBestMethod(e->type->getClass(), member, args);
   typeCtx->age = oldAge;
   return f;
 }
@@ -76,7 +83,7 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
                                     const std::vector<types::TypePtr> &generics) {
   auto e = std::make_shared<IdExpr>(type->name);
   e->type = type;
-  type = typeCtx->instantiateGeneric(e.get(), type, generics)->getClass();
+  type = typeCtx->instantiateGeneric(type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(type)) {
     return classes[rtv->getClass()->name]
@@ -89,15 +96,20 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
 ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
                                  const std::vector<types::TypePtr> &args,
                                  const std::vector<types::TypePtr> &generics,
-                                 types::ClassTypePtr parentClass) {
+                                 const types::ClassTypePtr &parentClass) {
   auto e = std::make_shared<IdExpr>(type->ast->name);
   e->type = type;
-  type = typeCtx->instantiate(e.get(), type, parentClass.get(), false)->getFunc();
-  if (args.size() != type->args.size())
+  type = typeCtx->instantiate(type, parentClass)->getFunc();
+  if (args.size() != type->getArgTypes().size() + 1)
     return nullptr;
-  for (int gi = 0; gi < args.size(); gi++) {
-    types::Type::Unification undo;
-    if (type->args[gi]->unify(args[gi].get(), &undo) < 0) {
+  types::Type::Unification undo;
+  if (type->getRetType()->unify(args[0].get(), &undo) < 0) {
+    undo.undo();
+    return nullptr;
+  }
+  for (int gi = 1; gi < args.size(); gi++) {
+    undo = types::Type::Unification();
+    if (type->getArgTypes()[gi - 1]->unify(args[gi].get(), &undo) < 0) {
       undo.undo();
       return nullptr;
     }
@@ -106,7 +118,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
     if (generics.size() != type->funcGenerics.size())
       return nullptr;
     for (int gi = 0; gi < generics.size(); gi++) {
-      types::Type::Unification undo;
+      undo = types::Type::Unification();
       if (type->funcGenerics[gi].type->unify(generics[gi].get(), &undo) < 0) {
         undo.undo();
         return nullptr;
@@ -129,19 +141,24 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  auto name = tv.generateTupleStub(types.size());
+  auto name = tv.generateTuple(types.size());
   auto t = typeCtx->find(name);
-  seqassert(t && t->type, "cannot find {}", name);
+  seqassertn(t && t->type, "cannot find {}", name);
   return realizeType(t->type->getClass(), types);
 }
 
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  seqassert(!types.empty(), "types must have at least one argument");
-  auto name = tv.generateFunctionStub(types.size() - 1);
-  auto t = typeCtx->find(name);
-  seqassert(t && t->type, "cannot find {}", name);
-  return realizeType(t->type->getClass(), types);
+  seqassertn(!types.empty(), "types must have at least one argument");
+
+  auto tup = tv.generateTuple(types.size() - 1);
+  const auto &ret = types[0];
+  auto argType = typeCtx->instantiateGeneric(
+      typeCtx->find(tup)->type,
+      std::vector<types::TypePtr>(types.begin() + 1, types.end()));
+  auto t = typeCtx->find("Function");
+  seqassertn(t && t->type, "cannot find 'Function'");
+  return realizeType(t->type->getClass(), {argType, ret});
 }
 
 void Cache::parseCode(const std::string &code) {
@@ -152,5 +169,4 @@ void Cache::parseCode(const std::string &code) {
   ast::TranslateVisitor(codegenCtx).transform(node);
 }
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

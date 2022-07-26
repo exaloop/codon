@@ -101,8 +101,35 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     if (has(v))
       return result[v->getId()];
     v->accept(*this);
-    seqassert(has(v), "node not added to results");
+    seqassertn(has(v), "node not added to results");
     return result[v->getId()];
+  }
+
+  std::pair<Status, Status> getVarAssignStatus(const Var *var) {
+    if (!var)
+      return {Status::PURE, Status::PURE};
+
+    auto id = var->getId();
+    auto it1 = vua.varCounts.find(id);
+    auto it2 = vua.varAssignCounts.find(id);
+    auto count1 = (it1 != vua.varCounts.end()) ? it1->second : 0;
+    auto count2 = (it2 != vua.varAssignCounts.end()) ? it2->second : 0;
+
+    bool global = var->isGlobal();
+    bool used = (count1 != count2);
+    Status defaultStatus = global ? Status::UNKNOWN : Status::NO_CAPTURE;
+    auto se2stat = [&](bool b) { return b ? defaultStatus : Status::PURE; };
+
+    if (globalAssignmentHasSideEffects || var->isExternal()) {
+      return {se2stat(used || global), se2stat(global)};
+    } else {
+      return {se2stat(used), se2stat(used && global)};
+    }
+  }
+
+  void handleVarAssign(const Value *v, const Var *var, Status base) {
+    auto pair = getVarAssignStatus(var);
+    set(v, max(pair.first, base), pair.second);
   }
 
   void visit(const Module *v) override {
@@ -165,7 +192,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
         s = max(s, process(x));
       }
     }
-    set(v, s);
+    handleVarAssign(v, v->getVar(), s);
   }
 
   void visit(const ImperativeForFlow *v) override {
@@ -175,15 +202,20 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
         s = max(s, process(x));
       }
     }
-    set(v, s);
+    handleVarAssign(v, v->getVar(), s);
   }
 
   void visit(const TryCatchFlow *v) override {
     auto s = max(process(v->getBody()), process(v->getFinally()));
+    auto callStatus = Status::PURE;
+
     for (auto &x : *v) {
-      s = max(s, process(x.getHandler()));
+      auto pair = getVarAssignStatus(x.getVar());
+      s = max(s, pair.first, process(x.getHandler()));
+      callStatus = max(callStatus, pair.second);
     }
-    set(v, s);
+
+    set(v, s, callStatus);
   }
 
   void visit(const PipelineFlow *v) override {
@@ -225,20 +257,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   void visit(const dsl::CustomConst *v) override { set(v, Status::PURE); }
 
   void visit(const AssignInstr *v) override {
-    auto id = v->getLhs()->getId();
-    auto it1 = vua.varCounts.find(id);
-    auto it2 = vua.varAssignCounts.find(id);
-    auto count1 = (it1 != vua.varCounts.end()) ? it1->second : 0;
-    auto count2 = (it2 != vua.varAssignCounts.end()) ? it2->second : 0;
-
-    bool g = v->getLhs()->isGlobal();
-    bool s = (count1 != count2);
-    auto se2stat = [](bool b) { return b ? Status::NO_CAPTURE : Status::PURE; };
-    if (globalAssignmentHasSideEffects) {
-      set(v, se2stat(s | g | process(v->getRhs())), se2stat(g));
-    } else {
-      set(v, se2stat(s | process(v->getRhs())), se2stat(s & g));
-    }
+    handleVarAssign(v, v->getLhs(), process(v->getRhs()));
   }
 
   void visit(const ExtractInstr *v) override { set(v, process(v->getVal())); }
@@ -249,7 +268,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
     auto *func = funcStack.back();
     auto it = cr->results.find(func->getId());
-    seqassert(it != cr->results.end(), "function not found in capture results");
+    seqassertn(it != cr->results.end(), "function not found in capture results");
     auto captureInfo = it->second;
 
     bool pure = true;

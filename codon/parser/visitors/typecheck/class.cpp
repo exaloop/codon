@@ -1,0 +1,147 @@
+#include <string>
+#include <tuple>
+
+#include "codon/parser/ast.h"
+#include "codon/parser/cache.h"
+#include "codon/parser/common.h"
+#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
+
+using fmt::format;
+
+namespace codon::ast {
+
+using namespace types;
+
+/// Parse a class (type) declaration and add a (generic) type to the context.
+void TypecheckVisitor::visit(ClassStmt *stmt) {
+  // Extensions are not possible after the simplification
+  seqassert(!stmt->attributes.has(Attr::Extend), "invalid extension '{}'", stmt->name);
+  // Type should be constructed only once
+  stmt->setDone();
+
+  // Generate the type and add it to the context
+  ClassTypePtr typ = nullptr;
+  if (stmt->isRecord()) {
+    typ = std::make_shared<RecordType>(stmt->name, ctx->cache->rev(stmt->name));
+  } else {
+    typ = std::make_shared<ClassType>(stmt->name, ctx->cache->rev(stmt->name));
+  }
+  if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
+    // Special handling of partial types (e.g., `Partial.0001.foo`)
+    if (auto p = in(ctx->cache->partials, stmt->name))
+      typ = std::make_shared<PartialType>(typ->getRecord(), p->first, p->second);
+  }
+  typ->setSrcInfo(stmt->getSrcInfo());
+  // Classes should always be visible, so add them to the toplevel
+  ctx->addToplevel(stmt->name,
+                   std::make_shared<TypecheckItem>(TypecheckItem::Type, typ));
+
+  // Handle generics
+  for (const auto &a : stmt->args) {
+    if (a.status != Param::Normal) {
+      // Generic and static types
+      auto generic = ctx->getUnbound();
+      generic->isStatic = getStaticGeneric(a.type.get());
+      auto typId = generic->id;
+      generic->getLink()->genericName = ctx->cache->rev(a.name);
+      if (a.defaultValue) {
+        auto defType = transformType(clone(a.defaultValue));
+        if (a.status == Param::Generic) {
+          generic->defaultType = defType->type;
+        } else {
+          // Hidden generics can be outright replaced (e.g., `T=int`).
+          // Unify them immediately.
+          unify(defType->type, generic);
+        }
+      }
+      ctx->add(TypecheckItem::Type, a.name, generic);
+      ClassType::Generic g{a.name, ctx->cache->rev(a.name),
+                           generic->generalize(ctx->typecheckLevel), typId};
+      if (a.status == Param::Generic) {
+        typ->generics.push_back(g);
+      } else {
+        typ->hiddenGenerics.push_back(g);
+      }
+    }
+  }
+
+  // Handle class members
+  ctx->typecheckLevel++; // to avoid unifying generics early
+  auto &fields = ctx->cache->classes[stmt->name].fields;
+  for (auto ai = 0, aj = 0; ai < stmt->args.size(); ai++)
+    if (stmt->args[ai].status == Param::Normal) {
+      fields[aj].type = transformType(stmt->args[ai].type)
+                            ->getType()
+                            ->generalize(ctx->typecheckLevel - 1);
+      fields[aj].type->setSrcInfo(stmt->args[ai].type->getSrcInfo());
+      if (stmt->isRecord())
+        typ->getRecord()->args.push_back(fields[aj].type);
+      aj++;
+    }
+  ctx->typecheckLevel--;
+
+  // Generalize generics and remove them from the context
+  for (const auto &g : stmt->args)
+    if (g.status != Param::Normal) {
+      auto generic = ctx->forceFind(g.name)->type;
+      if (g.status == Param::Generic) {
+        // Generalize generics. Hidden generics are linked to the class generics so
+        // ignore them
+        seqassert(generic && generic->getLink() &&
+                      generic->getLink()->kind != types::LinkType::Link,
+                  "generic has been unified");
+        generic->getLink()->kind = LinkType::Generic;
+      }
+      ctx->remove(g.name);
+    }
+
+  // Debug information
+  LOG_REALIZE("[class] {} -> {}", stmt->name, typ->debugString(true));
+  for (auto &m : ctx->cache->classes[stmt->name].fields)
+    LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(true));
+}
+
+/// Generate a tuple class `Tuple.N[T1,...,TN]`.
+/// @param len       Tuple length (`N`)
+/// @param name      Tuple name. `Tuple` by default.
+///                  Can be something else (e.g., `KwTuple`)
+/// @param names     Member names. By default `item1`...`itemN`.
+/// @param hasSuffix Set if the tuple name should have `.N` suffix.
+std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
+                                            std::vector<std::string> names,
+                                            bool hasSuffix) {
+  auto key = join(names, ";");
+  std::string suffix;
+  if (!names.empty()) {
+    // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
+    // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
+    // combination.
+    if (!in(ctx->cache->generatedTuples, key))
+      ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size());
+    suffix = format("_{}", ctx->cache->generatedTuples[key]);
+  } else {
+    for (size_t i = 1; i <= len; i++)
+      names.push_back(format("item{}", i));
+  }
+
+  auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
+  if (!ctx->find(typeName)) {
+    // Generate the appropriate ClassStmt
+    std::vector<Param> args;
+    for (size_t i = 0; i < len; i++)
+      args.emplace_back(Param(names[i], N<IdExpr>(format("T{}", i + 1)), nullptr));
+    for (size_t i = 0; i < len; i++)
+      args.emplace_back(Param(format("T{}", i + 1), N<IdExpr>("type"), nullptr, true));
+    StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
+                                std::vector<ExprPtr>{N<IdExpr>("tuple")});
+    // Simplify in the standard library context and type check
+    stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
+                                  FILE_GENERATED, 0);
+    stmt = TypecheckVisitor(ctx).transform(stmt);
+    prependStmts->push_back(stmt);
+  }
+  return typeName;
+}
+
+} // namespace codon::ast

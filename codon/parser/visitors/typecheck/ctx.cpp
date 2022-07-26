@@ -1,4 +1,4 @@
-#include "typecheck_ctx.h"
+#include "ctx.h"
 
 #include <map>
 #include <memory>
@@ -11,20 +11,18 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 TypeContext::TypeContext(Cache *cache)
-    : Context<TypecheckItem>(""), cache(move(cache)), typecheckLevel(0),
-      allowActivation(true), age(0), realizationDepth(0), blockLevel(0),
-      returnEarly(false) {
-  stack.push_front(std::vector<std::string>());
-  bases.push_back({"", nullptr, nullptr});
+    : Context<TypecheckItem>(""), cache(cache), typecheckLevel(0), age(0),
+      blockLevel(0), returnEarly(false), changedNodes(0) {
+  realizationBases.push_back({"", nullptr, nullptr});
+  pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
 }
 
 std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
                                                 const std::string &name,
-                                                types::TypePtr type) {
+                                                const types::TypePtr &type) {
   auto t = std::make_shared<TypecheckItem>(kind, type);
   add(name, t);
   return t;
@@ -33,63 +31,56 @@ std::shared_ptr<TypecheckItem> TypeContext::add(TypecheckItem::Kind kind,
 std::shared_ptr<TypecheckItem> TypeContext::find(const std::string &name) const {
   if (auto t = Context<TypecheckItem>::find(name))
     return t;
-  auto tt = findInVisited(name);
-  if (tt.second)
-    return std::make_shared<TypecheckItem>(tt.first, tt.second);
+  if (in(cache->globals, name))
+    return std::make_shared<TypecheckItem>(TypecheckItem::Var, getUnbound());
   return nullptr;
 }
 
-types::TypePtr TypeContext::findInternal(const std::string &name) const {
+std::shared_ptr<TypecheckItem> TypeContext::forceFind(const std::string &name) const {
   auto t = find(name);
   seqassert(t, "cannot find '{}'", name);
-  return t->type;
+  return t;
 }
 
-std::pair<TypecheckItem::Kind, types::TypePtr>
-TypeContext::findInVisited(const std::string &name) const {
-  for (int bi = int(bases.size()) - 1; bi >= 0; bi--) {
-    auto t = bases[bi].visitedAsts.find(name);
-    if (t == bases[bi].visitedAsts.end())
-      continue;
-    return t->second;
-  }
-  return {TypecheckItem::Var, nullptr};
+types::TypePtr TypeContext::getType(const std::string &name) const {
+  return forceFind(name)->type;
 }
 
-int TypeContext::findBase(const std::string &b) {
-  for (int i = int(bases.size()) - 1; i >= 0; i--)
-    if (b == bases[i].name)
-      return i;
-  seqassert(false, "cannot find base '{}'", b);
-  return -1;
+TypeContext::RealizationBase *TypeContext::getRealizationBase() {
+  return &(realizationBases.back());
 }
 
-std::string TypeContext::getBase() const {
-  if (bases.empty())
+size_t TypeContext::getRealizationDepth() const { return realizationBases.size(); }
+
+std::string TypeContext::getRealizationStackName() const {
+  if (realizationBases.empty())
     return "";
   std::vector<std::string> s;
-  for (auto &b : bases)
+  for (auto &b : realizationBases)
     if (b.type)
       s.push_back(b.type->realizedName());
   return join(s, ":");
 }
 
-std::shared_ptr<types::LinkType>
-TypeContext::addUnbound(const Expr *expr, int level, bool setActive, char staticType) {
-  auto t = std::make_shared<types::LinkType>(
-      types::LinkType::Unbound, cache->unboundCount++, level, nullptr, staticType);
-  // Keep it for debugging purposes:
-  // if (t->id == 7815) LOG("debug");
-  t->setSrcInfo(expr->getSrcInfo());
-  LOG_TYPECHECK("[ub] new {}: {} ({})", t->debugString(true), expr->toString(),
-                setActive);
-  if (setActive && allowActivation)
-    activeUnbounds[t] = cache->getContent(expr->getSrcInfo());
-  return t;
+std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo,
+                                                         int level) const {
+  auto typ = std::make_shared<types::LinkType>(types::LinkType::Unbound,
+                                               cache->unboundCount++, level, nullptr);
+  typ->setSrcInfo(srcInfo);
+  return typ;
 }
 
-types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
-                                        types::ClassType *generics, bool activate) {
+std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo) const {
+  return getUnbound(srcInfo, typecheckLevel);
+}
+
+std::shared_ptr<types::LinkType> TypeContext::getUnbound() const {
+  return getUnbound(getSrcInfo(), typecheckLevel);
+}
+
+types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
+                                        const types::TypePtr &type,
+                                        const types::ClassTypePtr &generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics)
@@ -98,42 +89,31 @@ types::TypePtr TypeContext::instantiate(const Expr *expr, types::TypePtr type,
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
-  auto t = type->instantiate(getLevel(), &(cache->unboundCount), &genericCache);
+  auto t = type->instantiate(typecheckLevel, &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
-      if (l->kind != types::LinkType::Unbound)
-        continue;
-      if (expr)
-        i.second->setSrcInfo(expr->getSrcInfo());
-      if (activeUnbounds.find(i.second) == activeUnbounds.end()) {
-        LOG_TYPECHECK("[ub] #{} -> {} (during inst of {}): {} ({})", i.first,
-                      i.second->debugString(true), type->debugString(true),
-                      expr ? expr->toString() : "", activate);
-        if (activate && allowActivation)
-          activeUnbounds[i.second] = format(
-              "{} of {} in {}", l->genericName.empty() ? "?" : l->genericName,
-              type->toString(), expr ? cache->getContent(expr->getSrcInfo()) : "");
-      }
+      i.second->setSrcInfo(srcInfo);
+      if (l->defaultType)
+        pendingDefaults.insert(i.second);
     }
   }
-  LOG_TYPECHECK("[inst] {} -> {}", expr ? expr->toString() : "", t->debugString(true));
   return t;
 }
 
 types::TypePtr
-TypeContext::instantiateGeneric(const Expr *expr, types::TypePtr root,
+TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &root,
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
   auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
-  if (generics.size() != c->generics.size())
-    error(expr->getSrcInfo(), "generics do not match");
+  if (generics.size() != c->generics.size()) {
+    error(srcInfo, "generics do not match");
+  }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
-    g->generics.push_back(
-        types::ClassType::Generic("", "", generics[i], c->generics[i].id));
+    g->generics.emplace_back("", "", generics[i], c->generics[i].id);
   }
-  return instantiate(expr, root, g.get());
+  return instantiate(srcInfo, root, g);
 }
 
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
@@ -147,18 +127,18 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
       std::unordered_set<std::string> signatureLoci;
       std::vector<types::FuncTypePtr> vv;
       for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
-        auto &m = mt[mti];
-        if (endswith(m.name, ":dispatch"))
+        auto &method = mt[mti];
+        if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
           continue;
-        if (m.age <= age) {
+        if (method.age <= age) {
           if (hideShadowed) {
-            auto sig = cache->functions[m.name].ast->signature();
+            auto sig = cache->functions[method.name].ast->signature();
             if (!in(signatureLoci, sig)) {
               signatureLoci.insert(sig);
-              vv.emplace_back(cache->functions[m.name].type);
+              vv.emplace_back(cache->functions[method.name].type);
             }
           } else {
-            vv.emplace_back(cache->functions[m.name].type);
+            vv.emplace_back(cache->functions[method.name].type);
           }
         }
       }
@@ -170,10 +150,6 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
-  if (member == "__elemsize__")
-    return findInternal("int");
-  if (member == "__atomic__")
-    return findInternal("bool");
   auto m = cache->classes.find(typeName);
   if (m != cache->classes.end()) {
     for (auto &mm : m->second.fields)
@@ -185,7 +161,8 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,
                                   const std::vector<CallExpr::Arg> &args,
-                                  ReorderDoneFn onDone, ReorderErrorFn onError,
+                                  const ReorderDoneFn &onDone,
+                                  const ReorderErrorFn &onError,
                                   const std::vector<char> &known) {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:
@@ -272,10 +249,10 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->args.size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (!func->ast->args[i].generic &&
-          (func->ast->args[i].deflt || (!known.empty() && known[i])))
+      if (func->ast->args[i].status == Param::Normal &&
+          (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
-      else if (!partial && !func->ast->args[i].generic)
+      else if (!partial && func->ast->args[i].status == Param::Normal)
         return onError(format("missing argument '{}'",
                               cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
@@ -285,13 +262,12 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 void TypeContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
-  LOG("base: {}", getBase());
+  LOG("base: {}", getRealizationStackName());
   for (auto &i : ordered) {
     std::string s;
-    auto t = i.second.front().second;
+    auto t = i.second.front();
     LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type->toString());
   }
 }
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

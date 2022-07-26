@@ -64,7 +64,7 @@ void StrAdditionOptimization::handle(CallInstr *v) {
     args = {arg};
     auto *replacementFunc =
         M->getOrRealizeMethod(M->getStringType(), "cat", {arg->getType()});
-    seqassert(replacementFunc, "could not find cat function");
+    seqassertn(replacementFunc, "could not find cat function [{}]", v->getSrcInfo());
     v->replaceAll(util::call(replacementFunc, args));
   }
 }

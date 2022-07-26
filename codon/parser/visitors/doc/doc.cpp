@@ -12,8 +12,7 @@
 
 using fmt::format;
 
-namespace codon {
-namespace ast {
+namespace codon::ast {
 
 // clang-format off
 std::string json_escape(const std::string &str) {
@@ -73,7 +72,7 @@ std::string json::toString() {
 
 std::shared_ptr<json> json::get(const std::string &s) {
   auto i = values.find(s);
-  seqassert(i != values.end(), "cannot find {}", s);
+  seqassertn(i != values.end(), "cannot find {}", s);
   return i->second;
 }
 
@@ -97,7 +96,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->modules[""]->setFilename(stdlib->path);
   shared->j = std::make_shared<json>();
-  for (auto &s : std::vector<std::string>{"void", "byte", "float", "bool", "int", "str",
+  for (auto &s : std::vector<std::string>{"byte", "float", "bool", "int", "str",
                                           "pyobj", "Ptr", "Function", "Generator",
                                           "Tuple", "Int", "UInt", TYPE_OPTIONAL,
                                           "Callable", "NoneType", "__internal__"}) {
@@ -141,7 +140,7 @@ std::string getDocstr(const StmtPtr &s) {
 
 std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool deep) {
   std::vector<StmtPtr> stmts;
-  if (auto s = const_cast<SuiteStmt *>(stmt->getSuite())) {
+  if (auto s = stmt->getSuite()) {
     for (int i = 0; i < (deep ? s->stmts.size() : 1); i++) {
       for (auto &x : flatten(std::move(s->stmts[i]), i ? nullptr : docstr, deep))
         stmts.push_back(std::move(x));
@@ -242,21 +241,19 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   std::vector<std::shared_ptr<json>> args;
   std::vector<std::string> generics;
   for (auto &a : stmt->args)
-    if (a.generic || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
-                                 (a.type->getIndex() &&
-                                  a.type->getIndex()->expr->isId("Static"))))) {
+    if (a.status != Param::Normal) {
       ctx->add(a.name, std::make_shared<int>(0));
       generics.push_back(a.name);
-      a.generic = true;
+      a.status = Param::Generic;
     }
   for (auto &a : stmt->args)
-    if (!a.generic) {
+    if (a.status != Param::Normal) {
       auto j = std::make_shared<json>();
       j->set("name", a.name);
       if (a.type)
         j->set("type", transform(a.type));
-      if (a.deflt) {
-        j->set("default", FormatVisitor::apply(a.deflt));
+      if (a.defaultValue) {
+        j->set("default", FormatVisitor::apply(a.defaultValue));
       }
       args.push_back(j);
     }
@@ -271,7 +268,7 @@ void DocVisitor::visit(FunctionStmt *stmt) {
     j->set("return", transform(stmt->ret));
   j->set("args", std::make_shared<json>(args));
   std::string docstr;
-  flatten(std::move(const_cast<FunctionStmt *>(stmt)->suite), &docstr);
+  flatten(std::move(stmt->suite), &docstr);
   for (auto &g : generics)
     ctx->remove(g);
   if (!docstr.empty() && !isLLVM)
@@ -304,17 +301,15 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::vector<std::shared_ptr<json>> args;
   for (auto &a : stmt->args)
-    if (a.generic || (a.type && (a.type->isId("type") || a.type->isId("TypeVar") ||
-                                 (a.type->getIndex() &&
-                                  a.type->getIndex()->expr->isId("Static"))))) {
-      a.generic = true;
+    if (a.status != Param::Normal) {
+      a.status = Param::Generic;
       generics.push_back(a.name);
     }
   ctx->shared->generics[id] = generics;
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
   for (auto &a : stmt->args)
-    if (!a.generic) {
+    if (a.status != Param::Normal) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       if (a.type)
@@ -327,7 +322,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::string docstr;
   std::vector<std::string> members;
-  for (auto &f : flatten(std::move(const_cast<ClassStmt *>(stmt)->suite), &docstr)) {
+  for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
     if (auto ff = CAST(f, FunctionStmt)) {
       auto i = transform(f);
       if (i != "")
@@ -421,7 +416,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
     // TODO: implement this corner case
   } else if (stmt->what->isId("*")) {
     for (auto &i : *ictx)
-      ctx->add(i.first, i.second[0].second);
+      ctx->add(i.first, i.second.front());
   } else {
     auto i = stmt->what->getId();
     if (auto c = ictx->find(i->value))
@@ -444,5 +439,4 @@ void DocVisitor::visit(AssignStmt *stmt) {
   resultStmt = std::to_string(id);
 }
 
-} // namespace ast
-} // namespace codon
+} // namespace codon::ast

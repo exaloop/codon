@@ -442,6 +442,10 @@ def _round_half_even(x: float) -> float:
 
 @tuple
 class timedelta:
+    min: ClassVar[timedelta] = timedelta._new(-9223372036854775808)
+    max: ClassVar[timedelta] = timedelta._new(9223372036854775807)
+    resolution: ClassVar[timedelta] = timedelta(microseconds=1)
+
     _microseconds: int
 
     def _new(microseconds: int) -> timedelta:
@@ -636,6 +640,10 @@ class IsoCalendarDate:
 
 @tuple
 class date:
+    min: ClassVar[date] = date(MINYEAR, 1, 1)
+    max: ClassVar[date] = date(MAXYEAR, 12, 31)
+    resolution: ClassVar[timedelta] = timedelta(days=1)
+
     _value: UInt[32]
 
     def __new__(year: int, month: int, day: int) -> date:
@@ -787,6 +795,10 @@ class date:
 
 @tuple
 class time:
+    min: ClassVar[time] = time(0, 0, 0, 0)
+    max: ClassVar[time] = time(23, 59, 59, 999999)
+    resolution: ClassVar[timedelta] = timedelta(microseconds=1)
+
     _value: int
 
     def __new__(
@@ -888,6 +900,10 @@ class time:
 
 @tuple
 class datetime:
+    min: ClassVar[datetime] = datetime(MINYEAR, 1, 1)
+    max: ClassVar[datetime] = datetime(MAXYEAR, 12, 31, 23, 59, 59, 999999)
+    resolution: ClassVar[timedelta] = timedelta(microseconds=1)
+
     _time: time
     _date: date
 
