@@ -391,6 +391,7 @@ void executeCommand(const std::vector<std::string> &args) {
 void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   const std::string llvmCtor = "llvm.global_ctors";
   auto *main = M->getFunction("main");
+  main->setName(".main"); // avoid clash with other main
   if (M->getNamedValue(llvmCtor) || !main)
     return;
 
@@ -401,6 +402,7 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
 
   auto *ctor = cast<llvm::Function>(
       M->getOrInsertFunction(".main.ctor", ctorFuncTy).getCallee());
+  ctor->setLinkage(llvm::GlobalValue::InternalLinkage);
   auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
   B->SetInsertPoint(entry);
   B->CreateCall({main->getFunctionType(), main},
