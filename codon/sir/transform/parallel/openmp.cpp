@@ -21,19 +21,11 @@ struct OMPTypes {
   types::Type *i32 = nullptr;
   types::Type *i8ptr = nullptr;
   types::Type *i32ptr = nullptr;
-  types::Type *routine = nullptr;
-  types::Type *ident = nullptr;
-  types::Type *task = nullptr;
 
   explicit OMPTypes(Module *M) {
     i32 = M->getIntNType(32, /*sign=*/true);
     i8ptr = M->getPointerType(M->getByteType());
     i32ptr = M->getPointerType(i32);
-    routine = M->getFuncType(i32, {i32ptr, i8ptr});
-    ident = M->getOrRealizeType("Ident", {}, ompModule);
-    task = M->getOrRealizeType("Task", {}, ompModule);
-    seqassertn(ident, "openmp.Ident type not found");
-    seqassertn(task, "openmp.Task type not found");
   }
 };
 
@@ -63,11 +55,19 @@ struct ReductionLocks {
   Var *critLock = nullptr; // lock used in reduction critical sections
 
   Var *createLock(Module *M) {
-    auto *main = cast<BodiedFunc>(M->getMainFunc());
-    auto *lck = util::alloc(M->getByteType(), 32);
-    auto *val = util::makeVar(lck, cast<SeriesFlow>(main->getBody()),
-                              /*parent=*/nullptr, /*prepend=*/true);
-    return val->getVar();
+    auto *lockType = M->getOrRealizeType("Lock", {}, ompModule);
+    seqassertn(lockType, "openmp.Lock type not found");
+    auto *var = M->Nr<Var>(lockType, /*global=*/true);
+    static int counter = 1;
+    var->setName(".omp_lock." + std::to_string(counter++));
+
+    // add it to main function so it doesn't get demoted by IR pass
+    auto *series = cast<SeriesFlow>(cast<BodiedFunc>(M->getMainFunc())->getBody());
+    auto *init = (*lockType)();
+    seqassertn(init, "could not initialize openmp.Lock");
+    series->insert(series->begin(), M->Nr<AssignInstr>(var, init));
+
+    return var;
   }
 
   Var *getMainLock(Module *M) {
@@ -283,20 +283,21 @@ struct Reduction {
 
     seqassertn(loc && gtid, "loc and/or gtid are null");
     auto *lck = locks.getCritLock(M);
-    auto *critBegin = M->getOrRealizeFunc(
-        "_critical_begin", {loc->getType(), gtid->getType(), lck->getType()}, {},
-        ompModule);
+    auto *lckPtrType = M->getPointerType(lck->getType());
+    auto *critBegin = M->getOrRealizeFunc("_critical_begin",
+                                          {loc->getType(), gtid->getType(), lckPtrType},
+                                          {}, ompModule);
     seqassertn(critBegin, "critical begin function not found");
     auto *critEnd = M->getOrRealizeFunc(
-        "_critical_end", {loc->getType(), gtid->getType(), lck->getType()}, {},
-        ompModule);
+        "_critical_end", {loc->getType(), gtid->getType(), lckPtrType}, {}, ompModule);
     seqassertn(critEnd, "critical end function not found");
 
-    auto *critEnter = util::call(
-        critBegin, {M->Nr<VarValue>(loc), M->Nr<VarValue>(gtid), M->Nr<VarValue>(lck)});
+    auto *critEnter =
+        util::call(critBegin, {M->Nr<VarValue>(loc), M->Nr<VarValue>(gtid),
+                               M->Nr<PointerValue>(lck)});
     auto *operation = generateNonAtomicReduction(ptr, arg);
-    auto *critExit = util::call(
-        critEnd, {M->Nr<VarValue>(loc), M->Nr<VarValue>(gtid), M->Nr<VarValue>(lck)});
+    auto *critExit = util::call(critEnd, {M->Nr<VarValue>(loc), M->Nr<VarValue>(gtid),
+                                          M->Nr<PointerValue>(lck)});
     // make sure the unlock is in a finally-block
     return util::series(critEnter, M->Nr<TryCatchFlow>(util::series(operation),
                                                        util::series(critExit)));
@@ -570,22 +571,23 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
       auto *lck = locks.getMainLock(M);
       auto *rawReducer = ptrFromFunc(reducer);
 
+      auto *lckPtrType = M->getPointerType(lck->getType());
       auto *reduceNoWait = M->getOrRealizeFunc(
           "_reduce_nowait",
           {reductionLocRef->getType(), gtid->getType(), reductionTuple->getType(),
-           rawReducer->getType(), lck->getType()},
+           rawReducer->getType(), lckPtrType},
           {}, ompModule);
       seqassertn(reduceNoWait, "reduce nowait function not found");
       auto *reduceNoWaitEnd = M->getOrRealizeFunc(
           "_end_reduce_nowait",
-          {reductionLocRef->getType(), gtid->getType(), lck->getType()}, {}, ompModule);
+          {reductionLocRef->getType(), gtid->getType(), lckPtrType}, {}, ompModule);
       seqassertn(reduceNoWaitEnd, "end reduce nowait function not found");
 
       auto *series = M->Nr<SeriesFlow>();
       auto *tupleVal = util::makeVar(reductionTuple, series, parent);
-      auto *reduceCode = util::call(reduceNoWait, {M->Nr<VarValue>(reductionLocRef),
-                                                   M->Nr<VarValue>(gtid), tupleVal,
-                                                   rawReducer, M->Nr<VarValue>(lck)});
+      auto *reduceCode = util::call(
+          reduceNoWait, {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
+                         tupleVal, rawReducer, M->Nr<PointerValue>(lck)});
       auto *codeVar = util::makeVar(reduceCode, series, parent)->getVar();
       seqassertn(codeVar->getType()->is(M->getIntType()), "wrong reduce code type");
 
@@ -600,9 +602,9 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
               info.reduction.generateNonAtomicReduction(ptr, arg));
         }
       }
-      sectionNonAtomic->push_back(
-          util::call(reduceNoWaitEnd, {M->Nr<VarValue>(reductionLocRef),
-                                       M->Nr<VarValue>(gtid), M->Nr<VarValue>(lck)}));
+      sectionNonAtomic->push_back(util::call(
+          reduceNoWaitEnd, {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
+                            M->Nr<PointerValue>(lck)}));
 
       for (auto &info : sharedInfo) {
         if (info.reduction) {

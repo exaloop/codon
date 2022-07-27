@@ -126,13 +126,13 @@ def _reduction_loc():
 _reduction_loc()
 
 
-def _critical_begin(loc_ref: Ptr[Ident], gtid: int, lck: cobj):
-    from C import __kmpc_critical(Ptr[Ident], i32, cobj)
+def _critical_begin(loc_ref: Ptr[Ident], gtid: int, lck: Ptr[Lock]):
+    from C import __kmpc_critical(Ptr[Ident], i32, Ptr[Lock])
     __kmpc_critical(loc_ref, i32(gtid), lck)
 
 
-def _critical_end(loc_ref: Ptr[Ident], gtid: int, lck: cobj):
-    from C import __kmpc_end_critical(Ptr[Ident], i32, cobj)
+def _critical_end(loc_ref: Ptr[Ident], gtid: int, lck: Ptr[Lock]):
+    from C import __kmpc_end_critical(Ptr[Ident], i32, Ptr[Lock])
     __kmpc_end_critical(loc_ref, i32(gtid), lck)
 
 
@@ -325,12 +325,12 @@ def _reduce_nowait(
     gtid: int,
     reduce_data: T,
     reduce_func: cobj,
-    lck: cobj,
+    lck: Ptr[Lock],
     T: type,
 ):
     from internal.gc import sizeof
 
-    from C import __kmpc_reduce_nowait(Ptr[Ident], i32, i32, int, cobj, cobj, cobj) -> i32
+    from C import __kmpc_reduce_nowait(Ptr[Ident], i32, i32, int, cobj, cobj, Ptr[Lock]) -> i32
     num_vars = staticlen(reduce_data)
     reduce_size = sizeof(T)
     return int(
@@ -346,8 +346,8 @@ def _reduce_nowait(
     )
 
 
-def _end_reduce_nowait(loc_ref: Ptr[Ident], gtid: int, lck: cobj):
-    from C import __kmpc_end_reduce_nowait(Ptr[Ident], i32, cobj)
+def _end_reduce_nowait(loc_ref: Ptr[Ident], gtid: int, lck: Ptr[Lock]):
+    from C import __kmpc_end_reduce_nowait(Ptr[Ident], i32, Ptr[Lock])
     __kmpc_end_reduce_nowait(loc_ref, i32(gtid), lck)
 
 
@@ -875,11 +875,11 @@ def critical(func):
     def _wrapper(*args, **kwargs):
         gtid = get_thread_num()
         loc = _default_loc()
-        _critical_begin(loc, gtid, __ptr__(_default_lock).as_byte())
+        _critical_begin(loc, gtid, __ptr__(_default_lock))
         try:
             func(*args, **kwargs)
         finally:
-            _critical_end(loc, gtid, __ptr__(_default_lock).as_byte())
+            _critical_end(loc, gtid, __ptr__(_default_lock))
 
     return _wrapper
 

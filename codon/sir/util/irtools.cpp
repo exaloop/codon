@@ -115,7 +115,7 @@ VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) 
   auto *v = M->Nr<Var>(x->getType(), global);
   if (global) {
     static int counter = 1;
-    v->setName("_anon_global_" + std::to_string(counter++));
+    v->setName(".anon_global." + std::to_string(counter++));
   }
   auto *a = M->Nr<AssignInstr>(v, x);
   if (prepend) {
