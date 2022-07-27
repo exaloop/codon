@@ -139,7 +139,8 @@ if(CODON_JUPYTER)
                 "ZMQ_BUILD_TESTS OFF"
                 "ENABLE_CPACK OFF"
                 "BUILD_SHARED ON"
-                "WITH_LIBSODIUM OFF")
+                "WITH_LIBSODIUM OFF"
+                "WITH_TLS OFF")
     CPMAddPackage(
         NAME cppzmq
         URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
