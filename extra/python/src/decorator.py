@@ -13,14 +13,10 @@ if "CODON_PATH" not in os.environ:
     )
     os.environ["CODON_PATH"] += "/stdlib"
 
-
 from .codon_jit import Jit, JitError
 
 class CodonError(Exception):
     pass
-
-separator = "__"
-
 
 convertible = {type(None): "NoneType",
                int: "int",
@@ -57,10 +53,6 @@ def _codon_type(arg):
 def _codon_types(args):
     return tuple(_codon_type(arg) for arg in args)
 
-
-# codon wrapper stubs
-
-
 def _wrapper_stub_init():
     from internal.python import (
         pyobj,
@@ -74,9 +66,6 @@ def _wrapper_stub_init():
 
     ensure_initialized(True)
 
-
-# helpers
-
 def _reset_jit():
     global jit
     jit = Jit()
@@ -84,9 +73,7 @@ def _reset_jit():
     jit.execute("".join([l[4:] for l in lines]))
     return jit
 
-
 jit = _reset_jit()
-
 
 def _obj_to_str(obj) -> str:
     if inspect.isclass(obj):
@@ -101,20 +88,14 @@ def _obj_to_str(obj) -> str:
         raise TypeError(f"Function or class expected, got {type(obj).__name__}.")
     return obj_str.replace("_@par", "@par")
 
-
 def _obj_name(obj) -> str:
     if inspect.isclass(obj) or callable(obj):
         return obj.__name__
     else:
         raise TypeError(f"Function or class expected, got {type(obj).__name__}.")
 
-
 def _parse_decorated(obj):
     return _obj_name(obj), _obj_to_str(obj)
-
-
-# decorator
-
 
 def codon(obj):
     try:

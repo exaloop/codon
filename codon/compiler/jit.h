@@ -31,11 +31,11 @@ struct JITResult {
 class JIT {
 public:
   struct PythonData {
-    ir::types::Type *pyobj;
+    ir::types::Type *cobj;
     std::unordered_map<std::string, ir::Func *> cache;
 
     PythonData();
-    ir::types::Type *getPyObjType(ir::Module *M);
+    ir::types::Type *getCObjType(ir::Module *M);
   };
 
 private:

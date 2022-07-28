@@ -185,8 +185,8 @@ std::string buildKey(const std::string &name, const std::vector<std::string> &ty
 std::string buildPythonWrapper(const std::string &name, const std::string &wrapname,
                                const std::vector<std::string> &types) {
   std::stringstream wrap;
-  wrap << "def " << wrapname << "(args: pyobj) -> pyobj:\n";
-
+  wrap << "@export\n";
+  wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
   for (unsigned i = 0; i < types.size(); i++) {
     wrap << "    "
          << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
@@ -204,57 +204,13 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
 }
 } // namespace
 
-JIT::PythonData::PythonData() : pyobj(nullptr), cache() {}
+JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 
-ir::types::Type *JIT::PythonData::getPyObjType(ir::Module *M) {
-  if (pyobj)
-    return pyobj;
-  pyobj = M->getOrRealizeType("pyobj");
-  seqassertn(pyobj, "could not find pyobj type");
-  return pyobj;
-}
-
-llvm::Expected<void *> JIT::runPythonWrapper(const ir::Func *wrapper, void *arg) {
-  const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
-  auto func = engine->lookup(name);
-  PyWrapperFunc *wrap;
-
-  if (auto err = func.takeError()) {
-    auto result = getRawFunction(wrapper);
-    if (auto err2 = result.takeError())
-      return std::move(err2);
-    wrap = (PyWrapperFunc *)result.get();
-  } else {
-    wrap = (PyWrapperFunc *)func->getAddress();
-  }
-
-  try {
-    return (*wrap)(arg);
-  } catch (const JITError &e) {
-    return handleJITError(e);
-  }
-}
-
-llvm::Expected<ir::Func *> JIT::getWrapperFunc(const std::string &name,
-                                               const std::vector<std::string> &types) {
-  auto key = buildKey(name, types);
-  auto &cache = pydata->cache;
-  auto it = cache.find(key);
-  if (it != cache.end())
-    return it->second;
-
-  auto wrapname = "__codon_wrapped__" + name;
-  auto wrapper = buildPythonWrapper(name, wrapname, types);
-  std::cout << wrapper << std::endl;
-  auto result = execute(wrapper);
-  if (auto err = result.takeError())
-    return std::move(err);
-
-  auto *M = compiler->getModule();
-  auto *func = M->getOrRealizeFunc(wrapname, {pydata->getPyObjType(M)});
-  seqassertn(func, "could not access wrapper func '{}'", wrapname);
-  cache.emplace(key, func);
-  return func;
+ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+  if (cobj)
+    return cobj;
+  cobj = M->getPointerType(M->getByteType());
+  return cobj;
 }
 
 JITResult JIT::executeSafe(const std::string &code) {
@@ -268,19 +224,66 @@ JITResult JIT::executeSafe(const std::string &code) {
 
 JITResult JIT::executePython(const std::string &name,
                              const std::vector<std::string> &types, void *arg) {
-  auto funcResult = getWrapperFunc(name, types);
-  if (auto err = funcResult.takeError()) {
+
+  auto key = buildKey(name, types);
+  auto &cache = pydata->cache;
+  auto it = cache.find(key);
+  PyWrapperFunc *wrap;
+
+  if (it != cache.end()) {
+    auto *wrapper = it->second;
+    const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
+    auto func = engine->lookup(name);
+
+    if (auto err = func.takeError()) {
+      auto result = getRawFunction(wrapper);
+      if (auto err2 = result.takeError()) {
+        auto errorInfo = llvm::toString(std::move(err2));
+        return JITResult::error(errorInfo);
+      }
+      wrap = (PyWrapperFunc *)result.get();
+    } else {
+      wrap = (PyWrapperFunc *)func->getAddress();
+    }
+
+    try {
+      return JITResult::success((*wrap)(arg));
+    } catch (const JITError &e) {
+      auto err = handleJITError(e);
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+  } else {
+    auto wrapname = "__codon_wrapped__" + name;
+    auto wrapper = buildPythonWrapper(name, wrapname, types);
+    auto execResult = execute(wrapper);
+    if (auto err = execResult.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    auto *M = compiler->getModule();
+    auto *func = M->getOrRealizeFunc(wrapname, {pydata->getCObjType(M)});
+    seqassertn(func, "could not access wrapper func '{}'", wrapname);
+    cache.emplace(key, func);
+
+    auto rawResult = getRawFunction(func);
+    if (auto err = rawResult.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    wrap = (PyWrapperFunc *)rawResult.get();
+  }
+
+  try {
+    auto *ans = (*wrap)(arg);
+    return JITResult::success(ans);
+  } catch (const JITError &e) {
+    auto err = handleJITError(e);
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);
   }
-
-  auto runResult = runPythonWrapper(funcResult.get(), arg);
-  if (auto err = runResult.takeError()) {
-    auto errorInfo = llvm::toString(std::move(err));
-    return JITResult::error(errorInfo);
-  }
-
-  return JITResult::success(runResult.get());
 }
 
 } // namespace jit
