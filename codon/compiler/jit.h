@@ -52,7 +52,9 @@ public:
 
   // General
   llvm::Error init();
-  llvm::Expected<void *> getRawFunction(const ir::Func *input);
+  llvm::Error compile(const ir::Func *input);
+  llvm::Expected<ir::Func *> compile(const std::string &code);
+  llvm::Expected<void *> address(const ir::Func *input);
   llvm::Expected<std::string> run(const ir::Func *input);
   llvm::Expected<std::string> execute(const std::string &code);
 

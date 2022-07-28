@@ -61,7 +61,7 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Expected<void *> JIT::getRawFunction(const ir::Func *input) {
+llvm::Error JIT::compile(const ir::Func *input) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
@@ -70,8 +70,6 @@ llvm::Expected<void *> JIT::getRawFunction(const ir::Func *input) {
   pm->run(module);
   t1.log();
 
-  const std::string name = ir::LLVMVisitor::getNameForFunction(input);
-
   Timer t2("jit/llvm");
   auto pair = llvisitor->takeModule(module);
   t2.log();
@@ -79,30 +77,12 @@ llvm::Expected<void *> JIT::getRawFunction(const ir::Func *input) {
   Timer t3("jit/engine");
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return std::move(err);
-
-  auto func = engine->lookup(name);
-  if (auto err = func.takeError())
-    return std::move(err);
   t3.log();
 
-  return (void *)func->getAddress();
+  return llvm::Error::success();
 }
 
-llvm::Expected<std::string> JIT::run(const ir::Func *input) {
-  auto result = getRawFunction(input);
-  if (auto err = result.takeError())
-    return std::move(err);
-
-  auto *repl = (InputFunc *)result.get();
-  try {
-    (*repl)();
-  } catch (const JITError &e) {
-    return handleJITError(e);
-  }
-  return getCapturedOutput();
-}
-
-llvm::Expected<std::string> JIT::execute(const std::string &code) {
+llvm::Expected<ir::Func *> JIT::compile(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
@@ -143,7 +123,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
         ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
 
-    return run(func);
+    return func;
   } catch (const exc::ParserException &e) {
     for (auto &f : cache->functions)
       for (auto &r : f.second.realizations)
@@ -158,6 +138,41 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
     *(cache->codegenCtx) = bTranslate;
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
+}
+
+llvm::Expected<void *> JIT::address(const ir::Func *input) {
+  if (auto err = compile(input))
+    return std::move(err);
+
+  const std::string name = ir::LLVMVisitor::getNameForFunction(input);
+  auto func = engine->lookup(name);
+  if (auto err = func.takeError())
+    return std::move(err);
+
+  return (void *)func->getAddress();
+}
+
+llvm::Expected<std::string> JIT::run(const ir::Func *input) {
+  auto result = address(input);
+  if (auto err = result.takeError())
+    return std::move(err);
+
+  auto *repl = (InputFunc *)result.get();
+  try {
+    (*repl)();
+  } catch (const JITError &e) {
+    return handleJITError(e);
+  }
+  return getCapturedOutput();
+}
+
+llvm::Expected<std::string> JIT::execute(const std::string &code) {
+  auto result = compile(code);
+  if (auto err = result.takeError())
+    return std::move(err);
+  if (auto err = compile(result.get()))
+    return std::move(err);
+  return run(result.get());
 }
 
 llvm::Error JIT::handleJITError(const JITError &e) {
@@ -233,31 +248,12 @@ JITResult JIT::executePython(const std::string &name,
   if (it != cache.end()) {
     auto *wrapper = it->second;
     const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
-    auto func = engine->lookup(name);
-
-    if (auto err = func.takeError()) {
-      auto result = getRawFunction(wrapper);
-      if (auto err2 = result.takeError()) {
-        auto errorInfo = llvm::toString(std::move(err2));
-        return JITResult::error(errorInfo);
-      }
-      wrap = (PyWrapperFunc *)result.get();
-    } else {
-      wrap = (PyWrapperFunc *)func->getAddress();
-    }
-
-    try {
-      return JITResult::success((*wrap)(arg));
-    } catch (const JITError &e) {
-      auto err = handleJITError(e);
-      auto errorInfo = llvm::toString(std::move(err));
-      return JITResult::error(errorInfo);
-    }
+    auto func = llvm::cantFail(engine->lookup(name));
+    wrap = (PyWrapperFunc *)func.getAddress();
   } else {
     auto wrapname = "__codon_wrapped__" + name;
     auto wrapper = buildPythonWrapper(name, wrapname, types);
-    auto execResult = execute(wrapper);
-    if (auto err = execResult.takeError()) {
+    if (auto err = compile(wrapper).takeError()) {
       auto errorInfo = llvm::toString(std::move(err));
       return JITResult::error(errorInfo);
     }
@@ -267,13 +263,12 @@ JITResult JIT::executePython(const std::string &name,
     seqassertn(func, "could not access wrapper func '{}'", wrapname);
     cache.emplace(key, func);
 
-    auto rawResult = getRawFunction(func);
-    if (auto err = rawResult.takeError()) {
+    auto result = address(func);
+    if (auto err = result.takeError()) {
       auto errorInfo = llvm::toString(std::move(err));
       return JITResult::error(errorInfo);
     }
-
-    wrap = (PyWrapperFunc *)rawResult.get();
+    wrap = (PyWrapperFunc *)result.get();
   }
 
   try {
