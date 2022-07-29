@@ -333,7 +333,8 @@ class pyobj:
 @extend
 class NoneType:
     def __to_py__(self) -> cobj:
-        return Py_IncRef(Py_None)
+        Py_IncRef(Py_None)
+        return Py_None
 
     def __from_py__(i: cobj) -> None:
         return

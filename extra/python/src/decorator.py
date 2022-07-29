@@ -15,9 +15,6 @@ if "CODON_PATH" not in os.environ:
 
 from .codon_jit import Jit, JitError
 
-class CodonError(Exception):
-    pass
-
 convertible = {type(None): "NoneType",
                int: "int",
                float: "float",
@@ -30,9 +27,7 @@ convertible = {type(None): "NoneType",
 
 def _codon_type(arg):
     t = type(arg)
-    s = convertible.get(t, "")
-    if not s:
-        raise CodonError("type " + str(t) + " is not convertible to a Codon type")
+    s = convertible.get(t, "pyobj")
 
     if issubclass(t, list) or issubclass(t, set):
         sub = "NoneType"
