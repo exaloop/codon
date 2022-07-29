@@ -25,7 +25,8 @@ convertible = {type(None): "NoneType",
                str: "str",
                list: "List",
                dict: "Dict",
-               set: "Set"}
+               set: "Set",
+               tuple: "Tuple"}
 
 def _codon_type(arg):
     t = type(arg)
@@ -47,6 +48,8 @@ def _codon_type(arg):
             sub1 = _codon_type(x[0])
             sub2 = _codon_type(x[1])
         s += f"[{sub1},{sub2}]"
+    elif issubclass(t, tuple):
+        s += f"[{','.join(_codon_type(a) for a in arg)}]"
 
     return s
 
