@@ -41,6 +41,9 @@ PyTuple_SetItem = Function[[cobj, int, cobj], NoneType](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
 PyUnicode_FromString = Function[[cobj], cobj](cobj())
+PyComplex_FromDoubles = Function[[float, float], cobj](cobj())
+PyComplex_RealAsDouble = Function[[cobj], float](cobj())
+PyComplex_ImagAsDouble = Function[[cobj], float](cobj())
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
@@ -120,6 +123,9 @@ def init_dl_handles(py_handle: cobj):
     global PyUnicode_AsEncodedString
     global PyUnicode_DecodeFSDefaultAndSize
     global PyUnicode_FromString
+    global PyComplex_FromDoubles
+    global PyComplex_RealAsDouble
+    global PyComplex_ImagAsDouble
     global Py_None
     global Py_True
     global Py_False
@@ -161,6 +167,9 @@ def init_dl_handles(py_handle: cobj):
     PyUnicode_AsEncodedString = dlsym(py_handle, "PyUnicode_AsEncodedString")
     PyUnicode_DecodeFSDefaultAndSize = dlsym(py_handle, "PyUnicode_DecodeFSDefaultAndSize")
     PyUnicode_FromString = dlsym(py_handle, "PyUnicode_FromString")
+    PyComplex_FromDoubles = dlsym(py_handle, "PyComplex_FromDoubles")
+    PyComplex_RealAsDouble = dlsym(py_handle, "PyComplex_RealAsDouble")
+    PyComplex_ImagAsDouble = dlsym(py_handle, "PyComplex_ImagAsDouble")
 
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
@@ -386,6 +395,17 @@ class str:
 
     def __from_py__(s: cobj) -> str:
         return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
+
+
+@extend
+class complex:
+    def __to_py__(self) -> cobj:
+        return pyobj.exc_wrap(PyComplex_FromDoubles(self.real, self.imag))
+
+    def __from_py__(c: cobj) -> complex:
+        real = pyobj.exc_wrap(PyComplex_RealAsDouble(c))
+        imag = pyobj.exc_wrap(PyComplex_ImagAsDouble(c))
+        return complex(real, imag)
 
 
 @extend
