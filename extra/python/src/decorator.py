@@ -51,24 +51,12 @@ def _codon_type(arg):
 def _codon_types(args):
     return tuple(_codon_type(arg) for arg in args)
 
-def _wrapper_stub_init():
-    from internal.python import (
-        pyobj,
-        ensure_initialized,
-        Py_None,
-        PyImport_AddModule,
-        PyObject_GetAttrString,
-        PyObject_SetAttrString,
-        PyTuple_GetItem,
-    )
-
-    ensure_initialized(True)
-
 def _reset_jit():
     global jit
     jit = Jit()
-    lines = inspect.getsourcelines(_wrapper_stub_init)[0][1:]
-    jit.execute("".join([l[4:] for l in lines]))
+    init_code = ("from internal.python import setup_decorator, PyTuple_GetItem\n"
+                 "setup_decorator()\n")
+    jit.execute(init_code)
     return jit
 
 jit = _reset_jit()

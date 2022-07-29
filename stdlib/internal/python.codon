@@ -167,7 +167,7 @@ def init_dl_handles(py_handle: cobj):
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
 
 
-def init(python_loaded: bool = False):
+def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
     if _PY_INITIALIZED:
         return
@@ -184,13 +184,16 @@ def init(python_loaded: bool = False):
     if not python_loaded:
         Py_Initialize()
 
-    PyRun_SimpleString(_PY_INIT.c_str())
     _PY_INITIALIZED = True
 
 
 def ensure_initialized(python_loaded: bool = False):
-    if not _PY_INITIALIZED:
-        init(python_loaded)
+    setup_python(python_loaded)
+    PyRun_SimpleString(_PY_INIT.c_str())
+
+
+def setup_decorator():
+    setup_python(True)
 
 
 @extend
