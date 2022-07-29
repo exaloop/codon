@@ -10,11 +10,11 @@ from libcpp.vector cimport vector
 from src.jit cimport JIT, JITResult
 
 
-class JitError(Exception):
+class JITError(Exception):
     pass
 
 
-cdef class Jit:
+cdef class JITWrapper:
     cdef JIT* jit
 
     def __cinit__(self):
@@ -29,7 +29,7 @@ cdef class Jit:
         if <bint>result:
             return None
         else:
-            raise JitError(result.message)
+            raise JITError(result.message)
 
     def run_wrapper(self, name: str, types: list[str], args) -> object:
         cdef vector[string] types_vec = types
@@ -37,4 +37,4 @@ cdef class Jit:
         if <bint>result:
             return <object>result.result
         else:
-            raise JitError(result.message)
+            raise JITError(result.message)

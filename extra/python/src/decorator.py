@@ -13,7 +13,7 @@ if "CODON_PATH" not in os.environ:
     )
     os.environ["CODON_PATH"] += "/stdlib"
 
-from .codon_jit import Jit, JitError
+from .codon_jit import JITWrapper, JITError
 
 convertible = {type(None): "NoneType",
                int: "int",
@@ -53,7 +53,7 @@ def _codon_types(args):
 
 def _reset_jit():
     global jit
-    jit = Jit()
+    jit = JITWrapper()
     init_code = ("from internal.python import setup_decorator, PyTuple_GetItem\n"
                  "setup_decorator()\n")
     jit.execute(init_code)
@@ -87,7 +87,7 @@ def codon(obj):
     try:
         obj_name, obj_str = _parse_decorated(obj)
         jit.execute(obj_str)
-    except JitError as e:
+    except JITError as e:
         _reset_jit()
         raise
 
@@ -96,7 +96,7 @@ def codon(obj):
             args = (*args, *kwargs.values())
             types = _codon_types(args)
             return jit.run_wrapper(obj_name, types, args)
-        except JitError as e:
+        except JITError as e:
             _reset_jit()
             raise
 
