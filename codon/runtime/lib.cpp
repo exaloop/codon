@@ -271,7 +271,7 @@ static std::ostringstream capture;
 static std::mutex captureLock;
 
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
-  if ((seq_flags & SEQ_FLAG_JIT) && (fo == stdout || fo == stderr)) {
+  if ((seq_flags & SEQ_FLAG_CAPTURE_OUTPUT) && (fo == stdout || fo == stderr)) {
     captureLock.lock();
     capture.write(str.str, str.len);
     captureLock.unlock();

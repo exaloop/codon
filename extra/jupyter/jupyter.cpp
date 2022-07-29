@@ -16,6 +16,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
+#include "codon/config/config.h"
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
 
@@ -85,6 +86,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
 
 void CodonJupyter::configure_impl() {
   jit = std::make_unique<codon::jit::JIT>(argv0, "jupyter");
+  jit->getCompiler()->getLLVMVisitor()->setCapture();
 
   for (const auto &plugin : plugins) {
     // TODO: error handling on plugin init
@@ -114,8 +116,8 @@ nl::json CodonJupyter::is_complete_request_impl(const string &code) {
 }
 
 nl::json CodonJupyter::kernel_info_request_impl() {
-  return xeus::create_info_reply("1.0", "codon_kernel", "0.1.0", "python", "3.7",
-                                 "text/x-python", ".seq", "python", "", "",
+  return xeus::create_info_reply("", "codon_kernel", CODON_VERSION, "python", "3.7",
+                                 "text/x-python", ".codon", "python", "", "",
                                  "Codon Kernel");
 }
 

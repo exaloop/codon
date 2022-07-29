@@ -100,12 +100,14 @@ private:
     bool jit;
     /// Whether we are compiling a standalone object/executable
     bool standalone;
+    /// Whether to capture writes to stdout/stderr
+    bool capture;
     /// Program command-line flags
     std::string flags;
 
     DebugInfo()
         : builder(), unit(nullptr), debug(false), jit(false), standalone(false),
-          flags() {}
+          capture(false), flags() {}
 
     llvm::DIFile *getFile(const std::string &path);
 
@@ -243,6 +245,12 @@ public:
   /// Sets standalone status.
   /// @param s true if standalone
   void setStandalone(bool s = true) { db.standalone = s; }
+
+  /// @return true if capturing outputs, false otherwise
+  bool getCapture() const { return db.capture; }
+  /// Sets capture status.
+  /// @param c true to capture
+  void setCapture(bool c = true) { db.capture = c; }
 
   /// @return program flags
   std::string getFlags() const { return db.flags; }

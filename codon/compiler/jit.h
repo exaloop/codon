@@ -22,9 +22,7 @@ struct JITResult {
   std::string message;
 
   operator bool() const { return message.empty(); }
-
   static JITResult success(void *result) { return {result, ""}; }
-
   static JITResult error(const std::string &message) { return {nullptr, message}; }
 };
 

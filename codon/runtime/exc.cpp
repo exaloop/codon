@@ -208,7 +208,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
   }
 
   std::ostringstream buf;
-  if (seq_flags & SEQ_FLAG_JIT)
+  if (seq_flags & SEQ_FLAG_CAPTURE_OUTPUT)
     buf << codon::getCapturedOutput();
 
   buf << "\033[1m";
