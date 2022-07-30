@@ -23,6 +23,7 @@
 ## Interoperability
 
 * [Python integration](interop/python.md)
+* [Python decorator](interop/decorator.md)
 * [C/C++ integration](interop/cpp.md)
 * [Jupyter integration](interop/jupyter.md)
 
