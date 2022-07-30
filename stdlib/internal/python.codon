@@ -88,6 +88,9 @@ PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyObject_Str = Function[[cobj], cobj](cobj())
 PyObject_Repr = Function[[cobj], cobj](cobj())
 PyObject_Hash = Function[[cobj], int](cobj())
+PyObject_GetItem = Function[[cobj, cobj], cobj](cobj())
+PyObject_SetItem = Function[[cobj, cobj, cobj], int](cobj())
+PyObject_DelItem = Function[[cobj, cobj], int](cobj())
 
 # number
 
@@ -211,6 +214,9 @@ def init_dl_handles(py_handle: cobj):
     global PyObject_Str
     global PyObject_Repr
     global PyObject_Hash
+    global PyObject_GetItem
+    global PyObject_SetItem
+    global PyObject_DelItem
     global Py_None
     global Py_True
     global Py_False
@@ -292,6 +298,9 @@ def init_dl_handles(py_handle: cobj):
     PyObject_Str = dlsym(py_handle, "PyObject_Str")
     PyObject_Repr = dlsym(py_handle, "PyObject_Repr")
     PyObject_Hash = dlsym(py_handle, "PyObject_Hash")
+    PyObject_GetItem = dlsym(py_handle, "PyObject_GetItem")
+    PyObject_SetItem = dlsym(py_handle, "PyObject_SetItem")
+    PyObject_DelItem = dlsym(py_handle, "PyObject_DelItem")
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
@@ -450,6 +459,18 @@ class pyobj:
 
     def __length_hint__(self) -> int:
         return pyobj.exc_wrap(PyObject_LengthHint(self.p))
+
+    def __getitem__(self, key):
+        print('getitem')
+        return pyobj(pyobj.exc_wrap(PyObject_GetItem(self.p, key.__to_py__())), steal=True)
+
+    def __setitem__(self, key, v):
+        print('setitem')
+        pyobj.exc_wrap(PyObject_SetItem(self.p, key.__to_py__(), v.__to_py__()))
+
+    def __delitem__(self, key):
+        print('delitem')
+        return pyobj.exc_wrap(PyObject_DelItem(self.p, key.__to_py__()))
 
     def __to_py__(self) -> cobj:
         return self.p
