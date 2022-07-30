@@ -4,35 +4,28 @@ import os
 
 from internal.dlopen import *
 
+# general
 Py_DecRef = Function[[cobj], NoneType](cobj())
 Py_IncRef = Function[[cobj], NoneType](cobj())
 Py_Initialize = Function[[], NoneType](cobj())
+PyImport_AddModule = Function[[cobj], cobj](cobj())
+PyImport_ImportModule = Function[[cobj], cobj](cobj())
+PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
+PyRun_SimpleString = Function[[cobj], NoneType](cobj())
+
+# conversions
+PyLong_AsLong = Function[[cobj], int](cobj())
+PyLong_FromLong = Function[[int], cobj](cobj())
+PyFloat_AsDouble = Function[[cobj], float](cobj())
+PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
+PyList_New = Function[[int], cobj](cobj())
+PyList_GetItem = Function[[cobj, int], cobj](cobj())
+PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
-PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
-PyFloat_AsDouble = Function[[cobj], float](cobj())
-PyFloat_FromDouble = Function[[float], cobj](cobj())
-PyImport_AddModule = Function[[cobj], cobj](cobj())
-PyImport_ImportModule = Function[[cobj], cobj](cobj())
-PyIter_Next = Function[[cobj], cobj](cobj())
-PyList_GetItem = Function[[cobj, int], cobj](cobj())
-PyList_New = Function[[int], cobj](cobj())
-PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
-PyLong_AsLong = Function[[cobj], int](cobj())
-PyLong_FromLong = Function[[int], cobj](cobj())
-PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
-PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
-PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
-PyObject_GetIter = Function[[cobj], cobj](cobj())
-PyObject_HasAttrString = Function[[cobj, cobj], int](cobj())
-PyObject_IsTrue = Function[[cobj], int](cobj())
-PyObject_Length = Function[[cobj], int](cobj())
-PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
-PyObject_Str = Function[[cobj], cobj](cobj())
-PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
 PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
@@ -44,6 +37,61 @@ PyUnicode_FromString = Function[[cobj], cobj](cobj())
 PyComplex_FromDoubles = Function[[float, float], cobj](cobj())
 PyComplex_RealAsDouble = Function[[cobj], float](cobj())
 PyComplex_ImagAsDouble = Function[[cobj], float](cobj())
+PyIter_Next = Function[[cobj], cobj](cobj())
+
+# number
+PyNumber_Add = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Subtract = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Multiply = Function[[cobj, cobj], cobj](cobj())
+PyNumber_MatrixMultiply = Function[[cobj, cobj], cobj](cobj())
+PyNumber_FloorDivide = Function[[cobj, cobj], cobj](cobj())
+PyNumber_TrueDivide = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Remainder = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Divmod = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Power = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Negative = Function[[cobj], cobj](cobj())
+PyNumber_Positive = Function[[cobj], cobj](cobj())
+PyNumber_Absolute = Function[[cobj], cobj](cobj())
+PyNumber_Invert = Function[[cobj], [cobj]](cobj())
+PyNumber_Lshift = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Rshift = Function[[cobj, cobj], cobj](cobj())
+PyNumber_And = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Xor = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Or = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceAdd = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceSubtract = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceMultiply = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceMatrixMultiply = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceFloorDivide = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceTrueDivide = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceRemainder = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlacePower = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceLshift = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceRshift = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceAnd = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceXor = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlaceOr = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Long = Function[[cobj], cobj](cobj())
+PyNumber_Float = Function[[cobj], cobj](cobj())
+PyNumber_Index = Function[[cobj], cobj](cobj())
+
+# object
+PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
+PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
+PyObject_GetIter = Function[[cobj], cobj](cobj())
+PyObject_HasAttrString = Function[[cobj, cobj], int](cobj())
+PyObject_IsTrue = Function[[cobj], int](cobj())
+PyObject_Length = Function[[cobj], int](cobj())
+PyObject_LengthHint = Function[[cobj, int], int](cobj())
+PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_Str = Function[[cobj], cobj](cobj())
+PyObject_Repr = Function[[cobj], cobj](cobj())
+PyObject_Hash = Function[[cobj], int](cobj())
+
+# number
+
+# constants
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
@@ -89,32 +137,22 @@ def init_dl_handles(py_handle: cobj):
     global Py_DecRef
     global Py_IncRef
     global Py_Initialize
+    global PyImport_AddModule
+    global PyImport_ImportModule
+    global PyErr_Fetch
+    global PyRun_SimpleString
+    global PyLong_AsLong
+    global PyLong_FromLong
+    global PyFloat_AsDouble
+    global PyFloat_FromDouble
     global PyBool_FromLong
     global PyBytes_AsString
+    global PyList_New
+    global PyList_GetItem
+    global PyList_SetItem
     global PyDict_New
     global PyDict_Next
     global PyDict_SetItem
-    global PyErr_Fetch
-    global PyFloat_AsDouble
-    global PyFloat_FromDouble
-    global PyImport_AddModule
-    global PyImport_ImportModule
-    global PyIter_Next
-    global PyList_GetItem
-    global PyList_New
-    global PyList_SetItem
-    global PyLong_AsLong
-    global PyLong_FromLong
-    global PyObject_Call
-    global PyObject_GetAttr
-    global PyObject_GetAttrString
-    global PyObject_GetIter
-    global PyObject_HasAttrString
-    global PyObject_IsTrue
-    global PyObject_Length
-    global PyObject_SetAttrString
-    global PyObject_Str
-    global PyRun_SimpleString
     global PySet_Add
     global PySet_New
     global PyTuple_GetItem
@@ -126,6 +164,53 @@ def init_dl_handles(py_handle: cobj):
     global PyComplex_FromDoubles
     global PyComplex_RealAsDouble
     global PyComplex_ImagAsDouble
+    global PyIter_Next
+    global PyNumber_Add
+    global PyNumber_Subtract
+    global PyNumber_Multiply
+    global PyNumber_MatrixMultiply
+    global PyNumber_FloorDivide
+    global PyNumber_TrueDivide
+    global PyNumber_Remainder
+    global PyNumber_Divmod
+    global PyNumber_Power
+    global PyNumber_Negative
+    global PyNumber_Positive
+    global PyNumber_Absolute
+    global PyNumber_Invert
+    global PyNumber_Lshift
+    global PyNumber_Rshift
+    global PyNumber_And
+    global PyNumber_Xor
+    global PyNumber_Or
+    global PyNumber_InPlaceAdd
+    global PyNumber_InPlaceSubtract
+    global PyNumber_InPlaceMultiply
+    global PyNumber_InPlaceMatrixMultiply
+    global PyNumber_InPlaceFloorDivide
+    global PyNumber_InPlaceTrueDivide
+    global PyNumber_InPlaceRemainder
+    global PyNumber_InPlacePower
+    global PyNumber_InPlaceLshift
+    global PyNumber_InPlaceRshift
+    global PyNumber_InPlaceAnd
+    global PyNumber_InPlaceXor
+    global PyNumber_InPlaceOr
+    global PyNumber_Long
+    global PyNumber_Float
+    global PyNumber_Index
+    global PyObject_Call
+    global PyObject_GetAttr
+    global PyObject_GetAttrString
+    global PyObject_GetIter
+    global PyObject_HasAttrString
+    global PyObject_IsTrue
+    global PyObject_Length
+    global PyObject_LengthHint
+    global PyObject_SetAttrString
+    global PyObject_Str
+    global PyObject_Repr
+    global PyObject_Hash
     global Py_None
     global Py_True
     global Py_False
@@ -133,32 +218,22 @@ def init_dl_handles(py_handle: cobj):
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
     Py_Initialize = dlsym(py_handle, "Py_Initialize")
+    PyImport_AddModule = dlsym(py_handle, "PyImport_AddModule")
+    PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
+    PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
+    PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
+    PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
+    PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
+    PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
+    PyFloat_FromDouble = dlsym(py_handle, "PyFloat_FromDouble")
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
     PyBytes_AsString = dlsym(py_handle, "PyBytes_AsString")
+    PyList_New = dlsym(py_handle, "PyList_New")
+    PyList_GetItem = dlsym(py_handle, "PyList_GetItem")
+    PyList_SetItem = dlsym(py_handle, "PyList_SetItem")
     PyDict_New = dlsym(py_handle, "PyDict_New")
     PyDict_Next = dlsym(py_handle, "PyDict_Next")
     PyDict_SetItem = dlsym(py_handle, "PyDict_SetItem")
-    PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
-    PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
-    PyFloat_FromDouble = dlsym(py_handle, "PyFloat_FromDouble")
-    PyImport_AddModule = dlsym(py_handle, "PyImport_AddModule")
-    PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
-    PyIter_Next = dlsym(py_handle, "PyIter_Next")
-    PyList_GetItem = dlsym(py_handle, "PyList_GetItem")
-    PyList_New = dlsym(py_handle, "PyList_New")
-    PyList_SetItem = dlsym(py_handle, "PyList_SetItem")
-    PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
-    PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
-    PyObject_Call = dlsym(py_handle, "PyObject_Call")
-    PyObject_GetAttr = dlsym(py_handle, "PyObject_GetAttr")
-    PyObject_GetAttrString = dlsym(py_handle, "PyObject_GetAttrString")
-    PyObject_GetIter = dlsym(py_handle, "PyObject_GetIter")
-    PyObject_HasAttrString = dlsym(py_handle, "PyObject_HasAttrString")
-    PyObject_IsTrue = dlsym(py_handle, "PyObject_IsTrue")
-    PyObject_Length = dlsym(py_handle, "PyObject_Length")
-    PyObject_SetAttrString = dlsym(py_handle, "PyObject_SetAttrString")
-    PyObject_Str = dlsym(py_handle, "PyObject_Str")
-    PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
     PySet_Add = dlsym(py_handle, "PySet_Add")
     PySet_New = dlsym(py_handle, "PySet_New")
     PyTuple_GetItem = dlsym(py_handle, "PyTuple_GetItem")
@@ -170,7 +245,53 @@ def init_dl_handles(py_handle: cobj):
     PyComplex_FromDoubles = dlsym(py_handle, "PyComplex_FromDoubles")
     PyComplex_RealAsDouble = dlsym(py_handle, "PyComplex_RealAsDouble")
     PyComplex_ImagAsDouble = dlsym(py_handle, "PyComplex_ImagAsDouble")
-
+    PyIter_Next = dlsym(py_handle, "PyIter_Next")
+    PyNumber_Add = dlsym(py_handle, "PyNumber_Add")
+    PyNumber_Subtract = dlsym(py_handle, "PyNumber_Subtract")
+    PyNumber_Multiply = dlsym(py_handle, "PyNumber_Multiply")
+    PyNumber_MatrixMultiply = dlsym(py_handle, "PyNumber_MatrixMultiply")
+    PyNumber_FloorDivide = dlsym(py_handle, "PyNumber_FloorDivide")
+    PyNumber_TrueDivide = dlsym(py_handle, "PyNumber_TrueDivide")
+    PyNumber_Remainder = dlsym(py_handle, "PyNumber_Remainder")
+    PyNumber_Divmod = dlsym(py_handle, "PyNumber_Divmod")
+    PyNumber_Power = dlsym(py_handle, "PyNumber_Power")
+    PyNumber_Negative = dlsym(py_handle, "PyNumber_Negative")
+    PyNumber_Positive = dlsym(py_handle, "PyNumber_Positive")
+    PyNumber_Absolute = dlsym(py_handle, "PyNumber_Absolute")
+    PyNumber_Invert = dlsym(py_handle, "PyNumber_Invert")
+    PyNumber_Lshift = dlsym(py_handle, "PyNumber_Lshift")
+    PyNumber_Rshift = dlsym(py_handle, "PyNumber_Rshift")
+    PyNumber_And = dlsym(py_handle, "PyNumber_And")
+    PyNumber_Xor = dlsym(py_handle, "PyNumber_Xor")
+    PyNumber_Or = dlsym(py_handle, "PyNumber_Or")
+    PyNumber_InPlaceAdd = dlsym(py_handle, "PyNumber_InPlaceAdd")
+    PyNumber_InPlaceSubtract = dlsym(py_handle, "PyNumber_InPlaceSubtract")
+    PyNumber_InPlaceMultiply = dlsym(py_handle, "PyNumber_InPlaceMultiply")
+    PyNumber_InPlaceMatrixMultiply = dlsym(py_handle, "PyNumber_InPlaceMatrixMultiply")
+    PyNumber_InPlaceFloorDivide = dlsym(py_handle, "PyNumber_InPlaceFloorDivide")
+    PyNumber_InPlaceTrueDivide = dlsym(py_handle, "PyNumber_InPlaceTrueDivide")
+    PyNumber_InPlaceRemainder = dlsym(py_handle, "PyNumber_InPlaceRemainder")
+    PyNumber_InPlacePower = dlsym(py_handle, "PyNumber_InPlacePower")
+    PyNumber_InPlaceLshift = dlsym(py_handle, "PyNumber_InPlaceLshift")
+    PyNumber_InPlaceRshift = dlsym(py_handle, "PyNumber_InPlaceRshift")
+    PyNumber_InPlaceAnd = dlsym(py_handle, "PyNumber_InPlaceAnd")
+    PyNumber_InPlaceXor = dlsym(py_handle, "PyNumber_InPlaceXor")
+    PyNumber_InPlaceOr = dlsym(py_handle, "PyNumber_InPlaceOr")
+    PyNumber_Long = dlsym(py_handle, "PyNumber_Long")
+    PyNumber_Float = dlsym(py_handle, "PyNumber_Float")
+    PyNumber_Index = dlsym(py_handle, "PyNumber_Index")
+    PyObject_Call = dlsym(py_handle, "PyObject_Call")
+    PyObject_GetAttr = dlsym(py_handle, "PyObject_GetAttr")
+    PyObject_GetAttrString = dlsym(py_handle, "PyObject_GetAttrString")
+    PyObject_GetIter = dlsym(py_handle, "PyObject_GetIter")
+    PyObject_HasAttrString = dlsym(py_handle, "PyObject_HasAttrString")
+    PyObject_IsTrue = dlsym(py_handle, "PyObject_IsTrue")
+    PyObject_Length = dlsym(py_handle, "PyObject_Length")
+    PyObject_LengthHint = dlsym(py_handle, "PyObject_LengthHint")
+    PyObject_SetAttrString = dlsym(py_handle, "PyObject_SetAttrString")
+    PyObject_Str = dlsym(py_handle, "PyObject_Str")
+    PyObject_Repr = dlsym(py_handle, "PyObject_Repr")
+    PyObject_Hash = dlsym(py_handle, "PyObject_Hash")
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
@@ -225,8 +346,110 @@ class pyobj:
     def _getattr(self, name: str) -> pyobj:
         return pyobj(pyobj.exc_wrap(PyObject_GetAttrString(self.p, name.c_str())), steal=True)
 
+    def __add__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Add(self.p, other.__to_py__())), steal=True)
+
+    def __sub__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Subtract(self.p, other.__to_py__())), steal=True)
+
+    def __mul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Multiply(self.p, other.__to_py__())), steal=True)
+
+    def __matmul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_MatrixMultiply(self.p, other.__to_py__())), steal=True)
+
+    def __floordiv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_FloorDivide(self.p, other.__to_py__())), steal=True)
+
+    def __truediv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_TrueDivide(self.p, other.__to_py__())), steal=True)
+
+    def __mod__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Remainder(self.p, other.__to_py__())), steal=True)
+
+    def __divmod__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Divmod(self.p, other.__to_py__())), steal=True)
+
+    def __pow__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Power(self.p, other.__to_py__())), steal=True)
+
+    def __neg__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Negative(self.p)), steal=True)
+
+    def __pos__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Positive(self.p)), steal=True)
+
+    def __invert__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Invert(self.p)), steal=True)
+
+    def __lshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Lshift(self.p, other.__to_py__())), steal=True)
+
+    def __rshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Rshift(self.p, other.__to_py__())), steal=True)
+
+    def __and__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_And(self.p, other.__to_py__())), steal=True)
+
+    def __xor__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Xor(self.p, other.__to_py__())), steal=True)
+
+    def __or__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Or(self.p, other.__to_py__())), steal=True)
+
+    def __iadd__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceAdd(self.p, other.__to_py__())), steal=True)
+
+    def __isub__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceSubtract(self.p, other.__to_py__())), steal=True)
+
+    def __imul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceMultiply(self.p, other.__to_py__())), steal=True)
+
+    def __imatmul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceMatrixMultiply(self.p, other.__to_py__())), steal=True)
+
+    def __ifloordiv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceFloorDivide(self.p, other.__to_py__())), steal=True)
+
+    def __itruediv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceTrueDivide(self.p, other.__to_py__())), steal=True)
+
+    def __imod__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceRemainder(self.p, other.__to_py__())), steal=True)
+
+    def __ipow__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlacePower(self.p, other.__to_py__())), steal=True)
+
+    def __ilshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceLshift(self.p, other.__to_py__())), steal=True)
+
+    def __irshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceRshift(self.p, other.__to_py__())), steal=True)
+
+    def __iand__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceAnd(self.p, other.__to_py__())), steal=True)
+
+    def __ixor__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceXor(self.p, other.__to_py__())), steal=True)
+
+    def __ior__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceOr(self.p, other.__to_py__())), steal=True)
+
+    def __int__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Long(self.p)), steal=True)
+
+    def __float__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Float(self.p)), steal=True)
+
+    def __index__(self):
+        return pyobj(pyobj.exc_wrap(PyNumber_Index(self.p)), steal=True)
+
     def __len__(self) -> int:
         return pyobj.exc_wrap(PyObject_Length(self.p))
+
+    def __length_hint__(self) -> int:
+        return pyobj.exc_wrap(PyObject_LengthHint(self.p))
 
     def __to_py__(self) -> cobj:
         return self.p
@@ -235,18 +458,25 @@ class pyobj:
         return pyobj(p)
 
     def __str__(self) -> str:
-        return str.__from_py__(self._getattr("__str__").__call__().p)
+        o = pyobj.exc_wrap(PyObject_Str(self.p))
+        return pyobj.exc_wrap(str.__from_py__(o))
 
     def __repr__(self) -> str:
-        return str.__from_py__(self._getattr("__repr__").__call__().p)
+        o = pyobj.exc_wrap(PyObject_Repr(self.p))
+        return pyobj.exc_wrap(str.__from_py__(o))
+
+    def __hash__(self) -> int:
+        return pyobj.exc_wrap(PyObject_Hash(self.p))
 
     def __iter__(self) -> Generator[pyobj]:
         it = PyObject_GetIter(self.p)
         if not it:
             raise ValueError("Python object is not iterable")
-        while i := PyIter_Next(it):
-            yield pyobj(pyobj.exc_wrap(i), steal=True)
-        pyobj.decref(it)
+        try:
+            while i := PyIter_Next(it):
+                yield pyobj(pyobj.exc_wrap(i), steal=True)
+        finally:
+            pyobj.decref(it)
         pyobj.exc_check()
 
     def to_str(p: cobj, errors: str, empty: str = "") -> str:
@@ -337,7 +567,7 @@ class pyobj:
         return {mime: txt}
 
     def __bool__(self):
-        return bool.__from_py__(self._getattr("__bool__").__call__().p)
+        return bool(pyobj.exc_wrap(PyObject_IsTrue(self.p) == 1))
 
 
 # Type conversions
