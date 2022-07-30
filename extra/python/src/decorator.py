@@ -15,52 +15,65 @@ if "CODON_PATH" not in os.environ:
 
 from .codon_jit import JITWrapper, JITError
 
-convertible = {type(None): "NoneType",
-               int: "int",
-               float: "float",
-               bool: "bool",
-               str: "str",
-               complex: "complex",
-               list: "List",
-               dict: "Dict",
-               set: "Set",
-               tuple: "Tuple"}
+pod_conversions = {type(None): "NoneType",
+                   int: "int",
+                   float: "float",
+                   bool: "bool",
+                   str: "str",
+                   complex: "complex"}
+
+custom_conversions = {}
 
 def _codon_type(arg):
     t = type(arg)
-    s = convertible.get(t, "pyobj")
 
-    if issubclass(t, list) or issubclass(t, set):
+    if s := pod_conversions.get(t, ""):
+        return s
+
+    if issubclass(t, list):
         sub = "NoneType"
         x = next(iter(arg), None)
         if x is not None:
             sub = _codon_type(x)
-        s += f"[{sub}]"
-    elif issubclass(t, dict):
+        return f"List[{sub}]"
+
+    if issubclass(t, set):
+        sub = "NoneType"
+        x = next(iter(arg), None)
+        if x is not None:
+            sub = _codon_type(x)
+        return f"Set[{sub}]"
+
+    if issubclass(t, dict):
         sub1 = "NoneType"
         sub2 = "NoneType"
         x = next(arg.items(), None)
         if x is not None:
             sub1 = _codon_type(x[0])
             sub2 = _codon_type(x[1])
-        s += f"[{sub1},{sub2}]"
-    elif issubclass(t, tuple):
-        s += f"[{','.join(_codon_type(a) for a in arg)}]"
+        return f"Dict[{sub1},{sub2}]"
 
-    return s
+    if issubclass(t, tuple):
+        return f"Tuple[{','.join(_codon_type(a) for a in arg)}]"
+
+    if s := custom_conversions.get(t, ""):
+        return f"{s}[{','.join(_codon_type(getattr(arg, slot)) for slot in t.__slots__)}]"
+
+    return "pyobj"
 
 def _codon_types(args):
     return tuple(_codon_type(arg) for arg in args)
 
 def _reset_jit():
-    global jit
-    jit = JITWrapper()
-    init_code = ("from internal.python import setup_decorator, PyTuple_GetItem\n"
+    global _jit
+    _jit = JITWrapper()
+    init_code = ("from internal.python import "
+                 "setup_decorator, PyTuple_GetItem, PyObject_GetAttrString\n"
                  "setup_decorator()\n")
-    jit.execute(init_code)
-    return jit
+    _jit.execute(init_code)
+    return _jit
 
-jit = _reset_jit()
+_jit = _reset_jit()
 
 def _obj_to_str(obj) -> str:
     if inspect.isclass(obj):
@@ -84,10 +97,31 @@ def _obj_name(obj) -> str:
 def _parse_decorated(obj):
     return _obj_name(obj), _obj_to_str(obj)
 
-def codon(obj):
+def convert(t):
+    if not hasattr(t, "__slots__"):
+        raise JITError(f"class '{str(t)}' does not have '__slots__' attribute")
+
+    name = t.__name__
+    slots = t.__slots__
+    code = ("@tuple\n"
+            "class " + name + "[" + ",".join(f"T{i}" for i in range(len(slots))) + "]:\n")
+    for i, slot in enumerate(slots):
+        code += f"    {slot}: T{i}\n"
+
+    # PyObject_GetAttrString
+    code += "    def __from_py__(p: cobj):\n"
+    for i, slot in enumerate(slots):
+        code += f"        a{i} = T{i}.__from_py__(PyObject_GetAttrString(p, '{slot}'.ptr))\n"
+    code += f"        return {name}({', '.join(f'a{i}' for i in range(len(slots)))})\n"
+
+    _jit.execute(code)
+    custom_conversions[t] = name
+    return t
+
+def jit(obj):
     try:
         obj_name, obj_str = _parse_decorated(obj)
-        jit.execute(obj_str)
+        _jit.execute(obj_str)
     except JITError as e:
         _reset_jit()
         raise
@@ -96,7 +130,7 @@ def codon(obj):
         try:
             args = (*args, *kwargs.values())
             types = _codon_types(args)
-            return jit.run_wrapper(obj_name, types, args)
+            return _jit.run_wrapper(obj_name, types, args)
         except JITError as e:
             _reset_jit()
             raise
