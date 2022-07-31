@@ -183,9 +183,11 @@ print z.slice(0, 2).len #: 2
 
 #%% optional,barebones
 a = Optional[float]()
-print a.__bool__() #: False
+print bool(a) #: False
+a = Optional[float](0.0)
+print bool(a) #: False
 a = Optional[float](5.5)
-print a.__bool__(), a.__invert__() #: True 5.5
+print a.__bool__(), a.__val__() #: True 5.5
 
 #%% generator,barebones
 def foo():
