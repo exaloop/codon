@@ -137,6 +137,10 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       // Case: *args expansion
       transform(star->what);
       auto typ = star->what->type->getClass();
+      while (typ && typ->is(TYPE_OPTIONAL)) {
+        star->what = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->what));
+        typ = star->what->type->getClass();
+      }
       if (!typ) // Process later
         return false;
       if (!typ->getRecord())
@@ -151,6 +155,10 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       // Case: **kwargs expansion
       kwstar->what = transform(kwstar->what);
       auto typ = kwstar->what->type->getClass();
+      while (typ && typ->is(TYPE_OPTIONAL)) {
+        kwstar->what = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), kwstar->what));
+        typ = kwstar->what->type->getClass();
+      }
       if (!typ)
         return false;
       if (!typ->getRecord() || startswith(typ->name, TYPE_TUPLE))
@@ -259,11 +267,11 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   // Extract pi-th partial argument from a partial object
   auto getPartialArg = [&](size_t pi) {
     auto id = transform(N<IdExpr>(part.var));
-    ExprPtr it = N<IntExpr>(pi);
     // Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
-    auto ex = transformStaticTupleIndex(id->type->getClass(), id, it);
-    seqassert(ex, "partial indexing failed: {}", id->type->debugString(true));
-    return ex;
+    auto ex = transformStaticTupleIndex(id->type->getClass(), id, N<IntExpr>(pi));
+    seqassert(ex.first && ex.second, "partial indexing failed: {}",
+              id->type->debugString(true));
+    return ex.second;
   };
 
   // Handle reordered arguments (see @c reorderNamedArgs for details)

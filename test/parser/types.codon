@@ -270,6 +270,14 @@ try:
 except ValueError:
     print 'unwrap failed'  #: unwrap failed
 
+#%% optional_tuple,barebones
+a = None
+if True:
+    a = ('x', 's')
+print(a)  #: ('x', 's')
+print(*a, (1, *a))  #: x s (1, 'x', 's')
+x,y=a
+print(x,y,[*a]) #: x s ['x', 's']
 
 #%% global_none,barebones
 a, b = None, None

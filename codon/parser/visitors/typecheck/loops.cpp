@@ -107,7 +107,7 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
   auto tupleVar = ctx->cache->getTemporaryVar("tuple");
   block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), stmt->iter));
 
-  auto tupleArgs = stmt->iter->getType()->getHeterogenousTuple()->args;
+  auto tupleArgs = stmt->iter->getType()->getClass()->getHeterogenousTuple()->args;
   auto cntVar = ctx->cache->getTemporaryVar("idx");
   std::vector<StmtPtr> forBlock;
   for (size_t ai = 0; ai < tupleArgs.size(); ai++) {

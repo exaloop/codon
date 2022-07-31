@@ -236,12 +236,18 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
 
   // Case: static tuple access
-  resultExpr = transformStaticTupleIndex(cls, expr->expr, expr->index);
-
-  // Case: normal __getitem__
-  if (!resultExpr)
+  auto [isTuple, tupleExpr] = transformStaticTupleIndex(cls, expr->expr, expr->index);
+  if (isTuple) {
+    if (!tupleExpr) {
+      unify(expr->type, ctx->getUnbound());
+    } else {
+      resultExpr = tupleExpr;
+    }
+  } else {
+    // Case: normal __getitem__
     resultExpr =
         transform(N<CallExpr>(N<DotExpr>(expr->expr, "__getitem__"), expr->index));
+  }
 }
 
 /// Transform an instantiation to canonical realized name.
@@ -624,12 +630,22 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 /// (integer or slice). If so, statically extract the specified tuple item or a
 /// sub-tuple (if the index is a slice).
 /// Works only on normal tuples and partial functions.
-ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
-                                                    ExprPtr &expr, ExprPtr &index) {
+std::pair<bool, ExprPtr>
+TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
+                                            const ExprPtr &expr, const ExprPtr &index) {
   if (!tuple->getRecord())
-    return nullptr;
-  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL))
-    return nullptr;
+    return {false, nullptr};
+  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_PARTIAL)) {
+    if (tuple->is(TYPE_OPTIONAL)) {
+      if (auto newTuple = tuple->generics[0].type->getClass()) {
+        return transformStaticTupleIndex(
+            newTuple, transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr)), index);
+      } else {
+        return {true, nullptr};
+      }
+    }
+    return {false, nullptr};
+  }
 
   // Extract the static integer value from expression
   auto getInt = [&](int64_t *o, const ExprPtr &e) {
@@ -656,12 +672,12 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
       error("tuple index out of range (expected 0..{}, got {})", stop, i);
-    return transform(N<DotExpr>(expr, classItem->fields[i].name));
+    return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
   } else if (auto slice = CAST(index, SliceExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
         !getInt(&step, slice->step))
-      return nullptr;
+      return {false, nullptr};
 
     // Adjust slice indices (Python slicing rules)
     if (slice->step && !slice->start)
@@ -677,11 +693,11 @@ ExprPtr TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
         error("tuple index out of range (expected 0..{}, got {})", sz, i);
       te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
     }
-    return transform(
-        N<CallExpr>(N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te));
+    return {true, transform(N<CallExpr>(
+                      N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te))};
   }
 
-  return nullptr;
+  return {false, nullptr};
 }
 
 /// Follow Python indexing rules for static tuple indices.
