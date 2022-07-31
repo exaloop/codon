@@ -251,7 +251,8 @@ JITResult JIT::executePython(const std::string &name,
     auto func = llvm::cantFail(engine->lookup(name));
     wrap = (PyWrapperFunc *)func.getAddress();
   } else {
-    auto wrapname = "__codon_wrapped__" + name;
+    static int idx = 0;
+    auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);
     auto wrapper = buildPythonWrapper(name, wrapname, types);
     if (auto err = compile(wrapper).takeError()) {
       auto errorInfo = llvm::toString(std::move(err));

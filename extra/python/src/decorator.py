@@ -48,7 +48,7 @@ def _codon_type(arg):
     if issubclass(t, dict):
         sub1 = "NoneType"
         sub2 = "NoneType"
-        x = next(arg.items(), None)
+        x = next(iter(arg.items()), None)
         if x is not None:
             sub1 = _codon_type(x[0])
             sub2 = _codon_type(x[1])
