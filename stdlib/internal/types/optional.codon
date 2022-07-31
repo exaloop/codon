@@ -35,7 +35,10 @@ class Optional:
     def __bool__(self) -> bool:
         if not self.__has__():
             return False
-        return bool(self.__val__())
+        if hasattr(self.__val__(), "__bool__"):
+            return self.__val__().__bool__()
+        else:
+            return True
 
     def __eq__(self, other: T) -> bool:
         if self is None:
