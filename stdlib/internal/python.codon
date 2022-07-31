@@ -38,6 +38,8 @@ PyComplex_FromDoubles = Function[[float, float], cobj](cobj())
 PyComplex_RealAsDouble = Function[[cobj], float](cobj())
 PyComplex_ImagAsDouble = Function[[cobj], float](cobj())
 PyIter_Next = Function[[cobj], cobj](cobj())
+PySlice_New = Function[[cobj, cobj, cobj], cobj](cobj())
+PySlice_Unpack = Function[[cobj, Ptr[int], Ptr[int], Ptr[int]], int](cobj())
 
 # number
 PyNumber_Add = Function[[cobj, cobj], cobj](cobj())
@@ -173,6 +175,8 @@ def init_dl_handles(py_handle: cobj):
     global PyComplex_RealAsDouble
     global PyComplex_ImagAsDouble
     global PyIter_Next
+    global PySlice_New
+    global PySlice_Unpack
     global PyNumber_Add
     global PyNumber_Subtract
     global PyNumber_Multiply
@@ -258,6 +262,8 @@ def init_dl_handles(py_handle: cobj):
     PyComplex_RealAsDouble = dlsym(py_handle, "PyComplex_RealAsDouble")
     PyComplex_ImagAsDouble = dlsym(py_handle, "PyComplex_ImagAsDouble")
     PyIter_Next = dlsym(py_handle, "PyIter_Next")
+    PySlice_New = dlsym(py_handle, "PySlice_New")
+    PySlice_Unpack = dlsym(py_handle, "PySlice_Unpack")
     PyNumber_Add = dlsym(py_handle, "PyNumber_Add")
     PyNumber_Subtract = dlsym(py_handle, "PyNumber_Subtract")
     PyNumber_Multiply = dlsym(py_handle, "PyNumber_Multiply")
@@ -750,3 +756,37 @@ class Set:
             b.add(k)
         pyobj.decref(s_iter)
         return b
+
+
+@extend
+class Slice:
+    def __to_py__(self) -> cobj:
+        start = self.start
+        stop = self.stop
+        step = self.step
+        start_py = start.__to_py__() if start is not None else cobj()
+        stop_py = stop.__to_py__() if stop is not None else cobj()
+        step_py = step.__to_py__() if step is not None else cobj()
+        return PySlice_New(start_py, stop_py, step_py)
+
+    def __from_py__(s: cobj) -> Slice:
+        start = 0
+        stop = 0
+        step = 0
+        pyobj.exc_wrap(PySlice_Unpack(s, __ptr__(start), __ptr__(stop), __ptr__(step)))
+        return Slice(Optional(start), Optional(stop), Optional(step))
+
+
+@extend
+class Optional:
+    def __to_py__(self) -> cobj:
+        if self is None:
+            return Py_None
+        else:
+            return self.__get__().__to_py__()
+
+    def __from_py__(o: cobj) -> Optional[T]:
+        if o == Py_None:
+            return Optional[T]()
+        else:
+            return Optional[T](T.__from_py__(o))

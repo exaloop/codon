@@ -21,6 +21,12 @@ class Optional:
         else:
             return __internal__.opt_ref_bool(self, T)
 
+    def __get__(self) -> T:
+        if isinstance(T, ByVal):
+            return __internal__.opt_tuple_invert(self, T)
+        else:
+            return __internal__.opt_ref_invert(self, T)
+
     def __invert__(self) -> T:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_invert(self, T)

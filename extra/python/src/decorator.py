@@ -20,7 +20,8 @@ pod_conversions = {type(None): "NoneType",
                    float: "float",
                    bool: "bool",
                    str: "str",
-                   complex: "complex"}
+                   complex: "complex",
+                   slice: "slice"}
 
 custom_conversions = {}
 
