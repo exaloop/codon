@@ -96,3 +96,21 @@ extension on the output file name).
 ## Errors
 
 Added support for multiple error reporting.
+
+## Static methods
+
+Added support for `@staticmethod` method decorator. Class variables are also supported:
+
+```
+class Cls:
+  a = 5  # or a: ClassVar[int] = 5
+  
+  @staticmethod
+  def method(): pass
+c = Cls()
+Cls.a, Cls.method(), c.a, c.method()  # supported
+```
+
+## Tuple handling
+
+Arbitrary classes can be converted to tuples via `tuple()` function.
