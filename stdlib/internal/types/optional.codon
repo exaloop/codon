@@ -58,10 +58,10 @@ class Optional:
         return self.__val__() != other.__val__()
 
     def __str__(self) -> str:
-        return "None" if not self else str(self.__val__())
+        return "None" if self is None else str(self.__val__())
 
     def __repr__(self) -> str:
-        return "None" if not self else (self.__val__()).__repr__()
+        return "None" if self is None else self.__val__().__repr__()
 
     def __is_optional__(self, other: Optional[T]) -> bool:
         self_has = self.__has__()
