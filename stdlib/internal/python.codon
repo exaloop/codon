@@ -91,13 +91,18 @@ PyObject_Hash = Function[[cobj], int](cobj())
 PyObject_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyObject_SetItem = Function[[cobj, cobj, cobj], int](cobj())
 PyObject_DelItem = Function[[cobj, cobj], int](cobj())
-
-# number
+PyObject_RichCompareBool = Function[[cobj, cobj, Int[32]], int](cobj())
 
 # constants
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
+Py_LT = 0
+Py_LE = 1
+Py_EQ = 2
+Py_NE = 3
+Py_GT = 4
+Py_GE = 5
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
 
@@ -217,6 +222,7 @@ def init_dl_handles(py_handle: cobj):
     global PyObject_GetItem
     global PyObject_SetItem
     global PyObject_DelItem
+    global PyObject_RichCompareBool
     global Py_None
     global Py_True
     global Py_False
@@ -301,6 +307,7 @@ def init_dl_handles(py_handle: cobj):
     PyObject_GetItem = dlsym(py_handle, "PyObject_GetItem")
     PyObject_SetItem = dlsym(py_handle, "PyObject_SetItem")
     PyObject_DelItem = dlsym(py_handle, "PyObject_DelItem")
+    PyObject_RichCompareBool = dlsym(py_handle, "PyObject_RichCompareBool")
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
@@ -461,16 +468,33 @@ class pyobj:
         return pyobj.exc_wrap(PyObject_LengthHint(self.p))
 
     def __getitem__(self, key):
-        print('getitem')
         return pyobj(pyobj.exc_wrap(PyObject_GetItem(self.p, key.__to_py__())), steal=True)
 
     def __setitem__(self, key, v):
-        print('setitem')
         pyobj.exc_wrap(PyObject_SetItem(self.p, key.__to_py__(), v.__to_py__()))
 
     def __delitem__(self, key):
-        print('delitem')
         return pyobj.exc_wrap(PyObject_DelItem(self.p, key.__to_py__()))
+
+    '''
+    def __lt__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_LT))) == 1
+
+    def __le__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_LE))) == 1
+
+    def __eq__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_EQ))) == 1
+
+    def __ne__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_LT))) == 1
+
+    def __gt__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_GT))) == 1
+
+    def __ge__(self, other):
+        return pyobj.exc_wrap(PyObject_RichCompareBool(self.p, other.__to_py__(), i32(Py_GT))) == 1
+    '''
 
     def __to_py__(self) -> cobj:
         return self.p
