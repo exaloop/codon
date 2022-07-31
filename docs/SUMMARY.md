@@ -2,11 +2,12 @@
 
 * [Welcome to Codon](README.md)
 
-## Basics
+## General
 
 * [Getting started](intro/intro.md)
 * [Frequently asked questions](intro/faq.md)
 * [Differences with Python](intro/differences.md)
+* [Release notes](intro/releases.md)
 
 ## Language
 
