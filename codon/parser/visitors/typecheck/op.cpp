@@ -500,9 +500,9 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
       // lhs is not optional: `return False`
       return transform(N<BoolExpr>(false));
     } else {
-      // lhs is optional: `return lhs.__bool__.__invert__()`
+      // lhs is optional: `return lhs.__has__().__invert__()`
       return transform(N<CallExpr>(
-          N<DotExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "__bool__")), "__invert__")));
+          N<DotExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "__has__")), "__invert__")));
     }
   }
 

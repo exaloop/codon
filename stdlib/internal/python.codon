@@ -781,7 +781,7 @@ class Optional:
         if self is None:
             return Py_None
         else:
-            return self.__get__().__to_py__()
+            return self.__val__().__to_py__()
 
     def __from_py__(o: cobj) -> Optional[T]:
         if o == Py_None:

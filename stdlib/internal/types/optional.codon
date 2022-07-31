@@ -15,40 +15,66 @@ class Optional:
         else:
             return __internal__.opt_ref_new_arg(what, T)
 
-    def __bool__(self) -> bool:
+    def __has__(self) -> bool:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_bool(self, T)
         else:
             return __internal__.opt_ref_bool(self, T)
 
-    def __get__(self) -> T:
+    def __val__(self) -> T:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_invert(self, T)
         else:
             return __internal__.opt_ref_invert(self, T)
 
-    def __invert__(self) -> T:
-        if isinstance(T, ByVal):
-            return __internal__.opt_tuple_invert(self, T)
-        else:
-            return __internal__.opt_ref_invert(self, T)
+    def __val_or__(self, default: T):
+        if self.__has__():
+            return self.__val__()
+        return default
+
+    def __bool__(self) -> bool:
+        if not self.__has__():
+            return False
+        return bool(self.__val__())
+
+    def __eq__(self, other: T) -> bool:
+        if self is None:
+            return False
+        return self.__val__() == other
+
+    def __eq__(self, other: Optional[T]) -> bool:
+        if (self is None) or (other is None):
+            return (self is None) and (other is None)
+        return self.__val__() == other.__val__()
+
+    def __ne__(self, other: T) -> bool:
+        if self is None:
+            return True
+        return self.__val__() != other
+
+    def __ne__(self, other: Optional[T]) -> bool:
+        if (self is None) or (other is None):
+            return not ((self is None) and (other is None))
+        return self.__val__() != other.__val__()
 
     def __str__(self) -> str:
-        return "None" if not self else str(~self)
+        return "None" if not self else str(self.__val__())
 
     def __repr__(self) -> str:
-        return "None" if not self else (~self).__repr__()
+        return "None" if not self else (self.__val__()).__repr__()
 
     def __is_optional__(self, other: Optional[T]) -> bool:
-        if (not self) or (not other):
-            return (not self) and (not other)
-        return self.__invert__() is other.__invert__()
+        self_has = self.__has__()
+        other_has = other.__has__()
+        if (not self_has) or (not other_has):
+            return (not self_has) and (not other_has)
+        return self.__val__() is other.__val__()
 
 
 optional = Optional
 
 
 def unwrap(opt: Optional[T], T: type) -> T:
-    if opt is None:
-        raise ValueError("optional is None")
-    return ~opt
+    if opt.__has__():
+        return opt.__val__()
+    raise ValueError("optional is None")

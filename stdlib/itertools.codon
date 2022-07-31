@@ -160,13 +160,13 @@ def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]
     """
     Make an iterator that returns selected elements from the iterable.
     """
-    if stop and unwrap(stop) < 0:
+    if stop is not None and stop.__get__() < 0:
         raise ValueError(
             "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
         )
     i = 0
     for x in iterable:
-        if stop and i >= unwrap(stop):
+        if stop is not None and i >= stop.__get__():
             break
         yield x
         i += 1
@@ -185,9 +185,9 @@ def islice(
     """
     from sys import maxsize
 
-    start: int = 0 if not start else start
-    stop: int = maxsize if not stop else stop
-    step: int = 1 if not step else step
+    start: int = 0 if start is None else start
+    stop: int = maxsize if stop is None else stop
+    step: int = 1 if step is None else step
     have_stop = False
 
     if start < 0 or stop < 0:
@@ -435,7 +435,7 @@ def permutations(
         pool: List[T], r: Optional[int], T: type
     ) -> Generator[List[T]]:
         n = len(pool)
-        r: int = r if r else n
+        r: int = r if r is not None else n
         if r > n:
             return
 
@@ -458,7 +458,7 @@ def permutations(
             if b == -1:
                 return
 
-    if r is not None and unwrap(r) < 0:
+    if r is not None and r.__get__() < 0:
         raise ValueError("r must be non-negative")
     if hasattr(pool, "__getitem__") and hasattr(pool, "__len__"):
         return permutations_helper(pool, r)

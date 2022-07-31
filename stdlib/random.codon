@@ -703,7 +703,7 @@ def getrandbits(k: int):
 
 
 def randrange(start: int, stop: Optional[int] = None, step: int = 1):
-    return _rnd.randrange(start, stop, step) if stop else _rnd.randrange(0, start, step)
+    return _rnd.randrange(start, stop, step) if stop is not None else _rnd.randrange(0, start, step)
 
 
 def randint(a: int, b: int):

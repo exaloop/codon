@@ -253,13 +253,13 @@ test_re_findall()
 def test_re_match():
     assert cmp_list(re.match('a', 'a').groups(), List[Optional[str]]())
     assert cmp_list(re.match('(a)', 'a').groups(), [None, 'a',][1:])
-    assert ~re.match('(a)', 'a').group(0) == 'a'
-    assert ~re.match('(a)', 'a').group(1) == 'a'
+    assert re.match('(a)', 'a').group(0).__val__() == 'a'
+    assert re.match('(a)', 'a').group(1).__val__() == 'a'
     assert re.match('(a)', 'a').group(1, 1) == (Optional('a'), Optional('a'))
     assert cmp_list(re.match('\xe0', '\xe0').groups(), List[Optional[str]]())
     assert cmp_list(re.match('(\xe0)', '\xe0').groups(), ['\xe0'])
-    assert ~re.match('(\xe0)', '\xe0').group(0) == '\xe0'
-    assert ~re.match('(\xe0)', '\xe0').group(1) == '\xe0'
+    assert unwrap(re.match('(\xe0)', '\xe0').group(0)) == '\xe0'
+    assert unwrap(re.match('(\xe0)', '\xe0').group(1)) == '\xe0'
     assert re.match('(\xe0)', '\xe0').group(1, 1) == (Optional('\xe0'), Optional('\xe0'))
 
     pat = re.compile('((a)|(b))(c)?')
@@ -295,9 +295,9 @@ def test_group():
     # A single group
     m = re.match('(a)(b)', 'ab')
     assert m.group() == 'ab'
-    assert ~m.group(0) == 'ab'
-    assert ~m.group(1) == 'a'
-    assert ~m.group(Index(1)) == 'a'
+    assert unwrap(m.group(0)) == 'ab'
+    assert unwrap(m.group(1)) == 'a'
+    assert unwrap(m.group(Index(1))) == 'a'
     assert raises(IndexError, m.group, -1)
     assert raises(IndexError, m.group, 3)
     assert raises(IndexError, m.group, 1<<1000)
@@ -313,11 +313,11 @@ def test_match_getitem():
     pat = re.compile('(?:(?P<a1>a)|(?P<b2>b))(?P<c3>c)?')
 
     m = pat.match('a')
-    assert ~m['a1'] == 'a'
+    assert unwrap(m['a1']) == 'a'
     assert m['b2'] is None
     assert m['c3'] is None
-    assert ~m[0] == 'a'
-    assert ~m[1] == 'a'
+    assert unwrap(m[0]) == 'a'
+    assert unwrap(m[1]) == 'a'
     assert m[2] is None
     assert m[3] is None
 
@@ -326,13 +326,13 @@ def test_match_getitem():
     assert raises(IndexError, lambda i: m[i], 4)
 
     m = pat.match('ac')
-    assert ~m['a1'] == 'a'
+    assert unwrap(m['a1']) == 'a'
     assert m['b2'] is None
-    assert ~m['c3'] == 'c'
-    assert ~m[0] == 'ac'
-    assert ~m[1] == 'a'
+    assert unwrap(m['c3']) == 'c'
+    assert unwrap(m[0]) == 'ac'
+    assert unwrap(m[1]) == 'a'
     assert m[2] is None
-    assert ~m[3] == 'c'
+    assert unwrap(m[3]) == 'c'
 test_match_getitem()
 
 @test
@@ -389,14 +389,14 @@ test_constants()
 
 @test
 def test_anyall():
-    assert ~re.match("a.b", "a\nb", re.DOTALL).group(0) == "a\nb"
-    assert ~re.match("a.*b", "a\n\nb", re.DOTALL).group(0) == "a\n\nb"
+    assert unwrap(re.match("a.b", "a\nb", re.DOTALL).group(0)) == "a\nb"
+    assert unwrap(re.match("a.*b", "a\n\nb", re.DOTALL).group(0)) == "a\n\nb"
 test_anyall()
 
 @test
 def test_groupdict():
     d = re.match('(?P<first>first) (?P<second>second)', 'first second').groupdict()
-    assert len(d) == 2 and ~d['first'] == 'first' and ~d['second'] == 'second'
+    assert len(d) == 2 and unwrap(d['first']) == 'first' and unwrap(d['second']) == 'second'
 test_groupdict()
 
 @test

@@ -50,7 +50,7 @@ class List:
         algorithm: Optional[str] = None,
         reverse: bool = False,
     ):
-        algorithm: str = algorithm if algorithm else "tim"
+        algorithm: str = algorithm if algorithm is not None else "tim"
         if isinstance(key, Optional):
             _sort_list(self, lambda x: x, algorithm)
         else:

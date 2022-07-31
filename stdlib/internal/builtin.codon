@@ -162,8 +162,8 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     Return the next item from g
     """
     if g.done():
-        if default:
-            return unwrap(default)
+        if default is not None:
+            return default.__get__()
         else:
             raise StopIteration()
     return g.next()

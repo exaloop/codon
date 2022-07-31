@@ -1085,7 +1085,7 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
-        return (~key)(x)
+        return (key.__val__())(x)
 print t(5) #: 5
 print t(6, lambda x: f'#{x}') #: #6
 
@@ -1101,7 +1101,7 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
-        return (~key)(x)
+        return (key.__val__())(x)
 print t(6, Optional(1)) #! cannot unify Optional[int] and Optional[T]
 
 #%% traits_error_2,barebones
@@ -1132,7 +1132,7 @@ zx: float = 1
 print zx.__class__.__name__, zx #: float 1
 
 def test(v: Optional[int]):
-    v = ~v if v else 3
+    v: int = v if v is not None else 3
     print v.__class__.__name__
 test(5) #: int
 test(None) #: int

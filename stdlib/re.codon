@@ -175,7 +175,7 @@ class Match:
 
     def group(self, *args):
         if staticlen(args) == 0:
-            return ~(self._get_match(0, 1))
+            return self._get_match(0, 1).__val__()
         elif staticlen(args) == 1:
             return self._get_match(args[0], self.re.groups)
         else:
@@ -358,8 +358,8 @@ class Pattern:
         return d
 
     def _match_one(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
-        posx = 0 if pos is None else max(0, min(~pos, len(string)))
-        endposx = len(string) if endpos is None else max(0, min(~endpos, len(string)))
+        posx = 0 if pos is None else max(0, min(pos.__val__(), len(string)))
+        endposx = len(string) if endpos is None else max(0, min(endpos.__val__(), len(string)))
 
         if posx > endposx:
             return None
@@ -371,8 +371,8 @@ class Pattern:
         return Match(spans, posx, endposx, self, string)
 
     def _match(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
-        posx = 0 if pos is None else max(0, min(~pos, len(string)))
-        endposx = len(string) if endpos is None else max(0, min(~endpos, len(string)))
+        posx = 0 if pos is None else max(0, min(pos.__val__(), len(string)))
+        endposx = len(string) if endpos is None else max(0, min(endpos.__val__(), len(string)))
 
         if posx > endposx:
             return

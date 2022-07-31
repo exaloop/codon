@@ -29,8 +29,8 @@ def t3():
     assert (None |> g(a=1, b=...)) == (1, 0)
 t3()
 
-def _unwrap(opt):
-    return ~opt
+def _unwrap(opt: Optional[T], T: type) -> T:
+    return opt
 
 def foo(x: int, y: int, z: optional[list[float]]):
     xs = str(x)
