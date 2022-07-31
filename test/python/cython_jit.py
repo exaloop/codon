@@ -46,6 +46,7 @@ def test_roundtrip():
         return x
 
     for i in range(5):
+        assert roundtrip(None) == None
         assert roundtrip(42) == 42
         assert roundtrip(3.14) == 3.14
         assert roundtrip(False) == False
@@ -60,6 +61,7 @@ def test_roundtrip():
         assert roundtrip({11: 'one', 22: 'two', 33: 'three'}) == {11: 'one', 22: 'two', 33: 'three'}
         assert roundtrip((11,22,33)) == (11,22,33)
         assert Foo(roundtrip(Foo(123))[0]) == Foo(123)
+        assert roundtrip(roundtrip) is roundtrip
 
 def test_return_type():
     @codon.jit
