@@ -310,12 +310,13 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> suite,
   auto f = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(suite)),
                                      Attr({Attr::Capture})));
   if (auto fs = f->getSuite()) {
-    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(), "invalid function transform");
+    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(),
+              "invalid function transform");
     prependStmts->push_back(fs->stmts[0]);
-    for (StmtPtr s = fs->stmts[1]; s; ) {
+    for (StmtPtr s = fs->stmts[1]; s;) {
       if (auto suite = s->getSuite()) {
-        // Suites can only occur when __internal__.undef is inserted for a partial call argument.
-        // Extract __internal__.undef checks and prepend them
+        // Suites can only occur when __internal__.undef is inserted for a partial call
+        // argument. Extract __internal__.undef checks and prepend them
         seqassert(suite->stmts.size() == 2, "invalid function transform");
         prependStmts->push_back(suite->stmts[0]);
         s = suite->stmts[1];
@@ -325,7 +326,7 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> suite,
         seqassert(false, "invalid function transform");
       }
     }
-    return nullptr;  // should fail an assert before
+    return nullptr; // should fail an assert before
   } else {
     prependStmts->push_back(f);
     return transform(N<IdExpr>(name));
