@@ -187,5 +187,7 @@ def test_ops():
     assert len(v) == 2 and v[0] == 1 and v[1] == 3
     a[-1] = 99
     assert repr(a) == 'array([ 1, 99])'
+    assert bool(a[0]) == True
+    assert bool(a[0] - 1) == False
 
 test_ops()
