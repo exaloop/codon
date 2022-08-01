@@ -50,11 +50,11 @@ PyNumber_FloorDivide = Function[[cobj, cobj], cobj](cobj())
 PyNumber_TrueDivide = Function[[cobj, cobj], cobj](cobj())
 PyNumber_Remainder = Function[[cobj, cobj], cobj](cobj())
 PyNumber_Divmod = Function[[cobj, cobj], cobj](cobj())
-PyNumber_Power = Function[[cobj, cobj], cobj](cobj())
+PyNumber_Power = Function[[cobj, cobj, cobj], cobj](cobj())
 PyNumber_Negative = Function[[cobj], cobj](cobj())
 PyNumber_Positive = Function[[cobj], cobj](cobj())
 PyNumber_Absolute = Function[[cobj], cobj](cobj())
-PyNumber_Invert = Function[[cobj], [cobj]](cobj())
+PyNumber_Invert = Function[[cobj], cobj](cobj())
 PyNumber_Lshift = Function[[cobj, cobj], cobj](cobj())
 PyNumber_Rshift = Function[[cobj, cobj], cobj](cobj())
 PyNumber_And = Function[[cobj, cobj], cobj](cobj())
@@ -67,7 +67,7 @@ PyNumber_InPlaceMatrixMultiply = Function[[cobj, cobj], cobj](cobj())
 PyNumber_InPlaceFloorDivide = Function[[cobj, cobj], cobj](cobj())
 PyNumber_InPlaceTrueDivide = Function[[cobj, cobj], cobj](cobj())
 PyNumber_InPlaceRemainder = Function[[cobj, cobj], cobj](cobj())
-PyNumber_InPlacePower = Function[[cobj, cobj], cobj](cobj())
+PyNumber_InPlacePower = Function[[cobj, cobj, cobj], cobj](cobj())
 PyNumber_InPlaceLshift = Function[[cobj, cobj], cobj](cobj())
 PyNumber_InPlaceRshift = Function[[cobj, cobj], cobj](cobj())
 PyNumber_InPlaceAnd = Function[[cobj, cobj], cobj](cobj())
@@ -393,7 +393,7 @@ class pyobj:
         return pyobj(pyobj.exc_wrap(PyNumber_Divmod(self.p, other.__to_py__())), steal=True)
 
     def __pow__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Power(self.p, other.__to_py__())), steal=True)
+        return pyobj(pyobj.exc_wrap(PyNumber_Power(self.p, other.__to_py__(), Py_None)), steal=True)
 
     def __neg__(self):
         return pyobj(pyobj.exc_wrap(PyNumber_Negative(self.p)), steal=True)
@@ -441,7 +441,7 @@ class pyobj:
         return pyobj(pyobj.exc_wrap(PyNumber_InPlaceRemainder(self.p, other.__to_py__())), steal=True)
 
     def __ipow__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlacePower(self.p, other.__to_py__())), steal=True)
+        return pyobj(pyobj.exc_wrap(PyNumber_InPlacePower(self.p, other.__to_py__(), Py_None)), steal=True)
 
     def __ilshift__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_InPlaceLshift(self.p, other.__to_py__())), steal=True)
