@@ -23,12 +23,34 @@ Moreover, variables can now be assigned to different types:
 
 ``` python
 x = 42
-print(x)
+print(x)  # 42
 x = 'hello'
-print(x)
+print(x)  # hello
 ```
 
-The same applies in a Jupyter or JIT environment.
+The same applies in Jupyter or JIT environments.
+
+### Static methods
+
+Added support for `@staticmethod` method decorator.
+Class variables are also supported:
+
+``` python
+class Cls:
+    a = 5  # or "a: ClassVar[int] = 5" (PEP 526)
+
+    @staticmethod
+    def method():
+        print('hello world')
+
+c = Cls()
+Cls.a, Cls.method(), c.a, c.method()  # supported
+```
+
+### Tuple handling
+
+Arbitrary classes can now be converted to tuples via the `tuple()`
+function.
 
 ### Void type
 
@@ -96,21 +118,3 @@ extension on the output file name).
 ## Errors
 
 Added support for multiple error reporting.
-
-## Static methods
-
-Added support for `@staticmethod` method decorator. Class variables are also supported:
-
-```
-class Cls:
-  a = 5  # or a: ClassVar[int] = 5
-  
-  @staticmethod
-  def method(): pass
-c = Cls()
-Cls.a, Cls.method(), c.a, c.method()  # supported
-```
-
-## Tuple handling
-
-Arbitrary classes can be converted to tuples via `tuple()` function.
