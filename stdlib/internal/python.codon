@@ -371,29 +371,56 @@ class pyobj:
     def __add__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Add(self.p, other.__to_py__())), steal=True)
 
+    def __radd__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Add(other.__to_py__(), self.p)), steal=True)
+
     def __sub__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Subtract(self.p, other.__to_py__())), steal=True)
+
+    def __rsub__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Subtract(other.__to_py__(), self.p)), steal=True)
 
     def __mul__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Multiply(self.p, other.__to_py__())), steal=True)
 
+    def __rmul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Multiply(other.__to_py__(), self.p)), steal=True)
+
     def __matmul__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_MatrixMultiply(self.p, other.__to_py__())), steal=True)
+
+    def __rmatmul__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_MatrixMultiply(other.__to_py__(), self.p)), steal=True)
 
     def __floordiv__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_FloorDivide(self.p, other.__to_py__())), steal=True)
 
+    def __rfloordiv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_FloorDivide(other.__to_py__(), self.p)), steal=True)
+
     def __truediv__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_TrueDivide(self.p, other.__to_py__())), steal=True)
+
+    def __rtruediv__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_TrueDivide(other.__to_py__(), self.p)), steal=True)
 
     def __mod__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Remainder(self.p, other.__to_py__())), steal=True)
 
+    def __rmod__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Remainder(other.__to_py__(), self.p)), steal=True)
+
     def __divmod__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Divmod(self.p, other.__to_py__())), steal=True)
 
+    def __rdivmod__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Divmod(other.__to_py__(), self.p)), steal=True)
+
     def __pow__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Power(self.p, other.__to_py__(), Py_None)), steal=True)
+
+    def __rpow__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Power(other.__to_py__(), self.p, Py_None)), steal=True)
 
     def __neg__(self):
         return pyobj(pyobj.exc_wrap(PyNumber_Negative(self.p)), steal=True)
@@ -407,17 +434,32 @@ class pyobj:
     def __lshift__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Lshift(self.p, other.__to_py__())), steal=True)
 
+    def __rlshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Lshift(other.__to_py__(), self.p)), steal=True)
+
     def __rshift__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Rshift(self.p, other.__to_py__())), steal=True)
+
+    def __rrshift__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Rshift(other.__to_py__(), self.p)), steal=True)
 
     def __and__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_And(self.p, other.__to_py__())), steal=True)
 
+    def __rand__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_And(other.__to_py__(), self.p)), steal=True)
+
     def __xor__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Xor(self.p, other.__to_py__())), steal=True)
 
+    def __rxor__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Xor(other.__to_py__(), self.p)), steal=True)
+
     def __or__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_Or(self.p, other.__to_py__())), steal=True)
+
+    def __ror__(self, other):
+        return pyobj(pyobj.exc_wrap(PyNumber_Or(other.__to_py__(), self.p)), steal=True)
 
     def __iadd__(self, other):
         return pyobj(pyobj.exc_wrap(PyNumber_InPlaceAdd(self.p, other.__to_py__())), steal=True)
@@ -459,13 +501,22 @@ class pyobj:
         return pyobj(pyobj.exc_wrap(PyNumber_InPlaceOr(self.p, other.__to_py__())), steal=True)
 
     def __int__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Long(self.p)), steal=True)
+        o = pyobj.exc_wrap(PyNumber_Long(self.p))
+        x = int.__from_py__(o)
+        pyobj.decref(o)
+        return x
 
     def __float__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Float(self.p)), steal=True)
+        o = pyobj.exc_wrap(PyNumber_Float(self.p))
+        x = float.__from_py__(o)
+        pyobj.decref(o)
+        return x
 
     def __index__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Index(self.p)), steal=True)
+        o = pyobj.exc_wrap(PyNumber_Index(self.p))
+        x = int.__from_py__(o)
+        pyobj.decref(o)
+        return x
 
     def __len__(self) -> int:
         return pyobj.exc_wrap(PyObject_Length(self.p))
