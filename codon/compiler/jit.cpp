@@ -1,24 +1,27 @@
 #include "jit.h"
 
+#include <sstream>
+
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/runtime/lib.h"
 
 namespace codon {
 namespace jit {
 namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
+typedef void *PyWrapperFunc(void *);
 
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
 JIT::JIT(const std::string &argv0, const std::string &mode)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)), mode(mode) {
+    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)), engine(),
+      pydata(std::make_unique<PythonData>()), mode(mode) {
   if (auto e = Engine::create()) {
     engine = std::move(e.get());
   } else {
@@ -58,7 +61,7 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Expected<std::string> JIT::run(const ir::Func *input) {
+llvm::Error JIT::compile(const ir::Func *input) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
@@ -67,8 +70,6 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   pm->run(module);
   t1.log();
 
-  const std::string name = ir::LLVMVisitor::getNameForFunction(input);
-
   Timer t2("jit/llvm");
   auto pair = llvisitor->takeModule(module);
   t2.log();
@@ -76,31 +77,12 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   Timer t3("jit/engine");
   if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
     return std::move(err);
-
-  auto func = engine->lookup(name);
-  if (auto err = func.takeError())
-    return std::move(err);
-
-  auto *repl = (InputFunc *)func->getAddress();
   t3.log();
 
-  try {
-    (*repl)();
-  } catch (const JITError &e) {
-    std::vector<std::string> backtrace;
-    for (auto pc : e.getBacktrace()) {
-      auto line = engine->getDebugListener()->getPrettyBacktrace(pc);
-      if (line && !line->empty())
-        backtrace.push_back(*line);
-    }
-    return llvm::make_error<error::RuntimeErrorInfo>(e.getOutput(), e.getType(),
-                                                     e.what(), e.getFile(), e.getLine(),
-                                                     e.getCol(), backtrace);
-  }
-  return getCapturedOutput();
+  return llvm::Error::success();
 }
 
-llvm::Expected<std::string> JIT::execute(const std::string &code) {
+llvm::Expected<ir::Func *> JIT::compile(const std::string &code) {
   auto *cache = compiler->getCache();
   ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
 
@@ -141,7 +123,7 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
         ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
 
-    return run(func);
+    return func;
   } catch (const exc::ParserException &e) {
     for (auto &f : cache->functions)
       for (auto &r : f.second.realizations)
@@ -158,13 +140,146 @@ llvm::Expected<std::string> JIT::execute(const std::string &code) {
   }
 }
 
+llvm::Expected<void *> JIT::address(const ir::Func *input) {
+  if (auto err = compile(input))
+    return std::move(err);
+
+  const std::string name = ir::LLVMVisitor::getNameForFunction(input);
+  auto func = engine->lookup(name);
+  if (auto err = func.takeError())
+    return std::move(err);
+
+  return (void *)func->getAddress();
+}
+
+llvm::Expected<std::string> JIT::run(const ir::Func *input) {
+  auto result = address(input);
+  if (auto err = result.takeError())
+    return std::move(err);
+
+  auto *repl = (InputFunc *)result.get();
+  try {
+    (*repl)();
+  } catch (const JITError &e) {
+    return handleJITError(e);
+  }
+  return getCapturedOutput();
+}
+
+llvm::Expected<std::string> JIT::execute(const std::string &code) {
+  auto result = compile(code);
+  if (auto err = result.takeError())
+    return std::move(err);
+  if (auto err = compile(result.get()))
+    return std::move(err);
+  return run(result.get());
+}
+
+llvm::Error JIT::handleJITError(const JITError &e) {
+  std::vector<std::string> backtrace;
+  for (auto pc : e.getBacktrace()) {
+    auto line = engine->getDebugListener()->getPrettyBacktrace(pc);
+    if (line && !line->empty())
+      backtrace.push_back(*line);
+  }
+  return llvm::make_error<error::RuntimeErrorInfo>(e.getOutput(), e.getType(), e.what(),
+                                                   e.getFile(), e.getLine(), e.getCol(),
+                                                   backtrace);
+}
+
+namespace {
+std::string buildKey(const std::string &name, const std::vector<std::string> &types) {
+  std::stringstream key;
+  key << name;
+  for (const auto &t : types) {
+    key << "|" << t;
+  }
+  return key.str();
+}
+
+std::string buildPythonWrapper(const std::string &name, const std::string &wrapname,
+                               const std::vector<std::string> &types) {
+  std::stringstream wrap;
+  wrap << "@export\n";
+  wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
+  for (unsigned i = 0; i < types.size(); i++) {
+    wrap << "    "
+         << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
+         << "))\n";
+  }
+  wrap << "    return " << name << "(";
+  for (unsigned i = 0; i < types.size(); i++) {
+    if (i > 0)
+      wrap << ", ";
+    wrap << "a" << i;
+  }
+  wrap << ").__to_py__()\n";
+
+  return wrap.str();
+}
+} // namespace
+
+JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
+
+ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+  if (cobj)
+    return cobj;
+  cobj = M->getPointerType(M->getByteType());
+  return cobj;
+}
+
 JITResult JIT::executeSafe(const std::string &code) {
-  auto result = this->execute(code);
+  auto result = execute(code);
   if (auto err = result.takeError()) {
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);
   }
-  return JITResult::success(result.get());
+  return JITResult::success(nullptr);
+}
+
+JITResult JIT::executePython(const std::string &name,
+                             const std::vector<std::string> &types, void *arg) {
+
+  auto key = buildKey(name, types);
+  auto &cache = pydata->cache;
+  auto it = cache.find(key);
+  PyWrapperFunc *wrap;
+
+  if (it != cache.end()) {
+    auto *wrapper = it->second;
+    const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
+    auto func = llvm::cantFail(engine->lookup(name));
+    wrap = (PyWrapperFunc *)func.getAddress();
+  } else {
+    static int idx = 0;
+    auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);
+    auto wrapper = buildPythonWrapper(name, wrapname, types);
+    if (auto err = compile(wrapper).takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    auto *M = compiler->getModule();
+    auto *func = M->getOrRealizeFunc(wrapname, {pydata->getCObjType(M)});
+    seqassertn(func, "could not access wrapper func '{}'", wrapname);
+    cache.emplace(key, func);
+
+    auto result = address(func);
+    if (auto err = result.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+    wrap = (PyWrapperFunc *)result.get();
+  }
+
+  try {
+    auto *ans = (*wrap)(arg);
+    return JITResult::success(ans);
+  } catch (const JITError &e) {
+    auto err = handleJITError(e);
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
+  }
 }
 
 } // namespace jit

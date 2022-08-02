@@ -9,6 +9,7 @@ from setuptools import setup
 from setuptools.extension import Extension
 import distutils.dir_util
 
+from config.config import *
 
 def exists(executable):
     ps = subprocess.run(["which", executable], stdout=subprocess.PIPE)
@@ -75,13 +76,13 @@ jit_extension = Extension(
 
 setup(
     name="codon",
-    version="0.1.1",
+    version=CODON_VERSION,
     python_requires='>=3.6',
     description="Codon JIT decorator",
-    url="https://exaloop.io/",
+    url="https://exaloop.io",
     long_description="Please see https://exaloop.io for more details.",
     author="Exaloop Inc.",
-    author_email="ibrahim@exaloop.io",
+    author_email="info@exaloop.io",
     license="Commercial",
     cmdclass={"build_ext": build_ext},
     ext_modules=[jit_extension],

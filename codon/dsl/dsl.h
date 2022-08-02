@@ -30,6 +30,8 @@ public:
     std::string supported;
     /// Plugin stdlib path
     std::string stdlibPath;
+    /// Plugin dynamic library path
+    std::string dylibPath;
   };
 
   using KeywordCallback =

@@ -1,3 +1,3 @@
-__all__ = ["codon", "JitError"]
+__all__ = ["jit", "convert", "JITError"]
 
-from .decorator import codon, JitError
+from .decorator import jit, convert, JITError

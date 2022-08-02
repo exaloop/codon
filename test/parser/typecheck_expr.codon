@@ -244,7 +244,7 @@ a.append(5)
 
 #%% dot_case_2,barebones
 a = Optional(0)
-print a.__bool__() #: True
+print a.__bool__() #: False
 print a.__add__(1) #: 1
 
 #%% dot_case_4,barebones

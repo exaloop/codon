@@ -5,15 +5,16 @@
 
 from cython.operator import dereference as dref
 from libcpp.string cimport string
+from libcpp.vector cimport vector
 
 from src.jit cimport JIT, JITResult
 
 
-class JitError(Exception):
+class JITError(Exception):
     pass
 
 
-cdef class Jit:
+cdef class JITWrapper:
     cdef JIT* jit
 
     def __cinit__(self):
@@ -26,6 +27,14 @@ cdef class Jit:
     def execute(self, code: str) -> str:
         result = dref(self.jit).executeSafe(code)
         if <bint>result:
-            return result.data
+            return None
         else:
-            raise JitError(result.data)
+            raise JITError(result.message)
+
+    def run_wrapper(self, name: str, types: list[str], args) -> object:
+        cdef vector[string] types_vec = types
+        result = dref(self.jit).executePython(name, types_vec, <object>args)
+        if <bint>result:
+            return <object>result.result
+        else:
+            raise JITError(result.message)

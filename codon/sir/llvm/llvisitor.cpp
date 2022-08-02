@@ -462,8 +462,36 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     command.push_back("-Wl,-rpath," + rpath);
   }
 
+  if (plugins) {
+    for (auto *plugin : *plugins) {
+      auto dylibPath = plugin->info.dylibPath;
+      if (dylibPath.empty())
+        continue;
+
+      llvm::SmallString<128> rpath0 = llvm::sys::path::parent_path(dylibPath);
+      llvm::sys::fs::make_absolute(rpath0);
+      llvm::StringRef rpath = rpath0.str();
+      command.push_back("-L" + rpath.str());
+      command.push_back("-Wl,-rpath," + rpath.str());
+    }
+  }
+
   for (const auto &lib : libs) {
     command.push_back("-l" + lib);
+  }
+
+  if (plugins) {
+    for (auto *plugin : *plugins) {
+      auto dylibPath = plugin->info.dylibPath;
+      if (dylibPath.empty())
+        continue;
+
+      auto stem = llvm::sys::path::stem(dylibPath);
+      if (stem.startswith("lib"))
+        stem = stem.substr(3);
+
+      command.push_back("-l" + stem.str());
+    }
   }
 
   std::vector<std::string> extraArgs = {
@@ -774,7 +802,8 @@ void LLVMVisitor::visit(const Module *x) {
   llvm::Value *argStorage = getVar(x->getArgVar());
   seqassertn(argStorage, "argument storage missing");
   B->CreateStore(arr, argStorage);
-  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) | (db.jit ? SEQ_FLAG_JIT : 0) |
+  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) |
+                    (db.capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
                     (db.standalone ? SEQ_FLAG_STANDALONE : 0);
   B->CreateCall(initFunc, B->getInt32(flags));
 

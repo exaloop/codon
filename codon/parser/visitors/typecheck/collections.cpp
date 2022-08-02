@@ -19,15 +19,17 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     if (auto star = expr->items[ai]->getStar()) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
       transform(star->what);
-      auto t = star->what->type->getClass();
-      if (!t) {
-        return; // continue later when the type becomes known
+      auto typ = star->what->type->getClass();
+      while (typ && typ->is(TYPE_OPTIONAL)) {
+        star->what = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->what));
+        typ = star->what->type->getClass();
       }
-
-      if (!t->getRecord())
+      if (!typ)
+        return; // continue later when the type becomes known
+      if (!typ->getRecord())
         error("can only unpack tuple types");
-      auto &ff = ctx->cache->classes[t->name].fields;
-      for (int i = 0; i < t->getRecord()->args.size(); i++, ai++) {
+      auto &ff = ctx->cache->classes[typ->name].fields;
+      for (int i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
                            transform(N<DotExpr>(clone(star->what), ff[i].name)));
       }

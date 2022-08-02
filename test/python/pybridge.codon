@@ -64,3 +64,130 @@ test_roundtrip(Dict[str,int]())
 test_roundtrip({'aa': 11, 'bb': 22, 'cc': 33})
 test_roundtrip((11, 1.1, '11', [1, 1], {1}, {1: 1}))
 test_roundtrip(())
+test_roundtrip(Optional(0))
+test_roundtrip(Optional(111))
+test_roundtrip(Optional[int]())
+test_roundtrip(None)
+
+@test
+def test_ops():
+    from python import numpy as np
+    a = np.array([1, 3])
+    assert str(a + 1) == '[2 4]'
+    assert str(a - 1) == '[0 2]'
+    assert str(a * 2) == '[2 6]'
+    assert str(a @ a) == '10'
+    assert str(a // 2) == '[0 1]'
+    assert str(a / 2) == '[0.5 1.5]'
+    assert str(a % 2) == '[1 1]'
+    assert str(a ** 2) == '[1 9]'
+    assert str(-a) == '[-1 -3]'
+    assert str(+a) == '[1 3]'
+    assert str(~a) == '[-2 -4]'
+    assert str(a << 1) == '[2 6]'
+    assert str(a >> 1) == '[0 1]'
+    assert str(a & 2) == '[0 2]'
+    assert str(a ^ 2) == '[3 1]'
+    assert str(a | 2) == '[3 3]'
+
+    assert str(a < 3) == '[ True False]'
+    assert str(a <= 3) == '[ True  True]'
+    assert str(a == 3) == '[False  True]'
+    assert str(a != 3) == '[ True False]'
+    assert str(a > 3) == '[False False]'
+    assert str(a >= 3) == '[False  True]'
+
+    assert str(1 + a) == '[2 4]'
+    assert str(1 - a) == '[ 0 -2]'
+    assert str(2 * a) == '[2 6]'
+    assert str(1 // a) == '[1 0]'
+    assert str(2 & a) == '[0 2]'
+    assert str(2 ^ a) == '[3 1]'
+    assert str(2 | a) == '[3 3]'
+    n = a[0]
+    assert str(10 // n) == '10'
+    assert str(10 / n) == '10.0'
+    assert str(10 % n) == '0'
+    assert str(10 ** n) == '10'
+    assert str(4 << n) == '8'
+    assert str(4 >> n) == '2'
+
+    assert str(3 < a) == '[False False]'
+    assert str(3 <= a) == '[False  True]'
+    assert str(3 == a) == '[False  True]'
+    assert str(3 != a) == '[ True False]'
+    assert str(3 > a) == '[ True False]'
+    assert str(3 >= a) == '[ True  True]'
+
+    a = np.array([1, 3])
+    b = a
+    a += 1
+    assert str(b) == '[2 4]'
+
+    a = np.array([1, 3])
+    b = a
+    a -= 1
+    assert str(b) == '[0 2]'
+
+    a = np.array([1, 3])
+    b = a
+    a //= 2
+    assert str(b) == '[0 1]'
+
+    a = np.array([1.0, 3.0])
+    b = a
+    a /= 2
+    assert str(b) == '[0.5 1.5]'
+
+    a = np.array([1, 3])
+    b = a
+    a %= 2
+    assert str(b) == '[1 1]'
+
+    a = np.array([1, 3])
+    b = a
+    a **= 2
+    assert str(b) == '[1 9]'
+
+    a = np.array([1, 3])
+    b = a
+    a <<= 1
+    assert str(b) == '[2 6]'
+
+    a = np.array([1, 3])
+    b = a
+    a >>= 1
+    assert str(b) == '[0 1]'
+
+    a = np.array([1, 3])
+    b = a
+    a &= 2
+    assert str(b) == '[0 2]'
+
+    a = np.array([1, 3])
+    b = a
+    a ^= 2
+    assert str(b) == '[3 1]'
+
+    a = np.array([1, 3])
+    b = a
+    a |= 2
+    assert str(b) == '[3 3]'
+
+    a = np.array([1, 3])
+    n = a[-1]
+    assert str(n) == '3'
+    assert int(n) == 3
+    assert float(n) == 3.0
+    from operator import index
+    assert index(n) == 3
+    assert hash(n) == 3
+    assert len(a) == 2
+    v = list(iter(a))
+    assert len(v) == 2 and v[0] == 1 and v[1] == 3
+    a[-1] = 99
+    assert repr(a) == 'array([ 1, 99])'
+    assert bool(a[0]) == True
+    assert bool(a[0] - 1) == False
+
+test_ops()

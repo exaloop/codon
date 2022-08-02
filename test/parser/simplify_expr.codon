@@ -2,9 +2,9 @@
 @extend
 class Optional:
     def __repr__(self):
-        return 'OPTIONAL: ' + ('-' if not self else self.__invert__().__repr__())
+        return 'OPTIONAL: ' + ('-' if self is None else self.__val__().__repr__())
     def __str__(self):
-        return 'OPTIONAL: ' + ('-' if not self else self.__invert__().__repr__())
+        return 'OPTIONAL: ' + ('-' if self is None else self.__val__().__repr__())
 
 a = None
 print a #: OPTIONAL: -
@@ -267,9 +267,9 @@ class Foo:
         print foo
 f = Foo()
 f[0,0] #: (0, 0)
-f[0,:] #: (0, (start: None, stop: None, step: None))
-f[:,:] #: ((start: None, stop: None, step: None), (start: None, stop: None, step: None))
-f[:,0] #: ((start: None, stop: None, step: None), 0)
+f[0,:] #: (0, slice(None, None, None))
+f[:,:] #: (slice(None, None, None), slice(None, None, None))
+f[:,0] #: (slice(None, None, None), 0)
 
 #%% index_error,barebones
 Ptr[9.99] #! expected type or static parameters

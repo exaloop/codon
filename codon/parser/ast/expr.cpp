@@ -385,7 +385,7 @@ std::string CallExpr::toString() const {
     else
       s += format("({}{})", i.value->toString(),
                   i.name.empty() ? "" : format(" #:name '{}", i.name));
-  return wrapType(format("call {}{}", expr->toString(), s));
+  return wrapType(format("call {} {}", expr->toString(), s));
 }
 ACCEPT_IMPL(CallExpr, ASTVisitor);
 

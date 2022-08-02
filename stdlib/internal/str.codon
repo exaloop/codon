@@ -789,7 +789,7 @@ class str:
         whitespace string is a separator and empty strings are removed
         from the result.
         """
-        if not sep:
+        if sep is None:
             return self._split_whitespace(
                 maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
             )
@@ -848,7 +848,7 @@ class str:
         done. If sep is not specified, any whitespace string
         is a separator.
         """
-        if not sep:
+        if sep is None:
             return self._rsplit_whitespace(
                 maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
             )

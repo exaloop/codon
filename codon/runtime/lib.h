@@ -9,9 +9,9 @@
 #include <unwind.h>
 #include <vector>
 
-#define SEQ_FLAG_DEBUG (1 << 0)      // compiled/running in debug mode
-#define SEQ_FLAG_JIT (1 << 1)        // compiled/running in JIT mode
-#define SEQ_FLAG_STANDALONE (1 << 2) // compiled as a standalone object/binary
+#define SEQ_FLAG_DEBUG (1 << 0)          // compiled/running in debug mode
+#define SEQ_FLAG_CAPTURE_OUTPUT (1 << 1) // capture writes to stdout/stderr
+#define SEQ_FLAG_STANDALONE (1 << 2)     // compiled as a standalone object/binary
 
 #define SEQ_FUNC extern "C"
 

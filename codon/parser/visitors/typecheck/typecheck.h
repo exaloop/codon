@@ -95,12 +95,13 @@ private: // Node typechecking rules
   ExprPtr evaluateStaticBinary(BinaryExpr *);
   ExprPtr transformBinarySimple(BinaryExpr *);
   ExprPtr transformBinaryIs(BinaryExpr *);
-  std::string getMagic(const std::string &);
+  std::pair<std::string, std::string> getMagic(const std::string &);
   ExprPtr transformBinaryInplaceMagic(BinaryExpr *, bool);
   ExprPtr transformBinaryMagic(BinaryExpr *);
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
-  ExprPtr transformStaticTupleIndex(const types::ClassTypePtr &, ExprPtr &, ExprPtr &);
+  std::pair<bool, ExprPtr> transformStaticTupleIndex(const types::ClassTypePtr &,
+                                                     const ExprPtr &, const ExprPtr &);
   int64_t translateIndex(int64_t, int64_t, bool = false);
   int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
   void visit(InstantiateExpr *) override;

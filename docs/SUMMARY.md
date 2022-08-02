@@ -2,11 +2,12 @@
 
 * [Welcome to Codon](README.md)
 
-## Basics
+## General
 
 * [Getting started](intro/intro.md)
 * [Frequently asked questions](intro/faq.md)
 * [Differences with Python](intro/differences.md)
+* [Release notes](intro/releases.md)
 
 ## Language
 
@@ -23,6 +24,7 @@
 ## Interoperability
 
 * [Python integration](interop/python.md)
+* [Python decorator](interop/decorator.md)
 * [C/C++ integration](interop/cpp.md)
 * [Jupyter integration](interop/jupyter.md)
 

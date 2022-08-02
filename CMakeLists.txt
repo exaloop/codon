@@ -6,6 +6,8 @@ project(
   DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
+configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
+               "${PROJECT_SOURCE_DIR}/extra/python/config/config.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
 

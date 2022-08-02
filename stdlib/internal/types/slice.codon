@@ -8,17 +8,18 @@ class Slice:
     step: Optional[int]
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
-        step: int = self.step if self.step else 1
+        step: int = self.step if self.step is not None else 1
         start: int = 0
         stop: int = 0
         if step == 0:
             raise ValueError("slice step cannot be zero")
         if step > 0:
-            start = self.start if self.start else 0
-            stop = self.stop if self.stop else length
+            start = self.start if self.start is not None else 0
+            stop = self.stop if self.stop is not None else length
         else:
-            start = self.start if self.start else length - 1
-            stop = self.stop if self.stop else -(length + 1)
+            start = self.start if self.start is not None else length - 1
+            stop = self.stop if self.stop is not None else -(length + 1)
+
         return Slice.adjust_indices_helper(length, start, stop, step)
 
     def adjust_indices_helper(
@@ -47,5 +48,7 @@ class Slice:
 
         return start, stop, step, 0
 
+    def __repr__(self):
+        return f"slice({self.start}, {self.stop}, {self.step})"
 
 slice = Slice

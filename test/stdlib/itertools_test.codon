@@ -905,7 +905,7 @@ def test_ziplongest_from_cpython():
         ]
         assert str(list(zip_longest(*args))) == str(target)
         target2 = [
-            [(-999 if e is None else ~e) for e in t] for t in target
+            [(-999 if e is None else e.__val__()) for e in t] for t in target
         ]  # Replace None fills with 'X'
         assert list(zip_longest(*args, fillvalue=-999)) == target2
 

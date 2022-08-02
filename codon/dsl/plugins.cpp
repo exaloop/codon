@@ -49,24 +49,28 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
   auto library = tml["library"];
 
   std::string cppLib = library["cpp"].value_or("");
-  llvm::SmallString<128> dylibPath;
+  std::string dylibPath;
   if (!cppLib.empty()) {
-    dylibPath = llvm::sys::path::parent_path(tomlPath);
-    auto fn = std::string(library["cpp"].value_or("lib")) + "." + libExt;
-    llvm::sys::path::append(dylibPath, fn);
+    llvm::SmallString<128> p = llvm::sys::path::parent_path(tomlPath);
+    llvm::sys::path::append(p, cppLib + "." + libExt);
+    dylibPath = p.str();
   }
 
   std::string codonLib = library["codon"].value_or("");
   std::string stdlibPath;
   if (!codonLib.empty()) {
-    llvm::SmallString<128> p = llvm::sys::path::parent_path(tomlPath.str());
+    llvm::SmallString<128> p = llvm::sys::path::parent_path(tomlPath);
     llvm::sys::path::append(p, codonLib);
     stdlibPath = p.str();
   }
 
-  DSL::Info info = {about["name"].value_or(""),      about["description"].value_or(""),
-                    about["version"].value_or(""),   about["url"].value_or(""),
-                    about["supported"].value_or(""), stdlibPath};
+  DSL::Info info = {about["name"].value_or(""),
+                    about["description"].value_or(""),
+                    about["version"].value_or(""),
+                    about["url"].value_or(""),
+                    about["supported"].value_or(""),
+                    stdlibPath,
+                    dylibPath};
 
   bool versionOk = false;
   try {
@@ -87,13 +91,13 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
                                                                  &libLoadErrorMsg);
     if (!handle.isValid())
       return pluginError(fmt::format(
-          "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}",
-          dylibPath.str(), libLoadErrorMsg));
+          "[llvm::sys::DynamicLibrary::getPermanentLibrary(\"{}\", ...)] {}", dylibPath,
+          libLoadErrorMsg));
 
     auto *entry = (LoadFunc *)handle.getAddressOfSymbol("load");
     if (!entry)
-      return pluginError(fmt::format(
-          "could not find 'load' in plugin shared library: {}", dylibPath.str()));
+      return pluginError(
+          fmt::format("could not find 'load' in plugin shared library: {}", dylibPath));
 
     auto dsl = (*entry)();
     plugins.push_back(std::make_unique<Plugin>(std::move(dsl), info, handle));

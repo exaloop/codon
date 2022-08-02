@@ -5,8 +5,6 @@ import importlib.util
 import sys
 import os
 
-from typing import List, Tuple
-
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 if "CODON_PATH" not in os.environ:
@@ -15,69 +13,70 @@ if "CODON_PATH" not in os.environ:
     )
     os.environ["CODON_PATH"] += "/stdlib"
 
+from .codon_jit import JITWrapper, JITError
 
-from .codon_jit import Jit, JitError
+pod_conversions = {type(None): "NoneType",
+                   int: "int",
+                   float: "float",
+                   bool: "bool",
+                   str: "str",
+                   complex: "complex",
+                   slice: "slice"}
 
+custom_conversions = {}
 
-separator = "__"
+def _codon_type(arg):
+    t = type(arg)
 
+    s = pod_conversions.get(t, "")
+    if s:
+        return s
 
-# codon wrapper stubs
+    if issubclass(t, list):
+        sub = "NoneType"
+        x = next(iter(arg), None)
+        if x is not None:
+            sub = _codon_type(x)
+        return f"List[{sub}]"
 
+    if issubclass(t, set):
+        sub = "NoneType"
+        x = next(iter(arg), None)
+        if x is not None:
+            sub = _codon_type(x)
+        return f"Set[{sub}]"
 
-def _wrapper_stub_init():
-    from internal.python import (
-        pyobj,
-        ensure_initialized,
-        Py_None,
-        PyImport_AddModule,
-        PyObject_GetAttrString,
-        PyObject_SetAttrString,
-        PyTuple_GetItem,
-    )
+    if issubclass(t, dict):
+        sub1 = "NoneType"
+        sub2 = "NoneType"
+        x = next(iter(arg.items()), None)
+        if x is not None:
+            sub1 = _codon_type(x[0])
+            sub2 = _codon_type(x[1])
+        return f"Dict[{sub1},{sub2}]"
 
-    ensure_initialized(True)
+    if issubclass(t, tuple):
+        return f"Tuple[{','.join(_codon_type(a) for a in arg)}]"
 
-    module = PyImport_AddModule("__codon_interop__".c_str())
+    s = custom_conversions.get(t, "")
+    if s:
+        return f"{s}[{','.join(_codon_type(getattr(arg, slot)) for slot in t.__slots__)}]"
 
+    return "pyobj"
 
-def _wrapper_stub_header():
-    argt = PyObject_GetAttrString(module, "__codon_args__".c_str())
-
-
-def _wrapper_stub_footer_ret():
-    PyObject_SetAttrString(module, "__codon_ret__".c_str(), ret)
-
-
-def _wrapper_stub_footer_void():
-    pyobj.incref(Py_None)
-    PyObject_SetAttrString(module, "__codon_ret__".c_str(), Py_None)
-
-
-# helpers
-
+def _codon_types(args):
+    return tuple(_codon_type(arg) for arg in args)
 
 def _reset_jit():
-    global jit
-    jit = Jit()
-    lines = inspect.getsourcelines(_wrapper_stub_init)[0][1:]
-    jit.execute("".join([l[4:] for l in lines]))
+    global _jit
+    _jit = JITWrapper()
+    init_code = ("from internal.python import "
+                 "setup_decorator, PyTuple_GetItem, PyObject_GetAttrString\n"
+                 "setup_decorator()\n")
+    _jit.execute(init_code)
+    return _jit
 
-    return jit
-
-
-def _init():
-    spec = importlib.machinery.ModuleSpec("__codon_interop__", None)
-    module = importlib.util.module_from_spec(spec)
-    exec("__codon_args__ = ()\n__codon_ret__ = None", module.__dict__)
-    sys.modules["__codon_interop__"] = module
-    exec("import __codon_interop__")
-
-    return _reset_jit(), module
-
-
-jit, module = _init()
-
+_jit = _reset_jit()
 
 def _obj_to_str(obj) -> str:
     if inspect.isclass(obj):
@@ -92,90 +91,50 @@ def _obj_to_str(obj) -> str:
         raise TypeError(f"Function or class expected, got {type(obj).__name__}.")
     return obj_str.replace("_@par", "@par")
 
-
 def _obj_name(obj) -> str:
     if inspect.isclass(obj) or callable(obj):
         return obj.__name__
     else:
         raise TypeError(f"Function or class expected, got {type(obj).__name__}.")
 
-
-def _obj_name_full(obj) -> str:
-    obj_name = _obj_name(obj)
-    obj_name_stack = [obj_name]
-    frame = inspect.currentframe()
-    while frame.f_code.co_name != "codon":
-        frame = frame.f_back
-    frame = frame.f_back
-    while frame:
-        if frame.f_code.co_name == "<module>":
-            obj_name_stack += [frame.f_globals["__name__"]]
-            break
-        else:
-            obj_name_stack += [frame.f_code.co_name]
-        frame = frame.f_back
-    return obj_name, separator.join(reversed(obj_name_stack))
-
-
 def _parse_decorated(obj):
     return _obj_name(obj), _obj_to_str(obj)
 
+def convert(t):
+    if not hasattr(t, "__slots__"):
+        raise JITError(f"class '{str(t)}' does not have '__slots__' attribute")
 
-def _get_type_info(obj) -> Tuple[List[str], str]:
-    sgn = inspect.signature(obj)
-    par = [p.annotation for p in sgn.parameters.values()]
-    ret = sgn.return_annotation
-    return par, ret
+    name = t.__name__
+    slots = t.__slots__
+    code = ("@tuple\n"
+            "class " + name + "[" + ",".join(f"T{i}" for i in range(len(slots))) + "]:\n")
+    for i, slot in enumerate(slots):
+        code += f"    {slot}: T{i}\n"
 
+    # PyObject_GetAttrString
+    code += "    def __from_py__(p: cobj):\n"
+    for i, slot in enumerate(slots):
+        code += f"        a{i} = T{i}.__from_py__(PyObject_GetAttrString(p, '{slot}'.ptr))\n"
+    code += f"        return {name}({', '.join(f'a{i}' for i in range(len(slots)))})\n"
 
-def _type_str(typ) -> str:
-    if typ in (int, float, str, bool):
-        return typ.__name__
-    obj_str = str(typ)
-    return obj_str[7:] if obj_str.startswith("typing.") else obj_str
+    _jit.execute(code)
+    custom_conversions[t] = name
+    return t
 
-
-def _build_wrapper(obj, obj_name) -> str:
-    arg_types, ret_type = _get_type_info(obj)
-    arg_count = len(arg_types)
-    wrap_name = f"{obj_name}{separator}wrapped"
-    wrap = [f"def {wrap_name}():\n"]
-    wrap += inspect.getsourcelines(_wrapper_stub_header)[0][1:]
-    wrap += [
-        f"    arg_{i} = {_type_str(arg_types[i])}.__from_py__(PyTuple_GetItem(argt, {i}))\n"
-        for i in range(arg_count)
-    ]
-    args = ", ".join([f"arg_{i}" for i in range(arg_count)])
-    if ret_type != inspect._empty:
-        wrap += [f"    ret = {obj_name}({args}).__to_py__()\n"]
-        wrap += inspect.getsourcelines(_wrapper_stub_footer_ret)[0][1:]
-    else:
-        wrap += [f"    {obj_name}({args})\n"]
-        wrap += inspect.getsourcelines(_wrapper_stub_footer_void)[0][1:]
-    return wrap_name, "".join(wrap)
-
-
-# decorator
-
-
-def codon(obj):
+def jit(obj):
     try:
         obj_name, obj_str = _parse_decorated(obj)
-        jit.execute(obj_str)
-
-        wrap_name, wrap_str = _build_wrapper(obj, obj_name)
-        jit.execute(wrap_str)
-    except JitError as e:
+        _jit.execute(obj_str)
+    except JITError as e:
         _reset_jit()
         raise
 
     def wrapped(*args, **kwargs):
         try:
-            module.__codon_args__ = (*args, *kwargs.values())
-            stdout = jit.execute(f"{wrap_name}()")
-            print(stdout, end="")
-            return module.__codon_ret__
-        except JitError as e:
+            args = (*args, *kwargs.values())
+            types = _codon_types(args)
+            return _jit.run_wrapper(obj_name, types, args)
+        except JITError as e:
             _reset_jit()
             raise
 

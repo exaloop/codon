@@ -1445,10 +1445,10 @@ class TestDateTime(TestDate[theclass]):
         for dummy in range(3):
             from_now = self.theclass.utcnow()
             from_timestamp = self.theclass.utcfromtimestamp(time.time())
-            if abs(~from_timestamp - ~from_now) <= tolerance:
+            if abs(from_timestamp.__val__() - from_now.__val__()) <= tolerance:
                 break
             # Else try again a few times.
-        self.assertLessEqual(abs(~from_timestamp - ~from_now), tolerance)
+        self.assertLessEqual(abs(from_timestamp.__val__() - from_now.__val__()), tolerance)
 
     def test_extract(self):
         dt = self.theclass(2002, 3, 4, 18, 45, 3, 1234)

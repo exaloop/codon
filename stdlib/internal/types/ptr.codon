@@ -213,5 +213,14 @@ class NoneType:
     def __new__() -> NoneType:
         return ()
 
+    def __eq__(self, other: NoneType):
+        return True
+
+    def __ne__(self, other: NoneType):
+        return False
+
+    def __bool__(self) -> bool:
+        return False
+
     def __repr__(self) -> str:
         return "None"
