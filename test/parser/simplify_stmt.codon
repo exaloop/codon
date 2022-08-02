@@ -763,6 +763,30 @@ print a <= a, a <= b, b <= a #: True True False
 print a > a, a > b, b > a #: False False True
 print a >= a, a >= b, b >= a #: True False True
 
+# Right magic test
+class X:
+    x: int
+class Y:
+    y: int
+    def __eq__(self, o: X): return self.y == o.x
+    def __ne__(self, o: X): return self.y != o.x
+    def __le__(self, o: X): return self.y <= o.x
+    def __lt__(self, o: X): return self.y <  o.x
+    def __ge__(self, o: X): return self.y >= o.x
+    def __gt__(self, o: X): return self.y >  o.x
+    def __add__(self, o: X):  return self.y + o.x + 1
+    def __radd__(self, o: X): return self.y + o.x + 2
+print Y(1) == X(1), Y(1) != X(1)  #: True False
+print X(1) == Y(1), X(1) != Y(1)  #: True False
+print Y(1) <= X(2), Y(1) < X(2)  #: True True
+print X(1) <= Y(2), X(1) < Y(2)  #: True True
+print Y(1) >= X(2), Y(1) > X(2)  #: False False
+print X(1) >= Y(2), X(1) > Y(2)  #: False False
+print X(1) + Y(2)  #: 5
+print Y(1) + X(2)  #: 4
+
+
+
 #%% magic_2,barebones
 @tuple
 class Foo:

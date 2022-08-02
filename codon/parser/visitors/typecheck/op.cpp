@@ -75,16 +75,24 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   } else if (expr->op == "is") {
     // Case: is operator
     resultExpr = transformBinaryIs(expr);
-  } else if (auto ei = transformBinaryInplaceMagic(expr, false)) {
-    // Case: in-place magic methods
-    resultExpr = ei;
-  } else if (auto em = transformBinaryMagic(expr)) {
-    // Case: normal magic methods
-    resultExpr = em;
   } else {
-    // Nothing found: report an error
-    error("cannot find magic '{}' in {}", getMagic(expr->op),
-          expr->lexpr->type->toString());
+    if (auto ei = transformBinaryInplaceMagic(expr, false)) {
+      // Case: in-place magic methods
+      resultExpr = ei;
+    } else if (auto em = transformBinaryMagic(expr)) {
+      // Case: normal magic methods
+      resultExpr = em;
+    } else if (expr->lexpr->getType()->is(TYPE_OPTIONAL)) {
+      // Special case: handle optionals if everything else fails.
+      // Assumes that optionals have no relevant magics (except for __eq__)
+      resultExpr =
+          transform(N<BinaryExpr>(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->lexpr),
+                                  expr->op, expr->rexpr, expr->inPlace));
+    } else {
+      // Nothing found: report an error
+      error("cannot find magic '{}' in {}", getMagic(expr->op).first,
+            expr->lexpr->type->toString());
+    }
   }
 }
 
@@ -545,7 +553,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
 }
 
 /// Return a binary magic opcode for the provided operator.
-std::string TypecheckVisitor::getMagic(const std::string &op) {
+std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string &op) {
   // Table of supported binary operations and the corresponding magic methods.
   static auto magics = std::unordered_map<std::string, std::string>{
       {"+", "add"},     {"-", "sub"},       {"*", "mul"},     {"**", "pow"},
@@ -557,7 +565,12 @@ std::string TypecheckVisitor::getMagic(const std::string &op) {
   auto mi = magics.find(op);
   if (mi == magics.end())
     error("invalid binary operator '{}'", op);
-  return mi->second;
+
+  static auto rightMagics = std::unordered_map<std::string, std::string>{
+      {"<", "gt"}, {"<=", "ge"}, {">", "lt"}, {">=", "le"}, {"==", "eq"}, {"!=", "ne"},
+  };
+  auto rm = in(rightMagics, op);
+  return {mi->second, rm ? *rm : "r" + mi->second};
 }
 
 /// Transform an in-place binary expression.
@@ -565,7 +578,7 @@ std::string TypecheckVisitor::getMagic(const std::string &op) {
 ///   `a op= b` -> `a.__iopmagic__(b)`
 /// @param isAtomic if set, use atomic magics if available.
 ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAtomic) {
-  auto magic = getMagic(expr->op);
+  auto [magic, _] = getMagic(expr->op);
   auto lt = expr->lexpr->getType()->getClass();
   auto rt = expr->rexpr->getType()->getClass();
   seqassert(lt && rt, "lhs and rhs types not known");
@@ -595,16 +608,17 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 /// @example
 ///   `a op b` -> `a.__opmagic__(b)`
 ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
-  auto magic = getMagic(expr->op);
+  auto [magic, rightMagic] = getMagic(expr->op);
   auto lt = expr->lexpr->getType()->getClass();
   auto rt = expr->rexpr->getType()->getClass();
   seqassert(lt && rt, "lhs and rhs types not known");
 
-  // Normal operations: check if `lhs.__op__(lhs, rhs)` exists
+  // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   auto method = findBestMethod(lt, format("__{}__", magic), {lt, rt});
 
-  // Right-side magics: check if `rhs.__rop__(rhs, lhs)` exists
-  if (!method && (method = findBestMethod(rt, format("__r{}__", magic), {rt, lt}))) {
+  // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
+  if (!method &&
+      (method = findBestMethod(rt, format("__{}__", rightMagic), {rt, lt}))) {
     swap(expr->lexpr, expr->rexpr);
   }
 

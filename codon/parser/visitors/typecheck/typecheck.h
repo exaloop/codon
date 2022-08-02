@@ -95,7 +95,7 @@ private: // Node typechecking rules
   ExprPtr evaluateStaticBinary(BinaryExpr *);
   ExprPtr transformBinarySimple(BinaryExpr *);
   ExprPtr transformBinaryIs(BinaryExpr *);
-  std::string getMagic(const std::string &);
+  std::pair<std::string, std::string> getMagic(const std::string &);
   ExprPtr transformBinaryInplaceMagic(BinaryExpr *, bool);
   ExprPtr transformBinaryMagic(BinaryExpr *);
   void visit(PipeExpr *) override;
