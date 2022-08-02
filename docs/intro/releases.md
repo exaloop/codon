@@ -1,8 +1,8 @@
-# v0.13
+## v0.13
 
-## Language
+### Language
 
-### Scoping
+#### Scoping
 
 Scoping was changed to match Python scoping. For example:
 
@@ -30,7 +30,7 @@ print(x)  # hello
 
 The same applies in Jupyter or JIT environments.
 
-### Static methods
+#### Static methods
 
 Added support for `@staticmethod` method decorator.
 Class variables are also supported:
@@ -47,19 +47,19 @@ c = Cls()
 Cls.a, Cls.method(), c.a, c.method()  # supported
 ```
 
-### Tuple handling
+#### Tuple handling
 
 Arbitrary classes can now be converted to tuples via the `tuple()`
 function.
 
-### Void type
+#### Void type
 
 The `void` type has been completely removed in favor of the new
 and Pythonic `NoneType`, which compiles to an empty LLVM struct.
 This does not affect C interoperability as the empty struct type
 is replaced by `void` by LLVM.
 
-### Standard library
+#### Standard library
 
 The `re` module is now fully supported, and uses
 [Google's `re2`](https://github.com/google/re2) as a backend. Future
@@ -67,7 +67,7 @@ versions of Codon will also include an additional regex optimization
 pass to compile constant ("known at compile time") regular expressions
 to native code.
 
-## C variables
+### C variables
 
 Global variables with C linkage can now be imported via `from C import`:
 
@@ -77,7 +77,7 @@ from C import foo: int
 print(foo)
 ```
 
-## Parallelism
+### Parallelism
 
 Numerous improvements to the OpenMP backend, including the addition
 of task-based reductions:
@@ -88,20 +88,20 @@ for a in some_arbitrary_generator():
     total += do_work(a)  # now converted to atomic reduction
 ```
 
-## Python interoperability
+### Python interoperability
 
 Included revamped `codon` module for Python, with `@codon.jit` decorator
 for compiling Python code in existing codebases. Further improved and
 optimized the Python bridge.
 
-## Codon IR
+### Codon IR
 
 New capture analysis pass for Codon IR for improving tasks such as dead
 code elimination and side effect analysis. This allows Codon IR to deduce
 whether arbitrary, compilable Python expressions have side effects, capture
 variables, and more.
 
-## Code generation and optimizations
+### Code generation and optimizations
 
 A new dynamic allocation optimization pass is included, which 1)
 removes unused allocations (e.g. instantiating a class but never
@@ -109,12 +109,12 @@ using it) and 2) demotes small heap allocations to stack (`alloca`)
 allocations when possible. The latter optimization can frequently
 remove any overhead associated with instantiating most classes.
 
-## Command-line tool
+### Command-line tool
 
 The `codon` binary can now compile to shared libraries using the `-lib`
 option to `codon build` (or it can be deduced from a `.so` or `.dylib`
 extension on the output file name).
 
-## Errors
+### Errors
 
 Added support for multiple error reporting.
