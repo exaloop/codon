@@ -28,7 +28,8 @@ custom_conversions = {}
 def _codon_type(arg):
     t = type(arg)
 
-    if s := pod_conversions.get(t, ""):
+    s = pod_conversions.get(t, "")
+    if s:
         return s
 
     if issubclass(t, list):
@@ -57,7 +58,8 @@ def _codon_type(arg):
     if issubclass(t, tuple):
         return f"Tuple[{','.join(_codon_type(a) for a in arg)}]"
 
-    if s := custom_conversions.get(t, ""):
+    s = custom_conversions.get(t, "")
+    if s:
         return f"{s}[{','.join(_codon_type(getattr(arg, slot)) for slot in t.__slots__)}]"
 
     return "pyobj"
