@@ -8,7 +8,6 @@ import itertools
 import ast
 import astunparse
 
-
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 if "CODON_PATH" not in os.environ:
@@ -30,13 +29,13 @@ pod_conversions = {type(None): "pyobj",
 custom_conversions = {}
 _error_msgs = set()
 
-def _common_type(t, debug, sample_rate):
+def _common_type(t, debug, sample_size):
     sub, is_optional = None, False
-    for i in itertools.islice(t, sample_rate):
+    for i in itertools.islice(t, sample_size):
         if i is None:
             is_optional = True
         else:
-            s = _codon_type(i, debug=debug, sample_rate=sample_rate)
+            s = _codon_type(i, debug=debug, sample_size=sample_size)
             if sub and sub != s:
                 return "pyobj"
             sub = s
@@ -85,7 +84,6 @@ def _reset_jit():
 
 _jit = _reset_jit()
 
-
 class RewriteFunctionArgs(ast.NodeTransformer):
     def __init__(self, args):
         self.args = args
@@ -94,7 +92,6 @@ class RewriteFunctionArgs(ast.NodeTransformer):
         for a in self.args:
             node.args.args.append(ast.arg(arg=a, annotation=None))
         return node
-
 
 def _obj_to_str(obj, **kwargs) -> str:
     if inspect.isclass(obj):
@@ -144,8 +141,7 @@ def convert(t):
     custom_conversions[t] = name
     return t
 
-
-def jit(fn=None, debug=None, sample_rate=5, pyvars=None):
+def jit(fn=None, debug=None, sample_size=5, pyvars=None):
     if not pyvars:
         pyvars = []
     if not isinstance(pyvars, list):
@@ -167,7 +163,7 @@ def jit(fn=None, debug=None, sample_rate=5, pyvars=None):
         def wrapped(*args, **kwargs):
             try:
                 args = (*args, *kwargs.values())
-                types = _codon_types(args, debug=debug, sample_rate=sample_rate)
+                types = _codon_types(args, debug=debug, sample_size=sample_size)
                 if debug:
                     print(f"[python] {f.__name__}({list(types)})", file=sys.stderr)
                 return _jit.run_wrapper(obj_name, types, f.__module__, pyvars, args, 1 if debug else 0)
@@ -178,4 +174,3 @@ def jit(fn=None, debug=None, sample_rate=5, pyvars=None):
     if fn:
         return _decorate(fn)
     return _decorate
-

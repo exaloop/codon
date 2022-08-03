@@ -108,12 +108,67 @@ class Foo:
     def total(self):
         return self.a + self.b + self.c
 
-print(Foo(10).total())
+print(Foo(10).total())  # 1110
 ```
 
 `@codon.convert` requires the annotated class to specify `__slots__`, which
 it uses to construct a generic Codon class (specifically, a named tuple) to
 store the class's converted fields.
+
+# Passing globals to Codon
+
+Global variables, functions or modules can be passed to JIT'd functions through
+the `pyvars` argument to `@codon.jit`:
+
+``` python
+import codon
+
+def foo(n):
+    print(f'n is {n}')
+
+@codon.jit(pyvars=['foo'])
+def bar(n):
+    foo(n)  # calls the Python function 'foo'
+    return n ** 2
+
+print(bar(9))  # 'n is 9' then '81'
+```
+
+This also allows imported Python modules to be accessed by Codon. All `pyvars`
+are passed as Python objects. Note that JIT'd functions can call each other
+by default.
+
+# Debugging
+
+`@codon.jit` takes an optional `debug` parameter that can be used to print debug
+information such as generated Codon functions and data types:
+
+``` python
+import codon
+
+@codon.jit(debug=True)
+def sum_of_squares(v):
+    return sum(i**2 for i in v)
+
+print(sum_of_squares([1.4, 2.9, 3.14]))
+```
+
+outputs:
+
+```
+[codon::jit::execute] code:
+def sum_of_squares(v):
+    return sum(i**2 for i in v)
+-----
+[python] sum_of_squares(['List[float]'])
+[codon::jit::executePython] wrapper:
+@export
+def __codon_wrapped__sum_of_squares_0(args: cobj) -> cobj:
+    a0 = List[float].__from_py__(PyTuple_GetItem(args, 0))
+    return sum_of_squares(a0).__to_py__()
+-----
+20.229599999999998
+```
 
 # Internals and performance tips
 
@@ -127,4 +182,6 @@ but instead reuses the cached function pointer.
 
 Although object conversions from Python to Codon are generally cheap, they do
 impose a small overhead, meaning **`@codon.jit` will work best on expensive and/or
-long-running operations** rather than short-lived operations.
+long-running operations** rather than short-lived operations. By the same token,
+**the more work can be done in Codon, the better,** as opposed to repeatedly
+transferring back and forth.
