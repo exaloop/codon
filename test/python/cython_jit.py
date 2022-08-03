@@ -1,5 +1,3 @@
-import sys
-from io import StringIO
 from typing import Dict, List, Tuple
 
 import codon
@@ -45,7 +43,7 @@ def test_roundtrip():
     def roundtrip(x):
         return x
 
-    for i in range(5):
+    for _ in range(5):
         assert roundtrip(None) == None
         assert roundtrip(42) == 42
         assert roundtrip(3.14) == 3.14
@@ -113,3 +111,43 @@ test_roundtrip()
 test_return_type()
 test_param_types()
 test_error_handling()
+
+
+@codon.jit
+def foo(y):
+    return f"{y.__class__.__name__}; {y}"
+
+
+@codon.jit(debug=True)
+def foo2(y):
+    return f"{y.__class__.__name__}; {y}"
+
+class Foo:
+    def __init__(self):
+        self.x = 1
+
+@codon.jit
+def a(x):
+    return x+1
+
+def b(x, z):
+    y = a(x)
+    return y * z
+
+@codon.jit(pyvars=['b'])
+def c(x, y):
+    n = b(x,y) ** 2
+    return n
+
+def test_cross_calls():
+    assert foo([None, 1]) == "List[Optional[int]]; [None, 1]"
+    assert foo([1, None, 1]) == "List[Optional[int]]; [1, None, 1]"
+    assert foo({1, None, 1.2}) == "Set[pyobj]; {1, 1.2, None}"
+    assert foo({None: 1}) == "Dict[pyobj,int]; {None: 1}"
+    assert foo2([None, Foo()]).startswith("List[pyobj]; [None, <__main__.Foo object at")
+
+    assert a(3) == 4
+    assert b(3, 4) == 16
+    assert round(c(5, 6.1), 2) == 1339.56
+
+test_cross_calls()

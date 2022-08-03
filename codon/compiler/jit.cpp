@@ -166,7 +166,9 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return getCapturedOutput();
 }
 
-llvm::Expected<std::string> JIT::execute(const std::string &code) {
+llvm::Expected<std::string> JIT::execute(const std::string &code, bool debug) {
+  if (debug)
+    fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
   auto result = compile(code);
   if (auto err = result.takeError())
     return std::move(err);
@@ -198,7 +200,8 @@ std::string buildKey(const std::string &name, const std::vector<std::string> &ty
 }
 
 std::string buildPythonWrapper(const std::string &name, const std::string &wrapname,
-                               const std::vector<std::string> &types) {
+                               const std::vector<std::string> &types,
+                               const std::vector<std::string> &pyVars) {
   std::stringstream wrap;
   wrap << "@export\n";
   wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
@@ -207,11 +210,19 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
          << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
          << "))\n";
   }
+  for (unsigned i = 0; i < pyVars.size(); i++) {
+    wrap << "    "
+         << "py" << i << " = pyobj._main_module()._getattr(\"" << pyVars[i] << "\");\n";
+  }
   wrap << "    return " << name << "(";
   for (unsigned i = 0; i < types.size(); i++) {
     if (i > 0)
       wrap << ", ";
     wrap << "a" << i;
+  }
+  for (unsigned i = 0; i < pyVars.size(); i++) {
+    wrap << ", "
+         << "py" << i;
   }
   wrap << ").__to_py__()\n";
 
@@ -228,8 +239,8 @@ ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   return cobj;
 }
 
-JITResult JIT::executeSafe(const std::string &code) {
-  auto result = execute(code);
+JITResult JIT::executeSafe(const std::string &code, bool debug) {
+  auto result = execute(code, debug);
   if (auto err = result.takeError()) {
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);
@@ -238,8 +249,9 @@ JITResult JIT::executeSafe(const std::string &code) {
 }
 
 JITResult JIT::executePython(const std::string &name,
-                             const std::vector<std::string> &types, void *arg) {
-
+                             const std::vector<std::string> &types,
+                             const std::vector<std::string> &pyVars, void *arg,
+                             bool debug) {
   auto key = buildKey(name, types);
   auto &cache = pydata->cache;
   auto it = cache.find(key);
@@ -253,7 +265,9 @@ JITResult JIT::executePython(const std::string &name,
   } else {
     static int idx = 0;
     auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);
-    auto wrapper = buildPythonWrapper(name, wrapname, types);
+    auto wrapper = buildPythonWrapper(name, wrapname, types, pyVars);
+    if (debug)
+      fmt::print(stderr, "[codon::jit::executePython] wrapper:\n{}-----\n", wrapper);
     if (auto err = compile(wrapper).takeError()) {
       auto errorInfo = llvm::toString(std::move(err));
       return JITResult::error(errorInfo);

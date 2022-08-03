@@ -50,10 +50,10 @@ codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir / "include")
 ext = "dylib" if sys.platform == "darwin" else "so"
 
 root = Path(os.path.dirname(os.path.realpath(__file__)))
-distutils.dir_util.copy_tree(str(codon_dir / ".." / "stdlib"), str(root / "src" / "stdlib"))
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonc." + ext), root / "src")
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonrt." + ext), root / "src")
-shutil.copy(codon_dir / "lib" / "codon" / ("libomp." + ext), root / "src")
+distutils.dir_util.copy_tree(str(codon_dir / ".." / "stdlib"), str(root / "codon" / "stdlib"))
+shutil.copy(codon_dir / "lib" / "codon" / ("libcodonc." + ext), root / "codon")
+shutil.copy(codon_dir / "lib" / "codon" / ("libcodonrt." + ext), root / "codon")
+shutil.copy(codon_dir / "lib" / "codon" / ("libomp." + ext), root / "codon")
 
 print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
 print(f"<codon> {codon_include_dir}")
@@ -65,13 +65,13 @@ else:
 
 jit_extension = Extension(
     "codon.codon_jit",
-    sources=["src/jit.pyx"],
+    sources=["codon/jit.pyx"],
     libraries=["codonc", "codonrt"],
     language="c++",
     extra_compile_args=["-w", "-std=c++17"],
     extra_link_args=[linker_args],
     include_dirs=[llvm_include_dir, str(codon_include_dir)],
-    library_dirs=[llvm_lib_dir, str(root / "src")],
+    library_dirs=[llvm_lib_dir, str(root / "codon")],
 )
 
 setup(
@@ -87,6 +87,5 @@ setup(
     cmdclass={"build_ext": build_ext},
     ext_modules=[jit_extension],
     packages=["codon"],
-    package_dir={"codon": "src"},
     include_package_data=True
 )
