@@ -49,11 +49,27 @@ codon_dir = Path(os.environ.get("CODON_DIR", from_root("build")))
 codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir / "include")
 ext = "dylib" if sys.platform == "darwin" else "so"
 
+def symlink(target, dest):
+    tmp = "_tmp"
+    os.symlink(str(target.resolve()), tmp)
+    os.rename(tmp, str(dest))
 root = Path(os.path.dirname(os.path.realpath(__file__)))
-distutils.dir_util.copy_tree(str(codon_dir / ".." / "stdlib"), str(root / "codon" / "stdlib"))
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonc." + ext), root / "codon")
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonrt." + ext), root / "codon")
-shutil.copy(codon_dir / "lib" / "codon" / ("libomp." + ext), root / "codon")
+symlink(
+    codon_dir / ".." / "stdlib",
+    root / "codon" / "stdlib"
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libcodonc." + ext),
+    root / "codon" / ("libcodonc." + ext)
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libcodonrt." + ext),
+    root / "codon" / ("libcodonrt." + ext)
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libomp." + ext),
+    root / "codon" / ("libomp." + ext)
+)
 
 print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
 print(f"<codon> {codon_include_dir}")
@@ -77,6 +93,7 @@ jit_extension = Extension(
 setup(
     name="codon",
     version=CODON_VERSION,
+    install_requires=["astunparse"],
     python_requires='>=3.6',
     description="Codon JIT decorator",
     url="https://exaloop.io",

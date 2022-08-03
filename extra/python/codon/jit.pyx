@@ -24,17 +24,17 @@ cdef class JITWrapper:
     def __dealloc__(self):
         del self.jit
 
-    def execute(self, code: str, debug: char) -> str:
-        result = dref(self.jit).executeSafe(code, <char>debug)
+    def execute(self, code: str, filename: str, fileno: int, debug: char) -> str:
+        result = dref(self.jit).executeSafe(code, filename, fileno, <char>debug)
         if <bint>result:
             return None
         else:
             raise JITError(result.message)
 
-    def run_wrapper(self, name: str, types: list[str], pyvars: list[str], args, debug: char) -> object:
+    def run_wrapper(self, name: str, types: list[str], module: str, pyvars: list[str], args, debug: char) -> object:
         cdef vector[string] types_vec = types
         cdef vector[string] pyvars_vec = pyvars
-        result = dref(self.jit).executePython(name, types_vec, pyvars_vec, <object>args, <char>debug)
+        result = dref(self.jit).executePython(name, types_vec, module, pyvars_vec, <object>args, <char>debug)
         if <bint>result:
             return <object>result.result
         else:

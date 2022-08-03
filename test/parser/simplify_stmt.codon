@@ -917,6 +917,23 @@ def foo():
     return str(pyfoo3())
 print foo() #: 3
 
+#%% python_pyobj
+@python
+def foofn() -> Dict[pyobj, pyobj]:
+    return {"str": "hai", "int": 1}
+
+foo = foofn()
+print(foo, foo.__class__.__name__)
+#: {'str': 'hai', 'int': 1} Dict[pyobj,pyobj]
+foo["codon"] = 5.15
+print(foo["codon"], foo["codon"].__class__.__name__, foo.__class__.__name__)
+#: 5.15 pyobj Dict[pyobj,pyobj]
+
+a = {1: "s", 2: "t"}
+a[3] = foo["str"]
+print(a)
+#: {1: 's', 2: 't', 3: 'hai'}
+
 #%% typeof_definition_error,barebones
 a = 1
 class X:

@@ -19,7 +19,7 @@ if "CODON_PATH" not in os.environ:
 
 from .codon_jit import JITWrapper, JITError
 
-pod_conversions = {type(None): "NoneType",
+pod_conversions = {type(None): "pyobj",
                    int: "int",
                    float: "float",
                    bool: "bool",
@@ -80,7 +80,7 @@ def _reset_jit():
     init_code = ("from internal.python import "
                  "setup_decorator, PyTuple_GetItem, PyObject_GetAttrString\n"
                  "setup_decorator()\n")
-    _jit.execute(init_code, False)
+    _jit.execute(init_code, "", 0, False)
     return _jit
 
 _jit = _reset_jit()
@@ -140,7 +140,7 @@ def convert(t):
         code += f"        a{i} = T{i}.__from_py__(PyObject_GetAttrString(p, '{slot}'.ptr))\n"
     code += f"        return {name}({', '.join(f'a{i}' for i in range(len(slots)))})\n"
 
-    _jit.execute(code, False)
+    _jit.execute(code, "", 0, False)
     custom_conversions[t] = name
     return t
 
@@ -153,7 +153,12 @@ def jit(fn=None, debug=None, sample_rate=5, pyvars=None):
     def _decorate(f):
         try:
             obj_name, obj_str = _parse_decorated(f, pyvars=pyvars)
-            _jit.execute(obj_str, 1 if debug else 0)
+            _jit.execute(
+                obj_str,
+                f.__code__.co_filename,
+                f.__code__.co_firstlineno,
+                1 if debug else 0
+            )
         except JITError:
             _reset_jit()
             raise
@@ -163,7 +168,9 @@ def jit(fn=None, debug=None, sample_rate=5, pyvars=None):
             try:
                 args = (*args, *kwargs.values())
                 types = _codon_types(args, debug=debug, sample_rate=sample_rate)
-                return _jit.run_wrapper(obj_name, types, pyvars, args, 1 if debug else 0)
+                if debug:
+                    print(f"[python] {f.__name__}({list(types)})", file=sys.stderr)
+                return _jit.run_wrapper(obj_name, types, f.__module__, pyvars, args, 1 if debug else 0)
             except JITError:
                 _reset_jit()
                 raise

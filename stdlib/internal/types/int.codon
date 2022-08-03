@@ -23,14 +23,15 @@ class int:
     def __new__() -> int:
         ret i64 0
 
-    def __new__(what) -> int:
-        return what.__int__()
-
-    def __new__(s: str) -> int:
-        return int._from_str(s, 10)
-
     def __new__(s: str, base: int) -> int:
         return int._from_str(s, base)
+
+    def __new__(what) -> int:
+        # do not overload! (needed to avoid pyobj conversion)
+        if isinstance(what, str):
+            return int._from_str(what, 10)
+        else:
+            return what.__int__()
 
     def __int__(self) -> int:
         return self

@@ -250,7 +250,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   if (callee && expr->isType())
     expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
 
-  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL};
+  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
+                                           "pyobj"};
   if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&
@@ -267,6 +268,15 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              exprClass->name == TYPE_OPTIONAL &&
              exprClass->name != expectedClass->name) { // unwrap optional
     expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr));
+  } else if (expectedClass && expectedClass->name == "pyobj" &&
+             exprClass->name != expectedClass->name) { // wrap to pyobj
+    expr = transform(
+        N<CallExpr>(N<IdExpr>("pyobj"), N<CallExpr>(N<DotExpr>(expr, "__to_py__"))));
+  } else if (allowUnwrap && expectedClass && exprClass && exprClass->name == "pyobj" &&
+             exprClass->name != expectedClass->name) { // unwrap pyobj
+    auto texpr = N<IdExpr>(expectedClass->name);
+    texpr->setType(expectedType);
+    expr = transform(N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p")));
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.

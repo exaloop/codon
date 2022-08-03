@@ -613,6 +613,13 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   auto rt = expr->rexpr->getType()->getClass();
   seqassert(lt && rt, "lhs and rhs types not known");
 
+  if (!lt->is("pyobj") && rt->is("pyobj")) {
+    // Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
+    // Assumes that pyobj implements all left and right magics
+    return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, format("__{}__", rightMagic)),
+                                 expr->lexpr));
+  }
+
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   auto method = findBestMethod(lt, format("__{}__", magic), {lt, rt});
 
@@ -626,16 +633,6 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
         N<CallExpr>(N<IdExpr>(method->ast->name), expr->lexpr, expr->rexpr));
-  } else if (lt->is("pyobj")) {
-    // Special case: call `pyobj._getattr(magic)` on lhs
-    return transform(N<CallExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "_getattr"),
-                                             N<StringExpr>(format("__{}__", magic))),
-                                 expr->rexpr));
-  } else if (rt->is("pyobj")) {
-    // Special case: call `pyobj._getattr(magic)` on rhs
-    return transform(N<CallExpr>(N<CallExpr>(N<DotExpr>(expr->rexpr, "_getattr"),
-                                             N<StringExpr>(format("__r{}__", magic))),
-                                 expr->lexpr));
   }
   return nullptr;
 }
