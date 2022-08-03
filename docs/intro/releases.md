@@ -96,7 +96,8 @@ for a in some_arbitrary_generator():
 
 Included revamped `codon` module for Python, with `@codon.jit` decorator
 for compiling Python code in existing codebases. Further improved and
-optimized the Python bridge.
+optimized the Python bridge. Please see the [docs](../interop/decorator.md)
+for more information.
 
 ## Codon IR
 
