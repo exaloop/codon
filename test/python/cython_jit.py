@@ -136,7 +136,7 @@ def b(x, z):
 
 @codon.jit(pyvars=['b'])
 def c(x, y):
-    n = b(x,y) ** 2
+    n = b(x,y) ** a(1)
     return n
 
 def test_cross_calls():
