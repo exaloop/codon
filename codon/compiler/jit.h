@@ -51,18 +51,25 @@ public:
   // General
   llvm::Error init();
   llvm::Error compile(const ir::Func *input);
-  llvm::Expected<ir::Func *> compile(const std::string &code);
+  llvm::Expected<ir::Func *> compile(const std::string &code,
+                                     const std::string &file = "", int line = 0);
   llvm::Expected<void *> address(const ir::Func *input);
   llvm::Expected<std::string> run(const ir::Func *input);
-  llvm::Expected<std::string> execute(const std::string &code);
+  llvm::Expected<std::string> execute(const std::string &code,
+                                      const std::string &file = "", int line = 0,
+                                      bool debug = false);
 
   // Python
   llvm::Expected<void *> runPythonWrapper(const ir::Func *wrapper, void *arg);
   llvm::Expected<ir::Func *> getWrapperFunc(const std::string &name,
                                             const std::vector<std::string> &types);
   JITResult executePython(const std::string &name,
-                          const std::vector<std::string> &types, void *arg);
-  JITResult executeSafe(const std::string &code);
+                          const std::vector<std::string> &types,
+                          const std::string &pyModule,
+                          const std::vector<std::string> &pyVars, void *arg,
+                          bool debug);
+  JITResult executeSafe(const std::string &code, const std::string &file, int line,
+                        bool debug);
 
   // Errors
   llvm::Error handleJITError(const JITError &e);

@@ -16,10 +16,7 @@ class float:
     def __new__() -> float:
         return 0.0
 
-    def __new__(what) -> float:
-        return what.__float__()
-
-    def __new__(s: str) -> float:
+    def _from_str(s: str) -> float:
         from C import strtod(cobj, Ptr[cobj]) -> float
 
         buf = __array__[byte](32)
@@ -40,6 +37,13 @@ class float:
             raise ValueError(f"could not convert string to float: {s}")
 
         return result
+
+    def __new__(what) -> float:
+        # do not overload! (needed to avoid pyobj conversion)
+        if isinstance(what, str):
+            return float._from_str(what)
+        else:
+            return what.__float__()
 
     def __repr__(self) -> str:
         s = seq_str_float(self)

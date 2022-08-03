@@ -14,5 +14,5 @@ cdef extern from "codon/compiler/jit.h" namespace "codon::jit":
     cdef cppclass JIT:
         JIT(string)
         Error init()
-        JITResult executeSafe(string)
-        JITResult executePython(string, vector[string], object)
+        JITResult executeSafe(string, string, int, char)
+        JITResult executePython(string, vector[string], string, vector[string], object, char)

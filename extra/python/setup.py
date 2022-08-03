@@ -49,11 +49,27 @@ codon_dir = Path(os.environ.get("CODON_DIR", from_root("build")))
 codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir / "include")
 ext = "dylib" if sys.platform == "darwin" else "so"
 
+def symlink(target, dest):
+    tmp = "_tmp"
+    os.symlink(str(target.resolve()), tmp)
+    os.rename(tmp, str(dest))
 root = Path(os.path.dirname(os.path.realpath(__file__)))
-distutils.dir_util.copy_tree(str(codon_dir / ".." / "stdlib"), str(root / "src" / "stdlib"))
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonc." + ext), root / "src")
-shutil.copy(codon_dir / "lib" / "codon" / ("libcodonrt." + ext), root / "src")
-shutil.copy(codon_dir / "lib" / "codon" / ("libomp." + ext), root / "src")
+symlink(
+    codon_dir / ".." / "stdlib",
+    root / "codon" / "stdlib"
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libcodonc." + ext),
+    root / "codon" / ("libcodonc." + ext)
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libcodonrt." + ext),
+    root / "codon" / ("libcodonrt." + ext)
+)
+symlink(
+    codon_dir / "lib" / "codon" / ("libomp." + ext),
+    root / "codon" / ("libomp." + ext)
+)
 
 print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
 print(f"<codon> {codon_include_dir}")
@@ -65,18 +81,19 @@ else:
 
 jit_extension = Extension(
     "codon.codon_jit",
-    sources=["src/jit.pyx"],
+    sources=["codon/jit.pyx"],
     libraries=["codonc", "codonrt"],
     language="c++",
     extra_compile_args=["-w", "-std=c++17"],
     extra_link_args=[linker_args],
     include_dirs=[llvm_include_dir, str(codon_include_dir)],
-    library_dirs=[llvm_lib_dir, str(root / "src")],
+    library_dirs=[llvm_lib_dir, str(root / "codon")],
 )
 
 setup(
     name="codon",
     version=CODON_VERSION,
+    install_requires=["astunparse"],
     python_requires='>=3.6',
     description="Codon JIT decorator",
     url="https://exaloop.io",
@@ -87,6 +104,5 @@ setup(
     cmdclass={"build_ext": build_ext},
     ext_modules=[jit_extension],
     packages=["codon"],
-    package_dir={"codon": "src"},
     include_package_data=True
 )

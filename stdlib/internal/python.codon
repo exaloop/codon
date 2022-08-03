@@ -9,9 +9,11 @@ Py_DecRef = Function[[cobj], NoneType](cobj())
 Py_IncRef = Function[[cobj], NoneType](cobj())
 Py_Initialize = Function[[], NoneType](cobj())
 PyImport_AddModule = Function[[cobj], cobj](cobj())
+PyImport_AddModuleObject = Function[[cobj], cobj](cobj())
 PyImport_ImportModule = Function[[cobj], cobj](cobj())
 PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
 PyRun_SimpleString = Function[[cobj], NoneType](cobj())
+PyEval_GetGlobals = Function[[], cobj](cobj())
 
 # conversions
 PyLong_AsLong = Function[[cobj], int](cobj())
@@ -25,6 +27,7 @@ PyList_GetItem = Function[[cobj, int], cobj](cobj())
 PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
+PyDict_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
@@ -148,9 +151,11 @@ def init_dl_handles(py_handle: cobj):
     global Py_IncRef
     global Py_Initialize
     global PyImport_AddModule
+    global PyImport_AddModuleObject
     global PyImport_ImportModule
     global PyErr_Fetch
     global PyRun_SimpleString
+    global PyEval_GetGlobals
     global PyLong_AsLong
     global PyLong_FromLong
     global PyFloat_AsDouble
@@ -162,6 +167,7 @@ def init_dl_handles(py_handle: cobj):
     global PyList_SetItem
     global PyDict_New
     global PyDict_Next
+    global PyDict_GetItem
     global PyDict_SetItem
     global PySet_Add
     global PySet_New
@@ -235,9 +241,11 @@ def init_dl_handles(py_handle: cobj):
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
     Py_Initialize = dlsym(py_handle, "Py_Initialize")
     PyImport_AddModule = dlsym(py_handle, "PyImport_AddModule")
+    PyImport_AddModuleObject = dlsym(py_handle, "PyImport_AddModuleObject")
     PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
     PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
     PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
+    PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
     PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
     PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
     PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
@@ -249,6 +257,7 @@ def init_dl_handles(py_handle: cobj):
     PyList_SetItem = dlsym(py_handle, "PyList_SetItem")
     PyDict_New = dlsym(py_handle, "PyDict_New")
     PyDict_Next = dlsym(py_handle, "PyDict_Next")
+    PyDict_GetItem = dlsym(py_handle, "PyDict_GetItem")
     PyDict_SetItem = dlsym(py_handle, "PyDict_SetItem")
     PySet_Add = dlsym(py_handle, "PySet_Add")
     PySet_New = dlsym(py_handle, "PySet_New")
@@ -579,6 +588,9 @@ class pyobj:
             pyobj.decref(it)
         pyobj.exc_check()
 
+    def to_str(self, errors: str, empty: str = "") -> str:
+        return pyobj.to_str(self.p, errors, empty)
+
     def to_str(p: cobj, errors: str, empty: str = "") -> str:
         obj = PyUnicode_AsEncodedString(p, "utf-8".c_str(), errors.c_str())
         if obj == cobj():
@@ -587,9 +599,6 @@ class pyobj:
         res = str.from_ptr(bts)
         pyobj.decref(obj)
         return res
-
-    def to_str(self, errors: str, empty: str = "") -> str:
-        return pyobj.to_str(self.p, errors, empty)
 
     def exc_check():
         ptype, pvalue, ptraceback = cobj(), cobj(), cobj()
@@ -657,8 +666,15 @@ class pyobj:
         ensure_initialized()
         PyRun_SimpleString(code.c_str())
 
+    def _globals() -> pyobj:
+        return pyobj(PyEval_GetGlobals())
+
+    def _get_module(name: str) -> pyobj:
+        p = pyobj(pyobj.exc_wrap(PyImport_AddModule(name.c_str())))
+        return p
+
     def _main_module() -> pyobj:
-        return pyobj(pyobj.exc_wrap(PyImport_AddModule("__main__".c_str())))
+        return pyobj._get_module("__main__")
 
     def _repr_mimebundle_(self, bundle=Set[str]()) -> Dict[str, str]:
         fn = pyobj._main_module()._getattr("__codon_repr__")

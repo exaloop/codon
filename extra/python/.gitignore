@@ -1,2 +1,3 @@
 dist
-src/stdlib
+codon/stdlib
+codon/jit.cpp

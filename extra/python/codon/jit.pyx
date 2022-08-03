@@ -7,7 +7,7 @@ from cython.operator import dereference as dref
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
-from src.jit cimport JIT, JITResult
+from codon.jit cimport JIT, JITResult
 
 
 class JITError(Exception):
@@ -24,16 +24,17 @@ cdef class JITWrapper:
     def __dealloc__(self):
         del self.jit
 
-    def execute(self, code: str) -> str:
-        result = dref(self.jit).executeSafe(code)
+    def execute(self, code: str, filename: str, fileno: int, debug: char) -> str:
+        result = dref(self.jit).executeSafe(code, filename, fileno, <char>debug)
         if <bint>result:
             return None
         else:
             raise JITError(result.message)
 
-    def run_wrapper(self, name: str, types: list[str], args) -> object:
+    def run_wrapper(self, name: str, types: list[str], module: str, pyvars: list[str], args, debug: char) -> object:
         cdef vector[string] types_vec = types
-        result = dref(self.jit).executePython(name, types_vec, <object>args)
+        cdef vector[string] pyvars_vec = pyvars
+        result = dref(self.jit).executePython(name, types_vec, module, pyvars_vec, <object>args, <char>debug)
         if <bint>result:
             return <object>result.result
         else:

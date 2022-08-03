@@ -82,9 +82,11 @@ llvm::Error JIT::compile(const ir::Func *input) {
   return llvm::Error::success();
 }
 
-llvm::Expected<ir::Func *> JIT::compile(const std::string &code) {
+llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
+                                        const std::string &file, int line) {
   auto *cache = compiler->getCache();
-  ast::StmtPtr node = ast::parseCode(cache, JIT_FILENAME, code, /*startLine=*/0);
+  ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
+                                     /*startLine=*/line);
 
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
@@ -166,8 +168,11 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return getCapturedOutput();
 }
 
-llvm::Expected<std::string> JIT::execute(const std::string &code) {
-  auto result = compile(code);
+llvm::Expected<std::string>
+JIT::execute(const std::string &code, const std::string &file, int line, bool debug) {
+  if (debug)
+    fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
+  auto result = compile(code, file, line);
   if (auto err = result.takeError())
     return std::move(err);
   if (auto err = compile(result.get()))
@@ -198,7 +203,9 @@ std::string buildKey(const std::string &name, const std::vector<std::string> &ty
 }
 
 std::string buildPythonWrapper(const std::string &name, const std::string &wrapname,
-                               const std::vector<std::string> &types) {
+                               const std::vector<std::string> &types,
+                               const std::string &pyModule,
+                               const std::vector<std::string> &pyVars) {
   std::stringstream wrap;
   wrap << "@export\n";
   wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
@@ -207,11 +214,20 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
          << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
          << "))\n";
   }
+  for (unsigned i = 0; i < pyVars.size(); i++) {
+    wrap << "    "
+         << "py" << i << " = pyobj._get_module(\"" << pyModule << "\")._getattr(\""
+         << pyVars[i] << "\")\n";
+  }
   wrap << "    return " << name << "(";
   for (unsigned i = 0; i < types.size(); i++) {
     if (i > 0)
       wrap << ", ";
     wrap << "a" << i;
+  }
+  for (unsigned i = 0; i < pyVars.size(); i++) {
+    wrap << ", "
+         << "py" << i;
   }
   wrap << ").__to_py__()\n";
 
@@ -228,8 +244,9 @@ ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   return cobj;
 }
 
-JITResult JIT::executeSafe(const std::string &code) {
-  auto result = execute(code);
+JITResult JIT::executeSafe(const std::string &code, const std::string &file, int line,
+                           bool debug) {
+  auto result = execute(code, file, line, debug);
   if (auto err = result.takeError()) {
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);
@@ -238,8 +255,10 @@ JITResult JIT::executeSafe(const std::string &code) {
 }
 
 JITResult JIT::executePython(const std::string &name,
-                             const std::vector<std::string> &types, void *arg) {
-
+                             const std::vector<std::string> &types,
+                             const std::string &pyModule,
+                             const std::vector<std::string> &pyVars, void *arg,
+                             bool debug) {
   auto key = buildKey(name, types);
   auto &cache = pydata->cache;
   auto it = cache.find(key);
@@ -253,7 +272,9 @@ JITResult JIT::executePython(const std::string &name,
   } else {
     static int idx = 0;
     auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);
-    auto wrapper = buildPythonWrapper(name, wrapname, types);
+    auto wrapper = buildPythonWrapper(name, wrapname, types, pyModule, pyVars);
+    if (debug)
+      fmt::print(stderr, "[codon::jit::executePython] wrapper:\n{}-----\n", wrapper);
     if (auto err = compile(wrapper).takeError()) {
       auto errorInfo = llvm::toString(std::move(err));
       return JITResult::error(errorInfo);
