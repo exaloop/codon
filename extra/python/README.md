@@ -7,8 +7,8 @@ $ pip install extra/python
 To use:
 
 ```python
-from codon import codon, JitError
+import codon
 
-@codon
+@codon.jit
 def ...
 ```

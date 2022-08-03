@@ -142,7 +142,7 @@ def c(x, y):
 def test_cross_calls():
     assert foo([None, 1]) == "List[Optional[int]]; [None, 1]"
     assert foo([1, None, 1]) == "List[Optional[int]]; [1, None, 1]"
-    assert foo({1, None, 1.2}) == "Set[pyobj]; {1, 1.2, None}"
+    assert foo([1, None, 1.2]) == "List[pyobj]; [1, None, 1.2]"
     assert foo({None: 1}) == "Dict[pyobj,int]; {None: 1}"
     assert foo2([None, Foo()]).startswith("List[pyobj]; [None, <__main__.Foo object at")
 
