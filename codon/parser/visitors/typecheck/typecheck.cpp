@@ -276,7 +276,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              exprClass->name != expectedClass->name) { // unwrap pyobj
     auto texpr = N<IdExpr>(expectedClass->name);
     texpr->setType(expectedType);
-    expr = transform(N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p")));
+    expr =
+        transform(N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p")));
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
