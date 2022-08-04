@@ -40,7 +40,7 @@ class float:
 
     def __new__(what) -> float:
         # do not overload! (needed to avoid pyobj conversion)
-        if isinstance(what, str):
+        if isinstance(what, str) or isinstance(what, Optional[str]):
             return float._from_str(what)
         else:
             return what.__float__()

@@ -28,7 +28,7 @@ class int:
 
     def __new__(what) -> int:
         # do not overload! (needed to avoid pyobj conversion)
-        if isinstance(what, str):
+        if isinstance(what, str) or isinstance(what, Optional[str]):
             return int._from_str(what, 10)
         else:
             return what.__int__()
