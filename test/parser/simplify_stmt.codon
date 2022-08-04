@@ -923,16 +923,15 @@ def foofn() -> Dict[pyobj, pyobj]:
     return {"str": "hai", "int": 1}
 
 foo = foofn()
-print(foo, foo.__class__.__name__)
-#: {'str': 'hai', 'int': 1} Dict[pyobj,pyobj]
+print(sorted(foo.items(), key=lambda x: str(x)), foo.__class__.__name__)
+#: [('int', 1), ('str', 'hai')] Dict[pyobj,pyobj]
 foo["codon"] = 5.15
-print(foo["codon"], foo["codon"].__class__.__name__, foo.__class__.__name__)
-#: 5.15 pyobj Dict[pyobj,pyobj]
+print(sorted(foo.items(), key=lambda x: str(x)), foo["codon"].__class__.__name__, foo.__class__.__name__)
+#: [('codon', 5.15), ('int', 1), ('str', 'hai')] pyobj Dict[pyobj,pyobj]
 
 a = {1: "s", 2: "t"}
 a[3] = foo["str"]
-print(a)
-#: {1: 's', 2: 't', 3: 'hai'}
+print(sorted(a.items()))  #: [(1, 's'), (2, 't'), (3, 'hai')]
 
 #%% typeof_definition_error,barebones
 a = 1
