@@ -88,8 +88,9 @@ of task-based reductions:
 
 ``` python
 total = 0
+@par
 for a in some_arbitrary_generator():
-    total += do_work(a)  # now converted to atomic reduction
+    total += do_work(a)  # now converted to task reduction
 ```
 
 ## Python interoperability
