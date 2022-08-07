@@ -3,9 +3,9 @@
 # Seq runtime functions
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
-from C import seq_stdin: cobj as _stdin
-from C import seq_stdout: cobj as _stdout
-from C import seq_stderr: cobj as _stderr
+from C import seq_stdin: cobj
+from C import seq_stdout: cobj
+from C import seq_stderr: cobj
 
 
 @pure
