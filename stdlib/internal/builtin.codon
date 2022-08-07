@@ -1,9 +1,5 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-from internal.gc import alloc_atomic, free
-from internal.types.optional import unwrap
-from C import seq_stdout: cobj as _stdout
-
 
 @tuple
 class object:
@@ -18,7 +14,7 @@ def id(x) -> int:
         return 0
 
 
-def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
+def print(*args, sep: str = " ", end: str = "\n", file = _C.seq_stdout, flush: bool = False):
     """
     Print args to the text stream file.
     """
@@ -345,6 +341,7 @@ def hex(n):
 @extend
 class int:
     def _from_str(s: str, base: int):
+        from internal.gc import alloc_atomic, free
         from C import strtoll(cobj, Ptr[cobj], i32) -> int
 
         if base < 0 or base > 36 or base == 1:

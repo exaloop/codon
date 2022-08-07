@@ -2,13 +2,10 @@
 
 argv = list(__argv__, len(__argv__))
 
-from C import seq_stdin: cobj as _stdin
-from C import seq_stdout: cobj as _stdout
-from C import seq_stderr: cobj as _stderr
 
-stdin = File(_stdin)
-stdout = File(_stdout)
-stderr = File(_stderr)
+stdin = File(_C.seq_stdin)
+stdout = File(_C.seq_stdout)
+stderr = File(_C.seq_stderr)
 
 
 def exit(status: int = 0):
