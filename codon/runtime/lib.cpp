@@ -286,11 +286,9 @@ std::string codon::getCapturedOutput() {
   return result;
 }
 
-SEQ_FUNC void *seq_stdin() { return stdin; }
-
-SEQ_FUNC void *seq_stdout() { return stdout; }
-
-SEQ_FUNC void *seq_stderr() { return stderr; }
+SEQ_FUNC FILE *seq_stdin = stdin;
+SEQ_FUNC FILE *seq_stdout = stdout;
+SEQ_FUNC FILE *seq_stderr = stderr;
 
 /*
  * Threading

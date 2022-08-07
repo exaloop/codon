@@ -80,10 +80,6 @@ SEQ_FUNC seq_str_t seq_str_byte(char c);
 SEQ_FUNC seq_str_t seq_str_ptr(void *p);
 SEQ_FUNC seq_str_t seq_str_tuple(seq_str_t *strs, seq_int_t n);
 
-SEQ_FUNC void *seq_stdin();
-SEQ_FUNC void *seq_stdout();
-SEQ_FUNC void *seq_stderr();
-
 SEQ_FUNC void seq_print(seq_str_t str);
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo);
 

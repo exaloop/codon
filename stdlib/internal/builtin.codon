@@ -2,6 +2,7 @@
 
 from internal.gc import alloc_atomic, free
 from internal.types.optional import unwrap
+from C import seq_stdout: cobj as _stdout
 
 
 @tuple
@@ -15,9 +16,6 @@ def id(x) -> int:
         return int(x.__raw__())
     else:
         return 0
-
-
-_stdout = _C.seq_stdout()
 
 
 def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
