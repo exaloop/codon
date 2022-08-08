@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "codon/sir/llvm/coro/Coroutines.h"
+#include "codon/sir/llvm/gpu.h"
 #include "codon/util/common.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
@@ -649,6 +650,7 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
     TIME("llvm/opt2");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
+  applyGPUTransformations(module);
   verify(module);
 }
 

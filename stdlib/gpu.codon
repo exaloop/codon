@@ -1,0 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+@__attribute__
+def kernel():
+	pass

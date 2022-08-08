@@ -148,6 +148,7 @@ set(CODON_HPPFILES
     codon/sir/llvm/coro/CoroInternal.h
     codon/sir/llvm/coro/CoroSplit.h
     codon/sir/llvm/coro/Coroutines.h
+    codon/sir/llvm/gpu.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
     codon/sir/llvm/optimize.h
@@ -295,6 +296,7 @@ set(CODON_CPPFILES
     codon/sir/llvm/coro/CoroFrame.cpp
     codon/sir/llvm/coro/CoroSplit.cpp
     codon/sir/llvm/coro/Coroutines.cpp
+    codon/sir/llvm/gpu.cpp
     codon/sir/llvm/llvisitor.cpp
     codon/sir/llvm/optimize.cpp
     codon/sir/module.cpp

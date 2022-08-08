@@ -22,6 +22,7 @@ namespace {
 const std::string EXPORT_ATTR = "std.internal.attributes.export";
 const std::string INLINE_ATTR = "std.internal.attributes.inline";
 const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
+const std::string GPU_KERNEL_ATTR = "std.gpu.kernel";
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -1162,6 +1163,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   }
   if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+  }
+  if (fnAttributes && fnAttributes->has(GPU_KERNEL_ATTR)) {
+    func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+    func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
+    func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
   func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
