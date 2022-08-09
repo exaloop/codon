@@ -23,7 +23,8 @@ std::unique_ptr<llvm::Module> createKernelModule(llvm::LLVMContext &context,
   return M;
 }
 
-void moduleToPTX(llvm::Module *module, const std::string &cpuStr = "sm_20",
+void moduleToPTX(llvm::Module *M, const std::string &filename,
+                 const std::string &cpuStr = "sm_20",
                  const std::string &featuresStr = "") {
   std::string err;
   llvm::Triple triple(GPU_TRIPLE);
@@ -40,8 +41,8 @@ void moduleToPTX(llvm::Module *module, const std::string &cpuStr = "sm_20",
       llvm::CodeGenOpt::Aggressive));
 
   std::error_code errcode;
-  auto out = std::make_unique<llvm::ToolOutputFile>("kernel.ptx", errcode,
-                                                    llvm::sys::fs::OF_Text);
+  auto out =
+      std::make_unique<llvm::ToolOutputFile>(filename, errcode, llvm::sys::fs::OF_Text);
   if (errcode)
     compilationError(errcode.message());
   llvm::raw_pwrite_stream *os = &out->os();
@@ -57,19 +58,42 @@ void moduleToPTX(llvm::Module *module, const std::string &cpuStr = "sm_20",
              "could not add passes");
   const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
       ->Initialize(mmiwp->getMMI().getContext(), *machine);
-  pm.run(*module);
+  pm.run(*M);
   out->keep();
+}
+
+void addInitCall(llvm::Module *M, const std::string &filename) {
+  llvm::LLVMContext &context = M->getContext();
+  auto f = M->getOrInsertFunction("seq_nvptx_init", llvm::Type::getVoidTy(context),
+                                  llvm::Type::getInt8PtrTy(context));
+  auto *g = llvm::cast<llvm::Function>(f.getCallee());
+  g->setDoesNotThrow();
+
+  auto *init = M->getFunction("seq_init");
+  seqassertn(init, "seq_init function not found in M");
+  seqassertn(init->hasOneUse(), "seq_init used more than once");
+  auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->get());
+  seqassertn(use, "seq_init use was not a call");
+
+  auto *filenameVar = new llvm::GlobalVariable(
+      *M, llvm::ArrayType::get(llvm::Type::getInt8Ty(context), filename.length() + 1),
+      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantDataArray::getString(context, filename), ".nvptx.filename");
+  filenameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+  llvm::IRBuilder<> B(context);
+  B.SetInsertPoint(use->getNextNode());
+  B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
 }
 } // namespace
 
-void applyGPUTransformations(llvm::Module *module) {
-  llvm::LLVMContext &context = module->getContext();
-  auto kernelModule = createKernelModule(context, module->getSourceFileName());
+void applyGPUTransformations(llvm::Module *M) {
+  llvm::LLVMContext &context = M->getContext();
+  auto kernelModule = createKernelModule(context, M->getSourceFileName());
   llvm::NamedMDNode *nvvmAnno =
       kernelModule->getOrInsertNamedMetadata("nvvm.annotations");
   llvm::ValueToValueMapTy vmap;
 
-  for (auto &func : *module) {
+  for (auto &func : *M) {
     if (!func.hasFnAttribute("kernel"))
       continue;
 
@@ -100,8 +124,10 @@ void applyGPUTransformations(llvm::Module *module) {
     nvvmAnno->addOperand(llvm::MDNode::get(context, nvvmElem));
   }
 
+  const std::string filename = "kernel.ptx";
   llvm::errs() << *kernelModule << "\n";
-  moduleToPTX(kernelModule.get());
+  moduleToPTX(kernelModule.get(), filename);
+  addInitCall(M, filename);
 }
 
 } // namespace ir

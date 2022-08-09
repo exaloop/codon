@@ -19,7 +19,12 @@
     }                                                                                  \
   } while (0)
 
-SEQ_FUNC void seq_nvptx_init() { check(cuInit(0)); }
+static CUmodule module;
+
+SEQ_FUNC void seq_nvptx_init(const char *filename) {
+  check(cuInit(0));
+  check(cuModuleLoad(&module, filename));
+}
 
 SEQ_FUNC seq_int_t seq_nvptx_device_count() {
   int devCount;
