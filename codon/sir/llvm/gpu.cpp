@@ -76,10 +76,6 @@ void applyGPUTransformations(llvm::Module *module) {
     auto *clone = llvm::Function::Create(func.getFunctionType(), func.getLinkage(),
                                          func.getName(), *kernelModule);
     clone->copyAttributesFrom(&func);
-
-    static int idx = 0;
-    clone->setName("kernel_" + std::to_string(idx++));
-
     vmap[&func] = clone;
 
     auto cloneArg = clone->arg_begin();
