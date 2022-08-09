@@ -10,6 +10,7 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/extra/python/config/config.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
+option(CODON_GPU "build Codon GPU backend" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -59,7 +60,8 @@ add_custom_command(
 
 # Codon runtime library
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                  codon/runtime/re.cpp codon/runtime/exc.cpp)
+                  codon/runtime/re.cpp codon/runtime/exc.cpp
+                  codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
@@ -89,6 +91,11 @@ if(ASAN)
   target_link_libraries(
     codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                     "-fsanitize-recover=address")
+endif()
+if(CODON_GPU)
+  add_compile_definitions(CODON_GPU)
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(codonrt PRIVATE CUDA::cudart_static CUDA::cuda_driver)
 endif()
 add_custom_command(
   TARGET codonrt

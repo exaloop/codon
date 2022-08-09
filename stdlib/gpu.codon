@@ -3,3 +3,32 @@
 @__attribute__
 def kernel():
     pass
+
+@tuple
+class Device:
+    _device: i32
+
+    def __new__(device: int):
+        from C import seq_nvptx_device(int) -> i32
+        return Device(seq_nvptx_device(device))
+
+    @staticmethod
+    def count():
+        from C import seq_nvptx_device_count() -> int
+        return seq_nvptx_device_count()
+
+    def __str__(self):
+        from C import seq_nvptx_device_count(i32) -> str
+        return seq_nvptx_device_count(self._device)
+
+    def __index__(self):
+        return int(self._device)
+
+    def __bool__(self):
+        return True
+
+    @property
+    def compute_capability(self):
+        from C import seq_nvptx_device_capability(i32) -> int
+        c = seq_nvptx_device_capability(self._device)
+        return (c >> 32, c & 0xffffffff)
