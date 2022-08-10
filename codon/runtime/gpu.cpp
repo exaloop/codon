@@ -53,4 +53,33 @@ SEQ_FUNC CUdevice seq_nvptx_device(seq_int_t idx) {
   return device;
 }
 
+SEQ_FUNC CUfunction seq_nvptx_function(const char *name) {
+  CUfunction function;
+  check(cuModuleGetFunction(&function, module, name));
+  return function;
+}
+
+SEQ_FUNC void seq_nvptx_invoke(CUfunction f, unsigned int gridDimX,
+                               unsigned int gridDimY, unsigned int gridDimZ,
+                               unsigned int blockDimX, unsigned int blockDimY,
+                               unsigned int blockDimZ, unsigned int sharedMemBytes,
+                               void **kernelParams) {
+  check(cuLaunchKernel(f, gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY, blockDimZ,
+                       sharedMemBytes, nullptr, kernelParams, nullptr));
+}
+
+SEQ_FUNC CUdeviceptr seq_nvptx_device_alloc(seq_int_t size) {
+  CUdeviceptr devp;
+  check(cuMemAlloc(&devp, size));
+  return devp;
+}
+
+SEQ_FUNC void seq_nvptx_memcpy_h2d(CUdeviceptr devp, char *hostp, seq_int_t size) {
+  check(cuMemcpyHtoD(devp, hostp, size));
+}
+
+SEQ_FUNC void seq_nvptx_memcpy_d2h(char *hostp, CUdeviceptr devp, seq_int_t size) {
+  check(cuMemcpyDtoH(hostp, devp, size));
+}
+
 #endif /* CODON_GPU */

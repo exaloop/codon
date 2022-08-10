@@ -32,3 +32,21 @@ class Device:
         from C import seq_nvptx_device_capability(i32) -> int
         c = seq_nvptx_device_capability(self._device)
         return (c >> 32, c & 0xffffffff)
+
+@tuple
+class Memory:
+    _ptr: u32
+
+    def __new__(size: int):
+        from C import seq_nvptx_device_alloc(int) -> u32
+        return Memory(seq_nvptx_device_alloc(size))
+
+    def read(self, p: Ptr[T], n: int, T: type):
+        from C import seq_nvptx_memcpy_d2h(Ptr[byte], u32, int)
+        from internal.gc import sizeof
+        seq_nvptx_memcpy_d2h(p.as_byte(), self._ptr, n * sizeof(T))
+
+    def write(self, p: Ptr[T], n: int, T: type):
+        from C import seq_nvptx_memcpy_h2d(u32, Ptr[byte], int)
+        from internal.gc import sizeof
+        seq_nvptx_memcpy_h2d(self._ptr, p.as_byte(), n * sizeof(T))

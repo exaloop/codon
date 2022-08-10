@@ -72,7 +72,7 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
   auto *init = M->getFunction("seq_init");
   seqassertn(init, "seq_init function not found in M");
   seqassertn(init->hasOneUse(), "seq_init used more than once");
-  auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->get());
+  auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
   seqassertn(use, "seq_init use was not a call");
 
   auto *filenameVar = new llvm::GlobalVariable(
