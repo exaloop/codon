@@ -82,8 +82,6 @@ SEQ_FUNC void seq_nvptx_memcpy_d2h(char *hostp, CUdeviceptr devp, seq_int_t size
   check(cuMemcpyDtoH(hostp, devp, size));
 }
 
-SEQ_FUNC void seq_nvptx_device_free(CUdeviceptr devp) {
-  check(cuMemFree(devp));
-}
+SEQ_FUNC void seq_nvptx_device_free(CUdeviceptr devp) { check(cuMemFree(devp)); }
 
 #endif /* CODON_GPU */

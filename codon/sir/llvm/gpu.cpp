@@ -14,23 +14,31 @@ const std::string GPU_DL =
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
     "f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64";
 
-std::unique_ptr<llvm::Module> createKernelModule(llvm::LLVMContext &context,
-                                                 const std::string &filename) {
-  auto M = std::make_unique<llvm::Module>("codon_gpu", context);
-  M->setTargetTriple(GPU_TRIPLE);
-  M->setDataLayout(GPU_DL);
-  M->setSourceFileName(filename);
-  return M;
+std::string cleanUpName(llvm::StringRef name) {
+  std::string validName;
+  llvm::raw_string_ostream validNameStream(validName);
+  for (char c : name) {
+    if (c == '.' || c == '@') {
+      validNameStream << "_$_";
+    } else {
+      validNameStream << c;
+    }
+  }
+
+  return validNameStream.str();
 }
 
 void moduleToPTX(llvm::Module *M, const std::string &filename,
+                 std::vector<llvm::GlobalValue *> &kernels,
                  const std::string &cpuStr = "sm_20",
                  const std::string &featuresStr = "") {
-  std::string err;
   llvm::Triple triple(GPU_TRIPLE);
+  llvm::TargetLibraryInfoImpl tlii(triple);
+
+  std::string err;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget("nvptx64", triple, err);
-  seqassertn(target, "invalid target");
+  seqassertn(target, "couldn't lookup target: {}", err);
 
   const llvm::TargetOptions options =
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
@@ -40,26 +48,85 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOpt::Aggressive));
 
-  std::error_code errcode;
-  auto out =
-      std::make_unique<llvm::ToolOutputFile>(filename, errcode, llvm::sys::fs::OF_Text);
-  if (errcode)
-    compilationError(errcode.message());
-  llvm::raw_pwrite_stream *os = &out->os();
+  // Run NVPTX passes and general opt pipeline.
+  {
+    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    auto fpm = std::make_unique<llvm::legacy::FunctionPassManager>(M);
+    pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
 
-  auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
-  auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
-  llvm::legacy::PassManager pm;
+    pm->add(llvm::createTargetTransformInfoWrapperPass(
+        machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
+    fpm->add(llvm::createTargetTransformInfoWrapperPass(
+        machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
 
-  llvm::TargetLibraryInfoImpl tlii(triple);
-  pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-  seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_AssemblyFile,
-                                           /*DisableVerify=*/false, mmiwp),
-             "could not add passes");
-  const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
-      ->Initialize(mmiwp->getMMI().getContext(), *machine);
-  pm.run(*M);
-  out->keep();
+    if (machine) {
+      auto &ltm = dynamic_cast<llvm::LLVMTargetMachine &>(*machine);
+      llvm::Pass *tpc = ltm.createPassConfig(*pm);
+      pm->add(tpc);
+    }
+
+    pm->add(llvm::createGVExtractionPass(kernels));
+
+    llvm::PassManagerBuilder pmb;
+    unsigned optLevel = 3, sizeLevel = 0;
+    pmb.OptLevel = optLevel;
+    pmb.SizeLevel = sizeLevel;
+    pmb.Inliner = llvm::createFunctionInliningPass(optLevel, sizeLevel, false);
+    pmb.DisableUnrollLoops = false;
+    pmb.LoopVectorize = true;
+    pmb.SLPVectorize = true;
+
+    if (machine) {
+      machine->adjustPassManager(pmb);
+    }
+
+    pmb.populateModulePassManager(*pm);
+    pmb.populateFunctionPassManager(*fpm);
+
+    fpm->doInitialization();
+    for (llvm::Function &f : *M) {
+      fpm->run(f);
+    }
+    fpm->doFinalization();
+    pm->run(*M);
+  }
+
+  // Clean up names.
+  static int x = 0;
+  {
+    for (auto &G : M->globals()) {
+      if (G.hasLocalLinkage())
+        G.setName("x" + std::to_string(x++));
+    }
+
+    for (auto &F : M->functions()) {
+      if (F.hasLocalLinkage())
+        F.setName("x" + std::to_string(x++));
+    }
+  }
+
+  // Generate PTX file.
+  {
+    std::error_code errcode;
+    auto out = std::make_unique<llvm::ToolOutputFile>(filename, errcode,
+                                                      llvm::sys::fs::OF_Text);
+    if (errcode)
+      compilationError(errcode.message());
+    llvm::raw_pwrite_stream *os = &out->os();
+
+    auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
+    auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
+    llvm::legacy::PassManager pm;
+
+    pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
+    seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_AssemblyFile,
+                                             /*DisableVerify=*/false, mmiwp),
+               "could not add passes");
+    const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
+        ->Initialize(mmiwp->getMMI().getContext(), *machine);
+    pm.run(*M);
+    out->keep();
+  }
 }
 
 void addInitCall(llvm::Module *M, const std::string &filename) {
@@ -84,49 +151,72 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
   B.SetInsertPoint(use->getNextNode());
   B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
 }
+
+void cleanUpIntrinsics(llvm::Module *M) {
+  llvm::LLVMContext &context = M->getContext();
+  llvm::SmallVector<llvm::Function *, 16> remove;
+  for (auto &F : *M) {
+    if (F.getIntrinsicID() != llvm::Intrinsic::not_intrinsic &&
+        F.getName().startswith("llvm.nvvm"))
+      remove.push_back(&F);
+  }
+
+  for (auto *F : remove) {
+    auto dummyName = "dummy_" + F->getName();
+    auto *dummy = M->getFunction(dummyName.str());
+    if (!dummy) {
+      dummy = llvm::Function::Create(F->getFunctionType(),
+                                     llvm::GlobalValue::PrivateLinkage, dummyName, *M);
+      auto *entry = llvm::BasicBlock::Create(context, "entry", dummy);
+      llvm::IRBuilder<> B(entry);
+
+      auto *retType = F->getReturnType();
+      if (retType->isVoidTy()) {
+        B.CreateRetVoid();
+      } else {
+        B.CreateRet(llvm::UndefValue::get(retType));
+      }
+    }
+
+    F->replaceAllUsesWith(dummy);
+    F->dropAllReferences();
+    F->eraseFromParent();
+  }
+}
 } // namespace
 
 void applyGPUTransformations(llvm::Module *M) {
   llvm::LLVMContext &context = M->getContext();
-  auto kernelModule = createKernelModule(context, M->getSourceFileName());
-  llvm::NamedMDNode *nvvmAnno =
-      kernelModule->getOrInsertNamedMetadata("nvvm.annotations");
-  llvm::ValueToValueMapTy vmap;
+  std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
+  clone->setTargetTriple(GPU_TRIPLE);
+  clone->setDataLayout(GPU_DL);
 
-  for (auto &func : *M) {
-    if (!func.hasFnAttribute("kernel"))
+  llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
+
+  unsigned idx = 0;
+  std::vector<llvm::GlobalValue *> kernels;
+
+  for (auto &F : *clone) {
+    F.setPersonalityFn(nullptr);
+    if (!F.hasFnAttribute("kernel"))
       continue;
 
-    auto *clone = llvm::Function::Create(func.getFunctionType(), func.getLinkage(),
-                                         func.getName(), *kernelModule);
-    clone->copyAttributesFrom(&func);
-    static int idx = 0;
-    clone->setName("kernel_" + std::to_string(idx++));
-    vmap[&func] = clone;
-
-    auto cloneArg = clone->arg_begin();
-    for (const auto &arg : func.args()) {
-      cloneArg->setName(arg.getName());
-      vmap[&arg] = &*cloneArg++;
-    }
-
-    llvm::SmallVector<llvm::ReturnInst *, 8> returns;
-    llvm::CloneFunctionInto(clone, &func, vmap, /*ModuleLevelChanges=*/true, returns);
-    clone->setPersonalityFn(nullptr);
+    F.setName("kernel_" + std::to_string(idx++));
 
     llvm::Metadata *nvvmElem[] = {
-        llvm::ConstantAsMetadata::get(clone),
+        llvm::ConstantAsMetadata::get(&F),
         llvm::MDString::get(context, "kernel"),
         llvm::ConstantAsMetadata::get(
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1)),
     };
 
     nvvmAnno->addOperand(llvm::MDNode::get(context, nvvmElem));
+    kernels.push_back(&F);
   }
 
   const std::string filename = "kernel.ptx";
-  llvm::errs() << *kernelModule << "\n";
-  moduleToPTX(kernelModule.get(), filename);
+  moduleToPTX(clone.get(), filename, kernels);
+  cleanUpIntrinsics(M);
   addInitCall(M, filename);
 }
 
