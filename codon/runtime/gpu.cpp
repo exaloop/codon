@@ -20,9 +20,13 @@
   } while (0)
 
 static CUmodule module;
+static CUcontext context;
 
 SEQ_FUNC void seq_nvptx_init(const char *filename) {
+  CUdevice device;
   check(cuInit(0));
+  check(cuDeviceGet(&device, 0));
+  check(cuCtxCreate(&context, 0, device));
   check(cuModuleLoad(&module, filename));
 }
 
