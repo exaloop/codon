@@ -13,6 +13,7 @@ const std::string GPU_TRIPLE = "nvptx64-nvidia-cuda";
 const std::string GPU_DL =
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
     "f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64";
+const std::string LIBDEVICE_PATH = "/usr/local/cuda/nvvm/libdevice/libdevice.10.bc";
 
 std::string cleanUpName(llvm::StringRef name) {
   std::string validName;
@@ -26,6 +27,16 @@ std::string cleanUpName(llvm::StringRef name) {
   }
 
   return validNameStream.str();
+}
+
+void linkLibdevice(llvm::Module *M, const std::string &path) {
+  llvm::SMDiagnostic err;
+  auto libdevice = llvm::parseIRFile(path, err, M->getContext());
+  if (!libdevice)
+    compilationError(err.getMessage().str(), err.getFilename().str(), err.getLineNo(),
+                     err.getColumnNo());
+  llvm::Linker::linkModules(*M, std::move(libdevice),
+                            llvm::Linker::Flags::LinkOnlyNeeded);
 }
 
 void moduleToPTX(llvm::Module *M, const std::string &filename,
@@ -49,6 +60,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::CodeGenOpt::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
+  linkLibdevice(M, LIBDEVICE_PATH);
 
   // Run NVPTX passes and general opt pipeline.
   {
@@ -94,8 +106,9 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   }
 
   // Clean up names.
-  static int x = 0;
   {
+    static int x = 0;
+
     for (auto &G : M->globals()) {
       if (G.hasLocalLinkage())
         G.setName("x" + std::to_string(x++));
@@ -139,7 +152,7 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
   g->setDoesNotThrow();
 
   auto *init = M->getFunction("seq_init");
-  seqassertn(init, "seq_init function not found in M");
+  seqassertn(init, "seq_init function not found in module");
   seqassertn(init->hasOneUse(), "seq_init used more than once");
   auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
   seqassertn(use, "seq_init use was not a call");
