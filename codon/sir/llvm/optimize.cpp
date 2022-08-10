@@ -643,14 +643,17 @@ void verify(llvm::Module *module) {
 void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
   verify(module);
   {
-    TIME("llvm/opt");
+    TIME("llvm/opt1");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
+  }
+  {
+    TIME("llvm/gpu");
+    applyGPUTransformations(module);
   }
   if (!debug) {
     TIME("llvm/opt2");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
-  applyGPUTransformations(module);
   verify(module);
 }
 
