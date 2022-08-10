@@ -1,5 +1,7 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
+from internal.gc import sizeof as _sizeof
+
 @__attribute__
 def kernel():
     pass
@@ -34,19 +36,40 @@ class Device:
         return (c >> 32, c & 0xffffffff)
 
 @tuple
-class Memory:
-    _ptr: u32
+class Memory[T]:
+    _ptr: Ptr[byte]
 
-    def __new__(size: int):
-        from C import seq_nvptx_device_alloc(int) -> u32
-        return Memory(seq_nvptx_device_alloc(size))
+    def _alloc(n: int, T: type):
+        from C import seq_nvptx_device_alloc(int) -> Ptr[byte]
+        return Memory[T](seq_nvptx_device_alloc(n * _sizeof(T)))
 
-    def read(self, p: Ptr[T], n: int, T: type):
-        from C import seq_nvptx_memcpy_d2h(Ptr[byte], u32, int)
-        from internal.gc import sizeof
-        seq_nvptx_memcpy_d2h(p.as_byte(), self._ptr, n * sizeof(T))
+    def _read(self, p: Ptr[T], n: int):
+        from C import seq_nvptx_memcpy_d2h(Ptr[byte], Ptr[byte], int)
+        seq_nvptx_memcpy_d2h(p.as_byte(), self._ptr, n * _sizeof(T))
 
-    def write(self, p: Ptr[T], n: int, T: type):
-        from C import seq_nvptx_memcpy_h2d(u32, Ptr[byte], int)
-        from internal.gc import sizeof
-        seq_nvptx_memcpy_h2d(self._ptr, p.as_byte(), n * sizeof(T))
+    def _write(self, p: Ptr[T], n: int):
+        from C import seq_nvptx_memcpy_h2d(Ptr[byte], Ptr[byte], int)
+        seq_nvptx_memcpy_h2d(self._ptr, p.as_byte(), n * _sizeof(T))
+
+    def _free(self):
+        from C import seq_nvptx_device_free(Ptr[byte])
+        seq_nvptx_device_free(self._ptr)
+
+def _launch(f: cobj, grid: Tuple[int,int,int], block: Tuple[int,int,int], params, shared_mem: int = 0):
+    from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
+    seq_nvptx_invoke(f, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
+                     u32(block[1]), u32(block[2]), u32(shared_mem), __ptr__(params).as_byte())
+
+@extend
+class List:
+    def __to_gpu__(self):
+        n = len(self)
+        mem = Memory._alloc(n, T)
+        mem._write(self.arr.ptr, n)
+        return mem._ptr
+
+    def __from_gpu__(self, p: Ptr[byte]):
+        mem = Memory[T](p)
+        n = len(self)
+        mem._read(self.arr.ptr, n)
+        mem._free()
