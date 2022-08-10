@@ -32,7 +32,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
                  std::vector<llvm::GlobalValue *> &kernels,
                  const std::string &cpuStr = "sm_20",
                  const std::string &featuresStr = "") {
-  llvm::Triple triple(GPU_TRIPLE);
+  llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
   std::string err;
@@ -47,6 +47,8 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       triple.getTriple(), cpuStr, featuresStr, options,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOpt::Aggressive));
+
+  M->setDataLayout(machine->createDataLayout());
 
   // Run NVPTX passes and general opt pipeline.
   {
@@ -188,7 +190,7 @@ void cleanUpIntrinsics(llvm::Module *M) {
 void applyGPUTransformations(llvm::Module *M) {
   llvm::LLVMContext &context = M->getContext();
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
-  clone->setTargetTriple(GPU_TRIPLE);
+  clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
 
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
