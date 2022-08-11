@@ -35,8 +35,26 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   if (!libdevice)
     compilationError(err.getMessage().str(), err.getFilename().str(), err.getLineNo(),
                      err.getColumnNo());
-  llvm::Linker::linkModules(*M, std::move(libdevice),
-                            llvm::Linker::Flags::LinkOnlyNeeded);
+  llvm::Linker::linkModules(*M, std::move(libdevice), 0);
+}
+
+void remapFunctions(llvm::Module *M) {
+  std::vector<std::pair<std::string, std::string>> remapping = {
+    {"llvm.sin.f64", "__nv_sin"},
+  };
+
+  for (auto &pair : remapping) {
+    if (auto *F = M->getFunction(pair.first)) {
+      auto *G = M->getFunction(pair.second);
+      if (!G) {
+        G = llvm::Function::Create(F->getFunctionType(),
+                                   llvm::GlobalValue::PrivateLinkage, pair.second, *M);
+      }
+      F->replaceAllUsesWith(G);
+      F->dropAllReferences();
+      F->eraseFromParent();
+    }
+  }
 }
 
 void moduleToPTX(llvm::Module *M, const std::string &filename,
@@ -60,6 +78,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::CodeGenOpt::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
+  remapFunctions(M);
   linkLibdevice(M, LIBDEVICE_PATH);
 
   // Run NVPTX passes and general opt pipeline.
@@ -104,6 +123,8 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     fpm->doFinalization();
     pm->run(*M);
   }
+
+  llvm::errs() << *M << "\n";
 
   // Clean up names.
   {
