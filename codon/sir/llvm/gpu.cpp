@@ -43,7 +43,7 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   seqassertn(!fail, "linking libdevice failed");
 }
 
-void remapFunctions(llvm::Module *M) {
+void remapFunctions(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
   std::vector<std::pair<std::string, std::string>> remapping = {
       {"llvm.sin.f64", "__nv_sin"},
   };
@@ -52,6 +52,7 @@ void remapFunctions(llvm::Module *M) {
     if (auto *F = M->getFunction(pair.first)) {
       auto *G = M->getFunction(pair.second);
       seqassertn(G, "could not find function '{}' in module", pair.second);
+      kernels.push_back(G);
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
       F->eraseFromParent();
@@ -81,7 +82,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
   M->setDataLayout(machine->createDataLayout());
   linkLibdevice(M, LIBDEVICE_PATH);
-  remapFunctions(M);
+  remapFunctions(M, kernels);
 
   // Run NVPTX passes and general opt pipeline.
   {
