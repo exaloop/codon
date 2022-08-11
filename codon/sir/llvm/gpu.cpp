@@ -35,12 +35,15 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   if (!libdevice)
     compilationError(err.getMessage().str(), err.getFilename().str(), err.getLineNo(),
                      err.getColumnNo());
-  llvm::Linker::linkModules(*M, std::move(libdevice), 0);
+  libdevice->setDataLayout(M->getDataLayout());
+  libdevice->setTargetTriple(M->getTargetTriple());
+  llvm::Linker::linkModules(*M, std::move(libdevice),
+                            llvm::Linker::Flags::OverrideFromSrc);
 }
 
 void remapFunctions(llvm::Module *M) {
   std::vector<std::pair<std::string, std::string>> remapping = {
-    {"llvm.sin.f64", "__nv_sin"},
+      {"llvm.sin.f64", "__nv_sin"},
   };
 
   for (auto &pair : remapping) {
