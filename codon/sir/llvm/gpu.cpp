@@ -1,5 +1,6 @@
 #include "gpu.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -85,7 +86,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   {
     auto pm = std::make_unique<llvm::legacy::PassManager>();
     pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-    // Delete functions specified in list of functions.
+    // Delete everything but kernel functions.
     pm->add(llvm::createGVExtractionPass(kernels));
     // Delete unreachable globals.
     pm->add(llvm::createGlobalDCEPass());
@@ -115,6 +116,10 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::Pass *tpc = ltm.createPassConfig(*pm);
       pm->add(tpc);
     }
+
+    pm->add(llvm::createInternalizePass([&](const llvm::GlobalValue &gv) {
+      return std::find(kernels.begin(), kernels.end(), &gv) != kernels.end();
+    }));
 
     llvm::PassManagerBuilder pmb;
     unsigned optLevel = 3, sizeLevel = 0;
