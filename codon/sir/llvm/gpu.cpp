@@ -49,10 +49,7 @@ void remapFunctions(llvm::Module *M) {
   for (auto &pair : remapping) {
     if (auto *F = M->getFunction(pair.first)) {
       auto *G = M->getFunction(pair.second);
-      if (!G) {
-        G = llvm::Function::Create(F->getFunctionType(),
-                                   llvm::GlobalValue::ExternalLinkage, pair.second, *M);
-      }
+      seqassertn(G, "could not find function '{}' in module", pair.second);
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
       F->eraseFromParent();
@@ -236,7 +233,6 @@ void applyGPUTransformations(llvm::Module *M) {
   std::vector<llvm::GlobalValue *> kernels;
 
   for (auto &F : *clone) {
-    F.setPersonalityFn(nullptr);
     if (!F.hasFnAttribute("kernel"))
       continue;
 
