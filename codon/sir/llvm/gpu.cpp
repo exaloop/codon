@@ -43,7 +43,7 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   seqassertn(!fail, "linking libdevice failed");
 }
 
-void remapFunctions(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
+void remapFunctions(llvm::Module *M) {
   std::vector<std::pair<std::string, std::string>> remapping = {
       {"llvm.sin.f64", "__nv_sin"},
   };
@@ -52,7 +52,6 @@ void remapFunctions(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) 
     if (auto *F = M->getFunction(pair.first)) {
       auto *G = M->getFunction(pair.second);
       seqassertn(G, "could not find function '{}' in module", pair.second);
-      kernels.push_back(G);
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
       F->eraseFromParent();
@@ -81,8 +80,24 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::CodeGenOpt::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
+
+  // Remove non-kernel functions.
+  {
+    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
+    // Delete functions specified in list of functions.
+    pm->add(llvm::createGVExtractionPass(kernels));
+    // Delete unreachable globals.
+    pm->add(llvm::createGlobalDCEPass());
+    // Remove dead debug info.
+    pm->add(llvm::createStripDeadDebugInfoPass());
+    // Remove dead func decls.
+    pm->add(llvm::createStripDeadPrototypesPass());
+    pm->run(*M);
+  }
+
   linkLibdevice(M, LIBDEVICE_PATH);
-  remapFunctions(M, kernels);
+  remapFunctions(M);
 
   // Run NVPTX passes and general opt pipeline.
   {
@@ -100,8 +115,6 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::Pass *tpc = ltm.createPassConfig(*pm);
       pm->add(tpc);
     }
-
-    pm->add(llvm::createGVExtractionPass(kernels));
 
     llvm::PassManagerBuilder pmb;
     unsigned optLevel = 3, sizeLevel = 0;
