@@ -37,8 +37,10 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
                      err.getColumnNo());
   libdevice->setDataLayout(M->getDataLayout());
   libdevice->setTargetTriple(M->getTargetTriple());
-  llvm::Linker::linkModules(*M, std::move(libdevice),
-                            llvm::Linker::Flags::OverrideFromSrc);
+
+  llvm::Linker L(*M);
+  const bool fail = L.linkInModule(std::move(libdevice));
+  seqassertn(!fail, "linking libdevice failed");
 }
 
 void remapFunctions(llvm::Module *M) {
