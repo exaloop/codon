@@ -81,8 +81,8 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::CodeGenOpt::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
-  remapFunctions(M);
   linkLibdevice(M, LIBDEVICE_PATH);
+  remapFunctions(M);
 
   // Run NVPTX passes and general opt pipeline.
   {
