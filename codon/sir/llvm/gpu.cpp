@@ -48,7 +48,7 @@ void remapFunctions(llvm::Module *M) {
       auto *G = M->getFunction(pair.second);
       if (!G) {
         G = llvm::Function::Create(F->getFunctionType(),
-                                   llvm::GlobalValue::PrivateLinkage, pair.second, *M);
+                                   llvm::GlobalValue::ExternalLinkage, pair.second, *M);
       }
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
@@ -249,6 +249,9 @@ void applyGPUTransformations(llvm::Module *M) {
     nvvmAnno->addOperand(llvm::MDNode::get(context, nvvmElem));
     kernels.push_back(&F);
   }
+
+  if (kernels.empty())
+    return;
 
   const std::string filename = "kernel.ptx";
   moduleToPTX(clone.get(), filename, kernels);
