@@ -168,7 +168,7 @@ def ldexp(x: float, i: int) -> float:
 
     Returns x multiplied by 2 raised to the power of exponent.
     """
-    return _C.ldexp(x, i)
+    return _C.ldexp(x, i32(i))
 
 
 def log(x: float, base: float = e) -> float:

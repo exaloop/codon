@@ -216,7 +216,7 @@ def expm1(a: float) -> float:
 
 @pure
 @C
-def ldexp(a: float, b: int) -> float:
+def ldexp(a: float, b: i32) -> float:
     pass
 
 
