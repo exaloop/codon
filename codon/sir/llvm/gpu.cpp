@@ -44,8 +44,56 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   seqassertn(!fail, "linking libdevice failed");
 }
 
+llvm::Function *copyPrototype(llvm::Function *F, const std::string &name) {
+  auto *M = F->getParent();
+  return llvm::Function::Create(F->getFunctionType(), llvm::GlobalValue::PrivateLinkage,
+                                name.empty() ? F->getName() : name, *M);
+}
+
+llvm::Function *makeNoOp(llvm::Function *F) {
+  auto *M = F->getParent();
+  auto &context = M->getContext();
+  auto dummyName = (".codon.gpu.dummy." + F->getName()).str();
+  auto *dummy = M->getFunction(dummyName);
+  if (!dummy) {
+    dummy = copyPrototype(F, dummyName);
+    auto *entry = llvm::BasicBlock::Create(context, "entry", dummy);
+    llvm::IRBuilder<> B(entry);
+
+    auto *retType = F->getReturnType();
+    if (retType->isVoidTy()) {
+      B.CreateRetVoid();
+    } else {
+      B.CreateRet(llvm::UndefValue::get(retType));
+    }
+  }
+  return dummy;
+}
+
+using Codegen =
+    std::function<void(llvm::IRBuilder<> &, const std::vector<llvm::Value *> &)>;
+
+llvm::Function *makeFillIn(llvm::Function *F, Codegen codegen) {
+  auto *M = F->getParent();
+  auto &context = M->getContext();
+  auto fillInName = (".codon.gpu.fillin." + F->getName()).str();
+  auto *fillIn = M->getFunction(fillInName);
+  if (!fillIn) {
+    fillIn = copyPrototype(F, fillInName);
+    std::vector<llvm::Value *> args;
+    for (auto it = fillIn->arg_begin(); it != fillIn->arg_end(); ++it) {
+      args.push_back(it);
+    }
+    auto *entry = llvm::BasicBlock::Create(context, "entry", fillIn);
+    llvm::IRBuilder<> B(entry);
+    codegen(B, args);
+  }
+  return fillIn;
+}
+
 void remapFunctions(llvm::Module *M) {
-  std::vector<std::pair<std::string, std::string>> remapping = {
+  // simple name-to-name remappings
+  static const std::vector<std::pair<std::string, std::string>> remapping = {
       // 64-bit float intrinsics
       {"llvm.ceil.f64", "__nv_ceil"},
       {"llvm.floor.f64", "__nv_floor"},
@@ -135,12 +183,70 @@ void remapFunctions(llvm::Module *M) {
       {"remainderf", "__nv_remainderf"},
       {"frexpf", "__nv_frexpf"},
       {"modff", "__nv_modff"},
+
+      // runtime library functions
+      {"seq_alloc", "malloc"},
+      {"seq_alloc_atomic", "malloc"},
+      {"seq_free", "free"},
+      {"seq_register_finalizer", ""},
+      {"seq_gc_add_roots", ""},
+      {"seq_gc_remove_roots", ""},
+      {"seq_gc_clear_roots", ""},
+      {"seq_gc_exclude_static_roots", ""},
+  };
+
+  // functions that need to be generated as they're not available on GPU
+  static const std::vector<std::pair<std::string, Codegen>> fillins = {
+      {"seq_realloc",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertPoint()->getModule();
+
+         {
+           auto F = M->getOrInsertFunction("free", B.getVoidTy(), B.getInt8PtrTy());
+           auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           B.CreateCall(G, args[0]);
+         }
+
+         llvm::Value *mem;
+         {
+           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
+           auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setDoesNotThrow();
+           G->setReturnDoesNotAlias();
+           G->setOnlyAccessesInaccessibleMemory();
+           mem = B.CreateCall(G, args[1]);
+         }
+
+         {
+           auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
+                                                    {B.getInt8PtrTy(), B.getInt64Ty()});
+           B.CreateCall(F, {mem, B.getInt8(0), args[1], B.getFalse()});
+         }
+
+         B.CreateRet(mem);
+       }},
   };
 
   for (auto &pair : remapping) {
     if (auto *F = M->getFunction(pair.first)) {
-      auto *G = M->getFunction(pair.second);
-      seqassertn(G, "could not find function '{}' in module", pair.second);
+      llvm::Function *G = nullptr;
+      if (pair.second.empty()) {
+        G = makeNoOp(F);
+      } else {
+        G = M->getFunction(pair.second);
+        if (!G)
+          G = copyPrototype(F, pair.second);
+      }
+
+      F->replaceAllUsesWith(G);
+      F->dropAllReferences();
+      F->eraseFromParent();
+    }
+  }
+
+  for (auto &pair : fillins) {
+    if (auto *F = M->getFunction(pair.first)) {
+      llvm::Function *G = makeFillIn(F, pair.second);
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
       F->eraseFromParent();
@@ -232,8 +338,6 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     fpm->doFinalization();
     pm->run(*M);
   }
-
-  llvm::errs() << *M << "\n";
 
   // Clean up names.
   {
