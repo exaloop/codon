@@ -209,13 +209,22 @@ def kernel(fn, *args):
             S = type(t[-1])
             return (*offsets(t[:-1]), offsetof(t, staticlen(t) - 1, T, S))
 
+    def from_gpu(args, gpu_args):
+        if staticlen(args) > 0:
+            a = args[0]
+            g = gpu_args[0]
+            a.__from_gpu__(g)
+            from_gpu(args[1:], gpu_args[1:])
+
     kernel_ptr = seq_nvptx_function("kernel_0".ptr)  # TODO: use fn name
 
     def wrapper(*args, grid: Tuple[int,int,int], block: Tuple[int,int,int]):
-        p = __ptr__(args)
+        gpu_args = tuple(args.__to_gpu__() for arg in args)
+        p = __ptr__(gpu_args)
         arg_ptrs = tuple((p + offset) for offset in offsets(t))
         seq_nvptx_invoke(kernel_ptr, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
                          u32(block[1]), u32(block[2]), u32(shared_mem), __ptr__(arg_ptrs).as_byte())
+        from_gpu(args, gpu_args)
 
     return wrapper
 
