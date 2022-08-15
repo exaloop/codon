@@ -219,6 +219,7 @@ def kernel(fn, *args):
     kernel_ptr = seq_nvptx_function("kernel_0".ptr)  # TODO: use fn name
 
     def wrapper(*args, grid: Tuple[int,int,int], block: Tuple[int,int,int]):
+        shared_mem = 0
         gpu_args = tuple(args.__to_gpu__() for arg in args)
         p = __ptr__(gpu_args)
         arg_ptrs = tuple((p + offset) for offset in offsets(t))
