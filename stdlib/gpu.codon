@@ -20,8 +20,8 @@ class Device:
         return seq_nvptx_device_count()
 
     def __str__(self):
-        from C import seq_nvptx_device_count(i32) -> str
-        return seq_nvptx_device_count(self._device)
+        from C import seq_nvptx_device_name(i32) -> str
+        return seq_nvptx_device_name(self._device)
 
     def __index__(self):
         return int(self._device)
