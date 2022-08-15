@@ -200,13 +200,6 @@ void remapFunctions(llvm::Module *M) {
       {"seq_realloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertPoint()->getModule();
-
-         {
-           auto F = M->getOrInsertFunction("free", B.getVoidTy(), B.getInt8PtrTy());
-           auto *G = llvm::cast<llvm::Function>(F.getCallee());
-           B.CreateCall(G, args[0]);
-         }
-
          llvm::Value *mem;
          {
            auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
@@ -218,9 +211,64 @@ void remapFunctions(llvm::Module *M) {
          }
 
          {
+           auto F = llvm::Intrinsic::getDeclaration(
+               M, llvm::Intrinsic::memcpy,
+               {B.getInt8PtrTy(), B.getInt8PtrTy(), B.getInt64Ty()});
+           B.CreateCall(F, {mem, args[0], args[1], B.getFalse()});
+         }
+
+         {
+           auto F = M->getOrInsertFunction("free", B.getVoidTy(), B.getInt8PtrTy());
+           auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           B.CreateCall(G, args[0]);
+         }
+
+         B.CreateRet(mem);
+       }},
+
+      {"seq_calloc",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertPoint()->getModule();
+
+         llvm::Value *size = B.CreateMul(args[0], args[1]);
+         llvm::Value *mem;
+         {
+           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
+           auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setDoesNotThrow();
+           G->setReturnDoesNotAlias();
+           G->setOnlyAccessesInaccessibleMemory();
+           mem = B.CreateCall(G, size);
+         }
+
+         {
            auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
                                                     {B.getInt8PtrTy(), B.getInt64Ty()});
-           B.CreateCall(F, {mem, B.getInt8(0), args[1], B.getFalse()});
+           B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
+         }
+
+         B.CreateRet(mem);
+       }},
+
+      {"seq_calloc_atomic",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertPoint()->getModule();
+
+         llvm::Value *size = B.CreateMul(args[0], args[1]);
+         llvm::Value *mem;
+         {
+           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
+           auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setDoesNotThrow();
+           G->setReturnDoesNotAlias();
+           G->setOnlyAccessesInaccessibleMemory();
+           mem = B.CreateCall(G, size);
+         }
+
+         {
+           auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
+                                                    {B.getInt8PtrTy(), B.getInt64Ty()});
+           B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
          }
 
          B.CreateRet(mem);
@@ -411,23 +459,7 @@ void cleanUpIntrinsics(llvm::Module *M) {
   }
 
   for (auto *F : remove) {
-    auto dummyName = "dummy_" + F->getName();
-    auto *dummy = M->getFunction(dummyName.str());
-    if (!dummy) {
-      dummy = llvm::Function::Create(F->getFunctionType(),
-                                     llvm::GlobalValue::PrivateLinkage, dummyName, *M);
-      auto *entry = llvm::BasicBlock::Create(context, "entry", dummy);
-      llvm::IRBuilder<> B(entry);
-
-      auto *retType = F->getReturnType();
-      if (retType->isVoidTy()) {
-        B.CreateRetVoid();
-      } else {
-        B.CreateRet(llvm::UndefValue::get(retType));
-      }
-    }
-
-    F->replaceAllUsesWith(dummy);
+    F->replaceAllUsesWith(makeNoOp(F));
     F->dropAllReferences();
     F->eraseFromParent();
   }
