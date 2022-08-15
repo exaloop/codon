@@ -190,6 +190,35 @@ def _launch(f: cobj, grid: Tuple[int,int,int], block: Tuple[int,int,int], params
     seq_nvptx_invoke(f, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
                      u32(block[1]), u32(block[2]), u32(shared_mem), __ptr__(params).as_byte())
 
+def kernel(fn, *args):
+    from C import seq_nvptx_function(Ptr[byte]) -> cobj
+    from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
+
+    def offsets(t):
+        @pure
+        @llvm
+        def offsetof(t: T, i: Static[int], T: type, S: type) -> int:
+            %p = getelementptr {=T}, {=T}* null, i64 0, i32 {=i}
+            %s = ptrtoint {=S}* %p to i64
+            ret i64 %s
+
+        if staticlen(t) == 0:
+            return ()
+        else:
+            T = type(t)
+            S = type(t[-1])
+            return (*offsets(t[:-1]), offsetof(t, staticlen(t) - 1, T, S))
+
+    kernel_ptr = seq_nvptx_function("kernel_0".ptr)  # TODO: use fn name
+
+    def wrapper(*args, grid: Tuple[int,int,int], block: Tuple[int,int,int]):
+        p = __ptr__(args)
+        arg_ptrs = tuple((p + offset) for offset in offsets(t))
+        seq_nvptx_invoke(kernel_ptr, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
+                         u32(block[1]), u32(block[2]), u32(shared_mem), __ptr__(arg_ptrs).as_byte())
+
+    return wrapper
+
 @extend
 class List:
     def __to_gpu__(self):
