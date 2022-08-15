@@ -169,7 +169,7 @@ private: // Node simplification rules
   StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
                                     const Expr *, Stmt *);
   StmtPtr transformLLVMDefinition(Stmt *);
-  std::string *isAttribute(const ExprPtr &);
+  std::pair<bool, std::string> getDecorator(const ExprPtr &);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;

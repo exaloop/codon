@@ -111,9 +111,11 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
-    if (auto n = isAttribute(stmt->decorators[i])) {
-      stmt->attributes.set(*n);
-      stmt->decorators[i] = nullptr; // remove it from further consideration
+    auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
+    if (!attrName.empty()) {
+      stmt->attributes.set(attrName);
+      if (isAttr)
+        stmt->decorators[i] = nullptr; // remove it from further consideration
     }
   }
 
@@ -417,20 +419,22 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   return N<SuiteStmt>(items);
 }
 
-/// Check if a decorator is actually an attribute (a function with `@__attribute__`)
-std::string *SimplifyVisitor::isAttribute(const ExprPtr &e) {
+/// Fetch a decorator canonical name. The first pair member indicates if a decorator is
+/// actually an attribute (a function with `@__attribute__`).
+std::pair<bool, std::string> SimplifyVisitor::getDecorator(const ExprPtr &e) {
   auto dt = transform(clone(e));
-  if (dt && dt->getId()) {
-    auto ci = ctx->find(dt->getId()->value);
+  auto id = dt->getCall() ? dt->getCall()->expr : dt;
+  if (id && id->getId()) {
+    auto ci = ctx->find(id->getId()->value);
     if (ci && ci->isFunc()) {
-      if (ctx->cache->overloads[ci->canonicalName].size() == 1)
-        if (ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0].name]
-                .ast->attributes.isAttribute) {
-          return &(ci->canonicalName);
-        }
+      if (ctx->cache->overloads[ci->canonicalName].size() == 1) {
+        return {ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0].name]
+                    .ast->attributes.isAttribute,
+                ci->canonicalName};
+      }
     }
   }
-  return nullptr;
+  return {false, ""};
 }
 
 } // namespace codon::ast
