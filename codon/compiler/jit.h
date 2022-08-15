@@ -14,17 +14,10 @@
 #include "codon/sir/transform/manager.h"
 #include "codon/sir/var.h"
 
+#include "extra/python/codon/jit.h"
+
 namespace codon {
 namespace jit {
-
-struct JITResult {
-  void *result;
-  std::string message;
-
-  operator bool() const { return message.empty(); }
-  static JITResult success(void *result) { return {result, ""}; }
-  static JITResult error(const std::string &message) { return {nullptr, message}; }
-};
 
 class JIT {
 public:

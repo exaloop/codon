@@ -344,7 +344,8 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     processToplevelStmt(comment);
     if (auto st = n->getSuite()) {
       for (auto &ss : st->stmts)
-        processToplevelStmt(ss);
+        if (ss)
+          processToplevelStmt(ss);
     } else {
       processToplevelStmt(n);
     }

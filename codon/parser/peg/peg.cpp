@@ -34,6 +34,7 @@ std::shared_ptr<peg::Grammar> initParser() {
     x.second.accept(v);
   }
   (*g)["program"].enablePackratParsing = true;
+  (*g)["fstring"].enablePackratParsing = true;
   for (auto &rule : std::vector<std::string>{
            "arguments", "slices", "genexp", "parentheses", "star_parens", "generics",
            "with_parens_item", "params", "from_as_parens", "from_params"}) {
@@ -86,8 +87,12 @@ StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code
 }
 
 ExprPtr parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
-  return parseCode<ExprPtr>(cache, offset.file, code, offset.line, offset.col,
+  auto newCode = code;
+  ltrim(newCode);
+  rtrim(newCode);
+  auto e = parseCode<ExprPtr>(cache, offset.file, newCode, offset.line, offset.col,
                             "fstring");
+  return e;
 }
 
 StmtPtr parseFile(Cache *cache, const std::string &file) {
