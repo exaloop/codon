@@ -2,10 +2,6 @@
 
 from internal.gc import sizeof as _sizeof
 
-@__attribute__
-def kernel():
-    pass
-
 @tuple
 class Device:
     _device: i32
