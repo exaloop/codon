@@ -204,6 +204,7 @@ void remapFunctions(llvm::Module *M) {
          {
            auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
            auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
            G->setDoesNotThrow();
            G->setReturnDoesNotAlias();
            G->setOnlyAccessesInaccessibleMemory();
@@ -220,6 +221,7 @@ void remapFunctions(llvm::Module *M) {
          {
            auto F = M->getOrInsertFunction("free", B.getVoidTy(), B.getInt8PtrTy());
            auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
            B.CreateCall(G, args[0]);
          }
 
@@ -235,6 +237,7 @@ void remapFunctions(llvm::Module *M) {
          {
            auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
            auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
            G->setDoesNotThrow();
            G->setReturnDoesNotAlias();
            G->setOnlyAccessesInaccessibleMemory();
@@ -259,6 +262,7 @@ void remapFunctions(llvm::Module *M) {
          {
            auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
            auto *G = llvm::cast<llvm::Function>(F.getCallee());
+           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
            G->setDoesNotThrow();
            G->setReturnDoesNotAlias();
            G->setOnlyAccessesInaccessibleMemory();
@@ -272,6 +276,17 @@ void remapFunctions(llvm::Module *M) {
          }
 
          B.CreateRet(mem);
+       }},
+
+      {"seq_alloc_exc",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertBlock()->getModule();
+         B.CreateUnreachable();
+       }},
+
+      {"seq_throw",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         B.CreateUnreachable();
        }},
   };
 
@@ -401,6 +416,8 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
         F.setName("x" + std::to_string(x++));
     }
   }
+
+  llvm::errs() << *M << "\n";
 
   // Generate PTX file.
   {
