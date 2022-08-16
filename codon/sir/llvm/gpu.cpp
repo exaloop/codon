@@ -199,7 +199,7 @@ void remapFunctions(llvm::Module *M) {
   static const std::vector<std::pair<std::string, Codegen>> fillins = {
       {"seq_realloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         auto *M = B.GetInsertPoint()->getModule();
+         auto *M = B.GetInsertBlock()->getModule();
          llvm::Value *mem;
          {
            auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
@@ -228,7 +228,7 @@ void remapFunctions(llvm::Module *M) {
 
       {"seq_calloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         auto *M = B.GetInsertPoint()->getModule();
+         auto *M = B.GetInsertBlock()->getModule();
 
          llvm::Value *size = B.CreateMul(args[0], args[1]);
          llvm::Value *mem;
@@ -252,7 +252,7 @@ void remapFunctions(llvm::Module *M) {
 
       {"seq_calloc_atomic",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         auto *M = B.GetInsertPoint()->getModule();
+         auto *M = B.GetInsertBlock()->getModule();
 
          llvm::Value *size = B.CreateMul(args[0], args[1]);
          llvm::Value *mem;
