@@ -225,16 +225,45 @@ def kernel(fn, *args):
 
     return wrapper
 
+def _ptr_to_gpu(p: Ptr[T], n: int, T: type):
+    mem = Memory._alloc(n, T)
+    mem._write(p, n)
+    return Ptr[T](mem._ptr)
+
+def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, T: type):
+    mem = Memory[T](q.as_byte())
+    mem._read(p, n)
+    mem._free()
+
+@pure
+@llvm
+def _ptr_to_type(p: cobj, T: type) -> T:
+    ret i8* %p
+
 @extend
 class List:
     def __to_gpu__(self):
-        n = len(self)
-        mem = Memory._alloc(n, T)
-        mem._write(self.arr.ptr, n)
-        return mem._ptr
+        mem = List[T].__new__()
+        cap = self.arr.len
+        gpu_ptr = _ptr_to_gpu(self.arr.ptr, cap)
+        mem.arr = Array[T](gpu_ptr, cap)
+        mem.len = self.len
 
-    def __from_gpu__(self, p: Ptr[byte]):
-        mem = Memory[T](p)
-        n = len(self)
-        mem._read(self.arr.ptr, n)
-        mem._free()
+        s = tuple(mem)
+        gpu_mem = Memory._alloc(1, type(s))
+        gpu_mem._write(__ptr__(s), 1)
+        return _ptr_to_type(gpu_mem._ptr, List[T])
+
+    def __from_gpu__(self, other: List[T]):
+        S = type(tuple(self))
+        mem = List[T].__new__()
+        _ptr_from_gpu(Ptr[S](mem.__raw__()), Ptr[S](other.__raw__()), 1)
+
+        my_cap = self.arr.len
+        other_cap = mem.arr.len
+
+        if other_cap > my_cap:
+            self._resize(other_cap)
+
+        _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
+        self.len = mem.len
