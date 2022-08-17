@@ -241,6 +241,71 @@ def _ptr_to_type(p: cobj, T: type) -> T:
     ret i8* %p
 
 @extend
+class NoneType:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: NoneType):
+        pass
+
+@extend
+class int:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: int):
+        pass
+
+@extend
+class float:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: float):
+        pass
+
+@extend
+class bool:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: bool):
+        pass
+
+@extend
+class byte:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: byte):
+        pass
+
+@extend
+class Int:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: Int[N]):
+        pass
+
+@extend
+class UInt:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: Int[N]):
+        pass
+
+@extend
+class str:
+    def __to_gpu__(self):
+        n = self.len
+        return str(_ptr_to_gpu(self.ptr, n), n)
+
+    def __from_gpu__(self, other: str):
+        Memory[byte](other.ptr)._free()
+
+@extend
 class List:
     def __to_gpu__(self):
         mem = List[T].__new__()
@@ -267,3 +332,18 @@ class List:
 
         _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
         self.len = mem.len
+
+# TODO: dict
+# TODO: set
+
+@extend
+class Optional:
+    def __to_gpu__(self):
+        if self is None:
+            return self
+        else:
+            return Optional[T](self.__val__().__to_gpu__())
+
+    def __from_gpu__(self, other: Optional[T]):
+        if self is not None and other is not None:
+            self.__val__().__from_gpu__(other.__val__())
