@@ -280,7 +280,7 @@ void remapFunctions(llvm::Module *M) {
 
       {"seq_alloc_exc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         auto *M = B.GetInsertBlock()->getModule();
+         // TODO: print error message and abort
          B.CreateUnreachable();
        }},
 
