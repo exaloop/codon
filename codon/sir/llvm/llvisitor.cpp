@@ -1358,6 +1358,10 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getDoubleTy();
   }
 
+  if (auto *x = cast<types::Float32Type>(t)) {
+    return B->getFloatTy();
+  }
+
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
   }
@@ -1431,6 +1435,11 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<types::FloatType>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }

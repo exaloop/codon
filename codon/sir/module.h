@@ -31,6 +31,7 @@ public:
   static const std::string BYTE_NAME;
   static const std::string INT_NAME;
   static const std::string FLOAT_NAME;
+  static const std::string FLOAT32_NAME;
   static const std::string STRING_NAME;
 
   static const std::string EQ_MAGIC_NAME;
@@ -305,6 +306,8 @@ public:
   types::Type *getIntType();
   /// @return the float type
   types::Type *getFloatType();
+  /// @return the float32 type
+  types::Type *getFloat32Type();
   /// @return the string type
   types::Type *getStringType();
   /// Gets a pointer type.

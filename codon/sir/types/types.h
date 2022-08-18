@@ -138,6 +138,15 @@ public:
   FloatType() : AcceptorExtend("float") {}
 };
 
+/// Float32 type (32-bit float)
+class Float32Type : public AcceptorExtend<Float32Type, PrimitiveType> {
+public:
+  static const char NodeId;
+
+  /// Constructs a float32 type.
+  Float32Type() : AcceptorExtend("float32") {}
+};
+
 /// Bool type (8-bit unsigned integer; either 0 or 1)
 class BoolType : public AcceptorExtend<BoolType, PrimitiveType> {
 public:

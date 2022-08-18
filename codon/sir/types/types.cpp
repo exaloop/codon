@@ -65,6 +65,8 @@ const char IntType::NodeId = 0;
 
 const char FloatType::NodeId = 0;
 
+const char Float32Type::NodeId = 0;
+
 const char BoolType::NodeId = 0;
 
 const char ByteType::NodeId = 0;

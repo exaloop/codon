@@ -347,8 +347,7 @@ std::string FunctionStmt::toString(int indent) const {
   return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
                 ret ? " #:ret " + ret->toString() : "",
                 dec.empty() ? "" : format(" (dec {})", join(dec, " ")),
-                attr.empty() ? "" : format(" (attr {})", join(attr, " ")),
-                pad,
+                attr.empty() ? "" : format(" (attr {})", join(attr, " ")), pad,
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
