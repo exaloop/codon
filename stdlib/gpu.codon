@@ -333,8 +333,92 @@ class List:
         _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
         self.len = mem.len
 
-# TODO: dict
-# TODO: set
+@extend
+class Dict:
+    def __to_gpu__(self):
+        from internal.khash import __ac_fsize
+        mem = Dict[K,V].__new__()
+        n = self._n_buckets
+        f = __ac_fsize(n)
+
+        mem._n_buckets = n
+        mem._size = self._size
+        mem._n_occupied = self._n_occupied
+        mem._upper_bound = self._upper_bound
+        mem._flags = _ptr_to_gpu(self._flags, f)
+        mem._keys = _ptr_to_gpu(self._keys, n)
+        mem._vals = _ptr_to_gpu(self._vals, n)
+
+        s = tuple(mem)
+        gpu_mem = Memory._alloc(1, type(s))
+        gpu_mem._write(__ptr__(s), 1)
+        return _ptr_to_type(gpu_mem._ptr, Dict[K,V])
+
+    def __from_gpu__(self, other: Dict[K,V]):
+        from internal.khash import __ac_fsize
+        S = type(tuple(self))
+        mem = Dict[K,V].__new__()
+        _ptr_from_gpu(Ptr[S](mem.__raw__()), Ptr[S](other.__raw__()), 1)
+
+        my_n = self._n_buckets
+        n = mem._n_buckets
+        f = __ac_fsize(n)
+
+        if my_n != n:
+            self._flags = Ptr[u32](f)
+            self._keys = Ptr[K](n)
+            self._vals = Ptr[V](n)
+
+        _ptr_from_gpu(self._flags, mem._flags, f)
+        _ptr_from_gpu(self._keys, mem._keys, n)
+        _ptr_from_gpu(self._vals, mem._vals, n)
+
+        self._n_buckets = n
+        self._size = mem._size
+        self._n_occupied = mem._n_occupied
+        self._upper_bound = mem._upper_bound
+
+@extend
+class Set:
+    def __to_gpu__(self):
+        from internal.khash import __ac_fsize
+        mem = Set[K].__new__()
+        n = self._n_buckets
+        f = __ac_fsize(n)
+
+        mem._n_buckets = n
+        mem._size = self._size
+        mem._n_occupied = self._n_occupied
+        mem._upper_bound = self._upper_bound
+        mem._flags = _ptr_to_gpu(self._flags, f)
+        mem._keys = _ptr_to_gpu(self._keys, n)
+
+        s = tuple(mem)
+        gpu_mem = Memory._alloc(1, type(s))
+        gpu_mem._write(__ptr__(s), 1)
+        return _ptr_to_type(gpu_mem._ptr, Set[K])
+
+    def __from_gpu__(self, other: Set[K]):
+        from internal.khash import __ac_fsize
+        S = type(tuple(self))
+        mem = Set[K].__new__()
+        _ptr_from_gpu(Ptr[S](mem.__raw__()), Ptr[S](other.__raw__()), 1)
+
+        my_n = self._n_buckets
+        n = mem._n_buckets
+        f = __ac_fsize(n)
+
+        if my_n != n:
+            self._flags = Ptr[u32](f)
+            self._keys = Ptr[K](n)
+
+        _ptr_from_gpu(self._flags, mem._flags, f)
+        _ptr_from_gpu(self._keys, mem._keys, n)
+
+        self._n_buckets = n
+        self._size = mem._size
+        self._n_occupied = mem._n_occupied
+        self._upper_bound = mem._upper_bound
 
 @extend
 class Optional:
