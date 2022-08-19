@@ -22,6 +22,13 @@ class int:
 class float:
     pass
 
+
+@tuple
+@__internal__
+class float32:
+    pass
+
+
 @tuple
 @__internal__
 class NoneType:

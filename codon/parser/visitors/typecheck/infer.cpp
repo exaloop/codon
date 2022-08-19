@@ -390,6 +390,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getIntType();
   } else if (t->name == "float") {
     handle = module->getFloatType();
+  } else if (t->name == "float32") {
+    handle = module->getFloat32Type();
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
