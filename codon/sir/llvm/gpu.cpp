@@ -317,6 +317,30 @@ void remapFunctions(llvm::Module *M) {
   }
 }
 
+void exploreGV(llvm::GlobalValue *G, llvm::SmallPtrSetImpl<llvm::GlobalValue *> &keep) {
+  if (keep.contains(G))
+    return;
+
+  keep.insert(G);
+  if (auto *F = llvm::dyn_cast<llvm::Function>(G)) {
+    for (auto I = llvm::inst_begin(F), E = inst_end(F); I != E; ++I) {
+      for (auto &U : I->operands()) {
+        if (auto *G2 = llvm::dyn_cast<llvm::GlobalValue>(U.get()))
+          exploreGV(G2, keep);
+      }
+    }
+  }
+}
+
+std::vector<llvm::GlobalValue *>
+getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
+  llvm::SmallPtrSet<llvm::GlobalValue *, 32> keep;
+  for (auto *G : kernels) {
+    exploreGV(G, keep);
+  }
+  return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
+}
+
 void moduleToPTX(llvm::Module *M, const std::string &filename,
                  std::vector<llvm::GlobalValue *> &kernels,
                  const std::string &cpuStr = "sm_20",
@@ -338,13 +362,14 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       llvm::CodeGenOpt::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
+  auto keep = getRequiredGVs(kernels);
 
   // Remove non-kernel functions.
   {
     auto pm = std::make_unique<llvm::legacy::PassManager>();
     pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
     // Delete everything but kernel functions.
-    pm->add(llvm::createGVExtractionPass(kernels));
+    pm->add(llvm::createGVExtractionPass(keep));
     // Delete unreachable globals.
     pm->add(llvm::createGlobalDCEPass());
     // Remove dead debug info.
@@ -375,7 +400,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     }
 
     pm->add(llvm::createInternalizePass([&](const llvm::GlobalValue &gv) {
-      return std::find(kernels.begin(), kernels.end(), &gv) != kernels.end();
+      return std::find(keep.begin(), keep.end(), &gv) != keep.end();
     }));
 
     llvm::PassManagerBuilder pmb;
