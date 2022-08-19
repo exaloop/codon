@@ -231,9 +231,9 @@ def kernel(fn, *args):
 
     kernel_ptr = seq_nvptx_function("kernel_0")  # TODO: use fn name
 
-    def wrapper(*args, block, grid = 1):
-        block = canonical_dim(block)
+    def wrapper(*args, grid, block):
         grid = canonical_dim(grid)
+        block = canonical_dim(block)
         shared_mem = 0
         gpu_args = tuple(arg.__to_gpu__() for arg in args)
         p = __ptr__(gpu_args).as_byte()
