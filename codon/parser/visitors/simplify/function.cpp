@@ -423,6 +423,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 /// actually an attribute (a function with `@__attribute__`).
 std::pair<bool, std::string> SimplifyVisitor::getDecorator(const ExprPtr &e) {
   auto dt = transform(clone(e));
+  LOG("{}", dt->toString());
   auto id = dt->getCall() ? dt->getCall()->expr : dt;
   if (id && id->getId()) {
     auto ci = ctx->find(id->getId()->value);
