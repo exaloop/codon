@@ -91,6 +91,19 @@ llvm::Function *makeFillIn(llvm::Function *F, Codegen codegen) {
   return fillIn;
 }
 
+llvm::Function *makeMalloc(llvm::Module *M) {
+  auto &context = M->getContext();
+  auto F = M->getOrInsertFunction("malloc", llvm::Type::getInt8PtrTy(context),
+                                  llvm::Type::getInt64Ty(context));
+  auto *G = llvm::cast<llvm::Function>(F.getCallee());
+  G->setLinkage(llvm::GlobalValue::ExternalLinkage);
+  G->setDoesNotThrow();
+  G->setReturnDoesNotAlias();
+  G->setOnlyAccessesInaccessibleMemory();
+  G->setWillReturn();
+  return G;
+}
+
 void remapFunctions(llvm::Module *M) {
   // simple name-to-name remappings
   static const std::vector<std::pair<std::string, std::string>> remapping = {
@@ -200,16 +213,7 @@ void remapFunctions(llvm::Module *M) {
       {"seq_realloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
-         llvm::Value *mem;
-         {
-           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
-           auto *G = llvm::cast<llvm::Function>(F.getCallee());
-           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
-           G->setDoesNotThrow();
-           G->setReturnDoesNotAlias();
-           G->setOnlyAccessesInaccessibleMemory();
-           mem = B.CreateCall(G, args[1]);
-         }
+         llvm::Value *mem = B.CreateCall(makeMalloc(M), args[1]);
 
          {
            auto F = llvm::Intrinsic::getDeclaration(
@@ -231,56 +235,28 @@ void remapFunctions(llvm::Module *M) {
       {"seq_calloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
-
          llvm::Value *size = B.CreateMul(args[0], args[1]);
-         llvm::Value *mem;
-         {
-           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
-           auto *G = llvm::cast<llvm::Function>(F.getCallee());
-           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
-           G->setDoesNotThrow();
-           G->setReturnDoesNotAlias();
-           G->setOnlyAccessesInaccessibleMemory();
-           mem = B.CreateCall(G, size);
-         }
-
-         {
-           auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
-                                                    {B.getInt8PtrTy(), B.getInt64Ty()});
-           B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
-         }
-
+         llvm::Value *mem = B.CreateCall(makeMalloc(M), size);
+         auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
+                                                  {B.getInt8PtrTy(), B.getInt64Ty()});
+         B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
          B.CreateRet(mem);
        }},
 
       {"seq_calloc_atomic",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
-
          llvm::Value *size = B.CreateMul(args[0], args[1]);
-         llvm::Value *mem;
-         {
-           auto F = M->getOrInsertFunction("malloc", B.getInt8PtrTy(), B.getInt64Ty());
-           auto *G = llvm::cast<llvm::Function>(F.getCallee());
-           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
-           G->setDoesNotThrow();
-           G->setReturnDoesNotAlias();
-           G->setOnlyAccessesInaccessibleMemory();
-           mem = B.CreateCall(G, size);
-         }
-
-         {
-           auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
-                                                    {B.getInt8PtrTy(), B.getInt64Ty()});
-           B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
-         }
-
+         llvm::Value *mem = B.CreateCall(makeMalloc(M), size);
+         auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
+                                                  {B.getInt8PtrTy(), B.getInt64Ty()});
+         B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
          B.CreateRet(mem);
        }},
 
       {"seq_alloc_exc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         // TODO: print error message and abort
+         // TODO: print error message and abort if in debug mode
          B.CreateUnreachable();
        }},
 
