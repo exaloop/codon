@@ -69,7 +69,7 @@ SEQ_FUNC CUfunction seq_nvptx_function(seq_str_t name) {
   CUfunction function;
   auto *clean = (char *)seq_alloc_atomic(name.len + 1);
   for (unsigned i = 0; i < name.len; i++) {
-    char c = name.ptr[i];
+    char c = name.str[i];
     clean[i] = (name_char_valid(c, i == 0) ? c : '$');
   }
   clean[name.len] = '\0';
