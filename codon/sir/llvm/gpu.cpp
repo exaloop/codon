@@ -421,11 +421,13 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   // Clean up names.
   {
     for (auto &G : M->globals()) {
-      G.setName(cleanUpName(G.getName()));
+      if (G.hasLocalLinkage())
+        G.setName(cleanUpName(G.getName()));
     }
 
     for (auto &F : M->functions()) {
-      F.setName(cleanUpName(F.getName()));
+      if (F.hasLocalLinkage())
+        F.setName(cleanUpName(F.getName()));
     }
 
     for (auto *S : M->getIdentifiedStructTypes()) {
