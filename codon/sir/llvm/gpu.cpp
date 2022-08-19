@@ -19,12 +19,19 @@ const std::string LIBDEVICE_PATH = "/usr/local/cuda/nvvm/libdevice/libdevice.10.
 std::string cleanUpName(llvm::StringRef name) {
   std::string validName;
   llvm::raw_string_ostream validNameStream(validName);
+
+  auto valid = [](char c, bool first) {
+    bool ok =
+        ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '$') || (c == '_');
+    if (!first)
+      ok = ok || ('0' <= c && c <= '9');
+    return ok;
+  };
+
+  bool first = true;
   for (char c : name) {
-    if (c == '.' || c == '@') {
-      validNameStream << "_$_";
-    } else {
-      validNameStream << c;
-    }
+    validNameStream << (valid(c, first) ? c : '$');
+    first = false;
   }
 
   return validNameStream.str();
@@ -413,16 +420,16 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
   // Clean up names.
   {
-    static int x = 0;
-
     for (auto &G : M->globals()) {
-      if (G.hasLocalLinkage())
-        G.setName("x" + std::to_string(x++));
+      G.setName(cleanUpName(G.getName()));
     }
 
     for (auto &F : M->functions()) {
-      if (F.hasLocalLinkage())
-        F.setName("x" + std::to_string(x++));
+      F.setName(cleanUpName(F.getName()));
+    }
+
+    for (auto *S : M->getIdentifiedStructTypes()) {
+      S->setName(cleanUpName(S->getName()));
     }
   }
 

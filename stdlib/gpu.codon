@@ -187,7 +187,7 @@ def _launch(f: cobj, grid: Tuple[int,int,int], block: Tuple[int,int,int], params
                      u32(block[1]), u32(block[2]), u32(shared_mem), __ptr__(params).as_byte())
 
 def kernel(fn, *args):
-    from C import seq_nvptx_function(Ptr[byte]) -> cobj
+    from C import seq_nvptx_function(str) -> cobj
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
 
     def offsets(t):
@@ -212,7 +212,7 @@ def kernel(fn, *args):
             a.__from_gpu__(g)
             from_gpu(args[1:], gpu_args[1:])
 
-    kernel_ptr = seq_nvptx_function("kernel_0".ptr)  # TODO: use fn name
+    kernel_ptr = seq_nvptx_function("kernel_0")  # TODO: use fn name
 
     def wrapper(*args, grid: Tuple[int,int,int], block: Tuple[int,int,int]):
         shared_mem = 0
