@@ -364,8 +364,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   M->setDataLayout(machine->createDataLayout());
   auto keep = getRequiredGVs(kernels);
 
-  // Remove non-kernel functions.
-  {
+  auto prune = [&](std::vector<llvm::GlobalValue *> keep) {
     auto pm = std::make_unique<llvm::legacy::PassManager>();
     pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
     // Delete everything but kernel functions.
@@ -377,8 +376,12 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     // Remove dead func decls.
     pm->add(llvm::createStripDeadPrototypesPass());
     pm->run(*M);
-  }
+  };
 
+  // Remove non-kernel functions.
+  prune(keep);
+
+  // Link libdevice and other cleanup.
   linkLibdevice(M, LIBDEVICE_PATH);
   remapFunctions(M);
 
@@ -426,6 +429,10 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     fpm->doFinalization();
     pm->run(*M);
   }
+
+  // Prune again after optimizations.
+  keep = getRequiredGVs(kernels);
+  prune(keep);
 
   // Clean up names.
   {
