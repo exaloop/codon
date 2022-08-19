@@ -78,111 +78,144 @@ class Dim3:
     def z(self):
         return int(self._z)
 
-def thread():
-    @pure
-    @llvm
-    def get_x() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.tid.x()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
-        ret i32 %res
+@tuple
+class Thread:
+    @property
+    def x(self):
+        @pure
+        @llvm
+        def get_x() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+            ret i32 %res
 
-    @pure
-    @llvm
-    def get_y() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.tid.y()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.y()
-        ret i32 %res
+        return int(get_x())
 
-    @pure
-    @llvm
-    def get_z() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.tid.z()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.z()
-        ret i32 %res
+    @property
+    def y(self):
+        @pure
+        @llvm
+        def get_y() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.tid.y()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.y()
+            ret i32 %res
 
-    return Dim3(get_x(), get_y(), get_z())
+        return int(get_y())
 
-def block():
-    @pure
-    @llvm
-    def get_x() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
-        ret i32 %res
+    @property
+    def z(self):
+        @pure
+        @llvm
+        def get_z() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.tid.z()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.z()
+            ret i32 %res
 
-    @pure
-    @llvm
-    def get_y() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()
-        ret i32 %res
+        return int(get_z())
 
-    @pure
-    @llvm
-    def get_z() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
-        ret i32 %res
+@tuple
+class Block:
+    @property
+    def x(self):
+        @pure
+        @llvm
+        def get_x() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+            ret i32 %res
 
-    return Dim3(get_x(), get_y(), get_z())
+        return int(get_x())
 
-def block_dim():
-    @pure
-    @llvm
-    def get_x() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
-        ret i32 %res
+    @property
+    def y(self):
+        @pure
+        @llvm
+        def get_y() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()
+            ret i32 %res
 
-    @pure
-    @llvm
-    def get_y() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
-        ret i32 %res
+        return int(get_y())
 
-    @pure
-    @llvm
-    def get_z() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
-        ret i32 %res
+    @property
+    def z(self):
+        @pure
+        @llvm
+        def get_z() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
+            ret i32 %res
 
-    return Dim3(get_x(), get_y(), get_z())
+        return int(get_z())
 
-def grid_dim():
-    @pure
-    @llvm
-    def get_x() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()
-        ret i32 %res
+    @property
+    def dim(self):
+        @pure
+        @llvm
+        def get_x() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
+            ret i32 %res
 
-    @pure
-    @llvm
-    def get_y() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.y()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.y()
-        ret i32 %res
+        @pure
+        @llvm
+        def get_y() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
+            ret i32 %res
 
-    @pure
-    @llvm
-    def get_z() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
-        ret i32 %res
+        @pure
+        @llvm
+        def get_z() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
+            ret i32 %res
 
-    return Dim3(get_x(), get_y(), get_z())
+        return Dim3(get_x(), get_y(), get_z())
 
-def warpsize():
-    @pure
-    @llvm
-    def _warpsize() -> u32:
-        declare i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-        %res = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-        ret i32 %res
+@tuple
+class Grid:
+    @property
+    def dim(self):
+        @pure
+        @llvm
+        def get_x() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()
+            ret i32 %res
 
-    return int(warpsize)
+        @pure
+        @llvm
+        def get_y() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.y()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.y()
+            ret i32 %res
+
+        @pure
+        @llvm
+        def get_z() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
+            ret i32 %res
+
+        return Dim3(get_x(), get_y(), get_z())
+
+@tuple
+class Warp:
+    def __len__(self):
+        @pure
+        @llvm
+        def get_warpsize() -> u32:
+            declare i32 @llvm.nvvm.read.ptx.sreg.warpsize()
+            %res = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
+            ret i32 %res
+
+        return int(get_warpsize())
+
+thread = Thread()
+block = Block()
+grid = Grid()
+warp = Warp()
 
 def _launch(f: cobj, grid: Tuple[int,int,int], block: Tuple[int,int,int], params, shared_mem: int = 0):
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
