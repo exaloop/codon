@@ -426,7 +426,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     }
 
     for (auto &F : M->functions()) {
-      if (F.hasLocalLinkage())
+      if (F.getInstructionCount() > 0)
         F.setName(cleanUpName(F.getName()));
     }
 
