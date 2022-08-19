@@ -277,6 +277,7 @@ void remapFunctions(llvm::Module *M) {
           G = copyPrototype(F, pair.second);
       }
 
+      G->setWillReturn();
       F->replaceAllUsesWith(G);
       F->dropAllReferences();
       F->eraseFromParent();
