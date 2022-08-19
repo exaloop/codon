@@ -58,10 +58,13 @@ def syncthreads() -> None:
     ret {} {}
 
 @tuple
-class Dim:
+class Dim3:
     _x: u32
     _y: u32
     _z: u32
+
+    def __new__(x: int, y: int, z: int):
+        return Dim3(u32(x), u32(y), u32(z))
 
     @property
     def x(self):
@@ -97,7 +100,7 @@ def thread():
         %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.z()
         ret i32 %res
 
-    return Dim(get_x(), get_y(), get_z())
+    return Dim3(get_x(), get_y(), get_z())
 
 def block():
     @pure
@@ -121,7 +124,7 @@ def block():
         %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.z()
         ret i32 %res
 
-    return Dim(get_x(), get_y(), get_z())
+    return Dim3(get_x(), get_y(), get_z())
 
 def block_dim():
     @pure
@@ -145,7 +148,7 @@ def block_dim():
         %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
         ret i32 %res
 
-    return Dim(get_x(), get_y(), get_z())
+    return Dim3(get_x(), get_y(), get_z())
 
 def grid_dim():
     @pure
@@ -169,7 +172,7 @@ def grid_dim():
         %res = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.z()
         ret i32 %res
 
-    return Dim(get_x(), get_y(), get_z())
+    return Dim3(get_x(), get_y(), get_z())
 
 def warpsize():
     @pure
@@ -189,6 +192,20 @@ def _launch(f: cobj, grid: Tuple[int,int,int], block: Tuple[int,int,int], params
 def kernel(fn, *args):
     from C import seq_nvptx_function(str) -> cobj
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
+
+    def canonical_dim(dim):
+        if isinstance(dim, NoneType):
+            return (1, 1, 1)
+        elif isinstance(dim, int):
+            return (dim, 1, 1)
+        elif isinstance(dim, Tuple[int,int]):
+            return (dim[0], dim[1], 1)
+        elif isinstance(dim, Tuple[int,int,int]):
+            return dim
+        elif isinstance(dim, Dim3):
+            return (dim.x, dim.y, dim.z)
+        else:
+            compile_error("bad dimension argument")
 
     def offsets(t):
         @pure
@@ -214,7 +231,9 @@ def kernel(fn, *args):
 
     kernel_ptr = seq_nvptx_function("kernel_0")  # TODO: use fn name
 
-    def wrapper(*args, grid: Tuple[int,int,int], block: Tuple[int,int,int]):
+    def wrapper(*args, block, grid = 1):
+        block = canonical_dim(block)
+        grid = canonical_dim(grid)
         shared_mem = 0
         gpu_args = tuple(arg.__to_gpu__() for arg in args)
         p = __ptr__(gpu_args).as_byte()
