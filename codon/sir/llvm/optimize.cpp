@@ -646,13 +646,13 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
     TIME("llvm/opt1");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
-  {
-    TIME("llvm/gpu");
-    applyGPUTransformations(module);
-  }
   if (!debug) {
     TIME("llvm/opt2");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
+  }
+  {
+    TIME("llvm/gpu");
+    applyGPUTransformations(module);
   }
   verify(module);
 }
