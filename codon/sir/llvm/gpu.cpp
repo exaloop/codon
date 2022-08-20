@@ -205,8 +205,6 @@ void remapFunctions(llvm::Module *M) {
       {"modff", "__nv_modff"},
 
       // runtime library functions
-      {"seq_alloc", "malloc"},
-      {"seq_alloc_atomic", "malloc"},
       {"seq_free", "free"},
       {"seq_register_finalizer", ""},
       {"seq_gc_add_roots", ""},
@@ -217,6 +215,20 @@ void remapFunctions(llvm::Module *M) {
 
   // functions that need to be generated as they're not available on GPU
   static const std::vector<std::pair<std::string, Codegen>> fillins = {
+      {"seq_alloc",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertBlock()->getModule();
+         llvm::Value *mem = B.CreateCall(makeMalloc(M), args[0]);
+         B.CreateRet(mem);
+       }},
+
+      {"seq_alloc_atomic",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         auto *M = B.GetInsertBlock()->getModule();
+         llvm::Value *mem = B.CreateCall(makeMalloc(M), args[0]);
+         B.CreateRet(mem);
+       }},
+
       {"seq_realloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
@@ -268,9 +280,8 @@ void remapFunctions(llvm::Module *M) {
        }},
 
       {"seq_throw",
-       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
-         B.CreateUnreachable();
-       }},
+       [](llvm::IRBuilder<> &B,
+          const std::vector<llvm::Value *> &args) { B.CreateUnreachable(); }},
   };
 
   for (auto &pair : remapping) {
