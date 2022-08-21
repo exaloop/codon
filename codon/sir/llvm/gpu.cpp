@@ -21,8 +21,7 @@ std::string cleanUpName(llvm::StringRef name) {
   llvm::raw_string_ostream validNameStream(validName);
 
   auto valid = [](char c, bool first) {
-    bool ok =
-        ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '$') || (c == '_');
+    bool ok = ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '_');
     if (!first)
       ok = ok || ('0' <= c && c <= '9');
     return ok;
@@ -30,7 +29,7 @@ std::string cleanUpName(llvm::StringRef name) {
 
   bool first = true;
   for (char c : name) {
-    validNameStream << (valid(c, first) ? c : '$');
+    validNameStream << (valid(c, first) ? c : '_');
     first = false;
   }
 

@@ -58,8 +58,7 @@ SEQ_FUNC CUdevice seq_nvptx_device(seq_int_t idx) {
 }
 
 static bool name_char_valid(char c, bool first) {
-  bool ok =
-      ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '$') || (c == '_');
+  bool ok = ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '_');
   if (!first)
     ok = ok || ('0' <= c && c <= '9');
   return ok;
@@ -70,7 +69,7 @@ SEQ_FUNC CUfunction seq_nvptx_function(seq_str_t name) {
   auto *clean = (char *)seq_alloc_atomic(name.len + 1);
   for (unsigned i = 0; i < name.len; i++) {
     char c = name.str[i];
-    clean[i] = (name_char_valid(c, i == 0) ? c : '$');
+    clean[i] = (name_char_valid(c, i == 0) ? c : '_');
   }
   clean[name.len] = '\0';
   check(cuModuleGetFunction(&function, module, clean));
