@@ -1120,7 +1120,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     err.print("LLVM", buf);
     // LOG("-> ERR {}", x->referenceString());
     // LOG("       {}", code);
-    compilationError(buf.str());
+    compilationError(fmt::format("{} ({})", buf.str(), x->getName()));
   }
   sub->setDataLayout(M->getDataLayout());
 

@@ -382,6 +382,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Get the IR type
   auto *module = ctx->cache->module;
   ir::types::Type *handle = nullptr;
+
   if (t->name == "bool") {
     handle = module->getBoolType();
   } else if (t->name == "byte") {
@@ -417,6 +418,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
       types.push_back(forceFindIRType(m));
     auto ret = forceFindIRType(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
+  } else if (t->name == "std.simd.Vec") {
+    seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
+    handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
   } else if (auto tr = t->getRecord()) {
     std::vector<ir::types::Type *> typeArgs;
     std::vector<std::string> names;
