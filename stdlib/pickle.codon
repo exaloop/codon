@@ -78,6 +78,14 @@ class float:
 
 
 @extend
+class float32:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> float32:
+        return _read(jar, float32)
+
+@extend
 class bool:
     def __pickle__(self, jar: Jar):
         _write(jar, self)

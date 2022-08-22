@@ -15,17 +15,20 @@ class byte:
 @tuple
 @__internal__
 class int:
+    MAX = 9223372036854775807
     pass
 
 @tuple
 @__internal__
 class float:
+    MIN_10_EXP = -307
     pass
 
 
 @tuple
 @__internal__
 class float32:
+    MIN_10_EXP = -37
     pass
 
 
@@ -160,4 +163,7 @@ def super():
 
 def superf(*args):
     """Special handling"""
+    pass
+
+def __realized__(fn, args):
     pass

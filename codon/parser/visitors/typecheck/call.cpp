@@ -543,6 +543,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformCompileError(expr)};
   } else if (val == "tuple") {
     return {true, transformTupleFn(expr)};
+  } else if (val == "__realized__") {
+    return {true, transformRealizedFn(expr)};
   } else {
     return {false, nullptr};
   }
@@ -799,6 +801,21 @@ ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   e->setDone();
   e->markType();
   return e;
+}
+
+/// Transform __realized__ function to a fully realized type identifier.
+ExprPtr TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
+  auto call = transform(N<CallExpr>(expr->args[0].value,
+    N<StarExpr>(expr->args[1].value)));
+  if (!call->getCall()->expr->type->getFunc())
+    error("the first argument must be a function");
+  if (auto f = realize(call->getCall()->expr->type)) {
+    auto e = N<IdExpr>(f->getFunc()->realizedName());
+    e->setType(f);
+    e->setDone();
+    return e;
+  }
+  return nullptr;
 }
 
 /// Get the list that describes the inheritance hierarchy of a given type.

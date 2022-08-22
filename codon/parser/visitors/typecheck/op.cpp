@@ -339,7 +339,9 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   if (expr->expr->staticValue.type == StaticValue::STRING) {
     if (expr->op == "!") {
       if (expr->expr->staticValue.evaluated) {
-        return transform(N<BoolExpr>(expr->expr->staticValue.getString().empty()));
+        bool value = expr->expr->staticValue.getString().empty();
+        LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
+        return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         unify(expr->type, ctx->getType("bool"));
@@ -360,6 +362,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         value = -value;
       else
         value = !bool(value);
+      LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
       if (expr->op == "!")
         return transform(N<BoolExpr>(bool(value)));
       else
@@ -385,8 +388,10 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     if (expr->op == "+") {
       // `"a" + "b"` -> `"ab"`
       if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
-        return transform(N<StringExpr>(expr->lexpr->staticValue.getString() +
-                                       expr->rexpr->staticValue.getString()));
+        auto value =
+            expr->lexpr->staticValue.getString() + expr->rexpr->staticValue.getString();
+        LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
+        return transform(N<StringExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
@@ -398,7 +403,9 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
         bool eq = expr->lexpr->staticValue.getString() ==
                   expr->rexpr->staticValue.getString();
-        return transform(N<BoolExpr>(expr->op == "==" ? eq : !eq));
+        bool value = expr->op == "==" ? eq : !eq;
+        LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
+        return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
@@ -452,7 +459,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     } else {
       seqassert(false, "unknown static operator {}", expr->op);
     }
-
+    LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
     if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
            expr->op))
       return transform(N<BoolExpr>(bool(lvalue)));
