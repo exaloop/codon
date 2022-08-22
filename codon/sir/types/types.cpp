@@ -190,6 +190,12 @@ std::string IntNType::getInstanceName(unsigned int len, bool sign) {
   return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
 }
 
+const char VectorType::NodeId = 0;
+
+std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base) {
+  return fmt::format(FMT_STRING("Vector[{}, {}]"), count, base->referenceString());
+}
+
 } // namespace types
 } // namespace ir
 } // namespace codon

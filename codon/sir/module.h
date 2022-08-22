@@ -338,6 +338,11 @@ public:
   /// @param sign true if signed
   /// @return a variable length integer type
   types::Type *getIntNType(unsigned len, bool sign);
+  /// Gets a vector type.
+  /// @param count the vector size
+  /// @param base the vector base type (MUST be a primitive type)
+  /// @return a vector type
+  types::Type *getVectorType(unsigned count, types::Type *base);
   /// Gets a tuple type.
   /// @param args the arg types
   /// @return the tuple type
@@ -404,6 +409,12 @@ public:
   /// @param sign true if signed
   /// @return a variable length integer type
   types::Type *unsafeGetIntNType(unsigned len, bool sign);
+  /// Gets a vector type. Should generally not be used as no
+  /// type-checker information is generated.
+  /// @param count the vector size
+  /// @param base the vector base type (MUST be a primitive type)
+  /// @return a vector type
+  types::Type *unsafeGetVectorType(unsigned count, types::Type *base);
 
 private:
   void store(types::Type *t) {

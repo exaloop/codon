@@ -1416,6 +1416,11 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getIntNTy(x->getLen());
   }
 
+  if (auto *x = cast<types::VectorType>(t)) {
+    return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
+                                 /*Scalable=*/false);
+  }
+
   if (auto *x = cast<dsl::types::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
@@ -1567,6 +1572,12 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type),
         x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
+  }
+
+  if (auto *x = cast<types::VectorType>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_unsigned);
   }
 
   if (auto *x = cast<dsl::types::CustomType>(t)) {

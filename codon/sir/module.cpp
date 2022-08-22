@@ -250,6 +250,10 @@ types::Type *Module::getIntNType(unsigned int len, bool sign) {
   return getOrRealizeType(sign ? "Int" : "UInt", {len});
 }
 
+types::Type *Module::getVectorType(unsigned count, types::Type *base) {
+  return getOrRealizeType("Vec", {base, count});
+}
+
 types::Type *Module::getTupleType(std::vector<types::Type *> args) {
   std::vector<ast::types::TypePtr> argTypes;
   for (auto *t : args) {
@@ -337,6 +341,15 @@ types::Type *Module::unsafeGetIntNType(unsigned int len, bool sign) {
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::IntNType>(len, sign);
+}
+
+types::Type *Module::unsafeGetVectorType(unsigned int count, types::Type *base) {
+  auto *primitive = cast<types::PrimitiveType>(base);
+  auto name = types::VectorType::getInstanceName(count, primitive);
+  if (auto *rVal = getType(name))
+    return rVal;
+  seqassertn(primitive, "base type must be a primitive type");
+  return Nr<types::VectorType>(count, primitive);
 }
 
 } // namespace ir
