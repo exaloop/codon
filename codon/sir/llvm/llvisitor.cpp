@@ -42,6 +42,8 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
   if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
     return x->getUnmangledName();
+  } else if (util::hasAttribute(x, GPU_KERNEL_ATTR)) {
+    return x->getName();
   } else {
     return x->referenceString();
   }
