@@ -314,7 +314,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     inferTypes(ast->suite);
     ctx->blockLevel = oldBlockLevel;
 
-
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->ret && type->getRetType()->getUnbound())
