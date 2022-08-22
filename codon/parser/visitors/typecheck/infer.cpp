@@ -52,8 +52,11 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     ctx->typecheckLevel++;
     auto changedNodes = ctx->changedNodes;
     ctx->changedNodes = 0;
+    auto returnEarly = ctx->returnEarly;
+    ctx->returnEarly = false;
     TypecheckVisitor(ctx).transform(result);
     std::swap(ctx->changedNodes, changedNodes);
+    std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
 
     if (iteration == 1 && isToplevel) {
@@ -282,10 +285,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
-    auto oldReturnEarly = ctx->returnEarly;
     ctx->blockLevel = 0;
-    ctx->returnEarly = false;
-
     if (startswith(type->ast->name, "Function.__call__")) {
       // Special case: Function.__call__
       /// TODO: move to IR
@@ -313,7 +313,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     }
     inferTypes(ast->suite);
     ctx->blockLevel = oldBlockLevel;
-    ctx->returnEarly = oldReturnEarly;
+
 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
