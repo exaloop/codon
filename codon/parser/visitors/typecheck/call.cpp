@@ -805,8 +805,8 @@ ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
 
 /// Transform __realized__ function to a fully realized type identifier.
 ExprPtr TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
-  auto call = transform(N<CallExpr>(expr->args[0].value,
-    N<StarExpr>(expr->args[1].value)));
+  auto call =
+      transform(N<CallExpr>(expr->args[0].value, N<StarExpr>(expr->args[1].value)));
   if (!call->getCall()->expr->type->getFunc())
     error("the first argument must be a function");
   if (auto f = realize(call->getCall()->expr->type)) {
