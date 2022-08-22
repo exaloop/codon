@@ -442,7 +442,7 @@ class float32:
 
     @pure
     @llvm
-    def __neg__(self) -> float:
+    def __neg__(self) -> float32:
         %0 = fneg float %self
         ret float %0
 
