@@ -444,8 +444,6 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     }
   }
 
-  llvm::errs() << *M << "\n";
-
   // Generate PTX file.
   {
     std::error_code errcode;
