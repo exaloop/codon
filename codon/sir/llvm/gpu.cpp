@@ -517,15 +517,11 @@ void applyGPUTransformations(llvm::Module *M) {
   clone->setDataLayout(GPU_DL);
 
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
-
-  unsigned idx = 0;
   std::vector<llvm::GlobalValue *> kernels;
 
   for (auto &F : *clone) {
     if (!F.hasFnAttribute("kernel"))
       continue;
-
-    F.setName("kernel_" + std::to_string(idx++));
 
     llvm::Metadata *nvvmElem[] = {
         llvm::ConstantAsMetadata::get(&F),
