@@ -405,6 +405,9 @@ class float32:
         %0 = fptrunc double %self to float
         ret float %0
 
+    def __new__(what: float32) -> float32:
+        return what
+
     def __new__() -> float32:
         return float32.__new__(0.0)
 
