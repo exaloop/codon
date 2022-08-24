@@ -238,7 +238,9 @@ class List:
         len0 = self.__len__()
         new_cap = n * len0
         if self.arr.len < new_cap:
-            p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(), new_cap * gc.sizeof(T)))
+            p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(),
+                                  new_cap * gc.sizeof(T),
+                                  self.arr.len * gc.sizeof(T)))
             self.arr = Array[T](p, new_cap)
 
         idx = len0
@@ -349,7 +351,9 @@ class List:
             raise IndexError(msg)
 
     def _resize(self, new_cap: int):
-        p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(), new_cap * gc.sizeof(T)))
+        p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(),
+                              new_cap * gc.sizeof(T),
+                              self.arr.len * gc.sizeof(T)))
         self.arr = Array[T](p, new_cap)
 
     def _resize_if_full(self):

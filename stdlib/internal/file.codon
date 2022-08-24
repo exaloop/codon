@@ -145,8 +145,9 @@ class gzFile:
             if self.buf[offset - 1] == byte(10):  # '\n'
                 break
 
+            oldsz = self.sz
             self.sz *= 2
-            self.buf = realloc(self.buf, self.sz)
+            self.buf = realloc(self.buf, self.sz, oldsz)
 
         return offset
 

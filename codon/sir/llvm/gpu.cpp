@@ -237,7 +237,7 @@ void remapFunctions(llvm::Module *M) {
            auto F = llvm::Intrinsic::getDeclaration(
                M, llvm::Intrinsic::memcpy,
                {B.getInt8PtrTy(), B.getInt8PtrTy(), B.getInt64Ty()});
-           B.CreateCall(F, {mem, args[0], args[1], B.getFalse()});
+           B.CreateCall(F, {mem, args[0], args[2], B.getFalse()});
          }
 
          {

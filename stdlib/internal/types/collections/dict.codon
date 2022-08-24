@@ -284,10 +284,14 @@ class Dict:
 
             if self._n_buckets < new_n_buckets:
                 self._keys = Ptr[K](
-                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                    gc.realloc(self._keys.as_byte(),
+                               new_n_buckets * gc.sizeof(K),
+                               self._n_buckets * gc.sizeof(K))
                 )
                 self._vals = Ptr[V](
-                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                    gc.realloc(self._vals.as_byte(),
+                               new_n_buckets * gc.sizeof(V),
+                               self._n_buckets * gc.sizeof(V))
                 )
 
         if j:
@@ -324,10 +328,14 @@ class Dict:
 
             if self._n_buckets > new_n_buckets:
                 self._keys = Ptr[K](
-                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                    gc.realloc(self._keys.as_byte(),
+                               new_n_buckets * gc.sizeof(K),
+                               self._n_buckets * gc.sizeof(K))
                 )
                 self._vals = Ptr[V](
-                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                    gc.realloc(self._vals.as_byte(),
+                               new_n_buckets * gc.sizeof(V),
+                               self._n_buckets * gc.sizeof(V))
                 )
 
             self._flags = new_flags
