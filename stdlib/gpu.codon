@@ -286,6 +286,25 @@ def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, T: type):
 def _ptr_to_type(p: cobj, T: type) -> T:
     ret i8* %p
 
+@tuple
+class Pointer[T]:
+    _ptr: Ptr[T]
+    _len: int
+
+    def __to_gpu__(self):
+        return _ptr_to_gpu(self._ptr, self._len)
+
+    def __from_gpu__(self, other: Ptr[T]):
+        _ptr_from_gpu(self._ptr, other, self._len)
+
+@extend
+class Ptr:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: Ptr[T]):
+        pass
+
 @extend
 class NoneType:
     def __to_gpu__(self):
