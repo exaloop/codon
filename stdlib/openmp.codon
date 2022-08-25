@@ -952,6 +952,26 @@ def _atomic_float_max(a: Ptr[float], b: float):
     __kmpc_atomic_float8_max(_default_loc(), i32(0), a, b)
 
 
+def _atomic_float32_add(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_add(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_add(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_mul(a: Ptr[float32], b: float32):
+    from C import __kmpc_atomic_float4_mul(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_mul(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_min(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_min(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_min(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_max(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_max(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_max(_default_loc(), i32(0), a, b)
+
+
 def for_par(
     num_threads: int = -1,
     chunk_size: int = -1,

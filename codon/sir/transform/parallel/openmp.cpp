@@ -142,6 +142,28 @@ struct Reduction {
       default:
         return nullptr;
       }
+    } else if (isA<types::Float32Type>(type)) {
+      auto *f32 = M->getOrRealizeType("float32");
+      float value = 0.0;
+
+      switch (kind) {
+      case Kind::ADD:
+        value = 0.0;
+        break;
+      case Kind::MUL:
+        value = 1.0;
+        break;
+      case Kind::MIN:
+        value = std::numeric_limits<float>::max();
+        break;
+      case Kind::MAX:
+        value = std::numeric_limits<float>::min();
+        break;
+      default:
+        return nullptr;
+      }
+
+      return (*f32)(*M->getFloat(value));
     }
 
     auto *init = (*type)();
@@ -235,6 +257,23 @@ struct Reduction {
         break;
       case Kind::MAX:
         func = "_atomic_float_max";
+        break;
+      default:
+        break;
+      }
+    } else if (isA<types::Float32Type>(type)) {
+      switch (kind) {
+      case Kind::ADD:
+        func = "_atomic_float32_add";
+        break;
+      case Kind::MUL:
+        func = "_atomic_float32_mul";
+        break;
+      case Kind::MIN:
+        func = "_atomic_float32_min";
+        break;
+      case Kind::MAX:
+        func = "_atomic_float32_max";
         break;
       default:
         break;

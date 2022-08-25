@@ -450,6 +450,35 @@ def test_omp_reductions():
         c = min(b, c)
     assert c == -1.
 
+    # float32s
+    c = f32(0.)
+    # this one can give different results due to
+    # non-commutativity of floats; so limit to 1001
+    @par
+    for i in L[1:1001]:
+        c += f32(i)
+    assert c == sum(f32(i) for i in range(1001))
+
+    c = f32(1.)
+    @par
+    for i in L[1:10]:
+        c *= f32(i)
+    assert c == f32(1*2*3*4*5*6*7*8*9)
+
+    c = f32(0.)
+    @par
+    for i in L:
+        b = f32(N+1 if i == N//2 else i)
+        c = max(b, c)
+    assert c == f32(N+1)
+
+    c = f32(0.)
+    @par
+    for i in L:
+        b = f32(-1 if i == N//2 else i)
+        c = min(b, c)
+    assert c == f32(-1.)
+
     x_add = 10.
     x_min = inf
     x_max = -inf
