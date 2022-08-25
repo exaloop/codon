@@ -508,18 +508,26 @@ class Optional:
 @extend
 class __internal__:
     def class_to_gpu(obj):
-        if isinstance(obj, ByVal):
+        if isinstance(obj, Tuple):
             return tuple(a.__to_gpu__() for a in obj)
+        elif isinstance(obj, ByVal):
+            T = type(obj)
+            return T(*tuple(a.__to_gpu__() for a in tuple(obj)))
         else:
             T = type(obj)
             S = type(tuple(obj))
-            gpu_mem = _ptr_to_gpu(Ptr[S](obj.__raw__()), 1)
-            gpu_mem[0] = tuple(obj).__to_gpu__()
-            return _ptr_to_type(gpu_mem.as_byte(), T)
+            mem = T.__new__()
+            Ptr[S](mem.__raw__())[0] = tuple(obj).__to_gpu__()
+            s = tuple(mem)
+            gpu_mem = Memory._alloc(1, type(s))
+            gpu_mem._write(__ptr__(s), 1)
+            return _ptr_to_type(gpu_mem._ptr, T)
 
     def class_from_gpu(obj, other):
-        if isinstance(obj, ByVal):
+        if isinstance(obj, Tuple):
             _tuple_from_gpu(obj, other)
+        elif isinstance(obj, ByVal):
+            _tuple_from_gpu(tuple(obj), tuple(other))
         else:
             T = type(obj)
             S = type(tuple(obj))
