@@ -509,7 +509,7 @@ class Optional:
 class __internal__:
     def class_to_gpu(obj):
         if isinstance(obj, Tuple):
-            return (a.__to_gpu__() for a in obj)
+            return tuple(a.__to_gpu__() for a in obj)
         else:
             T = type(obj)
             S = type(tuple(obj))
