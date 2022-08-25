@@ -637,16 +637,17 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   return __internal__.tuple_to_gpu(self)
     fargs.emplace_back(Param{"self", typExpr->clone()});
     ret = typExpr->clone();
-    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
-          N<DotExpr>(I("__internal__"), "tuple_to_gpu"), I("self"))));
+    stmts.emplace_back(N<ReturnStmt>(
+        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_to_gpu"), I("self"))));
   } else if (op == "from_gpu") {
     // def __from_gpu__(self: T, other: T) -> None:
-    //   return __internal__.tuple_from_gpu(T1.__from_py__(pyobj._tuple_get(src, 1)), ...)
+    //   return __internal__.tuple_from_gpu(T1.__from_py__(pyobj._tuple_get(src, 1)),
+    //   ...)
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"other", typExpr->clone()});
     ret = I("NoneType");
     stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(I("__internal__"), "tuple_from_gpu"), I("self"), I("other"))));
+        N<DotExpr>(I("__internal__"), "tuple_from_gpu"), I("self"), I("other"))));
   } else if (op == "repr") {
     // def __repr__(self: T) -> str:
     //   a = __array__[str](N)  (number of args)
