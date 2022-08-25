@@ -499,7 +499,8 @@ void ClassStmt::parseDecorators() {
       {"new", true},      {"repr", false},  {"hash", false},    {"eq", false},
       {"ne", false},      {"lt", false},    {"le", false},      {"gt", false},
       {"ge", false},      {"pickle", true}, {"unpickle", true}, {"to_py", false},
-      {"from_py", false}, {"iter", false},  {"getitem", false}, {"len", false}};
+      {"from_py", false}, {"iter", false},  {"getitem", false}, {"len", false},
+      {"to_gpu", false}, {"from_gpu", false}};
 
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
@@ -534,6 +535,8 @@ void ClassStmt::parseDecorators() {
           tupleMagics["pickle"] = tupleMagics["unpickle"] = val;
         } else if (a.name == "python") {
           tupleMagics["to_py"] = tupleMagics["from_py"] = val;
+        } else if (a.name == "gpu") {
+          tupleMagics["to_gpu"] = tupleMagics["from_gpu"] = val;
         } else if (a.name == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {
