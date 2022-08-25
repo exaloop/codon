@@ -508,7 +508,7 @@ class Optional:
 @extend
 class __internal__:
     def class_to_gpu(obj):
-        if isinstance(obj, Tuple):
+        if isinstance(obj, ByVal):
             return tuple(a.__to_gpu__() for a in obj)
         else:
             T = type(obj)
@@ -518,7 +518,7 @@ class __internal__:
             return _ptr_to_type(gpu_mem.as_byte(), T)
 
     def class_from_gpu(obj, other):
-        if isinstance(obj, Tuple):
+        if isinstance(obj, ByVal):
             _tuple_from_gpu(obj, other)
         else:
             T = type(obj)
