@@ -525,4 +525,6 @@ class __internal__:
             S = type(tuple(self))
             mem = T.__new__()
             _ptr_from_gpu(Ptr[S](mem.__raw__()), Ptr[S](other.__raw__()), 1)
-            tuple(self).__from_gpu__(tuple(mem))
+            tup = tuple(mem)
+            Ptr[S](self.__raw__())[0] = tup
+            tuple(self).__from_gpu__(tup)
