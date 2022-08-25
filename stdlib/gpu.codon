@@ -330,6 +330,14 @@ class float:
         pass
 
 @extend
+class float32:
+    def __to_gpu__(self):
+        return self
+
+    def __from_gpu__(self, other: float32):
+        pass
+
+@extend
 class bool:
     def __to_gpu__(self):
         return self
