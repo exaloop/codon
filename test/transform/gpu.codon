@@ -1,0 +1,42 @@
+import gpu
+
+@test
+def test_hello_world():
+    @gpu.kernel
+    def kernel(a, b, c):
+        i = gpu.thread.x
+        c[i] = a[i] + b[i]
+
+    a = [i for i in range(16)]
+    b = [2*i for i in range(16)]
+    c = [0 for _ in range(16)]
+    kernel(a, b, c, grid=1, block=16)
+
+    assert c == [3*i for i in range(16)]
+
+@test
+def test_user_classes():
+    @dataclass(gpu=True, eq=True)
+    class A:
+       x: int
+
+    @tuple
+    class B:
+        x: int
+
+    @gpu.kernel
+    def kernel(a, b, c):
+        a.x += b.x + c[0]
+        c[1][0][0] = 9999
+
+    a = A(42)
+    b = B(100)
+    c = (1000, [[-1]])
+    kernel(a, b, c, grid=1, block=1)
+
+    assert a == A(1142)
+    assert b == B(100)
+    assert c == (1000, [[9999]])
+
+test_hello_world()
+test_user_classes()
