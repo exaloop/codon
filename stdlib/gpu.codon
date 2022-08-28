@@ -297,6 +297,9 @@ class Pointer[T]:
     def __from_gpu__(self, other: Ptr[T]):
         _ptr_from_gpu(self._ptr, other, self._len)
 
+def raw(v: List[T], T: type):
+    return Pointer(v.arr.ptr, len(v))
+
 @extend
 class Ptr:
     def __to_gpu__(self):
