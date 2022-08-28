@@ -508,7 +508,7 @@ void cleanUpIntrinsics(llvm::Module *M) {
 }
 } // namespace
 
-void applyGPUTransformations(llvm::Module *M) {
+void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
   llvm::LLVMContext &context = M->getContext();
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
@@ -535,7 +535,14 @@ void applyGPUTransformations(llvm::Module *M) {
   if (kernels.empty())
     return;
 
-  const std::string filename = "kernel.ptx";
+  std::string filename = ptxFilename.empty() ? M->getSourceFileName() : ptxFilename;
+  if (filename.empty())
+    filename = "kernel";
+  llvm::SmallString<128> path(ptxFilename.empty() ? ptxFilename
+                                                  : M->getSourceFileName());
+  llvm::sys::path::replace_extension(path, "ptx");
+  filename = path.str();
+
   moduleToPTX(clone.get(), filename, kernels);
   cleanUpIntrinsics(M);
   addInitCall(M, filename);
