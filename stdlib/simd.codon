@@ -118,6 +118,14 @@ class Vec:
         %0 = shufflevector <16 x i8> %vec, <16 x i8> zeroinitializer, <16 x i32> <i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23>
         ret <16 x i8> %0
 
+    @llvm
+    def _mm256_add_ps(x: Vec[f32, 8], y: Vec[f32, 8]) -> Vec[f32, 8]:
+        %0 = fadd <8 x float> %x, %y
+        ret <8 x float> %0
+
+    def __add__(self: Vec[f32, 8], other: Vec[f32, 8]) -> Vec[f32, 8]:
+        return Vec._mm256_add_ps(self, other)
+
 
     def __rshift__(self: Vec[u8, 16], shift: Static[int]) -> Vec[u8, 16]:
         if shift == 0:
@@ -139,7 +147,7 @@ class Vec:
     #     %7 = extractelement <4 x float> %6, i32 0
     #     ret float %7
 
-    def sum(self: Vec[f32, 8], x: f32) -> f32:
+    def sum(self: Vec[f32, 8], x: f32 = f32(0.0)) -> f32:
         return x + self[0] + self[1] + self[2] + self[3] + self[4] + self[5] + self[6] + self[7]
 
     @llvm
@@ -149,8 +157,8 @@ class Vec:
 
     def __repr__(self):
         if N == 8:
-            return f"[[ {self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]} ]]"
+            return f"<{self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]}>"
         elif N == 16:
-            return f"[[ {self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]}, {self[8]}, {self[9]}, {self[10]}, {self[11]}, {self[12]}, {self[13]}, {self[14]}, {self[15]} ]]"
+            return f"<{self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]}, {self[8]}, {self[9]}, {self[10]}, {self[11]}, {self[12]}, {self[13]}, {self[14]}, {self[15]}>"
         else:
             return "?"
