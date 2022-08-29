@@ -3,6 +3,9 @@ class Vec:
     T: type
     N: Static[int]
 
+    ZERO_16x8i = Vec(u8(0), T=u8, N=16)
+    FF_16x8i = Vec(u8(0xff), T=u8, N=16)
+
     @llvm
     def _mm_set1_epi8(val: u8) -> Vec[u8, 16]:
         %0 = insertelement <16 x i8> undef, i8 %val, i32 0
@@ -73,7 +76,13 @@ class Vec:
         ret <16 x i8> %1
 
     def __ne__(self: Vec[u8, 16], other: Vec[u8, 16]) -> Vec[u8, 16]:
-        return Vec._mm_andnot_si128(self, other)
+        return Vec._mm_andnot_si128((self == other), Vec.FF_16x8i)
+
+    def __eq__(self: Vec[u8, 16], other: bool) -> Vec[u8, 16]:
+        if not other:
+            return Vec._mm_andnot_si128(self, Vec.FF_16x8i)
+        else:
+            return Vec._mm_andnot_si128(self, Vec.ZERO_16x8i)
 
     @llvm
     def _mm_and_si128(x: Vec[u8, 16], y: Vec[u8, 16]) -> Vec[u8, 16]:

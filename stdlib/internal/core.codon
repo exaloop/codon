@@ -167,3 +167,6 @@ def superf(*args):
 
 def __realized__(fn, args):
     pass
+
+def statictuple(*args):
+    return args

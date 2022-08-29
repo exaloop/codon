@@ -95,3 +95,6 @@ class range:
             return f"range({self.start}, {self.stop})"
         else:
             return f"range({self.start}, {self.stop}, {self.step})"
+
+def staticrange(start: Static[int], end: Static[int], step: Static[int] = 1):
+    return range(start, end, step)

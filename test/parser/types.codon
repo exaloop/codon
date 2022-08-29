@@ -1208,3 +1208,28 @@ foo('hooooooooy!', 1, 2) #! cannot find a method 'foo' with arguments 'str', 'in
 from C import seq_print(str)
 x = seq_print("not ")
 print x  #: not None
+
+
+#%% static_for,barebones
+def foo(i: Static[int]):
+    print('static', i, Int[i].__class__.__name__)
+
+for i in statictuple(1, 2, 3, 4, 5):
+    foo(i)
+    if i == 3: break
+#: static 1 Int[1]
+#: static 2 Int[2]
+#: static 3 Int[3]
+for i in staticrange(9, 4, -2):
+    foo(i)
+    if i == 3:
+        break
+#: static 9 Int[9]
+#: static 7 Int[7]
+#: static 5 Int[5]
+for i in statictuple("x", 1, 2):
+    print(i)
+static 5 Int[5]
+#: x
+#: 1
+#: 2

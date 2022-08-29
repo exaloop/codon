@@ -152,6 +152,7 @@ private: // Node typechecking rules
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   StmtPtr transformHeterogenousTupleFor(ForStmt *);
+  StmtPtr transformStaticForLoop(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
   void visit(TryStmt *) override;
