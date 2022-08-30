@@ -113,6 +113,12 @@ class Vec:
                 return Vec._mm512_castsi512_ps(Vec._mm512_cvtepi8_epi64(x))
         compile_error("invalid SIMD vector constructor")
 
+    def __new__(x: str, offset: int = 0, N: Static[int]) -> Vec[u8, N]:
+        return Vec(x.ptr + offset, u8, N)
+
+    def __new__(x: List[T], offset: int = 0, T: type, N: Static[int]) -> Vec[T, N]:
+        return Vec(x.arr.ptr + offset, T, N)
+
     @llvm
     def _mm_cmpeq_epi8(x: Vec[u8, 16], y: Vec[u8, 16]) -> Vec[u8, 16]:
         %0 = icmp eq <16 x i8> %x, %y
