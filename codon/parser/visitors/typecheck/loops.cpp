@@ -145,7 +145,7 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 /// A separate suite is generated for each static iteration.
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto fn = [&](const std::string &var, const ExprPtr &expr) {
-    bool staticInt = expr->getInt();
+    bool staticInt = expr->isStatic();
     auto t = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
     t->markType();
     auto block = N<SuiteStmt>(
