@@ -15,6 +15,36 @@ def test_hello_world():
     assert c == [3*i for i in range(16)]
 
 @test
+def test_conversions():
+    @gpu.kernel
+    def kernel(x, v):
+        v[0] = x
+
+    def check(x):
+        T = type(x)
+        v = [T()]
+        kernel(x, v, grid=1, block=1)
+        return v == [x]
+
+    assert check(None)
+    assert check(42)
+    assert check(3.14)
+    assert check(f32(2.718))
+    assert check(byte(99))
+    assert check(Int[128](123123))
+    assert check(UInt[128](321321))
+    assert check(Optional[int]())
+    assert check(Optional(111))
+    ''' TODO: double-free issue
+    assert check('hello world')
+    assert check([1, 2, 3])
+    assert check([[1], [2], [3]])
+    assert check({1: [1.1], 2: [2.2]})
+    assert check({'a', 'b', 'c'})
+    assert check(Optional([1, 2, 3]))
+    '''
+
+@test
 def test_user_classes():
     @dataclass(gpu=True, eq=True)
     class A:
@@ -38,5 +68,26 @@ def test_user_classes():
     assert b == B(100)
     assert c == (1000, [[9999]])
 
+@test
+def test_intrinsics():
+    @gpu.kernel
+    def kernel(v):
+        block_id = (gpu.block.x + gpu.block.y*gpu.grid.dim.x +
+                    gpu.block.z*gpu.grid.dim.x*gpu.grid.dim.y)
+        thread_id = (block_id*gpu.block.dim.x*gpu.block.dim.y*gpu.block.dim.z +
+                     gpu.thread.z*gpu.block.dim.x*gpu.block.dim.y +
+                     gpu.thread.y*gpu.block.dim.x +
+                     gpu.thread.x)
+        v[thread_id] = thread_id
+
+    grid = gpu.Dim3(3, 4, 5)
+    block = gpu.Dim3(6, 7, 8)
+    N = grid.x * grid.y * grid.z * block.x * block.y * block.z
+    v = [0 for _ in range(N)]
+    kernel(v, grid=grid, block=block)
+    assert v == list(range(N))
+
 test_hello_world()
+test_conversions()
 test_user_classes()
+test_intrinsics()
