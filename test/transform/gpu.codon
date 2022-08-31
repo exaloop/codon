@@ -87,7 +87,41 @@ def test_intrinsics():
     kernel(v, grid=grid, block=block)
     assert v == list(range(N))
 
+@test
+def test_matmul():
+    A = [[12, 7, 3],
+         [4, 5, 6],
+         [7, 8, 9]]
+
+    B = [[5, 8, 1, 2],
+         [6, 7, 3, 0],
+         [4, 5, 9, 1]]
+
+    def mmz(A, B):
+        return [[0]*len(B[0]) for _ in range(len(A))]
+
+    def matmul(A, B):
+        result = mmz(A, B)
+        for i in range(len(A)):
+            for j in range(len(B[0])):
+                for k in range(len(B)):
+                    result[i][j] += A[i][k] * B[k][j]
+        return result
+
+    expected = matmul(A, B)
+
+    @gpu.kernel
+    def kernel(A, B, result):
+        i = gpu.thread.x
+        j = gpu.thread.y
+        result[i][j] = sum(A[i][k]*B[k][j] for k in range(len(A[0])))
+
+    result = mmz(A, B)
+    kernel(A, B, result, grid=1, block=(len(result), len(result[0])))
+    assert result == expected
+
 test_hello_world()
 test_conversions()
 test_user_classes()
 test_intrinsics()
+test_matmul()
