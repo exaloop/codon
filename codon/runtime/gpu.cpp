@@ -87,19 +87,27 @@ SEQ_FUNC void seq_nvptx_invoke(CUfunction f, unsigned int gridDimX,
 }
 
 SEQ_FUNC CUdeviceptr seq_nvptx_device_alloc(seq_int_t size) {
+  if (size == 0)
+    return {};
+
   CUdeviceptr devp;
   check(cuMemAlloc(&devp, size));
   return devp;
 }
 
 SEQ_FUNC void seq_nvptx_memcpy_h2d(CUdeviceptr devp, char *hostp, seq_int_t size) {
-  check(cuMemcpyHtoD(devp, hostp, size));
+  if (size)
+    check(cuMemcpyHtoD(devp, hostp, size));
 }
 
 SEQ_FUNC void seq_nvptx_memcpy_d2h(char *hostp, CUdeviceptr devp, seq_int_t size) {
-  check(cuMemcpyDtoH(hostp, devp, size));
+  if (size)
+    check(cuMemcpyDtoH(hostp, devp, size));
 }
 
-SEQ_FUNC void seq_nvptx_device_free(CUdeviceptr devp) { check(cuMemFree(devp)); }
+SEQ_FUNC void seq_nvptx_device_free(CUdeviceptr devp) {
+  if (devp)
+    check(cuMemFree(devp));
+}
 
 #endif /* CODON_GPU */
