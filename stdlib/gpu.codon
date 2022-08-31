@@ -401,7 +401,7 @@ class UInt:
     def __to_gpu__(self):
         return self
 
-    def __from_gpu__(self, other: Int[N]):
+    def __from_gpu__(self, other: UInt[N]):
         pass
 
 @extend
