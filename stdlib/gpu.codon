@@ -461,7 +461,7 @@ class str:
         pass
 
     def __from_gpu_new__(other: str):
-        n = other.n
+        n = other.len
         p = Ptr[byte](n)
         _ptr_from_gpu(p, other.ptr, n)
         return str(p, n)
