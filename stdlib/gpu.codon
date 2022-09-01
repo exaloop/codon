@@ -620,7 +620,7 @@ class Optional:
         if other is None:
             return Optional[T]()
         else:
-            return Optional[T](other.__val__().__from_gpu_new__())
+            return Optional[T](T.__from_gpu_new__(other.__val__()))
 
 @extend
 class __internal__:
@@ -655,10 +655,10 @@ class __internal__:
             return (a.__from_gpu_new__() for a in other)
         elif isinstance(other, ByVal):
             T = type(other)
-            return T(*tuple(a.__from_gpu_new__() for a in tuple(other)))
+            return T(*tuple(type(a).__from_gpu_new__(a) for a in tuple(other)))
         else:
             T = type(other)
             S = type(tuple(other))
             mem = _object_from_gpu(other)
             tup = tuple(mem)
-            Ptr[S](mem.__raw__())[0] = tup.__from_gpu_new__()
+            Ptr[S](mem.__raw__())[0] = S.__from_gpu_new__(tup)
