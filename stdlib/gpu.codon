@@ -426,7 +426,7 @@ class byte:
     def __from_gpu__(self, other: byte):
         pass
 
-    def __from_gpu__(other: byte):
+    def __from_gpu_new__(other: byte):
         return other
 
 @extend
