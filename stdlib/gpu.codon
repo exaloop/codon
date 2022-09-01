@@ -287,6 +287,9 @@ def kernel(fn, *args):
 def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, T: type):
     from internal.gc import atomic
 
+    if n == 0:
+        return Ptr[T]()
+
     if not atomic(T):
         tmp = Ptr[T](n)
         for i in range(n):
@@ -300,6 +303,9 @@ def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, T: type):
 
 def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, T: type):
     from internal.gc import atomic
+
+    if n == 0:
+        return
 
     mem = Memory[T](q.as_byte())
     if not atomic(T):
