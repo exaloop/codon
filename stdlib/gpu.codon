@@ -553,9 +553,9 @@ class Dict:
         _ptr_from_gpu(keys, mem._keys, n)
         _ptr_from_gpu(vals, mem._vals, n)
 
-        mem.flags = flags
-        mem.keys = keys
-        mem.vals = vals
+        mem._flags = flags
+        mem._keys = keys
+        mem._vals = vals
         return mem
 
 @extend
@@ -607,8 +607,8 @@ class Set:
         _ptr_from_gpu(flags, mem._flags, f)
         _ptr_from_gpu(keys, mem._keys, n)
 
-        mem.flags = flags
-        mem.keys = keys
+        mem._flags = flags
+        mem._keys = keys
         return mem
 
 @extend
