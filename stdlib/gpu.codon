@@ -502,8 +502,8 @@ class Set:
         mem._size = self._size
         mem._n_occupied = self._n_occupied
         mem._upper_bound = self._upper_bound
-        mem._flags = _ptr_to_gpu(self._flags, f)
-        mem._keys = _ptr_to_gpu(self._keys, n)
+        mem._flags = _ptr_to_gpu(self._flags, f, cache)
+        mem._keys = _ptr_to_gpu(self._keys, n, cache)
 
         return _object_to_gpu(mem, cache)
 
