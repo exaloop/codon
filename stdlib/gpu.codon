@@ -307,7 +307,7 @@ def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, T: type):
         mem._read(tmp, n)
 
         for i in range(n):
-            p[i].__from_gpu__(tmp[i])
+            p[i] = T.__from_gpu_new__(tmp[i])
     else:
         mem._read(p, n)
 
@@ -346,6 +346,9 @@ class Pointer[T]:
     def __from_gpu__(self, other: Ptr[T]):
         _ptr_from_gpu(self._ptr, other, self._len)
 
+    def __from_gpu_new__(other: Ptr[T]):
+        return other
+
 def raw(v: List[T], T: type):
     return Pointer(v.arr.ptr, len(v))
 
@@ -357,6 +360,9 @@ class Ptr:
     def __from_gpu__(self, other: Ptr[T]):
         pass
 
+    def __from_gpu_new__(other: Ptr[T]):
+        return other
+
 @extend
 class NoneType:
     def __to_gpu__(self, cache: AllocCache):
@@ -364,6 +370,9 @@ class NoneType:
 
     def __from_gpu__(self, other: NoneType):
         pass
+
+    def __from_gpu_new__(other: NoneType):
+        return other
 
 @extend
 class int:
@@ -373,6 +382,9 @@ class int:
     def __from_gpu__(self, other: int):
         pass
 
+    def __from_gpu_new__(other: int):
+        return other
+
 @extend
 class float:
     def __to_gpu__(self, cache: AllocCache):
@@ -380,6 +392,9 @@ class float:
 
     def __from_gpu__(self, other: float):
         pass
+
+    def __from_gpu_new__(other: float):
+        return other
 
 @extend
 class float32:
@@ -389,6 +404,9 @@ class float32:
     def __from_gpu__(self, other: float32):
         pass
 
+    def __from_gpu_new__(other: float32):
+        return other
+
 @extend
 class bool:
     def __to_gpu__(self, cache: AllocCache):
@@ -396,6 +414,9 @@ class bool:
 
     def __from_gpu__(self, other: bool):
         pass
+
+    def __from_gpu_new__(other: bool):
+        return other
 
 @extend
 class byte:
@@ -405,6 +426,9 @@ class byte:
     def __from_gpu__(self, other: byte):
         pass
 
+    def __from_gpu__(other: byte):
+        return other
+
 @extend
 class Int:
     def __to_gpu__(self, cache: AllocCache):
@@ -412,6 +436,9 @@ class Int:
 
     def __from_gpu__(self, other: Int[N]):
         pass
+
+    def __from_gpu_new__(other: Int[N]):
+        return other
 
 @extend
 class UInt:
@@ -421,6 +448,9 @@ class UInt:
     def __from_gpu__(self, other: UInt[N]):
         pass
 
+    def __from_gpu_new__(other: UInt[N]):
+        return other
+
 @extend
 class str:
     def __to_gpu__(self, cache: AllocCache):
@@ -429,6 +459,12 @@ class str:
 
     def __from_gpu__(self, other: str):
         pass
+
+    def __from_gpu_new__(other: str):
+        n = other.n
+        p = Ptr[byte](n)
+        _ptr_from_gpu(p, other.ptr, n)
+        return str(p, n)
 
 @extend
 class List:
@@ -450,6 +486,13 @@ class List:
 
         _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
         self.len = mem.len
+
+    def __from_gpu_new__(other: List[T]):
+        mem = _object_from_gpu(other)
+        arr = Array[T](mem.arr.len)
+        _ptr_from_gpu(arr.ptr, mem.arr.ptr, arr.len)
+        mem.arr = arr
+        return arr
 
 @extend
 class Dict:
@@ -490,6 +533,26 @@ class Dict:
         self._n_occupied = mem._n_occupied
         self._upper_bound = mem._upper_bound
 
+    def __from_gpu_new__(other: Dict[K,V]):
+        from internal.khash import __ac_fsize
+        mem = _object_from_gpu(other)
+
+        n = mem._n_buckets
+        f = __ac_fsize(n)
+        flags = Ptr[u32](f)
+        keys = Ptr[K](n)
+        vals = Ptr[V](n)
+
+        _ptr_from_gpu(flags, mem._flags, f)
+        _ptr_from_gpu(keys, mem._keys, n)
+        _ptr_from_gpu(vals, mem._vals, n)
+
+        mem.flags = flags
+        mem.keys = keys
+        mem.vals = vals
+
+        return mem
+
 @extend
 class Set:
     def __to_gpu__(self, cache: AllocCache):
@@ -527,6 +590,23 @@ class Set:
         self._n_occupied = mem._n_occupied
         self._upper_bound = mem._upper_bound
 
+    def __from_gpu_new__(other: Set[K]):
+        from internal.khash import __ac_fsize
+        mem = _object_from_gpu(other)
+
+        n = mem._n_buckets
+        f = __ac_fsize(n)
+        flags = Ptr[u32](f)
+        keys = Ptr[K](n)
+
+        _ptr_from_gpu(flags, mem._flags, f)
+        _ptr_from_gpu(keys, mem._keys, n)
+
+        mem.flags = flags
+        mem.keys = keys
+
+        return mem
+
 @extend
 class Optional:
     def __to_gpu__(self, cache: AllocCache):
@@ -538,6 +618,12 @@ class Optional:
     def __from_gpu__(self, other: Optional[T]):
         if self is not None and other is not None:
             self.__val__().__from_gpu__(other.__val__())
+
+    def __from_gpu_new__(other: Optional[T]):
+        if other is None:
+            return Optional[T]()
+        else:
+            return Optional[T](other.__val__().__from_gpu_new__())
 
 @extend
 class __internal__:
@@ -566,3 +652,17 @@ class __internal__:
             tup = tuple(mem)
             Ptr[S](obj.__raw__())[0] = tup
             tuple(obj).__from_gpu__(tup)
+
+    def class_from_gpu_new(other):
+        if isinstance(obj, Tuple):
+            return (a.__from_gpu_new__() for a in other)
+            _tuple_from_gpu(obj, other)
+        elif isinstance(obj, ByVal):
+            T = type(obj)
+            return T(*tuple(a.__from_gpu_new__() for a in tuple(other)))
+        else:
+            T = type(other)
+            S = type(tuple(other))
+            mem = _object_from_gpu(other)
+            tup = tuple(mem)
+            Ptr[S](obj.__raw__())[0] = tup.__from_gpu_new__()
