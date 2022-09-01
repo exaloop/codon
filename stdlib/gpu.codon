@@ -333,8 +333,6 @@ def _object_from_gpu(obj):
 
     mem = Memory[S](q.as_byte())
     mem._read(p, 1)
-    mem._free()
-
     return tmp
 
 @tuple
@@ -430,7 +428,7 @@ class str:
         return str(_ptr_to_gpu(self.ptr, n), n, cache)
 
     def __from_gpu__(self, other: str):
-        Memory[byte](other.ptr)._free()
+        pass
 
 @extend
 class List:
