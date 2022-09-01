@@ -320,7 +320,7 @@ def _object_to_gpu(obj: T, cache: AllocCache, T: type):
     s = tuple(obj)
     gpu_mem = Memory._alloc(1, type(s))
     cache.add(gpu_mem._ptr)
-    gpu_mem._write(__ptr__(s))
+    gpu_mem._write(__ptr__(s), 1)
     return _ptr_to_type(gpu_mem._ptr, T)
 
 def _object_from_gpu(obj):
