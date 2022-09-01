@@ -232,21 +232,10 @@ void remapFunctions(llvm::Module *M) {
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();
          llvm::Value *mem = B.CreateCall(makeMalloc(M), args[1]);
-
-         {
-           auto F = llvm::Intrinsic::getDeclaration(
-               M, llvm::Intrinsic::memcpy,
-               {B.getInt8PtrTy(), B.getInt8PtrTy(), B.getInt64Ty()});
-           B.CreateCall(F, {mem, args[0], args[2], B.getFalse()});
-         }
-
-         {
-           auto F = M->getOrInsertFunction("free", B.getVoidTy(), B.getInt8PtrTy());
-           auto *G = llvm::cast<llvm::Function>(F.getCallee());
-           G->setLinkage(llvm::GlobalValue::ExternalLinkage);
-           B.CreateCall(G, args[0]);
-         }
-
+         auto F = llvm::Intrinsic::getDeclaration(
+             M, llvm::Intrinsic::memcpy,
+             {B.getInt8PtrTy(), B.getInt8PtrTy(), B.getInt64Ty()});
+         B.CreateCall(F, {mem, args[0], args[2], B.getFalse()});
          B.CreateRet(mem);
        }},
 

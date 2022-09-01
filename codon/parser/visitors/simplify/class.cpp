@@ -633,12 +633,13 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
           N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_get"), I("src"), N<IntExpr>(i))));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
   } else if (op == "to_gpu") {
-    // def __to_gpu__(self: T) -> T:
-    //   return __internal__.class_to_gpu(self)
+    // def __to_gpu__(self: T, cache) -> T:
+    //   return __internal__.class_to_gpu(self, cache)
     fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back(Param{"cache"});
     ret = typExpr->clone();
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "class_to_gpu"), I("self"))));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
+        N<DotExpr>(I("__internal__"), "class_to_gpu"), I("self"), I("cache"))));
   } else if (op == "from_gpu") {
     // def __from_gpu__(self: T, other: T) -> None:
     //   __internal__.class_from_gpu(self, other)
