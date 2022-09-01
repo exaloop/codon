@@ -492,7 +492,7 @@ class List:
         arr = Array[T](mem.arr.len)
         _ptr_from_gpu(arr.ptr, mem.arr.ptr, arr.len)
         mem.arr = arr
-        return arr
+        return mem
 
 @extend
 class Dict:
@@ -550,7 +550,6 @@ class Dict:
         mem.flags = flags
         mem.keys = keys
         mem.vals = vals
-
         return mem
 
 @extend
@@ -604,7 +603,6 @@ class Set:
 
         mem.flags = flags
         mem.keys = keys
-
         return mem
 
 @extend
