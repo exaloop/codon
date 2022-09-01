@@ -652,7 +652,7 @@ class __internal__:
 
     def class_from_gpu_new(other):
         if isinstance(other, Tuple):
-            return (a.__from_gpu_new__() for a in other)
+            return (type(a).__from_gpu_new__(a) for a in other)
         elif isinstance(other, ByVal):
             T = type(other)
             return T(*tuple(type(a).__from_gpu_new__(a) for a in tuple(other)))
