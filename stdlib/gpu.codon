@@ -425,7 +425,7 @@ class UInt:
 class str:
     def __to_gpu__(self, cache: AllocCache):
         n = self.len
-        return str(_ptr_to_gpu(self.ptr, n), n, cache)
+        return str(_ptr_to_gpu(self.ptr, n, cache), n)
 
     def __from_gpu__(self, other: str):
         pass
