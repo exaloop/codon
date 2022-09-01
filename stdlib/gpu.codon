@@ -284,16 +284,14 @@ def kernel(fn, *args):
 
     return wrapper
 
-def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, T: type):
+def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, index_filter = lambda i: True, T: type):
     from internal.gc import atomic
-
-    if n == 0:
-        return Ptr[T]()
 
     if not atomic(T):
         tmp = Ptr[T](n)
         for i in range(n):
-            tmp[i] = p[i].__to_gpu__(cache)
+            if index_filter(i):
+                tmp[i] = p[i].__to_gpu__(cache)
         p = tmp
 
     mem = Memory._alloc(n, T)
@@ -301,19 +299,16 @@ def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, T: type):
     mem._write(p, n)
     return Ptr[T](mem._ptr)
 
-def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, T: type):
+def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, index_filter = lambda i: True, T: type):
     from internal.gc import atomic
-
-    if n == 0:
-        return
 
     mem = Memory[T](q.as_byte())
     if not atomic(T):
         tmp = Ptr[T](n)
         mem._read(tmp, n)
-
         for i in range(n):
-            p[i] = T.__from_gpu_new__(tmp[i])
+            if index_filter(i):
+                p[i] = T.__from_gpu_new__(tmp[i])
     else:
         mem._read(p, n)
 
@@ -476,10 +471,10 @@ class str:
 class List:
     def __to_gpu__(self, cache: AllocCache):
         mem = List[T].__new__()
-        cap = self.arr.len
-        gpu_ptr = _ptr_to_gpu(self.arr.ptr, cap, cache)
-        mem.arr = Array[T](gpu_ptr, cap)
-        mem.len = self.len
+        n = self.len
+        gpu_ptr = _ptr_to_gpu(self.arr.ptr, n, cache)
+        mem.arr = Array[T](gpu_ptr, n)
+        mem.len = n
         return _object_to_gpu(mem, cache)
 
     def __from_gpu__(self, other: List[T]):
@@ -506,15 +501,15 @@ class Dict:
         from internal.khash import __ac_fsize
         mem = Dict[K,V].__new__()
         n = self._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
 
         mem._n_buckets = n
         mem._size = self._size
         mem._n_occupied = self._n_occupied
         mem._upper_bound = self._upper_bound
         mem._flags = _ptr_to_gpu(self._flags, f, cache)
-        mem._keys = _ptr_to_gpu(self._keys, n, cache)
-        mem._vals = _ptr_to_gpu(self._vals, n, cache)
+        mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
+        mem._vals = _ptr_to_gpu(self._vals, n, cache, lambda i: self._kh_exist(i))
 
         return _object_to_gpu(mem, cache)
 
@@ -523,7 +518,7 @@ class Dict:
         mem = _object_from_gpu(other)
         my_n = self._n_buckets
         n = mem._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
 
         if my_n != n:
             self._flags = Ptr[u32](f)
@@ -531,8 +526,8 @@ class Dict:
             self._vals = Ptr[V](n)
 
         _ptr_from_gpu(self._flags, mem._flags, f)
-        _ptr_from_gpu(self._keys, mem._keys, n)
-        _ptr_from_gpu(self._vals, mem._vals, n)
+        _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
+        _ptr_from_gpu(self._vals, mem._vals, n, lambda i: self._kh_exist(i))
 
         self._n_buckets = n
         self._size = mem._size
@@ -544,17 +539,16 @@ class Dict:
         mem = _object_from_gpu(other)
 
         n = mem._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
         flags = Ptr[u32](f)
         keys = Ptr[K](n)
         vals = Ptr[V](n)
 
         _ptr_from_gpu(flags, mem._flags, f)
-        _ptr_from_gpu(keys, mem._keys, n)
-        _ptr_from_gpu(vals, mem._vals, n)
-
         mem._flags = flags
+        _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
         mem._keys = keys
+        _ptr_from_gpu(vals, mem._vals, n, lambda i: mem._kh_exist(i))
         mem._vals = vals
         return mem
 
@@ -564,14 +558,14 @@ class Set:
         from internal.khash import __ac_fsize
         mem = Set[K].__new__()
         n = self._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
 
         mem._n_buckets = n
         mem._size = self._size
         mem._n_occupied = self._n_occupied
         mem._upper_bound = self._upper_bound
         mem._flags = _ptr_to_gpu(self._flags, f, cache)
-        mem._keys = _ptr_to_gpu(self._keys, n, cache)
+        mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
 
         return _object_to_gpu(mem, cache)
 
@@ -581,14 +575,14 @@ class Set:
 
         my_n = self._n_buckets
         n = mem._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
 
         if my_n != n:
             self._flags = Ptr[u32](f)
             self._keys = Ptr[K](n)
 
         _ptr_from_gpu(self._flags, mem._flags, f)
-        _ptr_from_gpu(self._keys, mem._keys, n)
+        _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
 
         self._n_buckets = n
         self._size = mem._size
@@ -600,14 +594,13 @@ class Set:
         mem = _object_from_gpu(other)
 
         n = mem._n_buckets
-        f = __ac_fsize(n)
+        f = __ac_fsize(n) if n else 0
         flags = Ptr[u32](f)
         keys = Ptr[K](n)
 
         _ptr_from_gpu(flags, mem._flags, f)
-        _ptr_from_gpu(keys, mem._keys, n)
-
         mem._flags = flags
+        _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
         mem._keys = keys
         return mem
 
