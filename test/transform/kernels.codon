@@ -35,14 +35,12 @@ def test_conversions():
     assert check(UInt[128](321321))
     assert check(Optional[int]())
     assert check(Optional(111))
-    ''' TODO: double-free issue
     assert check('hello world')
     assert check([1, 2, 3])
     assert check([[1], [2], [3]])
     assert check({1: [1.1], 2: [2.2]})
     assert check({'a', 'b', 'c'})
     assert check(Optional([1, 2, 3]))
-    '''
 
 @test
 def test_user_classes():
