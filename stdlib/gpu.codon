@@ -643,12 +643,8 @@ class __internal__:
         elif isinstance(obj, ByVal):
             _tuple_from_gpu(tuple(obj), tuple(other))
         else:
-            T = type(obj)
             S = type(tuple(obj))
-            mem = _object_from_gpu(other)
-            tup = tuple(mem)
-            Ptr[S](obj.__raw__())[0] = tup
-            tuple(obj).__from_gpu__(tup)
+            Ptr[S](obj.__raw__())[0] = S.__from_gpu_new__(tuple(_object_from_gpu(other)))
 
     def class_from_gpu_new(other):
         if isinstance(other, Tuple):
