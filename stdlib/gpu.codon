@@ -662,3 +662,4 @@ class __internal__:
             mem = _object_from_gpu(other)
             tup = tuple(mem)
             Ptr[S](mem.__raw__())[0] = S.__from_gpu_new__(tup)
+            return mem

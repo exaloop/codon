@@ -650,10 +650,10 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
         N<DotExpr>(I("__internal__"), "class_from_gpu"), I("self"), I("other"))));
   } else if (op == "from_gpu_new") {
     // def __from_gpu_new__(other: T) -> T:
-    //   __internal__.class_from_gpu_new(other)
+    //   return __internal__.class_from_gpu_new(other)
     fargs.emplace_back(Param{"other", typExpr->clone()});
     ret = typExpr->clone();
-    stmts.emplace_back(N<ExprStmt>(
+    stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "class_from_gpu_new"), I("other"))));
   } else if (op == "repr") {
     // def __repr__(self: T) -> str:
