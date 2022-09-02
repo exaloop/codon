@@ -536,7 +536,8 @@ void ClassStmt::parseDecorators() {
         } else if (a.name == "python") {
           tupleMagics["to_py"] = tupleMagics["from_py"] = val;
         } else if (a.name == "gpu") {
-          tupleMagics["to_gpu"] = tupleMagics["from_gpu"] = val;
+          tupleMagics["to_gpu"] = tupleMagics["from_gpu"] =
+              tupleMagics["from_gpu_new"] = val;
         } else if (a.name == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {
