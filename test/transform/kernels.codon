@@ -86,6 +86,22 @@ def test_user_classes():
     assert b == B(100, [1002])
     assert c == (1000, [[9999]])
 
+    @gpu.kernel
+    def kernel2(a, b, c):
+        a[0].x += b[0].x + c[0][0]
+        c[0][1][0][0] = 9999
+        a[0].y[0] = c[0][0] + 1
+        b[0].y[0] = c[0][0] + 2
+
+    a = [A(42, [-1])]
+    b = [B(100, [-2])]
+    c = [(1000, [[-1]])]
+    kernel2(a, b, c, grid=1, block=1)
+
+    assert a == [A(1142, [1001])]
+    assert b == [B(100, [1002])]
+    assert c == [(1000, [[9999]])]
+
 @test
 def test_intrinsics():
     @gpu.kernel
