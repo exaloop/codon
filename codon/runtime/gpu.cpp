@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "lib.h"
 
@@ -8,26 +9,36 @@
 
 #include "cuda.h"
 
+#define fail(err)                                                                      \
+  do {                                                                                 \
+    const char *msg;                                                                   \
+    cuGetErrorString((err), &msg);                                                     \
+    fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, msg);             \
+    abort();                                                                           \
+  } while (0)
+
 #define check(call)                                                                    \
   do {                                                                                 \
     auto err = (call);                                                                 \
     if (err != CUDA_SUCCESS) {                                                         \
-      const char *msg;                                                                 \
-      cuGetErrorString(err, &msg);                                                     \
-      fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, msg);           \
-      abort();                                                                         \
+      fail(err);                                                                       \
     }                                                                                  \
   } while (0)
 
-static CUmodule module;
+static std::vector<CUmodule> modules;
 static CUcontext context;
 
-SEQ_FUNC void seq_nvptx_init(const char *filename) {
+void seq_nvptx_init() {
   CUdevice device;
   check(cuInit(0));
   check(cuDeviceGet(&device, 0));
   check(cuCtxCreate(&context, 0, device));
+}
+
+SEQ_FUNC void seq_nvptx_load_module(const char *filename) {
+  CUmodule module;
   check(cuModuleLoad(&module, filename));
+  modules.push_back(module);
 }
 
 SEQ_FUNC seq_int_t seq_nvptx_device_count() {
@@ -66,15 +77,28 @@ static bool name_char_valid(char c, bool first) {
 
 SEQ_FUNC CUfunction seq_nvptx_function(seq_str_t name) {
   CUfunction function;
-  auto *clean = (char *)seq_alloc_atomic(name.len + 1);
+  CUresult result;
+
+  std::vector<char> clean(name.len + 1);
   for (unsigned i = 0; i < name.len; i++) {
     char c = name.str[i];
     clean[i] = (name_char_valid(c, i == 0) ? c : '_');
   }
   clean[name.len] = '\0';
-  check(cuModuleGetFunction(&function, module, clean));
-  seq_free(clean);
-  return function;
+
+  for (auto it = modules.rbegin(); it != modules.rend(); ++it) {
+    result = cuModuleGetFunction(&function, *it, clean.data());
+    if (result == CUDA_SUCCESS) {
+      return function;
+    } else if (result == CUDA_ERROR_NOT_FOUND) {
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  fail(result);
+  return {};
 }
 
 SEQ_FUNC void seq_nvptx_invoke(CUfunction f, unsigned int gridDimX,

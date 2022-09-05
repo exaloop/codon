@@ -459,8 +459,9 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
 void addInitCall(llvm::Module *M, const std::string &filename) {
   llvm::LLVMContext &context = M->getContext();
-  auto f = M->getOrInsertFunction("seq_nvptx_init", llvm::Type::getVoidTy(context),
-                                  llvm::Type::getInt8PtrTy(context));
+  auto f =
+      M->getOrInsertFunction("seq_nvptx_load_module", llvm::Type::getVoidTy(context),
+                             llvm::Type::getInt8PtrTy(context));
   auto *g = llvm::cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
 
@@ -478,6 +479,13 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
   llvm::IRBuilder<> B(context);
   B.SetInsertPoint(use->getNextNode());
   B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+
+  for (auto &F : M->functions()) {
+    if (F.hasFnAttribute("jit")) {
+      B.SetInsertPoint(F.getEntryBlock().getFirstNonPHI());
+      B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+    }
+  }
 }
 
 void cleanUpIntrinsics(llvm::Module *M) {

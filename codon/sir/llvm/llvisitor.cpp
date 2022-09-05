@@ -1155,6 +1155,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   setDebugInfoForNode(x);
 
   auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
+  if (x->isJIT()) {
+    func->addFnAttr(llvm::Attribute::get(*context, "jit"));
+  }
   if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {

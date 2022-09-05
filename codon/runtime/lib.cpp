@@ -38,6 +38,10 @@ extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
 
 void seq_exc_init();
 
+#ifdef CODON_GPU
+void seq_nvptx_init();
+#endif
+
 int seq_flags;
 
 SEQ_FUNC void seq_init(int flags) {
@@ -47,6 +51,9 @@ SEQ_FUNC void seq_init(int flags) {
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
   seq_exc_init();
+#ifdef CODON_GPU
+  seq_nvptx_init();
+#endif
   seq_flags = flags;
 }
 
