@@ -465,20 +465,20 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
   auto *g = llvm::cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
 
-  auto *init = M->getFunction("seq_init");
-  seqassertn(init, "seq_init function not found in module");
-  seqassertn(init->hasOneUse(), "seq_init used more than once");
-  auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
-  seqassertn(use, "seq_init use was not a call");
-
   auto *filenameVar = new llvm::GlobalVariable(
       *M, llvm::ArrayType::get(llvm::Type::getInt8Ty(context), filename.length() + 1),
       /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantDataArray::getString(context, filename), ".nvptx.filename");
   filenameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   llvm::IRBuilder<> B(context);
-  B.SetInsertPoint(use->getNextNode());
-  B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+
+  if (auto *init = M->getFunction("seq_init")) {
+    seqassertn(init->hasOneUse(), "seq_init used more than once");
+    auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
+    seqassertn(use, "seq_init use was not a call");
+    B.SetInsertPoint(use->getNextNode());
+    B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+  }
 
   for (auto &F : M->functions()) {
     if (F.hasFnAttribute("jit")) {
