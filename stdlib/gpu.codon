@@ -235,11 +235,7 @@ def _tuple_from_gpu(args, gpu_args):
         a.__from_gpu__(g)
         _tuple_from_gpu(args[1:], gpu_args[1:])
 
-Nxx: Static[int] = 10
-
 def kernel(fn, *args):
-    x = __array__[int](Nxx)
-
     from C import seq_nvptx_function(str) -> cobj
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
 
@@ -473,6 +469,7 @@ class str:
 
 @extend
 class List:
+    @inline
     def __to_gpu__(self, cache: AllocCache):
         mem = List[T].__new__()
         n = self.len
@@ -481,6 +478,7 @@ class List:
         mem.len = n
         return _object_to_gpu(mem, cache)
 
+    @inline
     def __from_gpu__(self, other: List[T]):
         mem = _object_from_gpu(other)
         my_cap = self.arr.len
@@ -492,6 +490,7 @@ class List:
         _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
         self.len = mem.len
 
+    @inline
     def __from_gpu_new__(other: List[T]):
         mem = _object_from_gpu(other)
         arr = Array[T](mem.arr.len)
