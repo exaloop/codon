@@ -125,7 +125,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
 
   struct BaseGuard {
     SimplifyContext *holder;
-    BaseGuard(SimplifyContext *holder, const std::string &name): holder(holder) {
+    BaseGuard(SimplifyContext *holder, const std::string &name) : holder(holder) {
       holder->bases.emplace_back(Base(name));
       holder->addBlock();
     }
@@ -134,7 +134,6 @@ struct SimplifyContext : public Context<SimplifyItem> {
       holder->popBlock();
     }
   };
-
 
   /// Set of seen global identifiers used to prevent later creation of local variables
   /// with the same name.

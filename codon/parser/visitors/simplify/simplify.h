@@ -43,10 +43,11 @@ class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
-                       const std::unordered_map<std::string, std::string> &defines = {},
-                       const std::unordered_map<std::string, std::string> &earlyDefines = {},
-                       bool barebones = false);
+  static StmtPtr
+  apply(Cache *cache, const StmtPtr &node, const std::string &file,
+        const std::unordered_map<std::string, std::string> &defines = {},
+        const std::unordered_map<std::string, std::string> &earlyDefines = {},
+        bool barebones = false);
   static StmtPtr apply(const std::shared_ptr<SimplifyContext> &cache,
                        const StmtPtr &node, const std::string &file, int atAge = -1);
 

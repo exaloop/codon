@@ -141,9 +141,9 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   bool lambda = startswith(ctx->bases.back().name, "._lambda_");
   // Disallow outer generics except for class generics in methods
   // if (!lambda)
-    if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size())) {
-      error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
-    }
+  if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size())) {
+    error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
+  }
   // if (lambda)
   // LOG("{} {} {}", ctx->getSrcInfo(), ctx->bases.back().name, crossCaptureBoundary);
 
@@ -154,8 +154,8 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
 
   // Check if a real variable (not a static) is defined outside the current scope
   // if (!lambda)
-    if (!val->isVar() || val->isGeneric())
-      return false;
+  if (!val->isVar() || val->isGeneric())
+    return false;
 
   // Case: a global variable that has not been marked with `global` statement
   if (val->getBaseName().empty()) { /// TODO: use isGlobal instead?

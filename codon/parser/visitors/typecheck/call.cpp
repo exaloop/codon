@@ -411,7 +411,6 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
       auto typ = typeArgs[si]->type;
       if (calleeFn->funcGenerics[si].type->isStaticType()) {
         if (!typeArgs[si]->isStatic()) {
-          LOG("{}", typeArgs[si]->toString());
           error("expected static expression");
         }
         typ = std::make_shared<StaticType>(typeArgs[si], ctx);
