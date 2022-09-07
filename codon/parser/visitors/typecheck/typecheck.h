@@ -136,6 +136,7 @@ private: // Node typechecking rules
   ExprPtr transformTupleFn(CallExpr *expr);
   ExprPtr transformTypeFn(CallExpr *expr);
   ExprPtr transformRealizedFn(CallExpr *expr);
+  ExprPtr transformStaticPrintFn(CallExpr *expr);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
   void addFunctionGenerics(const types::FuncType *t);
   std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);

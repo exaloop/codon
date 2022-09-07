@@ -123,6 +123,19 @@ struct SimplifyContext : public Context<SimplifyItem> {
   /// Current base stack (the last enclosing base is the last base in the stack).
   std::vector<Base> bases;
 
+  struct BaseGuard {
+    SimplifyContext *holder;
+    BaseGuard(SimplifyContext *holder, const std::string &name): holder(holder) {
+      holder->bases.emplace_back(Base(name));
+      holder->addBlock();
+    }
+    ~BaseGuard() {
+      holder->bases.pop_back();
+      holder->popBlock();
+    }
+  };
+
+
   /// Set of seen global identifiers used to prevent later creation of local variables
   /// with the same name.
   std::unordered_map<std::string, std::unordered_map<std::string, ExprPtr>>

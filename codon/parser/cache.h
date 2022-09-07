@@ -220,6 +220,8 @@ public:
   SrcInfo generateSrcInfo();
   /// Get file contents at the given location.
   std::string getContent(const SrcInfo &info);
+  /// Register a global identifier.
+  void addGlobal(const std::string &name, ir::Var *var = nullptr);
 
   /// Realization API.
 

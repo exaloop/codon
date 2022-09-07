@@ -410,8 +410,10 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     if (typeArgs[si]) {
       auto typ = typeArgs[si]->type;
       if (calleeFn->funcGenerics[si].type->isStaticType()) {
-        if (!typeArgs[si]->isStatic())
+        if (!typeArgs[si]->isStatic()) {
+          LOG("{}", typeArgs[si]->toString());
           error("expected static expression");
+        }
         typ = std::make_shared<StaticType>(typeArgs[si], ctx);
       }
       unify(typ, calleeFn->funcGenerics[si].type);
@@ -545,6 +547,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformTupleFn(expr)};
   } else if (val == "__realized__") {
     return {true, transformRealizedFn(expr)};
+  } else if (val == "__static_print__") {
+    return {false, transformStaticPrintFn(expr)};
   } else {
     return {false, nullptr};
   }
@@ -814,6 +818,18 @@ ExprPtr TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
     e->setType(f);
     e->setDone();
     return e;
+  }
+  return nullptr;
+}
+
+/// Transform __static_print__ function to a fully realized type identifier.
+ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
+  auto &args = expr->args[0].value->getCall()->args;
+  for (size_t i = 0; i < args.size(); i++) {
+    realize(args[i].value->type);
+    fmt::print(stderr, "[static_print] {}: {} := {}\n", getSrcInfo(),
+               FormatVisitor::apply(args[i].value),
+               args[i].value->type ? args[i].value->type->debugString(1) : "-");
   }
   return nullptr;
 }

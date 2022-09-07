@@ -1,12 +1,9 @@
 @tuple
-class Vec:
-    T: type
-    N: Static[int]
-
-    ZERO_16x8i = Vec(u8(0), T=u8, N=16)
-    FF_16x8i = Vec(u8(0xff), T=u8, N=16)
-    ZERO_32x8i = Vec(u8(0), T=u8, N=32)
-    FF_32x8i = Vec(u8(0xff), T=u8, N=32)
+class Vec[T, N: Static[int]]:
+    ZERO_16x8i = Vec[u8,16](u8(0))
+    FF_16x8i = Vec[u8,16](u8(0xff))
+    ZERO_32x8i = Vec[u8,32](u8(0))
+    FF_32x8i = Vec[u8,32](u8(0xff))
 
     @llvm
     def _mm_set1_epi8(val: u8) -> Vec[u8, 16]:
@@ -113,11 +110,14 @@ class Vec:
                 return Vec._mm512_castsi512_ps(Vec._mm512_cvtepi8_epi64(x))
         compile_error("invalid SIMD vector constructor")
 
-    def __new__(x: str, offset: int = 0, N: Static[int]) -> Vec[u8, N]:
+    def __new__(x: str, offset: int = 0) -> Vec[u8, N]:
         return Vec(x.ptr + offset, u8, N)
 
-    def __new__(x: List[T], offset: int = 0, T: type, N: Static[int]) -> Vec[T, N]:
+    def __new__(x: List[T], offset: int = 0) -> Vec[T, N]:
         return Vec(x.arr.ptr + offset, T, N)
+
+    def __new__(x) -> Vec[T, N]:
+        return Vec(x, T, N)
 
     @llvm
     def _mm_cmpeq_epi8(x: Vec[u8, 16], y: Vec[u8, 16]) -> Vec[u8, 16]:
@@ -304,3 +304,7 @@ class Vec:
             return f"<{self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]}, {self[8]}, {self[9]}, {self[10]}, {self[11]}, {self[12]}, {self[13]}, {self[14]}, {self[15]}>"
         else:
             return "?"
+
+u8x16 = Vec[u8, 16]
+u8x32 = Vec[u8, 32]
+f32x8 = Vec[f32, 8]

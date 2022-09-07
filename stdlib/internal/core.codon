@@ -170,3 +170,7 @@ def __realized__(fn, args):
 
 def statictuple(*args):
     return args
+
+def __static_print__(*args):
+    pass
+

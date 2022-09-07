@@ -319,8 +319,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // `import_[I]_done = False` (set to True upon successful import)
     preamble->push_back(N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
                                       N<BoolExpr>(false)));
-    if (!in(ctx->cache->globals, importDoneVar))
-      ctx->cache->globals[importDoneVar] = nullptr;
+    ctx->cache->addGlobal(importDoneVar);
 
     // Wrap all imported top-level statements into a function.
     // Make sure to register the global variables and set their assignments as updates.
@@ -332,11 +331,8 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
         if (!a->isUpdate() && a->lhs->getId()) {
           // Global `a = ...`
           auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal() && !getStaticGeneric(a->type.get())) {
-            // Register global
-            if (!in(ctx->cache->globals, val->canonicalName))
-              ctx->cache->globals[val->canonicalName] = nullptr;
-          }
+          if (val->isVar() && val->isGlobal() && !getStaticGeneric(a->type.get()))
+            ctx->cache->addGlobal(val->canonicalName);
         }
       }
       stmts.push_back(s);

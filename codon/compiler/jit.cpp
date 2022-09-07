@@ -38,7 +38,7 @@ llvm::Error JIT::init() {
   auto *llvisitor = compiler->getLLVMVisitor();
 
   auto transformed = ast::SimplifyVisitor::apply(
-      cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME, {});
+      cache, std::make_shared<ast::SuiteStmt>(), JIT_FILENAME);
 
   auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
   ast::TranslateVisitor::apply(cache, std::move(typechecked));

@@ -97,7 +97,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
                 stmt->var->getSrcInfo());
     transform(stmt->var);
-    transform(stmt->suite);
+    stmt->suite = transform(N<SuiteStmt>(stmt->suite));
   } else {
     varName = ctx->cache->getTemporaryVar("for");
     ctx->addVar(varName, varName, stmt->var->getSrcInfo());
@@ -109,7 +109,7 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     stmts.push_back(stmt->suite);
     stmt->suite = transform(N<SuiteStmt>(stmts));
   }
-  ctx->leaveConditionalBlock();
+  ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
     ctx->findDominatingBinding(var);

@@ -146,7 +146,9 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto fn = [&](const std::string &var, const ExprPtr &expr) {
     bool staticInt = expr->isStatic();
-    auto t = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+    auto t = N<IndexExpr>(
+        N<IdExpr>("Static"),
+        N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
     t->markType();
     auto block = N<SuiteStmt>(
         N<AssignStmt>(N<IdExpr>(var), expr->clone(), staticInt ? t : nullptr),

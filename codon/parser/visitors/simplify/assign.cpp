@@ -152,9 +152,8 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
 
   // Register all toplevel variables as global in JIT mode
   bool isGlobal = (ctx->cache->isJit && ctx->isGlobal()) || (canonical == VAR_ARGV);
-  if (isGlobal && !in(ctx->cache->globals, canonical)) {
-    ctx->cache->globals[canonical] = nullptr;
-  }
+  if (isGlobal)
+    ctx->cache->addGlobal(canonical);
 
   return assign;
 }

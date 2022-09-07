@@ -235,7 +235,11 @@ def _tuple_from_gpu(args, gpu_args):
         a.__from_gpu__(g)
         _tuple_from_gpu(args[1:], gpu_args[1:])
 
+# Nxx: Static[int] = 10
+
 def kernel(fn, *args):
+    # x = __array__[int](Nxx)
+
     from C import seq_nvptx_function(str) -> cobj
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
 

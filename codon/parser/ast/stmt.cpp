@@ -341,7 +341,8 @@ std::string FunctionStmt::toString(int indent) const {
     as.push_back(a.toString());
   std::vector<std::string> dec, attr;
   for (auto &a : decorators)
-    dec.push_back(format("(dec {})", a->toString()));
+    if (a)
+      dec.push_back(format("(dec {})", a->toString()));
   for (auto &a : attributes.customAttr)
     attr.push_back(format("'{}'", a));
   return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),

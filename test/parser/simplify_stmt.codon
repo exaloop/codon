@@ -1120,3 +1120,22 @@ def match(match):
     match
 
 match(1)
+
+#%% loop_domination,barebones
+for i in range(2):
+    try: dat = 1
+    except: pass
+    print(dat)
+#: 1
+#: 1
+
+#%% block_unroll,barebones
+# Ensure that block unrolling is done in RAII manner on error
+def foo():
+    while True:
+        def magic(a: x):
+            return
+        print b
+foo()
+#! identifier 'x' not found
+#! identifier 'b' not found
