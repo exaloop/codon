@@ -684,17 +684,17 @@ def test_float32_pow():
 
 @test
 def test_float32_acos():
-    assert math.acos(-1.0f32) == math.pi32
-    assert math.acos(0.0f32) == math.pi32 / 2.0f32
+    assert close32(math.acos(-1.0f32), math.pi32)
+    assert close32(math.acos(0.0f32), math.pi32 / 2.0f32)
     assert math.acos(1.0f32) == 0.0f32
     assert math.isnan(math.acos(NAN32)) == True
 
 
 @test
 def test_float32_asin():
-    assert math.asin(-1.0f32) == -math.pi32 / 2.0f32
+    assert close32(math.asin(-1.0f32), -math.pi32 / 2.0f32)
     assert math.asin(0.0f32) == 0.0f32
-    assert math.asin(1.0f32) == math.pi32 / 2.0f32
+    assert close32(math.asin(1.0f32), math.pi32 / 2.0f32)
     assert math.isnan(math.asin(NAN32)) == True
 
 
@@ -717,7 +717,7 @@ def test_float32_atan2():
     assert math.atan2(1.0f32, 0.0f32) == math.pi32 / 2.0f32
     assert math.atan2(-0.0f32, 0.0f32) == -0.0f32
     assert math.atan2(-0.0f32, 2.3f32) == -0.0f32
-    assert math.atan2(0.0f32, -2.3f32) == math.pi32
+    assert close32(math.atan2(0.0f32, -2.3f32), math.pi32)
     assert math.atan2(INF32, NINF32) == math.pi32 * 3.0f32 / 4.0f32
     assert math.atan2(INF32, 2.3f32) == math.pi32 / 2.0f32
     assert math.isnan(math.atan2(NAN32, 0.0f32)) == True
