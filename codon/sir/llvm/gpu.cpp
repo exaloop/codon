@@ -533,7 +533,7 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
     return;
 
   std::string filename = ptxFilename.empty() ? M->getSourceFileName() : ptxFilename;
-  if (filename.empty())
+  if (filename.empty() || filename[0] == '<')
     filename = "kernel";
   llvm::SmallString<128> path(filename);
   llvm::sys::path::replace_extension(path, "ptx");
