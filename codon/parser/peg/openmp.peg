@@ -29,8 +29,11 @@ clause <-
   / "num_threads" _ "(" _ int _ ")" {
     return vector<CallExpr::Arg>{{"num_threads", make_shared<IntExpr>(ac<int>(V0))}};
   }
-   / "ordered" {
+  / "ordered" {
     return vector<CallExpr::Arg>{{"ordered", make_shared<BoolExpr>(true)}};
+  }
+  / "collapse" {
+    return vector<CallExpr::Arg>{{"collapse", make_shared<IntExpr>(ac<int>(V0))}};
   }
 schedule_kind <- ("static" / "dynamic" / "guided" / "auto" / "runtime") {
   return VS.token_to_string();

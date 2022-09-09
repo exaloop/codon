@@ -757,6 +757,119 @@ def test_omp_corner_cases():
     for i in squares(10):
         i += i
 
+@test
+def test_omp_collapse():
+    # trivial
+    A0 = []
+    B0 = []
+
+    for i in range(10):
+        A0.append(i)
+
+    @par(num_threads=4, collapse=1)
+    for i in range(10):
+        with lock:
+            B0.append(i)
+
+    assert sorted(A0) == sorted(B0)
+
+    # basic
+    A1 = []
+    B1 = []
+
+    for i in range(10):
+        for j in range(10):
+            A1.append((i,j))
+
+    @par(num_threads=4, collapse=2)
+    for i in range(10):
+        for j in range(10):
+            with lock:
+                B1.append((i,j))
+
+    assert sorted(A1) == sorted(B1)
+
+    # deep
+    A2 = []
+    B2 = []
+
+    for a in range(3):
+        for b in range(4):
+            for c in range(5):
+                for d in range(6):
+                    A2.append((a,b,c,d))
+
+    @par(num_threads=4, collapse=4)
+    for a in range(3):
+        for b in range(4):
+            for c in range(5):
+                for d in range(6):
+                    with lock:
+                        B2.append((a,b,c,d))
+
+    assert sorted(A2) == sorted(B2)
+
+    # ranges 1
+    A3 = []
+    B3 = []
+
+    for a in range(-5,5,2):
+        for b in range(5,-7,-2):
+            for c in range(0,17,3):
+                for d in range(5):
+                    A3.append((a,b,c,d))
+
+    @par(num_threads=4, collapse=4)
+    for a in range(-5,5,2):
+        for b in range(5,-7,-2):
+            for c in range(0,17,3):
+                for d in range(5):
+                    with lock:
+                        B3.append((a,b,c,d))
+
+    assert sorted(A3) == sorted(B3)
+
+    # ranges 2
+    A4 = []
+    B4 = []
+
+    for i in range(10):
+        for j in range(7,-5,-2):
+            for k in range(-5,10,3):
+                A4.append((i,j,k))
+
+    @par(num_threads=4, collapse=3)
+    for i in range(10):
+        for j in range(7,-5,-2):
+            for k in range(-5,10,3):
+                with lock:
+                    B4.append((i,j,k))
+
+    assert sorted(A4) == sorted(B4)
+
+    # zero
+    B5 = []
+
+    @noinline
+    def zstart():
+        return 5
+
+    @noinline
+    def zstop():
+        return -5
+
+    start = zstart()
+    stop = zstop()
+
+    @par(num_threads=4, collapse=3)
+    for i in range(10):
+        for j in range(start, stop, 1):
+            for k in range(-5,10,3):
+                with lock:
+                    B5.append((i,j,k))
+
+    assert len(B5) == 0
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
@@ -768,3 +881,4 @@ test_omp_transform(111, 222, 333)
 test_omp_transform(111.1, 222.2, 333.3)
 test_omp_nested()
 test_omp_corner_cases()
+test_omp_collapse()

@@ -29,6 +29,8 @@ for i in range(10):
 -   `chunk_size` (int): chunk size when partitioning loop iterations
 -   `ordered` (bool): whether the loop iterations should be executed in
     the same order
+-   `collapse` (int): number of loop nests to collapse into a single
+    iteration space
 
 Other OpenMP parameters like `private`, `shared` or `reduction`, are
 inferred automatically by the compiler. For example, the following loop

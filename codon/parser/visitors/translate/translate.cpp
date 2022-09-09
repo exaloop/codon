@@ -409,7 +409,9 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
-    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered);
+    int64_t collapse =
+        fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
+    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse);
     LOG_TYPECHECK("parsed {}", stmt->decorator->toString());
   }
 

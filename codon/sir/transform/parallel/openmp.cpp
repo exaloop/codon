@@ -1212,6 +1212,112 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
   }
   return result;
 }
+
+struct CollapseResult {
+  ImperativeForFlow *collapsed = nullptr;
+  SeriesFlow *setup = nullptr;
+  std::string error;
+
+  operator bool() const { return collapsed != nullptr; }
+};
+
+struct LoopRange {
+  ImperativeForFlow *loop;
+  Var *start;
+  Var *stop;
+  int64_t step;
+  Var *len;
+};
+
+CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t levels) {
+  auto fail = [](const std::string &error) {
+    CollapseResult bad;
+    bad.error = error;
+    return bad;
+  };
+
+  auto *M = v->getModule();
+  CollapseResult res;
+  if (levels < 1)
+    return fail("'collapse' must be at least 1");
+
+  std::vector<ImperativeForFlow *> loopNests = {v};
+  ImperativeForFlow *curr = v;
+
+  for (auto i = 0; i < levels - 1; i++) {
+    auto *body = cast<SeriesFlow>(curr->getBody());
+    seqassertn(body, "unexpected loop body");
+    if (std::distance(body->begin(), body->end()) != 1 ||
+        !isA<ImperativeForFlow>(body->front()))
+      return fail("loop nest not collapsible");
+
+    curr = cast<ImperativeForFlow>(body->front());
+    loopNests.push_back(curr);
+  }
+
+  std::vector<LoopRange> ranges;
+  auto *setup = M->Nr<SeriesFlow>();
+
+  auto *intType = M->getIntType();
+  auto *lenCalc =
+      M->getOrRealizeFunc("_range_len", {intType, intType, intType}, {}, ompModule);
+  seqassertn(lenCalc, "range length calculation function not found");
+
+  for (auto *loop : loopNests) {
+    setup->push_back(M->Nr<AssignInstr>(loop->getVar(), M->getInt(0)));
+
+    LoopRange range;
+    range.loop = loop;
+    range.start = util::makeVar(loop->getStart(), setup, parent)->getVar();
+    range.stop = util::makeVar(loop->getEnd(), setup, parent)->getVar();
+    range.step = loop->getStep();
+    range.len = util::makeVar(util::call(lenCalc, {M->Nr<VarValue>(range.start),
+                                                   M->Nr<VarValue>(range.stop),
+                                                   M->getInt(range.step)}),
+                              setup, parent)
+                    ->getVar();
+    ranges.push_back(range);
+  }
+
+  auto *numIters = M->getInt(1);
+  for (auto &range : ranges) {
+    numIters = (*numIters) * (*M->Nr<VarValue>(range.len));
+  }
+
+  auto *collapsedVar = M->Nr<Var>(M->getIntType(), /*global=*/false);
+  parent->push_back(collapsedVar);
+  auto *body = M->Nr<SeriesFlow>();
+  auto sched = std::make_unique<OMPSched>(*v->getSchedule());
+  sched->collapse = 0;
+  auto *collapsed = M->Nr<ImperativeForFlow>(M->getInt(0), 1, numIters, body,
+                                             collapsedVar, std::move(sched));
+
+  // reconstruct indices by successive divmods
+  Var *lastDiv = nullptr;
+  for (auto it = ranges.rbegin(); it != ranges.rend(); ++it) {
+    auto *k = lastDiv ? lastDiv : collapsedVar;
+    auto *div =
+        util::makeVar(*M->Nr<VarValue>(k) / *M->Nr<VarValue>(it->len), body, parent)
+            ->getVar();
+    auto *mod =
+        util::makeVar(*M->Nr<VarValue>(k) % *M->Nr<VarValue>(it->len), body, parent)
+            ->getVar();
+    auto *i =
+        *M->Nr<VarValue>(it->start) + *(*M->Nr<VarValue>(mod) * *M->getInt(it->step));
+    body->push_back(M->Nr<AssignInstr>(it->loop->getVar(), i));
+    lastDiv = div;
+  }
+
+  auto *oldBody = cast<SeriesFlow>(loopNests.back()->getBody());
+  for (auto *x : *oldBody) {
+    body->push_back(x);
+  }
+
+  res.collapsed = collapsed;
+  res.setup = setup;
+
+  return res;
+}
 } // namespace
 
 const std::string OpenMPPass::KEY = "core-parallel-openmp";
@@ -1318,7 +1424,24 @@ void OpenMPPass::handle(ForFlow *v) {
 }
 
 void OpenMPPass::handle(ImperativeForFlow *v) {
-  auto data = setupOpenMPTransform(v, cast<BodiedFunc>(getParentFunc()));
+  auto *parent = cast<BodiedFunc>(getParentFunc());
+
+  if (v->isParallel() && v->getSchedule()->collapse != 0) {
+    auto levels = v->getSchedule()->collapse;
+    auto collapse = collapseLoop(parent, v, levels);
+
+    if (collapse) {
+      v->replaceAll(collapse.collapsed);
+      v = collapse.collapsed;
+      insertBefore(collapse.setup);
+    } else if (!collapse.error.empty()) {
+      auto src = v->getSrcInfo();
+      compilationWarning("could not collapse loop: " + collapse.error, src.file,
+                         src.line, src.col);
+    }
+  }
+
+  auto data = setupOpenMPTransform(v, parent);
   if (!v->isParallel())
     return;
 
