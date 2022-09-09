@@ -870,6 +870,25 @@ def test_omp_collapse():
 
     assert len(B5) == 0
 
+    # order
+    A6 = []
+    B6 = []
+
+    for a in range(-5,5,2):
+        for b in range(5,-7,-2):
+            for c in range(0,17,3):
+                for d in range(5):
+                    A6.append((a,b,c,d))
+
+    @par(num_threads=1, collapse=4)
+    for a in range(-5,5,2):
+        for b in range(5,-7,-2):
+            for c in range(0,17,3):
+                for d in range(5):
+                    B6.append((a,b,c,d))  # no lock since threads=1
+
+    assert A6 == B6
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
