@@ -40,6 +40,8 @@ struct SimplifyItem : public SrcObject {
   bool noShadow = false;
   /// Set if an identifier is a class or a function generic
   bool generic = false;
+  /// Set if an identifier is a static variable.
+  char staticType = 0;
 
 public:
   SimplifyItem(Kind kind, std::string baseName, std::string canonicalName,
@@ -61,6 +63,7 @@ public:
   /// (i.e., a block that might not be executed during the runtime)
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
+  char isStatic() const { return staticType; }
 };
 
 /** Context class that tracks identifiers during the simplification. **/
@@ -99,8 +102,9 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// Map of captured identifiers (i.e., identifiers not defined in a function).
     /// Captured (canonical) identifiers are mapped to the new canonical names
     /// (representing the canonical function argument names that are appended to the
-    /// function after processing).
-    std::unordered_map<std::string, std::string> *captures;
+    /// function after processing) and their types (indicating if they are a type, a
+    /// static or a variable).
+    std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"

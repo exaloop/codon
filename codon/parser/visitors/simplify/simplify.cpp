@@ -191,6 +191,7 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
     stmt->accept(v);
   } catch (const exc::ParserException &e) {
     ctx->cache->errors.push_back(e);
+    // throw;
   }
   ctx->popSrcInfo();
   if (v.resultStmt)

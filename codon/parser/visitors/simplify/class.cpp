@@ -74,10 +74,13 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
           varName = a.name, genName = ctx->cache->rev(a.name);
         else
           varName = ctx->generateCanonicalName(a.name), genName = a.name;
-        if (getStaticGeneric(a.type.get()))
-          ctx->addVar(genName, varName, a.type->getSrcInfo())->generic = true;
-        else
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(genName, varName, a.type->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
           ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
+        }
         args.emplace_back(Param{varName, transformType(clone(a.type), false),
                                 transformType(clone(a.defaultValue), false), a.status});
       }
@@ -277,10 +280,13 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
         args.emplace_back(a);
       }
       if (a.status != Param::Normal) {
-        if (getStaticGeneric(a.type.get()))
-          ctx->addVar(a.name, a.name, a.type->getSrcInfo())->generic = true;
-        else
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(a.name, a.name, a.type->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
           ctx->addType(a.name, a.name, a.type->getSrcInfo())->generic = true;
+        }
       }
     }
     if (si != subs.size())

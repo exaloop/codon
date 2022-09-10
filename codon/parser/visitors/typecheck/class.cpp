@@ -75,6 +75,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                             ->getType()
                             ->generalize(ctx->typecheckLevel - 1);
       fields[aj].type->setSrcInfo(stmt->args[ai].type->getSrcInfo());
+      // if (auto l = fields[aj].type->getLink()) {
+      //   if (l->trait) { // Callable
+      //     typ->generics.push_back(
+      //       ClassType::Generic{".T." + stmt->args[ai].name, ".T." + stmt->args[ai].name,
+      //                      fields[aj].type, l->id}
+      //     );
+      //   }
+      // }
       if (stmt->isRecord())
         typ->getRecord()->args.push_back(fields[aj].type);
       aj++;

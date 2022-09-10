@@ -147,7 +147,9 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   if (rhs && rhs->isType()) {
     ctx->addType(e->value, canonical, lhs->getSrcInfo());
   } else {
-    ctx->addVar(e->value, canonical, lhs->getSrcInfo());
+    auto val = ctx->addVar(e->value, canonical, lhs->getSrcInfo());
+    if (auto st = getStaticGeneric(type.get()))
+      val->staticType = st;
   }
 
   // Register all toplevel variables as global in JIT mode

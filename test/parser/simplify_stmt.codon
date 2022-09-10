@@ -580,12 +580,22 @@ def f(x):
     return g(x)
 print f(5) #: 6
 
-#%% function_err_nested,barebones
+##% nested_generic_static,barebones
+def foo():
+    N: Static[int] = 5
+    Z: Static[int] = 15
+    T = Int[Z]
+    def bar():
+        x = __array__[T](N)
+        print(x.__class__.__name__)
+    return bar
+foo()()  #: Array[Int[15]]
+
 def f[T]():
     def g():
         return T()
-    g()
-f(int) #! cannot access nonlocal variable 'T'
+    return g()
+print f(int) #: 0
 
 #%% class_err_1,barebones
 @extend

@@ -157,7 +157,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   std::vector<Param> args;
   StmtPtr suite = nullptr;
   ExprPtr ret = nullptr;
-  std::unordered_map<std::string, std::string> captures;
+  std::unordered_map<std::string, std::pair<std::string, ExprPtr>> captures;
   {
     // Set up the base
     SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
@@ -198,10 +198,13 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
       // Add generics to the context
       if (a.status != Param::Normal) {
-        if (getStaticGeneric(a.type.get()))
-          ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
-        else
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(varName, name, stmt->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
           ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
+        }
       }
     }
 
@@ -260,8 +263,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       args.pop_back();
     }
     for (auto &c : captures) {
-      args.emplace_back(Param{c.second, nullptr, nullptr});
-      partialArgs.push_back({c.second, N<IdExpr>(ctx->cache->rev(c.first))});
+      args.emplace_back(Param{c.second.first, c.second.second, nullptr});
+      partialArgs.push_back({c.second.first, N<IdExpr>(ctx->cache->rev(c.first))});
     }
     if (!kw.name.empty())
       args.push_back(kw);
