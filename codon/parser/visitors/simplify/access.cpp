@@ -140,9 +140,6 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
        ctx->bases[ctx->bases.size() - 2].name == val->getBaseName());
   auto i = ctx->bases.size();
   for (; i-- > 0;) {
-    // LOG("-> {:20} {} :: {} {} [{}]", getSrcInfo(), val->canonicalName,
-    //     val->getBaseName(), ctx->bases[i].name,
-    //     bool(!isClassMethod && !ctx->bases[i].captures));
     if (ctx->bases[i].name == val->getBaseName())
       break;
     if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
@@ -169,13 +166,6 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   // Check if a real variable (not a static) is defined outside the current scope
   if (crossCaptureBoundary)
     error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
-
-  // Disallow outer generics except for class generics in methods
-  // if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size()))
-  // {
-  //   error("cannot access nonlocal variable '{}'",
-  //   ctx->cache->rev(val->canonicalName));
-  // }
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is enabled

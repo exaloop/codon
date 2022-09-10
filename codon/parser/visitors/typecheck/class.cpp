@@ -55,6 +55,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           unify(defType->type, generic);
         }
       }
+      if (auto ti = CAST(a.type, InstantiateExpr)) {
+        // Parse TraitVar
+        seqassert(ti->typeExpr->isId("TraitVar"), "not a TraitVar instantiation");
+        auto l = transformType(ti->typeParams[0])->type->getLink();
+        if (!l || !l->trait)
+          error("not a trait");
+        generic->getLink()->trait = l->trait;
+      }
       ctx->add(TypecheckItem::Type, a.name, generic);
       ClassType::Generic g{a.name, ctx->cache->rev(a.name),
                            generic->generalize(ctx->typecheckLevel), typId};
@@ -75,14 +83,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                             ->getType()
                             ->generalize(ctx->typecheckLevel - 1);
       fields[aj].type->setSrcInfo(stmt->args[ai].type->getSrcInfo());
-      // if (auto l = fields[aj].type->getLink()) {
-      //   if (l->trait) { // Callable
-      //     typ->generics.push_back(
-      //       ClassType::Generic{".T." + stmt->args[ai].name, ".T." + stmt->args[ai].name,
-      //                      fields[aj].type, l->id}
-      //     );
-      //   }
-      // }
       if (stmt->isRecord())
         typ->getRecord()->args.push_back(fields[aj].type);
       aj++;

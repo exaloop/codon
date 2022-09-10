@@ -1233,3 +1233,36 @@ for i in statictuple("x", 1, 3.3, 2):
 #: 1
 #: 3.3
 #: 2
+
+
+#%% trait_defdict
+class dd(Dict[K,V]):
+    fn: S
+    K: type
+    V: type
+    S: TraitVar[Callable[[], V]]
+
+    def __init__(self, f: S):
+        self.fn = f
+
+    def __getitem__(self, key: K) -> V:
+        if key not in self:
+            self.__setitem__(key, self.fn())
+        return super().__getitem__(key)
+
+x = dd(lambda: 'empty')
+x.update({1: 's', 2: 'b'})
+print(x[1], x[44])
+#: s empty
+print(x)
+#: {44: 'empty', 1: 's', 2: 'b'}
+
+s = 's'
+y = dd(lambda: 'hey' + s)
+print(y[1])
+#: emptys
+s = 'x'
+print(y[2])
+#: emptyx
+print(y)
+#: {1: 'emptys', 2: 'emptyx'}

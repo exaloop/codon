@@ -312,10 +312,9 @@ std::string ClassType::debugString(bool debug) const {
     if (!a.name.empty())
       gs.push_back(a.type->debugString(debug));
   if (debug && !hiddenGenerics.empty()) {
-    gs.emplace_back("//");
     for (auto &a : hiddenGenerics)
       if (!a.name.empty())
-        gs.push_back(a.type->debugString(debug));
+        gs.push_back("-" + a.type->debugString(debug));
   }
   // Special formatting for Functions and Tuples
   auto n = niceName;

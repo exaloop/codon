@@ -66,6 +66,7 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
       defaultValue(std::move(defaultValue)) {
   if (status == 0 && this->type &&
       (this->type->isId("type") || this->type->isId("TypeVar") ||
+       (this->type->getIndex() && this->type->getIndex()->expr->isId("TraitVar")) ||
        getStaticGeneric(this->type.get())))
     this->status = Generic;
   else
