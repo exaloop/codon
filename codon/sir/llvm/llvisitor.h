@@ -89,6 +89,10 @@ private:
     }
   };
 
+  struct CatchData : NestableData {
+    llvm::Value *exception;
+  };
+
   struct DebugInfo {
     /// LLVM debug info builder
     std::unique_ptr<llvm::DIBuilder> builder;
@@ -139,6 +143,8 @@ private:
   std::vector<LoopData> loops;
   /// Try-catch data stack
   std::vector<TryCatchData> trycatch;
+  /// Catch-block data stack
+  std::vector<CatchData> catches;
   /// Debug information
   DebugInfo db;
   /// Plugin manager
@@ -181,6 +187,8 @@ private:
   void exitLoop();
   void enterTryCatch(TryCatchData data);
   void exitTryCatch();
+  void enterCatch(CatchData data);
+  void exitCatch();
   TryCatchData *getInnermostTryCatch();
   TryCatchData *getInnermostTryCatchBeforeLoop();
 

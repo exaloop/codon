@@ -52,7 +52,7 @@ std::string LLVMVisitor::getNameForFunction(const Func *x) {
 LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
-      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), db(),
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), catches(), db(),
       plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -290,6 +290,7 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   coro.reset();
   loops.clear();
   trycatch.clear();
+  catches.clear();
   db.reset();
 
   context = std::make_unique<llvm::LLVMContext>();
@@ -698,6 +699,16 @@ void LLVMVisitor::enterTryCatch(TryCatchData data) {
 void LLVMVisitor::exitTryCatch() {
   seqassertn(!trycatch.empty(), "no try catches present");
   trycatch.pop_back();
+}
+
+void LLVMVisitor::enterCatch(CatchData data) {
+  catches.push_back(std::move(data));
+  catches.back().sequenceNumber = nextSequenceNumber++;
+}
+
+void LLVMVisitor::exitCatch() {
+  seqassertn(!catches.empty(), "no catches present");
+  catches.pop_back();
 }
 
 LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatch() {
@@ -2125,7 +2136,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       }
 
       B->CreateStore(excStateCaught, tc.excFlag);
+      CatchData cd;
+      cd.exception = objPtr;
+      enterCatch(cd);
       process(catches[i]->getHandler());
+      exitCatch();
       B->SetInsertPoint(block);
       B->CreateBr(tc.finallyBlock);
     }
@@ -2486,10 +2501,19 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   // note: exception header should be set in the frontend
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();
-  process(x->getValue());
+  llvm::Value *obj = nullptr;
+
+  if (x->getValue()) {
+    process(x->getValue());
+    obj = value;
+  } else {
+    seqassertn(!catches.empty(), "empty raise outside of except block");
+    obj = catches.back().exception;
+  }
+
   B->SetInsertPoint(block);
   llvm::Value *exc = B->CreateCall(
-      excAllocFunc, {B->getInt32(getTypeIdx(x->getValue()->getType())), value});
+      excAllocFunc, {B->getInt32(getTypeIdx(x->getValue()->getType())), obj});
   call(throwFunc, exc);
 }
 
