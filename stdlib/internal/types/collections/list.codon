@@ -418,5 +418,37 @@ class List:
             return Array[T](Ptr[T](), 0)
         return self.arr.slice(start, stop).__copy__()
 
+    def _cmp(self, other: List[T]):
+        n1 = self.__len__()
+        n2 = other.__len__()
+        nmin = n1 if n1 < n2 else n2
+        for i in range(nmin):
+            a = self.arr[i]
+            b = other.arr[i]
+
+            if a < b:
+                return -1
+            elif a == b:
+                continue
+            else:
+                return 1
+        if n1 < n2:
+            return -1
+        elif n1 == n2:
+            return 0
+        else:
+            return 1
+
+    def __lt__(self, other: List[T]):
+        return self._cmp(other) < 0
+
+    def __gt__(self, other: List[T]):
+        return self._cmp(other) > 0
+
+    def __le__(self, other: List[T]):
+        return self._cmp(other) <= 0
+
+    def __ge__(self, other: List[T]):
+        return self._cmp(other) >= 0
 
 list = List
