@@ -943,6 +943,33 @@ a = {1: "s", 2: "t"}
 a[3] = foo["str"]
 print(sorted(a.items()))  #: [(1, 's'), (2, 't'), (3, 'hai')]
 
+
+#%% python_isinstance
+import python
+
+@python
+def foo():
+    return 1
+
+z = foo()
+print(z.__class__.__name__)  #: pyobj
+
+print isinstance(z, pyobj)  #: True
+print isinstance(z, int)  #: False
+print isinstance(z, python.int)  #: True
+print isinstance(z, python.ValueError)  #: False
+
+print isinstance(z, (int, str, python.int))  #: True
+print isinstance(z, (int, str, python.AttributeError))  #: False
+
+try:
+    foo().x
+# except python.ValueError:
+    # pass
+except python.AttributeError as e:
+    print('caught', e, e.__class__.__name__) #: caught 'int' object has no attribute 'x' pyobj
+
+
 #%% typeof_definition_error,barebones
 a = 1
 class X:

@@ -15,9 +15,33 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   transform(stmt->suite);
   ctx->blockLevel--;
 
+  std::vector<StmtPtr> pyobjExcept;
+
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
+    transform(c.exc);
+    if (c.exc->type->is("pyobj")) {
+      // Transformation for python.Error exceptions:
+      //   ```except python.Error as e: ...``` ->
+      //   ```except PyError as exc:
+      //        e = exc.pytype
+      //        if isinstance(exc.pytype, python.Error): ...
+      //        else: raise
+      auto var = ctx->cache->getTemporaryVar("exc");
+      if (!c.var.empty()) {
+        c.suite = N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(c.var), N<DotExpr>(N<IdExpr>(var), "pytype")),
+            c.suite);
+      }
+      c.suite = N<IfStmt>(
+          N<CallExpr>(N<IdExpr>("isinstance"), N<DotExpr>(N<IdExpr>(var), "pytype"), clone(c.exc)),
+          c.suite, N<ThrowStmt>(N<IdExpr>(var)));
+      c.var = var;
+      c.exc = N<IdExpr>("std.internal.types.error.PyError");
+      c.exc->markType();
+    }
     transformType(c.exc);
+
     if (!c.var.empty()) {
       // Handle dominated except bindings
       auto changed = in(ctx->cache->replacements, c.var);
@@ -56,6 +80,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 /// @example
 ///   `raise exc` -> ```raise __internal__.set_header(exc, "fn", "file", line, col)```
 void TypecheckVisitor::visit(ThrowStmt *stmt) {
+  if (!stmt->expr) {
+    stmt->setDone();
+    return;
+  }
+
   transform(stmt->expr);
 
   if (!(stmt->expr->getCall() &&

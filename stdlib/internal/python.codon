@@ -12,8 +12,10 @@ PyImport_AddModule = Function[[cobj], cobj](cobj())
 PyImport_AddModuleObject = Function[[cobj], cobj](cobj())
 PyImport_ImportModule = Function[[cobj], cobj](cobj())
 PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
+PyErr_NormalizeException = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
 PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PyEval_GetGlobals = Function[[], cobj](cobj())
+PyEval_GetBuiltins = Function[[], cobj](cobj())
 
 # conversions
 PyLong_AsLong = Function[[cobj], int](cobj())
@@ -97,6 +99,7 @@ PyObject_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyObject_SetItem = Function[[cobj, cobj, cobj], int](cobj())
 PyObject_DelItem = Function[[cobj, cobj], int](cobj())
 PyObject_RichCompare = Function[[cobj, cobj, i32], cobj](cobj())
+PyObject_IsInstance = Function[[cobj, cobj], i32](cobj())
 
 # constants
 Py_None = cobj()
@@ -154,8 +157,10 @@ def init_dl_handles(py_handle: cobj):
     global PyImport_AddModuleObject
     global PyImport_ImportModule
     global PyErr_Fetch
+    global PyErr_NormalizeException
     global PyRun_SimpleString
     global PyEval_GetGlobals
+    global PyEval_GetBuiltins
     global PyLong_AsLong
     global PyLong_FromLong
     global PyFloat_AsDouble
@@ -233,6 +238,7 @@ def init_dl_handles(py_handle: cobj):
     global PyObject_SetItem
     global PyObject_DelItem
     global PyObject_RichCompare
+    global PyObject_IsInstance
     global Py_None
     global Py_True
     global Py_False
@@ -244,8 +250,10 @@ def init_dl_handles(py_handle: cobj):
     PyImport_AddModuleObject = dlsym(py_handle, "PyImport_AddModuleObject")
     PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
     PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
+    PyErr_NormalizeException = dlsym(py_handle, "PyErr_NormalizeException")
     PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
     PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
+    PyEval_GetBuiltins = dlsym(py_handle, "PyEval_GetBuiltins")
     PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
     PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
     PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
@@ -323,6 +331,7 @@ def init_dl_handles(py_handle: cobj):
     PyObject_SetItem = dlsym(py_handle, "PyObject_SetItem")
     PyObject_DelItem = dlsym(py_handle, "PyObject_DelItem")
     PyObject_RichCompare = dlsym(py_handle, "PyObject_RichCompare")
+    PyObject_IsInstance = dlsym(py_handle, "PyObject_IsInstance")
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
@@ -603,19 +612,17 @@ class pyobj:
     def exc_check():
         ptype, pvalue, ptraceback = cobj(), cobj(), cobj()
         PyErr_Fetch(__ptr__(ptype), __ptr__(pvalue), __ptr__(ptraceback))
+        PyErr_NormalizeException(__ptr__(ptype), __ptr__(pvalue), __ptr__(ptraceback))
         if ptype != cobj():
             py_msg = PyObject_Str(pvalue) if pvalue != cobj() else pvalue
             msg = pyobj.to_str(py_msg, "ignore", "<empty Python message>")
-            py_typ = PyObject_GetAttrString(ptype, "__name__".c_str())
-            typ = pyobj.to_str(py_typ, "ignore")
 
             pyobj.decref(ptype)
-            pyobj.decref(pvalue)
             pyobj.decref(ptraceback)
             pyobj.decref(py_msg)
-            pyobj.decref(py_typ)
 
-            raise PyError(msg, typ)
+            # pyobj.decref(pvalue)
+            raise PyError(msg, pyobj(pvalue))
 
     def exc_wrap(_retval: T, T: type) -> T:
         pyobj.exc_check()
@@ -667,7 +674,14 @@ class pyobj:
         PyRun_SimpleString(code.c_str())
 
     def _globals() -> pyobj:
-        return pyobj(PyEval_GetGlobals())
+        p = PyEval_GetGlobals()
+        if p == cobj():
+            Py_IncRef(Py_None)
+            return pyobj(Py_None)
+        return pyobj(p)
+
+    def _builtins() -> pyobj:
+        return pyobj(PyEval_GetBuiltins())
 
     def _get_module(name: str) -> pyobj:
         p = pyobj(pyobj.exc_wrap(PyImport_AddModule(name.c_str())))
@@ -684,6 +698,17 @@ class pyobj:
 
     def __bool__(self):
         return bool(pyobj.exc_wrap(PyObject_IsTrue(self.p) == 1))
+
+
+def _get_identifier(typ: str) -> pyobj:
+    t = pyobj._builtins()[typ]
+    if t.p == cobj():
+        t = pyobj._main_module()[typ]
+    return t
+
+
+def _isinstance(what: pyobj, typ: pyobj) -> bool:
+    return bool(pyobj.exc_wrap(PyObject_IsInstance(what.p, typ.p)))
 
 
 # Type conversions

@@ -1242,6 +1242,10 @@ class dd(Dict[K,V]):
     V: type
     S: TraitVar[Callable[[], V]]
 
+    @realize_without_self
+    def __init__(self: dd[K, VV, Callable[[], VV]], VV: type):
+        self.fn = lambda: VV()
+
     def __init__(self, f: S):
         self.fn = f
 
@@ -1250,19 +1254,28 @@ class dd(Dict[K,V]):
             self.__setitem__(key, self.fn())
         return super().__getitem__(key)
 
-x = dd(lambda: 'empty')
-x.update({1: 's', 2: 'b'})
-print(x[1], x[44])
-#: s empty
-print(x)
-#: {44: 'empty', 1: 's', 2: 'b'}
 
-s = 's'
-y = dd(lambda: 'hey' + s)
-print(y[1])
-#: emptys
-s = 'x'
-print(y[2])
-#: emptyx
+x = dd(list)
+x[1] = [1, 2]
+print(x[2])
+#: []
+print(x)
+#: {1: [1, 2], 2: []}
+
+z = 5
+y = dd(lambda: z+1)
+y.update({'a': 5})
+print(y['b'])
+#: 6
+z = 6
+print(y['c'])
+#: 7
 print(y)
-#: {1: 'emptys', 2: 'emptyx'}
+#: {'a': 5, 'b': 6, 'c': 7}
+
+xx = dd(lambda: 'empty')
+xx.update({1: 's', 2: 'b'})
+print(xx[1], xx[44])
+#: s empty
+print(xx)
+#: {44: 'empty', 1: 's', 2: 'b'}

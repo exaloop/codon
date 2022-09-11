@@ -673,7 +673,6 @@ ExprPtr TypecheckVisitor::transformArray(CallExpr *expr) {
 ///   `isinstance(obj, ByVal)` is True if `type(obj)` is a tuple type
 ///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
 ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
-  expr->staticValue.type = StaticValue::INT;
   expr->setType(unify(expr->type, ctx->getType("bool")));
   transform(expr->args[0].value);
   auto typ = expr->args[0].value->type->getClass();
@@ -683,21 +682,40 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   transform(expr->args[0].value); // transform again to realize it
 
   auto &typExpr = expr->args[1].value;
+  if (auto c = typExpr->getCall()) {
+    // Handle `isinstance(obj, (type1, type2, ...))`
+    if (typExpr->origExpr && typExpr->origExpr->getTuple()) {
+      ExprPtr result = transform(N<BoolExpr>(false));
+      for (auto &i : typExpr->origExpr->getTuple()->items) {
+        result = transform(N<BinaryExpr>(
+            result, "||",
+            N<CallExpr>(N<IdExpr>("isinstance"), expr->args[0].value, i)));
+      }
+      return result;
+    }
+  }
+
+  expr->staticValue.type = StaticValue::INT;
   if (typExpr->isId("Tuple") || typExpr->isId("tuple")) {
     return transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)));
   } else if (typExpr->isId("ByVal")) {
     return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("ByRef")) {
     return transform(N<BoolExpr>(typ->getRecord() == nullptr));
-  } else {
-    transformType(typExpr);
-    // Check super types (i.e., statically inherited) as well
-    for (auto &tx : getSuperTypes(typ->getClass())) {
-      if (tx->unify(typExpr->type.get(), nullptr) >= 0)
-        return transform(N<BoolExpr>(true));
-    }
-    return transform(N<BoolExpr>(false));
+  } else if (typ->is("pyobj") && typExpr->type->is("pyobj") && !typExpr->isType()) {
+    expr->staticValue.type = StaticValue::NOT_STATIC;
+    return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance:0"),
+                                 expr->args[0].value, expr->args[1].value));
   }
+
+  transformType(typExpr);
+
+  // Check super types (i.e., statically inherited) as well
+  for (auto &tx : getSuperTypes(typ->getClass())) {
+    if (tx->unify(typExpr->type.get(), nullptr) >= 0)
+      return transform(N<BoolExpr>(true));
+  }
+  return transform(N<BoolExpr>(false));
 }
 
 /// Transform staticlen method to a static integer expression. This method supports only

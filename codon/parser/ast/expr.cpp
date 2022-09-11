@@ -17,7 +17,7 @@ namespace codon::ast {
 
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
-      done(false), attributes(0) {}
+      done(false), attributes(0), origExpr(nullptr) {}
 void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }

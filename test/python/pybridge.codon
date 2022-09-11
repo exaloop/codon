@@ -1,3 +1,5 @@
+import python
+
 @test
 def test_basic():
     from python import mymodule
@@ -32,7 +34,7 @@ def test_pythrow():
     try:
         te()
     except PyError as e:
-        assert e.pytype + ":" + e.message == "ValueError:foo"
+        assert python.type(e.pytype)._getattr('__name__') + ":" + e.message == "ValueError:foo"
         return
     assert False
 test_pythrow()

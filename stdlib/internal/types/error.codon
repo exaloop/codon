@@ -72,9 +72,9 @@ class CError(Exception):
 
 
 class PyError(Exception):
-    pytype: str
+    pytype: pyobj
 
-    def __init__(self, message: str, pytype: str):
+    def __init__(self, message: str, pytype: pyobj):
         super().__init__("PyError", message)
         self.pytype = pytype
 

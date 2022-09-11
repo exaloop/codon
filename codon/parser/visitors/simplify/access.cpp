@@ -82,8 +82,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
 
 /// Flatten imports.
 /// @example
-///   `a.b.c` -> canonical name of `c` in `a.b` if `a.b` is an import
-///   `a.B.c` -> canonical name of `c` in class `a.B`
+///   `a.b.c`      -> canonical name of `c` in `a.b` if `a.b` is an import
+///   `a.B.c`      -> canonical name of `c` in class `a.B`
+///   `python.foo` -> internal.python._get_identifier("foo")
 /// Other cases are handled during the type checking.
 void SimplifyVisitor::visit(DotExpr *expr) {
   // First flatten the imports:
@@ -99,7 +100,11 @@ void SimplifyVisitor::visit(DotExpr *expr) {
     std::reverse(chain.begin(), chain.end());
     auto p = getImport(chain);
 
-    if (p.second->getModule() == ctx->getModule() && p.first == 1) {
+    if (p.second->getModule() == "std.python") {
+      resultExpr = transform(N<CallExpr>(
+          N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
+          N<StringExpr>(chain[p.first++])));
+    } else if (p.second->getModule() == ctx->getModule() && p.first == 1) {
       resultExpr = transform(N<IdExpr>(chain[0]), true);
     } else {
       resultExpr = N<IdExpr>(p.second->canonicalName);
@@ -223,10 +228,18 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     size_t itemEnd = 0;
     auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
     for (auto i = chain.size(); i-- > importEnd;) {
-      val = fctx->find(join(chain, ".", importEnd, i + 1));
-      if (val && (importName.empty() || val->isType() || !val->isConditional())) {
-        itemName = val->canonicalName, itemEnd = i + 1;
-        break;
+      if (fctx->getModule() == "std.python" && importEnd < chain.size()) {
+        // Special case: importing from Python.
+        // Fake SimplifyItem that inidcates std.python access
+        val = std::make_shared<SimplifyItem>(SimplifyItem::Var, "", "",
+                                             fctx->getModule(), std::vector<int>{});
+        return {importEnd, val};
+      } else {
+        val = fctx->find(join(chain, ".", importEnd, i + 1));
+        if (val && (importName.empty() || val->isType() || !val->isConditional())) {
+          itemName = val->canonicalName, itemEnd = i + 1;
+          break;
+        }
       }
     }
     if (itemName.empty() && importName.empty())
