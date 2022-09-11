@@ -33,9 +33,10 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<AssignStmt>(N<IdExpr>(c.var), N<DotExpr>(N<IdExpr>(var), "pytype")),
             c.suite);
       }
-      c.suite = N<IfStmt>(
-          N<CallExpr>(N<IdExpr>("isinstance"), N<DotExpr>(N<IdExpr>(var), "pytype"), clone(c.exc)),
-          c.suite, N<ThrowStmt>(N<IdExpr>(var)));
+      c.suite =
+          N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
+                                N<DotExpr>(N<IdExpr>(var), "pytype"), clone(c.exc)),
+                    c.suite, N<ThrowStmt>(N<IdExpr>(var)));
       c.var = var;
       c.exc = N<IdExpr>("std.internal.types.error.PyError");
       c.exc->markType();
