@@ -106,6 +106,15 @@ class Dict:
     def __len__(self) -> int:
         return self._size
 
+    def __or__(self, other: Dict[K,V]):
+        new = Dict[K,V](self)
+        new.update(other)
+        return new
+
+    def __ior__(self, other: Dict[K,V]):
+        self.update(other)
+        return self
+
     def __copy__(self):
         if self.__len__() == 0:
             return Dict[K, V]()
