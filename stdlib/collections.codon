@@ -120,7 +120,7 @@ class deque:
         return self.__copy__()
 
     def __repr__(self) -> str:
-        return repr(List[T](iter(self)))
+        return f"deque({repr(List[T](iter(self)))})"
 
     def _idx_check(self, idx: int, msg: str):
         if self._head == self._tail or idx >= len(self) or idx < 0:
@@ -341,6 +341,9 @@ class Counter(Dict[T, int]):
         result = copy(self)
         result |= other
         return result
+
+    def __repr__(self):
+        return f"Counter({super().__repr__()})"
 
     def __dict_do_op_throws__(self, key: T, other: Z, op: F, F: type, Z: type):
         self.__dict_do_op__(key, other, 0, op)

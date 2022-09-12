@@ -107,7 +107,7 @@ class Dict:
         return self._size
 
     def __or__(self, other: Dict[K,V]):
-        new = Dict[K,V](self)
+        new = self.__copy__()
         new.update(other)
         return new
 

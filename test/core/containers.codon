@@ -409,7 +409,7 @@ def test_deque():
     dq.append(3)
     dq.appendleft(11)
     dq.appendleft(22)
-    assert str(dq) == '[22, 11, 1, 2, 3]'
+    assert str(dq) == 'deque([22, 11, 1, 2, 3])'
     assert bool(dq) == True
 
     # test cap increase:
@@ -418,29 +418,29 @@ def test_deque():
     for i in range(20):
         dq.append(i)
         dq.appendleft(i)
-    assert str(dq) == '[19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]'
+    assert str(dq) == 'deque([19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19])'
     assert len(dq) == 40
 
     for i in range(19):
         dq.pop()
         dq.popleft()
-    assert str(dq) == '[0, 0]'
+    assert str(dq) == 'deque([0, 0])'
     for a in dq:
         assert a == 0
 
     assert (0 in dq) == True
     assert (1 in dq) == False
-    assert str(copy(dq)) == '[0, 0]'
+    assert str(copy(dq)) == 'deque([0, 0])'
 
     # test maxlen:
     dq = deque[int](5)
     for i in range(100):
         dq.append(i)
-    assert str(dq) == '[95, 96, 97, 98, 99]'
+    assert str(dq) == 'deque([95, 96, 97, 98, 99])'
 
     for i in range(5):
         dq.append(i)
-    assert str(dq) == '[0, 1, 2, 3, 4]'
+    assert str(dq) == 'deque([0, 1, 2, 3, 4])'
 test_deque()
 
 @test
@@ -659,4 +659,6 @@ def test_counter():
             exp = sorted(d.values(), reverse=True)
             got = [v for k,v in d.most_common()]
             assert exp == got
+
+    assert repr(Counter('abcabc')) == "Counter({'a': 2, 'b': 2, 'c': 2})"
 test_counter()
