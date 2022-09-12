@@ -643,6 +643,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
     _loop_reductions(shared)
     _barrier(loc_ref, gtid)
 
+
 @pure
 def get_num_threads():
     from C import omp_get_num_threads() -> i32
