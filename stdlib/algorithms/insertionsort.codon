@@ -42,6 +42,6 @@ def insertion_sort(
     Insertion Sort
     Returns the sorted list.
     """
-    newlst = copy(collection)
+    newlst = collection.__copy__()
     insertion_sort_inplace(newlst, keyf)
     return newlst

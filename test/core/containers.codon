@@ -1,3 +1,5 @@
+from copy import copy
+
 @tuple
 class A:
     a: int

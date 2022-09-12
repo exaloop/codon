@@ -1,6 +1,7 @@
 import random as R
 import time
 import sys
+from copy import copy
 
 seed = int(time.time())
 # sys.stderr.write('seed: ' + str(seed) + '\n')

@@ -114,7 +114,7 @@ class deque:
         return deque(i.__deepcopy__() for i in self)
 
     def __copy__(self) -> deque[T]:
-        return deque[T](copy(self._arr), self._head, self._tail, self._maxlen)
+        return deque[T](self._arr.__copy__(), self._head, self._tail, self._maxlen)
 
     def copy(self) -> deque[T]:
         return self.__copy__()
@@ -323,22 +323,22 @@ class Counter(Dict[T, int]):
         return result
 
     def __add__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result += other
         return result
 
     def __sub__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result -= other
         return result
 
     def __and__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result &= other
         return result
 
     def __or__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result |= other
         return result
 
