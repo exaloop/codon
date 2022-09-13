@@ -434,6 +434,5 @@ public:
   std::string debugString(bool debug) const override;
 };
 
-
 } // namespace types
 } // namespace codon::ast
