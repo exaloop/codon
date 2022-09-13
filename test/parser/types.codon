@@ -1282,6 +1282,6 @@ print(xx)
 s = 'mississippi'
 d = dd(int)
 for k in s:
-    d[k] += 1
+    d[k] = d["x" + k]
 print(sorted(d.items()))
-#: [('i', 4), ('m', 1), ('p', 2), ('s', 4)]
+#: [('i', 0), ('m', 0), ('p', 0), ('s', 0), ('xi', 0), ('xm', 0), ('xp', 0), ('xs', 0)]

@@ -53,6 +53,10 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
+    // Core definitions
+    preamble->push_back(SimplifyVisitor(stdlib, preamble)
+                            .transform(parseCode(stdlib->cache, stdlibPath->path,
+                                                 "from internal.core import *")));
     for (auto &d : earlyDefines) {
       // Load early compile-time defines (for standard library)
       preamble->push_back(

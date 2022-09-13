@@ -489,7 +489,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ThrowStmt *stmt) {
-  result = make<ir::ThrowInstr>(stmt, transform(stmt->expr));
+  result = make<ir::ThrowInstr>(stmt, stmt->expr ? transform(stmt->expr) : nullptr);
 }
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {
