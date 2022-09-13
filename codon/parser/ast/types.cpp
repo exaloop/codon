@@ -828,4 +828,24 @@ std::string CallableTrait::debugString(bool debug) const {
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
+TypeTrait::TypeTrait(TypePtr typ) : type(std::move(typ)) {}
+int TypeTrait::unify(Type *typ, Unification *us) {
+  return typ->unify(type.get(), us);
+}
+TypePtr TypeTrait::generalize(int atLevel) {
+  auto c = std::make_shared<TypeTrait>(type->generalize(atLevel));
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
+                                   std::unordered_map<int, TypePtr> *cache) {
+  auto c = std::make_shared<TypeTrait>(type->instantiate(atLevel, unboundCount, cache));
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+std::string TypeTrait::debugString(bool debug) const {
+  return fmt::format("Trait[{}]", type->debugString(debug));
+}
+
+
 } // namespace codon::ast::types

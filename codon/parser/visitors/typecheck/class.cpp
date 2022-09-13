@@ -57,11 +57,12 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
       if (auto ti = CAST(a.type, InstantiateExpr)) {
         // Parse TraitVar
-        seqassert(ti->typeExpr->isId("TraitVar"), "not a TraitVar instantiation");
-        auto l = transformType(ti->typeParams[0])->type->getLink();
-        if (!l || !l->trait)
-          error("not a trait");
-        generic->getLink()->trait = l->trait;
+        seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
+        auto l = transformType(ti->typeParams[0])->type;
+        if (l->getLink() && l->getLink()->trait)
+          generic->getLink()->trait = l->getLink()->trait;
+        else
+          generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
       }
       ctx->add(TypecheckItem::Type, a.name, generic);
       ClassType::Generic g{a.name, ctx->cache->rev(a.name),

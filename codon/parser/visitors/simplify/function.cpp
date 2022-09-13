@@ -182,7 +182,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
         if (a.type->getIndex() && a.type->getIndex()->expr->isId(TYPE_CALLABLE))
           defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
         // Special case: `arg: type = None` -> `arg: type = NoneType`
-        if (a.type->isId("type") || a.type->isId("TypeVar"))
+        if (a.type->isId("type") || a.type->isId(TYPE_TYPEVAR))
           defaultValue = N<IdExpr>("NoneType");
       }
       /// TODO: Uncomment for Python-style defaults

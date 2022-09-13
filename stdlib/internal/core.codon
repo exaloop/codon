@@ -103,9 +103,7 @@ function = Function
 
 # dummy
 @__internal__
-class TypeVar: pass
-@__internal__
-class TraitVar[T]: pass
+class TypeVar[T]: pass
 @__internal__
 class ByVal: pass
 @__internal__

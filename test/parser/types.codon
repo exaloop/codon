@@ -1240,10 +1240,9 @@ class dd(Dict[K,V]):
     fn: S
     K: type
     V: type
-    S: TraitVar[Callable[[], V]]
+    S: TypeVar[Callable[[], V]]
 
-    @realize_without_self
-    def __init__(self: dd[K, VV, Callable[[], VV]], VV: type):
+    def __init__(self: dd[K, VV, Function[[], V]], VV: TypeVar[V]):
         self.fn = lambda: VV()
 
     def __init__(self, f: S):
@@ -1279,3 +1278,10 @@ print(xx[1], xx[44])
 #: s empty
 print(xx)
 #: {44: 'empty', 1: 's', 2: 'b'}
+
+s = 'mississippi'
+d = dd(int)
+for k in s:
+    d[k] += 1
+print(sorted(d.items()))
+#: [('i', 4), ('m', 1), ('p', 2), ('s', 4)]

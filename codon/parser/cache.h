@@ -19,6 +19,7 @@
 
 #define TYPE_TUPLE "Tuple.N"
 #define TYPE_KWTUPLE "KwTuple.N"
+#define TYPE_TYPEVAR "TypeVar"
 #define TYPE_CALLABLE "Callable"
 #define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"

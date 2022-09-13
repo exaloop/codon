@@ -262,15 +262,20 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 /// @example
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
-  // Infer the expression type
+  transformType(expr->typeExpr);
+  TypePtr typ =
+      ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
+  seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr->toString());
+
+  auto &generics = typ->getClass()->generics;
+  if (expr->typeParams.size() != generics.size())
+    error("expected {} generics and/or statics", generics.size());
+
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
-    // Case: Callable[...] instantiation
+    // Case: Callable[...] trait instantiation
     std::vector<TypePtr> types;
 
     // Callable error checking.
-    /// TODO: move to Codon?
-    if (expr->typeParams.size() != 2)
-      error("invalid Callable type declaration");
     for (auto &typeParam : expr->typeParams) {
       transformType(typeParam);
       if (typeParam->type->isStaticType())
@@ -281,16 +286,13 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(types);
     unify(expr->type, typ);
+  } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
+    // Case: TypeVar[...] trait instantiation
+    transformType(expr->typeParams[0]);
+    auto typ = ctx->getUnbound();
+    typ->getLink()->trait = std::make_shared<TypeTrait>(expr->typeParams[0]->type);
+    unify(expr->type, typ);
   } else {
-    transformType(expr->typeExpr);
-    TypePtr typ =
-        ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
-    seqassert(typ->getClass(), "unknown type");
-
-    auto &generics = typ->getClass()->generics;
-    if (expr->typeParams.size() != generics.size())
-      error("expected {} generics and/or statics", generics.size());
-
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "codon/parser/ast.h"
+#include "codon/parser/cache.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -65,8 +66,8 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
     : name(std::move(name)), type(std::move(type)),
       defaultValue(std::move(defaultValue)) {
   if (status == 0 && this->type &&
-      (this->type->isId("type") || this->type->isId("TypeVar") ||
-       (this->type->getIndex() && this->type->getIndex()->expr->isId("TraitVar")) ||
+      (this->type->isId("type") || this->type->isId(TYPE_TYPEVAR) ||
+       (this->type->getIndex() && this->type->getIndex()->expr->isId(TYPE_TYPEVAR)) ||
        getStaticGeneric(this->type.get())))
     this->status = Generic;
   else

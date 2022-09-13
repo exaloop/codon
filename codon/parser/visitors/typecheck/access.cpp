@@ -24,15 +24,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (isTuple(expr->value))
     generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
-  // Handle empty callable references
-  if (expr->value == TYPE_CALLABLE) {
-    auto typ = ctx->getUnbound();
-    typ->getLink()->trait = std::make_shared<CallableTrait>(std::vector<TypePtr>{});
-    unify(expr->type, typ);
-    expr->markType();
-    return;
-  }
-
   // Replace identifiers that have been superseded by domination analysis during the
   // simplification
   while (auto s = in(ctx->cache->replacements, expr->value))
