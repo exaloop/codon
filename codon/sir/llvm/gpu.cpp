@@ -326,7 +326,7 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
 
 void moduleToPTX(llvm::Module *M, const std::string &filename,
                  std::vector<llvm::GlobalValue *> &kernels,
-                 const std::string &cpuStr = "sm_20",
+                 const std::string &cpuStr = "sm_30",
                  const std::string &featuresStr = "+ptx42") {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
