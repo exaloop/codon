@@ -9,63 +9,97 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Typecheck try-except statements.
+/// Typecheck try-except statements. Handle Python exceptions separately.
+/// @example
+///   ```try: ...
+///      except python.Error as e: ...
+///      except PyExc as f: ...
+///      except ValueError as g: ...
+///   ``` -> ```
+///      try: ...
+///      except ValueError as g: ...                   # ValueError
+///      except PyExc as exc:
+///        while True:
+///          if isinstance(exc.pytype, python.Error):  # python.Error
+///            e = exc.pytype; ...; break
+///          f = exc; ...; break                       # PyExc
+///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;
 
-  std::vector<StmtPtr> pyobjExcept;
+  std::vector<TryStmt::Catch> catches;
+  auto pyVar = ctx->cache->getTemporaryVar("pyexc");
+  auto pyCatchStmt = N<WhileStmt>(N<BoolExpr>(true), N<SuiteStmt>());
 
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
     transform(c.exc);
-    if (c.exc->type->is("pyobj")) {
-      // Transformation for python.Error exceptions:
-      //   ```except python.Error as e: ...``` ->
-      //   ```except PyError as exc:
-      //        e = exc.pytype
-      //        if isinstance(exc.pytype, python.Error): ...
-      //        else: raise
-      auto var = ctx->cache->getTemporaryVar("exc");
+    if (c.exc && c.exc->type->is("pyobj")) {
+      // Transform python.Error exceptions
       if (!c.var.empty()) {
         c.suite = N<SuiteStmt>(
-            N<AssignStmt>(N<IdExpr>(c.var), N<DotExpr>(N<IdExpr>(var), "pytype")),
+            N<AssignStmt>(N<IdExpr>(c.var), N<DotExpr>(N<IdExpr>(pyVar), "pytype")),
             c.suite);
       }
       c.suite =
           N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
-                                N<DotExpr>(N<IdExpr>(var), "pytype"), clone(c.exc)),
-                    c.suite, N<ThrowStmt>(N<IdExpr>(var)));
-      c.var = var;
-      c.exc = N<IdExpr>("std.internal.types.error.PyError");
-      c.exc->markType();
-    }
-    transformType(c.exc);
-
-    if (!c.var.empty()) {
-      // Handle dominated except bindings
-      auto changed = in(ctx->cache->replacements, c.var);
-      while (auto s = in(ctx->cache->replacements, c.var))
-        c.var = s->first, changed = s;
-      if (changed && changed->second) {
-        auto update =
-            N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
-        update->setUpdate();
-        c.suite = N<SuiteStmt>(update, c.suite);
+                                N<DotExpr>(N<IdExpr>(pyVar), "pytype"), clone(c.exc)),
+                    N<SuiteStmt>(c.suite, N<BreakStmt>()), nullptr);
+      pyCatchStmt->suite->getSuite()->stmts.push_back(c.suite);
+    } else if (c.exc && c.exc->type->is("std.internal.types.error.PyError")) {
+      // Transform PyExc exceptions
+      if (!c.var.empty()) {
+        c.suite =
+            N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(c.var), N<IdExpr>(pyVar)), c.suite);
       }
-      if (changed)
-        c.exc->setAttr(ExprAttr::Dominated);
-      auto val = ctx->find(c.var);
-      if (!changed)
-        val = ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
-      unify(val->type, c.exc->getType());
+      c.suite = N<SuiteStmt>(c.suite, N<BreakStmt>());
+      pyCatchStmt->suite->getSuite()->stmts.push_back(c.suite);
+    } else {
+      // Handle all other exceptions
+      transformType(c.exc);
+      if (!c.var.empty()) {
+        // Handle dominated except bindings
+        auto changed = in(ctx->cache->replacements, c.var);
+        while (auto s = in(ctx->cache->replacements, c.var))
+          c.var = s->first, changed = s;
+        if (changed && changed->second) {
+          auto update =
+              N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
+          update->setUpdate();
+          c.suite = N<SuiteStmt>(update, c.suite);
+        }
+        if (changed)
+          c.exc->setAttr(ExprAttr::Dominated);
+        auto val = ctx->find(c.var);
+        if (!changed)
+          val = ctx->add(TypecheckItem::Var, c.var, c.exc->getType());
+        unify(val->type, c.exc->getType());
+      }
+      ctx->blockLevel++;
+      transform(c.suite);
+      ctx->blockLevel--;
+      done &= (!c.exc || c.exc->isDone()) && c.suite->isDone();
+      catches.push_back(c);
     }
+  }
+  if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
+    // Process PyError catches
+    auto exc = N<IdExpr>("std.internal.types.error.PyError");
+    exc->markType();
+    pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
+    TryStmt::Catch c{pyVar, transformType(exc), pyCatchStmt};
+
+    auto val = ctx->add(TypecheckItem::Var, pyVar, c.exc->getType());
+    unify(val->type, c.exc->getType());
     ctx->blockLevel++;
     transform(c.suite);
     ctx->blockLevel--;
     done &= (!c.exc || c.exc->isDone()) && c.suite->isDone();
+    catches.push_back(c);
   }
+  stmt->catches = catches;
   if (stmt->finally) {
     ctx->blockLevel++;
     transform(stmt->finally);

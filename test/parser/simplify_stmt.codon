@@ -964,10 +964,43 @@ print isinstance(z, (int, str, python.AttributeError))  #: False
 
 try:
     foo().x
-# except python.ValueError:
-    # pass
+except python.ValueError:
+    pass
 except python.AttributeError as e:
     print('caught', e, e.__class__.__name__) #: caught 'int' object has no attribute 'x' pyobj
+
+
+#%% python_exceptions
+import python
+
+@python
+def foo():
+    return 1
+
+try:
+    foo().x
+except python.AttributeError as f:
+    print 'py.Att', f  #: py.Att 'int' object has no attribute 'x'
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e
+try:
+    foo().x
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e  #: PyError 'int' object has no attribute 'x'
+try:
+    raise ValueError("ho")
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'  #: Val
+except PyError as e:
+    print 'PyError', e
 
 
 #%% typeof_definition_error,barebones
