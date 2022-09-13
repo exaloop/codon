@@ -91,6 +91,7 @@ private:
 
   struct CatchData : NestableData {
     llvm::Value *exception;
+    llvm::Value *typeId;
   };
 
   struct DebugInfo {

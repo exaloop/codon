@@ -2138,6 +2138,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       B->CreateStore(excStateCaught, tc.excFlag);
       CatchData cd;
       cd.exception = objPtr;
+      cd.typeId = objType;
       enterCatch(cd);
       process(catches[i]->getHandler());
       exitCatch();
@@ -2502,18 +2503,20 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();
   llvm::Value *obj = nullptr;
+  llvm::Value *typ = nullptr;
 
   if (x->getValue()) {
     process(x->getValue());
     obj = value;
+    typ = B->getInt32(getTypeIdx(x->getValue()->getType()));
   } else {
     seqassertn(!catches.empty(), "empty raise outside of except block");
     obj = catches.back().exception;
+    typ = catches.back().typeId;
   }
 
   B->SetInsertPoint(block);
-  llvm::Value *exc = B->CreateCall(
-      excAllocFunc, {B->getInt32(getTypeIdx(x->getValue()->getType())), obj});
+  llvm::Value *exc = B->CreateCall(excAllocFunc, {typ, obj});
   call(throwFunc, exc);
 }
 
