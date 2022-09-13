@@ -106,12 +106,12 @@ class Dict:
     def __len__(self) -> int:
         return self._size
 
-    def __or__(self, other: Dict[K,V]):
+    def __or__(self, other):
         new = self.__copy__()
         new.update(other)
         return new
 
-    def __ior__(self, other: Dict[K,V]):
+    def __ior__(self, other):
         self.update(other)
         return self
 
@@ -192,9 +192,13 @@ class Dict:
         ret, x = self._kh_put(key)
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
-    def update(self, other: Dict[K, V]):
-        for k, v in other.items():
-            self[k] = v
+    def update(self, other):
+        if isinstance(other, Dict[K, V]):
+            for k, v in other.items():
+                self[k] = v
+        else:
+            for k, v in other:
+                self[k] = v
 
     def pop(self, key: K) -> V:
         x = self._kh_get(key)
