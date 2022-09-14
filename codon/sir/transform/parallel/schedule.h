@@ -17,14 +17,17 @@ struct OMPSched {
   Value *chunk;
   bool ordered;
   int64_t collapse;
+  bool gpu;
 
   explicit OMPSched(int code = -1, bool dynamic = false, Value *threads = nullptr,
-                    Value *chunk = nullptr, bool ordered = false, int64_t collapse = 0);
+                    Value *chunk = nullptr, bool ordered = false, int64_t collapse = 0,
+                    bool gpu = false);
   explicit OMPSched(const std::string &code, Value *threads = nullptr,
-                    Value *chunk = nullptr, bool ordered = false, int64_t collapse = 0);
+                    Value *chunk = nullptr, bool ordered = false, int64_t collapse = 0,
+                    bool gpu = false);
   OMPSched(const OMPSched &s)
       : code(s.code), dynamic(s.dynamic), threads(s.threads), chunk(s.chunk),
-        ordered(s.ordered), collapse(s.collapse) {}
+        ordered(s.ordered), collapse(s.collapse), gpu(s.gpu) {}
 
   std::vector<Value *> getUsedValues() const;
   int replaceUsedValue(id_t id, Value *newValue);

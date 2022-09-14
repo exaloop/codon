@@ -235,7 +235,7 @@ def _tuple_from_gpu(args, gpu_args):
         a.__from_gpu__(g)
         _tuple_from_gpu(args[1:], gpu_args[1:])
 
-def kernel(fn, *args):
+def kernel(fn):
     from C import seq_nvptx_function(str) -> cobj
     from C import seq_nvptx_invoke(cobj, u32, u32, u32, u32, u32, u32, u32, cobj)
 
@@ -660,3 +660,68 @@ class __internal__:
             mem = _object_from_gpu(other)
             Ptr[S](mem.__raw__())[0] = S.__from_gpu_new__(tuple(mem))
             return mem
+
+# @par(gpu=True) support
+
+@pure
+@llvm
+def _gpu_thread_x() -> u32:
+    declare i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+    %res = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+    ret i32 %res
+
+@pure
+@llvm
+def _gpu_block_x() -> u32:
+    declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+    %res = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()
+    ret i32 %res
+
+@pure
+@llvm
+def _gpu_block_dim_x() -> u32:
+    declare i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
+    %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
+    ret i32 %res
+
+def _gpu_loop_outline_template(start, stop, args, instance: Static[int]):
+    @nonpure
+    def _loop_step():
+        return 1
+
+    @kernel
+    def _kernel_stub(start: int, count: int, args):
+        @nonpure
+        def _gpu_loop_body_stub(idx, args):
+            pass
+
+        @nonpure
+        def _dummy_use(n):
+            pass
+
+        _dummy_use(instance)
+        idx = (int(_gpu_block_dim_x()) * int(_gpu_block_x())) + int(_gpu_thread_x())
+        step = _loop_step()
+        if idx < count:
+            _gpu_loop_body_stub(start + (idx * step), args)
+
+    step = _loop_step()
+    loop = range(start, stop, step)
+
+    MAX_BLOCK = 1024
+    MAX_GRID = 2147483647
+    G = MAX_BLOCK * MAX_GRID
+    n = len(loop)
+
+    if n == 0:
+        return
+    elif n > G:
+        raise ValueError(f'loop exceeds GPU iteration limit of {G}')
+
+    block = n
+    grid = 1
+    if n > MAX_BLOCK:
+        block = MAX_BLOCK
+        grid = (n // MAX_BLOCK) + (0 if n % MAX_BLOCK == 0 else 1)
+
+    _kernel_stub(start, n, args, grid=grid, block=block)

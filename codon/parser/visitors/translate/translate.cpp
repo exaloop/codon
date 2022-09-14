@@ -411,7 +411,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto chunk = transform(c->args[1].value);
     int64_t collapse =
         fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
-    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse);
+    bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
+    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
     LOG_TYPECHECK("parsed {}", stmt->decorator->toString());
   }
 

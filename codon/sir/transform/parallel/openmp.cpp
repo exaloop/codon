@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <unordered_set>
 
 #include "codon/sir/transform/parallel/schedule.h"
 #include "codon/sir/util/cloning.h"
@@ -15,14 +16,22 @@ namespace transform {
 namespace parallel {
 namespace {
 const std::string ompModule = "std.openmp";
+const std::string gpuModule = "std.gpu";
 const std::string builtinModule = "std.internal.builtin";
 
+void warn(const std::string &msg, const Value *v) {
+  auto src = v->getSrcInfo();
+  compilationWarning(msg, src.file, src.line, src.col);
+}
+
 struct OMPTypes {
+  types::Type *i64 = nullptr;
   types::Type *i32 = nullptr;
   types::Type *i8ptr = nullptr;
   types::Type *i32ptr = nullptr;
 
   explicit OMPTypes(Module *M) {
+    i64 = M->getIntType();
     i32 = M->getIntNType(32, /*sign=*/true);
     i8ptr = M->getPointerType(M->getByteType());
     i32ptr = M->getPointerType(i32);
@@ -515,10 +524,16 @@ struct SharedInfo {
   Reduction reduction; // the reduction we're performing, or empty if none
 };
 
-struct ParallelLoopTemplateReplacer : public util::Operator {
+struct LoopTemplateReplacer : public util::Operator {
   BodiedFunc *parent;
   CallInstr *replacement;
   Var *loopVar;
+
+  LoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar)
+      : util::Operator(), parent(parent), replacement(replacement), loopVar(loopVar) {}
+};
+
+struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
   ReductionIdentifier *reds;
   std::vector<SharedInfo> sharedInfo;
   ReductionLocks locks;
@@ -528,9 +543,8 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
 
   ParallelLoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar,
                                ReductionIdentifier *reds)
-      : util::Operator(), parent(parent), replacement(replacement), loopVar(loopVar),
-        reds(reds), sharedInfo(), locks(), locRef(nullptr), reductionLocRef(nullptr),
-        gtid(nullptr) {}
+      : LoopTemplateReplacer(parent, replacement, loopVar), reds(reds), sharedInfo(),
+        locks(), locRef(nullptr), reductionLocRef(nullptr), gtid(nullptr) {}
 
   unsigned numReductions() {
     unsigned num = 0;
@@ -1141,6 +1155,72 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   }
 };
 
+struct GPULoopBodyStubReplacer : public util::Operator {
+  CallInstr *replacement;
+  Var *loopVar;
+  int64_t step;
+
+  GPULoopBodyStubReplacer(CallInstr *replacement, Var *loopVar, int64_t step)
+      : util::Operator(), replacement(replacement), loopVar(loopVar), step(step) {}
+
+  void handle(CallInstr *v) override {
+    auto *M = v->getModule();
+    auto *func = util::getFunc(v->getCallee());
+    if (!func)
+      return;
+    auto name = func->getUnmangledName();
+
+    if (name == "_gpu_loop_body_stub") {
+      seqassertn(replacement, "unexpected double replacement");
+      seqassertn(v->numArgs() == 2, "unexpected loop body stub");
+
+      // the template passes gtid, privs and shareds to the body stub for convenience
+      auto *idx = v->front();
+      auto *args = v->back();
+      unsigned next = 0;
+
+      std::vector<Value *> newArgs;
+      for (auto *arg : *replacement) {
+        // std::cout << "A: " << *arg << std::endl;
+        if (getVarFromOutlinedArg(arg)->getId() == loopVar->getId()) {
+          // std::cout << "(loop var)" << std::endl;
+          newArgs.push_back(idx);
+        } else {
+          newArgs.push_back(util::tupleGet(args, next++));
+        }
+      }
+
+      auto *outlinedFunc = cast<BodiedFunc>(util::getFunc(replacement->getCallee()));
+      v->replaceAll(util::call(outlinedFunc, newArgs));
+      replacement = nullptr;
+    }
+
+    if (name == "_loop_step") {
+      v->replaceAll(M->getInt(step));
+    }
+  }
+};
+
+struct GPULoopTemplateReplacer : public LoopTemplateReplacer {
+  int64_t step;
+
+  GPULoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar,
+                          int64_t step)
+      : LoopTemplateReplacer(parent, replacement, loopVar), step(step) {}
+
+  void handle(CallInstr *v) override {
+    auto *M = v->getModule();
+    auto *func = util::getFunc(v->getCallee());
+    if (!func)
+      return;
+    auto name = func->getUnmangledName();
+
+    if (name == "_loop_step") {
+      v->replaceAll(M->getInt(step));
+    }
+  }
+};
+
 struct OpenMPTransformData {
   util::OutlineResult outline;
   std::vector<Var *> sharedVars;
@@ -1203,10 +1283,9 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
   seqassertn(forkFunc, "fork call function not found");
   result.fork = util::call(forkFunc, {rawTemplateFunc, forkExtra});
 
-  auto *intType = M->getIntType();
-  if (sched->threads && sched->threads->getType()->is(intType)) {
+  if (sched->threads && sched->threads->getType()->is(types.i64)) {
     auto *pushNumThreadsFunc =
-        M->getOrRealizeFunc("_push_num_threads", {intType}, {}, ompModule);
+        M->getOrRealizeFunc("_push_num_threads", {types.i64}, {}, ompModule);
     seqassertn(pushNumThreadsFunc, "push num threads func not found");
     result.pushNumThreads = util::call(pushNumThreadsFunc, {sched->threads});
   }
@@ -1435,9 +1514,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
       v = collapse.collapsed;
       insertBefore(collapse.setup);
     } else if (!collapse.error.empty()) {
-      auto src = v->getSrcInfo();
-      compilationWarning("could not collapse loop: " + collapse.error, src.file,
-                         src.line, src.col);
+      warn("could not collapse loop: " + collapse.error, v);
     }
   }
 
@@ -1454,6 +1531,12 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
   auto *sched = v->getSchedule();
   OMPTypes types(M);
 
+  if (sched->gpu && !sharedVars.empty()) {
+    warn("GPU-parallel loop cannot modify external variables; ignoring", v);
+    v->setParallel(false);
+    return;
+  }
+
   // gather extra arguments
   std::vector<Value *> extraArgs;
   std::vector<types::Type *> extraArgTypes;
@@ -1466,41 +1549,88 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   // template call
   std::string templateFuncName;
-  if (sched->dynamic) {
+  if (sched->gpu) {
+    templateFuncName = "_gpu_loop_outline_template";
+  } else if (sched->dynamic) {
     templateFuncName = "_dynamic_loop_outline_template";
   } else if (sched->chunk) {
     templateFuncName = "_static_chunked_loop_outline_template";
   } else {
     templateFuncName = "_static_loop_outline_template";
   }
-  auto *intType = M->getIntType();
-  std::vector<types::Type *> templateFuncArgs = {
-      types.i32ptr, types.i32ptr,
-      M->getPointerType(M->getTupleType(
-          {intType, intType, intType, M->getTupleType(extraArgTypes)}))};
-  auto *templateFunc =
-      M->getOrRealizeFunc(templateFuncName, templateFuncArgs, {}, ompModule);
-  seqassertn(templateFunc, "imperative loop outline template not found");
 
-  util::CloneVisitor cv(M);
-  templateFunc = cast<Func>(cv.forceClone(templateFunc));
-  ImperativeLoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call,
-                                     loopVar, &reds, sched, v->getStep());
-  templateFunc->accept(rep);
-  auto *rawTemplateFunc = ptrFromFunc(templateFunc);
+  if (sched->gpu) {
+    std::unordered_set<id_t> kernels;
+    const std::string gpuAttr = "std.gpu.kernel";
+    for (auto *var : *M) {
+      if (auto *func = cast<BodiedFunc>(var)) {
+        if (util::hasAttribute(func, gpuAttr))
+          kernels.insert(func->getId());
+      }
+    }
 
-  auto *chunk = (sched->chunk && sched->chunk->getType()->is(intType)) ? sched->chunk
-                                                                       : M->getInt(1);
-  std::vector<Value *> forkExtraArgs = {chunk, v->getStart(), v->getEnd()};
-  for (auto *arg : extraArgs) {
-    forkExtraArgs.push_back(arg);
+    std::vector<types::Type *> templateFuncArgs = {types.i64, types.i64,
+                                                   M->getTupleType(extraArgTypes)};
+    static int64_t instance = 0;
+    auto *templateFunc = M->getOrRealizeFunc(templateFuncName, templateFuncArgs,
+                                             {instance++}, gpuModule);
+
+    if (!templateFunc) {
+      warn("loop not compilable for GPU; ignoring", v);
+      v->setParallel(false);
+      return;
+    }
+
+    BodiedFunc *kernel = nullptr;
+    for (auto *var : *M) {
+      if (auto *func = cast<BodiedFunc>(var)) {
+        if (util::hasAttribute(func, gpuAttr) && kernels.count(func->getId()) == 0) {
+          seqassertn(!kernel, "multiple new kernels found after instantiation");
+          kernel = func;
+        }
+      }
+    }
+    seqassertn(kernel, "no new kernel found");
+    GPULoopBodyStubReplacer brep(outline.call, loopVar, v->getStep());
+    kernel->accept(brep);
+
+    util::CloneVisitor cv(M);
+    templateFunc = cast<Func>(cv.forceClone(templateFunc));
+    GPULoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call, loopVar,
+                                v->getStep());
+    templateFunc->accept(rep);
+    v->replaceAll(util::call(
+        templateFunc, {v->getStart(), v->getEnd(), util::makeTuple(extraArgs, M)}));
+  } else {
+    std::vector<types::Type *> templateFuncArgs = {
+        types.i32ptr, types.i32ptr,
+        M->getPointerType(M->getTupleType(
+            {types.i64, types.i64, types.i64, M->getTupleType(extraArgTypes)}))};
+    auto *templateFunc =
+        M->getOrRealizeFunc(templateFuncName, templateFuncArgs, {}, ompModule);
+    seqassertn(templateFunc, "imperative loop outline template not found");
+
+    util::CloneVisitor cv(M);
+    templateFunc = cast<Func>(cv.forceClone(templateFunc));
+    ImperativeLoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call,
+                                       loopVar, &reds, sched, v->getStep());
+    templateFunc->accept(rep);
+    auto *rawTemplateFunc = ptrFromFunc(templateFunc);
+
+    auto *chunk = (sched->chunk && sched->chunk->getType()->is(types.i64))
+                      ? sched->chunk
+                      : M->getInt(1);
+    std::vector<Value *> forkExtraArgs = {chunk, v->getStart(), v->getEnd()};
+    for (auto *arg : extraArgs) {
+      forkExtraArgs.push_back(arg);
+    }
+
+    // fork call
+    auto forkData = createForkCall(M, types, rawTemplateFunc, forkExtraArgs, sched);
+    if (forkData.pushNumThreads)
+      insertBefore(forkData.pushNumThreads);
+    v->replaceAll(forkData.fork);
   }
-
-  // fork call
-  auto forkData = createForkCall(M, types, rawTemplateFunc, forkExtraArgs, sched);
-  if (forkData.pushNumThreads)
-    insertBefore(forkData.pushNumThreads);
-  v->replaceAll(forkData.fork);
 }
 
 } // namespace parallel

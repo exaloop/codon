@@ -35,6 +35,9 @@ clause <-
   / "collapse" {
     return vector<CallExpr::Arg>{{"collapse", make_shared<IntExpr>(ac<int>(V0))}};
   }
+  / "gpu" {
+    return vector<CallExpr::Arg>{{"gpu", make_shared<BoolExpr>(true)}};
+  }
 schedule_kind <- ("static" / "dynamic" / "guided" / "auto" / "runtime") {
   return VS.token_to_string();
 }

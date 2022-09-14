@@ -127,7 +127,9 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
     return cache->realizeFunction(method, translateArgs(args),
                                   translateGenerics(generics), cls);
   } catch (const exc::ParserException &e) {
-    LOG_IR("getOrRealizeMethod parser error: {}", e.what());
+    for (int i = 0; i < e.messages.size(); i++)
+      LOG_IR("getOrRealizeMethod parser error at {}: {}", e.locations[i],
+             e.messages[i]);
     return nullptr;
   }
 }
@@ -163,7 +165,8 @@ types::Type *Module::getOrRealizeType(const std::string &typeName,
   try {
     return cache->realizeType(type, translateGenerics(generics));
   } catch (const exc::ParserException &e) {
-    LOG_IR("getOrRealizeType parser error: {}", e.what());
+    for (int i = 0; i < e.messages.size(); i++)
+      LOG_IR("getOrRealizeType parser error at {}: {}", e.locations[i], e.messages[i]);
     return nullptr;
   }
 }
