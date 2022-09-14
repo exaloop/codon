@@ -1234,6 +1234,45 @@ for i in statictuple("x", 1, 3.3, 2):
 #: 3.3
 #: 2
 
+for i in staticrange(0, 10):
+    if i % 2 == 0: continue
+    if i > 8: break
+    print('xyz', Int[i].__class__.__name__)
+print('whoa')
+#: xyz Int[1]
+#: xyz Int[3]
+#: xyz Int[5]
+#: xyz Int[7]
+#: whoa
+
+for i in staticrange(15):
+    if i % 2 == 0: continue
+    if i > 8: break
+    print('xyz', Int[i].__class__.__name__)
+print('whoa')
+#: xyz Int[1]
+#: xyz Int[3]
+#: xyz Int[5]
+#: xyz Int[7]
+#: whoa
+
+for i in statictuple(0, 2, 4, 7, 11, 12, 13):
+    if i % 2 == 0: continue
+    if i > 8: break
+    print('xyz', Int[i].__class__.__name__)
+print('whoa')
+#: xyz Int[7]
+#: whoa
+
+for i in staticrange(10):  # TODO: large values are too slow!
+    pass
+print('done')
+#: done
+
+#%% static_range_error,barebones
+for i in staticrange(1000, -2000, -2):
+    pass
+#! staticrange out of bounds (1500 > 1024)
 
 #%% trait_defdict
 class dd(Dict[K,V]):
@@ -1285,3 +1324,11 @@ for k in s:
     d[k] = d["x" + k]
 print(sorted(d.items()))
 #: [('i', 0), ('m', 0), ('p', 0), ('s', 0), ('xi', 0), ('xm', 0), ('xp', 0), ('xs', 0)]
+
+
+#%% kwargs_getattr,barebones
+def foo(**kwargs):
+    print kwargs['foo'], kwargs['bar']
+
+foo(foo=1, bar='s')
+#: 1 s

@@ -238,6 +238,9 @@ struct WhileStmt : public Stmt {
   StmtPtr suite;
   /// nullptr if there is no else suite.
   StmtPtr elseSuite;
+  /// Set if a while loop is used to emulate goto statement
+  /// (as `while gotoVar: ...`).
+  std::string gotoVar = "";
 
   WhileStmt(ExprPtr cond, StmtPtr suite, StmtPtr elseSuite = nullptr);
   WhileStmt(const WhileStmt &stmt);

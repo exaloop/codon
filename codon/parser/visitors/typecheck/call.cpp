@@ -320,7 +320,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!part.known.empty()) {
           auto e = getPartialArg(-1);
           auto t = e->getType()->getRecord();
-          seqassert(t && startswith(t->name, "KwTuple"), "{} not a kwtuple",
+          seqassert(t && startswith(t->name, TYPE_KWTUPLE), "{} not a kwtuple",
                     e->toString());
           auto &ff = ctx->cache->classes[t->name].fields;
           for (int i = 0; i < t->getRecord()->args.size(); i++) {
