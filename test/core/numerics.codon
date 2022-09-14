@@ -1,0 +1,185 @@
+import operator as op
+
+@test
+def test_py_numerics_int():
+    one = 1
+    iz = 0
+    fz = 0.0
+    n = 0
+
+    # through function (not optimized / pre-evaluated)
+    assert op.floordiv(-5, 2) == -3
+    assert op.floordiv(-5, 2.0) == -3.0
+    assert op.truediv(-5, 2) == -2.5
+    assert op.truediv(-5, 2.0) == -2.5
+    assert op.mod(-10, 3) == 2
+    assert op.mod(-1, 0.3) == 0.19999999999999996
+    assert divmod(-10, 3) == (-4, 2)
+    assert divmod(-1, 0.3) == (-4.0, 0.19999999999999996)
+
+    # with vars (evaluated in IR)
+    a = -5
+    b = 2
+    c = 2.0
+    d = -10
+    e = 3
+    f = -1
+    g = 0.3
+    assert a // b == -3
+    assert a // c == -3.0
+    assert a / b == -2.5
+    assert a / c == -2.5
+    assert d % e == 2
+    assert f % g == 0.19999999999999996
+
+    # errors
+    try:
+        print(one // fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float floor division by zero'
+        n += 1
+
+    try:
+        print(one // iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'integer division or modulo by zero'
+        n += 1
+
+    try:
+        print(one / fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float division by zero'
+        n += 1
+
+    try:
+        print(one / iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'division by zero'
+        n += 1
+
+    try:
+        print(one % fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float modulo'
+        n += 1
+
+    try:
+        print(one % iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'integer division or modulo by zero'
+        n += 1
+
+    try:
+        print(divmod(one, iz))
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'integer division or modulo by zero'
+        n += 1
+
+    try:
+        print(divmod(one, fz))
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float divmod()'
+        n += 1
+
+    assert n == 8
+
+@test
+def test_py_numerics_float():
+    one = 1.0
+    iz = 0
+    fz = 0.0
+    n = 0
+
+    # through function (not optimized / pre-evaluated)
+    assert op.floordiv(-5.6, 2) == -3.0
+    assert op.floordiv(-5.6, 2.0) == -3.0
+    assert op.truediv(-5.6, 2) == -2.8
+    assert op.truediv(-5.6, 2.0) == -2.8
+    assert op.mod(-10.0, 3) == 2.0
+    assert op.mod(-1.0, 0.3) == 0.19999999999999996
+    assert divmod(-10.0, 3) == (-4.0, 2.0)
+    assert divmod(-1.0, 0.3) == (-4.0, 0.19999999999999996)
+
+    # with vars (evaluated in IR)
+    a = -5.6
+    b = 2
+    c = 2.0
+    d = -10.0
+    e = 3
+    f = -1.0
+    g = 0.3
+    assert a // b == -3
+    assert a // c == -3.0
+    assert a / b == -2.8
+    assert a / c == -2.8
+    assert d % e == 2
+    assert f % g == 0.19999999999999996
+
+    try:
+        print(one // fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float floor division by zero'
+        n += 1
+
+    try:
+        print(one // iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float floor division by zero'
+        n += 1
+
+    try:
+        print(one / fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float division by zero'
+        n += 1
+
+    try:
+        print(one / iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float division by zero'
+        n += 1
+
+    try:
+        print(one % fz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float modulo'
+        n += 1
+
+    try:
+        print(one % iz)
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float modulo'
+        n += 1
+
+    try:
+        print(divmod(one, iz))
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float divmod()'
+        n += 1
+
+    try:
+        print(divmod(one, fz))
+        assert False
+    except ZeroDivisionError as e:
+        assert str(e) == 'float divmod()'
+        n += 1
+
+    assert n == 8
+
+test_py_numerics_int()
+test_py_numerics_float()

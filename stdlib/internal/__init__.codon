@@ -1,3 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 # Core library
 
 from internal.attributes import *
@@ -37,3 +39,6 @@ from internal.file import File, gzFile, open, gzopen
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
 import internal.python
+
+if __py_numerics__:
+    import internal.pynumerics

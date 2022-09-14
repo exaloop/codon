@@ -1,0 +1,168 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+@pure
+@llvm
+def _floordiv_int_float(self: int, other: float) -> float:
+    declare double @llvm.floor.f64(double)
+    %0 = sitofp i64 %self to double
+    %1 = fdiv double %0, %other
+    %2 = call double @llvm.floor.f64(double %1)
+    ret double %2
+
+@pure
+@llvm
+def _floordiv_int_int(self: int, other: int) -> int:
+    %0 = sdiv i64 %self, %other
+    ret i64 %0
+
+@pure
+@llvm
+def _truediv_int_float(self: int, other: float) -> float:
+    %0 = sitofp i64 %self to double
+    %1 = fdiv double %0, %other
+    ret double %1
+
+@pure
+@llvm
+def _truediv_int_int(self: int, other: int) -> float:
+    %0 = sitofp i64 %self to double
+    %1 = sitofp i64 %other to double
+    %2 = fdiv double %0, %1
+    ret double %2
+
+@pure
+@llvm
+def _mod_int_float(self: int, other: float) -> float:
+    %0 = sitofp i64 %self to double
+    %1 = frem double %0, %other
+    ret double %1
+
+@pure
+@llvm
+def _mod_int_int(self: int, other: int) -> int:
+    %0 = srem i64 %self, %other
+    ret i64 %0
+
+@pure
+@llvm
+def _truediv_float_float(self: float, other: float) -> float:
+    %0 = fdiv double %self, %other
+    ret double %0
+
+@pure
+@llvm
+def _mod_float_float(self: float, other: float) -> float:
+    %0 = frem double %self, %other
+    ret double %0
+
+def _divmod_int_int(self: int, other: int):
+    d = _floordiv_int_int(self, other)
+    m = self - d * other
+    if m and ((other ^ m) < 0):
+        m += other
+        d -= 1
+    return (d, m)
+
+def _divmod_float_float(self: float, other: float):
+    mod = _mod_float_float(self, other)
+    div = _truediv_float_float(self - mod, other)
+    if mod:
+        if (other < 0) != (mod < 0):
+            mod += other
+            div -= 1.0
+    else:
+        mod = (0.0).copysign(other)
+
+    floordiv = 0.0
+    if div:
+        floordiv = div.__floor__()
+        if div - floordiv > 0.5:
+            floordiv += 1.0
+    else:
+        floordiv = (0.0).copysign(self / other)
+
+    return (floordiv, mod)
+
+@extend
+class int:
+    def __floordiv__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float floor division by zero")
+        return _divmod_float_float(float(self), other)[0]
+
+    def __floordiv__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("integer division or modulo by zero")
+        return _divmod_int_int(self, other)[0]
+
+    def __truediv__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float division by zero")
+        return _truediv_int_float(self, other)
+
+    def __truediv__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("division by zero")
+        return _truediv_int_int(self, other)
+
+    def __mod__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float modulo")
+        return _divmod_float_float(self, other)[1]
+
+    def __mod__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("integer division or modulo by zero")
+        return _divmod_int_int(self, other)[1]
+
+    def __divmod__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float divmod()")
+        return _divmod_float_float(float(self), other)
+
+    def __divmod__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("integer division or modulo by zero")
+        return _divmod_int_int(self, other)
+
+@extend
+class float:
+    def __floordiv__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float floor division by zero")
+        return _divmod_float_float(self, other)[0]
+
+    def __floordiv__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("float floor division by zero")
+        return _divmod_float_float(self, float(other))[0]
+
+    def __truediv__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float division by zero")
+        return _truediv_float_float(self, other)
+
+    def __truediv__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("float division by zero")
+        return _truediv_float_float(self, float(other))
+
+    def __mod__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float modulo")
+        return _divmod_float_float(self, other)[1]
+
+    def __mod__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("float modulo")
+        return _divmod_float_float(self, float(other))[1]
+
+    def __divmod__(self, other: float):
+        if other == 0.0:
+            raise ZeroDivisionError("float divmod()")
+        return _divmod_float_float(self, other)
+
+    def __divmod__(self, other: int):
+        if other == 0:
+            raise ZeroDivisionError("float divmod()")
+        return _divmod_float_float(self, float(other))

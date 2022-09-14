@@ -182,6 +182,9 @@ class int:
         %tmp = srem i64 %a, %b
         ret i64 %tmp
 
+    def __divmod__(self, other: float) -> Tuple[float, float]:
+        return float(self).__divmod__(other)
+
     def __divmod__(self, other: int) -> Tuple[int, int]:
         d = self // other
         m = self - d * other
