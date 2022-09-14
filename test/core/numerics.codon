@@ -37,6 +37,10 @@ def test_py_numerics_int():
     assert d % e == 2
     assert f % g == 0.19999999999999996
 
+    # constant (evaluated statically by parser)
+    assert -5 // 2 == -3
+    assert -10 % 3 == 2
+
     # errors
     try:
         print(one // fz)
