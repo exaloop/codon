@@ -208,6 +208,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::unordered_map<std::string, int> generatedTuples;
   std::vector<exc::ParserException> errors;
 
+  /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
+  bool pythonCompat = false;
+
 public:
   explicit Cache(std::string argv0 = "");
 

@@ -380,6 +380,25 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   return nullptr;
 }
 
+/// Division and modulus implementations.
+std::pair<int, int> divMod(const std::shared_ptr<TypeContext> &ctx, int a, int b) {
+  if (!b)
+    error(ctx->getSrcInfo(), "static division by zero");
+  if (ctx->cache->pythonCompat) {
+    // Use Python implementation.
+    int d = a / b;
+    int m = a - d * b;
+    if (m && ((b ^ m) < 0)) {
+      m += b;
+      d -= 1;
+    }
+    return {d, m};
+  } else {
+    // Use C implementation.
+    return {a / b, a % b};
+  }
+}
+
 /// Evaluate a static binary expression and return the resulting static expression.
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) +, ==, !=
@@ -450,17 +469,12 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       lvalue = lvalue & rvalue;
     else if (expr->op == "|")
       lvalue = lvalue | rvalue;
-    else if (expr->op == "//") {
-      if (!rvalue)
-        error("static division by zero");
-      lvalue = lvalue / rvalue;
-    } else if (expr->op == "%") {
-      if (!rvalue)
-        error("static division by zero");
-      lvalue = lvalue % rvalue;
-    } else {
+    else if (expr->op == "//")
+      lvalue = divMod(ctx, lvalue, rvalue).first;
+    else if (expr->op == "%")
+      lvalue = divMod(ctx, lvalue, rvalue).second;
+    else
       seqassert(false, "unknown static operator {}", expr->op);
-    }
     LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
     if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
            expr->op))

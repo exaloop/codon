@@ -39,6 +39,7 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                                                       disabledPasses, pyNumerics)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
+  cache->pythonCompat = pyNumerics;
   module->setCache(cache.get());
   llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
