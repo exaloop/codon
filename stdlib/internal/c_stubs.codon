@@ -1,6 +1,6 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-# Seq runtime functions
+# runtime functions
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
 
