@@ -217,6 +217,11 @@ block = Block()
 grid = Grid()
 warp = Warp()
 
+def _catch():
+    return (thread, block, grid, warp)
+
+_catch()
+
 @tuple
 class AllocCache:
     v: List[Ptr[byte]]
