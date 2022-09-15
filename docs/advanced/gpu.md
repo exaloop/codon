@@ -24,6 +24,20 @@ which outputs:
 [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45]
 ```
 
+The same code can be written using Codon's `@par` syntax:
+
+``` python
+a = [i for i in range(16)]
+b = [2*i for i in range(16)]
+c = [0 for _ in range(16)]
+
+@par(gpu=True)
+for i in range(16):
+    c[i] = a[i] + b[i]
+
+print(c)
+```
+
 Below is a more comprehensive example for computing the [Mandelbrot
 set](https://en.wikipedia.org/wiki/Mandelbrot_set), and plotting it
 using NumPy/Matplotlib:
@@ -188,6 +202,39 @@ are automatically generated for user-defined classes, so most objects can be tra
 back and forth from the GPU seamlessly. A user-defined class that makes use of raw pointers
 or other low-level constructs will have to define these methods for GPU use. Please refer
 to the `gpu` module for implementation examples.
+
+# `@par(gpu=True)`
+
+Codon's `@par` syntax can be used to seamlessly parallelize existing loops on the GPU,
+without needing to explicitly write them as kernels. For loop nests, the `collapse` argument
+can be used to cover the entire iteration space on the GPU. For example, here is the Mandelbrot
+code above written using `@par`:
+
+``` python
+MAX    = 1000  # maximum Mandelbrot iterations
+N      = 4096  # width and height of image
+pixels = [0 for _ in range(N * N)]
+
+def scale(x, a, b):
+    return a + (x/N)*(b - a)
+
+@par(gpu=True, collapse=2)
+for i in range(N):
+    for j in range(N):
+        c = complex(scale(j, -2.00, 0.47), scale(i, -1.12, 1.12))
+        z = 0j
+        iteration = 0
+
+        while abs(z) <= 2 and iteration < MAX:
+            z = z**2 + c
+            iteration += 1
+
+        pixels[i*N + j] = int(255 * iteration/MAX)
+```
+
+Note that the `gpu=True` option disallows shared variables (i.e. assigning out-of-loop
+variables in the loop body) as well as reductions. The other GPU-specific restrictions
+described here apply as well.
 
 # Troubleshooting
 
