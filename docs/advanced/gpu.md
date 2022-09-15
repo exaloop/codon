@@ -153,6 +153,13 @@ gives:
 [0, 1, 1.41421, 1.73205, 2, 2.23607, 2.44949, 2.64575, 2.82843, 3]
 ```
 
+# Libdevice
+
+Codon uses [libdevice](https://docs.nvidia.com/cuda/libdevice-users-guide/index.html)
+for GPU-optimized math functions. The default libdevice path is
+`/usr/local/cuda/nvvm/libdevice/libdevice.10.bc`. An alternative path can be specified
+via the `-libdevice` compiler flag.
+
 # Working with raw pointers
 
 By default, objects are converted entirely to their GPU counterparts, which have
