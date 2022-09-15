@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 from pathlib import Path
 from Cython.Distutils import build_ext
 from setuptools import setup
@@ -16,7 +17,7 @@ root = Path(__file__).resolve().parent
 def symlink(target):
     tmp = tempfile.mktemp()
     os.symlink(str(target.resolve()), tmp)
-    os.rename(tmp, str(root / "codon" / target.name))
+    shutil.move(tmp, str(root / "codon" / target.name))
 symlink(codon_dir / ".." / "stdlib")
 symlink(codon_dir / "lib" / "codon" / ("libcodonc." + ext))
 symlink(codon_dir / "lib" / "codon" / ("libcodonrt." + ext))
