@@ -14,7 +14,9 @@ const std::string GPU_TRIPLE = "nvptx64-nvidia-cuda";
 const std::string GPU_DL =
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
     "f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64";
-const std::string LIBDEVICE_PATH = "/usr/local/cuda/nvvm/libdevice/libdevice.10.bc";
+llvm::cl::opt<std::string>
+    libdevice("libdevice", llvm::cl::desc("libdevice path for GPU kernels"),
+              llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
 
 std::string cleanUpName(llvm::StringRef name) {
   std::string validName;
@@ -365,7 +367,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   prune(keep);
 
   // Link libdevice and other cleanup.
-  linkLibdevice(M, LIBDEVICE_PATH);
+  linkLibdevice(M, libdevice);
   remapFunctions(M);
 
   // Run NVPTX passes and general opt pipeline.
