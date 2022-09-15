@@ -288,6 +288,9 @@ public:
   void visit(const types::FloatType *v) override {
     fmt::print(os, FMT_STRING("(float '\"{}\")"), v->referenceString());
   }
+  void visit(const types::Float32Type *v) override {
+    fmt::print(os, FMT_STRING("(float32 '\"{}\")"), v->referenceString());
+  }
   void visit(const types::BoolType *v) override {
     fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());
   }
@@ -333,6 +336,10 @@ public:
   void visit(const types::IntNType *v) override {
     fmt::print(os, FMT_STRING("(intn '\"{}\" {} (signed {}))"), v->referenceString(),
                v->getLen(), v->isSigned());
+  }
+  void visit(const types::VectorType *v) override {
+    fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),
+               makeFormatter(v->getBase()), v->getCount());
   }
   void visit(const dsl::types::CustomType *v) override { v->doFormat(os); }
 

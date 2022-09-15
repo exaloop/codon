@@ -66,6 +66,8 @@ struct TypeContext : public Context<TypecheckItem> {
   int blockLevel;
   /// True if an early return is found (anything afterwards won't be typechecked)
   bool returnEarly;
+  /// Stack of static loop control variables (used to emulate goto statements).
+  std::vector<std::string> staticLoops;
 
 public:
   explicit TypeContext(Cache *cache);

@@ -106,6 +106,15 @@ class Dict:
     def __len__(self) -> int:
         return self._size
 
+    def __or__(self, other):
+        new = self.__copy__()
+        new.update(other)
+        return new
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
     def __copy__(self):
         if self.__len__() == 0:
             return Dict[K, V]()
@@ -183,9 +192,13 @@ class Dict:
         ret, x = self._kh_put(key)
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
-    def update(self, other: Dict[K, V]):
-        for k, v in other.items():
-            self[k] = v
+    def update(self, other):
+        if isinstance(other, Dict[K, V]):
+            for k, v in other.items():
+                self[k] = v
+        else:
+            for k, v in other:
+                self[k] = v
 
     def pop(self, key: K) -> V:
         x = self._kh_get(key)
@@ -284,10 +297,14 @@ class Dict:
 
             if self._n_buckets < new_n_buckets:
                 self._keys = Ptr[K](
-                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                    gc.realloc(self._keys.as_byte(),
+                               new_n_buckets * gc.sizeof(K),
+                               self._n_buckets * gc.sizeof(K))
                 )
                 self._vals = Ptr[V](
-                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                    gc.realloc(self._vals.as_byte(),
+                               new_n_buckets * gc.sizeof(V),
+                               self._n_buckets * gc.sizeof(V))
                 )
 
         if j:
@@ -324,10 +341,14 @@ class Dict:
 
             if self._n_buckets > new_n_buckets:
                 self._keys = Ptr[K](
-                    gc.realloc(self._keys.as_byte(), new_n_buckets * gc.sizeof(K))
+                    gc.realloc(self._keys.as_byte(),
+                               new_n_buckets * gc.sizeof(K),
+                               self._n_buckets * gc.sizeof(K))
                 )
                 self._vals = Ptr[V](
-                    gc.realloc(self._vals.as_byte(), new_n_buckets * gc.sizeof(V))
+                    gc.realloc(self._vals.as_byte(),
+                               new_n_buckets * gc.sizeof(V),
+                               self._n_buckets * gc.sizeof(V))
                 )
 
             self._flags = new_flags

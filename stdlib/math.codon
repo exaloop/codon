@@ -1,11 +1,23 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-e = 2.718281828459045
-pi = 3.141592653589793
-tau = 6.283185307179586
 
-inf = 1.0 / 0.0
-nan = 0.0 / 0.0
+@pure
+@llvm
+def _inf() -> float:
+    ret double 0x7FF0000000000000
+
+
+@pure
+@llvm
+def _nan() -> float:
+    ret double 0x7FF8000000000000
+
+
+e = 2.7182818284590452354
+pi = 3.14159265358979323846
+tau = 6.28318530717958647693
+inf = _inf()
+nan = _nan()
 
 
 def factorial(x: int) -> int:
@@ -43,11 +55,14 @@ def isnan(x: float) -> bool:
 
     Return True if float arg is a NaN, else False.
     """
-    test = x == x
-    # if it is true then it is a number
-    if test:
-        return False
-    return True
+    @pure
+    @llvm
+    def f(x: float) -> bool:
+        %y = fcmp uno double %x, 0.000000e+00
+        %z = zext i1 %y to i8
+        ret i8 %z
+
+    return f(x)
 
 
 def isinf(x: float) -> bool:
@@ -56,7 +71,16 @@ def isinf(x: float) -> bool:
 
     Return True if float arg is an INF, else False.
     """
-    return x == inf or x == -inf
+    @pure
+    @llvm
+    def f(x: float) -> bool:
+        declare double @llvm.fabs.f64(double)
+        %a = call double @llvm.fabs.f64(double %x)
+        %b = fcmp oeq double %a, 0x7FF0000000000000
+        %c = zext i1 %b to i8
+        ret i8 %c
+
+    return f(x)
 
 
 def isfinite(x: float) -> bool:
@@ -66,9 +90,35 @@ def isfinite(x: float) -> bool:
     Return True if x is neither an infinity nor a NaN,
     and False otherwise.
     """
-    if isnan(x) or isinf(x):
-        return False
-    return True
+    return not (isnan(x) or isinf(x))
+
+
+def _check1(arg: float, r: float, can_overflow: bool = False):
+    if __py_numerics__:
+        if isnan(r) and not isnan(arg):
+            raise ValueError("math domain error")
+
+        if isinf(r) and isfinite(arg):
+            if can_overflow:
+                raise OverflowError("math range error")
+            else:
+                raise ValueError("math domain error")
+
+    return r
+
+
+def _check2(x: float, y: float, r: float, can_overflow: bool = False):
+    if __py_numerics__:
+        if isnan(r) and not isnan(x) and not isnan(y):
+            raise ValueError("math domain error")
+
+        if isinf(r) and isfinite(x) and isfinite(y):
+            if can_overflow:
+                raise OverflowError("math range error")
+            else:
+                raise ValueError("math domain error")
+
+    return r
 
 
 def ceil(x: float) -> float:
@@ -149,7 +199,7 @@ def exp(x: float) -> float:
         %y = call double @llvm.exp.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x), True)
 
 
 def expm1(x: float) -> float:
@@ -159,7 +209,7 @@ def expm1(x: float) -> float:
     Return e raised to the power x, minus 1. expm1 provides
     a way to compute this quantity to full precision.
     """
-    return _C.expm1(x)
+    return _check1(x, _C.expm1(x), True)
 
 
 def ldexp(x: float, i: int) -> float:
@@ -168,7 +218,7 @@ def ldexp(x: float, i: int) -> float:
 
     Returns x multiplied by 2 raised to the power of exponent.
     """
-    return _C.ldexp(x, i)
+    return _check1(x, _C.ldexp(x, i32(i)), True)
 
 
 def log(x: float, base: float = e) -> float:
@@ -185,9 +235,9 @@ def log(x: float, base: float = e) -> float:
         ret double %y
 
     if base == e:
-        return f(x)
+        return _check1(x, f(x))
     else:
-        return f(x) / f(base)
+        return _check1(x, f(x)) / _check1(base, f(base))
 
 
 def log2(x: float) -> float:
@@ -203,7 +253,7 @@ def log2(x: float) -> float:
         %y = call double @llvm.log2.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def log10(x: float) -> float:
@@ -219,7 +269,7 @@ def log10(x: float) -> float:
         %y = call double @llvm.log10.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def degrees(x: float) -> float:
@@ -255,7 +305,7 @@ def sqrt(x: float) -> float:
         %y = call double @llvm.sqrt.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def pow(x: float, y: float) -> float:
@@ -271,7 +321,7 @@ def pow(x: float, y: float) -> float:
         %z = call double @llvm.pow.f64(double %x, double %y)
         ret double %z
 
-    return f(x, y)
+    return _check2(x, y, f(x, y), True)
 
 
 def acos(x: float) -> float:
@@ -280,7 +330,7 @@ def acos(x: float) -> float:
 
     Returns the arc cosine of x in radians.
     """
-    return _C.acos(x)
+    return _check1(x, _C.acos(x))
 
 
 def asin(x: float) -> float:
@@ -289,7 +339,7 @@ def asin(x: float) -> float:
 
     Returns the arc sine of x in radians.
     """
-    return _C.asin(x)
+    return _check1(x, _C.asin(x))
 
 
 def atan(x: float) -> float:
@@ -298,7 +348,7 @@ def atan(x: float) -> float:
 
     Returns the arc tangent of x in radians.
     """
-    return _C.atan(x)
+    return _check1(x, _C.atan(x))
 
 
 def atan2(y: float, x: float) -> float:
@@ -309,7 +359,7 @@ def atan2(y: float, x: float) -> float:
     on the signs of both values to determine the
     correct quadrant.
     """
-    return _C.atan2(y, x)
+    return _check2(x, y, _C.atan2(y, x))
 
 
 def cos(x: float) -> float:
@@ -325,7 +375,7 @@ def cos(x: float) -> float:
         %y = call double @llvm.cos.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def sin(x: float) -> float:
@@ -341,7 +391,7 @@ def sin(x: float) -> float:
         %y = call double @llvm.sin.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def hypot(x: float, y: float) -> float:
@@ -352,7 +402,7 @@ def hypot(x: float, y: float) -> float:
     This is the length of the vector from the
     origin to point (x, y).
     """
-    return _C.hypot(x, y)
+    return _check2(x, y, _C.hypot(x, y), True)
 
 
 def tan(x: float) -> float:
@@ -361,7 +411,7 @@ def tan(x: float) -> float:
 
     Return the tangent of a radian angle x.
     """
-    return _C.tan(x)
+    return _check1(x, _C.tan(x))
 
 
 def cosh(x: float) -> float:
@@ -370,7 +420,7 @@ def cosh(x: float) -> float:
 
     Returns the hyperbolic cosine of x.
     """
-    return _C.cosh(x)
+    return _check1(x, _C.cosh(x), True)
 
 
 def sinh(x: float) -> float:
@@ -379,7 +429,7 @@ def sinh(x: float) -> float:
 
     Returns the hyperbolic sine of x.
     """
-    return _C.sinh(x)
+    return _check1(x, _C.sinh(x), True)
 
 
 def tanh(x: float) -> float:
@@ -388,7 +438,7 @@ def tanh(x: float) -> float:
 
     Returns the hyperbolic tangent of x.
     """
-    return _C.tanh(x)
+    return _check1(x, _C.tanh(x))
 
 
 def acosh(x: float) -> float:
@@ -397,7 +447,7 @@ def acosh(x: float) -> float:
 
     Return the inverse hyperbolic cosine of x.
     """
-    return _C.acosh(x)
+    return _check1(x, _C.acosh(x))
 
 
 def asinh(x: float) -> float:
@@ -406,7 +456,7 @@ def asinh(x: float) -> float:
 
     Return the inverse hyperbolic sine of x.
     """
-    return _C.asinh(x)
+    return _check1(x, _C.asinh(x))
 
 
 def atanh(x: float) -> float:
@@ -415,7 +465,7 @@ def atanh(x: float) -> float:
 
     Return the inverse hyperbolic tangent of x.
     """
-    return _C.atanh(x)
+    return _check1(x, _C.atanh(x))
 
 
 def copysign(x: float, y: float) -> float:
@@ -432,7 +482,7 @@ def copysign(x: float, y: float) -> float:
         %z = call double @llvm.copysign.f64(double %x, double %y)
         ret double %z
 
-    return f(x, y)
+    return _check2(x, y, f(x, y))
 
 
 def log1p(x: float) -> float:
@@ -441,7 +491,7 @@ def log1p(x: float) -> float:
 
     Return the natural logarithm of 1+x (base e).
     """
-    return _C.log1p(x)
+    return _check1(x, _C.log1p(x))
 
 
 def trunc(x: float) -> float:
@@ -458,7 +508,7 @@ def trunc(x: float) -> float:
         %y = call double @llvm.trunc.f64(double %x)
         ret double %y
 
-    return f(x)
+    return _check1(x, f(x))
 
 
 def erf(x: float) -> float:
@@ -467,7 +517,7 @@ def erf(x: float) -> float:
 
     Return the error function at x.
     """
-    return _C.erf(x)
+    return _check1(x, _C.erf(x))
 
 
 def erfc(x: float) -> float:
@@ -476,7 +526,7 @@ def erfc(x: float) -> float:
 
     Return the complementary error function at x.
     """
-    return _C.erfc(x)
+    return _check1(x, _C.erfc(x))
 
 
 def gamma(x: float) -> float:
@@ -485,7 +535,7 @@ def gamma(x: float) -> float:
 
     Return the Gamma function at x.
     """
-    return _C.tgamma(x)
+    return _check1(x, _C.tgamma(x), True)
 
 
 def lgamma(x: float) -> float:
@@ -495,7 +545,7 @@ def lgamma(x: float) -> float:
     Return the natural logarithm of
     the absolute value of the Gamma function at x.
     """
-    return _C.lgamma(x)
+    return _check1(x, _C.lgamma(x), True)
 
 
 def remainder(x: float, y: float) -> float:
@@ -509,7 +559,7 @@ def remainder(x: float, y: float) -> float:
     two consecutive integers, the nearest even integer is used
     for n.
     """
-    return _C.remainder(x, y)
+    return _check2(x, y, _C.remainder(x, y))
 
 
 def gcd(a: float, b: float) -> float:
@@ -577,6 +627,618 @@ def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) ->
 
     # NAN is not close to anything, not even itself
     if a == nan or b == nan:
+        return False
+
+    # regular computation
+    diff = fabs(b - a)
+
+    return ((diff <= fabs(rel_tol * b)) or (diff <= fabs(rel_tol * a))) or (
+        diff <= abs_tol
+    )
+
+
+# 32-bit float ops
+
+e32 = float32(e)
+pi32 = float32(pi)
+tau32 = float32(tau)
+
+inf32 = float32(inf)
+nan32 = float32(nan)
+
+
+@overload
+def isnan(x: float32) -> bool:
+    """
+    isnan(float32) -> bool
+
+    Return True if float arg is a NaN, else False.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> bool:
+        %y = fcmp uno float %x, 0.000000e+00
+        %z = zext i1 %y to i8
+        ret i8 %z
+
+    return f(x)
+
+
+@overload
+def isinf(x: float32) -> bool:
+    """
+    isinf(float32) -> bool:
+
+    Return True if float arg is an INF, else False.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> bool:
+        declare float @llvm.fabs.f32(float)
+        %a = call float @llvm.fabs.f32(float %x)
+        %b = fcmp oeq float %a, 0x7FF0000000000000
+        %c = zext i1 %b to i8
+        ret i8 %c
+
+    return f(x)
+
+
+@overload
+def isfinite(x: float32) -> bool:
+    """
+    isfinite(float32) -> bool
+
+    Return True if x is neither an infinity nor a NaN,
+    and False otherwise.
+    """
+    return not (isnan(x) or isinf(x))
+
+
+@overload
+def ceil(x: float32) -> float32:
+    """
+    ceil(float32) -> float32
+
+    Return the ceiling of x as an Integral.
+    This is the smallest integer >= x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.ceil.f32(float)
+        %y = call float @llvm.ceil.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def floor(x: float32) -> float32:
+    """
+    floor(float32) -> float32
+
+    Return the floor of x as an Integral.
+    This is the largest integer <= x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.floor.f32(float)
+        %y = call float @llvm.floor.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def fabs(x: float32) -> float32:
+    """
+    fabs(float32) -> float32
+
+    Returns the absolute value of a float32ing point number.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.fabs.f32(float)
+        %y = call float @llvm.fabs.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def fmod(x: float32, y: float32) -> float32:
+    """
+    fmod(float32, float32) -> float32
+
+    Returns the remainder of x divided by y.
+    """
+    @pure
+    @llvm
+    def f(x: float32, y: float32) -> float32:
+        %z = frem float %x, %y
+        ret float %z
+
+    return f(x, y)
+
+
+@overload
+def exp(x: float32) -> float32:
+    """
+    exp(float32) -> float32
+
+    Returns the value of e raised to the xth power.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.exp.f32(float)
+        %y = call float @llvm.exp.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def expm1(x: float32) -> float32:
+    """
+    expm1(float32) -> float32
+
+    Return e raised to the power x, minus 1. expm1 provides
+    a way to compute this quantity to full precision.
+    """
+    return _C.expm1f(x)
+
+
+@overload
+def ldexp(x: float32, i: int) -> float32:
+    """
+    ldexp(float32, int) -> float32
+
+    Returns x multiplied by 2 raised to the power of exponent.
+    """
+    return _C.ldexpf(x, i32(i))
+
+
+@overload
+def log(x: float32, base: float32 = e32) -> float32:
+    """
+    log(float32) -> float32
+
+    Returns the natural logarithm (base-e logarithm) of x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.log.f32(float)
+        %y = call float @llvm.log.f32(float %x)
+        ret float %y
+
+    if base == e32:
+        return f(x)
+    else:
+        return f(x) / f(base)
+
+
+@overload
+def log2(x: float32) -> float32:
+    """
+    log2(float32) -> float32
+
+    Return the base-2 logarithm of x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.log2.f32(float)
+        %y = call float @llvm.log2.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def log10(x: float32) -> float32:
+    """
+    log10(float32) -> float32
+
+    Returns the common logarithm (base-10 logarithm) of x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.log10.f32(float)
+        %y = call float @llvm.log10.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def degrees(x: float32) -> float32:
+    """
+    degrees(float32) -> float32
+
+    Convert angle x from radians to degrees.
+    """
+    radToDeg = float32(180.0) / pi32
+    return x * radToDeg
+
+
+@overload
+def radians(x: float32) -> float32:
+    """
+    radians(float32) -> float32
+
+    Convert angle x from degrees to radians.
+    """
+    degToRad = pi32 / float32(180.0)
+    return x * degToRad
+
+@overload
+def sqrt(x: float32) -> float32:
+    """
+    sqrt(float32) -> float32
+
+    Returns the square root of x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.sqrt.f32(float)
+        %y = call float @llvm.sqrt.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def pow(x: float32, y: float32) -> float32:
+    """
+    pow(float32, float32) -> float32
+
+    Returns x raised to the power of y.
+    """
+    @pure
+    @llvm
+    def f(x: float32, y: float32) -> float32:
+        declare float @llvm.pow.f32(float, float)
+        %z = call float @llvm.pow.f32(float %x, float %y)
+        ret float %z
+
+    return f(x, y)
+
+
+@overload
+def acos(x: float32) -> float32:
+    """
+    acos(float32) -> float32
+
+    Returns the arc cosine of x in radians.
+    """
+    return _C.acosf(x)
+
+
+@overload
+def asin(x: float32) -> float32:
+    """
+    asin(float32) -> float32
+
+    Returns the arc sine of x in radians.
+    """
+    return _C.asinf(x)
+
+
+@overload
+def atan(x: float32) -> float32:
+    """
+    atan(float32) -> float32
+
+    Returns the arc tangent of x in radians.
+    """
+    return _C.atanf(x)
+
+
+@overload
+def atan2(y: float32, x: float32) -> float32:
+    """
+    atan2(float32, float32) -> float32
+
+    Returns the arc tangent in radians of y/x based
+    on the signs of both values to determine the
+    correct quadrant.
+    """
+    return _C.atan2f(y, x)
+
+
+@overload
+def cos(x: float32) -> float32:
+    """
+    cos(float32) -> float32
+
+    Returns the cosine of a radian angle x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.cos.f32(float)
+        %y = call float @llvm.cos.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def sin(x: float32) -> float32:
+    """
+    sin(float32) -> float32
+
+    Returns the sine of a radian angle x.
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.sin.f32(float)
+        %y = call float @llvm.sin.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def hypot(x: float32, y: float32) -> float32:
+    """
+    hypot(float32, float32) -> float32
+
+    Return the Euclidean norm.
+    This is the length of the vector from the
+    origin to point (x, y).
+    """
+    return _C.hypotf(x, y)
+
+
+@overload
+def tan(x: float32) -> float32:
+    """
+    tan(float32) -> float32
+
+    Return the tangent of a radian angle x.
+    """
+    return _C.tanf(x)
+
+
+@overload
+def cosh(x: float32) -> float32:
+    """
+    cosh(float32) -> float32
+
+    Returns the hyperbolic cosine of x.
+    """
+    return _C.coshf(x)
+
+
+@overload
+def sinh(x: float32) -> float32:
+    """
+    sinh(float32) -> float32
+
+    Returns the hyperbolic sine of x.
+    """
+    return _C.sinhf(x)
+
+
+@overload
+def tanh(x: float32) -> float32:
+    """
+    tanh(float32) -> float32
+
+    Returns the hyperbolic tangent of x.
+    """
+    return _C.tanhf(x)
+
+
+@overload
+def acosh(x: float32) -> float32:
+    """
+    acosh(float32) -> float32
+
+    Return the inverse hyperbolic cosine of x.
+    """
+    return _C.acoshf(x)
+
+
+@overload
+def asinh(x: float32) -> float32:
+    """
+    asinh(float32) -> float32
+
+    Return the inverse hyperbolic sine of x.
+    """
+    return _C.asinhf(x)
+
+
+@overload
+def atanh(x: float32) -> float32:
+    """
+    atanh(float32) -> float32
+
+    Return the inverse hyperbolic tangent of x.
+    """
+    return _C.atanhf(x)
+
+
+@overload
+def copysign(x: float32, y: float32) -> float32:
+    """
+    copysign(float32, float32) -> float32
+
+    Return a float32 with the magnitude (absolute value) of
+    x but the sign of y.
+    """
+    @pure
+    @llvm
+    def f(x: float32, y: float32) -> float32:
+        declare float @llvm.copysign.f32(float, float)
+        %z = call float @llvm.copysign.f32(float %x, float %y)
+        ret float %z
+
+    return f(x, y)
+
+
+@overload
+def log1p(x: float32) -> float32:
+    """
+    log1p(float32) -> float32
+
+    Return the natural logarithm of 1+x (base e).
+    """
+    return _C.log1pf(x)
+
+
+@overload
+def trunc(x: float32) -> float32:
+    """
+    trunc(float32) -> float32
+
+    Return the Real value x truncated to an Integral
+    (usually an integer).
+    """
+    @pure
+    @llvm
+    def f(x: float32) -> float32:
+        declare float @llvm.trunc.f32(float)
+        %y = call float @llvm.trunc.f32(float %x)
+        ret float %y
+
+    return f(x)
+
+
+@overload
+def erf(x: float32) -> float32:
+    """
+    erf(float32) -> float32
+
+    Return the error function at x.
+    """
+    return _C.erff(x)
+
+
+@overload
+def erfc(x: float32) -> float32:
+    """
+    erfc(float32) -> float32
+
+    Return the complementary error function at x.
+    """
+    return _C.erfcf(x)
+
+
+@overload
+def gamma(x: float32) -> float32:
+    """
+    gamma(float32) -> float32
+
+    Return the Gamma function at x.
+    """
+    return _C.tgammaf(x)
+
+
+@overload
+def lgamma(x: float32) -> float32:
+    """
+    lgamma(float32) -> float32
+
+    Return the natural logarithm of
+    the absolute value of the Gamma function at x.
+    """
+    return _C.lgammaf(x)
+
+
+@overload
+def remainder(x: float32, y: float32) -> float32:
+    """
+    remainder(float32, float32) -> float32
+
+    Return the IEEE 754-style remainder of x with respect to y.
+    For finite x and finite nonzero y, this is the difference
+    x - n*y, where n is the closest integer to the exact value
+    of the quotient x / y. If x / y is exactly halfway between
+    two consecutive integers, the nearest even integer is used
+    for n.
+    """
+    return _C.remainderf(x, y)
+
+
+@overload
+def gcd(a: float32, b: float32) -> float32:
+    """
+    gcd(float32, float32) -> float32
+
+    returns greatest common divisor of x and y.
+    """
+    a = abs(a)
+    b = abs(b)
+    while a:
+        a, b = b % a, a
+    return b
+
+
+@overload
+@pure
+def frexp(x: float32) -> Tuple[float32, int]:
+    """
+    frexp(float32) -> Tuple[float32, int]
+
+    The returned value is the mantissa and the integer pointed
+    to by exponent is the exponent. The resultant value is
+    x = mantissa * 2 ^ exponent.
+    """
+    tmp = i32(0)
+    res = _C.frexpf(float32(x), __ptr__(tmp))
+    return (res, int(tmp))
+
+
+@overload
+@pure
+def modf(x: float32) -> Tuple[float32, float32]:
+    """
+    modf(float32) -> Tuple[float32, float32]
+
+    The returned value is the fraction component (part after
+    the decimal), and sets integer to the integer component.
+    """
+    tmp = float32(0.0)
+    res = _C.modff(float32(x), __ptr__(tmp))
+    return (res, tmp)
+
+
+@overload
+def isclose(a: float32, b: float32, rel_tol: float32 = float32(1e-09), abs_tol: float32 = float32(0.0)) -> bool:
+    """
+    isclose(float32, float32) -> bool
+
+    Return True if a is close in value to b, and False otherwise.
+    For the values to be considered close, the difference between them
+    must be smaller than at least one of the tolerances.
+    """
+
+    # short circuit exact equality -- needed to catch two
+    # infinities of the same sign. And perhaps speeds things
+    # up a bit sometimes.
+    if a == b:
+        return True
+
+    # This catches the case of two infinities of opposite sign, or
+    # one infinity and one finite number. Two infinities of opposite
+    # sign would otherwise have an infinite relative tolerance.
+    # Two infinities of the same sign are caught by the equality check
+    # above.
+    if a == inf32 or b == inf32:
+        return False
+
+    # NAN is not close to anything, not even itself
+    if a == nan32 or b == nan32:
         return False
 
     # regular computation

@@ -1,6 +1,7 @@
 #include "const_fold.h"
 
 #include <cmath>
+#include <utility>
 
 #include "codon/sir/util/cloning.h"
 #include "codon/sir/util/irtools.h"
@@ -15,15 +16,28 @@ namespace ir {
 namespace transform {
 namespace folding {
 namespace {
+auto pyDivmod(int64_t self, int64_t other) {
+  auto d = self / other;
+  auto m = self - d * other;
+  if (m && ((other ^ m) < 0)) {
+    m += other;
+    d -= 1;
+  }
+  return std::make_pair(d, m);
+}
+
 template <typename Func, typename Out> class IntFloatBinaryRule : public RewriteRule {
 private:
   Func f;
   std::string magic;
   types::Type *out;
+  bool excludeRHSZero;
 
 public:
-  IntFloatBinaryRule(Func f, std::string magic, types::Type *out)
-      : f(std::move(f)), magic(std::move(magic)), out(out) {}
+  IntFloatBinaryRule(Func f, std::string magic, types::Type *out,
+                     bool excludeRHSZero = false)
+      : f(std::move(f)), magic(std::move(magic)), out(out),
+        excludeRHSZero(excludeRHSZero) {}
 
   virtual ~IntFloatBinaryRule() noexcept = default;
 
@@ -41,11 +55,15 @@ public:
     if (isA<FloatConst>(leftConst) && isA<IntConst>(rightConst)) {
       auto left = cast<FloatConst>(leftConst)->getVal();
       auto right = cast<IntConst>(rightConst)->getVal();
+      if (excludeRHSZero && right == 0)
+        return;
       return setResult(M->template N<TemplatedConst<Out>>(v->getSrcInfo(),
                                                           f(left, (double)right), out));
     } else if (isA<IntConst>(leftConst) && isA<FloatConst>(rightConst)) {
       auto left = cast<IntConst>(leftConst)->getVal();
       auto right = cast<FloatConst>(rightConst)->getVal();
+      if (excludeRHSZero && right == 0.0)
+        return;
       return setResult(M->template N<TemplatedConst<Out>>(v->getSrcInfo(),
                                                           f((double)left, right), out));
     }
@@ -140,15 +158,22 @@ template <typename Func> auto floatToFloatBinary(Module *m, Func f, std::string 
       std::move(f), std::move(magic), m->getFloatType(), m->getFloatType());
 }
 
+template <typename Func>
+auto floatToFloatBinaryNoZeroRHS(Module *m, Func f, std::string magic) {
+  return std::make_unique<DoubleConstantBinaryRuleExcludeRHSZero<double, Func, double>>(
+      std::move(f), std::move(magic), m->getFloatType(), m->getFloatType());
+}
+
 template <typename Func> auto floatToBoolBinary(Module *m, Func f, std::string magic) {
   return std::make_unique<DoubleConstantBinaryRule<double, Func, bool>>(
       std::move(f), std::move(magic), m->getFloatType(), m->getBoolType());
 }
 
 template <typename Func>
-auto intFloatToFloatBinary(Module *m, Func f, std::string magic) {
+auto intFloatToFloatBinary(Module *m, Func f, std::string magic,
+                           bool excludeRHSZero = false) {
   return std::make_unique<IntFloatBinaryRule<Func, double>>(
-      std::move(f), std::move(magic), m->getFloatType());
+      std::move(f), std::move(magic), m->getFloatType(), excludeRHSZero);
 }
 
 template <typename Func>
@@ -222,8 +247,15 @@ void FoldingPass::registerStandardRules(Module *m) {
                intToIntBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("int-constant-subtraction",
                intToIntBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  registerRule("int-constant-floor-div",
-               intToIntBinaryNoZeroRHS(m, BINOP(/), Module::FLOOR_DIV_MAGIC_NAME));
+  if (pyNumerics) {
+    registerRule("int-constant-floor-div",
+                 intToIntBinaryNoZeroRHS(
+                     m, [](auto x, auto y) -> auto{ return pyDivmod(x, y).first; },
+                     Module::FLOOR_DIV_MAGIC_NAME));
+  } else {
+    registerRule("int-constant-floor-div",
+                 intToIntBinaryNoZeroRHS(m, BINOP(/), Module::FLOOR_DIV_MAGIC_NAME));
+  }
   registerRule("int-constant-mul", intToIntBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
   registerRule("int-constant-lshift",
                intToIntBinary(m, BINOP(<<), Module::LSHIFT_MAGIC_NAME));
@@ -233,8 +265,15 @@ void FoldingPass::registerStandardRules(Module *m) {
   registerRule("int-constant-xor", intToIntBinary(m, BINOP(^), Module::XOR_MAGIC_NAME));
   registerRule("int-constant-or", intToIntBinary(m, BINOP(|), Module::OR_MAGIC_NAME));
   registerRule("int-constant-and", intToIntBinary(m, BINOP(&), Module::AND_MAGIC_NAME));
-  registerRule("int-constant-mod",
-               intToIntBinaryNoZeroRHS(m, BINOP(%), Module::MOD_MAGIC_NAME));
+  if (pyNumerics) {
+    registerRule("int-constant-mod",
+                 intToIntBinaryNoZeroRHS(
+                     m, [](auto x, auto y) -> auto{ return pyDivmod(x, y).second; },
+                     Module::MOD_MAGIC_NAME));
+  } else {
+    registerRule("int-constant-mod",
+                 intToIntBinaryNoZeroRHS(m, BINOP(%), Module::MOD_MAGIC_NAME));
+  }
 
   // binary, double constant, int->bool
   registerRule("int-constant-eq", intToBoolBinary(m, BINOP(==), Module::EQ_MAGIC_NAME));
@@ -273,8 +312,13 @@ void FoldingPass::registerStandardRules(Module *m) {
                floatToFloatBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("float-constant-subtraction",
                floatToFloatBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  registerRule("float-constant-floor-div",
-               floatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
+  if (pyNumerics) {
+    registerRule("float-constant-floor-div",
+                 floatToFloatBinaryNoZeroRHS(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
+  } else {
+    registerRule("float-constant-floor-div",
+                 floatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
+  }
   registerRule("float-constant-mul",
                floatToFloatBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
   registerRule(
@@ -301,8 +345,9 @@ void FoldingPass::registerStandardRules(Module *m) {
                intFloatToFloatBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("int-float-constant-subtraction",
                intFloatToFloatBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  registerRule("int-float-constant-floor-div",
-               intFloatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
+  registerRule(
+      "int-float-constant-floor-div",
+      intFloatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME, pyNumerics));
   registerRule("int-float-constant-mul",
                intFloatToFloatBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
 

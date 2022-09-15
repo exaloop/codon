@@ -1,6 +1,7 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 # Core library
 
-from internal.core import *
 from internal.attributes import *
 from internal.types.ptr import *
 from internal.types.str import *
@@ -34,7 +35,11 @@ from internal.str import *
 from internal.sort import sorted
 
 from openmp import Ident as __OMPIdent, for_par
+from gpu import _gpu_loop_outline_template
 from internal.file import File, gzFile, open, gzopen
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
 import internal.python
+
+if __py_numerics__:
+    import internal.pynumerics

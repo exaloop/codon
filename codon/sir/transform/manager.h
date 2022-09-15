@@ -89,6 +89,9 @@ private:
   /// passes to avoid registering
   std::vector<std::string> disabled;
 
+  /// whether to use Python (vs. C) numeric semantics in passes
+  bool pyNumerics;
+
 public:
   /// PassManager initialization mode.
   enum Init {
@@ -98,14 +101,17 @@ public:
     JIT,
   };
 
-  explicit PassManager(Init init, std::vector<std::string> disabled = {})
+  explicit PassManager(Init init, std::vector<std::string> disabled = {},
+                       bool pyNumerics = false)
       : km(), passes(), analyses(), executionOrder(), results(),
-        disabled(std::move(disabled)) {
+        disabled(std::move(disabled)), pyNumerics(pyNumerics) {
     registerStandardPasses(init);
   }
 
-  explicit PassManager(bool debug = false, std::vector<std::string> disabled = {})
-      : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled)) {}
+  explicit PassManager(bool debug = false, std::vector<std::string> disabled = {},
+                       bool pyNumerics = false)
+      : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled),
+                    pyNumerics) {}
 
   /// Checks if the given pass is included in this manager.
   /// @param key the pass key

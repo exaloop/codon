@@ -320,7 +320,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!part.known.empty()) {
           auto e = getPartialArg(-1);
           auto t = e->getType()->getRecord();
-          seqassert(t && startswith(t->name, "KwTuple"), "{} not a kwtuple",
+          seqassert(t && startswith(t->name, TYPE_KWTUPLE), "{} not a kwtuple",
                     e->toString());
           auto &ff = ctx->cache->classes[t->name].fields;
           for (int i = 0; i < t->getRecord()->args.size(); i++) {
@@ -410,8 +410,9 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     if (typeArgs[si]) {
       auto typ = typeArgs[si]->type;
       if (calleeFn->funcGenerics[si].type->isStaticType()) {
-        if (!typeArgs[si]->isStatic())
+        if (!typeArgs[si]->isStatic()) {
           error("expected static expression");
+        }
         typ = std::make_shared<StaticType>(typeArgs[si], ctx);
       }
       unify(typ, calleeFn->funcGenerics[si].type);
@@ -543,6 +544,10 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformCompileError(expr)};
   } else if (val == "tuple") {
     return {true, transformTupleFn(expr)};
+  } else if (val == "__realized__") {
+    return {true, transformRealizedFn(expr)};
+  } else if (val == "__static_print__") {
+    return {false, transformStaticPrintFn(expr)};
   } else {
     return {false, nullptr};
   }
@@ -668,7 +673,6 @@ ExprPtr TypecheckVisitor::transformArray(CallExpr *expr) {
 ///   `isinstance(obj, ByVal)` is True if `type(obj)` is a tuple type
 ///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
 ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
-  expr->staticValue.type = StaticValue::INT;
   expr->setType(unify(expr->type, ctx->getType("bool")));
   transform(expr->args[0].value);
   auto typ = expr->args[0].value->type->getClass();
@@ -678,21 +682,44 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   transform(expr->args[0].value); // transform again to realize it
 
   auto &typExpr = expr->args[1].value;
+  if (auto c = typExpr->getCall()) {
+    // Handle `isinstance(obj, (type1, type2, ...))`
+    if (typExpr->origExpr && typExpr->origExpr->getTuple()) {
+      ExprPtr result = transform(N<BoolExpr>(false));
+      for (auto &i : typExpr->origExpr->getTuple()->items) {
+        result = transform(N<BinaryExpr>(
+            result, "||",
+            N<CallExpr>(N<IdExpr>("isinstance"), expr->args[0].value, i)));
+      }
+      return result;
+    }
+  }
+
+  expr->staticValue.type = StaticValue::INT;
   if (typExpr->isId("Tuple") || typExpr->isId("tuple")) {
     return transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)));
   } else if (typExpr->isId("ByVal")) {
     return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("ByRef")) {
     return transform(N<BoolExpr>(typ->getRecord() == nullptr));
-  } else {
-    transformType(typExpr);
-    // Check super types (i.e., statically inherited) as well
-    for (auto &tx : getSuperTypes(typ->getClass())) {
-      if (tx->unify(typExpr->type.get(), nullptr) >= 0)
-        return transform(N<BoolExpr>(true));
+  } else if (typExpr->type->is("pyobj") && !typExpr->isType()) {
+    if (typ->is("pyobj")) {
+      expr->staticValue.type = StaticValue::NOT_STATIC;
+      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance:0"),
+                                   expr->args[0].value, expr->args[1].value));
+    } else {
+      return transform(N<BoolExpr>(false));
     }
-    return transform(N<BoolExpr>(false));
   }
+
+  transformType(typExpr);
+
+  // Check super types (i.e., statically inherited) as well
+  for (auto &tx : getSuperTypes(typ->getClass())) {
+    if (tx->unify(typExpr->type.get(), nullptr) >= 0)
+      return transform(N<BoolExpr>(true));
+  }
+  return transform(N<BoolExpr>(false));
 }
 
 /// Transform staticlen method to a static integer expression. This method supports only
@@ -799,6 +826,33 @@ ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   e->setDone();
   e->markType();
   return e;
+}
+
+/// Transform __realized__ function to a fully realized type identifier.
+ExprPtr TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
+  auto call =
+      transform(N<CallExpr>(expr->args[0].value, N<StarExpr>(expr->args[1].value)));
+  if (!call->getCall()->expr->type->getFunc())
+    error("the first argument must be a function");
+  if (auto f = realize(call->getCall()->expr->type)) {
+    auto e = N<IdExpr>(f->getFunc()->realizedName());
+    e->setType(f);
+    e->setDone();
+    return e;
+  }
+  return nullptr;
+}
+
+/// Transform __static_print__ function to a fully realized type identifier.
+ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
+  auto &args = expr->args[0].value->getCall()->args;
+  for (size_t i = 0; i < args.size(); i++) {
+    realize(args[i].value->type);
+    fmt::print(stderr, "[static_print] {}: {} := {}\n", getSrcInfo(),
+               FormatVisitor::apply(args[i].value),
+               args[i].value->type ? args[i].value->type->debugString(1) : "-");
+  }
+  return nullptr;
 }
 
 /// Get the list that describes the inheritance hierarchy of a given type.

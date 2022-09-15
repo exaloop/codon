@@ -16,6 +16,7 @@ class Type;
 class PrimitiveType;
 class IntType;
 class FloatType;
+class Float32Type;
 class BoolType;
 class ByteType;
 class VoidType;
@@ -26,6 +27,7 @@ class OptionalType;
 class PointerType;
 class GeneratorType;
 class IntNType;
+class VectorType;
 } // namespace types
 
 namespace dsl {
@@ -146,6 +148,7 @@ public:
   VISIT(types::PrimitiveType);
   VISIT(types::IntType);
   VISIT(types::FloatType);
+  VISIT(types::Float32Type);
   VISIT(types::BoolType);
   VISIT(types::ByteType);
   VISIT(types::VoidType);
@@ -156,6 +159,7 @@ public:
   VISIT(types::PointerType);
   VISIT(types::GeneratorType);
   VISIT(types::IntNType);
+  VISIT(types::VectorType);
   VISIT(dsl::types::CustomType);
 };
 
@@ -220,6 +224,7 @@ public:
   CONST_VISIT(types::PrimitiveType);
   CONST_VISIT(types::IntType);
   CONST_VISIT(types::FloatType);
+  CONST_VISIT(types::Float32Type);
   CONST_VISIT(types::BoolType);
   CONST_VISIT(types::ByteType);
   CONST_VISIT(types::VoidType);
@@ -230,6 +235,7 @@ public:
   CONST_VISIT(types::PointerType);
   CONST_VISIT(types::GeneratorType);
   CONST_VISIT(types::IntNType);
+  CONST_VISIT(types::VectorType);
   CONST_VISIT(dsl::types::CustomType);
 };
 

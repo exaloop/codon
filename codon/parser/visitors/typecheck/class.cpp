@@ -55,6 +55,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           unify(defType->type, generic);
         }
       }
+      if (auto ti = CAST(a.type, InstantiateExpr)) {
+        // Parse TraitVar
+        seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
+        auto l = transformType(ti->typeParams[0])->type;
+        if (l->getLink() && l->getLink()->trait)
+          generic->getLink()->trait = l->getLink()->trait;
+        else
+          generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
+      }
       ctx->add(TypecheckItem::Type, a.name, generic);
       ClassType::Generic g{a.name, ctx->cache->rev(a.name),
                            generic->generalize(ctx->typecheckLevel), typId};
@@ -135,6 +144,18 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
       args.emplace_back(Param(format("T{}", i + 1), N<IdExpr>("type"), nullptr, true));
     StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
                                 std::vector<ExprPtr>{N<IdExpr>("tuple")});
+
+    // Add getItem for KwArgs:
+    //   `def __getitem__(self, key: Static[str]): return getattr(self, key)`
+    auto getItem = N<FunctionStmt>(
+        "__getitem__", nullptr,
+        std::vector<Param>{Param{"self"}, Param{"key", N<IndexExpr>(N<IdExpr>("Static"),
+                                                                    N<IdExpr>("str"))}},
+        N<SuiteStmt>(N<ReturnStmt>(
+            N<CallExpr>(N<IdExpr>("getattr"), N<IdExpr>("self"), N<IdExpr>("key")))));
+    if (startswith(typeName, TYPE_KWTUPLE))
+      stmt->getClass()->suite = getItem;
+
     // Simplify in the standard library context and type check
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
                                   FILE_GENERATED, 0);

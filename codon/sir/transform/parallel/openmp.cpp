@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <unordered_set>
 
 #include "codon/sir/transform/parallel/schedule.h"
 #include "codon/sir/util/cloning.h"
@@ -15,14 +16,22 @@ namespace transform {
 namespace parallel {
 namespace {
 const std::string ompModule = "std.openmp";
+const std::string gpuModule = "std.gpu";
 const std::string builtinModule = "std.internal.builtin";
 
+void warn(const std::string &msg, const Value *v) {
+  auto src = v->getSrcInfo();
+  compilationWarning(msg, src.file, src.line, src.col);
+}
+
 struct OMPTypes {
+  types::Type *i64 = nullptr;
   types::Type *i32 = nullptr;
   types::Type *i8ptr = nullptr;
   types::Type *i32ptr = nullptr;
 
   explicit OMPTypes(Module *M) {
+    i64 = M->getIntType();
     i32 = M->getIntNType(32, /*sign=*/true);
     i8ptr = M->getPointerType(M->getByteType());
     i32ptr = M->getPointerType(i32);
@@ -142,6 +151,28 @@ struct Reduction {
       default:
         return nullptr;
       }
+    } else if (isA<types::Float32Type>(type)) {
+      auto *f32 = M->getOrRealizeType("float32");
+      float value = 0.0;
+
+      switch (kind) {
+      case Kind::ADD:
+        value = 0.0;
+        break;
+      case Kind::MUL:
+        value = 1.0;
+        break;
+      case Kind::MIN:
+        value = std::numeric_limits<float>::max();
+        break;
+      case Kind::MAX:
+        value = std::numeric_limits<float>::min();
+        break;
+      default:
+        return nullptr;
+      }
+
+      return (*f32)(*M->getFloat(value));
     }
 
     auto *init = (*type)();
@@ -235,6 +266,23 @@ struct Reduction {
         break;
       case Kind::MAX:
         func = "_atomic_float_max";
+        break;
+      default:
+        break;
+      }
+    } else if (isA<types::Float32Type>(type)) {
+      switch (kind) {
+      case Kind::ADD:
+        func = "_atomic_float32_add";
+        break;
+      case Kind::MUL:
+        func = "_atomic_float32_mul";
+        break;
+      case Kind::MIN:
+        func = "_atomic_float32_min";
+        break;
+      case Kind::MAX:
+        func = "_atomic_float32_max";
         break;
       default:
         break;
@@ -476,10 +524,16 @@ struct SharedInfo {
   Reduction reduction; // the reduction we're performing, or empty if none
 };
 
-struct ParallelLoopTemplateReplacer : public util::Operator {
+struct LoopTemplateReplacer : public util::Operator {
   BodiedFunc *parent;
   CallInstr *replacement;
   Var *loopVar;
+
+  LoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar)
+      : util::Operator(), parent(parent), replacement(replacement), loopVar(loopVar) {}
+};
+
+struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
   ReductionIdentifier *reds;
   std::vector<SharedInfo> sharedInfo;
   ReductionLocks locks;
@@ -489,9 +543,8 @@ struct ParallelLoopTemplateReplacer : public util::Operator {
 
   ParallelLoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar,
                                ReductionIdentifier *reds)
-      : util::Operator(), parent(parent), replacement(replacement), loopVar(loopVar),
-        reds(reds), sharedInfo(), locks(), locRef(nullptr), reductionLocRef(nullptr),
-        gtid(nullptr) {}
+      : LoopTemplateReplacer(parent, replacement, loopVar), reds(reds), sharedInfo(),
+        locks(), locRef(nullptr), reductionLocRef(nullptr), gtid(nullptr) {}
 
   unsigned numReductions() {
     unsigned num = 0;
@@ -1102,6 +1155,72 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   }
 };
 
+struct GPULoopBodyStubReplacer : public util::Operator {
+  CallInstr *replacement;
+  Var *loopVar;
+  int64_t step;
+
+  GPULoopBodyStubReplacer(CallInstr *replacement, Var *loopVar, int64_t step)
+      : util::Operator(), replacement(replacement), loopVar(loopVar), step(step) {}
+
+  void handle(CallInstr *v) override {
+    auto *M = v->getModule();
+    auto *func = util::getFunc(v->getCallee());
+    if (!func)
+      return;
+    auto name = func->getUnmangledName();
+
+    if (name == "_gpu_loop_body_stub") {
+      seqassertn(replacement, "unexpected double replacement");
+      seqassertn(v->numArgs() == 2, "unexpected loop body stub");
+
+      // the template passes gtid, privs and shareds to the body stub for convenience
+      auto *idx = v->front();
+      auto *args = v->back();
+      unsigned next = 0;
+
+      std::vector<Value *> newArgs;
+      for (auto *arg : *replacement) {
+        // std::cout << "A: " << *arg << std::endl;
+        if (getVarFromOutlinedArg(arg)->getId() == loopVar->getId()) {
+          // std::cout << "(loop var)" << std::endl;
+          newArgs.push_back(idx);
+        } else {
+          newArgs.push_back(util::tupleGet(args, next++));
+        }
+      }
+
+      auto *outlinedFunc = cast<BodiedFunc>(util::getFunc(replacement->getCallee()));
+      v->replaceAll(util::call(outlinedFunc, newArgs));
+      replacement = nullptr;
+    }
+
+    if (name == "_loop_step") {
+      v->replaceAll(M->getInt(step));
+    }
+  }
+};
+
+struct GPULoopTemplateReplacer : public LoopTemplateReplacer {
+  int64_t step;
+
+  GPULoopTemplateReplacer(BodiedFunc *parent, CallInstr *replacement, Var *loopVar,
+                          int64_t step)
+      : LoopTemplateReplacer(parent, replacement, loopVar), step(step) {}
+
+  void handle(CallInstr *v) override {
+    auto *M = v->getModule();
+    auto *func = util::getFunc(v->getCallee());
+    if (!func)
+      return;
+    auto name = func->getUnmangledName();
+
+    if (name == "_loop_step") {
+      v->replaceAll(M->getInt(step));
+    }
+  }
+};
+
 struct OpenMPTransformData {
   util::OutlineResult outline;
   std::vector<Var *> sharedVars;
@@ -1164,14 +1283,117 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
   seqassertn(forkFunc, "fork call function not found");
   result.fork = util::call(forkFunc, {rawTemplateFunc, forkExtra});
 
-  auto *intType = M->getIntType();
-  if (sched->threads && sched->threads->getType()->is(intType)) {
+  if (sched->threads && sched->threads->getType()->is(types.i64)) {
     auto *pushNumThreadsFunc =
-        M->getOrRealizeFunc("_push_num_threads", {intType}, {}, ompModule);
+        M->getOrRealizeFunc("_push_num_threads", {types.i64}, {}, ompModule);
     seqassertn(pushNumThreadsFunc, "push num threads func not found");
     result.pushNumThreads = util::call(pushNumThreadsFunc, {sched->threads});
   }
   return result;
+}
+
+struct CollapseResult {
+  ImperativeForFlow *collapsed = nullptr;
+  SeriesFlow *setup = nullptr;
+  std::string error;
+
+  operator bool() const { return collapsed != nullptr; }
+};
+
+struct LoopRange {
+  ImperativeForFlow *loop;
+  Var *start;
+  Var *stop;
+  int64_t step;
+  Var *len;
+};
+
+CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t levels) {
+  auto fail = [](const std::string &error) {
+    CollapseResult bad;
+    bad.error = error;
+    return bad;
+  };
+
+  auto *M = v->getModule();
+  CollapseResult res;
+  if (levels < 1)
+    return fail("'collapse' must be at least 1");
+
+  std::vector<ImperativeForFlow *> loopNests = {v};
+  ImperativeForFlow *curr = v;
+
+  for (auto i = 0; i < levels - 1; i++) {
+    auto *body = cast<SeriesFlow>(curr->getBody());
+    seqassertn(body, "unexpected loop body");
+    if (std::distance(body->begin(), body->end()) != 1 ||
+        !isA<ImperativeForFlow>(body->front()))
+      return fail("loop nest not collapsible");
+
+    curr = cast<ImperativeForFlow>(body->front());
+    loopNests.push_back(curr);
+  }
+
+  std::vector<LoopRange> ranges;
+  auto *setup = M->Nr<SeriesFlow>();
+
+  auto *intType = M->getIntType();
+  auto *lenCalc =
+      M->getOrRealizeFunc("_range_len", {intType, intType, intType}, {}, ompModule);
+  seqassertn(lenCalc, "range length calculation function not found");
+
+  for (auto *loop : loopNests) {
+    LoopRange range;
+    range.loop = loop;
+    range.start = util::makeVar(loop->getStart(), setup, parent)->getVar();
+    range.stop = util::makeVar(loop->getEnd(), setup, parent)->getVar();
+    range.step = loop->getStep();
+    range.len = util::makeVar(util::call(lenCalc, {M->Nr<VarValue>(range.start),
+                                                   M->Nr<VarValue>(range.stop),
+                                                   M->getInt(range.step)}),
+                              setup, parent)
+                    ->getVar();
+    ranges.push_back(range);
+  }
+
+  auto *numIters = M->getInt(1);
+  for (auto &range : ranges) {
+    numIters = (*numIters) * (*M->Nr<VarValue>(range.len));
+  }
+
+  auto *collapsedVar = M->Nr<Var>(M->getIntType(), /*global=*/false);
+  parent->push_back(collapsedVar);
+  auto *body = M->Nr<SeriesFlow>();
+  auto sched = std::make_unique<OMPSched>(*v->getSchedule());
+  sched->collapse = 0;
+  auto *collapsed = M->Nr<ImperativeForFlow>(M->getInt(0), 1, numIters, body,
+                                             collapsedVar, std::move(sched));
+
+  // reconstruct indices by successive divmods
+  Var *lastDiv = nullptr;
+  for (auto it = ranges.rbegin(); it != ranges.rend(); ++it) {
+    auto *k = lastDiv ? lastDiv : collapsedVar;
+    auto *div =
+        util::makeVar(*M->Nr<VarValue>(k) / *M->Nr<VarValue>(it->len), body, parent)
+            ->getVar();
+    auto *mod =
+        util::makeVar(*M->Nr<VarValue>(k) % *M->Nr<VarValue>(it->len), body, parent)
+            ->getVar();
+    auto *i =
+        *M->Nr<VarValue>(it->start) + *(*M->Nr<VarValue>(mod) * *M->getInt(it->step));
+    body->push_back(M->Nr<AssignInstr>(it->loop->getVar(), i));
+    lastDiv = div;
+  }
+
+  auto *oldBody = cast<SeriesFlow>(loopNests.back()->getBody());
+  for (auto *x : *oldBody) {
+    body->push_back(x);
+  }
+
+  res.collapsed = collapsed;
+  res.setup = setup;
+
+  return res;
 }
 } // namespace
 
@@ -1279,7 +1501,22 @@ void OpenMPPass::handle(ForFlow *v) {
 }
 
 void OpenMPPass::handle(ImperativeForFlow *v) {
-  auto data = setupOpenMPTransform(v, cast<BodiedFunc>(getParentFunc()));
+  auto *parent = cast<BodiedFunc>(getParentFunc());
+
+  if (v->isParallel() && v->getSchedule()->collapse != 0) {
+    auto levels = v->getSchedule()->collapse;
+    auto collapse = collapseLoop(parent, v, levels);
+
+    if (collapse) {
+      v->replaceAll(collapse.collapsed);
+      v = collapse.collapsed;
+      insertBefore(collapse.setup);
+    } else if (!collapse.error.empty()) {
+      warn("could not collapse loop: " + collapse.error, v);
+    }
+  }
+
+  auto data = setupOpenMPTransform(v, parent);
   if (!v->isParallel())
     return;
 
@@ -1291,6 +1528,12 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
   auto *loopVar = v->getVar();
   auto *sched = v->getSchedule();
   OMPTypes types(M);
+
+  if (sched->gpu && !sharedVars.empty()) {
+    warn("GPU-parallel loop cannot modify external variables; ignoring", v);
+    v->setParallel(false);
+    return;
+  }
 
   // gather extra arguments
   std::vector<Value *> extraArgs;
@@ -1304,41 +1547,88 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   // template call
   std::string templateFuncName;
-  if (sched->dynamic) {
+  if (sched->gpu) {
+    templateFuncName = "_gpu_loop_outline_template";
+  } else if (sched->dynamic) {
     templateFuncName = "_dynamic_loop_outline_template";
   } else if (sched->chunk) {
     templateFuncName = "_static_chunked_loop_outline_template";
   } else {
     templateFuncName = "_static_loop_outline_template";
   }
-  auto *intType = M->getIntType();
-  std::vector<types::Type *> templateFuncArgs = {
-      types.i32ptr, types.i32ptr,
-      M->getPointerType(M->getTupleType(
-          {intType, intType, intType, M->getTupleType(extraArgTypes)}))};
-  auto *templateFunc =
-      M->getOrRealizeFunc(templateFuncName, templateFuncArgs, {}, ompModule);
-  seqassertn(templateFunc, "imperative loop outline template not found");
 
-  util::CloneVisitor cv(M);
-  templateFunc = cast<Func>(cv.forceClone(templateFunc));
-  ImperativeLoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call,
-                                     loopVar, &reds, sched, v->getStep());
-  templateFunc->accept(rep);
-  auto *rawTemplateFunc = ptrFromFunc(templateFunc);
+  if (sched->gpu) {
+    std::unordered_set<id_t> kernels;
+    const std::string gpuAttr = "std.gpu.kernel";
+    for (auto *var : *M) {
+      if (auto *func = cast<BodiedFunc>(var)) {
+        if (util::hasAttribute(func, gpuAttr))
+          kernels.insert(func->getId());
+      }
+    }
 
-  auto *chunk = (sched->chunk && sched->chunk->getType()->is(intType)) ? sched->chunk
-                                                                       : M->getInt(1);
-  std::vector<Value *> forkExtraArgs = {chunk, v->getStart(), v->getEnd()};
-  for (auto *arg : extraArgs) {
-    forkExtraArgs.push_back(arg);
+    std::vector<types::Type *> templateFuncArgs = {types.i64, types.i64,
+                                                   M->getTupleType(extraArgTypes)};
+    static int64_t instance = 0;
+    auto *templateFunc = M->getOrRealizeFunc(templateFuncName, templateFuncArgs,
+                                             {instance++}, gpuModule);
+
+    if (!templateFunc) {
+      warn("loop not compilable for GPU; ignoring", v);
+      v->setParallel(false);
+      return;
+    }
+
+    BodiedFunc *kernel = nullptr;
+    for (auto *var : *M) {
+      if (auto *func = cast<BodiedFunc>(var)) {
+        if (util::hasAttribute(func, gpuAttr) && kernels.count(func->getId()) == 0) {
+          seqassertn(!kernel, "multiple new kernels found after instantiation");
+          kernel = func;
+        }
+      }
+    }
+    seqassertn(kernel, "no new kernel found");
+    GPULoopBodyStubReplacer brep(outline.call, loopVar, v->getStep());
+    kernel->accept(brep);
+
+    util::CloneVisitor cv(M);
+    templateFunc = cast<Func>(cv.forceClone(templateFunc));
+    GPULoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call, loopVar,
+                                v->getStep());
+    templateFunc->accept(rep);
+    v->replaceAll(util::call(
+        templateFunc, {v->getStart(), v->getEnd(), util::makeTuple(extraArgs, M)}));
+  } else {
+    std::vector<types::Type *> templateFuncArgs = {
+        types.i32ptr, types.i32ptr,
+        M->getPointerType(M->getTupleType(
+            {types.i64, types.i64, types.i64, M->getTupleType(extraArgTypes)}))};
+    auto *templateFunc =
+        M->getOrRealizeFunc(templateFuncName, templateFuncArgs, {}, ompModule);
+    seqassertn(templateFunc, "imperative loop outline template not found");
+
+    util::CloneVisitor cv(M);
+    templateFunc = cast<Func>(cv.forceClone(templateFunc));
+    ImperativeLoopTemplateReplacer rep(cast<BodiedFunc>(templateFunc), outline.call,
+                                       loopVar, &reds, sched, v->getStep());
+    templateFunc->accept(rep);
+    auto *rawTemplateFunc = ptrFromFunc(templateFunc);
+
+    auto *chunk = (sched->chunk && sched->chunk->getType()->is(types.i64))
+                      ? sched->chunk
+                      : M->getInt(1);
+    std::vector<Value *> forkExtraArgs = {chunk, v->getStart(), v->getEnd()};
+    for (auto *arg : extraArgs) {
+      forkExtraArgs.push_back(arg);
+    }
+
+    // fork call
+    auto forkData = createForkCall(M, types, rawTemplateFunc, forkExtraArgs, sched);
+    if (forkData.pushNumThreads)
+      insertBefore(forkData.pushNumThreads);
+    v->replaceAll(forkData.fork);
   }
-
-  // fork call
-  auto forkData = createForkCall(M, types, rawTemplateFunc, forkExtraArgs, sched);
-  if (forkData.pushNumThreads)
-    insertBefore(forkData.pushNumThreads);
-  v->replaceAll(forkData.fork);
 }
 
 } // namespace parallel

@@ -30,6 +30,15 @@ compile to native code without any runtime performance overhead.
 Future versions of Codon will lift some of these restrictions
 by the introduction of e.g. implicit union types.
 
+# Numerics
+
+For performance reasons, some numeric operations use C semantics
+rather than Python semantics. This includes, for example, raising
+an exception when dividing by zero, or other checks done by `math`
+functions. Strict adherence to Python semantics can be achieved by
+using the `-numerics=py` flag of the Codon compiler. Note that this
+does *not* change `int`s from 64-bit.
+
 # Modules
 
 While most of the commonly used builtin modules have Codon-native

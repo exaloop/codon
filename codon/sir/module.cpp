@@ -57,6 +57,7 @@ const std::string Module::BOOL_NAME = "bool";
 const std::string Module::BYTE_NAME = "byte";
 const std::string Module::INT_NAME = "int";
 const std::string Module::FLOAT_NAME = "float";
+const std::string Module::FLOAT32_NAME = "float32";
 const std::string Module::STRING_NAME = "str";
 
 const std::string Module::EQ_MAGIC_NAME = "__eq__";
@@ -126,7 +127,9 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
     return cache->realizeFunction(method, translateArgs(args),
                                   translateGenerics(generics), cls);
   } catch (const exc::ParserException &e) {
-    LOG_IR("getOrRealizeMethod parser error: {}", e.what());
+    for (int i = 0; i < e.messages.size(); i++)
+      LOG_IR("getOrRealizeMethod parser error at {}: {}", e.locations[i],
+             e.messages[i]);
     return nullptr;
   }
 }
@@ -162,7 +165,8 @@ types::Type *Module::getOrRealizeType(const std::string &typeName,
   try {
     return cache->realizeType(type, translateGenerics(generics));
   } catch (const exc::ParserException &e) {
-    LOG_IR("getOrRealizeType parser error: {}", e.what());
+    for (int i = 0; i < e.messages.size(); i++)
+      LOG_IR("getOrRealizeType parser error at {}: {}", e.locations[i], e.messages[i]);
     return nullptr;
   }
 }
@@ -195,6 +199,12 @@ types::Type *Module::getFloatType() {
   if (auto *rVal = getType(FLOAT_NAME))
     return rVal;
   return Nr<types::FloatType>();
+}
+
+types::Type *Module::getFloat32Type() {
+  if (auto *rVal = getType(FLOAT32_NAME))
+    return rVal;
+  return Nr<types::Float32Type>();
 }
 
 types::Type *Module::getStringType() {
@@ -241,6 +251,10 @@ types::Type *Module::getFuncType(types::Type *rType,
 
 types::Type *Module::getIntNType(unsigned int len, bool sign) {
   return getOrRealizeType(sign ? "Int" : "UInt", {len});
+}
+
+types::Type *Module::getVectorType(unsigned count, types::Type *base) {
+  return getOrRealizeType("Vec", {base, count});
 }
 
 types::Type *Module::getTupleType(std::vector<types::Type *> args) {
@@ -330,6 +344,15 @@ types::Type *Module::unsafeGetIntNType(unsigned int len, bool sign) {
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::IntNType>(len, sign);
+}
+
+types::Type *Module::unsafeGetVectorType(unsigned int count, types::Type *base) {
+  auto *primitive = cast<types::PrimitiveType>(base);
+  auto name = types::VectorType::getInstanceName(count, primitive);
+  if (auto *rVal = getType(name))
+    return rVal;
+  seqassertn(primitive, "base type must be a primitive type");
+  return Nr<types::VectorType>(count, primitive);
 }
 
 } // namespace ir

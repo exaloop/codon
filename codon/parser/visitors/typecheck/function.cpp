@@ -40,15 +40,15 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
     unify(ctx->getRealizationBase()->returnType, stmt->expr->type);
   } else {
-    // If we are not within conditional block, ignore later statements in this function.
-    // Useful with static if statements.
-    if (!ctx->blockLevel)
-      ctx->returnEarly = true;
-
     // Just set the expr for the translation stage. However, do not unify the return
     // type! This might be a `return` in a generator.
     stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType")));
   }
+
+  // If we are not within conditional block, ignore later statements in this function.
+  // Useful with static if statements.
+  if (!ctx->blockLevel)
+    ctx->returnEarly = true;
 
   if (stmt->expr->isDone())
     stmt->setDone();

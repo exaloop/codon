@@ -69,7 +69,11 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
     unify(stmt->lhs->type,
           unify(stmt->type->type, std::make_shared<StaticType>(stmt->rhs, ctx)));
-    ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
+    auto val = ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
+    if (in(ctx->cache->globals, lhs)) {
+      // Make globals always visible!
+      ctx->addToplevel(lhs, val);
+    }
     if (realize(stmt->lhs->type))
       stmt->setDone();
   } else {

@@ -19,6 +19,7 @@
 
 #define TYPE_TUPLE "Tuple.N"
 #define TYPE_KWTUPLE "KwTuple.N"
+#define TYPE_TYPEVAR "TypeVar"
 #define TYPE_CALLABLE "Callable"
 #define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"
@@ -28,6 +29,7 @@
 
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200
+#define MAX_STATIC_ITER 1024
 
 namespace codon::ast {
 
@@ -207,6 +209,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::unordered_map<std::string, int> generatedTuples;
   std::vector<exc::ParserException> errors;
 
+  /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
+  bool pythonCompat = false;
+
 public:
   explicit Cache(std::string argv0 = "");
 
@@ -220,6 +225,8 @@ public:
   SrcInfo generateSrcInfo();
   /// Get file contents at the given location.
   std::string getContent(const SrcInfo &info);
+  /// Register a global identifier.
+  void addGlobal(const std::string &name, ir::Var *var = nullptr);
 
   /// Realization API.
 

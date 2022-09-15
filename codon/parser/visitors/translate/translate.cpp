@@ -409,7 +409,10 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
-    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered);
+    int64_t collapse =
+        fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
+    bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
+    os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
     LOG_TYPECHECK("parsed {}", stmt->decorator->toString());
   }
 
@@ -487,7 +490,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ThrowStmt *stmt) {
-  result = make<ir::ThrowInstr>(stmt, transform(stmt->expr));
+  result = make<ir::ThrowInstr>(stmt, stmt->expr ? transform(stmt->expr) : nullptr);
 }
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {

@@ -82,8 +82,9 @@ void SimplifyVisitor::visit(IdExpr *expr) {
 
 /// Flatten imports.
 /// @example
-///   `a.b.c` -> canonical name of `c` in `a.b` if `a.b` is an import
-///   `a.B.c` -> canonical name of `c` in class `a.B`
+///   `a.b.c`      -> canonical name of `c` in `a.b` if `a.b` is an import
+///   `a.B.c`      -> canonical name of `c` in class `a.B`
+///   `python.foo` -> internal.python._get_identifier("foo")
 /// Other cases are handled during the type checking.
 void SimplifyVisitor::visit(DotExpr *expr) {
   // First flatten the imports:
@@ -99,7 +100,11 @@ void SimplifyVisitor::visit(DotExpr *expr) {
     std::reverse(chain.begin(), chain.end());
     auto p = getImport(chain);
 
-    if (p.second->getModule() == ctx->getModule() && p.first == 1) {
+    if (p.second->getModule() == "std.python") {
+      resultExpr = transform(N<CallExpr>(
+          N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
+          N<StringExpr>(chain[p.first++])));
+    } else if (p.second->getModule() == ctx->getModule() && p.first == 1) {
       resultExpr = transform(N<IdExpr>(chain[0]), true);
     } else {
       resultExpr = N<IdExpr>(p.second->canonicalName);
@@ -120,57 +125,74 @@ void SimplifyVisitor::visit(DotExpr *expr) {
 bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   if (!ctx->isOuter(val))
     return false;
+  if ((val->isType() && !val->isGeneric()) || val->isFunc())
+    return false;
 
   // Ensure that outer variables can be captured (i.e., do not cross no-capture
   // boundary). Example:
   // def foo():
   //   x = 1
-  //   class T:      # <- boundary (class methods cannot capture locals)
-  //     def bar():
+  //   class T:      # <- boundary (classes cannot capture locals)
+  //     t: int = x  # x cannot be accessed
+  //     def bar():  # <- another boundary
+  //                 # (class methods cannot capture locals except class generics)
   //       print(x)  # x cannot be accessed
   bool crossCaptureBoundary = false;
+  bool localGeneric = val->isGeneric() && val->getBaseName() == ctx->getBaseName();
+  bool parentClassGeneric =
+      val->isGeneric() && !ctx->getBase()->isType() &&
+      (ctx->bases.size() > 1 && ctx->bases[ctx->bases.size() - 2].isType() &&
+       ctx->bases[ctx->bases.size() - 2].name == val->getBaseName());
   auto i = ctx->bases.size();
   for (; i-- > 0;) {
     if (ctx->bases[i].name == val->getBaseName())
       break;
-    if (!ctx->bases[i].captures)
+    if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
       crossCaptureBoundary = true;
   }
   seqassert(i < ctx->bases.size(), "invalid base for '{}'", val->canonicalName);
 
-  // Disallow outer generics except for class generics in methods
-  if (val->isGeneric() && !(ctx->bases[i].isType() && i + 2 == ctx->bases.size()))
-    error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
-
   // Mark methods (class functions that access class generics)
-  if (val->isGeneric() && ctx->bases[i].isType() && i + 2 == ctx->bases.size() &&
-      ctx->getBase()->attributes)
+  if (parentClassGeneric)
     ctx->getBase()->attributes->set(Attr::Method);
 
-  // Check if a real variable (not a static) is defined outside the current scope
-  if (!val->isVar() || val->isGeneric())
+  // Ignore generics
+  if (parentClassGeneric || localGeneric)
     return false;
 
   // Case: a global variable that has not been marked with `global` statement
-  if (val->getBaseName().empty()) { /// TODO: use isGlobal instead?
+  if (val->isVar() && val->getBaseName().empty()) {
     val->noShadow = true;
-    if (val->scope.size() == 1 && !in(ctx->cache->globals, val->canonicalName))
-      ctx->cache->globals[val->canonicalName] = nullptr;
+    if (val->scope.size() == 1)
+      ctx->cache->addGlobal(val->canonicalName);
     return false;
   }
+
+  // Check if a real variable (not a static) is defined outside the current scope
+  if (crossCaptureBoundary)
+    error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is enabled
   auto captures = ctx->getBase()->captures;
-  if (!crossCaptureBoundary && captures && !in(*captures, val->canonicalName)) {
+  if (captures && !in(*captures, val->canonicalName)) {
     // Captures are transformed to function arguments; generate new name for that
     // argument
-    auto newName = (*captures)[val->canonicalName] =
-        ctx->generateCanonicalName(val->canonicalName);
+    ExprPtr typ = nullptr;
+    if (val->isType())
+      typ = N<IdExpr>("type");
+    if (auto st = val->isStatic())
+      typ = N<IndexExpr>(N<IdExpr>("Static"),
+                         N<IdExpr>(st == StaticValue::INT ? "int" : "str"));
+    auto [newName, _] = (*captures)[val->canonicalName] = {
+        ctx->generateCanonicalName(val->canonicalName), typ};
     ctx->cache->reverseIdentifierLookup[newName] = newName;
     // Add newly generated argument to the context
-    auto newVal =
-        ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+    std::shared_ptr<SimplifyItem> newVal = nullptr;
+    if (val->isType())
+      newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+    else
+      newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
     newVal->baseName = ctx->getBaseName();
     newVal->noShadow = true;
     return true;
@@ -206,10 +228,18 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     size_t itemEnd = 0;
     auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
     for (auto i = chain.size(); i-- > importEnd;) {
-      val = fctx->find(join(chain, ".", importEnd, i + 1));
-      if (val && (importName.empty() || val->isType() || !val->isConditional())) {
-        itemName = val->canonicalName, itemEnd = i + 1;
-        break;
+      if (fctx->getModule() == "std.python" && importEnd < chain.size()) {
+        // Special case: importing from Python.
+        // Fake SimplifyItem that inidcates std.python access
+        val = std::make_shared<SimplifyItem>(SimplifyItem::Var, "", "",
+                                             fctx->getModule(), std::vector<int>{});
+        return {importEnd, val};
+      } else {
+        val = fctx->find(join(chain, ".", importEnd, i + 1));
+        if (val && (importName.empty() || val->isType() || !val->isConditional())) {
+          itemName = val->canonicalName, itemEnd = i + 1;
+          break;
+        }
       }
     }
     if (itemName.empty() && importName.empty())

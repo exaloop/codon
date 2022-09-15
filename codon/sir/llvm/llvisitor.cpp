@@ -22,6 +22,7 @@ namespace {
 const std::string EXPORT_ATTR = "std.internal.attributes.export";
 const std::string INLINE_ATTR = "std.internal.attributes.inline";
 const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
+const std::string GPU_KERNEL_ATTR = "std.gpu.kernel";
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -41,6 +42,8 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
   if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
     return x->getUnmangledName();
+  } else if (util::hasAttribute(x, GPU_KERNEL_ATTR)) {
+    return x->getName();
   } else {
     return x->referenceString();
   }
@@ -49,7 +52,7 @@ std::string LLVMVisitor::getNameForFunction(const Func *x) {
 LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
-      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), db(),
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), catches(), db(),
       plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
@@ -287,6 +290,7 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   coro.reset();
   loops.clear();
   trycatch.clear();
+  catches.clear();
   db.reset();
 
   context = std::make_unique<llvm::LLVMContext>();
@@ -695,6 +699,16 @@ void LLVMVisitor::enterTryCatch(TryCatchData data) {
 void LLVMVisitor::exitTryCatch() {
   seqassertn(!trycatch.empty(), "no try catches present");
   trycatch.pop_back();
+}
+
+void LLVMVisitor::enterCatch(CatchData data) {
+  catches.push_back(std::move(data));
+  catches.back().sequenceNumber = nextSequenceNumber++;
+}
+
+void LLVMVisitor::exitCatch() {
+  seqassertn(!catches.empty(), "no catches present");
+  catches.pop_back();
 }
 
 LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatch() {
@@ -1119,7 +1133,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
     err.print("LLVM", buf);
     // LOG("-> ERR {}", x->referenceString());
     // LOG("       {}", code);
-    compilationError(buf.str());
+    compilationError(fmt::format("{} ({})", buf.str(), x->getName()));
   }
   sub->setDataLayout(M->getDataLayout());
 
@@ -1152,6 +1166,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   setDebugInfoForNode(x);
 
   auto *fnAttributes = x->getAttribute<KeyValueAttribute>();
+  if (x->isJIT()) {
+    func->addFnAttr(llvm::Attribute::get(*context, "jit"));
+  }
   if (x->isJIT() || (fnAttributes && fnAttributes->has(EXPORT_ATTR))) {
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   } else {
@@ -1162,6 +1179,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   }
   if (fnAttributes && fnAttributes->has(NOINLINE_ATTR)) {
     func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+  }
+  if (fnAttributes && fnAttributes->has(GPU_KERNEL_ATTR)) {
+    func->addFnAttr(llvm::Attribute::AttrKind::NoInline);
+    func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
+    func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
   func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
@@ -1352,6 +1374,10 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getDoubleTy();
   }
 
+  if (auto *x = cast<types::Float32Type>(t)) {
+    return B->getFloatTy();
+  }
+
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
   }
@@ -1406,6 +1432,11 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getIntNTy(x->getLen());
   }
 
+  if (auto *x = cast<types::VectorType>(t)) {
+    return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
+                                 /*Scalable=*/false);
+  }
+
   if (auto *x = cast<dsl::types::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
@@ -1425,6 +1456,11 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<types::FloatType>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
@@ -1552,6 +1588,12 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type),
         x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
+  }
+
+  if (auto *x = cast<types::VectorType>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_unsigned);
   }
 
   if (auto *x = cast<dsl::types::CustomType>(t)) {
@@ -2094,7 +2136,12 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       }
 
       B->CreateStore(excStateCaught, tc.excFlag);
+      CatchData cd;
+      cd.exception = objPtr;
+      cd.typeId = objType;
+      enterCatch(cd);
       process(catches[i]->getHandler());
+      exitCatch();
       B->SetInsertPoint(block);
       B->CreateBr(tc.finallyBlock);
     }
@@ -2455,10 +2502,21 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   // note: exception header should be set in the frontend
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();
-  process(x->getValue());
+  llvm::Value *obj = nullptr;
+  llvm::Value *typ = nullptr;
+
+  if (x->getValue()) {
+    process(x->getValue());
+    obj = value;
+    typ = B->getInt32(getTypeIdx(x->getValue()->getType()));
+  } else {
+    seqassertn(!catches.empty(), "empty raise outside of except block");
+    obj = catches.back().exception;
+    typ = catches.back().typeId;
+  }
+
   B->SetInsertPoint(block);
-  llvm::Value *exc = B->CreateCall(
-      excAllocFunc, {B->getInt32(getTypeIdx(x->getValue()->getType())), value});
+  llvm::Value *exc = B->CreateCall(excAllocFunc, {typ, obj});
   call(throwFunc, exc);
 }
 

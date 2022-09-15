@@ -20,12 +20,12 @@ using namespace types;
 /// @param cache     Pointer to the shared cache ( @c Cache )
 /// @param file      Filename to be used for error reporting
 /// @param barebones Use the bare-bones standard library for faster testing
-/// @param defines   User-defined static values (typically passed as `codon run -DX=Y
-/// ...`).
+/// @param defines   User-defined static values (typically passed as `codon run -DX=Y`).
 ///                  Each value is passed as a string.
 StmtPtr
 SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &file,
                        const std::unordered_map<std::string, std::string> &defines,
+                       const std::unordered_map<std::string, std::string> &earlyDefines,
                        bool barebones) {
   auto preamble = std::make_shared<std::vector<StmtPtr>>();
   seqassertn(cache->module, "cache's module is not set");
@@ -53,6 +53,20 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
     // Load the standard library
     stdlib->setFilename(stdlibPath->path);
+    // Core definitions
+    preamble->push_back(SimplifyVisitor(stdlib, preamble)
+                            .transform(parseCode(stdlib->cache, stdlibPath->path,
+                                                 "from internal.core import *")));
+    for (auto &d : earlyDefines) {
+      // Load early compile-time defines (for standard library)
+      preamble->push_back(
+          SimplifyVisitor(stdlib, preamble)
+              .transform(std::make_shared<AssignStmt>(
+                  std::make_shared<IdExpr>(d.first),
+                  std::make_shared<IntExpr>(d.second),
+                  std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
+                                              std::make_shared<IdExpr>("int")))));
+    }
     preamble->push_back(SimplifyVisitor(stdlib, preamble)
                             .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
@@ -181,6 +195,7 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
     stmt->accept(v);
   } catch (const exc::ParserException &e) {
     ctx->cache->errors.push_back(e);
+    // throw;
   }
   ctx->popSrcInfo();
   if (v.resultStmt)

@@ -36,7 +36,10 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   if (expr->cond->isStatic()) {
     resultExpr = evaluateStaticCondition(
         expr->cond,
-        [&](bool isTrue) { return transform(isTrue ? expr->ifexpr : expr->elsexpr); },
+        [&](bool isTrue) {
+          LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
+          return transform(isTrue ? expr->ifexpr : expr->elsexpr);
+        },
         [&]() -> ExprPtr {
           // Check if both subexpressions are static; if so, this if expression is also
           // static and should be marked as such
@@ -83,6 +86,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
     resultStmt = evaluateStaticCondition(
         stmt->cond,
         [&](bool isTrue) {
+          LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
           auto t = transform(isTrue ? stmt->ifSuite : stmt->elseSuite);
           return t ? t : transform(N<SuiteStmt>());
         },

@@ -80,6 +80,9 @@ struct Expr : public codon::SrcObject {
   /// Set of attributes.
   int attributes;
 
+  /// Original (pre-transformation) expression
+  std::shared_ptr<Expr> origExpr;
+
 public:
   Expr();
   Expr(const Expr &expr) = default;

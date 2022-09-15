@@ -580,12 +580,22 @@ def f(x):
     return g(x)
 print f(5) #: 6
 
-#%% function_err_nested,barebones
+##% nested_generic_static,barebones
+def foo():
+    N: Static[int] = 5
+    Z: Static[int] = 15
+    T = Int[Z]
+    def bar():
+        x = __array__[T](N)
+        print(x.__class__.__name__)
+    return bar
+foo()()  #: Array[Int[15]]
+
 def f[T]():
     def g():
         return T()
-    g()
-f(int) #! cannot access nonlocal variable 'T'
+    return g()
+print f(int) #: 0
 
 #%% class_err_1,barebones
 @extend
@@ -933,6 +943,66 @@ a = {1: "s", 2: "t"}
 a[3] = foo["str"]
 print(sorted(a.items()))  #: [(1, 's'), (2, 't'), (3, 'hai')]
 
+
+#%% python_isinstance
+import python
+
+@python
+def foo():
+    return 1
+
+z = foo()
+print(z.__class__.__name__)  #: pyobj
+
+print isinstance(z, pyobj)  #: True
+print isinstance(z, int)  #: False
+print isinstance(z, python.int)  #: True
+print isinstance(z, python.ValueError)  #: False
+
+print isinstance(z, (int, str, python.int))  #: True
+print isinstance(z, (int, str, python.AttributeError))  #: False
+
+try:
+    foo().x
+except python.ValueError:
+    pass
+except python.AttributeError as e:
+    print('caught', e, e.__class__.__name__) #: caught 'int' object has no attribute 'x' pyobj
+
+
+#%% python_exceptions
+import python
+
+@python
+def foo():
+    return 1
+
+try:
+    foo().x
+except python.AttributeError as f:
+    print 'py.Att', f  #: py.Att 'int' object has no attribute 'x'
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e
+try:
+    foo().x
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e  #: PyError 'int' object has no attribute 'x'
+try:
+    raise ValueError("ho")
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'  #: Val
+except PyError as e:
+    print 'PyError', e
+
+
 #%% typeof_definition_error,barebones
 a = 1
 class X:
@@ -1120,3 +1190,22 @@ def match(match):
     match
 
 match(1)
+
+#%% loop_domination,barebones
+for i in range(2):
+    try: dat = 1
+    except: pass
+    print(dat)
+#: 1
+#: 1
+
+#%% block_unroll,barebones
+# Ensure that block unrolling is done in RAII manner on error
+def foo():
+    while True:
+        def magic(a: x):
+            return
+        print b
+foo()
+#! identifier 'x' not found
+#! identifier 'b' not found

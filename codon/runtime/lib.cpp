@@ -38,6 +38,10 @@ extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
 
 void seq_exc_init();
 
+#ifdef CODON_GPU
+void seq_nvptx_init();
+#endif
+
 int seq_flags;
 
 SEQ_FUNC void seq_init(int flags) {
@@ -47,6 +51,9 @@ SEQ_FUNC void seq_init(int flags) {
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
   seq_exc_init();
+#ifdef CODON_GPU
+  seq_nvptx_init();
+#endif
   seq_flags = flags;
 }
 
@@ -176,11 +183,11 @@ SEQ_FUNC void *seq_calloc_atomic(size_t m, size_t n) {
 #endif
 }
 
-SEQ_FUNC void *seq_realloc(void *p, size_t n) {
+SEQ_FUNC void *seq_realloc(void *p, size_t newsize, size_t oldsize) {
 #if USE_STANDARD_MALLOC
-  return realloc(p, n);
+  return realloc(p, newsize);
 #else
-  return GC_REALLOC(p, n);
+  return GC_REALLOC(p, newsize);
 #endif
 }
 
@@ -231,7 +238,7 @@ static seq_str_t string_conv(const char *fmt, const size_t size, T t) {
   int n = snprintf(p, size, fmt, t);
   if (n >= size) {
     auto n2 = (size_t)n + 1;
-    p = (char *)seq_realloc((void *)p, n2);
+    p = (char *)seq_realloc((void *)p, n2, size);
     n = snprintf(p, n2, fmt, t);
   }
   return {(seq_int_t)n, p};

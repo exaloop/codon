@@ -29,15 +29,17 @@ ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool is
 } // namespace
 
 Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
-                   const std::vector<std::string> &disabledPasses, bool isTest)
-    : argv0(argv0), debug(mode == Mode::DEBUG), input(),
+                   const std::vector<std::string> &disabledPasses, bool isTest,
+                   bool pyNumerics)
+    : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics), input(),
       plm(std::make_unique<PluginManager>()),
       cache(std::make_unique<ast::Cache>(argv0)),
       module(std::make_unique<ir::Module>()),
       pm(std::make_unique<ir::transform::PassManager>(getPassManagerInit(mode, isTest),
-                                                      disabledPasses)),
+                                                      disabledPasses, pyNumerics)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
+  cache->pythonCompat = pyNumerics;
   module->setCache(cache.get());
   llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
@@ -77,8 +79,9 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
 
     Timer t2("simplify");
     t2.logged = true;
-    auto transformed = ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt),
-                                                   abspath, defines, (testFlags > 1));
+    auto transformed =
+        ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt), abspath, defines,
+                                    getEarlyDefines(), (testFlags > 1));
     LOG_TIME("[T] parse = {:.1f}", totalPeg);
     LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
 
@@ -169,6 +172,13 @@ llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &fil
   } catch (exc::ParserException &e) {
     return llvm::make_error<error::ParserErrorInfo>(e);
   }
+}
+
+std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
+  std::unordered_map<std::string, std::string> earlyDefines;
+  earlyDefines.emplace("__debug__", debug ? "1" : "0");
+  earlyDefines.emplace("__py_numerics__", pyNumerics ? "1" : "0");
+  return earlyDefines;
 }
 
 } // namespace codon

@@ -504,3 +504,510 @@ test_gcd()
 test_frexp()
 test_modf()
 test_isclose()
+
+
+# 32-bit float ops
+
+NAN32 = math.nan32
+INF32 = math.inf32
+NINF32 = -math.inf32
+
+
+def close32(a: float32, b: float32, epsilon: float32 = 1e-5f32):
+    return abs(a - b) <= epsilon
+
+
+@test
+def test_float32_isnan():
+    assert math.isnan(float32(float("nan"))) == True
+    assert math.isnan(4.0f32) == False
+
+
+@test
+def test_float32_isinf():
+    assert math.isinf(float32(float("inf"))) == True
+    assert math.isinf(7.0f32) == False
+
+
+@test
+def test_float32_isfinite():
+    assert math.isfinite(1.4f32) == True
+    assert math.isfinite(0.0f32) == True
+    assert math.isfinite(NAN32) == False
+    assert math.isfinite(INF32) == False
+    assert math.isfinite(NINF32) == False
+
+
+@test
+def test_float32_ceil():
+    assert math.ceil(3.3f32) == 4.0f32
+    assert math.ceil(0.5f32) == 1.0f32
+    assert math.ceil(1.0f32) == 1.0f32
+    assert math.ceil(1.5f32) == 2.0f32
+    assert math.ceil(-0.5f32) == 0.0f32
+    assert math.ceil(-1.0f32) == -1.0f32
+    assert math.ceil(-1.5f32) == -1.0f32
+
+
+@test
+def test_float32_floor():
+    assert math.floor(3.3f32) == 3.0f32
+    assert math.floor(0.5f32) == 0.0f32
+    assert math.floor(1.0f32) == 1.0f32
+    assert math.floor(1.5f32) == 1.0f32
+    assert math.floor(-0.5f32) == -1.0f32
+    assert math.floor(-1.0f32) == -1.0f32
+    assert math.floor(-1.5f32) == -2.0f32
+
+
+@test
+def test_float32_fabs():
+    assert math.fabs(-1.0f32) == 1.0f32
+    assert math.fabs(0.0f32) == 0.0f32
+    assert math.fabs(1.0f32) == 1.0f32
+
+
+@test
+def test_float32_fmod():
+    assert math.fmod(10.0f32, 1.0f32) == 0.0f32
+    assert math.fmod(10.0f32, 0.5f32) == 0.0f32
+    assert math.fmod(10.0f32, 1.5f32) == 1.0f32
+    assert math.fmod(-10.0f32, 1.0f32) == -0.0f32
+    assert math.fmod(-10.0f32, 0.5f32) == -0.0f32
+    assert math.fmod(-10.0f32, 1.5f32) == -1.0f32
+
+
+@test
+def test_float32_exp():
+    assert math.exp(0.0f32) == 1.0f32
+    assert math.exp(-1.0f32) == 1.0f32 / math.e32
+    assert math.exp(1.0f32) == math.e32
+
+
+@test
+def test_float32_expm1():
+    assert math.expm1(0.0f32) == 0.0f32
+    assert close32(math.expm1(1.0f32), 1.7182818284590453f32)
+    assert close32(math.expm1(3.0f32), 19.085536923187668f32)
+    assert close32(math.expm1(5.0f32), 147.4131591025766f32)
+    assert math.expm1(INF32) == INF32
+    assert math.expm1(NINF32) == -1.0f32
+    assert math.isnan(math.expm1(NAN32)) == True
+
+
+@test
+def test_float32_ldexp():
+    assert math.ldexp(0.0f32, 1) == 0.0f32
+    assert math.ldexp(1.0f32, 1) == 2.0f32
+    assert math.ldexp(1.0f32, -1) == 0.5f32
+    assert math.ldexp(-1.0f32, 1) == -2.0f32
+    assert math.ldexp(0.0f32, 1) == 0.0f32
+    assert math.ldexp(1.0f32, -1000000) == 0.0f32
+    assert math.ldexp(-1.0f32, -1000000) == -0.0f32
+    assert math.ldexp(INF32, 30) == INF32
+    assert math.ldexp(NINF32, -213) == NINF32
+    assert math.isnan(math.ldexp(NAN32, 0)) == True
+
+
+@test
+def test_float32_log():
+    assert math.log(1.0f32 / math.e32) == -1.0f32
+    assert math.log(1.0f32) == 0.0f32
+    assert close32(math.log(math.e32), 1.0f32)
+
+
+@test
+def test_float32_log2():
+    assert math.log2(1.0f32) == 0.0f32
+    assert math.log2(2.0f32) == 1.0f32
+    assert math.log2(4.0f32) == 2.0f32
+    assert math.log2(2.0f32 ** 50.0f32) == 50.0f32
+    assert math.isnan(math.log2(-1.5f32)) == True
+    assert math.isnan(math.log2(NINF32)) == True
+    assert math.isnan(math.log2(NAN32)) == True
+
+
+@test
+def test_float32_log10():
+    assert math.log10(0.1f32) == -1.0f32
+    assert math.log10(1.0f32) == 0.0f32
+    assert math.log10(10.0f32) == 1.0f32
+    assert math.log10(10000.0f32) == 4.0f32
+
+
+@test
+def test_float32_degrees():
+    assert math.degrees(math.pi32) == 180.0f32
+    assert math.degrees(math.pi32 / 2.0f32) == 90.0f32
+    assert math.degrees(-math.pi32 / 4.0f32) == -45.0f32
+    assert math.degrees(0.0f32) == 0.0f32
+
+
+@test
+def test_float32_radians():
+    assert math.radians(180.0f32) == math.pi32
+    assert math.radians(90.0f32) == math.pi32 / 2.0f32
+    assert math.radians(-45.0f32) == -math.pi32 / 4.0f32
+    assert math.radians(0.0f32) == 0.0f32
+
+
+@test
+def test_float32_sqrt():
+    assert math.sqrt(4.0f32) == 2.0f32
+    assert math.sqrt(0.0f32) == 0.0f32
+    assert math.sqrt(1.0f32) == 1.0f32
+    assert math.isnan(math.sqrt(-1.0f32)) == True
+
+
+@test
+def test_float32_pow():
+    assert math.pow(0.0f32, 1.0f32) == 0.0f32
+    assert math.pow(1.0f32, 0.0f32) == 1.0f32
+    assert math.pow(2.0f32, 1.0f32) == 2.0f32
+    assert math.pow(2.0f32, -1.0f32) == 0.5f32
+    assert math.pow(-0.0f32, 3.0f32) == -0.0f32
+    assert math.pow(-0.0f32, 2.3f32) == 0.0f32
+    assert math.pow(-0.0f32, 0.0f32) == 1.0f32
+    assert math.pow(-0.0f32, -0.0f32) == 1.0f32
+    assert math.pow(-2.0f32, 2.0f32) == 4.0f32
+    assert math.pow(-2.0f32, 3.0f32) == -8.0f32
+    assert math.pow(-2.0f32, -3.0f32) == -0.125f32
+    assert math.pow(INF32, 1.0f32) == INF32
+    assert math.pow(NINF32, 1.0f32) == NINF32
+    assert math.pow(1.0f32, INF32) == 1.0f32
+    assert math.pow(1.0f32, NINF32) == 1.0f32
+    assert math.isnan(math.pow(NAN32, 1.0f32)) == True
+    assert math.isnan(math.pow(2.0f32, NAN32)) == True
+    assert math.isnan(math.pow(0.0f32, NAN32)) == True
+    assert math.pow(1.0f32, NAN32) == 1.0f32
+
+
+@test
+def test_float32_acos():
+    assert close32(math.acos(-1.0f32), math.pi32)
+    assert close32(math.acos(0.0f32), math.pi32 / 2.0f32)
+    assert math.acos(1.0f32) == 0.0f32
+    assert math.isnan(math.acos(NAN32)) == True
+
+
+@test
+def test_float32_asin():
+    assert close32(math.asin(-1.0f32), -math.pi32 / 2.0f32)
+    assert math.asin(0.0f32) == 0.0f32
+    assert close32(math.asin(1.0f32), math.pi32 / 2.0f32)
+    assert math.isnan(math.asin(NAN32)) == True
+
+
+@test
+def test_float32_atan():
+    assert math.atan(-1.0f32) == -math.pi32 / 4.0f32
+    assert math.atan(0.0f32) == 0.0f32
+    assert close32(math.atan(1.0f32), math.pi32 / 4.0f32)
+    assert close32(math.atan(INF32), math.pi32 / 2.0f32)
+    assert close32(math.atan(NINF32), -math.pi32 / 2.0f32)
+    assert math.isnan(math.atan(NAN32)) == True
+
+
+@test
+def test_float32_atan2():
+    assert math.atan2(-1.0f32, 0.0f32) == -math.pi32 / 2.0f32
+    assert math.atan2(-1.0f32, 1.0f32) == -math.pi32 / 4.0f32
+    assert math.atan2(0.0f32, 1.0f32) == 0.0f32
+    assert math.atan2(1.0f32, 1.0f32) == math.pi32 / 4.0f32
+    assert math.atan2(1.0f32, 0.0f32) == math.pi32 / 2.0f32
+    assert math.atan2(-0.0f32, 0.0f32) == -0.0f32
+    assert math.atan2(-0.0f32, 2.3f32) == -0.0f32
+    assert close32(math.atan2(0.0f32, -2.3f32), math.pi32)
+    assert math.atan2(INF32, NINF32) == math.pi32 * 3.0f32 / 4.0f32
+    assert math.atan2(INF32, 2.3f32) == math.pi32 / 2.0f32
+    assert math.isnan(math.atan2(NAN32, 0.0f32)) == True
+
+
+@test
+def test_float32_cos():
+    assert math.cos(0.0f32) == 1.0f32
+    assert close32(math.cos(math.pi32 / 2.0f32), 6.123233995736766e-17f32)
+    assert close32(math.cos(-math.pi32 / 2.0f32), 6.123233995736766e-17f32)
+    assert math.cos(math.pi32) == -1.0f32
+    assert math.isnan(math.cos(INF32)) == True
+    assert math.isnan(math.cos(NINF32)) == True
+    assert math.isnan(math.cos(NAN32)) == True
+
+
+@test
+def test_float32_sin():
+    assert math.sin(0.0f32) == 0.0f32
+    assert math.sin(math.pi32 / 2.0f32) == 1.0f32
+    assert math.sin(-math.pi32 / 2.0f32) == -1.0f32
+    assert math.isnan(math.sin(INF32)) == True
+    assert math.isnan(math.sin(NINF32)) == True
+    assert math.isnan(math.sin(NAN32)) == True
+
+
+@test
+def test_float32_hypot():
+    assert math.hypot(12.0f32, 5.0f32) == 13.0f32
+    assert math.hypot(12.0f32 / 32.0f32, 5.0f32 / 32.0f32) == 13.0f32 / 32.0f32
+    assert math.hypot(0.0f32, 0.0f32) == 0.0f32
+    assert math.hypot(-3.0f32, 4.0f32) == 5.0f32
+    assert math.hypot(3.0f32, 4.0f32) == 5.0f32
+
+
+@test
+def test_float32_tan():
+    assert math.tan(0.0f32) == 0.0f32
+    assert close32(math.tan(math.pi32 / 4.0f32), 0.9999999999999999f32)
+    assert close32(math.tan(-math.pi32 / 4.0f32), -0.9999999999999999f32)
+    assert math.isnan(math.tan(INF32)) == True
+    assert math.isnan(math.tan(NINF32)) == True
+    assert math.isnan(math.tan(NAN32)) == True
+
+
+@test
+def test_float32_cosh():
+    assert math.cosh(0.0f32) == 1.0f32
+    assert close32(math.cosh(2.0f32) - 2.0f32 * math.cosh(1.0f32) ** 2.0f32, -1.0f32)
+    assert math.cosh(INF32) == INF32
+    assert math.cosh(NINF32) == INF32
+    assert math.isnan(math.cosh(NAN32)) == True
+
+
+@test
+def test_float32_sinh():
+    assert math.sinh(0.0f32) == 0.0f32
+    assert math.sinh(1.0f32) + math.sinh(-1.0f32) == 0.0f32
+    assert math.sinh(INF32) == INF32
+    assert math.sinh(NINF32) == NINF32
+    assert math.isnan(math.sinh(NAN32)) == True
+
+
+@test
+def test_float32_tanh():
+    assert math.tanh(0.0f32) == 0.0f32
+    assert math.tanh(1.0f32) + math.tanh(-1.0f32) == 0.0f32
+    assert math.tanh(INF32) == 1.0f32
+    assert math.tanh(NINF32) == -1.0f32
+    assert math.isnan(math.tanh(NAN32)) == True
+
+
+@test
+def test_float32_acosh():
+    assert math.acosh(1.0f32) == 0.0f32
+    assert close32(math.acosh(2.0f32), 1.3169578969248166f32)
+    assert math.acosh(INF32) == INF32
+    assert math.isnan(math.acosh(NAN32)) == True
+    assert math.isnan(math.acosh(-1.0f32)) == True
+
+
+@test
+def test_float32_asinh():
+    assert math.asinh(0.0f32) == 0.0f32
+    assert close32(math.asinh(1.0f32), 0.881373587019543f32)
+    assert close32(math.asinh(-1.0f32), -0.881373587019543f32)
+    assert math.asinh(INF32) == INF32
+    assert math.isnan(math.asinh(NAN32)) == True
+    assert math.asinh(NINF32) == NINF32
+
+
+@test
+def test_float32_atanh():
+    assert math.atanh(0.0f32) == 0.0f32
+    assert close32(math.atanh(0.5f32), 0.5493061443340549f32)
+    assert close32(math.atanh(-0.5f32), -0.5493061443340549f32)
+    assert math.isnan(math.atanh(INF32)) == True
+    assert math.isnan(math.atanh(NAN32)) == True
+    assert math.isnan(math.atanh(NINF32)) == True
+
+
+@test
+def test_float32_copysign():
+    assert math.copysign(1.0f32, -0.0f32) == -1.0f32
+    assert math.copysign(1.0f32, 42.0f32) == 1.0f32
+    assert math.copysign(1.0f32, -42.0f32) == -1.0f32
+    assert math.copysign(3.0f32, 0.0f32) == 3.0f32
+    assert math.copysign(INF32, 0.0f32) == INF32
+    assert math.copysign(INF32, -0.0f32) == NINF32
+    assert math.copysign(NINF32, 0.0f32) == INF32
+    assert math.copysign(NINF32, -0.0f32) == NINF32
+    assert math.copysign(1.0f32, INF32) == 1.0f32
+    assert math.copysign(1.0f32, NINF32) == -1.0f32
+    assert math.copysign(INF32, INF32) == INF32
+    assert math.copysign(INF32, NINF32) == NINF32
+    assert math.copysign(NINF32, INF32) == INF32
+    assert math.copysign(NINF32, NINF32) == NINF32
+    assert math.isnan(math.copysign(NAN32, 1.0f32)) == True
+    assert math.isnan(math.copysign(NAN32, INF32)) == True
+    assert math.isnan(math.copysign(NAN32, NINF32)) == True
+    assert math.isnan(math.copysign(NAN32, NAN32)) == True
+
+
+@test
+def test_float32_log1p():
+    assert close32(math.log1p(2.0f32), 1.0986122886681098f32)
+    assert close32(math.log1p(2.0f32 ** 90.0f32), 62.383246250395075f32)
+    assert math.log1p(INF32) == INF32
+    assert math.log1p(-1.0f32) == NINF32
+
+
+@test
+def test_float32_trunc():
+    assert math.trunc(1.0f32) == 1.0f32
+    assert math.trunc(-1.0f32) == -1.0f32
+    assert math.trunc(1.5f32) == 1.0f32
+    assert math.trunc(-1.5f32) == -1.0f32
+    assert math.trunc(1.99999f32) == 1.0f32
+    assert math.trunc(-1.99999f32) == -1.0f32
+    assert math.trunc(0.99999f32) == 0.0f32
+    assert math.trunc(-100.999f32) == -100.0f32
+
+
+@test
+def test_float32_erf():
+    assert close32(math.erf(1.0f32), 0.8427007929497148f32)
+    assert math.erf(0.0f32) == 0.0f32
+    assert close32(math.erf(3.0f32), 0.9999779095030015f32)
+    assert math.erf(256.0f32) == 1.0f32
+    assert math.erf(INF32) == 1.0f32
+    assert math.erf(NINF32) == -1.0f32
+    assert math.isnan(math.erf(NAN32)) == True
+
+
+@test
+def test_float32_erfc():
+    assert math.erfc(0.0f32) == 1.0f32
+    assert close32(math.erfc(1.0f32), 0.15729920705028516f32)
+    assert close32(math.erfc(2.0f32), 0.0046777349810472645f32)
+    assert close32(math.erfc(-1.0f32), 1.8427007929497148f32)
+    assert math.erfc(INF32) == 0.0f32
+    assert math.erfc(NINF32) == 2.0f32
+    assert math.isnan(math.erfc(NAN32)) == True
+
+
+@test
+def test_float32_gamma():
+    assert close32(math.gamma(6.0f32), 120.0f32)
+    assert close32(math.gamma(1.0f32), 1.0f32)
+    assert close32(math.gamma(2.0f32), 1.0f32)
+    assert close32(math.gamma(3.0f32), 2.0f32)
+    assert math.isnan(math.gamma(-1.0f32)) == True
+    assert math.gamma(INF32) == INF32
+    assert math.isnan(math.gamma(NINF32)) == True
+    assert math.isnan(math.gamma(NAN32)) == True
+
+
+@test
+def test_float32_lgamma():
+    assert math.lgamma(1.0f32) == 0.0f32
+    assert math.lgamma(2.0f32) == 0.0f32
+    assert math.lgamma(-1.0f32) == INF32
+    assert math.lgamma(INF32) == INF32
+    assert math.lgamma(NINF32) == INF32
+    assert math.isnan(math.lgamma(NAN32)) == True
+
+
+@test
+def test_float32_remainder():
+    assert math.remainder(2.0f32, 2.0f32) == 0.0f32
+    assert math.remainder(-4.0f32, 1.0f32) == -0.0f32
+    assert close32(math.remainder(-3.8f32, 1.0f32), 0.20000000000000018f32)
+    assert close32(math.remainder(3.8f32, 1.0f32), -0.20000000000000018f32)
+    assert math.isnan(math.remainder(INF32, 1.0f32)) == True
+    assert math.isnan(math.remainder(NINF32, 1.0f32)) == True
+    assert math.isnan(math.remainder(NAN32, 1.0f32)) == True
+
+
+@test
+def test_float32_gcd():
+    assert math.gcd(0.0f32, 0.0f32) == 0.0f32
+    assert math.gcd(1.0f32, 0.0f32) == 1.0f32
+    assert math.gcd(-1.0f32, 0.0f32) == 1.0f32
+    assert math.gcd(0.0f32, -1.0f32) == 1.0f32
+    assert math.gcd(0.0f32, 1.0f32) == 1.0f32
+    assert math.gcd(7.0f32, 1.0f32) == 1.0f32
+    assert math.gcd(7.0f32, -1.0f32) == 1.0f32
+    assert math.gcd(-23.0f32, 15.0f32) == 1.0f32
+    assert math.gcd(120.0f32, 84.0f32) == 12.0f32
+    assert math.gcd(84.0f32, -120.0f32) == 12.0f32
+
+
+@test
+def test_float32_frexp():
+    assert math.frexp(-2.0f32) == (-0.5f32, 2)
+    assert math.frexp(-1.0f32) == (-0.5f32, 1)
+    assert math.frexp(0.0f32) == (0.0f32, 0)
+    assert math.frexp(1.0f32) == (0.5f32, 1)
+    assert math.frexp(2.0f32) == (0.5f32, 2)
+    assert math.frexp(INF32)[0] == INF32
+    assert math.frexp(NINF32)[0] == NINF32
+    assert math.isnan(math.frexp(NAN32)[0]) == True
+
+
+@test
+def test_float32_modf():
+    assert math.modf(1.5f32) == (0.5f32, 1.0f32)
+    assert math.modf(-1.5f32) == (-0.5f32, -1.0f32)
+    assert math.modf(math.inf32) == (0.0f32, INF32)
+    assert math.modf(-math.inf32) == (-0.0f32, NINF32)
+    modf_nan = math.modf(NAN32)
+    assert math.isnan(modf_nan[0]) == True
+    assert math.isnan(modf_nan[1]) == True
+
+
+@test
+def test_float32_isclose():
+    assert math.isclose(1.0f32 + 1.0f32, 1.000000000001f32 + 1.0f32) == True
+    assert math.isclose(2.90909324093284f32, 2.909093240932844234234234234f32) == True
+    assert math.isclose(2.90909324093284f32, 2.9f32) == False
+    assert math.isclose(2.90909324093284f32, 2.90909324f32) == True
+    assert math.isclose(2.909094f32, 2.909095f32) == False
+    assert math.isclose(NAN32, 2.9f32) == False
+    assert math.isclose(2.9f32, NAN32) == False
+    assert math.isclose(INF32, INF32) == True
+    assert math.isclose(NINF32, NINF32) == True
+    assert math.isclose(NINF32, INF32) == False
+    assert math.isclose(INF32, NINF32) == False
+
+
+test_float32_isnan()
+test_float32_isinf()
+test_float32_isfinite()
+test_float32_ceil()
+test_float32_floor()
+test_float32_fabs()
+test_float32_fmod()
+test_float32_exp()
+test_float32_expm1()
+test_float32_ldexp()
+test_float32_log()
+test_float32_log2()
+test_float32_log10()
+test_float32_degrees()
+test_float32_radians()
+test_float32_sqrt()
+test_float32_pow()
+test_float32_acos()
+test_float32_asin()
+test_float32_atan()
+test_float32_atan2()
+test_float32_cos()
+test_float32_sin()
+test_float32_hypot()
+test_float32_tan()
+test_float32_cosh()
+test_float32_sinh()
+test_float32_tanh()
+test_float32_acosh()
+test_float32_asinh()
+test_float32_atanh()
+test_float32_copysign()
+test_float32_log1p()
+test_float32_trunc()
+test_float32_erf()
+test_float32_erfc()
+test_float32_gamma()
+test_float32_lgamma()
+test_float32_remainder()
+test_float32_gcd()
+test_float32_frexp()
+test_float32_modf()
+test_float32_isclose()

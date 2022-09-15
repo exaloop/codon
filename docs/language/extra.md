@@ -19,6 +19,12 @@ variants:
 - `i32`/`u32`: signed/unsigned 32-bit integer
 - `i64`/`u64`: signed/unsigned 64-bit integer
 
+# 32-bit float
+
+Codon's `float` type is a 64-bit floating point value. Codon
+also supports `float32` (or `f32` as a shorthand), representing
+a 32-bit floating point value (like C's `float`).
+
 # Pointers
 
 Codon has a `Ptr[T]` type that represents a pointer to an object

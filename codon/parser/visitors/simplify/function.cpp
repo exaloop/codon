@@ -74,8 +74,7 @@ void SimplifyVisitor::visit(GlobalStmt *stmt) {
             stmt->var);
 
   // Register as global if needed
-  if (!in(ctx->cache->globals, val->canonicalName))
-    ctx->cache->globals[val->canonicalName] = nullptr;
+  ctx->cache->addGlobal(val->canonicalName);
 
   val = ctx->addVar(stmt->var, val->canonicalName, stmt->getSrcInfo());
   val->baseName = ctx->getBaseName();
@@ -111,9 +110,11 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
-    if (auto n = isAttribute(stmt->decorators[i])) {
-      stmt->attributes.set(*n);
-      stmt->decorators[i] = nullptr; // remove it from further consideration
+    auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
+    if (!attrName.empty()) {
+      stmt->attributes.set(attrName);
+      if (isAttr)
+        stmt->decorators[i] = nullptr; // remove it from further consideration
     }
   }
 
@@ -153,89 +154,92 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     ctx->addAlwaysVisible(funcVal);
   }
 
-  // Set up the base
-  ctx->bases.emplace_back(SimplifyContext::Base{canonicalName});
-  ctx->addBlock();
-  ctx->getBase()->attributes = &(stmt->attributes);
-
-  // Parse arguments and add them to the context
   std::vector<Param> args;
-  for (auto &a : stmt->args) {
-    std::string varName = a.name;
-    int stars = trimStars(varName);
-    auto name = ctx->generateCanonicalName(varName);
-
-    // Mark as method if the first argument is self
-    if (isClassMember && stmt->attributes.has(Attr::HasSelf) && a.name == "self") {
-      ctx->getBase()->selfName = name;
-      stmt->attributes.set(Attr::Method);
-    }
-
-    // Handle default values
-    auto defaultValue = a.defaultValue;
-    if (a.type && defaultValue && defaultValue->getNone()) {
-      // Special case: `arg: Callable = None` -> `arg: Callable = NoneType()`
-      if (a.type->getIndex() && a.type->getIndex()->expr->isId(TYPE_CALLABLE))
-        defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
-      // Special case: `arg: type = None` -> `arg: type = NoneType`
-      if (a.type->isId("type") || a.type->isId("TypeVar"))
-        defaultValue = N<IdExpr>("NoneType");
-    }
-    /// TODO: Uncomment for Python-style defaults
-    // if (defaultValue) {
-    //   auto defaultValueCanonicalName =
-    //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
-    //   prependStmts->push_back(N<AssignStmt>(N<IdExpr>(defaultValueCanonicalName),
-    //     defaultValue));
-    //   defaultValue = N<IdExpr>(defaultValueCanonicalName);
-    // }
-    args.emplace_back(
-        Param{std::string(stars, '*') + name, a.type, defaultValue, a.status});
-
-    // Add generics to the context
-    if (a.status != Param::Normal) {
-      if (getStaticGeneric(a.type.get()))
-        ctx->addVar(varName, name, stmt->getSrcInfo())->generic = true;
-      else
-        ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
-    }
-  }
-  // Parse arguments to the context. Needs to be done after adding generics
-  // to support cases like `foo(a: T, T: type)`
-  for (auto &a : args) {
-    a.type = transformType(a.type, false);
-    a.defaultValue = transform(a.defaultValue, true);
-  }
-  // Add non-generic arguments to the context. Delayed to prevent cases like
-  // `def foo(a, b=a)`
-  for (auto &a : args) {
-    if (a.status == Param::Normal) {
-      std::string canName = a.name;
-      trimStars(canName);
-      ctx->addVar(ctx->cache->rev(canName), canName, stmt->getSrcInfo());
-    }
-  }
-
-  // Parse the return type
-  auto ret = transformType(stmt->ret, false);
-
-  // Parse function body
   StmtPtr suite = nullptr;
-  std::unordered_map<std::string, std::string> captures;
-  if (!stmt->attributes.has(Attr::Internal) && !stmt->attributes.has(Attr::C)) {
-    if (stmt->attributes.has(Attr::LLVM)) {
-      suite = transformLLVMDefinition(stmt->suite->firstInBlock());
-    } else if (stmt->attributes.has(Attr::C)) {
-      // Do nothing
-    } else {
-      if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
-        ctx->getBase()->captures = &captures;
-      suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
+  ExprPtr ret = nullptr;
+  std::unordered_map<std::string, std::pair<std::string, ExprPtr>> captures;
+  {
+    // Set up the base
+    SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
+    ctx->getBase()->attributes = &(stmt->attributes);
+
+    // Parse arguments and add them to the context
+    for (auto &a : stmt->args) {
+      std::string varName = a.name;
+      int stars = trimStars(varName);
+      auto name = ctx->generateCanonicalName(varName);
+
+      // Mark as method if the first argument is self
+      if (isClassMember && stmt->attributes.has(Attr::HasSelf) && a.name == "self") {
+        ctx->getBase()->selfName = name;
+        stmt->attributes.set(Attr::Method);
+      }
+
+      // Handle default values
+      auto defaultValue = a.defaultValue;
+      if (a.type && defaultValue && defaultValue->getNone()) {
+        // Special case: `arg: Callable = None` -> `arg: Callable = NoneType()`
+        if (a.type->getIndex() && a.type->getIndex()->expr->isId(TYPE_CALLABLE))
+          defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
+        // Special case: `arg: type = None` -> `arg: type = NoneType`
+        if (a.type->isId("type") || a.type->isId(TYPE_TYPEVAR))
+          defaultValue = N<IdExpr>("NoneType");
+      }
+      /// TODO: Uncomment for Python-style defaults
+      // if (defaultValue) {
+      //   auto defaultValueCanonicalName =
+      //       ctx->generateCanonicalName(format("{}.{}", canonicalName, name));
+      //   prependStmts->push_back(N<AssignStmt>(N<IdExpr>(defaultValueCanonicalName),
+      //     defaultValue));
+      //   defaultValue = N<IdExpr>(defaultValueCanonicalName);
+      // }
+      args.emplace_back(
+          Param{std::string(stars, '*') + name, a.type, defaultValue, a.status});
+
+      // Add generics to the context
+      if (a.status != Param::Normal) {
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(varName, name, stmt->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
+          ctx->addType(varName, name, stmt->getSrcInfo())->generic = true;
+        }
+      }
+    }
+
+    // Parse arguments to the context. Needs to be done after adding generics
+    // to support cases like `foo(a: T, T: type)`
+    for (auto &a : args) {
+      a.type = transformType(a.type, false);
+      a.defaultValue = transform(a.defaultValue, true);
+    }
+    // Add non-generic arguments to the context. Delayed to prevent cases like
+    // `def foo(a, b=a)`
+    for (auto &a : args) {
+      if (a.status == Param::Normal) {
+        std::string canName = a.name;
+        trimStars(canName);
+        ctx->addVar(ctx->cache->rev(canName), canName, stmt->getSrcInfo());
+      }
+    }
+
+    // Parse the return type
+    ret = transformType(stmt->ret, false);
+
+    // Parse function body
+    if (!stmt->attributes.has(Attr::Internal) && !stmt->attributes.has(Attr::C)) {
+      if (stmt->attributes.has(Attr::LLVM)) {
+        suite = transformLLVMDefinition(stmt->suite->firstInBlock());
+      } else if (stmt->attributes.has(Attr::C)) {
+        // Do nothing
+      } else {
+        if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
+          ctx->getBase()->captures = &captures;
+        suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
+      }
     }
   }
-
-  ctx->bases.pop_back();
-  ctx->popBlock();
   stmt->attributes.module =
       format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
              ctx->moduleName.module);
@@ -259,8 +263,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       args.pop_back();
     }
     for (auto &c : captures) {
-      args.emplace_back(Param{c.second, nullptr, nullptr});
-      partialArgs.push_back({c.second, N<IdExpr>(ctx->cache->rev(c.first))});
+      args.emplace_back(Param{c.second.first, c.second.second, nullptr});
+      partialArgs.push_back({c.second.first, N<IdExpr>(ctx->cache->rev(c.first))});
     }
     if (!kw.name.empty())
       args.push_back(kw);
@@ -417,20 +421,22 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   return N<SuiteStmt>(items);
 }
 
-/// Check if a decorator is actually an attribute (a function with `@__attribute__`)
-std::string *SimplifyVisitor::isAttribute(const ExprPtr &e) {
+/// Fetch a decorator canonical name. The first pair member indicates if a decorator is
+/// actually an attribute (a function with `@__attribute__`).
+std::pair<bool, std::string> SimplifyVisitor::getDecorator(const ExprPtr &e) {
   auto dt = transform(clone(e));
-  if (dt && dt->getId()) {
-    auto ci = ctx->find(dt->getId()->value);
+  auto id = dt->getCall() ? dt->getCall()->expr : dt;
+  if (id && id->getId()) {
+    auto ci = ctx->find(id->getId()->value);
     if (ci && ci->isFunc()) {
-      if (ctx->cache->overloads[ci->canonicalName].size() == 1)
-        if (ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0].name]
-                .ast->attributes.isAttribute) {
-          return &(ci->canonicalName);
-        }
+      if (ctx->cache->overloads[ci->canonicalName].size() == 1) {
+        return {ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0].name]
+                    .ast->attributes.isAttribute,
+                ci->canonicalName};
+      }
     }
   }
-  return nullptr;
+  return {false, ""};
 }
 
 } // namespace codon::ast

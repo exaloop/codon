@@ -138,6 +138,15 @@ public:
   FloatType() : AcceptorExtend("float") {}
 };
 
+/// Float32 type (32-bit float)
+class Float32Type : public AcceptorExtend<Float32Type, PrimitiveType> {
+public:
+  static const char NodeId;
+
+  /// Constructs a float32 type.
+  Float32Type() : AcceptorExtend("float32") {}
+};
+
 /// Bool type (8-bit unsigned integer; either 0 or 1)
 class BoolType : public AcceptorExtend<BoolType, PrimitiveType> {
 public:
@@ -424,7 +433,7 @@ private:
 };
 
 /// Type of a variably sized integer
-class IntNType : public AcceptorExtend<IntNType, Type> {
+class IntNType : public AcceptorExtend<IntNType, PrimitiveType> {
 private:
   /// length of the integer
   unsigned len;
@@ -451,9 +460,31 @@ public:
   std::string oppositeSignName() const { return getInstanceName(len, !sign); }
 
   static std::string getInstanceName(unsigned len, bool sign);
+};
 
+/// Type of a vector of primitives
+class VectorType : public AcceptorExtend<VectorType, PrimitiveType> {
 private:
-  bool doIsAtomic() const override { return true; }
+  /// number of elements
+  unsigned count;
+  /// base type
+  PrimitiveType *base;
+
+public:
+  static const char NodeId;
+
+  /// Constructs a vector type.
+  /// @param count the number of elements
+  /// @param base the base type
+  VectorType(unsigned count, PrimitiveType *base)
+      : AcceptorExtend(getInstanceName(count, base)), count(count), base(base) {}
+
+  /// @return the count of the vector
+  unsigned getCount() const { return count; }
+  /// @return the base type of the vector
+  PrimitiveType *getBase() const { return base; }
+
+  static std::string getInstanceName(unsigned count, PrimitiveType *base);
 };
 
 } // namespace types

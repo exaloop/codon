@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "codon/sir/llvm/coro/Coroutines.h"
+#include "codon/sir/llvm/gpu.h"
 #include "codon/util/common.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
@@ -642,12 +643,16 @@ void verify(llvm::Module *module) {
 void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
   verify(module);
   {
-    TIME("llvm/opt");
+    TIME("llvm/opt1");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
   }
   if (!debug) {
     TIME("llvm/opt2");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
+  }
+  {
+    TIME("llvm/gpu");
+    applyGPUTransformations(module);
   }
   verify(module);
 }

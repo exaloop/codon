@@ -281,6 +281,9 @@ struct CanonConstSub : public RewriteRule {
     Value *lhs = v->front();
     Value *rhs = v->back();
 
+    if (!lhs->getType()->is(rhs->getType()))
+      return;
+
     Value *newCall = nullptr;
     if (util::isConst<int64_t>(rhs)) {
       auto c = util::getConst<int64_t>(rhs);

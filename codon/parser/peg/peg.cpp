@@ -34,6 +34,7 @@ std::shared_ptr<peg::Grammar> initParser() {
     x.second.accept(v);
   }
   (*g)["program"].enablePackratParsing = true;
+  (*g)["fstring"].enablePackratParsing = true;
   for (auto &rule : std::vector<std::string>{
            "arguments", "slices", "genexp", "parentheses", "star_parens", "generics",
            "with_parens_item", "params", "from_as_parens", "from_params"}) {
