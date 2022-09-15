@@ -212,6 +212,44 @@ def test_kitchen_sink():
     kernel(x, grid=1, block=16)
     assert x == [0, 2, 6, 9, 12, 20, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
+@test
+def test_auto_par():
+    a = [i for i in range(16)]
+    b = [2*i for i in range(16)]
+    c = [0 for _ in range(16)]
+
+    @par(gpu=True)
+    for i in range(16):
+        c[i] = a[i] + b[i]
+
+    assert c == [3*i for i in range(16)]
+
+    @par(gpu=True)
+    for i in range(16):
+        c[i] += a[i] + b[i]
+
+    assert c == [6*i for i in range(16)]
+
+    N = 200
+    Z = 42
+    x = [0] * (N*N)
+    y = [0] * (N*N)
+
+    for i in range(2, N - 1, 3):
+        for j in range(3, N, 2):
+            x[i*N + j] = i + j + Z
+
+    @par(gpu=True, collapse=2)
+    for i in range(2, N - 1, 3):
+        for j in range(3, N, 2):
+            y[i*N + j] = i + j + Z
+
+    assert x == y
+
+    @par(gpu=True)
+    for i in range(1):
+        pass
+
 test_hello_world()
 test_raw()
 test_conversions()
@@ -220,3 +258,4 @@ test_intrinsics()
 test_matmul()
 test_mandelbrot()
 test_kitchen_sink()
+test_auto_par()
