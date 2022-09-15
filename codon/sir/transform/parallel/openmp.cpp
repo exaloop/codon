@@ -1343,8 +1343,6 @@ CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t le
   seqassertn(lenCalc, "range length calculation function not found");
 
   for (auto *loop : loopNests) {
-    setup->push_back(M->Nr<AssignInstr>(loop->getVar(), M->getInt(0)));
-
     LoopRange range;
     range.loop = loop;
     range.start = util::makeVar(loop->getStart(), setup, parent)->getVar();
