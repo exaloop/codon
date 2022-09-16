@@ -1,78 +1,27 @@
 import os
 import sys
-import subprocess
 import shutil
 from pathlib import Path
-
 from Cython.Distutils import build_ext
 from setuptools import setup
 from setuptools.extension import Extension
-import distutils.dir_util
-
+import tempfile
 from config.config import *
 
-def exists(executable):
-    ps = subprocess.run(["which", executable], stdout=subprocess.PIPE)
-    return ps.returncode == 0
-
-
-def get_output(*args):
-    ps = subprocess.run(args, stdout=subprocess.PIPE)
-    return ps.stdout.decode("utf8").strip()
-
-
-def package_files(directory):
-    for (path, _, fns) in os.walk(directory):
-        for fn in fns:
-            yield os.path.join(path, fn)
-
-
-from_root = lambda relpath: os.path.realpath(f"{os.getcwd()}/../../{relpath}")
-
-llvm_config = ""
-llvm_config_candidates = [
-    os.environ.get("CODON_LLVM_CONFIG", from_root("llvm/bin/llvm-config")),
-    "llvm-config-12",
-    "llvm-config",
-]
-for candidate in llvm_config_candidates:
-    if exists(candidate):
-        llvm_config = candidate
-        break
-else:
-    raise FileNotFoundError("Cannot find llvm-config; is llvm installed?")
-
-llvm_include_dir = get_output(llvm_config, "--includedir")
-llvm_lib_dir = get_output(llvm_config, "--libdir")
-
-codon_dir = Path(os.environ.get("CODON_DIR", from_root("build")))
-codon_include_dir = os.environ.get("CODON_INCLUDE_DIR", codon_dir / "include")
+codon_dir = Path(os.environ.get(
+    "CODON_DIR", os.path.realpath(f"{os.getcwd()}/../../build")
+))
 ext = "dylib" if sys.platform == "darwin" else "so"
 
-def symlink(target, dest):
-    tmp = "_tmp"
+root = Path(__file__).resolve().parent
+def symlink(target):
+    tmp = tempfile.mktemp()
     os.symlink(str(target.resolve()), tmp)
-    os.rename(tmp, str(dest))
-root = Path(os.path.dirname(os.path.realpath(__file__)))
-symlink(
-    codon_dir / ".." / "stdlib",
-    root / "codon" / "stdlib"
-)
-symlink(
-    codon_dir / "lib" / "codon" / ("libcodonc." + ext),
-    root / "codon" / ("libcodonc." + ext)
-)
-symlink(
-    codon_dir / "lib" / "codon" / ("libcodonrt." + ext),
-    root / "codon" / ("libcodonrt." + ext)
-)
-symlink(
-    codon_dir / "lib" / "codon" / ("libomp." + ext),
-    root / "codon" / ("libomp." + ext)
-)
-
-print(f"<llvm>  {llvm_include_dir}, {llvm_lib_dir}")
-print(f"<codon> {codon_include_dir}")
+    shutil.move(tmp, str(root / "codon" / target.name))
+symlink(codon_dir / ".." / "stdlib")
+symlink(codon_dir / "lib" / "codon" / ("libcodonc." + ext))
+symlink(codon_dir / "lib" / "codon" / ("libcodonrt." + ext))
+symlink(codon_dir / "lib" / "codon" / ("libomp." + ext))
 
 if sys.platform == "darwin":
     linker_args = "-Wl,-rpath,@loader_path"
@@ -86,8 +35,7 @@ jit_extension = Extension(
     language="c++",
     extra_compile_args=["-w", "-std=c++17"],
     extra_link_args=[linker_args],
-    include_dirs=[llvm_include_dir, str(codon_include_dir)],
-    library_dirs=[llvm_lib_dir, str(root / "codon")],
+    library_dirs=[str(root / "codon")],
 )
 
 setup(

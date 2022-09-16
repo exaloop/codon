@@ -304,5 +304,24 @@ JITResult JIT::executePython(const std::string &name,
   }
 }
 
+JIT *jitInit(const std::string &name) {
+  auto jit = new JIT(name);
+  llvm::cantFail(jit->init());
+  return jit;
+}
+
+JITResult jitExecutePython(JIT *jit, const std::string &name,
+                           const std::vector<std::string> &types,
+                           const std::string &pyModule,
+                           const std::vector<std::string> &pyVars, void *arg,
+                           bool debug) {
+  return jit->executePython(name, types, pyModule, pyVars, arg, debug);
+}
+
+JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &file,
+                         int line, bool debug) {
+  return jit->executeSafe(code, file, line, debug);
+}
+
 } // namespace jit
 } // namespace codon

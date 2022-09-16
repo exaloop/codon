@@ -235,7 +235,8 @@ set(CODON_HPPFILES
     codon/util/toml++/toml_node.h
     codon/util/toml++/toml_parser.hpp
     codon/util/toml++/toml_utf8_streams.h
-    extra/jupyter/jupyter.h)
+    extra/jupyter/jupyter.h
+    extra/python/codon/jit.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/debug_listener.cpp
