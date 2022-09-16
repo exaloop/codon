@@ -422,5 +422,17 @@ public:
   std::string debugString(bool debug) const override;
 };
 
+struct TypeTrait : public Trait {
+  TypePtr type;
+
+public:
+  explicit TypeTrait(TypePtr type);
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) override;
+  std::string debugString(bool debug) const override;
+};
+
 } // namespace types
 } // namespace codon::ast

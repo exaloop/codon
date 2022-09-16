@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.13.0"
+  VERSION "0.14.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
@@ -10,6 +10,7 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/extra/python/config/config.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
+option(CODON_GPU "build Codon GPU backend" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -59,7 +60,8 @@ add_custom_command(
 
 # Codon runtime library
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                  codon/runtime/re.cpp codon/runtime/exc.cpp)
+                  codon/runtime/re.cpp codon/runtime/exc.cpp
+                  codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
@@ -89,6 +91,11 @@ if(ASAN)
   target_link_libraries(
     codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                     "-fsanitize-recover=address")
+endif()
+if(CODON_GPU)
+  add_compile_definitions(CODON_GPU)
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(codonrt PRIVATE CUDA::cudart_static CUDA::cuda_driver)
 endif()
 add_custom_command(
   TARGET codonrt
@@ -148,6 +155,7 @@ set(CODON_HPPFILES
     codon/sir/llvm/coro/CoroInternal.h
     codon/sir/llvm/coro/CoroSplit.h
     codon/sir/llvm/coro/Coroutines.h
+    codon/sir/llvm/gpu.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
     codon/sir/llvm/optimize.h
@@ -296,6 +304,7 @@ set(CODON_CPPFILES
     codon/sir/llvm/coro/CoroFrame.cpp
     codon/sir/llvm/coro/CoroSplit.cpp
     codon/sir/llvm/coro/Coroutines.cpp
+    codon/sir/llvm/gpu.cpp
     codon/sir/llvm/llvisitor.cpp
     codon/sir/llvm/optimize.cpp
     codon/sir/module.cpp

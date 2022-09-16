@@ -233,6 +233,8 @@ public:
   void handle(const types::IntType *, const types::IntType *) { result = true; }
   VISIT(types::FloatType);
   void handle(const types::FloatType *, const types::FloatType *) { result = true; }
+  VISIT(types::Float32Type);
+  void handle(const types::Float32Type *, const types::Float32Type *) { result = true; }
   VISIT(types::BoolType);
   void handle(const types::BoolType *, const types::BoolType *) { result = true; }
   VISIT(types::ByteType);
@@ -271,6 +273,10 @@ public:
   VISIT(types::IntNType);
   void handle(const types::IntNType *x, const types::IntNType *y) {
     result = x->getLen() == y->getLen() && x->isSigned() == y->isSigned();
+  }
+  VISIT(types::VectorType);
+  void handle(const types::VectorType *x, const types::VectorType *y) {
+    result = x->getCount() == y->getCount() && process(x->getBase(), y->getBase());
   }
   VISIT(dsl::types::CustomType);
   void handle(const dsl::types::CustomType *x, const dsl::types::CustomType *y) {

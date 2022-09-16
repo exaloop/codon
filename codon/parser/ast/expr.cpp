@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "codon/parser/ast.h"
+#include "codon/parser/cache.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -17,7 +18,7 @@ namespace codon::ast {
 
 Expr::Expr()
     : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
-      done(false), attributes(0) {}
+      done(false), attributes(0), origExpr(nullptr) {}
 void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
@@ -65,7 +66,8 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
     : name(std::move(name)), type(std::move(type)),
       defaultValue(std::move(defaultValue)) {
   if (status == 0 && this->type &&
-      (this->type->isId("type") || this->type->isId("TypeVar") ||
+      (this->type->isId("type") || this->type->isId(TYPE_TYPEVAR) ||
+       (this->type->getIndex() && this->type->getIndex()->expr->isId(TYPE_TYPEVAR)) ||
        getStaticGeneric(this->type.get())))
     this->status = Generic;
   else

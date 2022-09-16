@@ -50,169 +50,170 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     argsToParse = astIter->second.ast->args;
   }
 
-  // Add the class base
-  ctx->bases.emplace_back(SimplifyContext::Base(canonicalName));
-  ctx->addBlock();
-
-  // Parse and add class generics
-  std::vector<Param> args;
-  std::pair<StmtPtr, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
-  if (stmt->attributes.has("deduce") && args.empty()) {
-    // Auto-detect generics and fields
-    autoDeducedInit = autoDeduceMembers(stmt, args);
-  } else {
-    // Add all generics before parent classes, fields and methods
-    for (auto &a : argsToParse) {
-      if (a.status != Param::Generic)
-        continue;
-      std::string genName, varName;
-      if (stmt->attributes.has(Attr::Extend))
-        varName = a.name, genName = ctx->cache->rev(a.name);
-      else
-        varName = ctx->generateCanonicalName(a.name), genName = a.name;
-      if (getStaticGeneric(a.type.get()))
-        ctx->addVar(genName, varName, a.type->getSrcInfo())->generic = true;
-      else
-        ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
-      args.emplace_back(Param{varName, transformType(clone(a.type), false),
-                              transformType(clone(a.defaultValue), false), a.status});
-    }
-  }
-
-  // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-  ExprPtr typeAst = N<IdExpr>(name);
-  for (auto &a : args) {
-    if (a.status == Param::Generic) {
-      if (!typeAst->getIndex())
-        typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
-      typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
-    }
-  }
-
-  // Collect classes (and their fields) that are to be statically inherited
-  auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
-
-  // A ClassStmt will be separated into class variable assignments, method-free
-  // ClassStmts (that include nested classes) and method FunctionStmts
   std::vector<StmtPtr> clsStmts; // Will be filled later!
   std::vector<StmtPtr> varStmts; // Will be filled later!
   std::vector<StmtPtr> fnStmts;  // Will be filled later!
-  transformNestedClasses(stmt, clsStmts, varStmts, fnStmts);
+  std::vector<SimplifyContext::Item> addLater;
+  {
+    // Add the class base
+    SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
 
-  // Collect class fields
-  for (auto &a : argsToParse) {
-    if (a.status == Param::Normal) {
-      if (!ClassStmt::isClassVar(a)) {
-        args.emplace_back(Param{a.name, transformType(clone(a.type), false),
-                                transform(clone(a.defaultValue), true)});
-      } else if (!stmt->attributes.has(Attr::Extend)) {
-        // Handle class variables. Transform them later to allow self-references
-        auto name = format("{}.{}", canonicalName, a.name);
-        preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
-        if (!in(ctx->cache->globals, name))
-          ctx->cache->globals[name] = nullptr;
-        auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
-                                    a.type ? a.type->getIndex()->index : nullptr);
-        assign->setUpdate();
-        varStmts.push_back(assign);
-        ctx->cache->classes[canonicalName].classVars[a.name] = name;
+    // Parse and add class generics
+    std::vector<Param> args;
+    std::pair<StmtPtr, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
+    if (stmt->attributes.has("deduce") && args.empty()) {
+      // Auto-detect generics and fields
+      autoDeducedInit = autoDeduceMembers(stmt, args);
+    } else {
+      // Add all generics before parent classes, fields and methods
+      for (auto &a : argsToParse) {
+        if (a.status != Param::Generic)
+          continue;
+        std::string genName, varName;
+        if (stmt->attributes.has(Attr::Extend))
+          varName = a.name, genName = ctx->cache->rev(a.name);
+        else
+          varName = ctx->generateCanonicalName(a.name), genName = a.name;
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(genName, varName, a.type->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
+          ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
+        }
+        args.emplace_back(Param{varName, transformType(clone(a.type), false),
+                                transformType(clone(a.defaultValue), false), a.status});
       }
     }
-  }
 
-  // ASTs for member arguments to be used for populating magic methods
-  std::vector<Param> memberArgs;
-  for (auto &a : args) {
-    if (a.status == Param::Normal)
-      memberArgs.push_back(a.clone());
-  }
-
-  // Ensure that all fields and class variables are registered
-  if (!stmt->attributes.has(Attr::Extend)) {
-    for (size_t ai = 0; ai < args.size();) {
-      if (args[ai].status == Param::Normal)
-        ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
-      ai++;
+    // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
+    ExprPtr typeAst = N<IdExpr>(name);
+    for (auto &a : args) {
+      if (a.status == Param::Generic) {
+        if (!typeAst->getIndex())
+          typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+        typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
+      }
     }
-  }
 
-  // Parse class members (arguments) and methods
-  if (!stmt->attributes.has(Attr::Extend)) {
-    // Now that we are done with arguments, add record type to the context
-    if (stmt->attributes.has(Attr::Tuple)) {
-      // Ensure that class binding does not shadow anything.
-      // Class bindings cannot be dominated either
-      auto v = ctx->find(name);
-      if (v && v->noShadow)
-        error("cannot update global/nonlocal");
-      ctx->add(name, classItem);
-      ctx->addAlwaysVisible(classItem);
-    }
-    // Create a cached AST.
-    stmt->attributes.module =
-        format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
-               ctx->moduleName.module);
-    ctx->cache->classes[canonicalName].ast =
-        N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
-    for (auto &b : baseASTs)
-      ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
-    ctx->cache->classes[canonicalName].ast->validate();
+    // Collect classes (and their fields) that are to be statically inherited
+    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
 
-    // Codegen default magic methods
-    for (auto &m : stmt->attributes.magics) {
-      fnStmts.push_back(transform(
-          codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
-    }
-    // Add inherited methods
-    for (auto &base : baseASTs) {
-      for (auto &mm : ctx->cache->classes[base->name].methods)
-        for (auto &mf : ctx->cache->overloads[mm.second]) {
-          auto f = ctx->cache->functions[mf.name].ast;
-          if (!f->attributes.has("autogenerated")) {
-            std::string rootName;
-            auto &mts = ctx->cache->classes[ctx->getBase()->name].methods;
-            auto it = mts.find(ctx->cache->rev(f->name));
-            if (it != mts.end())
-              rootName = it->second;
-            else
-              rootName = ctx->generateCanonicalName(ctx->cache->rev(f->name), true);
-            auto newCanonicalName =
-                format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
-            ctx->cache->overloads[rootName].push_back(
-                {newCanonicalName, ctx->cache->age});
-            ctx->cache->reverseIdentifierLookup[newCanonicalName] =
-                ctx->cache->rev(f->name);
-            auto nf = std::dynamic_pointer_cast<FunctionStmt>(f->clone());
-            nf->name = newCanonicalName;
-            nf->attributes.parentClass = ctx->getBase()->name;
-            ctx->cache->functions[newCanonicalName].ast = nf;
-            ctx->cache->classes[ctx->getBase()->name]
-                .methods[ctx->cache->rev(f->name)] = rootName;
-            fnStmts.push_back(nf);
-          }
+    // A ClassStmt will be separated into class variable assignments, method-free
+    // ClassStmts (that include nested classes) and method FunctionStmts
+    transformNestedClasses(stmt, clsStmts, varStmts, fnStmts);
+
+    // Collect class fields
+    for (auto &a : argsToParse) {
+      if (a.status == Param::Normal) {
+        if (!ClassStmt::isClassVar(a)) {
+          args.emplace_back(Param{a.name, transformType(clone(a.type), false),
+                                  transform(clone(a.defaultValue), true)});
+        } else if (!stmt->attributes.has(Attr::Extend)) {
+          // Handle class variables. Transform them later to allow self-references
+          auto name = format("{}.{}", canonicalName, a.name);
+          preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
+          ctx->cache->addGlobal(name);
+          auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
+                                      a.type ? a.type->getIndex()->index : nullptr);
+          assign->setUpdate();
+          varStmts.push_back(assign);
+          ctx->cache->classes[canonicalName].classVars[a.name] = name;
         }
-    }
-    // Add auto-deduced __init__ (if available)
-    if (autoDeducedInit.first)
-      fnStmts.push_back(autoDeducedInit.first);
-  }
-  // Add class methods
-  for (const auto &sp : getClassMethods(stmt->suite))
-    if (sp && sp->getFunction()) {
-      if (sp.get() != autoDeducedInit.second)
-        fnStmts.push_back(transform(sp));
+      }
     }
 
-  // After popping context block, record types and nested classes will disappear.
-  // Store their references and re-add them to the context after popping
-  std::vector<SimplifyContext::Item> addLater;
-  addLater.reserve(clsStmts.size() + 1);
-  for (auto &c : clsStmts)
-    addLater.push_back(ctx->find(c->getClass()->name));
-  if (stmt->attributes.has(Attr::Tuple))
-    addLater.push_back(ctx->forceFind(name));
-  ctx->bases.pop_back();
-  ctx->popBlock();
+    // ASTs for member arguments to be used for populating magic methods
+    std::vector<Param> memberArgs;
+    for (auto &a : args) {
+      if (a.status == Param::Normal)
+        memberArgs.push_back(a.clone());
+    }
+
+    // Ensure that all fields and class variables are registered
+    if (!stmt->attributes.has(Attr::Extend)) {
+      for (size_t ai = 0; ai < args.size();) {
+        if (args[ai].status == Param::Normal)
+          ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
+        ai++;
+      }
+    }
+
+    // Parse class members (arguments) and methods
+    if (!stmt->attributes.has(Attr::Extend)) {
+      // Now that we are done with arguments, add record type to the context
+      if (stmt->attributes.has(Attr::Tuple)) {
+        // Ensure that class binding does not shadow anything.
+        // Class bindings cannot be dominated either
+        auto v = ctx->find(name);
+        if (v && v->noShadow)
+          error("cannot update global/nonlocal");
+        ctx->add(name, classItem);
+        ctx->addAlwaysVisible(classItem);
+      }
+      // Create a cached AST.
+      stmt->attributes.module =
+          format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
+                 ctx->moduleName.module);
+      ctx->cache->classes[canonicalName].ast =
+          N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
+      for (auto &b : baseASTs)
+        ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
+      ctx->cache->classes[canonicalName].ast->validate();
+
+      // Codegen default magic methods
+      for (auto &m : stmt->attributes.magics) {
+        fnStmts.push_back(transform(
+            codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
+      }
+      // Add inherited methods
+      for (auto &base : baseASTs) {
+        for (auto &mm : ctx->cache->classes[base->name].methods)
+          for (auto &mf : ctx->cache->overloads[mm.second]) {
+            auto f = ctx->cache->functions[mf.name].ast;
+            if (!f->attributes.has("autogenerated")) {
+              std::string rootName;
+              auto &mts = ctx->cache->classes[ctx->getBase()->name].methods;
+              auto it = mts.find(ctx->cache->rev(f->name));
+              if (it != mts.end())
+                rootName = it->second;
+              else
+                rootName = ctx->generateCanonicalName(ctx->cache->rev(f->name), true);
+              auto newCanonicalName =
+                  format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+              ctx->cache->overloads[rootName].push_back(
+                  {newCanonicalName, ctx->cache->age});
+              ctx->cache->reverseIdentifierLookup[newCanonicalName] =
+                  ctx->cache->rev(f->name);
+              auto nf = std::dynamic_pointer_cast<FunctionStmt>(f->clone());
+              nf->name = newCanonicalName;
+              nf->attributes.parentClass = ctx->getBase()->name;
+              ctx->cache->functions[newCanonicalName].ast = nf;
+              ctx->cache->classes[ctx->getBase()->name]
+                  .methods[ctx->cache->rev(f->name)] = rootName;
+              fnStmts.push_back(nf);
+            }
+          }
+      }
+      // Add auto-deduced __init__ (if available)
+      if (autoDeducedInit.first)
+        fnStmts.push_back(autoDeducedInit.first);
+    }
+    // Add class methods
+    for (const auto &sp : getClassMethods(stmt->suite))
+      if (sp && sp->getFunction()) {
+        if (sp.get() != autoDeducedInit.second)
+          fnStmts.push_back(transform(sp));
+      }
+
+    // After popping context block, record types and nested classes will disappear.
+    // Store their references and re-add them to the context after popping
+    addLater.reserve(clsStmts.size() + 1);
+    for (auto &c : clsStmts)
+      addLater.push_back(ctx->find(c->getClass()->name));
+    if (stmt->attributes.has(Attr::Tuple))
+      addLater.push_back(ctx->forceFind(name));
+  }
   for (auto &i : addLater)
     ctx->add(ctx->cache->rev(i->canonicalName), i);
 
@@ -279,10 +280,13 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
         args.emplace_back(a);
       }
       if (a.status != Param::Normal) {
-        if (getStaticGeneric(a.type.get()))
-          ctx->addVar(a.name, a.name, a.type->getSrcInfo())->generic = true;
-        else
+        if (auto st = getStaticGeneric(a.type.get())) {
+          auto val = ctx->addVar(a.name, a.name, a.type->getSrcInfo());
+          val->generic = true;
+          val->staticType = st;
+        } else {
           ctx->addType(a.name, a.name, a.type->getSrcInfo())->generic = true;
+        }
       }
     }
     if (si != subs.size())
@@ -632,6 +636,29 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
           N<DotExpr>(clone(args[i].type), "__from_py__"),
           N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_get"), I("src"), N<IntExpr>(i))));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
+  } else if (op == "to_gpu") {
+    // def __to_gpu__(self: T, cache) -> T:
+    //   return __internal__.class_to_gpu(self, cache)
+    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back(Param{"cache"});
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
+        N<DotExpr>(I("__internal__"), "class_to_gpu"), I("self"), I("cache"))));
+  } else if (op == "from_gpu") {
+    // def __from_gpu__(self: T, other: T) -> None:
+    //   __internal__.class_from_gpu(self, other)
+    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back(Param{"other", typExpr->clone()});
+    ret = I("NoneType");
+    stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
+        N<DotExpr>(I("__internal__"), "class_from_gpu"), I("self"), I("other"))));
+  } else if (op == "from_gpu_new") {
+    // def __from_gpu_new__(other: T) -> T:
+    //   return __internal__.class_from_gpu_new(other)
+    fargs.emplace_back(Param{"other", typExpr->clone()});
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(
+        N<CallExpr>(N<DotExpr>(I("__internal__"), "class_from_gpu_new"), I("other"))));
   } else if (op == "repr") {
     // def __repr__(self: T) -> str:
     //   a = __array__[str](N)  (number of args)

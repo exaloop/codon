@@ -198,16 +198,3 @@ def test_add_mul_canon():
     x = f(100.)  # don't distribute float ops
     assert (x * 0.1) + (x * 0.2) == 30.
 test_add_mul_canon()
-
-@test
-def test_const_sub():
-    a = Vec(1,1)
-    b = a - -1
-    assert (b.x, b.y) == (2, 2)
-    # EXPECT: vec add (x: 1, y: 1) 1
-
-    x = Vec(1.5, 1.5)
-    y = x - .5
-    assert (y.x, y.y) == (1., 1.)
-    # EXPECT: vec add (x: 1.5, y: 1.5) -0.5
-test_const_sub()

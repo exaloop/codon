@@ -643,6 +643,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
     _loop_reductions(shared)
     _barrier(loc_ref, gtid)
 
+
 @pure
 def get_num_threads():
     from C import omp_get_num_threads() -> i32
@@ -952,10 +953,41 @@ def _atomic_float_max(a: Ptr[float], b: float):
     __kmpc_atomic_float8_max(_default_loc(), i32(0), a, b)
 
 
+def _atomic_float32_add(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_add(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_add(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_mul(a: Ptr[float32], b: float32):
+    from C import __kmpc_atomic_float4_mul(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_mul(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_min(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_min(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_min(_default_loc(), i32(0), a, b)
+
+
+def _atomic_float32_max(a: Ptr[float32], b: float32) -> None:
+    from C import __kmpc_atomic_float4_max(Ptr[Ident], i32, Ptr[float32], float32)
+    __kmpc_atomic_float4_max(_default_loc(), i32(0), a, b)
+
+
+def _range_len(start: int, stop: int, step: int):
+    if step > 0 and start < stop:
+        return 1 + (stop - 1 - start) // step
+    elif step < 0 and start > stop:
+        return 1 + (start - 1 - stop) // (-step)
+    else:
+        return 0
+
+
 def for_par(
     num_threads: int = -1,
     chunk_size: int = -1,
     schedule: Static[str] = "static",
     ordered: Static[int] = False,
+    collapse: Static[int] = 0,
+    gpu: Static[int] = False,
 ):
     pass

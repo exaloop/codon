@@ -1,3 +1,5 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
 @__internal__
 class __internal__:
     pass
@@ -15,12 +17,22 @@ class byte:
 @tuple
 @__internal__
 class int:
+    MAX = 9223372036854775807
     pass
 
 @tuple
 @__internal__
 class float:
+    MIN_10_EXP = -307
     pass
+
+
+@tuple
+@__internal__
+class float32:
+    MIN_10_EXP = -37
+    pass
+
 
 @tuple
 @__internal__
@@ -93,7 +105,7 @@ function = Function
 
 # dummy
 @__internal__
-class TypeVar: pass
+class TypeVar[T]: pass
 @__internal__
 class ByVal: pass
 @__internal__
@@ -154,3 +166,13 @@ def super():
 def superf(*args):
     """Special handling"""
     pass
+
+def __realized__(fn, args):
+    pass
+
+def statictuple(*args):
+    return args
+
+def __static_print__(*args):
+    pass
+

@@ -339,11 +339,15 @@ std::string FunctionStmt::toString(int indent) const {
   std::vector<std::string> as;
   for (auto &a : args)
     as.push_back(a.toString());
-  std::vector<std::string> attr;
+  std::vector<std::string> dec, attr;
   for (auto &a : decorators)
-    attr.push_back(format("(dec {})", a->toString()));
-  return format("(fn '{} ({}){}{}{}{})", name, join(as, " "),
+    if (a)
+      dec.push_back(format("(dec {})", a->toString()));
+  for (auto &a : attributes.customAttr)
+    attr.push_back(format("'{}'", a));
+  return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
                 ret ? " #:ret " + ret->toString() : "",
+                dec.empty() ? "" : format(" (dec {})", join(dec, " ")),
                 attr.empty() ? "" : format(" (attr {})", join(attr, " ")), pad,
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
@@ -493,10 +497,11 @@ void ClassStmt::parseDecorators() {
   // @extend
 
   std::map<std::string, bool> tupleMagics = {
-      {"new", true},      {"repr", false},  {"hash", false},    {"eq", false},
-      {"ne", false},      {"lt", false},    {"le", false},      {"gt", false},
-      {"ge", false},      {"pickle", true}, {"unpickle", true}, {"to_py", false},
-      {"from_py", false}, {"iter", false},  {"getitem", false}, {"len", false}};
+      {"new", true},      {"repr", false},     {"hash", false},        {"eq", false},
+      {"ne", false},      {"lt", false},       {"le", false},          {"gt", false},
+      {"ge", false},      {"pickle", true},    {"unpickle", true},     {"to_py", false},
+      {"from_py", false}, {"iter", false},     {"getitem", false},     {"len", false},
+      {"to_gpu", false},  {"from_gpu", false}, {"from_gpu_new", false}};
 
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
@@ -531,6 +536,9 @@ void ClassStmt::parseDecorators() {
           tupleMagics["pickle"] = tupleMagics["unpickle"] = val;
         } else if (a.name == "python") {
           tupleMagics["to_py"] = tupleMagics["from_py"] = val;
+        } else if (a.name == "gpu") {
+          tupleMagics["to_gpu"] = tupleMagics["from_gpu"] =
+              tupleMagics["from_gpu_new"] = val;
         } else if (a.name == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {

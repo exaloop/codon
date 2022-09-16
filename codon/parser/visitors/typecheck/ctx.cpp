@@ -83,12 +83,13 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
                                         const types::ClassTypePtr &generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
-  if (generics)
+  if (generics) {
     for (auto &g : generics->generics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
+  }
   auto t = type->instantiate(typecheckLevel, &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {

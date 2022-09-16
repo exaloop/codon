@@ -13,17 +13,32 @@ namespace codon::ast {
 using namespace types;
 
 /// Nothing to typecheck; just call setDone
-void TypecheckVisitor::visit(BreakStmt *stmt) { stmt->setDone(); }
+void TypecheckVisitor::visit(BreakStmt *stmt) {
+  stmt->setDone();
+  if (!ctx->staticLoops.back().empty()) {
+    auto a = N<AssignStmt>(N<IdExpr>(ctx->staticLoops.back()), N<BoolExpr>(false));
+    a->setUpdate();
+    resultStmt = transform(N<SuiteStmt>(a, stmt->clone()));
+  }
+}
 
 /// Nothing to typecheck; just call setDone
-void TypecheckVisitor::visit(ContinueStmt *stmt) { stmt->setDone(); }
+void TypecheckVisitor::visit(ContinueStmt *stmt) {
+  stmt->setDone();
+  if (!ctx->staticLoops.back().empty()) {
+    resultStmt = N<BreakStmt>();
+    resultStmt->setDone();
+  }
+}
 
 /// Typecheck while statements.
 void TypecheckVisitor::visit(WhileStmt *stmt) {
+  ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   transform(stmt->cond);
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;
+  ctx->staticLoops.pop_back();
 
   if (stmt->cond->isDone() && stmt->suite->isDone())
     stmt->setDone();
@@ -39,6 +54,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   auto iterType = stmt->iter->getType()->getClass();
   if (!iterType)
     return; // wait until the iterator is known
+
+  if ((resultStmt = transformStaticForLoop(stmt)))
+    return;
 
   bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE) ||
                            startswith(iterType->name, TYPE_KWTUPLE);
@@ -83,9 +101,11 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   unify(stmt->var->type,
         iterType ? unify(val->type, iterType->generics[0].type) : val->type);
 
+  ctx->staticLoops.push_back("");
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;
+  ctx->staticLoops.pop_back();
 
   if (stmt->iter->isDone() && stmt->suite->isDone())
     stmt->setDone();
@@ -130,6 +150,83 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
   ctx->blockLevel--;
 
   return block;
+}
+
+/// Handle static for constructs.
+/// @example
+///   `for i in statictuple(1, x): <suite>` ->
+///   ```loop = True
+///      while loop:
+///        while loop:
+///          i: Static[int] = 1; <suite>; break
+///        while loop:
+///          i = x; <suite>; break
+///        loop = False   # also set to False on break
+/// A separate suite is generated for each static iteration.
+StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
+  auto loopVar = ctx->cache->getTemporaryVar("loop");
+  auto fn = [&](const std::string &var, const ExprPtr &expr) {
+    bool staticInt = expr->isStatic();
+    auto t = N<IndexExpr>(
+        N<IdExpr>("Static"),
+        N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
+    t->markType();
+    auto brk = N<BreakStmt>();
+    brk->setDone(); // Avoid transforming this one to continue
+    // var [: Static] := expr; suite...
+    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
+                             N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(var), expr->clone(),
+                                                        staticInt ? t : nullptr),
+                                          clone(stmt->suite), brk));
+    loop->gotoVar = loopVar;
+    return loop;
+  };
+
+  auto var = stmt->var->getId()->value;
+  if (!stmt->iter->getCall() || !stmt->iter->getCall()->expr->getId())
+    return nullptr;
+  auto iter = stmt->iter->getCall()->expr->getId();
+  auto block = N<SuiteStmt>();
+  if (iter && startswith(iter->value, "statictuple:0")) {
+    auto &args = stmt->iter->getCall()->args[0].value->getCall()->args;
+    for (size_t i = 0; i < args.size(); i++)
+      block->stmts.push_back(fn(var, args[i].value));
+  } else if (iter &&
+             startswith(iter->value, "std.internal.types.range.staticrange:0")) {
+    int st =
+        iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    int ed =
+        iter->type->getFunc()->funcGenerics[1].type->getStatic()->evaluate().getInt();
+    int step =
+        iter->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
+    if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
+      error("staticrange out of bounds ({} > {})", abs(st - ed) / abs(step),
+            MAX_STATIC_ITER);
+    for (int i = st; step > 0 ? i < ed : i > ed; i += step)
+      block->stmts.push_back(fn(var, N<IntExpr>(i)));
+  } else if (iter &&
+             startswith(iter->value, "std.internal.types.range.staticrange:1")) {
+    int ed =
+        iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    if (ed > MAX_STATIC_ITER)
+      error("staticrange out of bounds ({} > {})", ed, MAX_STATIC_ITER);
+    for (int i = 0; i < ed; i++)
+      block->stmts.push_back(fn(var, N<IntExpr>(i)));
+  } else {
+    return nullptr;
+  }
+  ctx->blockLevel++;
+
+  // Close the loop
+  auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+  a->setUpdate();
+  block->stmts.push_back(a);
+
+  auto loop =
+      transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                             N<WhileStmt>(N<IdExpr>(loopVar), block)));
+  ctx->blockLevel--;
+  return loop;
 }
 
 } // namespace codon::ast

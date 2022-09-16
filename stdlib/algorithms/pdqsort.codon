@@ -321,6 +321,6 @@ def pdq_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> L
 
     Returns a sorted list.
     """
-    newlst = copy(collection)
+    newlst = collection.__copy__()
     pdq_sort_inplace(newlst, keyf)
     return newlst

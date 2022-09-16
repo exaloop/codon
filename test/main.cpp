@@ -235,10 +235,10 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 
 string argv0;
 
-class SeqTest
-    : public testing::TestWithParam<tuple<
-          string /*filename*/, bool /*debug*/, string /* case name */,
-          string /* case code */, int /* case line */, bool /* barebones stdlib */>> {
+class SeqTest : public testing::TestWithParam<
+                    tuple<string /*filename*/, bool /*debug*/, string /* case name */,
+                          string /* case code */, int /* case line */,
+                          bool /* barebones stdlib */, bool /* Python numerics */>> {
   vector<char> buf;
   int out_pipe[2];
   pid_t pid;
@@ -265,9 +265,11 @@ public:
       auto code = get<3>(GetParam());
       auto startLine = get<4>(GetParam());
       int testFlags = 1 + get<5>(GetParam());
+      bool pyNumerics = get<6>(GetParam());
 
       auto compiler = std::make_unique<Compiler>(
-          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true);
+          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
+          pyNumerics);
       compiler->getLLVMVisitor()->setStandalone(
           true); // make sure we abort() on runtime error
       llvm::handleAllErrors(code.empty()
@@ -364,7 +366,7 @@ TEST_P(SeqTest, Run) {
   }
 }
 auto getTypeTests(const vector<string> &files) {
-  vector<tuple<string, bool, string, string, int, bool>> cases;
+  vector<tuple<string, bool, string, string, int, bool, bool>> cases;
   for (auto &f : files) {
     bool barebones = false;
     string l;
@@ -377,7 +379,7 @@ auto getTypeTests(const vector<string> &files) {
       if (l.substr(0, 3) == "#%%") {
         if (line)
           cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
-                                        codeLine, barebones));
+                                        codeLine, barebones, false));
         auto t = ast::split(l.substr(4), ',');
         barebones = (t.size() > 1 && t[1] == "barebones");
         testName = t[0];
@@ -391,7 +393,7 @@ auto getTypeTests(const vector<string> &files) {
     }
     if (line)
       cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
-                                    codeLine, barebones));
+                                    codeLine, barebones, false));
   }
   return cases;
 }
@@ -433,7 +435,23 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(""),
       testing::Values(0),
+      testing::Values(false),
       testing::Values(false)
+    ),
+    getTestNameFromParam);
+
+INSTANTIATE_TEST_SUITE_P(
+    NumericsTests, SeqTest,
+    testing::Combine(
+      testing::Values(
+        "core/numerics.codon"
+      ),
+      testing::Values(true, false),
+      testing::Values(""),
+      testing::Values(""),
+      testing::Values(0),
+      testing::Values(false),
+      testing::Values(true)
     ),
     getTestNameFromParam);
 
@@ -459,6 +477,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(""),
       testing::Values(0),
+      testing::Values(false),
       testing::Values(false)
     ),
     getTestNameFromParam);
@@ -482,6 +501,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(""),
         testing::Values(0),
+        testing::Values(false),
         testing::Values(false)
     ),
     getTestNameFromParam);

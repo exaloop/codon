@@ -262,15 +262,20 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 /// @example
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
-  // Infer the expression type
+  transformType(expr->typeExpr);
+  TypePtr typ =
+      ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
+  seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr->toString());
+
+  auto &generics = typ->getClass()->generics;
+  if (expr->typeParams.size() != generics.size())
+    error("expected {} generics and/or statics", generics.size());
+
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
-    // Case: Callable[...] instantiation
+    // Case: Callable[...] trait instantiation
     std::vector<TypePtr> types;
 
     // Callable error checking.
-    /// TODO: move to Codon?
-    if (expr->typeParams.size() != 2)
-      error("invalid Callable type declaration");
     for (auto &typeParam : expr->typeParams) {
       transformType(typeParam);
       if (typeParam->type->isStaticType())
@@ -281,16 +286,13 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(types);
     unify(expr->type, typ);
+  } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
+    // Case: TypeVar[...] trait instantiation
+    transformType(expr->typeParams[0]);
+    auto typ = ctx->getUnbound();
+    typ->getLink()->trait = std::make_shared<TypeTrait>(expr->typeParams[0]->type);
+    unify(expr->type, typ);
   } else {
-    transformType(expr->typeExpr);
-    TypePtr typ =
-        ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
-    seqassert(typ->getClass(), "unknown type");
-
-    auto &generics = typ->getClass()->generics;
-    if (expr->typeParams.size() != generics.size())
-      error("expected {} generics and/or statics", generics.size());
-
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
@@ -339,7 +341,9 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   if (expr->expr->staticValue.type == StaticValue::STRING) {
     if (expr->op == "!") {
       if (expr->expr->staticValue.evaluated) {
-        return transform(N<BoolExpr>(expr->expr->staticValue.getString().empty()));
+        bool value = expr->expr->staticValue.getString().empty();
+        LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
+        return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         unify(expr->type, ctx->getType("bool"));
@@ -360,6 +364,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         value = -value;
       else
         value = !bool(value);
+      LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
       if (expr->op == "!")
         return transform(N<BoolExpr>(bool(value)));
       else
@@ -375,6 +380,25 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   return nullptr;
 }
 
+/// Division and modulus implementations.
+std::pair<int, int> divMod(const std::shared_ptr<TypeContext> &ctx, int a, int b) {
+  if (!b)
+    error(ctx->getSrcInfo(), "static division by zero");
+  if (ctx->cache->pythonCompat) {
+    // Use Python implementation.
+    int d = a / b;
+    int m = a - d * b;
+    if (m && ((b ^ m) < 0)) {
+      m += b;
+      d -= 1;
+    }
+    return {d, m};
+  } else {
+    // Use C implementation.
+    return {a / b, a % b};
+  }
+}
+
 /// Evaluate a static binary expression and return the resulting static expression.
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) +, ==, !=
@@ -385,8 +409,10 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     if (expr->op == "+") {
       // `"a" + "b"` -> `"ab"`
       if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
-        return transform(N<StringExpr>(expr->lexpr->staticValue.getString() +
-                                       expr->rexpr->staticValue.getString()));
+        auto value =
+            expr->lexpr->staticValue.getString() + expr->rexpr->staticValue.getString();
+        LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
+        return transform(N<StringExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
@@ -398,7 +424,9 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
         bool eq = expr->lexpr->staticValue.getString() ==
                   expr->rexpr->staticValue.getString();
-        return transform(N<BoolExpr>(expr->op == "==" ? eq : !eq));
+        bool value = expr->op == "==" ? eq : !eq;
+        LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
+        return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
@@ -441,18 +469,13 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       lvalue = lvalue & rvalue;
     else if (expr->op == "|")
       lvalue = lvalue | rvalue;
-    else if (expr->op == "//") {
-      if (!rvalue)
-        error("static division by zero");
-      lvalue = lvalue / rvalue;
-    } else if (expr->op == "%") {
-      if (!rvalue)
-        error("static division by zero");
-      lvalue = lvalue % rvalue;
-    } else {
+    else if (expr->op == "//")
+      lvalue = divMod(ctx, lvalue, rvalue).first;
+    else if (expr->op == "%")
+      lvalue = divMod(ctx, lvalue, rvalue).second;
+    else
       seqassert(false, "unknown static operator {}", expr->op);
-    }
-
+    LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
     if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
            expr->op))
       return transform(N<BoolExpr>(bool(lvalue)));

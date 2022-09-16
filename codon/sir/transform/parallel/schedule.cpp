@@ -47,17 +47,19 @@ Value *nullIfNeg(Value *v) {
 }
 } // namespace
 
-OMPSched::OMPSched(int code, bool dynamic, Value *threads, Value *chunk, bool ordered)
+OMPSched::OMPSched(int code, bool dynamic, Value *threads, Value *chunk, bool ordered,
+                   int64_t collapse, bool gpu)
     : code(code), dynamic(dynamic), threads(nullIfNeg(threads)),
-      chunk(nullIfNeg(chunk)), ordered(ordered) {
+      chunk(nullIfNeg(chunk)), ordered(ordered), collapse(collapse), gpu(gpu) {
   if (code < 0)
     this->code = getScheduleCode();
 }
 
 OMPSched::OMPSched(const std::string &schedule, Value *threads, Value *chunk,
-                   bool ordered)
+                   bool ordered, int64_t collapse, bool gpu)
     : OMPSched(getScheduleCode(schedule, nullIfNeg(chunk) != nullptr, ordered),
-               (schedule != "static") || ordered, threads, chunk, ordered) {}
+               (schedule != "static") || ordered, threads, chunk, ordered, collapse,
+               gpu) {}
 
 std::vector<Value *> OMPSched::getUsedValues() const {
   std::vector<Value *> ret;

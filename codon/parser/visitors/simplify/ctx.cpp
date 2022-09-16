@@ -160,8 +160,8 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
         std::make_unique<BoolExpr>(false), nullptr));
     // Reached the toplevel? Register the binding as global.
     if (prefix == 1) {
-      cache->globals[canonicalName] = nullptr;
-      cache->globals[fmt::format("{}.__used__", canonicalName)] = nullptr;
+      cache->addGlobal(canonicalName);
+      cache->addGlobal(fmt::format("{}.__used__", canonicalName));
     }
     hasUsed = true;
   }

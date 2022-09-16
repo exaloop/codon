@@ -42,7 +42,7 @@ void SimplifyVisitor::visit(TryStmt *stmt) {
       c.var = ctx->generateCanonicalName(c.var);
       ctx->addVar(ctx->cache->rev(c.var), c.var, c.suite->getSrcInfo());
     }
-    transformType(c.exc);
+    transform(c.exc, true);
     transformConditionalScope(c.suite);
     ctx->leaveConditionalBlock();
   }

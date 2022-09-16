@@ -72,6 +72,7 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
 
 enum BuildKind { LLVM, Bitcode, Object, Executable, Library, Detect };
 enum OptMode { Debug, Release };
+enum Numerics { C, Python };
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
@@ -116,6 +117,14 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
   llvm::cl::opt<std::string> log("log", llvm::cl::desc("Enable given log streams"));
+  llvm::cl::opt<Numerics> numerics(
+      "numerics", llvm::cl::desc("numerical semantics"),
+      llvm::cl::values(
+          clEnumValN(C, "c", "C semantics: best performance but deviates from Python"),
+          clEnumValN(Python, "py",
+                     "Python semantics: mirrors Python but might disable optimizations "
+                     "like vectorization")),
+      llvm::cl::init(C));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   initLogFlags(log);
@@ -148,7 +157,9 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 
   const bool isDebug = (optMode == OptMode::Debug);
   std::vector<std::string> disabledOptsVec(disabledOpts);
-  auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec);
+  auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec,
+                                                    /*isTest=*/false,
+                                                    (numerics == Numerics::Python));
   compiler->getLLVMVisitor()->setStandalone(standalone);
 
   // load plugins

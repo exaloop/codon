@@ -43,9 +43,11 @@ class SimplifyVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(Cache *cache, const StmtPtr &node, const std::string &file,
-                       const std::unordered_map<std::string, std::string> &defines,
-                       bool barebones = false);
+  static StmtPtr
+  apply(Cache *cache, const StmtPtr &node, const std::string &file,
+        const std::unordered_map<std::string, std::string> &defines = {},
+        const std::unordered_map<std::string, std::string> &earlyDefines = {},
+        bool barebones = false);
   static StmtPtr apply(const std::shared_ptr<SimplifyContext> &cache,
                        const StmtPtr &node, const std::string &file, int atAge = -1);
 
@@ -169,7 +171,7 @@ private: // Node simplification rules
   StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
                                     const Expr *, Stmt *);
   StmtPtr transformLLVMDefinition(Stmt *);
-  std::string *isAttribute(const ExprPtr &);
+  std::pair<bool, std::string> getDecorator(const ExprPtr &);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;

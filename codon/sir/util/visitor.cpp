@@ -51,6 +51,7 @@ void Visitor::visit(types::Type *x) { defaultVisit(x); }
 void Visitor::visit(types::PrimitiveType *x) { defaultVisit(x); }
 void Visitor::visit(types::IntType *x) { defaultVisit(x); }
 void Visitor::visit(types::FloatType *x) { defaultVisit(x); }
+void Visitor::visit(types::Float32Type *x) { defaultVisit(x); }
 void Visitor::visit(types::BoolType *x) { defaultVisit(x); }
 void Visitor::visit(types::ByteType *x) { defaultVisit(x); }
 void Visitor::visit(types::VoidType *x) { defaultVisit(x); }
@@ -61,6 +62,7 @@ void Visitor::visit(types::OptionalType *x) { defaultVisit(x); }
 void Visitor::visit(types::PointerType *x) { defaultVisit(x); }
 void Visitor::visit(types::GeneratorType *x) { defaultVisit(x); }
 void Visitor::visit(types::IntNType *x) { defaultVisit(x); }
+void Visitor::visit(types::VectorType *x) { defaultVisit(x); }
 void Visitor::visit(dsl::types::CustomType *x) { defaultVisit(x); }
 
 void ConstVisitor::visit(const Module *x) { defaultVisit(x); }
@@ -108,6 +110,7 @@ void ConstVisitor::visit(const types::Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::PrimitiveType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::IntType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::FloatType *x) { defaultVisit(x); }
+void ConstVisitor::visit(const types::Float32Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::BoolType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::ByteType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::VoidType *x) { defaultVisit(x); }
@@ -118,6 +121,7 @@ void ConstVisitor::visit(const types::OptionalType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::PointerType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::GeneratorType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::IntNType *x) { defaultVisit(x); }
+void ConstVisitor::visit(const types::VectorType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const dsl::types::CustomType *x) { defaultVisit(x); }
 
 } // namespace util

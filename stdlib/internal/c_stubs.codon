@@ -1,6 +1,6 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-# Seq runtime functions
+# runtime functions
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
 
@@ -216,7 +216,7 @@ def expm1(a: float) -> float:
 
 @pure
 @C
-def ldexp(a: float, b: int) -> float:
+def ldexp(a: float, b: i32) -> float:
     pass
 
 
@@ -403,6 +403,234 @@ def frexp(a: float, b: Ptr[Int[32]]) -> float:
 @nocapture
 @C
 def modf(a: float, b: Ptr[float]) -> float:
+    pass
+
+
+@pure
+@C
+def ceilf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def floorf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def fabsf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def fmodf(a: float32, b: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def expf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def expm1f(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def ldexpf(a: float32, b: i32) -> float32:
+    pass
+
+
+@pure
+@C
+def logf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def log2f(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def log10f(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def sqrtf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def powf(a: float32, b: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def roundf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def acosf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def asinf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def atanf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def atan2f(a: float32, b: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def cosf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def sinf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def tanf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def coshf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def sinhf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def tanhf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def acoshf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def asinhf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def atanhf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def copysignf(a: float32, b: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def log1pf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def truncf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def log2f(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def erff(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def erfcf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def tgammaf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def lgammaf(a: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def remainderf(a: float32, b: float32) -> float32:
+    pass
+
+
+@pure
+@C
+def hypotf(a: float32, b: float32) -> float32:
+    pass
+
+
+@nocapture
+@C
+def frexpf(a: float32, b: Ptr[Int[32]]) -> float32:
+    pass
+
+
+@nocapture
+@C
+def modff(a: float32, b: Ptr[float32]) -> float32:
     pass
 
 

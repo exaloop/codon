@@ -1,3 +1,5 @@
+from copy import copy, deepcopy
+
 @tuple
 class A:
     a: int
@@ -118,6 +120,24 @@ def test_list():
 
     assert List[int]().copy() == List[int]()
     assert [1,2,3].copy() == [1,2,3]
+
+    def test_cmp[T](a: T, b: T):
+        yield 'EQ', a == b
+        yield 'NE', a != b
+        yield 'LT', a < b
+        yield 'GT', a > b
+        yield 'LE', a <= b
+        yield 'GE', a >= b
+
+    assert list(test_cmp([1,2], [1,2])) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp([1,2,2], [1,2,3])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp([1,2,-1], [1,0,1])) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
+    assert list(test_cmp(List[int](), List[int]())) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp([1], List[int]())) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
+    assert list(test_cmp(List[int](), [1])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp([1,2,-1], [2])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp([1,2,-1], [1,2,-1,3])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp([1,2,-1,3], [1,2,-1])) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
 test_list()
 
 @test
@@ -373,6 +393,12 @@ def test_dict():
     assert d2['y'] == -1
     assert d2['z'] == 2
     assert d2 == {'x': 11, 'y': -1, 'z': 2}
+
+    d3 = {1: 2, 42: 42}
+    d4 = {1: 5, 2: 9}
+    assert d3 | d4 == {1: 5, 42: 42, 2: 9}
+    d3 |= d4
+    assert d3 == {1: 5, 42: 42, 2: 9}
 test_dict()
 
 @test
@@ -385,7 +411,7 @@ def test_deque():
     dq.append(3)
     dq.appendleft(11)
     dq.appendleft(22)
-    assert str(dq) == '[22, 11, 1, 2, 3]'
+    assert str(dq) == 'deque([22, 11, 1, 2, 3])'
     assert bool(dq) == True
 
     # test cap increase:
@@ -394,29 +420,29 @@ def test_deque():
     for i in range(20):
         dq.append(i)
         dq.appendleft(i)
-    assert str(dq) == '[19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]'
+    assert str(dq) == 'deque([19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19])'
     assert len(dq) == 40
 
     for i in range(19):
         dq.pop()
         dq.popleft()
-    assert str(dq) == '[0, 0]'
+    assert str(dq) == 'deque([0, 0])'
     for a in dq:
         assert a == 0
 
     assert (0 in dq) == True
     assert (1 in dq) == False
-    assert str(copy(dq)) == '[0, 0]'
+    assert str(copy(dq)) == 'deque([0, 0])'
 
     # test maxlen:
     dq = deque[int](5)
     for i in range(100):
         dq.append(i)
-    assert str(dq) == '[95, 96, 97, 98, 99]'
+    assert str(dq) == 'deque([95, 96, 97, 98, 99])'
 
     for i in range(5):
         dq.append(i)
-    assert str(dq) == '[0, 1, 2, 3, 4]'
+    assert str(dq) == 'deque([0, 1, 2, 3, 4])'
 test_deque()
 
 @test
@@ -635,4 +661,193 @@ def test_counter():
             exp = sorted(d.values(), reverse=True)
             got = [v for k,v in d.most_common()]
             assert exp == got
+
+    assert repr(Counter('abcabc')) == "Counter({'a': 2, 'b': 2, 'c': 2})"
 test_counter()
+
+@test
+def test_defaultdict():
+    from collections import defaultdict
+
+    # basic
+    #d1 = defaultdict()
+    #self.assertEqual(d1.default_factory, None)
+    #d1.default_factory = list
+    d1 = defaultdict(list)
+    d1[12].append(42)
+    assert d1 == {12: [42]}
+    d1[12].append(24)
+    assert d1 == {12: [42, 24]}
+    d1[13]
+    d1[14]
+    assert d1 == {12: [42, 24], 13: [], 14: []}
+    assert d1[12] is not d1[13] is not d1[14]
+    #d2 = defaultdict(list, foo=1, bar=2)
+    #self.assertEqual(d2.default_factory, list)
+    #self.assertEqual(d2, {"foo": 1, "bar": 2})
+    #self.assertEqual(d2["foo"], 1)
+    #self.assertEqual(d2["bar"], 2)
+    #self.assertEqual(d2[42], [])
+    #self.assertIn("foo", d2)
+    #self.assertIn("foo", d2.keys())
+    #self.assertIn("bar", d2)
+    #self.assertIn("bar", d2.keys())
+    #self.assertIn(42, d2)
+    #self.assertIn(42, d2.keys())
+    #self.assertNotIn(12, d2)
+    #self.assertNotIn(12, d2.keys())
+    #d2.default_factory = None
+    #self.assertEqual(d2.default_factory, None)
+    #try:
+    #    d2[15]
+    #except KeyError as err:
+    #    self.assertEqual(err.args, (15,))
+    #else:
+    #    self.fail("d2[15] didn't raise KeyError")
+    #self.assertRaises(TypeError, defaultdict, 1)
+
+    # missing
+    #d1 = defaultdict()
+    #self.assertRaises(KeyError, d1.__missing__, 42)
+    #d1.default_factory = list
+    #d1 = defaultdict(list)
+    assert d1.__missing__(42) == []
+
+    # repr
+    d1 = defaultdict(lambda: 0)
+    #self.assertEqual(d1.default_factory, None)
+    #self.assertEqual(repr(d1), "defaultdict(None, {})")
+    #self.assertEqual(eval(repr(d1)), d1)
+    d1[11] = 41
+    assert repr(d1) == "defaultdict(<default factory of 'int'>, {11: 41})"
+    d2 = defaultdict(lambda: 0)  # TODO: use 'int' when it's fixed...
+    #self.assertEqual(d2.default_factory, int)
+    d2[12] = 42
+    assert repr(d2) == "defaultdict(<default factory of 'int'>, {12: 42})"
+    def foo(): return 43
+    d3 = defaultdict(foo)
+    #self.assertTrue(d3.default_factory is foo)
+    d3[13]
+    assert repr(d3) == "defaultdict(<default factory of 'int'>, {13: 43})"
+
+
+    # copy
+    d1 = defaultdict(list)
+    d2 = d1.copy()
+    #self.assertEqual(type(d2), defaultdict)
+    #self.assertEqual(d2.default_factory, None)
+    assert d2 == {}
+    #d1.default_factory = list
+    #d3 = d1.copy()
+    #self.assertEqual(type(d3), defaultdict)
+    #self.assertEqual(d3.default_factory, list)
+    #self.assertEqual(d3, {})
+    d1[42].append(0)
+    #d4 = d1.copy()
+    #assert d4 == {42: [0]}
+    #d4[12]
+    #assert d4 == {42: [], 12: []}
+
+    # Issue 6637: Copy fails for empty default dict
+    #d = defaultdict()
+    #d['a'] = 42
+    #e = d.copy()
+    #assert e['a'] == 42
+
+
+    # shallow copy
+    foobar = list
+    d1 = defaultdict(foobar)
+    d1[1] += [1]
+    d2 = copy(d1)
+    #self.assertEqual(d2.default_factory, foobar)
+    assert d2 == d1
+    #d1.default_factory = list
+    d2 = copy(d1)
+    #self.assertEqual(d2.default_factory, list)
+    assert d2 == d1
+
+    # deep copy
+    d1 = defaultdict(foobar)
+    d1[1].append(1)
+    d2 = deepcopy(d1)
+    #self.assertEqual(d2.default_factory, foobar)
+    assert d2 == d1
+    assert d1[1] is not d2[1]
+    #d1.default_factory = list
+    d2 = deepcopy(d1)
+    #self.assertEqual(d2.default_factory, list)
+    assert d2 == d1
+
+    # KeyError without factory
+    #d1 = defaultdict()
+    #try:
+    #    d1[(1,)]
+    #except KeyError as err:
+    #    self.assertEqual(err.args[0], (1,))
+    #else:
+    #    self.fail("expected KeyError")
+
+    # pickling
+    #d = defaultdict(int)
+    #d[1]
+    #for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+    #    s = pickle.dumps(d, proto)
+    #    o = pickle.loads(s)
+    #    self.assertEqual(d, o)
+
+    # union
+    i = defaultdict(int, {1: 1, 2: 2})
+    s = defaultdict(int, {0: 0, 1: 111})
+
+    i_s = i | s
+    #self.assertIs(i_s.default_factory, int)
+    assert i_s == {1: 111, 2: 2, 0: 0}
+    assert sorted(i_s) == [0, 1, 2]
+
+    s_i = s | i
+    #self.assertIs(s_i.default_factory, str)
+    assert s_i == {0: 0, 1: 1, 2: 2}
+    assert sorted(s_i) == [0, 1, 2]
+
+    i_ds = i | dict(s)
+    #self.assertIs(i_ds.default_factory, int)
+    assert i_ds == {1: 111, 2: 2, 0: 0}
+    assert sorted(i_ds) == [0, 1, 2]
+
+    ds_i = dict(s) | i
+    #self.assertIs(ds_i.default_factory, int)
+    assert ds_i == {0: 0, 1: 1, 2: 2}
+    assert sorted(ds_i) == [0, 1, 2]
+
+    # We inherit a fine |= from dict, so just a few sanity checks here:
+    i |= list(s.items())
+    #self.assertIs(i.default_factory, int)
+    assert i == {1: 111, 2: 2, 0: 0}
+    assert sorted(i), [1, 2, 0]
+
+    # general
+    s = 'mississippi'
+    d = defaultdict(int)
+    for k in s:
+        d[k] += 1
+    assert sorted(d.items()) == [('i', 4), ('m', 1), ('p', 2), ('s', 4)]
+
+    s = 'mississippi'
+    d = defaultdict(int)
+    for k in s:
+        d[k] = d.get(k, 0) + 1
+    assert sorted(d.items()) == [('i', 4), ('m', 1), ('p', 2), ('s', 4)]
+
+    s = [('yellow', 1), ('blue', 2), ('yellow', 3), ('blue', 4), ('red', 1)]
+    d = defaultdict(list)
+    for k, v in s:
+        d[k].append(v)
+    assert sorted(d.items()) == [('blue', [2, 4]), ('red', [1]), ('yellow', [1, 3])]
+
+    def constant_factory(value):
+        return lambda: value
+
+    d = defaultdict(constant_factory('<missing>'))
+    assert d[10] == '<missing>'
+test_defaultdict()

@@ -47,6 +47,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
     ctx->popSrcInfo();
     if (v.resultExpr) {
       v.resultExpr->attributes |= expr->attributes;
+      v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
     seqassert(expr->type, "type not set for {}", expr->toString());

@@ -69,6 +69,6 @@ def heap_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> 
     Heap Sort
     Returns a sorted list.
     """
-    newlst = copy(collection)
+    newlst = collection.__copy__()
     heap_sort_inplace(newlst, keyf)
     return newlst

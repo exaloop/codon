@@ -114,13 +114,13 @@ class deque:
         return deque(i.__deepcopy__() for i in self)
 
     def __copy__(self) -> deque[T]:
-        return deque[T](copy(self._arr), self._head, self._tail, self._maxlen)
+        return deque[T](self._arr.__copy__(), self._head, self._tail, self._maxlen)
 
     def copy(self) -> deque[T]:
         return self.__copy__()
 
     def __repr__(self) -> str:
-        return repr(List[T](iter(self)))
+        return f"deque({repr(List[T](iter(self)))})"
 
     def _idx_check(self, idx: int, msg: str):
         if self._head == self._tail or idx >= len(self) or idx < 0:
@@ -323,24 +323,27 @@ class Counter(Dict[T, int]):
         return result
 
     def __add__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result += other
         return result
 
     def __sub__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result -= other
         return result
 
     def __and__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result &= other
         return result
 
     def __or__(self, other: Counter[T]) -> Counter[T]:
-        result = copy(self)
+        result = self.__copy__()
         result |= other
         return result
+
+    def __repr__(self):
+        return f"Counter({super().__repr__()})"
 
     def __dict_do_op_throws__(self, key: T, other: Z, op: F, F: type, Z: type):
         self.__dict_do_op__(key, other, 0, op)
@@ -354,6 +357,80 @@ class Counter(Dict[T, int]):
 @extend
 class Dict:
     def __init__(self: Dict[K, int], other: Counter[K]):
+        self._init_from(other)
+
+
+class defaultdict(Dict[K,V]):
+    default_factory: S
+    K: type
+    V: type
+    S: TypeVar[Callable[[], V]]
+
+    def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V]):
+        super().__init__()
+        self.default_factory = lambda: VV()
+
+    def __init__(self, f: S):
+        super().__init__()
+        self.default_factory = f
+
+    def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V], other: Dict[K, V]):
+        super().__init__(other)
+        self.default_factory = lambda: VV()
+
+    def __init__(self, f: S, other: Dict[K, V]):
+        super().__init__(other)
+        self.default_factory = f
+
+    def __missing__(self, key: K):
+        default_value = self.default_factory()
+        self.__setitem__(key, default_value)
+        return default_value
+
+    def __getitem__(self, key: K) -> V:
+        if key not in self:
+            return self.__missing__(key)
+        return super().__getitem__(key)
+
+    def __dict_do_op_throws__(self, key: K, other: Z, op: F, F: type, Z: type):
+        x = self._kh_get(key)
+        if x == self._kh_end():
+            self.__missing__(key)
+            x = self._kh_get(key)
+        self._vals[x] = op(self._vals[x], other)
+
+    def copy(self):
+        d = defaultdict[K,V,S](self.default_factory)
+        d._init_from(self)
+        return d
+
+    def __copy__(self):
+        return self.copy()
+
+    def __deepcopy__(self):
+        d = defaultdict[K,V,S](self.default_factory)
+        for k,v in self.items():
+            d[k.__deepcopy__()] = v.__deepcopy__()
+        return d
+
+    def __eq__(self, other: defaultdict[K,V,S]) -> bool:
+        if self.__len__() != other.__len__():
+            return False
+        for k, v in self.items():
+            if k not in other or other[k] != v:
+                return False
+        return True
+
+    def __ne__(self, other: defaultdict[K,V,S]) -> bool:
+        return not (self == other)
+
+    def __repr__(self):
+        return f"defaultdict(<default factory of '{V.__name__}'>, {super().__repr__()})"
+
+
+@extend
+class Dict:
+    def __init__(self: Dict[K, V], other: defaultdict[K, V, S], S: type):
         self._init_from(other)
 
 

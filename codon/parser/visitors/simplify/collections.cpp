@@ -13,7 +13,7 @@ namespace codon::ast {
 /// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(TupleExpr *expr) {
   for (auto &i : expr->items)
-    transform(i);
+    transform(i, true); // types needed for some constructs (e.g., isinstance)
 }
 
 /// Transform a list `[a1, ..., aN]` to the corresponding statement expression.

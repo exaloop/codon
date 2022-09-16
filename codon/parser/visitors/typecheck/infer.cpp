@@ -52,8 +52,11 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     ctx->typecheckLevel++;
     auto changedNodes = ctx->changedNodes;
     ctx->changedNodes = 0;
+    auto returnEarly = ctx->returnEarly;
+    ctx->returnEarly = false;
     TypecheckVisitor(ctx).transform(result);
     std::swap(ctx->changedNodes, changedNodes);
+    std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
 
     if (iteration == 1 && isToplevel) {
@@ -282,10 +285,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
-    auto oldReturnEarly = ctx->returnEarly;
     ctx->blockLevel = 0;
-    ctx->returnEarly = false;
-
     if (startswith(type->ast->name, "Function.__call__")) {
       // Special case: Function.__call__
       /// TODO: move to IR
@@ -313,7 +313,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
     }
     inferTypes(ast->suite);
     ctx->blockLevel = oldBlockLevel;
-    ctx->returnEarly = oldReturnEarly;
 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
@@ -382,6 +381,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Get the IR type
   auto *module = ctx->cache->module;
   ir::types::Type *handle = nullptr;
+
   if (t->name == "bool") {
     handle = module->getBoolType();
   } else if (t->name == "byte") {
@@ -390,6 +390,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getIntType();
   } else if (t->name == "float") {
     handle = module->getFloatType();
+  } else if (t->name == "float32") {
+    handle = module->getFloat32Type();
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
@@ -415,6 +417,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
       types.push_back(forceFindIRType(m));
     auto ret = forceFindIRType(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
+  } else if (t->name == "std.simd.Vec") {
+    seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
+    handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
   } else if (auto tr = t->getRecord()) {
     std::vector<ir::types::Type *> typeArgs;
     std::vector<std::string> names;

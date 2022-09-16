@@ -1,4 +1,5 @@
 import pickle
+from copy import copy
 
 @tuple
 class MyType:

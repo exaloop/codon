@@ -185,11 +185,11 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                              capKey,
                              /*globalAssignmentHasSideEffects=*/false),
                          {capKey});
-    registerPass(
-        std::make_unique<folding::FoldingPassGroup>(
-            seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false),
-        /*insertBefore=*/"", {seKey1, rdKey, globalKey},
-        {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<folding::FoldingPassGroup>(
+                     seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false,
+                     pyNumerics),
+                 /*insertBefore=*/"", {seKey1, rdKey, globalKey},
+                 {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
@@ -198,12 +198,12 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     if (init != Init::JIT) {
       // Don't demote globals in JIT mode, since they might be used later
       // by another user input.
-      registerPass(
-          std::make_unique<folding::FoldingPassGroup>(seKey2, rdKey, globalKey,
-                                                      /*repeat=*/5,
-                                                      /*runGlobalDemoton=*/true),
-          /*insertBefore=*/"", {seKey2, rdKey, globalKey},
-          {seKey2, rdKey, cfgKey, globalKey});
+      registerPass(std::make_unique<folding::FoldingPassGroup>(
+                       seKey2, rdKey, globalKey,
+                       /*repeat=*/5,
+                       /*runGlobalDemoton=*/true, pyNumerics),
+                   /*insertBefore=*/"", {seKey2, rdKey, globalKey},
+                   {seKey2, rdKey, cfgKey, globalKey});
     }
     break;
   }

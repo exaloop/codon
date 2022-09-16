@@ -25,6 +25,7 @@ public:
 private:
   std::string argv0;
   bool debug;
+  bool pyNumerics;
   std::string input;
   std::unique_ptr<PluginManager> plm;
   std::unique_ptr<ast::Cache> cache;
@@ -38,12 +39,14 @@ private:
 
 public:
   Compiler(const std::string &argv0, Mode mode,
-           const std::vector<std::string> &disabledPasses = {}, bool isTest = false);
+           const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
+           bool pyNumerics = false);
 
   explicit Compiler(const std::string &argv0, bool debug = false,
                     const std::vector<std::string> &disabledPasses = {},
-                    bool isTest = false)
-      : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest) {}
+                    bool isTest = false, bool pyNumerics = false)
+      : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,
+                 pyNumerics) {}
 
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }
@@ -62,6 +65,8 @@ public:
             const std::unordered_map<std::string, std::string> &defines = {});
   llvm::Error compile();
   llvm::Expected<std::string> docgen(const std::vector<std::string> &files);
+
+  std::unordered_map<std::string, std::string> getEarlyDefines();
 };
 
 } // namespace codon

@@ -18,7 +18,7 @@ def seq_alloc_atomic(a: int) -> cobj:
 @nocapture
 @derives
 @C
-def seq_realloc(p: cobj, a: int) -> cobj:
+def seq_realloc(p: cobj, newsize: int, oldsize: int) -> cobj:
     pass
 
 
@@ -76,8 +76,8 @@ def alloc_atomic(sz: int):
     return seq_alloc_atomic(sz)
 
 
-def realloc(p: cobj, sz: int):
-    return seq_realloc(p, sz)
+def realloc(p: cobj, newsz: int, oldsz: int):
+    return seq_realloc(p, newsz, oldsz)
 
 
 def free(p: cobj):

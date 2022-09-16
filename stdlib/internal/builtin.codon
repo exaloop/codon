@@ -108,13 +108,6 @@ def iter(x):
     return x.__iter__()
 
 
-def copy(x):
-    """
-    Return a copy of x
-    """
-    return x.__copy__()
-
-
 def abs(x):
     """
     Return the absolute value of x

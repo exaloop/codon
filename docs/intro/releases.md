@@ -2,6 +2,50 @@ Below you can find release notes for each major Codon release,
 listing improvements, updates, optimizations and more for each
 new version.
 
+# v0.14
+
+## GPU support
+
+GPU kernels can now be written and called in Codon. Existing
+loops can be parallelized on the GPU with the `@par(gpu=True)`
+annotation. Please see the [docs](../advanced/gpu.md) for
+more information and examples.
+
+## Semantics
+
+Added `-numerics` flag, which specifies semantics of various
+numeric operations:
+
+- `-numerics=c` (default): C semantics; best performance
+- `-numerics=py`: Python semantics (checks for zero divisors
+  and raises `ZeroDivisionError`, and adds domain checks to `math`
+  functions); might slightly decrease performance.
+
+## Types
+
+Added `float32` type to represent 32-bit floats (equivalent to C's
+`float`). All `math` functions now have `float32` overloads.
+
+## Parallelism
+
+Added `collapse` option to `@par`:
+
+``` python
+@par(collapse=2)  # parallelize entire iteration space of 2 loops
+for i in range(N):
+    for j in range(N):
+        do_work(i, j)
+```
+
+## Standard library
+
+Added `collections.defaultdict`.
+
+## Python interoperability
+
+Various Python interoperability improvements: can now use `isinstance`
+on Python objects/types and can now catch Python exceptions by name.
+
 # v0.13
 
 ## Language
