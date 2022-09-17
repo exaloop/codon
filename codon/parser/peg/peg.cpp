@@ -91,7 +91,7 @@ ExprPtr parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &o
   ltrim(newCode);
   rtrim(newCode);
   auto e = parseCode<ExprPtr>(cache, offset.file, newCode, offset.line, offset.col,
-                            "fstring");
+                              "fstring");
   return e;
 }
 
