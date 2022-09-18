@@ -200,16 +200,26 @@ class List:
             i -= 1
 
     def __add__(self, other: List[T]) -> List[T]:
-        v = List[T](self.len + other.len)
-        for a in self:
-            v.append(a)
-        for a in other:
-            v.append(a)
+        n = self.len + other.len
+        v = List[T](n)
+        v.len = n
+        p = v.arr.ptr
+        str.memcpy(p.as_byte(),
+                   self.arr.ptr.as_byte(),
+                   self.len * gc.sizeof(T))
+        str.memcpy((p + self.len).as_byte(),
+                   other.arr.ptr.as_byte(),
+                   other.len * gc.sizeof(T))
         return v
 
     def __iadd__(self, other: List[T]) -> List[T]:
-        for a in other:
-            self.append(a)
+        n = self.len + other.len
+        if self.arr.len < n:
+            self._resize(n)
+        str.memcpy((self.arr.ptr + self.len).as_byte(),
+                   other.arr.ptr.as_byte(),
+                   other.len * gc.sizeof(T))
+        self.len = n
         return self
 
     def __mul__(self, n: int) -> List[T]:

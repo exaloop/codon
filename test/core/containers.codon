@@ -138,6 +138,24 @@ def test_list():
     assert list(test_cmp([1,2,-1], [2])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
     assert list(test_cmp([1,2,-1], [1,2,-1,3])) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
     assert list(test_cmp([1,2,-1,3], [1,2,-1])) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
+
+    assert str([1] + [2] + [] + [3]) == '[1, 2, 3]'
+    assert ['a', 'b'] + ['x', 'y', 'z'] == ['a', 'b'] + ['x', 'y', 'z']
+    assert [(1,1), (2,2)] + [] == [(1,1), (2,2)]
+    assert [] + [(1,1), (2,2)] == [(1,1), (2,2)]
+    assert List[int]() + List[int]() == List[int]()
+    l7 = [3.14, 2.5]
+    l7 += [9.99, -1.0]
+    assert l7 == [3.14, 2.5, 9.99, -1.0]
+    l8 = []
+    l8 += [11, 22, 33]
+    assert l8 == [11, 22, 33]
+    l8 = [11, 22, 33]
+    l8 += []
+    assert l8 == [11, 22, 33]
+    l8 = List[int]()
+    l8 += List[int]()
+    assert l8 == List[int]()
 test_list()
 
 @test
