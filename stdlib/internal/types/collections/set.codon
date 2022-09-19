@@ -133,7 +133,7 @@ class Set:
         from internal.types.strbuf import strbuf
         n = self.__len__()
         if n == 0:
-            return "{}"
+            return "set()"
         else:
             buf = strbuf()
             buf.append("{")

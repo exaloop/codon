@@ -383,7 +383,7 @@ def test_set():
         pass
 
     assert repr({(1,2)}) == '{(1, 2)}'
-    assert repr(Set[int]()) == '{}'
+    assert repr(Set[int]()) == 'set()'
 test_set()
 
 @test
