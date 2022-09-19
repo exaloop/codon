@@ -130,21 +130,22 @@ class Set:
         return {s.__deepcopy__() for s in self}
 
     def __repr__(self) -> str:
+        from internal.types.strbuf import strbuf
         n = self.__len__()
         if n == 0:
             return "{}"
         else:
-            lst = []
-            lst.append("{")
+            buf = strbuf()
+            buf.append("{")
             first = True
             for k in self:
                 if not first:
-                    lst.append(", ")
+                    buf.append(", ")
                 else:
                     first = False
-                lst.append(k.__repr__())
-            lst.append("}")
-            return str.cat(lst)
+                buf.append(k.__repr__())
+            buf.append("}")
+            return buf.__str__()
 
     # Helper methods
 
