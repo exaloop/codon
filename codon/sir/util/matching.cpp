@@ -227,67 +227,16 @@ public:
     result = x->match(y);
   }
 
-  VISIT(types::Type);
-  void handle(const types::Type *x, const types::Type *y) {}
-  VISIT(types::IntType);
-  void handle(const types::IntType *, const types::IntType *) { result = true; }
-  VISIT(types::FloatType);
-  void handle(const types::FloatType *, const types::FloatType *) { result = true; }
-  VISIT(types::Float32Type);
-  void handle(const types::Float32Type *, const types::Float32Type *) { result = true; }
-  VISIT(types::BoolType);
-  void handle(const types::BoolType *, const types::BoolType *) { result = true; }
-  VISIT(types::ByteType);
-  void handle(const types::ByteType *, const types::ByteType *) { result = true; }
-  VISIT(types::VoidType);
-  void handle(const types::VoidType *, const types::VoidType *) { result = true; }
-  VISIT(types::RecordType);
-  void handle(const types::RecordType *x, const types::RecordType *y) {
-    result = std::equal(
-        x->begin(), x->end(), y->begin(), y->end(), [this](auto &x, auto &y) {
-          return x.getName() == y.getName() && process(x.getType(), y.getType());
-        });
-  }
-  VISIT(types::RefType);
-  void handle(const types::RefType *x, const types::RefType *y) {
-    result = process(x->getContents(), y->getContents());
-  }
-  VISIT(types::FuncType);
-  void handle(const types::FuncType *x, const types::FuncType *y) {
-    result = process(x->getReturnType(), y->getReturnType()) &&
-             std::equal(x->begin(), x->end(), y->begin(), y->end(),
-                        [this](auto *x, auto *y) { return process(x, y); });
-  }
-  VISIT(types::OptionalType);
-  void handle(const types::OptionalType *x, const types::OptionalType *y) {
-    result = process(x->getBase(), y->getBase());
-  }
-  VISIT(types::PointerType);
-  void handle(const types::PointerType *x, const types::PointerType *y) {
-    result = process(x->getBase(), y->getBase());
-  }
-  VISIT(types::GeneratorType);
-  void handle(const types::GeneratorType *x, const types::GeneratorType *y) {
-    result = process(x->getBase(), y->getBase());
-  }
-  VISIT(types::IntNType);
-  void handle(const types::IntNType *x, const types::IntNType *y) {
-    result = x->getLen() == y->getLen() && x->isSigned() == y->isSigned();
-  }
-  VISIT(types::VectorType);
-  void handle(const types::VectorType *x, const types::VectorType *y) {
-    result = x->getCount() == y->getCount() && process(x->getBase(), y->getBase());
-  }
-  VISIT(dsl::types::CustomType);
-  void handle(const dsl::types::CustomType *x, const dsl::types::CustomType *y) {
-    result = x->match(y);
-  }
-
   bool process(const Node *x, const Node *y) const {
     if (!x && !y)
       return true;
     else if ((!x && y) || (x && !y))
       return false;
+
+    auto *tx = cast<types::Type>(x);
+    auto *ty = cast<types::Type>(y);
+    if (tx || ty)
+      return tx && ty && tx->is(const_cast<types::Type *>(ty));
 
     MatchVisitor v(checkName);
     x->accept(v);
@@ -314,8 +263,6 @@ private:
   }
 };
 } // namespace
-
-const char AnyType::NodeId = 0;
 
 const char AnyValue::NodeId = 0;
 

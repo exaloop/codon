@@ -9,16 +9,6 @@ namespace util {
 /// Base class for IR nodes that match anything.
 class Any {};
 
-/// Any type.
-class AnyType : public AcceptorExtend<AnyType, types::Type>, public Any {
-public:
-  static const char NodeId;
-  using AcceptorExtend::AcceptorExtend;
-
-private:
-  bool doIsAtomic() const override { return true; }
-};
-
 /// Any value.
 class AnyValue : public AcceptorExtend<AnyValue, Value>, public Any {
 public:
