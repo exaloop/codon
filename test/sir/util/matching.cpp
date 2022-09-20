@@ -7,9 +7,9 @@ using namespace codon::ir;
 TEST_F(SIRCoreTest, MatchingEquivalentVar) {
   auto *first = module->Nr<Var>(module->getIntType());
   auto *second = module->Nr<Var>(module->getIntType());
+  auto *third = module->Nr<Var>(module->getFloatType());
   ASSERT_TRUE(util::match(first, second));
-  ASSERT_TRUE(
-      util::match(first, module->Nr<util::AnyVar>(module->Nr<util::AnyType>("baz"))));
+  ASSERT_FALSE(util::match(first, third));
 }
 
 TEST_F(SIRCoreTest, MatchingNonEquivalentVar) {
