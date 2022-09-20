@@ -1,0 +1,27 @@
+# (c) 2022 Exaloop Inc. All rights reserved.
+
+class strbuf:
+    data: Ptr[byte]
+    n: int
+    m: int
+
+    def __init__(self, capacity: int = 16):
+        self.data = Ptr[byte](capacity)
+        self.n = 0
+        self.m = capacity
+
+    def append(self, s: str):
+        from internal.gc import realloc
+        adding = s.__len__()
+        needed = self.n + adding
+        if needed > self.m:
+            m = self.m
+            while m < needed:
+                m *= 2
+            self.data = realloc(self.data, m, self.m)
+            self.m = m
+        str.memcpy(self.data + self.n, s.ptr, adding)
+        self.n = needed
+
+    def __str__(self):
+        return str(self.data, self.n)

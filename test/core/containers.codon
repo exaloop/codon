@@ -304,6 +304,9 @@ def test_extendedslicing():
     a = list(range(10))
     a[::2] = (0, 1, 2, 3, 4)
     assert a == [0, 1, 1, 3, 2, 5, 3, 7, 4, 9]
+
+    assert repr(['x', 'y', 'z']) == "['x', 'y', 'z']"
+    assert repr(List[int]()) == '[]'
 test_extendedslicing()
 
 @test
@@ -378,6 +381,9 @@ def test_set():
         assert False
     except ValueError:
         pass
+
+    assert repr({(1,2)}) == '{(1, 2)}'
+    assert repr(Set[int]()) == 'set()'
 test_set()
 
 @test
@@ -417,6 +423,9 @@ def test_dict():
     assert d3 | d4 == {1: 5, 42: 42, 2: 9}
     d3 |= d4
     assert d3 == {1: 5, 42: 42, 2: 9}
+
+    assert repr({1: ['x']}) == "{1: ['x']}"
+    assert repr(Dict[int,int]()) == '{}'
 test_dict()
 
 @test
