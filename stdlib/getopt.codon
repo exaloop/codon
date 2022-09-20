@@ -65,7 +65,7 @@ Adapted from https://raw.githubusercontent.com/python/cpython/2.7/Lib/getopt.py
 import os
 
 
-class GetoptError(Exception):
+class GetoptError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("GetoptError", message)
 

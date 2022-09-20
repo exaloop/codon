@@ -80,7 +80,7 @@ def seq_re_purge() -> None:
 def seq_re_compile(pattern: str, flags: int) -> cobj:
     pass
 
-class error(Exception):
+class error(Static[Exception]):
     pattern: str
 
     def __init__(self, message: str = "", pattern: str = ""):

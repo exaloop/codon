@@ -170,7 +170,7 @@ class _CounterItem:
         return self.count >= other.count
 
 
-class Counter(Dict[T, int]):
+class Counter(Static[Dict[T, int]]):
     T: type
 
     def __init__(self, elements: Generator[T]):
@@ -360,7 +360,7 @@ class Dict:
         self._init_from(other)
 
 
-class defaultdict(Dict[K,V]):
+class defaultdict(Static[Dict[K,V]]):
     default_factory: S
     K: type
     V: type

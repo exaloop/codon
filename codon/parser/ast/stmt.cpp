@@ -439,9 +439,18 @@ void FunctionStmt::parseDecorators() {
 }
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-                     std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses)
+                     std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses,
+                     std::vector<ExprPtr> staticBaseClasses)
     : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
-      decorators(std::move(decorators)), baseClasses(std::move(baseClasses)) {
+      decorators(std::move(decorators)),
+      staticBaseClasses(std::move(staticBaseClasses)) {
+  for (auto &b : baseClasses) {
+    if (b->getIndex() && b->getIndex()->expr->isId("Static")) {
+      this->staticBaseClasses.push_back(b->getIndex()->index);
+    } else {
+      this->baseClasses.push_back(b);
+    }
+  }
   parseDecorators();
 }
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
@@ -454,12 +463,15 @@ ClassStmt::ClassStmt(const ClassStmt &stmt)
     : Stmt(stmt), name(stmt.name), args(ast::clone_nop(stmt.args)),
       suite(ast::clone(stmt.suite)), attributes(stmt.attributes),
       decorators(ast::clone(stmt.decorators)),
-      baseClasses(ast::clone(stmt.baseClasses)) {}
+      baseClasses(ast::clone(stmt.baseClasses)),
+      staticBaseClasses(ast::clone(stmt.staticBaseClasses)) {}
 std::string ClassStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> bases;
   for (auto &b : baseClasses)
     bases.push_back(b->toString());
+  for (auto &b : staticBaseClasses)
+    bases.push_back(fmt::format("(static {})", b->toString()));
   std::string as;
   for (int i = 0; i < args.size(); i++)
     as += (i ? pad : "") + args[i].toString();
@@ -477,7 +489,8 @@ void ClassStmt::validate() const {
   std::unordered_set<std::string> seen;
   if (attributes.has(Attr::Extend) && !args.empty())
     error(getSrcInfo(), "extensions cannot be generic or declare members");
-  if (attributes.has(Attr::Extend) && !baseClasses.empty())
+  if (attributes.has(Attr::Extend) &&
+      !(baseClasses.empty() && staticBaseClasses.empty()))
     error(getSrcInfo(), "extensions cannot inherit other classes");
   for (auto &a : args) {
     // if (!a.type)

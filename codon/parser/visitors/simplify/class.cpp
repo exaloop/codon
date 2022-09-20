@@ -97,7 +97,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
+    auto baseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts

@@ -238,7 +238,7 @@ print foo(N=3, x=(1, 2)) #: ()
 print foo(N=1, x=(1, 2, 3)) #: (3)
 
 #%% try_throw,barebones
-class MyError(Exception):
+class MyError(Static[Exception]):
     def __init__(self, message: str):
         super().__init__('MyError', message)
 try:
@@ -330,7 +330,7 @@ class Bear:
 print Bear.woof('!')
 #: bear woof ! bear w--f !
 
-class PolarBear(Bear):
+class PolarBear(Static[Bear]):
     def woof():
         return 'polar ' + superf('@')
 print PolarBear.woof()

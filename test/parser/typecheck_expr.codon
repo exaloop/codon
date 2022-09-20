@@ -630,12 +630,12 @@ class AX[T]:
 class Side:
     def __init__(self):
         pass
-class BX[T,U](AX[T], Side):
+class BX[T,U](Static[AX[T]], Static[Side]):
     b: U
     def __init__(self, a: T, b: U):
         super().__init__(a)
         self.b = b
-class CX[T,U](BX[T,U]):
+class CX[T,U](Static[BX[T,U]]):
     c: int
     def __init__(self, a: T, b: U):
         super().__init__(a, b)
@@ -761,7 +761,7 @@ class A[T]:
         self.a = t
     def foo(self):
         return f'A:{self.a}'
-class B(A[str]):
+class B(Static[A[str]]):
     b: int
     def __init__(self):
         super().__init__('s')
@@ -778,7 +778,7 @@ class AX[T]:
         self.a = a
     def foo(self):
         return f'[AX:{self.a}]'
-class BX[T,U](AX[T]):
+class BX[T,U](Static[AX[T]]):
     b: U
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -786,7 +786,7 @@ class BX[T,U](AX[T]):
         self.b = b
     def foo(self):
         return f'[BX:{super().foo()}:{self.b}]'
-class CX[T,U](BX[T,U]):
+class CX[T,U](Static[BX[T,U]]):
     c: int
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -811,7 +811,7 @@ class A[T]:
     def foo(self):
         return f'A:{self.a}'
 @tuple
-class B(A[str]):
+class B(Static[A[str]]):
     b: int
     def __new__() -> B:
         return (*(A('s')), 6)

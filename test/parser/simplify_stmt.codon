@@ -1020,7 +1020,7 @@ _ = 5
 _ = 's'
 
 #%% inherit_class_4,barebones
-class defdict[K,V](Dict[K,V]):
+class defdict[K,V](Static[Dict[K,V]]):
     fx: Function[[],V]
     def __init__(self, d: Dict[K,V], fx: Function[[], V]):
         self.__init__()
@@ -1048,7 +1048,7 @@ class Bar[T]:
     y: T
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
-class FooBarBaz[T](Foo, Bar[T]):
+class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
 print FooBarBaz[str]().foo() #: foo 0
@@ -1056,7 +1056,7 @@ print FooBarBaz[float]().bar() #: bar 0/float
 print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
 
 #%% inherit_class_err_5,barebones
-class defdict(Dict[str,float]):
+class defdict(Static[Dict[str,float]]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
@@ -1069,7 +1069,7 @@ class Foo:
     def __init__(self, a: int):
         self.a, self.b = a, 'yoo'
 @tuple
-class FooTup(Foo): pass
+class FooTup(Static[Foo]): pass
 
 f = Foo(5)
 print f.a, f.b #: 5 yoo
@@ -1077,16 +1077,16 @@ fp = FooTup(6, 's')
 print fp #: (a: 6, b: 's')
 
 #%% inherit_class_err_1,barebones
-class defdict(Array[int]):
+class defdict(Static[Array[int]]):
     pass #! reference classes cannot inherit by-value classes
 
 #%% inherit_class_err_2,barebones
 @tuple
-class defdict(int):
+class defdict(Static[int]):
     pass #! cannot inherit internal types
 
 #%% inherit_class_err_3,barebones
-class defdict(Dict[int, float, float]):
+class defdict(Static[Dict[int, float, float]]):
     pass #! wrong number of generics
 
 #%% inherit_class_err_4,barebones
@@ -1094,7 +1094,7 @@ class Foo:
     x: int
 class Bar:
     x: float
-class FooBar(Foo, Bar):
+class FooBar(Static[Foo], Static[Bar]):
     pass #! 'x' declared twice
 
 #%% keyword_prefix,barebones

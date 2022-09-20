@@ -489,10 +489,12 @@ struct ClassStmt : public Stmt {
   Attr attributes;
   std::vector<ExprPtr> decorators;
   std::vector<ExprPtr> baseClasses;
+  std::vector<ExprPtr> staticBaseClasses;
 
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
             std::vector<ExprPtr> decorators = {},
-            std::vector<ExprPtr> baseClasses = {});
+            std::vector<ExprPtr> baseClasses = {},
+            std::vector<ExprPtr> staticBaseClasses = {});
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
   ClassStmt(const ClassStmt &stmt);
 

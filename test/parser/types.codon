@@ -1275,7 +1275,7 @@ for i in staticrange(1000, -2000, -2):
 #! staticrange out of bounds (1500 > 1024)
 
 #%% trait_defdict
-class dd(Dict[K,V]):
+class dd(Static[Dict[K,V]]):
     fn: S
     K: type
     V: type

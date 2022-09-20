@@ -13,7 +13,7 @@ from math import (
 )
 
 
-class StatisticsError(Exception):
+class StatisticsError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("StatisticsError", message)
 

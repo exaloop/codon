@@ -337,6 +337,8 @@ public:
       transform(d);
     for (auto &d : stmt->baseClasses)
       transform(d);
+    for (auto &d : stmt->staticBaseClasses)
+      transform(d);
   }
   void visit(YieldFromStmt *stmt) override { transform(stmt->expr); }
   void visit(WithStmt *stmt) override {
