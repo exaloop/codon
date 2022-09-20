@@ -29,7 +29,7 @@ bool isMacOS() {
 }
 
 const std::vector<std::string> &supportedExtensions() {
-  static const std::vector<std::string> extensions = {".codon", ".py"};
+  static const std::vector<std::string> extensions = {".codon", ".py", ".seq"};
   return extensions;
 }
 
