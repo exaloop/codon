@@ -1,5 +1,8 @@
 #include "reaching.h"
 
+#include <deque>
+#include <tuple>
+
 namespace codon {
 namespace ir {
 namespace {
@@ -23,22 +26,187 @@ std::pair<id_t, id_t> getGenerated(const Value *val) {
   }
   return {-1, -1};
 }
+
+template <typename T> struct WorkList {
+  std::unordered_set<id_t> have;
+  std::deque<T *> queue;
+
+  void push(T *a) {
+    auto id = a->getId();
+    if (have.count(id))
+      return;
+    have.insert(id);
+    queue.push_back(a);
+  }
+
+  T *pop() {
+    if (queue.empty())
+      return nullptr;
+    auto *a = queue.front();
+    queue.pop_front();
+    have.erase(a->getId());
+    return a;
+  }
+
+  template <typename S> WorkList(S *x) : have(), queue() {
+    for (T *a : *x) {
+      push(a);
+    }
+  }
+};
+
+struct BitSet {
+  static constexpr unsigned B = 64;
+  static unsigned allocSize(unsigned size) { return (size + B - 1) / B; }
+
+  std::vector<uint64_t> words;
+
+  explicit BitSet(unsigned size) : words(allocSize(size), 0) {}
+
+  BitSet copy(unsigned size) const {
+    auto res = BitSet(size);
+    std::memcpy(res.words.data(), words.data(), allocSize(size) * (B / 8));
+    return res;
+  }
+
+  void set(unsigned bit) { words.data()[bit / B] |= (1 << (bit % B)); }
+
+  bool get(unsigned bit) const {
+    return (words.data()[bit / B] & (1 << (bit % B))) != 0;
+  }
+
+  bool equals(const BitSet &other, unsigned size) {
+    return std::memcmp(words.data(), other.words.data(), allocSize(size) * (B / 8)) ==
+           0;
+  }
+
+  void clear(unsigned size) { std::memset(words.data(), 0, allocSize(size) * (B / 8)); }
+
+  void setAll(unsigned size) {
+    std::memset(words.data(), 0xff, allocSize(size) * (B / 8));
+  }
+
+  void overwrite(const BitSet &other, unsigned size) {
+    std::memcpy(words.data(), other.words.data(), allocSize(size) * (B / 8));
+  }
+
+  void update(const BitSet &other, unsigned size) {
+    auto *p = words.data();
+    auto *q = other.words.data();
+    auto n = allocSize(size);
+    for (unsigned i = 0; i < n; i++) {
+      p[i] |= q[i];
+    }
+  }
+
+  void subtract(const BitSet &other, unsigned size) {
+    auto *p = words.data();
+    auto *q = other.words.data();
+    auto n = allocSize(size);
+    for (unsigned i = 0; i < n; i++) {
+      p[i] &= ~q[i];
+    }
+  }
+};
+
+template <typename T> struct BlockBitSets {
+  T *blk;
+  BitSet gen;
+  BitSet kill;
+  BitSet in;
+  BitSet out;
+
+  BlockBitSets(T *blk, BitSet gen, BitSet kill, BitSet in, BitSet out)
+      : blk(blk), gen(std::move(gen)), kill(std::move(kill)), in(std::move(in)),
+        out(std::move(out)) {}
+};
 } // namespace
 
 namespace analyze {
 namespace dataflow {
 
 void RDInspector::analyze() {
-  std::unordered_set<CFBlock *> workset(cfg->begin(), cfg->end());
-  while (!workset.empty()) {
-    std::unordered_set<CFBlock *> newWorkset;
-    for (auto *blk : workset) {
-      initializeIfNecessary(blk);
-      calculateIn(blk);
-      if (!calculateOut(blk))
-        newWorkset.insert(blk->successors_begin(), blk->successors_end());
+  std::vector<const Value *> ordering;
+  std::unordered_map<id_t, unsigned> lookup;
+  std::unordered_map<id_t, std::vector<const Value *>> varToAssignments;
+
+  for (auto *blk : *cfg) {
+    for (auto *val : *blk) {
+      auto k = getKilled(val);
+      if (k != -1) {
+        lookup.emplace(val->getId(), ordering.size());
+        ordering.push_back(val);
+        varToAssignments[k].push_back(val);
+      }
     }
-    workset = std::move(newWorkset);
+  }
+
+  unsigned n = ordering.size();
+  std::unordered_map<id_t, BlockBitSets<CFBlock>> bitsets;
+
+  for (auto *blk : *cfg) {
+    auto in = BitSet(n);
+    auto gen = BitSet(n);
+    auto kill = BitSet(n);
+
+    std::unordered_map<id_t, id_t> generated; // make sure we only take last assignment
+    for (auto *val : *blk) {
+      if (auto *ptr = cast<PointerValue>(val)) {
+        invalid.insert(ptr->getVar()->getId());
+        continue;
+      }
+
+      auto gen = getGenerated(val);
+      if (gen.first != -1) {
+        generated[gen.first] = val->getId();
+        for (auto *assign : varToAssignments[gen.first]) {
+          kill.set(lookup[assign->getId()]);
+        }
+      }
+    }
+    for (auto &entry : generated) {
+      gen.set(lookup[entry.second]);
+    }
+
+    auto out = gen.copy(n);
+    bitsets.emplace(std::piecewise_construct, std::forward_as_tuple(blk->getId()),
+                    std::forward_as_tuple(blk, std::move(gen), std::move(kill),
+                                          std::move(in), std::move(out)));
+  }
+
+  WorkList<CFBlock> worklist(cfg);
+  while (auto *blk = worklist.pop()) {
+    auto &data = bitsets.find(blk->getId())->second;
+
+    data.in.clear(n);
+    for (auto it = blk->predecessors_begin(); it != blk->predecessors_end(); ++it) {
+      data.in.update(bitsets.find((*it)->getId())->second.out, n);
+    }
+
+    auto oldout = data.out.copy(n);
+    auto tmp = data.in.copy(n);
+    tmp.subtract(data.kill, n);
+    tmp.update(data.gen, n);
+    data.out.overwrite(tmp, n);
+
+    if (!data.out.equals(oldout, n)) {
+      for (auto it = blk->successors_begin(); it != blk->successors_end(); ++it) {
+        worklist.push(*it);
+      }
+    }
+  }
+
+  for (auto &elem : bitsets) {
+    auto &data = elem.second;
+    auto &entry = sets[data.blk->getId()];
+
+    for (unsigned i = 0; i < n; i++) {
+      if (data.in.get(i)) {
+        auto *val = ordering[i];
+        auto gen = getGenerated(val);
+        entry.in[gen.first].insert(gen.second);
+      }
+    }
   }
 }
 
@@ -72,65 +240,6 @@ std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
     return std::unordered_set<id_t>();
 
   return defs;
-}
-
-void RDInspector::initializeIfNecessary(CFBlock *blk) {
-  auto &entry = sets[blk->getId()];
-  if (entry.initialized)
-    return;
-  entry.initialized = true;
-  for (auto *val : *blk) {
-    if (auto *ptr = cast<PointerValue>(val))
-      invalid.insert(ptr->getVar()->getId());
-
-    auto killed = getKilled(val);
-    if (killed != -1)
-      entry.killed.insert(killed);
-    auto gen = getGenerated(val);
-    if (gen.first != -1)
-      entry.generated[gen.first] = gen.second;
-  }
-}
-
-void RDInspector::calculateIn(CFBlock *blk) {
-  auto &curEntry = sets[blk->getId()];
-  std::unordered_map<id_t, std::unordered_set<id_t>> newVal;
-
-  if (blk->getId() == cfg->getEntryBlock()->getId()) {
-    auto *fn = cfg->getFunc();
-    for (auto *v : *fn)
-      newVal[v->getId()] = {-1};
-    for (auto it = fn->arg_begin(); it != fn->arg_end(); ++it)
-      newVal[(*it)->getId()] = {-1};
-  }
-
-  for (auto it = blk->predecessors_begin(); it != blk->predecessors_end(); ++it) {
-    auto *pred = *it;
-    auto &predEntry = sets[pred->getId()];
-    for (auto &it2 : predEntry.out) {
-      auto &loc = newVal[it2.first];
-      loc.insert(it2.second.begin(), it2.second.end());
-    }
-  }
-  curEntry.in = std::move(newVal);
-}
-
-bool RDInspector::calculateOut(CFBlock *blk) {
-  auto &entry = sets[blk->getId()];
-  std::unordered_map<id_t, std::unordered_set<id_t>> newOut;
-  for (auto &gen : entry.generated) {
-    newOut[gen.first] = {gen.second};
-  }
-
-  for (auto it = entry.in.begin(); it != entry.in.end(); ++it) {
-    if (entry.killed.find(it->first) == entry.killed.end()) {
-      newOut[it->first].insert(it->second.begin(), it->second.end());
-    }
-  }
-
-  auto res = entry.out == newOut;
-  entry.out = std::move(newOut);
-  return res;
 }
 
 const std::string RDAnalysis::KEY = "core-analyses-rd";
