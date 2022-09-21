@@ -323,12 +323,17 @@ std::string ClassType::debugString(bool debug) const {
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
 std::string ClassType::realizedName() const {
+  if (!_rn.empty()) return _rn;
+
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
       gs.push_back(a.type->realizedName());
   std::string s = join(gs, ",");
-  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+  if (canRealize())
+    const_cast<ClassType*>(this)->_rn =
+      fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+  return _rn;
 }
 std::string ClassType::realizedTypeName() const {
   return this->ClassType::realizedName();

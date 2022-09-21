@@ -232,6 +232,8 @@ struct ClassType : public Type {
 
   std::vector<Generic> hiddenGenerics;
 
+  std::string _rn;
+
   explicit ClassType(std::string name, std::string niceName,
                      std::vector<Generic> generics = {},
                      std::vector<Generic> hiddenGenerics = {});

@@ -131,6 +131,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
     /// List of inherited classes.
     std::vector<std::string> parentClasses;
+    std::vector<std::string> staticParentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
