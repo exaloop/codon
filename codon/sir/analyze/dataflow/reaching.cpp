@@ -144,13 +144,14 @@ void RDInspector::analyze() {
   unsigned n = ordering.size();
   std::unordered_map<id_t, BlockBitSets<CFBlock>> bitsets;
 
+  // construct initial gen and kill sets
   for (auto *blk : *cfg) {
-    auto in = BitSet(n);
     auto gen = BitSet(n);
     auto kill = BitSet(n);
 
-    std::unordered_map<id_t, id_t> generated; // make sure we only take last assignment
+    std::unordered_map<id_t, id_t> generated;
     for (auto *val : *blk) {
+      // vars that are used by pointer may change at any time, so don't track them
       if (auto *ptr = cast<PointerValue>(val)) {
         invalid.insert(ptr->getVar()->getId());
         continue;
@@ -158,7 +159,10 @@ void RDInspector::analyze() {
 
       auto gen = getGenerated(val);
       if (gen.first != -1) {
+        // generated map will store latest generated assignment, as desired
         generated[gen.first] = val->getId();
+
+        // all assignments that use the var are killed
         for (auto *assign : varToAssignments[gen.first]) {
           kill.set(lookup[assign->getId()]);
         }
@@ -168,6 +172,7 @@ void RDInspector::analyze() {
       gen.set(lookup[entry.second]);
     }
 
+    auto in = BitSet(n);
     auto out = gen.copy(n);
     bitsets.emplace(std::piecewise_construct, std::forward_as_tuple(blk->getId()),
                     std::forward_as_tuple(blk, std::move(gen), std::move(kill),
@@ -178,11 +183,13 @@ void RDInspector::analyze() {
   while (auto *blk = worklist.pop()) {
     auto &data = bitsets.find(blk->getId())->second;
 
+    // IN[blk] = U OUT[pred], for all predecessors pred
     data.in.clear(n);
     for (auto it = blk->predecessors_begin(); it != blk->predecessors_end(); ++it) {
       data.in.update(bitsets.find((*it)->getId())->second.out, n);
     }
 
+    // OUT[blk] = GEN[blk] U (IN[blk] - KILL[blk])
     auto oldout = data.out.copy(n);
     auto tmp = data.in.copy(n);
     tmp.subtract(data.kill, n);
@@ -213,11 +220,11 @@ void RDInspector::analyze() {
 std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
                                                              const Value *loc) {
   if (invalid.find(var->getId()) != invalid.end() || var->isGlobal())
-    return std::unordered_set<id_t>();
+    return {};
 
   auto *blk = cfg->getBlock(loc);
   if (!blk)
-    return std::unordered_set<id_t>();
+    return {};
   auto &entry = sets[blk->getId()];
   auto defs = entry.in[var->getId()];
 
@@ -237,7 +244,7 @@ std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
   }
 
   if (defs.find(-1) != defs.end())
-    return std::unordered_set<id_t>();
+    return {};
 
   return defs;
 }
