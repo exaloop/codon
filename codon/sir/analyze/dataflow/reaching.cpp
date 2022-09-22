@@ -164,7 +164,8 @@ void RDInspector::analyze() {
 
         // all assignments that use the var are killed
         for (auto *assign : varToAssignments[gen.first]) {
-          kill.set(lookup[assign->getId()]);
+          if (assign->getId() != val->getId())
+            kill.set(lookup[assign->getId()]);
         }
       }
     }
