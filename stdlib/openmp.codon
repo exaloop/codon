@@ -894,7 +894,7 @@ def _push_num_threads(num_threads: int):
 
 @llvm
 def _atomic_int_add(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw add i64* %a, i64 %b monotonic
+    %old = atomicrmw add ptr %a, i64 %b monotonic
     ret {} {}
 
 
@@ -905,31 +905,31 @@ def _atomic_int_mul(a: Ptr[int], b: int):
 
 @llvm
 def _atomic_int_and(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw and i64* %a, i64 %b monotonic
+    %old = atomicrmw and ptr %a, i64 %b monotonic
     ret {} {}
 
 
 @llvm
 def _atomic_int_or(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw or i64* %a, i64 %b monotonic
+    %old = atomicrmw or ptr %a, i64 %b monotonic
     ret {} {}
 
 
 @llvm
 def _atomic_int_xor(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw xor i64* %a, i64 %b monotonic
+    %old = atomicrmw xor ptr %a, i64 %b monotonic
     ret {} {}
 
 
 @llvm
 def _atomic_int_min(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw min i64* %a, i64 %b monotonic
+    %old = atomicrmw min ptr %a, i64 %b monotonic
     ret {} {}
 
 
 @llvm
 def _atomic_int_max(a: Ptr[int], b: int) -> None:
-    %old = atomicrmw max i64* %a, i64 %b monotonic
+    %old = atomicrmw max ptr %a, i64 %b monotonic
     ret {} {}
 
 

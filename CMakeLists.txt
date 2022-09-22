@@ -148,13 +148,6 @@ set(CODON_HPPFILES
     codon/sir/flow.h
     codon/sir/func.h
     codon/sir/instr.h
-    codon/sir/llvm/coro/CoroCleanup.h
-    codon/sir/llvm/coro/CoroEarly.h
-    codon/sir/llvm/coro/CoroElide.h
-    codon/sir/llvm/coro/CoroInstr.h
-    codon/sir/llvm/coro/CoroInternal.h
-    codon/sir/llvm/coro/CoroSplit.h
-    codon/sir/llvm/coro/Coroutines.h
     codon/sir/llvm/gpu.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
@@ -298,12 +291,6 @@ set(CODON_CPPFILES
     codon/sir/flow.cpp
     codon/sir/func.cpp
     codon/sir/instr.cpp
-    codon/sir/llvm/coro/CoroCleanup.cpp
-    codon/sir/llvm/coro/CoroEarly.cpp
-    codon/sir/llvm/coro/CoroElide.cpp
-    codon/sir/llvm/coro/CoroFrame.cpp
-    codon/sir/llvm/coro/CoroSplit.cpp
-    codon/sir/llvm/coro/Coroutines.cpp
     codon/sir/llvm/gpu.cpp
     codon/sir/llvm/llvisitor.cpp
     codon/sir/llvm/optimize.cpp

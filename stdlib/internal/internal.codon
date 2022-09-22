@@ -47,16 +47,14 @@ class __internal__:
     @pure
     @derives
     @llvm
-    def fn_new(ptr: Ptr[byte], T: type) -> T:
-        %0 = bitcast i8* %ptr to {=T}
-        ret {=T} %0
+    def fn_new(p: Ptr[byte], T: type) -> T:
+        ret ptr %p
 
     @pure
     @derives
     @llvm
     def fn_raw(fn: T, T: type) -> Ptr[byte]:
-        %0 = bitcast {=T} %fn to i8*
-        ret i8* %0
+        ret ptr %fn
 
     @pure
     @llvm
@@ -99,7 +97,7 @@ class __internal__:
     @pure
     @llvm
     def opt_ref_new(T: type) -> Optional[T]:
-        ret i8* null
+        ret ptr null
 
     @pure
     @derives
@@ -112,7 +110,7 @@ class __internal__:
     @derives
     @llvm
     def opt_ref_new_arg(what: T, T: type) -> Optional[T]:
-        ret i8* %what
+        ret ptr %what
 
     @pure
     @llvm
@@ -124,7 +122,7 @@ class __internal__:
     @pure
     @llvm
     def opt_ref_bool(what: Optional[T], T: type) -> bool:
-        %0 = icmp ne i8* %what, null
+        %0 = icmp ne ptr %what, null
         %1 = zext i1 %0 to i8
         ret i8 %1
 
@@ -144,18 +142,17 @@ class __internal__:
     @pure
     @derives
     @llvm
-    def to_class_ptr(ptr: Ptr[byte], T: type) -> T:
-        %0 = bitcast i8* %ptr to {=T}
-        ret {=T} %0
+    def to_class_ptr(p: Ptr[byte], T: type) -> T:
+        ret ptr %p
 
     def _tuple_offsetof(x, field: Static[int]) -> int:
         @pure
         @llvm
         def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
             %a = alloca {=T}
-            %b = getelementptr inbounds {=T}, {=T}* %a, i64 0, i32 {=idx}
-            %base = ptrtoint {=T}* %a to i64
-            %elem = ptrtoint {=TE}* %b to i64
+            %b = getelementptr inbounds {=T}, ptr %a, i64 0, i32 {=idx}
+            %base = ptrtoint ptr %a to i64
+            %elem = ptrtoint ptr %b to i64
             %offset = sub i64 %elem, %base
             ret i64 %offset
 
@@ -318,8 +315,7 @@ class Function:
     @pure
     @llvm
     def __new__(what: Ptr[byte]) -> Function[T, TR]:
-        %0 = bitcast i8* %what to {=Function[T, TR]}
-        ret {=Function[T, TR]} %0
+        ret ptr %what
 
     def __new__(what: Function[T, TR]) -> Function[T, TR]:
        return what
@@ -327,8 +323,7 @@ class Function:
     @pure
     @llvm
     def __raw__(self) -> Ptr[byte]:
-        %0 = bitcast {=Function[T, TR]} %self to i8*
-        ret i8* %0
+        ret ptr %self
 
     def __repr__(self) -> str:
        return __internal__.raw_type_str(self.__raw__(), "function")

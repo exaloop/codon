@@ -362,6 +362,10 @@ public:
   /// @param t the IR type
   /// @return corresponding LLVM type
   llvm::Type *getLLVMType(types::Type *t);
+  /// Gets LLVM function type from IR function type
+  /// @param t the IR type (must be FuncType)
+  /// @return corresponding LLVM function type
+  llvm::FunctionType *getLLVMFuncType(types::Type *t);
   /// Gets the LLVM debug info type from the IR type
   /// @param t the IR type
   /// @return corresponding LLVM DI type

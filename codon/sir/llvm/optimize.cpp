@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include "codon/sir/llvm/coro/Coroutines.h"
 #include "codon/sir/llvm/gpu.h"
 #include "codon/util/common.h"
 #include "llvm/CodeGen/CommandFlags.h"
@@ -64,7 +63,7 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
 #endif
       if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline))
         f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
-      f.setHasUWTable();
+      f.setUWTableKind(llvm::UWTableKind::Default);
       f.addFnAttr("no-frame-pointer-elim", "true");
       f.addFnAttr("no-frame-pointer-elim-non-leaf");
       f.addFnAttr("no-jump-tables", "false");
@@ -488,6 +487,7 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
   CoroBranchSimplifier() : llvm::LoopPass(ID) {}
 
   static llvm::Value *getNonNullOperand(llvm::Value *op1, llvm::Value *op2) {
+    /* TODO
     auto *ptr = llvm::dyn_cast<llvm::PointerType>(op1->getType());
     if (!ptr || !ptr->getElementType()->isFunctionTy())
       return nullptr;
@@ -499,9 +499,12 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
     if (!(isNull1 ^ isNull2))
       return nullptr;
     return isNull1 ? op2 : op1;
+    */
+    return nullptr;
   }
 
   bool runOnLoop(llvm::Loop *loop, llvm::LPPassManager &lpm) override {
+    /*
     if (auto *exit = loop->getExitingBlock()) {
       if (auto *br = llvm::dyn_cast<llvm::BranchInst>(exit->getTerminator())) {
         if (!br->isConditional() || br->getNumSuccessors() != 2 ||
@@ -552,6 +555,7 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
         }
       }
     }
+    */
     return false;
   }
 };
@@ -608,7 +612,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
     machine->adjustPassManager(pmb);
   }
 
-  coro::addCoroutinePassesToExtensionPoints(pmb);
+  // llvm::addCoroutinePassesToExtensionPoints(pmb);
   if (!debug) {
     pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
                      addCoroutineBranchSimplifier);

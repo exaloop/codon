@@ -9,22 +9,21 @@
 #include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/EPCIndirectionUtils.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
+#include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
 #include "llvm/ExecutionEngine/Orc/IRTransformLayer.h"
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/Orc/TPCIndirectionUtils.h"
-#include "llvm/ExecutionEngine/Orc/TargetProcessControl.h"
 
 namespace codon {
 namespace jit {
 
 class Engine {
 private:
-  std::unique_ptr<llvm::orc::TargetProcessControl> tpc;
   std::unique_ptr<llvm::orc::ExecutionSession> sess;
-  std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu;
+  std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu;
 
   llvm::DataLayout layout;
   llvm::orc::MangleAndInterner mangle;
@@ -45,9 +44,8 @@ private:
                  const llvm::orc::MaterializationResponsibility &R);
 
 public:
-  Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
-         std::unique_ptr<llvm::orc::ExecutionSession> sess,
-         std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu,
+  Engine(std::unique_ptr<llvm::orc::ExecutionSession> sess,
+         std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu,
          llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout);
 
   ~Engine();
