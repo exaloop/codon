@@ -1249,6 +1249,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto *startBlock = llvm::BasicBlock::Create(*context, "start", func);
 
   if (x->isGenerator()) {
+    func->setPresplitCoroutine();
     auto *generatorType = cast<types::GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);
 
