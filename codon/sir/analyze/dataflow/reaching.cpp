@@ -228,6 +228,8 @@ std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
     return {};
   auto &entry = sets[blk->getId()];
   auto defs = entry.in[var->getId()];
+  if (blk->getId() == cfg->getEntryBlock()->getId())
+    defs.insert(-1);
 
   auto done = false;
   for (auto *val : *blk) {
