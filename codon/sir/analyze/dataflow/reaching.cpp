@@ -157,24 +157,29 @@ void RDInspector::analyze() {
         continue;
       }
 
-      auto gen = getGenerated(val);
-      if (gen.first != -1) {
+      auto g = getGenerated(val);
+      if (g.first != -1) {
         // generated map will store latest generated assignment, as desired
-        generated[gen.first] = val->getId();
+        generated[g.first] = val->getId();
+      }
 
-        // all assignments that use the var are killed
-        for (auto *assign : varToAssignments[gen.first]) {
+      auto k = getKilled(val);
+      if (k != -1) {
+        // all other assignments that use the var are killed
+        for (auto *assign : varToAssignments[k]) {
           if (assign->getId() != val->getId())
             kill.set(lookup[assign->getId()]);
         }
       }
     }
+
+    // set gen for the last assignment of each var in the block
     for (auto &entry : generated) {
       gen.set(lookup[entry.second]);
     }
 
     auto in = BitSet(n);
-    auto out = gen.copy(n);
+    auto out = gen.copy(n); // out = gen is an optimization over out = {}
     bitsets.emplace(std::piecewise_construct, std::forward_as_tuple(blk->getId()),
                     std::forward_as_tuple(blk, std::move(gen), std::move(kill),
                                           std::move(in), std::move(out)));
@@ -197,6 +202,7 @@ void RDInspector::analyze() {
     tmp.update(data.gen, n);
     data.out.overwrite(tmp, n);
 
+    // if OUT changed, add all successors to worklist
     if (!data.out.equals(oldout, n)) {
       for (auto it = blk->successors_begin(); it != blk->successors_end(); ++it) {
         worklist.push(*it);
@@ -204,15 +210,15 @@ void RDInspector::analyze() {
     }
   }
 
+  // reconstruct final sets in more convenient format
   for (auto &elem : bitsets) {
     auto &data = elem.second;
     auto &entry = sets[data.blk->getId()];
 
     for (unsigned i = 0; i < n; i++) {
       if (data.in.get(i)) {
-        auto *val = ordering[i];
-        auto gen = getGenerated(val);
-        entry.in[gen.first].insert(gen.second);
+        auto g = getGenerated(ordering[i]);
+        entry.in[g.first].insert(g.second);
       }
     }
   }
