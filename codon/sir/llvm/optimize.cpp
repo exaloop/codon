@@ -83,19 +83,17 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
 
 /// Lowers allocations of known, small size to alloca when possible.
 /// Also removes unused allocations.
-struct AllocationRemover : public llvm::FunctionPass {
+struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
   std::string alloc;
   std::string allocAtomic;
   std::string realloc;
   std::string free;
 
-  static char ID;
   AllocationRemover(const std::string &alloc = "seq_alloc",
                     const std::string &allocAtomic = "seq_alloc_atomic",
                     const std::string &realloc = "seq_realloc",
                     const std::string &free = "seq_free")
-      : llvm::FunctionPass(ID), alloc(alloc), allocAtomic(allocAtomic),
-        realloc(realloc), free(free) {}
+      : alloc(alloc), allocAtomic(allocAtomic), realloc(realloc), free(free) {}
 
   static bool sizeOkToDemote(uint64_t size) { return 0 < size && size <= 1024; }
 
@@ -430,7 +428,7 @@ struct AllocationRemover : public llvm::FunctionPass {
     }
   }
 
-  bool runOnFunction(llvm::Function &func) override {
+  llvm::PreservedAnalyses run(llvm::Function &func, llvm::FunctionAnalysisManager &am) {
     using namespace llvm;
 
     SmallSet<Instruction *, 32> erase;
@@ -467,29 +465,20 @@ struct AllocationRemover : public llvm::FunctionPass {
       I->eraseFromParent();
     }
 
-    return !erase.empty() || !replace.empty() || !alloca.empty() || !untail.empty();
+    if (!erase.empty() || !replace.empty() || !alloca.empty() || !untail.empty())
+      return PreservedAnalyses::none();
+    else
+      return PreservedAnalyses::all();
   }
 };
-
-void addAllocationRemover(const llvm::PassManagerBuilder &builder,
-                          llvm::legacy::PassManagerBase &pm) {
-  pm.add(new AllocationRemover());
-}
-
-char AllocationRemover::ID = 0;
-llvm::RegisterPass<AllocationRemover> X1("alloc-remove", "Allocation Remover");
 
 /// Sometimes coroutine lowering produces hard-to-analyze loops involving
 /// function pointer comparisons. This pass puts them into a somewhat
 /// easier-to-analyze form.
-struct CoroBranchSimplifier : public llvm::LoopPass {
-  static char ID;
-  CoroBranchSimplifier() : llvm::LoopPass(ID) {}
-
+struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   static llvm::Value *getNonNullOperand(llvm::Value *op1, llvm::Value *op2) {
-    /* TODO
     auto *ptr = llvm::dyn_cast<llvm::PointerType>(op1->getType());
-    if (!ptr || !ptr->getElementType()->isFunctionTy())
+    if (!ptr)
       return nullptr;
 
     auto *c1 = llvm::dyn_cast<llvm::Constant>(op1);
@@ -499,22 +488,21 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
     if (!(isNull1 ^ isNull2))
       return nullptr;
     return isNull1 ? op2 : op1;
-    */
-    return nullptr;
   }
 
-  bool runOnLoop(llvm::Loop *loop, llvm::LPPassManager &lpm) override {
-    /*
-    if (auto *exit = loop->getExitingBlock()) {
+  llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
+                              llvm::LoopStandardAnalysisResults &ar,
+                              llvm::LPMUpdater &u) {
+    if (auto *exit = loop.getExitingBlock()) {
       if (auto *br = llvm::dyn_cast<llvm::BranchInst>(exit->getTerminator())) {
         if (!br->isConditional() || br->getNumSuccessors() != 2 ||
-            loop->contains(br->getSuccessor(0)) || !loop->contains(br->getSuccessor(1)))
-          return false;
+            loop.contains(br->getSuccessor(0)) || !loop.contains(br->getSuccessor(1)))
+          return llvm::PreservedAnalyses::all();
 
         auto *cond = br->getCondition();
         if (auto *cmp = llvm::dyn_cast<llvm::CmpInst>(cond)) {
           if (cmp->getPredicate() != llvm::CmpInst::Predicate::ICMP_EQ)
-            return false;
+            return llvm::PreservedAnalyses::all();
 
           if (auto *f = getNonNullOperand(cmp->getOperand(0), cmp->getOperand(1))) {
             if (auto *sel = llvm::dyn_cast<llvm::SelectInst>(f)) {
@@ -544,10 +532,10 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
                     }
                   }
                   if (!ok)
-                    return false;
+                    return llvm::PreservedAnalyses::all();
 
                   br->setCondition(sel->getCondition());
-                  return true;
+                  return llvm::PreservedAnalyses::none();
                 }
               }
             }
@@ -555,85 +543,49 @@ struct CoroBranchSimplifier : public llvm::LoopPass {
         }
       }
     }
-    */
-    return false;
+    return llvm::PreservedAnalyses::all();
   }
 };
-
-void addCoroutineBranchSimplifier(const llvm::PassManagerBuilder &builder,
-                                  llvm::legacy::PassManagerBase &pm) {
-  pm.add(new CoroBranchSimplifier());
-}
-
-char CoroBranchSimplifier::ID = 0;
-llvm::RegisterPass<CoroBranchSimplifier> X2("coro-br-simpl",
-                                            "Coroutine Branch Simplifier");
 
 void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
                                PluginManager *plugins) {
   applyDebugTransformations(module, debug, jit);
 
-  llvm::Triple moduleTriple(module->getTargetTriple());
-  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
-
-  auto pm = std::make_unique<llvm::legacy::PassManager>();
-  auto fpm = std::make_unique<llvm::legacy::FunctionPassManager>(module);
-  pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-
+  llvm::LoopAnalysisManager lam;
+  llvm::FunctionAnalysisManager fam;
+  llvm::CGSCCAnalysisManager cgam;
+  llvm::ModuleAnalysisManager mam;
   auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
-  pm->add(llvm::createTargetTransformInfoWrapperPass(
-      machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
-  fpm->add(llvm::createTargetTransformInfoWrapperPass(
-      machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
+  llvm::PassBuilder pb(machine.get());
 
-  if (machine) {
-    auto &ltm = dynamic_cast<llvm::LLVMTargetMachine &>(*machine);
-    llvm::Pass *tpc = ltm.createPassConfig(*pm);
-    pm->add(tpc);
-  }
+  pb.registerModuleAnalyses(mam);
+  pb.registerCGSCCAnalyses(cgam);
+  pb.registerFunctionAnalyses(fam);
+  pb.registerLoopAnalyses(lam);
+  pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-  unsigned optLevel = 3;
-  unsigned sizeLevel = 0;
-  llvm::PassManagerBuilder pmb;
+  pb.registerLateLoopOptimizationsEPCallback(
+      [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
+        if (opt.isOptimizingForSpeed())
+          pm.addPass(CoroBranchSimplifier());
+      });
 
-  if (!debug) {
-    pmb.OptLevel = optLevel;
-    pmb.SizeLevel = sizeLevel;
-    pmb.Inliner = llvm::createFunctionInliningPass(optLevel, sizeLevel, false);
-    pmb.DisableUnrollLoops = false;
-    pmb.LoopVectorize = true;
-    pmb.SLPVectorize = true;
-    // pmb.MergeFunctions = true;
+  pb.registerPeepholeEPCallback(
+      [&](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
+        if (opt.isOptimizingForSpeed())
+          pm.addPass(AllocationRemover());
+      });
+
+  if (debug) {
+    llvm::ModulePassManager mpm =
+        pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
+    mpm.run(*module, mam);
   } else {
-    pmb.OptLevel = 0;
+    llvm::ModulePassManager mpm =
+        pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(*module, mam);
   }
 
-  if (machine) {
-    machine->adjustPassManager(pmb);
-  }
-
-  // llvm::addCoroutinePassesToExtensionPoints(pmb);
-  if (!debug) {
-    pmb.addExtension(llvm::PassManagerBuilder::EP_LateLoopOptimizations,
-                     addCoroutineBranchSimplifier);
-    pmb.addExtension(llvm::PassManagerBuilder::EP_Peephole, addAllocationRemover);
-  }
-
-  if (plugins) {
-    for (auto *plugin : *plugins) {
-      plugin->dsl->addLLVMPasses(&pmb, debug);
-    }
-  }
-
-  pmb.populateModulePassManager(*pm);
-  pmb.populateFunctionPassManager(*fpm);
-
-  fpm->doInitialization();
-  for (llvm::Function &f : *module) {
-    fpm->run(f);
-  }
-  fpm->doFinalization();
-  pm->run(*module);
   applyDebugTransformations(module, debug, jit);
 }
 
