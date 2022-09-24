@@ -34,10 +34,7 @@ void DebugListener::notifyFreeingObject(ObjectKey key) {
 llvm::Expected<llvm::DILineInfo> DebugListener::symbolize(uintptr_t pc) {
   for (const auto &o : objects) {
     if (o.contains(pc)) {
-      llvm::symbolize::LLVMSymbolizer::Options opt;
-      opt.PrintFunctions = llvm::DILineInfoSpecifier::FunctionNameKind::ShortName;
-      opt.PathStyle = llvm::DILineInfoSpecifier::FileLineInfoKind::BaseNameOnly;
-      llvm::symbolize::LLVMSymbolizer sym(opt);
+      llvm::symbolize::LLVMSymbolizer sym;
       return sym.symbolizeCode(
           o.getObject(),
           {pc - o.getStart(), llvm::object::SectionedAddress::UndefSection});
@@ -53,8 +50,8 @@ llvm::Expected<std::string> DebugListener::getPrettyBacktrace(uintptr_t pc) {
     return std::move(err);
   if (invalid(src->FunctionName) || invalid(src->FileName))
     return "";
-  return makeBacktraceFrameString(pc, src->FunctionName, src->FileName, src->Line,
-                                  src->Column);
+  return runtime::makeBacktraceFrameString(pc, src->FunctionName, src->FileName,
+                                           src->Line, src->Column);
 }
 
 std::string DebugListener::getPrettyBacktrace(const std::vector<uintptr_t> &backtrace) {

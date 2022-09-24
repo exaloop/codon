@@ -22,8 +22,6 @@
 #include "codon/runtime/lib.h"
 #include <gc.h>
 
-using namespace std;
-
 /*
  * General
  */
@@ -68,20 +66,23 @@ SEQ_FUNC bool seq_is_macos() {
 SEQ_FUNC seq_int_t seq_pid() { return (seq_int_t)getpid(); }
 
 SEQ_FUNC seq_int_t seq_time() {
-  auto duration = chrono::system_clock::now().time_since_epoch();
-  seq_int_t nanos = chrono::duration_cast<chrono::nanoseconds>(duration).count();
+  auto duration = std::chrono::system_clock::now().time_since_epoch();
+  seq_int_t nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
   return nanos;
 }
 
 SEQ_FUNC seq_int_t seq_time_monotonic() {
-  auto duration = chrono::steady_clock::now().time_since_epoch();
-  seq_int_t nanos = chrono::duration_cast<chrono::nanoseconds>(duration).count();
+  auto duration = std::chrono::steady_clock::now().time_since_epoch();
+  seq_int_t nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
   return nanos;
 }
 
 SEQ_FUNC seq_int_t seq_time_highres() {
-  auto duration = chrono::high_resolution_clock::now().time_since_epoch();
-  seq_int_t nanos = chrono::duration_cast<chrono::nanoseconds>(duration).count();
+  auto duration = std::chrono::high_resolution_clock::now().time_since_epoch();
+  seq_int_t nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
   return nanos;
 }
 
@@ -264,7 +265,7 @@ SEQ_FUNC seq_str_t seq_str_ptr(void *p) { return string_conv("%p", 19, p); }
 
 SEQ_FUNC seq_str_t seq_check_errno() {
   if (errno) {
-    string msg = strerror(errno);
+    std::string msg = strerror(errno);
     auto *buf = (char *)seq_alloc_atomic(msg.size());
     memcpy(buf, msg.data(), msg.size());
     return {(seq_int_t)msg.size(), buf};
@@ -287,7 +288,7 @@ SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
   }
 }
 
-std::string codon::getCapturedOutput() {
+std::string codon::runtime::getCapturedOutput() {
   std::string result = capture.str();
   capture.str("");
   return result;
@@ -304,11 +305,11 @@ SEQ_FUNC void *seq_stderr() { return stderr; }
  */
 
 SEQ_FUNC void *seq_lock_new() {
-  return (void *)new (seq_alloc_atomic(sizeof(timed_mutex))) timed_mutex();
+  return (void *)new (seq_alloc_atomic(sizeof(std::timed_mutex))) std::timed_mutex();
 }
 
 SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout) {
-  auto *m = (timed_mutex *)lock;
+  auto *m = (std::timed_mutex *)lock;
   if (timeout < 0.0) {
     if (block) {
       m->lock();
@@ -317,22 +318,22 @@ SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout) {
       return m->try_lock();
     }
   } else {
-    return m->try_lock_for(chrono::duration<double>(timeout));
+    return m->try_lock_for(std::chrono::duration<double>(timeout));
   }
 }
 
 SEQ_FUNC void seq_lock_release(void *lock) {
-  auto *m = (timed_mutex *)lock;
+  auto *m = (std::timed_mutex *)lock;
   m->unlock();
 }
 
 SEQ_FUNC void *seq_rlock_new() {
-  return (void *)new (seq_alloc_atomic(sizeof(recursive_timed_mutex)))
-      recursive_timed_mutex();
+  return (void *)new (seq_alloc_atomic(sizeof(std::recursive_timed_mutex)))
+      std::recursive_timed_mutex();
 }
 
 SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout) {
-  auto *m = (recursive_timed_mutex *)lock;
+  auto *m = (std::recursive_timed_mutex *)lock;
   if (timeout < 0.0) {
     if (block) {
       m->lock();
@@ -341,11 +342,11 @@ SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout) {
       return m->try_lock();
     }
   } else {
-    return m->try_lock_for(chrono::duration<double>(timeout));
+    return m->try_lock_for(std::chrono::duration<double>(timeout));
   }
 }
 
 SEQ_FUNC void seq_rlock_release(void *lock) {
-  auto *m = (recursive_timed_mutex *)lock;
+  auto *m = (std::recursive_timed_mutex *)lock;
   m->unlock();
 }

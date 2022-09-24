@@ -4,10 +4,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <stdexcept>
 #include <string>
-#include <unwind.h>
 #include <vector>
+
+#include <unwind.h>
 
 #define SEQ_FLAG_DEBUG (1 << 0)          // compiled/running in debug mode
 #define SEQ_FLAG_CAPTURE_OUTPUT (1 << 1) // capture writes to stdout/stderr
@@ -95,6 +97,7 @@ SEQ_FUNC bool seq_rlock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_rlock_release(void *lock);
 
 namespace codon {
+namespace runtime {
 class JITError : public std::runtime_error {
 private:
   std::string output;
@@ -124,4 +127,7 @@ std::string makeBacktraceFrameString(uintptr_t pc, const std::string &func = "",
                                      int col = 0);
 
 std::string getCapturedOutput();
+
+void setJITErrorCallback(std::function<void(const JITError &)> callback);
+} // namespace runtime
 } // namespace codon

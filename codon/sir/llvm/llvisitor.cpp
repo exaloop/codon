@@ -568,14 +568,21 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     }
   }
 
-  try {
-    eng->runFunctionAsMain(main, args, envp);
-  } catch (const JITError &e) {
-    fmt::print(stderr, "{}", e.getOutput());
-    if (db.debug)
-      fmt::print(stderr, "\n{}", dbListener->getPrettyBacktrace(e.getBacktrace()));
-    std::abort();
+  if (db.debug) {
+    runtime::setJITErrorCallback([&dbListener](const runtime::JITError &e) {
+      fmt::print(stderr, "{}\n{}", e.getOutput(),
+                 dbListener->getPrettyBacktrace(e.getBacktrace()));
+      std::abort();
+    });
+  } else {
+    runtime::setJITErrorCallback([&dbListener](const runtime::JITError &e) {
+      fmt::print(stderr, "{}", e.getOutput());
+      std::abort();
+    });
   }
+
+  eng->runFunctionAsMain(main, args, envp);
+  runtime::setJITErrorCallback({});
   delete eng;
 }
 

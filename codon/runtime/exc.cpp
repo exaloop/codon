@@ -197,6 +197,8 @@ static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
   buf.write(p, (size_t)n);
 }
 
+static std::function<void(const codon::runtime::JITError &)> jitErrorCallback;
+
 SEQ_FUNC void seq_terminate(void *exc) {
   auto *base = (OurBaseException_t *)((char *)exc + seq_exc_offset());
   void *obj = base->obj;
@@ -209,7 +211,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
 
   std::ostringstream buf;
   if (seq_flags & SEQ_FLAG_CAPTURE_OUTPUT)
-    buf << codon::getCapturedOutput();
+    buf << codon::runtime::getCapturedOutput();
 
   buf << "\033[1m";
   print_from_last_dot(hdr->type, buf);
@@ -238,9 +240,9 @@ SEQ_FUNC void seq_terminate(void *exc) {
       for (unsigned i = 0; i < bt->count; i++) {
         auto *frame = &bt->frames[i];
         buf << "  "
-            << codon::makeBacktraceFrameString(frame->pc, std::string(frame->function),
-                                               std::string(frame->filename),
-                                               frame->lineno)
+            << codon::runtime::makeBacktraceFrameString(
+                   frame->pc, std::string(frame->function),
+                   std::string(frame->filename), frame->lineno)
             << "\n";
       }
     }
@@ -262,8 +264,12 @@ SEQ_FUNC void seq_terminate(void *exc) {
         backtrace.push_back(bt->frames[i].pc);
       }
     }
-    throw codon::JITError(output, msg, type, file, (int)hdr->line, (int)hdr->col,
-                          backtrace);
+    codon::runtime::JITError e(output, msg, type, file, (int)hdr->line, (int)hdr->col,
+                               backtrace);
+    if (jitErrorCallback)
+      jitErrorCallback(e);
+    else
+      throw e;
   }
 }
 
@@ -591,9 +597,10 @@ SEQ_FUNC uint64_t seq_exc_class() {
   return genClass(ourBaseExcpClassChars, sizeof(ourBaseExcpClassChars));
 }
 
-std::string codon::makeBacktraceFrameString(uintptr_t pc, const std::string &func,
-                                            const std::string &file, int line,
-                                            int col) {
+std::string codon::runtime::makeBacktraceFrameString(uintptr_t pc,
+                                                     const std::string &func,
+                                                     const std::string &file, int line,
+                                                     int col) {
   std::ostringstream buf;
   buf << "[\033[33m0x" << std::hex << pc << std::dec << "\033[0m]";
   if (!func.empty()) {
@@ -609,4 +616,9 @@ std::string codon::makeBacktraceFrameString(uintptr_t pc, const std::string &fun
     }
   }
   return buf.str();
+}
+
+void codon::runtime::setJITErrorCallback(
+    std::function<void(const codon::runtime::JITError &)> callback) {
+  jitErrorCallback = callback;
 }
