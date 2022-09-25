@@ -130,6 +130,18 @@ CPMAddPackage(
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
 
+if(APPLE)
+    enable_language(ASM)
+    CPMAddPackage(
+        NAME unwind
+        GITHUB_REPOSITORY "exaloop/libunwind"
+        GIT_TAG f38e660ebe55347501e6d5451f4c58731243474e
+        OPTIONS "CMAKE_BUILD_TYPE Release"
+                "LIBUNWIND_ENABLE_STATIC OFF"
+                "LIBUNWIND_ENABLE_SHARED ON"
+                "LIBUNWIND_INCLUDE_DOCS OFF")
+endif()
+
 if(CODON_JUPYTER)
     CPMAddPackage(
         NAME libzmq

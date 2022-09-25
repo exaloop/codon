@@ -64,12 +64,16 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
+if(APPLE)
+  add_dependencies(codonrt unwind_shared)
+endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
+  target_link_libraries(codonrt PRIVATE unwind_shared)
   target_link_libraries(
     codonrt
     PRIVATE -Wl,-force_load,$<TARGET_FILE:zlibstatic>
