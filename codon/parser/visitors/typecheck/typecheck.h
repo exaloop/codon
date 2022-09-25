@@ -203,6 +203,8 @@ private:
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
+  ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp);
+
 
 public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }

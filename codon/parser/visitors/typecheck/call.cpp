@@ -211,16 +211,22 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     // Case: reference type constructor. Transform to
     // `ctr = T.__new__(); std.internal.gc.register_finalizer(v); v.__init__(args)`
     ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("ctr"));
-    return {nullptr,
-            transform(N<StmtExpr>(
-                N<SuiteStmt>(
-                    N<AssignStmt>(clone(var),
-                                  N<CallExpr>(N<DotExpr>(expr->expr, "__new__"))),
-                    N<ExprStmt>(N<CallExpr>(
-                        N<IdExpr>("std.internal.gc.register_finalizer"), clone(var))),
-                    N<ExprStmt>(
-                        N<CallExpr>(N<DotExpr>(clone(var), "__init__"), expr->args))),
-                clone(var)))};
+    auto clsName = expr->expr->type->getClass()->name;
+    auto newInit =
+        N<AssignStmt>(clone(var), N<CallExpr>(N<DotExpr>(expr->expr, "__new__")));
+    auto finalizerInit = N<ExprStmt>(
+        N<CallExpr>(N<IdExpr>("std.internal.gc.register_finalizer"), clone(var)));
+    auto e = N<StmtExpr>(N<SuiteStmt>(newInit, finalizerInit), clone(var));
+    if (ctx->cache->classes[clsName].hasVTable()) {
+      auto vtableInit = N<AssignMemberStmt>(
+          clone(var), "__vtable__",
+          N<DotExpr>(N<DotExpr>(fmt::format(".__vtable__.{}", clsName), "arr"), "ptr"));
+      e->stmts.emplace_back(vtableInit);
+    }
+    auto init =
+        N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), expr->args));
+    e->stmts.emplace_back(init);
+    return {nullptr, transform(e)};
   }
 
   auto calleeFn = callee->getFunc();
@@ -608,7 +614,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     error("no parent classes available");
 
   ClassTypePtr typ = funcTyp->getArgTypes()[0]->getClass();
-  auto &cands = ctx->cache->classes[typ->name].parentClasses;
+  auto &cands = ctx->cache->classes[typ->name].staticParentClasses;
   if (cands.empty())
     error("no parent classes available");
 
@@ -625,19 +631,9 @@ ExprPtr TypecheckVisitor::transformSuper() {
     return e;
   } else {
     // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
-    for (auto &field : ctx->cache->classes[typ->name].fields) {
-      for (auto &parentField : ctx->cache->classes[name].fields)
-        if (field.name == parentField.name) {
-          unify(ctx->instantiate(field.type, typ),
-                ctx->instantiate(parentField.type, superTyp));
-        }
-    }
-
-    auto typExpr = N<IdExpr>(name);
-    typExpr->setType(superTyp);
     auto self = N<IdExpr>(funcTyp->ast->args[0].name);
-    return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                                 N<CallExpr>(N<DotExpr>(self, "__raw__")), typExpr));
+    self->type = typ;
+    return castToSuperClass(self, superTyp);
   }
 }
 
@@ -863,7 +859,7 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
     return result;
 
   result.push_back(cls);
-  for (auto &name : ctx->cache->classes[cls->name].parentClasses) {
+  for (auto &name : ctx->cache->classes[cls->name].staticParentClasses) {
     auto parentTyp = ctx->instantiate(ctx->forceFind(name)->type)->getClass();
     for (auto &field : ctx->cache->classes[cls->name].fields) {
       for (auto &parentField : ctx->cache->classes[name].fields)

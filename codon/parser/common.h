@@ -77,8 +77,8 @@ std::string combine2(const std::vector<T> &items, const std::string &delim = ","
 }
 /// @return True if an item is found in a vector vec.
 template <typename T, typename U>
-const T *in(const std::vector<T> &vec, const U &item) {
-  auto f = std::find(vec.begin(), vec.end(), item);
+const T *in(const std::vector<T> &vec, const U &item, size_t start = 0) {
+  auto f = std::find(vec.begin() + start, vec.end(), item);
   return f != vec.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a set s.

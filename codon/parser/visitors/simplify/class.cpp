@@ -97,7 +97,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    auto baseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes);
+    auto staticBaseASTs =
+        parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes);
+    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
@@ -157,9 +159,56 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                  ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
-      for (auto &b : baseASTs)
+      for (auto &b : baseASTs) {
         ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
+        ctx->cache->classes[b->name].childrenClasses.emplace_back(canonicalName);
+      }
+      for (auto &b : staticBaseASTs)
+        ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
       ctx->cache->classes[canonicalName].ast->validate();
+
+      // Calculate MRO
+      std::vector<std::vector<std::string>> mro{{canonicalName}};
+      for (auto &parent : ctx->cache->classes[canonicalName].parentClasses)
+        mro.push_back(ctx->cache->classes[parent].mro);
+      mro.push_back(ctx->cache->classes[canonicalName].parentClasses);
+      auto mergeC3 = [&](auto &seqs) {
+        // Reference: https://www.python.org/download/releases/2.3/mro/
+        std::vector<std::string> result;
+        for (int i = 0;; i++) {
+          bool found = false;
+          const std::string *cand = nullptr;
+          for (auto &seq : seqs) {
+            if (seq.empty())
+              continue;
+            found = true;
+            bool nothead = false;
+            for (auto &s : seqs)
+              if (!s.empty() && in(s, seq[0], 1)) {
+                nothead = true;
+                break;
+              }
+            if (!nothead) {
+              cand = &(seq[0]);
+              break;
+            }
+          }
+          if (!found)
+            return result;
+          if (!cand)
+            error("inconsistent hierarchy");
+          result.push_back(*cand);
+          for (auto &s : seqs)
+            if (!s.empty() && *cand == s[0]) {
+              s.erase(s.begin());
+            }
+        }
+        return result;
+      };
+      ctx->cache->classes[canonicalName].mro = mergeC3(mro);
+      if (ctx->cache->classes[canonicalName].mro.size() > 1) {
+        LOG("[mro] {} -> [{}]", canonicalName, combine2(ctx->cache->classes[canonicalName].mro));
+      }
 
       // Codegen default magic methods
       for (auto &m : stmt->attributes.magics) {
@@ -167,7 +216,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
       }
       // Add inherited methods
-      for (auto &base : baseASTs) {
+      for (auto &base : staticBaseASTs) {
         for (auto &mm : ctx->cache->classes[base->name].methods)
           for (auto &mf : ctx->cache->overloads[mm.second]) {
             auto f = ctx->cache->functions[mf.name].ast;
@@ -213,6 +262,24 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       addLater.push_back(ctx->find(c->getClass()->name));
     if (stmt->attributes.has(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
+
+    // Mark methods as virtual where needed
+    for (auto &m : ctx->cache->classes[canonicalName].methods) {
+      for (auto &bc : baseASTs) {
+        if (auto bcm = in(ctx->cache->classes[bc->name].methods, m.first)) {
+          for (auto &o : ctx->cache->overloads[*bcm]) {
+            // LOG("[virtual] set {}", o.name);
+            auto fn = ctx->cache->functions[o.name].ast;
+            fn->attributes.set("__virtual__");
+          }
+          for (auto &o : ctx->cache->overloads[m.second]) {
+            // LOG("[virtual] set {}", o.name);
+            auto fn = ctx->cache->functions[o.name].ast;
+            fn->attributes.set("__virtual__");
+          }
+        }
+      }
+    }
   }
   for (auto &i : addLater)
     ctx->add(ctx->cache->rev(i->canonicalName), i);

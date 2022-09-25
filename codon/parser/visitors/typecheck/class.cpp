@@ -90,6 +90,16 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
   ctx->typecheckLevel--;
 
+  // Handle vtables
+  auto &cls = ctx->cache->classes[stmt->name];
+  if ((!cls.parentClasses.empty()) || (!cls.childrenClasses.empty())) {
+    LOG("[mro] adding vtable for {}", stmt->name);
+    cls.fields.insert(cls.fields.begin(),
+                      Cache::Class::ClassField{"__vtable__", transformType(N<IdExpr>("cobj"))->type});
+    // preamble->push_back(N<AssignStmt>(N<IdExpr>(fmt::format(".__vtable__.{}", n)),
+                                      // N<CallExpr>(N<IdExpr>("cobj"), N<IntExpr>(100))));
+  }
+
   // Generalize generics and remove them from the context
   for (const auto &g : stmt->args)
     if (g.status != Param::Normal) {

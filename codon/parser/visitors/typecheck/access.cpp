@@ -190,7 +190,34 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>());
-    return transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
+    auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
+    unify(expr->type, e->type);
+    // if (isVirtual(bestMethod)) {
+    //   e->done = false;
+    //   if (realize(e->type)) {
+    //     auto name = ctx->cache->rev(bestMethod->ast->name);
+    //     auto fn = e->type->getFunc();
+    //     auto id = getVTableID(expr->expr->type->getClass(), name, fn);
+    //     std::vector<ExprPtr> ids;
+    //     for (auto &t: fn->getArgTypes())
+    //       ids.push_back(N<IdExpr>(t->realizedName()));
+    //     auto fnType = N<IndexExpr>(
+    //       N<IdExpr>("Function"),
+    //       std::vector<ExprPtr>{
+    //         N<TupleExpr>(ids),
+    //         N<IdExpr>(fn->getRetType()->realizedName())
+    //       }
+    //     );
+    //     e = transform(N<CallExpr>(
+    //       N<CallExpr>(
+    //         fnType,
+    //         N<IndexExpr>(N<DotExpr>(expr->expr, ".vtable"), N<IntExpr>(id))
+    //       ),
+    //       e->getCall()->args
+    //     ));
+    //   }
+    // }
+    return e;
   }
 }
 

@@ -243,6 +243,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 ///   expected `Optional[T]`, got `T`     -> `Optional(expr)`
 ///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
 ///   expected `Function`, got a function -> partialize function
+///   expected parent class, got a child class -> cast
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
@@ -283,8 +284,33 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
+  } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
+    if (in(ctx->cache->classes[exprClass->name].mro, expectedClass->name)) {
+      if (!expr->isId("")) {
+        // LOG("[cast] casting {} to {}", expr->toString(), expectedClass->toString());
+        expr = castToSuperClass(expr, expectedClass);
+      } else { // Just checking can this be done
+        expr->type = expectedClass;
+      }
+    }
   }
   return true;
+}
+
+ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp) {
+  ClassTypePtr typ = expr->type->getClass();
+  // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
+  for (auto &field : ctx->cache->classes[typ->name].fields) {
+    for (auto &parentField : ctx->cache->classes[superTyp->name].fields)
+      if (field.name == parentField.name) {
+        unify(ctx->instantiate(field.type, typ),
+              ctx->instantiate(parentField.type, superTyp));
+      }
+  }
+  auto typExpr = N<IdExpr>(superTyp->name);
+  typExpr->setType(superTyp);
+  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                       N<CallExpr>(N<DotExpr>(expr, "__raw__")), typExpr));
 }
 
 } // namespace codon::ast

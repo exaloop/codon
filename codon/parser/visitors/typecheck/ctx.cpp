@@ -120,33 +120,37 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
                                                         const std::string &method,
                                                         bool hideShadowed) const {
-  auto m = cache->classes.find(typeName);
-  if (m != cache->classes.end()) {
-    auto t = m->second.methods.find(method);
-    if (t != m->second.methods.end()) {
-      auto mt = cache->overloads[t->second];
-      std::unordered_set<std::string> signatureLoci;
-      std::vector<types::FuncTypePtr> vv;
-      for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
-        auto &method = mt[mti];
-        if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
-          continue;
-        if (method.age <= age) {
-          if (hideShadowed) {
-            auto sig = cache->functions[method.name].ast->signature();
-            if (!in(signatureLoci, sig)) {
-              signatureLoci.insert(sig);
-              vv.emplace_back(cache->functions[method.name].type);
-            }
-          } else {
+  std::vector<types::FuncTypePtr> vv;
+  std::unordered_set<std::string> signatureLoci;
+  auto populate = [&](const auto &cls) {
+    auto t = in(cls.methods, method);
+    if (!t) return;
+    auto mt = cache->overloads[*t];
+    for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+      auto &method = mt[mti];
+      if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
+        continue;
+      if (method.age <= age) {
+        if (hideShadowed) {
+          auto sig = cache->functions[method.name].ast->signature();
+          if (!in(signatureLoci, sig)) {
+            signatureLoci.insert(sig);
             vv.emplace_back(cache->functions[method.name].type);
           }
+        } else {
+          vv.emplace_back(cache->functions[method.name].type);
         }
       }
-      return vv;
+    }
+  };
+  if (auto cls = in(cache->classes, typeName)) {
+    for (auto &pc: cls->mro) {
+      auto mc = in(cache->classes, pc);
+      seqassert(mc, "class '{}' not found", pc);
+      populate(*mc);
     }
   }
-  return {};
+  return vv;
 }
 
 types::TypePtr TypeContext::findMember(const std::string &typeName,
