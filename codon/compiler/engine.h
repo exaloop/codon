@@ -6,17 +6,6 @@
 #include "codon/compiler/debug_listener.h"
 #include "codon/sir/llvm/llvm.h"
 
-#include "llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h"
-#include "llvm/ExecutionEngine/Orc/CompileUtils.h"
-#include "llvm/ExecutionEngine/Orc/Core.h"
-#include "llvm/ExecutionEngine/Orc/EPCIndirectionUtils.h"
-#include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
-#include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
-#include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
-#include "llvm/ExecutionEngine/Orc/IRTransformLayer.h"
-#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
-#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-
 namespace codon {
 namespace jit {
 

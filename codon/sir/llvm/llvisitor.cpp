@@ -550,16 +550,6 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
-  llvm::Function *main = M->getFunction("main");
-  llvm::EngineBuilder EB(std::move(M));
-  EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
-  llvm::ExecutionEngine *eng = EB.create();
-
-  auto dbListener = std::unique_ptr<DebugListener>();
-  if (db.debug) {
-    dbListener = std::make_unique<DebugListener>();
-    eng->RegisterJITEventListener(dbListener.get());
-  }
 
   for (auto &lib : libs) {
     std::string err;
@@ -568,10 +558,37 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     }
   }
 
+  DebugListener dbListener;
+  llvm::Triple triple(M->getTargetTriple());
+  auto epc = llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create(
+      std::make_shared<llvm::orc::SymbolStringPool>()));
+
+  llvm::orc::LLJITBuilder builder;
+  builder.setDataLayout(llvm::DataLayout(M.get()));
+  builder.setObjectLinkingLayerCreator(
+      [&epc](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
+          -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+        auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+            es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+        L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
+            es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
+        L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
+            es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
+        return L;
+      });
+
+  auto jit = llvm::cantFail(builder.create());
+  jit->getMainJITDylib().addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          jit->getDataLayout().getGlobalPrefix())));
+
+  llvm::cantFail(jit->addIRModule({std::move(M), std::move(context)}));
+  auto mainAddr = llvm::cantFail(jit->lookup("main"));
+
   if (db.debug) {
     runtime::setJITErrorCallback([&dbListener](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
-                 dbListener->getPrettyBacktrace(e.getBacktrace()));
+                 dbListener.getPrettyBacktrace(e.getBacktrace()));
       std::abort();
     });
   } else {
@@ -581,9 +598,12 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     });
   }
 
-  eng->runFunctionAsMain(main, args, envp);
-  runtime::setJITErrorCallback({});
-  delete eng;
+  try {
+    llvm::cantFail(epc->runAsMain(mainAddr, args));
+  } catch (const runtime::JITError &e) {
+    fmt::print(stderr, "{}\n", e.getOutput());
+    std::abort();
+  }
 }
 
 llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
