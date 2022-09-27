@@ -558,6 +558,10 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
   llvm::PassBuilder pb(machine.get());
 
+  llvm::Triple moduleTriple(module->getTargetTriple());
+  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
+  fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
+
   pb.registerModuleAnalyses(mam);
   pb.registerCGSCCAnalyses(cgam);
   pb.registerFunctionAnalyses(fam);
