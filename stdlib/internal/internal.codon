@@ -26,10 +26,9 @@ class __internal__:
     @llvm
     def _tuple_getitem_llvm(t: T, idx: int, T: type, E: type) -> E:
         %x = alloca {=T}
-        store {=T} %t, {=T}* %x
-        %p0 = bitcast {=T}* %x to {=E}*
-        %p1 = getelementptr {=E}, {=E}* %p0, i64 %idx
-        %v  = load {=E}, {=E}* %p1
+        store {=T} %t, ptr %x
+        %p = getelementptr {=E}, ptr %x, i64 %idx
+        %v  = load {=E}, ptr %p
         ret {=E} %v
 
     def tuple_fix_index(idx: int, len: int) -> int:
