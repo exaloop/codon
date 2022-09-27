@@ -593,7 +593,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   clearLLVMData();
   auto mainAddr = llvm::cantFail(jit->lookup("main"));
 
-  if (true /*db.debug*/) {
+  if (db.debug) {
     runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
                  dbp->getPrettyBacktrace(e.getBacktrace()));
