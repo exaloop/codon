@@ -225,28 +225,6 @@ class Int:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
-    @llvm
-    def __pickle__(self, dest: Ptr[byte]) -> None:
-        declare i32 @gzwrite(i8*, i8*, i32)
-        %0 = alloca i{=N}
-        store i{=N} %self, i{=N}* %0
-        %1 = bitcast i{=N}* %0 to i8*
-        %sz = getelementptr i{=N}, i{=N}* null, i32 1
-        %szi = ptrtoint i{=N}* %sz to i32
-        %2 = call i32 @gzwrite(i8* %dest, i8* %1, i32 %szi)
-        ret {} {}
-
-    @llvm
-    def __unpickle__(src: Ptr[byte]) -> Int[N]:
-        declare i32 @gzread(i8*, i8*, i32)
-        %0 = alloca i{=N}
-        %1 = bitcast i{=N}* %0 to i8*
-        %sz = getelementptr i{=N}, i{=N}* null, i32 1
-        %szi = ptrtoint i{=N}* %sz to i32
-        %2 = call i32 @gzread(i8* %src, i8* %1, i32 %szi)
-        %3 = load i{=N}, i{=N}* %0
-        ret i{=N} %3
-
     def __repr__(self) -> str:
         return str.cat(("Int[", seq_str_int(N), "](", seq_str_int(int(self)), ")"))
 
@@ -466,28 +444,6 @@ class UInt:
     def __xor__(self, other: UInt[N]) -> UInt[N]:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
-
-    @llvm
-    def __pickle__(self, dest: Ptr[byte]) -> None:
-        declare i32 @gzwrite(i8*, i8*, i32)
-        %0 = alloca i{=N}
-        store i{=N} %self, i{=N}* %0
-        %1 = bitcast i{=N}* %0 to i8*
-        %sz = getelementptr i{=N}, i{=N}* null, i32 1
-        %szi = ptrtoint i{=N}* %sz to i32
-        %2 = call i32 @gzwrite(i8* %dest, i8* %1, i32 %szi)
-        ret {} {}
-
-    @llvm
-    def __unpickle__(src: Ptr[byte]) -> UInt[N]:
-        declare i32 @gzread(i8*, i8*, i32)
-        %0 = alloca i{=N}
-        %1 = bitcast i{=N}* %0 to i8*
-        %sz = getelementptr i{=N}, i{=N}* null, i32 1
-        %szi = ptrtoint i{=N}* %sz to i32
-        %2 = call i32 @gzread(i8* %src, i8* %1, i32 %szi)
-        %3 = load i{=N}, i{=N}* %0
-        ret i{=N} %3
 
     def __repr__(self) -> str:
         return str.cat(("UInt[", seq_str_int(N), "](", seq_str_uint(int(self)), ")"))

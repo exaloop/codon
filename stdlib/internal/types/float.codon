@@ -324,20 +324,56 @@ class float:
     @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[float], b: float) -> None:
-        %tmp = atomicrmw xchg double* %d, double %b seq_cst
+        %tmp = atomicrmw xchg ptr %d, double %b seq_cst
         ret {} {}
 
     @nocapture
     @llvm
     def __atomic_add__(d: Ptr[float], b: float) -> float:
-        %tmp = atomicrmw fadd double* %d, double %b seq_cst
-        ret double %tmp
+        0:
+        %1 = load atomic i64, ptr %d monotonic, align 8
+        %2 = bitcast i64 %1 to double
+        %3 = fadd double %2, %b
+        %4 = bitcast double %3 to i64
+        %5 = cmpxchg weak ptr %d, i64 %1, i64 %4 seq_cst monotonic, align 8
+        %6 = extractvalue { i64, i1 } %5, 1
+        br i1 %6, label %15, label %7
+        7:                                                ; preds = %0, %7
+        %8 = phi { i64, i1 } [ %13, %7 ], [ %5, %0 ]
+        %9 = extractvalue { i64, i1 } %8, 0
+        %10 = bitcast i64 %9 to double
+        %11 = fadd double %10, %b
+        %12 = bitcast double %11 to i64
+        %13 = cmpxchg weak ptr %d, i64 %9, i64 %12 seq_cst monotonic, align 8
+        %14 = extractvalue { i64, i1 } %13, 1
+        br i1 %14, label %15, label %7
+        15:                                               ; preds = %7, %0
+        %16 = phi double [ %2, %0 ], [ %10, %7 ]
+        ret double %16
 
     @nocapture
     @llvm
     def __atomic_sub__(d: Ptr[float], b: float) -> float:
-        %tmp = atomicrmw fsub double* %d, double %b seq_cst
-        ret double %tmp
+        0:
+        %1 = load atomic i64, ptr %d monotonic, align 8
+        %2 = bitcast i64 %1 to double
+        %3 = fsub double %2, %b
+        %4 = bitcast double %3 to i64
+        %5 = cmpxchg weak ptr %d, i64 %1, i64 %4 seq_cst monotonic, align 8
+        %6 = extractvalue { i64, i1 } %5, 1
+        br i1 %6, label %15, label %7
+        7:                                                ; preds = %0, %7
+        %8 = phi { i64, i1 } [ %13, %7 ], [ %5, %0 ]
+        %9 = extractvalue { i64, i1 } %8, 0
+        %10 = bitcast i64 %9 to double
+        %11 = fsub double %10, %b
+        %12 = bitcast double %11 to i64
+        %13 = cmpxchg weak ptr %d, i64 %9, i64 %12 seq_cst monotonic, align 8
+        %14 = extractvalue { i64, i1 } %13, 1
+        br i1 %14, label %15, label %7
+        15:                                               ; preds = %7, %0
+        %16 = phi double [ %2, %0 ], [ %10, %7 ]
+        ret double %16
 
     def __hash__(self) -> int:
         @nocapture
@@ -690,20 +726,56 @@ class float32:
     @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[float32], b: float32) -> None:
-        %tmp = atomicrmw xchg float* %d, float %b seq_cst
+        %tmp = atomicrmw xchg ptr %d, float %b seq_cst
         ret {} {}
 
     @nocapture
     @llvm
     def __atomic_add__(d: Ptr[float32], b: float32) -> float32:
-        %tmp = atomicrmw fadd float* %d, float %b seq_cst
-        ret float %tmp
+        0:
+        %1 = load atomic i32, ptr %d monotonic, align 4
+        %2 = bitcast i32 %1 to float
+        %3 = fadd float %2, %b
+        %4 = bitcast float %3 to i32
+        %5 = cmpxchg weak ptr %d, i32 %1, i32 %4 seq_cst monotonic, align 4
+        %6 = extractvalue { i32, i1 } %5, 1
+        br i1 %6, label %15, label %7
+        7:                                                ; preds = %0, %7
+        %8 = phi { i32, i1 } [ %13, %7 ], [ %5, %0 ]
+        %9 = extractvalue { i32, i1 } %8, 0
+        %10 = bitcast i32 %9 to float
+        %11 = fadd float %10, %b
+        %12 = bitcast float %11 to i32
+        %13 = cmpxchg weak ptr %d, i32 %9, i32 %12 seq_cst monotonic, align 4
+        %14 = extractvalue { i32, i1 } %13, 1
+        br i1 %14, label %15, label %7
+        15:                                               ; preds = %7, %0
+        %16 = phi float [ %2, %0 ], [ %10, %7 ]
+        ret float %16
 
     @nocapture
     @llvm
     def __atomic_sub__(d: Ptr[float32], b: float32) -> float32:
-        %tmp = atomicrmw fsub float* %d, float %b seq_cst
-        ret float %tmp
+        0:
+        %1 = load atomic i32, ptr %d monotonic, align 4
+        %2 = bitcast i32 %1 to float
+        %3 = fsub float %2, %b
+        %4 = bitcast float %3 to i32
+        %5 = cmpxchg weak ptr %d, i32 %1, i32 %4 seq_cst monotonic, align 4
+        %6 = extractvalue { i32, i1 } %5, 1
+        br i1 %6, label %15, label %7
+        7:                                                ; preds = %0, %7
+        %8 = phi { i32, i1 } [ %13, %7 ], [ %5, %0 ]
+        %9 = extractvalue { i32, i1 } %8, 0
+        %10 = bitcast i32 %9 to float
+        %11 = fsub float %10, %b
+        %12 = bitcast float %11 to i32
+        %13 = cmpxchg weak ptr %d, i32 %9, i32 %12 seq_cst monotonic, align 4
+        %14 = extractvalue { i32, i1 } %13, 1
+        br i1 %14, label %15, label %7
+        15:                                               ; preds = %7, %0
+        %16 = phi float [ %2, %0 ], [ %10, %7 ]
+        ret float %16
 
     def __hash__(self) -> int:
         return self.__float__().__hash__()

@@ -69,6 +69,24 @@ class int:
 
 
 @extend
+class Int:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> Int[N]:
+        return _read(jar, Int[N])
+
+
+@extend
+class UInt:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> UInt[N]:
+        return _read(jar, UInt[N])
+
+
+@extend
 class float:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
