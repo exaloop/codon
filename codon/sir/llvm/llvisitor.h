@@ -207,6 +207,7 @@ private:
   }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
+  void clearLLVMData();
 
 public:
   static std::string getNameForFunction(const Func *x);

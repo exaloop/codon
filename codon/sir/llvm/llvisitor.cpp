@@ -232,6 +232,39 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   return M;
 }
 
+void LLVMVisitor::clearLLVMData() {
+  B = {};
+  func = nullptr;
+  block = nullptr;
+  value = nullptr;
+
+  for (auto it = funcs.begin(); it != funcs.end();) {
+    if (it->second && it->second->hasPrivateLinkage()) {
+      it = funcs.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
+  for (auto it = vars.begin(); it != vars.end();) {
+    if (it->second && !llvm::isa<llvm::GlobalValue>(it->second)) {
+      it = vars.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
+  coro.reset();
+  loops.clear();
+  trycatch.clear();
+  catches.clear();
+  db.reset();
+  context = {};
+  M = {};
+}
+
 std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
 LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   // process any new functions or globals
@@ -266,38 +299,9 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   auto currentModule = std::move(M);
 
   // reset all LLVM fields/data -- they are owned by the context
-  B = {};
-  func = nullptr;
-  block = nullptr;
-  value = nullptr;
-
-  for (auto it = funcs.begin(); it != funcs.end();) {
-    if (it->second && it->second->hasPrivateLinkage()) {
-      it = funcs.erase(it);
-    } else {
-      it->second = nullptr;
-      ++it;
-    }
-  }
-
-  for (auto it = vars.begin(); it != vars.end();) {
-    if (it->second && !llvm::isa<llvm::GlobalValue>(it->second)) {
-      it = vars.erase(it);
-    } else {
-      it->second = nullptr;
-      ++it;
-    }
-  }
-
-  coro.reset();
-  loops.clear();
-  trycatch.clear();
-  catches.clear();
-  db.reset();
-
+  clearLLVMData();
   context = std::make_unique<llvm::LLVMContext>();
   M = makeModule(*context, src);
-
   return {std::move(currentModule), std::move(currentContext)};
 }
 
@@ -558,7 +562,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     }
   }
 
-  DebugListener dbListener;
+  DebugPlugin *dbp = nullptr;
   llvm::Triple triple(M->getTargetTriple());
   auto epc = llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create(
       std::make_shared<llvm::orc::SymbolStringPool>()));
@@ -566,7 +570,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   llvm::orc::LLJITBuilder builder;
   builder.setDataLayout(llvm::DataLayout(M.get()));
   builder.setObjectLinkingLayerCreator(
-      [&epc](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
+      [&epc, &dbp](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
         auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
             es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
@@ -574,6 +578,9 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
             es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
         L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
             es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
+        auto dbPlugin = std::make_unique<DebugPlugin>();
+        dbp = dbPlugin.get();
+        L->addPlugin(std::move(dbPlugin));
         return L;
       });
 
@@ -583,16 +590,17 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           jit->getDataLayout().getGlobalPrefix())));
 
   llvm::cantFail(jit->addIRModule({std::move(M), std::move(context)}));
+  clearLLVMData();
   auto mainAddr = llvm::cantFail(jit->lookup("main"));
 
-  if (db.debug) {
-    runtime::setJITErrorCallback([&dbListener](const runtime::JITError &e) {
+  if (true /*db.debug*/) {
+    runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
-                 dbListener.getPrettyBacktrace(e.getBacktrace()));
+                 dbp->getPrettyBacktrace(e.getBacktrace()));
       std::abort();
     });
   } else {
-    runtime::setJITErrorCallback([&dbListener](const runtime::JITError &e) {
+    runtime::setJITErrorCallback([](const runtime::JITError &e) {
       fmt::print(stderr, "{}", e.getOutput());
       std::abort();
     });
