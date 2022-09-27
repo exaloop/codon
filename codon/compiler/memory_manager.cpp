@@ -188,8 +188,7 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
 
     if (static_cast<int>(AG.getMemProt()) &
         static_cast<int>(llvm::jitlink::MemProt::Write)) {
-      seq_gc_add_roots((void *)SegAddr.getValue(),
-                       (void *)((char *)SegAddr.getValue() + Seg.ContentSize));
+      seq_gc_add_roots((void *)Seg.Addr.getValue(), (void *)SegAddr.getValue());
     }
   }
 

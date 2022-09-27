@@ -555,6 +555,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
 
+  Timer t1("llvm/jitlink");
   for (auto &lib : libs) {
     std::string err;
     if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(lib.c_str(), &err)) {
@@ -583,6 +584,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
         L->addPlugin(std::move(dbPlugin));
         return L;
       });
+  builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
 
   auto jit = llvm::cantFail(builder.create());
   jit->getMainJITDylib().addGenerator(
@@ -605,6 +607,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
       std::abort();
     });
   }
+  t1.log();
 
   try {
     llvm::cantFail(epc->runAsMain(mainAddr, args));

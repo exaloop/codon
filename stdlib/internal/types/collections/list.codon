@@ -267,12 +267,11 @@ class List:
         return self
 
     def __repr__(self) -> str:
-        from internal.types.strbuf import strbuf
         n = self.__len__()
         if n == 0:
             return "[]"
         else:
-            buf = strbuf()
+            buf = _strbuf()
             buf.append("[")
             buf.append(self[0].__repr__())
             for i in range(1, n):
