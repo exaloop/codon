@@ -36,10 +36,6 @@ getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
 
-  auto pm = std::make_unique<llvm::legacy::PassManager>();
-  auto fpm = std::make_unique<llvm::legacy::FunctionPassManager>(module);
-  pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-
   if (moduleTriple.getArch()) {
     cpuStr = llvm::codegen::getCPUStr();
     featuresStr = llvm::codegen::getFeaturesStr();

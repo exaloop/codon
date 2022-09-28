@@ -18,6 +18,128 @@ llvm::cl::opt<std::string>
     libdevice("libdevice", llvm::cl::desc("libdevice path for GPU kernels"),
               llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
 
+// Adapted from LLVM's GVExtractorPass, which is not externally available
+// as a pass for the new pass manager.
+class GVExtractor : public llvm::PassInfoMixin<GVExtractor> {
+  llvm::SetVector<llvm::GlobalValue *> named;
+  bool deleteStuff;
+  bool keepConstInit;
+
+public:
+  // If deleteS is true, this pass deletes the specified global values.
+  // Otherwise, it deletes as much of the module as possible, except for the
+  // global values specified.
+  explicit GVExtractor(std::vector<llvm::GlobalValue *> &GVs, bool deleteS = true,
+                       bool keepConstInit = false)
+      : named(GVs.begin(), GVs.end()), deleteStuff(deleteS),
+        keepConstInit(keepConstInit) {}
+
+  // Make sure GV is visible from both modules. Delete is true if it is
+  // being deleted from this module.
+  // This also makes sure GV cannot be dropped so that references from
+  // the split module remain valid.
+  static void makeVisible(llvm::GlobalValue &GV, bool del) {
+    bool local = GV.hasLocalLinkage();
+    if (local || del) {
+      GV.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      if (local)
+        GV.setVisibility(llvm::GlobalValue::HiddenVisibility);
+      return;
+    }
+
+    if (!GV.hasLinkOnceLinkage()) {
+      seqassertn(!GV.isDiscardableIfUnused(), "bad global in extractor");
+      return;
+    }
+
+    // Map linkonce* to weak* so that llvm doesn't drop this GV.
+    switch (GV.getLinkage()) {
+    default:
+      seqassertn(false, "unexpected linkage");
+    case llvm::GlobalValue::LinkOnceAnyLinkage:
+      GV.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
+      return;
+    case llvm::GlobalValue::LinkOnceODRLinkage:
+      GV.setLinkage(llvm::GlobalValue::WeakODRLinkage);
+      return;
+    }
+  }
+
+  llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &) {
+    // Visit the global inline asm.
+    if (!deleteStuff)
+      M.setModuleInlineAsm("");
+
+    // For simplicity, just give all GlobalValues ExternalLinkage. A trickier
+    // implementation could figure out which GlobalValues are actually
+    // referenced by the 'named' set, and which GlobalValues in the rest of
+    // the module are referenced by the NamedSet, and get away with leaving
+    // more internal and private things internal and private. But for now,
+    // be conservative and simple.
+
+    // Visit the GlobalVariables.
+    for (auto &GV : M.globals()) {
+      bool del = deleteStuff == (bool)named.count(&GV) && !GV.isDeclaration() &&
+                 (!GV.isConstant() || !keepConstInit);
+      if (!del) {
+        if (GV.hasAvailableExternallyLinkage())
+          continue;
+        if (GV.getName() == "llvm.global_ctors")
+          continue;
+      }
+
+      makeVisible(GV, del);
+
+      if (del) {
+        // Make this a declaration and drop it's comdat.
+        GV.setInitializer(nullptr);
+        GV.setComdat(nullptr);
+      }
+    }
+
+    // Visit the Functions.
+    for (auto &F : M) {
+      bool del = deleteStuff == (bool)named.count(&F) && !F.isDeclaration();
+      if (!del) {
+        if (F.hasAvailableExternallyLinkage())
+          continue;
+      }
+
+      makeVisible(F, del);
+
+      if (del) {
+        // Make this a declaration and drop it's comdat.
+        F.deleteBody();
+        F.setComdat(nullptr);
+      }
+    }
+
+    // Visit the Aliases.
+    for (auto &GA : llvm::make_early_inc_range(M.aliases())) {
+      bool del = deleteStuff == (bool)named.count(&GA);
+      makeVisible(GA, del);
+
+      if (del) {
+        auto *ty = GA.getValueType();
+        GA.removeFromParent();
+        llvm::Value *decl;
+        if (auto *funcTy = llvm::dyn_cast<llvm::FunctionType>(ty)) {
+          decl = llvm::Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage,
+                                        GA.getAddressSpace(), GA.getName(), &M);
+
+        } else {
+          decl = new llvm::GlobalVariable(
+              M, ty, false, llvm::GlobalValue::ExternalLinkage, nullptr, GA.getName());
+        }
+        GA.replaceAllUsesWith(decl);
+        delete &GA;
+      }
+    }
+
+    return llvm::PreservedAnalyses::none();
+  }
+};
+
 std::string cleanUpName(llvm::StringRef name) {
   std::string validName;
   llvm::raw_string_ostream validNameStream(validName);
@@ -350,17 +472,14 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   auto keep = getRequiredGVs(kernels);
 
   auto prune = [&](std::vector<llvm::GlobalValue *> keep) {
-    auto pm = std::make_unique<llvm::legacy::PassManager>();
-    pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-    // Delete everything but kernel functions.
-    pm->add(llvm::createGVExtractionPass(keep));
-    // Delete unreachable globals.
-    pm->add(llvm::createGlobalDCEPass());
-    // Remove dead debug info.
-    pm->add(llvm::createStripDeadDebugInfoPass());
-    // Remove dead func decls.
-    pm->add(llvm::createStripDeadPrototypesPass());
-    pm->run(*M);
+    llvm::ModuleAnalysisManager mam;
+    llvm::ModulePassManager mpm;
+
+    mpm.addPass(GVExtractor(keep));
+    mpm.addPass(llvm::GlobalDCEPass());
+    mpm.addPass(llvm::StripDeadDebugInfoPass());
+    mpm.addPass(llvm::StripDeadPrototypesPass());
+    mpm.run(*M, mam);
   };
 
   // Remove non-kernel functions.
@@ -372,47 +491,31 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
   // Run NVPTX passes and general opt pipeline.
   {
-    auto pm = std::make_unique<llvm::legacy::PassManager>();
-    auto fpm = std::make_unique<llvm::legacy::FunctionPassManager>(M);
-    pm->add(new llvm::TargetLibraryInfoWrapperPass(tlii));
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
+    llvm::PassBuilder pb(machine.get());
 
-    pm->add(llvm::createTargetTransformInfoWrapperPass(
-        machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
-    fpm->add(llvm::createTargetTransformInfoWrapperPass(
-        machine ? machine->getTargetIRAnalysis() : llvm::TargetIRAnalysis()));
+    llvm::TargetLibraryInfoImpl tlii(triple);
+    fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
 
-    if (machine) {
-      auto &ltm = dynamic_cast<llvm::LLVMTargetMachine &>(*machine);
-      llvm::Pass *tpc = ltm.createPassConfig(*pm);
-      pm->add(tpc);
-    }
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-    pm->add(llvm::createInternalizePass([&](const llvm::GlobalValue &gv) {
-      return std::find(keep.begin(), keep.end(), &gv) != keep.end();
-    }));
+    pb.registerPipelineStartEPCallback(
+        [&](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt) {
+          pm.addPass(llvm::InternalizePass([&](const llvm::GlobalValue &gv) {
+            return std::find(keep.begin(), keep.end(), &gv) != keep.end();
+          }));
+        });
 
-    llvm::PassManagerBuilder pmb;
-    unsigned optLevel = 3, sizeLevel = 0;
-    pmb.OptLevel = optLevel;
-    pmb.SizeLevel = sizeLevel;
-    pmb.Inliner = llvm::createFunctionInliningPass(optLevel, sizeLevel, false);
-    pmb.DisableUnrollLoops = false;
-    pmb.LoopVectorize = true;
-    pmb.SLPVectorize = true;
-
-    if (machine) {
-      machine->adjustPassManager(pmb);
-    }
-
-    pmb.populateModulePassManager(*pm);
-    pmb.populateFunctionPassManager(*fpm);
-
-    fpm->doInitialization();
-    for (llvm::Function &f : *M) {
-      fpm->run(f);
-    }
-    fpm->doFinalization();
-    pm->run(*M);
+    llvm::ModulePassManager mpm =
+        pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(*M, mam);
   }
 
   // Prune again after optimizations.
