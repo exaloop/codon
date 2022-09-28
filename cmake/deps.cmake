@@ -135,7 +135,7 @@ if(APPLE)
     CPMAddPackage(
         NAME unwind
         GITHUB_REPOSITORY "exaloop/libunwind"
-        GIT_TAG f38e660ebe55347501e6d5451f4c58731243474e
+        GIT_TAG e50988ccea5492b62e014408796002306b36eb9c
         OPTIONS "CMAKE_BUILD_TYPE Release"
                 "LIBUNWIND_ENABLE_STATIC OFF"
                 "LIBUNWIND_ENABLE_SHARED ON"

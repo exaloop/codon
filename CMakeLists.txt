@@ -433,7 +433,7 @@ if(APPLE)
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
     COMMAND
       ${CMAKE_COMMAND} -E copy
-      "${CMAKE_BINARY_DIR}/libunwind.1.0${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
       "${CMAKE_BINARY_DIR}/lib/codon")
   add_dependencies(libs_apple codonrt)
 endif()
