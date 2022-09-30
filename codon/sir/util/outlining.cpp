@@ -102,6 +102,7 @@ struct Outliner : public Operator {
   SeriesFlow *flowRegion;
   decltype(flowRegion->begin()) begin, end;
   bool outlineGlobals;              // whether to outline globals that are modified
+  bool allByValue;                  // outline all vars by value (can change semantics)
   bool inRegion;                    // are we in the outlined region?
   bool invalid;                     // if we can't outline for whatever reason
   std::unordered_set<id_t> inVars;  // vars used inside region
@@ -115,10 +116,11 @@ struct Outliner : public Operator {
 
   Outliner(BodiedFunc *parent, SeriesFlow *flowRegion,
            decltype(flowRegion->begin()) begin, decltype(flowRegion->begin()) end,
-           bool outlineGlobals)
+           bool outlineGlobals, bool allByValue)
       : Operator(), parent(parent), flowRegion(flowRegion), begin(begin), end(end),
-        outlineGlobals(outlineGlobals), inRegion(false), invalid(false), inVars(),
-        outVars(), modifiedInVars(), globalsToOutline(), inLoops(), outFlows() {}
+        outlineGlobals(outlineGlobals), allByValue(allByValue), inRegion(false),
+        invalid(false), inVars(), outVars(), modifiedInVars(), globalsToOutline(),
+        inLoops(), outFlows() {}
 
   bool isEnclosingLoopInRegion(id_t loopId = -1) {
     int d = depth();
@@ -235,6 +237,8 @@ struct Outliner : public Operator {
     for (auto *var : vars) {
       if (!var->isGlobal())
         set.insert(var->getId());
+      else if (inRegion && allByValue && !isA<Func>(var))
+        globalsToOutline.insert(var->getId());
     }
   }
 
@@ -260,6 +264,9 @@ struct Outliner : public Operator {
 
   // mod = shared AND modified in region
   std::unordered_set<id_t> getModVars() {
+    if (allByValue)
+      return {};
+
     std::unordered_set<id_t> modVars, shared = getSharedVars();
     for (auto id : modifiedInVars) {
       if (globalsToOutline.count(id) > 0 || shared.count(id) > 0)
@@ -377,18 +384,18 @@ struct Outliner : public Operator {
 OutlineResult outlineRegion(BodiedFunc *parent, SeriesFlow *series,
                             decltype(series->begin()) begin,
                             decltype(series->end()) end, bool allowOutflows,
-                            bool outlineGlobals) {
+                            bool outlineGlobals, bool allByValue) {
   if (begin == end)
     return {};
-  Outliner outliner(parent, series, begin, end, outlineGlobals);
+  Outliner outliner(parent, series, begin, end, outlineGlobals, allByValue);
   parent->accept(outliner);
   return outliner.outline(allowOutflows);
 }
 
 OutlineResult outlineRegion(BodiedFunc *parent, SeriesFlow *series, bool allowOutflows,
-                            bool outlineGlobals) {
+                            bool outlineGlobals, bool allByValue) {
   return outlineRegion(parent, series, series->begin(), series->end(), allowOutflows,
-                       outlineGlobals);
+                       outlineGlobals, allByValue);
 }
 
 } // namespace util
