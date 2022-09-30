@@ -163,7 +163,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   // Case: a global variable that has not been marked with `global` statement
   if (val->isVar() && val->getBaseName().empty()) {
     val->noShadow = true;
-    if (val->scope.size() == 1)
+    if (val->scope.size() == 1 && !val->isStatic())
       ctx->cache->addGlobal(val->canonicalName);
     return false;
   }
