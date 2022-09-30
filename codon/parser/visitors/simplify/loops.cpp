@@ -56,8 +56,9 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   transformConditionalScope(stmt->suite);
   ctx->leaveConditionalBlock();
   // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars)
+  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
     ctx->findDominatingBinding(var);
+  }
   ctx->getBase()->loops.pop_back();
 
   // Complete while-else clause
