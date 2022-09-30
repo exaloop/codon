@@ -99,7 +99,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     // Collect classes (and their fields) that are to be statically inherited
     auto staticBaseASTs =
         parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes);
-    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
+    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes, true);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
@@ -168,6 +168,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       ctx->cache->classes[canonicalName].ast->validate();
 
       // Calculate MRO
+      // TODO: use it with parseBaseClasses to have the same structure!
       std::vector<std::vector<std::string>> mro{{canonicalName}};
       for (auto &parent : ctx->cache->classes[canonicalName].parentClasses)
         mro.push_back(ctx->cache->classes[parent].mro);
@@ -207,7 +208,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       };
       ctx->cache->classes[canonicalName].mro = mergeC3(mro);
       if (ctx->cache->classes[canonicalName].mro.size() > 1) {
-        LOG("[mro] {} -> [{}]", canonicalName, combine2(ctx->cache->classes[canonicalName].mro));
+        LOG("[mro] {} -> [{}]", canonicalName,
+            combine2(ctx->cache->classes[canonicalName].mro));
       }
 
       // Codegen default magic methods
@@ -308,7 +310,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// @param args Class fields that are to be updated with base classes' fields.
 std::vector<ClassStmt *>
 SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                                  std::vector<Param> &args, const Attr &attr) {
+                                  std::vector<Param> &args, const Attr &attr,
+                                  bool addVTable) {
   std::vector<ClassStmt *> asts;
   for (auto &cls : baseClasses) {
     std::string name;
@@ -327,7 +330,21 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
     name = transformType(N<IdExpr>(name))->getId()->value;
     if (name.empty() || !in(ctx->cache->classes, name))
       error(cls.get(), "invalid base class");
-    asts.push_back(ctx->cache->classes[name].ast.get());
+
+    auto &cachedCls = ctx->cache->classes[name];
+    asts.push_back(cachedCls.ast.get());
+
+    // Add __vtable__ to parent classes if it is not there already
+    auto vtableVar = "__vtable__";
+    if (addVTable && !cachedCls.fields.empty() &&
+        cachedCls.fields[0].name != vtableVar) {
+      cachedCls.fields.insert(cachedCls.fields.begin(), {vtableVar, nullptr});
+      cachedCls.ast->args.insert(cachedCls.ast->args.begin(),
+                                 Param{vtableVar, N<IdExpr>("cobj"), nullptr});
+      preamble->push_back(
+          N<AssignStmt>(N<IdExpr>(fmt::format(".{}.{}", name, vtableVar)), nullptr,
+                        N<IdExpr>("cobj")));
+    }
 
     // Sanity checks
     if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))

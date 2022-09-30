@@ -217,10 +217,10 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     auto finalizerInit = N<ExprStmt>(
         N<CallExpr>(N<IdExpr>("std.internal.gc.register_finalizer"), clone(var)));
     auto e = N<StmtExpr>(N<SuiteStmt>(newInit, finalizerInit), clone(var));
-    if (ctx->cache->classes[clsName].hasVTable()) {
+    if (!ctx->cache->classes[clsName].fields.empty() &&
+        ctx->cache->classes[clsName].fields[0].name == "__vtable__") {
       auto vtableInit = N<AssignMemberStmt>(
-          clone(var), "__vtable__",
-          N<DotExpr>(N<DotExpr>(fmt::format(".__vtable__.{}", clsName), "arr"), "ptr"));
+          clone(var), "__vtable__", N<IdExpr>(fmt::format(".{}.__vtable__", clsName)));
       e->stmts.emplace_back(vtableInit);
     }
     auto init =

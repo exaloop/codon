@@ -348,6 +348,31 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   return type->getFunc();
 }
 
+size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
+  seqassert(fp->canRealize() && fp->getRetType()->canRealize(), "{} not realized",
+            fp->debugString(1));
+  auto parentCls = fp->getArgTypes()[0]->getClass()->name;
+  auto fnName = ctx->cache->rev(fp->ast->name);
+  std::vector<std::string> gs;
+  for (auto &a : fp->getArgTypes())
+    gs.push_back(a->realizedName());
+  gs.push_back("|");
+  for (auto &a : fp->funcGenerics)
+    if (!a.name.empty())
+      gs.push_back(a.type->realizedName());
+  auto sig = join(gs, ",");
+
+  // REALIZE CHILDREN
+
+
+  if (auto i = in(ctx->cache->classes[parentCls].vTableIDs, make_pair(fnName, sig))) {
+    return *i;
+  } else {
+    return ctx->cache->classes[parentCls].vTableIDs[{fnName, sig}] =
+               ctx->cache->classes[parentCls].vTableIDs.size();
+  }
+}
+
 /// Make IR node for a realized type.
 ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Realize if not, and return cached value if it exists

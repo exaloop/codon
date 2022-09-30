@@ -176,7 +176,8 @@ private: // Node simplification rules
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
   std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &,
-                                            std::vector<Param> &, const Attr &);
+                                            std::vector<Param> &, const Attr &,
+                                            bool = false);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                        std::vector<Param> &);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);

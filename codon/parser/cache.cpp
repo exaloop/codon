@@ -56,10 +56,6 @@ std::string Cache::getContent(const SrcInfo &info) {
   return s.substr(col, len);
 }
 
-bool Cache::Class::hasVTable() const {
-  return !fields.empty() && fields[0].name == "__vtable__";
-}
-
 types::ClassTypePtr Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->kind == TypecheckItem::Type)

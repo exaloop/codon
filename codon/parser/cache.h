@@ -133,13 +133,13 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::vector<std::string> parentClasses;
     std::vector<std::string> childrenClasses;
     std::vector<std::string> mro;
+    /// Maps (name, signature) to a unique VTable ID.
+    std::unordered_map<std::pair<std::string, std::string>, int> vTableIDs;
 
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
-
-    bool hasVTable() const;
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
