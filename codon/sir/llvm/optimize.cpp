@@ -576,6 +576,12 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
           pm.addPass(AllocationRemover());
       });
 
+  if (plugins) {
+    for (auto *plugin : *plugins) {
+      plugin->dsl->addLLVMPasses(&pb, debug);
+    }
+  }
+
   if (debug) {
     llvm::ModulePassManager mpm =
         pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
