@@ -472,8 +472,18 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   auto keep = getRequiredGVs(kernels);
 
   auto prune = [&](std::vector<llvm::GlobalValue *> keep) {
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
     llvm::ModulePassManager mpm;
+    llvm::PassBuilder pb;
+
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
 
     mpm.addPass(GVExtractor(keep));
     mpm.addPass(llvm::GlobalDCEPass());
