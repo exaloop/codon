@@ -73,7 +73,6 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
 target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
-  target_link_libraries(codonrt PRIVATE unwind_shared)
   target_link_libraries(
     codonrt
     PRIVATE -Wl,-force_load,$<TARGET_FILE:zlibstatic>
