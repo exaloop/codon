@@ -196,7 +196,7 @@ jobs:
           cp build/codon codon-deploy/bin/
           cp build/libcodon*.${LIBEXT} codon-deploy/lib/codon/
           cp build/libomp.${LIBEXT} codon-deploy/lib/codon/
-          if [ -e build/libunwind.${LIBEXT} ]; cp build/libunwind.${LIBEXT} codon-deploy/lib/codon/; fi
+          if [ -e build/libunwind.${LIBEXT} ]; then cp build/libunwind.${LIBEXT} codon-deploy/lib/codon/; fi
           cp -r build/include codon-deploy/
           cp -r stdlib codon-deploy/lib/codon/
           cp -r extra/python/dist/*.whl codon-deploy/
