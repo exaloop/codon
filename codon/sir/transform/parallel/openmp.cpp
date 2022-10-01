@@ -1233,7 +1233,7 @@ template <typename T> OpenMPTransformData unpar(T *v) {
 }
 
 template <typename T>
-OpenMPTransformData setupOpenMPTransform(T *v, BodiedFunc *parent) {
+OpenMPTransformData setupOpenMPTransform(T *v, BodiedFunc *parent, bool gpu) {
   if (!v->isParallel())
     return unpar(v);
   auto *M = v->getModule();
@@ -1241,7 +1241,7 @@ OpenMPTransformData setupOpenMPTransform(T *v, BodiedFunc *parent) {
   if (!parent || !body)
     return unpar(v);
   auto outline = util::outlineRegion(parent, body, /*allowOutflows=*/false,
-                                     /*outlineGlobals=*/true);
+                                     /*outlineGlobals=*/true, /*allByValue=*/gpu);
   if (!outline)
     return unpar(v);
 
@@ -1400,7 +1400,7 @@ CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t le
 const std::string OpenMPPass::KEY = "core-parallel-openmp";
 
 void OpenMPPass::handle(ForFlow *v) {
-  auto data = setupOpenMPTransform(v, cast<BodiedFunc>(getParentFunc()));
+  auto data = setupOpenMPTransform(v, cast<BodiedFunc>(getParentFunc()), /*gpu=*/false);
   if (!v->isParallel())
     return;
 
@@ -1516,7 +1516,8 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
     }
   }
 
-  auto data = setupOpenMPTransform(v, parent);
+  auto data =
+      setupOpenMPTransform(v, parent, (v->isParallel() && v->getSchedule()->gpu));
   if (!v->isParallel())
     return;
 
@@ -1529,11 +1530,8 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
   auto *sched = v->getSchedule();
   OMPTypes types(M);
 
-  if (sched->gpu && !sharedVars.empty()) {
-    warn("GPU-parallel loop cannot modify external variables; ignoring", v);
-    v->setParallel(false);
-    return;
-  }
+  // we disable shared vars for GPU loops
+  seqassertn(!(sched->gpu && !sharedVars.empty()), "GPU-parallel loop had shared vars");
 
   // gather extra arguments
   std::vector<Value *> extraArgs;
