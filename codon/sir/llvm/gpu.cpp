@@ -485,7 +485,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-    mpm.addPass(GVExtractor(keep));
+    mpm.addPass(GVExtractor(keep, false));
     mpm.addPass(llvm::GlobalDCEPass());
     mpm.addPass(llvm::StripDeadDebugInfoPass());
     mpm.addPass(llvm::StripDeadPrototypesPass());
