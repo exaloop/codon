@@ -175,4 +175,45 @@ void Cache::parseCode(const std::string &code) {
   ast::TranslateVisitor(codegenCtx).transform(node);
 }
 
+std::vector<std::string> Cache::mergeC3(std::vector<std::vector<std::string>> &seqs) {
+  // Reference: https://www.python.org/download/releases/2.3/mro/
+  std::vector<std::string> result;
+  for (size_t i = 0;; i++) {
+    bool found = false;
+    const std::string *cand = nullptr;
+    for (auto &seq : seqs) {
+      if (seq.empty())
+        continue;
+      found = true;
+      bool nothead = false;
+      for (auto &s : seqs)
+        if (!s.empty()) {
+          bool in = false;
+          for (size_t j = 1; j < s.size(); j++) {
+            if ((in |= (seq[0] == s[j])))
+              break;
+          }
+          if (in) {
+            nothead = true;
+            break;
+          }
+        }
+      if (!nothead) {
+        cand = &(seq[0]);
+        break;
+      }
+    }
+    if (!found)
+      return result;
+    if (!cand)
+      return {};
+    result.push_back(*cand);
+    for (auto &s : seqs)
+      if (!s.empty() && (*cand) == s[0]) {
+        s.erase(s.begin());
+      }
+  }
+  return result;
+}
+
 } // namespace codon::ast

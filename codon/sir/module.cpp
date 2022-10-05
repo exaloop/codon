@@ -17,7 +17,9 @@ translateGenerics(std::vector<types::Generic> &generics) {
     ret.push_back(std::make_shared<codon::ast::types::LinkType>(
         g.isStatic()
             ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
-            : g.getTypeValue()->getAstType()));
+            : (g.isStaticStr() ? std::make_shared<codon::ast::types::StaticType>(
+                                     g.getStaticStringValue())
+                               : g.getTypeValue()->getAstType())));
   }
   return ret;
 }

@@ -25,7 +25,8 @@ void Type::Unification::undo() {
 }
 TypePtr Type::follow() { return shared_from_this(); }
 std::vector<std::shared_ptr<Type>> Type::getUnbounds() const { return {}; }
-std::string Type::toString() const { return debugString(false); }
+std::string Type::prettyString() const { return debugString(0); }
+std::string Type::toString() const { return debugString(1); }
 bool Type::is(const std::string &s) { return getClass() && getClass()->name == s; }
 char Type::isStaticType() {
   auto t = follow();
@@ -38,7 +39,7 @@ char Type::isStaticType() {
 
 bool Trait::canRealize() const { return false; }
 bool Trait::isInstantiated() const { return false; }
-std::string Trait::debugString(bool debug) const { return ""; }
+std::string Trait::debugString(char mode) const { return ""; }
 std::string Trait::realizedName() const { return ""; }
 
 LinkType::LinkType(Kind kind, int id, int level, TypePtr type, char isStatic,
@@ -172,14 +173,13 @@ bool LinkType::canRealize() const {
     return type->canRealize();
 }
 bool LinkType::isInstantiated() const { return kind == Link && type->isInstantiated(); }
-std::string LinkType::debugString(bool debug) const {
+std::string LinkType::debugString(char mode) const {
   if (kind == Unbound || kind == Generic)
-    return debug ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
-                               trait ? ":" + trait->debugString(debug) : "")
-                 : (genericName.empty() ? "?" : genericName);
+    return (mode == 2) ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
+                                     trait ? ":" + trait->debugString(mode) : "")
+                       : (genericName.empty() ? "?" : genericName);
   else
-    return type->debugString(debug);
-  // fmt::format("{}->{}", id, type->debugString(debug));
+    return type->debugString(mode);
 }
 std::string LinkType::realizedName() const {
   if (kind == Unbound || kind == Generic)
@@ -306,24 +306,25 @@ bool ClassType::isInstantiated() const {
          std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
                      [](auto &t) { return !t.type || t.type->isInstantiated(); });
 }
-std::string ClassType::debugString(bool debug) const {
+std::string ClassType::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
-      gs.push_back(a.type->debugString(debug));
-  if (debug && !hiddenGenerics.empty()) {
+      gs.push_back(a.type->debugString(mode));
+  if ((mode == 2) && !hiddenGenerics.empty()) {
     for (auto &a : hiddenGenerics)
       if (!a.name.empty())
-        gs.push_back("-" + a.type->debugString(debug));
+        gs.push_back("-" + a.type->debugString(mode));
   }
   // Special formatting for Functions and Tuples
-  auto n = niceName;
+  auto n = mode == 0 ? niceName : name;
   if (startswith(n, TYPE_TUPLE))
     n = "Tuple";
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
 std::string ClassType::realizedName() const {
-  if (!_rn.empty()) return _rn;
+  if (!_rn.empty())
+    return _rn;
 
   std::vector<std::string> gs;
   for (auto &a : generics)
@@ -331,8 +332,8 @@ std::string ClassType::realizedName() const {
       gs.push_back(a.type->realizedName());
   std::string s = join(gs, ",");
   if (canRealize())
-    const_cast<ClassType*>(this)->_rn =
-      fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+    const_cast<ClassType *>(this)->_rn =
+        fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
   return _rn;
 }
 std::string ClassType::realizedTypeName() const {
@@ -409,8 +410,8 @@ bool RecordType::isInstantiated() const {
                      [](auto &a) { return a->isInstantiated(); }) &&
          this->ClassType::isInstantiated();
 }
-std::string RecordType::debugString(bool debug) const {
-  return fmt::format("{}", this->ClassType::debugString(debug));
+std::string RecordType::debugString(char mode) const {
+  return fmt::format("{}", this->ClassType::debugString(mode));
 }
 std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
@@ -521,18 +522,18 @@ bool FuncType::isInstantiated() const {
     retType->getFunc()->funcParent = removed;
   return res;
 }
-std::string FuncType::debugString(bool debug) const {
+std::string FuncType::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
-      gs.push_back(a.type->debugString(debug));
+      gs.push_back(a.type->debugString(mode));
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
-  if (debug)
-    as.push_back(getRetType()->debugString(debug));
+  if (mode == 2)
+    as.push_back(getRetType()->debugString(mode));
   for (auto &a : getArgTypes())
-    as.push_back(a->debugString(debug));
+    as.push_back(a->debugString(mode));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}", ast->name, s.empty() ? "" : fmt::format("[{}]", s));
@@ -570,11 +571,11 @@ TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
       this->RecordType::instantiate(atLevel, unboundCount, cache));
   return std::make_shared<PartialType>(rec, func, known);
 }
-std::string PartialType::debugString(bool debug) const {
+std::string PartialType::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
-      gs.push_back(a.type->debugString(debug));
+      gs.push_back(a.type->debugString(mode));
   std::vector<std::string> as;
   int i = 0, gi = 0;
   for (; i < known.size(); i++)
@@ -584,7 +585,7 @@ std::string PartialType::debugString(bool debug) const {
       else
         as.emplace_back(gs[gi++]);
     }
-  return fmt::format("{}[{}]", !debug ? func->ast->name : func->debugString(debug),
+  return fmt::format("{}[{}]", mode != 2 ? func->ast->name : func->debugString(mode),
                      join(as, ","));
 }
 std::string PartialType::realizedName() const {
@@ -610,6 +611,8 @@ StaticType::StaticType(std::vector<ClassType::Generic> generics,
     : generics(move(generics)), expr(e->clone()), typeCtx(move(typeCtx)) {}
 StaticType::StaticType(int64_t i)
     : expr(std::make_shared<IntExpr>(i)), typeCtx(nullptr) {}
+StaticType::StaticType(const std::string &s)
+    : expr(std::make_shared<StringExpr>(s)), typeCtx(nullptr) {}
 int StaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getStatic()) {
     if (canRealize())
@@ -683,13 +686,13 @@ bool StaticType::canRealize() const {
   return true;
 }
 bool StaticType::isInstantiated() const { return expr->staticValue.evaluated; }
-std::string StaticType::debugString(bool debug) const {
+std::string StaticType::debugString(char mode) const {
   if (expr->staticValue.evaluated)
     return expr->staticValue.toString();
-  if (debug) {
+  if (mode == 2) {
     std::vector<std::string> s;
     for (auto &g : generics)
-      s.push_back(g.type->debugString(debug));
+      s.push_back(g.type->debugString(mode));
     return fmt::format("Static[{};{}]", join(s, ","), expr->toString());
   } else {
     return fmt::format("Static[{}]", FormatVisitor::apply(expr));
@@ -826,10 +829,10 @@ TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
   c->setSrcInfo(getSrcInfo());
   return c;
 }
-std::string CallableTrait::debugString(bool debug) const {
+std::string CallableTrait::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : args)
-    gs.push_back(a->debugString(debug));
+    gs.push_back(a->debugString(mode));
   return fmt::format("Callable[{}]", join(gs, ","));
 }
 
@@ -846,8 +849,8 @@ TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
   c->setSrcInfo(getSrcInfo());
   return c;
 }
-std::string TypeTrait::debugString(bool debug) const {
-  return fmt::format("Trait[{}]", type->debugString(debug));
+std::string TypeTrait::debugString(char mode) const {
+  return fmt::format("Trait[{}]", type->debugString(mode));
 }
 
 } // namespace codon::ast::types

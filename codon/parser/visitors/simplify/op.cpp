@@ -57,8 +57,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
     // Special case: tuples. Change to Tuple.N
     auto t = expr->index->getTuple();
-    expr->expr = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
-    expr->expr->markType();
+    expr->expr = NT<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))

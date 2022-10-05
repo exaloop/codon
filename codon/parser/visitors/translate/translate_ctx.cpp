@@ -37,6 +37,12 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   return ret;
 }
 
+std::shared_ptr<TranslateItem> TranslateContext::forceFind(const std::string &name) const {
+  auto i = find(name);
+  seqassertn(i, "cannot find '{}'", name);
+  return i;
+}
+
 std::shared_ptr<TranslateItem>
 TranslateContext::add(TranslateItem::Kind kind, const std::string &name, void *type) {
   auto it = std::make_shared<TranslateItem>(kind, getBase());

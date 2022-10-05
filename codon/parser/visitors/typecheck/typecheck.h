@@ -169,6 +169,7 @@ private: // Node typechecking rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
+  void parseBaseClasses(ClassStmt *);
   std::string generateTuple(size_t, const std::string & = "Tuple",
                             std::vector<std::string> = {}, bool = true);
 
@@ -187,7 +188,7 @@ private:
   }
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
   types::TypePtr realize(types::TypePtr);
-  types::TypePtr realizeFunc(types::FuncType *);
+  types::TypePtr realizeFunc(types::FuncType *, bool = false);
   types::TypePtr realizeType(types::ClassType *);
   size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
@@ -205,6 +206,7 @@ private:
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
   ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp);
+  StmtPtr prepareVTables();
 
 public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }

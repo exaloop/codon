@@ -167,10 +167,9 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
   auto fn = [&](const std::string &var, const ExprPtr &expr) {
     bool staticInt = expr->isStatic();
-    auto t = N<IndexExpr>(
+    auto t = NT<IndexExpr>(
         N<IdExpr>("Static"),
         N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
-    t->markType();
     auto brk = N<BreakStmt>();
     brk->setDone(); // Avoid transforming this one to continue
     // var [: Static] := expr; suite...

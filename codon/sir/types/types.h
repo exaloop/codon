@@ -26,24 +26,38 @@ class Generic {
 private:
   union {
     int64_t staticValue;
+    char *staticStringValue;
     types::Type *typeValue;
   } value;
-  enum { STATIC, TYPE } tag;
+  enum { STATIC, STATIC_STR, TYPE } tag;
 
 public:
   Generic(int64_t staticValue) : value(), tag(STATIC) {
     value.staticValue = staticValue;
   }
+  Generic(const std::string &staticValue) : value(), tag(STATIC_STR) {
+    value.staticStringValue = new char[staticValue.size() + 1];
+    strncpy(value.staticStringValue, staticValue.data(), staticValue.size());
+    value.staticStringValue[staticValue.size()] = 0;
+  }
   Generic(types::Type *typeValue) : value(), tag(TYPE) { value.typeValue = typeValue; }
   Generic(const types::Generic &) = default;
+  ~Generic() {
+    // if (tag == STATIC_STR)
+    //   delete[] value.staticStringValue;
+  }
 
   /// @return true if the generic is a type
   bool isType() const { return tag == TYPE; }
   /// @return true if the generic is static
   bool isStatic() const { return tag == STATIC; }
+  /// @return true if the generic is static
+  bool isStaticStr() const { return tag == STATIC_STR; }
 
   /// @return the static value
   int64_t getStaticValue() const { return value.staticValue; }
+  /// @return the static string value
+  std::string getStaticStringValue() const { return value.staticStringValue; }
   /// @return the type value
   types::Type *getTypeValue() const { return value.typeValue; }
 };

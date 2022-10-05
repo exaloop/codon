@@ -162,7 +162,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       if (!typ)
         return false;
       if (!typ->getRecord() || startswith(typ->name, TYPE_TUPLE))
-        error("can only unpack named tuple types: {}", typ->toString());
+        error("can only unpack named tuple types: {}", typ->prettyString());
       auto &fields = ctx->cache->classes[typ->name].fields;
       for (size_t i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         args.insert(args.begin() + ai,
@@ -209,20 +209,12 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
 
   if (expr->expr->isType()) {
     // Case: reference type constructor. Transform to
-    // `ctr = T.__new__(); std.internal.gc.register_finalizer(v); v.__init__(args)`
+    // `ctr = T.__new__(); v.__init__(args)`
     ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("ctr"));
     auto clsName = expr->expr->type->getClass()->name;
     auto newInit =
         N<AssignStmt>(clone(var), N<CallExpr>(N<DotExpr>(expr->expr, "__new__")));
-    auto finalizerInit = N<ExprStmt>(
-        N<CallExpr>(N<IdExpr>("std.internal.gc.register_finalizer"), clone(var)));
-    auto e = N<StmtExpr>(N<SuiteStmt>(newInit, finalizerInit), clone(var));
-    if (!ctx->cache->classes[clsName].fields.empty() &&
-        ctx->cache->classes[clsName].fields[0].name == "__vtable__") {
-      auto vtableInit = N<AssignMemberStmt>(
-          clone(var), "__vtable__", N<IdExpr>(fmt::format(".{}.__vtable__", clsName)));
-      e->stmts.emplace_back(vtableInit);
-    }
+    auto e = N<StmtExpr>(N<SuiteStmt>(newInit), clone(var));
     auto init =
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), expr->args));
     e->stmts.emplace_back(init);
@@ -736,7 +728,7 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
   if (!typ->getClass())
     return nullptr;
   if (!typ->getRecord())
-    error("{} is not a tuple type", typ->toString());
+    error("{} is not a tuple type", typ->prettyString());
   return transform(N<IntExpr>(typ->getRecord()->args.size()));
 }
 
@@ -817,10 +809,9 @@ ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   if (!realize(expr->type))
     return nullptr;
 
-  auto e = N<IdExpr>(expr->type->realizedName());
+  auto e = NT<IdExpr>(expr->type->realizedName());
   e->setType(expr->type);
   e->setDone();
-  e->markType();
   return e;
 }
 

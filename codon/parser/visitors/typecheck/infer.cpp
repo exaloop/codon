@@ -34,7 +34,7 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
   } else {
     undo.undo();
   }
-  error("cannot unify {} and {}", a->toString(), b->toString());
+  error("cannot unify {} and {}", a->prettyString(), b->prettyString());
   return nullptr;
 }
 
@@ -144,7 +144,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
       e.trackRealize(fmt::format("{} (arguments {})", f->ast->name, f->toString()),
                      getSrcInfo());
     } else {
-      e.trackRealize(typ->toString(), getSrcInfo());
+      e.trackRealize(typ->prettyString(), getSrcInfo());
     }
     throw;
   }
@@ -191,6 +191,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()] =
           std::make_shared<Cache::Class::ClassRealization>();
   realization->type = realized;
+  realization->id = ctx->cache->classRealizationCnt++;
 
   // Realize tuple arguments
   if (auto tr = realized->getRecord()) {
@@ -210,7 +211,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     if (!realize(ftyp))
       error("cannot realize {}.{} of type {}",
             ctx->cache->reverseIdentifierLookup[realized->name], field.name,
-            ftyp->toString());
+            ftyp->prettyString());
     LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type->toString(),
                 ftyp->toString());
     realization->fields.emplace_back(field.name, ftyp);
@@ -230,10 +231,13 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   return realized;
 }
 
-types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
+types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto &realizations = ctx->cache->functions[type->ast->name].realizations;
-  if (auto r = in(realizations, type->realizedName()))
-    return (*r)->type;
+  if (auto r = in(realizations, type->realizedName())) {
+    if (!force) {
+      return (*r)->type;
+    }
+  }
 
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH)
     codon::compilationError(
@@ -276,8 +280,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 
   // Populate realization table in advance to support recursive realizations
   auto key = type->realizedName(); // note: the key might change later
+  ir::Func *oldIR = nullptr;       // Get it if it was already made (force mode)
+  if (auto i = in(realizations, key))
+    oldIR = (*i)->ir;
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
+  r->ir = oldIR;
 
   // Realizations should always be visible, so add them to the toplevel
   ctx->addToplevel(
@@ -322,22 +330,26 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   // Realize the return type
   realize(type->getRetType());
 
+  std::vector<Param> args;
+  for (auto &i : ast->args) {
+    std::string varName = i.name;
+    trimStars(varName);
+    args.emplace_back(Param{varName, nullptr, nullptr, i.status});
+  }
+  r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
+                           ast->suite);
+  r->ast->attributes = ast->attributes;
+
   if (!in(ctx->cache->pendingRealizations,
           make_pair(type->ast->name, type->realizedName()))) {
-    std::vector<Param> args;
-    for (auto &i : ast->args) {
-      std::string varName = i.name;
-      trimStars(varName);
-      args.emplace_back(Param{varName, nullptr, nullptr, i.status});
-    }
-    r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
-                             ast->suite);
-    r->ast->attributes = ast->attributes;
-    r->ir = makeIRFunction(r);
+    if (!r->ir)
+      r->ir = makeIRFunction(r);
     realizations[type->realizedName()] = r;
   } else {
     realizations[key] = realizations[type->realizedName()];
   }
+  if (force)
+    realizations[type->realizedName()]->ast = r->ast;
   ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
                                              TypecheckItem::Func, type->getFunc()));
   ctx->realizationBases.pop_back();
@@ -349,28 +361,94 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 }
 
 size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
-  seqassert(fp->canRealize() && fp->getRetType()->canRealize(), "{} not realized",
-            fp->debugString(1));
-  auto parentCls = fp->getArgTypes()[0]->getClass()->name;
+  seqassert(cp->canRealize() && fp->canRealize() && fp->getRetType()->canRealize(),
+            "{} not realized", fp->debugString(1));
+
+  auto sig = [](types::FuncType *fp) {
+    std::vector<std::string> gs;
+    for (auto &a : fp->getArgTypes())
+      gs.push_back(a->realizedName());
+    gs.push_back("|");
+    for (auto &a : fp->funcGenerics)
+      if (!a.name.empty())
+        gs.push_back(a.type->realizedName());
+    return join(gs, ",");
+  };
+
+  auto baseCls = cp->name;
   auto fnName = ctx->cache->rev(fp->ast->name);
-  std::vector<std::string> gs;
-  for (auto &a : fp->getArgTypes())
-    gs.push_back(a->realizedName());
-  gs.push_back("|");
-  for (auto &a : fp->funcGenerics)
-    if (!a.name.empty())
-      gs.push_back(a.type->realizedName());
-  auto sig = join(gs, ",");
+  auto key = make_pair(fnName, sig(fp));
+  auto &vt = ctx->cache->classes[baseCls]
+                 .realizations[cp->realizedName()]
+                 ->vtables[cp->realizedName()];
 
-  // REALIZE CHILDREN
-
-
-  if (auto i = in(ctx->cache->classes[parentCls].vTableIDs, make_pair(fnName, sig))) {
-    return *i;
+  size_t vid;
+  if (auto i = in(vt.table, key)) {
+    vid = i->second;
   } else {
-    return ctx->cache->classes[parentCls].vTableIDs[{fnName, sig}] =
-               ctx->cache->classes[parentCls].vTableIDs.size();
+    vid = vt.table.size();
+    vt.table[key] = {fp->getFunc(), vid};
   }
+
+  LOG("[virtual] realized base {} := {} :: {} :: {}", vid, baseCls, key.first,
+      key.second);
+
+  for (auto &[clsName, cls] : ctx->cache->classes) {
+    if (clsName != baseCls && in(cls.mro, baseCls)) {
+      for (auto &[_, real] : cls.realizations) {
+        auto &vtable = real->vtables[baseCls];
+
+        // TODO: fix the instantiation for geenrics!
+        auto ct =
+            ctx->instantiate(ctx->forceFind(clsName)->type, cp->getClass())->getClass();
+        std::vector<types::TypePtr> args = fp->getArgTypes();
+        args[0] = ct;
+        types::TypePtr m = findBestMethod(ct, fnName, args);
+        m = ctx->instantiate(m);
+        for (size_t ai = 0; ai < args.size(); ai++)
+          unify(m->getFunc()->getArgTypes()[ai], args[ai]);
+        unify(m->getFunc()->getRetType(), fp->getRetType());
+        seqassert(m->canRealize(), "cannot realize overriden method {}",
+                  m->debugString(1));
+        m = realize(m);
+        key = make_pair(fnName, sig(m->getFunc().get()));
+
+        std::vector<Param> fnArgs;
+        fnArgs.push_back(Param{".ptr", N<IdExpr>(cp->realizedName()), nullptr});
+        for (size_t i = 1; i < args.size(); i++)
+          fnArgs.push_back(
+              Param{format(".arg{}", i), N<IdExpr>(args[i]->realizedName()), nullptr});
+        std::vector<ExprPtr> callArgs;
+        callArgs.emplace_back(N<CallExpr>(
+            N<IdExpr>("__internal__.raw_class:0"),
+            N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>(".ptr"), "__raw__")), "-",
+                          N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                                      N<IdExpr>(cp->realizedName()),
+                                      N<IdExpr>(real->type->realizedName()))),
+            NT<IdExpr>(real->type->realizedName())));
+        for (size_t i = 1; i < args.size(); i++)
+          callArgs.emplace_back(N<IdExpr>(format(".arg{}", i)));
+        auto thunkAst = N<FunctionStmt>(
+            format("_thunk.{}.{}", baseCls, m->realizedName()), nullptr, fnArgs,
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs)),
+            Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
+        auto &thunkFn = ctx->cache->functions[thunkAst->name];
+        thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
+        transform(thunkAst);
+        auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
+        seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
+        LOG("thunk for {} |- {}: {}", baseCls, clsName,
+            ctx->cache->functions[thunkAst->name]
+                .realizations.begin()
+                ->second->ast->toString(1));
+
+        LOG("[virtual] realized child {} := {} :: {} :: {} [{} / {}]", vid, baseCls,
+            key.first, key.second, tm->debugString(1), m->debugString(1));
+        vtable.table[key] = {tm->getFunc(), vid};
+      }
+    }
+  }
+  return vid;
 }
 
 /// Make IR node for a realized type.

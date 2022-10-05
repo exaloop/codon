@@ -94,7 +94,9 @@ public:
   /// Pretty-print facility.
   std::string toString() const;
   /// Pretty-print facility.
-  virtual std::string debugString(bool debug) const = 0;
+  std::string prettyString() const;
+  /// Pretty-print facility. mode is [0: pretty, 1: llvm, 2: debug]
+  virtual std::string debugString(char mode) const = 0;
   /// Print the realization string.
   /// Similar to toString, but does not print the data unnecessary for realization
   /// (e.g. the function return type).
@@ -118,7 +120,7 @@ using TypePtr = std::shared_ptr<Type>;
 struct Trait : public Type {
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
 };
 
@@ -172,7 +174,7 @@ public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
   std::shared_ptr<LinkType> getLink() override {
@@ -249,7 +251,7 @@ public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
   /// Convenience function to get the name of realized type
   /// (needed if a subclass realizes something else as well).
@@ -283,7 +285,7 @@ public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
 
   std::shared_ptr<RecordType> getRecord() override {
     return std::static_pointer_cast<RecordType>(shared_from_this());
@@ -321,7 +323,7 @@ public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
   std::shared_ptr<FuncType> getFunc() override {
@@ -358,7 +360,7 @@ public:
   TypePtr instantiate(int atLevel, int *unboundCount,
                       std::unordered_map<int, TypePtr> *cache) override;
 
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
 public:
@@ -389,6 +391,7 @@ struct StaticType : public Type {
   StaticType(const std::shared_ptr<Expr> &expr, std::shared_ptr<TypeContext> ctx);
   /// Convenience function for static types whose evaluation is already known.
   explicit StaticType(int64_t i);
+  explicit StaticType(const std::string &s);
 
 public:
   int unify(Type *typ, Unification *undo) override;
@@ -400,7 +403,7 @@ public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
   StaticValue evaluate() const;
@@ -421,7 +424,7 @@ public:
   TypePtr generalize(int atLevel) override;
   TypePtr instantiate(int atLevel, int *unboundCount,
                       std::unordered_map<int, TypePtr> *cache) override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
 };
 
 struct TypeTrait : public Trait {
@@ -433,7 +436,7 @@ public:
   TypePtr generalize(int atLevel) override;
   TypePtr instantiate(int atLevel, int *unboundCount,
                       std::unordered_map<int, TypePtr> *cache) override;
-  std::string debugString(bool debug) const override;
+  std::string debugString(char mode) const override;
 };
 
 } // namespace types

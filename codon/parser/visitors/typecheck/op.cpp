@@ -91,7 +91,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
     } else {
       // Nothing found: report an error
       error("cannot find magic '{}' in {}", getMagic(expr->op).first,
-            expr->lexpr->type->toString());
+            expr->lexpr->type->prettyString());
     }
   }
 }

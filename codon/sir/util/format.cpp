@@ -134,6 +134,9 @@ public:
       const auto &l = *it;
       if (l.isStatic()) {
         literals.push_back(fmt::format(FMT_STRING("(static {})"), l.getStaticValue()));
+      } else if (l.isStaticStr()) {
+        literals.push_back(
+            fmt::format(FMT_STRING("(static \"{}\")"), l.getStaticStringValue()));
       } else {
         literals.push_back(
             fmt::format(FMT_STRING("(type {})"), makeFormatter(l.getTypeValue())));

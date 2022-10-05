@@ -1,6 +1,6 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-from internal.gc import free
+from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic
 
 
 @pure
@@ -12,7 +12,6 @@ def seq_check_errno() -> str:
 from C import seq_print(str)
 from C import exit(int)
 
-
 @extend
 class __internal__:
     @pure
@@ -20,6 +19,38 @@ class __internal__:
     @llvm
     def class_raw(obj) -> Ptr[byte]:
         ret i8* %obj
+
+    @pure
+    @derives
+    @llvm
+    def raw_class(obj: Ptr[byte], T: type) -> T:
+        %0 = bitcast i8* %obj to {=T}
+        ret {=T} %0
+
+    @pure
+    @derives
+    def class_new(T: type) -> T:
+        sz = T.__tuplesize__()
+        p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
+        register_finalizer(p)
+        pf = __internal__.raw_class(p, T)
+        __internal__.init_obj_vtable(pf)
+        return pf
+
+    def init_obj_vtable(pf):  # do manual inspection!
+        pass
+
+    def init_vtable() -> Ptr[Ptr[cobj]]:
+        p = Ptr[Ptr[cobj]](seq_alloc_atomic(10000))
+        __internal__.init_vtable_members(p)
+        return p
+
+    def init_vtable_members(p: Ptr[Ptr[cobj]]) -> None:
+        pass
+
+    @inline
+    def base_derived_dist(B: type, D: type) -> int:
+        return 0
 
     @pure
     @derives
@@ -336,3 +367,6 @@ class Function:
     @llvm
     def __call__(self, *args) -> TR:
         noop  # compiler will populate this one
+
+__vtables__ = __internal__.init_vtable()
+def _____(): __vtables__  # make it global!

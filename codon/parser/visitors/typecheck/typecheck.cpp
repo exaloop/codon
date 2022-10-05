@@ -20,7 +20,85 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!cache->typeCtx)
     cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
-  return v.inferTypes(clone(stmts), true);
+  auto s = v.inferTypes(clone(stmts), true);
+  if (s->getSuite()) {
+    v.prepareVTables();
+  }
+  return s;
+}
+
+StmtPtr TypecheckVisitor::prepareVTables() {
+  auto rep = "__internal__.init_vtable_members:0";
+  auto &initFn = ctx->cache->functions[rep];
+  auto suite = N<SuiteStmt>();
+  for (auto &[_, cls] : ctx->cache->classes) {
+    for (auto &[r, real] : cls.realizations) {
+      for (auto &[base, vtable] : real->vtables) {
+        if (!vtable.ir) {
+          auto var = initFn.ast->args[0].name;
+          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
+              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
+                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
+                          N<IntExpr>(vtable.table.size())))));
+          for (auto &[k, v] : vtable.table) {
+            auto &[fn, id] = v;
+            std::vector<ExprPtr> ids;
+            for (auto &t : fn->getArgTypes())
+              ids.push_back(NT<IdExpr>(t->realizedName()));
+            suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+                N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                           "__setitem__"),
+                N<IntExpr>(id),
+                N<CallExpr>(N<DotExpr>(
+                    N<CallExpr>(
+                        NT<InstantiateExpr>(
+                            NT<IdExpr>("Function"),
+                            std::vector<ExprPtr>{
+                                NT<InstantiateExpr>(
+                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
+                                    ids),
+                                NT<IdExpr>(fn->getRetType()->realizedName())}),
+                        N<IdExpr>(fn->realizedName())),
+                    "__raw__")))));
+          }
+        }
+      }
+    }
+  }
+  initFn.ast->suite = suite;
+  auto typ = initFn.realizations.begin()->second->type;
+  typ->ast = initFn.ast.get();
+  realizeFunc(typ.get(), true);
+
+  auto &initObjFns =
+      ctx->cache->functions["__internal__.init_obj_vtable:0"];
+  auto oldAst = initObjFns.ast;
+  for (auto &[_, real] : initObjFns.realizations) {
+    auto t = real->type;
+    auto clsTyp = t->getArgTypes()[0]->getClass();
+    auto varName = initObjFns.ast->args[0].name;
+
+    const auto &fields = ctx->cache->classes[clsTyp->name].fields;
+    auto suite = N<SuiteStmt>();
+    for (auto &f : fields)
+      if (startswith(f.name, VAR_VTABLE)) {
+        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
+        suite->stmts.push_back(N<AssignMemberStmt>(
+            N<IdExpr>(varName),
+            format("{}.{}", VAR_VTABLE, name),
+            N<IndexExpr>(
+                N<IdExpr>("__vtables__"),
+                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
+      }
+
+    initObjFns.ast->suite = suite;
+    t->ast = initObjFns.ast.get();
+    realizeFunc(t.get(), true);
+  }
+  initObjFns.ast = oldAst;
+
+  return nullptr;
 }
 
 /**************************************************************************************/
@@ -285,12 +363,20 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
   } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
-    if (in(ctx->cache->classes[exprClass->name].mro, expectedClass->name)) {
-      if (!expr->isId("")) {
-        // LOG("[cast] casting {} to {}", expr->toString(), expectedClass->toString());
-        expr = castToSuperClass(expr, expectedClass);
-      } else { // Just checking can this be done
-        expr->type = expectedClass;
+    // TODO: adjust for generic MROs
+    auto &mros = ctx->cache->classes[exprClass->name].mro;
+    for (size_t i = 1; i < mros.size(); i++) {
+      auto tt = ctx->forceFind(mros[i])->type;
+      auto t = ctx->instantiate(tt, exprClass);
+      if (t->unify(expectedClass.get(), nullptr) >= 0) {
+        if (!expr->isId("")) {
+          // LOG("[cast] casting {} to {}", expr->toString(),
+          // expectedClass->toString());
+          expr = castToSuperClass(expr, expectedClass);
+        } else { // Just checking can this be done
+          expr->type = expectedClass;
+        }
+        break;
       }
     }
   }
@@ -310,7 +396,7 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp) 
   auto typExpr = N<IdExpr>(superTyp->name);
   typExpr->setType(superTyp);
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                       N<CallExpr>(N<DotExpr>(expr, "__raw__")), typExpr));
+                               N<CallExpr>(N<DotExpr>(expr, "__raw__")), typExpr));
 }
 
 } // namespace codon::ast

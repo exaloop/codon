@@ -1109,6 +1109,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   for (auto it = x->literal_begin(); it != x->literal_end(); ++it) {
     if (it->isStatic()) {
       store.push_back(it->getStaticValue());
+    } else if (it->isStaticStr()) {
+      store.push_back(it->getStaticStringValue());
     } else if (it->isType()) {
       llvm::Type *llvmType = getLLVMType(it->getTypeValue());
       std::string bufStr;

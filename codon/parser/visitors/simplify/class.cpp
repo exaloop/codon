@@ -97,9 +97,10 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    auto staticBaseASTs =
-        parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes);
-    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes, true);
+    auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
+                                           stmt->attributes, canonicalName);
+    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
+                                     canonicalName, true);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
@@ -159,58 +160,10 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                  ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
-      for (auto &b : baseASTs) {
-        ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
-        ctx->cache->classes[b->name].childrenClasses.emplace_back(canonicalName);
-      }
+      ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
       ctx->cache->classes[canonicalName].ast->validate();
-
-      // Calculate MRO
-      // TODO: use it with parseBaseClasses to have the same structure!
-      std::vector<std::vector<std::string>> mro{{canonicalName}};
-      for (auto &parent : ctx->cache->classes[canonicalName].parentClasses)
-        mro.push_back(ctx->cache->classes[parent].mro);
-      mro.push_back(ctx->cache->classes[canonicalName].parentClasses);
-      auto mergeC3 = [&](auto &seqs) {
-        // Reference: https://www.python.org/download/releases/2.3/mro/
-        std::vector<std::string> result;
-        for (int i = 0;; i++) {
-          bool found = false;
-          const std::string *cand = nullptr;
-          for (auto &seq : seqs) {
-            if (seq.empty())
-              continue;
-            found = true;
-            bool nothead = false;
-            for (auto &s : seqs)
-              if (!s.empty() && in(s, seq[0], 1)) {
-                nothead = true;
-                break;
-              }
-            if (!nothead) {
-              cand = &(seq[0]);
-              break;
-            }
-          }
-          if (!found)
-            return result;
-          if (!cand)
-            error("inconsistent hierarchy");
-          result.push_back(*cand);
-          for (auto &s : seqs)
-            if (!s.empty() && *cand == s[0]) {
-              s.erase(s.begin());
-            }
-        }
-        return result;
-      };
-      ctx->cache->classes[canonicalName].mro = mergeC3(mro);
-      if (ctx->cache->classes[canonicalName].mro.size() > 1) {
-        LOG("[mro] {} -> [{}]", canonicalName,
-            combine2(ctx->cache->classes[canonicalName].mro));
-      }
 
       // Codegen default magic methods
       for (auto &m : stmt->attributes.magics) {
@@ -265,20 +218,23 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     if (stmt->attributes.has(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
 
-    // Mark methods as virtual where needed
+    // Check virtual functions
+    auto banned =
+        std::set<std::string>{"__init__", "__new__", "__raw__", "__tuplesize__"};
     for (auto &m : ctx->cache->classes[canonicalName].methods) {
-      for (auto &bc : baseASTs) {
-        if (auto bcm = in(ctx->cache->classes[bc->name].methods, m.first)) {
-          for (auto &o : ctx->cache->overloads[*bcm]) {
-            // LOG("[virtual] set {}", o.name);
-            auto fn = ctx->cache->functions[o.name].ast;
-            fn->attributes.set("__virtual__");
-          }
-          for (auto &o : ctx->cache->overloads[m.second]) {
-            // LOG("[virtual] set {}", o.name);
-            auto fn = ctx->cache->functions[o.name].ast;
-            fn->attributes.set("__virtual__");
-          }
+      auto method = m.first;
+      for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+        const auto &b = ctx->cache->classes[canonicalName].mro[mi];
+        if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
+          LOG("[virtual] {} . {}", canonicalName, method);
+          ctx->cache->classes[canonicalName].virtuals.insert(method);
+        }
+      }
+      for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
+        for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+          const auto &b = ctx->cache->classes[canonicalName].mro[mi];
+          LOG("[virtual] {} . {}", b, v);
+          ctx->cache->classes[b].virtuals.insert(v);
         }
       }
     }
@@ -309,10 +265,14 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// Returns a list of their ASTs. Also updates the class fields.
 /// @param args Class fields that are to be updated with base classes' fields.
 std::vector<ClassStmt *>
-SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
+SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
                                   std::vector<Param> &args, const Attr &attr,
-                                  bool addVTable) {
+                                  const std::string &canonicalName, bool addVTable) {
   std::vector<ClassStmt *> asts;
+
+  // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
+  std::vector<std::vector<std::string>> mro{{canonicalName}};
+  std::vector<std::string> parentClasses;
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
@@ -330,23 +290,27 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
     name = transformType(N<IdExpr>(name))->getId()->value;
     if (name.empty() || !in(ctx->cache->classes, name))
       error(cls.get(), "invalid base class");
+    transformType(cls);
 
     auto &cachedCls = ctx->cache->classes[name];
     asts.push_back(cachedCls.ast.get());
+    parentClasses.push_back(name);
+    mro.push_back(cachedCls.mro);
 
     // Add __vtable__ to parent classes if it is not there already
-    auto vtableVar = "__vtable__";
     if (addVTable && !cachedCls.fields.empty() &&
-        cachedCls.fields[0].name != vtableVar) {
-      cachedCls.fields.insert(cachedCls.fields.begin(), {vtableVar, nullptr});
-      cachedCls.ast->args.insert(cachedCls.ast->args.begin(),
-                                 Param{vtableVar, N<IdExpr>("cobj"), nullptr});
-      preamble->push_back(
-          N<AssignStmt>(N<IdExpr>(fmt::format(".{}.{}", name, vtableVar)), nullptr,
-                        N<IdExpr>("cobj")));
+        !startswith(cachedCls.fields[0].name, VAR_VTABLE)) {
+      auto var = format("{}.{}", VAR_VTABLE, name);
+      cachedCls.fields.insert(cachedCls.fields.begin(), {var, nullptr});
+      cachedCls.ast->args.insert(
+          cachedCls.ast->args.begin(),
+          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
+                nullptr});
     }
 
     // Sanity checks
+    if (attr.has(Attr::Tuple) && addVTable)
+      error("tuple classes cannot inherit");
     if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))
       error("reference classes cannot inherit by-value classes");
     if (asts.back()->attributes.has(Attr::Internal))
@@ -381,6 +345,16 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
     for (auto &a : ast->args) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a))
         args.emplace_back(Param{a.name, a.type, a.defaultValue});
+    }
+  }
+  if (addVTable) {
+    mro.push_back(parentClasses);
+    ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
+    if (ctx->cache->classes[canonicalName].mro.empty()) {
+      error("inconsistent hierarchy");
+    } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
+      LOG("[mro] {} -> [{}]", canonicalName,
+          combine2(ctx->cache->classes[canonicalName].mro));
     }
   }
   return asts;
@@ -488,7 +462,8 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
 /// @li Python: __to_py__, __from_py__
 /// TODO: move to Codon as much as possible
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typExpr,
-                                      const std::vector<Param> &args, bool isRecord) {
+                                      const std::vector<Param> &allArgs,
+                                      bool isRecord) {
 #define I(s) N<IdExpr>(s)
   seqassert(typExpr, "typExpr is null");
   ExprPtr ret;
@@ -496,16 +471,26 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   std::vector<StmtPtr> stmts;
   Attr attr;
   attr.set("autogenerated");
+
+  std::vector<Param> args;
+  for (auto &a : allArgs)
+    if (!startswith(a.name, VAR_VTABLE))
+      args.push_back(a);
+
   if (op == "new") {
     // Classes: @internal def __new__() -> T
     // Tuples: @internal def __new__(a1: T1, ..., aN: TN) -> T
     ret = typExpr->clone();
-    if (isRecord)
+    if (isRecord) {
       for (auto &a : args)
         fargs.emplace_back(
             Param{a.name, clone(a.type),
                   a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
-    attr.set(Attr::Internal);
+      attr.set(Attr::Internal);
+    } else {
+      stmts.emplace_back(N<ReturnStmt>(
+          N<CallExpr>(N<DotExpr>(I("__internal__"), "class_new"), typExpr->clone())));
+    }
   } else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
     //            self.aI = aI ...
@@ -796,6 +781,15 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     fargs.emplace_back(Param{"tup", nullptr});
     stmts.emplace_back(N<ReturnStmt>(N<TupleExpr>(
         std::vector<ExprPtr>{N<StarExpr>(I("self")), N<StarExpr>(I("tup"))})));
+  } else if (op == "tuplesize") {
+    // def __tuplesize__() -> int:
+    //   return Tuple[arg_types...].__elemsize__
+    ret = I("int");
+    std::vector<ExprPtr> items;
+    for (auto &a : allArgs)
+      items.push_back(clone(a.type));
+    stmts.emplace_back(N<ReturnStmt>(
+        N<DotExpr>(N<IndexExpr>(I("Tuple"), N<TupleExpr>(items)), "__elemsize__")));
   } else {
     seqassert(false, "invalid magic {}", op);
   }
@@ -804,6 +798,22 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
                                           N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
+}
+
+std::set<std::string> SimplifyVisitor::getAllClassBases(const std::string &cls) {
+  std::set<std::string> result;
+  for (auto &base : ctx->cache->classes[cls].ast->baseClasses) {
+    auto bc = base->getId() ? base->getId()->value : "";
+    if (bc.empty()) {
+      auto bi = CAST(base, InstantiateExpr);
+      seqassertn(bi && bi->typeExpr->getId(), "bad inheritance [WIP]");
+      bc = bi->typeExpr->getId()->value;
+    };
+    auto rec = getAllClassBases(bc);
+    result.insert(rec.begin(), rec.end());
+    result.insert(bc);
+  }
+  return result;
 }
 
 } // namespace codon::ast

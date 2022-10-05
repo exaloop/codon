@@ -81,6 +81,14 @@ class Ptr:
         ret i64 %3
 
     @pure
+    @derives
+    @llvm
+    def __sub__(self, other: int) -> Ptr[T]:
+        %0 = sub i64 0, %other
+        %1 = getelementptr {=T}, {=T}* %self, i64 %other
+        ret {=T}* %1
+
+    @pure
     @llvm
     def __eq__(self, other: Ptr[T]) -> bool:
         %0 = icmp eq {=T}* %self, %other

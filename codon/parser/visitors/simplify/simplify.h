@@ -175,8 +175,9 @@ private: // Node simplification rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &,
+  std::vector<ClassStmt *> parseBaseClasses(std::vector<ExprPtr> &,
                                             std::vector<Param> &, const Attr &,
+                                            const std::string &,
                                             bool = false);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                        std::vector<Param> &);
@@ -185,6 +186,7 @@ private: // Node simplification rules
                               std::vector<StmtPtr> &, std::vector<StmtPtr> &);
   StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
                        bool);
+  std::set<std::string> getAllClassBases(const std::string &);
 
   /* The rest (simplify.cpp) */
   void visit(StmtExpr *) override;

@@ -155,11 +155,15 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
-  auto m = cache->classes.find(typeName);
-  if (m != cache->classes.end()) {
-    for (auto &mm : m->second.fields)
-      if (mm.name == member)
-        return mm.type;
+  if (auto cls = in(cache->classes, typeName)) {
+    for (auto &pc: cls->mro) {
+      auto mc = in(cache->classes, pc);
+      seqassert(mc, "class '{}' not found", pc);
+      for (auto &mm : mc->fields) {
+        if (mm.name == member)
+          return mm.type;
+      }
+    }
   }
   return nullptr;
 }
@@ -239,7 +243,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
     return onError(format("too many arguments for {} (expected maximum {}, got {})",
-                          func->toString(), func->ast->args.size(),
+                          func->prettyString(), func->ast->args.size(),
                           args.size() - partial));
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;

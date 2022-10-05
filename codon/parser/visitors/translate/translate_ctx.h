@@ -60,6 +60,7 @@ public:
   std::shared_ptr<TranslateItem> add(TranslateItem::Kind kind, const std::string &name,
                                      void *type);
   std::shared_ptr<TranslateItem> find(const std::string &name) const override;
+  std::shared_ptr<TranslateItem> forceFind(const std::string &name) const;
 
   /// Convenience method for adding a series.
   void addSeries(codon::ir::SeriesFlow *s);

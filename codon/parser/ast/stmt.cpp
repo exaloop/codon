@@ -510,11 +510,13 @@ void ClassStmt::parseDecorators() {
   // @extend
 
   std::map<std::string, bool> tupleMagics = {
-      {"new", true},      {"repr", false},     {"hash", false},        {"eq", false},
-      {"ne", false},      {"lt", false},       {"le", false},          {"gt", false},
-      {"ge", false},      {"pickle", true},    {"unpickle", true},     {"to_py", false},
-      {"from_py", false}, {"iter", false},     {"getitem", false},     {"len", false},
-      {"to_gpu", false},  {"from_gpu", false}, {"from_gpu_new", false}};
+      {"new", true},           {"repr", false},    {"hash", false},
+      {"eq", false},           {"ne", false},      {"lt", false},
+      {"le", false},           {"gt", false},      {"ge", false},
+      {"pickle", true},        {"unpickle", true}, {"to_py", false},
+      {"from_py", false},      {"iter", false},    {"getitem", false},
+      {"len", false},          {"to_gpu", false},  {"from_gpu", false},
+      {"from_gpu_new", false}, {"tuplesize", true}};
 
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
