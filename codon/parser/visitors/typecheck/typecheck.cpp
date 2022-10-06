@@ -71,8 +71,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   typ->ast = initFn.ast.get();
   realizeFunc(typ.get(), true);
 
-  auto &initObjFns =
-      ctx->cache->functions["__internal__.init_obj_vtable:0"];
+  auto &initObjFns = ctx->cache->functions["__internal__.init_obj_vtable:0"];
   auto oldAst = initObjFns.ast;
   for (auto &[_, real] : initObjFns.realizations) {
     auto t = real->type;
@@ -85,8 +84,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
       if (startswith(f.name, VAR_VTABLE)) {
         auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
         suite->stmts.push_back(N<AssignMemberStmt>(
-            N<IdExpr>(varName),
-            format("{}.{}", VAR_VTABLE, name),
+            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
             N<IndexExpr>(
                 N<IdExpr>("__vtables__"),
                 N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
@@ -97,6 +95,39 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     realizeFunc(t.get(), true);
   }
   initObjFns.ast = oldAst;
+
+  auto &initDist = ctx->cache->functions["__internal__.base_derived_dist:0"];
+  oldAst = initDist.ast;
+  for (auto &[_, real] : initDist.realizations) {
+    auto t = real->type;
+    auto baseTyp = t->funcGenerics[0].type->getClass();
+    auto derivedTyp = t->funcGenerics[1].type->getClass();
+
+    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
+    auto types = std::vector<ExprPtr>{};
+    auto found = false;
+    for (auto &f : fields) {
+      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
+        found = true;
+        break;
+      } else {
+        auto ft = realize(ctx->instantiate(f.type, derivedTyp));
+        types.push_back(NT<IdExpr>(ft->realizedName()));
+      }
+    }
+    seqassert(found, "cannot find distance between {} and {}", derivedTyp->name,
+              baseTyp->name);
+    StmtPtr suite = N<ReturnStmt>(
+        N<DotExpr>(NT<InstantiateExpr>(
+                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
+                   "__elemsize__"));
+    initDist.ast->suite = suite;
+    t->ast = initDist.ast.get();
+    // LOG("[dist] {} -> {}: {}", derivedTyp->realizedName(), baseTyp->realizedName(),
+    // combine(types, ";"));
+    realizeFunc(t.get(), true);
+  }
+  initDist.ast = oldAst;
 
   return nullptr;
 }
@@ -372,7 +403,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
         if (!expr->isId("")) {
           // LOG("[cast] casting {} to {}", expr->toString(),
           // expectedClass->toString());
-          expr = castToSuperClass(expr, expectedClass);
+          expr = castToSuperClass(expr, expectedClass, true);
         } else { // Just checking can this be done
           expr->type = expectedClass;
         }
@@ -383,7 +414,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   return true;
 }
 
-ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp) {
+ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
+                                           bool isVirtual) {
   ClassTypePtr typ = expr->type->getClass();
   // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
   for (auto &field : ctx->cache->classes[typ->name].fields) {
@@ -395,8 +427,15 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp) 
   }
   auto typExpr = N<IdExpr>(superTyp->name);
   typExpr->setType(superTyp);
+  ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
+  if (isVirtual) {
+    dist = N<BinaryExpr>(dist, "+",
+                         N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                                     N<IdExpr>(superTyp->realizedName()),
+                                     N<CallExpr>(N<IdExpr>("type"), expr)));
+  }
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                               N<CallExpr>(N<DotExpr>(expr, "__raw__")), typExpr));
+                               dist, typExpr));
 }
 
 } // namespace codon::ast

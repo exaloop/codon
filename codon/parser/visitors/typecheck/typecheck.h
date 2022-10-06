@@ -205,7 +205,7 @@ private:
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
-  ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp);
+  ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp, bool = false);
   StmtPtr prepareVTables();
 
 public:

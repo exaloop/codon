@@ -226,14 +226,14 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
         const auto &b = ctx->cache->classes[canonicalName].mro[mi];
         if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
-          LOG("[virtual] {} . {}", canonicalName, method);
+          // LOG("[virtual] {} . {}", canonicalName, method);
           ctx->cache->classes[canonicalName].virtuals.insert(method);
         }
       }
       for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
         for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
           const auto &b = ctx->cache->classes[canonicalName].mro[mi];
-          LOG("[virtual] {} . {}", b, v);
+          // LOG("[virtual] {} . {}", b, v);
           ctx->cache->classes[b].virtuals.insert(v);
         }
       }
@@ -299,7 +299,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
 
     // Add __vtable__ to parent classes if it is not there already
     if (addVTable && !cachedCls.fields.empty() &&
-        !startswith(cachedCls.fields[0].name, VAR_VTABLE)) {
+        cachedCls.fields[0].name != format("{}.{}", VAR_VTABLE, name)) {
       auto var = format("{}.{}", VAR_VTABLE, name);
       cachedCls.fields.insert(cachedCls.fields.begin(), {var, nullptr});
       cachedCls.ast->args.insert(
@@ -353,8 +353,8 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       error("inconsistent hierarchy");
     } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
-      LOG("[mro] {} -> [{}]", canonicalName,
-          combine2(ctx->cache->classes[canonicalName].mro));
+      // LOG("[mro] {} -> [{}]", canonicalName,
+      //     combine2(ctx->cache->classes[canonicalName].mro));
     }
   }
   return asts;

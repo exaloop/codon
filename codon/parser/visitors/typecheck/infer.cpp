@@ -390,8 +390,8 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
     vt.table[key] = {fp->getFunc(), vid};
   }
 
-  LOG("[virtual] realized base {} := {} :: {} :: {}", vid, baseCls, key.first,
-      key.second);
+  // LOG("[virtual] realized base {} := {} :: {} :: {}", vid, baseCls, key.first,
+  //     key.second);
 
   for (auto &[clsName, cls] : ctx->cache->classes) {
     if (clsName != baseCls && in(cls.mro, baseCls)) {
@@ -414,20 +414,23 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         key = make_pair(fnName, sig(m->getFunc().get()));
 
         std::vector<Param> fnArgs;
-        fnArgs.push_back(Param{".ptr", N<IdExpr>(cp->realizedName()), nullptr});
+        fnArgs.push_back(
+            Param{fp->ast->args[0].name, N<IdExpr>(cp->realizedName()), nullptr});
         for (size_t i = 1; i < args.size(); i++)
-          fnArgs.push_back(
-              Param{format(".arg{}", i), N<IdExpr>(args[i]->realizedName()), nullptr});
+          fnArgs.push_back(Param{fp->ast->args[i].name,
+                                 N<IdExpr>(args[i]->realizedName()), nullptr});
         std::vector<ExprPtr> callArgs;
         callArgs.emplace_back(N<CallExpr>(
-            N<IdExpr>("__internal__.raw_class:0"),
-            N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>(".ptr"), "__raw__")), "-",
-                          N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
-                                      N<IdExpr>(cp->realizedName()),
-                                      N<IdExpr>(real->type->realizedName()))),
+            N<IdExpr>("__internal__.to_class_ptr:0"),
+            N<BinaryExpr>(
+                N<CallExpr>(N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
+                "-",
+                N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                            N<IdExpr>(cp->realizedName()),
+                            N<IdExpr>(real->type->realizedName()))),
             NT<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
-          callArgs.emplace_back(N<IdExpr>(format(".arg{}", i)));
+          callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
         auto thunkAst = N<FunctionStmt>(
             format("_thunk.{}.{}", baseCls, m->realizedName()), nullptr, fnArgs,
             N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs)),
@@ -437,13 +440,9 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         transform(thunkAst);
         auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
         seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
-        LOG("thunk for {} |- {}: {}", baseCls, clsName,
-            ctx->cache->functions[thunkAst->name]
-                .realizations.begin()
-                ->second->ast->toString(1));
 
-        LOG("[virtual] realized child {} := {} :: {} :: {} [{} / {}]", vid, baseCls,
-            key.first, key.second, tm->debugString(1), m->debugString(1));
+        // LOG("[virtual] realized child {} := {} :: {} :: {} [{} / {}]", vid, baseCls,
+            // key.first, key.second, tm->debugString(1), m->debugString(1));
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }

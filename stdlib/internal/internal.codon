@@ -22,18 +22,11 @@ class __internal__:
 
     @pure
     @derives
-    @llvm
-    def raw_class(obj: Ptr[byte], T: type) -> T:
-        %0 = bitcast i8* %obj to {=T}
-        ret {=T} %0
-
-    @pure
-    @derives
     def class_new(T: type) -> T:
         sz = T.__tuplesize__()
         p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
         register_finalizer(p)
-        pf = __internal__.raw_class(p, T)
+        pf = __internal__.to_class_ptr(p, T)
         __internal__.init_obj_vtable(pf)
         return pf
 

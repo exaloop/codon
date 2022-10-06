@@ -190,7 +190,6 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         !bestMethod->ast->attributes.has(Attr::Property)) {
       if (realize(expr->type)) {
         auto fn = expr->type->getFunc();
-        LOG("=> {}", fn->debugString(1));
         auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
         std::vector<ExprPtr> ids;
         for (auto &t : fn->getArgTypes())
