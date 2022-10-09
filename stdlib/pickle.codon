@@ -158,6 +158,28 @@ class List:
 
 
 @extend
+class DynamicTuple:
+    def __pickle__(self, jar: Jar):
+        n = len(self)
+        pickle(n, jar)
+        if atomic(T):
+            _write_raw(jar, (self._ptr).as_byte(), n * sizeof(T))
+        else:
+            for i in range(n):
+                pickle(self._ptr[i], jar)
+
+    def __unpickle__(jar: Jar) -> DynamicTuple[T]:
+        n = unpickle(jar, int)
+        p = Ptr[T](n)
+        if atomic(T):
+            _read_raw(jar, p.as_byte(), n * sizeof(T))
+        else:
+            for i in range(n):
+                p[i] = unpickle(jar, T)
+        return DynamicTuple[T](p, n)
+
+
+@extend
 class Dict:
     def __pickle__(self, jar: Jar):
         import internal.khash as khash
