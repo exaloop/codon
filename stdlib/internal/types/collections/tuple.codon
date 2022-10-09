@@ -43,6 +43,28 @@ class DynamicTuple:
     def __bool__(self):
         return self._len > 0
 
+    def _ensure_tuple(x):
+        if not isinstance(x, Tuple):
+            compile_error("expected tuple type")
+
+    def __eq__(self, other):
+        DynamicTuple._ensure_tuple(other)
+
+        p = self._ptr
+        n = self._len
+
+        if staticlen(other) == 0:
+            return n == 0
+
+        if n != staticlen(other):
+            return False
+
+        for i in range(n):
+            if p[i] != other[i]:
+                return False
+
+        return True
+
     def __eq__(self, other: DynamicTuple[T]):
         p = self._ptr
         n = self._len
@@ -58,8 +80,40 @@ class DynamicTuple:
 
         return True
 
+    def __ne__(self, other):
+        DynamicTuple._ensure_tuple(other)
+        return not (self == other)
+
     def __ne__(self, other: DynamicTuple[T]):
         return not (self == other)
+
+    def _cmp(self, other):
+        DynamicTuple._ensure_tuple(other)
+        p = self._ptr
+        n = self._len
+
+        if staticlen(other) == 0:
+            return (1 if n > 0 else 0)
+
+        m = staticlen(other)
+
+        for i in range(n if n < m else m):
+            a = p[i]
+            b = other[i]
+
+            if a < b:
+                return -1
+            elif a == b:
+                pass
+            else:
+                return 1
+
+        if n < m:
+            return -1
+        elif n == m:
+            return 0
+        else:
+            return 1
 
     def _cmp(self, other: DynamicTuple[T]):
         p = self._ptr
@@ -84,6 +138,18 @@ class DynamicTuple:
             return 0
         else:
             return 1
+
+    def __lt__(self, other):
+        return self._cmp(other) < 0
+
+    def __gt__(self, other):
+        return self._cmp(other) > 0
+
+    def __le__(self, other):
+        return self._cmp(other) <= 0
+
+    def __ge__(self, other):
+        return self._cmp(other) >= 0
 
     def __lt__(self, other: DynamicTuple[T]):
         return self._cmp(other) < 0
