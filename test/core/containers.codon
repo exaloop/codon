@@ -50,12 +50,13 @@ def test_tuple():
     assert t[:-1] == (1, 2)
     assert t[:1] == (1,)
     assert t[:] == (1, 2, 3)
+    assert t[::] == (1, 2, 3)
     assert t[1::1] == (2, 3)
     assert t[:2:1] == (1, 2)
     assert t[::2] == (1, 3)
     assert t[::-1] == (3, 2, 1)
     assert t[0:3:-1] == ()
-    assert t[3:0:-1] == (3, 2, 1)  # FIXME: does not match Python
+    assert t[3:0:-1] == (3, 2)
 
     a = A(42, 3.14)
     assert a[0] == 1
@@ -100,6 +101,7 @@ def test_dyn_tuple():
     assert t[:-1] == D(1, 2)
     assert t[:1] == D(1)
     assert t[:] == D(1, 2, 3)
+    assert t[::] == D(1, 2, 3)
     assert t[1::1] == D(2, 3)
     assert t[:2:1] == D(1, 2)
     assert t[::2] == D(1, 3)

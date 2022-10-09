@@ -715,14 +715,14 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
 
     // Adjust slice indices (Python slicing rules)
     if (slice->step && !slice->start)
-      start = step > 0 ? 0 : sz;
+      start = step > 0 ? 0 : (sz - 1);
     if (slice->step && !slice->stop)
-      stop = step > 0 ? sz : 0;
+      stop = step > 0 ? sz : -(sz + 1);
     sliceAdjustIndices(sz, &start, &stop, step);
 
     // Generate a sub-tuple
     std::vector<ExprPtr> te;
-    for (auto i = start; (step >= 0) == (i < stop); i += step) {
+    for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
         error("tuple index out of range (expected 0..{}, got {})", sz, i);
       te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
