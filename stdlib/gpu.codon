@@ -508,7 +508,7 @@ class DynamicTuple:
     @inline
     def __to_gpu__(self, cache: AllocCache):
         n = self._len
-        gpu_ptr = _ptr_to_gpu(self._ptr, n)
+        gpu_ptr = _ptr_to_gpu(self._ptr, n, cache)
         return DynamicTuple(gpu_ptr, n)
 
     @inline

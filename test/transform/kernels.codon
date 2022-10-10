@@ -51,6 +51,11 @@ def test_conversions():
     assert check(Optional(111))
     assert check((1, 2, 3))
     assert check(([1], [2], [3]))
+    # assert check(())  # TODO: PTX can't handle this; why?
+    assert check(DynamicTuple((1, 2, 3)))
+    assert check(DynamicTuple(([1], [2], [3])))
+    assert check(DynamicTuple[int]())
+    assert check(DynamicTuple[List[List[List[str]]]]())
     assert check('hello world')
     assert check([1, 2, 3])
     assert check([[1], [2], [3]])
