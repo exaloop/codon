@@ -69,7 +69,7 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
-if(APPLE AND APPLE_ARM)
+if(APPLE_ARM)
   add_dependencies(codonrt unwind_shared)
 endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
@@ -110,7 +110,7 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
           ${CMAKE_BINARY_DIR})
-if(APPLE AND APPLE_ARM)
+if(APPLE_ARM)
   add_custom_command(
     TARGET codonrt
     POST_BUILD
@@ -428,7 +428,7 @@ add_custom_target(
     "${CMAKE_BINARY_DIR}/lib/codon")
 add_dependencies(libs codonrt codonc)
 
-if(APPLE AND APPLE_ARM)
+if(APPLE_ARM)
   add_custom_target(
     libs_apple ALL
     COMMENT "Collecting Apple-specific libraries"

@@ -130,7 +130,7 @@ CPMAddPackage(
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
 
-if(APPLE AND APPLE_ARM)
+if(APPLE_ARM)
     enable_language(ASM)
     CPMAddPackage(
         NAME unwind
