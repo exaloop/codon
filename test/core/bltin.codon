@@ -194,8 +194,36 @@ def test_divmod():
         assert math.isclose(result[0], exp_result[0])
         assert math.isclose(result[1], exp_result[1])
 
+@test
+def test_files(open_fn):
+    path = 'build/testfile.txt'
+    f = open_fn(path, 'w')
+    f.write('hello\nworld\n')
+    f.close()
+
+    with open_fn(path) as f:
+        assert [line for line in f] == ['hello\n', 'world\n']
+
+    with open_fn(path) as f:
+        assert f.read(3) == 'hel'
+        assert f.read() == 'lo\nworld\n'
+
+    f = open_fn(path, 'a')
+    f.write('goodbye')
+    f.close()
+
+    with open_fn(path) as f:
+        assert [line for line in f] == ['hello\n', 'world\n', 'goodbye']
+
+    with open_fn(path) as f:
+        assert f.read(3) == 'hel'
+        assert f.read() == 'lo\nworld\ngoodbye'
+
 test_min_max()
 test_map_filter()
 test_int_format()
 test_reversed()
 test_divmod()
+test_files(open)
+import gzip
+test_files(gzip.open)

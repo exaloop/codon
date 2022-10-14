@@ -33,8 +33,9 @@ PyDict_GetItem = Function[[cobj, cobj], cobj](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
-PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
 PyTuple_New = Function[[int], cobj](cobj())
+PyTuple_Size = Function[[cobj], int](cobj())
+PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
 PyTuple_SetItem = Function[[cobj, int, cobj], NoneType](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
@@ -176,8 +177,9 @@ def init_dl_handles(py_handle: cobj):
     global PyDict_SetItem
     global PySet_Add
     global PySet_New
-    global PyTuple_GetItem
     global PyTuple_New
+    global PyTuple_Size
+    global PyTuple_GetItem
     global PyTuple_SetItem
     global PyUnicode_AsEncodedString
     global PyUnicode_DecodeFSDefaultAndSize
@@ -269,8 +271,9 @@ def init_dl_handles(py_handle: cobj):
     PyDict_SetItem = dlsym(py_handle, "PyDict_SetItem")
     PySet_Add = dlsym(py_handle, "PySet_Add")
     PySet_New = dlsym(py_handle, "PySet_New")
-    PyTuple_GetItem = dlsym(py_handle, "PyTuple_GetItem")
     PyTuple_New = dlsym(py_handle, "PyTuple_New")
+    PyTuple_Size = dlsym(py_handle, "PyTuple_Size")
+    PyTuple_GetItem = dlsym(py_handle, "PyTuple_GetItem")
     PyTuple_SetItem = dlsym(py_handle, "PyTuple_SetItem")
     PyUnicode_AsEncodedString = dlsym(py_handle, "PyUnicode_AsEncodedString")
     PyUnicode_DecodeFSDefaultAndSize = dlsym(py_handle, "PyUnicode_DecodeFSDefaultAndSize")
@@ -654,6 +657,9 @@ class pyobj:
     def _tuple_new(length: int):
         return pyobj.exc_wrap(PyTuple_New(length))
 
+    def _tuple_size(p: cobj):
+        return pyobj.exc_wrap(PyTuple_Size(p))
+
     def _tuple_set(p: cobj, idx: int, val: cobj):
         PyTuple_SetItem(p, idx, val)
         pyobj.exc_check()
@@ -846,6 +852,25 @@ class Set:
             b.add(k)
         pyobj.decref(s_iter)
         return b
+
+
+@extend
+class DynamicTuple:
+    def __to_py__(self) -> cobj:
+        pytup = PyTuple_New(len(self))
+        i = 0
+        for a in self:
+            PyTuple_SetItem(pytup, i, a.__to_py__())
+            pyobj.exc_check()
+            i += 1
+        return pytup
+
+    def __from_py__(t: cobj) -> DynamicTuple[T]:
+        n = pyobj.exc_wrap(PyTuple_Size(t))
+        p = Ptr[T](n)
+        for i in range(n):
+            p[i] = T.__from_py__(PyTuple_GetItem(t, i))
+        return DynamicTuple(p, n)
 
 
 @extend

@@ -59,9 +59,9 @@ LLVMVisitor::LLVMVisitor()
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
 
+  // Initialize passes
   auto &registry = *llvm::PassRegistry::getPassRegistry();
   llvm::initializeCore(registry);
-  llvm::initializeCoroutines(registry);
   llvm::initializeScalarOpts(registry);
   llvm::initializeObjCARCOpts(registry);
   llvm::initializeVectorization(registry);
@@ -75,6 +75,7 @@ LLVMVisitor::LLVMVisitor()
 
   llvm::initializeExpandMemCmpPassPass(registry);
   llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
+  llvm::initializeSelectOptimizePass(registry);
   llvm::initializeCodeGenPreparePass(registry);
   llvm::initializeAtomicExpandPass(registry);
   llvm::initializeRewriteSymbolsLegacyPassPass(registry);
@@ -87,14 +88,15 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeIndirectBrExpandPassPass(registry);
   llvm::initializeInterleavedLoadCombinePass(registry);
   llvm::initializeInterleavedAccessPass(registry);
-  llvm::initializeEntryExitInstrumenterPass(registry);
-  llvm::initializePostInlineEntryExitInstrumenterPass(registry);
   llvm::initializeUnreachableBlockElimLegacyPassPass(registry);
   llvm::initializeExpandReductionsPass(registry);
+  llvm::initializeExpandVectorPredicationPass(registry);
   llvm::initializeWasmEHPreparePass(registry);
   llvm::initializeWriteBitcodePassPass(registry);
   llvm::initializeHardwareLoopsPass(registry);
   llvm::initializeTypePromotionPass(registry);
+  llvm::initializeReplaceWithVeclibLegacyPass(registry);
+  llvm::initializeJMCInstrumenterPass(registry);
 }
 
 void LLVMVisitor::registerGlobal(const Var *var) {
@@ -230,6 +232,39 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   return M;
 }
 
+void LLVMVisitor::clearLLVMData() {
+  B = {};
+  func = nullptr;
+  block = nullptr;
+  value = nullptr;
+
+  for (auto it = funcs.begin(); it != funcs.end();) {
+    if (it->second && it->second->hasPrivateLinkage()) {
+      it = funcs.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
+  for (auto it = vars.begin(); it != vars.end();) {
+    if (it->second && !llvm::isa<llvm::GlobalValue>(it->second)) {
+      it = vars.erase(it);
+    } else {
+      it->second = nullptr;
+      ++it;
+    }
+  }
+
+  coro.reset();
+  loops.clear();
+  trycatch.clear();
+  catches.clear();
+  db.reset();
+  context = {};
+  M = {};
+}
+
 std::pair<std::unique_ptr<llvm::Module>, std::unique_ptr<llvm::LLVMContext>>
 LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   // process any new functions or globals
@@ -264,38 +299,9 @@ LLVMVisitor::takeModule(Module *module, const SrcInfo *src) {
   auto currentModule = std::move(M);
 
   // reset all LLVM fields/data -- they are owned by the context
-  B = {};
-  func = nullptr;
-  block = nullptr;
-  value = nullptr;
-
-  for (auto it = funcs.begin(); it != funcs.end();) {
-    if (it->second && it->second->hasPrivateLinkage()) {
-      it = funcs.erase(it);
-    } else {
-      it->second = nullptr;
-      ++it;
-    }
-  }
-
-  for (auto it = vars.begin(); it != vars.end();) {
-    if (it->second && !llvm::isa<llvm::GlobalValue>(it->second)) {
-      it = vars.erase(it);
-    } else {
-      it->second = nullptr;
-      ++it;
-    }
-  }
-
-  coro.reset();
-  loops.clear();
-  trycatch.clear();
-  catches.clear();
-  db.reset();
-
+  clearLLVMData();
   context = std::make_unique<llvm::LLVMContext>();
   M = makeModule(*context, src);
-
   return {std::move(currentModule), std::move(currentContext)};
 }
 
@@ -350,7 +356,7 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
 void LLVMVisitor::writeToBitcodeFile(const std::string &filename) {
   runLLVMPipeline();
   std::error_code err;
-  llvm::raw_fd_ostream stream(filename, err, llvm::sys::fs::F_None);
+  llvm::raw_fd_ostream stream(filename, err, llvm::sys::fs::OF_None);
   llvm::WriteBitcodeToFile(*M, stream);
   if (err) {
     compilationError(err.message());
@@ -548,17 +554,8 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
 void LLVMVisitor::run(const std::vector<std::string> &args,
                       const std::vector<std::string> &libs, const char *const *envp) {
   runLLVMPipeline();
-  llvm::Function *main = M->getFunction("main");
-  llvm::EngineBuilder EB(std::move(M));
-  EB.setMCJITMemoryManager(std::make_unique<BoehmGCMemoryManager>());
-  llvm::ExecutionEngine *eng = EB.create();
 
-  auto dbListener = std::unique_ptr<DebugListener>();
-  if (db.debug) {
-    dbListener = std::make_unique<DebugListener>();
-    eng->RegisterJITEventListener(dbListener.get());
-  }
-
+  Timer t1("llvm/jitlink");
   for (auto &lib : libs) {
     std::string err;
     if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(lib.c_str(), &err)) {
@@ -566,15 +563,58 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     }
   }
 
+  DebugPlugin *dbp = nullptr;
+  llvm::Triple triple(M->getTargetTriple());
+  auto epc = llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create(
+      std::make_shared<llvm::orc::SymbolStringPool>()));
+
+  llvm::orc::LLJITBuilder builder;
+  builder.setDataLayout(llvm::DataLayout(M.get()));
+  builder.setObjectLinkingLayerCreator(
+      [&epc, &dbp](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
+          -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+        auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+            es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+        L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
+            es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
+        L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
+            es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
+        auto dbPlugin = std::make_unique<DebugPlugin>();
+        dbp = dbPlugin.get();
+        L->addPlugin(std::move(dbPlugin));
+        return L;
+      });
+  builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
+
+  auto jit = llvm::cantFail(builder.create());
+  jit->getMainJITDylib().addGenerator(
+      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          jit->getDataLayout().getGlobalPrefix())));
+
+  llvm::cantFail(jit->addIRModule({std::move(M), std::move(context)}));
+  clearLLVMData();
+  auto mainAddr = llvm::cantFail(jit->lookup("main"));
+
+  if (db.debug) {
+    runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
+      fmt::print(stderr, "{}\n{}", e.getOutput(),
+                 dbp->getPrettyBacktrace(e.getBacktrace()));
+      std::abort();
+    });
+  } else {
+    runtime::setJITErrorCallback([](const runtime::JITError &e) {
+      fmt::print(stderr, "{}", e.getOutput());
+      std::abort();
+    });
+  }
+  t1.log();
+
   try {
-    eng->runFunctionAsMain(main, args, envp);
-  } catch (const JITError &e) {
-    fmt::print(stderr, "{}", e.getOutput());
-    if (db.debug)
-      fmt::print(stderr, "\n{}", dbListener->getPrettyBacktrace(e.getBacktrace()));
+    llvm::cantFail(epc->runAsMain(mainAddr, args));
+  } catch (const runtime::JITError &e) {
+    fmt::print(stderr, "{}\n", e.getOutput());
     std::abort();
   }
-  delete eng;
 }
 
 llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
@@ -803,13 +843,14 @@ void LLVMVisitor::visit(const Module *x) {
   B->CreateCondBr(cond, bodyBlock, exitBlock);
 
   B->SetInsertPoint(bodyBlock);
-  llvm::Value *arg = B->CreateLoad(B->CreateGEP(argv, control));
+  llvm::Value *arg =
+      B->CreateLoad(B->getInt8PtrTy(), B->CreateGEP(B->getInt8PtrTy(), argv, control));
   llvm::Value *argLen =
       B->CreateZExtOrTrunc(B->CreateCall(strlenFunc, arg), B->getInt64Ty());
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, argLen, 0);
   str = B->CreateInsertValue(str, arg, 1);
-  B->CreateStore(str, B->CreateGEP(ptr, control));
+  B->CreateStore(str, B->CreateGEP(strType, ptr, control));
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(exitBlock);
@@ -1246,6 +1287,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto *startBlock = llvm::BasicBlock::Create(*context, "start", func);
 
   if (x->isGenerator()) {
+    func->setPresplitCoroutine();
     auto *generatorType = cast<types::GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);
 
@@ -1351,7 +1393,7 @@ void LLVMVisitor::visit(const VarValue *x) {
     llvm::Value *varPtr = getVar(x->getVar());
     seqassertn(varPtr, "{} value not found", *x);
     B->SetInsertPoint(block);
-    value = B->CreateLoad(varPtr);
+    value = B->CreateLoad(getLLVMType(x->getType()), varPtr);
   }
 }
 
@@ -1403,13 +1445,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
-    llvm::Type *returnType = getLLVMType(x->getReturnType());
-    std::vector<llvm::Type *> argTypes;
-    for (auto *argType : *x) {
-      argTypes.push_back(getLLVMType(argType));
-    }
-    return llvm::FunctionType::get(returnType, argTypes, x->isVariadic())
-        ->getPointerTo();
+    return getLLVMFuncType(x)->getPointerTo();
   }
 
   if (auto *x = cast<types::OptionalType>(t)) {
@@ -1443,6 +1479,17 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
 
   seqassertn(0, "unknown type: {}", *t);
   return nullptr;
+}
+
+llvm::FunctionType *LLVMVisitor::getLLVMFuncType(types::Type *t) {
+  auto *x = cast<types::FuncType>(t);
+  seqassertn(x, "input type was not a func type");
+  llvm::Type *returnType = getLLVMType(x->getReturnType());
+  std::vector<llvm::Type *> argTypes;
+  for (auto *argType : *x) {
+    argTypes.push_back(getLLVMType(argType));
+  }
+  return llvm::FunctionType::get(returnType, argTypes, x->isVariadic());
 }
 
 llvm::DIType *LLVMVisitor::getDITypeHelper(
@@ -1760,8 +1807,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
         B->getInt32(M->getDataLayout().getPrefTypeAlignment(loopVarType));
     llvm::Value *from = B->getFalse();
     llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
-    promise = B->CreateBitCast(promise, loopVarType->getPointerTo());
-    llvm::Value *generatedValue = B->CreateLoad(promise);
+    llvm::Value *generatedValue = B->CreateLoad(loopVarType, promise);
     B->CreateStore(generatedValue, loopVar);
   }
 
@@ -1900,10 +1946,10 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   process(x->getFinally());
   auto *finallyBlock = block;
   B->SetInsertPoint(finallyBlock);
-  llvm::Value *excFlagRead = B->CreateLoad(tc.excFlag);
+  llvm::Value *excFlagRead = B->CreateLoad(B->getInt8Ty(), tc.excFlag);
 
   if (!isRoot) {
-    llvm::Value *depthRead = B->CreateLoad(tc.delegateDepth);
+    llvm::Value *depthRead = B->CreateLoad(B->getInt64Ty(), tc.delegateDepth);
     llvm::Value *delegate = B->CreateICmpSGT(depthRead, B->getInt64(0));
     auto *finallyNormal =
         llvm::BasicBlock::Create(*context, "trycatch.finally.normal", func);
@@ -1936,7 +1982,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     if (coro.exit) {
       B->CreateBr(coro.exit);
     } else if (tc.retStore) {
-      llvm::Value *retVal = B->CreateLoad(tc.retStore);
+      llvm::Value *retVal = B->CreateLoad(func->getReturnType(), tc.retStore);
       B->CreateRet(retVal);
     } else {
       B->CreateRetVoid();
@@ -1958,18 +2004,20 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
         llvm::BasicBlock::Create(*context, "trycatch.finally.continue.done", func);
 
     B->SetInsertPoint(finallyBreak);
-    auto *breakSwitch = B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+    auto *breakSwitch =
+        B->CreateSwitch(B->CreateLoad(B->getInt64Ty(), tc.loopSequence), endBlock, 0);
     B->SetInsertPoint(finallyBreakDone);
     B->CreateStore(excStateNotThrown, tc.excFlag);
     auto *breakDoneSwitch =
-        B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+        B->CreateSwitch(B->CreateLoad(B->getInt64Ty(), tc.loopSequence), endBlock, 0);
 
     B->SetInsertPoint(finallyContinue);
-    auto *continueSwitch = B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+    auto *continueSwitch =
+        B->CreateSwitch(B->CreateLoad(B->getInt64Ty(), tc.loopSequence), endBlock, 0);
     B->SetInsertPoint(finallyContinueDone);
     B->CreateStore(excStateNotThrown, tc.excFlag);
     auto *continueDoneSwitch =
-        B->CreateSwitch(B->CreateLoad(tc.loopSequence), endBlock, 0);
+        B->CreateSwitch(B->CreateLoad(B->getInt64Ty(), tc.loopSequence), endBlock, 0);
 
     for (auto &l : loops) {
       if (!trycatch.empty() && l.sequenceNumber < prevSeq) {
@@ -2018,7 +2066,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if uncaught
   B->SetInsertPoint(unwindResumeBlock);
-  B->CreateResume(B->CreateLoad(tc.catchStore));
+  B->CreateResume(B->CreateLoad(padType, tc.catchStore));
 
   // make sure we delegate to parent try-catch if necessary
   std::vector<types::Type *> catchTypesFull(tc.catchTypes);
@@ -2075,9 +2123,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   llvm::Value *depthMax = B->getInt64(trycatch.size());
   B->CreateStore(depthMax, tc.delegateDepth);
 
-  llvm::Value *unwindExceptionClass = B->CreateLoad(B->CreateStructGEP(
-      unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
-      0));
+  llvm::Value *unwindExceptionClass = B->CreateLoad(
+      B->getInt64Ty(),
+      B->CreateStructGEP(
+          unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
+          0));
 
   // check for foreign exceptions
   B->CreateCondBr(B->CreateICmpEQ(unwindExceptionClass, B->getInt64(seq_exc_class())),
@@ -2089,12 +2139,13 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // reroute Codon exceptions
   B->SetInsertPoint(tc.exceptionRouteBlock);
-  unwindException = B->CreateExtractValue(B->CreateLoad(tc.catchStore), 0);
-  llvm::Value *excVal = B->CreatePointerCast(
-      B->CreateConstGEP1_64(unwindException, (uint64_t)seq_exc_offset()),
-      excType->getPointerTo());
+  unwindException = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+  llvm::Value *excVal =
+      B->CreatePointerCast(B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
+                                                 (uint64_t)seq_exc_offset()),
+                           excType->getPointerTo());
 
-  llvm::Value *loadedExc = B->CreateLoad(excVal);
+  llvm::Value *loadedExc = B->CreateLoad(excType, excVal);
   llvm::Value *objType = B->CreateExtractValue(loadedExc, 0);
   objType = B->CreateExtractValue(objType, 0);
   llvm::Value *objPtr = B->CreateExtractValue(loadedExc, 1);
@@ -2164,8 +2215,8 @@ void LLVMVisitor::callStage(const PipelineFlow::Stage *stage) {
     }
   }
 
-  auto *funcType = cast<llvm::PointerType>(getLLVMType(stage->getCallee()->getType()));
-  value = call({cast<llvm::FunctionType>(funcType->getElementType()), f}, args);
+  auto *funcType = getLLVMFuncType(stage->getCallee()->getType());
+  value = call({funcType, f}, args);
 }
 
 void LLVMVisitor::codegenPipeline(
@@ -2223,7 +2274,7 @@ void LLVMVisitor::codegenPipeline(
     llvm::Value *from = B->getFalse();
     llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
     promise = B->CreateBitCast(promise, baseType->getPointerTo());
-    value = B->CreateLoad(promise);
+    value = B->CreateLoad(baseType, promise);
 
     block = bodyBlock;
     callStage(stage);
@@ -2278,11 +2329,8 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
 
   process(x->getVal());
   B->SetInsertPoint(block);
-  if (auto *refType = cast<types::RefType>(memberedType)) {
-    value =
-        B->CreateBitCast(value, getLLVMType(refType->getContents())->getPointerTo());
-    value = B->CreateLoad(value);
-  }
+  if (auto *refType = cast<types::RefType>(memberedType))
+    value = B->CreateLoad(getLLVMType(refType->getContents()), value);
   value = B->CreateExtractValue(value, index);
 }
 
@@ -2298,8 +2346,7 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   llvm::Value *rhs = value;
 
   B->SetInsertPoint(block);
-  lhs = B->CreateBitCast(lhs, getLLVMType(refType->getContents())->getPointerTo());
-  llvm::Value *load = B->CreateLoad(lhs);
+  llvm::Value *load = B->CreateLoad(getLLVMType(refType->getContents()), lhs);
   load = B->CreateInsertValue(load, rhs, index);
   B->CreateStore(load, lhs);
 }
@@ -2316,8 +2363,8 @@ void LLVMVisitor::visit(const CallInstr *x) {
     args.push_back(value);
   }
 
-  auto *funcType = cast<llvm::PointerType>(getLLVMType(x->getCallee()->getType()));
-  value = call({cast<llvm::FunctionType>(funcType->getElementType()), f}, args);
+  auto *funcType = getLLVMFuncType(x->getCallee()->getType());
+  value = call({funcType, f}, args);
 }
 
 void LLVMVisitor::visit(const TypePropertyInstr *x) {
@@ -2350,16 +2397,19 @@ void LLVMVisitor::visit(const YieldInInstr *x) {
     inst->addCase(B->getInt8(1), coro.cleanup);
     B->SetInsertPoint(block);
   }
-  value = B->CreateLoad(coro.promise);
+  value = B->CreateLoad(getLLVMType(x->getType()), coro.promise);
 }
 
 void LLVMVisitor::visit(const StackAllocInstr *x) {
+  auto *recordType = cast<types::RecordType>(x->getType());
+  seqassertn(recordType, "stack alloc does not have record type");
+  auto *ptrType = cast<types::PointerType>(recordType->back().getType());
+  seqassertn(ptrType, "array did not have ptr type");
+
   auto *arrayType = llvm::cast<llvm::StructType>(getLLVMType(x->getType()));
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
   llvm::Value *len = B->getInt64(x->getCount());
-  llvm::Value *ptr = B->CreateAlloca(
-      llvm::cast<llvm::PointerType>(arrayType->getElementType(1))->getElementType(),
-      len);
+  llvm::Value *ptr = B->CreateAlloca(getLLVMType(ptrType->getBase()), len);
   llvm::Value *arr = llvm::UndefValue::get(arrayType);
   arr = B->CreateInsertValue(arr, len, 0);
   arr = B->CreateInsertValue(arr, ptr, 1);

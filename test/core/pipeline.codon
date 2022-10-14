@@ -2,19 +2,22 @@ from threading import Lock, RLock
 
 n = 0
 f = 0.0
+g = f32(0.0)
 
 @atomic
 def inc(_):
-    global n, f
+    global n, f, g
     n += 1
     f += 1.0
+    g += f32(1.0)
     return 0
 
 @atomic
 def dec(_):
-    global n, f
+    global n, f, g
     n -= 1
     f -= 1.0
+    g -= f32(1.0)
     return 0
 
 lock = Lock()
@@ -53,12 +56,15 @@ def test_parallel_pipe(m: int):
     range(m) |> iter ||> inc
     assert n == m
     assert f == float(m)
+    assert g == f32(m)
     range(m) |> iter ||> dec
     assert n == 0
     assert f == 0.0
+    assert g == f32(0.0)
     range(m) |> iter ||> inc |> dec
     assert n == 0
     assert f == 0.0
+    assert g == f32(0.0)
 
     n = 0
     range(m) |> iter ||> inc_lock

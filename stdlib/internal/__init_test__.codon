@@ -18,6 +18,7 @@ from internal.types.optional import *
 from internal.types.slice import *
 from internal.types.range import *
 from internal.internal import *
+from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
 

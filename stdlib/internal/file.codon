@@ -45,8 +45,15 @@ class File:
         for s in g:
             self.write(str(s))
 
-    def read(self, sz: int) -> str:
+    def read(self, sz: int = -1) -> str:
         self._ensure_open()
+        if sz < 0:
+            SEEK_SET = 0
+            SEEK_END = 2
+            cur = _C.ftell(self.fp)
+            _C.fseek(self.fp, 0, i32(SEEK_END))
+            sz = _C.ftell(self.fp) - cur
+            _C.fseek(self.fp, cur, i32(SEEK_SET))
         buf = Ptr[byte](sz)
         ret = _C.fread(buf, 1, sz, self.fp)
         self._errcheck("error in read")
@@ -180,6 +187,18 @@ class gzFile:
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
             self.write(str(s))
+
+    def read(self, sz: int = -1) -> str:
+        self._ensure_open()
+        if sz < 0:
+            buf = _strbuf()
+            for a in self._iter():
+                buf.append(a)
+            return buf.__str__()
+        buf = Ptr[byte](sz)
+        ret = _C.gzread(self.fp, buf, u32(sz))
+        _gz_errcheck(self.fp)
+        return str(buf, int(ret))
 
     def tell(self) -> int:
         ret = _C.gztell(self.fp)

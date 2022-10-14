@@ -370,55 +370,55 @@ class int:
     @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[int], b: int) -> None:
-        %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw xchg ptr %d, i64 %b seq_cst
         ret {} {}
 
     @nocapture
     @llvm
     def __atomic_add__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw add i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw add ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_sub__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw sub i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw sub ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_and__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw and i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw and ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_nand__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw nand i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw nand ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_or__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw or i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw or ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_xor__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw xor i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw xor ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_min__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw min i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw min ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     @nocapture
     @llvm
     def __atomic_max__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw max i64* %d, i64 %b seq_cst
+        %tmp = atomicrmw max ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
     def __match__(self, i: int) -> bool:

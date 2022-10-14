@@ -3,11 +3,10 @@ recommend using pre-built binaries if possible.
 
 # Dependencies
 
-Codon depends on LLVM 12, which can be installed via most package
-managers. To build LLVM 12 yourself, you can do the following:
+Codon uses an LLVM fork based on LLVM 15. To build it, you can do:
 
 ``` bash
-git clone --depth 1 -b release/12.x https://github.com/llvm/llvm-project
+git clone --depth 1 -b codon https://github.com/exaloop/llvm-project
 mkdir -p llvm-project/llvm/build
 cd llvm-project/llvm/build
 cmake .. \
@@ -16,7 +15,7 @@ cmake .. \
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_ZLIB=OFF \
     -DLLVM_ENABLE_TERMINFO=OFF \
-    -DLLVM_TARGETS_TO_BUILD=host
+    -DLLVM_TARGETS_TO_BUILD=all
 make
 make install
 ```

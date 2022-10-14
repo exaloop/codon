@@ -65,7 +65,7 @@ public:
                         bool debug);
 
   // Errors
-  llvm::Error handleJITError(const JITError &e);
+  llvm::Error handleJITError(const runtime::JITError &e);
 };
 
 } // namespace jit

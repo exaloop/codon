@@ -140,12 +140,11 @@ class Dict:
         return {k.__deepcopy__(): v.__deepcopy__() for k, v in self.items()}
 
     def __repr__(self) -> str:
-        from internal.types.strbuf import strbuf
         n = self.__len__()
         if n == 0:
             return "{}"
         else:
-            buf = strbuf()
+            buf = _strbuf()
             buf.append("{")
             first = True
             for k, v in self.items():

@@ -163,10 +163,10 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   auto *repl = (InputFunc *)result.get();
   try {
     (*repl)();
-  } catch (const JITError &e) {
+  } catch (const runtime::JITError &e) {
     return handleJITError(e);
   }
-  return getCapturedOutput();
+  return runtime::getCapturedOutput();
 }
 
 llvm::Expected<std::string>
@@ -181,7 +181,7 @@ JIT::execute(const std::string &code, const std::string &file, int line, bool de
   return run(result.get());
 }
 
-llvm::Error JIT::handleJITError(const JITError &e) {
+llvm::Error JIT::handleJITError(const runtime::JITError &e) {
   std::vector<std::string> backtrace;
   for (auto pc : e.getBacktrace()) {
     auto line = engine->getDebugListener()->getPrettyBacktrace(pc);
@@ -297,7 +297,7 @@ JITResult JIT::executePython(const std::string &name,
   try {
     auto *ans = (*wrap)(arg);
     return JITResult::success(ans);
-  } catch (const JITError &e) {
+  } catch (const runtime::JITError &e) {
     auto err = handleJITError(e);
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);

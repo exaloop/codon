@@ -4,7 +4,7 @@
 #include "codon/sir/sir.h"
 #include "codon/sir/transform/manager.h"
 #include "codon/sir/transform/pass.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Passes/PassBuilder.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -55,10 +55,10 @@ public:
   /// @param debug true if compiling in debug mode
   virtual void addIRPasses(ir::transform::PassManager *pm, bool debug) {}
 
-  /// Registers this DSL's LLVM passes with the given pass manager builder.
-  /// @param pmb the pass manager builder to add the passes to
-  /// @param debug true if compining in debug mode
-  virtual void addLLVMPasses(llvm::PassManagerBuilder *pmb, bool debug) {}
+  /// Registers this DSL's LLVM passes with the given pass builder.
+  /// @param pb the pass builder to add the passes to
+  /// @param debug true if compiling in debug mode
+  virtual void addLLVMPasses(llvm::PassBuilder *pb, bool debug) {}
 
   /// Returns a vector of "expression keywords", defined as keywords of
   /// the form "keyword <expr>".

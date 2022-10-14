@@ -20,19 +20,18 @@ Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
   return std::move(module);
 }
 
-Engine::Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
-               std::unique_ptr<llvm::orc::ExecutionSession> sess,
-               std::unique_ptr<llvm::orc::TPCIndirectionUtils> tpciu,
+Engine::Engine(std::unique_ptr<llvm::orc::ExecutionSession> sess,
+               std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu,
                llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout)
-    : tpc(std::move(tpc)), sess(std::move(sess)), tpciu(std::move(tpciu)),
-      layout(std::move(layout)), mangle(*this->sess, this->layout),
+    : sess(std::move(sess)), epciu(std::move(epciu)), layout(std::move(layout)),
+      mangle(*this->sess, this->layout),
       objectLayer(*this->sess,
                   []() { return std::make_unique<BoehmGCMemoryManager>(); }),
       compileLayer(*this->sess, objectLayer,
                    std::make_unique<llvm::orc::ConcurrentIRCompiler>(std::move(jtmb))),
       optimizeLayer(*this->sess, compileLayer, optimizeModule),
-      codLayer(*this->sess, optimizeLayer, this->tpciu->getLazyCallThroughManager(),
-               [this] { return this->tpciu->createIndirectStubsManager(); }),
+      codLayer(*this->sess, optimizeLayer, this->epciu->getLazyCallThroughManager(),
+               [this] { return this->epciu->createIndirectStubsManager(); }),
       mainJD(this->sess->createBareJITDylib("<main>")),
       dbListener(std::make_unique<DebugListener>()) {
   mainJD.addGenerator(
@@ -45,36 +44,37 @@ Engine::Engine(std::unique_ptr<llvm::orc::TargetProcessControl> tpc,
 Engine::~Engine() {
   if (auto err = sess->endSession())
     sess->reportError(std::move(err));
-  if (auto err = tpciu->cleanup())
+  if (auto err = epciu->cleanup())
     sess->reportError(std::move(err));
 }
 
 llvm::Expected<std::unique_ptr<Engine>> Engine::create() {
-  auto ssp = std::make_shared<llvm::orc::SymbolStringPool>();
-  auto tpc = llvm::orc::SelfTargetProcessControl::Create(ssp);
-  if (!tpc)
-    return tpc.takeError();
+  auto epc = llvm::orc::SelfExecutorProcessControl::Create();
+  if (!epc)
+    return epc.takeError();
 
-  auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(ssp));
+  auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(*epc));
 
-  auto tpciu = llvm::orc::TPCIndirectionUtils::Create(**tpc);
-  if (!tpciu)
-    return tpciu.takeError();
+  auto epciu =
+      llvm::orc::EPCIndirectionUtils::Create(sess->getExecutorProcessControl());
+  if (!epciu)
+    return epciu.takeError();
 
-  (*tpciu)->createLazyCallThroughManager(
+  (*epciu)->createLazyCallThroughManager(
       *sess, llvm::pointerToJITTargetAddress(&handleLazyCallThroughError));
 
-  if (auto err = llvm::orc::setUpInProcessLCTMReentryViaTPCIU(**tpciu))
+  if (auto err = llvm::orc::setUpInProcessLCTMReentryViaEPCIU(**epciu))
     return std::move(err);
 
-  llvm::orc::JITTargetMachineBuilder jtmb((*tpc)->getTargetTriple());
+  llvm::orc::JITTargetMachineBuilder jtmb(
+      sess->getExecutorProcessControl().getTargetTriple());
 
   auto layout = jtmb.getDefaultDataLayoutForTarget();
   if (!layout)
     return layout.takeError();
 
-  return std::make_unique<Engine>(std::move(*tpc), std::move(sess), std::move(*tpciu),
-                                  std::move(jtmb), std::move(*layout));
+  return std::make_unique<Engine>(std::move(sess), std::move(*epciu), std::move(jtmb),
+                                  std::move(*layout));
 }
 
 llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,

@@ -130,6 +130,18 @@ CPMAddPackage(
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
 
+if(APPLE AND APPLE_ARM)
+    enable_language(ASM)
+    CPMAddPackage(
+        NAME unwind
+        GITHUB_REPOSITORY "exaloop/libunwind"
+        GIT_TAG e50988ccea5492b62e014408796002306b36eb9c
+        OPTIONS "CMAKE_BUILD_TYPE Release"
+                "LIBUNWIND_ENABLE_STATIC OFF"
+                "LIBUNWIND_ENABLE_SHARED ON"
+                "LIBUNWIND_INCLUDE_DOCS OFF")
+endif()
+
 if(CODON_JUPYTER)
     CPMAddPackage(
         NAME libzmq
@@ -161,12 +173,13 @@ if(CODON_JUPYTER)
         GITHUB_REPOSITORY "jupyter-xeus/xeus"
         VERSION 2.2.0
         GIT_TAG 2.2.0
-        PATCH_COMMAND sed -ibak "s/-Wunused-parameter -Wextra -Wreorder//g" CMakeLists.txt
+        PATCH_COMMAND patch -N -u CMakeLists.txt -b ${CMAKE_SOURCE_DIR}/cmake/xeus.patch || true
         OPTIONS "BUILD_EXAMPLES OFF"
                 "XEUS_BUILD_SHARED_LIBS OFF"
                 "XEUS_STATIC_DEPENDENCIES ON"
                 "CMAKE_POSITION_INDEPENDENT_CODE ON"
-                "XEUS_DISABLE_ARCH_NATIVE ON")
+                "XEUS_DISABLE_ARCH_NATIVE ON"
+                "XEUS_USE_DYNAMIC_UUID ${XEUS_USE_DYNAMIC_UUID}")
     if (xeus_ADDED)
         install(TARGETS nlohmann_json EXPORT xeus-targets)
     endif()

@@ -1,0 +1,7 @@
+FROM nvidia/cuda:11.8.0-devel-centos7
+RUN yum -y update
+RUN yum -y install bzip2
+COPY codon-gpu.tar.bz2 /opt
+RUN cd /opt && tar jxvf codon-gpu.tar.bz2
+COPY test.codon .
+CMD /opt/codon/bin/codon run -release test.codon

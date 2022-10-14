@@ -21,9 +21,11 @@ from internal.internal import *
 
 __argv__ = Array[str](0)
 
+from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 from internal.types.collections.set import *
 from internal.types.collections.dict import *
+from internal.types.collections.tuple import *
 
 # Extended core library
 
