@@ -141,7 +141,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     }
   } catch (exc::ParserException &e) {
     if (auto f = typ->getFunc()) {
-      e.trackRealize(fmt::format("{} (arguments {})", f->ast->name, f->toString()),
+      e.trackRealize(fmt::format("{} (arguments {})", f->ast->name, f->prettyString()),
                      getSrcInfo());
     } else {
       e.trackRealize(typ->prettyString(), getSrcInfo());

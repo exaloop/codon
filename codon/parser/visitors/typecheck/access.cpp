@@ -160,7 +160,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: cls.__name__
   if (expr->expr->isType() && expr->member == "__name__") {
     if (realize(expr->expr->type))
-      return transform(N<StringExpr>(expr->expr->type->toString()));
+      return transform(N<StringExpr>(expr->expr->type->prettyString()));
     return nullptr;
   }
   // Special case: cls.__vtable_id__

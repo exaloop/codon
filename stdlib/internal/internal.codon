@@ -18,7 +18,7 @@ class __internal__:
     @derives
     @llvm
     def class_raw(obj) -> Ptr[byte]:
-        ret i8* %obj
+        ret ptr %obj
 
     @pure
     @derives
@@ -160,7 +160,7 @@ class __internal__:
     @derives
     @llvm
     def opt_ref_invert(what: Optional[T], T: type) -> T:
-        ret i8* %what
+        ret ptr %what
 
     @pure
     @derives
