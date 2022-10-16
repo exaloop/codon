@@ -23,21 +23,21 @@ class Generator:
     @pure
     @llvm
     def __raw__(self) -> Ptr[byte]:
-        ret i8* %self
+        ret ptr %self
 
     @pure
     @llvm
     def __done__(self) -> bool:
-        declare i1 @llvm.coro.done(i8* nocapture readonly)
-        %0 = call i1 @llvm.coro.done(i8* %self)
+        declare i1 @llvm.coro.done(ptr nocapture readonly)
+        %0 = call i1 @llvm.coro.done(ptr %self)
         %1 = zext i1 %0 to i8
         ret i8 %1
 
     @nocapture
     @llvm
     def __resume__(self) -> None:
-        declare void @llvm.coro.resume(i8*)
-        call void @llvm.coro.resume(i8* %self)
+        declare void @llvm.coro.resume(ptr)
+        call void @llvm.coro.resume(ptr %self)
         ret {} {}
 
     def __repr__(self) -> str:
@@ -52,8 +52,8 @@ class Generator:
     @nocapture
     @llvm
     def destroy(self) -> None:
-        declare void @llvm.coro.destroy(i8*)
-        call void @llvm.coro.destroy(i8* %self)
+        declare void @llvm.coro.destroy(ptr)
+        call void @llvm.coro.destroy(ptr %self)
         ret {} {}
 
 

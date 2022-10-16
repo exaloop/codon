@@ -1,0 +1,22 @@
+FROM quay.io/pypa/manylinux2014_x86_64
+
+RUN yum -y update
+RUN yum -y install devtoolset-7 ninja-build cmake3
+RUN mkdir -p /opt/llvm-codon
+RUN git clone --depth 1 -b codon https://github.com/exaloop/llvm-project /github/llvm-src
+RUN scl enable devtoolset-7 -- \
+    cmake3 -S /github/llvm-src/llvm -G Ninja \
+           -B /github/llvm-src/llvm/build \
+           -DCMAKE_BUILD_TYPE=Release \
+           -DLLVM_INCLUDE_TESTS=OFF \
+           -DLLVM_ENABLE_RTTI=ON \
+           -DLLVM_ENABLE_ZLIB=OFF \
+           -DLLVM_ENABLE_TERMINFO=OFF \
+           -DLLVM_TARGETS_TO_BUILD="host;NVPTX" \
+           -DLLVM_BUILD_TOOLS=OFF \
+           -DLLVM_ENABLE_PROJECTS=clang \
+           -DCMAKE_INSTALL_PREFIX=/opt/llvm-codon
+RUN scl enable devtoolset-7 -- cmake3 --build /github/llvm-src/llvm/build
+RUN cmake3 --install /github/llvm-src/llvm/build
+RUN cd /github/llvm-src && tar cjvf /opt/llvm-codon-$(git rev-parse --short HEAD).tar.bz2 -C /opt llvm-codon/
+CMD cp /opt/llvm-codon-*.tar.bz2 /mnt/

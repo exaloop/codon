@@ -99,9 +99,6 @@ print a.__mod__(m), a.__lshift__(m), a.__rshift__(m) #: 3 240 0
 print a.__eq__(m), a.__ne__(m), a.__lt__(m), a.__gt__(m), a.__le__(m), a.__ge__(m) #: False True False True False True
 print a.__and__(m), a.__or__(m), a.__xor__(m) #: 4 15 11
 print a, a.popcnt() #: 15 4
-zx = Ptr[byte](123)
-a.__pickle__(zx)
-print UInt[123].__unpickle__(zx) #: 15
 ac = Int[128](5)
 bc = Int[32](5)
 print ac, bc, int(ac), int(bc) #: 5 5 5 5

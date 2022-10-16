@@ -1,0 +1,44 @@
+--- build/_deps/xeus-src/CMakeLists.txt.orig	2022-10-12 18:38:44.000000000 -0700
++++ build/_deps/xeus-src/CMakeLists.txt	2022-10-12 19:55:16.000000000 -0700
+@@ -53,6 +53,7 @@
+ option(XEUS_BUILD_STATIC_LIBS "Build xeus static library (default if BUILD_SHARED_LIBS is OFF)." ON)
+ option(XEUS_STATIC_DEPENDENCIES "link statically with xeus dependencies" OFF)
+ option(XEUS_EMSCRIPTEN_WASM_BUILD  "build for wasm via emscripten" OFF)
++option(XEUS_USE_DYNAMIC_UUID  "use dynamic linking for libuuid" OFF)
+ 
+ # Test options
+ option(XEUS_BUILD_TESTS "xeus test suite" OFF)
+@@ -85,6 +86,7 @@
+ message(STATUS "XEUS_BUILD_STATIC_LIBS:     ${XEUS_BUILD_STATIC_LIBS}")
+ message(STATUS "XEUS_STATIC_DEPENDENCIES:   ${XEUS_STATIC_DEPENDENCIES}")  
+ message(STATUS "XEUS_EMSCRIPTEN_WASM_BUILD: ${XEUS_EMSCRIPTEN_WASM_BUILD}")
++message(STATUS "XEUS_USE_DYNAMIC_UUID:      ${XEUS_USE_DYNAMIC_UUID}")
+ 
+ # Dependencies
+ # ============
+@@ -310,13 +312,15 @@
+         if (APPLE)
+             target_link_libraries(${target_name} PUBLIC "-framework CoreFoundation")
+         else ()
+-            if (XEUS_STATIC_DEPENDENCIES)
++            if ((NOT XEUS_USE_DYNAMIC_UUID) AND (XEUS_STATIC_DEPENDENCIES))
++                message(STATUS "static libuuid linking")
+                 find_path(LIBUUID_INCLUDE_DIR uuid.h PATH_SUFFIXES uuid)
+                 find_library(LIBUUID_LIBRARY libuuid.a)
+                 target_include_directories(${target_name} PRIVATE ${LIBUUID_INCLUDE_DIR})
+                 target_link_libraries(${target_name} PUBLIC ${LIBUUID_LIBRARY}) 
+                 target_link_libraries(${target_name} PUBLIC ${sodium_LIBRARY_RELEASE})
+             else ()
++                message(STATUS "dynamic libuuid linking")
+                 find_package(LibUUID REQUIRED)
+                 target_link_libraries(${target_name} PUBLIC LibUUID::LibUUID)
+             endif ()
+@@ -362,8 +366,6 @@
+         CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR
+         CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+ 
+-        target_compile_options(${target_name} PUBLIC -Wunused-parameter -Wextra -Wreorder)
+-
+         if (NOT XEUS_DISABLE_ARCH_NATIVE)
+             target_compile_options(${target_name} PUBLIC -march=native)
+         endif ()

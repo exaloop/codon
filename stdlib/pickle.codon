@@ -69,6 +69,24 @@ class int:
 
 
 @extend
+class Int:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> Int[N]:
+        return _read(jar, Int[N])
+
+
+@extend
+class UInt:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> UInt[N]:
+        return _read(jar, UInt[N])
+
+
+@extend
 class float:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
@@ -137,6 +155,28 @@ class List:
             for i in range(n):
                 arr[i] = unpickle(jar, T)
         return List[T](arr, n)
+
+
+@extend
+class DynamicTuple:
+    def __pickle__(self, jar: Jar):
+        n = len(self)
+        pickle(n, jar)
+        if atomic(T):
+            _write_raw(jar, (self._ptr).as_byte(), n * sizeof(T))
+        else:
+            for i in range(n):
+                pickle(self._ptr[i], jar)
+
+    def __unpickle__(jar: Jar) -> DynamicTuple[T]:
+        n = unpickle(jar, int)
+        p = Ptr[T](n)
+        if atomic(T):
+            _read_raw(jar, p.as_byte(), n * sizeof(T))
+        else:
+            for i in range(n):
+                p[i] = unpickle(jar, T)
+        return DynamicTuple[T](p, n)
 
 
 @extend

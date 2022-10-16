@@ -15,11 +15,6 @@ class RDInspector {
 private:
   struct BlockData {
     std::unordered_map<id_t, std::unordered_set<id_t>> in;
-    std::unordered_map<id_t, std::unordered_set<id_t>> out;
-    std::unordered_set<id_t> killed;
-    std::unordered_map<id_t, id_t> generated;
-    bool initialized = false;
-
     BlockData() = default;
   };
   std::unordered_set<id_t> invalid;
@@ -39,12 +34,6 @@ public:
   std::unordered_set<id_t> getReachingDefinitions(const Var *var, const Value *loc);
 
   bool isInvalid(const Var *var) const { return invalid.count(var->getId()) != 0; }
-
-private:
-  void initializeIfNecessary(CFBlock *blk);
-
-  void calculateIn(CFBlock *blk);
-  bool calculateOut(CFBlock *blk);
 };
 
 /// Result of a reaching definition analysis.

@@ -144,17 +144,19 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
+  val = nullptr;
   if (rhs && rhs->isType()) {
-    ctx->addType(e->value, canonical, lhs->getSrcInfo());
+    val = ctx->addType(e->value, canonical, lhs->getSrcInfo());
   } else {
-    auto val = ctx->addVar(e->value, canonical, lhs->getSrcInfo());
+    val = ctx->addVar(e->value, canonical, lhs->getSrcInfo());
     if (auto st = getStaticGeneric(type.get()))
       val->staticType = st;
   }
 
   // Register all toplevel variables as global in JIT mode
-  bool isGlobal = (ctx->cache->isJit && ctx->isGlobal()) || (canonical == VAR_ARGV);
-  if (isGlobal)
+  bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
+                  (canonical == VAR_ARGV);
+  if (isGlobal && !val->isGeneric())
     ctx->cache->addGlobal(canonical);
 
   return assign;

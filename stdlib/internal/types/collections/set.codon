@@ -130,12 +130,11 @@ class Set:
         return {s.__deepcopy__() for s in self}
 
     def __repr__(self) -> str:
-        from internal.types.strbuf import strbuf
         n = self.__len__()
         if n == 0:
             return "set()"
         else:
-            buf = strbuf()
+            buf = _strbuf()
             buf.append("{")
             first = True
             for k in self:

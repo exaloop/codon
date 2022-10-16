@@ -262,8 +262,8 @@ def kernel(fn):
         @pure
         @llvm
         def offsetof(t: T, i: Static[int], T: type, S: type) -> int:
-            %p = getelementptr {=T}, {=T}* null, i64 0, i32 {=i}
-            %s = ptrtoint {=S}* %p to i64
+            %p = getelementptr {=T}, ptr null, i64 0, i32 {=i}
+            %s = ptrtoint ptr %p to i64
             ret i64 %s
 
         if staticlen(t) == 0:
@@ -320,7 +320,7 @@ def _ptr_from_gpu(p: Ptr[T], q: Ptr[T], n: int, index_filter = lambda i: True, T
 @pure
 @llvm
 def _ptr_to_type(p: cobj, T: type) -> T:
-    ret i8* %p
+    ret ptr %p
 
 def _object_to_gpu(obj: T, cache: AllocCache, T: type):
     s = tuple(obj)
@@ -502,6 +502,25 @@ class List:
         _ptr_from_gpu(arr.ptr, mem.arr.ptr, arr.len)
         mem.arr = arr
         return mem
+
+@extend
+class DynamicTuple:
+    @inline
+    def __to_gpu__(self, cache: AllocCache):
+        n = self._len
+        gpu_ptr = _ptr_to_gpu(self._ptr, n, cache)
+        return DynamicTuple(gpu_ptr, n)
+
+    @inline
+    def __from_gpu__(self, other: DynamicTuple[T]):
+        _ptr_from_gpu(self._ptr, other._ptr, self._len)
+
+    @inline
+    def __from_gpu_new__(other: DynamicTuple[T]):
+        n = other._len
+        p = Ptr[T](n)
+        _ptr_from_gpu(p, other._ptr, n)
+        return DynamicTuple(p, n)
 
 @extend
 class Dict:

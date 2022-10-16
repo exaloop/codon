@@ -2,6 +2,16 @@ Below you can find release notes for each major Codon release,
 listing improvements, updates, optimizations and more for each
 new version.
 
+# v0.15
+
+## LLVM upgrade
+
+Upgraded to LLVM 15 (from 12). Note that LLVM 15 now uses
+[opaque pointers](https://llvm.org/docs/OpaquePointers.html),
+e.g. `ptr` instead of `i8*` or `i64*`, which affects `@llvm`
+functions written in Codon as well as LLVM IR output of
+`codon build`.
+
 # v0.14
 
 ## GPU support

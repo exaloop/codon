@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.14.0"
+  VERSION "0.15.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
@@ -27,6 +27,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
+
+set(APPLE_ARM OFF)
+if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+  set(APPLE_ARM ON)
+endif()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -64,6 +69,9 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
+if(APPLE AND APPLE_ARM)
+  add_dependencies(codonrt unwind_shared)
+endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include" runtime)
@@ -102,6 +110,13 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
           ${CMAKE_BINARY_DIR})
+if(APPLE AND APPLE_ARM)
+  add_custom_command(
+    TARGET codonrt
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:unwind_shared>
+            ${CMAKE_BINARY_DIR})
+endif()
 
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -148,13 +163,6 @@ set(CODON_HPPFILES
     codon/sir/flow.h
     codon/sir/func.h
     codon/sir/instr.h
-    codon/sir/llvm/coro/CoroCleanup.h
-    codon/sir/llvm/coro/CoroEarly.h
-    codon/sir/llvm/coro/CoroElide.h
-    codon/sir/llvm/coro/CoroInstr.h
-    codon/sir/llvm/coro/CoroInternal.h
-    codon/sir/llvm/coro/CoroSplit.h
-    codon/sir/llvm/coro/Coroutines.h
     codon/sir/llvm/gpu.h
     codon/sir/llvm/llvisitor.h
     codon/sir/llvm/llvm.h
@@ -298,12 +306,6 @@ set(CODON_CPPFILES
     codon/sir/flow.cpp
     codon/sir/func.cpp
     codon/sir/instr.cpp
-    codon/sir/llvm/coro/CoroCleanup.cpp
-    codon/sir/llvm/coro/CoroEarly.cpp
-    codon/sir/llvm/coro/CoroElide.cpp
-    codon/sir/llvm/coro/CoroFrame.cpp
-    codon/sir/llvm/coro/CoroSplit.cpp
-    codon/sir/llvm/coro/Coroutines.cpp
     codon/sir/llvm/gpu.cpp
     codon/sir/llvm/llvisitor.cpp
     codon/sir/llvm/optimize.cpp
@@ -425,6 +427,20 @@ add_custom_target(
     "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
     "${CMAKE_BINARY_DIR}/lib/codon")
 add_dependencies(libs codonrt codonc)
+
+if(APPLE AND APPLE_ARM)
+  add_custom_target(
+    libs_apple ALL
+    COMMENT "Collecting Apple-specific libraries"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy
+      "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${CMAKE_BINARY_DIR}/lib/codon")
+  add_dependencies(libs_apple codonrt)
+endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)

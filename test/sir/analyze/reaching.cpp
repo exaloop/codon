@@ -34,11 +34,15 @@ TEST_F(SIRCoreTest, RDAnalysisSimple) {
   auto firstRd = rd.getReachingDefinitions(v, firstAssign);
   auto secondRd = rd.getReachingDefinitions(v, secondAssign);
   auto endRd = rd.getReachingDefinitions(v, end);
+  auto firstRhsRd = rd.getReachingDefinitions(v, first);
+  auto secondRhsRd = rd.getReachingDefinitions(v, second);
 
   ASSERT_EQ(0, startRd.size());
   ASSERT_EQ(1, firstRd.size());
   ASSERT_EQ(1, secondRd.size());
   ASSERT_EQ(1, endRd.size());
+  ASSERT_EQ(0, firstRhsRd.size());
+  ASSERT_EQ(1, secondRhsRd.size());
 
   ASSERT_EQ(first->getId(), *firstRd.begin());
   ASSERT_EQ(second->getId(), *secondRd.begin());
