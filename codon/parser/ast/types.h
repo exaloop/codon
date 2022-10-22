@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <set>
 
 #include "codon/parser/common.h"
 
@@ -24,6 +25,7 @@ struct LinkType;
 struct RecordType;
 struct PartialType;
 struct StaticType;
+struct UnionType;
 
 /**
  * A type instance that contains the basic plumbing for type inference.
@@ -110,6 +112,7 @@ public:
   virtual std::shared_ptr<LinkType> getLink() { return nullptr; }
   virtual std::shared_ptr<LinkType> getUnbound() { return nullptr; }
   virtual std::shared_ptr<StaticType> getStatic() { return nullptr; }
+  virtual std::shared_ptr<UnionType> getUnion() { return nullptr; }
   virtual std::shared_ptr<RecordType> getHeterogenousTuple() { return nullptr; }
 
   virtual bool is(const std::string &s);
@@ -414,6 +417,33 @@ public:
 private:
   void parseExpr(const std::shared_ptr<Expr> &e, std::unordered_set<std::string> &seen);
 };
+
+/**
+ * Union type.
+ */
+struct UnionType : public Type {
+  std::vector<TypePtr> types;
+
+  explicit UnionType(const std::vector<TypePtr> &types);
+
+public:
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) override;
+
+public:
+  std::vector<TypePtr> getUnbounds() const override;
+  bool canRealize() const override;
+  bool isInstantiated() const override;
+  std::string debugString(char mode) const override;
+  std::string realizedName() const override;
+
+  std::shared_ptr<UnionType> getUnion() override {
+    return std::static_pointer_cast<UnionType>(shared_from_this());
+  }
+};
+using UnionTypePtr = std::shared_ptr<UnionType>;
 
 struct CallableTrait : public Trait {
   std::vector<TypePtr> args; // tuple with arg types, ret type

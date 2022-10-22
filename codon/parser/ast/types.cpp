@@ -327,9 +327,17 @@ std::string ClassType::realizedName() const {
     return _rn;
 
   std::vector<std::string> gs;
-  for (auto &a : generics)
-    if (!a.name.empty())
-      gs.push_back(a.type->realizedName());
+  if (name == "Union" && generics[0].type->getClass()) {
+    std::set<std::string> gss;
+    for (auto &a : generics[0].type->getClass()->generics)
+      if (!a.name.empty())
+        gss.insert(a.type->realizedName());
+    gs.insert(gs.end(), gss.begin(), gss.end());
+  } else {
+    for (auto &a : generics)
+      if (!a.name.empty())
+        gs.push_back(a.type->realizedName());
+  }
   std::string s = join(gs, ",");
   if (canRealize())
     const_cast<ClassType *>(this)->_rn =
@@ -354,6 +362,45 @@ int RecordType::unify(Type *typ, Unification *us) {
       auto t64 = std::make_shared<StaticType>(64);
       return generics[0].type->unify(t64.get(), us);
     }
+
+    // Handle Unions
+    if (name == "Union" && tr->name == "Union" && generics[0].type->getRecord() &&
+        tr->generics[0].type->getRecord()) {
+      // Do not hard-unify if we have unbounds
+      if (!canRealize() || !tr->canRealize())
+        return 0;
+
+      std::map<std::string, TypePtr> u1, u2;
+      for (auto &t : generics[0].type->getRecord()->args) {
+        auto key = t->realizedName();
+        if (auto i = in(u1, key)) {
+          if (t->unify(i->get(), us) == -1)
+            return -1;
+        } else {
+          u1[key] = t;
+        }
+      }
+      for (auto &t : tr->generics[0].type->getRecord()->args) {
+        auto key = t->realizedName();
+        if (auto i = in(u2, key)) {
+          if (t->unify(i->get(), us) == -1)
+            return -1;
+        } else {
+          u2[key] = t;
+        }
+      }
+
+      if (u1.size() != u2.size())
+        return -1;
+      int s1 = 2, s = 0;
+      for (auto i = u1.begin(), j = u2.begin(); i != u1.end(); i++, j++) {
+        if ((s = i->second->unify(j->second.get(), us)) == -1)
+          return -1;
+        s1 += s;
+      }
+      return s1;
+    }
+
     int s1 = 2, s = 0;
     if (args.size() != tr->args.size())
       return -1;
@@ -851,6 +898,77 @@ TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
 }
 std::string TypeTrait::debugString(char mode) const {
   return fmt::format("Trait[{}]", type->debugString(mode));
+}
+
+UnionType::UnionType(const std::vector<TypePtr> &types)
+    : types(types.begin(), types.end()) {}
+int UnionType::unify(Type *typ, Unification *us) {
+  if (auto t = typ->getUnion()) {
+    // Do not hard-unify if we have unbounds
+    if (!canRealize())
+      return 0;
+    if (!t->canRealize())
+      return 0;
+
+    if (types.size() != t->types.size())
+      return -1;
+    int s1 = 2, s = 0;
+    for (auto i = types.begin(), j = t->types.begin(); i != types.end(); i++, j++) {
+      if ((s = (*i)->unify((*j).get(), us)) == -1)
+        return -1;
+      s1 += s;
+    }
+    return s1;
+  } else if (auto tl = typ->getLink()) {
+    return tl->unify(this, us);
+  }
+  return -1;
+}
+TypePtr UnionType::generalize(int atLevel) {
+  std::vector<TypePtr> tp(types.begin(), types.end());
+  for (auto &t : tp)
+    t = t->generalize(atLevel);
+  auto c = std::make_shared<UnionType>(tp);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+TypePtr UnionType::instantiate(int atLevel, int *unboundCount,
+                               std::unordered_map<int, TypePtr> *cache) {
+  std::vector<TypePtr> tp(types.begin(), types.end());
+  for (auto &t : tp)
+    t = t->instantiate(atLevel, unboundCount, cache);
+  auto c = std::make_shared<UnionType>(tp);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+std::vector<TypePtr> UnionType::getUnbounds() const {
+  std::vector<TypePtr> u;
+  for (auto &t : types) {
+    auto tu = t->getUnbounds();
+    u.insert(u.begin(), tu.begin(), tu.end());
+  }
+  return u;
+}
+bool UnionType::canRealize() const {
+  return std::all_of(types.begin(), types.end(),
+                     [](auto &t) { return t->canRealize(); });
+}
+bool UnionType::isInstantiated() const {
+  return std::all_of(types.begin(), types.end(),
+                     [](auto &t) { return t->isInstantiated(); });
+}
+std::string UnionType::debugString(char mode) const {
+  std::vector<std::string> s;
+  for (auto &t : types)
+    s.push_back(t->debugString(mode));
+  return fmt::format("Union[{}]", join(s, ","));
+}
+std::string UnionType::realizedName() const {
+  seqassert(canRealize(), "cannot realize {}", toString());
+  std::vector<std::string> s;
+  for (auto &t : types)
+    s.push_back(t->realizedName());
+  return fmt::format("Union[{}]", join(s, ","));
 }
 
 } // namespace codon::ast::types

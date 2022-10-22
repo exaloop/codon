@@ -76,12 +76,19 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   } else {
     items.push_back(expr->index);
   }
-  for (auto &i : items) {
-    if (i->getList() && expr->expr->isType()) {
-      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
-      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
+  if (expr->expr->isType() && expr->expr->isId("Union") &&
+      ctx->getModule() != "std.internal.core") {
+    // Special case: `Union[A, B, C]` -> `Union[Tuple[A, B, C]]`
+    items = {transform(N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(items)), true)};
+  } else {
+    for (auto &i : items) {
+      if (i->getList() && expr->expr->isType()) {
+        // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
+        // `Function[...]`)
+        i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
+      }
+      transform(i, true);
     }
-    transform(i, true);
   }
   if (expr->expr->isType()) {
     resultExpr = N<InstantiateExpr>(expr->expr, items);

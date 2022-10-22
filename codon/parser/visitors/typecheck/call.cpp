@@ -225,7 +225,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
   if (auto partType = callee->getPartial()) {
     // Case: calling partial object `p`. Transform roughly to
     // `part = callee; partial_fn(*part.args, args...)`
-    ExprPtr var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("part"));
+    ExprPtr var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("partcall"));
     expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr),
                                        N<IdExpr>(partType->func->ast->name)));
 
@@ -234,12 +234,15 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     seqassert(calleeFn, "not a function: {}", expr->expr->type->toString());
 
     // Unify partial generics with types known thus far
-    for (size_t i = 0, j = 0; i < partType->known.size(); i++)
+    for (size_t i = 0, j = 0, k = 0; i < partType->known.size(); i++)
       if (partType->func->ast->args[i].status == Param::Generic) {
         if (partType->known[i])
           unify(calleeFn->funcGenerics[j].type,
                 ctx->instantiate(partType->func->funcGenerics[j].type));
         j++;
+      } else if (partType->known[i]) {
+        unify(calleeFn->getArgTypes()[i - j], partType->generics[k].type);
+        k++;
       }
     part.known = partType->known;
     return {calleeFn, nullptr};

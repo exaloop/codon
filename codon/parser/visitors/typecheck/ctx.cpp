@@ -122,6 +122,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
                                                         bool hideShadowed) const {
   std::vector<types::FuncTypePtr> vv;
   std::unordered_set<std::string> signatureLoci;
+
   auto populate = [&](const auto &cls) {
     auto t = in(cls.methods, method);
     if (!t) return;

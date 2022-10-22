@@ -190,6 +190,7 @@ private:
   types::TypePtr realize(types::TypePtr);
   types::TypePtr realizeFunc(types::FuncType *, bool = false);
   types::TypePtr realizeType(types::ClassType *);
+  std::shared_ptr<FunctionStmt> generateSpecialAst(types::FuncType *);
   size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *

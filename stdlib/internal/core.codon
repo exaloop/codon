@@ -103,6 +103,23 @@ class type:
         pass
 function = Function
 
+@__internal__
+class Ref[T]:
+    pass
+
+@__internal__
+@tuple
+class Union[TU]:
+    __ptr__: Ptr[byte]
+    __tag__: int
+
+    def __new__(obj: T, T: type) -> Union[TU]:
+        pass
+    def __union_get__(self, T: type) -> T:
+        pass
+    def __getter__(self, method: Static[str], *args, **kwargs):
+        pass
+
 # dummy
 @__internal__
 class TypeVar[T]: pass

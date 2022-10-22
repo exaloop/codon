@@ -318,6 +318,15 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
         N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
   }
 
+  // Case: transform `union.member` to `Union.__getter__(union, "member", ...)`
+  if (typ->is("Union")) {
+    return transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "__getter__"),
+                    std::vector<CallExpr::Arg>{{"self", expr->expr},
+                                               {"method", N<StringExpr>(expr->member)},
+                                               {"", N<EllipsisExpr>()}}));
+  }
+
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);
   error("cannot find '{}' in {}", expr->member, typ->prettyString());
   return nullptr;

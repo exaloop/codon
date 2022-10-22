@@ -12,6 +12,20 @@ def seq_check_errno() -> str:
 from C import seq_print(str)
 from C import exit(int)
 
+# class Union[T1, ..., TN]:
+#     data: ptr
+#     tag: byte
+#     def __new__(a: T1):
+#       data = Box[T1](a); tag = 1
+#     def __get__(self, T) -> T:
+#       if tag == 1:
+#         return __internal__.to_class_ptr(self.data, Box[T1]).__get__()
+#       raise UnionTypeError("...")
+#     def foo(self, x, y... ):
+#       if tag == 1:
+#          return T1(__internal__.to_class_ptr(self.data, Box[T1]), x, y, ...)
+#       elif ...
+
 @extend
 class __internal__:
     @pure

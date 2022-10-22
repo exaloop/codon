@@ -393,6 +393,23 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
+  } else if (callee && exprClass && expr->type->is("Union") && expectedClass &&
+             !expectedClass->is("Union")) {
+    // Case 8: extract union types
+    if (auto t = realize(expectedClass)) {
+      expr = transform(
+          N<CallExpr>(N<DotExpr>(expr, "__union_get__"), N<IdExpr>(t->realizedName())));
+    } else {
+      return false;
+    }
+  } else if (callee && exprClass && !expr->type->is("Union") && expectedClass &&
+             expectedClass->is("Union")) {
+    // Case 9: extract union types
+    if (auto t = realize(expectedClass)) {
+      expr = transform(N<CallExpr>(N<IdExpr>(t->realizedName()), expr));
+    } else {
+      return false;
+    }
   } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
     // TODO: adjust for generic MROs
     auto &mros = ctx->cache->classes[exprClass->name].mro;
