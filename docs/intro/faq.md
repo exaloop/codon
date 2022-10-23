@@ -27,7 +27,7 @@ handle cases where specific Python libraries or dynamism are required.
 
 - **Numba?** While Codon does offer a JIT decorator similar to Numba's, Codon is in
   general an ahead-of-time compiler that compiles end-to-end programs to native code.
-  It also supports compilation of a much broader subset of Python.
+  It also supports compilation of a much broader set of Python constructs and libraries.
 
 - **PyPy?** PyPy strives to effectively be a drop-in replacement for CPython, whereas
   Codon differs in a few places in order to eliminate any dynamic runtime or virtual
