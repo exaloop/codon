@@ -34,5 +34,17 @@ mkdir build
 cmake --build build --config Release
 ```
 
-This should produce the `codon` executable in the `build` directory, as
-well as `codon_test` which runs the test suite.
+This will produce the `codon` executable in the `build` directory, as
+well as `codon_test` which runs the test suite. Additionally, a number
+of shared libraries are produced:
+
+- `libcodonc`: The compiler library used by the `codon` compiler.
+- `libcodonrt`: The runtime library used during execution.
+- `libomp`: OpenMP runtime used to execute parallel code.
+
+# Build options
+
+The following additional flags can be passed to CMake:
+
+- *CODON_JUPYTER* = `ON|OFF`: Enable or disable Jupyter support (default: `OFF`)
+- *CODON_GPU* = `ON|OFF`: Enable or disable GPU support; requires CUDA (default: `OFF`)
