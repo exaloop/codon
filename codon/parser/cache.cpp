@@ -168,6 +168,16 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return realizeType(t->type->getClass(), {argType, ret});
 }
 
+ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
+  auto tv = TypecheckVisitor(typeCtx);
+
+  auto tup = tv.generateTuple(types.size());
+  auto argType = typeCtx->instantiateGeneric(typeCtx->find(tup)->type, types);
+  auto t = typeCtx->find("Union");
+  seqassertn(t && t->type, "cannot find 'Union'");
+  return realizeType(t->type->getClass(), {argType});
+}
+
 void Cache::parseCode(const std::string &code) {
   auto node = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
   auto sctx = imports[MAIN_IMPORT].ctx;

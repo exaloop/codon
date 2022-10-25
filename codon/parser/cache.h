@@ -290,6 +290,7 @@ public:
 
   ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
+  ir::types::Type *makeUnion(const std::vector<types::TypePtr> &types);
 
   void parseCode(const std::string &code);
 
