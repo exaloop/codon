@@ -2,17 +2,17 @@
  <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
 
-<p align="center">
+<h3 align="center">
   <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
-  |
+  &nbsp;&vert;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
-  |
+  &nbsp;&vert;&nbsp;
   <a href="https://discourse.exaloop.io" target="_blank"><b>Discourse</b></a>
-  |
+  &nbsp;&vert;&nbsp;
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
-  |
+  &nbsp;&vert;&nbsp;
   <a href="https://github.com/exaloop/codon/releases" target="_blank"><b>Releases</b></a>
-</p>
+</h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
   <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
