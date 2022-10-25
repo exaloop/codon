@@ -3,11 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
-    <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
-         alt="Build Status">
-  </a>
-  |
   <a href="https://docs.exaloop.io/codon" target="_blank">
     Docs
   </a>
