@@ -1479,7 +1479,6 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     auto &layout = M->getDataLayout();
     llvm::Type *largest = nullptr;
     size_t maxSize = 0;
-    int count = 0;
 
     for (auto *t : *x) {
       auto *llvmType = getLLVMType(t);
@@ -1488,20 +1487,12 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
         largest = llvmType;
         maxSize = size;
       }
-      ++count;
     }
 
-    if (count == 0)
-      return llvm::StructType::get(*context, {});
+    if (!largest)
+      largest = llvm::StructType::get(*context, {});
 
-    if (count == 1)
-      return llvm::StructType::get(*context, {B->getInt1Ty(), largest});
-
-    int bits = 0;
-    while ((1 << bits) < count)
-      ++bits;
-
-    return llvm::StructType::get(*context, {B->getIntNTy(bits), largest});
+    return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
   }
 
   if (auto *x = cast<dsl::types::CustomType>(t)) {
