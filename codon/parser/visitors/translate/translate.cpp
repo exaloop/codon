@@ -63,7 +63,8 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   //       if (!vtable.ir) {
   //         auto name = format(".gvtable.{}.{}", r, base);
   //         vtable.ir = mdl->Nr<ir::Var>(vType, true, false, name);
-  //         auto alloc = cache->codegenCtx->forceFind("std.internal.gc.seq_alloc_atomic:0[int]");
+  //         auto alloc =
+  //         cache->codegenCtx->forceFind("std.internal.gc.seq_alloc_atomic:0[int]");
   //         auto call = mdl->Nr<ir::CallInstr>(
   //             mdl->Nr<ir::VarValue>(alloc->getFunc()),
   //             std::vector<ir::Value *>{mdl->Nr<ir::IntConst>(

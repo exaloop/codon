@@ -125,7 +125,8 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 
   auto populate = [&](const auto &cls) {
     auto t = in(cls.methods, method);
-    if (!t) return;
+    if (!t)
+      return;
     auto mt = cache->overloads[*t];
     for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
       auto &method = mt[mti];
@@ -145,7 +146,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
     }
   };
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pc: cls->mro) {
+    for (auto &pc : cls->mro) {
       auto mc = in(cache->classes, pc);
       seqassert(mc, "class '{}' not found", pc);
       populate(*mc);
@@ -157,7 +158,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pc: cls->mro) {
+    for (auto &pc : cls->mro) {
       auto mc = in(cache->classes, pc);
       seqassert(mc, "class '{}' not found", pc);
       for (auto &mm : mc->fields) {

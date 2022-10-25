@@ -1475,6 +1475,35 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
                                  /*Scalable=*/false);
   }
 
+  if (auto *x = cast<types::UnionType>(t)) {
+    auto &layout = M->getDataLayout();
+    llvm::Type *largest = nullptr;
+    size_t maxSize = 0;
+    int count = 0;
+
+    for (auto *t : *x) {
+      auto *llvmType = getLLVMType(t);
+      size_t size = layout.getTypeAllocSizeInBits(llvmType);
+      if (!largest || size > maxSize) {
+        largest = llvmType;
+        maxSize = size;
+      }
+      ++count;
+    }
+
+    if (count == 0)
+      return llvm::StructType::get(*context, {});
+
+    if (count == 1)
+      return llvm::StructType::get(*context, {B->getInt1Ty(), largest});
+
+    int bits = 0;
+    while ((1 << bits) < count)
+      ++bits;
+
+    return llvm::StructType::get(*context, {B->getIntNTy(bits), largest});
+  }
+
   if (auto *x = cast<dsl::types::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
@@ -1640,6 +1669,12 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<types::VectorType>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_unsigned);
+  }
+
+  if (auto *x = cast<types::UnionType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);

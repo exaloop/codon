@@ -196,6 +196,17 @@ std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base)
   return fmt::format(FMT_STRING("Vector[{}, {}]"), count, base->referenceString());
 }
 
+const char UnionType::NodeId = 0;
+
+std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) {
+  std::vector<std::string> names;
+  for (auto *type : types) {
+    names.push_back(type->referenceString());
+  }
+  return fmt::format(FMT_STRING("Union[{}]"),
+                     fmt::join(names.begin(), names.end(), ", "));
+}
+
 } // namespace types
 } // namespace ir
 } // namespace codon

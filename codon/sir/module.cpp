@@ -268,6 +268,15 @@ types::Type *Module::getTupleType(std::vector<types::Type *> args) {
   return cache->makeTuple(argTypes);
 }
 
+types::Type *Module::getUnionType(std::vector<types::Type *> types) {
+  std::vector<ast::types::TypePtr> argTypes;
+  for (auto *t : types) {
+    seqassertn(t->getAstType(), "{} must have an ast type", *t);
+    argTypes.push_back(t->getAstType());
+  }
+  return cache->makeUnion(argTypes);
+}
+
 types::Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
 
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }

@@ -37,7 +37,8 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   return ret;
 }
 
-std::shared_ptr<TranslateItem> TranslateContext::forceFind(const std::string &name) const {
+std::shared_ptr<TranslateItem>
+TranslateContext::forceFind(const std::string &name) const {
   auto i = find(name);
   seqassertn(i, "cannot find '{}'", name);
   return i;

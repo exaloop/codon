@@ -63,6 +63,7 @@ void Visitor::visit(types::PointerType *x) { defaultVisit(x); }
 void Visitor::visit(types::GeneratorType *x) { defaultVisit(x); }
 void Visitor::visit(types::IntNType *x) { defaultVisit(x); }
 void Visitor::visit(types::VectorType *x) { defaultVisit(x); }
+void Visitor::visit(types::UnionType *x) { defaultVisit(x); }
 void Visitor::visit(dsl::types::CustomType *x) { defaultVisit(x); }
 
 void ConstVisitor::visit(const Module *x) { defaultVisit(x); }
@@ -122,6 +123,7 @@ void ConstVisitor::visit(const types::PointerType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::GeneratorType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::IntNType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::VectorType *x) { defaultVisit(x); }
+void ConstVisitor::visit(const types::UnionType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const dsl::types::CustomType *x) { defaultVisit(x); }
 
 } // namespace util

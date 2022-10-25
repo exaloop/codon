@@ -344,6 +344,11 @@ public:
     fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),
                makeFormatter(v->getBase()), v->getCount());
   }
+  void visit(const types::UnionType *v) override {
+    auto types = makeFormatters(v->begin(), v->end());
+    fmt::print(os, FMT_STRING("(union '\"{}\" {})"), v->referenceString(),
+               fmt::join(types.begin(), types.end(), " "));
+  }
   void visit(const dsl::types::CustomType *v) override { v->doFormat(os); }
 
   void format(const Node *n) {

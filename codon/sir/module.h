@@ -347,6 +347,10 @@ public:
   /// @param args the arg types
   /// @return the tuple type
   types::Type *getTupleType(std::vector<types::Type *> args);
+  /// Gets a union type.
+  /// @param types the alternative types
+  /// @return the union type
+  types::Type *getUnionType(std::vector<types::Type *> types);
   /// Gets the "none" type (i.e. empty tuple).
   /// @return none type
   types::Type *getNoneType();

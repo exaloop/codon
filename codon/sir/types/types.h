@@ -501,6 +501,38 @@ public:
   static std::string getInstanceName(unsigned count, PrimitiveType *base);
 };
 
+class UnionType : public AcceptorExtend<UnionType, Type> {
+private:
+  /// alternative types
+  std::vector<types::Type *> types;
+
+public:
+  static const char NodeId;
+
+  using const_iterator = std::vector<types::Type *>::const_iterator;
+  using const_reference = std::vector<types::Type *>::const_reference;
+
+  /// Constructs a UnionType.
+  /// @param types the alternative types (must be sorted by caller)
+  explicit UnionType(std::vector<types::Type *> types)
+      : AcceptorExtend(), types(std::move(types)) {}
+
+  const_iterator begin() const { return types.begin(); }
+  const_iterator end() const { return types.end(); }
+  const_reference front() const { return types.front(); }
+  const_reference back() const { return types.back(); }
+
+  static std::string getInstanceName(const std::vector<types::Type *> &types);
+
+private:
+  std::vector<types::Type *> doGetUsedTypes() const override { return types; }
+
+  bool doIsAtomic() const override {
+    return !std::any_of(types.begin(), types.end(),
+                        [](auto *type) { return !type->isAtomic(); });
+  }
+};
+
 } // namespace types
 } // namespace ir
 } // namespace codon
