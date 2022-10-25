@@ -36,6 +36,12 @@ class List:
         self.arr = arr
         self.len = len
 
+    def _get(self, idx: int):
+        return self.arr.ptr[idx]
+
+    def _set(self, idx: int, val: T):
+        self.arr.ptr[idx] = val
+
     def __len__(self) -> int:
         return self.len
 

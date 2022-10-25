@@ -3,26 +3,21 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.exaloop.io/codon" target="_blank">
-    Docs
-  </a>
+  <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
   |
-  <a href="https://docs.exaloop.io/codon/general/faq" target="_blank">
-    FAQ
-  </a>
+  <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
   |
-  <a href="https://discourse.exaloop.io" target="_blank">
-    Discourse
-  </a>
+  <a href="https://discourse.exaloop.io" target="_blank"><b>Discourse</b></a>
   |
-  <a href="https://blog.exaloop.io" target="_blank">
-    Blog
-  </a>
+  <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
   |
-  <a href="https://github.com/exaloop/codon/releases" target="_blank">
-    Releases
-  </a>
+  <a href="https://github.com/exaloop/codon/releases" target="_blank"><b>Releases</b></a>
 </p>
+
+<a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
+  <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
+       alt="Build Status">
+</a>
 
 ## What is Codon?
 
