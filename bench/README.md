@@ -15,8 +15,16 @@ of the `pyperf` module is removed).
 ## Setup
 
 The `bench.sh` script can be used to run all the benchmarks and output a
-CSV file with the results. Some benchmarks require specific environment
-variables to be set (below) for accessing data.
+CSV file with the results. The benchmark script looks at the following
+environment variables:
+
+- `EXE_PYTHON`: Python command (default: `python3`)
+- `EXE_PYPY`: PyPy command (default: `pypy3`)
+- `EXE_CPP`: C++ compiler command (default: `clang -std=c++11 -O3`)
+- `EXE_CODON`: Codon command (default: `build/codon`)
+
+Some benchmarks also require specific environment variables to be set
+for accessing data (details below).
 
 ## Benchmarks
 
