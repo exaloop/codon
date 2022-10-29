@@ -46,7 +46,7 @@ handle cases where specific Python libraries or dynamism are required.
 
 Benchmarks against several of these can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
 on bioinformatics-specific use cases (note that the name used in that paper is that of Codon's predecessor,
-"Seq").
+"Seq"). Other benchmarks can be found in [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench).
 
 ## I want to use Codon, but I have a large Python codebase I don't want to port.
 
@@ -67,6 +67,17 @@ While Codon covers a sizeable subset of Python's standard library, it does not y
 every function from every module. Note that missing functions can still be called through
 Python via `from python import`. Many of the functions that lack Codon-native implementations
 (e.g. I/O or OS related functions) will generally also not see substantial speedups from Codon.
+
+## Codon is no faster than Python for my application.
+
+Applications that spend most of their time in C-implemented library code generally do not
+see substantial performance improvements in Codon. Similarly, applications that are I/O or
+network-bound will have the same bottlenecks in Codon.
+
+## Codon is slower than Python for my application.
+
+Please report any cases where Codon is noticeably slower than Python as bugs on our
+[issue tracker](https://github.com/exaloop/codon/issues).
 
 # Usage
 
@@ -93,7 +104,7 @@ production-use license.
 
 ## Does Codon accept outside contributions?
 
-Absolutely, we'd be delighted to accept any contributions ranging from issues, bug reports,
+Absolutely, we'd be delighted to accept any contributions in the form of issues, bug reports,
 feature requests or pull requests.
 
 ## I want to contribute. Where do I start?
