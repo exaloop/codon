@@ -88,6 +88,18 @@ echo -n ","
 echo -n $(build/codon run -release ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
 echo ""
 
+# PRIMES
+echo -n "primes"
+echo -n ","
+echo -n $(python3 ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
+echo -n ","
+# nothing for pypy
+echo -n ","
+# nothing for cpp
+echo -n ","
+echo -n $(build/codon run -release ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
+echo ""
+
 # WORD_COUNT
 if [[ ! -z "${DATA_WORD_COUNT}" ]]; then
   echo -n "word_count"

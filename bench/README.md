@@ -12,7 +12,13 @@ by using various Codon-specific features, but their adaptations here are
 virtually identical to the original implementations (mainly just the use
 of the `pyperf` module is removed).
 
-Here is a description of each benchmark.
+## Setup
+
+The `bench.sh` script can be used to run all the benchmarks and output a
+CSV file with the results. Some benchmarks require specific environment
+variables to be set (below) for accessing data.
+
+## Benchmarks
 
 - `chaos`: [Pyperformance's `chaos` benchmark](https://github.com/python/pyperformance/blob/main/pyperformance/data-files/benchmarks/bm_chaos/run_benchmark.py).
 - `float`: [Pyperformance's `float` benchmark](https://github.com/python/pyperformance/blob/main/pyperformance/data-files/benchmarks/bm_float/run_benchmark.py).
@@ -26,3 +32,4 @@ Here is a description of each benchmark.
          (e.g. `EQY_US_ALL_NBBO_20220705.gz`). We recommend using the first 10M lines for benchmarking purposes. The TAQ file path should be passed to the benchmark script
          through the `DATA_TAQ` environment variable.
 - `word_count`: Counts occurences of words in a file using a dictionary. The file should be passed to the benchmark script through the `DATA_WORD_COUNT` environment variable.
+- `primes`: Counts the number of prime numbers below a threshold. Codon version is multithreaded with a dynamic schedule via one additional `@par(schedule='dynamic')` line.
