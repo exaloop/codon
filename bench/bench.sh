@@ -3,7 +3,7 @@
 export BENCH_DIR=$(dirname $0)
 export PYTHON="${EXE_PYTHON:-${PYTHON}}"
 export PYPY="${EXE_PYPY:-pypy3}"
-export CPP="${EXE_CPP:-clang -std=c++11 -O3}"
+export CPP="${EXE_CPP:-clang++ -std=c++11 -O3}"
 export CODON="${EXE_CODON:-build/codon}"
 
 echo "benchmark,python-time,pypy-time,cpp-time,codon-time"
