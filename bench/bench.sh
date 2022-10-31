@@ -13,7 +13,7 @@ echo -n "sum"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/sum/sum.py | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/sum/sum.py | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -25,7 +25,7 @@ echo -n "float"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/float/float.py | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/float/float.py | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -37,7 +37,7 @@ echo -n "go"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/go/go.py | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/go/go.py | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -49,7 +49,7 @@ echo -n "nbody"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/nbody/nbody.py 1000000 | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/nbody/nbody.py 1000000 | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -61,7 +61,7 @@ echo -n "chaos"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/chaos/chaos.py /dev/null | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/chaos/chaos.py /dev/null | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -73,7 +73,7 @@ echo -n "spectral_norm"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/spectral_norm/spectral_norm.py | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/spectral_norm/spectral_norm.py | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -85,7 +85,7 @@ echo -n "set_partition"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -97,7 +97,7 @@ echo -n "primes"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -109,7 +109,7 @@ echo -n "binary_trees"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/binary_trees/binary_trees.py 20 | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/binary_trees/binary_trees.py 20 | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -121,7 +121,7 @@ echo -n "fannkuch"
 echo -n ","
 echo -n $(${PYTHON} ${BENCH_DIR}/fannkuch/fannkuch.py 11 | tail -n 1)
 echo -n ","
-# nothing for pypy
+echo -n $(${PYPY} ${BENCH_DIR}/fannkuch/fannkuch.py 11 | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
@@ -134,7 +134,7 @@ if [[ ! -z "${DATA_WORD_COUNT}" ]]; then
   echo -n ","
   echo -n $(${PYTHON} ${BENCH_DIR}/word_count/word_count.py $DATA_WORD_COUNT | tail -n 1)
   echo -n ","
-  # nothing for pypy
+  echo -n $(${PYPY} ${BENCH_DIR}/word_count/word_count.py $DATA_WORD_COUNT | tail -n 1)
   echo -n ","
   # nothing for cpp
   echo -n ","
@@ -148,7 +148,7 @@ if [[ ! -z "${DATA_TAQ}" ]]; then
   echo -n ","
   echo -n $(${PYTHON} ${BENCH_DIR}/taq/taq.py $DATA_TAQ | tail -n 1)
   echo -n ","
-  # nothing for pypy
+  echo -n $(${PYPY} ${BENCH_DIR}/taq/taq.py $DATA_TAQ | tail -n 1)
   echo -n ","
   # nothing for cpp
   echo -n ","
