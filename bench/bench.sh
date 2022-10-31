@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -e
+set -o pipefail
 
 export BENCH_DIR=$(dirname $0)
 export PYTHON="${EXE_PYTHON:-${PYTHON}}"
