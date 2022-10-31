@@ -104,6 +104,18 @@ echo -n ","
 echo -n $(${CODON} run -release ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
 echo ""
 
+# BINARY_TREES
+echo -n "binary_trees"
+echo -n ","
+echo -n $(${PYTHON} ${BENCH_DIR}/binary_trees/binary_trees.py 20 | tail -n 1)
+echo -n ","
+# nothing for pypy
+echo -n ","
+# nothing for cpp
+echo -n ","
+echo -n $(${CODON} run -release ${BENCH_DIR}/binary_trees/binary_trees.codon 20 | tail -n 1)
+echo ""
+
 # WORD_COUNT
 if [[ ! -z "${DATA_WORD_COUNT}" ]]; then
   echo -n "word_count"

@@ -39,5 +39,6 @@ for accessing data (details below).
 - `taq`: Performs volume peak detection on an NYSE TAQ file. Sample TAQ files can be downloaded and uncompressed from [here](https://ftp.nyse.com/Historical%20Data%20Samples/DAILY%20TAQ/)
          (e.g. `EQY_US_ALL_NBBO_20220705.gz`). We recommend using the first 10M lines for benchmarking purposes. The TAQ file path should be passed to the benchmark script
          through the `DATA_TAQ` environment variable.
+- `binary_trees`: [Boehm's binary trees benchmark](https://hboehm.info/gc/gc_bench.html).
 - `word_count`: Counts occurences of words in a file using a dictionary. The file should be passed to the benchmark script through the `DATA_WORD_COUNT` environment variable.
 - `primes`: Counts the number of prime numbers below a threshold. Codon version is multithreaded with a dynamic schedule via one additional `@par(schedule='dynamic')` line.

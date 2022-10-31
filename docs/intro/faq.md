@@ -61,6 +61,10 @@ Interoperability is and will continue to be a priority for Codon.
 We don't want using Codon to render you unable to use all the other great frameworks and
 libraries that exist. Codon supports full interoperability with Python and C/C++.
 
+## Does Codon use garbage collection?
+
+Yes, Codon uses the [Boehm garbage collector](https://github.com/ivmai/bdwgc).
+
 ## Codon doesn't support Python module X or function Y.
 
 While Codon covers a sizeable subset of Python's standard library, it does not yet cover
