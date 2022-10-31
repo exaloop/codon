@@ -116,6 +116,18 @@ echo -n ","
 echo -n $(${CODON} run -release ${BENCH_DIR}/binary_trees/binary_trees.codon 20 | tail -n 1)
 echo ""
 
+# FANNKUCH
+echo -n "fannkuch"
+echo -n ","
+echo -n $(${PYTHON} ${BENCH_DIR}/fannkuch/fannkuch.py 11 | tail -n 1)
+echo -n ","
+# nothing for pypy
+echo -n ","
+# nothing for cpp
+echo -n ","
+echo -n $(${CODON} run -release ${BENCH_DIR}/fannkuch/fannkuch.codon 11 | tail -n 1)
+echo ""
+
 # WORD_COUNT
 if [[ ! -z "${DATA_WORD_COUNT}" ]]; then
   echo -n "word_count"
