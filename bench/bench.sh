@@ -152,7 +152,7 @@ if [[ ! -z "${DATA_TAQ}" ]]; then
   echo -n ","
   echo -n $(${PYPY} ${BENCH_DIR}/taq/taq.py $DATA_TAQ | tail -n 1)
   echo -n ","
-  # nothing for cpp
+  echo -n $(${CPP} -std=c++17 -O3 ${BENCH_DIR}/taq/taq.cpp && ./a.out $DATA_TAQ | tail -n 1)
   echo -n ","
   echo -n $(${CODON} run -release ${BENCH_DIR}/taq/taq.py $DATA_TAQ | tail -n 1)
   echo ""

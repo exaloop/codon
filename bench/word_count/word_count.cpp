@@ -1,3 +1,4 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -7,6 +8,11 @@
 using namespace std;
 
 int main(int argc, char *argv[]) {
+  using clock = chrono::high_resolution_clock;
+  using chrono::duration_cast;
+  using chrono::milliseconds;
+  auto t = clock::now();
+
   cin.tie(nullptr);
   cout.sync_with_stdio(false);
 
@@ -29,4 +35,5 @@ int main(int argc, char *argv[]) {
   }
 
   cout << map.size() << endl;
+  cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3) << endl;
 }
