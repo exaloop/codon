@@ -138,7 +138,7 @@ if [[ ! -z "${DATA_WORD_COUNT}" ]]; then
   echo -n ","
   echo -n $(${PYPY} ${BENCH_DIR}/word_count/word_count.py $DATA_WORD_COUNT | tail -n 1)
   echo -n ","
-  # nothing for cpp
+  echo -n $(${CPP} -std=c++17 -O3 ${BENCH_DIR}/word_count/word_count.cpp && ./a.out $DATA_WORD_COUNT | tail -n 1)
   echo -n ","
   echo -n $(${CODON} run -release ${BENCH_DIR}/word_count/word_count.py $DATA_WORD_COUNT | tail -n 1)
   echo ""
