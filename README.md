@@ -7,13 +7,11 @@
   &nbsp;&vert;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
   &nbsp;&vert;&nbsp;
+  <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
+  &nbsp;&vert;&nbsp;
   <a href="https://discourse.exaloop.io" target="_blank"><b>Forum</b></a>
   &nbsp;&vert;&nbsp;
   <a href="https://discord.gg/8mT5R57kng" target="_blank">Chat</a>
-  &nbsp;&vert;&nbsp;
-  <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
-  &nbsp;&vert;&nbsp;
-  <a href="https://github.com/exaloop/codon/releases" target="_blank"><b>Releases</b></a>
 </h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
