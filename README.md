@@ -7,7 +7,9 @@
   &nbsp;&vert;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
   &nbsp;&vert;&nbsp;
-  <a href="https://discourse.exaloop.io" target="_blank"><b>Discourse</b></a>
+  <a href="https://discourse.exaloop.io" target="_blank"><b>Forum</b></a>
+  &nbsp;&vert;&nbsp;
+  <a href="https://discord.gg/8mT5R57kng" target="_blank">Chat</a>
   &nbsp;&vert;&nbsp;
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
   &nbsp;&vert;&nbsp;
