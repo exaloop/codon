@@ -5,7 +5,7 @@ set -o pipefail
 export BENCH_DIR=$(dirname $0)
 export PYTHON="${EXE_PYTHON:-${PYTHON}}"
 export PYPY="${EXE_PYPY:-pypy3}"
-export CPP="${EXE_CPP:-clang++ -std=c++11 -O3}"
+export CPP="${EXE_CPP:-clang++}"
 export CODON="${EXE_CODON:-build/codon}"
 
 echo "benchmark,python-time,pypy-time,cpp-time,codon-time"
@@ -85,13 +85,13 @@ echo ""
 # SET_PARTITION
 echo -n "set_partition"
 echo -n ","
-echo -n $(${PYTHON} ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
+echo -n $(${PYTHON} ${BENCH_DIR}/set_partition/set_partition.py 15 | tail -n 1)
 echo -n ","
-echo -n $(${PYPY} ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
+echo -n $(${PYPY} ${BENCH_DIR}/set_partition/set_partition.py 15 | tail -n 1)
 echo -n ","
-# nothing for cpp
+echo -n $(${CPP} -std=c++17 -O3 ${BENCH_DIR}/set_partition/set_partition.cpp && ./a.out 15 | tail -n 1)
 echo -n ","
-echo -n $(${CODON} run -release ${BENCH_DIR}/set_partition/set_partition.py | tail -n 1)
+echo -n $(${CODON} run -release ${BENCH_DIR}/set_partition/set_partition.py 15 | tail -n 1)
 echo ""
 
 # PRIMES
@@ -113,7 +113,7 @@ echo -n $(${PYTHON} ${BENCH_DIR}/binary_trees/binary_trees.py 20 | tail -n 1)
 echo -n ","
 echo -n $(${PYPY} ${BENCH_DIR}/binary_trees/binary_trees.py 20 | tail -n 1)
 echo -n ","
-# nothing for cpp
+echo -n $(${CPP} -std=c++17 -O3 ${BENCH_DIR}/binary_trees/binary_trees.cpp && ./a.out 20 | tail -n 1)
 echo -n ","
 echo -n $(${CODON} run -release ${BENCH_DIR}/binary_trees/binary_trees.codon 20 | tail -n 1)
 echo ""

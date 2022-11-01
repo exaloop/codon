@@ -20,8 +20,8 @@ environment variables:
 
 - `EXE_PYTHON`: Python command (default: `python3`)
 - `EXE_PYPY`: PyPy command (default: `pypy3`)
-- `EXE_CPP`: C++ compiler command (default: `clang++ -std=c++11 -O3`)
-- `EXE_CODON`: Codon command (default: `build/codon`)
+- `EXE_CPP`: C++ compiler command (default: `clang++`; run with `-std=c++17 -O3`)
+- `EXE_CODON`: Codon command (default: `build/codon`; run with `-release`)
 
 Some benchmarks also require specific environment variables to be set
 for accessing data (details below).
