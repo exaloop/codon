@@ -36,19 +36,19 @@ void partition_filtered(const vec<int> &collection,
   auto loop = [&](const vec<vec<int>> &smaller) {
     int n = 0;
     for (const auto &subset : smaller) {
-      vec<vec<int>> candidate(smaller.size());
-      int j = 0;
+      vec<vec<int>> candidate;
+      candidate.reserve(smaller.size());
       for (int i = 0; i < n; i++)
-        candidate[j++] = smaller[i];
+        candidate.push_back(smaller[i]);
 
       vec<int> rep;
       rep.reserve(subset.size() + 1);
       rep.push_back(first);
       rep.insert(rep.end(), subset.begin(), subset.end());
-      candidate[j++] = {rep};
+      candidate.push_back({rep});
 
       for (int i = n + 1; i < smaller.size(); i++)
-        candidate[j++] = smaller[i];
+        candidate.push_back(smaller[i]);
 
       if (conforms(candidate, minsize, forgive))
         callback(candidate);
