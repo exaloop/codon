@@ -8,7 +8,7 @@ export PYPY="${EXE_PYPY:-pypy3}"
 export CPP="${EXE_CPP:-clang++}"
 export CODON="${EXE_CODON:-build/codon}"
 
-echo "benchmark,python-time,pypy-time,cpp-time,codon-time"
+echo "benchmark,python,pypy,cpp,codon"
 
 # SUM
 echo -n "sum"
@@ -53,7 +53,7 @@ echo -n $(${PYTHON} ${BENCH_DIR}/nbody/nbody.py 1000000 | tail -n 1)
 echo -n ","
 echo -n $(${PYPY} ${BENCH_DIR}/nbody/nbody.py 1000000 | tail -n 1)
 echo -n ","
-# nothing for cpp
+echo -n $(${CPP} -std=c++17 -O3 ${BENCH_DIR}/nbody/nbody.cpp && ./a.out 1000000 | tail -n 1)
 echo -n ","
 echo -n $(${CODON} run -release ${BENCH_DIR}/nbody/nbody.py 1000000 | tail -n 1)
 echo ""
