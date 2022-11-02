@@ -3,7 +3,7 @@ set -e
 set -o pipefail
 
 export BENCH_DIR=$(dirname $0)
-export PYTHON="${EXE_PYTHON:-${PYTHON}}"
+export PYTHON="${EXE_PYTHON:-python3}"
 export PYPY="${EXE_PYPY:-pypy3}"
 export CPP="${EXE_CPP:-clang++}"
 export CODON="${EXE_CODON:-build/codon}"
