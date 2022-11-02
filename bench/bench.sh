@@ -103,7 +103,7 @@ echo -n $(${PYPY} ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
 echo -n ","
 # nothing for cpp
 echo -n ","
-echo -n $(${CODON} run -release ${BENCH_DIR}/primes/primes.py 30000 | tail -n 1)
+echo -n $(${CODON} run -release ${BENCH_DIR}/primes/primes.codon 30000 | tail -n 1)
 echo ""
 
 # BINARY_TREES
