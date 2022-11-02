@@ -157,3 +157,15 @@ if [[ ! -z "${DATA_TAQ}" ]]; then
   echo -n $(${CODON} run -release ${BENCH_DIR}/taq/taq.py $DATA_TAQ | tail -n 1)
   echo ""
 fi
+
+# MANDELBROT
+echo -n "mandelbrot"
+echo -n ","
+echo -n $(${PYTHON} ${BENCH_DIR}/mandelbrot/mandelbrot.py | tail -n 1)
+echo -n ","
+echo -n $(${PYPY} ${BENCH_DIR}/mandelbrot/mandelbrot.py | tail -n 1)
+echo -n ","
+# nothing for cpp
+echo -n ","
+echo -n $(${CODON} run -release ${BENCH_DIR}/mandelbrot/mandelbrot.codon | tail -n 1)
+echo ""
