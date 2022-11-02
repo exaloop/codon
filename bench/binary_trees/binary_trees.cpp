@@ -1,6 +1,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,7 @@ struct ArgChunks {
     assert(chunksize % 2 == 0);
   }
 
-  bool next() const {
+  bool next() {
     chunk.clear();
     while (k <= i) {
       chunk.emplace_back(k++, d);
