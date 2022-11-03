@@ -366,5 +366,12 @@ types::Type *Module::unsafeGetVectorType(unsigned int count, types::Type *base) 
   return Nr<types::VectorType>(count, primitive);
 }
 
+types::Type *Module::unsafeGetUnionType(const std::vector<types::Type *> &types) {
+  auto name = types::UnionType::getInstanceName(types);
+  if (auto *rVal = getType(name))
+    return rVal;
+  return Nr<types::UnionType>(types);
+}
+
 } // namespace ir
 } // namespace codon

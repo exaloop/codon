@@ -419,6 +419,11 @@ public:
   /// @param base the vector base type (MUST be a primitive type)
   /// @return a vector type
   types::Type *unsafeGetVectorType(unsigned count, types::Type *base);
+  /// Gets a union type. Should generally not be used as no
+  /// type-checker information is generated.
+  /// @param types the alternative types
+  /// @return a union type
+  types::Type *unsafeGetUnionType(const std::vector<types::Type *> &types);
 
 private:
   void store(types::Type *t) {
