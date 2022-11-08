@@ -21,12 +21,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   stmt->setDone();
 
   // Generate the type and add it to the context
-  ClassTypePtr typ = nullptr;
-  if (stmt->isRecord()) {
-    typ = std::make_shared<RecordType>(stmt->name, ctx->cache->rev(stmt->name));
-  } else {
-    typ = std::make_shared<ClassType>(stmt->name, ctx->cache->rev(stmt->name));
-  }
+  auto typ = Type::makeType(stmt->name, ctx->cache->rev(stmt->name), stmt->isRecord())
+                 ->getClass();
   if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
     // Special handling of partial types (e.g., `Partial.0001.foo`)
     if (auto p = in(ctx->cache->partials, stmt->name))

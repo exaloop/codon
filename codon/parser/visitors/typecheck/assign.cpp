@@ -67,8 +67,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     if (!stmt->rhs->isStatic())
       error("right-hand side is not a static expression");
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
-    unify(stmt->lhs->type,
-          unify(stmt->type->type, std::make_shared<StaticType>(stmt->rhs, ctx)));
+    unify(stmt->lhs->type, unify(stmt->type->type, Type::makeStatic(stmt->rhs, ctx)));
     auto val = ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (in(ctx->cache->globals, lhs)) {
       // Make globals always visible!

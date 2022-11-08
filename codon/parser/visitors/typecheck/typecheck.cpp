@@ -179,7 +179,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
   transform(expr);
   if (expr) {
     if (!expr->isType() && expr->isStatic()) {
-      expr->setType(std::make_shared<StaticType>(expr, ctx));
+      expr->setType(Type::makeStatic(expr, ctx));
     } else if (!expr->isType()) {
       error("expected type expression");
     } else {

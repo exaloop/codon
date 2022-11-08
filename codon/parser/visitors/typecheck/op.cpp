@@ -297,7 +297,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
-        t = std::make_shared<StaticType>(expr->typeParams[i], ctx);
+        t = Type::makeStatic(expr->typeParams[i], ctx);
       } else {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
