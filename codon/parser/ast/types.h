@@ -427,11 +427,9 @@ private:
 /**
  * Union type.
  */
-struct UnionType : public ClassType {
-  std::vector<TypePtr> types;
-  bool sealed = true;
-
-  explicit UnionType(const std::vector<TypePtr> &types);
+struct UnionType : public RecordType {
+  explicit UnionType();
+  UnionType(const std::vector<ClassType::Generic> &, bool);
 
 public:
   int unify(Type *typ, Unification *undo) override;
@@ -440,9 +438,6 @@ public:
                       std::unordered_map<int, TypePtr> *cache) override;
 
 public:
-  std::vector<TypePtr> getUnbounds() const override;
-  bool canRealize() const override;
-  bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
@@ -452,9 +447,10 @@ public:
 
 private:
   bool sealed = false;
-  UnionType(const std::vector<TypePtr> &types, bool);
+
 public:
-  void seal() { sealed = true; }
+  void seal();
+  std::vector<types::TypePtr> getRealizationTypes();
 };
 using UnionTypePtr = std::shared_ptr<UnionType>;
 

@@ -39,7 +39,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       // Generic and static types
       auto generic = ctx->getUnbound();
       generic->isStatic = getStaticGeneric(a.type.get());
-      auto typId = generic->id;
+      auto typId = typ->getUnion() ? 100 : generic->id;
       generic->getLink()->genericName = ctx->cache->rev(a.name);
       if (a.defaultValue) {
         auto defType = transformType(clone(a.defaultValue));

@@ -482,15 +482,12 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = record;
   } else if (t->name == "Union") {
     seqassert(!types.empty() && statics.empty(), "bad union");
-    std::map<std::string, types::TypePtr> unionTypes;
-    for (auto &u : t->generics[0].type->getRecord()->args)
-      unionTypes[u->realizedName()] = u;
+    auto unionTypes = t->getUnion()->getRealizationTypes();
     std::vector<ir::types::Type *> unionVec;
     unionVec.reserve(unionTypes.size());
-    for (auto &[_, u] : unionTypes)
+    for (auto &u : unionTypes)
       unionVec.emplace_back(forceFindIRType(u));
     handle = module->unsafeGetUnionType(unionVec);
-    LOG("<|> {} -> {}", t->toString(), *handle);
   } else if (t->name == "Function") {
     types.clear();
     for (auto &m : t->generics[0].type->getRecord()->args)
@@ -622,18 +619,14 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
   } else if (startswith(ast->name, "Union.__new__")) {
-    auto unionType = type->funcParent->getClass();
-    auto unionTuple = unionType->generics[0].type->getRecord();
-    seqassert(unionTuple->canRealize(), "cannot realize {}",
-              unionTuple->debugString(1));
-    std::map<std::string, types::TypePtr> unionTypes;
-    for (auto &u : unionTuple->args)
-      unionTypes[u->realizedName()] = u;
+    auto unionType = type->funcParent->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
+    LOG("-> {} ", unionType->debugString(1));
 
     auto objVar = ast->args[0].name;
     auto suite = N<SuiteStmt>();
     int tag = 0;
-    for (auto &[_, t] : unionTypes) {
+    for (auto &t : unionTypes) {
       suite->stmts.push_back(N<IfStmt>(
           N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>(objVar),
                       NT<IdExpr>(t->realizedName())),
@@ -647,19 +640,14 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     ast->suite = suite;
     LOG("-> {}", ast->toString(1));
   } else if (startswith(ast->name, "Union.__union_get__")) {
-    auto unionType = type->funcParent->getClass();
-    auto unionTuple = unionType->generics[0].type->getRecord();
-    seqassert(unionTuple->canRealize(), "cannot realize {}",
-              unionTuple->debugString(1));
-    auto targetType = type->funcGenerics[0].type;
-    std::map<std::string, types::TypePtr> unionTypes;
-    for (auto &u : unionTuple->args)
-      unionTypes[u->realizedName()] = u;
+    auto unionType = type->funcParent->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
 
+    auto targetType = type->funcGenerics[0].type;
     auto selfVar = ast->args[0].name;
     auto suite = N<SuiteStmt>();
     int tag = 0;
-    for (auto &[_, t] : unionTypes) {
+    for (auto t : unionTypes) {
       if (t->realizedName() == targetType->realizedName()) {
         suite->stmts.push_back(N<IfStmt>(
             N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
@@ -679,18 +667,13 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
   } else if (startswith(ast->name, "Union.__getter__")) {
     auto szt = type->funcGenerics[0].type->getStatic();
     auto fnName = szt->evaluate().getString();
-    auto unionType = type->funcParent->getClass();
-    auto unionTuple = unionType->generics[0].type->getRecord();
-    seqassert(unionTuple->canRealize(), "cannot realize {}",
-              unionTuple->debugString(1));
-    std::map<std::string, types::TypePtr> unionTypes;
-    for (auto &u : unionTuple->args)
-      unionTypes[u->realizedName()] = u;
+    auto unionType = type->funcParent->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
 
     auto selfVar = ast->args[0].name;
     auto suite = N<SuiteStmt>();
     int tag = 0;
-    for (auto &[_, t] : unionTypes) {
+    for (auto &t : unionTypes) {
       suite->stmts.push_back(N<IfStmt>(
           N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
                                     N<IdExpr>(selfVar)),

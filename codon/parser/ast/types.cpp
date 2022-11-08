@@ -39,11 +39,11 @@ char Type::isStaticType() {
 
 TypePtr Type::makeType(const std::string &name, const std::string &niceName,
                        bool isRecord) {
-  if (isRecord) {
-    return std::make_shared<RecordType>(name, niceName);
-  }
   if (name == "Union") {
     return std::make_shared<UnionType>();
+  }
+  if (isRecord) {
+    return std::make_shared<RecordType>(name, niceName);
   }
   return std::make_shared<ClassType>(name, niceName);
 }
@@ -869,11 +869,11 @@ std::string TypeTrait::debugString(char mode) const {
   return fmt::format("Trait[{}]", type->debugString(mode));
 }
 
-UnionType::UnionType(const std::vector<TypePtr> &types)
-    : name("Union"), niceName("Union"), types(types.begin(), types.end()) {}
-UnionType::UnionType(const std::vector<TypePtr> &types, bool sealed)
-    : name("Union"), niceName("Union"), types(types), sealed(sealed) {}
+UnionType::UnionType() : RecordType("Union", "Union") {}
+UnionType::UnionType(const std::vector<ClassType::Generic> &generics, bool sealed)
+    : RecordType("Union", "Union", generics), sealed(sealed) {}
 int UnionType::unify(Type *typ, Unification *us) {
+  LOG("--> {} {}", debugString(2), typ->debugString(2));
   if (sealed && typ->getUnion()) {
     auto tr = typ->getUnion();
     // Do not hard-unify if we have unbounds
@@ -881,22 +881,22 @@ int UnionType::unify(Type *typ, Unification *us) {
       return 0;
 
     std::map<std::string, TypePtr> u1, u2;
-    for (auto &t : types) {
-      auto key = t->realizedName();
+    for (auto &t : generics) {
+      auto key = t.type->realizedName();
       if (auto i = in(u1, key)) {
-        if (t->unify(i->get(), us) == -1)
+        if (t.type->unify(i->get(), us) == -1)
           return -1;
       } else {
-        u1[key] = t;
+        u1[key] = t.type;
       }
     }
-    for (auto &t : tr->types) {
-      auto key = t->realizedName();
+    for (auto &t : tr->generics) {
+      auto key = t.type->realizedName();
       if (auto i = in(u2, key)) {
-        if (t->unify(i->get(), us) == -1)
+        if (t.type->unify(i->get(), us) == -1)
           return -1;
       } else {
-        u2[key] = t;
+        u2[key] = t.type;
       }
     }
 
@@ -912,16 +912,17 @@ int UnionType::unify(Type *typ, Unification *us) {
   } else if (!sealed) {
     if (auto tu = typ->getUnion()) {
       int sc = 0;
-      for (auto &t : tu->types)
-        sc += unify(t.get(), us);
+      for (auto &t : tu->generics)
+        sc += unify(t.type.get(), us);
       return sc;
     } else {
       // Add new type
-      for (size_t i = types.size(); i-- > 0;) {
-        if (types[i]->unify(typ, nullptr) >= 0)
-          return types[i]->unify(typ, us);
+      for (size_t i = generics.size(); i-- > 0;) {
+        if (generics[i].type->unify(typ, nullptr) >= 0)
+          return generics[i].type->unify(typ, us);
       }
-      types.push_back(typ->shared_from_this());
+      generics.emplace_back(
+          Generic("u", "u", typ->shared_from_this(), 100 + generics.size()));
       return 1;
     }
   } else if (auto tl = typ->getLink()) {
@@ -930,54 +931,39 @@ int UnionType::unify(Type *typ, Unification *us) {
   return -1;
 }
 TypePtr UnionType::generalize(int atLevel) {
-  std::vector<TypePtr> tp(types.begin(), types.end());
-  for (auto &t : tp)
-    t = t->generalize(atLevel);
-  auto c = std::make_shared<UnionType>(tp);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+  auto c = RecordType::generalize(atLevel);
+  return std::make_shared<UnionType>(c->getClass()->generics, sealed);
 }
 TypePtr UnionType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) {
-  std::vector<TypePtr> tp(types.begin(), types.end());
-  for (auto &t : tp)
-    t = t->instantiate(atLevel, unboundCount, cache);
-  auto c = std::make_shared<UnionType>(tp);
-  c->setSrcInfo(getSrcInfo());
-  return c;
-}
-std::vector<TypePtr> UnionType::getUnbounds() const {
-  std::vector<TypePtr> u;
-  for (auto &t : types) {
-    auto tu = t->getUnbounds();
-    u.insert(u.begin(), tu.begin(), tu.end());
-  }
-  return u;
-}
-bool UnionType::canRealize() const {
-  return std::all_of(types.begin(), types.end(),
-                     [](auto &t) { return t->canRealize(); });
-}
-bool UnionType::isInstantiated() const {
-  return std::all_of(types.begin(), types.end(),
-                     [](auto &t) { return t->isInstantiated(); });
+  auto c = RecordType::instantiate(atLevel, unboundCount, cache);
+  return std::make_shared<UnionType>(c->getClass()->generics, sealed);
 }
 std::string UnionType::debugString(char mode) const {
-  std::vector<std::string> s;
-  for (auto &t : types)
-    s.push_back(t->debugString(mode));
-  return fmt::format("Union[{}]", join(s, ","));
+  return this->RecordType::debugString(mode);
 }
 std::string UnionType::realizedName() const {
   seqassert(canRealize(), "cannot realize {}", toString());
   std::set<std::string> gss;
-  for (auto &a : types)
-    gss.insert(a->realizedName());
-  std::string s = join(gss, ",");
-  if (canRealize())
-    const_cast<UnionType *>(this)->_rn =
-        fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
-  return _rn;
+  for (auto &a : generics)
+    gss.insert(a.type->realizedName());
+  std::string s;
+  for (auto &i : gss)
+    s += "," + i;
+  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s.substr(1)));
+}
+
+void UnionType::seal() { sealed = true; }
+std::vector<types::TypePtr> UnionType::getRealizationTypes() {
+  seqassert(canRealize(), "cannot realize {}", debugString(1));
+  std::map<std::string, types::TypePtr> unionTypes;
+  for (auto &u : generics)
+    unionTypes[u.type->realizedName()] = u.type;
+  std::vector<types::TypePtr> r;
+  r.reserve(unionTypes.size());
+  for (auto &[_, t] : unionTypes)
+    r.emplace_back(t);
+  return r;
 }
 
 } // namespace codon::ast::types

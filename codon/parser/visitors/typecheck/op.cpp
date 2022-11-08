@@ -268,7 +268,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr->toString());
 
   auto &generics = typ->getClass()->generics;
-  if (expr->typeParams.size() != generics.size())
+  bool isUnion = typ->getUnion() != nullptr;
+  if (!isUnion && expr->typeParams.size() != generics.size())
     error("expected {} generics and/or statics", generics.size());
 
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
@@ -306,8 +307,10 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                              expr->typeParams[i]->getType());
       }
-      unify(generics[i].type, t);
+      unify(isUnion ? typ : generics[i].type, t);
     }
+    if (isUnion)
+      typ->getUnion()->seal();
     unify(expr->type, typ);
   }
   expr->markType();

@@ -404,7 +404,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     }
   } else if (exprClass && !expr->type->is("Union") && expectedClass &&
              expectedClass->is("Union")) {
-    // Case 9: extract union types
+    // Case 9: make union types
     if (auto t = realize(expectedClass)) {
       expr = transform(N<CallExpr>(N<IdExpr>(t->realizedName()), expr));
     } else {

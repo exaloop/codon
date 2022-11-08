@@ -14,7 +14,7 @@
 namespace codon::ast {
 
 Cache::Cache(std::string argv0)
-    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0),
+    : generatedSrcInfoCount(0), unboundCount(1000), varCount(0), age(0),
       argv0(move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
       jitCell(0) {}
 
