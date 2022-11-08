@@ -12,20 +12,6 @@ def seq_check_errno() -> str:
 from C import seq_print(str)
 from C import exit(int)
 
-# class Union[T1, ..., TN]:
-#     data: ptr
-#     tag: byte
-#     def __new__(a: T1):
-#       data = Box[T1](a); tag = 1
-#     def __get__(self, T) -> T:
-#       if tag == 1:
-#         return __internal__.to_class_ptr(self.data, Box[T1]).__get__()
-#       raise UnionTypeError("...")
-#     def foo(self, x, y... ):
-#       if tag == 1:
-#          return T1(__internal__.to_class_ptr(self.data, Box[T1]), x, y, ...)
-#       elif ...
-
 @extend
 class __internal__:
     @pure
@@ -59,6 +45,29 @@ class __internal__:
     def base_derived_dist(B: type, D: type) -> int:
         return 0
 
+    @llvm
+    def union_set_tag(tag: byte, U: type) -> U:
+        %0 = insertvalue {=U} undef, i8 %tag, 0
+        ret {=U} %0
+
+    @llvm
+    def union_get_data_ptr(ptr: Ptr[U], U: type, T: type) -> Ptr[T]:
+        %0 = getelementptr inbounds {=U}, ptr %ptr, i64 0, i32 1
+        ret ptr %0
+
+    @llvm
+    def union_get_tag(u: U, U: type) -> byte:
+        %0 = extractvalue {=U} %u, 0
+        ret i8 %0
+
+    def new_union(tag: int, value, U: type) -> U:
+        u = __internal__.union_set_tag(byte(tag), U)
+        __internal__.union_get_data_ptr(__ptr__(u), T=type(value))[0] = value
+        return u
+
+    def get_union(u, T: type) -> T:
+        return __internal__.union_get_data_ptr(__ptr__(u), T=T)[0]
+
     @pure
     @derives
     @llvm
@@ -66,7 +75,7 @@ class __internal__:
         %x = alloca {=T}
         store {=T} %t, ptr %x
         %p = getelementptr {=E}, ptr %x, i64 %idx
-        %v  = load {=E}, ptr %p
+        %v = load {=E}, ptr %p
         ret {=E} %v
 
     def tuple_fix_index(idx: int, len: int) -> int:

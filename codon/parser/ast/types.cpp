@@ -399,6 +399,11 @@ int RecordType::unify(Type *typ, Unification *us) {
         s1 += s;
       }
       return s1;
+    } else if (name == "Union" && generics.size() > 1) {
+      // TODO remove tuples here, just handle normal stuff...
+      ;
+    } else if (tr->name == "Union" && tr->generics.size() > 1) {
+      return tr->unify(this, us);
     }
 
     int s1 = 2, s = 0;

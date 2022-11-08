@@ -642,6 +642,11 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
     return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, format("__{}__", rightMagic)),
                                  expr->lexpr));
   }
+  if (lt->is("Union")) {
+    // Special case: `union op obj` -> `union.__magic__(rhs)`
+    return transform(
+        N<CallExpr>(N<DotExpr>(expr->lexpr, format("__{}__", magic)), expr->rexpr));
+  }
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   auto method = findBestMethod(lt, format("__{}__", magic), {lt, rt});

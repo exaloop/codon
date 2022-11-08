@@ -271,6 +271,7 @@ using ClassTypePtr = std::shared_ptr<ClassType>;
 struct RecordType : public ClassType {
   /// List of tuple arguments.
   std::vector<TypePtr> args;
+  char flags = 0;
 
   explicit RecordType(
       std::string name, std::string niceName,
@@ -423,6 +424,7 @@ private:
  */
 struct UnionType : public Type {
   std::vector<TypePtr> types;
+  bool sealed = true;
 
   explicit UnionType(const std::vector<TypePtr> &types);
 

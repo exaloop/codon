@@ -48,6 +48,9 @@ class byte:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
+    def __eq__(self, other: int) -> bool:
+        return self == byte(other)
+
     @pure
     @llvm
     def __ne__(self, other: byte) -> bool:

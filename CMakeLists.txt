@@ -429,17 +429,17 @@ add_custom_target(
 add_dependencies(libs codonrt codonc)
 
 if(APPLE AND APPLE_ARM)
-  add_custom_target(
-    libs_apple ALL
-    COMMENT "Collecting Apple-specific libraries"
-    BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
-    VERBATIM
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
-    COMMAND
-      ${CMAKE_COMMAND} -E copy
-      "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
-      "${CMAKE_BINARY_DIR}/lib/codon")
-  add_dependencies(libs_apple codonrt)
+  # add_custom_target(
+  #   libs_apple_arm ALL
+  #   COMMENT "Collecting Apple-specific libraries"
+  #   BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+  #   VERBATIM
+  #   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+  #   COMMAND
+  #     ${CMAKE_COMMAND} -E copy
+  #     "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
+  #     "${CMAKE_BINARY_DIR}/lib/codon")
+  # add_dependencies(libs_apple_arm codonrt)
 endif()
 
 # Codon command-line tool

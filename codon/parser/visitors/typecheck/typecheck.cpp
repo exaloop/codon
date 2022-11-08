@@ -393,7 +393,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
-  } else if (callee && exprClass && expr->type->is("Union") && expectedClass &&
+  } else if (allowUnwrap && exprClass && expr->type->is("Union") && expectedClass &&
              !expectedClass->is("Union")) {
     // Case 8: extract union types
     if (auto t = realize(expectedClass)) {
@@ -402,7 +402,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     } else {
       return false;
     }
-  } else if (callee && exprClass && !expr->type->is("Union") && expectedClass &&
+  } else if (exprClass && !expr->type->is("Union") && expectedClass &&
              expectedClass->is("Union")) {
     // Case 9: extract union types
     if (auto t = realize(expectedClass)) {

@@ -110,9 +110,6 @@ class Ref[T]:
 @__internal__
 @tuple
 class Union[TU]:
-    __ptr__: Ptr[byte]
-    __tag__: int
-
     def __new__(obj: T, T: type) -> Union[TU]:
         pass
     def __union_get__(self, T: type) -> T:
