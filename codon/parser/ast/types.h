@@ -117,6 +117,11 @@ public:
 
   virtual bool is(const std::string &s);
   char isStaticType();
+
+  static std::shared_ptr<Type> makeType(const std::string &, const std::string &,
+                                        bool = false);
+  static std::shared_ptr<StaticType> makeStatic(const std::shared_ptr<Expr> &,
+                                                std::shared_ptr<TypeContext> = nullptr);
 };
 using TypePtr = std::shared_ptr<Type>;
 
@@ -421,7 +426,7 @@ private:
 /**
  * Union type.
  */
-struct UnionType : public Type {
+struct UnionType : public ClassType {
   std::vector<TypePtr> types;
 
   explicit UnionType(const std::vector<TypePtr> &types);
@@ -442,6 +447,12 @@ public:
   std::shared_ptr<UnionType> getUnion() override {
     return std::static_pointer_cast<UnionType>(shared_from_this());
   }
+
+private:
+  bool sealed = false;
+  UnionType(const std::vector<TypePtr> &types, bool);
+public:
+  void seal() { sealed = true; }
 };
 using UnionTypePtr = std::shared_ptr<UnionType>;
 
