@@ -12,6 +12,8 @@
   <a href="https://discourse.exaloop.io" target="_blank"><b>Forum</b></a>
   &nbsp;&vert;&nbsp;
   <a href="https://discord.gg/8mT5R57kng" target="_blank">Chat</a>
+  &nbsp;&vert;&nbsp;
+  <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
 </h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
@@ -24,7 +26,7 @@
 Codon is a high-performance Python compiler that compiles Python code to native machine code without any runtime overhead.
 Typical speedups over Python are on the order of 10-100x or more, on a single thread. Codon's performance is typically on par with
 (and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
-times higher still.
+times higher still. Codon grew out of the [Seq project](https://github.com/seq-lang/seq).
 
 ### What isn't Codon?
 
