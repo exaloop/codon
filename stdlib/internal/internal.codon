@@ -60,10 +60,13 @@ class __internal__:
         %0 = extractvalue {=U} %u, 0
         ret i8 %0
 
-    def new_union(tag: int, value, U: type) -> U:
+    def union_make(tag: int, value, U: type) -> U:
         u = __internal__.union_set_tag(byte(tag), U)
         __internal__.union_get_data_ptr(__ptr__(u), T=type(value))[0] = value
         return u
+
+    def new_union(value, U: type) -> U:
+        pass
 
     def get_union(u, T: type) -> T:
         return __internal__.union_get_data_ptr(__ptr__(u), T=T)[0]

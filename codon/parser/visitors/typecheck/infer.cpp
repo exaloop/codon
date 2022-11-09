@@ -618,10 +618,13 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     ll.push_back(format("ret {{}} %{}", as.size()));
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
-  } else if (startswith(ast->name, "Union.__new__")) {
-    auto unionType = type->funcParent->getUnion();
+  } else if (startswith(ast->name, "__internal__.new_union")) {
+    LOG("~ {} / {} / {} / {} ", type->debugString(2), type->funcGenerics[0].type->debugString(2),
+      type->getRetType()->debugString(2),
+      (size_t)(dynamic_cast<UnionType*>(type->funcGenerics[0].type->getUnion().get()))
+    );
+    auto unionType = type->funcGenerics[0].type->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
-    LOG("-> {} ", unionType->debugString(1));
 
     auto objVar = ast->args[0].name;
     auto suite = N<SuiteStmt>();
@@ -630,7 +633,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
       suite->stmts.push_back(N<IfStmt>(
           N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>(objVar),
                       NT<IdExpr>(t->realizedName())),
-          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.new_union:0"),
+          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_make:0"),
                                     N<IntExpr>(tag), N<IdExpr>(objVar),
                                     N<IdExpr>(unionType->realizedTypeName())))));
       tag++;
@@ -638,7 +641,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
     ast->suite = suite;
-    LOG("-> {}", ast->toString(1));
+    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   } else if (startswith(ast->name, "Union.__union_get__")) {
     auto unionType = type->funcParent->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
@@ -663,7 +666,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union getter"))));
     ast->suite = suite;
-    LOG("-> {}", ast->toString(1));
+    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   } else if (startswith(ast->name, "Union.__getter__")) {
     auto szt = type->funcGenerics[0].type->getStatic();
     auto fnName = szt->evaluate().getString();
@@ -690,7 +693,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
     ast->suite = suite;
-    LOG("-> {}", ast->toString(1));
+    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   }
   return ast;
 }

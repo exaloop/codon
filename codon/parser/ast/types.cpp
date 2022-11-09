@@ -255,6 +255,8 @@ ClassType::ClassType(const ClassTypePtr &base)
       hiddenGenerics(base->hiddenGenerics) {}
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
+    if (typ->getUnion())
+      return typ->unify(typ, us);
     // Check names.
     if (name != tc->name)
       return -1;
@@ -369,6 +371,8 @@ int RecordType::unify(Type *typ, Unification *us) {
       auto t64 = std::make_shared<StaticType>(64);
       return generics[0].type->unify(t64.get(), us);
     }
+    if (typ->getUnion())
+      return typ->unify(typ, us);
 
     int s1 = 2, s = 0;
     if (args.size() != tr->args.size())
@@ -873,56 +877,42 @@ UnionType::UnionType() : RecordType("Union", "Union") {}
 UnionType::UnionType(const std::vector<ClassType::Generic> &generics, bool sealed)
     : RecordType("Union", "Union", generics), sealed(sealed) {}
 int UnionType::unify(Type *typ, Unification *us) {
-  LOG("--> {} {}", debugString(2), typ->debugString(2));
   if (sealed && typ->getUnion()) {
     auto tr = typ->getUnion();
+    if (!tr->sealed)
+      return tr->unify(this, us);
     // Do not hard-unify if we have unbounds
     if (!canRealize() || !tr->canRealize())
       return 0;
 
-    std::map<std::string, TypePtr> u1, u2;
-    for (auto &t : generics) {
-      auto key = t.type->realizedName();
-      if (auto i = in(u1, key)) {
-        if (t.type->unify(i->get(), us) == -1)
-          return -1;
-      } else {
-        u1[key] = t.type;
-      }
-    }
-    for (auto &t : tr->generics) {
-      auto key = t.type->realizedName();
-      if (auto i = in(u2, key)) {
-        if (t.type->unify(i->get(), us) == -1)
-          return -1;
-      } else {
-        u2[key] = t.type;
-      }
-    }
-
+    auto u1 = getRealizationTypes();
+    auto u2 = tr->getRealizationTypes();
     if (u1.size() != u2.size())
       return -1;
     int s1 = 2, s = 0;
-    for (auto i = u1.begin(), j = u2.begin(); i != u1.end(); i++, j++) {
-      if ((s = i->second->unify(j->second.get(), us)) == -1)
+    for (size_t i = 0; i < u1.size(); i++) {
+      if ((s = u1[i]->unify(u2[i].get(), us)) == -1)
         return -1;
       s1 += s;
     }
     return s1;
   } else if (!sealed) {
     if (auto tu = typ->getUnion()) {
-      int sc = 0;
-      for (auto &t : tu->generics)
-        sc += unify(t.type.get(), us);
-      return sc;
+      if (tu->sealed) {
+        for (auto &t : tu->generics[0].type->getRecord()->args)
+          unify(t.get(), us);
+      } else {
+        for (auto &t : tu->typeSet)
+          unify(t.get(), us);
+      }
+      return 1;
     } else {
       // Add new type
-      for (size_t i = generics.size(); i-- > 0;) {
-        if (generics[i].type->unify(typ, nullptr) >= 0)
-          return generics[i].type->unify(typ, us);
-      }
-      generics.emplace_back(
-          Generic("u", "u", typ->shared_from_this(), 100 + generics.size()));
+      // for (size_t i = typeSet.size(); i-- > 0;) {
+      //   if (typeSet[i]->unify(typ, nullptr) >= 0)
+      //     return typeSet[i]->unify(typ, us);
+      // }
+      typeSet.emplace_back(typ->shared_from_this());
       return 1;
     }
   } else if (auto tl = typ->getLink()) {
@@ -940,25 +930,38 @@ TypePtr UnionType::instantiate(int atLevel, int *unboundCount,
   return std::make_shared<UnionType>(c->getClass()->generics, sealed);
 }
 std::string UnionType::debugString(char mode) const {
-  return this->RecordType::debugString(mode);
+  return (sealed ? "$" : "S") + this->RecordType::debugString(mode);
 }
+bool UnionType::canRealize() const { return sealed && RecordType::canRealize(); }
 std::string UnionType::realizedName() const {
   seqassert(canRealize(), "cannot realize {}", toString());
   std::set<std::string> gss;
-  for (auto &a : generics)
-    gss.insert(a.type->realizedName());
+  for (auto &a : generics[0].type->getRecord()->args)
+    gss.insert(a->realizedName());
   std::string s;
   for (auto &i : gss)
     s += "," + i;
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s.substr(1)));
 }
+std::string UnionType::realizedTypeName() const { return realizedName(); }
+void UnionType::seal(const std::shared_ptr<TypeContext> &typeCtx) {
+  seqassert(generics[0].type->getUnbound(), "bad union");
+  sealed = true;
 
-void UnionType::seal() { sealed = true; }
+  if (!typeSet.empty()) {
+    auto tv = TypecheckVisitor(typeCtx);
+    auto name = tv.generateTuple(typeSet.size());
+    auto t = typeCtx->instantiateGeneric(typeCtx->forceFind(name)->type->getClass(),
+                                         typeSet);
+    Unification us;
+    generics[0].type->unify(t.get(), &us);
+  }
+}
 std::vector<types::TypePtr> UnionType::getRealizationTypes() {
   seqassert(canRealize(), "cannot realize {}", debugString(1));
   std::map<std::string, types::TypePtr> unionTypes;
-  for (auto &u : generics)
-    unionTypes[u.type->realizedName()] = u.type;
+  for (auto &u : generics[0].type->getRecord()->args)
+    unionTypes[u->realizedName()] = u;
   std::vector<types::TypePtr> r;
   r.reserve(unionTypes.size());
   for (auto &[_, t] : unionTypes)

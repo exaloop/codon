@@ -428,6 +428,9 @@ private:
  * Union type.
  */
 struct UnionType : public RecordType {
+  std::vector<TypePtr> typeSet;
+  bool sealed = false;
+
   explicit UnionType();
   UnionType(const std::vector<ClassType::Generic> &, bool);
 
@@ -438,18 +441,16 @@ public:
                       std::unordered_map<int, TypePtr> *cache) override;
 
 public:
+  bool canRealize() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
+  std::string realizedTypeName() const override;
 
-  std::shared_ptr<UnionType> getUnion() override {
+  virtual std::shared_ptr<UnionType> getUnion() override {
     return std::static_pointer_cast<UnionType>(shared_from_this());
   }
 
-private:
-  bool sealed = false;
-
-public:
-  void seal();
+  void seal(const std::shared_ptr<TypeContext> &typeCtx);
   std::vector<types::TypePtr> getRealizationTypes();
 };
 using UnionTypePtr = std::shared_ptr<UnionType>;

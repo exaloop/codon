@@ -214,6 +214,7 @@ public:
 
   friend class Cache;
   friend class types::CallableTrait;
+  friend class types::UnionType;
 };
 
 } // namespace codon::ast

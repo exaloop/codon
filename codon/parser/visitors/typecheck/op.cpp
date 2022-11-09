@@ -309,8 +309,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       }
       unify(isUnion ? typ : generics[i].type, t);
     }
-    if (isUnion)
-      typ->getUnion()->seal();
+    if (isUnion) {
+      typ->getUnion()->seal(ctx);
+    }
     unify(expr->type, typ);
   }
   expr->markType();
