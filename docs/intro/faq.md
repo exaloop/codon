@@ -44,9 +44,11 @@ handle cases where specific Python libraries or dynamism are required.
   Codon type checks the entire program ahead of time. Codon also tries to circumvent the learning
   curve of a new language by adopting Python's syntax and semantics.
 
-Benchmarks against several of these can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
+You can see results from [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench)
+suite at [exaloop.io/benchmarks](https://exaloop.io/benchmarks).
+More benchmarks can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
 on bioinformatics-specific use cases (note that the name used in that paper is that of Codon's predecessor,
-"Seq"). Other benchmarks can be found in [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench).
+"Seq").
 
 ## I want to use Codon, but I have a large Python codebase I don't want to port.
 
