@@ -98,6 +98,10 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
         pendingDefaults.insert(i.second);
     }
   }
+  if (t->getUnion() && !t->getUnion()->isSealed()) {
+    t->setSrcInfo(srcInfo);
+    pendingDefaults.insert(t);
+  }
   return t;
 }
 

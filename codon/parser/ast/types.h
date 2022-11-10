@@ -204,6 +204,9 @@ public:
   std::shared_ptr<StaticType> getStatic() override {
     return kind == Link ? type->getStatic() : nullptr;
   }
+  std::shared_ptr<UnionType> getUnion() override {
+    return kind == Link ? type->getUnion() : nullptr;
+  }
 
 private:
   /// Checks if a current (unbound) type occurs within a given type.
@@ -428,11 +431,10 @@ private:
  * Union type.
  */
 struct UnionType : public RecordType {
-  std::vector<TypePtr> typeSet;
-  bool sealed = false;
+  std::vector<TypePtr> pendingTypes;
 
   explicit UnionType();
-  UnionType(const std::vector<ClassType::Generic> &, bool);
+  UnionType(const std::vector<ClassType::Generic> &, const std::vector<TypePtr> &);
 
 public:
   int unify(Type *typ, Unification *undo) override;
@@ -445,11 +447,13 @@ public:
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
   std::string realizedTypeName() const override;
+  bool isSealed() const;
 
-  virtual std::shared_ptr<UnionType> getUnion() override {
+  std::shared_ptr<UnionType> getUnion() override {
     return std::static_pointer_cast<UnionType>(shared_from_this());
   }
 
+  void addType(TypePtr typ);
   void seal(const std::shared_ptr<TypeContext> &typeCtx);
   std::vector<types::TypePtr> getRealizationTypes();
 };

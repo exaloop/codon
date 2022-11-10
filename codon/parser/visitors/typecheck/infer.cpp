@@ -34,6 +34,7 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
   } else {
     undo.undo();
   }
+  a->unify(b.get(), &undo);
   error("cannot unify {} and {}", a->prettyString(), b->prettyString());
   return nullptr;
 }
@@ -82,8 +83,21 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       // default values (e.g., generics with default values). Unify those types with
       // their default values and then run another round to see if anything changed.
       bool anotherRound = false;
+      if (ctx->getRealizationBase()->returnType) {
+        if (auto tu = ctx->getRealizationBase()->returnType->getUnion()) {
+          if (!tu->isSealed()) {
+            tu->seal(ctx);
+            anotherRound = true;
+          }
+        }
+      }
       for (auto &unbound : ctx->pendingDefaults) {
-        if (auto u = unbound->getLink()) {
+        if (auto tu = unbound->getUnion()) {
+          if (!tu->isSealed()) {
+            tu->seal(ctx);
+            anotherRound = true;
+          }
+        } else if (auto u = unbound->getLink()) {
           types::Type::Unification undo;
           undo.realizator = this;
           if (u->unify(u->defaultType.get(), &undo) >= 0)
@@ -295,7 +309,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       unify(type->getRetType(), ctx->getType("NoneType"));
   }
   // Realize the return type
-  realize(type->getRetType());
+  auto ret = realize(type->getRetType());
+  seqassert(ret, "cannot realize return type '{}'", type->getRetType()->toString());
 
   std::vector<Param> args;
   for (auto &i : ast->args) {
@@ -618,11 +633,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     ll.push_back(format("ret {{}} %{}", as.size()));
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
-  } else if (startswith(ast->name, "__internal__.new_union")) {
-    LOG("~ {} / {} / {} / {} ", type->debugString(2), type->funcGenerics[0].type->debugString(2),
-      type->getRetType()->debugString(2),
-      (size_t)(dynamic_cast<UnionType*>(type->funcGenerics[0].type->getUnion().get()))
-    );
+  } else if (startswith(ast->name, "__internal__.new_union:0")) {
     auto unionType = type->funcGenerics[0].type->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
 
@@ -641,9 +652,9 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
     ast->suite = suite;
-    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
-  } else if (startswith(ast->name, "Union.__union_get__")) {
-    auto unionType = type->funcParent->getUnion();
+//    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
+  } else if (startswith(ast->name, "__internal__.get_union:0")) {
+    auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
 
     auto targetType = type->funcGenerics[0].type;
@@ -656,7 +667,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
             N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
                                       N<IdExpr>(selfVar)),
                           "==", N<IntExpr>(tag)),
-            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"),
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
                                       N<IdExpr>(selfVar),
                                       NT<IdExpr>(t->realizedName())))));
       }
@@ -666,11 +677,10 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union getter"))));
     ast->suite = suite;
-    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
-  } else if (startswith(ast->name, "Union.__getter__")) {
+  } else if (startswith(ast->name, "__internal__.get_union_method:0")) {
     auto szt = type->funcGenerics[0].type->getStatic();
     auto fnName = szt->evaluate().getString();
-    auto unionType = type->funcParent->getUnion();
+    auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
 
     auto selfVar = ast->args[0].name;
@@ -682,18 +692,17 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
                                     N<IdExpr>(selfVar)),
                         "==", N<IntExpr>(tag)),
           N<ReturnStmt>(N<CallExpr>(
-              N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"),
+              N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
                                      N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
                          fnName),
-              N<StarExpr>(N<IdExpr>("args")),
-              N<KeywordStarExpr>(N<IdExpr>("kwargs"))))));
+              N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1))),
+              N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)))))));
       tag++;
     }
     suite->stmts.push_back(
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
     ast->suite = suite;
-    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   }
   return ast;
 }

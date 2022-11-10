@@ -318,11 +318,12 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
         N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
   }
 
-  // Case: transform `union.member` to `Union.__getter__(union, "member", ...)`
-  if (typ->is("Union")) {
+  // Case: transform `union.member` to `__internal__.get_union_method(union, "member",
+  // ...)`
+  if (typ->getUnion()) {
     return transform(
-        N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "__getter__"),
-                    std::vector<CallExpr::Arg>{{"self", expr->expr},
+        N<CallExpr>(N<IdExpr>("__internal__.get_union_method:0"),
+                    std::vector<CallExpr::Arg>{{"union", expr->expr},
                                                {"method", N<StringExpr>(expr->member)},
                                                {"", N<EllipsisExpr>()}}));
   }

@@ -110,12 +110,7 @@ class Ref[T]:
 @__internal__
 @tuple
 class Union[TU]:
-    # def __new__(obj: T, T: type) -> Union[TU]:
-    # pass
-    def __union_get__(self, T: type) -> T:
-        pass
-    def __getter__(self, method: Static[str], *args, **kwargs):
-        pass
+    pass
 
 # dummy
 @__internal__

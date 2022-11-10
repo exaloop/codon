@@ -307,7 +307,10 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                              expr->typeParams[i]->getType());
       }
-      unify(isUnion ? typ : generics[i].type, t);
+      if (isUnion)
+        typ->getUnion()->addType(t);
+      else
+        unify(generics[i].type, t);
     }
     if (isUnion) {
       typ->getUnion()->seal(ctx);
@@ -646,7 +649,7 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
     return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, format("__{}__", rightMagic)),
                                  expr->lexpr));
   }
-  if (lt->is("Union")) {
+  if (lt->getUnion()) {
     // Special case: `union op obj` -> `union.__magic__(rhs)`
     return transform(
         N<CallExpr>(N<DotExpr>(expr->lexpr, format("__{}__", magic)), expr->rexpr));

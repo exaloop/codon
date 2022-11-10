@@ -77,14 +77,15 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       stmt->setDone();
   } else {
     // Normal assignments
+    unify(stmt->lhs->type, ctx->getUnbound());
     if (stmt->type) {
       unify(stmt->lhs->type,
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
-      // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      wrapExpr(stmt->rhs, stmt->lhs->getType());
-      unify(stmt->lhs->type, stmt->rhs->type);
     }
-    auto type = stmt->rhs->getType();
+    // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
+    if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
+      unify(stmt->lhs->type, stmt->rhs->type);
+    auto type = stmt->lhs->getType();
     auto kind = TypecheckItem::Var;
     if (stmt->rhs->isType())
       kind = TypecheckItem::Type;
@@ -113,7 +114,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       // Special case: type/function renames
       stmt->rhs->type = nullptr;
       stmt->setDone();
-    } else if (stmt->rhs->isDone()) {
+    } else if (stmt->rhs->isDone() && realize(stmt->lhs->type)) {
       stmt->setDone();
     }
   }
@@ -140,9 +141,9 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 
   transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
-  wrapExpr(stmt->rhs, stmt->lhs->getType());
-  unify(stmt->lhs->type, stmt->rhs->type);
-  if (stmt->rhs->done)
+  if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
+    unify(stmt->lhs->type, stmt->rhs->type);
+  if (stmt->rhs->done && realize(stmt->lhs->type))
     stmt->setDone();
 }
 
@@ -181,7 +182,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 
     transform(stmt->rhs);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
-    wrapExpr(stmt->rhs, typ);
+    if (!wrapExpr(stmt->rhs, typ))
+      return;
     unify(stmt->rhs->type, typ);
     if (stmt->rhs->isDone())
       stmt->setDone();

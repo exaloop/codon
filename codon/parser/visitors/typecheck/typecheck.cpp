@@ -393,21 +393,23 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
-  } else if (allowUnwrap && exprClass && expr->type->is("Union") && expectedClass &&
-             !expectedClass->is("Union")) {
+  } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
+             !expectedClass->getUnion()) {
     // Case 8: extract union types
     if (auto t = realize(expectedClass)) {
-      expr = transform(
-          N<CallExpr>(N<DotExpr>(expr, "__union_get__"), N<IdExpr>(t->realizedName())));
+      expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
+                                   N<IdExpr>(t->realizedName())));
     } else {
       return false;
     }
-  } else if (exprClass && !expr->type->is("Union") && expectedClass &&
-             expectedClass->is("Union")) {
+  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Case 9: make union types
+    if (!expectedClass->getUnion()->isSealed())
+      expectedClass->getUnion()->addType(exprClass);
     if (auto t = realize(expectedClass)) {
-      expr = transform(N<CallExpr>(N<IdExpr>("__internal__.new_union:0"), expr,
-                                   NT<IdExpr>(t->realizedName())));
+      if (expectedClass->unify(exprClass.get(), nullptr) == -1)
+        expr = transform(N<CallExpr>(N<IdExpr>("__internal__.new_union:0"), expr,
+                                     NT<IdExpr>(t->realizedName())));
     } else {
       return false;
     }

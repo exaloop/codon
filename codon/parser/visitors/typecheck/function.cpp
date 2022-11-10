@@ -29,7 +29,9 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (transform(stmt->expr)) {
     // Wrap expression to match the return type
     if (!ctx->getRealizationBase()->returnType->getUnbound())
-      wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType);
+      if (!wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType)) {
+        return;
+      }
 
     // Special case: partialize functions if we are returning them
     if (stmt->expr->getType()->getFunc() &&
