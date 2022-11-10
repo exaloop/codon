@@ -11,7 +11,7 @@
   &nbsp;&vert;&nbsp;
   <a href="https://discourse.exaloop.io" target="_blank"><b>Forum</b></a>
   &nbsp;&vert;&nbsp;
-  <a href="https://discord.gg/8mT5R57kng" target="_blank">Chat</a>
+  <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
   &nbsp;&vert;&nbsp;
   <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
 </h3>

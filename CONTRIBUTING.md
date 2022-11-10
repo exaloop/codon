@@ -1,7 +1,7 @@
 # Contributing to Codon
 
 Thank you for considering contributing to Codon! This document contains some helpful information for getting started.
-The best place to ask questions or get feedback is [our Discord chatroom](https://discord.gg/8mT5R57kng).
+The best place to ask questions or get feedback is [our Slack](https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ).
 
 ## Development workflow
 
