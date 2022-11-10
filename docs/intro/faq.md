@@ -134,5 +134,6 @@ have any question or suggestions, please feel free to ask in [the forum](https:/
 
 ## Is there a Contributor License Agreement (CLA)?
 
-Yes, there is a CLA that is required to be signed before any pull requests are merged. Please
-see [exaloop.io/cla](https://exaloop.io/cla) for more information.
+Yes, there is a CLA that is required to be agreed to before any pull requests are merged.
+Please see [exaloop.io/cla.txt](https://exaloop.io/cla.txt) for more information. To agree to
+the CLA, send an email with your GitHub username to [info@exaloop.io](mailto:info@exaloop.io).
