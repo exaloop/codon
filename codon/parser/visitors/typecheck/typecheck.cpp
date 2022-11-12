@@ -179,7 +179,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
   transform(expr);
   if (expr) {
     if (!expr->isType() && expr->isStatic()) {
-      expr->setType(Type::makeStatic(expr, ctx));
+      expr->setType(Type::makeStatic(ctx->cache, expr));
     } else if (!expr->isType()) {
       error("expected type expression");
     } else {
@@ -326,7 +326,6 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
         dummy->setDone();
         wrapExpr(dummy, expectTyp, method);
         types::Type::Unification undo;
-        undo.realizator = this;
         if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
           undo.undo();
         } else {

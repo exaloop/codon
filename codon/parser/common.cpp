@@ -194,8 +194,8 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
   if (!isStdLib && startswith(s, module0Root))
     root = module0Root;
   const std::string ext = ".codon";
-  seqassertn(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
-             s, root);
+  seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
+             "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE

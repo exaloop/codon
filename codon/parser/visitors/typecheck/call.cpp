@@ -414,7 +414,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!typeArgs[si]->isStatic()) {
           error("expected static expression");
         }
-        typ = Type::makeStatic(typeArgs[si], ctx);
+        typ = Type::makeStatic(ctx->cache, typeArgs[si]);
       }
       unify(typ, calleeFn->funcGenerics[si].type);
     }
@@ -492,7 +492,7 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
           calleeFn->funcGenerics[j].type->getUnbound()) {
         auto def = transform(clone(calleeFn->ast->args[i].defaultValue));
         unify(calleeFn->funcGenerics[j].type,
-              def->isStatic() ? Type::makeStatic(def, ctx) : def->getType());
+              def->isStatic() ? Type::makeStatic(ctx->cache, def) : def->getType());
       }
       j++;
     }

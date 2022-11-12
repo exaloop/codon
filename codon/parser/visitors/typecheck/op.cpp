@@ -285,7 +285,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     }
     auto typ = ctx->getUnbound();
     // Set up the Callable trait
-    typ->getLink()->trait = std::make_shared<CallableTrait>(types);
+    typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
     unify(expr->type, typ);
   } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
@@ -298,7 +298,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
-        t = Type::makeStatic(expr->typeParams[i], ctx);
+        t = Type::makeStatic(ctx->cache, expr->typeParams[i]);
       } else {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
@@ -313,7 +313,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         unify(generics[i].type, t);
     }
     if (isUnion) {
-      typ->getUnion()->seal(ctx);
+      typ->getUnion()->seal();
     }
     unify(expr->type, typ);
   }

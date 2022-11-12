@@ -28,7 +28,6 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
     return a = b;
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
-  undo.realizator = this;
   if (a->unify(b.get(), &undo) >= 0) {
     return a;
   } else {
@@ -86,7 +85,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       if (ctx->getRealizationBase()->returnType) {
         if (auto tu = ctx->getRealizationBase()->returnType->getUnion()) {
           if (!tu->isSealed()) {
-            tu->seal(ctx);
+            tu->seal();
             anotherRound = true;
           }
         }
@@ -94,12 +93,11 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       for (auto &unbound : ctx->pendingDefaults) {
         if (auto tu = unbound->getUnion()) {
           if (!tu->isSealed()) {
-            tu->seal(ctx);
+            tu->seal();
             anotherRound = true;
           }
         } else if (auto u = unbound->getLink()) {
           types::Type::Unification undo;
-          undo.realizator = this;
           if (u->unify(u->defaultType.get(), &undo) >= 0)
             anotherRound = true;
         }
@@ -652,7 +650,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
     ast->suite = suite;
-//    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
+    //    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   } else if (startswith(ast->name, "__internal__.get_union:0")) {
     auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();

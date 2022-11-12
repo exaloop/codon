@@ -134,6 +134,13 @@ set(CODON_HPPFILES
     codon/parser/ast/expr.h
     codon/parser/ast/stmt.h
     codon/parser/ast/types.h
+    codon/parser/ast/types/type.h
+    codon/parser/ast/types/link.h
+    codon/parser/ast/types/class.h
+    codon/parser/ast/types/function.h
+    codon/parser/ast/types/union.h
+    codon/parser/ast/types/static.h
+    codon/parser/ast/types/traits.h
     codon/parser/cache.h
     codon/parser/common.h
     codon/parser/ctx.h
@@ -255,7 +262,13 @@ set(CODON_CPPFILES
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp
     codon/parser/ast/stmt.cpp
-    codon/parser/ast/types.cpp
+    codon/parser/ast/types/type.cpp
+    codon/parser/ast/types/link.cpp
+    codon/parser/ast/types/class.cpp
+    codon/parser/ast/types/function.cpp
+    codon/parser/ast/types/union.cpp
+    codon/parser/ast/types/static.cpp
+    codon/parser/ast/types/traits.cpp
     codon/parser/cache.cpp
     codon/parser/common.cpp
     codon/parser/peg/peg.cpp

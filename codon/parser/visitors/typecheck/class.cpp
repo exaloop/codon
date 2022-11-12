@@ -21,7 +21,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   stmt->setDone();
 
   // Generate the type and add it to the context
-  auto typ = Type::makeType(stmt->name, ctx->cache->rev(stmt->name), stmt->isRecord())
+  auto typ = Type::makeType(ctx->cache, stmt->name, ctx->cache->rev(stmt->name),
+                            stmt->isRecord())
                  ->getClass();
   if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
     // Special handling of partial types (e.g., `Partial.0001.foo`)

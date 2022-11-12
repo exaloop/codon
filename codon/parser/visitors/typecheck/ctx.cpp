@@ -64,7 +64,7 @@ std::string TypeContext::getRealizationStackName() const {
 
 std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo,
                                                          int level) const {
-  auto typ = std::make_shared<types::LinkType>(types::LinkType::Unbound,
+  auto typ = std::make_shared<types::LinkType>(cache, types::LinkType::Unbound,
                                                cache->unboundCount++, level, nullptr);
   typ->setSrcInfo(srcInfo);
   return typ;
@@ -110,7 +110,8 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
-  auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
+  // dummy generic type
+  auto g = std::make_shared<types::ClassType>(cache, "", "");
   if (generics.size() != c->generics.size()) {
     error(srcInfo, "generics do not match");
   }

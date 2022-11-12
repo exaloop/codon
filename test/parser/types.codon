@@ -1382,3 +1382,28 @@ def ret2(x) -> Union:
     else: return ['oops']
 r = ret2(20)
 print(r, r.__class__.__name__)  #: ['oops'] Union[List[str],float,int]
+
+class A:
+    x: int
+    def foo(self):
+        return f"A: {self.x}"
+class B:
+    y: str
+    def foo(self):
+        return f"B: {self.y}"
+x : Union[A,B] = A(5)  # TODO: just Union does not work :/
+print(x.foo())  #: A: 5
+if True:
+    x = B("bee")
+print(x.foo())  #: B: bee
+
+def do(x: A):
+    print('do', x.x)
+try:
+    do(x)
+except TypeError:
+    print('error') #: error
+
+def do2(x: B):
+    print('do2', x.y)
+do2(x)  #: do2 bee
