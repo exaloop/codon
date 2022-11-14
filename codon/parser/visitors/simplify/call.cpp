@@ -6,6 +6,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -52,7 +54,7 @@ ExprPtr SimplifyVisitor::transformSpecialCall(const ExprPtr &callee,
     return transformTupleGenerator(args);
   } else if (callee->isId("type") && !ctx->allowTypeOf) {
     // type(i)
-    error("type() not allowed in definitions");
+    E(Error::CALL_NO_TYPE, getSrcInfo());
   } else if (callee->isId("std.collections.namedtuple")) {
     // namedtuple('Foo', ['x', 'y'])
     return transformNamedTuple(args);
@@ -72,7 +74,7 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
   if (args.size() != 1 || !(g = CAST(args[0].value, GeneratorExpr)) ||
       g->kind != GeneratorExpr::Generator || g->loops.size() != 1 ||
       !g->loops[0].conds.empty())
-    error("tuple only accepts a simple comprehension over a tuple");
+    E(Error::CALL_TUPLE_COMPREHENSION, args[0].value);
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
   if (auto i = var->getId()) {
@@ -100,7 +102,7 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
 ExprPtr SimplifyVisitor::transformNamedTuple(const std::vector<CallExpr::Arg> &args) {
   // Ensure that namedtuple call is valid
   if (args.size() != 2 || !args[0].value->getString() || !args[1].value->getList())
-    error("invalid namedtuple arguments");
+    E(Error::CALL_NAMEDTUPLE, getSrcInfo());
 
   // Construct the class statement
   std::vector<Param> generics, params;
@@ -115,7 +117,7 @@ ExprPtr SimplifyVisitor::transformNamedTuple(const std::vector<CallExpr::Arg> &a
       params.emplace_back(Param{i->getTuple()->items[0]->getString()->getValue(),
                                 transformType(i->getTuple()->items[1]), nullptr});
     } else {
-      error(i, "invalid namedtuple argument");
+      E(Error::CALL_NAMEDTUPLE, i);
     }
   }
   for (auto &g : generics)
@@ -131,7 +133,7 @@ ExprPtr SimplifyVisitor::transformNamedTuple(const std::vector<CallExpr::Arg> &a
 ///   `partial(foo, 1, a=2)` -> `foo(1, a=2, ...)`
 ExprPtr SimplifyVisitor::transformFunctoolsPartial(std::vector<CallExpr::Arg> args) {
   if (args.empty())
-    error("invalid partial arguments");
+    E(Error::CALL_PARTIAL, getSrcInfo());
   auto name = clone(args[0].value);
   args.erase(args.begin());
   args.push_back({"", N<EllipsisExpr>()});

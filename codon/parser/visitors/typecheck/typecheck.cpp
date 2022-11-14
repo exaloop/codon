@@ -11,6 +11,8 @@
 #include "codon/util/fmt/format.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -181,7 +183,7 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
     if (!expr->isType() && expr->isStatic()) {
       expr->setType(Type::makeStatic(ctx->cache, expr));
     } else if (!expr->isType()) {
-      error("expected type expression");
+      E(Error::EXPECTED_TYPE, expr, "type");
     } else {
       expr->setType(ctx->instantiate(expr->getType()));
     }

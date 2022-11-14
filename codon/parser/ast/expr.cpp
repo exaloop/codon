@@ -13,6 +13,7 @@
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
@@ -365,16 +366,15 @@ CallExpr::CallExpr(ExprPtr expr, std::vector<ExprPtr> args)
   validate();
 }
 void CallExpr::validate() const {
-  bool namesStarted = false;
-  bool foundEllispis = false;
+  bool namesStarted = false, foundEllispis = false;
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
         !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
-      error(getSrcInfo(), "unnamed argument after a named argument");
+      E(Error::CALL_NAME_ORDER, a.value);
     if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
-      error(getSrcInfo(), "named star-expressions not allowed");
+      E(Error::CALL_NAME_STAR, a.value);
     if (a.value->getEllipsis() && foundEllispis)
-      error(getSrcInfo(), "unexpected ellipsis expression");
+      E(Error::CALL_ELLIPSIS, a.value);
     foundEllispis |= bool(a.value->getEllipsis());
     namesStarted |= !a.name.empty();
   }

@@ -106,7 +106,7 @@ StmtPtr parseFile(Cache *cache, const std::string &file) {
   } else {
     std::ifstream fin(file);
     if (!fin)
-      error(fmt::format("cannot open {}", file).c_str());
+      E(exc::Error::COMPILER_NO_FILE, nullptr, file);
     for (std::string line; getline(fin, line);) {
       lines.push_back(line);
       code += line + "\n";

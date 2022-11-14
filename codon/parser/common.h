@@ -113,12 +113,6 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 
 /// AST utilities
 
-/// Raise a parsing error.
-void error(const char *format);
-/// Raise a parsing error at a source location p.
-void error(const SrcInfo &info, const char *format);
-void error(const SrcInfo &info, const std::string &format);
-
 /// Clones a pointer even if it is a nullptr.
 template <typename T> auto clone(const std::shared_ptr<T> &t) {
   return t ? t->clone() : nullptr;

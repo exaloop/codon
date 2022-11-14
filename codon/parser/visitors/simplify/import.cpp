@@ -9,6 +9,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -31,7 +33,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
                             ctx->cache->module0, ctx->cache->pluginImportPaths);
   if (!file) {
-    error("cannot locate import '{}'", combine2(components, "."));
+    E(Error::IMPORT_NO_MODULE, stmt->from, combine2(components, "."));
   }
 
   // If the file has not been seen before, load it into cache
@@ -88,7 +90,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     auto c = import.ctx->find(i->value);
     // Make sure that we are importing an existing global symbol
     if (!c || c->isConditional())
-      error("symbol '{}' not found in {}", i->value, file->path);
+      E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
   }
 

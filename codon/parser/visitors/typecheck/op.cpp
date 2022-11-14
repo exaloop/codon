@@ -390,7 +390,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 /// Division and modulus implementations.
 std::pair<int, int> divMod(const std::shared_ptr<TypeContext> &ctx, int a, int b) {
   if (!b)
-    error(ctx->getSrcInfo(), "static division by zero");
+    raise_error(ctx->getSrcInfo(), "static division by zero");
   if (ctx->cache->pythonCompat) {
     // Use Python implementation.
     int d = a / b;

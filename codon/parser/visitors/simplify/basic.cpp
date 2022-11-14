@@ -10,6 +10,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -63,7 +65,7 @@ ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
   if (!expr->intValue) {
     /// TODO: currently assumes that ints are always 64-bit.
     /// Should use str constructors if available for ints with a suffix instead.
-    error("integer {} out of range", expr->value);
+    E(Error::INT_RANGE, expr, expr->value);
   }
 
   /// Handle fixed-width integers: suffixValue is a pointer to NN if the suffix
@@ -108,7 +110,7 @@ ExprPtr SimplifyVisitor::transformFloat(FloatExpr *expr) {
   if (!expr->floatValue) {
     /// TODO: currently assumes that floats are always 64-bit.
     /// Should use str constructors if available for floats with suffix instead.
-    error("float {} out of range", expr->value);
+    E(Error::FLOAT_RANGE, expr, expr->value);
   }
 
   if (expr->suffix.empty()) {
@@ -155,8 +157,10 @@ ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
       braceStart = i + 1;
     }
   }
-  if (braceCount)
-    error("f-string braces are not balanced");
+  if (braceCount > 0)
+    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
+  if (braceCount < 0)
+    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
   if (braceStart != value.size())
     items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
   return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));

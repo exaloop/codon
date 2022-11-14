@@ -7,6 +7,8 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -191,7 +193,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
       (stmt->attributes.has(Attr::C) && !stmt->attributes.has(Attr::CVarArg))) {
     if (!funcTyp->canRealize())
-      error("builtins and external functions must be realizable");
+      E(Error::FN_REALIZE_BUILTIN, stmt);
   }
 
   // Debug information

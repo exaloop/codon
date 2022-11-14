@@ -13,6 +13,7 @@
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
+using namespace codon::exc;
 
 const int INDENT_SIZE = 2;
 
@@ -237,13 +238,17 @@ void ImportStmt::validate() const {
     while (auto d = e->getDot())
       e = d->expr.get();
     if (!from->isId("C") && !from->isId("python")) {
-      if (!e->getId() || !args.empty() || ret)
-        error(getSrcInfo(), "invalid import statement");
+      if (!e->getId())
+        E(Error::IMPORT_IDENTIFIER, e);
+      if (!args.empty())
+        E(Error::IMPORT_FN, args[0]);
+      if (ret)
+        E(Error::IMPORT_FN, ret);
       if (what && !what->getId())
-        error(getSrcInfo(), "invalid import statement");
+        E(Error::IMPORT_FN, what);
     }
     if (!isFunction && !args.empty())
-      error(getSrcInfo(), "invalid import statement");
+      E(Error::IMPORT_FN, args[0]);
   }
 }
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
@@ -354,7 +359,7 @@ std::string FunctionStmt::toString(int indent) const {
 }
 void FunctionStmt::validate() const {
   if (!ret && (attributes.has(Attr::LLVM) || attributes.has(Attr::C)))
-    error(getSrcInfo(), "C and LLVM functions must specify a return type");
+    E(Error::FN_LLVM, getSrcInfo());
 
   std::unordered_set<std::string> seenArgs;
   bool defaultsStarted = false, hasStarArg = false, hasKwArg = false;
@@ -363,26 +368,31 @@ void FunctionStmt::validate() const {
     auto n = a.name;
     int stars = trimStars(n);
     if (stars == 2) {
-      if (hasKwArg || a.defaultValue || ia != args.size() - 1)
-        error(getSrcInfo(), "invalid **kwargs");
+      if (hasKwArg)
+        E(Error::FN_MULTIPLE_ARGS, a);
+      if (a.defaultValue)
+        E(Error::FN_DEFAULT_STARARG, a);
+      if (ia != args.size() - 1)
+        E(Error::FN_LAST_KWARG, a);
       hasKwArg = true;
     } else if (stars == 1) {
-      if (hasStarArg || a.defaultValue)
-        error(getSrcInfo(), "invalid *args");
+      if (hasStarArg)
+        E(Error::FN_MULTIPLE_ARGS, a);
+      if (a.defaultValue)
+        E(Error::FN_DEFAULT_STARARG, a);
       hasStarArg = true;
     }
     if (in(seenArgs, n))
-      error(getSrcInfo(), format("'{}' declared twice", n));
+      E(Error::FN_ARG_TWICE, a, n);
     seenArgs.insert(n);
     if (!a.defaultValue && defaultsStarted && !stars && a.status == Param::Normal)
-      error(getSrcInfo(),
-            format("non-default argument '{}' after a default argument", n));
+      E(Error::FN_DEFAULT, a, n);
     defaultsStarted |= bool(a.defaultValue);
     if (attributes.has(Attr::C)) {
       if (a.defaultValue)
-        error(getSrcInfo(), "C functions do not accept default argument");
+        E(Error::FN_C_DEFAULT, a, n);
       if (stars != 1 && !a.type)
-        error(getSrcInfo(), "C functions require explicit type annotations");
+        E(Error::FN_C_TYPE, a, n);
     }
   }
 }
@@ -401,13 +411,13 @@ void FunctionStmt::parseDecorators() {
   for (auto &d : decorators) {
     if (d->isId(Attr::Attribute)) {
       if (decorators.size() != 1)
-        error(d->getSrcInfo(), "__attribute__ cannot be mixed with other decorators");
+        E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Attribute);
       attributes.isAttribute = true;
     } else if (d->isId(Attr::LLVM)) {
       attributes.set(Attr::LLVM);
     } else if (d->isId(Attr::Python)) {
       if (decorators.size() != 1)
-        error(d->getSrcInfo(), "@python cannot be mixed with other decorators");
+        E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Python);
       attributes.set(Attr::Python);
     } else if (d->isId(Attr::Internal)) {
       attributes.set(Attr::Internal);
@@ -488,15 +498,16 @@ std::string ClassStmt::toString(int indent) const {
 void ClassStmt::validate() const {
   std::unordered_set<std::string> seen;
   if (attributes.has(Attr::Extend) && !args.empty())
-    error(getSrcInfo(), "extensions cannot be generic or declare members");
+    E(Error::CLASS_EXTENSION, args[0]);
   if (attributes.has(Attr::Extend) &&
       !(baseClasses.empty() && staticBaseClasses.empty()))
-    error(getSrcInfo(), "extensions cannot inherit other classes");
+    E(Error::CLASS_EXTENSION,
+      baseClasses.empty() ? staticBaseClasses[0] : baseClasses[0]);
   for (auto &a : args) {
-    // if (!a.type)
-    //   error(getSrcInfo(), format("no type provided for '{}'", a.name));
+    if (!a.type)
+      E(Error::CLASS_MISSING_TYPE, a, a.name);
     if (in(seen, a.name))
-      error(getSrcInfo(), format("'{}' declared twice", a.name));
+      E(Error::CLASS_ARG_TWICE, a, a.name);
     seen.insert(a.name);
   }
 }
@@ -527,14 +538,14 @@ void ClassStmt::parseDecorators() {
         for (auto &m : tupleMagics)
           m.second = true;
       } else if (!c->expr->isId("dataclass")) {
-        error(getSrcInfo(), "invalid class attribute");
+        E(Error::CLASS_BAD_DECORATOR, c->expr);
       } else if (attributes.has(Attr::Tuple)) {
-        error(getSrcInfo(), "class already marked as tuple");
+        E(Error::CLASS_MULTIPLE_DECORATORS, c, Attr::Tuple);
       }
       for (auto &a : c->args) {
         auto b = CAST(a.value, BoolExpr);
         if (!b)
-          error(getSrcInfo(), "expected static boolean");
+          E(Error::CLASS_NONSTATIC_DECORATOR, a.value);
         char val = char(b->value);
         if (a.name == "init") {
           tupleMagics["new"] = val;
@@ -557,12 +568,12 @@ void ClassStmt::parseDecorators() {
         } else if (a.name == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {
-          error(getSrcInfo(), "invalid decorator argument");
+          E(Error::CLASS_BAD_DECORATOR_ARG, a.value);
         }
       }
     } else if (d->isId(Attr::Tuple)) {
       if (attributes.has(Attr::Tuple))
-        error(getSrcInfo(), "class already marked as tuple");
+        E(Error::CLASS_MULTIPLE_DECORATORS, c, Attr::Tuple);
       attributes.set(Attr::Tuple);
       for (auto &m : tupleMagics) {
         m.second = true;
@@ -570,11 +581,11 @@ void ClassStmt::parseDecorators() {
     } else if (d->isId(Attr::Extend)) {
       attributes.set(Attr::Extend);
       if (decorators.size() != 1)
-        error(getSrcInfo(), "extend cannot be combined with other decorators");
+        E(Error::CLASS_SINGLE_DECORATOR, decorators[decorators[0] == d], Attr::Extend);
     } else if (d->isId(Attr::Internal)) {
       attributes.set(Attr::Internal);
     } else {
-      error(getSrcInfo(), "invalid class decorator");
+      E(Error::CLASS_BAD_DECORATOR, d);
     }
   }
   if (startswith(name, TYPE_TUPLE))

@@ -11,6 +11,8 @@
 #include "codon/parser/visitors/simplify/ctx.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -38,7 +40,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     const std::string initFile = "__init__.codon";
     if (!stdlibPath || !endswith(stdlibPath->path, initFile))
-      ast::error("cannot load standard library");
+      codon::raise_error("cannot load standard library");
 
     /// Use __init_test__ for faster testing (e.g., #%% name,barebones)
     /// TODO: get rid of it one day...
@@ -163,7 +165,7 @@ ExprPtr SimplifyVisitor::transform(ExprPtr &expr, bool allowTypes) {
     expr = v.resultExpr;
   }
   if (!allowTypes && expr && expr->isType())
-    error("unexpected type expression");
+    E(Error::UNEXPECTED_TYPE, expr);
   return expr;
 }
 
@@ -179,7 +181,7 @@ ExprPtr SimplifyVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
     expr->markType();
   ctx->allowTypeOf = oldTypeOf;
   if (expr && !expr->isType())
-    error("expected type expression");
+    E(Error::EXPECTED_TYPE, expr, "type");
   return expr;
 }
 
@@ -244,13 +246,11 @@ void SimplifyVisitor::visit(KeywordStarExpr *expr) { transform(expr->what); }
 
 /// Manually handled in @c CallExpr
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
-  error("unexpected ellipsis expression");
+  E(Error::EXPECTED_TYPE, expr, "ellipsis");
 }
 
 /// Only allowed in @c MatchStmt
-void SimplifyVisitor::visit(RangeExpr *expr) {
-  error("unexpected pattern range expression");
-}
+void SimplifyVisitor::visit(RangeExpr *expr) { E(Error::EXPECTED_TYPE, expr, "range"); }
 
 /// Handled during the type checking
 void SimplifyVisitor::visit(SliceExpr *expr) {

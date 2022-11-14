@@ -10,13 +10,14 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
 /// Ensure that `(yield)` is in a function.
 void SimplifyVisitor::visit(YieldExpr *expr) {
   if (!ctx->inFunction())
-    error("expected function body");
+    E(Error::FN_OUTSIDE_ERROR, expr, "yield");
 }
 
 /// Transform lambdas. Capture outer expressions.
@@ -33,14 +34,14 @@ void SimplifyVisitor::visit(LambdaExpr *expr) {
 /// Ensure that `return` is in a function.
 void SimplifyVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
-    error("expected function body");
+    E(Error::FN_OUTSIDE_ERROR, stmt, "return");
   transform(stmt->expr);
 }
 
 /// Ensure that `yield` is in a function.
 void SimplifyVisitor::visit(YieldStmt *stmt) {
   if (!ctx->inFunction())
-    error("expected function body");
+    E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
   transform(stmt->expr);
 }
 
@@ -56,20 +57,20 @@ void SimplifyVisitor::visit(YieldFromStmt *stmt) {
 /// Process `global` statements. Remove them upon completion.
 void SimplifyVisitor::visit(GlobalStmt *stmt) {
   if (!ctx->inFunction())
-    error("global or nonlocal outside of a function");
+    E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
 
   // Dominate the binding
   auto val = ctx->findDominatingBinding(stmt->var);
   if (!val || !val->isVar())
-    error("identifier '{}' not found", stmt->var);
+    E(Error::ID_NOT_FOUND, stmt, stmt->var);
   if (val->getBaseName() == ctx->getBaseName())
-    error("identifier '{}' already defined", stmt->var);
+    E(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->var);
 
   // Check global/nonlocal distinction
   if (!stmt->nonLocal && !val->getBaseName().empty())
-    error("not a global variable");
+    E(Error::FN_GLOBAL_NOT_FOUND, stmt, "global", stmt->var);
   else if (stmt->nonLocal && val->getBaseName().empty())
-    error("not a nonlocal variable");
+    E(Error::FN_GLOBAL_NOT_FOUND, stmt, "nonlocal", stmt->var);
   seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
             stmt->var);
 
@@ -120,7 +121,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   bool isClassMember = ctx->inClass(), isEnclosedFunc = ctx->inFunction();
   if (stmt->attributes.has(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))
-    error("builtins must be defined at the toplevel");
+    E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "builtin functions");
 
   // All overloads share the same canonical name except for the number at the
   // end (e.g., `foo.1:0`, `foo.1:1` etc.)
@@ -149,7 +150,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (!isClassMember) {
     auto funcVal = ctx->find(stmt->name);
     if (funcVal && funcVal->noShadow)
-      error("cannot update global/nonlocal");
+      E(Error::CLASS_INVALID_BIND, stmt);
     funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
     ctx->addAlwaysVisible(funcVal);
   }
@@ -286,7 +287,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
       if (isClassMember)
-        error("decorators cannot be applied to class methods");
+        E(Error::FN_NO_DECORATORS, stmt->decorators[i]);
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(stmt->name));
@@ -400,7 +401,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
         braceStart = i + 2;
         braceCount++;
       } else {
-        error("invalid LLVM substitution");
+        E(Error::FN_BAD_LLVM, getSrcInfo());
       }
     } else if (braceCount && code[i] == '}') {
       braceCount--;
@@ -414,7 +415,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
     }
   }
   if (braceCount)
-    error("invalid LLVM substitution");
+    E(Error::FN_BAD_LLVM, getSrcInfo());
   if (braceStart != code.size())
     finalCode += escapeFStringBraces(code, braceStart, int(code.size()) - braceStart);
   se->strings[0].first = finalCode;

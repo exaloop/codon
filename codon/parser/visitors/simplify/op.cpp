@@ -8,6 +8,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -61,7 +63,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
-      error("only static integers and strings are supported");
+      E(Error::BAD_STATIC, expr->index);
     expr->markType();
     return;
   } else {

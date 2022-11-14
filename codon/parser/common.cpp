@@ -7,6 +7,18 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
+namespace codon {
+/// AST utilities
+
+void raise_error(const char *format) { throw exc::ParserException(format); }
+void raise_error(const ::codon::SrcInfo &info, const char *format) {
+  throw exc::ParserException(format, info);
+}
+void raise_error(const ::codon::SrcInfo &info, const std::string &format) {
+  throw exc::ParserException(format, info);
+}
+
+} // namespace codon
 namespace codon::ast {
 
 /// String and collection utilities
@@ -135,16 +147,6 @@ int trimStars(std::string &str) {
 }
 bool isdigit(const std::string &str) {
   return std::all_of(str.begin(), str.end(), ::isdigit);
-}
-
-/// AST utilities
-
-void error(const char *format) { throw exc::ParserException(format); }
-void error(const ::codon::SrcInfo &info, const char *format) {
-  throw exc::ParserException(format, info);
-}
-void error(const ::codon::SrcInfo &info, const std::string &format) {
-  throw exc::ParserException(format, info);
 }
 
 /// Path utilities

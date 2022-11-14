@@ -9,6 +9,8 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::exc;
+
 
 namespace codon::ast {
 
@@ -39,14 +41,14 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   } else {
     // Find the canonical name and AST of the class that is to be extended
     if (!ctx->isGlobal() || ctx->isConditional())
-      error("extend is only allowed at the toplevel");
+      E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "class extension");
     auto val = ctx->find(name);
     if (!val || !val->isType())
-      error("cannot find type '{}' to extend", name);
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     canonicalName = val->canonicalName;
     const auto &astIter = ctx->cache->classes.find(canonicalName);
     if (astIter == ctx->cache->classes.end())
-      error("cannot extend type alias or an instantiation ({})", name);
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     argsToParse = astIter->second.ast->args;
   }
 
@@ -150,7 +152,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         // Class bindings cannot be dominated either
         auto v = ctx->find(name);
         if (v && v->noShadow)
-          error("cannot update global/nonlocal");
+          E(Error::CLASS_INVALID_BIND, stmt);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
       }
@@ -289,7 +291,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     }
     name = transformType(N<IdExpr>(name))->getId()->value;
     if (name.empty() || !in(ctx->cache->classes, name))
-      error(cls.get(), "invalid base class");
+      E(Error::CLASS_ID_NOT_FOUND, cls, name);
     transformType(cls);
 
     auto &cachedCls = ctx->cache->classes[name];
@@ -310,18 +312,18 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
 
     // Sanity checks
     if (attr.has(Attr::Tuple) && addVTable)
-      error("tuple classes cannot inherit");
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple");
     if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))
-      error("reference classes cannot inherit by-value classes");
+      E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
     if (asts.back()->attributes.has(Attr::Internal))
-      error("cannot inherit internal types");
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
     // Add generics first
     int si = 0;
     for (auto &a : asts.back()->args) {
       if (a.status == Param::Generic) {
         if (si == subs.size())
-          error(cls.get(), "wrong number of generics");
+          E(Error::CLASS_GENERIC_MISMATCH, cls.get(), subs.size());
         args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
                                 Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {
@@ -338,7 +340,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
       }
     }
     if (si != subs.size())
-      error(cls.get(), "wrong number of generics");
+      E(Error::CLASS_GENERIC_MISMATCH, cls.get(), subs.size());
   }
   // Add normal fields
   for (auto &ast : asts) {
@@ -351,7 +353,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     mro.push_back(parentClasses);
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
     if (ctx->cache->classes[canonicalName].mro.empty()) {
-      error("inconsistent hierarchy");
+      E(Error::CLASS_BAD_MRO, getSrcInfo());
     } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
       // LOG("[mro] {} -> [{}]", canonicalName,
       //     combine2(ctx->cache->classes[canonicalName].mro));
@@ -415,7 +417,7 @@ std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
   } else if (s->getExpr() && s->getExpr()->expr->getString()) {
     /// Those are doc-strings, ignore them.
   } else if (!s->getFunction() && !s->getClass()) {
-    error("only function and class definitions are allowed within classes");
+    E(Error::CLASS_BAD_ATTR, s);
   } else {
     v.push_back(s);
   }

@@ -133,6 +133,16 @@ public:
 
   void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
 };
+template <class... TA> void E(exc::Error e, codon::SrcObject *o, TA... args) {
+  E(e, o->getSrcInfo(), args...);
+}
+template <class... TA> void E(exc::Error e, const codon::SrcObject &o, TA... args) {
+  E(e, o.getSrcInfo(), args...);
+}
+template <class... TA>
+void E(exc::Error e, const std::shared_ptr<SrcObject> &o, TA... args) {
+  E(e, o->getSrcInfo(), args...);
+}
 
 void compilationError(const std::string &msg, const std::string &file = "",
                       int line = 0, int col = 0, bool terminate = true);
