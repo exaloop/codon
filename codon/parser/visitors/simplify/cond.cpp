@@ -9,7 +9,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 void SimplifyVisitor::visit(IfExpr *expr) {

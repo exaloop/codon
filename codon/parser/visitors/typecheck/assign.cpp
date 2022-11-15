@@ -8,6 +8,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
@@ -65,7 +66,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   } else if (stmt->type && stmt->type->getType()->isStaticType()) {
     // Static assignments (e.g., `x: Static[int] = 5`)
     if (!stmt->rhs->isStatic())
-      error("right-hand side is not a static expression");
+      E(Error::EXPECTED_STATIC, stmt->rhs);
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
     unify(stmt->lhs->type,
           unify(stmt->type->type, Type::makeStatic(ctx->cache, stmt->rhs)));
@@ -127,7 +128,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->lhs);
   if (stmt->lhs->isStatic())
-    error("cannot modify static expression");
+    E(Error::ASSIGN_UNEXPECTED_STATIC, stmt->lhs);
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
@@ -177,9 +178,9 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     }
 
     if (!member)
-      error("cannot find '{}' in {}", stmt->member, lhsClass->name);
+      E(Error::DOT_NO_ATTR, stmt->lhs, lhsClass->prettyString(), stmt->member);
     if (lhsClass->getRecord())
-      error("tuple element '{}' is read-only", stmt->member);
+      E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
 
     transform(stmt->rhs);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);

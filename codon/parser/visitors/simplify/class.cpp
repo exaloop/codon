@@ -11,7 +11,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 /// Transform class and type definitions, as well as extensions.
@@ -162,6 +161,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                  ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
+      LOG("-> adding {}", canonicalName);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
@@ -289,9 +289,10 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
                                     : std::vector<ExprPtr>{e->index};
       }
     }
-    name = transformType(N<IdExpr>(name))->getId()->value;
-    if (name.empty() || !in(ctx->cache->classes, name))
+    auto nname = transformType(N<IdExpr>(name))->getId()->value;
+    if (nname.empty() || !in(ctx->cache->classes, nname))
       E(Error::CLASS_ID_NOT_FOUND, cls, name);
+    name = nname;
     transformType(cls);
 
     auto &cachedCls = ctx->cache->classes[name];
@@ -323,7 +324,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     for (auto &a : asts.back()->args) {
       if (a.status == Param::Generic) {
         if (si == subs.size())
-          E(Error::CLASS_GENERIC_MISMATCH, cls.get(), subs.size());
+          E(Error::CLASS_GENERIC_MISMATCH, cls, subs.size());
         args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
                                 Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {

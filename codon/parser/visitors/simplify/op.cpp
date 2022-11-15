@@ -10,7 +10,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 void SimplifyVisitor::visit(UnaryExpr *expr) { transform(expr->expr); }
@@ -63,7 +62,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
-      E(Error::BAD_STATIC, expr->index);
+      E(Error::BAD_STATIC_TYPE, expr->index);
     expr->markType();
     return;
   } else {

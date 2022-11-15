@@ -5,6 +5,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
@@ -27,7 +28,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       if (!typ)
         return; // continue later when the type becomes known
       if (!typ->getRecord())
-        error("can only unpack tuple types");
+        E(Error::CALL_BAD_UNPACK, star, typ->prettyString());
       auto &ff = ctx->cache->classes[typ->name].fields;
       for (int i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
@@ -58,7 +59,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
   auto tuple = gen->type->getRecord();
   if (!startswith(tuple->name, TYPE_TUPLE))
-    error("can only iterate over a tuple");
+    E(Error::CALL_BAD_ITER, gen, tuple->prettyString());
 
   auto block = N<SuiteStmt>();
   // `tuple = tuple_generator`

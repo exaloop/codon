@@ -95,8 +95,10 @@ enum Error {
   CLASS_BAD_DECORATOR_ARG,
   ID_NOT_FOUND,
   ID_CANNOT_CAPTURE,
+  ID_INVALID_BIND,
   UNION_TOO_BIG,
   COMPILER_NO_FILE,
+  COMPILER_NO_STDLIB,
   ID_NONLOCAL,
   IMPORT_NO_MODULE,
   IMPORT_NO_NAME,
@@ -130,9 +132,41 @@ enum Error {
   FN_REALIZE_BUILTIN,
   EXPECTED_LOOP,
   LOOP_DECORATOR,
-  BAD_STATIC,
+  BAD_STATIC_TYPE,
   EXPECTED_TYPE,
   UNEXPECTED_TYPE,
+  DOT_NO_ATTR,
+  DOT_NO_ATTR_ARGS,
+  FN_NO_ATTR_ARGS,
+  EXPECTED_STATIC,
+  EXPECTED_STATIC_SPECIFIED,
+  ASSIGN_UNEXPECTED_STATIC,
+  ASSIGN_UNEXPECTED_FROZEN,
+  CALL_BAD_UNPACK,
+  CALL_BAD_ITER,
+  CALL_BAD_KWUNPACK,
+  CALL_REPEATED_NAME,
+  CALL_RECURSIVE_DEFAULT,
+  CALL_SUPERF,
+  CALL_SUPER_PARENT,
+  CALL_PTR_VAR,
+  EXPECTED_TUPLE,
+  CALL_REALIZED_FN,
+  CALL_ARGS_MANY,
+  CALL_ARGS_INVALID,
+  CALL_ARGS_MISSING,
+  GENERICS_MISMATCH,
+  EXPECTED_GENERATOR,
+  STATIC_RANGE_BOUNDS,
+  TUPLE_RANGE_BOUNDS,
+  STATIC_DIV_ZERO,
+  SLICE_STEP_ZERO,
+  OP_NO_MAGIC,
+  INST_CALLABLE_STATIC,
+  TYPE_CANNOT_REALIZE_ATTR,
+  TYPE_UNIFY,
+  TYPE_FAILED,
+  CUSTOM,
   __END__
 };
 
@@ -190,14 +224,15 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     return fmt::format("class decorator arguments must be compile-time static values");
   case Error::CLASS_BAD_DECORATOR_ARG:
     return fmt::format("class decorator got unexpected argument");
-    /// Simplification
-
+  /// Simplification
   case Error::ID_NOT_FOUND:
     return fmt::format("name '{}' is not defined", args...);
   case Error::ID_CANNOT_CAPTURE:
     return fmt::format("name '{}' cannot be captured", args...);
   case Error::ID_NONLOCAL:
     return fmt::format("no binding for nonlocal '{}' found", args...);
+  case Error::ID_INVALID_BIND:
+    return fmt::format("cannot bind '{}' to global or nonlocal name", args...);
   case Error::IMPORT_NO_MODULE:
     return fmt::format("no module named '{}'", args...);
   case Error::IMPORT_NO_NAME:
@@ -212,7 +247,6 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     return fmt::format("local variable '{}' referenced before assignment", args...);
   case Error::ASSIGN_MULTI_STAR:
     return fmt::format("multiple starred expressions in assignment");
-
   case Error::INT_RANGE:
     return fmt::format("integer '{}' cannot fit into 64 bits (Int[64])", args...);
   case Error::FLOAT_RANGE:
@@ -221,7 +255,6 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     return fmt::format("expecting '}' in f-string");
   case Error::STR_FSTRING_BALANCE_MISSING:
     return fmt::format("single '{' is not allowed in f-string");
-
   case Error::CALL_NO_TYPE:
     return fmt::format("cannot use type() in function and class signatures", args...);
   case Error::CALL_TUPLE_COMPREHENSION:
@@ -238,7 +271,6 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     // Note that type aliases are not valid class names
     return fmt::format("class name '{}' is not defined", args...);
   case Error::CLASS_INVALID_BIND:
-    // Note that type aliases are not valid class names
     return fmt::format("cannot bind '{}' to class or function", args...);
   case Error::CLASS_NO_INHERIT:
     return fmt::format("{} classes cannot inherit other classes", args...);
@@ -250,7 +282,6 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     return fmt::format("inconsistent class hierarchy");
   case Error::CLASS_BAD_ATTR:
     return fmt::format("unexpected expression in class definition");
-
   case Error::MATCH_MULTI_ELLIPSIS:
     return fmt::format("no binding for nonlocal '{}' found", args...);
   case Error::FN_OUTSIDE_ERROR:
@@ -265,12 +296,11 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
     return fmt::format("invalid LLVM code");
   case Error::FN_REALIZE_BUILTIN:
     return fmt::format("builtin, exported and external functions cannot be generic");
-
   case Error::EXPECTED_LOOP:
     return fmt::format("'{}' outside loop", args...);
   case Error::LOOP_DECORATOR:
     return fmt::format("invalid loop decorator");
-  case Error::BAD_STATIC:
+  case Error::BAD_STATIC_TYPE:
     return fmt::format("expected int or str (only integers and strings can be static)");
   case Error::EXPECTED_TYPE:
     return fmt::format("expected '{}' expression", args...);
@@ -281,16 +311,88 @@ template <class... TA> std::string Emsg(Error e, TA... args) {
   case Error::UNION_TOO_BIG:
     return fmt::format(
         "union exceeded its maximum capacity (contains more than {} types)");
+  case Error::DOT_NO_ATTR:
+    return fmt::format("'{}' object has no attribute '{}'", args...);
+  case Error::DOT_NO_ATTR_ARGS:
+    return fmt::format("'{}' object has no method '{}' with arguments {}", args...);
+  case Error::FN_NO_ATTR_ARGS:
+    return fmt::format("no function '{}' with arguments {}", args...);
+  case Error::EXPECTED_STATIC:
+    return fmt::format("expected static expression");
+  case Error::EXPECTED_STATIC_SPECIFIED:
+    return fmt::format("expected static {} expression", args...);
+  case Error::ASSIGN_UNEXPECTED_STATIC:
+    return fmt::format("cannot modify static expressions");
+  case Error::ASSIGN_UNEXPECTED_FROZEN:
+    return fmt::format("cannot modify tuple attributes");
+  case Error::CALL_BAD_UNPACK:
+    return fmt::format("argument after * must be a tuple, not '{}'");
+  case Error::CALL_BAD_ITER:
+    return fmt::format("iterable must be a tuple, not '{}'");
+  case Error::CALL_BAD_KWUNPACK:
+    return fmt::format("argument after ** must be a named tuple, not '{}'");
+  case Error::CALL_REPEATED_NAME:
+    return fmt::format("keyword argument repeated: {}", args...);
+  case Error::CALL_RECURSIVE_DEFAULT:
+    return fmt::format("argument cannot have recursive default value");
+  case Error::CALL_SUPERF:
+    return fmt::format("no superf methods found", args...);
+  case Error::CALL_SUPER_PARENT:
+    return fmt::format("no super methods found", args...);
+  case Error::CALL_PTR_VAR:
+    return fmt::format("__ptr__() only takes identifiers as arguments");
+  case Error::EXPECTED_TUPLE:
+    return fmt::format("expected tuple type");
+  case Error::CALL_REALIZED_FN:
+    return fmt::format("__realized__() only takes functions as a first argument");
+  case Error::CALL_ARGS_MANY:
+    return fmt::format("{}() takes {} arguments ({} given)", args...);
+  case Error::CALL_ARGS_INVALID:
+    return fmt::format("'{}' is an invalid keyword argument for {}()", args...);
+  case Error::CALL_ARGS_MISSING:
+    return fmt::format("{}() missing 1 required positional argument: '{}'", args...);
+  case Error::GENERICS_MISMATCH:
+    return fmt::format("{} takes {} generics ({} given)", args...);
+  case Error::EXPECTED_GENERATOR:
+    return fmt::format("expected iterable expression");
+  case Error::STATIC_RANGE_BOUNDS:
+    return fmt::format("staticrange too large (expected 0..{2}, got instead {1})",
+                       args...);
+  case Error::TUPLE_RANGE_BOUNDS:
+    return fmt::format("tuple index out of range (expected 0..{}, got instead {})",
+                       args...);
+  case Error::STATIC_DIV_ZERO:
+    return fmt::format("static division by zero");
+  case Error::SLICE_STEP_ZERO:
+    return fmt::format("slice step cannot be zero");
+  case Error::OP_NO_MAGIC:
+    return fmt::format("unsupported operand type(s) for {}: '{}' and '{}'");
+  case Error::INST_CALLABLE_STATIC:
+    return fmt::format("Callable cannot take static types");
+
+  case Error::TYPE_CANNOT_REALIZE_ATTR:
+    return fmt::format("type of attribute '{}' of object '{}' cannot be inferred",
+                       args...);
+  case Error::TYPE_UNIFY:
+    return fmt::format("'{}' does not match expected type '{}'", args...);
+  case Error::TYPE_FAILED:
+    return fmt::format(
+        "cannot infer the complete type of an expression (inferred only '{}')",
+        args...);
 
   case Error::COMPILER_NO_FILE:
     return fmt::format("cannot open file '{}' for parsing");
+  case Error::COMPILER_NO_STDLIB:
+    return fmt::format("cannot locate standard library");
+  case Error::CUSTOM:
+    return fmt::format("{}", args...);
 
   default:
     assert(false);
   }
 }
 
-template <class... TA> void E(Error e, const SrcInfo &o, TA... args) {
+template <class... TA> void E(Error e, const SrcInfo &o = SrcInfo(), TA... args) {
   auto msg = Emsg(e, args...);
   codon::raise_error(o, msg);
 }

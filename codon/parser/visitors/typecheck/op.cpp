@@ -8,6 +8,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
@@ -37,7 +38,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
     else if (expr->op == "-")
       magic = "neg";
     else
-      error("invalid unary operator '{}'", expr->op);
+      seqassert(false, "invalid unary operator '{}'", expr->op);
     resultExpr =
         transform(N<CallExpr>(N<DotExpr>(clone(expr->expr), format("__{}__", magic))));
   }
@@ -90,8 +91,8 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
                                   expr->op, expr->rexpr, expr->inPlace));
     } else {
       // Nothing found: report an error
-      error("cannot find magic '{}' in {}", getMagic(expr->op).first,
-            expr->lexpr->type->prettyString());
+      E(Error::OP_NO_MAGIC, expr, expr->op, expr->lexpr->type->prettyString(),
+        expr->rexpr->type->prettyString());
     }
   }
 }
@@ -270,7 +271,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
   if (!isUnion && expr->typeParams.size() != generics.size())
-    error("expected {} generics and/or statics", generics.size());
+    E(Error::GENERICS_MISMATCH, expr, ctx->cache->rev(typ->getClass()->name),
+      generics.size(), expr->typeParams.size());
 
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
     // Case: Callable[...] trait instantiation
@@ -280,7 +282,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     for (auto &typeParam : expr->typeParams) {
       transformType(typeParam);
       if (typeParam->type->isStaticType())
-        error("unexpected static type");
+        E(Error::INST_CALLABLE_STATIC, typeParam);
       types.push_back(typeParam->type);
     }
     auto typ = ctx->getUnbound();
@@ -303,7 +305,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
         if (!expr->typeParams[i]->isType())
-          error("expected type or static parameters");
+          E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
         t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                              expr->typeParams[i]->getType());
       }
@@ -390,7 +392,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 /// Division and modulus implementations.
 std::pair<int, int> divMod(const std::shared_ptr<TypeContext> &ctx, int a, int b) {
   if (!b)
-    raise_error(ctx->getSrcInfo(), "static division by zero");
+    E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
   if (ctx->cache->pythonCompat) {
     // Use Python implementation.
     int d = a / b;
@@ -594,7 +596,7 @@ std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string
   };
   auto mi = magics.find(op);
   if (mi == magics.end())
-    error("invalid binary operator '{}'", op);
+    seqassert(false, "invalid binary operator '{}'", op);
 
   static auto rightMagics = std::unordered_map<std::string, std::string>{
       {"<", "gt"}, {"<=", "ge"}, {">", "lt"}, {">=", "le"}, {"==", "eq"}, {"!=", "ne"},
@@ -717,7 +719,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     // Case: `tuple[int]`
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
-      error("tuple index out of range (expected 0..{}, got {})", stop, i);
+      E(Error::TUPLE_RANGE_BOUNDS, index, stop, i);
     return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
   } else if (auto slice = CAST(index, SliceExpr)) {
     // Case: `tuple[int:int:int]`
@@ -736,7 +738,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     std::vector<ExprPtr> te;
     for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
-        error("tuple index out of range (expected 0..{}, got {})", sz, i);
+        E(Error::TUPLE_RANGE_BOUNDS, index, sz, i);
       te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
     }
     return {true, transform(N<CallExpr>(
@@ -757,7 +759,7 @@ int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
     if (idx > len)
       idx = len;
   } else if (idx < 0 || idx >= len) {
-    error("tuple index {} out of bounds (len: {})", idx, len);
+    E(Error::TUPLE_RANGE_BOUNDS, getSrcInfo(), len, idx);
   }
   return idx;
 }
@@ -768,7 +770,7 @@ int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
 int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
                                              int64_t *stop, int64_t step) {
   if (step == 0)
-    error("slice step cannot be 0");
+    E(Error::SLICE_STEP_ZERO, getSrcInfo());
 
   if (*start < 0) {
     *start += length;

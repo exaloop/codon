@@ -12,8 +12,6 @@
 
 using fmt::format;
 using namespace codon::exc;
-
-
 namespace codon::ast {
 
 using namespace types;
@@ -40,7 +38,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     const std::string initFile = "__init__.codon";
     if (!stdlibPath || !endswith(stdlibPath->path, initFile))
-      codon::raise_error("cannot load standard library");
+      E(Error::COMPILER_NO_STDLIB);
 
     /// Use __init_test__ for faster testing (e.g., #%% name,barebones)
     /// TODO: get rid of it one day...

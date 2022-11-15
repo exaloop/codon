@@ -10,6 +10,7 @@
 #include "codon/parser/visitors/format/format.h"
 
 using fmt::format;
+using namespace codon::exc;
 
 namespace codon::ast {
 
@@ -113,7 +114,8 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
   // dummy generic type
   auto g = std::make_shared<types::ClassType>(cache, "", "");
   if (generics.size() != c->generics.size()) {
-    raise_error(srcInfo, "generics do not match");
+    E(Error::GENERICS_MISMATCH, srcInfo, cache->rev(c->name), c->generics.size(),
+      generics.size());
   }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
@@ -243,21 +245,24 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
       else if (slots[slotNames[n.first]].empty())
         slots[slotNames[n.first]].push_back(n.second);
       else
-        return onError(format("argument '{}' already assigned", n.first));
+        return onError(args[n.second].value->getSrcInfo(),
+                       Emsg(Error::CALL_REPEATED_NAME, n.first));
     }
   }
 
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
-    return onError(format("too many arguments for {} (expected maximum {}, got {})",
-                          func->prettyString(), func->ast->args.size(),
-                          args.size() - partial));
+    return onError(getSrcInfo(), Emsg(Error::CALL_ARGS_MANY, func->prettyString(),
+                                      func->ast->args.size(), args.size() - partial));
+
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
 
   // 4. Fill in **kwargs, if present
   if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
-    return onError(format("unknown argument '{}'", extraNamedArgs.begin()->first));
+    return onError(args[extraNamedArgs.begin()->second].value->getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
+                        func->prettyString()));
   if (kwstarArgIndex != -1)
     for (auto &e : extraNamedArgs)
       slots[kwstarArgIndex].push_back(e.second);
@@ -269,8 +274,9 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
           (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
       else if (!partial && func->ast->args[i].status == Param::Normal)
-        return onError(format("missing argument '{}'",
-                              cache->reverseIdentifierLookup[func->ast->args[i].name]));
+        return onError(getSrcInfo(),
+                       Emsg(Error::CALL_ARGS_MISSING, func->prettyString(),
+                            cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
   return score + onDone(starArgIndex, kwstarArgIndex, slots, partial);
 }

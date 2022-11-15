@@ -12,7 +12,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 /// See @c transformInt

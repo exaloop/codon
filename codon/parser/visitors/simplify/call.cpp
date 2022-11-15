@@ -8,7 +8,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 /// Transform print statement.

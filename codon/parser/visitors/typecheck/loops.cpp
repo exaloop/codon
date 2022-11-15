@@ -7,7 +7,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
-
+using namespace codon::exc;
 namespace codon::ast {
 
 using namespace types;
@@ -97,7 +97,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     val = ctx->add(TypecheckItem::Var, var->value,
                    ctx->getUnbound(stmt->var->getSrcInfo()));
   if (iterType && iterType->name != "Generator")
-    error("for loop expected a generator");
+    E(Error::EXPECTED_GENERATOR, stmt->iter);
   unify(stmt->var->type,
         iterType ? unify(val->type, iterType->generics[0].type) : val->type);
 
@@ -199,8 +199,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int step =
         iter->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
-      error("staticrange out of bounds ({} > {})", abs(st - ed) / abs(step),
-            MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, abs(st - ed) / abs(step), MAX_STATIC_ITER);
     for (int i = st; step > 0 ? i < ed : i > ed; i += step)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else if (iter &&
@@ -208,7 +207,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int ed =
         iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
     if (ed > MAX_STATIC_ITER)
-      error("staticrange out of bounds ({} > {})", ed, MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, ed, MAX_STATIC_ITER);
     for (int i = 0; i < ed; i++)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else {

@@ -10,7 +10,6 @@
 using fmt::format;
 using namespace codon::exc;
 
-
 namespace codon::ast {
 
 using namespace types;
@@ -331,7 +330,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   }
 
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);
-  error("cannot find '{}' in {}", expr->member, typ->prettyString());
+  E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->member);
   return nullptr;
 }
 
@@ -429,16 +428,17 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (methodArgs) {
     std::vector<std::string> a;
     for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("'{}'", t.value->type->prettyString()));
-    argsNice = fmt::format(" with arguments {}", fmt::join(a, ", "));
+      a.emplace_back(fmt::format("{}", t.value->type->prettyString()));
+    argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
-  std::string nameNice;
+
   if (auto dot = expr->getDot()) {
-    nameNice = fmt::format("'{}' in {}", dot->member, dot->expr->type->prettyString());
+    E(Error::DOT_NO_ATTR_ARGS, expr, dot->expr->type->prettyString(), dot->member,
+      argsNice);
   } else {
-    nameNice = fmt::format("'{}'", expr->getId()->value);
+    E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(expr->getId()->value), argsNice);
   }
-  error("cannot find a method {}{}", nameNice, argsNice);
+
   return nullptr;
 }
 
