@@ -1,12 +1,8 @@
-FROM codon:llvm as codon-llvm
-
-FROM nvidia/cuda:11.8.0-devel-centos7
+FROM codon:llvm
 RUN yum -y update
-RUN yum -y install centos-release-scl-rh epel-release
 RUN yum -y install \
     ninja-build libuuid-devel openssl openssl-devel \
     libsodium-devel cmake3 zlib-devel git patch perl-Data-Dumper
-COPY --from=codon-llvm /opt/llvm-codon /opt/llvm-codon
 RUN mkdir -p /github/codon
 COPY cmake /github/codon/cmake
 COPY codon /github/codon/codon
@@ -15,19 +11,19 @@ COPY extra /github/codon/extra
 COPY stdlib /github/codon/stdlib
 COPY test /github/codon/test
 COPY CMakeLists.txt /github/codon
+RUN ls -lah /opt/llvm-codon/bin/
 RUN cmake3 -S /github/codon -B /github/codon/build \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
     -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
     -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm \
-    -DCODON_GPU=ON \
     -DCODON_JUPYTER=ON \
     -DOPENSSL_ROOT_DIR=$(openssl version -d | cut -d' ' -f2 | tr -d '"') \
     -DOPENSSL_CRYPTO_LIBRARY=/usr/lib64/libssl.so \
     -DCMAKE_INSTALL_PREFIX=/opt/codon \
     -DXEUS_USE_DYNAMIC_UUID=ON
-RUN LD_LIBRARY_PATH=/usr/local/cuda-11.8/compat:${LD_LIBRARY_PATH} cmake3 --build /github/codon/build
+RUN cmake3 --build /github/codon/build
 # TODO: fix install RUN cmake3 --install /github/codon/build
 RUN mkdir -p /opt/codon/bin
 RUN cp /github/codon/build/codon /opt/codon/bin/
@@ -35,4 +31,5 @@ RUN mkdir -p /opt/codon/lib/codon
 RUN cp -r /github/codon/build/lib*.so /opt/codon/lib/codon/
 RUN cp -r /github/codon/stdlib /opt/codon/lib/codon/
 RUN cd /github/codon && tar cjvf /opt/codon-$(git rev-parse --short HEAD).tar.bz2 -C /opt codon/
-CMD cp /opt/codon-*.tar.bz2 /mnt/
+CMD ls
+#cp /opt/codon-*.tar.bz2 /mnt/

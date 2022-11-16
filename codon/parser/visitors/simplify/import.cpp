@@ -290,7 +290,6 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file
   if (ctx->cache->age)
     ctx->cache->age++;
-  LOG("reading {}", file.path);
   auto ictx = std::make_shared<SimplifyContext>(file.path, ctx->cache);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;

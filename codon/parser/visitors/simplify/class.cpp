@@ -16,8 +16,6 @@ namespace codon::ast {
 /// Transform class and type definitions, as well as extensions.
 /// See below for details.
 void SimplifyVisitor::visit(ClassStmt *stmt) {
-  LOG(" [class] {}...", stmt->toString(1).substr(0, 100));
-
   // Get root name
   std::string name = stmt->name;
 
@@ -163,7 +161,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                  ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
-      LOG("-> adding {}", canonicalName);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);

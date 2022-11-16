@@ -504,7 +504,7 @@ void ClassStmt::validate() const {
     E(Error::CLASS_EXTENSION,
       baseClasses.empty() ? staticBaseClasses[0] : baseClasses[0]);
   for (auto &a : args) {
-    if (!a.type)
+    if (!a.type && !a.defaultValue)
       E(Error::CLASS_MISSING_TYPE, a, a.name);
     if (in(seen, a.name))
       E(Error::CLASS_ARG_TWICE, a, a.name);

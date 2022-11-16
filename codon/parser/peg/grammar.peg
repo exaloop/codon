@@ -738,8 +738,8 @@ CHAR <- ('\\' . / .) { return string(VS.sv()); }
 ~COMMENT <- <'#' (!EOL .)*>
 ~INDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.push(VS.sv().size()); }
 INDENT__PREDICATE {
-  if (!(CTX.indent.empty() && VS.sv().size()) ||
-      (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top())) {
+  if (!(CTX.indent.empty() && VS.sv().size()) &&
+      !(!CTX.indent.empty() && VS.sv().size() > CTX.indent.top())) {
     MSG = "unexpected indentation";
     return false;
   }
@@ -747,8 +747,8 @@ INDENT__PREDICATE {
 }
 ~SAMEDENT__NOPACKRAT <- <[ \t]*> {}
 SAMEDENT__PREDICATE {
-  return !((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() != CTX.indent.top()));
+  return !(!CTX.indent.size() && VS.sv().size()) &&
+         !(CTX.indent.size() && VS.sv().size() != CTX.indent.top());
 }
 ~DEDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.pop(); }
 DEDENT__PREDICATE {
@@ -760,8 +760,8 @@ DEDENT__PREDICATE {
 }
 ~EXTERNDENT__NOPACKRAT <- <[ \t]*> {}
 EXTERNDENT__PREDICATE {
-  return !((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() < CTX.indent.top()));
+  return !(!CTX.indent.size() && VS.sv().size()) &&
+         !(CTX.indent.size() && VS.sv().size() < CTX.indent.top());
 }
 ~EOL <- <[\r][\n] / [\r\n]>
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?

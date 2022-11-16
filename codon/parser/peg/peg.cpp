@@ -63,9 +63,6 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
     errors.emplace_back(line, col, msg);
   };
   T result = nullptr;
-  LOG("{}",file);
-  if (endswith(file, "core.codon"))
-  LOG("ww");
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
   auto r = (*grammar)[rule].parse_and_get_value(code.c_str(), code.size(), ctx, result,
                                                 file.c_str(), log);
@@ -120,7 +117,7 @@ StmtPtr parseFile(Cache *cache, const std::string &file) {
   cache->imports[file].content = lines;
   auto result = parseCode(cache, file, code);
   // For debugging purposes:
-  LOG("peg/{} :=  {}", file, result ? result->toString(0) : "<nullptr>");
+  // LOG("peg/{} :=  {}", file, result ? result->toString(0) : "<nullptr>");
   return result;
 }
 
