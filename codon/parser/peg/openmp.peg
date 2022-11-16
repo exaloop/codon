@@ -1,6 +1,6 @@
 # OpenMP PEG grammar
 
-%preamble {
+PREAMBLE {
   #include "codon/parser/peg/rules.h"
   #include <any>
   using namespace std;

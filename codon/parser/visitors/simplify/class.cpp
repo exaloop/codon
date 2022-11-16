@@ -9,13 +9,15 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 
 namespace codon::ast {
 
 /// Transform class and type definitions, as well as extensions.
 /// See below for details.
 void SimplifyVisitor::visit(ClassStmt *stmt) {
+  LOG(" [class] {}...", stmt->toString(1).substr(0, 100));
+
   // Get root name
   std::string name = stmt->name;
 

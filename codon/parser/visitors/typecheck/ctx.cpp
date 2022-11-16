@@ -10,7 +10,7 @@
 #include "codon/parser/visitors/format/format.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 
 namespace codon::ast {
 

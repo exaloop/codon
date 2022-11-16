@@ -133,7 +133,7 @@ void UnionType::addType(TypePtr typ) {
           return;
         }
       }
-    E(exc::Error::UNION_TOO_BIG, this);
+    E(error::Error::UNION_TOO_BIG, this);
   }
 }
 

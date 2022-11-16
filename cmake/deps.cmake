@@ -7,6 +7,12 @@ endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
 CPMAddPackage(
+    NAME peglib
+    GITHUB_REPOSITORY "exaloop/cpp-peglib"
+    GIT_TAG codon
+    OPTIONS "BUILD_TESTS OFF")
+
+CPMAddPackage(
     NAME zlibng
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
     VERSION 2.0.5

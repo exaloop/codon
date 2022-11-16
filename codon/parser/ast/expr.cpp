@@ -13,7 +13,7 @@
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 
 namespace codon::ast {
 

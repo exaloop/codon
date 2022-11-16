@@ -7,11 +7,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <peglib.h>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/util/cpp-peglib/peglib.h"
 
 namespace codon::ast {
 

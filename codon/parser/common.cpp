@@ -7,18 +7,6 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 
-namespace codon {
-/// AST utilities
-
-void raise_error(const char *format) { throw exc::ParserException(format); }
-void raise_error(const ::codon::SrcInfo &info, const char *format) {
-  throw exc::ParserException(format, info);
-}
-void raise_error(const ::codon::SrcInfo &info, const std::string &format) {
-  throw exc::ParserException(format, info);
-}
-
-} // namespace codon
 namespace codon::ast {
 
 /// String and collection utilities

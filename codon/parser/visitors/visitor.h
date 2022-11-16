@@ -5,6 +5,8 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/compiler/error.h"
+
 
 namespace codon::ast {
 
@@ -128,13 +130,13 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
 
   /// Convenience method that raises an error at the current source location.
   template <typename... TArgs> void error(const char *format, TArgs &&...args) {
-    codon::raise_error(getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(getSrcInfo(), fmt::format(format, args...).c_str());
   }
 
   /// Convenience method that raises an error at the source location of p.
   template <typename T, typename... TArgs>
   void error(const T &p, const char *format, TArgs &&...args) {
-    codon::raise_error(p->getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(p->getSrcInfo(), fmt::format(format, args...).c_str());
   }
 
   /// Convenience method that raises an internal error.

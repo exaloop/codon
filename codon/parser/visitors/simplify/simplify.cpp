@@ -11,7 +11,7 @@
 #include "codon/parser/visitors/simplify/ctx.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;

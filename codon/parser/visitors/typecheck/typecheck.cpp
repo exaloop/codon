@@ -11,7 +11,7 @@
 #include "codon/util/fmt/format.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 
 namespace codon::ast {
 

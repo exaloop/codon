@@ -8,7 +8,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;
@@ -381,7 +381,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     ctx->reorderNamedArgs(
         calleeFn.get(), expr->args, reorderFn,
         [&](const SrcInfo &o, const std::string &errorMsg) {
-          codon::raise_error(o, errorMsg);
+          error::raise_error(o, errorMsg);
           return -1;
         },
         part.known);

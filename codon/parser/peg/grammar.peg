@@ -3,7 +3,7 @@
 
 # TODO: nice docstrs
 
-%preamble {
+PREAMBLE {
   #include "codon/parser/peg/rules.h"
   #include <any>
   using namespace std;
@@ -70,13 +70,8 @@ small_stmt <-
   / print_stmt
   / import_stmt
   / expressions &(_ ';' / _ EOL)  { return any(ast<ExprStmt>(LOC, ac_expr(V0))); }
-  / NAME SPACE expressions {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomExprStmt(kwd)) {
-      throw codon::exc::ParserException(); // just ignore it
-    }
-    return any(ast<CustomStmt>(LOC, kwd, ac_expr(V1), nullptr));
-  }
+  / custom_small_stmt
+
 assignment <-
   / id _ ':' _ expression (_ '=' _ star_expressions)? {
     return ast<AssignStmt>(LOC,
@@ -417,19 +412,24 @@ case <-
   }
 custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomStmtKeyword(kwd, true)) {
-      throw codon::exc::ParserException();
-    }
-    return ast<CustomStmt>(LOC, kwd, ac_expr(V1), ac_stmt(V2));
+    return ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), ac_stmt(V2));
   }
   / NAME _ ':' _ suite {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomStmtKeyword(kwd, false)) {
-      throw codon::exc::ParserException();
-    }
-    return ast<CustomStmt>(LOC, kwd, nullptr, ac_stmt(V2));
+    return ast<CustomStmt>(LOC, ac<string>(V0), nullptr, ac_stmt(V2));
   }
+custom_stmt__PREDICATE {
+  auto kwd = ac<string>(V0);
+  return CTX.hasCustomStmtKeyword(kwd, VS.choice() == 0); // ignore it
+}
+
+custom_small_stmt <- NAME SPACE expressions {
+  return any(ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), nullptr));
+}
+custom_small_stmt__PREDICATE {
+  auto kwd = ac<string>(V0);
+  return CTX.hasCustomExprStmt(kwd); // ignore it
+}
+
 
 ########################################################################################
 # (2) Expressions
@@ -700,17 +700,29 @@ STRING <- <NAME? STR> {
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
+  if (p.second != "r" && p.second != "R") {
+    p.first = unescape(p.first);
+  } else {
+    p.second = "";
+  }
+  return p;
+}
+STRING__PREDICATE {
+  auto p = pair(
+    ac<string>(VS.size() > 1 ? V1 : V0),
+    VS.size() > 1 ? ac<string>(V0) : ""
+  );
   if (p.second != "r" && p.second != "R")
     try {
       p.first = unescape(p.first);
     } catch (std::invalid_argument &e) {
-      throw codon::exc::ParserException("invalid code in a string");
+      MSG = "invalid code in a string";
+      return false;
     } catch (std::out_of_range &) {
-      throw codon::exc::ParserException("invalid code in a string");
+      MSG = "invalid code in a string";
+      return false;
     }
-  else
-    p.second = "";
-  return p;
+  return true;
 }
 STR <- <
   '"""' (!'"""' CHAR)*       '"""'   /  '\'\'\'' (!'\'\'\'' CHAR)*     '\'\'\'' /
@@ -724,28 +736,32 @@ STR <- <
 }
 CHAR <- ('\\' . / .) { return string(VS.sv()); }
 ~COMMENT <- <'#' (!EOL .)*>
-~INDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((CTX.indent.empty() && VS.sv().size()) ||
-      (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top()))
-    CTX.indent.push(VS.sv().size());
-  else
-    throw codon::exc::ParserException("bad indent");
+~INDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.push(VS.sv().size()); }
+INDENT__PREDICATE {
+  if (!(CTX.indent.empty() && VS.sv().size()) ||
+      (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top())) {
+    MSG = "unexpected indentation";
+    return false;
+  }
+  return true;
 }
-~SAMEDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() != CTX.indent.top()))
-    throw codon::exc::ParserException();
+~SAMEDENT__NOPACKRAT <- <[ \t]*> {}
+SAMEDENT__PREDICATE {
+  return !((!CTX.indent.size() && VS.sv().size()) ||
+      (CTX.indent.size() && VS.sv().size() != CTX.indent.top()));
 }
-~DEDENT:NO_PACKRAT <- <[ \t]*> {
-  if (CTX.indent.size() && VS.sv().size() < CTX.indent.top())
-    CTX.indent.pop();
-  else
-    throw codon::exc::ParserException("bad dedent");
+~DEDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.pop(); }
+DEDENT__PREDICATE {
+  if (!(CTX.indent.size() && VS.sv().size() < CTX.indent.top())) {
+    MSG = "unexpected dedent";
+    return false;
+  }
+  return true;
 }
-~EXTERNDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() < CTX.indent.top()))
-    throw codon::exc::ParserException();
+~EXTERNDENT__NOPACKRAT <- <[ \t]*> {}
+EXTERNDENT__PREDICATE {
+  return !((!CTX.indent.size() && VS.sv().size()) ||
+      (CTX.indent.size() && VS.sv().size() < CTX.indent.top()));
 }
 ~EOL <- <[\r][\n] / [\r\n]>
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?

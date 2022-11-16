@@ -37,6 +37,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 find_package(LLVM REQUIRED)
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
@@ -50,8 +54,9 @@ else()
   set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
-add_executable(peg2cpp codon/util/peg2cpp.cpp codon/util/cpp-peglib/peglib.h)
-target_link_libraries(peg2cpp Threads::Threads)
+add_executable(peg2cpp codon/util/peg2cpp.cpp)
+target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
+target_link_libraries(peg2cpp PRIVATE Threads::Threads)
 add_custom_command(
   OUTPUT codon_rules.cpp
   COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/grammar.peg
@@ -210,7 +215,6 @@ set(CODON_HPPFILES
     codon/sir/value.h
     codon/sir/var.h
     codon/util/common.h
-    codon/util/cpp-peglib/peglib.h
     codon/util/fmt/chrono.h
     codon/util/fmt/color.h
     codon/util/fmt/compile.h
@@ -354,6 +358,7 @@ set(CODON_CPPFILES
     codon/util/fmt/format.cpp
     extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
+target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR})
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CODON_JUPYTER)
   add_compile_definitions(CODON_JUPYTER)

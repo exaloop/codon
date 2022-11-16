@@ -5,12 +5,12 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <peglib.h>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/rules.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/util/cpp-peglib/peglib.h"
 
 double totalPeg = 0.0;
 
@@ -38,10 +38,10 @@ std::shared_ptr<peg::Grammar> initParser() {
   for (auto &rule : std::vector<std::string>{
            "arguments", "slices", "genexp", "parentheses", "star_parens", "generics",
            "with_parens_item", "params", "from_as_parens", "from_params"}) {
-    (*g)[rule].enter = [](const char *, size_t, std::any &dt) {
+    (*g)[rule].enter = [](const peg::Context &, const char *, size_t, std::any &dt) {
       std::any_cast<ParseContext &>(dt).parens++;
     };
-    (*g)[rule.c_str()].leave = [](const char *, size_t, size_t, std::any &,
+    (*g)[rule.c_str()].leave = [](const peg::Context &, const char *, size_t, size_t, std::any &,
                                   std::any &dt) {
       std::any_cast<ParseContext &>(dt).parens--;
     };
@@ -59,10 +59,13 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
     grammar = initParser();
 
   std::vector<std::tuple<size_t, size_t, std::string>> errors;
-  auto log = [&](size_t line, size_t col, const std::string &msg) {
+  auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
     errors.emplace_back(line, col, msg);
   };
   T result = nullptr;
+  LOG("{}",file);
+  if (endswith(file, "core.codon"))
+  LOG("ww");
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
   auto r = (*grammar)[rule].parse_and_get_value(code.c_str(), code.size(), ctx, result,
                                                 file.c_str(), log);
@@ -106,7 +109,7 @@ StmtPtr parseFile(Cache *cache, const std::string &file) {
   } else {
     std::ifstream fin(file);
     if (!fin)
-      E(exc::Error::COMPILER_NO_FILE, SrcInfo(), file);
+      E(error::Error::COMPILER_NO_FILE, SrcInfo(), file);
     for (std::string line; getline(fin, line);) {
       lines.push_back(line);
       code += line + "\n";
@@ -117,7 +120,7 @@ StmtPtr parseFile(Cache *cache, const std::string &file) {
   cache->imports[file].content = lines;
   auto result = parseCode(cache, file, code);
   // For debugging purposes:
-  // LOG("peg/{} :=  {}", file, result ? result->toString(0) : "<nullptr>");
+  LOG("peg/{} :=  {}", file, result ? result->toString(0) : "<nullptr>");
   return result;
 }
 
@@ -139,7 +142,7 @@ std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
     ompGrammar = initOpenMPParser();
 
   std::vector<std::tuple<size_t, size_t, std::string>> errors;
-  auto log = [&](size_t line, size_t col, const std::string &msg) {
+  auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
     errors.emplace_back(line, col, msg);
   };
   std::vector<CallExpr::Arg> result;

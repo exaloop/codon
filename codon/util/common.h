@@ -7,6 +7,7 @@
 
 #include "codon/config/config.h"
 #include "codon/parser/ast/error.h"
+#include "codon/compiler/error.h"
 #include "codon/util/fmt/format.h"
 #include "codon/util/fmt/ostream.h"
 
@@ -133,14 +134,14 @@ public:
 
   void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
 };
-template <class... TA> void E(exc::Error e, codon::SrcObject *o, TA... args) {
+template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA&... args) {
   E(e, o->getSrcInfo(), args...);
 }
-template <class... TA> void E(exc::Error e, const codon::SrcObject &o, TA... args) {
+template <class... TA> void E(error::Error e, const codon::SrcObject &o, const TA&... args) {
   E(e, o.getSrcInfo(), args...);
 }
 template <class... TA>
-void E(exc::Error e, const std::shared_ptr<SrcObject> &o, TA... args) {
+void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA&... args) {
   E(e, o->getSrcInfo(), args...);
 }
 

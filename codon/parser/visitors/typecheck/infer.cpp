@@ -12,7 +12,7 @@
 #include "codon/sir/types/types.h"
 
 using fmt::format;
-using namespace codon::exc;
+using namespace codon::error;
 
 namespace codon::ast {
 
