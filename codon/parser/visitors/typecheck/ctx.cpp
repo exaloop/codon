@@ -252,7 +252,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
-    return onError(getSrcInfo(), Emsg(Error::CALL_ARGS_MANY, func->prettyString(),
+    return onError(getSrcInfo(), Emsg(Error::CALL_ARGS_MANY, cache->rev(func->ast->name),
                                       func->ast->args.size(), args.size() - partial));
 
   if (starArgIndex != -1)
@@ -262,7 +262,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
     return onError(args[extraNamedArgs.begin()->second].value->getSrcInfo(),
                    Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
-                        func->prettyString()));
+                        cache->rev(func->ast->name)));
   if (kwstarArgIndex != -1)
     for (auto &e : extraNamedArgs)
       slots[kwstarArgIndex].push_back(e.second);
@@ -275,7 +275,7 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
         score -= 2;
       else if (!partial && func->ast->args[i].status == Param::Normal)
         return onError(getSrcInfo(),
-                       Emsg(Error::CALL_ARGS_MISSING, func->prettyString(),
+                       Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->name),
                             cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
   return score + onDone(starArgIndex, kwstarArgIndex, slots, partial);

@@ -199,7 +199,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int step =
         iter->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, iter, abs(st - ed) / abs(step), MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, abs(st - ed) / abs(step));
     for (int i = st; step > 0 ? i < ed : i > ed; i += step)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else if (iter &&
@@ -207,7 +207,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int ed =
         iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
     if (ed > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, iter, ed, MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, ed);
     for (int i = 0; i < ed; i++)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else {

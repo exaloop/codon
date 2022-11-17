@@ -191,7 +191,7 @@ dot_name <- id (_ '.' _ NAME)* {
   return dot;
 }
 from_params <- '(' _ tlist(',', from_param)? _ ')' { return VS; }
-from_param <- expression { return Param{"", ac_expr(V0), nullptr}; }
+from_param <- expression { return Param(LOC, "", ac_expr(V0), nullptr); }
 #TODO expand import logic / param { return ac<Param>(V0); }
 
 suite <- (simple_stmt / (_ EOL)+ &INDENT statements (_ EOL)* &DEDENT) {
@@ -327,10 +327,10 @@ function_def <-
 params <- '(' _ tlist(',', param)? _ ')' { return VS; }
 param <-
   / param_name _ ':' _ expression (_ '=' _ expression)? {
-    return Param(ac<string>(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr);
+    return Param(LOC, ac<string>(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr);
   }
   / param_name (_ '=' _ expression)? {
-    return Param(ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
+    return Param(LOC, ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
   }
 param_name <- <'**' / '*'>? _ NAME {
   return (!VS.tokens.empty() ? VS.token_to_string() : "") + ac<string>(V0);
@@ -388,7 +388,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   for (auto &i: s->stmts) {
     if (auto a = const_cast<AssignStmt*>(i->getAssign()))
       if (a->lhs->getId()) {
-        args.push_back(Param(a->lhs->getId()->value, move(a->type), move(a->rhs)));
+        args.push_back(Param(a->getSrcInfo(), a->lhs->getId()->value, move(a->type), move(a->rhs)));
         continue;
       }
     suite->stmts.push_back(i);
@@ -667,7 +667,7 @@ args <- (simple_args (_ ',' _ kwargs)? / kwargs) {
   return args;
 }
 simple_args <- list(',', (starred_expression / named_expression !(_ '='))) {
-  return vmap(VS, [](auto &i) { return CallExpr::Arg{"", ac_expr(i)}; });
+  return vmap(VS, [](auto &i) { return CallExpr::Arg(ac_expr(i)); });
 }
 starred_expression <- '*' _ expression { return ast<StarExpr>(LOC, ac_expr(V0)); }
 kwargs <-
@@ -677,12 +677,12 @@ kwargs <-
   / list(',', kwarg_or_starred) { return VS.transform<CallExpr::Arg>(); }
   / list(',', kwarg_or_double_starred) { return VS.transform<CallExpr::Arg>(); }
 kwarg_or_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg{ac<string>(V0), ac_expr(V1)}; }
-  / starred_expression { return CallExpr::Arg{"", ac_expr(V0)}; }
+  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
+  / starred_expression { return CallExpr::Arg(ac_expr(V0)); }
 kwarg_or_double_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg{ac<string>(V0), ac_expr(V1)}; }
+  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
   / '**' _ expression {
-    return CallExpr::Arg{"", ast<KeywordStarExpr>(LOC, ac_expr(V0))};
+    return CallExpr::Arg(ast<KeywordStarExpr>(LOC, ac_expr(V0)));
   }
 id <- NAME { return ast<IdExpr>(LOC, ac<string>(V0)); }
 INT <- (BININT / HEXINT / DECINT) { return string(VS.sv()); }

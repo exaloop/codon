@@ -121,7 +121,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   bool isClassMember = ctx->inClass(), isEnclosedFunc = ctx->inFunction();
   if (stmt->attributes.has(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))
-    E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "builtin functions");
+    E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "builtin function");
 
   // All overloads share the same canonical name except for the number at the
   // end (e.g., `foo.1:0`, `foo.1:1` etc.)
@@ -150,7 +150,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   if (!isClassMember) {
     auto funcVal = ctx->find(stmt->name);
     if (funcVal && funcVal->noShadow)
-      E(Error::CLASS_INVALID_BIND, stmt);
+      E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
     funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
     ctx->addAlwaysVisible(funcVal);
   }

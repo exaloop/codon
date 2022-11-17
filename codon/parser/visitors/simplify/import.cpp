@@ -32,7 +32,16 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
                             ctx->cache->module0, ctx->cache->pluginImportPaths);
   if (!file) {
-    E(Error::IMPORT_NO_MODULE, stmt->from, combine2(components, "."));
+    std::string s(stmt->dots, '.');
+    for (size_t i = 0; i < components.size(); i++)
+      if (components[i] == "..") {
+        continue;
+      } else if (!s.empty() && s.back() != '.') {
+        s += "." + components[i];
+      } else {
+        s += components[i];
+      }
+    E(Error::IMPORT_NO_MODULE, stmt->from, s);
   }
 
   // If the file has not been seen before, load it into cache
@@ -220,8 +229,9 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::strin
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallExpr::Arg>{
-                      {"", dylib->clone()}, {"", N<StringExpr>(name)}, {"Fn", type}})));
+                  std::vector<CallExpr::Arg>{CallExpr::Arg(dylib->clone()),
+                                             CallExpr::Arg(N<StringExpr>(name)),
+                                             {"Fn", type}})));
 }
 
 /// Transform a Python module and function imports.

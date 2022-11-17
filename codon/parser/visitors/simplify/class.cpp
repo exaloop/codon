@@ -151,7 +151,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         // Class bindings cannot be dominated either
         auto v = ctx->find(name);
         if (v && v->noShadow)
-          E(Error::CLASS_INVALID_BIND, stmt);
+          E(Error::CLASS_INVALID_BIND, stmt, name);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
       }
@@ -319,11 +319,15 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
     // Add generics first
+    int nGenerics = 0;
+    for (auto &a : asts.back()->args)
+      nGenerics += a.status == Param::Generic;
     int si = 0;
     for (auto &a : asts.back()->args) {
       if (a.status == Param::Generic) {
         if (si == subs.size())
-          E(Error::CLASS_GENERIC_MISMATCH, cls, subs.size());
+          E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name), nGenerics,
+            subs.size());
         args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
                                 Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {
@@ -340,7 +344,8 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
       }
     }
     if (si != subs.size())
-      E(Error::CLASS_GENERIC_MISMATCH, cls.get(), subs.size());
+      E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name), nGenerics,
+        subs.size());
   }
   // Add normal fields
   for (auto &ast : asts) {

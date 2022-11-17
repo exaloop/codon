@@ -14,11 +14,11 @@ namespace codon::ast {
 using namespace types;
 
 /// Just ensure that this expression is not independent of CallExpr where it is handled.
-void TypecheckVisitor::visit(StarExpr *expr) { E(Error::EXPECTED_TYPE, expr, "star"); }
+void TypecheckVisitor::visit(StarExpr *expr) { E(Error::UNEXPECTED_TYPE, expr, "star"); }
 
 /// Just ensure that this expression is not independent of CallExpr where it is handled.
 void TypecheckVisitor::visit(KeywordStarExpr *expr) {
-  E(Error::EXPECTED_TYPE, expr, "kwstar");
+  E(Error::UNEXPECTED_TYPE, expr, "kwstar");
 }
 
 /// Typechecks an ellipsis. Ellipses are typically replaced during the typechecking; the
@@ -146,7 +146,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       if (!typ) // Process later
         return false;
       if (!typ->getRecord())
-        E(Error::CALL_BAD_UNPACK, args[ai].value, typ->prettyString());
+        E(Error::CALL_BAD_UNPACK, args[ai], typ->prettyString());
       auto &fields = ctx->cache->classes[typ->name].fields;
       for (size_t i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         args.insert(args.begin() + ai,
@@ -164,7 +164,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       if (!typ)
         return false;
       if (!typ->getRecord() || startswith(typ->name, TYPE_TUPLE))
-        E(Error::CALL_BAD_KWUNPACK, args[ai].value, typ->prettyString());
+        E(Error::CALL_BAD_KWUNPACK, args[ai], typ->prettyString());
       auto &fields = ctx->cache->classes[typ->name].fields;
       for (size_t i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         args.insert(args.begin() + ai,
@@ -183,7 +183,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
   for (auto &a : args)
     if (!a.name.empty()) {
       if (in(seen, a.name))
-        E(Error::CALL_REPEATED_NAME, a.value, a.name);
+        E(Error::CALL_REPEATED_NAME, a, a.name);
       seen.insert(a.name);
     }
 
@@ -329,12 +329,12 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
           for (int i = 0; i < t->getRecord()->args.size(); i++) {
             names.emplace_back(ff[i].name);
             values.emplace_back(
-                CallExpr::Arg{"", transform(N<DotExpr>(clone(e), ff[i].name))});
+                CallExpr::Arg(transform(N<DotExpr>(clone(e), ff[i].name))));
           }
         }
         for (auto &e : slots[si]) {
           names.emplace_back(expr->args[e].name);
-          values.emplace_back(CallExpr::Arg{"", expr->args[e].value});
+          values.emplace_back(CallExpr::Arg(expr->args[e].value));
         }
         auto kwName = generateTuple(names.size(), "KwTuple", names);
         auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
@@ -357,7 +357,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         } else {
           auto es = calleeFn->ast->args[si].defaultValue->toString();
           if (in(ctx->defaultCallDepth, es))
-            E(Error::CALL_RECURSIVE_DEFAULT, calleeFn->ast->args[si].defaultValue);
+            E(Error::CALL_RECURSIVE_DEFAULT, expr, ctx->cache->rev(calleeFn->ast->args[si].name));
           ctx->defaultCallDepth.insert(es);
           args.push_back(
               {realName, transform(clone(calleeFn->ast->args[si].defaultValue))});
@@ -639,7 +639,7 @@ ExprPtr TypecheckVisitor::transformPtr(CallExpr *expr) {
   auto id = expr->args[0].value->getId();
   auto val = id ? ctx->find(id->value) : nullptr;
   if (!val || val->kind != TypecheckItem::Var)
-    E(Error::CALL_PTR_VAR, expr);
+    E(Error::CALL_PTR_VAR, expr->args[0]);
 
   transform(expr->args[0].value);
   unify(expr->type,

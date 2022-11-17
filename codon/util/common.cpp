@@ -8,7 +8,7 @@
 namespace codon {
 namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
-                        const std::string &file, int line, int col) {
+                        const std::string &file, int line, int col, int len) {
   auto &out = getLogger().err;
   seqassertn(!(file.empty() && (line > 0 || col > 0)),
              "empty filename with non-zero line/col: file={}, line={}, col={}", file,
@@ -22,6 +22,8 @@ void compilationMessage(const std::string &header, const std::string &msg,
     out << ":" << line;
   if (col > 0)
     out << ":" << col;
+  if (len > 0)
+    out << "-" << col + len;
   if (!file.empty())
     out << ": ";
   out << header << "\033[1m " << msg << "\033[0m" << std::endl;
@@ -36,15 +38,15 @@ std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
 }
 
 void compilationError(const std::string &msg, const std::string &file, int line,
-                      int col, bool terminate) {
-  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col);
+                      int col, int len, bool terminate) {
+  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col, len);
   if (terminate)
     exit(EXIT_FAILURE);
 }
 
 void compilationWarning(const std::string &msg, const std::string &file, int line,
-                        int col, bool terminate) {
-  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col);
+                        int col, int len, bool terminate) {
+  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, len);
   if (terminate)
     exit(EXIT_FAILURE);
 }

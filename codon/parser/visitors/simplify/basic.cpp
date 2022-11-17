@@ -157,9 +157,9 @@ ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
     }
   }
   if (braceCount > 0)
-    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
-  if (braceCount < 0)
     E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
+  if (braceCount < 0)
+    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
   if (braceStart != value.size())
     items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
   return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));

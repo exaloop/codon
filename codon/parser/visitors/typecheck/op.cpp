@@ -719,7 +719,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     // Case: `tuple[int]`
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
-      E(Error::TUPLE_RANGE_BOUNDS, index, stop, i);
+      E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
     return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
   } else if (auto slice = CAST(index, SliceExpr)) {
     // Case: `tuple[int:int:int]`
@@ -738,7 +738,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     std::vector<ExprPtr> te;
     for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
-        E(Error::TUPLE_RANGE_BOUNDS, index, sz, i);
+        E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
       te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
     }
     return {true, transform(N<CallExpr>(
@@ -759,7 +759,7 @@ int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
     if (idx > len)
       idx = len;
   } else if (idx < 0 || idx >= len) {
-    E(Error::TUPLE_RANGE_BOUNDS, getSrcInfo(), len, idx);
+    E(Error::TUPLE_RANGE_BOUNDS, getSrcInfo(), len - 1, idx);
   }
   return idx;
 }

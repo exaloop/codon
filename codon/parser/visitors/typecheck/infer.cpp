@@ -154,8 +154,19 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     }
   } catch (exc::ParserException &e) {
     if (auto f = typ->getFunc()) {
-      e.trackRealize(fmt::format("{} (arguments {})", f->ast->name, f->prettyString()),
-                     getSrcInfo());
+      std::vector<std::string> args;
+      for (size_t i = 0, ai = 0, gi = 0; i < f->ast->args.size(); i++) {
+        auto an = f->ast->args[i].name;
+        auto ns = trimStars(an);
+        args.push_back(fmt::format("{}{}: {}", std::string(ns, '*'),
+                                   ctx->cache->rev(an),
+                                   f->ast->args[i].status == Param::Generic
+                                       ? f->funcGenerics[gi++].type->prettyString()
+                                       : f->getArgTypes()[ai++]->prettyString()));
+      }
+      e.trackRealize(
+          fmt::format("{}({})", ctx->cache->rev(f->ast->name), fmt::join(args, ", ")),
+          getSrcInfo());
     } else {
       e.trackRealize(typ->prettyString(), getSrcInfo());
     }
@@ -254,7 +265,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH)
     codon::compilationError(
         "maximum realization depth exceeded (recursive static function?)",
-        getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
+        getSrcInfo().file, getSrcInfo().line, getSrcInfo().col, getSrcInfo().len);
 
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
               type->realizedName(), ctx->getRealizationStackName(),

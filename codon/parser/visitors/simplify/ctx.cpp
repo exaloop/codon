@@ -28,7 +28,7 @@ SimplifyContext::Base::Base(std::string name, Attr *attributes)
 void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);
   if (v && v->noShadow)
-    E(Error::ID_INVALID_BIND, getSrcInfo());
+    E(Error::ID_INVALID_BIND, getSrcInfo(), name);
   Context<SimplifyItem>::add(name, var);
 }
 
@@ -133,7 +133,7 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
   }
   seqassert(lastGood != it->second.end(), "corrupted scoping ({})", name);
   if (lastGood != it->second.begin() && !(*lastGood)->isVar())
-    E(Error::CLASS_INVALID_BIND, getSrcInfo());
+    E(Error::CLASS_INVALID_BIND, getSrcInfo(), name);
 
   bool hasUsed = false;
   if ((*lastGood)->scope.size() == prefix) {

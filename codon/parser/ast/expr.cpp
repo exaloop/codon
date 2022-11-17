@@ -74,6 +74,11 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
   else
     this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
 }
+Param::Param(const SrcInfo &info, std::string name, ExprPtr type, ExprPtr defaultValue,
+             int status)
+    : Param(name, type, defaultValue, status) {
+  setSrcInfo(info);
+}
 std::string Param::toString() const {
   return format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
                 defaultValue ? " #:default " + defaultValue->toString() : "",
@@ -350,6 +355,15 @@ std::string IndexExpr::toString() const {
 ACCEPT_IMPL(IndexExpr, ASTVisitor);
 
 CallExpr::Arg CallExpr::Arg::clone() const { return {name, ast::clone(value)}; }
+CallExpr::Arg::Arg(const SrcInfo &info, const std::string &name, ExprPtr value)
+    : name(name), value(value) {
+  setSrcInfo(info);
+}
+CallExpr::Arg::Arg(const std::string &name, ExprPtr value) : name(name), value(value) {
+  if (value)
+    setSrcInfo(value->getSrcInfo());
+}
+CallExpr::Arg::Arg(ExprPtr value) : CallExpr::Arg("", value) {}
 
 CallExpr::CallExpr(const CallExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), args(ast::clone_nop(expr.args)),

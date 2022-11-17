@@ -146,9 +146,9 @@ void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA&... args) {
 }
 
 void compilationError(const std::string &msg, const std::string &file = "",
-                      int line = 0, int col = 0, bool terminate = true);
+                      int line = 0, int col = 0, int len = 0, bool terminate = true);
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
-                        int line = 0, int col = 0, bool terminate = false);
+                        int line = 0, int col = 0, int len = 0, bool terminate = false);
 
 } // namespace codon

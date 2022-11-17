@@ -61,7 +61,7 @@ public:
   /// Add an error message to the current stack trace
   void trackRealize(const std::string &msg, const SrcInfo &info) {
     locations.push_back(info);
-    messages.push_back("while realizing " + msg);
+    messages.push_back("during the realization of " + msg);
   }
 
   /// Add an error message to the current stack trace

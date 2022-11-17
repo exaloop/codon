@@ -53,13 +53,15 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
                 expr->loops[0].conds.empty(),
             "invalid tuple generator");
 
+  unify(expr->type, ctx->getUnbound());
+
   auto gen = transform(expr->loops[0].gen);
-  if (!gen->type->getRecord())
+  if (!gen->type->canRealize())
     return; // Wait until the iterator can be realized
 
   auto tuple = gen->type->getRecord();
-  if (!startswith(tuple->name, TYPE_TUPLE))
-    E(Error::CALL_BAD_ITER, gen, tuple->prettyString());
+  if (!tuple || !startswith(tuple->name, TYPE_TUPLE))
+    E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
 
   auto block = N<SuiteStmt>();
   // `tuple = tuple_generator`

@@ -157,6 +157,8 @@ struct Param : public codon::SrcObject {
 
   explicit Param(std::string name = "", ExprPtr type = nullptr,
                  ExprPtr defaultValue = nullptr, int generic = 0);
+  explicit Param(const SrcInfo &info, std::string name = "", ExprPtr type = nullptr,
+                 ExprPtr defaultValue = nullptr, int generic = 0);
 
   std::string toString() const;
   Param clone() const;
@@ -488,11 +490,15 @@ struct IndexExpr : public Expr {
 /// @li a(1, b=2)
 struct CallExpr : public Expr {
   /// Each argument can have a name (e.g. foo(1, b=5))
-  struct Arg {
+  struct Arg : public codon::SrcObject {
     std::string name;
     ExprPtr value;
 
     Arg clone() const;
+
+    Arg(const SrcInfo &info, const std::string &name, ExprPtr value);
+    Arg(const std::string &name, ExprPtr value);
+    Arg(ExprPtr value);
   };
 
   ExprPtr expr;

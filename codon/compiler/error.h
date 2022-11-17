@@ -16,16 +16,18 @@ private:
   std::string file;
   int line = 0;
   int col = 0;
+  int len = 0;
 
 public:
   explicit Message(const std::string &msg, const std::string &file = "", int line = 0,
-                   int col = 0)
-      : msg(msg), file(file), line(line), col(col) {}
+                   int col = 0, int len = 0)
+      : msg(msg), file(file), line(line), col(col), len(len) {}
 
   std::string getMessage() const { return msg; }
   std::string getFile() const { return file; }
   int getLine() const { return line; }
   int getColumn() const { return col; }
+  int getLength() const { return len; }
 
   void log(llvm::raw_ostream &out) const {
     if (!getFile().empty()) {
@@ -53,7 +55,7 @@ public:
     for (unsigned i = 0; i < e.messages.size(); i++) {
       if (!e.messages[i].empty())
         messages.emplace_back(e.messages[i], e.locations[i].file, e.locations[i].line,
-                              e.locations[i].col);
+                              e.locations[i].col, e.locations[i].len);
     }
   }
 
@@ -167,6 +169,7 @@ enum Error {
   CLASS_BAD_DECORATOR,
   CLASS_MULTIPLE_DECORATORS,
   CLASS_SINGLE_DECORATOR,
+  CLASS_CONFLICT_DECORATOR,
   CLASS_NONSTATIC_DECORATOR,
   CLASS_BAD_DECORATOR_ARG,
   ID_NOT_FOUND,
@@ -196,7 +199,6 @@ enum Error {
   CLASS_INVALID_BIND,
   CLASS_NO_INHERIT,
   CLASS_TUPLE_INHERIT,
-  CLASS_GENERIC_MISMATCH,
   CLASS_BAD_MRO,
   CLASS_BAD_ATTR,
   MATCH_MULTI_ELLIPSIS,
@@ -284,7 +286,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
                        args...);
   case Error::CLASS_EXTENSION:
     return fmt::format(
-        "class extensions cannot inherit or specify data attributes or generics");
+        "class extensions cannot define data attributes and generics or inherit other classes");
   case Error::CLASS_MISSING_TYPE:
     return fmt::format("type required for data attribute '{}'", args...);
   case Error::CLASS_ARG_TWICE:
@@ -296,6 +298,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::CLASS_SINGLE_DECORATOR:
     return fmt::format("cannot combine '@{}' with other attributes or decorators",
                        args...);
+  case Error::CLASS_CONFLICT_DECORATOR:
+    return fmt::format("cannot combine '@{}' with '@{}'", args...);
   case Error::CLASS_NONSTATIC_DECORATOR:
     return fmt::format("class decorator arguments must be compile-time static values");
   case Error::CLASS_BAD_DECORATOR_ARG:
@@ -316,9 +320,9 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::DEL_NOT_ALLOWED:
     return fmt::format("name '{}' cannot be deleted", args...);
   case Error::DEL_INVALID:
-    return fmt::format("cannot delete the given expression", args...);
+    return fmt::format("cannot delete given expression", args...);
   case Error::ASSIGN_INVALID:
-    return fmt::format("cannot assign to the provided expression");
+    return fmt::format("cannot assign to given expression");
   case Error::ASSIGN_LOCAL_REFERENCE:
     return fmt::format("local variable '{}' referenced before assignment", args...);
   case Error::ASSIGN_MULTI_STAR:
@@ -328,9 +332,9 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::FLOAT_RANGE:
     return fmt::format("float '{}' cannot fit into 64 bits (double)", args...);
   case Error::STR_FSTRING_BALANCE_EXTRA:
-    return fmt::format("expecting '}' in f-string");
+    return fmt::format("expecting '}}' in f-string");
   case Error::STR_FSTRING_BALANCE_MISSING:
-    return fmt::format("single '{' is not allowed in f-string");
+    return fmt::format("single '}}' is not allowed in f-string");
   case Error::CALL_NO_TYPE:
     return fmt::format("cannot use type() in function and class signatures", args...);
   case Error::CALL_TUPLE_COMPREHENSION:
@@ -352,14 +356,12 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format("{} classes cannot inherit other classes", args...);
   case Error::CLASS_TUPLE_INHERIT:
     return fmt::format("reference classes cannot inherit tuple classes");
-  case Error::CLASS_GENERIC_MISMATCH:
-    return fmt::format("expected {} generics", args...);
   case Error::CLASS_BAD_MRO:
     return fmt::format("inconsistent class hierarchy");
   case Error::CLASS_BAD_ATTR:
     return fmt::format("unexpected expression in class definition");
   case Error::MATCH_MULTI_ELLIPSIS:
-    return fmt::format("no binding for nonlocal '{}' found", args...);
+    return fmt::format("multiple ellipses in a pattern");
   case Error::FN_OUTSIDE_ERROR:
     return fmt::format("'{}' outside function", args...);
   case Error::FN_GLOBAL_ASSIGNED:
@@ -379,9 +381,9 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::BAD_STATIC_TYPE:
     return fmt::format("expected int or str (only integers and strings can be static)");
   case Error::EXPECTED_TYPE:
-    return fmt::format("expected '{}' expression", args...);
+    return fmt::format("expected {} expression", args...);
   case Error::UNEXPECTED_TYPE:
-    return fmt::format("expected runtime expression, got type instead");
+    return fmt::format("unexpected {} expression", args...);
 
   /// Typechecking
   case Error::UNION_TOO_BIG:
@@ -402,19 +404,19 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::ASSIGN_UNEXPECTED_FROZEN:
     return fmt::format("cannot modify tuple attributes");
   case Error::CALL_BAD_UNPACK:
-    return fmt::format("argument after * must be a tuple, not '{}'");
+    return fmt::format("argument after * must be a tuple, not '{}'", args...);
   case Error::CALL_BAD_ITER:
-    return fmt::format("iterable must be a tuple, not '{}'");
+    return fmt::format("iterable must be a tuple, not '{}'", args...);
   case Error::CALL_BAD_KWUNPACK:
-    return fmt::format("argument after ** must be a named tuple, not '{}'");
+    return fmt::format("argument after ** must be a named tuple, not '{}'", args...);
   case Error::CALL_REPEATED_NAME:
     return fmt::format("keyword argument repeated: {}", args...);
   case Error::CALL_RECURSIVE_DEFAULT:
-    return fmt::format("argument cannot have recursive default value");
+    return fmt::format("argument '{}' has recursive default value", args...);
   case Error::CALL_SUPERF:
-    return fmt::format("no superf methods found", args...);
+    return fmt::format("no superf methods found");
   case Error::CALL_SUPER_PARENT:
-    return fmt::format("no super methods found", args...);
+    return fmt::format("no super methods found");
   case Error::CALL_PTR_VAR:
     return fmt::format("__ptr__() only takes identifiers as arguments");
   case Error::EXPECTED_TUPLE:
@@ -432,7 +434,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::EXPECTED_GENERATOR:
     return fmt::format("expected iterable expression");
   case Error::STATIC_RANGE_BOUNDS:
-    return fmt::format("staticrange too large (expected 0..{2}, got instead {1})",
+    return fmt::format("staticrange too large (expected 0..{}, got instead {})",
                        args...);
   case Error::TUPLE_RANGE_BOUNDS:
     return fmt::format("tuple index out of range (expected 0..{}, got instead {})",
@@ -442,7 +444,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::SLICE_STEP_ZERO:
     return fmt::format("slice step cannot be zero");
   case Error::OP_NO_MAGIC:
-    return fmt::format("unsupported operand type(s) for {}: '{}' and '{}'");
+    return fmt::format("unsupported operand type(s) for {}: '{}' and '{}'", args...);
   case Error::INST_CALLABLE_STATIC:
     return fmt::format("Callable cannot take static types");
 

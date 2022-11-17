@@ -245,7 +245,7 @@ void ImportStmt::validate() const {
       if (ret)
         E(Error::IMPORT_FN, ret);
       if (what && !what->getId())
-        E(Error::IMPORT_FN, what);
+        E(Error::IMPORT_IDENTIFIER, what);
     }
     if (!isFunction && !args.empty())
       E(Error::IMPORT_FN, args[0]);
@@ -371,7 +371,7 @@ void FunctionStmt::validate() const {
       if (hasKwArg)
         E(Error::FN_MULTIPLE_ARGS, a);
       if (a.defaultValue)
-        E(Error::FN_DEFAULT_STARARG, a);
+        E(Error::FN_DEFAULT_STARARG, a.defaultValue);
       if (ia != args.size() - 1)
         E(Error::FN_LAST_KWARG, a);
       hasKwArg = true;
@@ -379,7 +379,7 @@ void FunctionStmt::validate() const {
       if (hasStarArg)
         E(Error::FN_MULTIPLE_ARGS, a);
       if (a.defaultValue)
-        E(Error::FN_DEFAULT_STARARG, a);
+        E(Error::FN_DEFAULT_STARARG, a.defaultValue);
       hasStarArg = true;
     }
     if (in(seenArgs, n))
@@ -390,7 +390,7 @@ void FunctionStmt::validate() const {
     defaultsStarted |= bool(a.defaultValue);
     if (attributes.has(Attr::C)) {
       if (a.defaultValue)
-        E(Error::FN_C_DEFAULT, a, n);
+        E(Error::FN_C_DEFAULT, a.defaultValue, n);
       if (stars != 1 && !a.type)
         E(Error::FN_C_TYPE, a, n);
     }
@@ -540,12 +540,12 @@ void ClassStmt::parseDecorators() {
       } else if (!c->expr->isId("dataclass")) {
         E(Error::CLASS_BAD_DECORATOR, c->expr);
       } else if (attributes.has(Attr::Tuple)) {
-        E(Error::CLASS_MULTIPLE_DECORATORS, c, Attr::Tuple);
+        E(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", Attr::Tuple);
       }
       for (auto &a : c->args) {
         auto b = CAST(a.value, BoolExpr);
         if (!b)
-          E(Error::CLASS_NONSTATIC_DECORATOR, a.value);
+          E(Error::CLASS_NONSTATIC_DECORATOR, a);
         char val = char(b->value);
         if (a.name == "init") {
           tupleMagics["new"] = val;
@@ -568,12 +568,12 @@ void ClassStmt::parseDecorators() {
         } else if (a.name == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {
-          E(Error::CLASS_BAD_DECORATOR_ARG, a.value);
+          E(Error::CLASS_BAD_DECORATOR_ARG, a);
         }
       }
     } else if (d->isId(Attr::Tuple)) {
       if (attributes.has(Attr::Tuple))
-        E(Error::CLASS_MULTIPLE_DECORATORS, c, Attr::Tuple);
+        E(Error::CLASS_MULTIPLE_DECORATORS, d, Attr::Tuple);
       attributes.set(Attr::Tuple);
       for (auto &m : tupleMagics) {
         m.second = true;

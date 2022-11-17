@@ -163,7 +163,7 @@ ExprPtr SimplifyVisitor::transform(ExprPtr &expr, bool allowTypes) {
     expr = v.resultExpr;
   }
   if (!allowTypes && expr && expr->isType())
-    E(Error::UNEXPECTED_TYPE, expr);
+    E(Error::UNEXPECTED_TYPE, expr, "type");
   return expr;
 }
 
@@ -244,7 +244,7 @@ void SimplifyVisitor::visit(KeywordStarExpr *expr) { transform(expr->what); }
 
 /// Manually handled in @c CallExpr
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
-  E(Error::EXPECTED_TYPE, expr, "ellipsis");
+  E(Error::UNEXPECTED_TYPE, expr, "ellipsis");
 }
 
 /// Only allowed in @c MatchStmt

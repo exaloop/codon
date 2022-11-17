@@ -107,19 +107,20 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     Timer t4("translate");
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
-  } catch (const exc::ParserException &e) {
+  } catch (const exc::ParserException &exc) {
     std::vector<error::Message> messages;
-    if (e.messages.empty()) {
+    if (exc.messages.empty()) {
       for (auto &e : cache->errors) {
         for (unsigned i = 0; i < e.messages.size(); i++) {
           if (!e.messages[i].empty())
             messages.emplace_back(e.messages[i], e.locations[i].file,
-                                  e.locations[i].line, e.locations[i].col);
+                                  e.locations[i].line, e.locations[i].col,
+                                  e.locations[i].len);
         }
       }
       return llvm::make_error<error::ParserErrorInfo>(messages);
     } else {
-      return llvm::make_error<error::ParserErrorInfo>(e);
+      return llvm::make_error<error::ParserErrorInfo>(exc);
     }
   }
   module->setSrcInfo({abspath, 0, 0, 0});
