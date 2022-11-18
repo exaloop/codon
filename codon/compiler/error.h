@@ -17,17 +17,19 @@ private:
   int line = 0;
   int col = 0;
   int len = 0;
+  int errorCode = -1;
 
 public:
   explicit Message(const std::string &msg, const std::string &file = "", int line = 0,
-                   int col = 0, int len = 0)
-      : msg(msg), file(file), line(line), col(col), len(len) {}
+                   int col = 0, int len = 0, int errorCode = -1)
+      : msg(msg), file(file), line(line), col(col), len(len), errorCode(-1) {}
 
   std::string getMessage() const { return msg; }
   std::string getFile() const { return file; }
   int getLine() const { return line; }
   int getColumn() const { return col; }
   int getLength() const { return len; }
+  int getErrorCode() const { return errorCode; }
 
   void log(llvm::raw_ostream &out) const {
     if (!getFile().empty()) {

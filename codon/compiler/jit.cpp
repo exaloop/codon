@@ -105,6 +105,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::StringExpr>(mode)));
       }
     auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+    if (!cache->errors.empty())
+      throw exc::ParserException();
     auto simplified = std::make_shared<ast::SuiteStmt>();
     for (auto &s : *preamble)
       simplified->stmts.push_back(s);
@@ -127,7 +129,19 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     cache->jitCell++;
 
     return func;
-  } catch (const exc::ParserException &e) {
+  } catch (const exc::ParserException &exc) {
+    std::vector<error::Message> messages;
+    if (exc.messages.empty()) {
+      for (auto &e : cache->errors) {
+        for (unsigned i = 0; i < e.messages.size(); i++) {
+          if (!e.messages[i].empty())
+            messages.emplace_back(e.messages[i], e.locations[i].file,
+                                  e.locations[i].line, e.locations[i].col,
+                                  e.locations[i].len, e.errorCode);
+        }
+      }
+    }
+
     for (auto &f : cache->functions)
       for (auto &r : f.second.realizations)
         if (!(in(bCache.functions, f.first) &&
@@ -139,7 +153,11 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
-    return llvm::make_error<error::ParserErrorInfo>(e);
+
+    if (exc.messages.empty())
+      return llvm::make_error<error::ParserErrorInfo>(messages);
+    else
+      return llvm::make_error<error::ParserErrorInfo>(exc);
   }
 }
 

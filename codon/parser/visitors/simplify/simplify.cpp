@@ -123,6 +123,9 @@ StmtPtr SimplifyVisitor::apply(const std::shared_ptr<SimplifyContext> &ctx,
     ctx->cache->age = atAge;
   auto preamble = std::make_shared<std::vector<StmtPtr>>();
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
+  if (!ctx->cache->errors.empty())
+    throw exc::ParserException();
+
   if (atAge != -1)
     ctx->cache->age = oldAge;
   auto suite = std::make_shared<SuiteStmt>();

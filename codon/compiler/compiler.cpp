@@ -115,7 +115,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
           if (!e.messages[i].empty())
             messages.emplace_back(e.messages[i], e.locations[i].file,
                                   e.locations[i].line, e.locations[i].col,
-                                  e.locations[i].len);
+                                  e.locations[i].len, e.errorCode);
         }
       }
       return llvm::make_error<error::ParserErrorInfo>(messages);

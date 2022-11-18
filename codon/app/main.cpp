@@ -59,7 +59,7 @@ std::string makeOutputFilename(const std::string &filename,
 void display(const codon::error::ParserErrorInfo &e) {
   for (auto &msg : e) {
     codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
-                            msg.getColumn(), msg.getLength(),
+                            msg.getColumn(), msg.getLength(), msg.getErrorCode(),
                             /*terminate=*/false);
   }
 }
@@ -167,7 +167,8 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
     bool failed = false;
     llvm::handleAllErrors(
         compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
-          codon::compilationError(e.getMessage(), /*file=*/"", /*line=*/0, /*col=*/0, /*len*/0,
+          codon::compilationError(e.getMessage(), /*file=*/"",
+                                  /*line=*/0, /*col=*/0, /*len*/ 0, /*errorCode*/ -1,
                                   /*terminate=*/false);
           failed = true;
         });
@@ -263,6 +264,7 @@ int jitMode(const std::vector<const char *> &args) {
                           [&failed](const codon::error::PluginErrorInfo &e) {
                             codon::compilationError(e.getMessage(), /*file=*/"",
                                                     /*line=*/0, /*col=*/0, /*len=*/0,
+                                                    /*errorCode*/ -1,
                                                     /*terminate=*/false);
                             failed = true;
                           });

@@ -5,9 +5,9 @@
 #include <iostream>
 #include <ostream>
 
+#include "codon/compiler/error.h"
 #include "codon/config/config.h"
 #include "codon/parser/ast/error.h"
-#include "codon/compiler/error.h"
 #include "codon/util/fmt/format.h"
 #include "codon/util/fmt/ostream.h"
 
@@ -134,21 +134,24 @@ public:
 
   void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
 };
-template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA&... args) {
+template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);
 }
-template <class... TA> void E(error::Error e, const codon::SrcObject &o, const TA&... args) {
+template <class... TA>
+void E(error::Error e, const codon::SrcObject &o, const TA &...args) {
   E(e, o.getSrcInfo(), args...);
 }
 template <class... TA>
-void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA&... args) {
+void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);
 }
 
 void compilationError(const std::string &msg, const std::string &file = "",
-                      int line = 0, int col = 0, int len = 0, bool terminate = true);
+                      int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                      bool terminate = true);
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
-                        int line = 0, int col = 0, int len = 0, bool terminate = false);
+                        int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                        bool terminate = false);
 
 } // namespace codon
