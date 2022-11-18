@@ -107,15 +107,8 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       if (anotherRound)
         continue;
 
-      // Nothing helps. Raise an error.
-      /// TODO: print which expressions could not be type-checked
-      if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-        // Dump the problematic block
-        auto fo = fopen("_dump_typecheck_error.sexp", "w");
-        fmt::print(fo, "{}\n", result->toString(0));
-        fclose(fo);
-      }
-      error("cannot typecheck the program");
+      // Nothing helps. Return nullptr.
+      return nullptr;
     }
   }
 
@@ -315,8 +308,27 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
-    inferTypes(ast->suite);
+    auto ret = inferTypes(ast->suite);
     ctx->blockLevel = oldBlockLevel;
+
+    if (!ret) {
+      realizations.erase(key);
+      if (!startswith(ast->name, "._lambda")) {
+        /// TODO: print which expressions could not be type-checked
+        // if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
+        //   // Dump the problematic block
+        //   auto fo = fopen("_dump_typecheck_error.sexp", "w");
+        //   fmt::print(fo, "{}\n", result->toString(0));
+        //   fclose(fo);
+        // }
+        error("cannot typecheck the program");
+      }
+      ctx->realizationBases.pop_back();
+      ctx->popBlock();
+      ctx->typecheckLevel--;
+      getLogger().level--;
+      return nullptr; // inference must be delayed
+    }
 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement

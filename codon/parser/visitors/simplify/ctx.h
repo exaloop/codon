@@ -105,6 +105,8 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// function after processing) and their types (indicating if they are a type, a
     /// static or a variable).
     std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures;
+    /// Scope wherein the base is defined.
+    std::vector<int> scope;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
@@ -131,6 +133,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
     SimplifyContext *holder;
     BaseGuard(SimplifyContext *holder, const std::string &name) : holder(holder) {
       holder->bases.emplace_back(Base(name));
+      holder->bases.back().scope = holder->scope.blocks;
       holder->addBlock();
     }
     ~BaseGuard() {

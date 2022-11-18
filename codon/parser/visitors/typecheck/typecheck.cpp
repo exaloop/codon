@@ -22,6 +22,9 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
   auto s = v.inferTypes(clone(stmts), true);
+  if (!s) {
+    v.error("cannot typecheck the program");
+  }
   if (s->getSuite()) {
     v.prepareVTables();
   }

@@ -1426,3 +1426,31 @@ for x in range(2):
     for y in range(x):
         foo('z' for _ in range(y))
 #: Generator[str] []
+
+#%% nonlocal_capture_loop,barebones
+# Issue #51
+def kernel(fn):
+    def wrapper(*args, grid, block):
+        print(grid, block, fn(*args))
+    return wrapper
+def test_mandelbrot():
+    MAX    = 10  # maximum Mandelbrot iterations
+    N      = 2   # width and height of image
+    pixels = [0 for _ in range(N)]
+    def scale(x, a, b):
+        return a + (x/N)*(b - a)
+    @kernel
+    def k(pixels):
+        i = 0
+        while i < MAX: i += 1  # this is needed for test to make sense
+        return (MAX, N, pixels, scale(N, -2, 0.4))
+    k(pixels, grid=(N*N)//1024, block=1024)
+test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.4)
+
+#%% delayed_lambda_realization,barebones
+x = []
+for i in range(2):
+    print(all(x[j] < 0 for j in range(i)))
+    x.append(i)
+#: True
+#: False

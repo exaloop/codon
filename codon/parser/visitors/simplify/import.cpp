@@ -176,12 +176,15 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
                 args[ai].type->clone(), nullptr});
     }
   }
+  ctx->generateCanonicalName(name); // avoid canonicalName == name
   StmtPtr f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("NoneType"), fnArgs,
                               nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
-    ctx->add(altName, ctx->find(name));
+    auto val = ctx->forceFind(name);
+    ctx->add(altName, val);
     ctx->remove(name);
+    seqassert(ctx->find(name) == nullptr, "import not properly handled");
   }
   return f;
 }

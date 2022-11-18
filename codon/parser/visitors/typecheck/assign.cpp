@@ -44,6 +44,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
       stmt->rhs = N<BoolExpr>(true);
     }
+    seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
     // Change this to the update and follow the update logic
     stmt->setUpdate();
     transformUpdate(stmt);

@@ -382,6 +382,11 @@ from C import seq_flags: Int[32] as e
 # debug | standalone == 5
 print e  #: 5
 
+#%% import_c_shadow_error,barebones
+# Issue #45
+from C import sqrt(float) -> float as foo
+sqrt(100.0)  #! name 'sqrt' is not defined
+
 
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext

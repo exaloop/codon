@@ -177,7 +177,6 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   //       and capturing is enabled
   auto captures = ctx->getBase()->captures;
   if (captures && !in(*captures, val->canonicalName)) {
-    // LOG("- capture {} _ {}", val->canonicalName, getSrcInfo());
     // Captures are transformed to function arguments; generate new name for that
     // argument
     ExprPtr typ = nullptr;
@@ -197,6 +196,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
       newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
     newVal->baseName = ctx->getBaseName();
     newVal->noShadow = true;
+    newVal->scope = ctx->getBase()->scope;
     return true;
   }
 
