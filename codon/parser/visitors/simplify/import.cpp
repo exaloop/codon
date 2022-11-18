@@ -304,6 +304,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
   auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
+  import->second.moduleName = file.module;
 
   // __name__ = [import name]
   StmtPtr n =

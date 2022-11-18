@@ -33,7 +33,7 @@ class int:
 print 123_456test #: TEST: 123456
 
 #%% int_error,barebones
-print 1844674407_3709551999 #! integer 18446744073709551999 out of range
+print 1844674407_3709551999 #! integer '18446744073709551999' cannot fit into 64-bit integer
 
 #%% float,barebones
 print 5.15 #: 5.15
@@ -67,10 +67,10 @@ c = f'and this is {a} followed by {b}'
 print c, f'{b}{a}', f'. {1+a=} .. {b} ...' #: and this is 1 followed by 2 21 . 1+a=2 .. 2 ...
 
 #%% fstring_error,barebones
-f"a{b + 3}}" #! f-string braces are not balanced
+f"a{b + 3}}" #! single '}' is not allowed in f-string
 
 #%% fstring_error_2,barebones
-f"a{{b + 3}" #! f-string braces are not balanced
+f"a{{b + 3}" #! expecting '}' in f-string
 
 #%% prefix_str,barebones
 @extend
@@ -91,7 +91,7 @@ print r'a\tb' #: a\tb
 print R'\n\r\t\\' #: \n\r\t\\
 
 #%% id_fstring_error,barebones
-f"a{b + 3}" #! identifier 'b' not found
+f"a{b + 3}" #! name 'b' is not defined
 
 #%% id_access,barebones
 def foo():
@@ -118,7 +118,7 @@ print z
 
 #%% star_err,barebones
 a = (1, 2, 3)
-z = *a #! cannot use star-expression
+z = *a #! unexpected star expression
 
 #%% list,barebones
 a = [4, 5, 6]
@@ -243,7 +243,7 @@ print True == (b == 15) #: True
 #%% pipe_error,barebones
 def b(a, b, c, d):
     pass
-1 |> b(1, ..., 2, ...)  #! unexpected ellipsis expression
+1 |> b(1, ..., 2, ...)  #! multiple ellipsis expressions
 
 #%% index_normal,barebones
 t: tuple[int, int] = (1, 2)
@@ -272,19 +272,19 @@ f[:,:] #: (slice(None, None, None), slice(None, None, None))
 f[:,0] #: (slice(None, None, None), 0)
 
 #%% index_error,barebones
-Ptr[9.99] #! expected type or static parameters
+Ptr[9.99] #! expected type expression
 
 #%% index_error_b,barebones
-Ptr['s'] #! cannot unify T and 's'
+Ptr['s'] #! ''s'' does not match expected type 'T'
 
 #%% index_error_static,barebones
-Ptr[1] #! cannot unify T and 1
+Ptr[1] #! '1' does not match expected type 'T'
 
 #%% index_error_2,barebones
-Ptr[int, 's'] #! expected 1 generics
+Ptr[int, 's'] #! Ptr takes 1 generics (2 given)
 
 #%% index_error_3,barebones
-Ptr[1, 's'] #! expected 1 generics
+Ptr[1, 's'] #! Ptr takes 1 generics (2 given)
 
 #%% call_ptr,barebones
 v = 5
@@ -292,11 +292,11 @@ p = __ptr__(v)
 print p[0] #: 5
 
 #%% call_ptr_error,barebones
-__ptr__(1) #! __ptr__ only accepts a variable identifier
+__ptr__(1) #! __ptr__() only takes identifiers as arguments
 
 #%% call_ptr_error_3,barebones
 v = 1
-__ptr__(v, 1) #! too many arguments for __ptr__
+__ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
 
 #%% call_array,barebones
 a = __array__[int](2)
@@ -304,18 +304,18 @@ a[0] = a[1] = 5
 print a[0], a[1] #: 5 5
 
 #%% call_array_error,barebones
-a = __array__[int](2, 3) #! cannot find a method '__new__' in __array__
+a = __array__[int](2, 3) #! '__array__[int]' object has no method '__new__' with arguments (int, int)
 
 #%% call_err_1,barebones
-seq_print(1, name="56", 2) #! unnamed argument after a named argument
+seq_print(1, name="56", 2) #! positional argument follows keyword argument
 
 #%% call_err_2,barebones
 x = (1, 2)
-seq_print(1, name=*x) #! syntax error
+seq_print(1, name=*x) #! syntax error, unexpected '*'
 
 #%% call_err_3,barebones
 x = (1, 2)
-seq_print(1, name=**x) #! syntax error
+seq_print(1, name=**x) #! syntax error, unexpected '*'
 
 #%% call_collections
 from collections import namedtuple as nt
@@ -415,10 +415,10 @@ except NameError:
     print("Error") #: Error
 
 #%% range_err,barebones
-1 ... 3 #! unexpected pattern range expression
+1 ... 3 #! unexpected range expression
 
 #%% callable_error,barebones
-def foo(x: Callable[[]]): pass  #! expected 2 generics and/or statics
+def foo(x: Callable[[]]): pass  #! Callable takes 2 generics (1 given)
 
 #%% unpack_specials,barebones
 x, = 1,
@@ -466,7 +466,7 @@ def goo():
   z = 0
   def foo():
     z += 1
-goo()  #! variable 'z' cannot be updated
+goo()  #! local variable 'z' referenced before assignment
 
 #%% new_scoping,barebones
 try:

@@ -186,7 +186,7 @@ except ValueError:
 #%% instantiate_err,barebones
 def foo[N]():
     return N()
-foo(int, float)  #! too many arguments
+foo(int, float)  #! foo() takes 1 arguments (2 given)
 
 #%% instantiate_err_2,barebones
 def foo[N, T]():
@@ -194,7 +194,7 @@ def foo[N, T]():
 foo(int)  #! cannot typecheck the program
 
 #%% instantiate_err_3,barebones
-Ptr[int, float]()  #! expected 1 generics
+Ptr[int, float]()  #! Ptr takes 1 generics (2 given)
 
 #%% slice,barebones
 z = [1, 2, 3, 4, 5]
@@ -214,11 +214,11 @@ print a[3:5] #: ()
 
 #%% static_index_err,barebones
 a = (1, 2)
-a[5] #! tuple index 5 out of bounds (len: 2)
+a[5] #! tuple index out of range (expected 0..1, got instead 5)
 
 #%% static_index_err_2,barebones
 a = (1, 2)
-a[-3] #! tuple index -1 out of bounds (len: 2)
+a[-3] #! tuple index out of range (expected 0..1, got instead -1)
 
 #%% index_func_instantiate,barebones
 class X:
@@ -239,7 +239,7 @@ print l, l.__class__.__name__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,boo
 
 #%% dot_case_1,barebones
 a = []
-print a[0].loop()  #! cannot find 'loop' in int
+print a[0].loop()  #! 'int' object has no attribute 'loop'
 a.append(5)
 
 #%% dot_case_2,barebones
@@ -253,7 +253,7 @@ print a.len #: 1
 
 #%% dot_case_4_err,barebones
 a = [5]
-a.foo #! cannot find 'foo' in List[int]
+a.foo #! 'List[int]' object has no attribute 'foo'
 
 #%% dot_case_6,barebones
 # Did heavy changes to this testcase because
@@ -306,7 +306,7 @@ class Foo:
         print 'foo'
     def method(self, a):
         print a
-Foo().clsmethod() #! cannot find a method 'clsmethod' in Foo with arguments 'Foo'
+Foo().clsmethod() #! 'Foo' object has no method 'clsmethod' with arguments (Foo)
 
 #%% call,barebones
 def foo(a, b, c='hi'):
@@ -357,24 +357,24 @@ print Moo(1) #: Moo.__new__
 #%% call_err_2,barebones
 class A:
     a: A
-a = A() #! recursive default arguments
+a = A() #! argument 'a' has recursive default value
 
 #%% call_err_3,barebones
 class G[T]:
     t: T
 class A:
     ga: G[A]
-a = A() #! recursive default arguments
+a = A() #! argument 'ga' has recursive default value
 
 #%% call_err_4,barebones
-seq_print(1, name="56", name=2) #! repeated named argument 'name'
+seq_print(1, name="56", name=2) #! keyword argument repeated: name
 
 #%% call_partial,barebones
 def foo(i, j, k):
     return i + j + k
 print foo(1.1, 2.2, 3.3)  #: 6.6
 p = foo(6, ...)
-print p.__class__.__name__ #: foo:0[int,...,...]
+print p.__class__.__name__ #: foo[int,...,...]
 print p(2, 1)  #: 9
 print p(k=3, j=6) #: 15
 q = p(k=1, ...)
@@ -390,11 +390,11 @@ print 42 |> add_two  #: 44
 def moo(a, b, c=3):
     print a, b, c
 m = moo(b=2, ...)
-print m.__class__.__name__ #: moo:0[...,int,...]
+print m.__class__.__name__ #: moo[...,int,...]
 m('s', 1.1) #: s 2 1.1
 # #
 n = m(c=2.2, ...)
-print n.__class__.__name__ #: moo:0[...,int,float]
+print n.__class__.__name__ #: moo[...,int,float]
 n('x') #: x 2 2.2
 print n('y').__class__.__name__ #: NoneType
 
@@ -403,11 +403,11 @@ def ff(a, b, c):
 print ff(1.1, 2, True).__class__.__name__ #: Tuple[float,int,bool]
 print ff(1.1, ...)(2, True).__class__.__name__ #: Tuple[float,int,bool]
 y = ff(1.1, ...)(c=True, ...)
-print y.__class__.__name__ #: ff:0[float,...,bool]
+print y.__class__.__name__ #: ff[float,...,bool]
 print ff(1.1, ...)(2, ...)(True).__class__.__name__ #: Tuple[float,int,bool]
 print y('hei').__class__.__name__ #: Tuple[float,str,bool]
 z = ff(1.1, ...)(c='s', ...)
-print z.__class__.__name__ #: ff:0[float,...,str]
+print z.__class__.__name__ #: ff[float,...,str]
 
 #%% call_arguments_partial,barebones
 def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
@@ -432,7 +432,7 @@ l = [1]
 def adder(a, b): return a+b
 doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
 #: int int
-#: adder:0[ Generator[int]
+#: adder[.. Generator[int]
 #: 5
 #: 1 Optional[int]
 #: 5 int
@@ -647,10 +647,10 @@ print isinstance(c, BX[str, bool]), isinstance(c, BX[str, str]), isinstance(c, A
 #: True False False
 
 #%% staticlen_err,barebones
-print staticlen([1, 2]) #! List[int] is not a tuple type
+print staticlen([1, 2]) #! expected tuple type
 
 #%% compile_error,barebones
-compile_error("woo-hoo") #! custom error: woo-hoo
+compile_error("woo-hoo") #! woo-hoo
 
 #%% stack_alloc,barebones
 a = __array__[int](2)
@@ -749,10 +749,10 @@ z = tuple(c)
 print z, z.__class__.__name__  #: (3, 'heh') Tuple[int,str]
 
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! cannot unify T1 and 1
+def foo(x: Callable[[1,2], 3]): pass  #! '1' does not match expected type 'T1'
 
 #%% static_unify_2,barebones
-def foo(x: List[1]): pass  #! cannot unify T and 1
+def foo(x: List[1]): pass  #! '1' does not match expected type 'T'
 
 #%% super,barebones
 class A[T]:
@@ -828,8 +828,8 @@ class A:
     def __init__(self):
         super().__init__()
 a = A()
-#! no parent classes available
-#! while realizing A.__init__:1 (arguments A.__init__:1[A])
+#! no super methods found
+#! during the realization of __init__(self: A)
 
 #%% super_error_2,barebones
-super().foo(1) #! no parent classes available
+super().foo(1) #! no super methods found

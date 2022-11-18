@@ -127,7 +127,8 @@ std::string FuncType::debugString(char mode) const {
     as.push_back(a->debugString(mode));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
-  return fmt::format("{}{}", ast->name, s.empty() ? "" : fmt::format("[{}]", s));
+  return fmt::format("{}{}", mode ? ast->name : cache->rev(ast->name),
+                     s.empty() ? "" : fmt::format("[{}]", s));
 }
 
 std::string FuncType::realizedName() const {
@@ -180,7 +181,10 @@ std::string PartialType::debugString(char mode) const {
       else
         as.emplace_back(gs[gi++]);
     }
-  return fmt::format("{}[{}]", mode != 2 ? func->ast->name : func->debugString(mode),
+  return fmt::format("{}[{}]",
+                     mode == 0
+                         ? cache->rev(func->ast->name)
+                         : (mode == 1 ? func->ast->name : func->debugString(mode)),
                      join(as, ","));
 }
 

@@ -415,6 +415,7 @@ struct Attr {
   const static std::string C;
   // Internal attributes
   const static std::string Internal;
+  const static std::string HiddenFromUser;
   const static std::string ForceRealize;
   const static std::string RealizeWithoutSelf; // not internal
   // Compiler-generated attributes

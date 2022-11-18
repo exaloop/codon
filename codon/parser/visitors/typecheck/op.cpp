@@ -312,7 +312,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       if (isUnion)
         typ->getUnion()->addType(t);
       else
-        unify(generics[i].type, t);
+        unify(t, generics[i].type);
     }
     if (isUnion) {
       typ->getUnion()->seal();

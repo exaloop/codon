@@ -60,7 +60,13 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
 
   std::vector<std::tuple<size_t, size_t, std::string>> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
-    errors.emplace_back(line, col, msg);
+    size_t ed = msg.size();
+    if (startswith(msg, "syntax error, unexpected")) {
+      auto i = msg.find(", expecting");
+      if (i != std::string::npos)
+        ed = i;
+    }
+    errors.emplace_back(line, col, msg.substr(0, ed));
   };
   T result = nullptr;
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);

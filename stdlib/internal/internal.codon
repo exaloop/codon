@@ -280,6 +280,7 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
+    @__hidden__
     def set_header(e, func, file, line, col):
         if not isinstance(e, BaseException):
             compile_error("exceptions must derive from BaseException")

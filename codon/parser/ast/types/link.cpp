@@ -151,9 +151,10 @@ bool LinkType::isInstantiated() const { return kind == Link && type->isInstantia
 
 std::string LinkType::debugString(char mode) const {
   if (kind == Unbound || kind == Generic)
-    return (mode == 2) ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
-                                     trait ? ":" + trait->debugString(mode) : "")
-                       : (genericName.empty() ? "?" : genericName);
+    return (mode == 2)
+               ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
+                             trait ? ":" + trait->debugString(mode) : "")
+               : (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
   else
     return type->debugString(mode);
 }

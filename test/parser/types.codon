@@ -214,8 +214,8 @@ def rec3(x, y): #- ('a, 'b) -> 'b
     else:
         return y
 rec3(1, 's')
-#! cannot unify int and str
-#! while realizing rec3:0 (arguments rec3:0[int,str])
+#! 'int' does not match expected type 'str'
+#! during the realization of rec3(x: int, y: str)
 
 #%% instantiate_function_2,barebones
 def fx[T](x: T) -> T:
@@ -318,7 +318,7 @@ print h(list(map(lambda i: i-1, map(lambda i: i+2, range(5)))))
 #%% func_unify_error,barebones
 def foo(x:int):
     print x
-z = 1 & foo #! cannot find magic 'and' in int
+z = 1 & foo #! unsupported operand type(s) for &: 'int' and 'foo[int]'
 
 #%% tuple_type_late,barebones
 coords = []
@@ -478,13 +478,13 @@ print e.__getitem1__(1) #: 3.33
 #%% static_fail,barebones
 def test(i: Int[32]):
     print int(i)
-test(Int[5](1)) #! cannot unify Int[5] and Int[32]
+test(Int[5](1)) #! 'Int[5]' does not match expected type 'Int[32]'
 
 #%% static_fail_2,barebones
 zi = Int[32](6)
 def test3[N](i: Int[N]):
     print int(i)
-test3(zi) #! cannot unify
+test3(zi) #! 'N' does not match expected type 'N'
 # TODO: nicer error message!
 
 #%% static_fail_3,barebones
@@ -514,11 +514,11 @@ def f[U](x: U, y): # ('u, 'a) -> tuple['a, 'u]
     def g[T, U](x: T, y: U): # ('t, 'u) -> tuple['t, 'u]
         return (x, y)
     return g(y, x)
-print f(1.1, 1, int).__class__.__name__ #! cannot unify float and int
+print f(1.1, 1, int).__class__.__name__ #! 'float' does not match expected type 'int'
 
 #%% fn_realization,barebones
 def ff[T](x: T, y: tuple[T]):
-      print ff(T=str,...).__class__.__name__ #: ff:0[str,Tuple[str],str]
+      print ff(T=str,...).__class__.__name__ #: ff[str,Tuple[str],str]
       return x
 x = ff(1, (1,))
 print x, x.__class__.__name__ #: 1 int
@@ -528,7 +528,7 @@ def fg[T](x:T):
     def g[T](y):
         z = T()
         return z
-    print fg(T=str,...).__class__.__name__  #: fg:0[str,str]
+    print fg(T=str,...).__class__.__name__  #: fg[str,str]
     print g(1, T).__class__.__name__ #: int
 fg(1)
 print fg(1).__class__.__name__ #: NoneType
@@ -546,8 +546,8 @@ def f[T](x: T):
     print f(x, int).__class__.__name__
     return x
 f('s')
-#! cannot unify str and int
-#! while realizing f
+#! 'str' does not match expected type 'int'
+#! during the realization of f(x: str, T: str)
 
 #%% nested_class_error,barebones
 class X:
@@ -557,7 +557,7 @@ class X:
         def bar(self, x):
             return x
 y = X.Y()
-y.foo(1) #! cannot find 'foo' in X.Y
+y.foo(1) #! 'X.Y' object has no attribute 'foo'
 
 #%% nested_deep_class,barebones
 class A[T]:
@@ -569,7 +569,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[bool].foo(W=str, ...).__class__.__name__ #: A.B.C.foo:0[bool,bool,bool,str,str]
+print A.B.C[bool].foo(W=str, ...).__class__.__name__ #: foo[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
@@ -588,7 +588,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments 'int', 'int', 'int', 'bool'
+print A.B.C[str].foo(1,1,1,True) #! 'A.B.C[str]' object has no method 'foo' with arguments (int, int, int, bool)
 
 #%% nested_deep_class_error_2,barebones
 class A[T]:
@@ -599,7 +599,7 @@ class A[T]:
             c: V
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
-print A.B[int].C[float].foo(1,1,1,True) #! cannot find 'C' in A.B[int]
+print A.B[int].C[float].foo(1,1,1,True) #! 'A.B[int]' object has no attribute 'C'
 
 #%% nested_class_function,barebones
 def f(x):
@@ -799,7 +799,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__.__name__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__.__name__ #: X.foo:0[X[float],float,int,int]
+print X[float].foo(U=int, ...).__class__.__name__ #: foo[X[float],float,int,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
@@ -808,7 +808,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 # TODO: should this even be the case?
-# print y.foo(U=float,...).__class__.__name__  ->  X.foo:0[X[X[int]],...,...]
+# print y.foo(U=float,...).__class__.__name__  ->  X.foo[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones
@@ -819,10 +819,10 @@ def bar[T](x):
     print x, T.__class__.__name__
 foo(bar, 1)
 #: 1 int
-#: bar:0[...]
+#: bar[...]
 foo(bar(...), 's')
 #: s str
-#: bar:0[...]
+#: bar[...]
 z = bar
 z('s', int)
 #: s int
@@ -840,8 +840,9 @@ def foo(f, x):
 def bar[T](x):
     print x, T.__class__.__name__
 foo(bar(T=int,...), 1)
-#! too many arguments for bar:0[T1,int] (expected maximum 2, got 2)
-#! while realizing foo:0 (arguments foo:0[bar:0[...],int])
+#! bar() takes 2 arguments (2 given)
+#! during the realization of foo(f: bar[...], x: int)
+# TODO fix this error message
 
 #%% sort_partial
 def foo(x, y):
@@ -859,17 +860,17 @@ def frec(x, y):
         return frec(y, x)
     return grec(x, y) if bl(y) else 2
 print frec(1, 2).__class__.__name__, frec('s', 1).__class__.__name__
-#! cannot unify NoneType and int
-#! while realizing frec:0 (arguments frec:0[int,int])
+#! 'NoneType' does not match expected type 'int'
+#! during the realization of frec(x: int, y: int)
 
 #%% return_fn,barebones
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__.__name__ #: retfn:0.inner:0[...,...,int,...]
+    print inner.__class__.__name__ #: inner[...,...,int,...]
     return inner(15, ...)
 f = retfn(1)
-print f.__class__.__name__ #: retfn:0.inner:0[int,...,int,...]
+print f.__class__.__name__ #: inner[int,...,int,...]
 f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
@@ -877,7 +878,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
 def dec(fn, a):
-    print 'decorating', fn.__class__.__name__ #: decorating foo:0[...,...,...]
+    print 'decorating', fn.__class__.__name__ #: decorating foo[...,...,...]
     def inner(*args, **kwargs):
         print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
@@ -902,7 +903,7 @@ def dec(a):
     return f
 ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
-#: decorating foo:0[...,...,...]
+#: decorating foo[...,...,...]
 #: decorator (5.5, 's') (z: True)
 #: 10 (5.5, 's') (z: True)
 #: 1
@@ -912,7 +913,7 @@ def zoo(e, b, *args):
     return f'zoo: {e}, {b}, {args}'
 print zoo(2, 3)
 print zoo('s', 3)
-#: decorating zoo:0[...,...,...]
+#: decorating zoo[...,...,...]
 #: decorator (2, 3) ()
 #: zoo: 5, 2, (3)
 #: decorator ('s', 3) ()
@@ -947,7 +948,7 @@ def factorial(num):
     return n
 factorial(10)
 #: 3628800
-#: time needed for factorial:0[...] is 3628799
+#: time needed for factorial[...] is 3628799
 
 def dx1(func):
     def inner():
@@ -1025,15 +1026,16 @@ def tee(iterable, n=2):
             yield mydeque.popleft()
     return list(gen(d) for d in deques)
 it = [1,2,3,4]
-a, b = tee(it) #! cannot typecheck the program
-#! while realizing tee:0 (arguments tee:0[List[int],int])
+a, b = tee(it)
+#! cannot typecheck the program
+#! during the realization of tee(iterable: List[int], n: int)
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Static[int] = 10):
     print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
-print foo(T=int,U=str,...).__class__.__name__ #: foo:0[T1,x,z,int,str]
-print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo:0[T1,bool,5,int,str]
+print foo(T=int,U=str,...).__class__.__name__ #: foo[T1,x,z,int,str]
+print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo[T1,bool,5,int,str]
 print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 
@@ -1075,7 +1077,7 @@ class Foo[T,U: Static[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[float,6].__class__.__name__ #! expected 4 generics and/or statics
+print Foo[float,6].__class__.__name__ #! Foo takes 4 generics (2 given)
 
 #%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print
@@ -1114,10 +1116,11 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
         return x
     else:
         return (key.__val__())(x)
-print t(6, Optional(1)) #! cannot unify Optional[int] and Optional[T]
+print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[T]'
+# TODO fix this error message
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! cannot unify ? and int
+z: Callable[[int],int] = 4 #! '<unknown type>' does not match expected type 'int'
 
 #%% assign_wrapers,barebones
 a = 1.5
@@ -1202,7 +1205,7 @@ def foo(x):
 @overload
 def foo(x, y):
     return 2, x, y
-foo('hooooooooy!', 1, 2) #! cannot find a method 'foo' with arguments 'str', 'int', 'int'
+foo('hooooooooy!', 1, 2) #! no function 'foo' with arguments (str, int, int)
 
 #%% c_void_return,barebones
 from C import seq_print(str)
@@ -1272,7 +1275,7 @@ print('done')
 #%% static_range_error,barebones
 for i in staticrange(1000, -2000, -2):
     pass
-#! staticrange out of bounds (1500 > 1024)
+#! staticrange too large (expected 0..1024, got instead 1500)
 
 #%% trait_defdict
 class dd(Static[Dict[K,V]]):

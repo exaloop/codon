@@ -244,6 +244,7 @@ enum Error {
   TYPE_CANNOT_REALIZE_ATTR,
   TYPE_UNIFY,
   TYPE_FAILED,
+  MAX_REALIZATION,
   CUSTOM,
   __END__
 };
@@ -328,15 +329,15 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::ASSIGN_MULTI_STAR:
     return fmt::format("multiple starred expressions in assignment");
   case Error::INT_RANGE:
-    return fmt::format("integer '{}' cannot fit into 64 bits (Int[64])", args...);
+    return fmt::format("integer '{}' cannot fit into 64-bit integer", args...);
   case Error::FLOAT_RANGE:
-    return fmt::format("float '{}' cannot fit into 64 bits (double)", args...);
+    return fmt::format("float '{}' cannot fit into 64-bit float", args...);
   case Error::STR_FSTRING_BALANCE_EXTRA:
     return fmt::format("expecting '}}' in f-string");
   case Error::STR_FSTRING_BALANCE_MISSING:
     return fmt::format("single '}}' is not allowed in f-string");
   case Error::CALL_NO_TYPE:
-    return fmt::format("cannot use type() in function and class signatures", args...);
+    return fmt::format("cannot use type() in type signatures", args...);
   case Error::CALL_TUPLE_COMPREHENSION:
     return fmt::format(
         "tuple constructor does not accept nested or conditioned comprehensions",
@@ -379,7 +380,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::LOOP_DECORATOR:
     return fmt::format("invalid loop decorator");
   case Error::BAD_STATIC_TYPE:
-    return fmt::format("expected int or str (only integers and strings can be static)");
+    return fmt::format("expected 'int' or 'str' (only integers and strings can be static)");
   case Error::EXPECTED_TYPE:
     return fmt::format("expected {} expression", args...);
   case Error::UNEXPECTED_TYPE:
@@ -462,6 +463,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format("cannot open file '{}' for parsing");
   case Error::COMPILER_NO_STDLIB:
     return fmt::format("cannot locate standard library");
+  case Error::MAX_REALIZATION:
+    return fmt::format("maximum realization depth reached during the realization of '{}'", args...);
   case Error::CUSTOM:
     return fmt::format("{}", args...);
 

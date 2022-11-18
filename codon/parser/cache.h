@@ -76,6 +76,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::string importVar;
     /// File content (line:col indexable)
     std::vector<std::string> content;
+    /// Relative module name (e.g., `foo.bar`)
+    std::string moduleName;
   };
 
   /// Absolute path of seqc executable (if available).

@@ -316,6 +316,7 @@ const std::string Attr::Internal = "__internal__";
 const std::string Attr::ForceRealize = "__force__";
 const std::string Attr::RealizeWithoutSelf =
     "std.internal.attributes.realize_without_self";
+const std::string Attr::HiddenFromUser = "__hidden__";
 const std::string Attr::C = "C";
 const std::string Attr::CVarArg = ".__vararg__";
 const std::string Attr::Method = ".__method__";
@@ -421,6 +422,8 @@ void FunctionStmt::parseDecorators() {
       attributes.set(Attr::Python);
     } else if (d->isId(Attr::Internal)) {
       attributes.set(Attr::Internal);
+    } else if (d->isId(Attr::HiddenFromUser)) {
+      attributes.set(Attr::HiddenFromUser);
     } else if (d->isId(Attr::Atomic)) {
       attributes.set(Attr::Atomic);
     } else if (d->isId(Attr::Property)) {

@@ -246,7 +246,8 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     if (itemName.empty() && importName.empty())
       E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
     if (itemName.empty())
-      E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd], importName);
+      E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
+        ctx->cache->imports[importName].moduleName);
     importEnd = itemEnd;
   }
   return {importEnd, val};

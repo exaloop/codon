@@ -144,7 +144,7 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
   if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
-    unify(stmt->lhs->type, stmt->rhs->type);
+    unify(stmt->rhs->type, stmt->lhs->type);
   if (stmt->rhs->done && realize(stmt->lhs->type))
     stmt->setDone();
 }
