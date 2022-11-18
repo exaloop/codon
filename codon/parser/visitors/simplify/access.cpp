@@ -162,9 +162,9 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
     return false;
 
   // Case: a global variable that has not been marked with `global` statement
-  if (val->isVar() && val->getBaseName().empty()) {
+  if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
     val->noShadow = true;
-    if (val->scope.size() == 1 && !val->isStatic())
+    if (!val->isStatic())
       ctx->cache->addGlobal(val->canonicalName);
     return false;
   }
@@ -177,6 +177,7 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
   //       and capturing is enabled
   auto captures = ctx->getBase()->captures;
   if (captures && !in(*captures, val->canonicalName)) {
+    // LOG("- capture {} _ {}", val->canonicalName, getSrcInfo());
     // Captures are transformed to function arguments; generate new name for that
     // argument
     ExprPtr typ = nullptr;

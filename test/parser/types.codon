@@ -1412,3 +1412,17 @@ except TypeError:
 def do2(x: B):
     print('do2', x.y)
 do2(x)  #: do2 bee
+
+#%% generator_capture_nonglobal,barebones
+# Issue #49
+def foo(iter):
+    print(iter.__class__.__name__, list(iter))
+
+for x in range(2):
+    foo(1 for _ in range(x))
+#: Generator[int] []
+#: Generator[int] [1]
+for x in range(2):
+    for y in range(x):
+        foo('z' for _ in range(y))
+#: Generator[str] []
