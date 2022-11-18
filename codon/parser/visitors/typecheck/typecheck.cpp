@@ -296,6 +296,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
   for (const auto &mi : methods) {
+    if (!mi) continue; // avoid overloads that have not been seen yet
     auto method = ctx->instantiate(mi, typ)->getFunc();
     std::vector<types::TypePtr> reordered;
     auto score = ctx->reorderNamedArgs(

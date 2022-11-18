@@ -1175,6 +1175,8 @@ print methodcaller('index')(v, 42) #: 1
 def foo(x):
     return 1, x
 
+print(foo(''))  #: (1, '')
+
 @overload
 def foo(x, y):
     def foo(x, y):

@@ -416,11 +416,13 @@ print a.b.A.B.b_foo().__add__(1) #: a.b.A.B.b_foo()
 #: 2
 
 print str(a.b)[:9], str(a.b)[-20:] #: <module ' a/b/__init__.codon'>
+print Int[a.b.stt].__class__.__name__  #: Int[5]
 
 from a.b import *
 har() #: a.b.har a.b.__init__ a.b.c
 a.b.har() #: a.b.har a.b.__init__ a.b.c
 fx() #: a.foo
+print(stt, Int[stt].__class__.__name__)  #: 5 Int[5]
 
 from a import *
 print zoo, _zoo, __name__  #: 5 1 __main__
