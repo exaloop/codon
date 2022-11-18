@@ -380,8 +380,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   } else {
     ctx->reorderNamedArgs(
         calleeFn.get(), expr->args, reorderFn,
-        [&](const SrcInfo &o, const std::string &errorMsg) {
-          error::raise_error(o, errorMsg);
+        [&](error::Error e, const SrcInfo &o, const std::string &errorMsg) {
+          error::raise_error(e, o, errorMsg);
           return -1;
         },
         part.known);

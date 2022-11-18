@@ -313,7 +313,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
           }
           return 0;
         },
-        [](const SrcInfo &, const std::string &) { return -1; });
+        [](error::Error, const SrcInfo &, const std::string &) { return -1; });
     for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
       auto expectTyp = method->ast->args[ai].status == Param::Normal
                            ? method->getArgTypes()[mai++]

@@ -45,18 +45,22 @@ public:
   /// These vectors (stacks) store an error stack-trace.
   std::vector<SrcInfo> locations;
   std::vector<std::string> messages;
+  int errorCode = -1;
 
 public:
-  ParserException(const std::string &msg, const SrcInfo &info) noexcept
-      : std::runtime_error(msg) {
+  ParserException(int errorCode, const std::string &msg, const SrcInfo &info) noexcept
+      : std::runtime_error(msg), errorCode(errorCode) {
     messages.push_back(msg);
     locations.push_back(info);
   }
   ParserException() noexcept : std::runtime_error("") {}
+  ParserException(int errorCode, const std::string &msg) noexcept
+      : ParserException(errorCode, msg, {}) {}
   explicit ParserException(const std::string &msg) noexcept
-      : ParserException(msg, {}) {}
+      : ParserException(-1, msg, {}) {}
   ParserException(const ParserException &e) noexcept
-      : std::runtime_error(e), locations(e.locations), messages(e.messages){};
+      : std::runtime_error(e), locations(e.locations), messages(e.messages),
+        errorCode(e.errorCode){};
 
   /// Add an error message to the current stack trace
   void trackRealize(const std::string &msg, const SrcInfo &info) {

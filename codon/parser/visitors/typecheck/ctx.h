@@ -136,7 +136,7 @@ public:
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
-  using ReorderErrorFn = std::function<int(const SrcInfo &, std::string)>;
+  using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
   /// Returns the reordered vector and an associated reordering score (missing

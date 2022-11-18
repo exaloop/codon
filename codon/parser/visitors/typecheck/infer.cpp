@@ -153,6 +153,8 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
       }
     }
   } catch (exc::ParserException &e) {
+    if (e.errorCode == Error::MAX_REALIZATION)
+      throw;
     if (auto f = typ->getFunc()) {
       if (f->ast->attributes.has(Attr::HiddenFromUser)) {
         e.locations.back() = getSrcInfo();
@@ -267,8 +269,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     }
   }
 
-  if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH)
+  if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
+  }
 
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
               type->realizedName(), ctx->getRealizationStackName(),

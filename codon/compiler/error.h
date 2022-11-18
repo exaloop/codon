@@ -476,13 +476,13 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
 /// Raise a parsing error.
 void raise_error(const char *format);
 /// Raise a parsing error at a source location p.
-void raise_error(const codon::SrcInfo &info, const char *format);
-void raise_error(const codon::SrcInfo &info, const std::string &format);
+void raise_error(int e, const codon::SrcInfo &info, const char *format);
+void raise_error(int e, const codon::SrcInfo &info, const std::string &format);
 
 template <class... TA>
 void E(Error e, const codon::SrcInfo &o = codon::SrcInfo(), const TA &...args) {
   auto msg = Emsg(e, args...);
-  raise_error(o, msg);
+  raise_error((int)e, o, msg);
 }
 
 } // namespace error
