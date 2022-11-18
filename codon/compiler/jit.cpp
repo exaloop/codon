@@ -94,6 +94,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
 
   ast::Cache bCache = *cache;
   ast::SimplifyContext bSimplify = *sctx;
+  ast::SimplifyContext stdlibSimplify = *(cache->imports[STDLIB_IMPORT].ctx);
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
@@ -151,6 +152,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
         }
     *cache = bCache;
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
+    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
 
