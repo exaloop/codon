@@ -30,6 +30,9 @@ class __internal__:
         __internal__.init_obj_vtable(pf)
         return pf
 
+    def class_ctr(T: type, *args, **kwargs) -> T:
+        return T(*args, **kwargs)
+
     def init_obj_vtable(pf):  # do manual inspection!
         pass
 

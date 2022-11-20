@@ -1130,7 +1130,6 @@ def foo(a:int, *b: float): return f"{a}_{b}", a+b[0]
 call(foo)
 #: ('1_(2)', 3)
 
-
 def call(f: Callable[[int,int],str]):
     print(f(1, 2))
 def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
@@ -1480,3 +1479,17 @@ for i in range(2):
     x.append(i)
 #: True
 #: False
+
+#%% constructor_passing
+class A:
+    s: str
+    def __init__(self, x):
+        self.s = str(x)[::-1]
+    def __lt__(self, o): return self.s < o.s
+    def __eq__(self, o): return self.s == o.s
+    def __ge__(self, o): return self.s >= o.s
+foo = [1,2,11,30]
+print(sorted(foo, key=str))
+#: [1, 11, 2, 30]
+print(sorted(foo, key=A))
+#: [30, 1, 11, 2]
