@@ -127,8 +127,14 @@ std::string FuncType::debugString(char mode) const {
     as.push_back(a->debugString(mode));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
-  return fmt::format("{}{}", mode ? ast->name : cache->rev(ast->name),
-                     s.empty() ? "" : fmt::format("[{}]", s));
+
+  auto fnname = ast->name;
+  if (mode == 0) {
+    fnname = cache->rev(ast->name);
+    // if (funcParent)
+    // fnname = fmt::format("{}.{}", funcParent->debugString(mode), fnname);
+  }
+  return fmt::format("{}{}", fnname, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
 std::string FuncType::realizedName() const {
@@ -181,11 +187,16 @@ std::string PartialType::debugString(char mode) const {
       else
         as.emplace_back(gs[gi++]);
     }
-  return fmt::format("{}[{}]",
-                     mode == 0
-                         ? cache->rev(func->ast->name)
-                         : (mode == 1 ? func->ast->name : func->debugString(mode)),
-                     join(as, ","));
+  auto fnname = func->ast->name;
+  if (mode == 0) {
+    fnname = cache->rev(func->ast->name);
+    // if (func->funcParent)
+    // fnname = fmt::format("{}.{}", func->funcParent->debugString(mode), fnname);
+  } else if (mode == 2) {
+    fnname = func->debugString(mode);
+  }
+  return fmt::format("{}[{}{}]", fnname, join(as, ","),
+                     mode == 2 ? fmt::format(";{}", join(gs, ",")) : "");
 }
 
 std::string PartialType::realizedName() const {

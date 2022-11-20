@@ -25,49 +25,108 @@ int CallableTrait::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
     if (tr->name == "NoneType")
       return 1;
+    if (tr->name != "Function" && !tr->getPartial())
+      return -1;
     if (args.empty())
-      return (tr->name == "Function" || tr->getPartial()) ? 1 : -1;
-    auto &inargs = args[0]->getRecord()->args;
-    if (tr->name == "Function") {
-      // Handle Callable[...]<->Function[...].
-      if (args.size() != tr->generics.size())
-        return -1;
-      if (inargs.size() != tr->generics[0].type->getRecord()->args.size())
-        return -1;
-      for (int i = 0; i < inargs.size(); i++) {
-        if (inargs[i]->unify(tr->generics[0].type->getRecord()->args[i].get(), us) ==
-            -1)
-          return -1;
-      }
       return 1;
-    } else if (auto pt = tr->getPartial()) {
-      // Handle Callable[...]<->Partial[...].
-      std::vector<int> zeros;
-      for (int pi = 9; pi < tr->name.size() && tr->name[pi] != '.'; pi++)
-        if (tr->name[pi] == '0')
-          zeros.emplace_back(pi - 9);
-      if (zeros.size() != inargs.size())
-        return -1;
 
+    std::vector<char> known;
+    auto trFun = tr;
+    if (auto pt = tr->getPartial()) {
       int ic = 0;
       std::unordered_map<int, TypePtr> c;
-      auto pf = pt->func->instantiate(0, &ic, &c)->getFunc();
-      // For partial functions, we just check can we unify without actually performing
-      // unification
-      for (int pi = 0, gi = 0; pi < pt->known.size(); pi++)
-        if (!pt->known[pi] && pf->ast->args[pi].status == Param::Normal)
-          if (inargs[gi++]->unify(pf->getArgTypes()[pi].get(), us) == -1)
-            return -1;
+      trFun = pt->func->instantiate(0, &ic, &c)->getRecord();
+      known = pt->known;
+    } else {
+      known = std::vector<char>(tr->generics[0].type->getRecord()->args.size(), 0);
+    }
+
+    auto &inArgs = args[0]->getRecord()->args;
+    auto &trInArgs = trFun->generics[0].type->getRecord()->args;
+    auto trAst = trFun->getFunc() ? trFun->getFunc()->ast : nullptr;
+    size_t star = trInArgs.size(), kwStar = trInArgs.size();
+    size_t total = 0;
+    if (trAst) {
+      star = trAst->getStarArgs();
+      kwStar = trAst->getKwStarArgs();
+      if (kwStar < trAst->args.size() && star >= trInArgs.size())
+        star -= 1;
+      size_t preStar = 0;
+      for (size_t fi = 0; fi < trAst->args.size(); fi++) {
+        if (fi != kwStar && !known[fi] && trAst->args[fi].status == Param::Normal) {
+          total++;
+          if (fi < star)
+            preStar++;
+        }
+      }
+      if (preStar < total) {
+        if (inArgs.size() < preStar)
+          return -1;
+      } else if (inArgs.size() != total) {
+        return -1;
+      }
+    } else {
+      total = star = trInArgs.size();
+      if (inArgs.size() != total)
+        return -1;
+    }
+    size_t i = 0;
+    for (size_t fi = 0; i < inArgs.size() && fi < star; fi++) {
+      if (!known[fi] && trAst->args[fi].status == Param::Normal) {
+        if (inArgs[i++]->unify(trInArgs[fi].get(), us) == -1)
+          return -1;
+      }
+    }
+    // NOTE: *args / **kwargs types will be typecheck when the function is called
+    if (auto pf = trFun->getFunc()) {
+      // Make sure to set types of *args/**kwargs so that the function that
+      // is being unified with Callable[] can be realized
+
+      if (star < trInArgs.size() - (kwStar < trInArgs.size())) {
+        std::vector<TypePtr> starArgTypes;
+        if (auto tp = tr->getPartial()) {
+          auto ts = tp->args[tp->args.size() - 2]->getRecord();
+          seqassert(ts, "bad partial *args/**kwargs");
+          starArgTypes = ts->args;
+        }
+        starArgTypes.insert(starArgTypes.end(), inArgs.begin() + i, inArgs.end());
+
+        auto tv = TypecheckVisitor(cache->typeCtx);
+        auto name = tv.generateTuple(starArgTypes.size());
+        auto t = cache->typeCtx->forceFind(name)->type;
+        t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
+        if (t->unify(trInArgs[star].get(), us) == -1)
+          return -1;
+      }
+      if (kwStar < trInArgs.size()) {
+        std::vector<std::string> names;
+        std::vector<TypePtr> starArgTypes;
+        if (auto tp = tr->getPartial()) {
+          auto ts = tp->args.back()->getRecord();
+          seqassert(ts, "bad partial *args/**kwargs");
+          auto &ff = cache->classes[ts->name].fields;
+          for (size_t i = 0; i < ts->args.size(); i++) {
+            names.emplace_back(ff[i].name);
+            starArgTypes.emplace_back(ts->args[i]);
+          }
+        }
+        auto tv = TypecheckVisitor(cache->typeCtx);
+        auto name = tv.generateTuple(starArgTypes.size(), "KwTuple", names);
+        auto t = cache->typeCtx->forceFind(name)->type;
+        t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
+        if (t->unify(trInArgs[kwStar].get(), us) == -1)
+          return -1;
+      }
+
       if (us && pf->canRealize()) {
-        // Realize if possible to allow deduction of return type [and possible
-        // unification!]
+        // Realize if possible to allow deduction of return type
         auto rf = TypecheckVisitor(cache->typeCtx).realize(pf);
         pf->unify(rf.get(), us);
       }
       if (args[1]->unify(pf->getRetType().get(), us) == -1)
         return -1;
-      return 1;
     }
+    return 1;
   } else if (auto tl = typ->getLink()) {
     if (tl->kind == LinkType::Link)
       return unify(tl->type.get(), us);
@@ -106,10 +165,8 @@ TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
 }
 
 std::string CallableTrait::debugString(char mode) const {
-  std::vector<std::string> gs;
-  for (auto &a : args)
-    gs.push_back(a->debugString(mode));
-  return fmt::format("Callable[{}]", join(gs, ","));
+  return fmt::format("Callable[{},{}]", args[0]->debugString(mode).substr(5),
+                     args[1]->debugString(mode));
 }
 
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}

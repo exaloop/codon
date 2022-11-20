@@ -150,13 +150,16 @@ bool LinkType::canRealize() const {
 bool LinkType::isInstantiated() const { return kind == Link && type->isInstantiated(); }
 
 std::string LinkType::debugString(char mode) const {
-  if (kind == Unbound || kind == Generic)
-    return (mode == 2)
-               ? fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
-                             trait ? ":" + trait->debugString(mode) : "")
-               : (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
-  else
-    return type->debugString(mode);
+  if (kind == Unbound || kind == Generic) {
+    if (mode == 2) {
+      return fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
+                         trait ? ":" + trait->debugString(mode) : "");
+    }
+    if (trait)
+      return trait->debugString(mode);
+    return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
+  }
+  return type->debugString(mode);
 }
 
 std::string LinkType::realizedName() const {

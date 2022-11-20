@@ -1110,17 +1110,43 @@ def foo[T](x: T, func: Optional[Callable[[], T]] = None) -> T:
     return x
 print foo(1) #: 1
 
+#%% trait_callable
+foo = [1,2,11]
+print(sorted(foo, key=str))
+#: [1, 11, 2]
+
+foo = {1: "a", 2: "a", 11: "c"}
+print(sorted(foo.items(), key=str))
+#: [(1, 'a'), (11, 'c'), (2, 'a')]
+
+def call(f: Callable[[int,int], Tuple[str,int]]):
+    print(f(1, 2))
+
+def foo(*x): return f"{x}_{x.__class__.__name__}",1
+call(foo)
+#: ('(1, 2)_Tuple[int,int]', 1)
+
+def foo(a:int, *b: float): return f"{a}_{b}", a+b[0]
+call(foo)
+#: ('1_(2)', 3)
+
+
+def call(f: Callable[[int,int],str]):
+    print(f(1, 2))
+def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
+call(foo(zzz=1.1, ...))
+#: 1_(2)_(zzz: 1.1)
+
 #%% traits_error,barebones
 def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
         return (key.__val__())(x)
-print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[T]'
-# TODO fix this error message
+print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[Callable[[int],S]]'
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! '<unknown type>' does not match expected type 'int'
+z: Callable[[int],int] = 4 #! 'Callable[[int],int]' does not match expected type 'int'
 
 #%% assign_wrapers,barebones
 a = 1.5

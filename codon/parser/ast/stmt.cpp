@@ -450,6 +450,24 @@ void FunctionStmt::parseDecorators() {
   decorators = newDecorators;
   validate();
 }
+size_t FunctionStmt::getStarArgs() const {
+  size_t i = 0;
+  while (i < args.size()) {
+    if (startswith(args[i].name, "*") && !startswith(args[i].name, "**"))
+      break;
+    i++;
+  }
+  return i;
+}
+size_t FunctionStmt::getKwStarArgs() const {
+  size_t i = 0;
+  while (i < args.size()) {
+    if (startswith(args[i].name, "**"))
+      break;
+    i++;
+  }
+  return i;
+}
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
                      std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses,

@@ -14,7 +14,9 @@ namespace codon::ast {
 using namespace types;
 
 /// Just ensure that this expression is not independent of CallExpr where it is handled.
-void TypecheckVisitor::visit(StarExpr *expr) { E(Error::UNEXPECTED_TYPE, expr, "star"); }
+void TypecheckVisitor::visit(StarExpr *expr) {
+  E(Error::UNEXPECTED_TYPE, expr, "star");
+}
 
 /// Just ensure that this expression is not independent of CallExpr where it is handled.
 void TypecheckVisitor::visit(KeywordStarExpr *expr) {
@@ -357,7 +359,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         } else {
           auto es = calleeFn->ast->args[si].defaultValue->toString();
           if (in(ctx->defaultCallDepth, es))
-            E(Error::CALL_RECURSIVE_DEFAULT, expr, ctx->cache->rev(calleeFn->ast->args[si].name));
+            E(Error::CALL_RECURSIVE_DEFAULT, expr,
+              ctx->cache->rev(calleeFn->ast->args[si].name));
           ctx->defaultCallDepth.insert(es);
           args.push_back(
               {realName, transform(clone(calleeFn->ast->args[si].defaultValue))});
@@ -450,9 +453,9 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
   bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
   for (size_t si = 0; si < calleeFn->getArgTypes().size(); si++) {
-    if (startswith(calleeFn->ast->args[si].name, "*") && calleeFn->ast->args[si].type) {
+    if (startswith(calleeFn->ast->args[si].name, "*") && calleeFn->ast->args[si].type &&
+        args[si].value->getCall()) {
       // Special case: `*args: type` and `**kwargs: type`
-      seqassert(args[si].value->getCall(), "not a tuple call");
       auto typ = transform(clone(calleeFn->ast->args[si].type))->type;
       for (auto &ca : args[si].value->getCall()->args) {
         if (wrapExpr(ca.value, typ, calleeFn)) {

@@ -475,6 +475,9 @@ struct FunctionStmt : public Stmt {
   bool hasAttr(const std::string &attr) const;
   void parseDecorators();
 
+  size_t getStarArgs() const;
+  size_t getKwStarArgs() const;
+
   FunctionStmt *getFunction() override { return this; }
 };
 

@@ -409,6 +409,14 @@ print y('hei').__class__.__name__ #: Tuple[float,str,bool]
 z = ff(1.1, ...)(c='s', ...)
 print z.__class__.__name__ #: ff[float,...,str]
 
+def fx(*args, **kw):
+    print(args, kw)
+f1 = fx(1, x=1, ...)
+f2 = f1(2, y=2, ...)
+f3 = f2(3, z=3, ...)
+f3()
+#: (1, 2, 3) (x: 1, y: 2, z: 3)
+
 #%% call_arguments_partial,barebones
 def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
     print R.__class__.__name__, T.__class__.__name__
