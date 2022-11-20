@@ -128,7 +128,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
     // LOG("[dist] {} -> {}: {}", derivedTyp->realizedName(), baseTyp->realizedName(),
-    // combine(types, ";"));
+        // combine(types, ";"));
     realizeFunc(t.get(), true);
   }
   initDist.ast = oldAst;
@@ -435,9 +435,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       auto t = ctx->instantiate(tt, exprClass);
       if (t->unify(expectedClass.get(), nullptr) >= 0) {
         if (!expr->isId("")) {
-          // LOG("[cast] casting {} to {}", expr->toString(),
-          // expectedClass->toString());
           expr = castToSuperClass(expr, expectedClass, true);
+          // LOG("[cast] casting to {}: {}", expectedClass->toString(), expr->toString());
         } else { // Just checking can this be done
           expr->type = expectedClass;
         }
@@ -468,6 +467,7 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
                                      N<IdExpr>(superTyp->realizedName()),
                                      N<CallExpr>(N<IdExpr>("type"), expr)));
   }
+  realize(superTyp);
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
                                dist, typExpr));
 }

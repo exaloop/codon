@@ -1493,3 +1493,49 @@ print(sorted(foo, key=str))
 #: [1, 11, 2, 30]
 print(sorted(foo, key=A))
 #: [30, 1, 11, 2]
+
+
+#%% polymorphism,barebones
+class A:
+    a: int
+    def foo(self, a: int): return (f'A({self.a})', a)
+    def bar(self): return 'A.bar'
+    def aaz(self): return 'A.aaz'
+class B(A):
+    b: int
+    def foo(self, a): return (f'B({self.a},{self.b})', a + self.b)
+    def bar(self): return 'B.bar'
+    def baz(self): return 'B.baz'
+class M[T]:
+    m: T
+    def moo(self): return (f'M_{T.__class__.__name__}', self.m)
+class X(B,M[int]):
+    def foo(self, a): return (f'X({self.a},{self.b},{self.m})', a + self.b + self.m)
+    def bar(self): return 'X.bar'
+
+def foo(i):
+    x = i.foo(1)
+    y = i.bar()
+    z = i.aaz()
+    print(*x, y, z)
+a = A(1)
+l = [a, B(2,3), X(2,3,-1)]
+for i in l: foo(i)
+#: A(1) 1 A.bar A.aaz
+#: B(2,3) 4 B.bar A.aaz
+#: X(2,3,-1) 3 X.bar A.aaz
+
+def moo(m: M):
+    print(m.moo())
+moo(M[float](5.5))
+moo(X(1,2,3))
+#: ('M_float', 5.5)
+#: ('M_int', 3)
+
+#%% polymorphism_error_1,barebones
+class M[T]:
+    m: T
+class X(M[int]):
+    pass
+l = [M[float](1.1), X(2)]
+#! 'int' does not match expected type 'float'

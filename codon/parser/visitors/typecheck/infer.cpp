@@ -442,7 +442,22 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
           callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
         auto thunkAst = N<FunctionStmt>(
             format("_thunk.{}.{}", baseCls, m->realizedName()), nullptr, fnArgs,
-            N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs)),
+            N<SuiteStmt>(
+                // N<ExprStmt>(N<CallExpr>(
+                //     N<IdExpr>("std.internal.builtin.print"),
+                //     N<CallExpr>(
+                //         N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
+                //     N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                //                 N<IdExpr>(cp->realizedName()),
+                //                 N<IdExpr>(real->type->realizedName())),
+                //     N<BinaryExpr>(
+                //         N<CallExpr>(
+                //             N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
+                //         "-",
+                //         N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                //                     N<IdExpr>(cp->realizedName()),
+                //                     N<IdExpr>(real->type->realizedName()))))),
+                N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs))),
             Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
         thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
@@ -450,8 +465,8 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
         seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
 
-        // LOG("[virtual] realized child {} := {} :: {} :: {} [{} / {}]", vid, baseCls,
-        // key.first, key.second, tm->debugString(1), m->debugString(1));
+        // LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls, key.first,
+        //     key.second, thunkAst->toString(2));
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }

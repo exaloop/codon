@@ -84,7 +84,7 @@ class Ptr:
     @llvm
     def __sub__(self, other: int) -> Ptr[T]:
         %0 = sub i64 0, %other
-        %1 = getelementptr {=T}, {=T}* %self, i64 %other
+        %1 = getelementptr {=T}, {=T}* %self, i64 %0
         ret {=T}* %1
 
     @pure
