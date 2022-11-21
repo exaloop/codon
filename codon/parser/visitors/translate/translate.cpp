@@ -53,33 +53,6 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
       cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
     }
 
-  // TODO: form global variables!
-  // auto vType = cache->codegenCtx->forceFind("Ptr[Ptr[byte]]")->getType();
-  // seqassertn(vType, "Ptr[cobj] not set");
-  // auto mdl = cache->codegenCtx->getModule();
-  // for (auto &[_, cls] : cache->classes) {
-  //   for (auto &[r, real] : cls.realizations) {
-  //     for (auto &[base, vtable] : real->vtables) {
-  //       if (!vtable.ir) {
-  //         auto name = format(".gvtable.{}.{}", r, base);
-  //         vtable.ir = mdl->Nr<ir::Var>(vType, true, false, name);
-  //         auto alloc =
-  //         cache->codegenCtx->forceFind("std.internal.gc.seq_alloc_atomic:0[int]");
-  //         auto call = mdl->Nr<ir::CallInstr>(
-  //             mdl->Nr<ir::VarValue>(alloc->getFunc()),
-  //             std::vector<ir::Value *>{mdl->Nr<ir::IntConst>(
-  //                 vtable.table.size(),
-  //                 cache->codegenCtx->forceFind("int")->getType())});
-  //         cache->codegenCtx->getSeries()->push_back(
-  //             mdl->Nr<ir::AssignInstr>(vtable.ir, call));
-  //         // for (auto &[_, id]: table) {
-  //         //   // A = B
-  //         // }
-  //       }
-  //     }
-  //   }
-  // }
-
   TranslateVisitor(cache->codegenCtx).transform(stmts);
   return main;
 }

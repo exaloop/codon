@@ -23,30 +23,68 @@ class __internal__:
     @pure
     @derives
     def class_new(T: type) -> T:
+        """Create a new reference (class) type"""
         sz = T.__tuplesize__()
         p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
         register_finalizer(p)
         pf = __internal__.to_class_ptr(p, T)
-        __internal__.init_obj_vtable(pf)
+        __internal__.class_set_obj_vtable(pf)
         return pf
 
     def class_ctr(T: type, *args, **kwargs) -> T:
+        """Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`"""
         return T(*args, **kwargs)
 
-    def init_obj_vtable(pf):  # do manual inspection!
+    def class_set_obj_vtable(pf: T, T: type) -> None:
+        """
+        Initialize a vtable of a T() object. Compiler generated.
+        Corresponds to:
+            pf.__vtable__ = __vtables__[pf.__vtable_id___]
+        """
         pass
 
-    def init_vtable() -> Ptr[Ptr[cobj]]:
-        p = Ptr[Ptr[cobj]](seq_alloc_atomic(10000))
-        __internal__.init_vtable_members(p)
+    def class_init_vtables() -> Ptr[Ptr[cobj]]:
+        """
+        Create a global vtable. Compiler generated.
+        Corresponds to:
+            return __internal__.class_make_n_vtables(<number of class realizations>)
+        """
+        pass
+
+    def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
+        """Create a global vtable."""
+        p = Ptr[Ptr[cobj]](seq_alloc_atomic(sz))
+        __internal__.class_populate_vtables(p)
         return p
 
-    def init_vtable_members(p: Ptr[Ptr[cobj]]) -> None:
+    def class_populate_vtables(p: Ptr[Ptr[cobj]]) -> None:
+        """
+        Populate content of vtables. Compiler generated.
+        Corresponds to:
+            for each realized class C:
+                p.__setitem__(<C's realization ID>, Ptr[cobj](<C's vtable size> + 1))
+                __internal__.class_set_typeinfo(p[<C's realization ID>], <C's realization ID>)
+                for each fn F in C's vtable:
+                    p[<C's realization ID>].__setitem__(<F's vtable ID>, Function(<instantiated F>).__raw__())
+        """
         pass
 
+    def class_set_typeinfo(p: Ptr[cobj], typeinfo: T, T: type) -> None:
+        i = Ptr[T](1)
+        i[0] = typeinfo
+        p[0] = i.as_byte()
+
+    def class_get_typeinfo(p) -> int:
+        c = Ptr[Ptr[cobj]](p.__raw__())
+        vt = c[0]
+        return Ptr[int](vt[0])[0]
+
     @inline
-    def base_derived_dist(B: type, D: type) -> int:
+    def class_base_derived_dist(B: type, D: type) -> int:
+        """Calculates the byte distance of base class B and derived class D. Compiler generated."""
         return 0
+
+    # Unions
 
     @llvm
     def union_set_tag(tag: byte, U: type) -> U:
@@ -80,6 +118,7 @@ class __internal__:
     def get_union_method(union, method: Static[str], *args, **kwargs):
         pass
 
+    # Tuples
 
     @pure
     @derives
@@ -102,6 +141,8 @@ class __internal__:
         return __internal__._tuple_getitem_llvm(
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
+
+    # ...
 
     @pure
     @derives
@@ -392,5 +433,5 @@ class Function:
     def __call__(self, *args) -> TR:
         noop  # compiler will populate this one
 
-__vtables__ = __internal__.init_vtable()
+__vtables__ = __internal__.class_init_vtables()
 def _____(): __vtables__  # make it global!

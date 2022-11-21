@@ -31,111 +31,6 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   return s;
 }
 
-StmtPtr TypecheckVisitor::prepareVTables() {
-  auto rep = "__internal__.init_vtable_members:0";
-  auto &initFn = ctx->cache->functions[rep];
-  auto suite = N<SuiteStmt>();
-  for (auto &[_, cls] : ctx->cache->classes) {
-    for (auto &[r, real] : cls.realizations) {
-      for (auto &[base, vtable] : real->vtables) {
-        if (!vtable.ir) {
-          auto var = initFn.ast->args[0].name;
-          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
-              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
-                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
-                          N<IntExpr>(vtable.table.size())))));
-          for (auto &[k, v] : vtable.table) {
-            auto &[fn, id] = v;
-            std::vector<ExprPtr> ids;
-            for (auto &t : fn->getArgTypes())
-              ids.push_back(NT<IdExpr>(t->realizedName()));
-            suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-                N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
-                           "__setitem__"),
-                N<IntExpr>(id),
-                N<CallExpr>(N<DotExpr>(
-                    N<CallExpr>(
-                        NT<InstantiateExpr>(
-                            NT<IdExpr>("Function"),
-                            std::vector<ExprPtr>{
-                                NT<InstantiateExpr>(
-                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
-                                    ids),
-                                NT<IdExpr>(fn->getRetType()->realizedName())}),
-                        N<IdExpr>(fn->realizedName())),
-                    "__raw__")))));
-          }
-        }
-      }
-    }
-  }
-  initFn.ast->suite = suite;
-  auto typ = initFn.realizations.begin()->second->type;
-  typ->ast = initFn.ast.get();
-  realizeFunc(typ.get(), true);
-
-  auto &initObjFns = ctx->cache->functions["__internal__.init_obj_vtable:0"];
-  auto oldAst = initObjFns.ast;
-  for (auto &[_, real] : initObjFns.realizations) {
-    auto t = real->type;
-    auto clsTyp = t->getArgTypes()[0]->getClass();
-    auto varName = initObjFns.ast->args[0].name;
-
-    const auto &fields = ctx->cache->classes[clsTyp->name].fields;
-    auto suite = N<SuiteStmt>();
-    for (auto &f : fields)
-      if (startswith(f.name, VAR_VTABLE)) {
-        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
-        suite->stmts.push_back(N<AssignMemberStmt>(
-            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
-            N<IndexExpr>(
-                N<IdExpr>("__vtables__"),
-                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
-      }
-
-    initObjFns.ast->suite = suite;
-    t->ast = initObjFns.ast.get();
-    realizeFunc(t.get(), true);
-  }
-  initObjFns.ast = oldAst;
-
-  auto &initDist = ctx->cache->functions["__internal__.base_derived_dist:0"];
-  oldAst = initDist.ast;
-  for (auto &[_, real] : initDist.realizations) {
-    auto t = real->type;
-    auto baseTyp = t->funcGenerics[0].type->getClass();
-    auto derivedTyp = t->funcGenerics[1].type->getClass();
-
-    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
-    auto types = std::vector<ExprPtr>{};
-    auto found = false;
-    for (auto &f : fields) {
-      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
-        found = true;
-        break;
-      } else {
-        auto ft = realize(ctx->instantiate(f.type, derivedTyp));
-        types.push_back(NT<IdExpr>(ft->realizedName()));
-      }
-    }
-    seqassert(found, "cannot find distance between {} and {}", derivedTyp->name,
-              baseTyp->name);
-    StmtPtr suite = N<ReturnStmt>(
-        N<DotExpr>(NT<InstantiateExpr>(
-                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
-                   "__elemsize__"));
-    initDist.ast->suite = suite;
-    t->ast = initDist.ast.get();
-    // LOG("[dist] {} -> {}: {}", derivedTyp->realizedName(), baseTyp->realizedName(),
-        // combine(types, ";"));
-    realizeFunc(t.get(), true);
-  }
-  initDist.ast = oldAst;
-
-  return nullptr;
-}
-
 /**************************************************************************************/
 
 TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
@@ -436,7 +331,6 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       if (t->unify(expectedClass.get(), nullptr) >= 0) {
         if (!expr->isId("")) {
           expr = castToSuperClass(expr, expectedClass, true);
-          // LOG("[cast] casting to {}: {}", expectedClass->toString(), expr->toString());
         } else { // Just checking can this be done
           expr->type = expectedClass;
         }
@@ -463,7 +357,7 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
   ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
   if (isVirtual) {
     dist = N<BinaryExpr>(dist, "+",
-                         N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                         N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
                                      N<IdExpr>(superTyp->realizedName()),
                                      N<CallExpr>(N<IdExpr>("type"), expr)));
   }

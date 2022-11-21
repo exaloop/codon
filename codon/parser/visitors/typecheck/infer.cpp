@@ -369,6 +369,128 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   return type->getFunc();
 }
 
+StmtPtr TypecheckVisitor::prepareVTables() {
+  auto rep = "__internal__.class_init_vtables:0";
+  auto &initAllVT = ctx->cache->functions[rep];
+  auto suite = N<SuiteStmt>(
+      N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.class_make_n_vtables:0"),
+                                N<IntExpr>(ctx->cache->classRealizationCnt + 1))));
+  initAllVT.ast->suite = suite;
+  auto typ = initAllVT.realizations.begin()->second->type;
+  typ->ast = initAllVT.ast.get();
+  LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
+  auto fx = realizeFunc(typ.get(), true);
+
+  rep = "__internal__.class_populate_vtables:0";
+  auto &initFn = ctx->cache->functions[rep];
+  suite = N<SuiteStmt>();
+  for (auto &[_, cls] : ctx->cache->classes) {
+    for (auto &[r, real] : cls.realizations) {
+      for (auto &[base, vtable] : real->vtables) {
+        if (!vtable.ir) {
+          auto var = initFn.ast->args[0].name;
+          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
+              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
+                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
+                          N<IntExpr>(vtable.table.size() + 2)))));
+          suite->stmts.push_back(N<ExprStmt>(
+              N<CallExpr>(N<IdExpr>("__internal__.class_set_typeinfo:0"),
+                          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                          N<IntExpr>(real->id))));
+          for (auto &[k, v] : vtable.table) {
+            auto &[fn, id] = v;
+            std::vector<ExprPtr> ids;
+            for (auto &t : fn->getArgTypes())
+              ids.push_back(NT<IdExpr>(t->realizedName()));
+            suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+                N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                           "__setitem__"),
+                N<IntExpr>(id),
+                N<CallExpr>(N<DotExpr>(
+                    N<CallExpr>(
+                        NT<InstantiateExpr>(
+                            NT<IdExpr>("Function"),
+                            std::vector<ExprPtr>{
+                                NT<InstantiateExpr>(
+                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
+                                    ids),
+                                NT<IdExpr>(fn->getRetType()->realizedName())}),
+                        N<IdExpr>(fn->realizedName())),
+                    "__raw__")))));
+          }
+        }
+      }
+    }
+  }
+  initFn.ast->suite = suite;
+  typ = initFn.realizations.begin()->second->type;
+  typ->ast = initFn.ast.get();
+  LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
+  realizeFunc(typ.get(), true);
+
+  rep = "__internal__.class_set_obj_vtable:0";
+  auto &initObjFns = ctx->cache->functions[rep];
+  auto oldAst = initObjFns.ast;
+  for (auto &[_, real] : initObjFns.realizations) {
+    auto t = real->type;
+    auto clsTyp = t->getArgTypes()[0]->getClass();
+    auto varName = initObjFns.ast->args[0].name;
+
+    const auto &fields = ctx->cache->classes[clsTyp->name].fields;
+    auto suite = N<SuiteStmt>();
+    for (auto &f : fields)
+      if (startswith(f.name, VAR_VTABLE)) {
+        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
+        suite->stmts.push_back(N<AssignMemberStmt>(
+            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
+            N<IndexExpr>(
+                N<IdExpr>("__vtables__"),
+                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
+      }
+
+    initObjFns.ast->suite = suite;
+    t->ast = initObjFns.ast.get();
+    LOG("[vt] {} / {} -> {}", rep, t->toString(), t->ast->toString(1));
+    realizeFunc(t.get(), true);
+  }
+  initObjFns.ast = oldAst;
+
+  auto &initDist = ctx->cache->functions["__internal__.class_base_derived_dist:0"];
+  oldAst = initDist.ast;
+  for (auto &[_, real] : initDist.realizations) {
+    auto t = real->type;
+    auto baseTyp = t->funcGenerics[0].type->getClass();
+    auto derivedTyp = t->funcGenerics[1].type->getClass();
+
+    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
+    auto types = std::vector<ExprPtr>{};
+    auto found = false;
+    for (auto &f : fields) {
+      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
+        found = true;
+        break;
+      } else {
+        auto ft = realize(ctx->instantiate(f.type, derivedTyp));
+        types.push_back(NT<IdExpr>(ft->realizedName()));
+      }
+    }
+    seqassert(found, "cannot find distance between {} and {}", derivedTyp->name,
+              baseTyp->name);
+    StmtPtr suite = N<ReturnStmt>(
+        N<DotExpr>(NT<InstantiateExpr>(
+                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
+                   "__elemsize__"));
+    initDist.ast->suite = suite;
+    t->ast = initDist.ast.get();
+    LOG("[vt] {} -> {}", rep, t->ast->toString(1));
+    realizeFunc(t.get(), true);
+  }
+  initDist.ast = oldAst;
+
+  return nullptr;
+}
+
 size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
   seqassert(cp->canRealize() && fp->canRealize() && fp->getRetType()->canRealize(),
             "{} not realized", fp->debugString(1));
@@ -395,19 +517,16 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   if (auto i = in(vt.table, key)) {
     vid = i->second;
   } else {
-    vid = vt.table.size();
+    vid = vt.table.size() + 1;
     vt.table[key] = {fp->getFunc(), vid};
   }
-
-  // LOG("[virtual] realized base {} := {} :: {} :: {}", vid, baseCls, key.first,
-  //     key.second);
 
   for (auto &[clsName, cls] : ctx->cache->classes) {
     if (clsName != baseCls && in(cls.mro, baseCls)) {
       for (auto &[_, real] : cls.realizations) {
         auto &vtable = real->vtables[baseCls];
 
-        // TODO: fix the instantiation for geenrics!
+        // TODO: fix the instantiation for generics!
         auto ct =
             ctx->instantiate(ctx->forceFind(clsName)->type, cp->getClass())->getClass();
         std::vector<types::TypePtr> args = fp->getArgTypes();
@@ -434,7 +553,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
             N<BinaryExpr>(
                 N<CallExpr>(N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
                 "-",
-                N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
+                N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
                             N<IdExpr>(cp->realizedName()),
                             N<IdExpr>(real->type->realizedName()))),
             NT<IdExpr>(real->type->realizedName())));
@@ -443,20 +562,6 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto thunkAst = N<FunctionStmt>(
             format("_thunk.{}.{}", baseCls, m->realizedName()), nullptr, fnArgs,
             N<SuiteStmt>(
-                // N<ExprStmt>(N<CallExpr>(
-                //     N<IdExpr>("std.internal.builtin.print"),
-                //     N<CallExpr>(
-                //         N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
-                //     N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
-                //                 N<IdExpr>(cp->realizedName()),
-                //                 N<IdExpr>(real->type->realizedName())),
-                //     N<BinaryExpr>(
-                //         N<CallExpr>(
-                //             N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
-                //         "-",
-                //         N<CallExpr>(N<IdExpr>("__internal__.base_derived_dist:0"),
-                //                     N<IdExpr>(cp->realizedName()),
-                //                     N<IdExpr>(real->type->realizedName()))))),
                 N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs))),
             Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
@@ -465,8 +570,9 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
         seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
 
-        // LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls, key.first,
-        //     key.second, thunkAst->toString(2));
+        LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls,
+        key.first,
+            key.second, thunkAst->toString(2));
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }

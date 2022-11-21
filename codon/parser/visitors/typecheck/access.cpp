@@ -189,28 +189,27 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     auto isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
+      // Special case: calling virtual methods. Route everything through a vtable.
       if (realize(expr->type)) {
         auto fn = expr->type->getFunc();
         auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
+
+        // Function[Tuple[TArg1, TArg2, ...], TRet]
         std::vector<ExprPtr> ids;
         for (auto &t : fn->getArgTypes())
           ids.push_back(NT<IdExpr>(t->realizedName()));
-        // LOG("-> {} .. {}", expr->type->toString(), fn->debugString(1));
+        auto name = generateTuple(ids.size());
         auto fnType = NT<InstantiateExpr>(
             NT<IdExpr>("Function"),
             std::vector<ExprPtr>{
-                NT<InstantiateExpr>(NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
-                                    ids),
+                NT<InstantiateExpr>(NT<IdExpr>(name), ids),
                 NT<IdExpr>(fn->getRetType()->realizedName())});
+        // Function[Tuple[TArg1, TArg2, ...], TRet](expr.__vtable__T[VIRTUAL_ID])
         auto e = transform(N<CallExpr>(
-            fnType,
-            N<IndexExpr>(
-                // TODO: fix this as a class can have 2 vtables from the same class
-                // Maybe have A.x and B.x as in C++?
-                N<DotExpr>(expr->expr, format("{}.{}", VAR_VTABLE,
-                                              expr->expr->type->getClass()->name)),
-                N<IntExpr>(vid))));
-        // LOG("[virtual] call := {}", e->toString());
+            fnType, N<IndexExpr>(N<DotExpr>(expr->expr,
+                                            format("{}.{}", VAR_VTABLE,
+                                                   expr->expr->type->getClass()->name)),
+                                 N<IntExpr>(vid))));
         return e;
       }
     }
