@@ -3,7 +3,7 @@
 
 @pure
 @C
-def seq_str_ptr(a: Ptr[byte]) -> str:
+def seq_str_ptr(a: Ptr[byte], fmt: cobj, error: cobj) -> str:
     pass
 
 
@@ -192,7 +192,7 @@ class Ptr:
         ret ptr %self
 
     def __repr__(self) -> str:
-        return seq_str_ptr(self.as_byte())
+        return self.__format__("")
 
 
 ptr = Ptr

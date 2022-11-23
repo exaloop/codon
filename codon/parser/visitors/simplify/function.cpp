@@ -408,7 +408,7 @@ StmtPtr SimplifyVisitor::transformLLVMDefinition(Stmt *codeStmt) {
       std::string exprCode = code.substr(braceStart, i - braceStart);
       auto offset = getSrcInfo();
       offset.col += i;
-      auto expr = transform(parseExpr(ctx->cache, exprCode, offset), true);
+      auto expr = transform(parseExpr(ctx->cache, exprCode, offset).first, true);
       items.push_back(N<ExprStmt>(expr));
       braceStart = i + 1;
       finalCode += '}';

@@ -510,4 +510,8 @@ private:
 } // namespace ir
 } // namespace codon
 
+template <>
+struct fmt::formatter<codon::ir::analyze::dataflow::CFGraph> : fmt::ostream_formatter {
+};
+
 #undef DEFAULT_VISIT

@@ -588,3 +588,5 @@ struct CommentStmt : public Stmt {
 #undef ACCEPT
 
 } // namespace codon::ast
+
+template <> struct fmt::formatter<codon::ast::Stmt> : fmt::ostream_formatter {};

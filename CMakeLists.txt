@@ -56,7 +56,7 @@ endif()
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
 target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
-target_link_libraries(peg2cpp PRIVATE Threads::Threads)
+target_link_libraries(peg2cpp PRIVATE Threads::Threads fmt)
 add_custom_command(
   OUTPUT codon_rules.cpp
   COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/grammar.peg
@@ -80,7 +80,7 @@ endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP}
+target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
   target_link_libraries(
@@ -215,17 +215,6 @@ set(CODON_HPPFILES
     codon/sir/value.h
     codon/sir/var.h
     codon/util/common.h
-    codon/util/fmt/chrono.h
-    codon/util/fmt/color.h
-    codon/util/fmt/compile.h
-    codon/util/fmt/core.h
-    codon/util/fmt/format-inl.h
-    codon/util/fmt/format.h
-    codon/util/fmt/locale.h
-    codon/util/fmt/ostream.h
-    codon/util/fmt/posix.h
-    codon/util/fmt/printf.h
-    codon/util/fmt/ranges.h
     codon/util/semver/semver.h
     codon/util/toml++/toml.h
     codon/util/toml++/toml_default_formatter.hpp
@@ -355,7 +344,6 @@ set(CODON_CPPFILES
     codon/sir/value.cpp
     codon/sir/var.cpp
     codon/util/common.cpp
-    codon/util/fmt/format.cpp
     extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR})
@@ -407,9 +395,9 @@ llvm_map_components_to_libnames(
   Vectorize
   Passes)
 if(APPLE)
-  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} dl codonrt)
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt)
 else()
-  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt)
+  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt dl codonrt)
 endif()
 
 # Gather headers
@@ -462,7 +450,7 @@ endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} codonc Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt codonc Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -495,6 +483,6 @@ set(CODON_TEST_CPPFILES
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/sir
                                               "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test codonc codonrt gtest_main)
+target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")

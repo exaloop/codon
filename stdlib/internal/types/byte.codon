@@ -1,12 +1,5 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-
-@pure
-@C
-def seq_str_byte(a: byte) -> str:
-    pass
-
-
 @extend
 class byte:
     @pure

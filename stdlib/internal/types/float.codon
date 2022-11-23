@@ -7,7 +7,7 @@ from internal.types.complex import complex
 
 @pure
 @C
-def seq_str_float(a: float) -> str:
+def seq_str_float(a: float, fmt: cobj, error: cobj) -> str:
     pass
 
 
@@ -46,8 +46,16 @@ class float:
             return what.__float__()
 
     def __repr__(self) -> str:
-        s = seq_str_float(self)
-        return s if s != "-nan" else "nan"
+        return self.__format__("")
+
+    def __format__(self, format_spec: str) -> str:
+        err = byte(0)
+        ret = seq_str_float(
+            self, format_spec.c_str() if format_spec else cobj(), __ptr__(err)
+        )
+        if err:
+            raise ValueError(f"invalid format specifier: {ret}")
+        return ret if ret != "-nan" else "nan"
 
     def __copy__(self) -> float:
         return self
@@ -448,8 +456,10 @@ class float32:
         return float32.__new__(0.0)
 
     def __repr__(self) -> str:
-        s = seq_str_float(self.__float__())
-        return s if s != "-nan" else "nan"
+        return self.__float__().__repr__()
+
+    def __format__(self, format_spec: str) -> str:
+        return self.__float__().__format(format_spec)
 
     def __copy__(self) -> float32:
         return self

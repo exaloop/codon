@@ -10,7 +10,7 @@
 #include "codon/sir/util/iterators.h"
 #include "codon/sir/util/visitor.h"
 #include "codon/sir/value.h"
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 
 namespace codon {
 namespace ir {

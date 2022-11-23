@@ -21,7 +21,7 @@
 #include <peglib.h>
 
 #define FMT_HEADER_ONLY
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 
 using namespace std;
 

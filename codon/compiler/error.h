@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 #include "codon/parser/ast/error.h"
 #include "llvm/Support/Error.h"
 

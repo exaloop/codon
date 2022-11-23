@@ -378,7 +378,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   initAllVT.ast->suite = suite;
   auto typ = initAllVT.realizations.begin()->second->type;
   typ->ast = initAllVT.ast.get();
-  LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
+  // LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
   auto fx = realizeFunc(typ.get(), true);
 
   rep = "__internal__.class_populate_vtables:0";
@@ -426,7 +426,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   initFn.ast->suite = suite;
   typ = initFn.realizations.begin()->second->type;
   typ->ast = initFn.ast.get();
-  LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
+  // LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
   realizeFunc(typ.get(), true);
 
   rep = "__internal__.class_set_obj_vtable:0";
@@ -451,7 +451,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
 
     initObjFns.ast->suite = suite;
     t->ast = initObjFns.ast.get();
-    LOG("[vt] {} / {} -> {}", rep, t->toString(), t->ast->toString(1));
+    // LOG("[vt] {} / {} -> {}", rep, t->toString(), t->ast->toString(1));
     realizeFunc(t.get(), true);
   }
   initObjFns.ast = oldAst;
@@ -483,7 +483,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                    "__elemsize__"));
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
-    LOG("[vt] {} -> {}", rep, t->ast->toString(1));
+    // LOG("[vt] {} -> {}", rep, t->ast->toString(1));
     realizeFunc(t.get(), true);
   }
   initDist.ast = oldAst;
@@ -570,9 +570,9 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
         seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
 
-        LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls,
-        key.first,
-            key.second, thunkAst->toString(2));
+        // LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls,
+        // key.first,
+        //     key.second, thunkAst->toString(2));
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }

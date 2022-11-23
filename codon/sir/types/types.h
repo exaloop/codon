@@ -10,8 +10,8 @@
 #include "codon/sir/base.h"
 #include "codon/sir/util/packs.h"
 #include "codon/sir/util/visitor.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 namespace codon {
 namespace ir {
@@ -536,3 +536,5 @@ private:
 } // namespace types
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::types::Type> : fmt::ostream_formatter {};

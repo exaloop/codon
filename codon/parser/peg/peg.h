@@ -14,7 +14,10 @@ namespace codon::ast {
 StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code,
                   int line_offset = 0);
 /// Parse a Seq code expression.
-ExprPtr parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset);
+/// @return pair of ExprPtr and a string indicating format specification
+/// (empty if not available).
+std::pair<ExprPtr, std::string> parseExpr(Cache *cache, const std::string &code,
+                                          const codon::SrcInfo &offset);
 /// Parse a Seq file.
 StmtPtr parseFile(Cache *cache, const std::string &file);
 

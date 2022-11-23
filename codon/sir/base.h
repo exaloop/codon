@@ -10,8 +10,8 @@
 #include "codon/sir/util/iterators.h"
 #include "codon/sir/util/visitor.h"
 #include "codon/util/common.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 namespace codon {
 namespace ir {
@@ -331,10 +331,4 @@ template <typename Desired> bool isA(const Node *other) {
 } // namespace ir
 } // namespace codon
 
-// See https://github.com/fmtlib/fmt/issues/1283.
-namespace fmt {
-using codon::ir::Node;
-
-template <typename Char>
-struct formatter<Node, Char> : fmt::v6::internal::fallback_formatter<Node, Char> {};
-} // namespace fmt
+template <> struct fmt::formatter<codon::ir::Node> : fmt::ostream_formatter {};

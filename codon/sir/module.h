@@ -10,8 +10,8 @@
 #include "codon/sir/value.h"
 #include "codon/sir/var.h"
 #include "codon/util/common.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 namespace codon {
 
@@ -442,3 +442,5 @@ private:
 
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::Module> : fmt::ostream_formatter {};

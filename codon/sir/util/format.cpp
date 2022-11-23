@@ -1,12 +1,12 @@
-#include "format.h"
 
 #include <algorithm>
 #include <sstream>
 #include <unordered_set>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
+#include "codon/sir/util/format.h"
 #include "codon/sir/util/visitor.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 namespace codon {
 namespace ir {
@@ -461,9 +461,4 @@ std::ostream &format(std::ostream &os, const Node *node) {
 } // namespace ir
 } // namespace codon
 
-// See https://github.com/fmtlib/fmt/issues/1283.
-namespace fmt {
-template <typename Char>
-struct formatter<codon::ir::util::NodeFormatter, Char>
-    : fmt::v6::internal::fallback_formatter<codon::ir::util::NodeFormatter, Char> {};
-} // namespace fmt
+template <> struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};

@@ -6,13 +6,13 @@ from internal.types.complex import complex
 
 @pure
 @C
-def seq_str_int(a: int) -> str:
+def seq_str_int(a: int, fmt: cobj, error: cobj) -> str:
     pass
 
 
 @pure
 @C
-def seq_str_uint(a: int) -> str:
+def seq_str_uint(a: int, fmt: cobj, error: cobj) -> str:
     pass
 
 
@@ -49,7 +49,7 @@ class int:
         return self
 
     def __repr__(self) -> str:
-        return seq_str_int(self)
+        return self.__format__("")
 
     def __copy__(self) -> int:
         return self

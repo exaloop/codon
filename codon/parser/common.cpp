@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 

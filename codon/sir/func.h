@@ -225,3 +225,5 @@ protected:
 
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::Func> : fmt::ostream_formatter {};

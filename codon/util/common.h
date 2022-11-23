@@ -4,12 +4,12 @@
 #include <chrono>
 #include <iostream>
 #include <ostream>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include "codon/compiler/error.h"
 #include "codon/config/config.h"
 #include "codon/parser/ast/error.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
@@ -155,3 +155,5 @@ void compilationWarning(const std::string &msg, const std::string &file = "",
                         bool terminate = false);
 
 } // namespace codon
+
+template <> struct fmt::formatter<codon::SrcInfo> : fmt::ostream_formatter {};

@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
+#include <fmt/args.h>
 
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"

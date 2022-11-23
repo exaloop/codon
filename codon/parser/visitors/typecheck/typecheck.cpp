@@ -8,7 +8,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 
 using fmt::format;
 using namespace codon::error;

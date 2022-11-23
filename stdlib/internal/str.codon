@@ -1,9 +1,24 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
 
+@pure
+@C
+def seq_str_str(a: cobj, fmt: cobj, error: cobj) -> str:
+    pass
+
+
 @extend
 class str:
     # Magic methods
+
+    def __format__(self, format_spec: str) -> str:
+        err = byte(0)
+        ret = seq_str_str(
+            self.c_str(), format_spec.c_str() if format_spec else cobj(), __ptr__(err)
+        )
+        if err:
+            raise ValueError(f"invalid format specifier: {ret}")
+        return ret
 
     def __hash__(self) -> int:
         h = 0

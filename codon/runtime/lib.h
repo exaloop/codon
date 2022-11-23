@@ -74,12 +74,11 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
 SEQ_FUNC int64_t seq_exc_offset();
 SEQ_FUNC uint64_t seq_exc_class();
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n);
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n);
-SEQ_FUNC seq_str_t seq_str_float(double f);
-SEQ_FUNC seq_str_t seq_str_bool(bool b);
-SEQ_FUNC seq_str_t seq_str_byte(char c);
-SEQ_FUNC seq_str_t seq_str_ptr(void *p);
+SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, char *, char *);
+SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, char *, char *);
+SEQ_FUNC seq_str_t seq_str_float(double f, char *, char *);
+SEQ_FUNC seq_str_t seq_str_ptr(void *p, char *, char *);
+SEQ_FUNC seq_str_t seq_str_str(char *p, char *, char *);
 SEQ_FUNC seq_str_t seq_str_tuple(seq_str_t *strs, seq_int_t n);
 
 SEQ_FUNC void *seq_stdin();
@@ -89,6 +88,7 @@ SEQ_FUNC void *seq_stderr();
 SEQ_FUNC void seq_print(seq_str_t str);
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo);
 
+SEQ_FUNC void *seq_lock_new();
 SEQ_FUNC void *seq_lock_new();
 SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_lock_release(void *lock);

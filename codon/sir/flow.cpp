@@ -2,7 +2,7 @@
 
 #include "codon/sir/module.h"
 #include "codon/sir/util/iterators.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/ostream.h>
 
 namespace codon {
 namespace ir {

@@ -147,11 +147,16 @@ ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
         if (!code.empty() && code.back() == '=') {
           // Special case: f"{x=}"
           code = code.substr(0, code.size() - 1);
-          items.push_back(N<StringExpr>(format("{}=", code)));
+          items.push_back(N<StringExpr>(fmt::format("{}=", code)));
         }
-        // Every expression is wrapped within `str`
-        items.push_back(
-            N<CallExpr>(N<IdExpr>("str"), parseExpr(ctx->cache, code, offset)));
+        auto [expr, format] = parseExpr(ctx->cache, code, offset);
+        if (!format.empty()) {
+          items.push_back(
+              N<CallExpr>(N<DotExpr>(expr, "__format__"), N<StringExpr>(format)));
+        } else {
+          // Every expression is wrapped within `str`
+          items.push_back(N<CallExpr>(N<IdExpr>("str"), expr));
+        }
       }
       braceStart = i + 1;
     }

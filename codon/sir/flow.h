@@ -609,11 +609,3 @@ protected:
 
 } // namespace ir
 } // namespace codon
-
-// See https://github.com/fmtlib/fmt/issues/1283.
-namespace fmt {
-using codon::ir::Flow;
-
-template <typename Char>
-struct formatter<Flow, Char> : fmt::v6::internal::fallback_formatter<Flow, Char> {};
-} // namespace fmt

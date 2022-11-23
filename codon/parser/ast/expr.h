@@ -673,3 +673,5 @@ enum ExprAttr {
 StaticValue::Type getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
+
+template <> struct fmt::formatter<codon::ast::Expr> : fmt::ostream_formatter {};

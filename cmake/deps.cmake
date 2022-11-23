@@ -13,6 +13,11 @@ CPMAddPackage(
     OPTIONS "BUILD_TESTS OFF")
 
 CPMAddPackage(
+    NAME fmt
+    GITHUB_REPOSITORY "fmtlib/fmt"
+    GIT_TAG 9.1.0)
+
+CPMAddPackage(
     NAME zlibng
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
     VERSION 2.0.5

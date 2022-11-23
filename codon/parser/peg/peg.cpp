@@ -3,9 +3,9 @@
 #include <any>
 #include <iostream>
 #include <memory>
+#include <peglib.h>
 #include <string>
 #include <vector>
-#include <peglib.h>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
@@ -41,8 +41,8 @@ std::shared_ptr<peg::Grammar> initParser() {
     (*g)[rule].enter = [](const peg::Context &, const char *, size_t, std::any &dt) {
       std::any_cast<ParseContext &>(dt).parens++;
     };
-    (*g)[rule.c_str()].leave = [](const peg::Context &, const char *, size_t, size_t, std::any &,
-                                  std::any &dt) {
+    (*g)[rule.c_str()].leave = [](const peg::Context &, const char *, size_t, size_t,
+                                  std::any &, std::any &dt) {
       std::any_cast<ParseContext &>(dt).parens--;
     };
   }
@@ -68,7 +68,7 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
     }
     errors.emplace_back(line, col, msg.substr(0, ed));
   };
-  T result = nullptr;
+  T result;
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
   auto r = (*grammar)[rule].parse_and_get_value(code.c_str(), code.size(), ctx, result,
                                                 file.c_str(), log);
@@ -82,7 +82,7 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
       ex.track(fmt::format("{}", std::get<2>(e)),
                SrcInfo(file, std::get<0>(e), std::get<1>(e), 0));
     throw ex;
-    return nullptr;
+    return T();
   }
   return result;
 }
@@ -92,12 +92,13 @@ StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code
   return parseCode<StmtPtr>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-ExprPtr parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
+std::pair<ExprPtr, std::string> parseExpr(Cache *cache, const std::string &code,
+                                          const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
   rtrim(newCode);
-  auto e = parseCode<ExprPtr>(cache, offset.file, newCode, offset.line, offset.col,
-                              "fstring");
+  auto e = parseCode<std::pair<ExprPtr, std::string>>(
+      cache, offset.file, newCode, offset.line, offset.col, "fstring");
   return e;
 }
 

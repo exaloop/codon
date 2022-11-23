@@ -42,7 +42,9 @@ program <- (statements (_ EOL)* / (_ EOL)*) !. {
     return ast<SuiteStmt>(LOC);
   return ac_stmt(V0);
 }
-fstring <- star_expressions _ !.
+fstring <- star_expressions _ (':' format_spec)? _ !. {
+  return make_pair(ac_expr(V0), VS.size() == 1 ? "" : ac<string>(V1));
+}
 
 # Macros
 list(c, e)  <- e (_ c _ e)*
@@ -774,3 +776,8 @@ EXTERNDENT__PREDICATE {
   'lambda' / 'try' / 'def' / 'from' / 'while' / 'assert' / 'del' / 'global' / 'not' /
   'with' / 'elif' / 'if' / 'or' / 'yield'
 >
+
+# https://docs.python.org/3/library/string.html#formatspec
+format_spec <- ([<>=^] / [^{}] [<>=^])? [+-]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
+  return string(VS.sv());
+}
