@@ -1,11 +1,11 @@
 #include "plugins.h"
 
 #include <cstdlib>
+#include <semver.hpp>
+#include <toml++/toml.h>
 
 #include "codon/parser/common.h"
 #include "codon/util/common.h"
-#include "codon/util/semver/semver.h"
-#include "codon/util/toml++/toml.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"

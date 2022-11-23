@@ -215,34 +215,6 @@ set(CODON_HPPFILES
     codon/sir/value.h
     codon/sir/var.h
     codon/util/common.h
-    codon/util/semver/semver.h
-    codon/util/toml++/toml.h
-    codon/util/toml++/toml_default_formatter.hpp
-    codon/util/toml++/toml_node.hpp
-    codon/util/toml++/toml_preprocessor.h
-    codon/util/toml++/toml_utf8_streams.hpp
-    codon/util/toml++/toml_array.h
-    codon/util/toml++/toml_formatter.h
-    codon/util/toml++/toml_node_view.h
-    codon/util/toml++/toml_print_to_stream.h
-    codon/util/toml++/toml_value.h
-    codon/util/toml++/toml_array.hpp
-    codon/util/toml++/toml_instantiations.hpp
-    codon/util/toml++/toml_parse_error.h
-    codon/util/toml++/toml_table.h
-    codon/util/toml++/toml_version.h
-    codon/util/toml++/toml_common.h
-    codon/util/toml++/toml_json_formatter.h
-    codon/util/toml++/toml_parse_result.h
-    codon/util/toml++/toml_table.hpp
-    codon/util/toml++/toml_date_time.h
-    codon/util/toml++/toml_json_formatter.hpp
-    codon/util/toml++/toml_parser.h
-    codon/util/toml++/toml_utf8.h
-    codon/util/toml++/toml_default_formatter.h
-    codon/util/toml++/toml_node.h
-    codon/util/toml++/toml_parser.hpp
-    codon/util/toml++/toml_utf8_streams.h
     extra/jupyter/jupyter.h
     extra/python/codon/jit.h)
 set(CODON_CPPFILES
@@ -346,7 +318,7 @@ set(CODON_CPPFILES
     codon/util/common.cpp
     extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
-target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR})
+target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CODON_JUPYTER)
   add_compile_definitions(CODON_JUPYTER)

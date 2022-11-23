@@ -15,7 +15,18 @@ CPMAddPackage(
 CPMAddPackage(
     NAME fmt
     GITHUB_REPOSITORY "fmtlib/fmt"
-    GIT_TAG 9.1.0)
+    GIT_TAG 9.1.0
+    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON")
+
+CPMAddPackage(
+    NAME toml
+    GITHUB_REPOSITORY "marzer/tomlplusplus"
+    GIT_TAG v3.2.0)
+
+CPMAddPackage(
+    NAME semver
+    GITHUB_REPOSITORY "Neargye/semver"
+    GIT_TAG v0.3.0)
 
 CPMAddPackage(
     NAME zlibng
