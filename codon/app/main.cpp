@@ -129,13 +129,6 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   initLogFlags(log);
 
-  auto &exts = supportedExtensions();
-  if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
-                        return hasExtension(input, ext);
-                      }) == exts.end())
-    codon::compilationError(
-        "input file is expected to be a .codon/.py file, or '-' for stdin");
-
   std::unordered_map<std::string, std::string> defmap;
   for (const auto &define : defines) {
     auto eq = define.find('=');
