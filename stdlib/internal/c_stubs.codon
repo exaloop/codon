@@ -125,55 +125,49 @@ def seq_i32_to_float(a: i32) -> float:
 # <ctype.h>
 @pure
 @C
-def isdigit(a: int) -> int:
+def isdigit(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def isspace(a: int) -> int:
+def isspace(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def isupper(a: int) -> int:
+def isupper(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def islower(a: int) -> int:
+def islower(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def toupper(a: int) -> int:
+def toupper(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def tolower(a: int) -> int:
+def tolower(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def isalnum(a: int) -> int:
+def isalnum(a: i32) -> i32:
     pass
 
 
 @pure
 @C
-def isalpha(a: int) -> int:
-    pass
-
-
-@pure
-@C
-def istitle(a: int) -> int:
+def isalpha(a: i32) -> i32:
     pass
 
 
@@ -781,4 +775,17 @@ def gztell(a: cobj) -> int:
 @nocapture
 @C
 def gzseek(a: cobj, b: int, c: i32) -> int:
+    pass
+
+
+# <string.h>
+@pure
+@C
+def memcmp(lhs: Ptr[byte], rhs: Ptr[byte], count: int) -> i32:
+    pass
+
+
+@pure
+@C
+def memchr(p: Ptr[byte], ch: i32, count: int) -> Ptr[byte]:
     pass

@@ -1,5 +1,7 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
+_MAX: Static[int] = 0x7FFFFFFFFFFFFFFF
+
 
 @pure
 @C
@@ -111,18 +113,18 @@ class str:
         i = 0
         n = len(self)
         while i < n:
-            yield self[i]
+            yield str(self.ptr + i, 1)
             i += 1
 
     def __reversed__(self) -> Generator[str]:
         i = len(self) - 1
         while i >= 0:
-            yield self[i]
+            yield str(self.ptr[i], 1)
             i -= 1
 
     def __mul__(self, x: int) -> str:
         total = x * self.len
-        p = cobj(total)
+        p = Ptr[byte](total)
         n = 0
         for _ in range(x):
             str.memcpy(p + n, self.ptr, self.len)
@@ -147,23 +149,54 @@ import algorithms.strings as algorithms
 @extend
 class str:
     def __contains__(self, pattern: str) -> bool:
-        return self.find(pattern, 0, len(self)) >= 0
+        return self.find(pattern) >= 0
 
     # Helper methods
+
+    def _isdigit(a: byte) -> bool:
+        return _C.isdigit(i32(int(a))) != i32(0)
+
+    def _isspace(a: byte) -> bool:
+        return _C.isspace(i32(int(a))) != i32(0)
+
+    def _isupper(a: byte) -> bool:
+        return _C.isupper(i32(int(a))) != i32(0)
+
+    def _islower(a: byte) -> bool:
+        return _C.islower(i32(int(a))) != i32(0)
+
+    def _isalpha(a: byte) -> bool:
+        return _C.isalpha(i32(int(a))) != i32(0)
+
+    def _isalnum(a: byte) -> bool:
+        return _C.isalnum(i32(int(a))) != i32(0)
+
+    def _toupper(a: byte) -> byte:
+        return byte(int(_C.toupper(i32(int(a)))))
+
+    def _tolower(a: byte) -> byte:
+        return byte(int(_C.tolower(i32(int(a)))))
 
     def _slice(self, i: int, j: int) -> str:
         return str(self.ptr + i, j - i)
 
+    def _at(self, i: int) -> str:
+        return str(self.ptr + i, 1)
+
     def join(self, l: Generator[str]) -> str:
+        buf = _strbuf()
         if len(self) == 0:
-            return str.cat(list(l))
-        v = []
-        for a in l:
-            v.append(a)
-            v.append(self)
-        if v:
-            del v[-1]
-        return str.cat(v)
+            for a in l:
+                buf.append(a)
+        else:
+            first = True
+            for a in l:
+                if first:
+                    first = False
+                else:
+                    buf.append(self)
+                buf.append(a)
+        return buf.__str__()
 
     def join(self, l: List[str]) -> str:
         if len(l) == 0:
@@ -203,17 +236,11 @@ class str:
         Return True if all characters in str are digits
         and there is at least one character in str, False otherwise.
         """
-
-        # For empty strings
         if len(self) == 0:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return _C.isdigit(int(self.ptr[0])) > 0
-
         for i in range(len(self)):
-            if _C.isdigit(int(self.ptr[i])) == 0:
+            if not str._isdigit(self.ptr[i]):
                 return False
         return True
 
@@ -232,12 +259,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return _C.islower(int(self.ptr[0])) > 0
+            return str._islower(self.ptr[0])
 
         for i in range(len(self)):
-            if _C.isupper(int(self.ptr[i])) > 0:
+            if str._isupper(self.ptr[i]):
                 return False
-            elif cased == False and _C.islower(int(self.ptr[i])):
+            elif not cased and str._islower(self.ptr[i]):
                 cased = True
         return cased
 
@@ -256,12 +283,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return _C.isupper(int(self.ptr[0])) > 0
+            return str._isupper(self.ptr[0])
 
         for i in range(len(self)):
-            if _C.islower(int(self.ptr[i])) > 0:
+            if str._islower(self.ptr[i]):
                 return False
-            elif cased == False and _C.isupper(int(self.ptr[i])):
+            elif not cased and str._isupper(self.ptr[i]):
                 cased = True
         return cased
 
@@ -272,17 +299,11 @@ class str:
         Return True if all characters in str are alphanumeric
         and there is at least one character in str, False otherwise.
         """
-
-        # For empty strings
         if len(self) == 0:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return _C.isalnum(int(self.ptr[0])) > 0
-
         for i in range(len(self)):
-            if _C.isalnum(int(self.ptr[i])) == 0:
+            if not str._isalnum(self.ptr[i]):
                 return False
         return True
 
@@ -293,17 +314,11 @@ class str:
         Return True if all characters in str are alphabetic
         and there is at least one character in str, False otherwise.
         """
-
-        # For empty strings
         if len(self) == 0:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return _C.isalpha(int(self.ptr[0])) > 0
-
         for i in range(len(self)):
-            if _C.isalpha(int(self.ptr[i])) == 0:
+            if not str._isalpha(self.ptr[i]):
                 return False
         return True
 
@@ -314,17 +329,11 @@ class str:
         Return True if all characters in str are whitespace
         and there is at least one character in str, False otherwise.
         """
-
-        # For empty strings
         if len(self) == 0:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return _C.isspace(int(self.ptr[0])) > 0
-
         for i in range(len(self)):
-            if _C.isspace(int(self.ptr[i])) == 0:
+            if not str._isspace(self.ptr[i]):
                 return False
         return True
 
@@ -344,17 +353,17 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return _C.isupper(int(self.ptr[0])) > 0
+            return str._isupper(self.ptr[0])
 
         cased = False
         prev_is_cased = False
         for i in range(len(self)):
-            if _C.isupper(int(self.ptr[i])) > 0:
+            if str._isupper(self.ptr[i]):
                 if prev_is_cased:
                     return False
                 prev_is_cased = True
                 cased = True
-            elif _C.islower(int(self.ptr[i])) > 0:
+            elif str._islower(self.ptr[i]):
                 if not prev_is_cased:
                     return False
                 prev_is_cased = True
@@ -370,20 +379,13 @@ class str:
         Return a copy of str with only its first character capitalized (ASCII)
         and the rest lower-cased.
         """
-
-        if len(self) > 0:
-            # Capitalize first letter
-            s = [str(chr(_C.toupper(int(self.ptr[0]))))]
-
-            # Make any following char lowercase
-            for i in range(1, len(self)):
-                if _C.isupper(int(self.ptr[i])):
-                    s.append(str(chr(_C.tolower(int(self.ptr[i])))))
-                else:
-                    s.append(self[i])
-            return "".join(s)
-
-        # Empty string
+        n = len(self)
+        if n > 0:
+            p = Ptr[byte](n)
+            p[0] = str._toupper(self.ptr[0])
+            for i in range(1, n):
+                p[i] = str._tolower(self.ptr[i])
+            return str(p, n)
         return ""
 
     def isdecimal(self) -> bool:
@@ -394,7 +396,6 @@ class str:
         str is a decimal string if all characters in str are decimal and
         there is at least one character in str.
         """
-        # Empty string
         if len(self) == 0:
             return False
 
@@ -416,7 +417,7 @@ class str:
             return ""
         p = Ptr[byte](n)
         for i in range(n):
-            p[i] = byte(_C.tolower(int(self.ptr[i])))
+            p[i] = str._tolower(self.ptr[i])
         return str(p, n)
 
     def upper(self) -> str:
@@ -431,7 +432,7 @@ class str:
             return ""
         p = Ptr[byte](n)
         for i in range(n):
-            p[i] = byte(_C.toupper(int(self.ptr[i])))
+            p[i] = str._toupper(self.ptr[i])
         return str(p, n)
 
     def isascii(self) -> bool:
@@ -441,8 +442,8 @@ class str:
         Return True if str is empty or all characters in str are ASCII,
         False otherwise.
         """
-        for char in self:
-            if int(ord(char)) >= 128:
+        for i in range(len(self)):
+            if int(self.ptr[i]) >= 128:
                 return False
         return True
 
@@ -469,10 +470,10 @@ class str:
             return ""
         p = Ptr[byte](n)
         for i in range(n):
-            if _C.islower(int(self.ptr[i])):
-                p[i] = byte(_C.toupper(int(self.ptr[i])))
-            elif _C.isupper(int(self.ptr[i])):
-                p[i] = byte(_C.tolower(int(self.ptr[i])))
+            if str._islower(self.ptr[i]):
+                p[i] = str._toupper(self.ptr[i])
+            elif str._isupper(self.ptr[i]):
+                p[i] = str._tolower(self.ptr[i])
             else:
                 p[i] = self.ptr[i]
         return str(p, n)
@@ -486,24 +487,23 @@ class str:
         """
         prev_is_cased = False
 
-        # Empty string
         n = len(self)
         if n == 0:
             return ""
 
         p = Ptr[byte](n)
         for i in range(n):
-            if _C.islower(int(self.ptr[i])):
+            if str._islower(self.ptr[i]):
                 # lowercase to uppercase
                 if not prev_is_cased:
-                    p[i] = byte(_C.toupper(int(self.ptr[i])))
+                    p[i] = str._toupper(self.ptr[i])
                 else:
                     p[i] = self.ptr[i]
                 prev_is_cased = True
-            elif _C.isupper(int(self.ptr[i])):
+            elif str._isupper(self.ptr[i]):
                 # uppercase to lowercase
                 if prev_is_cased:
-                    p[i] = byte(_C.tolower(int(self.ptr[i])))
+                    p[i] = str._tolower(self.ptr[i])
                 else:
                     p[i] = self.ptr[i]
                 prev_is_cased = True
@@ -524,6 +524,28 @@ class str:
         """
         return self.isdecimal()
 
+    def _build(*args):
+        total = 0
+        for t in args:
+            if isinstance(t, str):
+                total += len(t)
+            else:
+                total += len(t[0]) * t[1]
+        p = Ptr[byte](total)
+        i = 0
+
+        for t in args:
+            if isinstance(t, str):
+                str.memcpy(p + i, t.ptr, t.len)
+                i += t.len
+            else:
+                s, n = t
+                for _ in range(n):
+                    str.memcpy(p + i, s.ptr, s.len)
+                    i += s.len
+
+        return str(p, total)
+
     def ljust(self, width: int, fillchar: str = " ") -> str:
         """
         ljust(width[, fillchar]) -> string
@@ -532,9 +554,11 @@ class str:
 
         Padding is done using the specified fill character (default is a space).
         """
+        if len(fillchar) != 1:
+            raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
-        return self + (fillchar * (width - len(self)))
+        return str._build(self, (fillchar, width - len(self)))
 
     def rjust(self, width: int, fillchar: str = " ") -> str:
         """
@@ -544,9 +568,11 @@ class str:
 
         Padding is done using the specified fill character (default is a space).
         """
+        if len(fillchar) != 1:
+            raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
-        return (fillchar * (width - len(self))) + self
+        return str._build((fillchar, width - len(self)), self)
 
     def center(self, width: int, fillchar: str = " ") -> str:
         """
@@ -555,14 +581,15 @@ class str:
         Return str centered in a string of length width. Padding is
         done using the specified fill character (default is a space)
         """
+        if len(fillchar) != 1:
+            raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
             return self
 
         pad = width - len(self)
         left_pad = pad // 2
         right_pad = width - len(self) - left_pad
-
-        return "".join([fillchar * left_pad, self, fillchar * right_pad])
+        return str._build((fillchar, left_pad), self, (fillchar, right_pad))
 
     def zfill(self, width: int) -> str:
         """
@@ -602,10 +629,9 @@ class str:
         """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
-        count = 0
-        for _ in algorithms.filter_overlaps(self[start:end]._search(sub), len(sub)):
-            count += 1
-        return count
+        if end - start < len(sub):
+            return 0
+        return algorithms.count(self._slice(start, end), sub)
 
     def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
@@ -619,27 +645,10 @@ class str:
         """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
-
-        # special case for length-1 pattern
-        if len(sub) == 1:
-            char = sub.ptr[0]
-            for i in range(start, end):
-                if self.ptr[i] == char:
-                    return i
+        if end - start < len(sub):
             return -1
-
-        pos = str._getfirst(self[start:end]._search(sub))
-
-        if pos < 0:
-            return -1
-
-        if sub == "" and start > len(self):
-            return -1
-
-        if sub == "" and (start <= end <= len(self)):
-            return start
-
-        return pos + start  # add start position because of truncation
+        pos = algorithms.find(self._slice(start, end), sub)
+        return pos if pos < 0 else pos + start
 
     def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
@@ -653,24 +662,10 @@ class str:
         """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
-
-        # special case for length-1 pattern
-        if len(sub) == 1:
-            char = sub.ptr[0]
-            for i in range(end - 1, start, -1):
-                if self.ptr[i] == char:
-                    return i
+        if end - start < len(sub):
             return -1
-
-        pos = str._getfirst(self[start:end]._rsearch(sub))
-
-        if pos < 0:
-            return -1
-
-        if sub == "" and start > len(self):
-            return -1
-
-        return pos + start  # add start position because of truncation
+        pos = algorithms.rfind(self._slice(start, end), sub)
+        return pos if pos < 0 else pos + start
 
     def isidentifier(self) -> bool:
         """
@@ -684,15 +679,17 @@ class str:
             return False
 
         # is not a letter or _
-        if not self[0].isalpha():
-            if self[0] != "_":
+        first = self._at(0)
+        if not first.isalpha():
+            if first != "_":
                 return False
 
-        if self[0].isalpha() or self[0] == "_":
+        if first.isalpha() or first == "_":
             for i in range(1, len(self)):
-                if not self[i].isalpha():
-                    if not self[i].isdecimal():
-                        if self[i] != "_":
+                ith = self._at(i)
+                if not ith.isalpha():
+                    if not ith.isdecimal():
+                        if ith != "_":
                             return False
 
         return True
@@ -704,19 +701,20 @@ class str:
         Return True if the string is printable or empty, False otherwise.
         Unlike Python, isprintable() deals with just ASCII characters.
         """
-        for char in self:
-            if not (31 < int(ord(char)) < 128):
+        for i in range(len(self)):
+            if not (31 < int(self.ptr[i]) < 128):
                 return False
         return True
 
     def _has_char(self, chars: str) -> bool:
+        s = self._at(0)
         if chars:
             for c in chars:
-                if self[0] == c:
+                if s == c:
                     return True
             return False
         else:
-            return self[0].isspace()
+            return s.isspace()
 
     def lstrip(self, chars: str = "") -> str:
         """
@@ -727,9 +725,9 @@ class str:
         Unlike Python, lstrip() deals with just ASCII characters.
         """
         i = 0
-        while i < len(self) and self[i]._has_char(chars):
+        while i < len(self) and self._at(i)._has_char(chars):
             i += 1
-        return self[i:]
+        return self._slice(i, len(self))
 
     def rstrip(self, chars: str = "") -> str:
         """
@@ -740,9 +738,9 @@ class str:
         Unlike Python, lstrip() deals with just ASCII characters.
         """
         i = len(self) - 1
-        while i >= 0 and self[i]._has_char(chars):
+        while i >= 0 and self._at(i)._has_char(chars):
             i -= 1
-        return self[: i + 1]
+        return self._slice(0, i + 1)
 
     def strip(self, chars: str = "") -> str:
         """
@@ -753,9 +751,7 @@ class str:
         If chars is given, remove characters in chars instead.
         Unlike Python, lstrip() deals with just ASCII characters.
         """
-        lstr = self.lstrip(chars)
-        rstr = lstr.rstrip(chars)
-        return rstr
+        return self.lstrip(chars).rstrip(chars)
 
     def partition(self, sep: str) -> Tuple[str, str, str]:
         """
@@ -763,36 +759,25 @@ class str:
         the separator itself, and the part after it.  If the separator is not
         found, return str and two empty strings.
         """
-        pos = str._getfirst(self._search(sep))
-
+        if not sep:
+            raise ValueError("empty separator")
+        pos = algorithms.find(self, sep)
         if pos < 0:
             return self, "", ""
+        return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
-        if not pos:
-            return "", sep, self[pos + len(sep) :]
-
-        return self[:pos], sep, self[pos + len(sep) :]
-
-    def rpartition(self, sep: str) -> Tuple[str, str, str]:
+    def rpartition(self, sep: str) -> Tuple[str, str, str]: # XXX
         """
         Search for the separator sep in str, starting at the end of str, and return
         the part before it, the separator itself, and the part after it.  If the
         separator is not found, return two empty strings and str.
         """
-        pos0 = -1
-        pos1 = -1
-        for pos in self._search(sep):
-            if pos0 == -1:
-                pos0 = pos
-            pos1 = pos
-
-        if pos0 < 0:
+        if not sep:
+            raise ValueError("empty separator")
+        pos = algorithms.rfind(self, sep)
+        if pos < 0:
             return "", "", self
-
-        if not pos0:
-            return "", sep, self[pos1 + len(sep) :]
-
-        return self[:pos1], sep, self[pos1 + len(sep) :]
+        return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
     def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
         """
@@ -806,52 +791,36 @@ class str:
         """
         if sep is None:
             return self._split_whitespace(
-                maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
+                maxsplit if maxsplit >= 0 else _MAX
             )
         sep: str = sep
 
+        if len(sep) == 0:
+            raise ValueError("empty separator")
+
         # special case for length-1 pattern
         if len(sep) == 1:
-            return self._split_char(sep.ptr[0], maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF)
+            return self._split_char(sep.ptr[0], maxsplit if maxsplit >= 0 else _MAX)
 
-        li = list(algorithms.filter_overlaps(self._search(sep), len(sep)))
-        str_split = []
+        MAX_PREALLOC = 12
+        maxsplit = maxsplit if maxsplit >= 0 else _MAX
+        prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
+        v = List[str](capacity=prealloc_size)
+        i = 0
+        j = 0
+        n = len(self)
 
-        # no delimiter found
-        if len(li) == 0:
-            return [self]
+        while maxsplit > 0:
+            maxsplit -= 1
+            pos = algorithms.find(self._slice(i, n), sep)
+            if pos < 0:
+                break
+            j = i + pos
+            v.append(self._slice(i, j))
+            i = j + len(sep)
 
-        if len(sep) > len(self):
-            return [self]
-
-        if maxsplit == 0:
-            return [self]
-
-        if maxsplit < 0 or maxsplit > len(li):
-            maxsplit = len(li)
-
-        prev = li[0]
-        # append first part of string
-        # if sep is found at index 0, add '' to separate
-        if li[0] == 0:
-            str_split.append("")
-        else:
-            str_split.append(self[: li[0]])
-
-        # split the rest of the string according to separator
-        if len(li) > 1 and maxsplit > 1:
-            for j in range(1, maxsplit):
-                # when separators are beside each other, append '' to list
-                if li[j] - 1 == prev:
-                    str_split.append("")
-                else:
-                    str_split.append(self[prev + len(sep) : li[j]])
-                prev = li[j]
-
-        if prev != len(self):
-            str_split.append(self[prev + len(sep) :])
-
-        return str_split
+        v.append(self._slice(i, n))
+        return v
 
     def rsplit(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
         """
@@ -865,58 +834,36 @@ class str:
         """
         if sep is None:
             return self._rsplit_whitespace(
-                maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF
+                maxsplit if maxsplit >= 0 else _MAX
             )
         sep: str = sep
 
+        if len(sep) == 0:
+            raise ValueError("empty separator")
+
         # special case for length-1 pattern
         if len(sep) == 1:
-            return self._rsplit_char(sep.ptr[0], maxsplit if maxsplit >= 0 else 0x7FFFFFFFFFFFFFFF)
+            return self._rsplit_char(sep.ptr[0], maxsplit if maxsplit >= 0 else _MAX)
 
-        li = list(
-            algorithms.rfilter_overlaps(reversed(list(self._search(sep))), len(sep))
-        )
-        str_split = []
-        end_of_li = len(li) - 1
+        MAX_PREALLOC = 12
+        maxsplit = maxsplit if maxsplit >= 0 else _MAX
+        prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
+        v = List[str](capacity=prealloc_size)
+        i = 0
+        j = len(self)
+        n = j
 
-        if len(li) == 0:
-            return [self]
-        if len(sep) > len(self):
-            return [self]
-        if maxsplit == 0:
-            return [self]
+        while maxsplit > 0:
+            maxsplit -= 1
+            pos = algorithms.rfind(self._slice(0, j), sep)
+            if pos < 0:
+                break
+            v.append(self._slice(pos + len(sep), j))
+            j = pos
 
-        if maxsplit < 0 or maxsplit > len(li):
-            maxsplit = len(li)
-
-        prev = li[0]
-        # append first part of string
-        # if sep is found in the last index, add '' to separate
-        if prev == len(self) - len(sep):
-            str_split.append("")
-        else:
-            str_split.append(self[prev + len(sep) :])
-
-        # split the rest of the string according to separator
-        if len(li) > 1 and maxsplit > 1:
-            for j in range(1, maxsplit):
-                # when separators are beside each other, append '' to list
-                if li[j] + 1 == prev:
-                    str_split.append("")
-                else:
-                    str_split.append(self[li[j] + len(sep) : prev])
-                prev = li[j]
-
-        if prev != 0:
-            str_split.append(self[:prev])
-        else:
-            # NOT PICKING UP '' at start of string so manually putting it in
-            if li[end_of_li] == 0:
-                str_split.append("")
-            else:
-                str_split.append(self[: li[0]])
-        str_split.reverse()
-        return str_split
+        v.append(self._slice(0, j))
+        v.reverse()
+        return v
 
     def splitlines(self, keepends: bool = False) -> List[str]:
         """
@@ -926,75 +873,35 @@ class str:
         Line breaks are not included in the resulting list unless keepends
         is given and true.
         """
-        line_split = []
+        v = []
+        i = 0
+        j = 0
+        n = len(self)
 
-        prev = 0
-        for i in range(len(self)):
-            # finding '\n' by itself and dealing with '\r\n'
-            if i != 0:
-                # not equal to '\r\n'
-                if self[i] == "\n" and self[i - 1] != "\r":
-                    if keepends:
-                        line_split.append(self[prev : i + 1])
-                    else:
-                        # empty string
-                        if len(self[prev:i]) == 0:
-                            line_split.append("")
-                        else:
-                            line_split.append(self[prev:i])
-                    prev = i + 1
-                    continue
-                # equal to '\r\n'
-                elif self[i] == "\n" and self[i - 1] == "\r":
-                    if keepends:
-                        line_split.append(self[prev : i + 1])
+        break_r = byte(13)  # \r
+        break_n = byte(10)  # \n
 
-                    else:
-                        # empty string
-                        if len(self[prev : i - 1]) == 0:
-                            line_split.append("")
-                        else:
-                            line_split.append(self[prev : i - 1])
-                    prev = i + 1
-                    continue
-            # '\n' exisits at the beginning of string
-            elif self[i] == "\n":
-                if keepends:
-                    line_split.append(self[i])
+        while i < n:
+            while i < n and not (self.ptr[i] == break_r or self.ptr[i] == break_n):
+                i += 1
+
+            eol = i
+            if i < n:
+                if self.ptr[i] == break_r and i + 1 < n and self.ptr[i + 1] == break_n:
+                    i += 2
                 else:
-                    line_split.append("")
-                prev = i + 1
-                continue
+                    i += 1
+                if keepends:
+                    eol = i
 
-            # finding '\r' by itself
-            if i != len(self) - 1:
-                # not equal to '\r\n'
-                if self[i] == "\r" and self[i + 1] != "\n":
-                    if keepends:
-                        line_split.append(self[prev : i + 1])
-                    else:
-                        # empty string
-                        if len(self[prev:i]) == 0:
-                            line_split.append("")
-                        else:
-                            line_split.append(self[prev:i])
-                    prev = i + 1
-                    continue
-            # '\r' exisits at the end of string
-            elif self[i] == "\r":
-                if self[i - 1] == "\n" or self[i - 1] == "\r":
-                    if keepends:
-                        line_split.append(self[i])
-                    else:
-                        line_split.append("")
-                    prev = i + 1
-                    break
-                prev = i + 1
+            if j == 0 and eol == n:
+                v.append(self)
                 break
-        if prev < len(self):
-            line_split.append(self[prev:])
 
-        return line_split
+            v.append(self._slice(j, eol))
+            j = i
+
+        return v
 
     def startswith(
         self, prefix: str, start: int = 0, end: Optional[int] = None
@@ -1021,10 +928,10 @@ class str:
             return False
 
         # prefix is an empty string
-        if prefix == "":
+        if not prefix:
             return True
 
-        return prefix == self[start : start + len(prefix)]
+        return prefix == self._slice(start, start + len(prefix))
 
     def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
         """
@@ -1054,10 +961,10 @@ class str:
             return False
 
         # prefix is an empty string
-        if suffix == "":
+        if not suffix:
             return True
 
-        return suffix == self[start : start + len(suffix)]
+        return suffix == self._slice(start, start + len(suffix))
 
     def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """
@@ -1090,33 +997,8 @@ class str:
         Return a copy of string str with all occurrences of substring
         old replaced by new.  If the optional argument maxcount is
         given, only the first maxcount occurrences are replaced.
-
-        For now, maxcount is required.
         """
-
-        if maxcount < 0:
-            maxcount = len(self) + 1
-        # replace zero matches or length of self is 0
-        elif maxcount == 0 or len(self) == 0:
-            return self
-
-        # replace zero matches or there is nothing to replace
-        if maxcount == 0 or len(new) == 0 and len(old) == 0:
-            return self
-
-        # Handle zero-length special cases
-
-        # insert the 'new' string everywhere.
-        if len(old) == 0:
-            return algorithms.replace_interleave(self, new, maxcount)
-
-        # No way for an empty string to generate a non-empty string.
-        # except ''.replace('', 'A') == 'A' which is handled above.
-        if len(self) == 0:
-            return self
-
-        # delete all occurances of old in self
-        return algorithms.replace_delete_substring(self, old, new, maxcount)
+        return self._replace(old, new, maxcount)
 
     def expandtabs(self, tabsize: int = 8) -> str:
         """
@@ -1125,99 +1007,118 @@ class str:
         Return a copy of str where all tab characters are expanded using spaces.
         If tabsize is not given, a tab size of 8 characters is assumed.
         """
-        incr = 0
-        i = 0  # chars up to and including most recent \n or \r
-        j = 0  # chars since most recent \n or \r (use in tab calculations)
-        u = []
-        j = 0  # same as first pass
+        i = 0
+        j = 0
+        p = self.ptr
+        e = p + len(self)
 
-        # create output string and fill it
-        for p in range(len(self)):
-            if self[p] == "\t":
+        break_r = byte(13)  # \r
+        break_n = byte(10)  # \n
+        tab = byte(9)       # \t
+        space = byte(32)    # ' '
+
+        def overflow():
+            raise OverflowError("result too long")
+
+        while p < e:
+            if p[0] == tab:
+                if tabsize > 0:
+                    incr = tabsize - (j % tabsize)
+                    if j > _MAX - incr:
+                        overflow()
+                    j += incr
+            else:
+                if j > _MAX - 1:
+                    overflow()
+                j += 1
+                if p[0] == break_n or p[0] == break_r:
+                    if i > _MAX - j:
+                        overflow()
+                    i += j
+                    j = 0
+            p += 1
+
+        if i > _MAX - j:
+            overflow()
+
+        u_len = i + j
+        u = Ptr[byte](u_len)
+        j = 0
+        q = u
+        p = self.ptr
+
+        while p < e:
+            if p[0] == tab:
                 if tabsize > 0:
                     i = tabsize - (j % tabsize)
                     j += i
-                    while i != 0:
-                        u.append(" ")
+                    while True:
+                        k = i
                         i -= 1
+                        if k == 0:
+                            break
+                        q[0] = space
+                        q += 1
             else:
-                u.append(self[p])
                 j += 1
-                if self[p] == "\n" or self[p] == "\r":
+                q[0] = p[0]
+                q += 1
+                if p[0] == break_n or p[0] == break_r:
                     j = 0
-        return "".join(u)
+            p += 1
 
-    def translate(self, table) -> str:
+        return str(u, u_len)
+
+    def translate(self, map) -> str:
         """
         Return a copy with each character mapped by the given translation table.
-
-        Unlike Python, translate() currently does not allow the translation
-        table to be a bytes object of length 256.
-
-        As well, None implemented yet until None and be placed inside the table
-        with other strings. Use: {'a': ''} to replace a string for now
         """
-        li = list(iter(self))
-        for i in range(len(li)):
-            if li[i] in table:
-                li[i] = table[li[i]]
+        n = len(self)
+        m = 0
 
-        translate_str = "".join(li)
-        return translate_str
+        for i in range(n):
+            key = int(self.ptr[i])
+            if key in map:
+                val = map[key]
+                if val is not None:
+                    m += len(val)
+            else:
+                m += 1
+
+        p = Ptr[byte](m)
+        q = p
+
+        for i in range(n):
+            key = int(self.ptr[i])
+            if key in map:
+                val = map[key]
+                if val is not None:
+                    str.memcpy(q, val.ptr, len(val))
+                    q += len(val)
+            else:
+                q[0] = self.ptr[i]
+                q += 1
+
+        return str(p, m)
+
 
     # Internal helpers
 
-    def _isspace(b: byte) -> bool:
-        return (
-            b == byte(32)
-            or b == byte(9)
-            or b == byte(10)
-            or b == byte(11)
-            or b == byte(12)
-            or b == byte(13)
-        )
-
-    def _search(self, pattern: str) -> Generator[int]:
-        if len(pattern) == 1:
-            c = pattern.ptr[0]
-            i = 0
-            while i < len(self):
-                if self.ptr[i] == c:
-                    yield i
-                i += 1
-        elif len(pattern) <= len(self):
-            if len(pattern) <= 5:
-                yield from algorithms.string_search_slow(self, pattern)
-            else:
-                yield from algorithms.string_search_kmp(self, pattern)
-
-    def _rsearch(self, pattern: str) -> Generator[int]:
-        if len(pattern) == 1:
-            c = pattern.ptr[0]
-            i = len(self) - 1
-            while i >= 0:
-                if self.ptr[i] == c:
-                    yield i
-                i -= 1
-        yield from algorithms.rstring_search_slow(self, pattern)
-
-    def _getfirst(v: Generator[int]) -> int:
-        n = -1
-        if not v.done():
-            n = v.next()
-        v.destroy()
-        return n
-
     def _correct_indices(self, start: int, end: int) -> Tuple[int, int]:
         n = len(self)
+
+        if end > n:
+            end = n
+        elif end < 0:
+            end += n
+            if end < 0:
+                end = 0
+
         if start < 0:
             start += n
             if start < 0:
                 start = 0
-        if end < 0:
-            end += n
-            if end < 0:
-                end = 0
+
         return (start, end)
 
     def _split_whitespace(self, maxcount: int) -> List[str]:
@@ -1311,3 +1212,295 @@ class str:
         l.append(self._slice(0, j + 1))
         l.reverse()
         return l
+
+    def _findchar(self, c: byte):
+        return _C.memchr(self.ptr, i32(int(c)), len(self))
+
+    def _countchar(self, c: byte, maxcount: int):
+        count = 0
+        start = self.ptr
+        end = start + len(self)
+
+        while True:
+            start = str(start, end - start)._findchar(c)
+            if not start:
+                break
+            count += 1
+            if count >= maxcount:
+                break
+            start += 1
+        return count
+
+    def _replace_interleave(self, to: str, maxcount: int):
+        self_s = self.ptr
+        self_len = len(self)
+        to_len = len(to)
+        to_s = to.ptr
+        count = 0
+        i = 0
+
+        if maxcount <= self_len:
+            count = maxcount
+        else:
+            count = self_len + 1
+
+        # assert count > 0
+        if to_len > (_MAX - self_len) // count:
+            raise OverflowError("replace bytes is too long")
+
+        result_len = count * to_len + self_len
+        result_s = Ptr[byte](result_len)
+        result_s0 = result_s
+
+        if to_len > 1:
+            str.memcpy(result_s, to_s, to_len)
+            result_s += to_len
+            count -= 1
+
+            while i < count:
+                result_s[0] = self_s[0]
+                result_s += 1
+                self_s += 1
+                str.memcpy(result_s, to_s, to_len)
+                result_s += to_len
+                i += 1
+        else:
+            result_s[0] = to_s[0]
+            result_s += to_len
+            count -= 1
+
+            while i < count:
+                result_s[0] = self_s[0]
+                result_s += 1
+                self_s += 1
+                result_s[0] = to_s[0]
+                result_s += to_len
+                i += 1
+
+        str.memcpy(result_s, self_s, self_len - i)
+        return str(result_s0, result_len)
+
+    def _replace_delete_single_character(self, from_c: byte, maxcount: int):
+        self_len = len(self)
+        self_s = self.ptr
+
+        count = self._countchar(from_c, maxcount)
+        if count == 0:
+            return self
+
+        result_len = self_len - count
+        # assert result_len >= 0
+        result_s = Ptr[byte](result_len)
+        result_s0 = result_s
+
+        start = self_s
+        end = self_s + self_len
+        while count > 0:
+            count -= 1
+            nxt = str(start, end - start)._findchar(from_c)
+            if not nxt:
+                break
+            str.memcpy(result_s, start, nxt - start)
+            result_s += nxt - start
+            start = nxt + 1
+
+        str.memcpy(result_s, start, end - start)
+        return str(result_s0, result_len)
+
+    def _replace_delete_substring(self, from_s: str, maxcount: int):
+        self_len = len(self)
+        self_s = self.ptr
+        from_len = len(from_s)
+
+        count = algorithms.count_with_max(self, from_s, maxcount)
+        if count == 0:
+            return self
+
+        result_len = self_len - (count * from_len)
+        # assert result_len >= 0
+        result_s = Ptr[byte](result_len)
+        result_s0 = result_s
+
+        start = self_s
+        end = self_s + self_len
+        while count > 0:
+            count -= 1
+            offset = algorithms.find(str(start, end - start), from_s)
+            if offset == -1:
+                break
+            nxt = start + offset
+            str.memcpy(result_s, start, nxt - start)
+            result_s += nxt - start
+            start = nxt + from_len
+
+        str.memcpy(result_s, start, end - start)
+        return str(result_s0, result_len)
+
+    def _replace_single_character_in_place(self, from_c: byte, to_c: byte, maxcount: int):
+        self_s = self.ptr
+        self_len = len(self)
+
+        nxt = self._findchar(from_c)
+        if not nxt:
+            return self
+
+        result_s = Ptr[byte](self_len)
+        str.memcpy(result_s, self_s, self_len)
+
+        start = result_s + (nxt - self_s)
+        start[0] = to_c
+        start += 1
+        end = result_s + self_len
+        maxcount -= 1
+
+        while maxcount > 0:
+            maxcount -= 1
+            nxt = str(start, end - start)._findchar(from_c)
+            if not nxt:
+                break
+            nxt[0] = to_c
+            start = nxt + 1
+
+        return str(result_s, self_len)
+
+    def _replace_substring_in_place(self, from_s: str, to: str, maxcount: int):
+        self_s = self.ptr
+        self_len = len(self)
+        from_len = len(from_s)
+        to_s = to.ptr
+
+        offset = algorithms.find(self, from_s)
+        if offset == -1:
+            return self
+
+        result_s = Ptr[byte](self_len)
+        str.memcpy(result_s, self_s, self_len)
+
+        start = result_s + offset
+        str.memcpy(start, to_s, from_len)
+        start += from_len
+        end = result_s + self_len
+        maxcount -= 1
+
+        while maxcount > 0:
+            maxcount -= 1
+            offset = algorithms.find(str(start, end - start), from_s)
+            if offset == -1:
+                break
+            str.memcpy(start + offset, to_s, from_len)
+            start += offset + from_len
+
+        return str(result_s, self_len)
+
+    def _replace_single_character(self, from_c: byte, to_s: str, maxcount: int):
+        self_s = self.ptr
+        self_len = len(self)
+        to_len = len(to_s)
+
+        count = self._countchar(from_c, maxcount)
+        if count == 0:
+            return self
+
+        # assert count > 0
+        if to_len - 1 > (_MAX - self_len) // count:
+            raise OverflowError("replace bytes is too long")
+
+        result_len = self_len + count * (to_len - 1)
+        result_s = Ptr[byte](result_len)
+        result_s0 = result_s
+
+        start = self_s
+        end = self_s + self_len
+        while count > 0:
+            count -= 1
+            nxt = str(start, end - start)._findchar(from_c)
+            if not nxt:
+                break
+
+            if nxt == start:
+                str.memcpy(result_s, to_s.ptr, to_len)
+                result_s += to_len
+                start += 1
+            else:
+                str.memcpy(result_s, start, nxt - start)
+                result_s += (nxt - start)
+                str.memcpy(result_s, to_s.ptr, to_len)
+                result_s += to_len
+                start = nxt + 1
+
+        str.memcpy(result_s, start, end - start)
+        return str(result_s0, result_len)
+
+    def _replace_substring(self, from_s: str, to_s: str, maxcount: int):
+        self_s = self.ptr
+        self_len = len(self)
+        from_len = len(from_s)
+        to_len = len(to_s)
+
+        count = algorithms.count_with_max(self, from_s, maxcount)
+        if count == 0:
+            return self
+
+        # assert count > 0
+        if to_len - from_len > (_MAX - self_len) // count:
+            raise OverflowError("replace bytes is too long")
+
+        result_len = self_len + count * (to_len - from_len)
+        result_s = Ptr[byte](result_len)
+        result_s0 = result_s
+
+        start = self_s
+        end = self_s + self_len
+        while count > 0:
+            count -= 1
+            offset = algorithms.find(str(start, end - start), from_s)
+            if offset == -1:
+                break
+
+            nxt = start + offset
+            if nxt == start:
+                str.memcpy(result_s, to_s.ptr, to_len)
+                result_s += to_len
+                start += from_len
+            else:
+                str.memcpy(result_s, start, nxt - start)
+                result_s += (nxt - start)
+                str.memcpy(result_s, to_s.ptr, to_len)
+                result_s += to_len
+                start = nxt + from_len
+
+        str.memcpy(result_s, start, end - start)
+        return str(result_s0, result_len)
+
+    def _replace(self, from_s: str, to_s: str, maxcount: int):
+        self_len = len(self)
+        from_len = len(from_s)
+        to_len = len(to_s)
+
+        if self_len < from_len:
+            return self
+
+        if maxcount < 0:
+            maxcount = _MAX
+        elif maxcount == 0:
+            return self
+
+        if from_len == 0:
+            if to_len == 0:
+                return self
+            return self._replace_interleave(to_s, maxcount)
+
+        if to_len == 0:
+            if from_len == 1:
+                return self._replace_delete_single_character(from_s.ptr[0], maxcount)
+            return self._replace_delete_substring(from_s, maxcount)
+
+        if from_len == to_len:
+            if from_len == 1:
+                return self._replace_single_character_in_place(from_s.ptr[0], to_s.ptr[0], maxcount)
+            return self._replace_substring_in_place(from_s, to_s, maxcount)
+
+        if from_len == 1:
+            return self._replace_single_character(from_s.ptr[0], to_s, maxcount)
+        else:
+            return self._replace_substring(from_s, to_s, maxcount)

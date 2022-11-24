@@ -688,13 +688,13 @@ def test_expandtabs():
 
 @test
 def test_translate():
-    assert "I yor ge".translate({"g": "w", "y": "f"}) == "I for we"
-    assert "abababc".translate({"a": ""}) == "bbbc"
-    assert "abababc".translate({"a": "", "b": "i"}) == "iiic"
-    assert "abababc".translate({"a": "", "b": "i", "c": "x"}) == "iiix"
-    assert "abababc".translate({"a": "", "b": ""}) == "c"
-    assert "xzx".translate({"z": "yy"}) == "xyyx"
-
+    assert "I yor ge".translate({ord("g"): "w", ord("y"): "f"}) == "I for we"
+    assert "abababc".translate({ord("a"): ""}) == "bbbc"
+    assert "abababc".translate({ord("a"): "", ord("b"): "i"}) == "iiic"
+    assert "abababc".translate({ord("a"): "", ord("b"): "i", ord("c"): "x"}) == "iiix"
+    assert "abababc".translate({ord("a"): "", ord("b"): ""}) == "c"
+    assert "xzx".translate({ord("z"): "yy"}) == "xyyx"
+    assert "aaabbbccc".translate({ord("b"): Optional("XY"), ord("c"): None, ord("a"): Optional("")}) == "XYXYXY"
 
 @test
 def test_repr():
@@ -761,26 +761,6 @@ def test_repr():
     assert repr("\"'") == "'\"\\''"
 
 
-@test
-def test_algorithms():
-    from algorithms.strings import *
-
-    assert [1, 2] == list(string_search_slow('abbba', 'bb'))
-    assert [2, 1] == list(rstring_search_slow('abbbc', 'bb'))
-
-    assert [0, 9, 11, 14] == list(string_search_slow('1214313141212 12', '12'))
-    assert [0, 9, 11, 14] == list(string_search_rabin_karp('1214313141212 12', '12', 1001))
-    assert [0, 9, 11, 14] == list(string_search_kmp('1214313141212 12', '12'))
-
-    assert [0, 9, 12] == list(string_search_slow('AABAACAADAABAABA', 'AABA'))
-    assert [0, 9, 12] == list(string_search_rabin_karp('AABAACAADAABAABA', 'AABA', 1001))
-    assert [0, 9, 12] == list(string_search_kmp('AABAACAADAABAABA', 'AABA'))
-
-    assert [10] == list(string_search_slow('ABABDABACDABABCABAB', 'ABABCABAB'))
-    assert [10] == list(string_search_rabin_karp('ABABDABACDABABCABAB', 'ABABCABAB', 101))
-    assert [10] == list(string_search_kmp('ABABDABACDABABCABAB', 'ABABCABAB'))
-
-
 test_isdigit()
 test_islower()
 test_isupper()
@@ -826,4 +806,3 @@ test_fstr()
 test_slice()
 test_join()
 test_repr()
-test_algorithms()
