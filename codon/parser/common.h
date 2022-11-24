@@ -11,10 +11,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <fmt/format.h>
-#include <fmt/ostream.h>
-
-
 
 #include "codon/util/common.h"
 
