@@ -675,3 +675,14 @@ StaticValue::Type getStaticGeneric(Expr *e);
 } // namespace codon::ast
 
 template <> struct fmt::formatter<codon::ast::Expr> : fmt::ostream_formatter {};
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<
+           std::is_convertible<T, std::shared_ptr<codon::ast::Expr>>::value, char>>
+    : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
+  }
+};

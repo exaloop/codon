@@ -266,9 +266,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
-  LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
-              type->realizedName(), ctx->getRealizationStackName(),
-              ctx->getRealizationDepth());
+  LOG("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
+      type->realizedName(), ctx->getRealizationStackName(), ctx->getRealizationDepth());
   getLogger().level++;
   ctx->addBlock();
   ctx->typecheckLevel++;
@@ -524,6 +523,8 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   for (auto &[clsName, cls] : ctx->cache->classes) {
     if (clsName != baseCls && in(cls.mro, baseCls)) {
       for (auto &[_, real] : cls.realizations) {
+
+
         auto &vtable = real->vtables[baseCls];
 
         // TODO: fix the instantiation for generics!
@@ -540,6 +541,10 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                   m->debugString(1));
         m = realize(m);
         key = make_pair(fnName, sig(m->getFunc().get()));
+
+        auto thunkName = format("_thunk.{}.{}", baseCls, m->realizedName());
+        if (in(ctx->cache->functions, thunkName))
+          continue;
 
         std::vector<Param> fnArgs;
         fnArgs.push_back(
@@ -560,19 +565,17 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         for (size_t i = 1; i < args.size(); i++)
           callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
         auto thunkAst = N<FunctionStmt>(
-            format("_thunk.{}.{}", baseCls, m->realizedName()), nullptr, fnArgs,
+            thunkName, nullptr, fnArgs,
             N<SuiteStmt>(
                 N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs))),
             Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
         thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
         transform(thunkAst);
-        auto tm = realize(ctx->instantiate(thunkFn.type)->getFunc());
+        auto ti = ctx->instantiate(thunkFn.type);
+        auto tm = realize(ti);
         seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
 
-        // LOG("[virtual] realized child {} := {}.{}({}) -> {} ", vid, baseCls,
-        // key.first,
-        //     key.second, thunkAst->toString(2));
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }

@@ -103,9 +103,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
   // Debug information
-  LOG_REALIZE("[class] {} -> {}", stmt->name, typ->debugString(true));
+  LOG_REALIZE("[class] {} -> {}", stmt->name, typ);
   for (auto &m : ctx->cache->classes[stmt->name].fields)
-    LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(true));
+    LOG_REALIZE("       - member: {}: {}", m.name, m.type);
 }
 
 /// Generate a tuple class `Tuple.N[T1,...,TN]`.

@@ -126,3 +126,29 @@ protected:
 using TypePtr = std::shared_ptr<Type>;
 
 } // namespace codon::ast::types
+
+template <typename T>
+struct fmt::formatter<
+    T,
+    std::enable_if_t<
+        std::is_convertible<T, std::shared_ptr<codon::ast::types::Type>>::value, char>>
+    : fmt::formatter<std::string_view> {
+  char presentation = 'd';
+
+  constexpr auto parse(format_parse_context &ctx) -> decltype(ctx.begin()) {
+    auto it = ctx.begin(), end = ctx.end();
+    if (it != end && (*it == 'p' || *it == 'd' || *it == 'D'))
+      presentation = *it++;
+    return it;
+  }
+
+  template <typename FormatContext>
+  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    if (presentation == 'p')
+      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(0) : "<nullptr>");
+    else if (presentation == 'd')
+      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(1) : "<nullptr>");
+    else
+      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(2) : "<nullptr>");
+  }
+};
