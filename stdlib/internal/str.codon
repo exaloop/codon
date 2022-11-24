@@ -598,26 +598,22 @@ class str:
         Pad a numeric string str with zeros on the left, to fill a field
         of the specified width.  The string str is never truncated.
         """
-        sign = False
-
-        if width <= len(self):
+        if len(self) >= width:
             return self
 
-        s = []
-        if self and (self[0] == "+" or self[0] == "-"):
-            # move sign to beginning of string
-            s.append(self[0])
-            sign = True
+        plus = byte(43)   # +
+        minus = byte(45)  # -
+        zero = byte(48)   # 0
 
+        zf = self.rjust(width, '0')
         fill = width - len(self)
+        p = zf.ptr
 
-        s.append("0" * fill)
+        if p[fill] == plus or p[fill] == minus:
+            p[0] = p[fill]
+            p[fill] = zero
 
-        if sign:
-            s.append(self[1:])
-        else:
-            s.append(self)
-        return "".join(s)
+        return zf
 
     def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
         """

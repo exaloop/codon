@@ -207,6 +207,9 @@ def test_zfill():
     assert "".zfill(3) == "000"
     assert "34".zfill(1) == "34"
     assert "34".zfill(4) == "0034"
+    assert "1+2".zfill(5) == "001+2"
+    assert "+".zfill(10) == "+000000000"
+    assert "-".zfill(10) == "-000000000"
 
 
 @test
