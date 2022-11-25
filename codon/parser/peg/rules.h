@@ -5,9 +5,9 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <peglib.h>
 #include <string>
 #include <vector>
-#include <peglib.h>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"

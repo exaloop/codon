@@ -124,7 +124,7 @@ StmtPtr parseFile(Cache *cache, const std::string &file) {
   cache->imports[file].content = lines;
   auto result = parseCode(cache, file, code);
   // For debugging purposes:
-  // LOG("peg/{} :=  {}", file, result ? result->toString(0) : "<nullptr>");
+  // LOG("peg/{} :=  {}", file, result);
   return result;
 }
 

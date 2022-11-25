@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include <fmt/format.h>
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include <fmt/format.h>
 
 namespace codon::ast {
 

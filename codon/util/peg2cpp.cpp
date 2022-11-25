@@ -12,13 +12,13 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <peglib.h>
 #include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <peglib.h>
 
 #define FMT_HEADER_ONLY
 #include <fmt/format.h>
@@ -65,7 +65,8 @@ string join(const T &items, const string &delim = " ", int start = 0, int end = 
 
 // const string PREDICATE = ".predicate";
 // bool is_predicate(const std::string &name) {
-//   return (name.size() > PREDICATE.size() && name.substr(name.size() - PREDICATE.size()) == PREDICATE);
+//   return (name.size() > PREDICATE.size() && name.substr(name.size() -
+//   PREDICATE.size()) == PREDICATE);
 // }
 
 class PrintVisitor : public peg::Ope::Visitor {
@@ -159,7 +160,8 @@ int main(int argc, char **argv) {
 
   string rules, actions, actionFns;
   string action_preamble = "  auto &CTX = any_cast<ParseContext &>(DT);\n";
-  string const_action_preamble = "  const auto &CTX = any_cast<const ParseContext &>(DT);\n";
+  string const_action_preamble =
+      "  const auto &CTX = any_cast<const ParseContext &>(DT);\n";
   string loc_preamble = "  const auto &LI = VS.line_info();\n"
                         "  auto LOC = codon::SrcInfo(\n"
                         "    VS.path, LI.first + CTX.line_offset,\n"
@@ -220,8 +222,9 @@ int main(int argc, char **argv) {
       if (code.find("CTX") != std::string::npos)
         code = const_action_preamble + code;
       actions += fmt::format("P[\"{}\"].predicate = pred_{};\n", name, name);
-      actionFns += fmt::format(
-          "auto pred_{}(const peg::SemanticValues &VS, const any &DT, std::string &MSG) {{\n{}\n}};\n", name, code);
+      actionFns += fmt::format("auto pred_{}(const peg::SemanticValues &VS, const any "
+                               "&DT, std::string &MSG) {{\n{}\n}};\n",
+                               name, code);
     }
   };
 

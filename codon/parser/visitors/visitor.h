@@ -3,10 +3,9 @@
 #include <memory>
 #include <vector>
 
+#include "codon/compiler/error.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/compiler/error.h"
-
 
 namespace codon::ast {
 

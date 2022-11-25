@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <fmt/args.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
-#include <fmt/args.h>
 
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
@@ -1372,6 +1372,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     block = startBlock;
   }
 
+  seqassertn(x->getBody(), "{} has no body [{}]", x->getName(), x->getSrcInfo());
   process(x->getBody());
   B->SetInsertPoint(block);
 

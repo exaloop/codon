@@ -58,7 +58,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
-    seqassert(expr->type, "type not set for {}", expr->toString());
+    seqassert(expr->type, "type not set for {}", expr);
     unify(typ, expr->type);
     if (expr->done)
       ctx->changedNodes++;
@@ -356,10 +356,11 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
   typExpr->setType(superTyp);
   ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
   if (isVirtual) {
-    dist = N<BinaryExpr>(dist, "+",
-                         N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
-                                     N<IdExpr>(superTyp->realizedName()),
-                                     N<CallExpr>(N<IdExpr>("type"), expr)));
+    dist =
+        N<BinaryExpr>(dist, "+",
+                      N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
+                                  N<IdExpr>(superTyp->realizedName()),
+                                  N<CallExpr>(N<IdExpr>("type"), expr)));
   }
   realize(superTyp);
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),

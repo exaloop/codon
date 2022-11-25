@@ -24,7 +24,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs->toString());
+  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs);
   std::string lhs = stmt->lhs->getId()->value;
 
   // Special case: this assignment has been dominated and is not a true assignment but

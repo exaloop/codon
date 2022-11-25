@@ -290,7 +290,7 @@ void TypeContext::dump(int pad) {
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
-    LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type->toString());
+    LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type);
   }
 }
 

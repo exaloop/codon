@@ -2,13 +2,12 @@
 
 #include "llvm/Support/Path.h"
 #include <chrono>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+#include <fmt/std.h>
 #include <iostream>
 #include <ostream>
-#include <fmt/format.h>
-#include <fmt/format.h>
-#include <fmt/std.h>
-#include <fmt/ranges.h>
-#include <fmt/ostream.h>
 
 #include "codon/compiler/error.h"
 #include "codon/config/config.h"

@@ -76,7 +76,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   auto var = stmt->var->getId();
-  seqassert(var, "corrupt for variable: {}", stmt->var->toString());
+  seqassert(var, "corrupt for variable: {}", stmt->var);
 
   // Handle dominated for bindings
   auto changed = in(ctx->cache->replacements, var->value);

@@ -186,7 +186,11 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (args) { // TODO: more general rule?
     unify(expr->type, ctx->instantiate(bestMethod, typ));
     auto baseClass = expr->expr->type->getClass();
-    auto isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
+    auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
+    bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
+    // if (isVirtual)
+    //   LOG("|> {} {} ' {} {}", expr->toString(), baseClass, vtableName, ctx->findMember(baseClass->name, vtableName) != nullptr);
+    isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
       // Special case: calling virtual methods. Route everything through a vtable.
@@ -201,16 +205,12 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         auto name = generateTuple(ids.size());
         auto fnType = NT<InstantiateExpr>(
             NT<IdExpr>("Function"),
-            std::vector<ExprPtr>{
-                NT<InstantiateExpr>(NT<IdExpr>(name), ids),
-                NT<IdExpr>(fn->getRetType()->realizedName())});
+            std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
+                                 NT<IdExpr>(fn->getRetType()->realizedName())});
         // Function[Tuple[TArg1, TArg2, ...], TRet](expr.__vtable__T[VIRTUAL_ID])
-        auto e = transform(N<CallExpr>(
-            fnType, N<IndexExpr>(N<DotExpr>(expr->expr,
-                                            format("{}.{}", VAR_VTABLE,
-                                                   expr->expr->type->getClass()->name)),
-                                 N<IntExpr>(vid))));
-        return e;
+        auto e = N<CallExpr>(
+            fnType, N<IndexExpr>(N<DotExpr>(expr->expr, vtableName), N<IntExpr>(vid)));
+        return transform(e);
       }
     }
   }

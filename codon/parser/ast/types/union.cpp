@@ -108,7 +108,6 @@ std::string UnionType::realizedTypeName() const { return realizedName(); }
 
 void UnionType::addType(TypePtr typ) {
   seqassert(!isSealed(), "union already sealed");
-  //  LOG("-> adding {} to {}", typ->debugString(2), debugString(2));
   if (this == typ.get())
     return;
   if (auto tu = typ->getUnion()) {

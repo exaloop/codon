@@ -1,6 +1,6 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
-from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic
+from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic, seq_gc_add_roots
 
 
 @pure
@@ -11,6 +11,7 @@ def seq_check_errno() -> str:
 
 from C import seq_print(str)
 from C import exit(int)
+from C import malloc(int) -> cobj as c_malloc
 
 @extend
 class __internal__:
@@ -53,7 +54,8 @@ class __internal__:
 
     def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
         """Create a global vtable."""
-        p = Ptr[Ptr[cobj]](seq_alloc_atomic(sz))
+        p = Ptr[Ptr[cobj]](sz)
+        seq_gc_add_roots(p.as_byte(), (p + sz).as_byte())
         __internal__.class_populate_vtables(p)
         return p
 

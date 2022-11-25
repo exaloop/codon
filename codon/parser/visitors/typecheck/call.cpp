@@ -235,7 +235,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
 
     // Ensure that we got a function
     calleeFn = expr->expr->type->getFunc();
-    seqassert(calleeFn, "not a function: {}", expr->expr->type->toString());
+    seqassert(calleeFn, "not a function: {}", expr->expr->type);
 
     // Unify partial generics with types known thus far
     for (size_t i = 0, j = 0, k = 0; i < partType->known.size(); i++)
@@ -274,8 +274,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     auto id = transform(N<IdExpr>(part.var));
     // Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
     auto ex = transformStaticTupleIndex(id->type->getClass(), id, N<IntExpr>(pi));
-    seqassert(ex.first && ex.second, "partial indexing failed: {}",
-              id->type->debugString(true));
+    seqassert(ex.first && ex.second, "partial indexing failed: {}", id->type);
     return ex.second;
   };
 
@@ -325,8 +324,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!part.known.empty()) {
           auto e = getPartialArg(-1);
           auto t = e->getType()->getRecord();
-          seqassert(t && startswith(t->name, TYPE_KWTUPLE), "{} not a kwtuple",
-                    e->toString());
+          seqassert(t && startswith(t->name, TYPE_KWTUPLE), "{} not a kwtuple", e);
           auto &ff = ctx->cache->classes[t->name].fields;
           for (int i = 0; i < t->getRecord()->args.size(); i++) {
             names.emplace_back(ff[i].name);
@@ -884,7 +882,7 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
       parent = f->funcParent;
     } else {
       // Add parent class generics
-      seqassert(parent->getClass(), "not a class: {}", parent->toString());
+      seqassert(parent->getClass(), "not a class: {}", parent);
       for (auto &g : parent->getClass()->generics)
         ctx->add(TypecheckItem::Type, g.name, g.type);
       for (auto &g : parent->getClass()->hiddenGenerics)

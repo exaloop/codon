@@ -235,8 +235,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     if (!realize(ftyp))
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         ftyp->prettyString());
-    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type->toString(),
-                ftyp->toString());
+    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
     realization->fields.emplace_back(field.name, ftyp);
     names.emplace_back(field.name);
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
@@ -266,8 +265,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
-  LOG("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
-      type->realizedName(), ctx->getRealizationStackName(), ctx->getRealizationDepth());
+  LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
+              type->realizedName(), ctx->getRealizationStackName(),
+              ctx->getRealizationDepth());
   getLogger().level++;
   ctx->addBlock();
   ctx->typecheckLevel++;
@@ -336,7 +336,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
-  seqassert(ret, "cannot realize return type '{}'", type->getRetType()->toString());
+  seqassert(ret, "cannot realize return type '{}'", type->getRetType());
 
   std::vector<Param> args;
   for (auto &i : ast->args) {
@@ -369,6 +369,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 }
 
 StmtPtr TypecheckVisitor::prepareVTables() {
+  // for (auto &[_, cls] : ctx->cache->classes)
+  //   for (auto &[r, real] : cls.realizations)
+  // auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
+
   auto rep = "__internal__.class_init_vtables:0";
   auto &initAllVT = ctx->cache->functions[rep];
   auto suite = N<SuiteStmt>(
@@ -377,7 +381,6 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   initAllVT.ast->suite = suite;
   auto typ = initAllVT.realizations.begin()->second->type;
   typ->ast = initAllVT.ast.get();
-  // LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
   auto fx = realizeFunc(typ.get(), true);
 
   rep = "__internal__.class_populate_vtables:0";
@@ -425,7 +428,6 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   initFn.ast->suite = suite;
   typ = initFn.realizations.begin()->second->type;
   typ->ast = initFn.ast.get();
-  // LOG("[vt] {} -> {}", rep, typ->ast->toString(1));
   realizeFunc(typ.get(), true);
 
   rep = "__internal__.class_set_obj_vtable:0";
@@ -450,7 +452,6 @@ StmtPtr TypecheckVisitor::prepareVTables() {
 
     initObjFns.ast->suite = suite;
     t->ast = initObjFns.ast.get();
-    // LOG("[vt] {} / {} -> {}", rep, t->toString(), t->ast->toString(1));
     realizeFunc(t.get(), true);
   }
   initObjFns.ast = oldAst;
@@ -482,7 +483,6 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                    "__elemsize__"));
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
-    // LOG("[vt] {} -> {}", rep, t->ast->toString(1));
     realizeFunc(t.get(), true);
   }
   initDist.ast = oldAst;
@@ -523,8 +523,6 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   for (auto &[clsName, cls] : ctx->cache->classes) {
     if (clsName != baseCls && in(cls.mro, baseCls)) {
       for (auto &[_, real] : cls.realizations) {
-
-
         auto &vtable = real->vtables[baseCls];
 
         // TODO: fix the instantiation for generics!
@@ -537,8 +535,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         for (size_t ai = 0; ai < args.size(); ai++)
           unify(m->getFunc()->getArgTypes()[ai], args[ai]);
         unify(m->getFunc()->getRetType(), fp->getRetType());
-        seqassert(m->canRealize(), "cannot realize overriden method {}",
-                  m->debugString(1));
+        seqassert(m->canRealize(), "cannot realize overriden method {}", m);
         m = realize(m);
         key = make_pair(fnName, sig(m->getFunc().get()));
 
@@ -572,9 +569,10 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
         thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
         transform(thunkAst);
+        prependStmts->push_back(thunkAst);
         auto ti = ctx->instantiate(thunkFn.type);
         auto tm = realize(ti);
-        seqassert(tm, "bad thunk {}", thunkFn.type->debugString(2));
+        seqassert(tm, "bad thunk {}", thunkFn.type);
 
         vtable.table[key] = {tm->getFunc(), vid};
       }
@@ -595,9 +593,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   auto forceFindIRType = [&](const TypePtr &tt) {
     auto t = tt->getClass();
     seqassert(t && in(ctx->cache->classes[t->name].realizations, t->realizedTypeName()),
-              "{} not realized", tt->toString());
+              "{} not realized", tt);
     auto l = ctx->cache->classes[t->name].realizations[t->realizedTypeName()]->ir;
-    seqassert(l, "no LLVM type for {}", t->toString());
+    seqassert(l, "no LLVM type for {}", t);
     return l;
   };
 
@@ -803,7 +801,6 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
     ast->suite = suite;
-    //    LOG("-> {} @ {}", unionType->debugString(1), ast->toString(1));
   } else if (startswith(ast->name, "__internal__.get_union:0")) {
     auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();

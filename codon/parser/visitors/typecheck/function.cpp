@@ -196,7 +196,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   // Debug information
-  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp->debugString(true));
+  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp);
 }
 
 /// Make an empty partial call `fn(...)` for a given function.

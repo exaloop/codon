@@ -251,7 +251,9 @@ void SimplifyVisitor::visit(EllipsisExpr *expr) {
 }
 
 /// Only allowed in @c MatchStmt
-void SimplifyVisitor::visit(RangeExpr *expr) { E(Error::UNEXPECTED_TYPE, expr, "range"); }
+void SimplifyVisitor::visit(RangeExpr *expr) {
+  E(Error::UNEXPECTED_TYPE, expr, "range");
+}
 
 /// Handled during the type checking
 void SimplifyVisitor::visit(SliceExpr *expr) {

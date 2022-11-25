@@ -128,4 +128,5 @@ public:
 } // namespace ast
 } // namespace codon
 
-template <> struct fmt::formatter<codon::ast::FormatVisitor> : fmt::ostream_formatter {};
+template <>
+struct fmt::formatter<codon::ast::FormatVisitor> : fmt::ostream_formatter {};

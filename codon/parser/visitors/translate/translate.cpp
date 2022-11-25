@@ -184,7 +184,7 @@ void TranslateVisitor::visit(IfExpr *expr) {
 void TranslateVisitor::visit(CallExpr *expr) {
   if (expr->expr->isId("__ptr__")) {
     seqassert(expr->args[0].value->getId(), "expected IdExpr, got {}",
-              expr->args[0].value->toString());
+              expr->args[0].value);
     auto val = ctx->find(expr->args[0].value->getId()->value);
     seqassert(val && val->getVar(), "{} is not a variable",
               expr->args[0].value->getId()->value);
@@ -203,7 +203,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
   }
 
   auto ft = expr->expr->type->getFunc();
-  seqassert(ft, "not calling function: {}", ft->toString());
+  seqassert(ft, "not calling function: {}", ft);
   auto callee = transform(expr->expr);
   bool isVariadic = ft->ast->hasAttr(Attr::CVarArg);
   std::vector<ir::Value *> items;
@@ -225,7 +225,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
 
 void TranslateVisitor::visit(DotExpr *expr) {
   if (expr->member == "__atomic__" || expr->member == "__elemsize__") {
-    seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr->toString());
+    seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
     auto type = ctx->find(expr->expr->getId()->value)->getType();
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
     result = make<ir::TypePropertyInstr>(
@@ -261,7 +261,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   auto simplePipeline = !firstIsGen;
   for (auto i = 1; i < expr->items.size(); i++) {
     auto call = expr->items[i].expr->getCall();
-    seqassert(call, "{} is not a call", expr->items[i].expr->toString());
+    seqassert(call, "{} is not a call", expr->items[i].expr);
 
     auto fn = transform(call->expr);
     if (i + 1 != expr->items.size())
@@ -334,14 +334,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
 
   if (stmt->isUpdate()) {
-    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
+    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
     auto val = ctx->find(stmt->lhs->getId()->value);
     seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
     result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs->toString());
+  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
     auto isGlobal = in(ctx->cache->globals, var);
@@ -400,7 +400,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   if (stmt->decorator) {
     os = std::make_unique<OMPSched>();
     auto c = stmt->decorator->getCall();
-    seqassert(c, "for par is not a call: {}", stmt->decorator->toString());
+    seqassert(c, "for par is not a call: {}", stmt->decorator);
     auto fc = c->expr->getType()->getFunc();
     seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
               "for par is not a function");
@@ -413,10 +413,10 @@ void TranslateVisitor::visit(ForStmt *stmt) {
         fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
     bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
-    LOG_TYPECHECK("parsed {}", stmt->decorator->toString());
+    LOG_TYPECHECK("parsed {}", stmt->decorator);
   }
 
-  seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var->toString());
+  seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var);
   auto varName = stmt->var->getId()->value;
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->var->hasAttr(ExprAttr::Dominated)) {
@@ -519,10 +519,10 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 /************************************************************************************/
 
 codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
-  seqassert(t && t->getClass(), "{} is not a class", t ? t->toString() : "-");
+  seqassert(t && t->getClass(), "{} is not a class", t);
   std::string name = t->getClass()->realizedTypeName();
   auto i = ctx->find(name);
-  seqassert(i, "type {} not realized", t->toString());
+  seqassert(i, "type {} not realized", t);
   return i->getType();
 }
 

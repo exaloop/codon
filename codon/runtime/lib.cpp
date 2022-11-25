@@ -240,7 +240,9 @@ static seq_str_t string_conv(const std::string &s) {
   return {(seq_int_t)s.size(), p};
 }
 
-template <typename T> static seq_str_t fmt_conv(T n, const std::string &default_fmt, char *format, char *error) {
+template <typename T>
+static seq_str_t fmt_conv(T n, const std::string &default_fmt, char *format,
+                          char *error) {
   std::string ret;
   try {
     *error = false;

@@ -176,8 +176,6 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
-    // LOG("RENAME {} -> {} [{}] @ {}", (*i)->canonicalName, canonicalName, hasUsed,
-    //     (*i)->getSrcInfo());
     auto it = std::find(stack.front().begin(), stack.front().end(), name);
     if (it != stack.front().end())
       stack.front().erase(it);
@@ -266,7 +264,6 @@ void SimplifyContext::dump(int pad) {
     LOG("-> {}", s);
   for (auto &i : ordered) {
     std::string s;
-    // auto t = i.second.front();
     bool f = true;
     for (auto &t : i.second) {
       LOG("{}{} {} {:40} {:30} {}", std::string(pad * 2, ' '),

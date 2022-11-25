@@ -227,7 +227,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
         const auto &b = ctx->cache->classes[canonicalName].mro[mi];
         if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
-          LOG("[virtual] {} . {}", canonicalName, method);
+          // LOG("[virtual] {} . {}", canonicalName, method);
           ctx->cache->classes[canonicalName].virtuals.insert(method);
         }
       }
@@ -303,7 +303,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     if (addVTable && (cachedCls.fields.empty() ||
                       cachedCls.fields[0].name != format("{}.{}", VAR_VTABLE, name))) {
       auto var = format("{}.{}", VAR_VTABLE, name);
-      // LOG("[virtual] vtable := {}", var);
+      // LOG("[virtual] vtable({}) := {}", name, var);
       cachedCls.fields.insert(cachedCls.fields.begin(), {var, nullptr});
       cachedCls.ast->args.insert(
           cachedCls.ast->args.begin(),
@@ -361,7 +361,7 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
     } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
-      LOG("[mro] {} -> {}", canonicalName, ctx->cache->classes[canonicalName].mro);
+      // LOG("[mro] {} -> {}", canonicalName, ctx->cache->classes[canonicalName].mro);
     }
   }
   return asts;

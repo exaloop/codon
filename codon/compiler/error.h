@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include <fmt/format.h>
 #include "codon/parser/ast/error.h"
 #include "llvm/Support/Error.h"
+#include <fmt/format.h>
 
 namespace codon {
 namespace error {
@@ -288,8 +288,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format("cannot combine '@{}' with other attributes or decorators",
                        args...);
   case Error::CLASS_EXTENSION:
-    return fmt::format(
-        "class extensions cannot define data attributes and generics or inherit other classes");
+    return fmt::format("class extensions cannot define data attributes and generics or "
+                       "inherit other classes");
   case Error::CLASS_MISSING_TYPE:
     return fmt::format("type required for data attribute '{}'", args...);
   case Error::CLASS_ARG_TWICE:
@@ -382,7 +382,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::LOOP_DECORATOR:
     return fmt::format("invalid loop decorator");
   case Error::BAD_STATIC_TYPE:
-    return fmt::format("expected 'int' or 'str' (only integers and strings can be static)");
+    return fmt::format(
+        "expected 'int' or 'str' (only integers and strings can be static)");
   case Error::EXPECTED_TYPE:
     return fmt::format("expected {} expression", args...);
   case Error::UNEXPECTED_TYPE:
@@ -466,7 +467,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::COMPILER_NO_STDLIB:
     return fmt::format("cannot locate standard library");
   case Error::MAX_REALIZATION:
-    return fmt::format("maximum realization depth reached during the realization of '{}'", args...);
+    return fmt::format(
+        "maximum realization depth reached during the realization of '{}'", args...);
   case Error::CUSTOM:
     return fmt::format("{}", args...);
 

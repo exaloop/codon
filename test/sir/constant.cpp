@@ -1,7 +1,7 @@
 #include "test.h"
 
-#include <sstream>
 #include <fmt/format.h>
+#include <sstream>
 
 using namespace codon::ir;
 

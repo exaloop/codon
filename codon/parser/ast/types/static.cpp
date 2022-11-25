@@ -139,8 +139,7 @@ StaticValue StaticType::evaluate() const {
   for (auto &g : generics)
     cache->typeCtx->add(TypecheckItem::Type, g.name, g.type);
   auto en = TypecheckVisitor(cache->typeCtx).transform(expr->clone());
-  seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated",
-            en->toString());
+  seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated", en);
   cache->typeCtx->popBlock();
   return en->staticValue;
 }

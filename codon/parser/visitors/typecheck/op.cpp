@@ -266,7 +266,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
   TypePtr typ =
       ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
-  seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr->toString());
+  seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr);
 
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
@@ -701,7 +701,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
       return true;
     auto f = transform(clone(e));
     if (f->staticValue.type == StaticValue::INT) {
-      seqassert(f->staticValue.evaluated, "{} not evaluated", e->toString());
+      seqassert(f->staticValue.evaluated, "{} not evaluated", e);
       *o = f->staticValue.getInt();
       return true;
     } else if (auto ei = f->getInt()) {

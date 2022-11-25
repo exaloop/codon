@@ -1,9 +1,9 @@
 
 #include <algorithm>
-#include <sstream>
-#include <unordered_set>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <sstream>
+#include <unordered_set>
 
 #include "codon/sir/util/format.h"
 #include "codon/sir/util/visitor.h"
@@ -461,4 +461,5 @@ std::ostream &format(std::ostream &os, const Node *node) {
 } // namespace ir
 } // namespace codon
 
-template <> struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};
+template <>
+struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};

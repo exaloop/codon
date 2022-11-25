@@ -169,6 +169,6 @@ private:
 } // namespace codon
 
 template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<std::is_base_of<codon::ir::Var, T>::value, char>>
+struct fmt::formatter<T,
+                      std::enable_if_t<std::is_base_of<codon::ir::Var, T>::value, char>>
     : fmt::ostream_formatter {};

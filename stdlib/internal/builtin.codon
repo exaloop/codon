@@ -39,6 +39,11 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
     if flush:
         _C.fflush(fp)
 
+@extend
+class __internal__:
+    def prn(*args):
+        print(*args)
+
 
 def min(*args):
     if staticlen(args) == 0:
