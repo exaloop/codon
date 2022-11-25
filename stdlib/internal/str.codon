@@ -119,7 +119,7 @@ class str:
     def __reversed__(self) -> Generator[str]:
         i = len(self) - 1
         while i >= 0:
-            yield str(self.ptr[i], 1)
+            yield str(self.ptr + i, 1)
             i -= 1
 
     def __mul__(self, x: int) -> str:

@@ -1,5 +1,10 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
+# Implementation of vectorized Rabin-Karp string search.
+# See http://0x80.pl/articles/simd-strfind.html for
+# details. These implementations are modified to not
+# perform any out-of-bounds memory accesses.
+
 @pure
 @llvm
 def cttz(n: UInt[N], N: Static[int]) -> UInt[N]:
@@ -375,7 +380,7 @@ def count_with_max(haystack: str, needle: str, maxcount: int):
         return 0
 
     if k == 0:
-        return n + 1
+        return n + 1 if n + 1 < maxcount else maxcount
 
     while True:
         pos = forward_find(tmp, n - (tmp - haystack.ptr), needle.ptr, k)
