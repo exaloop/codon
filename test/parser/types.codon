@@ -1539,3 +1539,77 @@ class X(M[int]):
     pass
 l = [M[float](1.1), X(2)]
 #! 'int' does not match expected type 'float'
+
+#%% polymorphism_2
+class Expr:
+    def __init__(self):
+        pass
+    def eval(self):
+        raise ValueError('invalid expr')
+        return 0.0
+    def __str__(self):
+        return "Expr"
+class Const(Expr):
+    x: float
+    def __init__(self, x):
+        self.x=x
+    def __str__(self):
+        return f"{self.x}"
+    def eval(self):
+        return self.x
+class Add(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+        # print(f'ctr: {self}')
+    def eval(self):
+        return self.lhs.eval()+self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) + ({self.rhs})"
+class Mul(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+    def eval(self):
+        return self.lhs.eval()*self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) * ({self.rhs})"
+
+c1 = Const(5)
+c2 = Const(4)
+m = Add(c1, c2)
+c3 = Const(2)
+a = Mul(m, c3)
+print(f'{a} = {a.eval()}')
+#: ((5) + (4)) * (2) = 18
+
+from random import random, seed
+seed(137)
+def random_expr(depth) -> Expr:
+    if depth<=0:
+        return Const(int(random()*42.0))
+    else:
+        lhs=random_expr(depth-1)
+        rhs=random_expr(depth-1)
+        ctorid = int(random()*3)
+        if ctorid==0:
+            return Mul(lhs,rhs)
+        else:
+            return Add(lhs,rhs)
+for i in range(11):
+    print(random_expr(i).eval())
+#: 3
+#: 58
+#: 66
+#: 18216
+#: 2042
+#: 2.40728e+06
+#: 0
+#: 6.27442e+17
+#: 2.67377e+15
+#: 1.14799e+32
+#: 2.20324e+31
