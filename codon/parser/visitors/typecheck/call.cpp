@@ -336,7 +336,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
           names.emplace_back(expr->args[e].name);
           values.emplace_back(CallExpr::Arg(expr->args[e].value));
         }
-        auto kwName = generateTuple(names.size(), "KwTuple", names);
+        auto kwName = generateTuple(names.size(), TYPE_KWTUPLE, names);
         auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
         e->setAttr(ExprAttr::KwStarArgument);
         if (partial) {
@@ -398,7 +398,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     if (!part.args)
       part.args = transform(N<TupleExpr>()); // use ()
     if (!part.kwArgs) {
-      auto kwName = generateTuple(0, "KwTuple", {});
+      auto kwName = generateTuple(0, TYPE_KWTUPLE, {});
       part.kwArgs = transform(N<CallExpr>(N<IdExpr>(kwName))); // use KwTuple()
     }
   }

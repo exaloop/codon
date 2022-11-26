@@ -60,7 +60,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     return; // Wait until the iterator can be realized
 
   auto tuple = gen->type->getRecord();
-  if (!tuple || !startswith(tuple->name, TYPE_TUPLE))
+  if (!tuple ||
+      !(startswith(tuple->name, TYPE_TUPLE) || startswith(tuple->name, TYPE_KWTUPLE)))
     E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
 
   auto block = N<SuiteStmt>();

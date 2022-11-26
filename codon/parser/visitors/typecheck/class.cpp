@@ -131,7 +131,7 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
       names.push_back(format("item{}", i));
   }
 
-  auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
+  auto typeName = format("{}{}", name, hasSuffix ? format("{}{}", len, suffix) : "");
   if (!ctx->find(typeName)) {
     // Generate the appropriate ClassStmt
     std::vector<Param> args;

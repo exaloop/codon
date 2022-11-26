@@ -170,7 +170,7 @@ private: // Node typechecking rules
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
   void parseBaseClasses(ClassStmt *);
-  std::string generateTuple(size_t, const std::string & = "Tuple",
+  std::string generateTuple(size_t, const std::string & = TYPE_TUPLE,
                             std::vector<std::string> = {}, bool = true);
 
   /* The rest (typecheck.cpp) */

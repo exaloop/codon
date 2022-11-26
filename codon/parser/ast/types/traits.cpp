@@ -111,7 +111,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           }
         }
         auto tv = TypecheckVisitor(cache->typeCtx);
-        auto name = tv.generateTuple(starArgTypes.size(), "KwTuple", names);
+        auto name = tv.generateTuple(starArgTypes.size(), TYPE_KWTUPLE, names);
         auto t = cache->typeCtx->forceFind(name)->type;
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
         if (t->unify(trInArgs[kwStar].get(), us) == -1)

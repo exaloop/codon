@@ -214,7 +214,7 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
   auto partialTypeName = generatePartialStub(mask, fn.get());
   std::string var = ctx->cache->getTemporaryVar("partial");
   // Generate kwtuple for potential **kwargs
-  auto kwName = generateTuple(0, "KwTuple", {});
+  auto kwName = generateTuple(0, TYPE_KWTUPLE, {});
   // `partial = Partial.MASK((), KwTuple())`
   // (`()` for *args and `KwTuple()` for **kwargs)
   ExprPtr call =
