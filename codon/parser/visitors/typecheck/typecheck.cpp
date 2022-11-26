@@ -197,18 +197,21 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
     if (!mi)
       continue; // avoid overloads that have not been seen yet
     auto method = ctx->instantiate(mi, typ)->getFunc();
-    std::vector<types::TypePtr> reordered;
+    std::vector<std::pair<types::TypePtr, size_t>> reordered;
     auto score = ctx->reorderNamedArgs(
         method.get(), args,
         [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
             if (method->ast->args[si].status == Param::Generic) {
-              // Ignore type arguments
+              if (slots[si].empty())
+                reordered.push_back({nullptr, 0});
+              else
+                reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
             } else if (si == s || si == k || slots[si].size() != 1) {
               // Ignore *args, *kwargs and default arguments
-              reordered.emplace_back(nullptr);
+              reordered.push_back({nullptr, 0});
             } else {
-              reordered.emplace_back(args[slots[si][0]].value->type);
+              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
             }
           }
           return 0;
@@ -218,9 +221,23 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
       auto expectTyp = method->ast->args[ai].status == Param::Normal
                            ? method->getArgTypes()[mai++]
                            : method->funcGenerics[gi++].type;
-      auto argType = reordered[ai];
+      auto [argType, argTypeIdx] = reordered[ai];
       if (!argType)
         continue;
+      if (method->ast->args[ai].status != Param::Normal) {
+        // Check if this is a good generic!
+        if (expectTyp && expectTyp->isStaticType()) {
+          if (!args[argTypeIdx].value->isStatic()) {
+            score = -1;
+            break;
+          } else {
+            argType = Type::makeStatic(ctx->cache, args[argTypeIdx].value);
+          }
+        } else {
+          /// TODO: check if these are real types or if traits are satisfied
+          continue;
+        }
+      }
       try {
         ExprPtr dummy = std::make_shared<IdExpr>("");
         dummy->type = argType;

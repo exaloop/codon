@@ -70,6 +70,19 @@ A.m2()  #: 1 2 s
 c = A[str]('s')
 c.dump('y', 1.1)  #: A y 1.1
 
+#%% static_fn_overload,barebones
+def foo(x: Static[int]):
+    print('int', x)
+
+@overload
+def foo(x: Static[str]):
+    print('str', x)
+
+foo(10)
+#: int 10
+foo('s')
+#: str s
+
 #%% realization_big
 class A[TA,TB,TC]:
     a: TA
