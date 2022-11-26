@@ -674,7 +674,27 @@ StaticValue::Type getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
 
-template <> struct fmt::formatter<codon::ast::Expr> : fmt::ostream_formatter {};
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::Expr, T>::value, char>>
+    : fmt::ostream_formatter {};
+
+template <>
+struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const codon::ast::CallExpr::Arg &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "({}{})",
+                          p.name.empty() ? "" : fmt::format("{} = ", p.name), p.value);
+  }
+};
+
+template <>
+struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const codon::ast::Param &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p.toString());
+  }
+};
 
 template <typename T>
 struct fmt::formatter<

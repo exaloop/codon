@@ -277,22 +277,18 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
+
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
+    transformType(cls);
     if (auto i = cls->getId()) {
       name = i->value;
-    } else if (auto e = cls->getIndex()) {
-      if (auto ei = e->expr->getId()) {
+    } else if (auto e = CAST(cls, InstantiateExpr)) {
+      if (auto ei = e->typeExpr->getId()) {
         name = ei->value;
-        subs = e->index->getTuple() ? e->index->getTuple()->items
-                                    : std::vector<ExprPtr>{e->index};
+        subs = e->typeParams;
       }
     }
-    auto nname = transformType(N<IdExpr>(name))->getId()->value;
-    if (nname.empty() || !in(ctx->cache->classes, nname))
-      E(Error::CLASS_ID_NOT_FOUND, cls, name);
-    name = nname;
-    transformType(cls);
 
     auto &cachedCls = ctx->cache->classes[name];
     asts.push_back(cachedCls.ast.get());

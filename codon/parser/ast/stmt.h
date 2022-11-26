@@ -589,7 +589,10 @@ struct CommentStmt : public Stmt {
 
 } // namespace codon::ast
 
-template <> struct fmt::formatter<codon::ast::Stmt> : fmt::ostream_formatter {};
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::Stmt, T>::value, char>>
+    : fmt::ostream_formatter {};
 
 template <typename T>
 struct fmt::formatter<

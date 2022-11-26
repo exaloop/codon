@@ -129,6 +129,11 @@ using TypePtr = std::shared_ptr<Type>;
 
 template <typename T>
 struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::types::Type, T>::value, char>>
+    : fmt::ostream_formatter {};
+
+template <typename T>
+struct fmt::formatter<
     T,
     std::enable_if_t<
         std::is_convertible<T, std::shared_ptr<codon::ast::types::Type>>::value, char>>

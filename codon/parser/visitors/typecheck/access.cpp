@@ -400,6 +400,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
       auto m = findMatchingMethods(dot->expr->type->getClass(), methods, *methodArgs);
       bestMethod = m.empty() ? nullptr : m[0];
     } else if (auto id = expr->getId()) {
+      if (id->value == "f.15")
+      LOG("-> {} {} {}", getSrcInfo(), *args, bestMethod);
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
       for (auto &m : ctx->cache->overloads[id->value])

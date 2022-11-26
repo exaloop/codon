@@ -546,6 +546,13 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
       // lhs is not optional: `return False`
       return transform(N<BoolExpr>(false));
     } else {
+      // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
+      auto g = expr->lexpr->getType()->getClass();
+      for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
+        ;
+      if (g->generics[0].type->is("NoneType"))
+        return transform(N<BoolExpr>(true));
+
       // lhs is optional: `return lhs.__has__().__invert__()`
       return transform(N<CallExpr>(
           N<DotExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "__has__")), "__invert__")));
