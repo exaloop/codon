@@ -82,7 +82,12 @@ private: // Node typechecking rules
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
+  void visit(ListExpr *) override;
+  void visit(SetExpr *) override;
+  void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
+  ExprPtr transformComprehension(const std::string &, const std::string &,
+                                 std::vector<ExprPtr> &);
 
   /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;

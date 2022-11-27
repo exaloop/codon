@@ -331,16 +331,12 @@ struct SetExpr : public Expr {
 };
 
 /// Dictionary expression ({(key: value)...}).
+/// Each (key, value) pair is stored as a TupleExpr.
 /// @li {'s': 1, 't': 2}
 struct DictExpr : public Expr {
-  struct DictItem {
-    ExprPtr key, value;
+  std::vector<ExprPtr> items;
 
-    DictItem clone() const;
-  };
-  std::vector<DictItem> items;
-
-  explicit DictExpr(std::vector<DictItem> items);
+  explicit DictExpr(std::vector<ExprPtr> items);
   DictExpr(const DictExpr &expr);
 
   std::string toString() const override;

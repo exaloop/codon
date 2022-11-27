@@ -214,19 +214,15 @@ std::string SetExpr::toString() const {
 }
 ACCEPT_IMPL(SetExpr, ASTVisitor);
 
-DictExpr::DictItem DictExpr::DictItem::clone() const {
-  return {ast::clone(key), ast::clone(value)};
+DictExpr::DictExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items)) {
+  for (auto &i : items) {
+    auto t = i->getTuple();
+    seqassertn(t && t->items.size() == 2, "dictionary items are invalid");
+  }
 }
-
-DictExpr::DictExpr(std::vector<DictExpr::DictItem> items)
-    : Expr(), items(std::move(items)) {}
-DictExpr::DictExpr(const DictExpr &expr)
-    : Expr(expr), items(ast::clone_nop(expr.items)) {}
+DictExpr::DictExpr(const DictExpr &expr) : Expr(expr), items(ast::clone(expr.items)) {}
 std::string DictExpr::toString() const {
-  std::vector<std::string> s;
-  for (auto &i : items)
-    s.push_back(format("({} {})", i.key->toString(), i.value->toString()));
-  return wrapType(!s.empty() ? format("dict {}", join(s, " ")) : "dict");
+  return wrapType(!items.empty() ? format("dict {}", combine(items)) : "set");
 }
 ACCEPT_IMPL(DictExpr, ASTVisitor);
 

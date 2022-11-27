@@ -97,8 +97,6 @@ private: // Node simplification rules
   void visit(TupleExpr *) override;
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
-  ExprPtr transformComprehension(const std::string &, const std::string &,
-                                 const std::vector<ExprPtr> &);
   void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
   void visit(DictGeneratorExpr *) override;

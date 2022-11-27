@@ -167,10 +167,8 @@ public:
       transform(i);
   }
   void visit(DictExpr *expr) override {
-    for (auto &i : expr->items) {
-      transform(i.key);
-      transform(i.value);
-    }
+    for (auto &i : expr->items)
+      transform(i);
   }
   void visit(GeneratorExpr *expr) override {
     transform(expr->expr);

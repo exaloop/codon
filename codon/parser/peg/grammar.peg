@@ -607,24 +607,22 @@ setcomp <- '{' _ named_expression SPACE for_if_clauses _ '}' {
   );
 }
 dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
-  return ast<DictExpr>(LOC, VS.transform<DictExpr::DictItem>());
+  return ast<DictExpr>(LOC, VS.transform<ExprPtr>());
 }
 dictcomp <- '{' _ kvpair SPACE for_if_clauses _ '}' {
-  auto p = ac<DictExpr::DictItem>(V0);
+  auto p = ac<ExprPtr>(V0);
   return ast<DictGeneratorExpr>(LOC,
-    p.key, p.value, ac<SemVals>(V1).transform<GeneratorBody>()
+    p->getTuple()->items[0], p->getTuple()->items[1],
+    ac<SemVals>(V1).transform<GeneratorBody>()
   );
 }
 double_starred_kvpair <-
   / '**' _ bitwise_or {
-    return DictExpr::DictItem{
-      ast<IdExpr>(LOC, ""),
-      ast<KeywordStarExpr>(LOC, ac_expr(V0))
-    };
+    return ast<KeywordStarExpr>(LOC, ac_expr(V0));
   }
-  / kvpair { return ac<DictExpr::DictItem>(V0); }
+  / kvpair { return ac<ExprPtr>(V0); }
 kvpair <- expression _ ':' _ expression {
-  return DictExpr::DictItem{ac_expr(V0), ac_expr(V1)};
+  return ast<TupleExpr>(LOC, std::vector<ExprPtr>{ac_expr(V0), ac_expr(V1)});
 }
 for_if_clauses <- for_if_clause (SPACE for_if_clause)* { return VS; }
 for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction

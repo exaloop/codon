@@ -1626,3 +1626,61 @@ for i in range(11):
 #: 2.67377e+15
 #: 1.14799e+32
 #: 2.20324e+31
+
+
+#%% collection_common_type,barebones
+l = [1, 2, 3]
+print(l, l.__class__.__name__)
+#: [1, 2, 3] List[int]
+
+l = [1.1, 2, 3]
+print(l, l.__class__.__name__)
+#: [1.1, 2, 3] List[float]
+
+l = [1, 2, 3.3]
+print(l, l.__class__.__name__)
+#: [1, 2, 3.3] List[float]
+
+l = [1, None]
+print(l, l.__class__.__name__)
+#: [1, None] List[Optional[int]]
+
+l = [None, 2.2]
+print(l, l.__class__.__name__)
+#: [None, 2.2] List[Optional[float]]
+
+class A:
+    def __repr__(self): return 'A'
+class B(A):
+    def __repr__(self): return 'B'
+class C(B):
+    def __repr__(self): return 'C'
+class D(A):
+    def __repr__(self): return 'D'
+
+l = [A(), B(), C(), D()]
+print(l, l.__class__.__name__)
+#: [A, B, C, D] List[A]
+
+l = [D(), C(), B(), A()]
+print(l, l.__class__.__name__)
+#: [D, C, B, A] List[A]
+
+l = [C(), B()]
+print(l, l.__class__.__name__)
+#: [C, B] List[B]
+
+l = [C(), A(), B()]
+print(l, l.__class__.__name__)
+#: [C, A, B] List[A]
+
+l = [None, *[1, 2], None]
+print(l, l.__class__.__name__)
+#: [None, 1, 2, None] List[Optional[int]]
+
+# l = [C(), D(), B()] # does not work (correct behaviour)
+# print(l, l.__class__.__name__)
+
+d = {1: None, 2.2: 's'}
+print(d, d.__class__.__name__)
+#: {1: None, 2.2: 's'} Dict[float,Optional[str]]
