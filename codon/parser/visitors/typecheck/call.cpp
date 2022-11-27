@@ -695,6 +695,20 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("ByRef")) {
     return transform(N<BoolExpr>(typ->getRecord() == nullptr));
+  } else if (!typExpr->type->getUnion() && typ->getUnion()) {
+    auto unionTypes = typ->getUnion()->getRealizationTypes();
+    int tag = -1;
+    for (size_t ui = 0; ui < unionTypes.size(); ui++) {
+      if (typExpr->type->unify(unionTypes[ui].get(), nullptr) >= 0) {
+        tag = ui;
+        break;
+      }
+    }
+    if (tag == -1)
+      return transform(N<BoolExpr>(false));
+    return transform(N<BinaryExpr>(
+        N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"), expr->args[0].value),
+        "==", N<IntExpr>(tag)));
   } else if (typExpr->type->is("pyobj") && !typExpr->isType()) {
     if (typ->is("pyobj")) {
       expr->staticValue.type = StaticValue::NOT_STATIC;

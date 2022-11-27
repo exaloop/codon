@@ -1451,6 +1451,28 @@ def do2(x: B):
     print('do2', x.y)
 do2(x)  #: do2 bee
 
+z: Union[int, str] = 1
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+#: True False False False True
+
+print isinstance(z, Union[int]), isinstance(z, Union[int, float, str])
+#: False False
+
+if True:
+    z = 's'
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+#: False True False False True
+
+class A:
+    def foo(self): return 1
+class B:
+    def foo(self): return 's'
+class C:
+    def foo(self): return [True, False]
+x : Union[A,B,C] = A()
+print x.foo(), x.foo().__class__.__name__
+#: 1 Union[List[bool],int,str]
+
 #%% generator_capture_nonglobal,barebones
 # Issue #49
 def foo(iter):

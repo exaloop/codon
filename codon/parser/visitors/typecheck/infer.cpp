@@ -850,6 +850,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     suite->stmts.push_back(
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
+    unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
     ast->suite = suite;
   }
   return ast;
