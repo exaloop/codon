@@ -189,7 +189,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
     bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
     // if (isVirtual)
-    //   LOG("|> {} {} ' {} {}", expr->toString(), baseClass, vtableName, ctx->findMember(baseClass->name, vtableName) != nullptr);
+    //   LOG("|> {} {} ' {} {}", expr->toString(), baseClass, vtableName,
+    //   ctx->findMember(baseClass->name, vtableName) != nullptr);
     isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {

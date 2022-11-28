@@ -36,7 +36,8 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(ctx->getUnbound());
   auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("Dict");
-  if ((resultExpr = transformComprehension(name->canonicalName, "__setitem__", expr->items))) {
+  if ((resultExpr =
+           transformComprehension(name->canonicalName, "__setitem__", expr->items))) {
     resultExpr->setAttr(ExprAttr::Dict);
   }
 }

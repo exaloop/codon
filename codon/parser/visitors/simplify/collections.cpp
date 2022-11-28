@@ -19,21 +19,21 @@ void SimplifyVisitor::visit(TupleExpr *expr) {
 /// Simple transformation.
 /// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(ListExpr *expr) {
-  for (auto &i: expr->items)
+  for (auto &i : expr->items)
     transform(i);
 }
 
 /// Simple transformation.
 /// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(SetExpr *expr) {
-  for (auto &i: expr->items)
+  for (auto &i : expr->items)
     transform(i);
 }
 
 /// Simple transformation.
 /// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(DictExpr *expr) {
-  for (auto &i: expr->items)
+  for (auto &i : expr->items)
     transform(i);
 }
 
