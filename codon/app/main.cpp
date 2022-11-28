@@ -57,10 +57,21 @@ std::string makeOutputFilename(const std::string &filename,
 }
 
 void display(const codon::error::ParserErrorInfo &e) {
-  for (auto &msg : e) {
-    codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
-                            msg.getColumn(), msg.getLength(), msg.getErrorCode(),
-                            /*terminate=*/false);
+  using codon::MessageGroupPos;
+  for (auto &group : e) {
+    for (auto &msg : group) {
+      MessageGroupPos pos = MessageGroupPos::NONE;
+      if (&msg == &group.front()) {
+        pos = MessageGroupPos::HEAD;
+      } else if (&msg == &group.back()) {
+        pos = MessageGroupPos::LAST;
+      } else {
+        pos = MessageGroupPos::MID;
+      }
+      codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
+                              msg.getColumn(), msg.getLength(), msg.getErrorCode(),
+                              /*terminate=*/false, pos);
+    }
   }
 }
 

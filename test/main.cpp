@@ -276,9 +276,11 @@ public:
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
                             [](const error::ParserErrorInfo &e) {
-                              for (auto &msg : e) {
-                                getLogger().level = 0;
-                                printf("%s\n", msg.getMessage().c_str());
+                              for (auto &group : e) {
+                                for (auto &msg : group) {
+                                  getLogger().level = 0;
+                                  printf("%s\n", msg.getMessage().c_str());
+                                }
                               }
                               fflush(stdout);
                               exit(EXIT_FAILURE);

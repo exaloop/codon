@@ -9,13 +9,27 @@ namespace codon {
 namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
                         const std::string &file, int line, int col, int len,
-                        int errorCode) {
+                        int errorCode, MessageGroupPos pos) {
   auto &out = getLogger().err;
   seqassertn(!(file.empty() && (line > 0 || col > 0)),
              "empty filename with non-zero line/col: file={}, line={}, col={}", file,
              line, col);
   seqassertn(!(col > 0 && line <= 0), "col but no line: file={}, line={}, col={}", file,
              line, col);
+
+  switch (pos) {
+  case MessageGroupPos::NONE:
+    break;
+  case MessageGroupPos::HEAD:
+    break;
+  case MessageGroupPos::MID:
+    fmt::print("├─ ");
+    break;
+  case MessageGroupPos::LAST:
+    fmt::print("╰─ ");
+    break;
+  }
+
   fmt::print(out, "\033[1m");
   if (!file.empty()) {
     auto f = file.substr(file.rfind('/') + 1);
@@ -44,15 +58,19 @@ std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
 }
 
 void compilationError(const std::string &msg, const std::string &file, int line,
-                      int col, int len, int errorCode, bool terminate) {
-  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col, len, errorCode);
+                      int col, int len, int errorCode, bool terminate,
+                      MessageGroupPos pos) {
+  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col, len, errorCode,
+                     pos);
   if (terminate)
     exit(EXIT_FAILURE);
 }
 
 void compilationWarning(const std::string &msg, const std::string &file, int line,
-                        int col, int len, int errorCode, bool terminate) {
-  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, errorCode, len);
+                        int col, int len, int errorCode, bool terminate,
+                        MessageGroupPos pos) {
+  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, errorCode, len,
+                     pos);
   if (terminate)
     exit(EXIT_FAILURE);
 }

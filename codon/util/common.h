@@ -148,13 +148,20 @@ void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);
 }
 
+enum MessageGroupPos {
+  NONE = 0,
+  HEAD,
+  MID,
+  LAST,
+};
+
 void compilationError(const std::string &msg, const std::string &file = "",
                       int line = 0, int col = 0, int len = 0, int erroCode = -1,
-                      bool terminate = true);
+                      bool terminate = true, MessageGroupPos pos = NONE);
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
                         int line = 0, int col = 0, int len = 0, int erroCode = -1,
-                        bool terminate = false);
+                        bool terminate = false, MessageGroupPos pos = NONE);
 
 } // namespace codon
 

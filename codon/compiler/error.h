@@ -48,17 +48,22 @@ public:
 
 class ParserErrorInfo : public llvm::ErrorInfo<ParserErrorInfo> {
 private:
-  std::vector<Message> messages;
+  std::vector<std::vector<Message>> messages;
 
 public:
-  explicit ParserErrorInfo(std::vector<Message> messages)
-      : messages(std::move(messages)) {}
+  explicit ParserErrorInfo(const std::vector<Message> &m) : messages() {
+    for (auto &msg : m) {
+      messages.push_back({msg});
+    }
+  }
   explicit ParserErrorInfo(const exc::ParserException &e) : messages() {
+    std::vector<Message> group;
     for (unsigned i = 0; i < e.messages.size(); i++) {
       if (!e.messages[i].empty())
-        messages.emplace_back(e.messages[i], e.locations[i].file, e.locations[i].line,
-                              e.locations[i].col, e.locations[i].len);
+        group.emplace_back(e.messages[i], e.locations[i].file, e.locations[i].line,
+                           e.locations[i].col, e.locations[i].len);
     }
+    messages.push_back(group);
   }
 
   auto begin() { return messages.begin(); }
@@ -67,9 +72,11 @@ public:
   auto end() const { return messages.end(); }
 
   void log(llvm::raw_ostream &out) const override {
-    for (auto &msg : *this) {
-      msg.log(out);
-      out << "\n";
+    for (auto &group : messages) {
+      for (auto &msg : group) {
+        msg.log(out);
+        out << "\n";
+      }
     }
   }
 
