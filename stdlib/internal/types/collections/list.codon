@@ -36,6 +36,12 @@ class List:
         self.arr = arr
         self.len = len
 
+    def _get(self, idx: int):
+        return self.arr.ptr[idx]
+
+    def _set(self, idx: int, val: T):
+        self.arr.ptr[idx] = val
+
     def __len__(self) -> int:
         return self.len
 
@@ -46,20 +52,20 @@ class List:
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list index out of range")
-        return self.arr[idx]
+        return self._get(idx)
 
     def __setitem__(self, idx: int, val: T):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
-        self.arr[idx] = val
+        self._set(idx, val)
 
     def __delitem__(self, idx: int):
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "list assignment index out of range")
         while idx < self.len - 1:
-            self.arr[idx] = self.arr[idx + 1]
+            self._set(idx, self._get(idx + 1))
             idx += 1
         self.len -= 1
 
@@ -67,7 +73,7 @@ class List:
         if self.__len__() != other.__len__():
             return False
         for i in range(self.__len__()):
-            if self.arr[i] != other.arr[i]:
+            if self._get(i) != other._get(i):
                 return False
         return True
 
@@ -84,7 +90,7 @@ class List:
             start, stop, step, length = s.adjust_indices(self.__len__())
             other = List[T](length)
             for i in range(start, stop, step):
-                other.append(self.arr[i])
+                other.append(self._get(i))
             return other
 
     def __setitem__(self, s: Slice, other):
@@ -128,7 +134,7 @@ class List:
             cur = start
             i = 0
             while i < length:
-                self.arr[cur] = seq.arr[i]
+                self._set(cur, seq._get(i))
                 cur += step
                 i += 1
 
@@ -196,7 +202,7 @@ class List:
     def __reversed__(self) -> Generator[T]:
         i = self.len - 1
         while i >= 0:
-            yield self.arr[i]
+            yield self._get(i)
             i -= 1
 
     def __add__(self, other: List[T]) -> List[T]:
@@ -232,7 +238,7 @@ class List:
         while i < n:
             j = 0
             while j < self.len:
-                v.append(self[j])
+                v.append(self._get(j))
                 j += 1
             i += 1
         return v
@@ -258,7 +264,7 @@ class List:
         while i < n - 1:
             j = 0
             while j < len0:
-                self.arr[idx] = self.arr[j]
+                self._set(idx, self._get(j))
                 idx += 1
                 j += 1
             i += 1
@@ -273,10 +279,10 @@ class List:
         else:
             buf = _strbuf()
             buf.append("[")
-            buf.append(self[0].__repr__())
+            buf.append(self._get(0).__repr__())
             for i in range(1, n):
                 buf.append(", ")
-                buf.append(self[i].__repr__())
+                buf.append(self._get(i).__repr__())
             buf.append("]")
             return buf.__str__()
 
@@ -284,7 +290,7 @@ class List:
 
     def append(self, x: T):
         self._resize_if_full()
-        self.arr[self.len] = x
+        self._set(self.len, x)
         self.len += 1
 
     def extend(self, itr: Generator[T]):
@@ -302,9 +308,9 @@ class List:
         self._resize_if_full()
         i = n
         while i > idx:
-            self.arr[i] = self.arr[i - 1]
+            self._set(i, self._get(i - 1))
             i -= 1
-        self.arr[idx] = x
+        self._set(idx, x)
         self.len += 1
 
     def pop(self, idx: int = -1) -> T:
@@ -313,7 +319,7 @@ class List:
         if idx < 0:
             idx += self.__len__()
         self._idx_check(idx, "pop index out of range")
-        x = self[idx]
+        x = self._get(idx)
         del self[idx]
         return x
 
@@ -348,9 +354,9 @@ class List:
         i = 0
         while i < self.len // 2:
             j = self.len - i - 1
-            x = self[i]
-            self[i] = self[j]
-            self[j] = x
+            x = self._get(i)
+            self._set(i, self._get(j))
+            self._set(j, x)
             i += 1
 
     def copy(self) -> List[T]:
@@ -420,7 +426,7 @@ class List:
 
         k = 0
         while k < n:
-            a.arr[ilow] = v[k]
+            a._set(ilow, v[k])
             k += 1
             ilow += 1
         a.len += d
@@ -435,8 +441,8 @@ class List:
         n2 = other.__len__()
         nmin = n1 if n1 < n2 else n2
         for i in range(nmin):
-            a = self.arr[i]
-            b = other.arr[i]
+            a = self._get(i)
+            b = other._get(i)
 
             if a < b:
                 return -1

@@ -1,30 +1,139 @@
-> **What is the goal of Codon?**
+# Technical
 
-One of the main focuses of Codon is to bridge the gap between usability
-and performance. Codon aims to make writing high-performance software
-substantially easier, and to provide a common, unified framework for the
-development of such software across a range of domains.
+## What is Codon?
 
-> **I want to use Codon, but I have a large Python codebase I don't want to port.**
+Codon is a high-performance Python compiler that compiles Python code to native machine code
+without any runtime overhead. Typical speedups over Python are on the order of 10-100x or more,
+on a single thread. Codon's performance is typically on par with that of C/C++. Unlike Python,
+Codon supports native multithreading, which can lead to speedups many times higher still.
+Codon is extensible via a plugin infrastructure, which lets you incorporate new libraries,
+compiler optimizations and even keywords.
 
-You can use Codon on a per-function basis via the `@codon` annotation, which
-can be used within Python codebases. This will compile only the annotated functions
+## What isn't Codon?
+
+While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large
+codebases might require modifications to be run through the Codon compiler. For example, some
+of Python's modules are not yet implemented within Codon, and a few of Python's dynamic features
+are disallowed. The Codon compiler produces detailed error messages to help identify and resolve
+any incompatibilities. Codon supports seamless [Python interoperability](../interop/python.md) to
+handle cases where specific Python libraries or dynamism are required.
+
+## How does Codon compare to...
+
+- **CPython?** Codon tries to follow CPython's syntax, semantics and APIs as
+  closely as possible, aside from a few cases where Codon differs from CPython for
+  performance reasons (one example being Codon's 64-bit `int` vs. CPython's arbitrary-
+  width `int`). Performance-wise, speedups over CPython are usually on the order of 10-100x.
+
+- **Numba?** While Codon does offer a JIT decorator similar to Numba's, Codon is in
+  general an ahead-of-time compiler that compiles end-to-end programs to native code.
+  It also supports compilation of a much broader set of Python constructs and libraries.
+
+- **PyPy?** PyPy strives to effectively be a drop-in replacement for CPython, whereas
+  Codon differs in a few places in order to eliminate any dynamic runtime or virtual
+  machine, and thereby attain much better performance.
+
+- **C++?** Codon often generates the same code as an equivalent C or C++ program. Codon
+  can sometimes generate *better* code than C/C++ compilers for a variety of reasons, such
+  as better container implementations, the fact that Codon does not use object files and
+  inlines all library code, or Codon-specific compiler optimizations that are not performed
+  with C or C++.
+
+- **Julia?** Codon's compilation process is actually much closer to C++ than to Julia. Julia
+  is a dynamically-typed language that performs type inference as an optimization, whereas
+  Codon type checks the entire program ahead of time. Codon also tries to circumvent the learning
+  curve of a new language by adopting Python's syntax and semantics.
+
+You can see results from [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench)
+suite at [exaloop.io/benchmarks](https://exaloop.io/benchmarks).
+More benchmarks can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
+on bioinformatics-specific use cases (note that the name used in that paper is that of Codon's predecessor,
+"Seq").
+
+## I want to use Codon, but I have a large Python codebase I don't want to port.
+
+You can use Codon on a per-function basis via the [`@codon.jit` decorator](../interop/decorator.md),
+which can be used within Python codebases. This will compile only the annotated functions
 and automatically handle data conversions to and from Codon. It also allows for
-the use of any Codon-specific modules or extensions.
+the use of any Codon-specific modules or extensions, such as multithreading.
 
-> **How does Codon compare to other Python implementations?**
+## What about interoperability with other languages and frameworks?
 
-Unlike many other performance-oriented Python implementations, such as
-PyPy or Numba, Codon is a standalone system implemented entirely
-independently of regular Python or any dynamic runtime, and therefore has
-far greater flexibility to generate optimized code. In fact, Codon will
-frequently generate the same code as that from an equivalent C or C++ program.
-This design choice also allows Codon to circumvent issues like Python's global
-interpretter lock, and thereby to take full advantage of parallelism and multithreading.
+Interoperability is and will continue to be a priority for Codon.
+We don't want using Codon to render you unable to use all the other great frameworks and
+libraries that exist. Codon supports full interoperability with Python and C/C++.
 
-> **What about interoperability with other languages and frameworks?**
+## Does Codon use garbage collection?
 
-Interoperability is and will continue to be a priority for the Codon
-project. We don't want using Codon to render you unable to use all the
-other great frameworks and libraries that exist. Codon supports full
-interoperability with Python and C/C++.
+Yes, Codon uses the [Boehm garbage collector](https://github.com/ivmai/bdwgc).
+
+## Codon doesn't support Python module X or function Y.
+
+While Codon covers a sizeable subset of Python's standard library, it does not yet cover
+every function from every module. Note that missing functions can still be called through
+Python via `from python import`. Many of the functions that lack Codon-native implementations
+(e.g. I/O or OS related functions) will generally also not see substantial speedups from Codon.
+
+## Codon is no faster than Python for my application.
+
+Applications that spend most of their time in C-implemented library code generally do not
+see substantial performance improvements in Codon. Similarly, applications that are I/O or
+network-bound will have the same bottlenecks in Codon.
+
+## Codon is slower than Python for my application.
+
+Please report any cases where Codon is noticeably slower than Python as bugs on our
+[issue tracker](https://github.com/exaloop/codon/issues).
+
+# Usage
+
+## Is Codon free?
+
+Codon is and always will be free for non-production use. That means you can use Codon
+freely for personal, academic, or other non-commercial applications.
+
+## Is Codon open source?
+
+Codon is licensed under the [Business Source License (BSL)](https://mariadb.com/bsl11/), which
+means its source code is publicly available and it's free for non-production use. The BSL
+is technically *not* an "open source" license, although in many circumstances you can still treat
+Codon as you would any other open source project. Importantly, as per the BSL, each version of
+Codon converts to an actual open source license (specifically, [Apache](https://www.apache.org/licenses/LICENSE-2.0))
+after 3 years.
+
+## How can I use Codon for production or commercial use?
+
+Please reach out to [info@exaloop.io](mailto:info@exaloop.io) to inquire about about a
+production-use license.
+
+# Contributing
+
+## Does Codon accept outside contributions?
+
+Absolutely, we'd be delighted to accept any contributions in the form of issues, bug reports,
+feature requests or pull requests.
+
+## I want to contribute. Where do I start?
+
+If you have a specific feature or use case in mind, here is a quick breakdown of the codebase
+to help provide a sense of where to look first:
+
+- [`codon/`](https://github.com/exaloop/codon/tree/develop/codon): compiler code
+  - [`codon/parser/`](https://github.com/exaloop/codon/tree/develop/codon/parser):
+    parser and type checker code: this is the first step of compilation
+  - [`codon/sir/`](https://github.com/exaloop/codon/tree/develop/codon/sir):
+    Codon IR and optimizations: the second step of compilation
+  - [`codon/sir/llvm/`](https://github.com/exaloop/codon/tree/develop/codon/sir/llvm):
+    conversion from Codon IR to LLVM IR and machine code: the last step of compilation
+  - [`codon/runtime/`](https://github.com/exaloop/codon/tree/develop/codon/runtime):
+    runtime library: used during execution
+- [`stdlib/`](https://github.com/exaloop/codon/tree/develop/stdlib): standard library code
+
+You can also take a look at some of the [open issues](https://github.com/exaloop/codon/issues). If you
+have any question or suggestions, please feel free to ask in [the forum](https://discourse.exaloop.io).
+
+## Is there a Contributor License Agreement (CLA)?
+
+Yes, there is a CLA that is required to be agreed to before any pull requests are merged.
+Please see [exaloop.io/cla.txt](https://exaloop.io/cla.txt) for more information. To agree to
+the CLA, send an email with your GitHub username to [info@exaloop.io](mailto:info@exaloop.io).

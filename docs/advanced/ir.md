@@ -313,3 +313,28 @@ The `codon/ir/util/` directory has a number of utility and generally helpful fun
 cloning IR, inlining/outlining, matching and more. `codon/ir/util/irtools.h` in particular has many helpful
 functions for performing various common tasks. If you're working with SIR, be sure to take a look at these
 functions to make your life easier!
+
+# Standard pass pipeline
+
+These standard sets of passes are run in `release`-mode:
+
+- Python-specific optimizations: a series of passes to optimize common Python patterns and
+  idioms. Examples include dictionary updates of the form `d[k] = d.get(k, x) <op> y`, and
+  optimizing them to do just *one* access into the dictionary, as well as optimizing repeated
+  string concatenations or various I/O patterns.
+
+- Imperative `for`-loop lowering: loops of the form `for i in range(a, b, c)` (with `c` constant)
+  are lowered to a special IR node, since these loops are important for e.g. multithreading later.
+
+- A series of program analyses whose results are available to later passes:
+  - [Control-flow analysis](https://en.wikipedia.org/wiki/Control_flow_analysis)
+  - [Reaching definition analysis](https://en.wikipedia.org/wiki/Reaching_definition)
+  - [Dominator analysis](https://en.wikipedia.org/wiki/Dominator_(graph_theory))
+  - [Capture (or escape) analysis](https://en.wikipedia.org/wiki/Escape_analysis)
+
+- Parallel loop lowering for multithreading or GPU
+
+- Constant propagation and folding. This also includes dead code elimination and (in non-JIT mode)
+  global variable demotion.
+
+Codon plugins can inject their own passes into the pipeline as well.

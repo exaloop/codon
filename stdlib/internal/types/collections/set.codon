@@ -154,7 +154,7 @@ class Set:
     def add(self, key: K):
         self._kh_put(key)
 
-    def update(self, other: Set[K]):
+    def update(self, other: Generator[K]):
         for k in other:
             self.add(k)
 

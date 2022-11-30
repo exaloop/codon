@@ -1,7 +1,7 @@
 # (c) 2022 Exaloop Inc. All rights reserved.
 
 import sys
-from math import inf as INF, sqrt as _sqrt, acos as _acos, cos as _cos
+from math import inf as INF, sqrt as _sqrt, acos as _acos, cos as _cos, sin as _sin
 from math import log as _log, exp as _exp, pi as _pi, e as _e, ceil as _ceil
 from bisect import bisect as _bisect
 from time import time as _time
@@ -13,151 +13,117 @@ NV_MAGICCONST = 4 * _exp(-0.5) / _sqrt(2.0)
 SG_MAGICCONST = 1.0 + _log(4.5)
 TWOPI = 2.0 * _pi
 
-# http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/MT2002/CODES/mt19937ar.c
+MATRIX_A = u32(0x9908b0df)    # constant vector a
+UPPER_MASK = u32(0x80000000)  # most significant w-r bits
+LOWER_MASK = u32(0x7fffffff)  # least significant r bits
+
+@tuple
 class RandomGenerator:
-    state: Array[u32]  # the array for the state vector
-    next: int
+    data: Ptr[u32]
 
-    def __init__(self):
-        self.state = Array[u32](N)
-        self.next = N + 1
+    def __new__():
+        return RandomGenerator(Ptr[u32](N + 1))
 
-    def gestate(self) -> Tuple[Array[u32], int]:
-        return self.state.copy(), self.next
+    @property
+    def index(self):
+        return int(self.data[0])
 
-    def setstate(self, state: Tuple[Array[u32], int]):
-        if len(state[0]) != N:
-            raise ValueError("Invalid RNG state")
-        self.state, self.next = state
+    @property
+    def state(self):
+        return self.data + 1
 
-    def gettimeofday(self):
-        return _C.seq_time() * 1000
+    def getstate(self):
+        from internal.gc import sizeof
+        p = Ptr[u32](N + 1)
+        str.memcpy(p.as_byte(), self.data.as_byte(), (N + 1) * sizeof(u32))
+        return p
 
-    def init_genrand(self, s: u32):
-        """
-        init_genrand(u32)
+    def setstate(self, state):
+        from internal.gc import sizeof
+        str.memcpy(self.data.as_byte(), state.as_byte(), (N + 1) * sizeof(u32))
 
-        initializes state[N] with a seed
-        """
-        self.state[0] = s & u32(0xFFFFFFFF)
-        for i in range(1, N):
-            self.state[i] = u32(1812433253) * (
-                self.state[i - 1] ^ (self.state[i - 1]) >> u32(30)
-            ) + u32(i)
-        self.next = N
+    def genrand_int32(self) -> u32:
+        mag01 = (u32(0), MATRIX_A)
+        mt = self.state
 
-    def init_by_array(self, init_key: Array[u32], key_length: int):
-        """
-        initialize by an array with array-length
-        init_key is the array for initializing keys
-        key_length is its length
-        """
+        if self.index >= N:
+            kk = 0
 
-        self.init_genrand(u32(19650218))
+            while kk < int(N - M):
+                y = (mt[kk] & UPPER_MASK) | (mt[kk+1] & LOWER_MASK)
+                mt[kk] = mt[kk + M] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
+                kk += 1
+
+            while kk < int(N - 1):
+                y = (mt[kk] & UPPER_MASK) | (mt[kk+1] & LOWER_MASK)
+                mt[kk] = mt[kk+(M-N)] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
+                kk += 1
+
+            y = (mt[N-1] & UPPER_MASK) | (mt[0] & LOWER_MASK)
+            mt[N-1] = mt[M-1] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
+            self.data[0] = u32(0)
+
+        i = self.index
+        y = mt[i]
+        self.data[0] = u32(i + 1)
+        y ^= (y >> u32(11))
+        y ^= (y << u32(7)) & u32(0x9d2c5680)
+        y ^= (y << u32(15)) & u32(0xefc60000)
+        y ^= (y >> u32(18))
+        return y
+
+    def genrand_res53(self) -> float:
+        a = self.genrand_int32() >> u32(5)
+        b = self.genrand_int32() >> u32(6)
+        return (int(a) * 67108864.0 + int(b)) * (1.0 / 9007199254740992.0)
+
+    def random(self):
+        return self.genrand_res53()
+
+    def init_u32(self, s: u32):
+        mt = self.state
+        mt[0] = s
+        for mti in range(1, N):
+            mt[mti] = (u32(1812433253) * (mt[mti-1] ^ (mt[mti-1] >> u32(30))) + u32(mti))
+        self.data[0] = u32(N)
+
+    def init_array(self, init_key: Ptr[u32], key_length: int):
+        mt = self.state
+        self.init_u32(u32(19650218))
         i = 1
         j = 0
-        k = N if N > key_length else key_length
 
-        while k > 0:
-            self.state[i] = (
-                (
-                    self.state[i]
-                    ^ (
-                        (self.state[i - 1] ^ (self.state[i - 1] >> u32(30)))
-                        * u32(1664525)
-                    )
-                )
-                + init_key[j]
-                + j
-            )
+        k = N if N > key_length else key_length
+        while k:
+            mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> u32(30))) * u32(1664525))) + init_key[j] + u32(j)
             i += 1
             j += 1
-
             if i >= N:
-                self.state[0] = self.state[N - 1]
+                mt[0] = mt[N - 1]
                 i = 1
             if j >= key_length:
                 j = 0
             k -= 1
 
         k = N - 1
-        while k > 0:
-            self.state[i] = (
-                self.state[i]
-                ^ (
-                    (self.state[i - 1] ^ (self.state[i - 1] >> u32(30)))
-                    * u32(1566083941)
-                )
-            ) - i
+        while k:
+            mt[i] = (mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> u32(30))) * u32(1566083941))) - u32(i)
             i += 1
             if i >= N:
-                self.state[0] = self.state[N - 1]
+                mt[0] = mt[N - 1]
                 i = 1
             k -= 1
 
-        self.state[0] = u32(0x80000000)
+        mt[0] = u32(0x80000000)
 
-    def genrand_int32(self) -> u32:
-        """
-        genrand_int32() -> u32
+    def init_int(self, s: int):
+        init_key = (u32(s & ((1 << 32) - 1)), u32(s >> 32))
+        self.init_array(Ptr[u32](__ptr__(init_key).as_byte()), 2 if init_key[1] else 1)
 
-        generates a random number on [0,0xffffffff]-interval
-        """
-        MATRIX_A = u32(0x9908B0DF)
-        UPPER_MASK = u32(0x80000000)
-        LOWER_MASK = u32(0x7FFFFFFF)
-        mag01 = __array__[u32](2)
-        mag01[0] = u32(0)
-        mag01[1] = MATRIX_A
-
-        if self.next >= N:
-            if self.next == N + 1:
-                self.init_genrand(u32(5489))
-
-            mt = self.state
-            kk = 0
-
-            while kk < N - M:
-                y = (mt[kk] & UPPER_MASK) | (mt[kk + 1] & LOWER_MASK)
-                mt[kk] = mt[kk + M] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
-                kk += 1
-
-            while kk < N - 1:
-                y = (mt[kk] & UPPER_MASK) | (mt[kk + 1] & LOWER_MASK)
-                mt[kk] = mt[kk + (M - N)] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
-                kk += 1
-
-            y = (mt[N - 1] & UPPER_MASK) | (mt[0] & LOWER_MASK)
-            mt[N - 1] = mt[M - 1] ^ (y >> u32(1)) ^ mag01[int(y & u32(1))]
-            self.next = 0
-
-        y = self.state[self.next]
-        self.next += 1
-
-        # Tempering
-        y ^= y >> u32(11)
-        y ^= (y << u32(7)) & u32(0x9D2C5680)
-        y ^= (y << u32(15)) & u32(0xEFC60000)
-        y ^= y >> u32(18)
-
-        return y
-
-    def genrand_res53(self) -> float:
-        """
-        genrand_res53() -> float
-
-        generates a random number on [0,1) with 53-bit resolution
-        """
-
-        a = self.genrand_int32() >> u32(5)
-        b = self.genrand_int32() >> u32(6)
-        return (int(a) * 67108864.0 + int(b)) * (1.0 / 9007199254740992.0)
+    def gettimeofday(self):
+        return _C.seq_time() * 1000
 
     def random_seed_time_pid(self):
-        """
-        helper method for seed()
-        """
-
         now = u32(self.gettimeofday())
         key = __array__[u32](5)
         key[0] = u32(now & u32(0xFFFFFFFF))
@@ -166,15 +132,12 @@ class RandomGenerator:
         now = u32(_C.seq_time_monotonic())
         key[3] = u32(now & u32(0xFFFFFFFF))
         key[4] = u32(now >> u32(32))
+        self.init_array(key.ptr, len(key))
 
-        self.init_by_array(key, len(key))
+    def seed(self, seed: int):
+        self.init_int(seed)
 
     def seed(self):
-        """
-        Initialize internal state from hashable object.
-
-        For now a is set to its defaults a = None
-        """
         self.random_seed_time_pid()
 
 
@@ -192,8 +155,9 @@ can cover arbitrarily large ranges.
 
 class Random:
     gen: RandomGenerator  # comment for another error
+    gauss_next: Optional[float]
 
-    def __init__(self, g: RandomGenerator):
+    def __init__(self, seed: Optional[int]):
         """
         Initialize an instance.
 
@@ -201,10 +165,10 @@ class Random:
 
         For now x is set to its default None.
         """
-        self.gen = g
-        # self.gauss_next = None
+        self.gen = RandomGenerator()
+        self.seed(seed)
 
-    def seed(self):
+    def seed(self, a: Optional[int]):
         """
         Initialize internal state from hashable object.
 
@@ -217,53 +181,46 @@ class Random:
         bytes, or bytearray.  For version 1 (provided for reproducing random
         sequences from older versions of Python), the algorithm for str and
         bytes generates a narrower range of seeds.
-
-        For now a is set to its defaults a = None
         """
-        # a = None
-        self.gen.seed()
-        # self.gauss_next = None
+        if a is not None:
+            self.gen.seed(abs(a))
+        else:
+            self.gen.seed()
+        self.gauss_next = None
 
     def getstate(self):
-        return self.gen.getstate()
+        return self.gen.getstate(), self.gauss_next
 
     def setstate(self, state):
-        self.gen.setstate(state)
-
-    def from_bytes_big(self, b) -> int:
-        """
-        Return the integer represented by the given array of bytes.
-        The argument b must either be a bytes-like object or an iterable
-        producing bytes.
-        """
-        n = 0
-        for x in range(len(b)):
-            n <<= 8
-            n |= int(b[x])
-        return n
+        gen_state, gauss_next = state
+        self.gen.setstate(gen_state)
+        self.gauss_next = gauss_next
 
     def getrandbits(self, k: int) -> int:
         """
         getrandbits(k) -> x
         Generates an int with k random bits.
         """
+        if k == 0:
+            return 0
+
+        if k < 0:
+            raise ValueError("number of bits must be non-negative")
+
+        if k > 64:
+            raise ValueError("number of bits cannot be greater than 64")
 
         if k <= 32:  # Fast path
             r = int(self.gen.genrand_int32())
             m = r >> (32 - k)
             return m
 
-        words = (k - 1) // 32 + 1
-        assert words <= 4
-        wordarray = __array__[u32](4)
-        for i in range(words):
-            r = int(self.gen.genrand_int32())
-            if k < 32:
-                r >>= 32 - k
-            wordarray[i] = u32(r)
-            k -= 32
-
-        return self.from_bytes_big(wordarray.slice(0, words))
+        lo = u64(int(self.gen.genrand_int32()))
+        hi = u64(int(self.gen.genrand_int32()))
+        mask = ~((u64(1) << u64(64 - k)) - u64(1))
+        hi &= mask
+        hi >>= u64(64 - k)
+        return int((hi << u64(32)) | lo)
 
     def bit_length(self, n: int) -> int:
         """ """
@@ -284,7 +241,7 @@ class Random:
             r = getrandbits(k)
         return r
 
-    def randrange(self, start: int, stop: int, step: int) -> int:
+    def randrange(self, start: int, stop: int, step: int = 1) -> int:
         """
         Choose a random item from range(start, stop[, step]).
 
@@ -499,7 +456,7 @@ class Random:
         # possibility of taking the log of zero.
         return -_log(1.0 - self.random()) / lambd
 
-    def gauss(self, mu: float, sigma: float) -> float:
+    def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
         """
         Gaussian distribution.
 
@@ -507,11 +464,13 @@ class Random:
         slightly faster than the normalvariate() function.
         Not thread-safe without a lock around calls.
         """
-        z = 0.0
-        x2pi = self.random() * TWOPI
-        g2rad = _sqrt(-2.0 * _log(1.0 - self.random()))
-        z = _cos(x2pi) * g2rad
-        # self.gauss_next = _sin(x2pi) * g2rad
+        z = self.gauss_next
+        self.gauss_next = None
+        if z is None:
+            x2pi = self.random() * TWOPI
+            g2rad = _sqrt(-2.0 * _log(1.0 - self.random()))
+            z = _cos(x2pi) * g2rad
+            self.gauss_next = _sin(x2pi) * g2rad
         return mu + z * sigma
 
     def paretovariate(self, alpha: float) -> float:
@@ -529,7 +488,7 @@ class Random:
         u = 1.0 - self.random()
         return alpha * (-_log(u)) ** (1.0 / beta)
 
-    def normalvariate(self, mu: float, sigma: float) -> float:
+    def normalvariate(self, mu: float = 0.0, sigma: float = 1.0) -> float:
         """
         Normal distribution.
 
@@ -564,6 +523,29 @@ class Random:
         equal to zero.  If kappa is equal to zero, this distribution reduces
         to a uniform random angle over the range 0.0 to 2*pi.
         """
+        def _mod(a: float, b: float):
+            @pure
+            @llvm
+            def _truediv_float_float(self: float, other: float) -> float:
+                %0 = fdiv double %self, %other
+                ret double %0
+
+            @pure
+            @llvm
+            def _mod_float_float(self: float, other: float) -> float:
+                %0 = frem double %self, %other
+                ret double %0
+
+            mod = _mod_float_float(a, b)
+            div = _truediv_float_float(a - mod, b)
+            if mod:
+                if (b < 0) != (mod < 0):
+                    mod += b
+                    div -= 1.0
+            else:
+                mod = (0.0).copysign(b)
+            return mod
+
         z = 0.0
         theta = 0.0
 
@@ -586,9 +568,9 @@ class Random:
         f = (q + z) / (1.0 + q * z)
         u3 = self.random()
         if u3 > 0.5:
-            theta = (mu + _acos(f)) % TWOPI
+            theta = _mod(mu + _acos(f), TWOPI)
         else:
-            theta = (mu - _acos(f)) % TWOPI
+            theta = _mod(mu - _acos(f), TWOPI)
 
         return theta
 
@@ -687,15 +669,11 @@ class Random:
         ]
 
 
-_gen = RandomGenerator()
-_rnd = Random(_gen)
+_rnd = Random()
 
 
 def seed(a: int):
-    _gen.init_genrand(u32(a))
-
-
-seed(int(_time()))
+    _rnd.seed(a)
 
 
 def getrandbits(k: int):

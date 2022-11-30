@@ -12,6 +12,10 @@ e.g. `ptr` instead of `i8*` or `i64*`, which affects `@llvm`
 functions written in Codon as well as LLVM IR output of
 `codon build`.
 
+## Standard library
+
+`random` module now matches Python exactly for the same seed.
+
 # v0.14
 
 ## GPU support
