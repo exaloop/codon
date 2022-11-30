@@ -4,15 +4,15 @@
 
 <h3 align="center">
   <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
-  &nbsp;&vert;&nbsp;
+  &nbsp;&#65372;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
-  &nbsp;&vert;&nbsp;
+  &nbsp;&#65372;&nbsp;
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
-  &nbsp;&vert;&nbsp;
+  &nbsp;&#65372;&nbsp;
   <a href="https://discourse.exaloop.io" target="_blank"><b>Forum</b></a>
-  &nbsp;&vert;&nbsp;
+  &nbsp;&#65372;&nbsp;
   <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
-  &nbsp;&vert;&nbsp;
+  &nbsp;&#65372;&nbsp;
   <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
 </h3>
 
