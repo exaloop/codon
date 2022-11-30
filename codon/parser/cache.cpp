@@ -15,7 +15,7 @@ namespace codon::ast {
 
 Cache::Cache(std::string argv0)
     : generatedSrcInfoCount(0), unboundCount(256), varCount(0), age(0),
-      argv0(move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
+      argv0(std::move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
       jitCell(0) {}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {

@@ -21,7 +21,7 @@ StaticType::StaticType(Cache *cache, const std::shared_ptr<Expr> &e)
 
 StaticType::StaticType(Cache *cache, std::vector<ClassType::Generic> generics,
                        const std::shared_ptr<Expr> &e)
-    : Type(cache), generics(move(generics)), expr(e->clone()) {}
+    : Type(cache), generics(std::move(generics)), expr(e->clone()) {}
 
 StaticType::StaticType(Cache *cache, int64_t i)
     : Type(cache), expr(std::make_shared<IntExpr>(i)) {}

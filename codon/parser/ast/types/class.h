@@ -28,7 +28,8 @@ struct ClassType : public Type {
     TypePtr type;
 
     Generic(std::string name, std::string niceName, TypePtr type, int id)
-        : name(move(name)), niceName(move(niceName)), id(id), type(move(type)) {}
+        : name(std::move(name)), niceName(std::move(niceName)), id(id),
+          type(std::move(type)) {}
   };
 
   /// Canonical type name.

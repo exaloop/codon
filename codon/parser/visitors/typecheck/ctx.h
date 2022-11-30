@@ -24,7 +24,7 @@ struct TypecheckItem {
   /// Type
   types::TypePtr type;
 
-  TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(move(type)) {}
+  TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(std::move(type)) {}
 
   /* Convenience getters */
   bool isType() const { return kind == Type; }

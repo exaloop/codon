@@ -48,7 +48,7 @@ struct DocShared {
 struct DocContext : public Context<int> {
   std::shared_ptr<DocShared> shared;
   explicit DocContext(std::shared_ptr<DocShared> shared)
-      : Context<int>(""), shared(move(shared)) {}
+      : Context<int>(""), shared(std::move(shared)) {}
   std::shared_ptr<int> find(const std::string &s) const override;
 };
 
@@ -58,7 +58,7 @@ struct DocVisitor : public CallbackASTVisitor<std::shared_ptr<json>, std::string
   std::string resultStmt;
 
 public:
-  explicit DocVisitor(std::shared_ptr<DocContext> ctx) : ctx(move(ctx)) {}
+  explicit DocVisitor(std::shared_ptr<DocContext> ctx) : ctx(std::move(ctx)) {}
   static std::shared_ptr<json> apply(const std::string &argv0,
                                      const std::vector<std::string> &files);
 

@@ -11,16 +11,16 @@ namespace codon::ast::types {
 LinkType::LinkType(Cache *cache, Kind kind, int id, int level, TypePtr type,
                    char isStatic, std::shared_ptr<Trait> trait, TypePtr defaultType,
                    std::string genericName)
-    : Type(cache), kind(kind), id(id), level(level), type(move(type)),
-      isStatic(isStatic), trait(move(trait)), genericName(move(genericName)),
-      defaultType(move(defaultType)) {
+    : Type(cache), kind(kind), id(id), level(level), type(std::move(type)),
+      isStatic(isStatic), trait(std::move(trait)), genericName(std::move(genericName)),
+      defaultType(std::move(defaultType)) {
   seqassert((this->type && kind == Link) || (!this->type && kind == Generic) ||
                 (!this->type && kind == Unbound),
             "inconsistent link state");
 }
 
 LinkType::LinkType(TypePtr type)
-    : Type(type), kind(Link), id(0), level(0), type(move(type)), isStatic(0),
+    : Type(type), kind(Link), id(0), level(0), type(std::move(type)), isStatic(0),
       trait(nullptr), defaultType(nullptr) {
   seqassert(this->type, "link to nullptr");
 }

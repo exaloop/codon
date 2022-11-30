@@ -10,8 +10,8 @@ namespace codon::ast::types {
 
 FuncType::FuncType(const std::shared_ptr<RecordType> &baseType, FunctionStmt *ast,
                    std::vector<Generic> funcGenerics, TypePtr funcParent)
-    : RecordType(*baseType), ast(ast), funcGenerics(move(funcGenerics)),
-      funcParent(move(funcParent)) {}
+    : RecordType(*baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
+      funcParent(std::move(funcParent)) {}
 
 int FuncType::unify(Type *typ, Unification *us) {
   if (this == typ)
@@ -155,7 +155,7 @@ std::string FuncType::realizedName() const {
 
 PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
                          std::shared_ptr<FuncType> func, std::vector<char> known)
-    : RecordType(*baseType), func(move(func)), known(move(known)) {}
+    : RecordType(*baseType), func(std::move(func)), known(std::move(known)) {}
 int PartialType::unify(Type *typ, Unification *us) {
   return this->RecordType::unify(typ, us);
 }

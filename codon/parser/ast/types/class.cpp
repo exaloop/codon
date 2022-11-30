@@ -128,10 +128,11 @@ std::string ClassType::realizedTypeName() const {
 
 RecordType::RecordType(Cache *cache, std::string name, std::string niceName,
                        std::vector<Generic> generics, std::vector<TypePtr> args)
-    : ClassType(cache, move(name), move(niceName), move(generics)), args(move(args)) {}
+    : ClassType(cache, std::move(name), std::move(niceName), std::move(generics)),
+      args(std::move(args)) {}
 
 RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args)
-    : ClassType(base), args(move(args)) {}
+    : ClassType(base), args(std::move(args)) {}
 
 int RecordType::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
