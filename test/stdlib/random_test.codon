@@ -80,7 +80,6 @@ def test_vs_python(*args, seed, method: Static[str], T: type = float):
 test_vs_python(-10, 10, seed=22, method='randrange', T=int)
 test_vs_python(-10, 10, 3, seed=33, method='randrange', T=int)
 test_vs_python(-10, 10, seed=44, method='randint', T=int)
-test_vs_python(0, seed=55, method='getrandbits', T=int)
 test_vs_python(20, seed=55, method='getrandbits', T=int)
 test_vs_python(32, seed=55, method='getrandbits', T=int)
 test_vs_python(40, seed=55, method='getrandbits', T=int)
