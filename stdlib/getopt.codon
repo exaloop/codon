@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Parts of this file: (c) 2022 Python Software Foundation. All right reserved.
 # License:
 #    1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"), and
@@ -64,11 +64,9 @@ Adapted from https://raw.githubusercontent.com/python/cpython/2.7/Lib/getopt.py
 
 import os
 
-
 class GetoptError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("GetoptError", message)
-
 
 def long_has_args(opt: str, longopts: List[str]) -> Tuple[bool, str]:
     possibilities = [o for o in longopts if o.startswith(opt)]
@@ -91,7 +89,6 @@ def long_has_args(opt: str, longopts: List[str]) -> Tuple[bool, str]:
         unique_match = unique_match[:-1]
     return has_arg, unique_match
 
-
 def do_longs(
     opts: List[Tuple[str, str]], opt: str, longopts: List[str], args: List[str]
 ) -> Tuple[List[Tuple[str, str]], List[str]]:
@@ -113,13 +110,11 @@ def do_longs(
     opts.append((f"--{opt}", optarg))
     return opts, args
 
-
 def short_has_arg(opt: str, shortopts: str) -> bool:
     for i in range(len(shortopts)):
         if opt == shortopts[i] != ":":
             return shortopts.startswith(":", i + 1)
     raise GetoptError(f"option -{opt} not recognized")
-
 
 def do_shorts(
     opts: List[Tuple[str, str]], optstring: str, shortopts: str, args: List[str]
@@ -135,7 +130,6 @@ def do_shorts(
             optarg, optstring = optstring, ""
         opts.append((f"-{opt}", optarg))
     return opts, args
-
 
 def getopt(
     args: List[str], shortopts: str, longopts: List[str] = []

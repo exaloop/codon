@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 def _heapify(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
@@ -20,7 +19,6 @@ def _heapify(
     if root != begin:
         arr[begin], arr[root] = arr[root], arr[begin]
         _heapify(arr, root, end, keyf)
-
 
 def _heap_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
@@ -43,7 +41,6 @@ def _heap_sort(
         _heapify(arr, 0, i, keyf)
         i -= 1
 
-
 def heap_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
 ):
@@ -53,7 +50,6 @@ def heap_sort_array(
     """
     _heap_sort(collection, 0, size, keyf)
 
-
 def heap_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
 ):
@@ -62,7 +58,6 @@ def heap_sort_inplace(
     Sorts the list inplace.
     """
     heap_sort_array(collection.arr, collection.len, keyf)
-
 
 def heap_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
     """

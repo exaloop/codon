@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Pats of this file: (c) 2022 Python Software Foundation. All right reserved.
 # License:
 #    1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"), and
@@ -51,7 +51,6 @@ MIN_GALLOP = 7
 
 from algorithms.insertionsort import _insertion_sort
 
-
 def _count_run(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
 ) -> Tuple[int, int]:
@@ -84,7 +83,6 @@ def _count_run(
 
     return n, inorder
 
-
 def _merge_compute_minrun(n: int) -> int:
     """
     Computes the minrun for Timsort
@@ -95,13 +93,11 @@ def _merge_compute_minrun(n: int) -> int:
         n >>= 1
     return n + r
 
-
 def _reverse_sortslice(arr: Array[T], begin: int, end: int, T: type):
     if end - begin < 2:
         return
     arr[begin], arr[end - 1] = arr[end - 1], arr[begin]
     _reverse_sortslice(arr, begin + 1, end - 1)
-
 
 def _modified_comp(
     a: T, b: T, keyf: Callable[[T], S], left: bool, T: type, S: type
@@ -113,7 +109,6 @@ def _modified_comp(
         return keyf(b) >= keyf(a)
     else:
         return keyf(a) < keyf(b)
-
 
 def _gallop(
     arr: Array[T],
@@ -179,7 +174,6 @@ def _gallop(
             lastofs = m + 1
 
     return ofs
-
 
 def _merge_with_gallop(
     arr: Array[T],
@@ -278,7 +272,6 @@ def _merge_with_gallop(
         j += 1
         k += 1
 
-
 def _merge_at(
     arr: Array[T],
     a: Tuple[int, int],
@@ -302,7 +295,6 @@ def _merge_at(
         return
 
     _merge_with_gallop(arr, (start_a, len_a), (start_b, len_b), keyf)
-
 
 def _merge_collapse(
     arr: Array[T],
@@ -352,7 +344,6 @@ def _merge_collapse(
             stack.append((B[0], B[1] + C[1]))
             return
 
-
 def _final_merge(
     arr: Array[T],
     stack: List[Tuple[int, int]],
@@ -365,7 +356,6 @@ def _final_merge(
         B = stack.pop()
         _merge_at(arr, B, C, keyf)
         stack.append((B[0], B[1] + C[1]))
-
 
 def _tim_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
@@ -392,18 +382,15 @@ def _tim_sort(
 
     _final_merge(arr, merge_pending, keyf)
 
-
 def tim_sort_array(
     collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
 ):
     _tim_sort(collection, 0, size, keyf)
 
-
 def tim_sort_inplace(
     collection: List[T], keyf: Callable[[T], S], T: type, S: type
 ):
     tim_sort_array(collection.arr, collection.len, keyf)
-
 
 def tim_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
     newlst = list(collection)

@@ -1,3 +1,5 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 import os
 import sys
 import shutil

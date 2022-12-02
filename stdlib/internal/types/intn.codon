@@ -1,13 +1,11 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative, associative, distributive
-
 
 def check_N(N: Static[int]):
     if N <= 0:
         compile_error("N must be greater than 0")
     pass
-
 
 @extend
 class Int:
@@ -466,7 +464,6 @@ class UInt:
     def len() -> int:
         return N
 
-
 @extend
 class Ptr:
     def __format__(self, format_spec: str) -> str:
@@ -478,7 +475,6 @@ class Ptr:
             raise ValueError(f"invalid format specifier: {ret}")
         return ret
 
-
 @extend
 class int:
     def __format__(self, format_spec: str) -> str:
@@ -489,7 +485,6 @@ class int:
         if err:
             raise ValueError(f"invalid format specifier: {ret}")
         return ret
-
 
 i8 = Int[8]
 i16 = Int[16]

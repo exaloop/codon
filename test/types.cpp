@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <algorithm>
 #include <dirent.h>
 #include <fcntl.h>

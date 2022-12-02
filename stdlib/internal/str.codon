@@ -1,13 +1,11 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 _MAX: Static[int] = 0x7FFFFFFFFFFFFFFF
-
 
 @pure
 @C
 def seq_str_str(a: cobj, fmt: cobj, error: cobj) -> str:
     pass
-
 
 @extend
 class str:
@@ -142,9 +140,7 @@ class str:
             i += 1
         return self.len - other.len
 
-
 import algorithms.strings as algorithms
-
 
 @extend
 class str:

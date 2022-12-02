@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 import bisect
 import random
@@ -12,11 +12,9 @@ from math import (
     hypot as _hypot,
 )
 
-
 class StatisticsError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("StatisticsError", message)
-
 
 def median(data: List[T], T: type) -> float:
     """
@@ -36,7 +34,6 @@ def median(data: List[T], T: type) -> float:
         i = n // 2
         return (data[i - 1] + data[i]) / 2
 
-
 def median_low(data: List[T], T: type) -> float:
     """
     Return the low median of numeric data.
@@ -53,7 +50,6 @@ def median_low(data: List[T], T: type) -> float:
     else:
         return float(data[n // 2 - 1])
 
-
 def median_high(data: List[T], T: type) -> float:
     """
     Return the high median of data.
@@ -67,7 +63,6 @@ def median_high(data: List[T], T: type) -> float:
         raise StatisticsError("no median for empty data")
     return float(data[n // 2])
 
-
 def _find_lteq(a: List[T], x: float, T: type):
     """
     Locate the leftmost value exactly equal to x
@@ -77,7 +72,6 @@ def _find_lteq(a: List[T], x: float, T: type):
         return i
     assert False
 
-
 def _find_rteq(a: List[T], l: int, x: float, T: type):
     """
     Locate the rightmost value exactly equal to x
@@ -86,7 +80,6 @@ def _find_rteq(a: List[T], l: int, x: float, T: type):
     if i != (len(a) + 1) and a[i - 1] == x:
         return i - 1
     assert False
-
 
 def median_grouped(data: List[T], interval: S = 1, T: type, S: type = int) -> float:
     """
@@ -112,7 +105,6 @@ def median_grouped(data: List[T], interval: S = 1, T: type, S: type = int) -> fl
     f = l2 - l1 + 1
     return L + interval * (n / 2 - cf) / f
 
-
 def mode(data: List[T], T: type) -> T:
     """
     Return the most common data point from discrete or nominal data.
@@ -126,7 +118,6 @@ def mode(data: List[T], T: type) -> T:
             counter = curr_frequency
             elem = i
     return elem
-
 
 def multimode(data: List[T], T: type):
     """
@@ -149,7 +140,6 @@ def multimode(data: List[T], T: type):
         elif curr_frequency == counter and i not in mulmode:
             mulmode.append(i)
     return mulmode
-
 
 def quantiles(
     data: List[T], n: int = 4, method: str = "exclusive", T: type
@@ -198,7 +188,6 @@ def quantiles(
         return result
     raise ValueError(f"Unknown method: {method}")
 
-
 def _lcm(x: int, y: int):
     """
     Returns the lowest common multiple bewteen x and y
@@ -214,7 +203,6 @@ def _lcm(x: int, y: int):
             lcm = greater
             return lcm
         greater += 1
-
 
 def _sum(data: List[float]) -> float:
     """
@@ -246,7 +234,6 @@ def _sum(data: List[float]) -> float:
         i += 1
     return s + c
 
-
 def mean(data: List[float]) -> float:
     """
     Return the sample arithmetic mean of data.
@@ -261,7 +248,6 @@ def mean(data: List[float]) -> float:
     total = _sum(data)
     return total / n
 
-
 '''
 def fmean(data: List[float]) -> float:
     """
@@ -273,7 +259,6 @@ def fmean(data: List[float]) -> float:
     """
     pass
 '''
-
 
 def geometric_mean(data: List[float]) -> float:
     """
@@ -290,7 +275,6 @@ def geometric_mean(data: List[float]) -> float:
         raise StatisticsError("geometric mean requires a non-empty dataset")
     return _exp(mean(list(map(_log, data))))
 
-
 def _fail_neg(values: List[float], errmsg: str):
     """
     Iterate over values, failing if any are less than zero.
@@ -299,7 +283,6 @@ def _fail_neg(values: List[float], errmsg: str):
         if x < 0:
             raise StatisticsError(errmsg)
         yield x
-
 
 def harmonic_mean(data: List[float]) -> float:
     """
@@ -329,7 +312,6 @@ def harmonic_mean(data: List[float]) -> float:
     total = _sum(li)
     return n / total
 
-
 def _ss(data: List[float], c: float):
     """
     Return sum of square deviations of sequence data.
@@ -343,7 +325,6 @@ def _ss(data: List[float], c: float):
 
     total -= total2 ** 2 / len(data)
     return total
-
 
 def pvariance(data: List[float], mu: Optional[float] = None):
     """
@@ -366,7 +347,6 @@ def pvariance(data: List[float], mu: Optional[float] = None):
     ss = _ss(data, mu)
     return ss / n
 
-
 def pstdev(data: List[float], mu: Optional[float] = None):
     """
     Return the square root of the population variance.
@@ -375,7 +355,6 @@ def pstdev(data: List[float], mu: Optional[float] = None):
         mu = mean(data)
     var = pvariance(data, mu)
     return _sqrt(var)
-
 
 def variance(data: List[float], xbar: Optional[float] = None):
     """
@@ -393,7 +372,6 @@ def variance(data: List[float], xbar: Optional[float] = None):
     ss = _ss(data, xbar)
     return ss / (n - 1)
 
-
 def stdev(data, xbar: Optional[float] = None):
     """
     Return the square root of the sample variance.
@@ -402,7 +380,6 @@ def stdev(data, xbar: Optional[float] = None):
         xbar = mean(data)
     var = variance(data, xbar)
     return _sqrt(var)
-
 
 class NormalDist:
     """

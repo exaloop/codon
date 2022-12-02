@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "engine.h"
 
 #include "codon/compiler/memory_manager.h"

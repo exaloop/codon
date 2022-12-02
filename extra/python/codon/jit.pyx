@@ -1,3 +1,5 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 # distutils: language=c++
 # cython: language_level=3
 # cython: c_string_type=unicode

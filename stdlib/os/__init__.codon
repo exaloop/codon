@@ -1,14 +1,11 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 def system(cmd: str) -> int:
     return _C.system(cmd.c_str())
 
-
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
-
 
 @tuple
 class EnvMap:
@@ -54,13 +51,10 @@ class EnvMap:
         self._init_if_needed()
         return self._map.items()
 
-
 environ = EnvMap()
-
 
 def getenv(key: str, default: str = "") -> str:
     return environ[key] if key in environ else default
-
 
 def mkdir(name: str, mode: int = 0x1FF) -> int:
     # TODO: use errno

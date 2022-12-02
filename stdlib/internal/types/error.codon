@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 # Warning(!): This type must be consistent with the exception
 # header type defined in runtime/exc.cpp.
@@ -25,51 +24,41 @@ class BaseException:
     def __repr__(self):
         return f'{self.typename}({self.message.__repr__()})'
 
-
 class Exception(Static[BaseException]):
     def __init__(self, typename: str, msg: str = ""):
         super().__init__(typename, msg)
-
 
 class NameError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("NameError", message)
 
-
 class OSError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("OSError", message)
-
 
 class IOError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("IOError", message)
 
-
 class ValueError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("ValueError", message)
-
 
 class IndexError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("IndexError", message)
 
-
 class KeyError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("KeyError", message)
-
 
 class OverflowError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("OverflowError", message)
 
-
 class CError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("CError", message)
-
 
 class PyError(Static[Exception]):
     pytype: pyobj
@@ -78,36 +67,29 @@ class PyError(Static[Exception]):
         super().__init__("PyError", message)
         self.pytype = pytype
 
-
 class TypeError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("TypeError", message)
-
 
 class ZeroDivisionError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("ZeroDivisionError", message)
 
-
 class AttributeError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("AttributeError", message)
-
 
 class NotImplementedError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("NotImplementedError", message)
 
-
 class StopIteration(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("StopIteration", message)
 
-
 class AssertionError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("AssertionError", message)
-
 
 class SystemExit(Static[BaseException]):
     _status: int
