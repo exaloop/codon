@@ -41,7 +41,8 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
       [&](const codon::error::ParserErrorInfo &e) {
         std::vector<string> backtrace;
         for (auto &msg : e)
-          backtrace.push_back(msg.getMessage());
+          for (auto &s: msg)
+              backtrace.push_back(s.getMessage());
         string err = backtrace[0];
         backtrace.erase(backtrace.begin());
         failed = fmt::format("Compile error: {}\nBacktrace:\n{}", err,

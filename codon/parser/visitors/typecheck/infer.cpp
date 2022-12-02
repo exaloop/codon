@@ -521,7 +521,13 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   }
 
   for (auto &[clsName, cls] : ctx->cache->classes) {
-    if (clsName != baseCls && in(cls.mro, baseCls)) {
+    bool inMro = false;
+    for (auto &m : cls.mro)
+      if (m->type && m->type->getClass() && m->type->getClass()->name == baseCls) {
+        inMro = true;
+        break;
+      }
+    if (clsName != baseCls && inMro) {
       for (auto &[_, real] : cls.realizations) {
         auto &vtable = real->vtables[baseCls];
 

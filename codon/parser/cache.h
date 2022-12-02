@@ -143,14 +143,10 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
 
-    /***** INHERITANCE BEGIN *****/
-    /// List of inherited classes [done in typecheck]
-    std::vector<types::ClassTypePtr> parentClasses;
-    /// List of virtual method names [done in simplify]
+    /// List of virtual method names
     std::unordered_set<std::string> virtuals;
     /// MRO
-    std::vector<std::string> mro;
-    /***** INHERITANCE END *****/
+    std::vector<ExprPtr> mro;
 
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
@@ -296,7 +292,7 @@ public:
 
   void parseCode(const std::string &code);
 
-  static std::vector<std::string> mergeC3(std::vector<std::vector<std::string>> &);
+  static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
 };
 
 } // namespace codon::ast

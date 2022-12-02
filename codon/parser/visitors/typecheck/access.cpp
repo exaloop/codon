@@ -158,6 +158,12 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(N<StringExpr>(expr->expr->type->realizedName()));
     return nullptr;
   }
+  if (expr->member == "__llvm_args__") {
+    if (realize(expr->expr->type)) {
+      return transform(N<StringExpr>(expr->expr->type->realizedName()));
+    }
+    return nullptr;
+  }
   // Special case: cls.__name__
   if (expr->expr->isType() && expr->member == "__name__") {
     if (realize(expr->expr->type))

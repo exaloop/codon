@@ -75,8 +75,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (collectionCls->name != ti->name) {
       auto &mros = ctx->cache->classes[collectionCls->name].mro;
       for (size_t i = 1; i < mros.size(); i++) {
-        auto tt = ctx->forceFind(mros[i])->type;
-        auto t = ctx->instantiate(tt, collectionCls);
+        auto t = ctx->instantiate(mros[i]->type, collectionCls);
         if (t->unify(ti.get(), nullptr) >= 0) {
           return ti;
           break;

@@ -46,16 +46,18 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     canonicalName = val->canonicalName;
     const auto &astIter = ctx->cache->classes.find(canonicalName);
-    if (astIter == ctx->cache->classes.end())
+    if (astIter == ctx->cache->classes.end()) {
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
-    argsToParse = astIter->second.ast->args;
+    } else {
+      argsToParse = astIter->second.ast->args;
+    }
   }
 
   std::vector<StmtPtr> clsStmts; // Will be filled later!
   std::vector<StmtPtr> varStmts; // Will be filled later!
   std::vector<StmtPtr> fnStmts;  // Will be filled later!
   std::vector<SimplifyContext::Item> addLater;
-  {
+  try {
     // Add the class base
     SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
 
@@ -88,12 +90,17 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    ExprPtr typeAst = N<IdExpr>(name);
+    ExprPtr typeAst = N<IdExpr>(name), transformedTypeAst = NT<IdExpr>(canonicalName);
     for (auto &a : args) {
       if (a.status == Param::Generic) {
-        if (!typeAst->getIndex())
+        if (!typeAst->getIndex()) {
           typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+          transformedTypeAst =
+              NT<InstantiateExpr>(NT<IdExpr>(canonicalName), std::vector<ExprPtr>{});
+        }
         typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
+        CAST(transformedTypeAst, InstantiateExpr)
+            ->typeParams.push_back(transform(N<IdExpr>(a.name), true));
       }
     }
 
@@ -101,7 +108,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
                                            stmt->attributes, canonicalName);
     auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
-                                     canonicalName, true);
+                                     canonicalName, transformedTypeAst);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
@@ -225,7 +232,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &m : ctx->cache->classes[canonicalName].methods) {
       auto method = m.first;
       for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
-        const auto &b = ctx->cache->classes[canonicalName].mro[mi];
+        auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
         if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
           // LOG("[virtual] {} . {}", canonicalName, method);
           ctx->cache->classes[canonicalName].virtuals.insert(method);
@@ -233,12 +240,17 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       }
       for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
         for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
-          const auto &b = ctx->cache->classes[canonicalName].mro[mi];
+          auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
           // LOG("[virtual] {} . {}", b, v);
           ctx->cache->classes[b].virtuals.insert(v);
         }
       }
     }
+  } catch (const exc::ParserException &) {
+    if (!stmt->attributes.has(Attr::Tuple))
+      ctx->remove(name);
+    ctx->cache->classes.erase(name);
+    throw;
   }
   for (auto &i : addLater)
     ctx->add(ctx->cache->rev(i->canonicalName), i);
@@ -265,15 +277,16 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// Parse statically inherited classes.
 /// Returns a list of their ASTs. Also updates the class fields.
 /// @param args Class fields that are to be updated with base classes' fields.
-std::vector<ClassStmt *>
-SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
-                                  std::vector<Param> &args, const Attr &attr,
-                                  const std::string &canonicalName, bool addVTable) {
+/// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
+///                Only set when dealing with dynamic polymorphism.
+std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
+    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args, const Attr &attr,
+    const std::string &canonicalName, const ExprPtr &typeAst) {
   std::vector<ClassStmt *> asts;
 
   // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
-  std::vector<std::vector<std::string>> mro{{canonicalName}};
-  std::vector<std::string> parentClasses;
+  std::vector<std::vector<ExprPtr>> mro{{typeAst}};
+  std::vector<ExprPtr> parentClasses;
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
@@ -290,30 +303,32 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
       }
     }
 
-    auto &cachedCls = ctx->cache->classes[name];
-    asts.push_back(cachedCls.ast.get());
-    parentClasses.push_back(name);
-    mro.push_back(cachedCls.mro);
-
-    // Add __vtable__ to parent classes if it is not there already
-    if (addVTable && (cachedCls.fields.empty() ||
-                      cachedCls.fields[0].name != format("{}.{}", VAR_VTABLE, name))) {
-      auto var = format("{}.{}", VAR_VTABLE, name);
-      // LOG("[virtual] vtable({}) := {}", name, var);
-      cachedCls.fields.insert(cachedCls.fields.begin(), {var, nullptr});
-      cachedCls.ast->args.insert(
-          cachedCls.ast->args.begin(),
-          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
-                nullptr});
-    }
+    auto cachedCls = const_cast<Cache::Class*>(in(ctx->cache->classes, name));
+    if (!cachedCls)
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), ctx->cache->rev(name));
+    asts.push_back(cachedCls->ast.get());
+    parentClasses.push_back(clone(cls));
+    mro.push_back(cachedCls->mro);
 
     // Sanity checks
-    if (attr.has(Attr::Tuple) && addVTable)
+    if (attr.has(Attr::Tuple) && typeAst)
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple");
     if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))
       E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
     if (asts.back()->attributes.has(Attr::Internal))
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
+
+    // Add __vtable__ to parent classes if it is not there already
+    if (typeAst && (cachedCls->fields.empty() ||
+                    cachedCls->fields[0].name != format("{}.{}", VAR_VTABLE, name))) {
+      auto var = format("{}.{}", VAR_VTABLE, name);
+      // LOG("[virtual] vtable({}) := {}", name, var);
+      cachedCls->fields.insert(cachedCls->fields.begin(), {var, nullptr});
+      cachedCls->ast->args.insert(
+          cachedCls->ast->args.begin(),
+          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
+                nullptr});
+    }
 
     // Add generics first
     int nGenerics = 0;
@@ -351,8 +366,9 @@ SimplifyVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
         args.emplace_back(Param{a.name, a.type, a.defaultValue});
     }
   }
-  if (addVTable) {
-    mro.push_back(parentClasses);
+  if (typeAst) {
+    if (!parentClasses.empty())
+      mro.push_back(parentClasses);
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());

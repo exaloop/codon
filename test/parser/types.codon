@@ -1567,13 +1567,30 @@ moo(X(1,2,3))
 #: ('M_float', 5.5)
 #: ('M_int', 3)
 
+
+class A[T]:
+    def __init__(self):
+        print("init A", T.__class__.__name__)
+class Ho:
+    def __init__(self):
+        print("init Ho")
+# TODO: this throws and error: B[U](U)
+class B[U](A[U], Ho):
+    def __init__(self):
+        super().__init__()
+        print("init B", U.__class__.__name__)
+B[Ho]()
+#: init A Ho
+#: init B Ho
+
+
 #%% polymorphism_error_1,barebones
 class M[T]:
     m: T
 class X(M[int]):
     pass
 l = [M[float](1.1), X(2)]
-#! 'int' does not match expected type 'float'
+#! 'List[M[float]]' object has no method 'append' with arguments (List[M[float]], X)
 
 #%% polymorphism_2
 class Expr:
@@ -1637,17 +1654,17 @@ def random_expr(depth) -> Expr:
             return Add(lhs,rhs)
 for i in range(11):
     print(random_expr(i).eval())
-#: 3
-#: 58
-#: 66
-#: 18216
-#: 2042
-#: 2.40728e+06
-#: 0
-#: 6.27442e+17
-#: 2.67377e+15
-#: 1.14799e+32
-#: 2.20324e+31
+#: 17
+#: 71
+#: 1760
+#: 118440
+#: 94442
+#: 8.02435e+15
+#: 1.07463e+13
+#: 1.43017e+19
+#: 2.40292e+34
+#: 6.1307e+28
+#: 5.16611e+49
 
 
 #%% collection_common_type,barebones

@@ -87,6 +87,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
   ctx->typecheckLevel--;
 
+  // Handle MRO
+  for (auto &m: ctx->cache->classes[stmt->name].mro)
+    m = transformType(m);
+
   // Generalize generics and remove them from the context
   for (const auto &g : stmt->args)
     if (g.status != Param::Normal) {

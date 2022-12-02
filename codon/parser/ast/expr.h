@@ -138,6 +138,9 @@ public:
   bool isDone() const { return done; }
   void setDone() { done = true; }
 
+  /// @return Type name for IdExprs or instantiations.
+  std::string getTypeName();
+
 protected:
   /// Add a type to S-expression string.
   std::string wrapType(const std::string &sexpr) const;

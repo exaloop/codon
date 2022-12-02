@@ -611,9 +611,20 @@ ExprPtr TypecheckVisitor::transformSuper() {
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
 
   ClassTypePtr typ = funcTyp->getArgTypes()[0]->getClass();
-  auto &cands = ctx->cache->classes[typ->name].staticParentClasses;
-  if (cands.empty())
-    E(Error::CALL_SUPER_PARENT, getSrcInfo());
+  auto cands = ctx->cache->classes[typ->name].staticParentClasses;
+  if (cands.empty()) {
+    // Try dynamic inheritance: check MRO
+    // TODO: super() should be split into two functions in this case...
+    auto vCands = ctx->cache->classes[typ->name].mro;
+    if (vCands.size() < 2)
+      E(Error::CALL_SUPER_PARENT, getSrcInfo());
+
+    auto superTyp = ctx->instantiate(vCands[1]->type, typ)->getClass();
+    // LOG("-> {}", superTyp);
+    auto self = N<IdExpr>(funcTyp->ast->args[0].name);
+    self->type = typ;
+    return castToSuperClass(self, superTyp, true);
+  }
 
   auto name = cands.front(); // the first inherited type
   auto superTyp = ctx->instantiate(ctx->forceFind(name)->type)->getClass();

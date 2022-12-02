@@ -343,8 +343,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     // TODO: adjust for generic MROs
     auto &mros = ctx->cache->classes[exprClass->name].mro;
     for (size_t i = 1; i < mros.size(); i++) {
-      auto tt = ctx->forceFind(mros[i])->type;
-      auto t = ctx->instantiate(tt, exprClass);
+      auto t = ctx->instantiate(mros[i]->type, exprClass);
       if (t->unify(expectedClass.get(), nullptr) >= 0) {
         if (!expr->isId("")) {
           expr = castToSuperClass(expr, expectedClass, true);

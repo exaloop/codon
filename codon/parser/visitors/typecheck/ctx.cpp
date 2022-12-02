@@ -153,10 +153,12 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
     }
   };
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pc : cls->mro) {
-      auto mc = in(cache->classes, pc);
-      seqassert(mc, "class '{}' not found", pc);
-      populate(*mc);
+    for (auto &pt : cls->mro) {
+      if (auto pc = pt->type->getClass()) {
+        auto mc = in(cache->classes, pc->name);
+        seqassert(mc, "class '{}' not found", pc->name);
+        populate(*mc);
+      }
     }
   }
   return vv;
@@ -165,12 +167,14 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pc : cls->mro) {
-      auto mc = in(cache->classes, pc);
-      seqassert(mc, "class '{}' not found", pc);
-      for (auto &mm : mc->fields) {
-        if (mm.name == member)
-          return mm.type;
+    for (auto &pt : cls->mro) {
+      if (auto pc = pt->type->getClass()) {
+        auto mc = in(cache->classes, pc->name);
+        seqassert(mc, "class '{}' not found", pc->name);
+        for (auto &mm : mc->fields) {
+          if (mm.name == member)
+            return mm.type;
+        }
       }
     }
   }

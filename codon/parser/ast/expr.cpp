@@ -36,6 +36,15 @@ std::string Expr::wrapType(const std::string &sexpr) const {
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
 void Expr::setAttr(int attr) { attributes |= (1 << attr); }
+std::string Expr::getTypeName() {
+  if (getId()) {
+    return getId()->value;
+  } else {
+    auto i = dynamic_cast<InstantiateExpr *>(this);
+    seqassertn(i && i->typeExpr->getId(), "bad MRO");
+    return i->typeExpr->getId()->value;
+  }
+}
 
 StaticValue::StaticValue(StaticValue::Type t) : value(), type(t), evaluated(false) {}
 StaticValue::StaticValue(int64_t i) : value(i), type(INT), evaluated(true) {}
