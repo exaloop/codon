@@ -1,126 +1,105 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 # runtime functions
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
-
 
 @pure
 @C
 def seq_strdup(a: cobj) -> str:
     pass
 
-
 @pure
 @C
 def seq_stdin() -> cobj:
     pass
-
 
 @pure
 @C
 def seq_stdout() -> cobj:
     pass
 
-
 @pure
 @C
 def seq_stderr() -> cobj:
     pass
-
 
 @no_side_effect
 @C
 def seq_env() -> Ptr[cobj]:
     pass
 
-
 @no_side_effect
 @C
 def seq_time() -> int:
     pass
-
 
 @no_side_effect
 @C
 def seq_time_monotonic() -> int:
     pass
 
-
 @no_side_effect
 @C
 def seq_time_highres() -> int:
     pass
-
 
 @no_side_effect
 @C
 def seq_localtime(a: int, b: cobj) -> bool:
     pass
 
-
 @no_side_effect
 @C
 def seq_gmtime(a: int, b: cobj) -> bool:
     pass
-
 
 @pure
 @C
 def seq_mktime(a: cobj) -> int:
     pass
 
-
 from C import seq_sleep(float)
-
 
 @pure
 @C
 def seq_pid() -> int:
     pass
 
-
 @pure
 @C
 def seq_lock_new() -> cobj:
     pass
-
 
 @nocapture
 @C
 def seq_lock_acquire(a: cobj, b: bool, c: float) -> bool:
     pass
 
-
 @nocapture
 @C
 def seq_lock_release(a: cobj) -> None:
     pass
-
 
 @pure
 @C
 def seq_rlock_new() -> cobj:
     pass
 
-
 @nocapture
 @C
 def seq_rlock_acquire(a: cobj, b: bool, c: float) -> bool:
     pass
-
 
 @nocapture
 @C
 def seq_rlock_release(a: cobj) -> None:
     pass
 
-
 @pure
 @C
 def seq_i32_to_float(a: i32) -> float:
     pass
-
 
 # <ctype.h>
 @pure
@@ -128,48 +107,40 @@ def seq_i32_to_float(a: i32) -> float:
 def isdigit(a: i32) -> i32:
     pass
 
-
 @pure
 @C
 def isspace(a: i32) -> i32:
     pass
-
 
 @pure
 @C
 def isupper(a: i32) -> i32:
     pass
 
-
 @pure
 @C
 def islower(a: i32) -> i32:
     pass
-
 
 @pure
 @C
 def toupper(a: i32) -> i32:
     pass
 
-
 @pure
 @C
 def tolower(a: i32) -> i32:
     pass
-
 
 @pure
 @C
 def isalnum(a: i32) -> i32:
     pass
 
-
 @pure
 @C
 def isalpha(a: i32) -> i32:
     pass
-
 
 # <math.h>
 @pure
@@ -177,456 +148,380 @@ def isalpha(a: i32) -> i32:
 def ceil(a: float) -> float:
     pass
 
-
 @pure
 @C
 def floor(a: float) -> float:
     pass
-
 
 @pure
 @C
 def fabs(a: float) -> float:
     pass
 
-
 @pure
 @C
 def fmod(a: float, b: float) -> float:
     pass
-
 
 @pure
 @C
 def exp(a: float) -> float:
     pass
 
-
 @pure
 @C
 def expm1(a: float) -> float:
     pass
-
 
 @pure
 @C
 def ldexp(a: float, b: i32) -> float:
     pass
 
-
 @pure
 @C
 def log(a: float) -> float:
     pass
 
-
 @pure
 @C
 def log2(a: float) -> float:
     pass
-
 
 @pure
 @C
 def log10(a: float) -> float:
     pass
 
-
 @pure
 @C
 def sqrt(a: float) -> float:
     pass
-
 
 @pure
 @C
 def pow(a: float, b: float) -> float:
     pass
 
-
 @pure
 @C
 def round(a: float) -> float:
     pass
-
 
 @pure
 @C
 def acos(a: float) -> float:
     pass
 
-
 @pure
 @C
 def asin(a: float) -> float:
     pass
-
 
 @pure
 @C
 def atan(a: float) -> float:
     pass
 
-
 @pure
 @C
 def atan2(a: float, b: float) -> float:
     pass
-
 
 @pure
 @C
 def cos(a: float) -> float:
     pass
 
-
 @pure
 @C
 def sin(a: float) -> float:
     pass
-
 
 @pure
 @C
 def tan(a: float) -> float:
     pass
 
-
 @pure
 @C
 def cosh(a: float) -> float:
     pass
-
 
 @pure
 @C
 def sinh(a: float) -> float:
     pass
 
-
 @pure
 @C
 def tanh(a: float) -> float:
     pass
-
 
 @pure
 @C
 def acosh(a: float) -> float:
     pass
 
-
 @pure
 @C
 def asinh(a: float) -> float:
     pass
-
 
 @pure
 @C
 def atanh(a: float) -> float:
     pass
 
-
 @pure
 @C
 def copysign(a: float, b: float) -> float:
     pass
-
 
 @pure
 @C
 def log1p(a: float) -> float:
     pass
 
-
 @pure
 @C
 def trunc(a: float) -> float:
     pass
-
 
 @pure
 @C
 def log2(a: float) -> float:
     pass
 
-
 @pure
 @C
 def erf(a: float) -> float:
     pass
-
 
 @pure
 @C
 def erfc(a: float) -> float:
     pass
 
-
 @pure
 @C
 def tgamma(a: float) -> float:
     pass
-
 
 @pure
 @C
 def lgamma(a: float) -> float:
     pass
 
-
 @pure
 @C
 def remainder(a: float, b: float) -> float:
     pass
-
 
 @pure
 @C
 def hypot(a: float, b: float) -> float:
     pass
 
-
 @nocapture
 @C
 def frexp(a: float, b: Ptr[Int[32]]) -> float:
     pass
-
 
 @nocapture
 @C
 def modf(a: float, b: Ptr[float]) -> float:
     pass
 
-
 @pure
 @C
 def ceilf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def floorf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def fabsf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def fmodf(a: float32, b: float32) -> float32:
     pass
 
-
 @pure
 @C
 def expf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def expm1f(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def ldexpf(a: float32, b: i32) -> float32:
     pass
-
 
 @pure
 @C
 def logf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def log2f(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def log10f(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def sqrtf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def powf(a: float32, b: float32) -> float32:
     pass
 
-
 @pure
 @C
 def roundf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def acosf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def asinf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def atanf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def atan2f(a: float32, b: float32) -> float32:
     pass
-
 
 @pure
 @C
 def cosf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def sinf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def tanf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def coshf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def sinhf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def tanhf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def acoshf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def asinhf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def atanhf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def copysignf(a: float32, b: float32) -> float32:
     pass
-
 
 @pure
 @C
 def log1pf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def truncf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def log2f(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def erff(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def erfcf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def tgammaf(a: float32) -> float32:
     pass
-
 
 @pure
 @C
 def lgammaf(a: float32) -> float32:
     pass
 
-
 @pure
 @C
 def remainderf(a: float32, b: float32) -> float32:
     pass
-
 
 @pure
 @C
 def hypotf(a: float32, b: float32) -> float32:
     pass
 
-
 @nocapture
 @C
 def frexpf(a: float32, b: Ptr[Int[32]]) -> float32:
     pass
 
-
 @nocapture
 @C
 def modff(a: float32, b: Ptr[float32]) -> float32:
     pass
-
 
 # <stdio.h>
 @pure
@@ -634,94 +529,78 @@ def modff(a: float32, b: Ptr[float32]) -> float32:
 def ferror(a: cobj) -> i32:
     pass
 
-
 @nocapture
 @C
 def fgetc(a: cobj) -> i32:
     pass
-
 
 @nocapture
 @C
 def fopen(a: cobj, b: cobj) -> cobj:
     pass
 
-
 @nocapture
 @C
 def fdopen(a: int, b: cobj) -> cobj:
     pass
-
 
 @nocapture
 @C
 def fclose(a: cobj) -> int:
     pass
 
-
 @nocapture
 @C
 def fread(a: cobj, b: int, c: int, d: cobj) -> int:
     pass
-
 
 @nocapture
 @C
 def fwrite(a: cobj, b: int, c: int, d: cobj) -> int:
     pass
 
-
 @nocapture
 @C
 def ftell(a: cobj) -> int:
     pass
-
 
 @nocapture
 @C
 def fseek(a: cobj, b: int, c: i32) -> i32:
     pass
 
-
 @nocapture
 @C
 def fgets(a: cobj, b: int, c: cobj) -> cobj:
     pass
-
 
 @nocapture
 @C
 def fflush(a: cobj) -> None:
     pass
 
-
 @nocapture
 @C
 def getline(a: Ptr[cobj], b: Ptr[int], c: cobj) -> int:
     pass
 
-
 # <stdlib.h>
 from C import exit(int)
-
 
 @nocapture
 @C
 def system(a: cobj) -> int:
     pass
 
-
 @nocapture
 @C
 def free(a: cobj) -> None:
     pass
 
-
 @pure
 @C
 def atoi(a: cobj) -> int:
     pass
-
 
 # <zlib.h>
 @nocapture
@@ -729,61 +608,51 @@ def atoi(a: cobj) -> int:
 def gzopen(a: cobj, b: cobj) -> cobj:
     pass
 
-
 @nocapture
 @C
 def gzerror(a: cobj, b: Ptr[i32]) -> cobj:
     pass
-
 
 @nocapture
 @C
 def gzgetc(a: cobj) -> i32:
     pass
 
-
 @nocapture
 @C
 def gzgets(a: cobj, b: cobj, c: i32) -> cobj:
     pass
-
 
 @nocapture
 @C
 def gzclose(a: cobj) -> int:
     pass
 
-
 @nocapture
 @C
 def gzread(a: cobj, b: cobj, c: u32) -> i32:
     pass
-
 
 @nocapture
 @C
 def gzwrite(a: cobj, b: cobj, c: u32) -> i32:
     pass
 
-
 @nocapture
 @C
 def gztell(a: cobj) -> int:
     pass
-
 
 @nocapture
 @C
 def gzseek(a: cobj, b: int, c: i32) -> int:
     pass
 
-
 # <string.h>
 @pure
 @C
 def memcmp(lhs: Ptr[byte], rhs: Ptr[byte], count: int) -> i32:
     pass
-
 
 @pure
 @C

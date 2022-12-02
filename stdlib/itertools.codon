@@ -1,9 +1,8 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.types.optional import unwrap
 
 # Infinite iterators
-
 
 @inline
 def count(start: T = 0, step: T = 1, T: type) -> Generator[T]:
@@ -14,7 +13,6 @@ def count(start: T = 0, step: T = 1, T: type) -> Generator[T]:
     while True:
         yield n
         n += step
-
 
 @inline
 def cycle(iterable: Generator[T], T: type) -> Generator[T]:
@@ -29,7 +27,6 @@ def cycle(iterable: Generator[T], T: type) -> Generator[T]:
         for element in saved:
             yield element
 
-
 @inline
 def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
     """
@@ -42,9 +39,7 @@ def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
         for i in range(times):
             yield object
 
-
 # Iterators terminating on the shortest input sequence
-
 
 @inline
 def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
@@ -58,7 +53,6 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: ty
         total = func(total, element)
         yield total
 
-
 @inline
 @overload
 def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
@@ -70,7 +64,6 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
     for element in iterable:
         total = element if total is None else func(unwrap(total), element)
         yield unwrap(total)
-
 
 @tuple
 class chain:
@@ -91,7 +84,6 @@ class chain:
             for element in it:
                 yield element
 
-
 @inline
 def compress(
     data: Generator[T], selectors: Generator[B], T: type, B: type
@@ -104,7 +96,6 @@ def compress(
     for d, s in zip(data, selectors):
         if s:
             yield d
-
 
 @inline
 def dropwhile(
@@ -121,7 +112,6 @@ def dropwhile(
         if b:
             yield x
 
-
 @inline
 def filterfalse(
     predicate: Callable[[T], bool], iterable: Generator[T], T: type
@@ -132,7 +122,6 @@ def filterfalse(
     for x in iterable:
         if not predicate(x):
             yield x
-
 
 # TODO: fix this once Optional[Callable] lands
 @inline
@@ -155,7 +144,6 @@ def groupby(iterable, key=Optional[int]()):
     if currkey is not None:
         yield unwrap(currkey), group
 
-
 def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
     """
     Make an iterator that returns selected elements from the iterable.
@@ -170,7 +158,6 @@ def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]
             break
         yield x
         i += 1
-
 
 @overload
 def islice(
@@ -221,7 +208,6 @@ def islice(
         for i, element in zip(range(b + 1, stop), iterable):
             pass
 
-
 @inline
 def starmap(function, iterable):
     """
@@ -230,7 +216,6 @@ def starmap(function, iterable):
     """
     for args in iterable:
         yield function(*args)
-
 
 @inline
 def takewhile(
@@ -244,7 +229,6 @@ def takewhile(
             yield x
         else:
             break
-
 
 def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
     """
@@ -269,7 +253,6 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
             yield mydeque.popleft()
 
     return [gen(d) for d in deques]
-
 
 @inline
 def zip_longest(*iterables, fillvalue):
@@ -319,7 +302,6 @@ def zip_longest(*iterables, fillvalue):
                     values.append(it.next())
             yield values
 
-
 @inline
 @overload
 def zip_longest(*args):
@@ -349,9 +331,7 @@ def zip_longest(*args):
     for it in iters:
         it.destroy()
 
-
 # Combinatoric iterators
-
 
 def combinations(pool: Generator[T], r: int, T: type) -> Generator[List[T]]:
     """
@@ -385,7 +365,6 @@ def combinations(pool: Generator[T], r: int, T: type) -> Generator[List[T]]:
         return combinations_helper(pool, r)
     else:
         return combinations_helper([a for a in pool], r)
-
 
 def combinations_with_replacement(
     pool: Generator[T], r: int, T: type
@@ -422,7 +401,6 @@ def combinations_with_replacement(
         return combinations_with_replacement_helper(pool, r)
     else:
         return combinations_with_replacement_helper([a for a in pool], r)
-
 
 def permutations(
     pool: Generator[T], r: Optional[int] = None, T: type
@@ -465,7 +443,6 @@ def permutations(
     else:
         return permutations_helper([a for a in pool], r)
 
-
 @inline
 def product(*args):
     """
@@ -478,7 +455,6 @@ def product(*args):
             rest = args[1:]
             for b in product(*rest):
                 yield (a, *b)
-
 
 @inline
 @overload

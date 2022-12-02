@@ -1,24 +1,20 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @pure
 @llvm
 def _inf() -> float:
     ret double 0x7FF0000000000000
 
-
 @pure
 @llvm
 def _nan() -> float:
     ret double 0x7FF8000000000000
-
 
 e = 2.7182818284590452354
 pi = 3.14159265358979323846
 tau = 6.28318530717958647693
 inf = _inf()
 nan = _nan()
-
 
 def factorial(x: int) -> int:
     _F = (
@@ -48,7 +44,6 @@ def factorial(x: int) -> int:
         raise ValueError("factorial is only supported for 0 <= x <= 20")
     return _F[x]
 
-
 def isnan(x: float) -> bool:
     """
     isnan(float) -> bool
@@ -63,7 +58,6 @@ def isnan(x: float) -> bool:
         ret i8 %z
 
     return f(x)
-
 
 def isinf(x: float) -> bool:
     """
@@ -82,7 +76,6 @@ def isinf(x: float) -> bool:
 
     return f(x)
 
-
 def isfinite(x: float) -> bool:
     """
     isfinite(float) -> bool
@@ -91,7 +84,6 @@ def isfinite(x: float) -> bool:
     and False otherwise.
     """
     return not (isnan(x) or isinf(x))
-
 
 def _check1(arg: float, r: float, can_overflow: bool = False):
     if __py_numerics__:
@@ -106,7 +98,6 @@ def _check1(arg: float, r: float, can_overflow: bool = False):
 
     return r
 
-
 def _check2(x: float, y: float, r: float, can_overflow: bool = False):
     if __py_numerics__:
         if isnan(r) and not isnan(x) and not isnan(y):
@@ -119,7 +110,6 @@ def _check2(x: float, y: float, r: float, can_overflow: bool = False):
                 raise ValueError("math domain error")
 
     return r
-
 
 def ceil(x: float) -> float:
     """
@@ -137,7 +127,6 @@ def ceil(x: float) -> float:
 
     return f(x)
 
-
 def floor(x: float) -> float:
     """
     floor(float) -> float
@@ -154,7 +143,6 @@ def floor(x: float) -> float:
 
     return f(x)
 
-
 def fabs(x: float) -> float:
     """
     fabs(float) -> float
@@ -170,7 +158,6 @@ def fabs(x: float) -> float:
 
     return f(x)
 
-
 def fmod(x: float, y: float) -> float:
     """
     fmod(float, float) -> float
@@ -184,7 +171,6 @@ def fmod(x: float, y: float) -> float:
         ret double %z
 
     return f(x, y)
-
 
 def exp(x: float) -> float:
     """
@@ -201,7 +187,6 @@ def exp(x: float) -> float:
 
     return _check1(x, f(x), True)
 
-
 def expm1(x: float) -> float:
     """
     expm1(float) -> float
@@ -211,7 +196,6 @@ def expm1(x: float) -> float:
     """
     return _check1(x, _C.expm1(x), True)
 
-
 def ldexp(x: float, i: int) -> float:
     """
     ldexp(float, int) -> float
@@ -219,7 +203,6 @@ def ldexp(x: float, i: int) -> float:
     Returns x multiplied by 2 raised to the power of exponent.
     """
     return _check1(x, _C.ldexp(x, i32(i)), True)
-
 
 def log(x: float, base: float = e) -> float:
     """
@@ -239,7 +222,6 @@ def log(x: float, base: float = e) -> float:
     else:
         return _check1(x, f(x)) / _check1(base, f(base))
 
-
 def log2(x: float) -> float:
     """
     log2(float) -> float
@@ -254,7 +236,6 @@ def log2(x: float) -> float:
         ret double %y
 
     return _check1(x, f(x))
-
 
 def log10(x: float) -> float:
     """
@@ -271,7 +252,6 @@ def log10(x: float) -> float:
 
     return _check1(x, f(x))
 
-
 def degrees(x: float) -> float:
     """
     degrees(float) -> float
@@ -281,7 +261,6 @@ def degrees(x: float) -> float:
     radToDeg = 180.0 / pi
     return x * radToDeg
 
-
 def radians(x: float) -> float:
     """
     radians(float) -> float
@@ -290,7 +269,6 @@ def radians(x: float) -> float:
     """
     degToRad = pi / 180.0
     return x * degToRad
-
 
 def sqrt(x: float) -> float:
     """
@@ -307,7 +285,6 @@ def sqrt(x: float) -> float:
 
     return _check1(x, f(x))
 
-
 def pow(x: float, y: float) -> float:
     """
     pow(float, float) -> float
@@ -323,7 +300,6 @@ def pow(x: float, y: float) -> float:
 
     return _check2(x, y, f(x, y), True)
 
-
 def acos(x: float) -> float:
     """
     acos(float) -> float
@@ -331,7 +307,6 @@ def acos(x: float) -> float:
     Returns the arc cosine of x in radians.
     """
     return _check1(x, _C.acos(x))
-
 
 def asin(x: float) -> float:
     """
@@ -341,7 +316,6 @@ def asin(x: float) -> float:
     """
     return _check1(x, _C.asin(x))
 
-
 def atan(x: float) -> float:
     """
     atan(float) -> float
@@ -349,7 +323,6 @@ def atan(x: float) -> float:
     Returns the arc tangent of x in radians.
     """
     return _check1(x, _C.atan(x))
-
 
 def atan2(y: float, x: float) -> float:
     """
@@ -360,7 +333,6 @@ def atan2(y: float, x: float) -> float:
     correct quadrant.
     """
     return _check2(x, y, _C.atan2(y, x))
-
 
 def cos(x: float) -> float:
     """
@@ -377,7 +349,6 @@ def cos(x: float) -> float:
 
     return _check1(x, f(x))
 
-
 def sin(x: float) -> float:
     """
     sin(float) -> float
@@ -393,7 +364,6 @@ def sin(x: float) -> float:
 
     return _check1(x, f(x))
 
-
 def hypot(x: float, y: float) -> float:
     """
     hypot(float, float) -> float
@@ -404,7 +374,6 @@ def hypot(x: float, y: float) -> float:
     """
     return _check2(x, y, _C.hypot(x, y), True)
 
-
 def tan(x: float) -> float:
     """
     tan(float) -> float
@@ -412,7 +381,6 @@ def tan(x: float) -> float:
     Return the tangent of a radian angle x.
     """
     return _check1(x, _C.tan(x))
-
 
 def cosh(x: float) -> float:
     """
@@ -422,7 +390,6 @@ def cosh(x: float) -> float:
     """
     return _check1(x, _C.cosh(x), True)
 
-
 def sinh(x: float) -> float:
     """
     sinh(float) -> float
@@ -430,7 +397,6 @@ def sinh(x: float) -> float:
     Returns the hyperbolic sine of x.
     """
     return _check1(x, _C.sinh(x), True)
-
 
 def tanh(x: float) -> float:
     """
@@ -440,7 +406,6 @@ def tanh(x: float) -> float:
     """
     return _check1(x, _C.tanh(x))
 
-
 def acosh(x: float) -> float:
     """
     acosh(float) -> float
@@ -448,7 +413,6 @@ def acosh(x: float) -> float:
     Return the inverse hyperbolic cosine of x.
     """
     return _check1(x, _C.acosh(x))
-
 
 def asinh(x: float) -> float:
     """
@@ -458,7 +422,6 @@ def asinh(x: float) -> float:
     """
     return _check1(x, _C.asinh(x))
 
-
 def atanh(x: float) -> float:
     """
     atanh(float) -> float
@@ -466,7 +429,6 @@ def atanh(x: float) -> float:
     Return the inverse hyperbolic tangent of x.
     """
     return _check1(x, _C.atanh(x))
-
 
 def copysign(x: float, y: float) -> float:
     """
@@ -484,7 +446,6 @@ def copysign(x: float, y: float) -> float:
 
     return _check2(x, y, f(x, y))
 
-
 def log1p(x: float) -> float:
     """
     log1p(float) -> float
@@ -492,7 +453,6 @@ def log1p(x: float) -> float:
     Return the natural logarithm of 1+x (base e).
     """
     return _check1(x, _C.log1p(x))
-
 
 def trunc(x: float) -> float:
     """
@@ -510,7 +470,6 @@ def trunc(x: float) -> float:
 
     return _check1(x, f(x))
 
-
 def erf(x: float) -> float:
     """
     erf(float) -> float
@@ -518,7 +477,6 @@ def erf(x: float) -> float:
     Return the error function at x.
     """
     return _check1(x, _C.erf(x))
-
 
 def erfc(x: float) -> float:
     """
@@ -528,7 +486,6 @@ def erfc(x: float) -> float:
     """
     return _check1(x, _C.erfc(x))
 
-
 def gamma(x: float) -> float:
     """
     gamma(float) -> float
@@ -536,7 +493,6 @@ def gamma(x: float) -> float:
     Return the Gamma function at x.
     """
     return _check1(x, _C.tgamma(x), True)
-
 
 def lgamma(x: float) -> float:
     """
@@ -546,7 +502,6 @@ def lgamma(x: float) -> float:
     the absolute value of the Gamma function at x.
     """
     return _check1(x, _C.lgamma(x), True)
-
 
 def remainder(x: float, y: float) -> float:
     """
@@ -561,7 +516,6 @@ def remainder(x: float, y: float) -> float:
     """
     return _check2(x, y, _C.remainder(x, y))
 
-
 def gcd(a: float, b: float) -> float:
     """
     gcd(float, float) -> float
@@ -573,7 +527,6 @@ def gcd(a: float, b: float) -> float:
     while a:
         a, b = b % a, a
     return b
-
 
 @pure
 def frexp(x: float) -> Tuple[float, int]:
@@ -588,7 +541,6 @@ def frexp(x: float) -> Tuple[float, int]:
     res = _C.frexp(float(x), __ptr__(tmp))
     return (res, int(tmp))
 
-
 @pure
 def modf(x: float) -> Tuple[float, float]:
     """
@@ -600,7 +552,6 @@ def modf(x: float) -> Tuple[float, float]:
     tmp = 0.0
     res = _C.modf(float(x), __ptr__(tmp))
     return (res, tmp)
-
 
 def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) -> bool:
     """
@@ -636,7 +587,6 @@ def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) ->
         diff <= abs_tol
     )
 
-
 # 32-bit float ops
 
 e32 = float32(e)
@@ -645,7 +595,6 @@ tau32 = float32(tau)
 
 inf32 = float32(inf)
 nan32 = float32(nan)
-
 
 @overload
 def isnan(x: float32) -> bool:
@@ -662,7 +611,6 @@ def isnan(x: float32) -> bool:
         ret i8 %z
 
     return f(x)
-
 
 @overload
 def isinf(x: float32) -> bool:
@@ -682,7 +630,6 @@ def isinf(x: float32) -> bool:
 
     return f(x)
 
-
 @overload
 def isfinite(x: float32) -> bool:
     """
@@ -692,7 +639,6 @@ def isfinite(x: float32) -> bool:
     and False otherwise.
     """
     return not (isnan(x) or isinf(x))
-
 
 @overload
 def ceil(x: float32) -> float32:
@@ -711,7 +657,6 @@ def ceil(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def floor(x: float32) -> float32:
     """
@@ -729,7 +674,6 @@ def floor(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def fabs(x: float32) -> float32:
     """
@@ -746,7 +690,6 @@ def fabs(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def fmod(x: float32, y: float32) -> float32:
     """
@@ -761,7 +704,6 @@ def fmod(x: float32, y: float32) -> float32:
         ret float %z
 
     return f(x, y)
-
 
 @overload
 def exp(x: float32) -> float32:
@@ -779,7 +721,6 @@ def exp(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def expm1(x: float32) -> float32:
     """
@@ -790,7 +731,6 @@ def expm1(x: float32) -> float32:
     """
     return _C.expm1f(x)
 
-
 @overload
 def ldexp(x: float32, i: int) -> float32:
     """
@@ -799,7 +739,6 @@ def ldexp(x: float32, i: int) -> float32:
     Returns x multiplied by 2 raised to the power of exponent.
     """
     return _C.ldexpf(x, i32(i))
-
 
 @overload
 def log(x: float32, base: float32 = e32) -> float32:
@@ -820,7 +759,6 @@ def log(x: float32, base: float32 = e32) -> float32:
     else:
         return f(x) / f(base)
 
-
 @overload
 def log2(x: float32) -> float32:
     """
@@ -836,7 +774,6 @@ def log2(x: float32) -> float32:
         ret float %y
 
     return f(x)
-
 
 @overload
 def log10(x: float32) -> float32:
@@ -854,7 +791,6 @@ def log10(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def degrees(x: float32) -> float32:
     """
@@ -864,7 +800,6 @@ def degrees(x: float32) -> float32:
     """
     radToDeg = float32(180.0) / pi32
     return x * radToDeg
-
 
 @overload
 def radians(x: float32) -> float32:
@@ -892,7 +827,6 @@ def sqrt(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def pow(x: float32, y: float32) -> float32:
     """
@@ -909,7 +843,6 @@ def pow(x: float32, y: float32) -> float32:
 
     return f(x, y)
 
-
 @overload
 def acos(x: float32) -> float32:
     """
@@ -918,7 +851,6 @@ def acos(x: float32) -> float32:
     Returns the arc cosine of x in radians.
     """
     return _C.acosf(x)
-
 
 @overload
 def asin(x: float32) -> float32:
@@ -929,7 +861,6 @@ def asin(x: float32) -> float32:
     """
     return _C.asinf(x)
 
-
 @overload
 def atan(x: float32) -> float32:
     """
@@ -938,7 +869,6 @@ def atan(x: float32) -> float32:
     Returns the arc tangent of x in radians.
     """
     return _C.atanf(x)
-
 
 @overload
 def atan2(y: float32, x: float32) -> float32:
@@ -950,7 +880,6 @@ def atan2(y: float32, x: float32) -> float32:
     correct quadrant.
     """
     return _C.atan2f(y, x)
-
 
 @overload
 def cos(x: float32) -> float32:
@@ -968,7 +897,6 @@ def cos(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def sin(x: float32) -> float32:
     """
@@ -985,7 +913,6 @@ def sin(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def hypot(x: float32, y: float32) -> float32:
     """
@@ -997,7 +924,6 @@ def hypot(x: float32, y: float32) -> float32:
     """
     return _C.hypotf(x, y)
 
-
 @overload
 def tan(x: float32) -> float32:
     """
@@ -1006,7 +932,6 @@ def tan(x: float32) -> float32:
     Return the tangent of a radian angle x.
     """
     return _C.tanf(x)
-
 
 @overload
 def cosh(x: float32) -> float32:
@@ -1017,7 +942,6 @@ def cosh(x: float32) -> float32:
     """
     return _C.coshf(x)
 
-
 @overload
 def sinh(x: float32) -> float32:
     """
@@ -1026,7 +950,6 @@ def sinh(x: float32) -> float32:
     Returns the hyperbolic sine of x.
     """
     return _C.sinhf(x)
-
 
 @overload
 def tanh(x: float32) -> float32:
@@ -1037,7 +960,6 @@ def tanh(x: float32) -> float32:
     """
     return _C.tanhf(x)
 
-
 @overload
 def acosh(x: float32) -> float32:
     """
@@ -1046,7 +968,6 @@ def acosh(x: float32) -> float32:
     Return the inverse hyperbolic cosine of x.
     """
     return _C.acoshf(x)
-
 
 @overload
 def asinh(x: float32) -> float32:
@@ -1057,7 +978,6 @@ def asinh(x: float32) -> float32:
     """
     return _C.asinhf(x)
 
-
 @overload
 def atanh(x: float32) -> float32:
     """
@@ -1066,7 +986,6 @@ def atanh(x: float32) -> float32:
     Return the inverse hyperbolic tangent of x.
     """
     return _C.atanhf(x)
-
 
 @overload
 def copysign(x: float32, y: float32) -> float32:
@@ -1085,7 +1004,6 @@ def copysign(x: float32, y: float32) -> float32:
 
     return f(x, y)
 
-
 @overload
 def log1p(x: float32) -> float32:
     """
@@ -1094,7 +1012,6 @@ def log1p(x: float32) -> float32:
     Return the natural logarithm of 1+x (base e).
     """
     return _C.log1pf(x)
-
 
 @overload
 def trunc(x: float32) -> float32:
@@ -1113,7 +1030,6 @@ def trunc(x: float32) -> float32:
 
     return f(x)
 
-
 @overload
 def erf(x: float32) -> float32:
     """
@@ -1122,7 +1038,6 @@ def erf(x: float32) -> float32:
     Return the error function at x.
     """
     return _C.erff(x)
-
 
 @overload
 def erfc(x: float32) -> float32:
@@ -1133,7 +1048,6 @@ def erfc(x: float32) -> float32:
     """
     return _C.erfcf(x)
 
-
 @overload
 def gamma(x: float32) -> float32:
     """
@@ -1142,7 +1056,6 @@ def gamma(x: float32) -> float32:
     Return the Gamma function at x.
     """
     return _C.tgammaf(x)
-
 
 @overload
 def lgamma(x: float32) -> float32:
@@ -1153,7 +1066,6 @@ def lgamma(x: float32) -> float32:
     the absolute value of the Gamma function at x.
     """
     return _C.lgammaf(x)
-
 
 @overload
 def remainder(x: float32, y: float32) -> float32:
@@ -1169,7 +1081,6 @@ def remainder(x: float32, y: float32) -> float32:
     """
     return _C.remainderf(x, y)
 
-
 @overload
 def gcd(a: float32, b: float32) -> float32:
     """
@@ -1182,7 +1093,6 @@ def gcd(a: float32, b: float32) -> float32:
     while a:
         a, b = b % a, a
     return b
-
 
 @overload
 @pure
@@ -1198,7 +1108,6 @@ def frexp(x: float32) -> Tuple[float32, int]:
     res = _C.frexpf(float32(x), __ptr__(tmp))
     return (res, int(tmp))
 
-
 @overload
 @pure
 def modf(x: float32) -> Tuple[float32, float32]:
@@ -1211,7 +1120,6 @@ def modf(x: float32) -> Tuple[float32, float32]:
     tmp = float32(0.0)
     res = _C.modff(float32(x), __ptr__(tmp))
     return (res, tmp)
-
 
 @overload
 def isclose(a: float32, b: float32, rel_tol: float32 = float32(1e-09), abs_tol: float32 = float32(0.0)) -> bool:

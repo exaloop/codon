@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 import sys
 from math import inf as INF, sqrt as _sqrt, acos as _acos, cos as _cos, sin as _sin
@@ -140,20 +140,17 @@ class RandomGenerator:
     def seed(self):
         self.random_seed_time_pid()
 
-
-"""
-Random number generator base class used by bound module functions.
-Used to instantiate instances of Random to get generators that don't
-share state.
-Class Random can also be subclassed if you want to use a different basic
-generator of your own devising: in that case, override the following
-methods:  random(), seed(), getstate(), and setstate().
-Optionally, implement a getrandbits() method so that randrange()
-can cover arbitrarily large ranges.
-"""
-
-
 class Random:
+    """
+    Random number generator base class used by bound module functions.
+    Used to instantiate instances of Random to get generators that don't
+    share state.
+    Class Random can also be subclassed if you want to use a different basic
+    generator of your own devising: in that case, override the following
+    methods:  random(), seed(), getstate(), and setstate().
+    Optionally, implement a getrandbits() method so that randrange()
+    can cover arbitrarily large ranges.
+    """
     gen: RandomGenerator  # comment for another error
     gauss_next: Optional[float]
 
@@ -668,29 +665,22 @@ class Random:
             for i in range(k)
         ]
 
-
 _rnd = Random()
-
 
 def seed(a: int):
     _rnd.seed(a)
 
-
 def getrandbits(k: int):
     return _rnd.getrandbits(k)
-
 
 def randrange(start: int, stop: Optional[int] = None, step: int = 1):
     return _rnd.randrange(start, stop, step) if stop is not None else _rnd.randrange(0, start, step)
 
-
 def randint(a: int, b: int):
     return _rnd.randint(a, b)
 
-
 def choice(s):
     return _rnd.choice(s)
-
 
 def choices(
     population,
@@ -700,58 +690,44 @@ def choices(
 ):
     return _rnd.choices(population, weights, cum_weights, k)
 
-
 def shuffle(s):
     _rnd.shuffle(s)
-
 
 def sample(population, k: int):
     return _rnd.sample(population, k)
 
-
 def random():
     return _rnd.random()
-
 
 def uniform(a, b):
     return _rnd.uniform(a, b)
 
-
 def triangular(low: float = 0.0, high: float = 1.0, mode: Optional[float] = None):
     return _rnd.triangular(low, high, mode if mode is not None else (low + high) / 2)
-
 
 def betavariate(alpha: float, beta: float):
     return _rnd.betavariate(alpha, beta)
 
-
 def expovariate(lambd: float):
     return _rnd.expovariate(lambd)
-
 
 def gammavariate(alpha: float, beta: float):
     return _rnd.gammavariate(alpha, beta)
 
-
 def gauss(mu: float, sigma: float):
     return _rnd.gauss(mu, sigma)
-
 
 def lognormvariate(mu: float, sigma: float):
     return _rnd.lognormvariate(mu, sigma)
 
-
 def normalvariate(mu: float, sigma: float):
     return _rnd.normalvariate(mu, sigma)
-
 
 def vonmisesvariate(mu: float, kappa: float):
     return _rnd.vonmisesvariate(mu, kappa)
 
-
 def paretovariate(alpha: float):
     return _rnd.paretovariate(alpha)
-
 
 def weibullvariate(alpha: float, beta: float):
     return _rnd.weibullvariate(alpha, beta)

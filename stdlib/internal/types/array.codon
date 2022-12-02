@@ -1,6 +1,6 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-from internal.gc import sizeof
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
+from internal.gc import sizeof
 
 @extend
 class Array:
@@ -37,6 +37,5 @@ class Array:
 
     def slice(self, s: int, e: int) -> Array[T]:
         return (e - s, self.ptr + s)
-
 
 array = Array

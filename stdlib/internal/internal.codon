@@ -1,13 +1,11 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic, seq_gc_add_roots
-
 
 @pure
 @C
 def seq_check_errno() -> str:
     pass
-
 
 from C import seq_print(str)
 from C import exit(int)
@@ -402,7 +400,6 @@ class __internal__:
     #     return d
     # def __add__(self, obj):
     #     return (*self, *obj)
-
 
 @dataclass(init=True)
 @tuple

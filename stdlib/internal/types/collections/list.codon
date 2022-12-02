@@ -1,7 +1,6 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 import internal.gc as gc
-
 
 @extend
 class List:

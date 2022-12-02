@@ -1,14 +1,12 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # dict implementation based on klib's khash
+
 import internal.khash as khash
 import internal.gc as gc
-
 
 def _dict_hash(key) -> int:
     k = key.__hash__()
     return (k >> 33) ^ k ^ (k << 11)
-
 
 class Dict:
     _n_buckets: int
@@ -418,6 +416,5 @@ class Dict:
 
     def _kh_exist(self, x: int) -> bool:
         return not khash.__ac_iseither(self._flags, x)
-
 
 dict = Dict

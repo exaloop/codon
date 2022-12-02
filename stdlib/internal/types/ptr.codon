@@ -1,11 +1,9 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @pure
 @C
 def seq_str_ptr(a: Ptr[byte], fmt: cobj, error: cobj) -> str:
     pass
-
 
 @extend
 class Ptr:
@@ -194,17 +192,14 @@ class Ptr:
     def __repr__(self) -> str:
         return self.__format__("")
 
-
 ptr = Ptr
 Jar = Ptr[byte]
-
 
 # Forward declarations
 class List:
     len: int
     arr: Array[T]
     T: type
-
 
 @extend
 class NoneType:

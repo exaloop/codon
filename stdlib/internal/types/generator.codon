@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @extend
 class Generator:
@@ -55,6 +54,5 @@ class Generator:
         declare void @llvm.coro.destroy(ptr)
         call void @llvm.coro.destroy(ptr %self)
         ret {} {}
-
 
 generator = Generator

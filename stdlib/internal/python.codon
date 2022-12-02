@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 import os
 
@@ -148,7 +148,6 @@ def __codon_repr__(fig):
 """
 
 _PY_INITIALIZED = False
-
 
 def init_dl_handles(py_handle: cobj):
     global Py_DecRef
@@ -339,7 +338,6 @@ def init_dl_handles(py_handle: cobj):
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
 
-
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
     if _PY_INITIALIZED:
@@ -359,15 +357,12 @@ def setup_python(python_loaded: bool):
 
     _PY_INITIALIZED = True
 
-
 def ensure_initialized(python_loaded: bool = False):
     setup_python(python_loaded)
     PyRun_SimpleString(_PY_INIT.c_str())
 
-
 def setup_decorator():
     setup_python(True)
-
 
 @extend
 class pyobj:
@@ -705,17 +700,14 @@ class pyobj:
     def __bool__(self):
         return bool(pyobj.exc_wrap(PyObject_IsTrue(self.p) == 1))
 
-
 def _get_identifier(typ: str) -> pyobj:
     t = pyobj._builtins()[typ]
     if t.p == cobj():
         t = pyobj._main_module()[typ]
     return t
 
-
 def _isinstance(what: pyobj, typ: pyobj) -> bool:
     return bool(pyobj.exc_wrap(PyObject_IsInstance(what.p, typ.p)))
-
 
 # Type conversions
 
@@ -728,7 +720,6 @@ class NoneType:
     def __from_py__(i: cobj) -> None:
         return
 
-
 @extend
 class int:
     def __to_py__(self) -> cobj:
@@ -736,7 +727,6 @@ class int:
 
     def __from_py__(i: cobj) -> int:
         return pyobj.exc_wrap(PyLong_AsLong(i))
-
 
 @extend
 class float:
@@ -746,7 +736,6 @@ class float:
     def __from_py__(d: cobj) -> float:
         return pyobj.exc_wrap(PyFloat_AsDouble(d))
 
-
 @extend
 class bool:
     def __to_py__(self) -> cobj:
@@ -754,7 +743,6 @@ class bool:
 
     def __from_py__(b: cobj) -> bool:
         return pyobj.exc_wrap(PyObject_IsTrue(b)) != 0
-
 
 @extend
 class byte:
@@ -764,7 +752,6 @@ class byte:
     def __from_py__(c: cobj) -> byte:
         return str.__from_py__(c).ptr[0]
 
-
 @extend
 class str:
     def __to_py__(self) -> cobj:
@@ -772,7 +759,6 @@ class str:
 
     def __from_py__(s: cobj) -> str:
         return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
-
 
 @extend
 class complex:
@@ -783,7 +769,6 @@ class complex:
         real = pyobj.exc_wrap(PyComplex_RealAsDouble(c))
         imag = pyobj.exc_wrap(PyComplex_ImagAsDouble(c))
         return complex(real, imag)
-
 
 @extend
 class List:
@@ -806,7 +791,6 @@ class List:
             t.append(T.__from_py__(elem))
         return t
 
-
 @extend
 class Dict:
     def __to_py__(self) -> cobj:
@@ -828,7 +812,6 @@ class Dict:
             v = V.__from_py__(v_ptr)
             b[k] = v
         return b
-
 
 @extend
 class Set:
@@ -853,7 +836,6 @@ class Set:
         pyobj.decref(s_iter)
         return b
 
-
 @extend
 class DynamicTuple:
     def __to_py__(self) -> cobj:
@@ -872,7 +854,6 @@ class DynamicTuple:
             p[i] = T.__from_py__(PyTuple_GetItem(t, i))
         return DynamicTuple(p, n)
 
-
 @extend
 class Slice:
     def __to_py__(self) -> cobj:
@@ -890,7 +871,6 @@ class Slice:
         step = 0
         pyobj.exc_wrap(PySlice_Unpack(s, __ptr__(start), __ptr__(stop), __ptr__(step)))
         return Slice(Optional(start), Optional(stop), Optional(step))
-
 
 @extend
 class Optional:

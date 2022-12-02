@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "codon/runtime/lib.h"
 #include <cstring>
 #include <re2/re2.h>

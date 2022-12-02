@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 # Core library
 
@@ -22,7 +22,6 @@ from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
 
-
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
         if default:
@@ -31,9 +30,7 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             raise StopIteration()
     return g.next()
 
-
 from C import seq_print_full(str, cobj)
-
 
 class Set:
     items: List[T]
@@ -54,7 +51,6 @@ class Set:
         s.ptr[0] = "{".ptr[0]
         s.ptr[s.len - 1] = "}".ptr[0]
         return s
-
 
 class Dict:
     keys: List[K]
@@ -110,7 +106,6 @@ class Dict:
             lst.append("}")
             return str.cat(lst)
 
-
 @extend
 class str:
     def __getitem__(self, idx: int) -> str:
@@ -131,7 +126,6 @@ class str:
 
     def __repr__(self) -> str:
         return f"'{self}'"
-
 
 from internal.builtin import *
 
