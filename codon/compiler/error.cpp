@@ -24,5 +24,4 @@ void raise_error(int e, const ::codon::SrcInfo &info, const std::string &format)
 }
 
 } // namespace error
-
 } // namespace codon
