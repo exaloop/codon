@@ -10,7 +10,7 @@ R.seed(seed)
 
 @test
 def test_rnd_result(name, results, invariant):
-    print name
+    print(name)
     for a in results:
         assert invariant(a)
 
@@ -69,6 +69,7 @@ from python import random as Rpy
 
 @test
 def test_vs_python(*args, seed, method: Static[str], T: type = float):
+    print(seed, method, args)
     R1 = R.Random(seed)
     R2 = Rpy.Random(seed)
 
