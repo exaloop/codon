@@ -1639,7 +1639,7 @@ c1 = Const(5)
 c2 = Const(4)
 m = Add(c1, c2)
 c3 = Const(2)
-a = Mul(m, c3)
+a : Expr = Mul(m, c3)
 print(f'{a} = {a.eval()}')
 #: ((5) + (4)) * (2) = 18
 
@@ -1727,3 +1727,51 @@ print(l, l.__class__.__name__)
 d = {1: None, 2.2: 's'}
 print(d, d.__class__.__name__)
 #: {1: None, 2.2: 's'} Dict[float,Optional[str]]
+
+#%% polymorphism_3
+import operator
+
+class Expr:
+    def eval(self):
+        return 0
+
+class Const(Expr):
+    value: int
+
+    def __init__(self, value):
+        self.value = value
+
+    def eval(self):
+        return self.value
+
+class BinOp(Expr):
+    lhs: Expr
+    rhs: Expr
+
+    def __init__(self, lhs, rhs):
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def eval_from_fn(self, fn):
+        return fn(self.lhs.eval(), self.rhs.eval())
+
+class Add(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.add)
+
+class Sub(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.sub)
+
+class Mul(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.mul)
+
+class Div(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.floordiv)
+
+# TODO: remove Expr requirement
+expr : Expr = Mul(Const(3), Add(Const(10), Const(5)))
+print(expr.eval()) #: 45
+

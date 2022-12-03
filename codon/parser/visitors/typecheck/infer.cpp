@@ -539,16 +539,13 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
             ctx->instantiate(ctx->forceFind(clsName)->type, cp->getClass())->getClass();
         std::vector<types::TypePtr> args = fp->getArgTypes();
         args[0] = ct;
-        types::TypePtr m = findBestMethod(ct, fnName, args);
-        m = ctx->instantiate(m);
-        for (size_t ai = 0; ai < args.size(); ai++)
-          unify(m->getFunc()->getArgTypes()[ai], args[ai]);
-        unify(m->getFunc()->getRetType(), fp->getRetType());
-        seqassert(m->canRealize(), "cannot realize overriden method {}", m);
-        m = realize(m);
-        key = make_pair(fnName, sig(m->getFunc().get()));
+        auto m = findBestMethod(ct, fnName, args);
 
-        auto thunkName = format("_thunk.{}.{}", baseCls, m->realizedName());
+        std::vector<std::string> ns;
+        for (auto &a : args)
+          ns.push_back(a->realizedName());
+        auto thunkName =
+            format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
         if (in(ctx->cache->functions, thunkName))
           continue;
 
@@ -572,17 +569,16 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
           callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
         auto thunkAst = N<FunctionStmt>(
             thunkName, nullptr, fnArgs,
-            N<SuiteStmt>(
-                N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->realizedName()), callArgs))),
+            N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
             Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
         thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
+
         transform(thunkAst);
         prependStmts->push_back(thunkAst);
-        auto ti = ctx->instantiate(thunkFn.type);
-        auto tm = realize(ti);
+        auto ti = ctx->instantiate(thunkFn.type)->getFunc();
+        auto tm = realizeFunc(ti.get(), true);
         seqassert(tm, "bad thunk {}", thunkFn.type);
-
         vtable.table[key] = {tm->getFunc(), vid};
       }
     }
