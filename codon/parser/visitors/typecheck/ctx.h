@@ -48,6 +48,8 @@ struct TypeContext : public Context<TypecheckItem> {
     types::TypePtr type;
     /// The return type of currently realized function
     types::TypePtr returnType = nullptr;
+    /// Typechecking iteration
+    int iteration = 0;
   };
   std::vector<RealizationBase> realizationBases;
 
@@ -153,6 +155,8 @@ public:
 private:
   /// Pretty-print the current context state.
   void dump(int pad);
+  /// Pretty-print the current realization context.
+  std::string debugInfo();
 };
 
 } // namespace codon::ast

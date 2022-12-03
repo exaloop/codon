@@ -759,6 +759,11 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
   }
   if (!typ->getClass())
     return nullptr;
+  if (typ->getUnion()) {
+    if (realize(typ))
+      return transform(N<IntExpr>(typ->getUnion()->getRealizationTypes().size()));
+    return nullptr;
+  }
   if (!typ->getRecord())
     E(Error::EXPECTED_TUPLE, expr->args[0].value);
   return transform(N<IntExpr>(typ->getRecord()->args.size()));

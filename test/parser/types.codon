@@ -1389,6 +1389,8 @@ def foo(x):
 a: Union[int, str] = 5
 foo_int(a)  #: 5 int
 foo(a)  #: 5 0 Union[int,str]
+print(staticlen(a))  #: 2
+print(staticlen(Union[int, int]), staticlen(Tuple[int, float, int]))  #: 1 3
 
 @extend
 class str:
@@ -1411,13 +1413,15 @@ a: Union[Union[Union[str], int], Union[int, int, str]] = 9
 foo(a)  #: 9 0 Union[int,str]
 
 def ret(x):
-    z : Union = 0
+    z : Union = x
     if x < 1: z = 1
-    elif x < 10: z = 2.2
+    elif x < 10: z = False
     else: z = 'oops'
     return z
 r = ret(2)
-print(r, r.__class__.__name__)  #: 2.2 Union[float,int,str]
+print(r, r.__class__.__name__)  #: False Union[bool,int,str]
+r = ret(33.3)
+print(r, r.__class__.__name__)  #: 'oops' Union[bool,float,int,str]
 
 def ret2(x) -> Union:
     if x < 1: return 1

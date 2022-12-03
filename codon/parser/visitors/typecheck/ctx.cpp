@@ -300,4 +300,9 @@ void TypeContext::dump(int pad) {
   }
 }
 
+std::string TypeContext::debugInfo() {
+  return fmt::format("[{}:i{}@{}]", getRealizationBase()->name,
+                     getRealizationBase()->iteration, getSrcInfo());
+}
+
 } // namespace codon::ast
