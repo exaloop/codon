@@ -96,7 +96,7 @@ test_vs_python(1.0, 2.0, seed=-102, method='lognormvariate')
 test_vs_python(1.0, 2.0, seed=-103, method='normalvariate')
 test_vs_python(1.0, 2.0, seed=0xffffffff, method='vonmisesvariate')
 test_vs_python(1.0, seed=0xffffffff-1, method='paretovariate')
-test_vs_python(1.0, 2.0, seed=0xffffffff+1, method='weibullvariate')
+test_vs_python(1.0, 2.0, seed=0, method='weibullvariate')
 
 
 @test
