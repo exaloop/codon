@@ -160,12 +160,6 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(N<StringExpr>(expr->expr->type->realizedName()));
     return nullptr;
   }
-  if (expr->member == "__llvm_args__") {
-    if (realize(expr->expr->type)) {
-      return transform(N<StringExpr>(expr->expr->type->realizedName()));
-    }
-    return nullptr;
-  }
   // Special case: cls.__name__
   if (expr->expr->isType() && expr->member == "__name__") {
     if (realize(expr->expr->type))
@@ -191,18 +185,18 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return getClassMember(expr, args);
   auto bestMethod = getBestOverload(expr, args);
 
-  if (args) { // TODO: more general rule?
+  if (args) {
     unify(expr->type, ctx->instantiate(bestMethod, typ));
+
+    // Handle virtual calls
     auto baseClass = expr->expr->type->getClass();
     auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
+    // A function is deemed virtual if it is marked as such and if a base class has a vtable
     bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
-    // if (isVirtual)
-    //   LOG("|> {} {} ' {} {}", expr->toString(), baseClass, vtableName,
-    //   ctx->findMember(baseClass->name, vtableName) != nullptr);
     isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
-      // Special case: calling virtual methods. Route everything through a vtable.
+      // Special case: route the call through a vtable
       if (realize(expr->type)) {
         auto fn = expr->type->getFunc();
         auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
@@ -327,8 +321,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
         N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
   }
 
-  // Case: transform `union.member` to `__internal__.get_union_method(union, "member",
-  // ...)`
+  // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
     return transform(
         N<CallExpr>(N<IdExpr>("__internal__.get_union_method:0"),

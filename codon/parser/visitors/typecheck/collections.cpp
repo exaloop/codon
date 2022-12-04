@@ -63,18 +63,25 @@ void TypecheckVisitor::visit(DictExpr *expr) {
 ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
                                                  const std::string &fn,
                                                  std::vector<ExprPtr> &items) {
+  // Deduce the super type of the collection--- in other words, the least common ancestor of
+  // all types in the collection. For example, `type([1, 1.2]) == type([1.2, 1]) == float`
+  // because float is an "ancestor" of int.
   auto superTyp = [&](const ClassTypePtr &collectionCls,
                       const ClassTypePtr &ti) -> ClassTypePtr {
     if (!collectionCls)
       return ti;
     if (collectionCls->is("int") && ti->is("float")) {
+      // Rule: int derives from float
       return ti;
     } else if (collectionCls->name != TYPE_OPTIONAL && ti->name == TYPE_OPTIONAL) {
+      // Rule: T derives from Optional[T]
       return ctx->instantiateGeneric(ctx->getType("Optional"), {collectionCls})
           ->getClass();
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
+      // Rule: anything derives from pyobj
       return ti;
     } else if (collectionCls->name != ti->name) {
+      // Rule: subclass derives from superclass
       auto &mros = ctx->cache->classes[collectionCls->name].mro;
       for (size_t i = 1; i < mros.size(); i++) {
         auto t = ctx->instantiate(mros[i]->type, collectionCls);

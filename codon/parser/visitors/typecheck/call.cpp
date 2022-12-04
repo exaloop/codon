@@ -615,8 +615,8 @@ ExprPtr TypecheckVisitor::transformSuper() {
   ClassTypePtr typ = funcTyp->getArgTypes()[0]->getClass();
   auto cands = ctx->cache->classes[typ->name].staticParentClasses;
   if (cands.empty()) {
-    // Try dynamic inheritance: check MRO
-    // TODO: super() should be split into two functions in this case...
+    // Dynamic inheritance: use MRO
+    // TODO: maybe super() should be split into two separate functions...
     auto vCands = ctx->cache->classes[typ->name].mro;
     if (vCands.size() < 2)
       E(Error::CALL_SUPER_PARENT, getSrcInfo());

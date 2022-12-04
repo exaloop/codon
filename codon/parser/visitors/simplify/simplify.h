@@ -185,7 +185,6 @@ private: // Node simplification rules
                               std::vector<StmtPtr> &, std::vector<StmtPtr> &);
   StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
                        bool);
-  std::set<std::string> getAllClassBases(const std::string &);
 
   /* The rest (simplify.cpp) */
   void visit(StmtExpr *) override;

@@ -107,7 +107,7 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// function after processing) and their types (indicating if they are a type, a
     /// static or a variable).
     std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures;
-    /// Scope wherein the base is defined.
+    /// Scope that defines the base.
     std::vector<int> scope;
 
     /// A stack of nested loops enclosing the current statement used for transforming

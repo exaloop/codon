@@ -109,6 +109,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     // Collect classes (and their fields) that are to be statically inherited
     auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
                                            stmt->attributes, canonicalName);
+    if (ctx->cache->isJit && !stmt->baseClasses.empty())
+      E(Error::CUSTOM, stmt->baseClasses[0], "inheritance is not yet supported in JIT mode");
     auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
                                      canonicalName, transformedTypeAst);
 
@@ -228,22 +230,22 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     if (stmt->attributes.has(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
 
-    // Check virtual functions
+    // Mark functions as virtual:
     auto banned =
         std::set<std::string>{"__init__", "__new__", "__raw__", "__tuplesize__"};
     for (auto &m : ctx->cache->classes[canonicalName].methods) {
       auto method = m.first;
       for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+        // ... in the current class
         auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
         if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
-          // LOG("[virtual] {} . {}", canonicalName, method);
           ctx->cache->classes[canonicalName].virtuals.insert(method);
         }
       }
       for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
         for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+          // ... and in parent classes
           auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
-          // LOG("[virtual] {} . {}", b, v);
           ctx->cache->classes[b].virtuals.insert(v);
         }
       }
@@ -819,22 +821,6 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
                                           N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
-}
-
-std::set<std::string> SimplifyVisitor::getAllClassBases(const std::string &cls) {
-  std::set<std::string> result;
-  for (auto &base : ctx->cache->classes[cls].ast->baseClasses) {
-    auto bc = base->getId() ? base->getId()->value : "";
-    if (bc.empty()) {
-      auto bi = CAST(base, InstantiateExpr);
-      seqassertn(bi && bi->typeExpr->getId(), "bad inheritance [WIP]");
-      bc = bi->typeExpr->getId()->value;
-    };
-    auto rec = getAllClassBases(bc);
-    result.insert(rec.begin(), rec.end());
-    result.insert(bc);
-  }
-  return result;
 }
 
 } // namespace codon::ast

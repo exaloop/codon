@@ -131,12 +131,15 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       /// IR type pointer.
       codon::ir::types::Type *ir = nullptr;
 
+      /// Realization vtable.
       struct VTable {
+        // Maps {base, thunk signature} to {thunk realization, thunk ID}
         std::map<std::pair<std::string, std::string>,
                  std::pair<types::FuncTypePtr, size_t>>
             table;
         codon::ir::Var *ir = nullptr;
       };
+      /// All vtables (for each base class)
       std::unordered_map<std::string, VTable> vtables;
       /// Realization ID
       size_t id = 0;

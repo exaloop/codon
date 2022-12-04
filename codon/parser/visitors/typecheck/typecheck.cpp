@@ -271,7 +271,9 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 ///   expected `Optional[T]`, got `T`     -> `Optional(expr)`
 ///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
 ///   expected `Function`, got a function -> partialize function
-///   expected parent class, got a child class -> cast
+///   expected `T`, got `Union[T...]`     -> `__internal__.get_union(expr, T)`
+///   expected `Union[T...]`, got `T`     -> `__internal__.new_union(expr, Union[T...])`
+///   expected base class, got derived    -> downcast to base class
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
@@ -319,11 +321,11 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
         transform(N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p")));
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
-    // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
+    // Wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
   } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
              !expectedClass->getUnion()) {
-    // Case 8: extract union types
+    // Extract union types via __internal__.get_union
     if (auto t = realize(expectedClass)) {
       expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
                                    N<IdExpr>(t->realizedName())));
@@ -331,7 +333,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       return false;
     }
   } else if (exprClass && expectedClass && expectedClass->getUnion()) {
-    // Case 9: make union types
+    // Make union types via __internal__.new_union
     if (!expectedClass->getUnion()->isSealed())
       expectedClass->getUnion()->addType(exprClass);
     if (auto t = realize(expectedClass)) {
@@ -342,7 +344,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       return false;
     }
   } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
-    // TODO: adjust for generic MROs
+    // Cast derived classes to base classes
     auto &mros = ctx->cache->classes[exprClass->name].mro;
     for (size_t i = 1; i < mros.size(); i++) {
       auto t = ctx->instantiate(mros[i]->type, exprClass);
@@ -359,10 +361,10 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   return true;
 }
 
+/// Cast derived class to a base class.
 ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
                                            bool isVirtual) {
   ClassTypePtr typ = expr->type->getClass();
-  // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
   for (auto &field : ctx->cache->classes[typ->name].fields) {
     for (auto &parentField : ctx->cache->classes[superTyp->name].fields)
       if (field.name == parentField.name) {
@@ -372,8 +374,10 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
   }
   auto typExpr = N<IdExpr>(superTyp->name);
   typExpr->setType(superTyp);
+  // `dist = expr.__raw__()`
   ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
   if (isVirtual) {
+    // Virtual inheritance: `dist += class_base_derived_dist(super, type(expr))`
     dist =
         N<BinaryExpr>(dist, "+",
                       N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
@@ -381,6 +385,8 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
                                   N<CallExpr>(N<IdExpr>("type"), expr)));
   }
   realize(superTyp);
+
+  // No inheritance: `__internal__.to_class_ptr(dist, T)`
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
                                dist, typExpr));
 }
