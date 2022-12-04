@@ -170,7 +170,10 @@ def length_hint(a, default=0):
     else:
         return default
 
-# attrgetter not implemented
+def attrgetter(attr: Static[str]):
+    def getter(obj):
+        return getattr(obj, attr)
+    return getter
 
 def itemgetter(*items):
     if staticlen(items) == 1:
@@ -187,7 +190,10 @@ def itemgetter(*items):
 
         return g
 
-# methodcaller not implemented
+def methodcaller(name: Static[str], *args, **kwargs):
+    def caller(obj):
+        return getattr(obj, name)(*args, **kwargs)
+    return caller
 
 def iadd(a, b):
     a += b
