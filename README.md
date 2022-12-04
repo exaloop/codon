@@ -28,16 +28,6 @@ Typical speedups over Python are on the order of 10-100x or more, on a single th
 (and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
 times higher still. Codon grew out of the [Seq project](https://github.com/seq-lang/seq).
 
-### What isn't Codon?
-
-While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large codebases might require modifications
-to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
-dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
-
-Codon can be used within larger Python codebases via the [`@codon.jit` decorator](https://docs.exaloop.io/codon/interoperability/decorator).
-Plain Python functions and libraries can also be called from within Codon via
-[Python interoperability](https://docs.exaloop.io/codon/interoperability/python).
-
 ## Examples
 
 Codon is a Python-compatible language, and many Python programs will work with few if any modifications:
@@ -131,6 +121,16 @@ mandelbrot(pixels, grid=(N*N)//1024, block=1024)
 ```
 
 GPU programming can also be done using the `@par` syntax with `@par(gpu=True)`.
+
+## What isn't Codon?
+
+While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large codebases might require modifications
+to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
+dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
+
+Codon can be used within larger Python codebases via the [`@codon.jit` decorator](https://docs.exaloop.io/codon/interoperability/decorator).
+Plain Python functions and libraries can also be called from within Codon via
+[Python interoperability](https://docs.exaloop.io/codon/interoperability/python).
 
 ## Install
 
