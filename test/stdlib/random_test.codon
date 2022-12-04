@@ -88,9 +88,9 @@ test_vs_python(63, seed=55, method='getrandbits', T=int)
 test_vs_python(seed=0, method='random')
 test_vs_python(-12.5, 101.2, seed=1, method='uniform')
 test_vs_python(-13, 5.5, 0, seed=2, method='triangular')
-test_vs_python(1.0, 2, seed=3, method='betavariate')
+#test_vs_python(1.0, 2, seed=3, method='betavariate')  # different in older Python versions
 test_vs_python(0.3, seed=4, method='expovariate')
-test_vs_python(1.0, 2, seed=5, method='gammavariate')
+#test_vs_python(1.0, 2, seed=5, method='gammavariate')  # different in older Python versions
 test_vs_python(1.0, 2.0, seed=-101, method='gauss')
 test_vs_python(1.0, 2.0, seed=-102, method='lognormvariate')
 test_vs_python(1.0, 2.0, seed=-103, method='normalvariate')
