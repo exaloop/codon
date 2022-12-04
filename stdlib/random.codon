@@ -120,22 +120,19 @@ class RandomGenerator:
         init_key = (u32(s & ((1 << 32) - 1)), u32(s >> 32))
         self.init_array(Ptr[u32](__ptr__(init_key).as_byte()), 2 if init_key[1] else 1)
 
-    def gettimeofday(self):
-        return _C.seq_time() * 1000
-
     def random_seed_time_pid(self):
-        now = u32(self.gettimeofday())
+        now = _C.seq_time() * 1000
         key = __array__[u32](5)
-        key[0] = u32(now & u32(0xFFFFFFFF))
-        key[1] = u32(now >> u32(32))
+        key[0] = u32(now & 0xFFFFFFFF)
+        key[1] = u32(now >> 32)
         key[2] = u32(_C.seq_pid())
-        now = u32(_C.seq_time_monotonic())
-        key[3] = u32(now & u32(0xFFFFFFFF))
-        key[4] = u32(now >> u32(32))
+        now = _C.seq_time_monotonic()
+        key[3] = u32(now & 0xFFFFFFFF)
+        key[4] = u32(now >> 32)
         self.init_array(key.ptr, len(key))
 
-    def seed(self, seed: int):
-        self.init_int(seed)
+    def seed(self, s: int):
+        self.init_int(s)
 
     def seed(self):
         self.random_seed_time_pid()
@@ -154,7 +151,7 @@ class Random:
     gen: RandomGenerator  # comment for another error
     gauss_next: Optional[float]
 
-    def __init__(self, seed: Optional[int]):
+    def __init__(self, seed: Optional[int] = None):
         """
         Initialize an instance.
 
