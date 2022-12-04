@@ -110,7 +110,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
                                            stmt->attributes, canonicalName);
     if (ctx->cache->isJit && !stmt->baseClasses.empty())
-      E(Error::CUSTOM, stmt->baseClasses[0], "inheritance is not yet supported in JIT mode");
+      E(Error::CUSTOM, stmt->baseClasses[0],
+        "inheritance is not yet supported in JIT mode");
     auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
                                      canonicalName, transformedTypeAst);
 
@@ -307,7 +308,7 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
       }
     }
 
-    auto cachedCls = const_cast<Cache::Class*>(in(ctx->cache->classes, name));
+    auto cachedCls = const_cast<Cache::Class *>(in(ctx->cache->classes, name));
     if (!cachedCls)
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), ctx->cache->rev(name));
     asts.push_back(cachedCls->ast.get());

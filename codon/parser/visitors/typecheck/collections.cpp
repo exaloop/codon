@@ -63,9 +63,9 @@ void TypecheckVisitor::visit(DictExpr *expr) {
 ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
                                                  const std::string &fn,
                                                  std::vector<ExprPtr> &items) {
-  // Deduce the super type of the collection--- in other words, the least common ancestor of
-  // all types in the collection. For example, `type([1, 1.2]) == type([1.2, 1]) == float`
-  // because float is an "ancestor" of int.
+  // Deduce the super type of the collection--- in other words, the least common
+  // ancestor of all types in the collection. For example, `type([1, 1.2]) == type([1.2,
+  // 1]) == float` because float is an "ancestor" of int.
   auto superTyp = [&](const ClassTypePtr &collectionCls,
                       const ClassTypePtr &ti) -> ClassTypePtr {
     if (!collectionCls)

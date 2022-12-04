@@ -98,7 +98,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
           }
         } else if (auto u = unbound->getLink()) {
           types::Type::Unification undo;
-          if (u->unify(u->defaultType.get(), &undo) >= 0)
+          if (u->defaultType && u->unify(u->defaultType.get(), &undo) >= 0)
             anotherRound = true;
         }
       }

@@ -191,7 +191,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // Handle virtual calls
     auto baseClass = expr->expr->type->getClass();
     auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
-    // A function is deemed virtual if it is marked as such and if a base class has a vtable
+    // A function is deemed virtual if it is marked as such and if a base class has a
+    // vtable
     bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
     isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
