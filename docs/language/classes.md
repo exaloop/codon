@@ -80,7 +80,8 @@ class NamedPoint(Point):
 ```
 
 {% hint style="warning" %}
-Currently, inheritance in Codon is static and polymorphism is not supported.
+Currently, inheritance in Codon is still under active development.
+Treat it as a beta feature.
 {% endhint %}
 
 # Named tuples
@@ -158,6 +159,11 @@ print(5 + '4')  # 9
 
 Note that all type extensions are performed strictly at compile time and
 incur no runtime overhead.
+
+{% hint style="warning" %}
+Type extensions in Codon are also a beta feature.
+{% endhint %}
+
 
 # Magic methods
 
