@@ -1,11 +1,9 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @pure
 @C
-def seq_str_ptr(a: Ptr[byte]) -> str:
+def seq_str_ptr(a: Ptr[byte], fmt: cobj, error: cobj) -> str:
     pass
-
 
 @extend
 class Ptr:
@@ -78,6 +76,14 @@ class Ptr:
         %2 = sub i64 %0, %1
         %3 = sdiv exact i64 %2, ptrtoint (ptr getelementptr ({=T}, {=T}* null, i32 1) to i64)
         ret i64 %3
+
+    @pure
+    @derives
+    @llvm
+    def __sub__(self, other: int) -> Ptr[T]:
+        %0 = sub i64 0, %other
+        %1 = getelementptr {=T}, {=T}* %self, i64 %0
+        ret {=T}* %1
 
     @pure
     @llvm
@@ -184,19 +190,16 @@ class Ptr:
         ret ptr %self
 
     def __repr__(self) -> str:
-        return seq_str_ptr(self.as_byte())
-
+        return self.__format__("")
 
 ptr = Ptr
 Jar = Ptr[byte]
-
 
 # Forward declarations
 class List:
     len: int
     arr: Array[T]
     T: type
-
 
 @extend
 class NoneType:

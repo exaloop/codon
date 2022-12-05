@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -8,6 +10,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -23,7 +26,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs->toString());
+  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs);
   std::string lhs = stmt->lhs->getId()->value;
 
   // Special case: this assignment has been dominated and is not a true assignment but
@@ -43,6 +46,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
       stmt->rhs = N<BoolExpr>(true);
     }
+    seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
     // Change this to the update and follow the update logic
     stmt->setUpdate();
     transformUpdate(stmt);
@@ -65,10 +69,10 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   } else if (stmt->type && stmt->type->getType()->isStaticType()) {
     // Static assignments (e.g., `x: Static[int] = 5`)
     if (!stmt->rhs->isStatic())
-      error("right-hand side is not a static expression");
+      E(Error::EXPECTED_STATIC, stmt->rhs);
     seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
     unify(stmt->lhs->type,
-          unify(stmt->type->type, std::make_shared<StaticType>(stmt->rhs, ctx)));
+          unify(stmt->type->type, Type::makeStatic(ctx->cache, stmt->rhs)));
     auto val = ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (in(ctx->cache->globals, lhs)) {
       // Make globals always visible!
@@ -78,14 +82,15 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       stmt->setDone();
   } else {
     // Normal assignments
+    unify(stmt->lhs->type, ctx->getUnbound());
     if (stmt->type) {
       unify(stmt->lhs->type,
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
-      // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      wrapExpr(stmt->rhs, stmt->lhs->getType());
-      unify(stmt->lhs->type, stmt->rhs->type);
     }
-    auto type = stmt->rhs->getType();
+    // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
+    if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
+      unify(stmt->lhs->type, stmt->rhs->type);
+    auto type = stmt->lhs->getType();
     auto kind = TypecheckItem::Var;
     if (stmt->rhs->isType())
       kind = TypecheckItem::Type;
@@ -114,7 +119,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
       // Special case: type/function renames
       stmt->rhs->type = nullptr;
       stmt->setDone();
-    } else if (stmt->rhs->isDone()) {
+    } else if (stmt->rhs->isDone() && realize(stmt->lhs->type)) {
       stmt->setDone();
     }
   }
@@ -126,7 +131,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->lhs);
   if (stmt->lhs->isStatic())
-    error("cannot modify static expression");
+    E(Error::ASSIGN_UNEXPECTED_STATIC, stmt->lhs);
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
@@ -141,9 +146,9 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 
   transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
-  wrapExpr(stmt->rhs, stmt->lhs->getType());
-  unify(stmt->lhs->type, stmt->rhs->type);
-  if (stmt->rhs->done)
+  if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
+    unify(stmt->rhs->type, stmt->lhs->type);
+  if (stmt->rhs->done && realize(stmt->lhs->type))
     stmt->setDone();
 }
 
@@ -176,13 +181,14 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     }
 
     if (!member)
-      error("cannot find '{}' in {}", stmt->member, lhsClass->name);
+      E(Error::DOT_NO_ATTR, stmt->lhs, lhsClass->prettyString(), stmt->member);
     if (lhsClass->getRecord())
-      error("tuple element '{}' is read-only", stmt->member);
+      E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
 
     transform(stmt->rhs);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
-    wrapExpr(stmt->rhs, typ);
+    if (!wrapExpr(stmt->rhs, typ))
+      return;
     unify(stmt->rhs->type, typ);
     if (stmt->rhs->isDone())
       stmt->setDone();

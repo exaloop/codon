@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -8,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fmt/format.h>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -233,31 +236,49 @@ SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end) {
 /*
  * String conversion
  */
+static seq_str_t string_conv(const std::string &s) {
+  auto *p = (char *)seq_alloc_atomic(s.size());
+  strncpy(p, s.c_str(), s.size());
+  return {(seq_int_t)s.size(), p};
+}
+
 template <typename T>
-static seq_str_t string_conv(const char *fmt, const size_t size, T t) {
-  auto *p = (char *)seq_alloc_atomic(size);
-  int n = snprintf(p, size, fmt, t);
-  if (n >= size) {
-    auto n2 = (size_t)n + 1;
-    p = (char *)seq_realloc((void *)p, n2, size);
-    n = snprintf(p, n2, fmt, t);
+static seq_str_t fmt_conv(T n, const std::string &default_fmt, char *format,
+                          char *error) {
+  std::string ret;
+  try {
+    *error = false;
+    if (!format) {
+      ret = fmt::format(default_fmt, n);
+    } else {
+      ret = fmt::format(fmt::runtime(fmt::format("{{:{}}}", format)), n);
+    }
+  } catch (const std::runtime_error &f) {
+    *error = true;
+    ret = f.what();
   }
-  return {(seq_int_t)n, p};
+  return string_conv(ret);
 }
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n) { return string_conv("%ld", 22, n); }
-
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n) { return string_conv("%lu", 22, n); }
-
-SEQ_FUNC seq_str_t seq_str_float(double f) { return string_conv("%g", 16, f); }
-
-SEQ_FUNC seq_str_t seq_str_bool(bool b) {
-  return string_conv("%s", 6, b ? "True" : "False");
+SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, char *format, char *error) {
+  return fmt_conv<seq_int_t>(n, "{}", format, error);
 }
 
-SEQ_FUNC seq_str_t seq_str_byte(char c) { return string_conv("%c", 5, c); }
+SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, char *format, char *error) {
+  return fmt_conv<uint64_t>(n, "{}", format, error);
+}
 
-SEQ_FUNC seq_str_t seq_str_ptr(void *p) { return string_conv("%p", 19, p); }
+SEQ_FUNC seq_str_t seq_str_float(double f, char *format, char *error) {
+  return fmt_conv<double>(f, "{:g}", format, error);
+}
+
+SEQ_FUNC seq_str_t seq_str_ptr(void *p, char *format, char *error) {
+  return fmt_conv(fmt::ptr(p), "{}", format, error);
+}
+
+SEQ_FUNC seq_str_t seq_str_str(char *p, char *format, char *error) {
+  return fmt_conv(p, "{}", format, error);
+}
 
 /*
  * General I/O

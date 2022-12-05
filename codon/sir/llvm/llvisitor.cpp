@@ -1,8 +1,11 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "llvisitor.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <fmt/args.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
@@ -1150,6 +1153,8 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   for (auto it = x->literal_begin(); it != x->literal_end(); ++it) {
     if (it->isStatic()) {
       store.push_back(it->getStaticValue());
+    } else if (it->isStaticStr()) {
+      store.push_back(it->getStaticStringValue());
     } else if (it->isType()) {
       llvm::Type *llvmType = getLLVMType(it->getTypeValue());
       std::string bufStr;
@@ -1369,6 +1374,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     block = startBlock;
   }
 
+  seqassertn(x->getBody(), "{} has no body [{}]", x->getName(), x->getSrcInfo());
   process(x->getBody());
   B->SetInsertPoint(block);
 
@@ -1471,6 +1477,26 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   if (auto *x = cast<types::VectorType>(t)) {
     return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
                                  /*Scalable=*/false);
+  }
+
+  if (auto *x = cast<types::UnionType>(t)) {
+    auto &layout = M->getDataLayout();
+    llvm::Type *largest = nullptr;
+    size_t maxSize = 0;
+
+    for (auto *t : *x) {
+      auto *llvmType = getLLVMType(t);
+      size_t size = layout.getTypeAllocSizeInBits(llvmType);
+      if (!largest || size > maxSize) {
+        largest = llvmType;
+        maxSize = size;
+      }
+    }
+
+    if (!largest)
+      largest = llvm::StructType::get(*context, {});
+
+    return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
   }
 
   if (auto *x = cast<dsl::types::CustomType>(t)) {
@@ -1638,6 +1664,12 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<types::VectorType>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_unsigned);
+  }
+
+  if (auto *x = cast<types::UnionType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);

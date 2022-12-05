@@ -7,6 +7,28 @@ endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
 CPMAddPackage(
+    NAME peglib
+    GITHUB_REPOSITORY "exaloop/cpp-peglib"
+    GIT_TAG codon
+    OPTIONS "BUILD_TESTS OFF")
+
+CPMAddPackage(
+    NAME fmt
+    GITHUB_REPOSITORY "fmtlib/fmt"
+    GIT_TAG 9.1.0
+    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON")
+
+CPMAddPackage(
+    NAME toml
+    GITHUB_REPOSITORY "marzer/tomlplusplus"
+    GIT_TAG v3.2.0)
+
+CPMAddPackage(
+    NAME semver
+    GITHUB_REPOSITORY "Neargye/semver"
+    GIT_TAG v0.3.0)
+
+CPMAddPackage(
     NAME zlibng
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
     VERSION 2.0.5
@@ -68,7 +90,7 @@ endif()
 CPMAddPackage(
     NAME openmp
     GITHUB_REPOSITORY "exaloop/openmp"
-    GIT_TAG bdbd70a3acb5072f15c733d603b5f2b26b953555
+    GIT_TAG 11daa2021c590dc74a0e734b4783570b619d88c9
     OPTIONS "CMAKE_BUILD_TYPE Release"
             "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")

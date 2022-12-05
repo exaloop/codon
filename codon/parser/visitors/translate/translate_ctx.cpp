@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "translate_ctx.h"
 
 #include <memory>
@@ -35,6 +37,13 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
         cache->functions[tt->type->getFunc()->ast->name].realizations[name]->ir;
   }
   return ret;
+}
+
+std::shared_ptr<TranslateItem>
+TranslateContext::forceFind(const std::string &name) const {
+  auto i = find(name);
+  seqassertn(i, "cannot find '{}'", name);
+  return i;
 }
 
 std::shared_ptr<TranslateItem>

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <tuple>
 #include <vector>
 
@@ -16,98 +18,25 @@ void SimplifyVisitor::visit(TupleExpr *expr) {
     transform(i, true); // types needed for some constructs (e.g., isinstance)
 }
 
-/// Transform a list `[a1, ..., aN]` to the corresponding statement expression.
-/// See @c transformComprehension
+/// Simple transformation.
+/// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(ListExpr *expr) {
-  resultExpr = transformComprehension("List", "append", expr->items);
-  resultExpr->setAttr(ExprAttr::List);
+  for (auto &i : expr->items)
+    transform(i);
 }
 
-/// Transform a set `{a1, ..., aN}` to the corresponding statement expression.
-/// See @c transformComprehension
+/// Simple transformation.
+/// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(SetExpr *expr) {
-  resultExpr = transformComprehension("Set", "add", expr->items);
-  resultExpr->setAttr(ExprAttr::Set);
+  for (auto &i : expr->items)
+    transform(i);
 }
 
-/// Transform a collection of type `type` to a statement expression:
-///   `[a1, ..., aN]` -> `cont = [type](); (cont.[fn](a1); ...); cont`
-/// Any star-expression within the collection will be expanded:
-///   `[a, *b]` -> `cont.[fn](a); for i in b: cont.[fn](i)`.
-/// @example
-///   `[a, *b, c]` -> ```cont = List(3)
-///                      cont.append(a)
-///                      for i in b: cont.append(i)
-///                      cont.append(c)```
-///   `{a, *b, c}` -> ```cont = Set()
-///                      cont.add(a)
-///                      for i in b: cont.add(i)
-///                      cont.add(c)```
-ExprPtr SimplifyVisitor::transformComprehension(const std::string &type,
-                                                const std::string &fn,
-                                                const std::vector<ExprPtr> &items) {
-  std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
-
-  std::vector<ExprPtr> constructorArgs{};
-  if (type == "List" && !items.empty()) {
-    // Optimization: pre-allocate the list with the exact number of elements
-    constructorArgs.push_back(N<IntExpr>(items.size()));
-  }
-  stmts.push_back(transform(
-      N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>(type), constructorArgs))));
-  for (const auto &it : items) {
-    if (auto star = it->getStar()) {
-      // Unpack star-expression by iterating over it
-      // `*star` -> `for i in star: cont.[fn](i)`
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
-      auto st = star->what->clone();
-      st->setAttr(ExprAttr::StarSequenceItem);
-      stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), st,
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
-    } else {
-      auto st = clone(it);
-      st->setAttr(ExprAttr::SequenceItem);
-      stmts.push_back(
-          transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), st))));
-    }
-  }
-  return N<StmtExpr>(stmts, transform(var));
-}
-
-/// Transform a dictionary `{k1: v1, ..., kN: vN}` to a corresponding statement
-/// expression. Any kwstar-expression within the collection will be expanded.
-/// @example
-///   `{a: 1, **d}` -> ```cont = Dict()
-///                       cont.__setitem__(a, 1)
-///                       for i in b.items(): cont.__setitem__(i[0], i[i])```
+/// Simple transformation.
+/// The rest will be handled during the type-checking stage.
 void SimplifyVisitor::visit(DictExpr *expr) {
-  std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
-  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")))));
-  for (auto &it : expr->items) {
-    if (auto star = CAST(it.value, KeywordStarExpr)) {
-      // Expand kwstar-expression by iterating over it: see the example above
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
-      auto st = star->what->clone();
-      st->setAttr(ExprAttr::StarSequenceItem);
-      stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), N<CallExpr>(N<DotExpr>(st, "items")),
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
-                                  N<IndexExpr>(clone(forVar), N<IntExpr>(0)),
-                                  N<IndexExpr>(clone(forVar), N<IntExpr>(1)))))));
-    } else {
-      auto k = clone(it.key);
-      k->setAttr(ExprAttr::SequenceItem);
-      auto v = clone(it.value);
-      v->setAttr(ExprAttr::SequenceItem);
-      stmts.push_back(transform(
-          N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"), k, v))));
-    }
-  }
-  resultExpr = N<StmtExpr>(stmts, transform(var));
-  resultExpr->setAttr(ExprAttr::Dict);
+  for (auto &i : expr->items)
+    transform(i);
 }
 
 /// Transform a collection comprehension to the corresponding statement expression.

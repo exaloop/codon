@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "matching.h"
 
 #include <algorithm>
@@ -64,6 +66,8 @@ public:
                         [this](auto &x, auto &y) {
                           if (x.isStatic() && y.isStatic())
                             return x.getStaticValue() == y.getStaticValue();
+                          else if (x.isStaticStr() && y.isStaticStr())
+                            return x.getStaticStringValue() == y.getStaticStringValue();
                           else if (x.isType() && y.isType())
                             return process(x.getTypeValue(), y.getTypeValue());
                           return false;

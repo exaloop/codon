@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 #ifdef CODON_JUPYTER
 #include <codon/compiler/jit.h>

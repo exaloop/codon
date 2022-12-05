@@ -1,4 +1,5 @@
 # https://stackoverflow.com/questions/73473074/speed-up-set-partition-generation-by-skipping-ones-with-subsets-smaller-or-large
+import sys
 import time
 
 def conforms(candidate, minsize, forgive):
@@ -41,7 +42,7 @@ def partition_filtered(collection, minsize=1, forgive=0):
 import time
 
 t = time.time()
-something = list(range(1, 14))
+something = list(range(1, int(sys.argv[1])))
 v = partition_filtered(something, minsize=2)
 x = 0
 for p in v:

@@ -9,3 +9,5 @@ class A:
         def b_foo():
             print 'a.b.A.B.b_foo()'
             return 1
+
+stt: Static[int] = 5

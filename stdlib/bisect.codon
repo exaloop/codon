@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Pats of this file: (c) 2022 Python Software Foundation. All right reserved.
 # License:
 #    1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"), and
@@ -43,7 +43,6 @@
 #    8. By copying, installing or otherwise using Python 3.10.2, Licensee agrees
 #    to be bound by the terms and conditions of this License Agreement.
 
-
 def bisect_left(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
 ) -> int:
@@ -69,7 +68,6 @@ def bisect_left(
         else:
             hi = mid
     return lo
-
 
 def bisect_right(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
@@ -97,7 +95,6 @@ def bisect_right(
             lo = mid + 1
     return lo
 
-
 def insort_left(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
 ):
@@ -111,7 +108,6 @@ def insort_left(
     """
     lo = bisect_left(a, x, lo, hi)
     a.insert(lo, x)
-
 
 def insort_right(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type
@@ -130,7 +126,6 @@ def insort_right(
         a.append(x)
     else:
         a.insert(lo, x)
-
 
 bisect = bisect_right
 insort = insort_right

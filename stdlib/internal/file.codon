@@ -1,7 +1,6 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import realloc, free
-
 
 class File:
     sz: int
@@ -111,13 +110,11 @@ class File:
             else:
                 break
 
-
 def _gz_errcheck(stream: cobj):
     errnum = i32(0)
     msg = _C.gzerror(stream, __ptr__(errnum))
     if msg and msg[0]:
         raise IOError(f"zlib error: {str(msg, _C.strlen(msg))}")
-
 
 class gzFile:
     sz: int
@@ -237,14 +234,11 @@ class gzFile:
         self.buf = cobj()
         self.sz = 0
 
-
 def open(path: str, mode: str = "r") -> File:
     return File(path, mode)
 
-
 def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
-
 
 def is_binary(path: str) -> bool:
     # https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python/7392391#7392391

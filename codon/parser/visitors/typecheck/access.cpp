@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -8,6 +10,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -149,10 +152,10 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
   if (expr->expr->type->getFunc() && expr->member == "__name__") {
-    return transform(N<StringExpr>(expr->expr->type->toString()));
+    return transform(N<StringExpr>(expr->expr->type->prettyString()));
   }
-  // Special case: fn.__llvm_name__
-  if (expr->expr->type->getFunc() && expr->member == "__llvm_name__") {
+  // Special case: fn.__llvm_name__ or obj.__llvm_name__
+  if (expr->member == "__llvm_name__") {
     if (realize(expr->expr->type))
       return transform(N<StringExpr>(expr->expr->type->realizedName()));
     return nullptr;
@@ -160,7 +163,15 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: cls.__name__
   if (expr->expr->isType() && expr->member == "__name__") {
     if (realize(expr->expr->type))
-      return transform(N<StringExpr>(expr->expr->type->toString()));
+      return transform(N<StringExpr>(expr->expr->type->prettyString()));
+    return nullptr;
+  }
+  // Special case: cls.__vtable_id__
+  if (expr->expr->isType() && expr->member == "__vtable_id__") {
+    if (auto c = realize(expr->expr->type))
+      return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
+                                      .realizations[c->getClass()->realizedTypeName()]
+                                      ->id));
     return nullptr;
   }
 
@@ -173,6 +184,40 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (ctx->findMethod(typ->name, expr->member).empty())
     return getClassMember(expr, args);
   auto bestMethod = getBestOverload(expr, args);
+
+  if (args) {
+    unify(expr->type, ctx->instantiate(bestMethod, typ));
+
+    // Handle virtual calls
+    auto baseClass = expr->expr->type->getClass();
+    auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
+    // A function is deemed virtual if it is marked as such and if a base class has a
+    // vtable
+    bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
+    isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
+    if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
+        !bestMethod->ast->attributes.has(Attr::Property)) {
+      // Special case: route the call through a vtable
+      if (realize(expr->type)) {
+        auto fn = expr->type->getFunc();
+        auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
+
+        // Function[Tuple[TArg1, TArg2, ...], TRet]
+        std::vector<ExprPtr> ids;
+        for (auto &t : fn->getArgTypes())
+          ids.push_back(NT<IdExpr>(t->realizedName()));
+        auto name = generateTuple(ids.size());
+        auto fnType = NT<InstantiateExpr>(
+            NT<IdExpr>("Function"),
+            std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
+                                 NT<IdExpr>(fn->getRetType()->realizedName())});
+        // Function[Tuple[TArg1, TArg2, ...], TRet](expr.__vtable__T[VIRTUAL_ID])
+        auto e = N<CallExpr>(
+            fnType, N<IndexExpr>(N<DotExpr>(expr->expr, vtableName), N<IntExpr>(vid)));
+        return transform(e);
+      }
+    }
+  }
 
   // Check if a method is a static or an instance method and transform accordingly
   if (expr->expr->isType() || args) {
@@ -190,7 +235,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>());
-    return transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
+    auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
+    unify(expr->type, e->type);
+    return e;
   }
 }
 
@@ -275,8 +322,17 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
         N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
   }
 
+  // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
+  if (typ->getUnion()) {
+    return transform(
+        N<CallExpr>(N<IdExpr>("__internal__.get_union_method:0"),
+                    std::vector<CallExpr::Arg>{{"union", expr->expr},
+                                               {"method", N<StringExpr>(expr->member)},
+                                               {"", N<EllipsisExpr>()}}));
+  }
+
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);
-  error("cannot find '{}' in {}", expr->member, typ->toString());
+  E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->member);
   return nullptr;
 }
 
@@ -374,16 +430,17 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (methodArgs) {
     std::vector<std::string> a;
     for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("'{}'", t.value->type->toString()));
-    argsNice = fmt::format(" with arguments {}", fmt::join(a, ", "));
+      a.emplace_back(fmt::format("{}", t.value->type->prettyString()));
+    argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
-  std::string nameNice;
+
   if (auto dot = expr->getDot()) {
-    nameNice = fmt::format("'{}' in {}", dot->member, dot->expr->type->toString());
+    E(Error::DOT_NO_ATTR_ARGS, expr, dot->expr->type->prettyString(), dot->member,
+      argsNice);
   } else {
-    nameNice = fmt::format("'{}'", expr->getId()->value);
+    E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(expr->getId()->value), argsNice);
   }
-  error("cannot find a method {}{}", nameNice, argsNice);
+
   return nullptr;
 }
 

@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @tuple
 class complex:
@@ -276,12 +275,10 @@ class complex:
         %y = call double @llvm.log.f64(double %x)
         ret double %y
 
-
 @extend
 class int:
     def __suffix_j__(x: int) -> complex:
         return complex(0, x)
-
 
 @extend
 class float:

@@ -1,9 +1,10 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Codon PEG grammar
 # Adpoted from Python 3's PEG grammar (https://docs.python.org/3/reference/grammar.html)
 
 # TODO: nice docstrs
 
-%preamble {
+PREAMBLE {
   #include "codon/parser/peg/rules.h"
   #include <any>
   using namespace std;
@@ -42,7 +43,9 @@ program <- (statements (_ EOL)* / (_ EOL)*) !. {
     return ast<SuiteStmt>(LOC);
   return ac_stmt(V0);
 }
-fstring <- star_expressions _ !.
+fstring <- star_expressions _ (':' format_spec)? _ !. {
+  return make_pair(ac_expr(V0), VS.size() == 1 ? "" : ac<string>(V1));
+}
 
 # Macros
 list(c, e)  <- e (_ c _ e)*
@@ -70,13 +73,8 @@ small_stmt <-
   / print_stmt
   / import_stmt
   / expressions &(_ ';' / _ EOL)  { return any(ast<ExprStmt>(LOC, ac_expr(V0))); }
-  / NAME SPACE expressions {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomExprStmt(kwd)) {
-      throw codon::exc::ParserException(); // just ignore it
-    }
-    return any(ast<CustomStmt>(LOC, kwd, ac_expr(V1), nullptr));
-  }
+  / custom_small_stmt
+
 assignment <-
   / id _ ':' _ expression (_ '=' _ star_expressions)? {
     return ast<AssignStmt>(LOC,
@@ -196,7 +194,7 @@ dot_name <- id (_ '.' _ NAME)* {
   return dot;
 }
 from_params <- '(' _ tlist(',', from_param)? _ ')' { return VS; }
-from_param <- expression { return Param{"", ac_expr(V0), nullptr}; }
+from_param <- expression { return Param(LOC, "", ac_expr(V0), nullptr); }
 #TODO expand import logic / param { return ac<Param>(V0); }
 
 suite <- (simple_stmt / (_ EOL)+ &INDENT statements (_ EOL)* &DEDENT) {
@@ -332,10 +330,10 @@ function_def <-
 params <- '(' _ tlist(',', param)? _ ')' { return VS; }
 param <-
   / param_name _ ':' _ expression (_ '=' _ expression)? {
-    return Param(ac<string>(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr);
+    return Param(LOC, ac<string>(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr);
   }
   / param_name (_ '=' _ expression)? {
-    return Param(ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
+    return Param(LOC, ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
   }
 param_name <- <'**' / '*'>? _ NAME {
   return (!VS.tokens.empty() ? VS.token_to_string() : "") + ac<string>(V0);
@@ -393,7 +391,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   for (auto &i: s->stmts) {
     if (auto a = const_cast<AssignStmt*>(i->getAssign()))
       if (a->lhs->getId()) {
-        args.push_back(Param(a->lhs->getId()->value, move(a->type), move(a->rhs)));
+        args.push_back(Param(a->getSrcInfo(), a->lhs->getId()->value, move(a->type), move(a->rhs)));
         continue;
       }
     suite->stmts.push_back(i);
@@ -417,19 +415,24 @@ case <-
   }
 custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomStmtKeyword(kwd, true)) {
-      throw codon::exc::ParserException();
-    }
-    return ast<CustomStmt>(LOC, kwd, ac_expr(V1), ac_stmt(V2));
+    return ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), ac_stmt(V2));
   }
   / NAME _ ':' _ suite {
-    auto kwd = ac<string>(V0);
-    if (!CTX.hasCustomStmtKeyword(kwd, false)) {
-      throw codon::exc::ParserException();
-    }
-    return ast<CustomStmt>(LOC, kwd, nullptr, ac_stmt(V2));
+    return ast<CustomStmt>(LOC, ac<string>(V0), nullptr, ac_stmt(V2));
   }
+custom_stmt__PREDICATE {
+  auto kwd = ac<string>(V0);
+  return CTX.hasCustomStmtKeyword(kwd, VS.choice() == 0); // ignore it
+}
+
+custom_small_stmt <- NAME SPACE expressions {
+  return any(ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), nullptr));
+}
+custom_small_stmt__PREDICATE {
+  auto kwd = ac<string>(V0);
+  return CTX.hasCustomExprStmt(kwd); // ignore it
+}
+
 
 ########################################################################################
 # (2) Expressions
@@ -605,24 +608,22 @@ setcomp <- '{' _ named_expression SPACE for_if_clauses _ '}' {
   );
 }
 dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
-  return ast<DictExpr>(LOC, VS.transform<DictExpr::DictItem>());
+  return ast<DictExpr>(LOC, VS.transform<ExprPtr>());
 }
 dictcomp <- '{' _ kvpair SPACE for_if_clauses _ '}' {
-  auto p = ac<DictExpr::DictItem>(V0);
+  auto p = ac<ExprPtr>(V0);
   return ast<DictGeneratorExpr>(LOC,
-    p.key, p.value, ac<SemVals>(V1).transform<GeneratorBody>()
+    p->getTuple()->items[0], p->getTuple()->items[1],
+    ac<SemVals>(V1).transform<GeneratorBody>()
   );
 }
 double_starred_kvpair <-
   / '**' _ bitwise_or {
-    return DictExpr::DictItem{
-      ast<IdExpr>(LOC, ""),
-      ast<KeywordStarExpr>(LOC, ac_expr(V0))
-    };
+    return ast<KeywordStarExpr>(LOC, ac_expr(V0));
   }
-  / kvpair { return ac<DictExpr::DictItem>(V0); }
+  / kvpair { return ac<ExprPtr>(V0); }
 kvpair <- expression _ ':' _ expression {
-  return DictExpr::DictItem{ac_expr(V0), ac_expr(V1)};
+  return ast<TupleExpr>(LOC, std::vector<ExprPtr>{ac_expr(V0), ac_expr(V1)});
 }
 for_if_clauses <- for_if_clause (SPACE for_if_clause)* { return VS; }
 for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction
@@ -667,7 +668,7 @@ args <- (simple_args (_ ',' _ kwargs)? / kwargs) {
   return args;
 }
 simple_args <- list(',', (starred_expression / named_expression !(_ '='))) {
-  return vmap(VS, [](auto &i) { return CallExpr::Arg{"", ac_expr(i)}; });
+  return vmap(VS, [](auto &i) { return CallExpr::Arg(ac_expr(i)); });
 }
 starred_expression <- '*' _ expression { return ast<StarExpr>(LOC, ac_expr(V0)); }
 kwargs <-
@@ -677,12 +678,12 @@ kwargs <-
   / list(',', kwarg_or_starred) { return VS.transform<CallExpr::Arg>(); }
   / list(',', kwarg_or_double_starred) { return VS.transform<CallExpr::Arg>(); }
 kwarg_or_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg{ac<string>(V0), ac_expr(V1)}; }
-  / starred_expression { return CallExpr::Arg{"", ac_expr(V0)}; }
+  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
+  / starred_expression { return CallExpr::Arg(ac_expr(V0)); }
 kwarg_or_double_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg{ac<string>(V0), ac_expr(V1)}; }
+  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
   / '**' _ expression {
-    return CallExpr::Arg{"", ast<KeywordStarExpr>(LOC, ac_expr(V0))};
+    return CallExpr::Arg(ast<KeywordStarExpr>(LOC, ac_expr(V0)));
   }
 id <- NAME { return ast<IdExpr>(LOC, ac<string>(V0)); }
 INT <- (BININT / HEXINT / DECINT) { return string(VS.sv()); }
@@ -700,17 +701,29 @@ STRING <- <NAME? STR> {
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
+  if (p.second != "r" && p.second != "R") {
+    p.first = unescape(p.first);
+  } else {
+    p.second = "";
+  }
+  return p;
+}
+STRING__PREDICATE {
+  auto p = pair(
+    ac<string>(VS.size() > 1 ? V1 : V0),
+    VS.size() > 1 ? ac<string>(V0) : ""
+  );
   if (p.second != "r" && p.second != "R")
     try {
       p.first = unescape(p.first);
     } catch (std::invalid_argument &e) {
-      throw codon::exc::ParserException("invalid code in a string");
+      MSG = "invalid code in a string";
+      return false;
     } catch (std::out_of_range &) {
-      throw codon::exc::ParserException("invalid code in a string");
+      MSG = "invalid code in a string";
+      return false;
     }
-  else
-    p.second = "";
-  return p;
+  return true;
 }
 STR <- <
   '"""' (!'"""' CHAR)*       '"""'   /  '\'\'\'' (!'\'\'\'' CHAR)*     '\'\'\'' /
@@ -724,28 +737,32 @@ STR <- <
 }
 CHAR <- ('\\' . / .) { return string(VS.sv()); }
 ~COMMENT <- <'#' (!EOL .)*>
-~INDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((CTX.indent.empty() && VS.sv().size()) ||
-      (!CTX.indent.empty() && VS.sv().size() > CTX.indent.top()))
-    CTX.indent.push(VS.sv().size());
-  else
-    throw codon::exc::ParserException("bad indent");
+~INDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.push(VS.sv().size()); }
+INDENT__PREDICATE {
+  if (!(CTX.indent.empty() && VS.sv().size()) &&
+      !(!CTX.indent.empty() && VS.sv().size() > CTX.indent.top())) {
+    MSG = "unexpected indentation";
+    return false;
+  }
+  return true;
 }
-~SAMEDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() != CTX.indent.top()))
-    throw codon::exc::ParserException();
+~SAMEDENT__NOPACKRAT <- <[ \t]*> {}
+SAMEDENT__PREDICATE {
+  return !(!CTX.indent.size() && VS.sv().size()) &&
+         !(CTX.indent.size() && VS.sv().size() != CTX.indent.top());
 }
-~DEDENT:NO_PACKRAT <- <[ \t]*> {
-  if (CTX.indent.size() && VS.sv().size() < CTX.indent.top())
-    CTX.indent.pop();
-  else
-    throw codon::exc::ParserException("bad dedent");
+~DEDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.pop(); }
+DEDENT__PREDICATE {
+  if (!(CTX.indent.size() && VS.sv().size() < CTX.indent.top())) {
+    MSG = "unexpected dedent";
+    return false;
+  }
+  return true;
 }
-~EXTERNDENT:NO_PACKRAT <- <[ \t]*> {
-  if ((!CTX.indent.size() && VS.sv().size()) ||
-      (CTX.indent.size() && VS.sv().size() < CTX.indent.top()))
-    throw codon::exc::ParserException();
+~EXTERNDENT__NOPACKRAT <- <[ \t]*> {}
+EXTERNDENT__PREDICATE {
+  return !(!CTX.indent.size() && VS.sv().size()) &&
+         !(CTX.indent.size() && VS.sv().size() < CTX.indent.top());
 }
 ~EOL <- <[\r][\n] / [\r\n]>
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?
@@ -758,3 +775,8 @@ CHAR <- ('\\' . / .) { return string(VS.sv()); }
   'lambda' / 'try' / 'def' / 'from' / 'while' / 'assert' / 'del' / 'global' / 'not' /
   'with' / 'elif' / 'if' / 'or' / 'yield'
 >
+
+# https://docs.python.org/3/library/string.html#formatspec
+format_spec <- ([<>=^] / [^{}] [<>=^])? [+-]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
+  return string(VS.sv());
+}

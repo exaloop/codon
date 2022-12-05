@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "cache.h"
 
 #include <chrono>
@@ -14,8 +16,8 @@
 namespace codon::ast {
 
 Cache::Cache(std::string argv0)
-    : generatedSrcInfoCount(0), unboundCount(0), varCount(0), age(0),
-      argv0(move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
+    : generatedSrcInfoCount(0), unboundCount(256), varCount(0), age(0),
+      argv0(std::move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
       jitCell(0) {}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
@@ -168,12 +170,63 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return realizeType(t->type->getClass(), {argType, ret});
 }
 
+ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
+  auto tv = TypecheckVisitor(typeCtx);
+
+  auto tup = tv.generateTuple(types.size());
+  auto argType = typeCtx->instantiateGeneric(typeCtx->find(tup)->type, types);
+  auto t = typeCtx->find("Union");
+  seqassertn(t && t->type, "cannot find 'Union'");
+  return realizeType(t->type->getClass(), {argType});
+}
+
 void Cache::parseCode(const std::string &code) {
   auto node = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
   auto sctx = imports[MAIN_IMPORT].ctx;
   node = ast::SimplifyVisitor::apply(sctx, node, "<internal>", 99999);
   node = ast::TypecheckVisitor::apply(this, node);
   ast::TranslateVisitor(codegenCtx).transform(node);
+}
+
+std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
+  // Reference: https://www.python.org/download/releases/2.3/mro/
+  std::vector<ExprPtr> result;
+  for (size_t i = 0;; i++) {
+    bool found = false;
+    ExprPtr cand = nullptr;
+    for (auto &seq : seqs) {
+      if (seq.empty())
+        continue;
+      found = true;
+      bool nothead = false;
+      for (auto &s : seqs)
+        if (!s.empty()) {
+          bool in = false;
+          for (size_t j = 1; j < s.size(); j++) {
+            if ((in |= (seq[0]->getTypeName() == s[j]->getTypeName())))
+              break;
+          }
+          if (in) {
+            nothead = true;
+            break;
+          }
+        }
+      if (!nothead) {
+        cand = seq[0];
+        break;
+      }
+    }
+    if (!found)
+      return result;
+    if (!cand)
+      return {};
+    result.push_back(clone(cand));
+    for (auto &s : seqs)
+      if (!s.empty() && cand->getTypeName() == s[0]->getTypeName()) {
+        s.erase(s.begin());
+      }
+  }
+  return result;
 }
 
 } // namespace codon::ast

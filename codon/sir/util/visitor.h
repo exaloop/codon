@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <memory>
@@ -28,6 +30,7 @@ class PointerType;
 class GeneratorType;
 class IntNType;
 class VectorType;
+class UnionType;
 } // namespace types
 
 namespace dsl {
@@ -160,6 +163,7 @@ public:
   VISIT(types::GeneratorType);
   VISIT(types::IntNType);
   VISIT(types::VectorType);
+  VISIT(types::UnionType);
   VISIT(dsl::types::CustomType);
 };
 
@@ -236,6 +240,7 @@ public:
   CONST_VISIT(types::GeneratorType);
   CONST_VISIT(types::IntNType);
   CONST_VISIT(types::VectorType);
+  CONST_VISIT(types::UnionType);
   CONST_VISIT(dsl::types::CustomType);
 };
 

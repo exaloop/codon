@@ -4,6 +4,34 @@ new version.
 
 # v0.15
 
+## Union types
+
+Codon adds support for union types (e.g., `Union[int, float]`):
+
+```
+def foo(cmd) -> Union:
+    if cmd == 'int': return 1
+    else: return "s"
+foo('int')        # type is Union[int,str]
+5 + foo('int')    # 6
+'a' + foo('str')  # as
+```
+
+## Dynamic inheritance
+
+Dynamic inheritance and polymorphism are now supported:
+
+```
+class A:
+    def __repr__(): return 'A'
+class B(A):
+    def __repr__(): return 'B'
+l = [A(), B(), A()]  # type of l is List[A]
+print(l)  # [A, B, A]
+```
+
+This feature is still a work in progress.
+
 ## LLVM upgrade
 
 Upgraded to LLVM 15 (from 12). Note that LLVM 15 now uses
@@ -11,6 +39,10 @@ Upgraded to LLVM 15 (from 12). Note that LLVM 15 now uses
 e.g. `ptr` instead of `i8*` or `i64*`, which affects `@llvm`
 functions written in Codon as well as LLVM IR output of
 `codon build`.
+
+## Standard library
+
+`random` module now matches Python exactly for the same seed.
 
 # v0.14
 

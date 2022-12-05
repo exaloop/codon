@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -21,12 +23,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   stmt->setDone();
 
   // Generate the type and add it to the context
-  ClassTypePtr typ = nullptr;
-  if (stmt->isRecord()) {
-    typ = std::make_shared<RecordType>(stmt->name, ctx->cache->rev(stmt->name));
-  } else {
-    typ = std::make_shared<ClassType>(stmt->name, ctx->cache->rev(stmt->name));
-  }
+  auto typ = Type::makeType(ctx->cache, stmt->name, ctx->cache->rev(stmt->name),
+                            stmt->isRecord())
+                 ->getClass();
   if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
     // Special handling of partial types (e.g., `Partial.0001.foo`)
     if (auto p = in(ctx->cache->partials, stmt->name))
@@ -90,6 +89,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
   ctx->typecheckLevel--;
 
+  // Handle MRO
+  for (auto &m : ctx->cache->classes[stmt->name].mro)
+    m = transformType(m);
+
   // Generalize generics and remove them from the context
   for (const auto &g : stmt->args)
     if (g.status != Param::Normal) {
@@ -106,9 +109,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
   // Debug information
-  LOG_REALIZE("[class] {} -> {}", stmt->name, typ->debugString(true));
+  LOG_REALIZE("[class] {} -> {}", stmt->name, typ);
   for (auto &m : ctx->cache->classes[stmt->name].fields)
-    LOG_REALIZE("       - member: {}: {}", m.name, m.type->debugString(true));
+    LOG_REALIZE("       - member: {}: {}", m.name, m.type);
 }
 
 /// Generate a tuple class `Tuple.N[T1,...,TN]`.
@@ -134,7 +137,7 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
       names.push_back(format("item{}", i));
   }
 
-  auto typeName = format("{}{}", name, hasSuffix ? format(".N{}{}", len, suffix) : "");
+  auto typeName = format("{}{}", name, hasSuffix ? format("{}{}", len, suffix) : "");
   if (!ctx->find(typeName)) {
     // Generate the appropriate ClassStmt
     std::vector<Param> args;

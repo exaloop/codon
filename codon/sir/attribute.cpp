@@ -1,9 +1,11 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "attribute.h"
 
 #include "codon/sir/func.h"
 #include "codon/sir/util/cloning.h"
 #include "codon/sir/value.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/ostream.h>
 
 namespace codon {
 namespace ir {

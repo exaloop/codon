@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <memory>
 #include <vector>
 
@@ -6,6 +8,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -68,11 +71,13 @@ void SimplifyVisitor::visit(DelStmt *stmt) {
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->value);
-    if (!val || ctx->scope.blocks != val->scope)
-      error("cannot delete '{}'", ei->value);
+    if (!val)
+      E(Error::ID_NOT_FOUND, ei, ei->value);
+    if (ctx->scope.blocks != val->scope)
+      E(Error::DEL_NOT_ALLOWED, ei, ei->value);
     ctx->remove(ei->value);
   } else {
-    error("invalid del statement");
+    E(Error::DEL_INVALID, stmt);
   }
 }
 
@@ -106,9 +111,8 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
 
   // Case: a (: t) = b
   auto e = lhs->getId();
-  if (!e) {
-    error("invalid assignment");
-  }
+  if (!e)
+    E(Error::ASSIGN_INVALID, lhs);
 
   // Disable creation of local variables that share the name with some global if such
   // global was already accessed within the current scope. Example:
@@ -117,8 +121,8 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   //   print(x)  # x is seen here
   //   x = 2     # this should error
   if (in(ctx->seenGlobalIdentifiers[ctx->getBaseName()], e->value))
-    error(ctx->seenGlobalIdentifiers[ctx->getBaseName()][e->value],
-          "local variable '{}' referenced before assignment", e->value);
+    E(Error::ASSIGN_LOCAL_REFERENCE,
+      ctx->seenGlobalIdentifiers[ctx->getBaseName()][e->value], e->value);
 
   auto val = ctx->find(e->value);
   // Make sure that existing values that cannot be shadowed (e.g. imported globals) are
@@ -134,7 +138,7 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
         s->setUpdate();
       return s;
     } else {
-      error("variable '{}' cannot be updated", e->value);
+      E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value);
     }
   }
 
@@ -227,7 +231,7 @@ void SimplifyVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
     // because we do not know how big is StarExpr
     for (; st < leftSide.size(); st++) {
       if (leftSide[st]->getStar())
-        error(leftSide[st], "multiple unpack expressions");
+        E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
       rightSide = N<IndexExpr>(srcPos, clone(rhs),
                                N<IntExpr>(srcPos, -int(leftSide.size() - st)));
       unpackAssignments(leftSide[st], rightSide, stmts);

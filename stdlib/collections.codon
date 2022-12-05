@@ -1,7 +1,6 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.types.optional import unwrap
-
 
 class deque:
     _arr: Array[T]
@@ -144,7 +143,6 @@ class deque:
             assert 0 <= idx < self._tail
             return self._arr[idx]
 
-
 @tuple
 class _CounterItem:
     element: T
@@ -169,8 +167,7 @@ class _CounterItem:
     def __ge__(self, other: _CounterItem[T]) -> bool:
         return self.count >= other.count
 
-
-class Counter(Dict[T, int]):
+class Counter(Static[Dict[T, int]]):
     T: type
 
     def __init__(self, elements: Generator[T]):
@@ -353,14 +350,12 @@ class Counter(Dict[T, int]):
             if v <= 0:
                 del self[k]
 
-
 @extend
 class Dict:
     def __init__(self: Dict[K, int], other: Counter[K]):
         self._init_from(other)
 
-
-class defaultdict(Dict[K,V]):
+class defaultdict(Static[Dict[K,V]]):
     default_factory: S
     K: type
     V: type
@@ -427,12 +422,10 @@ class defaultdict(Dict[K,V]):
     def __repr__(self):
         return f"defaultdict(<default factory of '{V.__name__}'>, {super().__repr__()})"
 
-
 @extend
 class Dict:
     def __init__(self: Dict[K, V], other: defaultdict[K, V, S], S: type):
         self._init_from(other)
-
 
 def namedtuple(name: Static[str], args):  # internal
     pass

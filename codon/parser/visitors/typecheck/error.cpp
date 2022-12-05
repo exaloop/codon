@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
@@ -86,8 +88,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   }
   if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
     // Process PyError catches
-    auto exc = N<IdExpr>("std.internal.types.error.PyError");
-    exc->markType();
+    auto exc = NT<IdExpr>("std.internal.types.error.PyError");
     pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
     TryStmt::Catch c{pyVar, transformType(exc), pyCatchStmt};
 

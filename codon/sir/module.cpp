@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "module.h"
 
 #include <algorithm>
@@ -10,14 +12,16 @@ namespace codon {
 namespace ir {
 namespace {
 std::vector<codon::ast::types::TypePtr>
-translateGenerics(std::vector<types::Generic> &generics) {
+translateGenerics(codon::ast::Cache *cache, std::vector<types::Generic> &generics) {
   std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : generics) {
     seqassertn(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
     ret.push_back(std::make_shared<codon::ast::types::LinkType>(
         g.isStatic()
-            ? std::make_shared<codon::ast::types::StaticType>(g.getStaticValue())
-            : g.getTypeValue()->getAstType()));
+            ? std::make_shared<codon::ast::types::StaticType>(cache, g.getStaticValue())
+            : (g.isStaticStr() ? std::make_shared<codon::ast::types::StaticType>(
+                                     cache, g.getStaticStringValue())
+                               : g.getTypeValue()->getAstType())));
   }
   return ret;
 }
@@ -33,10 +37,10 @@ generateDummyNames(std::vector<types::Type *> &types) {
 }
 
 std::vector<codon::ast::types::TypePtr>
-translateArgs(std::vector<types::Type *> &types) {
+translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
   std::vector<codon::ast::types::TypePtr> ret = {
       std::make_shared<codon::ast::types::LinkType>(
-          codon::ast::types::LinkType::Kind::Unbound, 0)};
+          cache, codon::ast::types::LinkType::Kind::Unbound, 0)};
   for (auto *t : types) {
     seqassertn(t->getAstType(), "{} must have an ast type", *t);
     if (auto f = t->getAstType()->getFunc()) {
@@ -124,8 +128,8 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
   if (!method)
     return nullptr;
   try {
-    return cache->realizeFunction(method, translateArgs(args),
-                                  translateGenerics(generics), cls);
+    return cache->realizeFunction(method, translateArgs(cache, args),
+                                  translateGenerics(cache, generics), cls);
   } catch (const exc::ParserException &e) {
     for (int i = 0; i < e.messages.size(); i++)
       LOG_IR("getOrRealizeMethod parser error at {}: {}", e.locations[i],
@@ -143,8 +147,8 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
   auto func = cache->findFunction(fqName);
   if (!func)
     return nullptr;
-  auto arg = translateArgs(args);
-  auto gens = translateGenerics(generics);
+  auto arg = translateArgs(cache, args);
+  auto gens = translateGenerics(cache, generics);
   try {
     return cache->realizeFunction(func, arg, gens);
   } catch (const exc::ParserException &e) {
@@ -163,7 +167,7 @@ types::Type *Module::getOrRealizeType(const std::string &typeName,
   if (!type)
     return nullptr;
   try {
-    return cache->realizeType(type, translateGenerics(generics));
+    return cache->realizeType(type, translateGenerics(cache, generics));
   } catch (const exc::ParserException &e) {
     for (int i = 0; i < e.messages.size(); i++)
       LOG_IR("getOrRealizeType parser error at {}: {}", e.locations[i], e.messages[i]);
@@ -234,7 +238,7 @@ types::Type *Module::getOptionalType(types::Type *base) {
 
 types::Type *Module::getFuncType(types::Type *rType,
                                  std::vector<types::Type *> argTypes, bool variadic) {
-  auto args = translateArgs(argTypes);
+  auto args = translateArgs(cache, argTypes);
   args[0] = std::make_shared<codon::ast::types::LinkType>(rType->getAstType());
   auto *result = cache->makeFunction(args);
   if (variadic) {
@@ -264,6 +268,15 @@ types::Type *Module::getTupleType(std::vector<types::Type *> args) {
     argTypes.push_back(t->getAstType());
   }
   return cache->makeTuple(argTypes);
+}
+
+types::Type *Module::getUnionType(std::vector<types::Type *> types) {
+  std::vector<ast::types::TypePtr> argTypes;
+  for (auto *t : types) {
+    seqassertn(t->getAstType(), "{} must have an ast type", *t);
+    argTypes.push_back(t->getAstType());
+  }
+  return cache->makeUnion(argTypes);
 }
 
 types::Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
@@ -353,6 +366,13 @@ types::Type *Module::unsafeGetVectorType(unsigned int count, types::Type *base) 
     return rVal;
   seqassertn(primitive, "base type must be a primitive type");
   return Nr<types::VectorType>(count, primitive);
+}
+
+types::Type *Module::unsafeGetUnionType(const std::vector<types::Type *> &types) {
+  auto name = types::UnionType::getInstanceName(types);
+  if (auto *rVal = getType(name))
+    return rVal;
+  return Nr<types::UnionType>(types);
 }
 
 } // namespace ir

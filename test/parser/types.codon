@@ -70,6 +70,19 @@ A.m2()  #: 1 2 s
 c = A[str]('s')
 c.dump('y', 1.1)  #: A y 1.1
 
+#%% static_fn_overload,barebones
+def foo(x: Static[int]):
+    print('int', x)
+
+@overload
+def foo(x: Static[str]):
+    print('str', x)
+
+foo(10)
+#: int 10
+foo('s')
+#: str s
+
 #%% realization_big
 class A[TA,TB,TC]:
     a: TA
@@ -214,8 +227,8 @@ def rec3(x, y): #- ('a, 'b) -> 'b
     else:
         return y
 rec3(1, 's')
-#! cannot unify int and str
-#! while realizing rec3:0 (arguments rec3:0[int,str])
+#! 'int' does not match expected type 'str'
+#! during the realization of rec3(x: int, y: str)
 
 #%% instantiate_function_2,barebones
 def fx[T](x: T) -> T:
@@ -318,7 +331,7 @@ print h(list(map(lambda i: i-1, map(lambda i: i+2, range(5)))))
 #%% func_unify_error,barebones
 def foo(x:int):
     print x
-z = 1 & foo #! cannot find magic 'and' in int
+z = 1 & foo #! unsupported operand type(s) for &: 'int' and 'foo[int]'
 
 #%% tuple_type_late,barebones
 coords = []
@@ -478,13 +491,13 @@ print e.__getitem1__(1) #: 3.33
 #%% static_fail,barebones
 def test(i: Int[32]):
     print int(i)
-test(Int[5](1)) #! cannot unify Int[5] and Int[32]
+test(Int[5](1)) #! 'Int[5]' does not match expected type 'Int[32]'
 
 #%% static_fail_2,barebones
 zi = Int[32](6)
 def test3[N](i: Int[N]):
     print int(i)
-test3(zi) #! cannot unify
+test3(zi) #! 'N' does not match expected type 'N'
 # TODO: nicer error message!
 
 #%% static_fail_3,barebones
@@ -514,11 +527,11 @@ def f[U](x: U, y): # ('u, 'a) -> tuple['a, 'u]
     def g[T, U](x: T, y: U): # ('t, 'u) -> tuple['t, 'u]
         return (x, y)
     return g(y, x)
-print f(1.1, 1, int).__class__.__name__ #! cannot unify float and int
+print f(1.1, 1, int).__class__.__name__ #! 'float' does not match expected type 'int'
 
 #%% fn_realization,barebones
 def ff[T](x: T, y: tuple[T]):
-      print ff(T=str,...).__class__.__name__ #: ff:0[str,Tuple[str],str]
+      print ff(T=str,...).__class__.__name__ #: ff[str,Tuple[str],str]
       return x
 x = ff(1, (1,))
 print x, x.__class__.__name__ #: 1 int
@@ -528,7 +541,7 @@ def fg[T](x:T):
     def g[T](y):
         z = T()
         return z
-    print fg(T=str,...).__class__.__name__  #: fg:0[str,str]
+    print fg(T=str,...).__class__.__name__  #: fg[str,str]
     print g(1, T).__class__.__name__ #: int
 fg(1)
 print fg(1).__class__.__name__ #: NoneType
@@ -546,8 +559,8 @@ def f[T](x: T):
     print f(x, int).__class__.__name__
     return x
 f('s')
-#! cannot unify str and int
-#! while realizing f
+#! 'str' does not match expected type 'int'
+#! during the realization of f(x: str, T: str)
 
 #%% nested_class_error,barebones
 class X:
@@ -557,7 +570,7 @@ class X:
         def bar(self, x):
             return x
 y = X.Y()
-y.foo(1) #! cannot find 'foo' in X.Y
+y.foo(1) #! 'X.Y' object has no attribute 'foo'
 
 #%% nested_deep_class,barebones
 class A[T]:
@@ -569,7 +582,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[bool].foo(W=str, ...).__class__.__name__ #: A.B.C.foo:0[bool,bool,bool,str,str]
+print A.B.C[bool].foo(W=str, ...).__class__.__name__ #: foo[bool,bool,bool,str,str]
 print A.B.C.foo(1,1,1,True) #: (1, 1, 1, True)
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
 print A.B.C.foo('x', 'x', 'x', 'x') #: ('x', 'x', 'x', 'x')
@@ -588,7 +601,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[str].foo(1,1,1,True) #! cannot find a method 'foo' in A.B.C[str] with arguments 'int', 'int', 'int', 'bool'
+print A.B.C[str].foo(1,1,1,True) #! 'A.B.C[str]' object has no method 'foo' with arguments (int, int, int, bool)
 
 #%% nested_deep_class_error_2,barebones
 class A[T]:
@@ -599,7 +612,7 @@ class A[T]:
             c: V
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
-print A.B[int].C[float].foo(1,1,1,True) #! cannot find 'C' in A.B[int]
+print A.B[int].C[float].foo(1,1,1,True) #! 'A.B[int]' object has no attribute 'C'
 
 #%% nested_class_function,barebones
 def f(x):
@@ -799,7 +812,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__.__name__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__.__name__ #: X.foo:0[X[float],float,int,int]
+print X[float].foo(U=int, ...).__class__.__name__ #: foo[X[float],float,int,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access,barebones
@@ -808,7 +821,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 # TODO: should this even be the case?
-# print y.foo(U=float,...).__class__.__name__  ->  X.foo:0[X[X[int]],...,...]
+# print y.foo(U=float,...).__class__.__name__  ->  X.foo[X[X[int]],...,...]
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% forward,barebones
@@ -819,10 +832,10 @@ def bar[T](x):
     print x, T.__class__.__name__
 foo(bar, 1)
 #: 1 int
-#: bar:0[...]
+#: bar[...]
 foo(bar(...), 's')
 #: s str
-#: bar:0[...]
+#: bar[...]
 z = bar
 z('s', int)
 #: s int
@@ -840,8 +853,9 @@ def foo(f, x):
 def bar[T](x):
     print x, T.__class__.__name__
 foo(bar(T=int,...), 1)
-#! too many arguments for bar:0[T1,int] (expected maximum 2, got 2)
-#! while realizing foo:0 (arguments foo:0[bar:0[...],int])
+#! bar() takes 2 arguments (2 given)
+#! during the realization of foo(f: bar[...], x: int)
+# TODO fix this error message
 
 #%% sort_partial
 def foo(x, y):
@@ -859,17 +873,17 @@ def frec(x, y):
         return frec(y, x)
     return grec(x, y) if bl(y) else 2
 print frec(1, 2).__class__.__name__, frec('s', 1).__class__.__name__
-#! cannot unify NoneType and int
-#! while realizing frec:0 (arguments frec:0[int,int])
+#! 'NoneType' does not match expected type 'int'
+#! during the realization of frec(x: int, y: int)
 
 #%% return_fn,barebones
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__.__name__ #: retfn:0.inner:0[...,...,int,...]
+    print inner.__class__.__name__ #: inner[...,...,int,...]
     return inner(15, ...)
 f = retfn(1)
-print f.__class__.__name__ #: retfn:0.inner:0[int,...,int,...]
+print f.__class__.__name__ #: inner[int,...,int,...]
 f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
@@ -877,7 +891,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
 def dec(fn, a):
-    print 'decorating', fn.__class__.__name__ #: decorating foo:0[...,...,...]
+    print 'decorating', fn.__class__.__name__ #: decorating foo[...,...,...]
     def inner(*args, **kwargs):
         print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
@@ -902,7 +916,7 @@ def dec(a):
     return f
 ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
-#: decorating foo:0[...,...,...]
+#: decorating foo[...,...,...]
 #: decorator (5.5, 's') (z: True)
 #: 10 (5.5, 's') (z: True)
 #: 1
@@ -912,7 +926,7 @@ def zoo(e, b, *args):
     return f'zoo: {e}, {b}, {args}'
 print zoo(2, 3)
 print zoo('s', 3)
-#: decorating zoo:0[...,...,...]
+#: decorating zoo[...,...,...]
 #: decorator (2, 3) ()
 #: zoo: 5, 2, (3)
 #: decorator ('s', 3) ()
@@ -947,7 +961,7 @@ def factorial(num):
     return n
 factorial(10)
 #: 3628800
-#: time needed for factorial:0[...] is 3628799
+#: time needed for factorial[...] is 3628799
 
 def dx1(func):
     def inner():
@@ -1025,15 +1039,16 @@ def tee(iterable, n=2):
             yield mydeque.popleft()
     return list(gen(d) for d in deques)
 it = [1,2,3,4]
-a, b = tee(it) #! cannot typecheck the program
-#! while realizing tee:0 (arguments tee:0[List[int],int])
+a, b = tee(it)
+#! cannot typecheck the program
+#! during the realization of tee(iterable: List[int], n: int)
 
 #%% new_syntax,barebones
 def foo[T,U](x: type, y, z: Static[int] = 10):
     print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
-print foo(T=int,U=str,...).__class__.__name__ #: foo:0[T1,x,z,int,str]
-print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo:0[T1,bool,5,int,str]
+print foo(T=int,U=str,...).__class__.__name__ #: foo[T1,x,z,int,str]
+print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo[T1,bool,5,int,str]
 print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 
@@ -1075,7 +1090,7 @@ class Foo[T,U: Static[int]]:
     d: type
     e: List[d]
     f: UInt[b]
-print Foo[float,6].__class__.__name__ #! expected 4 generics and/or statics
+print Foo[float,6].__class__.__name__ #! Foo takes 4 generics (2 given)
 
 #%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print
@@ -1108,16 +1123,42 @@ def foo[T](x: T, func: Optional[Callable[[], T]] = None) -> T:
     return x
 print foo(1) #: 1
 
+#%% trait_callable
+foo = [1,2,11]
+print(sorted(foo, key=str))
+#: [1, 11, 2]
+
+foo = {1: "a", 2: "a", 11: "c"}
+print(sorted(foo.items(), key=str))
+#: [(1, 'a'), (11, 'c'), (2, 'a')]
+
+def call(f: Callable[[int,int], Tuple[str,int]]):
+    print(f(1, 2))
+
+def foo(*x): return f"{x}_{x.__class__.__name__}",1
+call(foo)
+#: ('(1, 2)_Tuple[int,int]', 1)
+
+def foo(a:int, *b: float): return f"{a}_{b}", a+b[0]
+call(foo)
+#: ('1_(2)', 3)
+
+def call(f: Callable[[int,int],str]):
+    print(f(1, 2))
+def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
+call(foo(zzz=1.1, ...))
+#: 1_(2)_(zzz: 1.1)
+
 #%% traits_error,barebones
 def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
         return (key.__val__())(x)
-print t(6, Optional(1)) #! cannot unify Optional[int] and Optional[T]
+print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[Callable[[int],S]]'
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! cannot unify ? and int
+z: Callable[[int],int] = 4 #! 'Callable[[int],int]' does not match expected type 'int'
 
 #%% assign_wrapers,barebones
 a = 1.5
@@ -1172,6 +1213,8 @@ print methodcaller('index')(v, 42) #: 1
 def foo(x):
     return 1, x
 
+print(foo(''))  #: (1, '')
+
 @overload
 def foo(x, y):
     def foo(x, y):
@@ -1202,7 +1245,7 @@ def foo(x):
 @overload
 def foo(x, y):
     return 2, x, y
-foo('hooooooooy!', 1, 2) #! cannot find a method 'foo' with arguments 'str', 'int', 'int'
+foo('hooooooooy!', 1, 2) #! no function 'foo' with arguments (str, int, int)
 
 #%% c_void_return,barebones
 from C import seq_print(str)
@@ -1272,10 +1315,10 @@ print('done')
 #%% static_range_error,barebones
 for i in staticrange(1000, -2000, -2):
     pass
-#! staticrange out of bounds (1500 > 1024)
+#! staticrange too large (expected 0..1024, got instead 1500)
 
 #%% trait_defdict
-class dd(Dict[K,V]):
+class dd(Static[Dict[K,V]]):
     fn: S
     K: type
     V: type
@@ -1332,3 +1375,403 @@ def foo(**kwargs):
 
 foo(foo=1, bar='s')
 #: 1 s
+
+
+
+#%% union_types,barebones
+def foo_int(x: int):
+    print(f'{x} {x.__class__.__name__}')
+def foo_str(x: str):
+    print(f'{x} {x.__class__.__name__}')
+def foo(x):
+    print(f'{x} {int(__internal__.union_get_tag(x))} {x.__class__.__name__}')
+
+a: Union[int, str] = 5
+foo_int(a)  #: 5 int
+foo(a)  #: 5 0 Union[int,str]
+print(staticlen(a))  #: 2
+print(staticlen(Union[int, int]), staticlen(Tuple[int, float, int]))  #: 1 3
+
+@extend
+class str:
+    def __add__(self, i: int):
+        return int(self) + i
+
+a += 6  ## this is U.__new__(a.__getter__(__add__)(59))
+b = a + 59
+print(a, b, a.__class__.__name__, b.__class__.__name__)  #: 11 70 Union[int,str] int
+
+if True:
+    a = 'hello'
+    foo_str(a)  #: hello str
+    foo(a)  #: 'hello' 1 Union[int,str]
+    # b = a[1:3]
+    # print(b)
+print(a)  #: 'hello'
+
+a: Union[Union[Union[str], int], Union[int, int, str]] = 9
+foo(a)  #: 9 0 Union[int,str]
+
+def ret(x):
+    z : Union = x
+    if x < 1: z = 1
+    elif x < 10: z = False
+    else: z = 'oops'
+    return z
+r = ret(2)
+print(r, r.__class__.__name__)  #: False Union[bool,int,str]
+r = ret(33.3)
+print(r, r.__class__.__name__)  #: 'oops' Union[bool,float,int,str]
+
+def ret2(x) -> Union:
+    if x < 1: return 1
+    elif x < 10: return 2.2
+    else: return ['oops']
+r = ret2(20)
+print(r, r.__class__.__name__)  #: ['oops'] Union[List[str],float,int]
+
+class A:
+    x: int
+    def foo(self):
+        return f"A: {self.x}"
+class B:
+    y: str
+    def foo(self):
+        return f"B: {self.y}"
+x : Union[A,B] = A(5)  # TODO: just Union does not work :/
+print(x.foo())  #: A: 5
+if True:
+    x = B("bee")
+print(x.foo())  #: B: bee
+
+def do(x: A):
+    print('do', x.x)
+try:
+    do(x)
+except TypeError:
+    print('error') #: error
+
+def do2(x: B):
+    print('do2', x.y)
+do2(x)  #: do2 bee
+
+z: Union[int, str] = 1
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+#: True False False False True
+
+print isinstance(z, Union[int]), isinstance(z, Union[int, float, str])
+#: False False
+
+if True:
+    z = 's'
+print isinstance(z, int), isinstance(z, str), isinstance(z, float), isinstance(z, Union[int, float]), isinstance(z, Union[int, str])
+#: False True False False True
+
+class A:
+    def foo(self): return 1
+class B:
+    def foo(self): return 's'
+class C:
+    def foo(self): return [True, False]
+x : Union[A,B,C] = A()
+print x.foo(), x.foo().__class__.__name__
+#: 1 Union[List[bool],int,str]
+
+#%% generator_capture_nonglobal,barebones
+# Issue #49
+def foo(iter):
+    print(iter.__class__.__name__, list(iter))
+
+for x in range(2):
+    foo(1 for _ in range(x))
+#: Generator[int] []
+#: Generator[int] [1]
+for x in range(2):
+    for y in range(x):
+        foo('z' for _ in range(y))
+#: Generator[str] []
+
+#%% nonlocal_capture_loop,barebones
+# Issue #51
+def kernel(fn):
+    def wrapper(*args, grid, block):
+        print(grid, block, fn(*args))
+    return wrapper
+def test_mandelbrot():
+    MAX    = 10  # maximum Mandelbrot iterations
+    N      = 2   # width and height of image
+    pixels = [0 for _ in range(N)]
+    def scale(x, a, b):
+        return a + (x/N)*(b - a)
+    @kernel
+    def k(pixels):
+        i = 0
+        while i < MAX: i += 1  # this is needed for test to make sense
+        return (MAX, N, pixels, scale(N, -2, 0.4))
+    k(pixels, grid=(N*N)//1024, block=1024)
+test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.4)
+
+#%% delayed_lambda_realization,barebones
+x = []
+for i in range(2):
+    print(all(x[j] < 0 for j in range(i)))
+    x.append(i)
+#: True
+#: False
+
+#%% constructor_passing
+class A:
+    s: str
+    def __init__(self, x):
+        self.s = str(x)[::-1]
+    def __lt__(self, o): return self.s < o.s
+    def __eq__(self, o): return self.s == o.s
+    def __ge__(self, o): return self.s >= o.s
+foo = [1,2,11,30]
+print(sorted(foo, key=str))
+#: [1, 11, 2, 30]
+print(sorted(foo, key=A))
+#: [30, 1, 11, 2]
+
+
+#%% polymorphism,barebones
+class A:
+    a: int
+    def foo(self, a: int): return (f'A({self.a})', a)
+    def bar(self): return 'A.bar'
+    def aaz(self): return 'A.aaz'
+class B(A):
+    b: int
+    def foo(self, a): return (f'B({self.a},{self.b})', a + self.b)
+    def bar(self): return 'B.bar'
+    def baz(self): return 'B.baz'
+class M[T]:
+    m: T
+    def moo(self): return (f'M_{T.__class__.__name__}', self.m)
+class X(B,M[int]):
+    def foo(self, a): return (f'X({self.a},{self.b},{self.m})', a + self.b + self.m)
+    def bar(self): return 'X.bar'
+
+def foo(i):
+    x = i.foo(1)
+    y = i.bar()
+    z = i.aaz()
+    print(*x, y, z)
+a = A(1)
+l = [a, B(2,3), X(2,3,-1)]
+for i in l: foo(i)
+#: A(1) 1 A.bar A.aaz
+#: B(2,3) 4 B.bar A.aaz
+#: X(2,3,-1) 3 X.bar A.aaz
+
+def moo(m: M):
+    print(m.moo())
+moo(M[float](5.5))
+moo(X(1,2,3))
+#: ('M_float', 5.5)
+#: ('M_int', 3)
+
+
+class A[T]:
+    def __init__(self):
+        print("init A", T.__class__.__name__)
+class Ho:
+    def __init__(self):
+        print("init Ho")
+# TODO: this throws and error: B[U](U)
+class B[U](A[U], Ho):
+    def __init__(self):
+        super().__init__()
+        print("init B", U.__class__.__name__)
+B[Ho]()
+#: init A Ho
+#: init B Ho
+
+
+#%% polymorphism_error_1,barebones
+class M[T]:
+    m: T
+class X(M[int]):
+    pass
+l = [M[float](1.1), X(2)]
+#! 'List[M[float]]' object has no method 'append' with arguments (List[M[float]], X)
+
+#%% polymorphism_2
+class Expr:
+    def __init__(self):
+        pass
+    def eval(self):
+        raise ValueError('invalid expr')
+        return 0.0
+    def __str__(self):
+        return "Expr"
+class Const(Expr):
+    x: float
+    def __init__(self, x):
+        self.x=x
+    def __str__(self):
+        return f"{self.x}"
+    def eval(self):
+        return self.x
+class Add(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+        # print(f'ctr: {self}')
+    def eval(self):
+        return self.lhs.eval()+self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) + ({self.rhs})"
+class Mul(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+    def eval(self):
+        return self.lhs.eval()*self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) * ({self.rhs})"
+
+c1 = Const(5)
+c2 = Const(4)
+m = Add(c1, c2)
+c3 = Const(2)
+a : Expr = Mul(m, c3)
+print(f'{a} = {a.eval()}')
+#: ((5) + (4)) * (2) = 18
+
+from random import random, seed
+seed(137)
+def random_expr(depth) -> Expr:
+    if depth<=0:
+        return Const(int(random()*42.0))
+    else:
+        lhs=random_expr(depth-1)
+        rhs=random_expr(depth-1)
+        ctorid = int(random()*3)
+        if ctorid==0:
+            return Mul(lhs,rhs)
+        else:
+            return Add(lhs,rhs)
+for i in range(11):
+    print(random_expr(i).eval())
+#: 17
+#: 71
+#: 1760
+#: 118440
+#: 94442
+#: 8.02435e+15
+#: 1.07463e+13
+#: 1.43017e+19
+#: 2.40292e+34
+#: 6.1307e+28
+#: 5.16611e+49
+
+
+#%% collection_common_type,barebones
+l = [1, 2, 3]
+print(l, l.__class__.__name__)
+#: [1, 2, 3] List[int]
+
+l = [1.1, 2, 3]
+print(l, l.__class__.__name__)
+#: [1.1, 2, 3] List[float]
+
+l = [1, 2, 3.3]
+print(l, l.__class__.__name__)
+#: [1, 2, 3.3] List[float]
+
+l = [1, None]
+print(l, l.__class__.__name__)
+#: [1, None] List[Optional[int]]
+
+l = [None, 2.2]
+print(l, l.__class__.__name__)
+#: [None, 2.2] List[Optional[float]]
+
+class A:
+    def __repr__(self): return 'A'
+class B(A):
+    def __repr__(self): return 'B'
+class C(B):
+    def __repr__(self): return 'C'
+class D(A):
+    def __repr__(self): return 'D'
+
+l = [A(), B(), C(), D()]
+print(l, l.__class__.__name__)
+#: [A, B, C, D] List[A]
+
+l = [D(), C(), B(), A()]
+print(l, l.__class__.__name__)
+#: [D, C, B, A] List[A]
+
+l = [C(), B()]
+print(l, l.__class__.__name__)
+#: [C, B] List[B]
+
+l = [C(), A(), B()]
+print(l, l.__class__.__name__)
+#: [C, A, B] List[A]
+
+l = [None, *[1, 2], None]
+print(l, l.__class__.__name__)
+#: [None, 1, 2, None] List[Optional[int]]
+
+# l = [C(), D(), B()] # does not work (correct behaviour)
+# print(l, l.__class__.__name__)
+
+d = {1: None, 2.2: 's'}
+print(d, d.__class__.__name__)
+#: {1: None, 2.2: 's'} Dict[float,Optional[str]]
+
+#%% polymorphism_3
+import operator
+
+class Expr:
+    def eval(self):
+        return 0
+
+class Const(Expr):
+    value: int
+
+    def __init__(self, value):
+        self.value = value
+
+    def eval(self):
+        return self.value
+
+class BinOp(Expr):
+    lhs: Expr
+    rhs: Expr
+
+    def __init__(self, lhs, rhs):
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def eval_from_fn(self, fn):
+        return fn(self.lhs.eval(), self.rhs.eval())
+
+class Add(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.add)
+
+class Sub(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.sub)
+
+class Mul(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.mul)
+
+class Div(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.floordiv)
+
+# TODO: remove Expr requirement
+expr : Expr = Mul(Const(3), Add(Const(10), Const(5)))
+print(expr.eval()) #: 45
+

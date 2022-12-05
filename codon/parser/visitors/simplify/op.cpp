@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 #include <vector>
@@ -8,6 +10,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -57,12 +60,11 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
     // Special case: tuples. Change to Tuple.N
     auto t = expr->index->getTuple();
-    expr->expr = N<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
-    expr->expr->markType();
+    expr->expr = NT<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
-      error("only static integers and strings are supported");
+      E(Error::BAD_STATIC_TYPE, expr->index);
     expr->markType();
     return;
   } else {
@@ -79,7 +81,8 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   }
   for (auto &i : items) {
     if (i->getList() && expr->expr->isType()) {
-      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
+      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
+      // `Function[...]`)
       i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
     }
     transform(i, true);

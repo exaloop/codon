@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <memory>
 #include <string>
 #include <tuple>
@@ -9,6 +11,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -39,22 +42,24 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
   } else {
     // Find the canonical name and AST of the class that is to be extended
     if (!ctx->isGlobal() || ctx->isConditional())
-      error("extend is only allowed at the toplevel");
+      E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "class extension");
     auto val = ctx->find(name);
     if (!val || !val->isType())
-      error("cannot find type '{}' to extend", name);
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     canonicalName = val->canonicalName;
     const auto &astIter = ctx->cache->classes.find(canonicalName);
-    if (astIter == ctx->cache->classes.end())
-      error("cannot extend type alias or an instantiation ({})", name);
-    argsToParse = astIter->second.ast->args;
+    if (astIter == ctx->cache->classes.end()) {
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
+    } else {
+      argsToParse = astIter->second.ast->args;
+    }
   }
 
   std::vector<StmtPtr> clsStmts; // Will be filled later!
   std::vector<StmtPtr> varStmts; // Will be filled later!
   std::vector<StmtPtr> fnStmts;  // Will be filled later!
   std::vector<SimplifyContext::Item> addLater;
-  {
+  try {
     // Add the class base
     SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
 
@@ -87,17 +92,28 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    ExprPtr typeAst = N<IdExpr>(name);
+    ExprPtr typeAst = N<IdExpr>(name), transformedTypeAst = NT<IdExpr>(canonicalName);
     for (auto &a : args) {
       if (a.status == Param::Generic) {
-        if (!typeAst->getIndex())
+        if (!typeAst->getIndex()) {
           typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+          transformedTypeAst =
+              NT<InstantiateExpr>(NT<IdExpr>(canonicalName), std::vector<ExprPtr>{});
+        }
         typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
+        CAST(transformedTypeAst, InstantiateExpr)
+            ->typeParams.push_back(transform(N<IdExpr>(a.name), true));
       }
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes);
+    auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
+                                           stmt->attributes, canonicalName);
+    if (ctx->cache->isJit && !stmt->baseClasses.empty())
+      E(Error::CUSTOM, stmt->baseClasses[0],
+        "inheritance is not yet supported in JIT mode");
+    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
+                                     canonicalName, transformedTypeAst);
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
@@ -147,7 +163,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         // Class bindings cannot be dominated either
         auto v = ctx->find(name);
         if (v && v->noShadow)
-          error("cannot update global/nonlocal");
+          E(Error::CLASS_INVALID_BIND, stmt, name);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
       }
@@ -157,8 +173,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                  ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
-      for (auto &b : baseASTs)
-        ctx->cache->classes[canonicalName].parentClasses.emplace_back(b->name);
+      ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
+      for (auto &b : staticBaseASTs)
+        ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
       ctx->cache->classes[canonicalName].ast->validate();
 
       // Codegen default magic methods
@@ -167,7 +184,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
       }
       // Add inherited methods
-      for (auto &base : baseASTs) {
+      for (auto &base : staticBaseASTs) {
         for (auto &mm : ctx->cache->classes[base->name].methods)
           for (auto &mf : ctx->cache->overloads[mm.second]) {
             auto f = ctx->cache->functions[mf.name].ast;
@@ -213,6 +230,32 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       addLater.push_back(ctx->find(c->getClass()->name));
     if (stmt->attributes.has(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
+
+    // Mark functions as virtual:
+    auto banned =
+        std::set<std::string>{"__init__", "__new__", "__raw__", "__tuplesize__"};
+    for (auto &m : ctx->cache->classes[canonicalName].methods) {
+      auto method = m.first;
+      for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+        // ... in the current class
+        auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
+        if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
+          ctx->cache->classes[canonicalName].virtuals.insert(method);
+        }
+      }
+      for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
+        for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+          // ... and in parent classes
+          auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
+          ctx->cache->classes[b].virtuals.insert(v);
+        }
+      }
+    }
+  } catch (const exc::ParserException &) {
+    if (!stmt->attributes.has(Attr::Tuple))
+      ctx->remove(name);
+    ctx->cache->classes.erase(name);
+    throw;
   }
   for (auto &i : addLater)
     ctx->add(ctx->cache->rev(i->canonicalName), i);
@@ -239,41 +282,69 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// Parse statically inherited classes.
 /// Returns a list of their ASTs. Also updates the class fields.
 /// @param args Class fields that are to be updated with base classes' fields.
-std::vector<ClassStmt *>
-SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
-                                  std::vector<Param> &args, const Attr &attr) {
+/// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
+///                Only set when dealing with dynamic polymorphism.
+std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
+    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args, const Attr &attr,
+    const std::string &canonicalName, const ExprPtr &typeAst) {
   std::vector<ClassStmt *> asts;
+
+  // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
+  std::vector<std::vector<ExprPtr>> mro{{typeAst}};
+  std::vector<ExprPtr> parentClasses;
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
+
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
+    transformType(cls);
     if (auto i = cls->getId()) {
       name = i->value;
-    } else if (auto e = cls->getIndex()) {
-      if (auto ei = e->expr->getId()) {
+    } else if (auto e = CAST(cls, InstantiateExpr)) {
+      if (auto ei = e->typeExpr->getId()) {
         name = ei->value;
-        subs = e->index->getTuple() ? e->index->getTuple()->items
-                                    : std::vector<ExprPtr>{e->index};
+        subs = e->typeParams;
       }
     }
-    name = transformType(N<IdExpr>(name))->getId()->value;
-    if (name.empty() || !in(ctx->cache->classes, name))
-      error(cls.get(), "invalid base class");
-    asts.push_back(ctx->cache->classes[name].ast.get());
+
+    auto cachedCls = const_cast<Cache::Class *>(in(ctx->cache->classes, name));
+    if (!cachedCls)
+      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), ctx->cache->rev(name));
+    asts.push_back(cachedCls->ast.get());
+    parentClasses.push_back(clone(cls));
+    mro.push_back(cachedCls->mro);
 
     // Sanity checks
+    if (attr.has(Attr::Tuple) && typeAst)
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple");
     if (!attr.has(Attr::Tuple) && asts.back()->attributes.has(Attr::Tuple))
-      error("reference classes cannot inherit by-value classes");
+      E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
     if (asts.back()->attributes.has(Attr::Internal))
-      error("cannot inherit internal types");
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
+
+    // Add __vtable__ to parent classes if it is not there already
+    if (typeAst && (cachedCls->fields.empty() ||
+                    cachedCls->fields[0].name != format("{}.{}", VAR_VTABLE, name))) {
+      auto var = format("{}.{}", VAR_VTABLE, name);
+      // LOG("[virtual] vtable({}) := {}", name, var);
+      cachedCls->fields.insert(cachedCls->fields.begin(), {var, nullptr});
+      cachedCls->ast->args.insert(
+          cachedCls->ast->args.begin(),
+          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
+                nullptr});
+    }
 
     // Add generics first
+    int nGenerics = 0;
+    for (auto &a : asts.back()->args)
+      nGenerics += a.status == Param::Generic;
     int si = 0;
     for (auto &a : asts.back()->args) {
       if (a.status == Param::Generic) {
         if (si == subs.size())
-          error(cls.get(), "wrong number of generics");
+          E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name),
+            nGenerics, subs.size());
         args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
                                 Param::HiddenGeneric});
       } else if (a.status == Param::HiddenGeneric) {
@@ -290,13 +361,24 @@ SimplifyVisitor::parseBaseClasses(const std::vector<ExprPtr> &baseClasses,
       }
     }
     if (si != subs.size())
-      error(cls.get(), "wrong number of generics");
+      E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name), nGenerics,
+        subs.size());
   }
   // Add normal fields
   for (auto &ast : asts) {
     for (auto &a : ast->args) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a))
         args.emplace_back(Param{a.name, a.type, a.defaultValue});
+    }
+  }
+  if (typeAst) {
+    if (!parentClasses.empty())
+      mro.push_back(parentClasses);
+    ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
+    if (ctx->cache->classes[canonicalName].mro.empty()) {
+      E(Error::CLASS_BAD_MRO, getSrcInfo());
+    } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
+      // LOG("[mro] {} -> {}", canonicalName, ctx->cache->classes[canonicalName].mro);
     }
   }
   return asts;
@@ -357,7 +439,7 @@ std::vector<StmtPtr> SimplifyVisitor::getClassMethods(const StmtPtr &s) {
   } else if (s->getExpr() && s->getExpr()->expr->getString()) {
     /// Those are doc-strings, ignore them.
   } else if (!s->getFunction() && !s->getClass()) {
-    error("only function and class definitions are allowed within classes");
+    E(Error::CLASS_BAD_ATTR, s);
   } else {
     v.push_back(s);
   }
@@ -404,7 +486,8 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
 /// @li Python: __to_py__, __from_py__
 /// TODO: move to Codon as much as possible
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typExpr,
-                                      const std::vector<Param> &args, bool isRecord) {
+                                      const std::vector<Param> &allArgs,
+                                      bool isRecord) {
 #define I(s) N<IdExpr>(s)
   seqassert(typExpr, "typExpr is null");
   ExprPtr ret;
@@ -412,16 +495,26 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   std::vector<StmtPtr> stmts;
   Attr attr;
   attr.set("autogenerated");
+
+  std::vector<Param> args;
+  for (auto &a : allArgs)
+    if (!startswith(a.name, VAR_VTABLE))
+      args.push_back(a);
+
   if (op == "new") {
     // Classes: @internal def __new__() -> T
     // Tuples: @internal def __new__(a1: T1, ..., aN: TN) -> T
     ret = typExpr->clone();
-    if (isRecord)
+    if (isRecord) {
       for (auto &a : args)
         fargs.emplace_back(
             Param{a.name, clone(a.type),
                   a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
-    attr.set(Attr::Internal);
+      attr.set(Attr::Internal);
+    } else {
+      stmts.emplace_back(N<ReturnStmt>(
+          N<CallExpr>(N<DotExpr>(I("__internal__"), "class_new"), typExpr->clone())));
+    }
   } else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
     //            self.aI = aI ...
@@ -712,6 +805,15 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     fargs.emplace_back(Param{"tup", nullptr});
     stmts.emplace_back(N<ReturnStmt>(N<TupleExpr>(
         std::vector<ExprPtr>{N<StarExpr>(I("self")), N<StarExpr>(I("tup"))})));
+  } else if (op == "tuplesize") {
+    // def __tuplesize__() -> int:
+    //   return Tuple[arg_types...].__elemsize__
+    ret = I("int");
+    std::vector<ExprPtr> items;
+    for (auto &a : allArgs)
+      items.push_back(clone(a.type));
+    stmts.emplace_back(N<ReturnStmt>(
+        N<DotExpr>(N<IndexExpr>(I("Tuple"), N<TupleExpr>(items)), "__elemsize__")));
   } else {
     seqassert(false, "invalid magic {}", op);
   }

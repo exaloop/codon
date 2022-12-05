@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <map>
@@ -26,6 +28,7 @@
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap"
 #define VAR_ARGV "__argv__"
+#define VAR_VTABLE ".__vtable__"
 
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200
@@ -75,6 +78,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::string importVar;
     /// File content (line:col indexable)
     std::vector<std::string> content;
+    /// Relative module name (e.g., `foo.bar`)
+    std::string moduleName;
   };
 
   /// Absolute path of seqc executable (if available).
@@ -124,19 +129,39 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       /// A list of field names and realization's realized field types.
       std::vector<std::pair<std::string, types::TypePtr>> fields;
       /// IR type pointer.
-      codon::ir::types::Type *ir;
+      codon::ir::types::Type *ir = nullptr;
+
+      /// Realization vtable.
+      struct VTable {
+        // Maps {base, thunk signature} to {thunk realization, thunk ID}
+        std::map<std::pair<std::string, std::string>,
+                 std::pair<types::FuncTypePtr, size_t>>
+            table;
+        codon::ir::Var *ir = nullptr;
+      };
+      /// All vtables (for each base class)
+      std::unordered_map<std::string, VTable> vtables;
+      /// Realization ID
+      size_t id = 0;
     };
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
-    /// List of inherited classes.
-    std::vector<std::string> parentClasses;
+
+    /// List of virtual method names
+    std::unordered_set<std::string> virtuals;
+    /// MRO
+    std::vector<ExprPtr> mro;
+
+    /// List of statically inherited classes.
+    std::vector<std::string> staticParentClasses;
 
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
   std::unordered_map<std::string, Class> classes;
+  size_t classRealizationCnt = 0;
 
   struct Function {
     /// Generic (unrealized) function template AST.
@@ -268,8 +293,11 @@ public:
 
   ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
+  ir::types::Type *makeUnion(const std::vector<types::TypePtr> &types);
 
   void parseCode(const std::string &code);
+
+  static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
 };
 
 } // namespace codon::ast

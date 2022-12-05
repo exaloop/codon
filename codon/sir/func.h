@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include "codon/sir/flow.h"
@@ -225,3 +227,5 @@ protected:
 
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::Func> : fmt::ostream_formatter {};

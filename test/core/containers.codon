@@ -252,6 +252,10 @@ def test_list():
     l8 = List[int]()
     l8 += List[int]()
     assert l8 == List[int]()
+
+    assert list(reversed(list('abc'))) == ['c', 'b', 'a']
+    assert list(list('abc')[::-1]) == ['c', 'b', 'a']
+    assert list(reversed(List[str]())) == List[str]()
 test_list()
 
 @test

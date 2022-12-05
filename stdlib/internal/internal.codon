@@ -1,17 +1,15 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
-from internal.gc import free
-
+from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic, seq_gc_add_roots
 
 @pure
 @C
 def seq_check_errno() -> str:
     pass
 
-
 from C import seq_print(str)
 from C import exit(int)
-
+from C import malloc(int) -> cobj as c_malloc
 
 @extend
 class __internal__:
@@ -19,7 +17,117 @@ class __internal__:
     @derives
     @llvm
     def class_raw(obj) -> Ptr[byte]:
-        ret i8* %obj
+        ret ptr %obj
+
+    @pure
+    @derives
+    def class_new(T: type) -> T:
+        """Create a new reference (class) type"""
+        sz = T.__tuplesize__()
+        p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
+        register_finalizer(p)
+        pf = __internal__.to_class_ptr(p, T)
+        __internal__.class_set_obj_vtable(pf)
+        return pf
+
+    def class_ctr(T: type, *args, **kwargs) -> T:
+        """Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`"""
+        return T(*args, **kwargs)
+
+    def class_set_obj_vtable(pf: T, T: type) -> None:
+        """
+        Initialize a vtable of a T() object. Compiler generated.
+        Corresponds to:
+            pf.__vtable__ = __vtables__[pf.__vtable_id___]
+        """
+        pass
+
+    def class_init_vtables() -> Ptr[Ptr[cobj]]:
+        """
+        Create a global vtable. Compiler generated.
+        Corresponds to:
+            return __internal__.class_make_n_vtables(<number of class realizations>)
+        """
+        pass
+
+    def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
+        """Create a global vtable."""
+        p = Ptr[Ptr[cobj]](sz)
+        seq_gc_add_roots(p.as_byte(), (p + sz).as_byte())
+        __internal__.class_populate_vtables(p)
+        return p
+
+    def class_populate_vtables(p: Ptr[Ptr[cobj]]) -> None:
+        """
+        Populate content of vtables. Compiler generated.
+        Corresponds to:
+            for each realized class C:
+                p.__setitem__(<C's realization ID>, Ptr[cobj](<C's vtable size> + 1))
+                __internal__.class_set_typeinfo(p[<C's realization ID>], <C's realization ID>)
+                for each fn F in C's vtable:
+                    p[<C's realization ID>].__setitem__(<F's vtable ID>, Function(<instantiated F>).__raw__())
+        """
+        pass
+
+    def class_set_typeinfo(p: Ptr[cobj], typeinfo: T, T: type) -> None:
+        i = Ptr[T](1)
+        i[0] = typeinfo
+        p[0] = i.as_byte()
+
+    def class_get_typeinfo(p) -> int:
+        c = Ptr[Ptr[cobj]](p.__raw__())
+        vt = c[0]
+        return Ptr[int](vt[0])[0]
+
+    @inline
+    def class_base_derived_dist(B: type, D: type) -> int:
+        """Calculates the byte distance of base class B and derived class D. Compiler generated."""
+        return 0
+
+    # Unions
+
+    @llvm
+    def union_set_tag(tag: byte, U: type) -> U:
+        %0 = insertvalue {=U} undef, i8 %tag, 0
+        ret {=U} %0
+
+    @llvm
+    def union_get_data_ptr(ptr: Ptr[U], U: type, T: type) -> Ptr[T]:
+        %0 = getelementptr inbounds {=U}, ptr %ptr, i64 0, i32 1
+        ret ptr %0
+
+    @llvm
+    def union_get_tag(u: U, U: type) -> byte:
+        %0 = extractvalue {=U} %u, 0
+        ret i8 %0
+
+    def union_get_data(u, T: type) -> T:
+        return __internal__.union_get_data_ptr(__ptr__(u), T=T)[0]
+
+    def union_make(tag: int, value, U: type) -> U:
+        u = __internal__.union_set_tag(byte(tag), U)
+        __internal__.union_get_data_ptr(__ptr__(u), T=type(value))[0] = value
+        return u
+
+    def new_union(value, U: type) -> U:
+        pass
+
+    def get_union(union, T: type) -> T:
+        pass
+
+    def get_union_first(union):
+        pass
+
+    def _get_union_method(union, method: Static[str], *args, **kwargs):
+        pass
+
+    def get_union_method(union, method: Static[str], *args, **kwargs):
+        t = __internal__._get_union_method(union, method, *args, **kwargs)
+        if staticlen(t) == 1:
+            return __internal__.get_union_first(t)
+        return t
+
+    # Tuples
 
     @pure
     @derives
@@ -28,7 +136,7 @@ class __internal__:
         %x = alloca {=T}
         store {=T} %t, ptr %x
         %p = getelementptr {=E}, ptr %x, i64 %idx
-        %v  = load {=E}, ptr %p
+        %v = load {=E}, ptr %p
         ret {=E} %v
 
     def tuple_fix_index(idx: int, len: int) -> int:
@@ -42,6 +150,8 @@ class __internal__:
         return __internal__._tuple_getitem_llvm(
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
+
+    # ...
 
     @pure
     @derives
@@ -136,7 +246,7 @@ class __internal__:
     @derives
     @llvm
     def opt_ref_invert(what: Optional[T], T: type) -> T:
-        ret i8* %what
+        ret ptr %what
 
     @pure
     @derives
@@ -223,6 +333,7 @@ class __internal__:
         if not v:
             raise NameError(f"variable '{s}' not yet defined")
 
+    @__hidden__
     def set_header(e, func, file, line, col):
         if not isinstance(e, BaseException):
             compile_error("exceptions must derive from BaseException")
@@ -299,7 +410,6 @@ class __internal__:
     # def __add__(self, obj):
     #     return (*self, *obj)
 
-
 @dataclass(init=True)
 @tuple
 class Import:
@@ -330,3 +440,6 @@ class Function:
     @llvm
     def __call__(self, *args) -> TR:
         noop  # compiler will populate this one
+
+__vtables__ = __internal__.class_init_vtables()
+def _____(): __vtables__  # make it global!

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "ctx.h"
 
 #include <map>
@@ -10,6 +12,7 @@
 #include "codon/parser/visitors/format/format.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -64,7 +67,7 @@ std::string TypeContext::getRealizationStackName() const {
 
 std::shared_ptr<types::LinkType> TypeContext::getUnbound(const SrcInfo &srcInfo,
                                                          int level) const {
-  auto typ = std::make_shared<types::LinkType>(types::LinkType::Unbound,
+  auto typ = std::make_shared<types::LinkType>(cache, types::LinkType::Unbound,
                                                cache->unboundCount++, level, nullptr);
   typ->setSrcInfo(srcInfo);
   return typ;
@@ -98,6 +101,10 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
         pendingDefaults.insert(i.second);
     }
   }
+  if (t->getUnion() && !t->getUnion()->isSealed()) {
+    t->setSrcInfo(srcInfo);
+    pendingDefaults.insert(t);
+  }
   return t;
 }
 
@@ -106,9 +113,11 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
                                 const std::vector<types::TypePtr> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
-  auto g = std::make_shared<types::ClassType>("", ""); // dummy generic type
+  // dummy generic type
+  auto g = std::make_shared<types::ClassType>(cache, "", "");
   if (generics.size() != c->generics.size()) {
-    error(srcInfo, "generics do not match");
+    E(Error::GENERICS_MISMATCH, srcInfo, cache->rev(c->name), c->generics.size(),
+      generics.size());
   }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
@@ -120,42 +129,56 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
                                                         const std::string &method,
                                                         bool hideShadowed) const {
-  auto m = cache->classes.find(typeName);
-  if (m != cache->classes.end()) {
-    auto t = m->second.methods.find(method);
-    if (t != m->second.methods.end()) {
-      auto mt = cache->overloads[t->second];
-      std::unordered_set<std::string> signatureLoci;
-      std::vector<types::FuncTypePtr> vv;
-      for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
-        auto &method = mt[mti];
-        if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
-          continue;
-        if (method.age <= age) {
-          if (hideShadowed) {
-            auto sig = cache->functions[method.name].ast->signature();
-            if (!in(signatureLoci, sig)) {
-              signatureLoci.insert(sig);
-              vv.emplace_back(cache->functions[method.name].type);
-            }
-          } else {
+  std::vector<types::FuncTypePtr> vv;
+  std::unordered_set<std::string> signatureLoci;
+
+  auto populate = [&](const auto &cls) {
+    auto t = in(cls.methods, method);
+    if (!t)
+      return;
+    auto mt = cache->overloads[*t];
+    for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+      auto &method = mt[mti];
+      if (endswith(method.name, ":dispatch") || !cache->functions[method.name].type)
+        continue;
+      if (method.age <= age) {
+        if (hideShadowed) {
+          auto sig = cache->functions[method.name].ast->signature();
+          if (!in(signatureLoci, sig)) {
+            signatureLoci.insert(sig);
             vv.emplace_back(cache->functions[method.name].type);
           }
+        } else {
+          vv.emplace_back(cache->functions[method.name].type);
         }
       }
-      return vv;
+    }
+  };
+  if (auto cls = in(cache->classes, typeName)) {
+    for (auto &pt : cls->mro) {
+      if (auto pc = pt->type->getClass()) {
+        auto mc = in(cache->classes, pc->name);
+        seqassert(mc, "class '{}' not found", pc->name);
+        populate(*mc);
+      }
     }
   }
-  return {};
+  return vv;
 }
 
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
-  auto m = cache->classes.find(typeName);
-  if (m != cache->classes.end()) {
-    for (auto &mm : m->second.fields)
-      if (mm.name == member)
-        return mm.type;
+  if (auto cls = in(cache->classes, typeName)) {
+    for (auto &pt : cls->mro) {
+      if (auto pc = pt->type->getClass()) {
+        auto mc = in(cache->classes, pc->name);
+        seqassert(mc, "class '{}' not found", pc->name);
+        for (auto &mm : mc->fields) {
+          if (mm.name == member)
+            return mm.type;
+        }
+      }
+    }
   }
   return nullptr;
 }
@@ -228,21 +251,26 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
       else if (slots[slotNames[n.first]].empty())
         slots[slotNames[n.first]].push_back(n.second);
       else
-        return onError(format("argument '{}' already assigned", n.first));
+        return onError(Error::CALL_REPEATED_NAME, args[n.second].value->getSrcInfo(),
+                       Emsg(Error::CALL_REPEATED_NAME, n.first));
     }
   }
 
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
-    return onError(format("too many arguments for {} (expected maximum {}, got {})",
-                          func->toString(), func->ast->args.size(),
-                          args.size() - partial));
+    return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_MANY, cache->rev(func->ast->name),
+                        func->ast->args.size(), args.size() - partial));
+
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
 
   // 4. Fill in **kwargs, if present
   if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
-    return onError(format("unknown argument '{}'", extraNamedArgs.begin()->first));
+    return onError(Error::CALL_ARGS_INVALID,
+                   args[extraNamedArgs.begin()->second].value->getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
+                        cache->rev(func->ast->name)));
   if (kwstarArgIndex != -1)
     for (auto &e : extraNamedArgs)
       slots[kwstarArgIndex].push_back(e.second);
@@ -254,8 +282,9 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
           (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
       else if (!partial && func->ast->args[i].status == Param::Normal)
-        return onError(format("missing argument '{}'",
-                              cache->reverseIdentifierLookup[func->ast->args[i].name]));
+        return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
+                       Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->name),
+                            cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
   return score + onDone(starArgIndex, kwstarArgIndex, slots, partial);
 }
@@ -267,8 +296,13 @@ void TypeContext::dump(int pad) {
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
-    LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type->toString());
+    LOG("{}{:.<25} {}", std::string(pad * 2, ' '), i.first, t->type);
   }
+}
+
+std::string TypeContext::debugInfo() {
+  return fmt::format("[{}:i{}@{}]", getRealizationBase()->name,
+                     getRealizationBase()->iteration, getSrcInfo());
 }
 
 } // namespace codon::ast

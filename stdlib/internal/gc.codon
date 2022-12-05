@@ -1,19 +1,15 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Primarily for internal use. Regular users should not use this module.
-
 
 @pure
 @C
 def seq_alloc(a: int) -> cobj:
     pass
 
-
 @pure
 @C
 def seq_alloc_atomic(a: int) -> cobj:
     pass
-
 
 @nocapture
 @derives
@@ -21,53 +17,43 @@ def seq_alloc_atomic(a: int) -> cobj:
 def seq_realloc(p: cobj, newsize: int, oldsize: int) -> cobj:
     pass
 
-
 @nocapture
 @C
 def seq_free(p: cobj) -> None:
     pass
-
 
 @nocapture
 @C
 def seq_register_finalizer(p: cobj, f: cobj) -> None:
     pass
 
-
 @nocapture
 @C
 def seq_gc_add_roots(p: cobj, q: cobj) -> None:
     pass
-
 
 @nocapture
 @C
 def seq_gc_remove_roots(p: cobj, q: cobj) -> None:
     pass
 
-
 @C
 def seq_gc_clear_roots() -> None:
     pass
-
 
 @nocapture
 @C
 def seq_gc_exclude_static_roots(p: cobj, q: cobj) -> None:
     pass
 
-
 def sizeof(T: type):
     return T.__elemsize__
-
 
 def atomic(T: type):
     return T.__atomic__
 
-
 def alloc(sz: int):
     return seq_alloc(sz)
-
 
 # Allocates a block of memory via GC, where the
 # caller guarantees that this block will not store
@@ -75,30 +61,23 @@ def alloc(sz: int):
 def alloc_atomic(sz: int):
     return seq_alloc_atomic(sz)
 
-
 def realloc(p: cobj, newsz: int, oldsz: int):
     return seq_realloc(p, newsz, oldsz)
-
 
 def free(p: cobj):
     seq_free(p)
 
-
 def add_roots(start: cobj, end: cobj):
     seq_gc_add_roots(start, end)
-
 
 def remove_roots(start: cobj, end: cobj):
     seq_gc_remove_roots(start, end)
 
-
 def clear_roots():
     seq_gc_clear_roots()
 
-
 def exclude_static_roots(start: cobj, end: cobj):
     seq_gc_exclude_static_roots(start, end)
-
 
 def register_finalizer(p):
     if hasattr(p, "__del__"):
@@ -107,7 +86,6 @@ def register_finalizer(p):
             Ptr[T](__ptr__(x).as_byte())[0].__del__()
 
         seq_register_finalizer(p.__raw__(), f(T=type(p), ...).__raw__())
-
 
 def construct_ref[T](args) -> T:
     p = T.__new__()

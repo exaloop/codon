@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <iostream>
@@ -509,5 +511,9 @@ private:
 } // namespace analyze
 } // namespace ir
 } // namespace codon
+
+template <>
+struct fmt::formatter<codon::ir::analyze::dataflow::CFGraph> : fmt::ostream_formatter {
+};
 
 #undef DEFAULT_VISIT

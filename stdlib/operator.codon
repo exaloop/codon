@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 lt = lambda a, b: a < b
 le = lambda a, b: a <= b
@@ -13,7 +13,6 @@ __ne__ = ne
 __gt__ = gt
 __ge__ = ge
 
-
 def not_(a) -> bool:
     if hasattr(a, "__bool__"):
         return not bool(a)
@@ -22,160 +21,116 @@ def not_(a) -> bool:
     else:
         compile_error("argument has no __bool__ or __len__ methods")
 
-
 def truth(a) -> bool:
     return bool(a)
-
 
 def is_(a, b) -> bool:
     return a is b
 
-
 def is_not(a, b) -> bool:
     return a is not b
-
 
 def abs(a):
     return a.__abs__()
 
-
 __abs__ = abs
-
 
 def add(a, b):
     return a + b
 
-
 __add__ = add
-
 
 def and_(a, b):
     return a & b
 
-
 __and__ = and_
-
 
 def floordiv(a, b):
     return a // b
 
-
 __floordiv__ = floordiv
-
 
 def index(a):
     return a.__index__()
 
-
 __index__ = index
-
 
 def inv(a):
     return ~a
-
 
 invert = inv
 __inv__ = inv
 __invert__ = inv
 
-
 def lshift(a, b):
     return a << b
 
-
 __lshift__ = lshift
-
 
 def mod(a, b):
     return a % b
 
-
 __mod__ = mod
-
 
 def mul(a, b):
     return a * b
 
-
 __mul__ = mul
-
 
 def matmul(a, b):
     return a @ b
 
-
 __matmul__ = matmul
-
 
 def neg(a):
     return -a
 
-
 __neg__ = neg
-
 
 def or_(a, b):
     return a | b
 
-
 __or__ = or_
-
 
 def pos(a):
     return +a
 
-
 __pos__ = pos
-
 
 def pow(a, b):
     return a ** b
 
-
 __pow__ = pow
-
 
 def rshift(a, b):
     return a >> b
 
-
 __rshift__ = rshift
-
 
 def sub(a, b):
     return a - b
 
-
 __sub__ = sub
-
 
 def truediv(a, b):
     return a / b
 
-
 __truediv__ = truediv
-
 
 def xor(a, b):
     return a ^ b
 
-
 __xor__ = xor
-
 
 def concat(a, b):
     return a + b
 
-
 __concat__ = concat
-
 
 def contains(a, b):
     return b in a  # intentionally reversed
 
-
 __contains__ = contains
-
 
 def countOf(a, b):
     n = 0
@@ -184,20 +139,15 @@ def countOf(a, b):
             n += 1
     return n
 
-
 def delitem(a, b):
     del a[b]
 
-
 __delitem__ = delitem
-
 
 def getitem(a, b):
     return a[b]
 
-
 __getitem__ = getitem
-
 
 def indexOf(a, b):
     n = 0
@@ -207,13 +157,10 @@ def indexOf(a, b):
         n += 1
     raise ValueError(f"sequence.index(x): x not in sequence")
 
-
 def setitem(a, b, c):
     a[b] = c
 
-
 __setitem__ = setitem
-
 
 def length_hint(a, default=0):
     if hasattr(a, "__len__"):
@@ -223,9 +170,10 @@ def length_hint(a, default=0):
     else:
         return default
 
-
-# attrgetter not implemented
-
+def attrgetter(attr: Static[str]):
+    def getter(obj):
+        return getattr(obj, attr)
+    return getter
 
 def itemgetter(*items):
     if staticlen(items) == 1:
@@ -242,117 +190,91 @@ def itemgetter(*items):
 
         return g
 
-
-# methodcaller not implemented
-
+def methodcaller(name: Static[str], *args, **kwargs):
+    def caller(obj):
+        return getattr(obj, name)(*args, **kwargs)
+    return caller
 
 def iadd(a, b):
     a += b
     return a
 
-
 __iadd__ = iadd
-
 
 def iand(a, b):
     a &= b
     return a
 
-
 __iand__ = iand
-
 
 def iconcat(a, b):
     a += b
     return a
 
-
 __iconcat__ = iconcat
-
 
 def ifloordiv(a, b):
     a //= b
     return a
 
-
 __ifloordiv__ = ifloordiv
-
 
 def ilshift(a, b):
     a <<= b
     return a
 
-
 __ilshift__ = ilshift
-
 
 def imod(a, b):
     a %= b
     return a
 
-
 __imod__ = imod
-
 
 def imul(a, b):
     a *= b
     return a
 
-
 __imul__ = imul
-
 
 def imatmul(a, b):
     a @= b
     return a
 
-
 __imatmul__ = imatmul
-
 
 def ior(a, b):
     a |= b
     return a
 
-
 __ior__ = ior
-
 
 def ipow(a, b):
     a **= b
     return a
 
-
 __ipow__ = ipow
-
 
 def irshift(a, b):
     a >>= b
     return a
 
-
 __irshift__ = irshift
-
 
 def isub(a, b):
     a -= b
     return a
 
-
 __isub__ = isub
-
 
 def itruediv(a, b):
     a /= b
     return a
 
-
 __itruediv__ = itruediv
-
 
 def ixor(a, b):
     a ^= b
     return a
-
 
 __ixor__ = ixor

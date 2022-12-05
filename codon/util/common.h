@@ -1,14 +1,19 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include "llvm/Support/Path.h"
 #include <chrono>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+#include <fmt/std.h>
 #include <iostream>
 #include <ostream>
 
+#include "codon/compiler/error.h"
 #include "codon/config/config.h"
 #include "codon/parser/ast/error.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
@@ -133,11 +138,33 @@ public:
 
   void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
 };
+template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA &...args) {
+  E(e, o->getSrcInfo(), args...);
+}
+template <class... TA>
+void E(error::Error e, const codon::SrcObject &o, const TA &...args) {
+  E(e, o.getSrcInfo(), args...);
+}
+template <class... TA>
+void E(error::Error e, const std::shared_ptr<SrcObject> &o, const TA &...args) {
+  E(e, o->getSrcInfo(), args...);
+}
+
+enum MessageGroupPos {
+  NONE = 0,
+  HEAD,
+  MID,
+  LAST,
+};
 
 void compilationError(const std::string &msg, const std::string &file = "",
-                      int line = 0, int col = 0, bool terminate = true);
+                      int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                      bool terminate = true, MessageGroupPos pos = NONE);
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
-                        int line = 0, int col = 0, bool terminate = false);
+                        int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                        bool terminate = false, MessageGroupPos pos = NONE);
 
 } // namespace codon
+
+template <> struct fmt::formatter<codon::SrcInfo> : fmt::ostream_formatter {};

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "common.h"
 
 #include <cstdlib>
@@ -8,23 +10,45 @@
 namespace codon {
 namespace {
 void compilationMessage(const std::string &header, const std::string &msg,
-                        const std::string &file, int line, int col) {
+                        const std::string &file, int line, int col, int len,
+                        int errorCode, MessageGroupPos pos) {
   auto &out = getLogger().err;
   seqassertn(!(file.empty() && (line > 0 || col > 0)),
              "empty filename with non-zero line/col: file={}, line={}, col={}", file,
              line, col);
   seqassertn(!(col > 0 && line <= 0), "col but no line: file={}, line={}, col={}", file,
              line, col);
-  out << "\033[1m";
-  if (!file.empty())
-    out << file.substr(file.rfind('/') + 1);
+
+  switch (pos) {
+  case MessageGroupPos::NONE:
+    break;
+  case MessageGroupPos::HEAD:
+    break;
+  case MessageGroupPos::MID:
+    fmt::print("├─ ");
+    break;
+  case MessageGroupPos::LAST:
+    fmt::print("╰─ ");
+    break;
+  }
+
+  fmt::print(out, "\033[1m");
+  if (!file.empty()) {
+    auto f = file.substr(file.rfind('/') + 1);
+    fmt::print(out, "{}", f == "-" ? "<stdin>" : f);
+  }
   if (line > 0)
-    out << ":" << line;
+    fmt::print(out, ":{}", line);
   if (col > 0)
-    out << ":" << col;
+    fmt::print(out, ":{}", col);
+  if (len > 0)
+    fmt::print(out, "-{}", col + len);
   if (!file.empty())
-    out << ": ";
-  out << header << "\033[1m " << msg << "\033[0m" << std::endl;
+    fmt::print(out, ": ");
+  fmt::print(out, "{}\033[1m {}\033[0m{}\n", header, msg,
+             errorCode != -1
+                 ? fmt::format(" (see https://exaloop.io/error/{:04d})", errorCode)
+                 : "");
 }
 
 std::vector<Logger> loggers;
@@ -36,15 +60,19 @@ std::ostream &operator<<(std::ostream &out, const codon::SrcInfo &src) {
 }
 
 void compilationError(const std::string &msg, const std::string &file, int line,
-                      int col, bool terminate) {
-  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col);
+                      int col, int len, int errorCode, bool terminate,
+                      MessageGroupPos pos) {
+  compilationMessage("\033[1;31merror:\033[0m", msg, file, line, col, len, errorCode,
+                     pos);
   if (terminate)
     exit(EXIT_FAILURE);
 }
 
 void compilationWarning(const std::string &msg, const std::string &file, int line,
-                        int col, bool terminate) {
-  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col);
+                        int col, int len, int errorCode, bool terminate,
+                        MessageGroupPos pos) {
+  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, errorCode, len,
+                     pos);
   if (terminate)
     exit(EXIT_FAILURE);
 }

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <ostream>
@@ -127,3 +129,6 @@ public:
 
 } // namespace ast
 } // namespace codon
+
+template <>
+struct fmt::formatter<codon::ast::FormatVisitor> : fmt::ostream_formatter {};

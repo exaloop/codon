@@ -1,34 +1,34 @@
-class Exc1(Exception):
+class Exc1(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('Exc1', msg)
 
     def show(self):
         print self.message
 
-class Exc2(Exception):
+class Exc2(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('Exc2', msg)
 
     def show(self):
         print self.message
 
-class A(Exception):
+class A(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('A', msg)
 
-class B(Exception):
+class B(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('B', msg)
 
-class C(Exception):
+class C(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('C', msg)
 
-class D(Exception):
+class D(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('D', msg)
 
-class E(Exception):
+class E(Static[Exception]):
     def __init__(self, msg: str):
         super().__init__('E', msg)
 

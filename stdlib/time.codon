@@ -1,37 +1,29 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from sys import stderr
-
 
 def time() -> float:
     return _C.seq_time() / 1e9
 
-
 def time_ns() -> int:
     return _C.seq_time()
-
 
 def monotonic() -> float:
     return _C.seq_time_monotonic() / 1e9
 
-
 def monotonic_ns() -> int:
     return _C.seq_time_monotonic()
-
 
 def perf_counter() -> float:
     return _C.seq_time_highres() / 1e9
 
-
 def perf_counter_ns() -> int:
     return _C.seq_time_highres()
-
 
 def sleep(secs: float):
     if secs < 0:
         raise ValueError("sleep length must be non-negative")
     _C.seq_sleep(secs)
-
 
 class TimeInterval:
     """
@@ -64,7 +56,6 @@ class TimeInterval:
         ret = self.report(msg)
         self.start = _C.seq_time()
 
-
 def timing(msg: str = "") -> TimeInterval:
     """
     Example usage:
@@ -76,7 +67,6 @@ def timing(msg: str = "") -> TimeInterval:
             foo()  # prints runtime of foo
     """
     return TimeInterval(0, msg)
-
 
 @tuple
 class struct_time:
@@ -187,7 +177,6 @@ def mktime(t) -> int:
         tm = struct_time(*t)
         return _C.seq_mktime(__ptr__(tm).as_byte())
 
-
 # pytime.h funcs
 
 _ROUND_HALF_EVEN = 0
@@ -198,10 +187,8 @@ _ROUND_UP = 3
 _MIN = 0x8000000000000000
 _MAX = 0x7FFFFFFFFFFFFFFF
 
-
 def _overflow():
     raise OverflowError("timestamp too large")
-
 
 def _add(t1: int, t2: int) -> int:
     if t2 > 0 and t1 > _MAX - t2:
@@ -211,14 +198,12 @@ def _add(t1: int, t2: int) -> int:
     else:
         return t1 + t2
 
-
 def _mul_check_overflow(a: int, b: int) -> bool:
     if b != 0:
         # assert b > 0
         return (a < _MIN // b) or (_MAX // b < a)
     else:
         return False
-
 
 def _mul(t: int, k: int) -> int:
     # assert k >= 0
@@ -227,13 +212,11 @@ def _mul(t: int, k: int) -> int:
     else:
         return t * k
 
-
 def _muldiv(ticks: int, mul: int, div: int) -> int:
     intpart = ticks / div
     ticks %= div
     remaining = _mul(ticks, mul) // div
     return _add(_mul(intpart, mul), remaining)
-
 
 def _round_half_even(x: float) -> float:
     from math import fabs
@@ -242,7 +225,6 @@ def _round_half_even(x: float) -> float:
     if fabs(x - rounded) == 0.5:
         rounded = 2.0 * (x / 2.0).__round__()
     return rounded
-
 
 def _round(x: float, mode: int) -> float:
     d = x
@@ -255,7 +237,6 @@ def _round(x: float, mode: int) -> float:
     elif mode == _ROUND_UP:
         d = d.__ceil__() if d >= 0 else d.__floor__()
     return d
-
 
 def _double_to_denominator(d: float, idenominator: int, mode: int) -> Tuple[int, int]:
     from math import modf
@@ -281,10 +262,8 @@ def _double_to_denominator(d: float, idenominator: int, mode: int) -> Tuple[int,
     # assert 0 <= numerator < idenominator
     return sec, numerator
 
-
 def _time_to_timespec(t: float, mode: int) -> Tuple[int, int]:
     return _double_to_denominator(t, 1000000000, mode)
-
 
 def _time_to_timeval(t: float, mode: int) -> Tuple[int, int]:
     return _double_to_denominator(t, 1000000, mode)

@@ -1,7 +1,6 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.file import gzFile
-
 
 def open(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)

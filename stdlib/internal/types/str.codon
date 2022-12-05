@@ -1,11 +1,9 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @pure
 @C
 def strlen(a: cobj) -> int:
     pass
-
 
 @extend
 class str:

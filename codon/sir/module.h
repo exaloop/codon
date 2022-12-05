@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <iterator>
@@ -10,8 +12,8 @@
 #include "codon/sir/value.h"
 #include "codon/sir/var.h"
 #include "codon/util/common.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 namespace codon {
 
@@ -347,6 +349,10 @@ public:
   /// @param args the arg types
   /// @return the tuple type
   types::Type *getTupleType(std::vector<types::Type *> args);
+  /// Gets a union type.
+  /// @param types the alternative types
+  /// @return the union type
+  types::Type *getUnionType(std::vector<types::Type *> types);
   /// Gets the "none" type (i.e. empty tuple).
   /// @return none type
   types::Type *getNoneType();
@@ -415,6 +421,11 @@ public:
   /// @param base the vector base type (MUST be a primitive type)
   /// @return a vector type
   types::Type *unsafeGetVectorType(unsigned count, types::Type *base);
+  /// Gets a union type. Should generally not be used as no
+  /// type-checker information is generated.
+  /// @param types the alternative types
+  /// @return a union type
+  types::Type *unsafeGetUnionType(const std::vector<types::Type *> &types);
 
 private:
   void store(types::Type *t) {
@@ -433,3 +444,5 @@ private:
 
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::Module> : fmt::ostream_formatter {};

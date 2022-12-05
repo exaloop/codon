@@ -1,24 +1,19 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.file import _gz_errcheck
 from internal.gc import sizeof, atomic
 
-
 def pickle(x: T, jar: Jar, T: type):
     x.__pickle__(jar)
-
 
 def unpickle(jar: Jar, T: type) -> T:
     return T.__unpickle__(jar)
 
-
 def dump(x: T, f, T: type):
     x.__pickle__(f.fp)
 
-
 def load(f, T: type) -> T:
     return T.__unpickle__(f.fp)
-
 
 def _write_raw(jar: Jar, p: cobj, n: int):
     LIMIT = 0x7FFFFFFF
@@ -31,7 +26,6 @@ def _write_raw(jar: Jar, p: cobj, n: int):
         p += b
         n -= b
 
-
 def _read_raw(jar: Jar, p: cobj, n: int):
     LIMIT = 0x7FFFFFFF
     while n > 0:
@@ -43,11 +37,9 @@ def _read_raw(jar: Jar, p: cobj, n: int):
         p += b
         n -= b
 
-
 def _write(jar: Jar, x: T, T: type):
     y = __ptr__(x)
     _write_raw(jar, y.as_byte(), sizeof(T))
-
 
 def _read(jar: Jar, T: type) -> T:
     x = T()
@@ -55,9 +47,7 @@ def _read(jar: Jar, T: type) -> T:
     _read_raw(jar, y.as_byte(), sizeof(T))
     return x
 
-
 # Extend core types to allow pickling
-
 
 @extend
 class int:
@@ -67,7 +57,6 @@ class int:
     def __unpickle__(jar: Jar) -> int:
         return _read(jar, int)
 
-
 @extend
 class Int:
     def __pickle__(self, jar: Jar):
@@ -75,7 +64,6 @@ class Int:
 
     def __unpickle__(jar: Jar) -> Int[N]:
         return _read(jar, Int[N])
-
 
 @extend
 class UInt:
@@ -85,7 +73,6 @@ class UInt:
     def __unpickle__(jar: Jar) -> UInt[N]:
         return _read(jar, UInt[N])
 
-
 @extend
 class float:
     def __pickle__(self, jar: Jar):
@@ -93,7 +80,6 @@ class float:
 
     def __unpickle__(jar: Jar) -> float:
         return _read(jar, float)
-
 
 @extend
 class float32:
@@ -103,7 +89,6 @@ class float32:
     def __unpickle__(jar: Jar) -> float32:
         return _read(jar, float32)
 
-
 @extend
 class bool:
     def __pickle__(self, jar: Jar):
@@ -112,7 +97,6 @@ class bool:
     def __unpickle__(jar: Jar) -> bool:
         return _read(jar, bool)
 
-
 @extend
 class byte:
     def __pickle__(self, jar: Jar):
@@ -120,7 +104,6 @@ class byte:
 
     def __unpickle__(jar: Jar) -> byte:
         return _read(jar, byte)
-
 
 @extend
 class str:
@@ -133,7 +116,6 @@ class str:
         p = Ptr[byte](n)
         _read_raw(jar, p, n)
         return str(p, n)
-
 
 @extend
 class List:
@@ -156,7 +138,6 @@ class List:
                 arr[i] = unpickle(jar, T)
         return List[T](arr, n)
 
-
 @extend
 class DynamicTuple:
     def __pickle__(self, jar: Jar):
@@ -177,7 +158,6 @@ class DynamicTuple:
             for i in range(n):
                 p[i] = unpickle(jar, T)
         return DynamicTuple[T](p, n)
-
 
 @extend
 class Dict:
@@ -237,7 +217,6 @@ class Dict:
                 d[k] = v
                 i += 1
         return d
-
 
 @extend
 class Set:

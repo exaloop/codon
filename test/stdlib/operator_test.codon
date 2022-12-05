@@ -593,3 +593,28 @@ def test_sequence_ops():
 
 
 test_sequence_ops()
+
+
+class C:
+    foo: int
+
+    def __init__(self, foo):
+        self.foo = foo
+
+    def bar(self, k, m, n):
+        return self.foo + k + m*100 + n*1000
+
+
+@test
+def test_getter_ops():
+    v = ['a']
+    operator.attrgetter('append')(v)('hello')
+    operator.methodcaller('append', 'goodbye')(v)
+    assert v == ['a', 'hello', 'goodbye']
+
+    c = C(10)
+    assert operator.attrgetter('foo')(c) == 10
+    assert operator.methodcaller('bar', 9, n=7, m=3)(c) == 7319
+
+
+test_getter_ops()

@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @__internal__
 class __internal__:
@@ -26,13 +26,11 @@ class float:
     MIN_10_EXP = -307
     pass
 
-
 @tuple
 @__internal__
 class float32:
     MIN_10_EXP = -37
     pass
-
 
 @tuple
 @__internal__
@@ -102,6 +100,15 @@ class type:
     def __new__(obj):
         pass
 function = Function
+
+@__internal__
+class Ref[T]:
+    pass
+
+@__internal__
+@tuple
+class Union[TU]:
+    pass
 
 # dummy
 @__internal__
@@ -175,4 +182,3 @@ def statictuple(*args):
 
 def __static_print__(*args):
     pass
-

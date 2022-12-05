@@ -1,13 +1,11 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative, associative, distributive
-
 
 def check_N(N: Static[int]):
     if N <= 0:
         compile_error("N must be greater than 0")
     pass
-
 
 @extend
 class Int:
@@ -226,10 +224,10 @@ class Int:
         ret i{=N} %0
 
     def __repr__(self) -> str:
-        return str.cat(("Int[", seq_str_int(N), "](", seq_str_int(int(self)), ")"))
+        return f"Int[{N}]({int(self)})"
 
     def __str__(self) -> str:
-        return seq_str_int(int(self))
+        return int(self).__repr__()
 
     @pure
     @llvm
@@ -446,10 +444,19 @@ class UInt:
         ret i{=N} %0
 
     def __repr__(self) -> str:
-        return str.cat(("UInt[", seq_str_int(N), "](", seq_str_uint(int(self)), ")"))
+        return f"UInt[{N}]({self.__str__()})"
 
     def __str__(self) -> str:
-        return seq_str_uint(int(self))
+        return self.__format__("")
+
+    def __format__(self, format_spec: str) -> str:
+        err = byte(0)
+        ret = seq_str_uint(
+            self.__int__(), format_spec.c_str() if format_spec else cobj(), __ptr__(err)
+        )
+        if err:
+            raise ValueError(f"invalid format specifier: {ret}")
+        return ret if ret != "-nan" else "nan"
 
     def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())
@@ -457,6 +464,27 @@ class UInt:
     def len() -> int:
         return N
 
+@extend
+class Ptr:
+    def __format__(self, format_spec: str) -> str:
+        err = byte(0)
+        ret = seq_str_ptr(
+            self.as_byte(), format_spec.c_str() if format_spec else cobj(), __ptr__(err)
+        )
+        if err:
+            raise ValueError(f"invalid format specifier: {ret}")
+        return ret
+
+@extend
+class int:
+    def __format__(self, format_spec: str) -> str:
+        err = byte(0)
+        ret = seq_str_int(
+            self, format_spec.c_str() if format_spec else cobj(), __ptr__(err)
+        )
+        if err:
+            raise ValueError(f"invalid format specifier: {ret}")
+        return ret
 
 i8 = Int[8]
 i16 = Int[16]

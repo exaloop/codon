@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -29,7 +31,7 @@ bool isMacOS() {
 }
 
 const std::vector<std::string> &supportedExtensions() {
-  static const std::vector<std::string> extensions = {".codon", ".py"};
+  static const std::vector<std::string> extensions = {".codon", ".py", ".seq"};
   return extensions;
 }
 
@@ -57,10 +59,21 @@ std::string makeOutputFilename(const std::string &filename,
 }
 
 void display(const codon::error::ParserErrorInfo &e) {
-  for (auto &msg : e) {
-    codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
-                            msg.getColumn(),
-                            /*terminate=*/false);
+  using codon::MessageGroupPos;
+  for (auto &group : e) {
+    for (auto &msg : group) {
+      MessageGroupPos pos = MessageGroupPos::NONE;
+      if (&msg == &group.front()) {
+        pos = MessageGroupPos::HEAD;
+      } else if (&msg == &group.back()) {
+        pos = MessageGroupPos::LAST;
+      } else {
+        pos = MessageGroupPos::MID;
+      }
+      codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
+                              msg.getColumn(), msg.getLength(), msg.getErrorCode(),
+                              /*terminate=*/false, pos);
+    }
   }
 }
 
@@ -129,13 +142,6 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   initLogFlags(log);
 
-  auto &exts = supportedExtensions();
-  if (input != "-" && std::find_if(exts.begin(), exts.end(), [&](auto &ext) {
-                        return hasExtension(input, ext);
-                      }) == exts.end())
-    codon::compilationError(
-        "input file is expected to be a .codon/.py file, or '-' for stdin");
-
   std::unordered_map<std::string, std::string> defmap;
   for (const auto &define : defines) {
     auto eq = define.find('=');
@@ -167,7 +173,8 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
     bool failed = false;
     llvm::handleAllErrors(
         compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
-          codon::compilationError(e.getMessage(), /*file=*/"", /*line=*/0, /*col=*/0,
+          codon::compilationError(e.getMessage(), /*file=*/"",
+                                  /*line=*/0, /*col=*/0, /*len*/ 0, /*errorCode*/ -1,
                                   /*terminate=*/false);
           failed = true;
         });
@@ -262,7 +269,8 @@ int jitMode(const std::vector<const char *> &args) {
     llvm::handleAllErrors(jit.getCompiler()->load(plugin),
                           [&failed](const codon::error::PluginErrorInfo &e) {
                             codon::compilationError(e.getMessage(), /*file=*/"",
-                                                    /*line=*/0, /*col=*/0,
+                                                    /*line=*/0, /*col=*/0, /*len=*/0,
+                                                    /*errorCode*/ -1,
                                                     /*terminate=*/false);
                             failed = true;
                           });

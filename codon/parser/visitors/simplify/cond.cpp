@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 #include <vector>
@@ -7,6 +9,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -95,7 +98,7 @@ StmtPtr SimplifyVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
     for (auto it = 0; it < items.size(); it++)
       if (items[it]->getEllipsis()) {
         if (i != items.size())
-          error("cannot have multiple ranges in a pattern");
+          E(Error::MATCH_MULTI_ELLIPSIS, items[it], "multiple ellipses in pattern");
         i = it;
       }
     return i;

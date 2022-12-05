@@ -119,7 +119,7 @@ def test_12(a, b):
     z = {'z': y}
     g = z['z'][0][2][0]
     assert expect_capture(True, True, (1,))  # a
-    assert expect_capture(True, True, ())    # b
+    assert expect_capture(True, True, (0,))  # b
     return z
 test_12([42], [[0]])
 

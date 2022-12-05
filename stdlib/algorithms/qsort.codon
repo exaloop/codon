@@ -1,4 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Parts of this file: https://github.com/orlp/pdqsort
 # License:
 #    Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
@@ -18,7 +18,6 @@
 #
 #    3. This notice may not be removed or altered from any source distribution.
 
-
 def _med3(
     a: int, b: int, c: int, d: Array[T], k: Callable[[T], S], T: type, S: type
 ) -> int:
@@ -31,10 +30,8 @@ def _med3(
             else (c if not (k(d[a]) < k(d[c]) or k(d[a]) == k(d[c])) else a)
         )
 
-
 def _swap(i: int, j: int, a: Array[T], T: type):
     a[i], a[j] = a[j], a[i]
-
 
 def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
     while n > 0:
@@ -42,7 +39,6 @@ def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
         i += 1
         j += 1
         n -= 1
-
 
 def _qsort(
     arr: Array[T], frm: int, cnt: int, key: Callable[[T], S], T: type, S: type
@@ -112,7 +108,6 @@ def _qsort(
     if span > 1:
         _qsort(arr, hi - span, span, key)
 
-
 def qsort_array(
     collection: Array[T], size: int, key: Callable[[T], S], T: type, S: type
 ):
@@ -124,7 +119,6 @@ def qsort_array(
     """
     _qsort(collection, 0, size, key)
 
-
 def qsort_inplace(
     collection: List[T], key: Callable[[T], S], T: type, S: type
 ):
@@ -135,7 +129,6 @@ def qsort_inplace(
     Sorts the list inplace.
     """
     qsort_array(collection.arr, collection.len, key)
-
 
 def qsort(collection: List[T], key: Callable[[T], S], T: type, S: type) -> List[T]:
     """

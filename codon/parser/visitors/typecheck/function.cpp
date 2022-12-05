@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -7,6 +9,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -29,7 +32,9 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (transform(stmt->expr)) {
     // Wrap expression to match the return type
     if (!ctx->getRealizationBase()->returnType->getUnbound())
-      wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType);
+      if (!wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType)) {
+        return;
+      }
 
     // Special case: partialize functions if we are returning them
     if (stmt->expr->getType()->getFunc() &&
@@ -189,11 +194,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
       (stmt->attributes.has(Attr::C) && !stmt->attributes.has(Attr::CVarArg))) {
     if (!funcTyp->canRealize())
-      error("builtins and external functions must be realizable");
+      E(Error::FN_REALIZE_BUILTIN, stmt);
   }
 
   // Debug information
-  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp->debugString(true));
+  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp);
 }
 
 /// Make an empty partial call `fn(...)` for a given function.
@@ -211,7 +216,7 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
   auto partialTypeName = generatePartialStub(mask, fn.get());
   std::string var = ctx->cache->getTemporaryVar("partial");
   // Generate kwtuple for potential **kwargs
-  auto kwName = generateTuple(0, "KwTuple", {});
+  auto kwName = generateTuple(0, TYPE_KWTUPLE, {});
   // `partial = Partial.MASK((), KwTuple())`
   // (`()` for *args and `KwTuple()` for **kwargs)
   ExprPtr call =

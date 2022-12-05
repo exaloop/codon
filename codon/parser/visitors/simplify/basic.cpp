@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <memory>
 #include <string>
 #include <tuple>
@@ -10,6 +12,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -63,7 +66,7 @@ ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
   if (!expr->intValue) {
     /// TODO: currently assumes that ints are always 64-bit.
     /// Should use str constructors if available for ints with a suffix instead.
-    error("integer {} out of range", expr->value);
+    E(Error::INT_RANGE, expr, expr->value);
   }
 
   /// Handle fixed-width integers: suffixValue is a pointer to NN if the suffix
@@ -108,7 +111,7 @@ ExprPtr SimplifyVisitor::transformFloat(FloatExpr *expr) {
   if (!expr->floatValue) {
     /// TODO: currently assumes that floats are always 64-bit.
     /// Should use str constructors if available for floats with suffix instead.
-    error("float {} out of range", expr->value);
+    E(Error::FLOAT_RANGE, expr, expr->value);
   }
 
   if (expr->suffix.empty()) {
@@ -146,17 +149,24 @@ ExprPtr SimplifyVisitor::transformFString(const std::string &value) {
         if (!code.empty() && code.back() == '=') {
           // Special case: f"{x=}"
           code = code.substr(0, code.size() - 1);
-          items.push_back(N<StringExpr>(format("{}=", code)));
+          items.push_back(N<StringExpr>(fmt::format("{}=", code)));
         }
-        // Every expression is wrapped within `str`
-        items.push_back(
-            N<CallExpr>(N<IdExpr>("str"), parseExpr(ctx->cache, code, offset)));
+        auto [expr, format] = parseExpr(ctx->cache, code, offset);
+        if (!format.empty()) {
+          items.push_back(
+              N<CallExpr>(N<DotExpr>(expr, "__format__"), N<StringExpr>(format)));
+        } else {
+          // Every expression is wrapped within `str`
+          items.push_back(N<CallExpr>(N<IdExpr>("str"), expr));
+        }
       }
       braceStart = i + 1;
     }
   }
-  if (braceCount)
-    error("f-string braces are not balanced");
+  if (braceCount > 0)
+    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
+  if (braceCount < 0)
+    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
   if (braceStart != value.size())
     items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
   return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));

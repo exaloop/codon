@@ -1,11 +1,13 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "common.h"
 
 #include <string>
 #include <vector>
 
-#include "codon/util/fmt/format.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include <fmt/format.h>
 
 namespace codon::ast {
 
@@ -137,16 +139,6 @@ bool isdigit(const std::string &str) {
   return std::all_of(str.begin(), str.end(), ::isdigit);
 }
 
-/// AST utilities
-
-void error(const char *format) { throw exc::ParserException(format); }
-void error(const ::codon::SrcInfo &info, const char *format) {
-  throw exc::ParserException(format, info);
-}
-void error(const ::codon::SrcInfo &info, const std::string &format) {
-  throw exc::ParserException(format, info);
-}
-
 /// Path utilities
 
 std::string executable_path(const char *argv0) {
@@ -194,8 +186,8 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
   if (!isStdLib && startswith(s, module0Root))
     root = module0Root;
   const std::string ext = ".codon";
-  seqassertn(startswith(s, root) && endswith(s, ext), "bad path substitution: {}, {}",
-             s, root);
+  seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
+             "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE

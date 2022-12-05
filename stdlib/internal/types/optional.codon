@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @extend
 class Optional:
@@ -73,9 +72,7 @@ class Optional:
             return (not self_has) and (not other_has)
         return self.__val__() is other.__val__()
 
-
 optional = Optional
-
 
 def unwrap(opt: Optional[T], T: type) -> T:
     if opt.__has__():

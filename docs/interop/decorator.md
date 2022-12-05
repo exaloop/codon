@@ -67,6 +67,11 @@ consider returning any necessary values and performing modifications
 in Python.
 {% endhint %}
 
+{% hint style="warning" %}
+Polymorphism and inheritance are not yet supported in JIT mode.
+{% endhint %}
+
+
 # Type conversions
 
 `@codon.jit` will attempt to convert any Python types that it can

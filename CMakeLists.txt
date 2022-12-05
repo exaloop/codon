@@ -37,6 +37,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 find_package(LLVM REQUIRED)
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
@@ -50,8 +54,9 @@ else()
   set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
-add_executable(peg2cpp codon/util/peg2cpp.cpp codon/util/cpp-peglib/peglib.h)
-target_link_libraries(peg2cpp Threads::Threads)
+add_executable(peg2cpp codon/util/peg2cpp.cpp)
+target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
+target_link_libraries(peg2cpp PRIVATE Threads::Threads fmt)
 add_custom_command(
   OUTPUT codon_rules.cpp
   COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/grammar.peg
@@ -75,7 +80,7 @@ endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE omp backtrace ${STATIC_LIBCPP}
+target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
   target_link_libraries(
@@ -134,6 +139,13 @@ set(CODON_HPPFILES
     codon/parser/ast/expr.h
     codon/parser/ast/stmt.h
     codon/parser/ast/types.h
+    codon/parser/ast/types/type.h
+    codon/parser/ast/types/link.h
+    codon/parser/ast/types/class.h
+    codon/parser/ast/types/function.h
+    codon/parser/ast/types/union.h
+    codon/parser/ast/types/static.h
+    codon/parser/ast/types/traits.h
     codon/parser/cache.h
     codon/parser/common.h
     codon/parser/ctx.h
@@ -203,46 +215,6 @@ set(CODON_HPPFILES
     codon/sir/value.h
     codon/sir/var.h
     codon/util/common.h
-    codon/util/cpp-peglib/peglib.h
-    codon/util/fmt/chrono.h
-    codon/util/fmt/color.h
-    codon/util/fmt/compile.h
-    codon/util/fmt/core.h
-    codon/util/fmt/format-inl.h
-    codon/util/fmt/format.h
-    codon/util/fmt/locale.h
-    codon/util/fmt/ostream.h
-    codon/util/fmt/posix.h
-    codon/util/fmt/printf.h
-    codon/util/fmt/ranges.h
-    codon/util/semver/semver.h
-    codon/util/toml++/toml.h
-    codon/util/toml++/toml_default_formatter.hpp
-    codon/util/toml++/toml_node.hpp
-    codon/util/toml++/toml_preprocessor.h
-    codon/util/toml++/toml_utf8_streams.hpp
-    codon/util/toml++/toml_array.h
-    codon/util/toml++/toml_formatter.h
-    codon/util/toml++/toml_node_view.h
-    codon/util/toml++/toml_print_to_stream.h
-    codon/util/toml++/toml_value.h
-    codon/util/toml++/toml_array.hpp
-    codon/util/toml++/toml_instantiations.hpp
-    codon/util/toml++/toml_parse_error.h
-    codon/util/toml++/toml_table.h
-    codon/util/toml++/toml_version.h
-    codon/util/toml++/toml_common.h
-    codon/util/toml++/toml_json_formatter.h
-    codon/util/toml++/toml_parse_result.h
-    codon/util/toml++/toml_table.hpp
-    codon/util/toml++/toml_date_time.h
-    codon/util/toml++/toml_json_formatter.hpp
-    codon/util/toml++/toml_parser.h
-    codon/util/toml++/toml_utf8.h
-    codon/util/toml++/toml_default_formatter.h
-    codon/util/toml++/toml_node.h
-    codon/util/toml++/toml_parser.hpp
-    codon/util/toml++/toml_utf8_streams.h
     extra/jupyter/jupyter.h
     extra/python/codon/jit.h)
 set(CODON_CPPFILES
@@ -255,7 +227,13 @@ set(CODON_CPPFILES
     codon/dsl/plugins.cpp
     codon/parser/ast/expr.cpp
     codon/parser/ast/stmt.cpp
-    codon/parser/ast/types.cpp
+    codon/parser/ast/types/type.cpp
+    codon/parser/ast/types/link.cpp
+    codon/parser/ast/types/class.cpp
+    codon/parser/ast/types/function.cpp
+    codon/parser/ast/types/union.cpp
+    codon/parser/ast/types/static.cpp
+    codon/parser/ast/types/traits.cpp
     codon/parser/cache.cpp
     codon/parser/common.cpp
     codon/parser/peg/peg.cpp
@@ -338,9 +316,9 @@ set(CODON_CPPFILES
     codon/sir/value.cpp
     codon/sir/var.cpp
     codon/util/common.cpp
-    codon/util/fmt/format.cpp
     extra/jupyter/jupyter.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
+target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(CODON_JUPYTER)
   add_compile_definitions(CODON_JUPYTER)
@@ -389,9 +367,9 @@ llvm_map_components_to_libnames(
   Vectorize
   Passes)
 if(APPLE)
-  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} dl codonrt)
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt)
 else()
-  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} dl codonrt)
+  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt dl codonrt)
 endif()
 
 # Gather headers
@@ -429,22 +407,22 @@ add_custom_target(
 add_dependencies(libs codonrt codonc)
 
 if(APPLE AND APPLE_ARM)
-  add_custom_target(
-    libs_apple ALL
-    COMMENT "Collecting Apple-specific libraries"
-    BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
-    VERBATIM
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
-    COMMAND
-      ${CMAKE_COMMAND} -E copy
-      "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
-      "${CMAKE_BINARY_DIR}/lib/codon")
-  add_dependencies(libs_apple codonrt)
+  # add_custom_target(
+  #   libs_apple_arm ALL
+  #   COMMENT "Collecting Apple-specific libraries"
+  #   BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+  #   VERBATIM
+  #   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+  #   COMMAND
+  #     ${CMAKE_COMMAND} -E copy
+  #     "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
+  #     "${CMAKE_BINARY_DIR}/lib/codon")
+  # add_dependencies(libs_apple_arm codonrt)
 endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} codonc Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt codonc Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -477,6 +455,6 @@ set(CODON_TEST_CPPFILES
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/sir
                                               "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test codonc codonrt gtest_main)
+target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")

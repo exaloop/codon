@@ -29,7 +29,7 @@ print a  #: []
 #%% assign_type_err,barebones
 a = 5
 if 1:
-    a = 3.3  #! cannot unify int and float
+    a = 3.3  #! 'float' does not match expected type 'int'
 a
 
 #%% assign_atomic,barebones
@@ -132,13 +132,13 @@ print fo.x #: 6
 #%% assign_member_err_1,barebones
 class Foo:
     x: Optional[int]
-Foo().y = 5 #! cannot find 'y' in Foo
+Foo().y = 5 #! 'Foo' object has no attribute 'y'
 
 #%% assign_member_err_2,barebones
 @tuple
 class Foo:
     x: Optional[int]
-Foo().x = 5 #! tuple element 'x' is read-only
+Foo().x = 5 #! cannot modify tuple attributes
 
 #%% return,barebones
 def foo():
@@ -196,7 +196,7 @@ for i in range(10):
 #%% for_error,barebones
 for i in 1:
     pass
-#! cannot find '__iter__' in int
+#! 'int' object has no attribute '__iter__'
 
 #%% for_void,barebones
 def foo(): yield
@@ -238,7 +238,7 @@ print foo(N=3, x=(1, 2)) #: ()
 print foo(N=1, x=(1, 2, 3)) #: (3)
 
 #%% try_throw,barebones
-class MyError(Exception):
+class MyError(Static[Exception]):
     def __init__(self, message: str):
         super().__init__('MyError', message)
 try:
@@ -267,14 +267,13 @@ except MyError as e:
 
 #%% throw_error,barebones
 raise 'hello'
-#! custom error: exceptions must derive from BaseException
-#! while realizing __internal__.set_header
+#! exceptions must derive from BaseException
 
 #%% function_builtin_error,barebones
 @__force__
 def foo(x):
     pass
-#! builtins and external functions must be realizable
+#! builtin, exported and external functions cannot be generic
 
 #%% extend,barebones
 @extend
@@ -330,7 +329,7 @@ class Bear:
 print Bear.woof('!')
 #: bear woof ! bear w--f !
 
-class PolarBear(Bear):
+class PolarBear(Static[Bear]):
     def woof():
         return 'polar ' + superf('@')
 print PolarBear.woof()
@@ -342,8 +341,8 @@ class Foo:
         superf(a)
         print 'foo-1', a
 Foo.foo(1)
-#! no matching superf methods are available
-#! while realizing Foo.foo:0
+#! no superf methods found
+#! during the realization of foo(a: int)
 
 #%% staticmethod,barebones
 class Foo:

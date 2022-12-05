@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -7,13 +9,14 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
 void SimplifyVisitor::visit(IdExpr *expr) {
   auto val = ctx->findDominatingBinding(expr->value);
   if (!val)
-    error("identifier '{}' not found", expr->value);
+    E(Error::ID_NOT_FOUND, expr, expr->value);
 
   // If we are accessing an outside variable, capture it or raise an error
   auto captured = checkCapture(val);
@@ -161,16 +164,16 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
     return false;
 
   // Case: a global variable that has not been marked with `global` statement
-  if (val->isVar() && val->getBaseName().empty()) {
+  if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
     val->noShadow = true;
-    if (val->scope.size() == 1 && !val->isStatic())
+    if (!val->isStatic())
       ctx->cache->addGlobal(val->canonicalName);
     return false;
   }
 
   // Check if a real variable (not a static) is defined outside the current scope
   if (crossCaptureBoundary)
-    error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
+    E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), ctx->cache->rev(val->canonicalName));
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is enabled
@@ -195,12 +198,13 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
       newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
     newVal->baseName = ctx->getBaseName();
     newVal->noShadow = true;
+    newVal->scope = ctx->getBase()->scope;
     return true;
   }
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled
-  error("cannot access nonlocal variable '{}'", ctx->cache->rev(val->canonicalName));
+  E(Error::ID_NONLOCAL, getSrcInfo(), ctx->cache->rev(val->canonicalName));
   return false;
 }
 
@@ -243,9 +247,10 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
       }
     }
     if (itemName.empty() && importName.empty())
-      error("identifier '{}' not found", chain[importEnd]);
+      E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
     if (itemName.empty())
-      error("identifier '{}' not found in {}", chain[importEnd], importName);
+      E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
+        ctx->cache->imports[importName].moduleName);
     importEnd = itemEnd;
   }
   return {importEnd, val};

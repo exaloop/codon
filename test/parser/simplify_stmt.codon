@@ -2,10 +2,10 @@
 pass
 
 #%% continue_error,barebones
-continue #! continue outside of a loop
+continue #! 'continue' outside loop
 
 #%% break_error,barebones
-break #! break outside of a loop
+break #! 'break' outside loop
 
 #%% assign,barebones
 a = 1
@@ -68,18 +68,18 @@ f[1] = -8
 print f.a #: 12
 
 #%% assign_err_1,barebones
-a, *b, c, *d = 1,2,3,4,5 #! multiple unpack expressions
+a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
 
 #%% assign_err_2,barebones
 a = [1, 2, 3]
-a[1]: int = 3 #! syntax error
+a[1]: int = 3 #! syntax error, unexpected ':'
 
 #%% assign_err_3,barebones
 a = 5
-a.x: int = 3 #! syntax error
+a.x: int = 3 #! syntax error, unexpected ':'
 
 #%% assign_err_4,barebones
-*x = range(5) #! invalid assignment
+*x = range(5) #! cannot assign to given expression
 
 #%% assign_err_5,barebones
 try:
@@ -101,7 +101,7 @@ print a #: s
 #%% assign_err_must_exist,barebones
 a = 1
 def foo():
-    a += 2 #! variable 'a' cannot be updated
+    a += 2 #! local variable 'a' referenced before assignment
 
 #%% assign_rename,barebones
 y = int
@@ -113,10 +113,10 @@ x = foo
 print x(1) #: 2
 
 #%% assign_err_6,barebones
-x = bar #! identifier 'bar' not found
+x = bar #! name 'bar' is not defined
 
 #%% assign_err_7,barebones
-foo() += bar #! invalid assignment
+foo() += bar #! cannot assign to given expression
 
 #%% assign_update_eq,barebones
 a = 5
@@ -145,7 +145,7 @@ print f #: 9
 #%% del,barebones
 a = 5
 del a
-print a #! identifier 'a' not found
+print a #! name 'a' is not defined
 
 #%% del_index,barebones
 y = [1, 2]
@@ -154,7 +154,7 @@ print y #: [2]
 
 #%% del_error,barebones
 a = [1]
-del a.ptr #! invalid del statement
+del a.ptr #! cannot delete given expression
 
 #%% assert,barebones
 assert True
@@ -185,13 +185,13 @@ def foo(i, j):
 print 3 |> foo(1)  #: 4
 
 #%% return_fail,barebones
-return #! expected function body
+return #! 'return' outside function
 
 #%% yield_fail,barebones
-yield 5 #! expected function body
+yield 5 #! 'yield' outside function
 
 #%% yield_fail_2,barebones
-(yield) #! expected function body
+(yield) #! 'yield' outside function
 
 #%% while_else,barebones
 a = 1
@@ -277,7 +277,7 @@ foo(range(10)) #: else
 #%% match_err_1,barebones
 match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
-#! cannot have multiple ranges in a pattern
+#! multiple ellipses in a pattern
 
 #%% match_err_2,barebones
 match [1, 2]:
@@ -295,23 +295,23 @@ print a  #: 1 2
 
 #%% global_err,barebones
 a = 1
-global a #! global or nonlocal outside o
+global a #! 'global' outside function
 
 #%% global_err_2,barebones
 def foo():
-    global b #! identifier 'b' not found
+    global b #! name 'b' is not defined
 
 #%% global_err_3,barebones
 def foo():
     b = 1
     def bar():
-        global b #! not a global variable
+        global b #! no binding for global 'b' found
 
 #%% global_err_4,barebones
 a = 1
 def foo():
     a += 1
-foo()  #! variable 'a' cannot be updated
+foo()  #! local variable 'a' referenced before assignment
 
 #%% global_ref,barebones
 a = [1]
@@ -382,18 +382,24 @@ from C import seq_flags: Int[32] as e
 # debug | standalone == 5
 print e  #: 5
 
+#%% import_c_shadow_error,barebones
+# Issue #45
+from C import sqrt(float) -> float as foo
+sqrt(100.0)  #! name 'sqrt' is not defined
+
 
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
 RT = "./libcodonrt." + dlext()
 if RT[-3:] == ".so":
     RT = "build/" + RT[2:]
-from C import RT.seq_str_int(int) -> str as sp
-print sp(65)  #: 65
+from C import RT.seq_str_int(int, cobj, cobj) -> str as sp
+p = cobj(1)
+print sp(65, cobj(), p)  #: 65
 
 #%% import_c_dylib_error,barebones
 from C import "".seq_print(str) as sp
-sp("hi!") #! syntax error
+sp("hi!") #! syntax error, unexpected '"'
 
 #%% import,barebones
 zoo, _zoo = 1, 1
@@ -416,11 +422,13 @@ print a.b.A.B.b_foo().__add__(1) #: a.b.A.B.b_foo()
 #: 2
 
 print str(a.b)[:9], str(a.b)[-20:] #: <module ' a/b/__init__.codon'>
+print Int[a.b.stt].__class__.__name__  #: Int[5]
 
 from a.b import *
 har() #: a.b.har a.b.__init__ a.b.c
 a.b.har() #: a.b.har a.b.__init__ a.b.c
 fx() #: a.foo
+print(stt, Int[stt].__class__.__name__)  #: 5 Int[5]
 
 from a import *
 print zoo, _zoo, __name__  #: 5 1 __main__
@@ -459,39 +467,39 @@ bar()
 
 #%% import_rec_err,barebones
 from a.b.rec1_err import bar
-#! symbol 'bar' not found in
-#! identifier 'bar' not found
+#! cannot import name 'bar' from 'a.b.rec1_err'
+#! name 'bar' is not defined
 
 #%% import_err_1,barebones
 class Foo:
-    import bar #! only function and class definitions are allowed within classes
+    import bar #! unexpected expression in class definition
 
 #%% import_err_2,barebones
-import "".a.b.c #! syntax error
+import "".a.b.c #! syntax error, unexpected '"'
 
 #%% import_err_3,barebones
-from a.b import foo() #! invalid import statement
+from a.b import foo() #! function signatures only allowed when importing C or Python functions
 
 #%% import_err_4,barebones
-from a.b.c import hai.hey #! invalid import statement
+from a.b.c import hai.hey #! expected identifier
 
 #%% import_err_4_x,barebones
-import whatever #! cannot locate import 'whatever'
+import whatever #! no module named 'whatever'
 
 #%% import_err_5,barebones
 import a.b
-print a.b.x #! identifier 'x' not found in
+print a.b.x #! cannot import name 'x' from 'a.b.__init__'
 
 #%% import_err_6,barebones
-from a.b import whatever #! symbol 'whatever' not found in
+from a.b import whatever #! cannot import name 'whatever' from 'a.b.__init__'
 
 #%% function_err_0,barebones
 def foo(a, b, a):
-    pass #! 'a' declared twice
+    pass #! duplicate argument 'a' in function definition
 
 #%% function_err_0b,barebones
 def foo(a, b=1, c):
-    pass #! non-default argument 'c' after a default argument
+    pass #! non-default argument 'c' follows default argument
 
 #%% function_err_0b_ok,barebones
 def foo(a, b=1, *c):
@@ -499,57 +507,57 @@ def foo(a, b=1, *c):
 
 #%% function_err_0c,barebones
 def foo(a, b=1, *c, *d):
-    pass #! invalid *args
+    pass #! multiple star arguments provided
 
 #%% function_err_0e,barebones
 def foo(a, b=1, *c = 1):
-    pass #! invalid *args
+    pass #! star arguments cannot have default values
 
 #%% function_err_0f,barebones
 def foo(a, b=1, **c, **kwargs):
-    pass #! invalid **kwargs
+    pass #! kwargs must be the last argument
 
 #%% function_err_0h,barebones
 def foo(a, b=1, **c = 1):
-    pass #! invalid **kwargs
+    pass #! star arguments cannot have default values
 
 #%% function_err_0i,barebones
 def foo(a, **c, d):
-    pass #! invalid **kwargs
+    pass #! kwargs must be the last argument
 
 #%% function_err_1,barebones
 def foo():
     @__force__
-    def bar(): pass #! builtins must be defined at the toplevel
+    def bar(): pass #! builtin function must be a top-level statement
 
 #%% function_err_2,barebones
 def f[T: Static[float]]():
     pass
-#! only static integers and strings are supported
+#! expected 'int' or 'str' (only integers and strings can be static)
 
 #%% function_err_3,barebones
 def f(a, b=a):
     pass
-#! identifier 'a' not found
+#! name 'a' is not defined
 
 #%% function_llvm_err_1,barebones
 @llvm
 def foo():
     blah
-#! C and LLVM functions must specify a return type
+#! return types required for LLVM and C functions
 
 #%% function_llvm_err_2,barebones
 @llvm
 def foo() -> int:
     a{={=}}
-#! invalid LLVM substitution
+#! invalid LLVM code
 
 #%% function_llvm_err_4,barebones
 a = 5
 @llvm
 def foo() -> int:
     a{=a
-#! invalid LLVM substitution
+#! invalid LLVM code
 
 #%% function_self,barebones
 class Foo:
@@ -562,7 +570,7 @@ print f.foo() #: F
 class Foo:
     def foo(self):
         return 'F'
-Foo.foo(1) #! cannot find a method 'foo' in Foo with arguments 'int'
+Foo.foo(1) #! 'Foo' object has no method 'foo' with arguments (int)
 
 #%% function_nested,barebones
 def foo(v):
@@ -602,21 +610,21 @@ print f(int) #: 0
 @foo
 class Foo:
     pass
-#! extend cannot be combined with other decorators
+#! cannot combine '@extend' with other attributes or decorators
 
 #%% class_err_1b,barebones
 size_t = i32
 @extend
 class size_t:
     pass
-#! cannot extend type alias or an instantiation (size_t)
+#! class name 'size_t' is not defined
 
 #%% class_err_2,barebones
 def foo():
     @extend
     class Foo:
         pass
-#! extend is only allowed at the toplevel
+#! class extension must be a top-level statement
 
 #%% class_nested,barebones
 class Foo:
@@ -651,13 +659,13 @@ print(f) #: (x: 5, b: (x: 6), c: (x: 7))
 class Foo:
     class Bar:
         b: Ptr[Bar]
-#! identifier 'Bar' not found
+#! name 'Bar' is not defined
 
 #%% class_err_4,barebones
 @extend
 class Foo:
     pass
-#! cannot find type 'Foo' to extend
+#! class name 'Foo' is not defined
 
 #%% class_err_5,barebones
 class Foo[T, U]:
@@ -665,42 +673,42 @@ class Foo[T, U]:
 @extend
 class Foo[T]:
     pass
-#! extensions cannot be generic or declare members
+#! class extensions cannot define data attributes and generics or inherit other classes
 
 #%% class_err_7,barebones
 class Foo:
     a: int
     a: int
-#! 'a' declared twice
+#! duplicate data attribute 'a' in class definition
 
 #%% class_err_tuple_no_recursive,barebones
 @tuple
 class Foo:
     a: Foo
-#! identifier 'Foo' not found
+#! name 'Foo' is not defined
 
 #%% class_err_8,barebones
 class Foo:
     while True: pass
-#! only function and class definitions are allowed within classes
+#! unexpected expression in class definition
 
 #%% class_err_9,barebones
 class F[T: Static[float]]:
     pass
-#! only static integers and strings are supported
+#! expected 'int' or 'str' (only integers and strings can be static)
 
 #%% class_err_10,barebones
 def foo[T]():
     class A:
         x: T
-#! cannot access nonlocal variable 'T'
+#! name 'T' cannot be captured
 
 #%% class_err_11,barebones
 def foo(x):
     class A:
         def bar():
             print x
-#! cannot access nonlocal variable 'x'
+#! name 'x' cannot be captured
 
 #%% class_err_12,barebones
 def foo(x):
@@ -708,7 +716,7 @@ def foo(x):
     class A:
         def bar():
             print T()
-#! cannot access nonlocal variable 'T'
+#! name 'T' cannot be captured
 
 #%% recursive_class,barebones
 class Node[T]:
@@ -844,27 +852,27 @@ print list(Foo().__iter__())  #: []
 @tuple(eq=False)
 class Foo:
     x: int
-Foo(1).__eq__(Foo(1)) #! cannot find '__eq__' in Foo
+Foo(1).__eq__(Foo(1)) #! 'Foo' object has no attribute '__eq__'
 
 #%% magic_err_5,barebones
 @tuple(pickle=False)
 class Foo:
     x: int
 p = Ptr[byte]()
-Foo(1).__pickle__(p) #! cannot find '__pickle__' in Foo
+Foo(1).__pickle__(p) #! 'Foo' object has no attribute '__pickle__'
 
 #%% magic_err_6,barebones
 @tuple(container=False)
 class Foo:
     x: int
-Foo(1).__getitem__(0) #! cannot find '__getitem__' in Foo
+Foo(1).__getitem__(0) #! 'Foo' object has no attribute '__getitem__'
 
 #%% magic_err_7,barebones
 @tuple(python=False)
 class Foo:
     x: int
 p = Ptr[byte]()
-Foo(1).__to_py__(p) #! cannot find '__to_py__' in Foo
+Foo(1).__to_py__(p) #! 'Foo' object has no attribute '__to_py__'
 
 #%% python
 from python import os
@@ -1006,21 +1014,21 @@ except PyError as e:
 #%% typeof_definition_error,barebones
 a = 1
 class X:
-    b: type(a) #! type() not allowed in definitions
+    b: type(a) #! cannot use type() in type signatures
 
 #%% typeof_definition_error_2,barebones
-def foo(a)->type(a): pass #! type() not allowed in definitions
+def foo(a)->type(a): pass #! cannot use type() in type signatures
 
 #%% typeof_definition_error_3,barebones
 a=1
-b: type(a) = 1 #! type() not allowed in definitions
+b: type(a) = 1 #! cannot use type() in type signatures
 
 #%% assign_underscore,barebones
 _ = 5
 _ = 's'
 
 #%% inherit_class_4,barebones
-class defdict[K,V](Dict[K,V]):
+class defdict[K,V](Static[Dict[K,V]]):
     fx: Function[[],V]
     def __init__(self, d: Dict[K,V], fx: Function[[], V]):
         self.__init__()
@@ -1048,7 +1056,7 @@ class Bar[T]:
     y: T
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
-class FooBarBaz[T](Foo, Bar[T]):
+class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
 print FooBarBaz[str]().foo() #: foo 0
@@ -1056,11 +1064,11 @@ print FooBarBaz[float]().bar() #: bar 0/float
 print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
 
 #%% inherit_class_err_5,barebones
-class defdict(Dict[str,float]):
+class defdict(Static[Dict[str,float]]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
-z[1.1] #! cannot find a method '__getitem__' in defdict with arguments 'defdict', 'float'
+z[1.1] #! 'defdict' object has no method '__getitem__' with arguments (defdict, float)
 
 #%% inherit_tuple,barebones
 class Foo:
@@ -1069,7 +1077,7 @@ class Foo:
     def __init__(self, a: int):
         self.a, self.b = a, 'yoo'
 @tuple
-class FooTup(Foo): pass
+class FooTup(Static[Foo]): pass
 
 f = Foo(5)
 print f.a, f.b #: 5 yoo
@@ -1077,25 +1085,25 @@ fp = FooTup(6, 's')
 print fp #: (a: 6, b: 's')
 
 #%% inherit_class_err_1,barebones
-class defdict(Array[int]):
-    pass #! reference classes cannot inherit by-value classes
+class defdict(Static[Array[int]]):
+    pass #! reference classes cannot inherit tuple classes
 
 #%% inherit_class_err_2,barebones
 @tuple
-class defdict(int):
-    pass #! cannot inherit internal types
+class defdict(Static[int]):
+    pass #! internal classes cannot inherit other classes
 
 #%% inherit_class_err_3,barebones
-class defdict(Dict[int, float, float]):
-    pass #! wrong number of generics
+class defdict(Static[Dict[int, float, float]]):
+    pass #! Dict takes 2 generics (3 given)
 
 #%% inherit_class_err_4,barebones
 class Foo:
     x: int
 class Bar:
     x: float
-class FooBar(Foo, Bar):
-    pass #! 'x' declared twice
+class FooBar(Static[Foo], Static[Bar]):
+    pass #! duplicate data attribute 'x' in class definition
 
 #%% keyword_prefix,barebones
 def foo(return_, pass_, yield_, break_, continue_, print_, assert_):
@@ -1134,9 +1142,9 @@ print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]
 
 #%% multi_error,barebones
 a = 55
-print z  #! identifier 'z' not found
-print(a, q, w)  #! identifier 'q' not found
-print quit  #! identifier 'quit' not found
+print z  #! name 'z' is not defined
+print(a, q, w)  #! name 'q' is not defined
+print quit  #! name 'quit' is not defined
 
 #%% class_var,barebones
 class Foo:
@@ -1178,7 +1186,7 @@ print Fot.f  #: heh-tup
 #%% dot_access_error,barebones
 class Foo:
     x: int = 1
-Foo.x #! cannot find 'x' in Foo
+Foo.x #! 'Foo' object has no attribute 'x'
 
 #%% scoping_same_name,barebones
 def match(pattern: str, string: str, flags: int = 0):
@@ -1207,5 +1215,5 @@ def foo():
             return
         print b
 foo()
-#! identifier 'x' not found
-#! identifier 'b' not found
+#! name 'x' is not defined
+#! name 'b' is not defined

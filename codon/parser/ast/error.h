@@ -1,8 +1,19 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+/**
+ * WARNING: do not include anything else in this file, especially format.h
+ * peglib.h uses this file. However, it is not compatible with format.h
+ * (and possibly some other includes). Their inclusion will result in a succesful
+ * compilation but extremely weird behaviour and hard-to-debug crashes (it seems that
+ * some parts of peglib conflict with format.h in a weird way---further investigation
+ * needed).
+ */
 
 namespace codon {
 struct SrcInfo {
@@ -22,6 +33,7 @@ struct SrcInfo {
 
   bool operator==(const SrcInfo &src) const { return id == src.id; }
 };
+
 } // namespace codon
 
 namespace codon::exc {
@@ -35,23 +47,27 @@ public:
   /// These vectors (stacks) store an error stack-trace.
   std::vector<SrcInfo> locations;
   std::vector<std::string> messages;
+  int errorCode = -1;
 
 public:
-  ParserException(const std::string &msg, const SrcInfo &info) noexcept
-      : std::runtime_error(msg) {
+  ParserException(int errorCode, const std::string &msg, const SrcInfo &info) noexcept
+      : std::runtime_error(msg), errorCode(errorCode) {
     messages.push_back(msg);
     locations.push_back(info);
   }
   ParserException() noexcept : std::runtime_error("") {}
+  ParserException(int errorCode, const std::string &msg) noexcept
+      : ParserException(errorCode, msg, {}) {}
   explicit ParserException(const std::string &msg) noexcept
-      : ParserException(msg, {}) {}
+      : ParserException(-1, msg, {}) {}
   ParserException(const ParserException &e) noexcept
-      : std::runtime_error(e), locations(e.locations), messages(e.messages){};
+      : std::runtime_error(e), locations(e.locations), messages(e.messages),
+        errorCode(e.errorCode){};
 
   /// Add an error message to the current stack trace
   void trackRealize(const std::string &msg, const SrcInfo &info) {
     locations.push_back(info);
-    messages.push_back("while realizing " + msg);
+    messages.push_back("during the realization of " + msg);
   }
 
   /// Add an error message to the current stack trace

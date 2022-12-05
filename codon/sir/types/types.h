@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <algorithm>
@@ -10,8 +12,8 @@
 #include "codon/sir/base.h"
 #include "codon/sir/util/packs.h"
 #include "codon/sir/util/visitor.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 namespace codon {
 namespace ir {
@@ -26,24 +28,38 @@ class Generic {
 private:
   union {
     int64_t staticValue;
+    char *staticStringValue;
     types::Type *typeValue;
   } value;
-  enum { STATIC, TYPE } tag;
+  enum { STATIC, STATIC_STR, TYPE } tag;
 
 public:
   Generic(int64_t staticValue) : value(), tag(STATIC) {
     value.staticValue = staticValue;
   }
+  Generic(const std::string &staticValue) : value(), tag(STATIC_STR) {
+    value.staticStringValue = new char[staticValue.size() + 1];
+    strncpy(value.staticStringValue, staticValue.data(), staticValue.size());
+    value.staticStringValue[staticValue.size()] = 0;
+  }
   Generic(types::Type *typeValue) : value(), tag(TYPE) { value.typeValue = typeValue; }
   Generic(const types::Generic &) = default;
+  ~Generic() {
+    // if (tag == STATIC_STR)
+    //   delete[] value.staticStringValue;
+  }
 
   /// @return true if the generic is a type
   bool isType() const { return tag == TYPE; }
   /// @return true if the generic is static
   bool isStatic() const { return tag == STATIC; }
+  /// @return true if the generic is static
+  bool isStaticStr() const { return tag == STATIC_STR; }
 
   /// @return the static value
   int64_t getStaticValue() const { return value.staticValue; }
+  /// @return the static string value
+  std::string getStaticStringValue() const { return value.staticStringValue; }
   /// @return the type value
   types::Type *getTypeValue() const { return value.typeValue; }
 };
@@ -487,6 +503,40 @@ public:
   static std::string getInstanceName(unsigned count, PrimitiveType *base);
 };
 
+class UnionType : public AcceptorExtend<UnionType, Type> {
+private:
+  /// alternative types
+  std::vector<types::Type *> types;
+
+public:
+  static const char NodeId;
+
+  using const_iterator = std::vector<types::Type *>::const_iterator;
+  using const_reference = std::vector<types::Type *>::const_reference;
+
+  /// Constructs a UnionType.
+  /// @param types the alternative types (must be sorted by caller)
+  explicit UnionType(std::vector<types::Type *> types)
+      : AcceptorExtend(), types(std::move(types)) {}
+
+  const_iterator begin() const { return types.begin(); }
+  const_iterator end() const { return types.end(); }
+  const_reference front() const { return types.front(); }
+  const_reference back() const { return types.back(); }
+
+  static std::string getInstanceName(const std::vector<types::Type *> &types);
+
+private:
+  std::vector<types::Type *> doGetUsedTypes() const override { return types; }
+
+  bool doIsAtomic() const override {
+    return !std::any_of(types.begin(), types.end(),
+                        [](auto *type) { return !type->isAtomic(); });
+  }
+};
+
 } // namespace types
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::types::Type> : fmt::ostream_formatter {};

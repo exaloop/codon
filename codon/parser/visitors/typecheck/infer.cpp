@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <limits>
 #include <map>
 #include <memory>
@@ -12,6 +14,7 @@
 #include "codon/sir/types/types.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -28,13 +31,13 @@ TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
     return a = b;
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
-  undo.realizator = this;
   if (a->unify(b.get(), &undo) >= 0) {
     return a;
   } else {
     undo.undo();
   }
-  error("cannot unify {} and {}", a->toString(), b->toString());
+  a->unify(b.get(), &undo);
+  E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
   return nullptr;
 }
 
@@ -44,7 +47,8 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
   if (!result)
     return nullptr;
 
-  for (size_t iteration = 1;; iteration++) {
+  for (ctx->getRealizationBase()->iteration = 1;;
+       ctx->getRealizationBase()->iteration++) {
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or
     //   (2) failure: no expression or statements were marked as done during an
@@ -59,7 +63,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
 
-    if (iteration == 1 && isToplevel) {
+    if (ctx->getRealizationBase()->iteration == 1 && isToplevel) {
       // Realize all @force_realize functions
       for (auto &f : ctx->cache->functions) {
         auto &attr = f.second.ast->attributes;
@@ -82,11 +86,19 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       // default values (e.g., generics with default values). Unify those types with
       // their default values and then run another round to see if anything changed.
       bool anotherRound = false;
+      // Special case: return type might have default as well (e.g., Union)
+      if (ctx->getRealizationBase()->returnType)
+        ctx->pendingDefaults.insert(ctx->getRealizationBase()->returnType);
       for (auto &unbound : ctx->pendingDefaults) {
-        if (auto u = unbound->getLink()) {
+        if (auto tu = unbound->getUnion()) {
+          // Seal all dynamic unions after the iteration is over
+          if (!tu->isSealed()) {
+            tu->seal();
+            anotherRound = true;
+          }
+        } else if (auto u = unbound->getLink()) {
           types::Type::Unification undo;
-          undo.realizator = this;
-          if (u->unify(u->defaultType.get(), &undo) >= 0)
+          if (u->defaultType && u->unify(u->defaultType.get(), &undo) >= 0)
             anotherRound = true;
         }
       }
@@ -94,15 +106,8 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       if (anotherRound)
         continue;
 
-      // Nothing helps. Raise an error.
-      /// TODO: print which expressions could not be type-checked
-      if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-        // Dump the problematic block
-        auto fo = fopen("_dump_typecheck_error.sexp", "w");
-        fmt::print(fo, "{}\n", result->toString(0));
-        fclose(fo);
-      }
-      error("cannot typecheck the program");
+      // Nothing helps. Return nullptr.
+      return nullptr;
     }
   }
 
@@ -140,11 +145,29 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
       }
     }
   } catch (exc::ParserException &e) {
+    if (e.errorCode == Error::MAX_REALIZATION)
+      throw;
     if (auto f = typ->getFunc()) {
-      e.trackRealize(fmt::format("{} (arguments {})", f->ast->name, f->toString()),
-                     getSrcInfo());
+      if (f->ast->attributes.has(Attr::HiddenFromUser)) {
+        e.locations.back() = getSrcInfo();
+      } else {
+        std::vector<std::string> args;
+        for (size_t i = 0, ai = 0, gi = 0; i < f->ast->args.size(); i++) {
+          auto an = f->ast->args[i].name;
+          auto ns = trimStars(an);
+          args.push_back(fmt::format("{}{}: {}", std::string(ns, '*'),
+                                     ctx->cache->rev(an),
+                                     f->ast->args[i].status == Param::Generic
+                                         ? f->funcGenerics[gi++].type->prettyString()
+                                         : f->getArgTypes()[ai++]->prettyString()));
+        }
+        e.trackRealize(
+            fmt::format("{}({})", ctx->cache->rev(f->ast->name), fmt::join(args, ", ")),
+            getSrcInfo());
+      }
+
     } else {
-      e.trackRealize(typ->toString(), getSrcInfo());
+      e.trackRealize(typ->prettyString(), getSrcInfo());
     }
     throw;
   }
@@ -191,6 +214,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()] =
           std::make_shared<Cache::Class::ClassRealization>();
   realization->type = realized;
+  realization->id = ctx->cache->classRealizationCnt++;
 
   // Realize tuple arguments
   if (auto tr = realized->getRecord()) {
@@ -208,11 +232,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   for (auto &field : ctx->cache->classes[realized->name].fields) {
     auto ftyp = ctx->instantiate(field.type, realized);
     if (!realize(ftyp))
-      error("cannot realize {}.{} of type {}",
-            ctx->cache->reverseIdentifierLookup[realized->name], field.name,
-            ftyp->toString());
-    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type->toString(),
-                ftyp->toString());
+      E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
+        ftyp->prettyString());
+    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
     realization->fields.emplace_back(field.name, ftyp);
     names.emplace_back(field.name);
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
@@ -230,22 +252,17 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   return realized;
 }
 
-types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
+types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto &realizations = ctx->cache->functions[type->ast->name].realizations;
-  if (auto r = in(realizations, type->realizedName()))
-    return (*r)->type;
+  if (auto r = in(realizations, type->realizedName())) {
+    if (!force) {
+      return (*r)->type;
+    }
+  }
 
-  if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH)
-    codon::compilationError(
-        "maximum realization depth exceeded (recursive static function?)",
-        getSrcInfo().file, getSrcInfo().line, getSrcInfo().col);
-
-  // Special cases: do not realize auto-generated heterogenous (__iter__, __getitem__)
-  if (type->ast->hasAttr("autogenerated") &&
-      (endswith(type->ast->name, ".__iter__:0") ||
-       endswith(type->ast->name, ".__getitem__:0")) &&
-      type->getArgTypes()[0]->getHeterogenousTuple())
-    error("cannot iterate a heterogeneous tuple");
+  if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
+    E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
+  }
 
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
               type->realizedName(), ctx->getRealizationStackName(),
@@ -259,8 +276,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       {type->ast->name, type->getFunc(), type->getRetType()});
 
   // Clone the generic AST that is to be realized
-  auto ast = std::dynamic_pointer_cast<FunctionStmt>(
-      clone(ctx->cache->functions[type->ast->name].ast));
+  auto ast = generateSpecialAst(type);
   addFunctionGenerics(type);
 
   // Internal functions have no AST that can be realized
@@ -276,8 +292,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
 
   // Populate realization table in advance to support recursive realizations
   auto key = type->realizedName(); // note: the key might change later
+  ir::Func *oldIR = nullptr;       // Get it if it was already made (force mode)
+  if (auto i = in(realizations, key))
+    oldIR = (*i)->ir;
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
+  r->ir = oldIR;
 
   // Realizations should always be visible, so add them to the toplevel
   ctx->addToplevel(
@@ -286,33 +306,23 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
-    if (startswith(type->ast->name, "Function.__call__")) {
-      // Special case: Function.__call__
-      /// TODO: move to IR
-      std::vector<StmtPtr> items;
-      items.push_back(nullptr);
-      std::vector<std::string> ll;
-      std::vector<std::string> lla;
-      auto &as = type->getArgTypes()[1]->getRecord()->args;
-      auto ag = ast->args[1].name;
-      trimStars(ag);
-      for (int i = 0; i < as.size(); i++) {
-        ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
-        items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
-      }
-      items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-      for (int i = 0; i < as.size(); i++) {
-        items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
-        lla.push_back(format("{{}} %{}", i));
-      }
-      items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-      ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
-      ll.push_back(format("ret {{}} %{}", as.size()));
-      items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
-      ast->suite = N<SuiteStmt>(items);
-    }
-    inferTypes(ast->suite);
+    auto ret = inferTypes(ast->suite);
     ctx->blockLevel = oldBlockLevel;
+
+    if (!ret) {
+      realizations.erase(key);
+      if (!startswith(ast->name, "._lambda")) {
+        // Lambda typecheck failures are "ignored" as they are treated as statements,
+        // not functions.
+        // TODO: generalize this further.
+        error("cannot typecheck the program");
+      }
+      ctx->realizationBases.pop_back();
+      ctx->popBlock();
+      ctx->typecheckLevel--;
+      getLogger().level--;
+      return nullptr; // inference must be delayed
+    }
 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
@@ -320,24 +330,29 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
       unify(type->getRetType(), ctx->getType("NoneType"));
   }
   // Realize the return type
-  realize(type->getRetType());
+  auto ret = realize(type->getRetType());
+  seqassert(ret, "cannot realize return type '{}'", type->getRetType());
+
+  std::vector<Param> args;
+  for (auto &i : ast->args) {
+    std::string varName = i.name;
+    trimStars(varName);
+    args.emplace_back(Param{varName, nullptr, nullptr, i.status});
+  }
+  r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
+                           ast->suite);
+  r->ast->attributes = ast->attributes;
 
   if (!in(ctx->cache->pendingRealizations,
           make_pair(type->ast->name, type->realizedName()))) {
-    std::vector<Param> args;
-    for (auto &i : ast->args) {
-      std::string varName = i.name;
-      trimStars(varName);
-      args.emplace_back(Param{varName, nullptr, nullptr, i.status});
-    }
-    r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
-                             ast->suite);
-    r->ast->attributes = ast->attributes;
-    r->ir = makeIRFunction(r);
+    if (!r->ir)
+      r->ir = makeIRFunction(r);
     realizations[type->realizedName()] = r;
   } else {
     realizations[key] = realizations[type->realizedName()];
   }
+  if (force)
+    realizations[type->realizedName()]->ast = r->ast;
   ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
                                              TypecheckItem::Func, type->getFunc()));
   ctx->realizationBases.pop_back();
@@ -346,6 +361,255 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type) {
   getLogger().level--;
 
   return type->getFunc();
+}
+
+/// Generate ASTs for all __internal__ functions that deal with vtable generation.
+/// Intended to be called once the typechecking is done.
+/// TODO: add JIT compatibility.
+StmtPtr TypecheckVisitor::prepareVTables() {
+  auto rep = "__internal__.class_init_vtables:0";
+  // def class_init_vtables():
+  //   return __internal__.class_make_n_vtables(<NUM_REALIZATIONS> + 1)
+  auto &initAllVT = ctx->cache->functions[rep];
+  auto suite = N<SuiteStmt>(
+      N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.class_make_n_vtables:0"),
+                                N<IntExpr>(ctx->cache->classRealizationCnt + 1))));
+  initAllVT.ast->suite = suite;
+  auto typ = initAllVT.realizations.begin()->second->type;
+  typ->ast = initAllVT.ast.get();
+  auto fx = realizeFunc(typ.get(), true);
+
+  rep = "__internal__.class_populate_vtables:0";
+  // def class_populate_vtables(p):
+  //   for real in <REALIZATIONS>:
+  //     if real.vtables:
+  //        p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
+  //        __internal__.class_set_typeinfo(p[real.ID], real.ID)
+  //        for f in real.vtables:
+  //          p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+  auto &initFn = ctx->cache->functions[rep];
+  suite = N<SuiteStmt>();
+  for (auto &[_, cls] : ctx->cache->classes) {
+    for (auto &[r, real] : cls.realizations) {
+      for (auto &[base, vtable] : real->vtables) {
+        if (!vtable.ir) {
+          auto var = initFn.ast->args[0].name;
+          // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
+          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
+              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
+                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
+                          N<IntExpr>(vtable.table.size() + 2)))));
+          // __internal__.class_set_typeinfo(p[real.ID], real.ID)
+          suite->stmts.push_back(N<ExprStmt>(
+              N<CallExpr>(N<IdExpr>("__internal__.class_set_typeinfo:0"),
+                          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                          N<IntExpr>(real->id))));
+          for (auto &[k, v] : vtable.table) {
+            auto &[fn, id] = v;
+            std::vector<ExprPtr> ids;
+            for (auto &t : fn->getArgTypes())
+              ids.push_back(NT<IdExpr>(t->realizedName()));
+            // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+            suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+                N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                           "__setitem__"),
+                N<IntExpr>(id),
+                N<CallExpr>(N<DotExpr>(
+                    N<CallExpr>(
+                        NT<InstantiateExpr>(
+                            NT<IdExpr>("Function"),
+                            std::vector<ExprPtr>{
+                                NT<InstantiateExpr>(
+                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
+                                    ids),
+                                NT<IdExpr>(fn->getRetType()->realizedName())}),
+                        N<IdExpr>(fn->realizedName())),
+                    "__raw__")))));
+          }
+        }
+      }
+    }
+  }
+  initFn.ast->suite = suite;
+  typ = initFn.realizations.begin()->second->type;
+  typ->ast = initFn.ast.get();
+  realizeFunc(typ.get(), true);
+
+  rep = "__internal__.class_set_obj_vtable:0";
+  // def class_set_obj_vtable(pf):
+  //   pf.__vtable__ = __vtables__[pf.__vtable_id___]
+  auto &initObjFns = ctx->cache->functions[rep];
+  auto oldAst = initObjFns.ast;
+  for (auto &[_, real] : initObjFns.realizations) {
+    auto t = real->type;
+    auto clsTyp = t->getArgTypes()[0]->getClass();
+    auto varName = initObjFns.ast->args[0].name;
+
+    const auto &fields = ctx->cache->classes[clsTyp->name].fields;
+    auto suite = N<SuiteStmt>();
+    for (auto &f : fields)
+      if (startswith(f.name, VAR_VTABLE)) {
+        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
+        suite->stmts.push_back(N<AssignMemberStmt>(
+            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
+            N<IndexExpr>(
+                N<IdExpr>("__vtables__"),
+                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
+      }
+
+    initObjFns.ast->suite = suite;
+    t->ast = initObjFns.ast.get();
+    realizeFunc(t.get(), true);
+  }
+  initObjFns.ast = oldAst;
+
+  auto &initDist = ctx->cache->functions["__internal__.class_base_derived_dist:0"];
+  // def class_base_derived_dist(B, D):
+  //   return Tuple[<types before B is reached in D>].__elemsize__
+  oldAst = initDist.ast;
+  for (auto &[_, real] : initDist.realizations) {
+    auto t = real->type;
+    auto baseTyp = t->funcGenerics[0].type->getClass();
+    auto derivedTyp = t->funcGenerics[1].type->getClass();
+
+    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
+    auto types = std::vector<ExprPtr>{};
+    auto found = false;
+    for (auto &f : fields) {
+      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
+        found = true;
+        break;
+      } else {
+        auto ft = realize(ctx->instantiate(f.type, derivedTyp));
+        types.push_back(NT<IdExpr>(ft->realizedName()));
+      }
+    }
+    seqassert(found, "cannot find distance between {} and {}", derivedTyp->name,
+              baseTyp->name);
+    StmtPtr suite = N<ReturnStmt>(
+        N<DotExpr>(NT<InstantiateExpr>(
+                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
+                   "__elemsize__"));
+    initDist.ast->suite = suite;
+    t->ast = initDist.ast.get();
+    realizeFunc(t.get(), true);
+  }
+  initDist.ast = oldAst;
+
+  return nullptr;
+}
+
+/// Generate thunks in all derived classes for a given virtual function (must be fully
+/// realizable) and the corresponding base class.
+/// @return unique thunk ID.
+size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
+  seqassert(cp->canRealize() && fp->canRealize() && fp->getRetType()->canRealize(),
+            "{} not realized", fp->debugString(1));
+
+  // TODO: ugly, ugly; surely needs refactoring
+
+  // Function signature for storing thunks
+  auto sig = [](types::FuncType *fp) {
+    std::vector<std::string> gs;
+    for (auto &a : fp->getArgTypes())
+      gs.push_back(a->realizedName());
+    gs.push_back("|");
+    for (auto &a : fp->funcGenerics)
+      if (!a.name.empty())
+        gs.push_back(a.type->realizedName());
+    return join(gs, ",");
+  };
+
+  // Set up the base class information
+  auto baseCls = cp->name;
+  auto fnName = ctx->cache->rev(fp->ast->name);
+  auto key = make_pair(fnName, sig(fp));
+  auto &vt = ctx->cache->classes[baseCls]
+                 .realizations[cp->realizedName()]
+                 ->vtables[cp->realizedName()];
+
+  // Add or extract thunk ID
+  size_t vid;
+  if (auto i = in(vt.table, key)) {
+    vid = i->second;
+  } else {
+    vid = vt.table.size() + 1;
+    vt.table[key] = {fp->getFunc(), vid};
+  }
+
+  // Iterate through all derived classes and instantiate the corresponding thunk
+  for (auto &[clsName, cls] : ctx->cache->classes) {
+    bool inMro = false;
+    for (auto &m : cls.mro)
+      if (m->type && m->type->getClass() && m->type->getClass()->name == baseCls) {
+        inMro = true;
+        break;
+      }
+    if (clsName != baseCls && inMro) {
+      for (auto &[_, real] : cls.realizations) {
+        auto &vtable = real->vtables[baseCls];
+
+        auto ct =
+            ctx->instantiate(ctx->forceFind(clsName)->type, cp->getClass())->getClass();
+        std::vector<types::TypePtr> args = fp->getArgTypes();
+        args[0] = ct;
+        auto m = findBestMethod(ct, fnName, args);
+        if (!m)
+          E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(), fnName);
+
+        std::vector<std::string> ns;
+        for (auto &a : args)
+          ns.push_back(a->realizedName());
+
+        // Thunk name: _thunk.<BASE>.<FN>.<ARGS>
+        auto thunkName =
+            format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
+        if (in(ctx->cache->functions, thunkName))
+          continue;
+
+        // Thunk contents:
+        // def _thunk.<BASE>.<FN>.<ARGS>(self, <ARGS...>):
+        //   return <FN>(
+        //     __internal__.to_class_ptr(
+        //       self.__raw__() - __internal__.class_base_derived_dist(<BASE>,
+        //       <DERIVED>), <DERIVED>
+        //     ), <ARGS...>)
+        std::vector<Param> fnArgs;
+        fnArgs.push_back(
+            Param{fp->ast->args[0].name, N<IdExpr>(cp->realizedName()), nullptr});
+        for (size_t i = 1; i < args.size(); i++)
+          fnArgs.push_back(Param{fp->ast->args[i].name,
+                                 N<IdExpr>(args[i]->realizedName()), nullptr});
+        std::vector<ExprPtr> callArgs;
+        callArgs.emplace_back(N<CallExpr>(
+            N<IdExpr>("__internal__.to_class_ptr:0"),
+            N<BinaryExpr>(
+                N<CallExpr>(N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
+                "-",
+                N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
+                            N<IdExpr>(cp->realizedName()),
+                            N<IdExpr>(real->type->realizedName()))),
+            NT<IdExpr>(real->type->realizedName())));
+        for (size_t i = 1; i < args.size(); i++)
+          callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
+        auto thunkAst = N<FunctionStmt>(
+            thunkName, nullptr, fnArgs,
+            N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
+            Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
+        auto &thunkFn = ctx->cache->functions[thunkAst->name];
+        thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
+
+        transform(thunkAst);
+        prependStmts->push_back(thunkAst);
+        auto ti = ctx->instantiate(thunkFn.type)->getFunc();
+        auto tm = realizeFunc(ti.get(), true);
+        seqassert(tm, "bad thunk {}", thunkFn.type);
+        vtable.table[key] = {tm->getFunc(), vid};
+      }
+    }
+  }
+  return vid;
 }
 
 /// Make IR node for a realized type.
@@ -360,9 +624,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   auto forceFindIRType = [&](const TypePtr &tt) {
     auto t = tt->getClass();
     seqassert(t && in(ctx->cache->classes[t->name].realizations, t->realizedTypeName()),
-              "{} not realized", tt->toString());
+              "{} not realized", tt);
     auto l = ctx->cache->classes[t->name].realizations[t->realizedTypeName()]->ir;
-    seqassert(l, "no LLVM type for {}", t->toString());
+    seqassert(l, "no LLVM type for {}", t);
     return l;
   };
 
@@ -411,13 +675,21 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});
     handle = record;
+  } else if (t->name == "Union") {
+    seqassert(!types.empty() && statics.empty(), "bad union");
+    auto unionTypes = t->getUnion()->getRealizationTypes();
+    std::vector<ir::types::Type *> unionVec;
+    unionVec.reserve(unionTypes.size());
+    for (auto &u : unionTypes)
+      unionVec.emplace_back(forceFindIRType(u));
+    handle = module->unsafeGetUnionType(unionVec);
   } else if (t->name == "Function") {
     types.clear();
     for (auto &m : t->generics[0].type->getRecord()->args)
       types.push_back(forceFindIRType(m));
     auto ret = forceFindIRType(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
-  } else if (t->name == "std.simd.Vec") {
+  } else if (t->name == "std.experimental.simd.Vec") {
     seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
     handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
   } else if (auto tr = t->getRecord()) {
@@ -502,6 +774,161 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   irType->setAstType(r->type->getFunc());
   fn->realize(irType, names);
   return fn;
+}
+
+/// Generate ASTs for dynamically generated functions.
+std::shared_ptr<FunctionStmt>
+TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
+  // Clone the generic AST that is to be realized
+  auto ast = std::dynamic_pointer_cast<FunctionStmt>(
+      clone(ctx->cache->functions[type->ast->name].ast));
+
+  if (ast->hasAttr("autogenerated") && endswith(ast->name, ".__iter__:0") &&
+      type->getArgTypes()[0]->getHeterogenousTuple()) {
+    // Special case: do not realize auto-generated heterogenous __iter__
+    E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
+  } else if (ast->hasAttr("autogenerated") && endswith(ast->name, ".__getitem__:0") &&
+             type->getArgTypes()[0]->getHeterogenousTuple()) {
+    // Special case: do not realize auto-generated heterogenous __getitem__
+    E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
+  } else if (startswith(ast->name, "Function.__call__")) {
+    // Special case: Function.__call__
+    /// TODO: move to IR one day
+    std::vector<StmtPtr> items;
+    items.push_back(nullptr);
+    std::vector<std::string> ll;
+    std::vector<std::string> lla;
+    auto &as = type->getArgTypes()[1]->getRecord()->args;
+    auto ag = ast->args[1].name;
+    trimStars(ag);
+    for (int i = 0; i < as.size(); i++) {
+      ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
+      items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
+    }
+    items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
+    for (int i = 0; i < as.size(); i++) {
+      items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
+      lla.push_back(format("{{}} %{}", i));
+    }
+    items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
+    ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
+    ll.push_back(format("ret {{}} %{}", as.size()));
+    items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
+    ast->suite = N<SuiteStmt>(items);
+  } else if (startswith(ast->name, "__internal__.new_union:0")) {
+    // Special case: __internal__.new_union
+    // def __internal__.new_union(value, U[T0, ..., TN]):
+    //   if isinstance(value, T0):
+    //     return __internal__.union_make(0, value, U[T0, ..., TN])
+    //   if isinstance(value, Union[T0]):
+    //     return __internal__.union_make(
+    //       0, __internal__.get_union(value, T0), U[T0, ..., TN])
+    //   ... <for all T0...TN> ...
+    //   compile_error("invalid union constructor")
+    auto unionType = type->funcGenerics[0].type->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
+
+    auto objVar = ast->args[0].name;
+    auto suite = N<SuiteStmt>();
+    int tag = 0;
+    for (auto &t : unionTypes) {
+      suite->stmts.push_back(N<IfStmt>(
+          N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>(objVar),
+                      NT<IdExpr>(t->realizedName())),
+          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_make:0"),
+                                    N<IntExpr>(tag), N<IdExpr>(objVar),
+                                    N<IdExpr>(unionType->realizedTypeName())))));
+      // Check for Union[T]
+      suite->stmts.push_back(N<IfStmt>(
+          N<CallExpr>(
+              N<IdExpr>("isinstance"), N<IdExpr>(objVar),
+              NT<InstantiateExpr>(NT<IdExpr>("Union"),
+                                  std::vector<ExprPtr>{NT<IdExpr>(t->realizedName())})),
+          N<ReturnStmt>(
+              N<CallExpr>(N<IdExpr>("__internal__.union_make:0"), N<IntExpr>(tag),
+                          N<CallExpr>(N<IdExpr>("__internal__.get_union:0"),
+                                      N<IdExpr>(objVar), NT<IdExpr>(t->realizedName())),
+                          N<IdExpr>(unionType->realizedTypeName())))));
+      tag++;
+    }
+    suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+        N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
+    ast->suite = suite;
+  } else if (startswith(ast->name, "__internal__.get_union:0")) {
+    // Special case: __internal__.get_union
+    // def __internal__.new_union(union: Union[T0,...,TN], T):
+    //   if __internal__.union_get_tag(union) == 0:
+    //     return __internal__.union_get_data(union, T0)
+    //   ... <for all T0...TN>
+    //   raise TypeError("getter")
+    auto unionType = type->getArgTypes()[0]->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
+
+    auto targetType = type->funcGenerics[0].type;
+    auto selfVar = ast->args[0].name;
+    auto suite = N<SuiteStmt>();
+    int tag = 0;
+    for (auto t : unionTypes) {
+      if (t->realizedName() == targetType->realizedName()) {
+        suite->stmts.push_back(N<IfStmt>(
+            N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
+                                      N<IdExpr>(selfVar)),
+                          "==", N<IntExpr>(tag)),
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
+                                      N<IdExpr>(selfVar),
+                                      NT<IdExpr>(t->realizedName())))));
+      }
+      tag++;
+    }
+    suite->stmts.push_back(
+        N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
+                                 N<StringExpr>("invalid union getter"))));
+    ast->suite = suite;
+  } else if (startswith(ast->name, "__internal__._get_union_method:0")) {
+    // def __internal__._get_union_method(union: Union[T0,...,TN], method, *args, **kw):
+    //   if __internal__.union_get_tag(union) == 0:
+    //     return __internal__.union_get_data(union, T0).method(*args, **kw)
+    //   ... <for all T0...TN>
+    //   raise TypeError("call")
+    auto szt = type->funcGenerics[0].type->getStatic();
+    auto fnName = szt->evaluate().getString();
+    auto unionType = type->getArgTypes()[0]->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
+
+    auto selfVar = ast->args[0].name;
+    auto suite = N<SuiteStmt>();
+    int tag = 0;
+    for (auto &t : unionTypes) {
+      suite->stmts.push_back(N<IfStmt>(
+          N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
+                                    N<IdExpr>(selfVar)),
+                        "==", N<IntExpr>(tag)),
+          N<ReturnStmt>(N<CallExpr>(
+              N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
+                                     N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
+                         fnName),
+              N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1))),
+              N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)))))));
+      tag++;
+    }
+    suite->stmts.push_back(
+        N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
+                                 N<StringExpr>("invalid union call"))));
+    unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
+    ast->suite = suite;
+  } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
+    // def __internal__.get_union_first(union: Union[T0]):
+    //   return __internal__.union_get_data(union, T0)
+    auto unionType = type->getArgTypes()[0]->getUnion();
+    auto unionTypes = unionType->getRealizationTypes();
+
+    auto selfVar = ast->args[0].name;
+    auto suite = N<SuiteStmt>(N<ReturnStmt>(
+        N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"), N<IdExpr>(selfVar),
+                    NT<IdExpr>(unionTypes[0]->realizedName()))));
+    ast->suite = suite;
+  }
+  return ast;
 }
 
 } // namespace codon::ast

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <deque>
@@ -44,7 +46,7 @@ private:
   std::vector<SrcInfo> srcInfos;
 
 public:
-  explicit Context(std::string filename) : filename(move(filename)) {
+  explicit Context(std::string filename) : filename(std::move(filename)) {
     /// Add a top-level block to the stack.
     stack.push_front(std::list<std::string>());
   }
@@ -53,7 +55,7 @@ public:
   /// Add an object to the top of the stack.
   virtual void add(const std::string &name, const Item &var) {
     seqassertn(!name.empty(), "adding an empty identifier");
-    map[name].push_front(move(var));
+    map[name].push_front(var);
     stack.front().push_back(name);
   }
   /// Remove the top-most object with a given identifier.
@@ -85,7 +87,7 @@ public:
   /// The absolute path of a current module.
   std::string getFilename() const { return filename; }
   /// Sets the absolute path of a current module.
-  void setFilename(std::string file) { filename = move(file); }
+  void setFilename(std::string file) { filename = std::move(file); }
 
   /// Convenience functions to allow range-based for loops over a context.
   typename Map::iterator begin() { return map.begin(); }

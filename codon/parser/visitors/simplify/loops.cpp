@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 #include <vector>
@@ -8,13 +10,14 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
 /// Ensure that `continue` is in a loop
 void SimplifyVisitor::visit(ContinueStmt *stmt) {
   if (!ctx->getBase()->getLoop())
-    error("continue outside of a loop");
+    E(Error::EXPECTED_LOOP, stmt, "continue");
 }
 
 /// Ensure that `break` is in a loop.
@@ -24,7 +27,7 @@ void SimplifyVisitor::visit(ContinueStmt *stmt) {
 ///   `break` -> `no_break = False; break`
 void SimplifyVisitor::visit(BreakStmt *stmt) {
   if (!ctx->getBase()->getLoop())
-    error("break outside of a loop");
+    E(Error::EXPECTED_LOOP, stmt, "break");
   if (!ctx->getBase()->getLoop()->breakVar.empty()) {
     resultStmt = N<SuiteStmt>(
         transform(N<AssignStmt>(N<IdExpr>(ctx->getBase()->getLoop()->breakVar),
@@ -135,7 +138,7 @@ ExprPtr SimplifyVisitor::transformForDecorator(const ExprPtr &decorator) {
   if (auto c = callee->getCall())
     callee = c->expr;
   if (!callee || !callee->isId("par"))
-    error("for loop can only take parallel decorator");
+    E(Error::LOOP_DECORATOR, decorator);
   std::vector<CallExpr::Arg> args;
   std::string openmp;
   std::vector<CallExpr::Arg> omp;

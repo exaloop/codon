@@ -1,6 +1,7 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # OpenMP PEG grammar
 
-%preamble {
+PREAMBLE {
   #include "codon/parser/peg/rules.h"
   #include <any>
   using namespace std;

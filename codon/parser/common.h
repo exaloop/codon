@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <chrono>
@@ -13,8 +15,6 @@
 #include <vector>
 
 #include "codon/util/common.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 #define CAST(s, T) dynamic_cast<T *>(s.get())
 
@@ -77,8 +77,8 @@ std::string combine2(const std::vector<T> &items, const std::string &delim = ","
 }
 /// @return True if an item is found in a vector vec.
 template <typename T, typename U>
-const T *in(const std::vector<T> &vec, const U &item) {
-  auto f = std::find(vec.begin(), vec.end(), item);
+const T *in(const std::vector<T> &vec, const U &item, size_t start = 0) {
+  auto f = std::find(vec.begin() + start, vec.end(), item);
   return f != vec.end() ? &(*f) : nullptr;
 }
 /// @return True if an item is found in a set s.
@@ -112,12 +112,6 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 }
 
 /// AST utilities
-
-/// Raise a parsing error.
-void error(const char *format);
-/// Raise a parsing error at a source location p.
-void error(const SrcInfo &info, const char *format);
-void error(const SrcInfo &info, const std::string &format);
 
 /// Clones a pointer even if it is a nullptr.
 template <typename T> auto clone(const std::shared_ptr<T> &t) {

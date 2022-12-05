@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include "codon/sir/base.h"
@@ -124,10 +126,7 @@ private:
 } // namespace ir
 } // namespace codon
 
-// See https://github.com/fmtlib/fmt/issues/1283.
-namespace fmt {
-using codon::ir::Value;
-
-template <typename Char>
-struct formatter<Value, Char> : fmt::v6::internal::fallback_formatter<Value, Char> {};
-} // namespace fmt
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ir::Value, T>::value, char>>
+    : fmt::ostream_formatter {};

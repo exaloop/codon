@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "simplify.h"
 
 #include <memory>
@@ -11,7 +13,7 @@
 #include "codon/parser/visitors/simplify/ctx.h"
 
 using fmt::format;
-
+using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;
@@ -38,7 +40,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
         getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
     const std::string initFile = "__init__.codon";
     if (!stdlibPath || !endswith(stdlibPath->path, initFile))
-      ast::error("cannot load standard library");
+      E(Error::COMPILER_NO_STDLIB);
 
     /// Use __init_test__ for faster testing (e.g., #%% name,barebones)
     /// TODO: get rid of it one day...
@@ -123,6 +125,9 @@ StmtPtr SimplifyVisitor::apply(const std::shared_ptr<SimplifyContext> &ctx,
     ctx->cache->age = atAge;
   auto preamble = std::make_shared<std::vector<StmtPtr>>();
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
+  if (!ctx->cache->errors.empty())
+    throw exc::ParserException();
+
   if (atAge != -1)
     ctx->cache->age = oldAge;
   auto suite = std::make_shared<SuiteStmt>();
@@ -163,7 +168,7 @@ ExprPtr SimplifyVisitor::transform(ExprPtr &expr, bool allowTypes) {
     expr = v.resultExpr;
   }
   if (!allowTypes && expr && expr->isType())
-    error("unexpected type expression");
+    E(Error::UNEXPECTED_TYPE, expr, "type");
   return expr;
 }
 
@@ -179,7 +184,7 @@ ExprPtr SimplifyVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
     expr->markType();
   ctx->allowTypeOf = oldTypeOf;
   if (expr && !expr->isType())
-    error("expected type expression");
+    E(Error::EXPECTED_TYPE, expr, "type");
   return expr;
 }
 
@@ -244,12 +249,12 @@ void SimplifyVisitor::visit(KeywordStarExpr *expr) { transform(expr->what); }
 
 /// Manually handled in @c CallExpr
 void SimplifyVisitor::visit(EllipsisExpr *expr) {
-  error("unexpected ellipsis expression");
+  E(Error::UNEXPECTED_TYPE, expr, "ellipsis");
 }
 
 /// Only allowed in @c MatchStmt
 void SimplifyVisitor::visit(RangeExpr *expr) {
-  error("unexpected pattern range expression");
+  E(Error::UNEXPECTED_TYPE, expr, "range");
 }
 
 /// Handled during the type checking

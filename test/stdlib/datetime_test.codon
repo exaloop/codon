@@ -3,7 +3,7 @@ from unittest import TestCase
 from operator import lt, le, gt, ge, eq, ne, truediv, floordiv, mod
 
 
-class TestTimeDelta(TestCase):
+class TestTimeDelta(Static[TestCase]):
     def test_constructor(self):
         eq = self.assertEqual
         td = timedelta
@@ -381,7 +381,7 @@ class TestTimeDelta(TestCase):
         # self.assertRaises(ZeroDivisionError, divmod, t, zerotd)
 
 
-class TestDateOnly(TestCase):
+class TestDateOnly(Static[TestCase]):
     def test_delta_non_days_ignored(self):
         dt = date(2000, 1, 2)
         delta = timedelta(days=1, hours=2, minutes=3, seconds=4, microseconds=5)
@@ -411,7 +411,7 @@ class TestDateOnly(TestCase):
         self.assertEqual(dt2, dt - days)
 
 
-class TestDate(TestCase):
+class TestDate(Static[TestCase]):
     theclass: type
 
     def test_basic_attributes(self):
@@ -930,7 +930,7 @@ class TestDate(TestCase):
             self.assertRaises(ValueError, self.theclass.fromisocalendar, *isocal)
 
 
-class TestDateTime(TestDate[theclass]):
+class TestDateTime(Static[TestDate[theclass]]):
     theclass: type
 
     def test_basic_attributes(self):
@@ -1657,7 +1657,7 @@ class TestDateTime(TestDate[theclass]):
             self.assertRaises(ValueError, self.theclass.fromisoformat, bad_str)
 
 
-class TestTime(TestCase):
+class TestTime(Static[TestCase]):
     theclass: type = time
 
     def test_basic_attributes(self):

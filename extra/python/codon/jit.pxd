@@ -1,3 +1,5 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 

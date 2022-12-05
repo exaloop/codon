@@ -5,15 +5,15 @@
  option(XEUS_STATIC_DEPENDENCIES "link statically with xeus dependencies" OFF)
  option(XEUS_EMSCRIPTEN_WASM_BUILD  "build for wasm via emscripten" OFF)
 +option(XEUS_USE_DYNAMIC_UUID  "use dynamic linking for libuuid" OFF)
- 
+
  # Test options
  option(XEUS_BUILD_TESTS "xeus test suite" OFF)
 @@ -85,6 +86,7 @@
  message(STATUS "XEUS_BUILD_STATIC_LIBS:     ${XEUS_BUILD_STATIC_LIBS}")
- message(STATUS "XEUS_STATIC_DEPENDENCIES:   ${XEUS_STATIC_DEPENDENCIES}")  
+ message(STATUS "XEUS_STATIC_DEPENDENCIES:   ${XEUS_STATIC_DEPENDENCIES}")
  message(STATUS "XEUS_EMSCRIPTEN_WASM_BUILD: ${XEUS_EMSCRIPTEN_WASM_BUILD}")
 +message(STATUS "XEUS_USE_DYNAMIC_UUID:      ${XEUS_USE_DYNAMIC_UUID}")
- 
+
  # Dependencies
  # ============
 @@ -310,13 +312,15 @@
@@ -26,7 +26,7 @@
                  find_path(LIBUUID_INCLUDE_DIR uuid.h PATH_SUFFIXES uuid)
                  find_library(LIBUUID_LIBRARY libuuid.a)
                  target_include_directories(${target_name} PRIVATE ${LIBUUID_INCLUDE_DIR})
-                 target_link_libraries(${target_name} PUBLIC ${LIBUUID_LIBRARY}) 
+                 target_link_libraries(${target_name} PUBLIC ${LIBUUID_LIBRARY})
                  target_link_libraries(${target_name} PUBLIC ${sodium_LIBRARY_RELEASE})
              else ()
 +                message(STATUS "dynamic libuuid linking")
@@ -36,7 +36,7 @@
 @@ -362,8 +366,6 @@
          CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR
          CMAKE_CXX_COMPILER_ID MATCHES "Intel")
- 
+
 -        target_compile_options(${target_name} PUBLIC -Wunused-parameter -Wextra -Wreorder)
 -
          if (NOT XEUS_DISABLE_ARCH_NATIVE)

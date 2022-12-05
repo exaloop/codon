@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <string>
@@ -82,7 +84,12 @@ private: // Node typechecking rules
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
+  void visit(ListExpr *) override;
+  void visit(SetExpr *) override;
+  void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
+  ExprPtr transformComprehension(const std::string &, const std::string &,
+                                 std::vector<ExprPtr> &);
 
   /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;
@@ -169,7 +176,8 @@ private: // Node typechecking rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::string generateTuple(size_t, const std::string & = "Tuple",
+  void parseBaseClasses(ClassStmt *);
+  std::string generateTuple(size_t, const std::string & = TYPE_TUPLE,
                             std::vector<std::string> = {}, bool = true);
 
   /* The rest (typecheck.cpp) */
@@ -187,8 +195,10 @@ private:
   }
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
   types::TypePtr realize(types::TypePtr);
-  types::TypePtr realizeFunc(types::FuncType *);
+  types::TypePtr realizeFunc(types::FuncType *, bool = false);
   types::TypePtr realizeType(types::ClassType *);
+  std::shared_ptr<FunctionStmt> generateSpecialAst(types::FuncType *);
+  size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
@@ -203,12 +213,15 @@ private:
                       const std::vector<CallExpr::Arg> &args);
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
+  ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp, bool = false);
+  StmtPtr prepareVTables();
 
 public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
 
   friend class Cache;
   friend class types::CallableTrait;
+  friend class types::UnionType;
 };
 
 } // namespace codon::ast

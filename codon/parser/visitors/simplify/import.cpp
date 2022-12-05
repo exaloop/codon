@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <memory>
 #include <string>
 #include <tuple>
@@ -9,6 +11,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -31,7 +34,16 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
                             ctx->cache->module0, ctx->cache->pluginImportPaths);
   if (!file) {
-    error("cannot locate import '{}'", combine2(components, "."));
+    std::string s(stmt->dots, '.');
+    for (size_t i = 0; i < components.size(); i++)
+      if (components[i] == "..") {
+        continue;
+      } else if (!s.empty() && s.back() != '.') {
+        s += "." + components[i];
+      } else {
+        s += components[i];
+      }
+    E(Error::IMPORT_NO_MODULE, stmt->from, s);
   }
 
   // If the file has not been seen before, load it into cache
@@ -88,7 +100,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     auto c = import.ctx->find(i->value);
     // Make sure that we are importing an existing global symbol
     if (!c || c->isConditional())
-      error("symbol '{}' not found in {}", i->value, file->path);
+      E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
   }
 
@@ -166,12 +178,15 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
                 args[ai].type->clone(), nullptr});
     }
   }
+  ctx->generateCanonicalName(name); // avoid canonicalName == name
   StmtPtr f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("NoneType"), fnArgs,
                               nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
-    ctx->add(altName, ctx->find(name));
+    auto val = ctx->forceFind(name);
+    ctx->add(altName, val);
     ctx->remove(name);
+    seqassert(ctx->find(name) == nullptr, "import not properly handled");
   }
   return f;
 }
@@ -219,8 +234,9 @@ StmtPtr SimplifyVisitor::transformCDLLImport(const Expr *dylib, const std::strin
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallExpr::Arg>{
-                      {"", dylib->clone()}, {"", N<StringExpr>(name)}, {"Fn", type}})));
+                  std::vector<CallExpr::Arg>{CallExpr::Arg(dylib->clone()),
+                                             CallExpr::Arg(N<StringExpr>(name)),
+                                             {"Fn", type}})));
 }
 
 /// Transform a Python module and function imports.
@@ -293,6 +309,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
   auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
+  import->second.moduleName = file.module;
 
   // __name__ = [import name]
   StmtPtr n =
@@ -331,7 +348,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
         if (!a->isUpdate() && a->lhs->getId()) {
           // Global `a = ...`
           auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal() && !getStaticGeneric(a->type.get()))
+          if (val->isVar() && val->isGlobal())
             ctx->cache->addGlobal(val->canonicalName);
         }
       }

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <memory>
@@ -24,7 +26,7 @@ struct TypecheckItem {
   /// Type
   types::TypePtr type;
 
-  TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(move(type)) {}
+  TypecheckItem(Kind k, types::TypePtr type) : kind(k), type(std::move(type)) {}
 
   /* Convenience getters */
   bool isType() const { return kind == Type; }
@@ -46,6 +48,8 @@ struct TypeContext : public Context<TypecheckItem> {
     types::TypePtr type;
     /// The return type of currently realized function
     types::TypePtr returnType = nullptr;
+    /// Typechecking iteration
+    int iteration = 0;
   };
   std::vector<RealizationBase> realizationBases;
 
@@ -136,7 +140,7 @@ public:
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
-  using ReorderErrorFn = std::function<int(std::string)>;
+  using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
   /// Reorders a given vector or named arguments (consisting of names and the
   /// corresponding types) according to the signature of a given function.
   /// Returns the reordered vector and an associated reordering score (missing
@@ -151,6 +155,8 @@ public:
 private:
   /// Pretty-print the current context state.
   void dump(int pad);
+  /// Pretty-print the current realization context.
+  std::string debugInfo();
 };
 
 } // namespace codon::ast

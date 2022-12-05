@@ -1,12 +1,13 @@
-#include "format.h"
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 #include <sstream>
 #include <unordered_set>
 
+#include "codon/sir/util/format.h"
 #include "codon/sir/util/visitor.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 namespace codon {
 namespace ir {
@@ -134,6 +135,9 @@ public:
       const auto &l = *it;
       if (l.isStatic()) {
         literals.push_back(fmt::format(FMT_STRING("(static {})"), l.getStaticValue()));
+      } else if (l.isStaticStr()) {
+        literals.push_back(
+            fmt::format(FMT_STRING("(static \"{}\")"), l.getStaticStringValue()));
       } else {
         literals.push_back(
             fmt::format(FMT_STRING("(type {})"), makeFormatter(l.getTypeValue())));
@@ -341,6 +345,11 @@ public:
     fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),
                makeFormatter(v->getBase()), v->getCount());
   }
+  void visit(const types::UnionType *v) override {
+    auto types = makeFormatters(v->begin(), v->end());
+    fmt::print(os, FMT_STRING("(union '\"{}\" {})"), v->referenceString(),
+               fmt::join(types.begin(), types.end(), " "));
+  }
   void visit(const dsl::types::CustomType *v) override { v->doFormat(os); }
 
   void format(const Node *n) {
@@ -453,9 +462,5 @@ std::ostream &format(std::ostream &os, const Node *node) {
 } // namespace ir
 } // namespace codon
 
-// See https://github.com/fmtlib/fmt/issues/1283.
-namespace fmt {
-template <typename Char>
-struct formatter<codon::ir::util::NodeFormatter, Char>
-    : fmt::v6::internal::fallback_formatter<codon::ir::util::NodeFormatter, Char> {};
-} // namespace fmt
+template <>
+struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};

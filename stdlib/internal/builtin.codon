@@ -1,8 +1,7 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import alloc_atomic, free
 from internal.types.optional import unwrap
-
 
 class object:
     def __init__(self):
@@ -11,16 +10,13 @@ class object:
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} object at {self.__raw__()}>"
 
-
 def id(x) -> int:
     if isinstance(x, ByRef):
         return int(x.__raw__())
     else:
         return 0
 
-
 _stdout = _C.seq_stdout()
-
 
 def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
     """
@@ -41,6 +37,10 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
     if flush:
         _C.fflush(fp)
 
+@extend
+class __internal__:
+    def prn(*args):
+        print(*args)
 
 def min(*args):
     if staticlen(args) == 0:
@@ -68,7 +68,6 @@ def min(*args):
                 m = i
         return m
 
-
 def max(*args):
     if staticlen(args) == 0:
         raise ValueError("empty sequence")
@@ -95,13 +94,11 @@ def max(*args):
                 m = i
         return m
 
-
 def len(x) -> int:
     """
     Return the length of x
     """
     return x.__len__()
-
 
 def iter(x):
     """
@@ -109,20 +106,17 @@ def iter(x):
     """
     return x.__iter__()
 
-
 def abs(x):
     """
     Return the absolute value of x
     """
     return x.__abs__()
 
-
 def hash(x) -> int:
     """
     Returns hashed value only for immutable objects
     """
     return x.__hash__()
-
 
 def ord(s: str) -> int:
     """
@@ -134,13 +128,11 @@ def ord(s: str) -> int:
         )
     return int(s.ptr[0])
 
-
 def divmod(a, b):
     if hasattr(a, "__divmod__"):
         return a.__divmod__(b)
     else:
         return (a // b, a % b)
-
 
 def chr(i: int) -> str:
     """
@@ -150,7 +142,6 @@ def chr(i: int) -> str:
     p = cobj(1)
     p[0] = byte(i)
     return str(p, 1)
-
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     """
@@ -163,7 +154,6 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             raise StopIteration()
     return g.next()
 
-
 def any(x: Generator[T], T: type) -> bool:
     """
     Returns True if any item in x is true,
@@ -174,7 +164,6 @@ def any(x: Generator[T], T: type) -> bool:
             return True
     return False
 
-
 def all(x: Generator[T], T: type) -> bool:
     """
     Returns True when all elements in x are true,
@@ -184,7 +173,6 @@ def all(x: Generator[T], T: type) -> bool:
         if not a:
             return False
     return True
-
 
 def zip(*args):
     """
@@ -205,7 +193,6 @@ def zip(*args):
         for i in iters:
             i.destroy()
 
-
 def filter(f: Callable[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     """
     Returns all a from the iterable x that are filtered by f
@@ -213,7 +200,6 @@ def filter(f: Callable[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     for a in x:
         if f(a):
             yield a
-
 
 def map(f, *args):
     """
@@ -228,7 +214,6 @@ def map(f, *args):
         for a in zip(*args):
             yield f(*a)
 
-
 def enumerate(x, start: int = 0):
     """
     Creates a tuple containing a count (from start which defaults
@@ -239,14 +224,12 @@ def enumerate(x, start: int = 0):
         yield (i, a)
         i += 1
 
-
 def echo(x):
     """
     Print and return argument
     """
     print x
     return x
-
 
 def reversed(x):
     """
@@ -260,7 +243,6 @@ def reversed(x):
             yield x[i]
             i -= 1
 
-
 def round(x, n=0):
     """
     Return the x rounded off to the given
@@ -268,7 +250,6 @@ def round(x, n=0):
     """
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
-
 
 def sum(xi):
     """
@@ -284,11 +265,9 @@ def sum(xi):
     else:
         x.destroy()
 
-
 def repr(x):
     """Return the string representation of x"""
     return x.__repr__()
-
 
 def _int_format(a: int, base: int, prefix: str = ""):
     assert base == 2 or base == 8 or base == 10 or base == 16
@@ -326,18 +305,14 @@ def _int_format(a: int, base: int, prefix: str = ""):
 
     return str(p, sz)
 
-
 def bin(n):
     return _int_format(n.__index__(), 2, "0b")
-
 
 def oct(n):
     return _int_format(n.__index__(), 8, "0o")
 
-
 def hex(n):
     return _int_format(n.__index__(), 16, "0x")
-
 
 @extend
 class int:
@@ -367,7 +342,6 @@ class int:
             )
 
         return result
-
 
 def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
     if isinstance(x, None):

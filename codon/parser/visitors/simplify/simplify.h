@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <string>
@@ -97,8 +99,6 @@ private: // Node simplification rules
   void visit(TupleExpr *) override;
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
-  ExprPtr transformComprehension(const std::string &, const std::string &,
-                                 const std::vector<ExprPtr> &);
   void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
   void visit(DictGeneratorExpr *) override;
@@ -175,8 +175,10 @@ private: // Node simplification rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<ClassStmt *> parseBaseClasses(const std::vector<ExprPtr> &,
-                                            std::vector<Param> &, const Attr &);
+  std::vector<ClassStmt *> parseBaseClasses(std::vector<ExprPtr> &,
+                                            std::vector<Param> &, const Attr &,
+                                            const std::string &,
+                                            const ExprPtr & = nullptr);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                        std::vector<Param> &);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);

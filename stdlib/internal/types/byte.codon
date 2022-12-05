@@ -1,11 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
-
-@pure
-@C
-def seq_str_byte(a: byte) -> str:
-    pass
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 @extend
 class byte:
@@ -47,6 +40,9 @@ class byte:
         %0 = icmp eq i8 %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
+    def __eq__(self, other: int) -> bool:
+        return self == byte(other)
 
     @pure
     @llvm

@@ -1,15 +1,13 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # set implementation based on klib's khash
+
 from internal.attributes import commutative, associative
 import internal.khash as khash
 import internal.gc as gc
 
-
 def _set_hash(key) -> int:
     k = key.__hash__()
     return (k >> 33) ^ k ^ (k << 11)
-
 
 class Set:
     _n_buckets: int
@@ -154,7 +152,7 @@ class Set:
     def add(self, key: K):
         self._kh_put(key)
 
-    def update(self, other: Set[K]):
+    def update(self, other: Generator[K]):
         for k in other:
             self.add(k)
 
@@ -424,6 +422,5 @@ class Set:
 
     def _kh_exist(self, x: int) -> bool:
         return not khash.__ac_iseither(self._flags, x)
-
 
 set = Set

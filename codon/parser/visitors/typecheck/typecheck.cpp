@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "typecheck.h"
 
 #include <memory>
@@ -8,9 +10,10 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -20,7 +23,14 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!cache->typeCtx)
     cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
-  return v.inferTypes(clone(stmts), true);
+  auto s = v.inferTypes(clone(stmts), true);
+  if (!s) {
+    v.error("cannot typecheck the program");
+  }
+  if (s->getSuite()) {
+    v.prepareVTables();
+  }
+  return s;
 }
 
 /**************************************************************************************/
@@ -50,7 +60,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
-    seqassert(expr->type, "type not set for {}", expr->toString());
+    seqassert(expr->type, "type not set for {}", expr);
     unify(typ, expr->type);
     if (expr->done)
       ctx->changedNodes++;
@@ -70,9 +80,9 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
   transform(expr);
   if (expr) {
     if (!expr->isType() && expr->isStatic()) {
-      expr->setType(std::make_shared<StaticType>(expr, ctx));
+      expr->setType(Type::makeStatic(ctx->cache, expr));
     } else if (!expr->isType()) {
-      error("expected type expression");
+      E(Error::EXPECTED_TYPE, expr, "type");
     } else {
       expr->setType(ctx->instantiate(expr->getType()));
     }
@@ -186,38 +196,56 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
   for (const auto &mi : methods) {
+    if (!mi)
+      continue; // avoid overloads that have not been seen yet
     auto method = ctx->instantiate(mi, typ)->getFunc();
-    std::vector<types::TypePtr> reordered;
+    std::vector<std::pair<types::TypePtr, size_t>> reordered;
     auto score = ctx->reorderNamedArgs(
         method.get(), args,
         [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
           for (int si = 0; si < slots.size(); si++) {
             if (method->ast->args[si].status == Param::Generic) {
-              // Ignore type arguments
+              if (slots[si].empty())
+                reordered.push_back({nullptr, 0});
+              else
+                reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
             } else if (si == s || si == k || slots[si].size() != 1) {
               // Ignore *args, *kwargs and default arguments
-              reordered.emplace_back(nullptr);
+              reordered.push_back({nullptr, 0});
             } else {
-              reordered.emplace_back(args[slots[si][0]].value->type);
+              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
             }
           }
           return 0;
         },
-        [](const std::string &) { return -1; });
+        [](error::Error, const SrcInfo &, const std::string &) { return -1; });
     for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
       auto expectTyp = method->ast->args[ai].status == Param::Normal
                            ? method->getArgTypes()[mai++]
                            : method->funcGenerics[gi++].type;
-      auto argType = reordered[ai];
+      auto [argType, argTypeIdx] = reordered[ai];
       if (!argType)
         continue;
+      if (method->ast->args[ai].status != Param::Normal) {
+        // Check if this is a good generic!
+        if (expectTyp && expectTyp->isStaticType()) {
+          if (!args[argTypeIdx].value->isStatic()) {
+            score = -1;
+            break;
+          } else {
+            argType = Type::makeStatic(ctx->cache, args[argTypeIdx].value);
+          }
+        } else {
+          /// TODO: check if these are real types or if traits are satisfied
+          continue;
+        }
+      }
       try {
         ExprPtr dummy = std::make_shared<IdExpr>("");
         dummy->type = argType;
         dummy->setDone();
         wrapExpr(dummy, expectTyp, method);
         types::Type::Unification undo;
-        undo.realizator = this;
         if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
           undo.undo();
         } else {
@@ -243,13 +271,25 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 ///   expected `Optional[T]`, got `T`     -> `Optional(expr)`
 ///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
 ///   expected `Function`, got a function -> partialize function
+///   expected `T`, got `Union[T...]`     -> `__internal__.get_union(expr, T)`
+///   expected `Union[T...]`, got `T`     -> `__internal__.new_union(expr, Union[T...])`
+///   expected base class, got derived    -> downcast to base class
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
-  if (callee && expr->isType())
-    expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+  if (callee && expr->isType()) {
+    auto c = expr->type->getClass();
+    if (!c)
+      return false;
+    if (c->getRecord())
+      expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+    else
+      expr = transform(N<CallExpr>(
+          N<IdExpr>("__internal__.class_ctr:0"),
+          std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+  }
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
@@ -281,10 +321,74 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
         transform(N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p")));
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
-    // Case 7: wrap raw Seq functions into Partial(...) call for easy realization.
+    // Wrap raw Seq functions into Partial(...) call for easy realization.
     expr = partializeFunction(expr->type->getFunc());
+  } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
+             !expectedClass->getUnion()) {
+    // Extract union types via __internal__.get_union
+    if (auto t = realize(expectedClass)) {
+      expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
+                                   N<IdExpr>(t->realizedName())));
+    } else {
+      return false;
+    }
+  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
+    // Make union types via __internal__.new_union
+    if (!expectedClass->getUnion()->isSealed())
+      expectedClass->getUnion()->addType(exprClass);
+    if (auto t = realize(expectedClass)) {
+      if (expectedClass->unify(exprClass.get(), nullptr) == -1)
+        expr = transform(N<CallExpr>(N<IdExpr>("__internal__.new_union:0"), expr,
+                                     NT<IdExpr>(t->realizedName())));
+    } else {
+      return false;
+    }
+  } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
+    // Cast derived classes to base classes
+    auto &mros = ctx->cache->classes[exprClass->name].mro;
+    for (size_t i = 1; i < mros.size(); i++) {
+      auto t = ctx->instantiate(mros[i]->type, exprClass);
+      if (t->unify(expectedClass.get(), nullptr) >= 0) {
+        if (!expr->isId("")) {
+          expr = castToSuperClass(expr, expectedClass, true);
+        } else { // Just checking can this be done
+          expr->type = expectedClass;
+        }
+        break;
+      }
+    }
   }
   return true;
+}
+
+/// Cast derived class to a base class.
+ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
+                                           bool isVirtual) {
+  ClassTypePtr typ = expr->type->getClass();
+  for (auto &field : ctx->cache->classes[typ->name].fields) {
+    for (auto &parentField : ctx->cache->classes[superTyp->name].fields)
+      if (field.name == parentField.name) {
+        unify(ctx->instantiate(field.type, typ),
+              ctx->instantiate(parentField.type, superTyp));
+      }
+  }
+  auto typExpr = N<IdExpr>(superTyp->name);
+  typExpr->setType(superTyp);
+  // `dist = expr.__raw__()`
+  ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
+  if (isVirtual) {
+    // Virtual inheritance: `dist += class_base_derived_dist(super, type(expr))`
+    dist =
+        N<BinaryExpr>(dist, "+",
+                      N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
+                                  N<IdExpr>(superTyp->realizedName()),
+                                  N<CallExpr>(N<IdExpr>("type"), expr)));
+  }
+  realize(superTyp);
+
+  // No inheritance: `__internal__.to_class_ptr(dist, T)`
+  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
+                               dist, typExpr));
 }
 
 } // namespace codon::ast

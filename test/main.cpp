@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <algorithm>
 #include <cstdio>
 #include <dirent.h>
@@ -276,9 +278,11 @@ public:
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
                             [](const error::ParserErrorInfo &e) {
-                              for (auto &msg : e) {
-                                getLogger().level = 0;
-                                printf("%s\n", msg.getMessage().c_str());
+                              for (auto &group : e) {
+                                for (auto &msg : group) {
+                                  getLogger().level = 0;
+                                  printf("%s\n", msg.getMessage().c_str());
+                                }
                               }
                               fflush(stdout);
                               exit(EXIT_FAILURE);
@@ -359,7 +363,7 @@ TEST_P(SeqTest, Run) {
     vector<string> results = splitLines(output);
     for (unsigned i = 0; i < min(results.size(), expects.first.size()); i++)
       if (expects.second)
-        EXPECT_EQ(results[i].substr(0, expects.first[i].size()), expects.first[i]);
+        EXPECT_EQ(results[i], expects.first[i]);
       else
         EXPECT_EQ(results[i], expects.first[i]);
     EXPECT_EQ(results.size(), expects.first.size());

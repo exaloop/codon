@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "expr.h"
 
 #include <memory>
@@ -13,6 +15,7 @@
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -35,6 +38,15 @@ std::string Expr::wrapType(const std::string &sexpr) const {
 bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
 void Expr::setAttr(int attr) { attributes |= (1 << attr); }
+std::string Expr::getTypeName() {
+  if (getId()) {
+    return getId()->value;
+  } else {
+    auto i = dynamic_cast<InstantiateExpr *>(this);
+    seqassertn(i && i->typeExpr->getId(), "bad MRO");
+    return i->typeExpr->getId()->value;
+  }
+}
 
 StaticValue::StaticValue(StaticValue::Type t) : value(), type(t), evaluated(false) {}
 StaticValue::StaticValue(int64_t i) : value(i), type(INT), evaluated(true) {}
@@ -72,6 +84,11 @@ Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
     this->status = Generic;
   else
     this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
+}
+Param::Param(const SrcInfo &info, std::string name, ExprPtr type, ExprPtr defaultValue,
+             int status)
+    : Param(name, type, defaultValue, status) {
+  setSrcInfo(info);
 }
 std::string Param::toString() const {
   return format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
@@ -208,19 +225,15 @@ std::string SetExpr::toString() const {
 }
 ACCEPT_IMPL(SetExpr, ASTVisitor);
 
-DictExpr::DictItem DictExpr::DictItem::clone() const {
-  return {ast::clone(key), ast::clone(value)};
+DictExpr::DictExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items)) {
+  for (auto &i : items) {
+    auto t = i->getTuple();
+    seqassertn(t && t->items.size() == 2, "dictionary items are invalid");
+  }
 }
-
-DictExpr::DictExpr(std::vector<DictExpr::DictItem> items)
-    : Expr(), items(std::move(items)) {}
-DictExpr::DictExpr(const DictExpr &expr)
-    : Expr(expr), items(ast::clone_nop(expr.items)) {}
+DictExpr::DictExpr(const DictExpr &expr) : Expr(expr), items(ast::clone(expr.items)) {}
 std::string DictExpr::toString() const {
-  std::vector<std::string> s;
-  for (auto &i : items)
-    s.push_back(format("({} {})", i.key->toString(), i.value->toString()));
-  return wrapType(!s.empty() ? format("dict {}", join(s, " ")) : "dict");
+  return wrapType(!items.empty() ? format("dict {}", combine(items)) : "set");
 }
 ACCEPT_IMPL(DictExpr, ASTVisitor);
 
@@ -349,6 +362,15 @@ std::string IndexExpr::toString() const {
 ACCEPT_IMPL(IndexExpr, ASTVisitor);
 
 CallExpr::Arg CallExpr::Arg::clone() const { return {name, ast::clone(value)}; }
+CallExpr::Arg::Arg(const SrcInfo &info, const std::string &name, ExprPtr value)
+    : name(name), value(value) {
+  setSrcInfo(info);
+}
+CallExpr::Arg::Arg(const std::string &name, ExprPtr value) : name(name), value(value) {
+  if (value)
+    setSrcInfo(value->getSrcInfo());
+}
+CallExpr::Arg::Arg(ExprPtr value) : CallExpr::Arg("", value) {}
 
 CallExpr::CallExpr(const CallExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), args(ast::clone_nop(expr.args)),
@@ -365,16 +387,15 @@ CallExpr::CallExpr(ExprPtr expr, std::vector<ExprPtr> args)
   validate();
 }
 void CallExpr::validate() const {
-  bool namesStarted = false;
-  bool foundEllispis = false;
+  bool namesStarted = false, foundEllispis = false;
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
         !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
-      error(getSrcInfo(), "unnamed argument after a named argument");
+      E(Error::CALL_NAME_ORDER, a.value);
     if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
-      error(getSrcInfo(), "named star-expressions not allowed");
+      E(Error::CALL_NAME_STAR, a.value);
     if (a.value->getEllipsis() && foundEllispis)
-      error(getSrcInfo(), "unexpected ellipsis expression");
+      E(Error::CALL_ELLIPSIS, a.value);
     foundEllispis |= bool(a.value->getEllipsis());
     namesStarted |= !a.name.empty();
   }

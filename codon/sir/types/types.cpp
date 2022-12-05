@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "types.h"
 
 #include <algorithm>
@@ -10,7 +12,7 @@
 #include "codon/sir/util/iterators.h"
 #include "codon/sir/util/visitor.h"
 #include "codon/sir/value.h"
-#include "codon/util/fmt/format.h"
+#include <fmt/format.h>
 
 namespace codon {
 namespace ir {
@@ -194,6 +196,17 @@ const char VectorType::NodeId = 0;
 
 std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base) {
   return fmt::format(FMT_STRING("Vector[{}, {}]"), count, base->referenceString());
+}
+
+const char UnionType::NodeId = 0;
+
+std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) {
+  std::vector<std::string> names;
+  for (auto *type : types) {
+    names.push_back(type->referenceString());
+  }
+  return fmt::format(FMT_STRING("Union[{}]"),
+                     fmt::join(names.begin(), names.end(), ", "));
 }
 
 } // namespace types

@@ -1,5 +1,4 @@
-# (c) 2022 Exaloop Inc. All rights reserved.
-
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 # Warning(!): This type must be consistent with the exception
 # header type defined in runtime/exc.cpp.
@@ -25,91 +24,74 @@ class BaseException:
     def __repr__(self):
         return f'{self.typename}({self.message.__repr__()})'
 
-
-class Exception(BaseException):
+class Exception(Static[BaseException]):
     def __init__(self, typename: str, msg: str = ""):
         super().__init__(typename, msg)
 
-
-class NameError(Exception):
+class NameError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("NameError", message)
 
-
-class OSError(Exception):
+class OSError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("OSError", message)
 
-
-class IOError(Exception):
+class IOError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("IOError", message)
 
-
-class ValueError(Exception):
+class ValueError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("ValueError", message)
 
-
-class IndexError(Exception):
+class IndexError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("IndexError", message)
 
-
-class KeyError(Exception):
+class KeyError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("KeyError", message)
 
-
-class OverflowError(Exception):
+class OverflowError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("OverflowError", message)
 
-
-class CError(Exception):
+class CError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("CError", message)
 
-
-class PyError(Exception):
+class PyError(Static[Exception]):
     pytype: pyobj
 
     def __init__(self, message: str, pytype: pyobj):
         super().__init__("PyError", message)
         self.pytype = pytype
 
-
-class TypeError(Exception):
+class TypeError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("TypeError", message)
 
-
-class ZeroDivisionError(Exception):
+class ZeroDivisionError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("ZeroDivisionError", message)
 
-
-class AttributeError(Exception):
+class AttributeError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("AttributeError", message)
 
-
-class NotImplementedError(Exception):
+class NotImplementedError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("NotImplementedError", message)
 
-
-class StopIteration(Exception):
+class StopIteration(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("StopIteration", message)
 
-
-class AssertionError(Exception):
+class AssertionError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("AssertionError", message)
 
-
-class SystemExit(BaseException):
+class SystemExit(Static[BaseException]):
     _status: int
 
     def __init__(self, message: str = "", status: int = 0):

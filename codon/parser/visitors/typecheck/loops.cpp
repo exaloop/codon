@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include <string>
 #include <tuple>
 
@@ -7,7 +9,7 @@
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
-
+using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;
@@ -76,7 +78,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   auto var = stmt->var->getId();
-  seqassert(var, "corrupt for variable: {}", stmt->var->toString());
+  seqassert(var, "corrupt for variable: {}", stmt->var);
 
   // Handle dominated for bindings
   auto changed = in(ctx->cache->replacements, var->value);
@@ -97,7 +99,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     val = ctx->add(TypecheckItem::Var, var->value,
                    ctx->getUnbound(stmt->var->getSrcInfo()));
   if (iterType && iterType->name != "Generator")
-    error("for loop expected a generator");
+    E(Error::EXPECTED_GENERATOR, stmt->iter);
   unify(stmt->var->type,
         iterType ? unify(val->type, iterType->generics[0].type) : val->type);
 
@@ -167,10 +169,9 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
   auto fn = [&](const std::string &var, const ExprPtr &expr) {
     bool staticInt = expr->isStatic();
-    auto t = N<IndexExpr>(
+    auto t = NT<IndexExpr>(
         N<IdExpr>("Static"),
         N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
-    t->markType();
     auto brk = N<BreakStmt>();
     brk->setDone(); // Avoid transforming this one to continue
     // var [: Static] := expr; suite...
@@ -200,8 +201,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int step =
         iter->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
-      error("staticrange out of bounds ({} > {})", abs(st - ed) / abs(step),
-            MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, abs(st - ed) / abs(step));
     for (int i = st; step > 0 ? i < ed : i > ed; i += step)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else if (iter &&
@@ -209,7 +209,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     int ed =
         iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
     if (ed > MAX_STATIC_ITER)
-      error("staticrange out of bounds ({} > {})", ed, MAX_STATIC_ITER);
+      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, ed);
     for (int i = 0; i < ed; i++)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
   } else {

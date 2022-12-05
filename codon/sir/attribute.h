@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <iostream>
@@ -8,8 +10,6 @@
 #include <utility>
 
 #include "codon/util/common.h"
-#include "codon/util/fmt/format.h"
-#include "codon/util/fmt/ostream.h"
 
 namespace codon {
 namespace ir {
@@ -221,3 +221,5 @@ private:
 
 } // namespace ir
 } // namespace codon
+
+template <> struct fmt::formatter<codon::ir::Attribute> : fmt::ostream_formatter {};

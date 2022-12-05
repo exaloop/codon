@@ -1,8 +1,11 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <memory>
 #include <vector>
 
+#include "codon/compiler/error.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 
@@ -128,13 +131,13 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
 
   /// Convenience method that raises an error at the current source location.
   template <typename... TArgs> void error(const char *format, TArgs &&...args) {
-    ast::error(getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(-1, getSrcInfo(), fmt::format(format, args...).c_str());
   }
 
   /// Convenience method that raises an error at the source location of p.
   template <typename T, typename... TArgs>
   void error(const T &p, const char *format, TArgs &&...args) {
-    ast::error(p->getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(-1, p->getSrcInfo(), fmt::format(format, args...).c_str());
   }
 
   /// Convenience method that raises an internal error.
@@ -166,10 +169,8 @@ public:
       transform(i);
   }
   void visit(DictExpr *expr) override {
-    for (auto &i : expr->items) {
-      transform(i.key);
-      transform(i.value);
-    }
+    for (auto &i : expr->items)
+      transform(i);
   }
   void visit(GeneratorExpr *expr) override {
     transform(expr->expr);
@@ -336,6 +337,8 @@ public:
     for (auto &d : stmt->decorators)
       transform(d);
     for (auto &d : stmt->baseClasses)
+      transform(d);
+    for (auto &d : stmt->staticBaseClasses)
       transform(d);
   }
   void visit(YieldFromStmt *stmt) override { transform(stmt->expr); }

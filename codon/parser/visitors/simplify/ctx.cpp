@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #include "ctx.h"
 
 #include <map>
@@ -9,6 +11,7 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;
+using namespace codon::error;
 
 namespace codon::ast {
 
@@ -27,7 +30,7 @@ SimplifyContext::Base::Base(std::string name, Attr *attributes)
 void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);
   if (v && v->noShadow)
-    error("cannot shadow global or nonlocal statement");
+    E(Error::ID_INVALID_BIND, getSrcInfo(), name);
   Context<SimplifyItem>::add(name, var);
 }
 
@@ -131,9 +134,8 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
       break;
   }
   seqassert(lastGood != it->second.end(), "corrupted scoping ({})", name);
-  if (lastGood != it->second.begin() && !(*lastGood)->isVar()) {
-    error("reassigning types and functions not allowed");
-  }
+  if (lastGood != it->second.begin() && !(*lastGood)->isVar())
+    E(Error::CLASS_INVALID_BIND, getSrcInfo(), name);
 
   bool hasUsed = false;
   if ((*lastGood)->scope.size() == prefix) {
@@ -176,8 +178,6 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
-    // LOG("RENAME {} -> {} [{}] @ {}", (*i)->canonicalName, canonicalName, hasUsed,
-    //     (*i)->getSrcInfo());
     auto it = std::find(stack.front().begin(), stack.front().end(), name);
     if (it != stack.front().end())
       stack.front().erase(it);
@@ -266,7 +266,6 @@ void SimplifyContext::dump(int pad) {
     LOG("-> {}", s);
   for (auto &i : ordered) {
     std::string s;
-    // auto t = i.second.front();
     bool f = true;
     for (auto &t : i.second) {
       LOG("{}{} {} {:40} {:30} {}", std::string(pad * 2, ' '),

@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <memory>
@@ -415,6 +417,7 @@ struct Attr {
   const static std::string C;
   // Internal attributes
   const static std::string Internal;
+  const static std::string HiddenFromUser;
   const static std::string ForceRealize;
   const static std::string RealizeWithoutSelf; // not internal
   // Compiler-generated attributes
@@ -474,6 +477,9 @@ struct FunctionStmt : public Stmt {
   bool hasAttr(const std::string &attr) const;
   void parseDecorators();
 
+  size_t getStarArgs() const;
+  size_t getKwStarArgs() const;
+
   FunctionStmt *getFunction() override { return this; }
 };
 
@@ -489,10 +495,11 @@ struct ClassStmt : public Stmt {
   Attr attributes;
   std::vector<ExprPtr> decorators;
   std::vector<ExprPtr> baseClasses;
+  std::vector<ExprPtr> staticBaseClasses;
 
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-            std::vector<ExprPtr> decorators = {},
-            std::vector<ExprPtr> baseClasses = {});
+            std::vector<ExprPtr> decorators = {}, std::vector<ExprPtr> baseClasses = {},
+            std::vector<ExprPtr> staticBaseClasses = {});
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
   ClassStmt(const ClassStmt &stmt);
 
@@ -583,3 +590,19 @@ struct CommentStmt : public Stmt {
 #undef ACCEPT
 
 } // namespace codon::ast
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::Stmt, T>::value, char>>
+    : fmt::ostream_formatter {};
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<
+           std::is_convertible<T, std::shared_ptr<codon::ast::Stmt>>::value, char>>
+    : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
+  }
+};

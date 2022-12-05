@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <any>
@@ -5,13 +7,13 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <peglib.h>
 #include <string>
 #include <vector>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/util/cpp-peglib/peglib.h"
 
 namespace codon::ast {
 

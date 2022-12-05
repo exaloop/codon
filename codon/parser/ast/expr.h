@@ -1,3 +1,5 @@
+// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
 #pragma once
 
 #include <memory>
@@ -138,6 +140,9 @@ public:
   bool isDone() const { return done; }
   void setDone() { done = true; }
 
+  /// @return Type name for IdExprs or instantiations.
+  std::string getTypeName();
+
 protected:
   /// Add a type to S-expression string.
   std::string wrapType(const std::string &sexpr) const;
@@ -156,6 +161,8 @@ struct Param : public codon::SrcObject {
   } status; // 1 for normal generic, 2 for hidden generic
 
   explicit Param(std::string name = "", ExprPtr type = nullptr,
+                 ExprPtr defaultValue = nullptr, int generic = 0);
+  explicit Param(const SrcInfo &info, std::string name = "", ExprPtr type = nullptr,
                  ExprPtr defaultValue = nullptr, int generic = 0);
 
   std::string toString() const;
@@ -329,16 +336,12 @@ struct SetExpr : public Expr {
 };
 
 /// Dictionary expression ({(key: value)...}).
+/// Each (key, value) pair is stored as a TupleExpr.
 /// @li {'s': 1, 't': 2}
 struct DictExpr : public Expr {
-  struct DictItem {
-    ExprPtr key, value;
+  std::vector<ExprPtr> items;
 
-    DictItem clone() const;
-  };
-  std::vector<DictItem> items;
-
-  explicit DictExpr(std::vector<DictItem> items);
+  explicit DictExpr(std::vector<ExprPtr> items);
   DictExpr(const DictExpr &expr);
 
   std::string toString() const override;
@@ -488,11 +491,15 @@ struct IndexExpr : public Expr {
 /// @li a(1, b=2)
 struct CallExpr : public Expr {
   /// Each argument can have a name (e.g. foo(1, b=5))
-  struct Arg {
+  struct Arg : public codon::SrcObject {
     std::string name;
     ExprPtr value;
 
     Arg clone() const;
+
+    Arg(const SrcInfo &info, const std::string &name, ExprPtr value);
+    Arg(const std::string &name, ExprPtr value);
+    Arg(ExprPtr value);
   };
 
   ExprPtr expr;
@@ -667,3 +674,38 @@ enum ExprAttr {
 StaticValue::Type getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::Expr, T>::value, char>>
+    : fmt::ostream_formatter {};
+
+template <>
+struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const codon::ast::CallExpr::Arg &p, FormatContext &ctx) const
+      -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "({}{})",
+                          p.name.empty() ? "" : fmt::format("{} = ", p.name), p.value);
+  }
+};
+
+template <>
+struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const codon::ast::Param &p, FormatContext &ctx) const
+      -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p.toString());
+  }
+};
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<
+           std::is_convertible<T, std::shared_ptr<codon::ast::Expr>>::value, char>>
+    : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
+  }
+};
