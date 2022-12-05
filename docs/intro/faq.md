@@ -130,7 +130,7 @@ to help provide a sense of where to look first:
 - [`stdlib/`](https://github.com/exaloop/codon/tree/develop/stdlib): standard library code
 
 You can also take a look at some of the [open issues](https://github.com/exaloop/codon/issues). If you
-have any question or suggestions, please feel free to ask in [the forum](https://discourse.exaloop.io).
+have any question or suggestions, please feel free to ask in [the forum](https://github.com/exaloop/codon/discussions).
 
 ## Is there a Contributor License Agreement (CLA)?
 
