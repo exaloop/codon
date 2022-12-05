@@ -11,11 +11,6 @@ if [ "$OS" != "linux" ] && [ "$OS" != "darwin" ]; then
   exit 1
 fi
 
-if [ "$ARCH" != "x86_64" ]; then
-  echo "error: Pre-built binaries only exist for x86_64." >&2
-  exit 1
-fi
-
 CODON_BUILD_ARCHIVE=codon-$OS-$ARCH.tar.gz
 
 mkdir -p $CODON_INSTALL_DIR
