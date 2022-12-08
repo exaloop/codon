@@ -471,8 +471,10 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     command.push_back("-shared");
 
   for (const auto &rpath : rpaths) {
-    command.push_back("-L" + rpath);
-    command.push_back("-Wl,-rpath," + rpath);
+    if (!rpath.empty()) {
+      command.push_back("-L" + rpath);
+      command.push_back("-Wl,-rpath," + rpath);
+    }
   }
 
   if (plugins) {
@@ -484,8 +486,10 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
       llvm::SmallString<128> rpath0 = llvm::sys::path::parent_path(dylibPath);
       llvm::sys::fs::make_absolute(rpath0);
       llvm::StringRef rpath = rpath0.str();
-      command.push_back("-L" + rpath.str());
-      command.push_back("-Wl,-rpath," + rpath.str());
+      if (!rpath.empty()) {
+        command.push_back("-L" + rpath.str());
+        command.push_back("-Wl,-rpath," + rpath.str());
+      }
     }
   }
 

@@ -28,6 +28,17 @@ Typical speedups over Python are on the order of 10-100x or more, on a single th
 (and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
 times higher still. Codon grew out of the [Seq project](https://github.com/seq-lang/seq).
 
+## Install
+
+Pre-built binaries for Linux (x86_64) and macOS (x86_64 and arm64) are available alongside [each release](https://github.com/exaloop/codon/releases).
+Download and install with:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
+```
+
+Or you can [build from source](https://docs.exaloop.io/codon/advanced/build).
+
 ## Examples
 
 Codon is a Python-compatible language, and many Python programs will work with few if any modifications:
@@ -131,54 +142,6 @@ dynamic features are disallowed. The Codon compiler produces detailed error mess
 Codon can be used within larger Python codebases via the [`@codon.jit` decorator](https://docs.exaloop.io/codon/interoperability/decorator).
 Plain Python functions and libraries can also be called from within Codon via
 [Python interoperability](https://docs.exaloop.io/codon/interoperability/python).
-
-## Install
-
-### Pre-built binaries
-
-Pre-built binaries for Linux and macOS on x86_64 are available alongside [each release](https://github.com/exaloop/codon/releases).
-Download and install with:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
-```
-
-### Build from source
-
-Codon can be built using CMake. It is recommended to build Codon with Clang, which can be done by setting the `CC` and `CXX`
-environment variables:
-
-```bash
-export CC=clang
-export CXX=clang++
-```
-
-Most dependencies are built as part of the CMake build process, except for LLVM, which can be built as follows
-(note that Codon uses a custom fork of LLVM 15):
-
-```bash
-git clone --depth 1 -b codon https://github.com/exaloop/llvm-project
-mkdir -p llvm-project/llvm/build
-cd llvm-project/llvm/build
-cmake .. \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLVM_ENABLE_RTTI=ON \
-    -DLLVM_ENABLE_ZLIB=OFF \
-    -DLLVM_ENABLE_TERMINFO=OFF \
-    -DLLVM_TARGETS_TO_BUILD=all
-make
-make install
-```
-
-Finally, build Codon itself with:
-
-```bash
-cd codon
-mkdir build
-(cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$(llvm-config --cmakedir))
-cmake --build build --config Release
-```
 
 ## Documentation
 

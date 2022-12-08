@@ -34,7 +34,7 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                    const std::vector<std::string> &disabledPasses, bool isTest,
                    bool pyNumerics)
     : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics), input(),
-      plm(std::make_unique<PluginManager>()),
+      plm(std::make_unique<PluginManager>(argv0)),
       cache(std::make_unique<ast::Cache>(argv0)),
       module(std::make_unique<ir::Module>()),
       pm(std::make_unique<ir::transform::PassManager>(getPassManagerInit(mode, isTest),

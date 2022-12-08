@@ -11,8 +11,8 @@
 #include "codon/parser/common.h"
 
 namespace codon::ast {
-class Cache;
-class Expr;
+struct Cache;
+struct Expr;
 } // namespace codon::ast
 
 namespace codon::ast::types {
