@@ -34,7 +34,7 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
   llvm::sys::path::append(tomlPath, config);
   if (!llvm::sys::fs::exists(tomlPath)) {
     // try default install path
-    tomlPath = llvm::SmallString<128>(llvm::sys::path::parent_path(argv0));
+    tomlPath = llvm::SmallString<128>(ast::executable_path(argv0.c_str()));
     llvm::sys::path::append(tomlPath, "../lib/codon/plugins", path, config);
   }
 
