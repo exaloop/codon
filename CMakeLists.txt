@@ -436,6 +436,9 @@ set(gtest_force_shared_crt
     CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
+if(IS_DIRECTORY "${googletest_SOURCE_DIR}")
+    set_property(DIRECTORY ${googletest_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
+endif()
 set(CODON_TEST_CPPFILES
     test/main.cpp
     test/sir/analyze/dominator.cpp
@@ -458,3 +461,10 @@ target_include_directories(codon_test PRIVATE test/sir
 target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+
+install(TARGETS codonrt codonc DESTINATION lib/codon)
+install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
+install(TARGETS codon DESTINATION bin)
+install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
+install(DIRECTORY DESTINATION lib/codon/plugins)

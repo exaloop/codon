@@ -16,7 +16,8 @@ CPMAddPackage(
     NAME fmt
     GITHUB_REPOSITORY "fmtlib/fmt"
     GIT_TAG 9.1.0
-    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON")
+    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+            "FMT_INSTALL ON")
 
 CPMAddPackage(
     NAME toml
@@ -33,6 +34,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
     VERSION 2.0.5
     GIT_TAG 2.0.5
+    EXCLUDE_FROM_ALL YES
     OPTIONS "HAVE_OFF64_T ON"
             "ZLIB_COMPAT ON"
             "ZLIB_ENABLE_TESTS OFF"
@@ -46,6 +48,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "xz-mirror/xz"
     VERSION 5.2.5
     GIT_TAG e7da44d5151e21f153925781ad29334ae0786101
+    EXCLUDE_FROM_ALL YES
     OPTIONS "BUILD_SHARED_LIBS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 if(xz_ADDED)
@@ -77,6 +80,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "ivmai/bdwgc"
     VERSION 8.0.5
     GIT_TAG d0ba209660ea8c663e06d9a68332ba5f42da54ba
+    EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "BUILD_SHARED_LIBS OFF"
             "enable_threads ON"
@@ -91,6 +95,7 @@ CPMAddPackage(
     NAME openmp
     GITHUB_REPOSITORY "exaloop/openmp"
     GIT_TAG 11daa2021c590dc74a0e734b4783570b619d88c9
+    EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_BUILD_TYPE Release"
             "OPENMP_ENABLE_LIBOMPTARGET OFF"
             "OPENMP_STANDALONE_BUILD ON")
@@ -148,6 +153,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "google/re2"
     VERSION 2022-06-01
     GIT_TAG 5723bb8950318135ed9cf4fc76bed988a087f536
+    EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
@@ -169,6 +175,7 @@ if(CODON_JUPYTER)
         NAME libzmq
         VERSION 4.3.4
         URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+        EXCLUDE_FROM_ALL YES
         OPTIONS "WITH_PERF_TOOL OFF"
                 "ZMQ_BUILD_TESTS OFF"
                 "ENABLE_CPACK OFF"
@@ -179,12 +186,14 @@ if(CODON_JUPYTER)
         NAME cppzmq
         URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
         VERSION 4.8.1
+        EXCLUDE_FROM_ALL YES
         OPTIONS "CPPZMQ_BUILD_TESTS OFF")
     CPMAddPackage(
         NAME xtl
         GITHUB_REPOSITORY "xtensor-stack/xtl"
         VERSION 0.7.3
         GIT_TAG 0.7.3
+        EXCLUDE_FROM_ALL YES
         OPTIONS "BUILD_TESTS OFF")
     CPMAddPackage(
         NAME json
@@ -195,6 +204,7 @@ if(CODON_JUPYTER)
         GITHUB_REPOSITORY "jupyter-xeus/xeus"
         VERSION 2.2.0
         GIT_TAG 2.2.0
+        EXCLUDE_FROM_ALL YES
         PATCH_COMMAND patch -N -u CMakeLists.txt -b ${CMAKE_SOURCE_DIR}/cmake/xeus.patch || true
         OPTIONS "BUILD_EXAMPLES OFF"
                 "XEUS_BUILD_SHARED_LIBS OFF"

@@ -30,12 +30,14 @@ struct Plugin {
 /// Manager for loading, applying and unloading plugins.
 class PluginManager {
 private:
+  /// Codon executable location
+  std::string argv0;
   /// vector of loaded plugins
   std::vector<std::unique_ptr<Plugin>> plugins;
 
 public:
   /// Constructs a plugin manager
-  PluginManager() : plugins() {}
+  PluginManager(const std::string &argv0) : argv0(argv0), plugins() {}
 
   /// @return iterator to the first plugin
   auto begin() { return ir::util::raw_ptr_adaptor(plugins.begin()); }

@@ -11,7 +11,7 @@
 #include "codon/parser/ast/types/type.h"
 
 namespace codon::ast {
-class FunctionStmt;
+struct FunctionStmt;
 }
 
 namespace codon::ast::types {
