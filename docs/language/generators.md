@@ -7,8 +7,8 @@ def gen(i):
         yield i ** 2
         i += 1
 
-print(list(gen(10)))  # prints [0, 1, 4, ..., 81]
-print(list(gen(0)))   # prints []
+print(list(gen(10)))  # prints []
+print(list(gen(0)))   # prints [0, 1, 4, ..., 81]
 ```
 
 You can also use `yield` to implement coroutines: `yield` suspends the
