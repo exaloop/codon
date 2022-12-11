@@ -100,7 +100,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-11
     runs-on: ${{ matrix.os }}
     name: Codon CI
     needs: [ release ]
