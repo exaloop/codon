@@ -2,8 +2,9 @@ Codon supports generators, and in fact they are heavily optimized in
 the compiler so as to typically eliminate any overhead:
 
 ``` python
-def gen(i):
-    while i < 10:
+def gen(n):
+    i = 0
+    while i < n:
         yield i ** 2
         i += 1
 
