@@ -14,28 +14,6 @@ class float:
     def __new__() -> float:
         return 0.0
 
-    def _from_str(s: str) -> float:
-        from C import strtod(cobj, Ptr[cobj]) -> float
-
-        buf = __array__[byte](32)
-        n = s.__len__()
-        need_dyn_alloc = n >= buf.__len__()
-
-        p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
-        str.memcpy(p, s.ptr, n)
-        p[n] = byte(0)
-
-        end = cobj()
-        result = strtod(p, __ptr__(end))
-
-        if need_dyn_alloc:
-            free(p)
-
-        if end != p + n:
-            raise ValueError(f"could not convert string to float: {s}")
-
-        return result
-
     def __new__(what) -> float:
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):

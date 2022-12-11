@@ -602,6 +602,16 @@ def free(a: cobj) -> None:
 def atoi(a: cobj) -> int:
     pass
 
+@nocapture
+@C
+def strtoll(a: cobj, b: Ptr[cobj], c: i32) -> int:
+    pass
+
+@nocapture
+@C
+def strtod(a: cobj, b: Ptr[cobj]) -> float:
+    pass
+
 # <zlib.h>
 @nocapture
 @C

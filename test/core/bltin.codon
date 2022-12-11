@@ -195,6 +195,54 @@ def test_divmod():
         assert math.isclose(result[1], exp_result[1])
 
 @test
+def test_num_from_str():
+    assert int('0') == 0
+    assert int('010') == 10
+    assert int('3\n') == 3
+    assert int('\r\t\n 42\r\t\n ') == 42
+    assert int('0101', 2) == 5
+    assert int('-0101', 2) == -5
+    assert int('0111', 8) == 73
+    assert int('-0111', 8) == -73
+    assert int('-0xabc', 16) == -2748
+    assert int('0xabc', 16) == 2748
+    assert int('-0xabc', 16) == -2748
+    assert int('111', 0) == 111
+    assert int('-111', 0) == -111
+    assert int('-0xabc', 0) == -2748
+    assert int('0xabc', 0) == 2748
+    assert int('-0xabc', 0) == -2748
+
+    try:
+        int('  10  a')
+        assert False
+    except ValueError as e:
+        assert str(e) == "invalid literal for int() with base 10: '  10  a'"
+
+    try:
+        int('')
+        assert False
+    except ValueError as e:
+        assert str(e) == "invalid literal for int() with base 10: ''"
+
+    assert float('0') == 0
+    assert float('3.14') == 3.14
+    assert float('3\n') == 3
+    assert float('\r\t\n -4.2\r\t\n ') == -4.2
+
+    try:
+        float('  3.14  a')
+        assert False
+    except ValueError as e:
+        assert str(e) == "could not convert string to float: '  3.14  a'"
+
+    try:
+        float('')
+        assert False
+    except ValueError as e:
+        assert str(e) == "could not convert string to float: ''"
+
+@test
 def test_files(open_fn):
     path = 'build/testfile.txt'
     f = open_fn(path, 'w')
@@ -224,6 +272,7 @@ test_map_filter()
 test_int_format()
 test_reversed()
 test_divmod()
+test_num_from_str()
 test_files(open)
 import gzip
 test_files(gzip.open)
