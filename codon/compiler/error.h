@@ -472,7 +472,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
         args...);
 
   case Error::COMPILER_NO_FILE:
-    return fmt::format("cannot open file '{}' for parsing");
+    return fmt::format("cannot open file '{}' for parsing", args...);
   case Error::COMPILER_NO_STDLIB:
     return fmt::format("cannot locate standard library");
   case Error::MAX_REALIZATION:
