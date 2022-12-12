@@ -9,7 +9,7 @@ yum -y install python3 python3-devel
 # env
 export PYTHONPATH=$(pwd)/test/python
 export CODON_PYTHON=$(python3 test/python/find-python-library.py)
-python3 -m pip -Iv pip==21.3.1
+python3 -m pip install -Iv pip==21.3.1
 python3 -m pip install numpy
 
 # deps
