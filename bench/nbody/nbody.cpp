@@ -74,7 +74,8 @@ void advance(double dt, int n, std::vector<Body *> &bodies = SYSTEM,
       auto &v2 = pair.second->v;
       double m2 = pair.second->m;
       double dx = x1 - x2, dy = y1 - y2, dz = z1 - z2;
-      double mag = dt * std::pow((dx * dx + dy * dy + dz * dz), -1.5);
+      double a = dx * dx + dy * dy + dz * dz;
+      double mag = dt / std::sqrt(a * a * a); // equivalent to: std::pow((dx * dx + dy * dy + dz * dz), -1.5);
       double b1m = m1 * mag;
       double b2m = m2 * mag;
       v1[0] -= dx * b2m;
@@ -106,7 +107,7 @@ void report_energy(std::vector<Body *> &bodies = SYSTEM,
     auto &v2 = pair.second->v;
     double m2 = pair.second->m;
     double dx = x1 - x2, dy = y1 - y2, dz = z1 - z2;
-    e -= (m1 * m2) / std::pow((dx * dx + dy * dy + dz * dz), 0.5);
+    e -= (m1 * m2) / std::sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   for (auto *body : bodies) {
