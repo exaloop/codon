@@ -6,7 +6,8 @@ pow(2.0, 2.0)  # 4.0
 
 # Import and rename function
 # cobj is a C pointer (void*, char*, etc.)
-from C import puts(cobj) -> void as print_line
+# None can be used to represent C's void
+from C import puts(cobj) -> None as print_line
 print_line("hello".c_str())  # prints "hello"; c_str() converts Codon str to C string
 ```
 
