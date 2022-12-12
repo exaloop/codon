@@ -8,17 +8,20 @@ import os
 import functools
 import itertools
 import ast
+import shutil
 import astunparse
+from pathlib import Path
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
-if "CODON_PATH" not in os.environ:
-    os.environ["CODON_PATH"] = os.path.dirname(
-        os.path.abspath(inspect.getfile(inspect.currentframe()))
-    )
-    os.environ["CODON_PATH"] += "/stdlib"
+from .codon_jit import JITWrapper, JITError, codon_library
 
-from .codon_jit import JITWrapper, JITError
+if "CODON_PATH" not in os.environ:
+    codon_lib_path = codon_library()
+    if not codon_lib_path:
+        raise RuntimeError("Cannot locate Codon. Please install Codon or set CODON_PATH.")
+    codon_path = (Path(codon_lib_path).parent / "stdlib").resolve()
+    os.environ["CODON_PATH"] = str(codon_path)
 
 pod_conversions = {type(None): "pyobj",
                    int: "int",

@@ -7,43 +7,59 @@ from pathlib import Path
 from Cython.Distutils import build_ext
 from setuptools import setup
 from setuptools.extension import Extension
-import tempfile
-from config.config import *
 
-codon_dir = Path(os.environ.get(
-    "CODON_DIR", os.path.realpath(f"{os.getcwd()}/../../build")
-))
+exec(open("codon/version.py").read())
+
 ext = "dylib" if sys.platform == "darwin" else "so"
 
-root = Path(__file__).resolve().parent
-def symlink(target):
-    tmp = tempfile.mktemp()
-    os.symlink(str(target.resolve()), tmp)
-    shutil.move(tmp, str(root / "codon" / target.name))
-symlink(codon_dir / ".." / "stdlib")
-symlink(codon_dir / "lib" / "codon" / ("libcodonc." + ext))
-symlink(codon_dir / "lib" / "codon" / ("libcodonrt." + ext))
-symlink(codon_dir / "lib" / "codon" / ("libomp." + ext))
+codon_path = os.environ.get("CODON_DIR")
+if not codon_path:
+    c = shutil.which("codon")
+    if c:
+        codon_path = Path(c).parent / ".."
+for path in [
+    os.path.expanduser("~") + "/.codon",
+    os.getcwd() + "/..",
+]:
+    path = Path(path)
+    if not codon_path and path.exists():
+        codon_path = path
+        break
+
+if (
+    not codon_path
+    or not (codon_path / "include" / "codon").exists()
+    or not (codon_path / "lib" / "codon").exists()
+):
+    print(
+        "Cannot find Codon.",
+        'Please either install Codon (/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"),',
+        "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon", file=sys.stderr)
+    sys.exit(1)
+codon_path = codon_path.resolve()
+print("Codon: " + str(codon_path))
+
 
 if sys.platform == "darwin":
-    linker_args = "-Wl,-rpath,@loader_path"
+    linker_args = "-Wl,-rpath," + str(codon_path / "lib" / "codon")
 else:
-    linker_args = "-Wl,-rpath=$ORIGIN"
+    linker_args = "-Wl,-rpath=" + str(codon_path / "lib" / "codon")
+
 
 jit_extension = Extension(
     "codon.codon_jit",
-    sources=["codon/jit.pyx"],
+    sources=["codon/jit.pyx", "codon/jit.pxd"],
     libraries=["codonc", "codonrt"],
     language="c++",
     extra_compile_args=["-w", "-std=c++17"],
     extra_link_args=[linker_args],
-    library_dirs=[str(root / "codon")],
+    library_dirs=[str(codon_path / "lib" / "codon")],
 )
 
 setup(
     name="codon",
-    version=CODON_VERSION,
-    install_requires=["astunparse"],
+    version=__version__,
+    install_requires=["cython", "astunparse"],
     python_requires='>=3.6',
     description="Codon JIT decorator",
     url="https://exaloop.io",
@@ -51,8 +67,10 @@ setup(
     author="Exaloop Inc.",
     author_email="info@exaloop.io",
     license="Commercial",
-    cmdclass={"build_ext": build_ext},
     ext_modules=[jit_extension],
     packages=["codon"],
-    include_package_data=True
+    include_package_data=True,
+    cmdclass={
+        "build_ext": build_ext,
+    },
 )

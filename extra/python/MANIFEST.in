@@ -1,3 +1,1 @@
-recursive-include codon/stdlib *.codon
-recursive-include codon *.so
-recursive-include codon *.dylib
+include codon/jit.h

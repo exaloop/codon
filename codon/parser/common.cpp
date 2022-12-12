@@ -2,6 +2,7 @@
 
 #include "common.h"
 
+#include <inttypes.h>
 #include <string>
 #include <vector>
 
@@ -144,6 +145,64 @@ bool isdigit(const std::string &str) {
 std::string executable_path(const char *argv0) {
   void *p = (void *)(intptr_t)executable_path;
   return llvm::sys::fs::getMainExecutable(argv0, p);
+}
+
+// Adopted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <dlfcn.h>
+#endif
+std::string library_path() {
+  std::string result;
+#ifdef __APPLE__
+  char buffer[PATH_MAX];
+  for (;;) {
+    Dl_info info;
+    if (dladdr(__builtin_extract_return_addr(__builtin_return_address(0)), &info)) {
+      char *resolved = realpath(info.dli_fname, buffer);
+      if (!resolved)
+        break;
+      result = std::string(resolved);
+    }
+    break;
+  }
+#else
+  for (int r = 0; r < 5; r++) {
+    FILE *maps = fopen("/proc/self/maps", "r");
+    if (!maps)
+      break;
+
+    for (;;) {
+      char buffer[PATH_MAX < 1024 ? 1024 : PATH_MAX];
+      uint64_t low, high;
+      char perms[5];
+      uint64_t offset;
+      uint32_t major, minor;
+      char path[PATH_MAX];
+      uint32_t inode;
+
+      if (!fgets(buffer, sizeof(buffer), maps))
+        break;
+
+      if (sscanf(buffer, "%" PRIx64 "-%" PRIx64 " %s %" PRIx64 " %x:%x %u %s\n", &low,
+                 &high, perms, &offset, &major, &minor, &inode, path) == 8) {
+        uint64_t addr =
+            (uintptr_t)(__builtin_extract_return_addr(__builtin_return_address(0)));
+        if (low <= addr && addr <= high) {
+          char *resolved = realpath(path, buffer);
+          if (resolved)
+            result = std::string(resolved);
+          break;
+        }
+      }
+    }
+    fclose(maps);
+    if (!result.empty())
+      break;
+  }
+#endif
+
+  return result;
 }
 
 namespace {

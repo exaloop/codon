@@ -26,6 +26,7 @@ export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
                       -DCMAKE_C_COMPILER=${CC} \
                       -DCMAKE_CXX_COMPILER=${CXX})
 cmake --build build --config Release -- VERBOSE=1
+cmake --install build --prefix=codon-deploy
 
 # build cython
 export PATH=$PATH:$(pwd)/llvm/bin
@@ -33,8 +34,8 @@ export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
 export CODON_DIR=$(pwd)/build
 python3 -m pip install cython wheel astunparse
 python3 -m pip debug --verbose
-(cd extra/python; python3 setup.py sdist bdist_wheel --plat-name=manylinux2014_x86_64)
-python3 -m pip install -v extra/python/dist/*.whl
+(cd codon-deploy/python && python3 setup.py sdist)
+python3 -m pip install -v codon-deploy/python/dist/*.gz
 export PYTHONPATH=$(pwd):$PYTHONPATH
 python3 test/python/cython_jit.py
 
@@ -45,12 +46,6 @@ build/codon_test
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
-mkdir -p codon-deploy/bin codon-deploy/lib/codon codon-deploy/plugins
-cp build/codon codon-deploy/bin/
-cp build/libcodon*.so codon-deploy/lib/codon/
-cp build/libomp.so codon-deploy/lib/codon/
-cp -r build/include codon-deploy/
-cp -r stdlib codon-deploy/lib/codon/
-cp -r extra/python/dist/*.whl codon-deploy/
+rm -f codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
 tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
 du -sh codon-deploy
