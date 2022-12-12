@@ -438,7 +438,7 @@ print f.__class__.__name__, f.t.__class__.__name__  #: Foo Ptr[B]
 
 a.ha()  #: B
 
-print param  #: x
+print par  #: x
 
 #%% import_order,barebones
 def foo():
