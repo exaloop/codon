@@ -35,7 +35,7 @@ export CODON_DIR=$(pwd)/build
 python3 -m pip install cython wheel astunparse
 python3 -m pip debug --verbose
 (cd codon-deploy/python && python3 setup.py sdist)
-python3 -m pip install -v codon-deploy/python/dist/*.gz
+CODON_DIR=codon-deploy python3 -m pip install -v codon-deploy/python/dist/*.gz
 export PYTHONPATH=$(pwd):$PYTHONPATH
 python3 test/python/cython_jit.py
 

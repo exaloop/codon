@@ -161,7 +161,7 @@ jobs:
       - name: Build Cython
         run: |
           (cd codon-deploy/python && python3 setup.py sdist)
-          python -m pip install -v codon-deploy/python/dist/*.gz
+          CODON_DIR=codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
           python test/python/cython_jit.py
         env:
           CC: clang
