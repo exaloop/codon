@@ -1,7 +1,6 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 
@@ -22,18 +21,44 @@ int main(int argc, char *argv[]) {
   }
 
   ifstream file(argv[1]);
-  if (!file.is_open()) {
+  
+  if (file)
+  {
+    std::string str;
+    
+    file.seekg(0, std::ios::end);
+    str.reserve(file.tellg());
+    file.seekg(0, std::ios::beg);
+
+    str.assign((std::istreambuf_iterator<char>(file)),
+                std::istreambuf_iterator<char>());
+    
+    unordered_map<string_view, uint32_t> map;
+    string_view line;
+    auto c = str.data();
+    auto start = c;
+    while (*c != '\0') {
+      if (*c == '\n') {
+        line = { start, static_cast<size_t>(c - start) };
+        ++map[line];
+        
+        ++c;
+        start = c;
+      }
+      else {
+        ++c;
+      }
+    }
+    
+    // final word
+    line = { start, static_cast<size_t>(c - start) };
+    ++map[line];
+
+    cout << map.size() << '\n';
+    cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3) << endl;
+  }
+  else {
     cerr << "Could not open file: " << argv[1] << endl;
     return -1;
   }
-
-  unordered_map<string, int> map;
-  for (string line; getline(file, line);) {
-    istringstream sin(line);
-    for (string word; sin >> word;)
-      map[word] += 1;
-  }
-
-  cout << map.size() << endl;
-  cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3) << endl;
 }
