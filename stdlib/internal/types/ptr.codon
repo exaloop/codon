@@ -1,10 +1,5 @@
 # Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
-@pure
-@C
-def seq_str_ptr(a: Ptr[byte], fmt: cobj, error: cobj) -> str:
-    pass
-
 @extend
 class Ptr:
     @pure

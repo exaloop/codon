@@ -21,6 +21,7 @@ from internal.internal import *
 from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
+from internal.format import *
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():

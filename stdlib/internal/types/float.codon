@@ -4,11 +4,6 @@ from internal.attributes import commutative
 from internal.gc import alloc_atomic, free
 from internal.types.complex import complex
 
-@pure
-@C
-def seq_str_float(a: float, fmt: cobj, error: cobj) -> str:
-    pass
-
 @extend
 class float:
     def __new__() -> float:
@@ -23,15 +18,6 @@ class float:
 
     def __repr__(self) -> str:
         return self.__format__("")
-
-    def __format__(self, format_spec: str) -> str:
-        err = byte(0)
-        ret = seq_str_float(
-            self, format_spec.c_str() if format_spec else cobj(), __ptr__(err)
-        )
-        if err:
-            raise ValueError(f"invalid format specifier: {ret}")
-        return ret if ret != "-nan" else "nan"
 
     def __copy__(self) -> float:
         return self
