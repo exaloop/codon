@@ -44,6 +44,6 @@ build/codon_test
 
 # package
 export CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz
-rm -f codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
+rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
 tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
 du -sh codon-deploy
