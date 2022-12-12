@@ -17,6 +17,8 @@ if not codon_path:
     c = shutil.which("codon")
     if c:
         codon_path = Path(c).parent / ".."
+else:
+    codon_path = Path(codon_path)
 for path in [
     os.path.expanduser("~") + "/.codon",
     os.getcwd() + "/..",
