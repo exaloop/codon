@@ -36,7 +36,9 @@ if (
     print(
         "Cannot find Codon.",
         'Please either install Codon (/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"),',
-        "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon", file=sys.stderr)
+        "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon",
+        file=sys.stderr,
+    )
     sys.exit(1)
 codon_path = codon_path.resolve()
 print("Codon: " + str(codon_path))
@@ -62,7 +64,7 @@ setup(
     name="codon",
     version=__version__,
     install_requires=["cython", "astunparse"],
-    python_requires='>=3.6',
+    python_requires=">=3.6",
     description="Codon JIT decorator",
     url="https://exaloop.io",
     long_description="Please see https://exaloop.io for more details.",

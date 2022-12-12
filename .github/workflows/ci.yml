@@ -161,11 +161,12 @@ jobs:
       - name: Build Cython
         run: |
           (cd codon-deploy/python && python3 setup.py sdist)
-          CODON_DIR=codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
+          python -m pip install -v codon-deploy/python/dist/*.gz
           python test/python/cython_jit.py
         env:
           CC: clang
           CXX: clang++
+          CODON_DIR: codon-deploy
 
       - name: Test
         run: |
