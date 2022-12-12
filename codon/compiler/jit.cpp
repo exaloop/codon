@@ -346,9 +346,7 @@ JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &f
   return jit->executeSafe(code, file, line, debug);
 }
 
-std::string getJITLibrary() {
-  return ast::library_path();
-}
+std::string getJITLibrary() { return ast::library_path(); }
 
 } // namespace jit
 } // namespace codon

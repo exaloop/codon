@@ -146,7 +146,6 @@ std::string executable_path(const char *argv0);
 /// @return Absolute executable path or argv0 if one cannot be found.
 std::string library_path();
 
-
 struct ImportFile {
   enum Status { STDLIB, PACKAGE };
   Status status;

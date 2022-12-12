@@ -149,8 +149,8 @@ std::string executable_path(const char *argv0) {
 
 // Adopted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
-#include <mach-o/dyld.h>
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
 #endif
 std::string library_path() {
   std::string result;
