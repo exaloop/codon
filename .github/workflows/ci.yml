@@ -238,6 +238,7 @@ jobs:
           password: ${{ secrets.PYPI_TEST_TOKEN }}
           repository_url: https://test.pypi.org/legacy/
           skip_existing: true
+          packages_dir: codon-deploy/python/dist
 
       - name: Publish package
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
@@ -245,4 +246,5 @@ jobs:
         with:
           user: ${{ secrets.PYPI_USERNAME }}
           password: ${{ secrets.PYPI_PASSWORD }}
+          packages_dir: codon-deploy/python/dist
 
