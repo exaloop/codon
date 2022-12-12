@@ -183,7 +183,7 @@ jobs:
 
       - name: Prepare Artifacts
         run: |
-          rm -f codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
+          rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
           if [ -e build/libunwind.${LIBEXT} ]; then cp build/libunwind.${LIBEXT} codon-deploy/lib/codon/; fi
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
@@ -240,7 +240,7 @@ jobs:
           skip_existing: true
           packages_dir: codon-deploy/python/dist
 
-      - name: Publish package
+      - name: Publish Package
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
