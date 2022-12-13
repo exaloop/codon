@@ -245,5 +245,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
+          password: ${{ secrets.PYPY_TOKEN }}
 
