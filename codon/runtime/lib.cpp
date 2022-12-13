@@ -237,9 +237,10 @@ SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end) {
  * String conversion
  */
 static seq_str_t string_conv(const std::string &s) {
-  auto *p = (char *)seq_alloc_atomic(s.size());
-  strncpy(p, s.c_str(), s.size());
-  return {(seq_int_t)s.size(), p};
+  auto n = s.size();
+  auto *p = (char *)seq_alloc_atomic(n);
+  memcpy(p, s.data(), n);
+  return {(seq_int_t)n, p};
 }
 
 template <typename T> std::string default_format(T n) {
