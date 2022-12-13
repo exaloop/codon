@@ -449,42 +449,11 @@ class UInt:
     def __str__(self) -> str:
         return self.__format__("")
 
-    def __format__(self, format_spec: str) -> str:
-        err = byte(0)
-        ret = seq_str_uint(
-            self.__int__(), format_spec.c_str() if format_spec else cobj(), __ptr__(err)
-        )
-        if err:
-            raise ValueError(f"invalid format specifier: {ret}")
-        return ret if ret != "-nan" else "nan"
-
     def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())
 
     def len() -> int:
         return N
-
-@extend
-class Ptr:
-    def __format__(self, format_spec: str) -> str:
-        err = byte(0)
-        ret = seq_str_ptr(
-            self.as_byte(), format_spec.c_str() if format_spec else cobj(), __ptr__(err)
-        )
-        if err:
-            raise ValueError(f"invalid format specifier: {ret}")
-        return ret
-
-@extend
-class int:
-    def __format__(self, format_spec: str) -> str:
-        err = byte(0)
-        ret = seq_str_int(
-            self, format_spec.c_str() if format_spec else cobj(), __ptr__(err)
-        )
-        if err:
-            raise ValueError(f"invalid format specifier: {ret}")
-        return ret
 
 i8 = Int[8]
 i16 = Int[16]

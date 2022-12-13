@@ -18,3 +18,8 @@ class Foo:
 def ha():
     c = C()
     print(c.__class__.__name__)
+
+
+par = 'y'
+if len('x') == 1:
+    par = 'x'

@@ -30,5 +30,7 @@ JITResult jitExecutePython(JIT *jit, const std::string &name,
 JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &file,
                          int line, bool debug);
 
+std::string getJITLibrary();
+
 } // namespace jit
 } // namespace codon

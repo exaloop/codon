@@ -21,6 +21,7 @@ from internal.internal import *
 from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
+from internal.format import *
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
@@ -123,6 +124,24 @@ class str:
             return str(self.ptr + start, length)
         else:
             raise ValueError("nope")
+
+    def strip(self):
+        if self.__len__() == 0:
+            return ""
+
+        i = 0
+        while i < self.__len__() and _C.isspace(i32(int(self.ptr[i]))):
+            i += 1
+
+        j = self.__len__() - 1
+        while j >= 0 and _C.isspace(i32(int(self.ptr[j]))):
+            j -= 1
+        j += 1
+
+        if j <= i:
+            return ""
+
+        return str(self.ptr + i, j - i)
 
     def __repr__(self) -> str:
         return f"'{self}'"

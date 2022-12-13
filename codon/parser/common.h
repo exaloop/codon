@@ -139,9 +139,12 @@ template <typename T> std::vector<T> clone_nop(const std::vector<T> &t) {
 /// @return The absolute canonical path of a given path.
 std::string getAbsolutePath(const std::string &path);
 
-/// Detect a absolute path of the current executable (whose argv0 is known).
+/// Detect an absolute path of the current executable (whose argv0 is known).
 /// @return Absolute executable path or argv0 if one cannot be found.
 std::string executable_path(const char *argv0);
+/// Detect an absolute path of the current libcodonc.
+/// @return Absolute executable path or argv0 if one cannot be found.
+std::string library_path();
 
 struct ImportFile {
   enum Status { STDLIB, PACKAGE };

@@ -76,12 +76,11 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
 SEQ_FUNC int64_t seq_exc_offset();
 SEQ_FUNC uint64_t seq_exc_class();
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, char *, char *);
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, char *, char *);
-SEQ_FUNC seq_str_t seq_str_float(double f, char *, char *);
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, char *, char *);
-SEQ_FUNC seq_str_t seq_str_str(char *p, char *, char *);
-SEQ_FUNC seq_str_t seq_str_tuple(seq_str_t *strs, seq_int_t n);
+SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error);
 
 SEQ_FUNC void *seq_stdin();
 SEQ_FUNC void *seq_stdout();

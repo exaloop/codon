@@ -1,0 +1,58 @@
+# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+
+def _format_error(ret: str):
+	raise ValueError(f"invalid format specifier: {ret}")
+
+@extend
+class int:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_int(self, format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret
+
+@extend
+class Int:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_int(self.__int__(), format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret
+
+@extend
+class UInt:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_uint(self.__int__(), format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret
+
+@extend
+class float:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_float(self, format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret if ret != "-nan" else "nan"
+
+@extend
+class str:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_str(self, format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret
+
+@extend
+class Ptr:
+    def __format__(self, format_spec: str) -> str:
+        err = False
+        ret = _C.seq_str_ptr(self.as_byte(), format_spec, __ptr__(err))
+        if err:
+            _format_error(ret)
+        return ret

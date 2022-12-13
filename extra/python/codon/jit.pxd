@@ -13,3 +13,4 @@ cdef extern from "jit.h" namespace "codon::jit":
     JIT *jitInit(string)
     JITResult jitExecuteSafe(JIT*, string, string, int, char)
     JITResult jitExecutePython(JIT*, string, vector[string], string, vector[string], object, char)
+    string getJITLibrary()

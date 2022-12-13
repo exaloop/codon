@@ -40,3 +40,6 @@ cdef class JITWrapper:
             return <object>result.result
         else:
             raise JITError(result.message)
+
+def codon_library():
+    return codon.jit.getJITLibrary()

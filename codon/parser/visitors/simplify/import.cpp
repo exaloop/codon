@@ -84,13 +84,16 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     seqassert(stmt->as.empty(), "renamed star-import");
     // Just copy all symbols from import's context here.
     for (auto &i : *(import.ctx)) {
-      if (!i.second.front()->isConditional() &&
-          (!startswith(i.first, "_") ||
+      if ((!startswith(i.first, "_") ||
            (ctx->isStdlibLoading && startswith(i.first, "__")))) {
         // Ignore all identifiers that start with `_` but not those that start with
         // `__` while the standard library is being loaded
-        /// TODO: handle conditionals as well?
-        ctx->add(i.first, i.second.front());
+        auto c = i.second.front();
+        if (c->isConditional() && i.first.find('.') == std::string::npos) {
+          LOG("-> fix {} :: {}", import.moduleName, i.first);
+          c = import.ctx->findDominatingBinding(i.first);
+        }
+        ctx->add(i.first, c);
       }
     }
   } else {
@@ -99,8 +102,10 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
     seqassert(i, "not a valid import what expression");
     auto c = import.ctx->find(i->value);
     // Make sure that we are importing an existing global symbol
-    if (!c || c->isConditional())
+    if (!c)
       E(Error::IMPORT_NO_NAME, i, i->value, file->module);
+    if (c->isConditional())
+      c = import.ctx->findDominatingBinding(i->value);
     ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
   }
 

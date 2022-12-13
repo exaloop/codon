@@ -4,6 +4,7 @@
 
 #include <sstream>
 
+#include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
@@ -344,6 +345,8 @@ JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &f
                          int line, bool debug) {
   return jit->executeSafe(code, file, line, debug);
 }
+
+std::string getJITLibrary() { return ast::library_path(); }
 
 } // namespace jit
 } // namespace codon

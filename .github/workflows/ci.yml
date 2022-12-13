@@ -100,7 +100,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-11
     runs-on: ${{ matrix.os }}
     name: Codon CI
     needs: [ release ]
@@ -153,24 +153,15 @@ jobs:
                                 -DCMAKE_C_COMPILER=${CC} \
                                 -DCMAKE_CXX_COMPILER=${CXX})
           cmake --build build --config Release -- VERBOSE=1
+          cmake --install build --prefix=codon-deploy
         env:
           CC: clang
           CXX: clang++
 
       - name: Build Cython
-        if: startsWith(matrix.os, 'ubuntu')
         run: |
-          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel)
-          python -m pip install -v extra/python/dist/*.whl
-        env:
-          CC: clang
-          CXX: clang++
-
-      - name: Build Cython
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          (cd extra/python; CODON_DIR=../../build python3 setup.py sdist bdist_wheel --plat-name=macosx_10_16_x86_64)
-          python -m pip install -v extra/python/dist/*.whl
+          (cd codon-deploy/python && python3 setup.py sdist)
+          CODON_DIR=$(pwd)/codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
           python test/python/cython_jit.py
         env:
           CC: clang
@@ -192,14 +183,9 @@ jobs:
 
       - name: Prepare Artifacts
         run: |
-          mkdir -p codon-deploy/bin codon-deploy/lib/codon codon-deploy/plugins
-          cp build/codon codon-deploy/bin/
-          cp build/libcodon*.${LIBEXT} codon-deploy/lib/codon/
-          cp build/libomp.${LIBEXT} codon-deploy/lib/codon/
+          cp -rf codon-deploy/python/dist .
+          rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
           if [ -e build/libunwind.${LIBEXT} ]; then cp build/libunwind.${LIBEXT} codon-deploy/lib/codon/; fi
-          cp -r build/include codon-deploy/
-          cp -r stdlib codon-deploy/lib/codon/
-          cp -r extra/python/dist/*.whl codon-deploy/
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
 
@@ -244,3 +230,20 @@ jobs:
         with:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
+
+      - name: Publish on TestPyPI
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TEST_TOKEN }}
+          repository_url: https://test.pypi.org/legacy/
+          skip_existing: true
+
+      - name: Publish Package
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: ${{ secrets.PYPI_USERNAME }}
+          password: ${{ secrets.PYPI_PASSWORD }}
+

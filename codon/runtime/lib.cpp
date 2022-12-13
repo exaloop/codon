@@ -242,42 +242,49 @@ static seq_str_t string_conv(const std::string &s) {
   return {(seq_int_t)s.size(), p};
 }
 
-template <typename T>
-static seq_str_t fmt_conv(T n, const std::string &default_fmt, char *format,
-                          char *error) {
-  std::string ret;
+template <typename T> std::string default_format(T n) {
+  return fmt::format(FMT_STRING("{}"), n);
+}
+
+template <> std::string default_format(double n) {
+  return fmt::format(FMT_STRING("{:g}"), n);
+}
+
+template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
+  *error = false;
   try {
-    *error = false;
-    if (!format) {
-      ret = fmt::format(default_fmt, n);
+    if (format.len == 0) {
+      return string_conv(default_format(n));
     } else {
-      ret = fmt::format(fmt::runtime(fmt::format("{{:{}}}", format)), n);
+      std::string fstr(format.str, format.len);
+      return string_conv(
+          fmt::format(fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
     }
   } catch (const std::runtime_error &f) {
     *error = true;
-    ret = f.what();
+    return string_conv(f.what());
   }
-  return string_conv(ret);
 }
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, char *format, char *error) {
-  return fmt_conv<seq_int_t>(n, "{}", format, error);
+SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error) {
+  return fmt_conv<seq_int_t>(n, format, error);
 }
 
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, char *format, char *error) {
-  return fmt_conv<uint64_t>(n, "{}", format, error);
+SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error) {
+  return fmt_conv<uint64_t>(n, format, error);
 }
 
-SEQ_FUNC seq_str_t seq_str_float(double f, char *format, char *error) {
-  return fmt_conv<double>(f, "{:g}", format, error);
+SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error) {
+  return fmt_conv<double>(f, format, error);
 }
 
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, char *format, char *error) {
-  return fmt_conv(fmt::ptr(p), "{}", format, error);
+SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
+  return fmt_conv(fmt::ptr(p), format, error);
 }
 
-SEQ_FUNC seq_str_t seq_str_str(char *p, char *format, char *error) {
-  return fmt_conv(p, "{}", format, error);
+SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
+  std::string t(s.str, s.len);
+  return fmt_conv(t, format, error);
 }
 
 /*

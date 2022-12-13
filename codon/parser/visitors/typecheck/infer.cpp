@@ -161,9 +161,19 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
                                          ? f->funcGenerics[gi++].type->prettyString()
                                          : f->getArgTypes()[ai++]->prettyString()));
         }
-        e.trackRealize(
-            fmt::format("{}({})", ctx->cache->rev(f->ast->name), fmt::join(args, ", ")),
-            getSrcInfo());
+        auto name = f->ast->name;
+        std::string name_args;
+        if (startswith(name, "._import_")) {
+          name = name.substr(10);
+          auto p = name.find('_');
+          if (p != std::string::npos)
+            name = name.substr(0, p);
+          name = "<import " + name + ">";
+        } else {
+          name = ctx->cache->rev(f->ast->name);
+          name_args = fmt::format("({})", fmt::join(args, ", "));
+        }
+        e.trackRealize(fmt::format("{}{}", name, name_args), getSrcInfo());
       }
 
     } else {

@@ -1,8 +1,5 @@
 # Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
-from internal.gc import alloc_atomic, free
-from internal.types.optional import unwrap
-
 class object:
     def __init__(self):
         pass
@@ -317,11 +314,13 @@ def hex(n):
 @extend
 class int:
     def _from_str(s: str, base: int):
-        from C import strtoll(cobj, Ptr[cobj], i32) -> int
+        from internal.gc import alloc_atomic, free
 
         if base < 0 or base > 36 or base == 1:
             raise ValueError("int() base must be >= 2 and <= 36, or 0")
 
+        s0 = s
+        s = s.strip()
         buf = __array__[byte](32)
         n = len(s)
         need_dyn_alloc = n >= len(buf)
@@ -331,15 +330,39 @@ class int:
         p[n] = byte(0)
 
         end = cobj()
-        result = strtoll(p, __ptr__(end), i32(base))
+        result = _C.strtoll(p, __ptr__(end), i32(base))
 
         if need_dyn_alloc:
             free(p)
 
-        if end != p + n:
+        if n == 0 or end != p + n:
             raise ValueError(
-                f"invalid literal for int() with base {base}: {s}"
+                f"invalid literal for int() with base {base}: {s0.__repr__()}"
             )
+
+        return result
+
+@extend
+class float:
+    def _from_str(s: str) -> float:
+        s0 = s
+        s = s.strip()
+        buf = __array__[byte](32)
+        n = len(s)
+        need_dyn_alloc = n >= len(buf)
+
+        p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
+        str.memcpy(p, s.ptr, n)
+        p[n] = byte(0)
+
+        end = cobj()
+        result = _C.strtod(p, __ptr__(end))
+
+        if need_dyn_alloc:
+            free(p)
+
+        if n == 0 or end != p + n:
+            raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
 

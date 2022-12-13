@@ -30,6 +30,7 @@ from internal.types.collections.tuple import *
 # Extended core library
 
 import internal.c_stubs as _C
+from internal.format import *
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.str import *

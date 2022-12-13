@@ -4,6 +4,31 @@
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
 
+@nocapture
+@C
+def seq_str_int(a: int, fmt: str, error: Ptr[bool]) -> str:
+    pass
+
+@nocapture
+@C
+def seq_str_uint(a: int, fmt: str, error: Ptr[bool]) -> str:
+    pass
+
+@nocapture
+@C
+def seq_str_float(a: float, fmt: str, error: Ptr[bool]) -> str:
+    pass
+
+@nocapture
+@C
+def seq_str_str(a: str, fmt: str, error: Ptr[bool]) -> str:
+    pass
+
+@nocapture
+@C
+def seq_str_ptr(a: cobj, fmt: str, error: Ptr[bool]) -> str:
+    pass
+
 @pure
 @C
 def seq_strdup(a: cobj) -> str:
@@ -600,6 +625,16 @@ def free(a: cobj) -> None:
 @pure
 @C
 def atoi(a: cobj) -> int:
+    pass
+
+@nocapture
+@C
+def strtoll(a: cobj, b: Ptr[cobj], c: i32) -> int:
+    pass
+
+@nocapture
+@C
+def strtod(a: cobj, b: Ptr[cobj]) -> float:
     pass
 
 # <zlib.h>

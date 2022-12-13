@@ -7,7 +7,7 @@ project(
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
-               "${PROJECT_SOURCE_DIR}/extra/python/config/config.py")
+               "${PROJECT_SOURCE_DIR}/extra/python/codon/version.py")
 
 option(CODON_JUPYTER "build Codon Jupyter server" OFF)
 option(CODON_GPU "build Codon GPU backend" OFF)
@@ -431,14 +431,10 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
 )
 # For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt
-    ON
-    CACHE BOOL "" FORCE)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+option(INSTALL_GTEST "Enable installation of googletest." OFF)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
-if(IS_DIRECTORY "${googletest_SOURCE_DIR}")
-    set_property(DIRECTORY ${googletest_SOURCE_DIR} PROPERTY EXCLUDE_FROM_ALL YES)
-endif()
 set(CODON_TEST_CPPFILES
     test/main.cpp
     test/sir/analyze/dominator.cpp
@@ -467,4 +463,5 @@ install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATI
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/extra/python/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)
