@@ -164,8 +164,8 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         auto name = f->ast->name;
         std::string name_args;
         if (startswith(name, "._import_")) {
-          name = name.substr(10);
-          auto p = name.find('_');
+          name = name.substr(9);
+          auto p = name.rfind('_');
           if (p != std::string::npos)
             name = name.substr(0, p);
           name = "<import " + name + ">";

@@ -93,7 +93,8 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
           LOG("-> fix {} :: {}", import.moduleName, i.first);
           c = import.ctx->findDominatingBinding(i.first);
         }
-        ctx->add(i.first, c);
+        // Imports should ignore  noShadow property
+        ctx->Context<SimplifyItem>::add(i.first, c);
       }
     }
   } else {
@@ -106,7 +107,8 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
       E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     if (c->isConditional())
       c = import.ctx->findDominatingBinding(i->value);
-    ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
+    // Imports should ignore  noShadow property
+    ctx->Context<SimplifyItem>::add(stmt->as.empty() ? i->value : stmt->as, c);
   }
 
   if (!resultStmt) {
