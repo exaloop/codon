@@ -1,7 +1,7 @@
 # Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 
 def _format_error(ret: str):
-	raise ValueError(f"invalid format specifier: {ret.__repr__()}")
+	raise ValueError(f"invalid format specifier: {ret}")
 
 @extend
 class int:
