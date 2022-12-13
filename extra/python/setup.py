@@ -61,7 +61,7 @@ jit_extension = Extension(
 )
 
 setup(
-    name="codon",
+    name="codon-jit",
     version=__version__,
     install_requires=["cython", "astunparse"],
     python_requires=">=3.6",
