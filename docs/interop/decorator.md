@@ -1,13 +1,15 @@
 Codon includes a Python package called `codon` that allows
 functions or methods within Python codebases to be compiled and
 executed by Codon's JIT. The `codon` library can be installed
-via `pip install`. For example:
+with `pip`:
 
 ```bash
-python3 -m pip install codon-0.13.0-cp39-cp39-macosx_12_0_arm64.whl
+pip install codon-jit
 ```
 
-where the `*.whl` file is included in the Codon distribution.
+This library will attempt to use an installed version of Codon.
+If Codon is installed at a non-standard path, set the `CODON_DIR`
+environment variable to the installation path.
 
 # Using `@codon.jit`
 
