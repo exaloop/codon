@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-#include <inttypes.h>
+#include <cinttypes>
 #include <string>
 #include <vector>
 
@@ -147,7 +147,7 @@ std::string executable_path(const char *argv0) {
   return llvm::sys::fs::getMainExecutable(argv0, p);
 }
 
-// Adopted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
+// Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
