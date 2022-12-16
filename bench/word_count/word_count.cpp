@@ -27,11 +27,10 @@ int main(int argc, char *argv[]) {
     std::string str;
     
     file.seekg(0, std::ios::end);
-    str.reserve(file.tellg());
+    str.resize(file.tellg());
     file.seekg(0, std::ios::beg);
 
-    str.assign((std::istreambuf_iterator<char>(file)),
-                std::istreambuf_iterator<char>());
+    file.read(str.data(), str.size());
     
     unordered_map<string_view, uint32_t> map;
     string_view line;
