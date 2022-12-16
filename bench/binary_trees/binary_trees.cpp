@@ -6,30 +6,29 @@
 #include <vector>
 
 struct Node {
-  Node* left{};
-  Node* right{};
+  std::unique_ptr<Node> left{};
+  std::unique_ptr<Node> right{};
 };
 
-inline Node* make_tree(int d, std::vector<Node>& pool) {
+inline std::unique_ptr<Node> make_tree(int d) {
   if (d > 0) {
-    return &pool.emplace_back(Node{make_tree(d - 1, pool), make_tree(d - 1, pool)});
+    return std::make_unique<Node>(Node{make_tree(d - 1), make_tree(d - 1)});
   }
   else {
-    return &pool.emplace_back(Node{});
+    return std::make_unique<Node>();
   }
 }
 
-inline int check_tree(const Node* node) {
+inline int check_tree(const std::unique_ptr<Node>& node) {
   if (!node->left)
     return 1;
   else
     return 1 + check_tree(node->left) + check_tree(node->right);
 }
 
-inline int make_check(const std::pair<int, int> &itde, std::vector<Node>& pool) {
+inline int make_check(const std::pair<int, int> &itde) {
   int i = itde.first, d = itde.second;
-  pool.clear();
-  auto tree = make_tree(d, pool);
+  auto tree = make_tree(d);
   return check_tree(tree);
 }
 
@@ -64,12 +63,10 @@ int main(int argc, char *argv[]) {
   int max_depth = std::max(min_depth + 2, n);
   int stretch_depth = max_depth + 1;
   
-  std::vector<Node> pool{};
-
   std::cout << "stretch tree of depth " << stretch_depth
-            << "\t check: " << make_check({0, stretch_depth}, pool) << '\n';
+            << "\t check: " << make_check({0, stretch_depth}) << '\n';
   
-  auto long_lived_tree = make_tree(max_depth, pool);
+  auto long_lived_tree = make_tree(max_depth);
   int mmd = max_depth + min_depth;
   for (int d = min_depth; d < stretch_depth; d += 2) {
     int i = (1 << (mmd - d));
@@ -77,7 +74,7 @@ int main(int argc, char *argv[]) {
     ArgChunks iter(i, d);
     while (iter.next()) {
       for (auto &argchunk : iter.chunk) {
-        cs += make_check(argchunk, pool);
+        cs += make_check(argchunk);
       }
     }
     std::cout << i << "\t trees of depth " << d << "\t check: " << cs << '\n';
