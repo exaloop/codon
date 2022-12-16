@@ -13,13 +13,12 @@ struct Node {
 inline std::unique_ptr<Node> make_tree(int d) {
   if (d > 0) {
     return std::make_unique<Node>(Node{make_tree(d - 1), make_tree(d - 1)});
-  }
-  else {
+  } else {
     return std::make_unique<Node>();
   }
 }
 
-inline int check_tree(const std::unique_ptr<Node>& node) {
+inline int check_tree(const std::unique_ptr<Node> &node) {
   if (!node->left)
     return 1;
   else
@@ -62,10 +61,10 @@ int main(int argc, char *argv[]) {
   int n = std::stoi(argv[1]);
   int max_depth = std::max(min_depth + 2, n);
   int stretch_depth = max_depth + 1;
-  
+
   std::cout << "stretch tree of depth " << stretch_depth
             << "\t check: " << make_check({0, stretch_depth}) << '\n';
-  
+
   auto long_lived_tree = make_tree(max_depth);
   int mmd = max_depth + min_depth;
   for (int d = min_depth; d < stretch_depth; d += 2) {
