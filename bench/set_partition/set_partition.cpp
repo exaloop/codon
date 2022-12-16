@@ -3,10 +3,10 @@
 #include <iostream>
 #include <vector>
 
-#define vec std::vector
+template <class T>
+using vec = std::vector<T>;
 
-namespace {
-vec<int> range(int start, int stop) {
+inline vec<int> range(int start, int stop) {
   vec<int> v(stop - start);
   uint j = 0;
   for (int i = start; i < stop; i++)
@@ -14,34 +14,38 @@ vec<int> range(int start, int stop) {
   return v;
 }
 
-bool conforms(const vec<vec<int>> &candidate, int minsize, int forgive) {
+inline bool conforms(const vec<vec<int>> &candidate, int minsize, int forgive) {
   int deficit = 0;
   for (const auto &p : candidate) {
-    int need = minsize - p.size();
+    int need = minsize - static_cast<int>(p.size());
     if (need > 0)
       deficit += need;
   }
   return deficit <= forgive;
 }
 
-void partition_filtered(const vec<int> &collection,
+inline void partition_filtered(const vec<int> &collection,
                         std::function<void(const vec<vec<int>> &)> callback,
                         int minsize = 1, int forgive = 0) {
   if (collection.size() == 1) {
     callback({collection});
     return;
   }
-
+  
   auto first = collection[0];
   auto loop = [&](const vec<vec<int>> &smaller) {
     int n = 0;
+    
+    vec<vec<int>> candidate;
+    candidate.reserve(smaller.size() + 1);
+    vec<int> rep;
+    
     for (const auto &subset : smaller) {
-      vec<vec<int>> candidate;
-      candidate.reserve(smaller.size());
+      candidate.resize(n);
       for (int i = 0; i < n; i++)
-        candidate.push_back(smaller[i]);
-
-      vec<int> rep;
+        candidate[i] = smaller[i];
+      
+      rep.clear();
       rep.reserve(subset.size() + 1);
       rep.push_back(first);
       rep.insert(rep.end(), subset.begin(), subset.end());
@@ -54,9 +58,8 @@ void partition_filtered(const vec<int> &collection,
         callback(candidate);
       ++n;
     }
-
-    vec<vec<int>> candidate;
-    candidate.reserve(smaller.size() + 1);
+    
+    candidate.clear();
     candidate.push_back({first});
     candidate.insert(candidate.end(), smaller.begin(), smaller.end());
 
@@ -67,7 +70,6 @@ void partition_filtered(const vec<int> &collection,
   vec<int> new_collection(collection.begin() + 1, collection.end());
   partition_filtered(new_collection, loop, minsize, forgive + 1);
 }
-} // namespace
 
 int main(int argc, char *argv[]) {
   using clock = std::chrono::high_resolution_clock;
