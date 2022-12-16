@@ -5,33 +5,32 @@
 #include <utility>
 #include <vector>
 
-namespace {
 struct Node {
-  std::unique_ptr<Node> left;
-  std::unique_ptr<Node> right;
+  Node* left{};
+  Node* right{};
 };
 
-std::unique_ptr<Node> make_tree(int d) {
-  auto node = std::make_unique<Node>();
+inline Node* make_tree(int d, std::vector<Node>& pool) {
   if (d > 0) {
-    node->left = make_tree(d - 1);
-    node->right = make_tree(d - 1);
+    return &pool.emplace_back(Node{make_tree(d - 1, pool), make_tree(d - 1, pool)});
   }
-  return node;
+  else {
+    return &pool.emplace_back(Node{});
+  }
 }
 
-int check_tree(Node *node) {
-  auto *l = node->left.get(), *r = node->right.get();
-  if (!l)
+inline int check_tree(const Node* node) {
+  if (!node->left)
     return 1;
   else
-    return 1 + check_tree(l) + check_tree(r);
+    return 1 + check_tree(node->left) + check_tree(node->right);
 }
 
-int make_check(const std::pair<int, int> &itde) {
+inline int make_check(const std::pair<int, int> &itde, std::vector<Node>& pool) {
   int i = itde.first, d = itde.second;
-  auto tree = make_tree(d);
-  return check_tree(tree.get());
+  pool.clear();
+  auto tree = make_tree(d, pool);
+  return check_tree(tree);
 }
 
 struct ArgChunks {
@@ -53,7 +52,6 @@ struct ArgChunks {
     return !chunk.empty();
   }
 };
-} // namespace
 
 int main(int argc, char *argv[]) {
   using clock = std::chrono::high_resolution_clock;
@@ -65,11 +63,13 @@ int main(int argc, char *argv[]) {
   int n = std::stoi(argv[1]);
   int max_depth = std::max(min_depth + 2, n);
   int stretch_depth = max_depth + 1;
+  
+  std::vector<Node> pool{};
 
   std::cout << "stretch tree of depth " << stretch_depth
-            << "\t check: " << make_check({0, stretch_depth}) << std::endl;
-
-  auto long_lived_tree = make_tree(max_depth);
+            << "\t check: " << make_check({0, stretch_depth}, pool) << '\n';
+  
+  auto long_lived_tree = make_tree(max_depth, pool);
   int mmd = max_depth + min_depth;
   for (int d = min_depth; d < stretch_depth; d += 2) {
     int i = (1 << (mmd - d));
@@ -77,13 +77,13 @@ int main(int argc, char *argv[]) {
     ArgChunks iter(i, d);
     while (iter.next()) {
       for (auto &argchunk : iter.chunk) {
-        cs += make_check(argchunk);
+        cs += make_check(argchunk, pool);
       }
     }
-    std::cout << i << "\t trees of depth " << d << "\t check: " << cs << std::endl;
+    std::cout << i << "\t trees of depth " << d << "\t check: " << cs << '\n';
   }
   std::cout << "long lived tree of depth " << max_depth
-            << "\t check: " << check_tree(long_lived_tree.get()) << std::endl;
+            << "\t check: " << check_tree(long_lived_tree) << '\n';
   std::cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3)
             << std::endl;
 }
