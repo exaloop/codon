@@ -5,52 +5,54 @@
 #include <utility>
 #include <vector>
 
-struct Node {
-  std::unique_ptr<Node> left{};
-  std::unique_ptr<Node> right{};
-};
-
-inline std::unique_ptr<Node> make_tree(int d) {
-  if (d > 0) {
-    return std::make_unique<Node>(Node{make_tree(d - 1), make_tree(d - 1)});
-  }
-  else {
-    return std::make_unique<Node>();
-  }
-}
-
-inline int check_tree(const std::unique_ptr<Node>& node) {
-  if (!node->left)
-    return 1;
-  else
-    return 1 + check_tree(node->left) + check_tree(node->right);
-}
-
-inline int make_check(const std::pair<int, int> &itde) {
-  int i = itde.first, d = itde.second;
-  auto tree = make_tree(d);
-  return check_tree(tree);
-}
-
-struct ArgChunks {
-  int i, k, d, chunksize;
-  std::vector<std::pair<int, int>> chunk;
-
-  ArgChunks(int i, int d, int chunksize = 5000)
-      : i(i), k(1), d(d), chunksize(chunksize), chunk() {
-    assert(chunksize % 2 == 0);
-  }
-
-  bool next() {
-    chunk.clear();
-    while (k <= i) {
-      chunk.emplace_back(k++, d);
-      if (chunk.size() == chunksize)
-        return true;
+namespace {
+  struct Node {
+    std::unique_ptr<Node> left{};
+    std::unique_ptr<Node> right{};
+  };
+  
+  inline std::unique_ptr<Node> make_tree(int d) {
+    if (d > 0) {
+      return std::make_unique<Node>(Node{make_tree(d - 1), make_tree(d - 1)});
     }
-    return !chunk.empty();
+    else {
+      return std::make_unique<Node>();
+    }
   }
-};
+  
+  inline int check_tree(const std::unique_ptr<Node>& node) {
+    if (!node->left)
+      return 1;
+    else
+      return 1 + check_tree(node->left) + check_tree(node->right);
+  }
+  
+  inline int make_check(const std::pair<int, int> &itde) {
+    int i = itde.first, d = itde.second;
+    auto tree = make_tree(d);
+    return check_tree(tree);
+  }
+  
+  struct ArgChunks {
+    int i, k, d, chunksize;
+    std::vector<std::pair<int, int>> chunk;
+    
+    ArgChunks(int i, int d, int chunksize = 5000)
+    : i(i), k(1), d(d), chunksize(chunksize), chunk() {
+      assert(chunksize % 2 == 0);
+    }
+    
+    bool next() {
+      chunk.clear();
+      while (k <= i) {
+        chunk.emplace_back(k++, d);
+        if (chunk.size() == chunksize)
+          return true;
+      }
+      return !chunk.empty();
+    }
+  };
+} // namespace
 
 int main(int argc, char *argv[]) {
   using clock = std::chrono::high_resolution_clock;
