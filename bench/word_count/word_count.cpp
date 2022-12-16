@@ -21,47 +21,48 @@ int main(int argc, char *argv[]) {
   }
 
   ifstream file(argv[1]);
-  
-  if (file)
-  {
+
+  if (file) {
     std::string str;
-    
+
     file.seekg(0, std::ios::end);
     str.resize(file.tellg());
     file.seekg(0, std::ios::beg);
 
     file.read(str.data(), str.size());
-    
+
     unordered_map<string_view, uint32_t> map;
     string_view line;
     auto c = str.data();
-    
+
     auto skip_white_space = [&] {
-      while (*c != '\0' && (*c == ' ' || *c == '\t')) { ++c; }
+      while (*c != '\0' && (*c == ' ' || *c == '\t')) {
+        ++c;
+      }
     };
-    
+
     skip_white_space();
     auto start = c;
     while (*c != '\0') {
       if (*c == ' ' || *c == '\t') {
-        line = { start, static_cast<size_t>(c - start) };
+        line = {start, static_cast<size_t>(c - start)};
         ++map[line];
-        
+
         skip_white_space();
         start = c;
         continue;
       }
       ++c;
     }
-    
+
     // final word
-    line = { start, static_cast<size_t>(c - start) };
+    line = {start, static_cast<size_t>(c - start)};
     ++map[line];
 
     cout << map.size() << '\n';
-    cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3) << endl;
-  }
-  else {
+    cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3)
+         << endl;
+  } else {
     cerr << "Could not open file: " << argv[1] << endl;
     return -1;
   }
