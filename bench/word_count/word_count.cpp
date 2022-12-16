@@ -35,18 +35,23 @@ int main(int argc, char *argv[]) {
     unordered_map<string_view, uint32_t> map;
     string_view line;
     auto c = str.data();
+    
+    auto skip_white_space = [&] {
+      while (*c != '\0' && (*c == ' ' || *c == '\t')) { ++c; }
+    };
+    
+    skip_white_space();
     auto start = c;
     while (*c != '\0') {
-      if (*c == '\n') {
+      if (*c == ' ' || *c == '\t') {
         line = { start, static_cast<size_t>(c - start) };
         ++map[line];
         
-        ++c;
+        skip_white_space();
         start = c;
+        continue;
       }
-      else {
-        ++c;
-      }
+      ++c;
     }
     
     // final word
