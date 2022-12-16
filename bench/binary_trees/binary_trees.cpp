@@ -5,33 +5,30 @@
 #include <utility>
 #include <vector>
 
-namespace {
 struct Node {
-  std::unique_ptr<Node> left;
-  std::unique_ptr<Node> right;
+  std::unique_ptr<Node> left{};
+  std::unique_ptr<Node> right{};
 };
 
-std::unique_ptr<Node> make_tree(int d) {
-  auto node = std::make_unique<Node>();
+inline std::unique_ptr<Node> make_tree(int d) {
   if (d > 0) {
-    node->left = make_tree(d - 1);
-    node->right = make_tree(d - 1);
+    return std::make_unique<Node>(Node{make_tree(d - 1), make_tree(d - 1)});
+  } else {
+    return std::make_unique<Node>();
   }
-  return node;
 }
 
-int check_tree(Node *node) {
-  auto *l = node->left.get(), *r = node->right.get();
-  if (!l)
+inline int check_tree(const std::unique_ptr<Node> &node) {
+  if (!node->left)
     return 1;
   else
-    return 1 + check_tree(l) + check_tree(r);
+    return 1 + check_tree(node->left) + check_tree(node->right);
 }
 
-int make_check(const std::pair<int, int> &itde) {
+inline int make_check(const std::pair<int, int> &itde) {
   int i = itde.first, d = itde.second;
   auto tree = make_tree(d);
-  return check_tree(tree.get());
+  return check_tree(tree);
 }
 
 struct ArgChunks {
@@ -53,7 +50,6 @@ struct ArgChunks {
     return !chunk.empty();
   }
 };
-} // namespace
 
 int main(int argc, char *argv[]) {
   using clock = std::chrono::high_resolution_clock;
@@ -67,7 +63,7 @@ int main(int argc, char *argv[]) {
   int stretch_depth = max_depth + 1;
 
   std::cout << "stretch tree of depth " << stretch_depth
-            << "\t check: " << make_check({0, stretch_depth}) << std::endl;
+            << "\t check: " << make_check({0, stretch_depth}) << '\n';
 
   auto long_lived_tree = make_tree(max_depth);
   int mmd = max_depth + min_depth;
@@ -80,10 +76,10 @@ int main(int argc, char *argv[]) {
         cs += make_check(argchunk);
       }
     }
-    std::cout << i << "\t trees of depth " << d << "\t check: " << cs << std::endl;
+    std::cout << i << "\t trees of depth " << d << "\t check: " << cs << '\n';
   }
   std::cout << "long lived tree of depth " << max_depth
-            << "\t check: " << check_tree(long_lived_tree.get()) << std::endl;
+            << "\t check: " << check_tree(long_lived_tree) << '\n';
   std::cout << (duration_cast<milliseconds>(clock::now() - t).count() / 1e3)
             << std::endl;
 }
