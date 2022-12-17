@@ -4,6 +4,7 @@ project(
   VERSION "0.15.2"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
+set(CODON_JIT_PYTHON_VERSION "0.1.1")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -216,7 +217,7 @@ set(CODON_HPPFILES
     codon/sir/var.h
     codon/util/common.h
     extra/jupyter/jupyter.h
-    extra/python/codon/jit.h)
+    codon/compiler/jit_extern.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/debug_listener.cpp

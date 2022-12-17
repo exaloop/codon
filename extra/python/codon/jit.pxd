@@ -3,7 +3,7 @@
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
-cdef extern from "jit.h" namespace "codon::jit":
+cdef extern from "codon/compiler/jit_extern.h" namespace "codon::jit":
     cdef cppclass JIT
     cdef cppclass JITResult:
         void *result

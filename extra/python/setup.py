@@ -3,6 +3,7 @@
 import os
 import sys
 import shutil
+import subprocess
 from pathlib import Path
 from Cython.Distutils import build_ext
 from setuptools import setup
@@ -45,18 +46,29 @@ print("Codon: " + str(codon_path))
 
 
 if sys.platform == "darwin":
-    linker_args = "-Wl,-rpath," + str(codon_path / "lib" / "codon")
+    linker_args = ["-Wl,-rpath," + str(codon_path / "lib" / "codon")]
 else:
-    linker_args = "-Wl,-rpath=" + str(codon_path / "lib" / "codon")
+    linker_args = [
+        "-Wl,-rpath=" + str(codon_path / "lib" / "codon"),
+        "-Wl,--no-as-needed",
+        "-lcodonc",
+    ]
 
+    # TODO: handle ABI changes better...
+    out = subprocess.check_output(["nm", "-g", str(codon_path / "lib" / "codon" / "libcodonc.so")])
+    out = [i for i in out.decode(sys.stdout.encoding).split("\n") if "jitExecuteSafe" in i]
+    if out and "cxx11" not in out[0]:
+        print("CXX11 ABI not detected")
+        os.environ["CFLAGS"] = os.environ.get("CFLAGS", "") + " -D_GLIBCXX_USE_CXX11_ABI=0"
 
 jit_extension = Extension(
     "codon.codon_jit",
     sources=["codon/jit.pyx", "codon/jit.pxd"],
-    libraries=["codonc", "codonrt"],
+    libraries=["codonrt"],
     language="c++",
-    extra_compile_args=["-w", "-std=c++17"],
-    extra_link_args=[linker_args],
+    extra_compile_args=["-w"],
+    extra_link_args=linker_args,
+    include_dirs=[str(codon_path / "include")],
     library_dirs=[str(codon_path / "lib" / "codon")],
 )
 
