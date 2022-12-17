@@ -3,8 +3,7 @@
 #include <iostream>
 #include <vector>
 
-template <class T>
-using vec = std::vector<T>;
+template <class T> using vec = std::vector<T>;
 
 inline vec<int> range(int start, int stop) {
   vec<int> v(stop - start);
@@ -24,27 +23,28 @@ inline bool conforms(const vec<vec<int>> &candidate, int minsize, int forgive) {
   return deficit <= forgive;
 }
 
-inline void partition_filtered(const vec<int> &collection,
-                        std::function<void(const vec<vec<int>> &)> callback,
-                        int minsize = 1, int forgive = 0) {
+inline void
+partition_filtered(const vec<int> &collection,
+                   std::function<void(const vec<vec<int>> &)> callback,
+                   int minsize = 1, int forgive = 0) {
   if (collection.size() == 1) {
     callback({collection});
     return;
   }
-  
+
   auto first = collection[0];
   auto loop = [&](const vec<vec<int>> &smaller) {
     int n = 0;
-    
+
     vec<vec<int>> candidate;
     candidate.reserve(smaller.size() + 1);
     vec<int> rep;
-    
+
     for (const auto &subset : smaller) {
       candidate.resize(n);
       for (int i = 0; i < n; i++)
         candidate[i] = smaller[i];
-      
+
       rep.clear();
       rep.reserve(subset.size() + 1);
       rep.push_back(first);
@@ -58,7 +58,7 @@ inline void partition_filtered(const vec<int> &collection,
         callback(candidate);
       ++n;
     }
-    
+
     candidate.clear();
     candidate.push_back({first});
     candidate.insert(candidate.end(), smaller.begin(), smaller.end());
