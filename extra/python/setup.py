@@ -46,15 +46,17 @@ print("Codon: " + str(codon_path))
 
 
 if sys.platform == "darwin":
+    libraries=["codonrt", "codonc"]
     linker_args = ["-Wl,-rpath," + str(codon_path / "lib" / "codon")]
 else:
+    libraries=["codonrt"]
     linker_args = [
         "-Wl,-rpath=" + str(codon_path / "lib" / "codon"),
         "-Wl,--no-as-needed",
         "-lcodonc",
     ]
 
-    # TODO: handle ABI changes better...
+    # TODO: handle ABI changes better
     out = subprocess.check_output(["nm", "-g", str(codon_path / "lib" / "codon" / "libcodonc.so")])
     out = [i for i in out.decode(sys.stdout.encoding).split("\n") if "jitExecuteSafe" in i]
     if out and "cxx11" not in out[0]:
@@ -64,7 +66,7 @@ else:
 jit_extension = Extension(
     "codon.codon_jit",
     sources=["codon/jit.pyx", "codon/jit.pxd"],
-    libraries=["codonrt"],
+    libraries=libraries,
     language="c++",
     extra_compile_args=["-w"],
     extra_link_args=linker_args,
