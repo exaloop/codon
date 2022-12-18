@@ -171,6 +171,8 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
   for (auto i = it->second.begin(); i != it->second.end(); i++) {
     if (i == lastGood)
       break;
+    if (!(*i)->canDominate())
+      continue;
     // These bindings (and their canonical identifiers) will be replaced by the
     // dominating binding during the type checking pass.
     cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};

@@ -65,6 +65,8 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
   }
 
   SuiteStmt *prev = nullptr;
+  auto avoidDomination = true;
+  std::swap(avoidDomination, ctx->avoidDomination);
   auto suite = transformGeneratorBody(loops, prev);
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
@@ -94,6 +96,7 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     stmts.push_back(suite);
     resultExpr = N<CallExpr>(N<DotExpr>(N<CallExpr>(makeAnonFn(stmts)), "__iter__"));
   }
+  std::swap(avoidDomination, ctx->avoidDomination);
 }
 
 /// Transform a dictionary comprehension to the corresponding statement expression.
@@ -102,6 +105,8 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
 ///                                      for i in j: if a: gen.__setitem__(i+a, j+1)```
 void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
   SuiteStmt *prev = nullptr;
+  auto avoidDomination = true;
+  std::swap(avoidDomination, ctx->avoidDomination);
   auto suite = transformGeneratorBody(expr->loops, prev);
 
   std::vector<StmtPtr> stmts;
@@ -111,6 +116,7 @@ void SimplifyVisitor::visit(DictGeneratorExpr *expr) {
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));
   resultExpr = N<StmtExpr>(stmts, transform(var));
+  std::swap(avoidDomination, ctx->avoidDomination);
 }
 
 /// Transforms a list of @c GeneratorBody loops to the corresponding set of for loops.
@@ -127,7 +133,8 @@ StmtPtr SimplifyVisitor::transformGeneratorBody(const std::vector<GeneratorBody>
     newSuite = N<SuiteStmt>();
     auto nextPrev = dynamic_cast<SuiteStmt *>(newSuite.get());
 
-    prev->stmts.push_back(N<ForStmt>(l.vars->clone(), l.gen->clone(), newSuite));
+    auto forStmt = N<ForStmt>(l.vars->clone(), l.gen->clone(), newSuite);
+    prev->stmts.push_back(forStmt);
     prev = nextPrev;
     for (auto &cond : l.conds) {
       newSuite = N<SuiteStmt>();

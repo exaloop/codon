@@ -1209,6 +1209,19 @@ for i in range(2):
 #: 1
 #: 1
 
+def comprehension_test(x):
+    for n in range(3):
+        print('>', n)
+    l = ['1', '2', str(x)]
+    x = [n for n in l]
+    print(x, n)
+comprehension_test(5)
+#: > 0
+#: > 1
+#: > 2
+#: ['1', '2', '5'] 2
+
+
 #%% block_unroll,barebones
 # Ensure that block unrolling is done in RAII manner on error
 def foo():

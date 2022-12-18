@@ -98,13 +98,14 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
   ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
   std::string varName;
   if (auto i = stmt->var->getId()) {
-    ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
-                stmt->var->getSrcInfo());
+    auto val = ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
+                           stmt->var->getSrcInfo());
+    val->avoidDomination = ctx->avoidDomination;
     transform(stmt->var);
     stmt->suite = transform(N<SuiteStmt>(stmt->suite));
   } else {
     varName = ctx->cache->getTemporaryVar("for");
-    ctx->addVar(varName, varName, stmt->var->getSrcInfo());
+    auto val = ctx->addVar(varName, varName, stmt->var->getSrcInfo());
     auto var = N<IdExpr>(varName);
     std::vector<StmtPtr> stmts;
     // Add for_var = [for variables]
