@@ -16,7 +16,7 @@
 #include "codon/sir/transform/manager.h"
 #include "codon/sir/var.h"
 
-#include "extra/python/codon/jit.h"
+#include "codon/compiler/jit_extern.h"
 
 namespace codon {
 namespace jit {
