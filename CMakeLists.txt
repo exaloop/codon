@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.15.2"
+  VERSION "0.15.3"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
 set(CODON_JIT_PYTHON_VERSION "0.1.1")
