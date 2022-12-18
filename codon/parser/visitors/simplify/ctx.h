@@ -44,6 +44,9 @@ struct SimplifyItem : public SrcObject {
   bool generic = false;
   /// Set if an identifier is a static variable.
   char staticType = 0;
+  /// Set if an identifier should not be dominated
+  /// (e.g., a loop variable in a comprehension).
+  bool avoidDomination = false;
 
 public:
   SimplifyItem(Kind kind, std::string baseName, std::string canonicalName,
@@ -66,6 +69,8 @@ public:
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
   char isStatic() const { return staticType; }
+  /// True if an identifier is a loop variable in a comprehension
+  bool canDominate() const { return !avoidDomination; }
 };
 
 /** Context class that tracks identifiers during the simplification. **/
@@ -159,6 +164,8 @@ struct SimplifyContext : public Context<SimplifyItem> {
   /// Allow type() expressions. Currently used to disallow type() in class
   /// and function definitions.
   bool allowTypeOf;
+  /// Set if all assignments should not be dominated later on.
+  bool avoidDomination = false;
 
 public:
   SimplifyContext(std::string filename, Cache *cache);

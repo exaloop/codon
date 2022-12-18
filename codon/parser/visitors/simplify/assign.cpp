@@ -18,6 +18,8 @@ namespace codon::ast {
 void SimplifyVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
   StmtPtr s = N<AssignStmt>(clone(expr->var), expr->expr);
+  auto avoidDomination = false; // walruses always leak
+  std::swap(avoidDomination, ctx->avoidDomination);
   if (ctx->isConditionalExpr) {
     // Make sure to transform both suite _AND_ the expression in the same scope
     ctx->enterConditionalBlock();
@@ -33,6 +35,7 @@ void SimplifyVisitor::visit(AssignExpr *expr) {
     s = transform(s);
     transform(expr->var);
   }
+  std::swap(avoidDomination, ctx->avoidDomination);
   resultExpr = N<StmtExpr>(std::vector<StmtPtr>{s}, expr->var);
 }
 
@@ -155,7 +158,11 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
     val = ctx->addVar(e->value, canonical, lhs->getSrcInfo());
     if (auto st = getStaticGeneric(type.get()))
       val->staticType = st;
+    if (ctx->avoidDomination)
+      val->avoidDomination = true;
   }
+  // Clean up seen tags if shadowing a name
+  ctx->seenGlobalIdentifiers[ctx->getBaseName()].erase(e->value);
 
   // Register all toplevel variables as global in JIT mode
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
