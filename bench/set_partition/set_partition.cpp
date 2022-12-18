@@ -23,10 +23,9 @@ inline bool conforms(const vec<vec<int>> &candidate, int minsize, int forgive) {
   return deficit <= forgive;
 }
 
-inline void
-partition_filtered(const vec<int> &collection,
-                   std::function<void(const vec<vec<int>> &)> callback,
-                   int minsize = 1, int forgive = 0) {
+inline void partition_filtered(const vec<int> &collection,
+                               std::function<void(const vec<vec<int>> &)> callback,
+                               int minsize = 1, int forgive = 0) {
   if (collection.size() == 1) {
     callback({collection});
     return;
