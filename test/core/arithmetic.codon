@@ -25,7 +25,8 @@ def test_popcnt():
     assert (0).popcnt() == 0
     assert int.popcnt(-1) == 64
     assert u8(-1).popcnt() == 8
-    assert (UInt[1024](0xfffffffffffffff3) * UInt[1024](0xfffffffffffffff3)).popcnt() == 65
+    assert (UInt[1024](0xfffffffffffffff3) * UInt[1024](0xfffffffffffffff3)).popcnt() == 4
+    assert UInt[128](-1).popcnt() == 128
 test_popcnt()
 
 @test
