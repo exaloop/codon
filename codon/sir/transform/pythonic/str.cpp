@@ -28,8 +28,7 @@ void inspect(Value *v, InspectionResult &r) {
     if (auto *c = cast<CallInstr>(v)) {
       auto *func = util::getFunc(c->getCallee());
       if (func && func->getUnmangledName() == Module::ADD_MAGIC_NAME &&
-          std::distance(c->begin(), c->end()) == 2 && isString(c->front()) &&
-          isString(c->back())) {
+          c->numArgs() == 2 && isString(c->front()) && isString(c->back())) {
         inspect(c->front(), r);
         inspect(c->back(), r);
         return;
