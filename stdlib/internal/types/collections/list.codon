@@ -242,6 +242,9 @@ class List:
             i += 1
         return v
 
+    def __rmul__(self, n: int) -> List[T]:
+        return self.__mul__(n)
+
     def __imul__(self, n: int) -> List[T]:
         if n == 1:
             return self

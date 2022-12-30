@@ -170,6 +170,7 @@ def test_list():
 
     assert [a for a in l1] == [99, 100]
     assert [a for a in l2] == [1, 2, 1, 2]
+    assert 2 * [1, 2] == l2
 
     l1 = [i*2 for i in range(3)]
     l1.insert(0, 99)
