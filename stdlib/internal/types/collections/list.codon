@@ -242,6 +242,9 @@ class List:
             i += 1
         return v
 
+    def __rmul__(self, n: int) -> List[T]:
+        return self.__mul__(n)
+
     def __imul__(self, n: int) -> List[T]:
         if n == 1:
             return self
@@ -467,5 +470,46 @@ class List:
 
     def __ge__(self, other: List[T]):
         return self._cmp(other) >= 0
+
+    # list addition optimization helpers
+
+    def _list_add_opt_default_len(v: List[T]):
+        return v.__len__()
+
+    def _list_add_opt_default_append(ans: List[T], v: List[T]):
+        from internal.gc import sizeof
+        n = v.__len__()
+        str.memcpy((ans.arr.ptr + ans.len).as_byte(), v.arr.ptr.as_byte(), n * sizeof(T))
+        ans.len += n
+
+    def _list_add_opt_slice_len(v: List[T], s: Slice):
+        if s.start is None and s.stop is None and s.step is None:
+            return v.__len__()
+        start, stop, step, length = s.adjust_indices(v.__len__())
+        return length
+
+    def _list_add_opt_slice_append(ans: List[T], v: List[T], s: Slice):
+        from internal.gc import sizeof
+        if s.start is None and s.stop is None and s.step is None:
+            n = v.__len__()
+            str.memcpy((ans.arr.ptr + ans.len).as_byte(), v.arr.ptr.as_byte(), n * sizeof(T))
+            ans.len += n
+        elif s.step is None:
+            start, stop, step, length = s.adjust_indices(v.__len__())
+            n = stop - start
+            str.memcpy((ans.arr.ptr + ans.len).as_byte(), (v.arr.ptr + start).as_byte(), n * sizeof(T))
+            ans.len += n
+        else:
+            start, stop, step, length = s.adjust_indices(v.__len__())
+            for i in range(start, stop, step):
+                ans.arr.ptr[ans.len] = v._get(i)
+                ans.len += 1
+
+    def _list_add_opt_literal_append(ans: List[T], elem: T):
+        ans.arr.ptr[ans.len] = elem
+        ans.len += 1
+
+    def _list_add_opt_opt_new(capacity: int):
+        return List[T](capacity=capacity)
 
 list = List

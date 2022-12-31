@@ -198,6 +198,7 @@ set(CODON_HPPFILES
     codon/sir/transform/pass.h
     codon/sir/transform/pythonic/dict.h
     codon/sir/transform/pythonic/io.h
+    codon/sir/transform/pythonic/list.h
     codon/sir/transform/pythonic/str.h
     codon/sir/transform/rewrite.h
     codon/sir/types/types.h
@@ -304,6 +305,7 @@ set(CODON_CPPFILES
     codon/sir/transform/pass.cpp
     codon/sir/transform/pythonic/dict.cpp
     codon/sir/transform/pythonic/io.cpp
+    codon/sir/transform/pythonic/list.cpp
     codon/sir/transform/pythonic/str.cpp
     codon/sir/types/types.cpp
     codon/sir/util/cloning.cpp

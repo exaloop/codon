@@ -89,6 +89,34 @@ const std::string Module::AND_MAGIC_NAME = "__and__";
 const std::string Module::OR_MAGIC_NAME = "__or__";
 const std::string Module::XOR_MAGIC_NAME = "__xor__";
 
+const std::string Module::IADD_MAGIC_NAME = "__iadd__";
+const std::string Module::ISUB_MAGIC_NAME = "__isub__";
+const std::string Module::IMUL_MAGIC_NAME = "__imul__";
+const std::string Module::IMATMUL_MAGIC_NAME = "__imatmul__";
+const std::string Module::ITRUE_DIV_MAGIC_NAME = "__itruediv__";
+const std::string Module::IFLOOR_DIV_MAGIC_NAME = "__ifloordiv__";
+const std::string Module::IMOD_MAGIC_NAME = "__imod__";
+const std::string Module::IPOW_MAGIC_NAME = "__ipow__";
+const std::string Module::ILSHIFT_MAGIC_NAME = "__ilshift__";
+const std::string Module::IRSHIFT_MAGIC_NAME = "__irshift__";
+const std::string Module::IAND_MAGIC_NAME = "__iand__";
+const std::string Module::IOR_MAGIC_NAME = "__ior__";
+const std::string Module::IXOR_MAGIC_NAME = "__ixor__";
+
+const std::string Module::RADD_MAGIC_NAME = "__radd__";
+const std::string Module::RSUB_MAGIC_NAME = "__rsub__";
+const std::string Module::RMUL_MAGIC_NAME = "__rmul__";
+const std::string Module::RMATMUL_MAGIC_NAME = "__rmatmul__";
+const std::string Module::RTRUE_DIV_MAGIC_NAME = "__rtruediv__";
+const std::string Module::RFLOOR_DIV_MAGIC_NAME = "__rfloordiv__";
+const std::string Module::RMOD_MAGIC_NAME = "__rmod__";
+const std::string Module::RPOW_MAGIC_NAME = "__rpow__";
+const std::string Module::RLSHIFT_MAGIC_NAME = "__rlshift__";
+const std::string Module::RRSHIFT_MAGIC_NAME = "__rrshift__";
+const std::string Module::RAND_MAGIC_NAME = "__rand__";
+const std::string Module::ROR_MAGIC_NAME = "__ror__";
+const std::string Module::RXOR_MAGIC_NAME = "__rxor__";
+
 const std::string Module::INT_MAGIC_NAME = "__int__";
 const std::string Module::FLOAT_MAGIC_NAME = "__float__";
 const std::string Module::BOOL_MAGIC_NAME = "__bool__";

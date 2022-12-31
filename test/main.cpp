@@ -497,6 +497,7 @@ INSTANTIATE_TEST_SUITE_P(
             "transform/for_lowering.codon",
             "transform/io_opt.codon",
             "transform/inlining.codon",
+            "transform/list_opt.codon",
             "transform/omp.codon",
             "transform/outlining.codon",
             "transform/str_opt.codon"

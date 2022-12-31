@@ -19,6 +19,7 @@
 #include "codon/sir/transform/pass.h"
 #include "codon/sir/transform/pythonic/dict.h"
 #include "codon/sir/transform/pythonic/io.h"
+#include "codon/sir/transform/pythonic/list.h"
 #include "codon/sir/transform/pythonic/str.h"
 #include "codon/util/common.h"
 
@@ -159,6 +160,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
   case Init::JIT: {
     // Pythonic
     registerPass(std::make_unique<pythonic::DictArithmeticOptimization>());
+    registerPass(std::make_unique<pythonic::ListAdditionOptimization>());
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
 

@@ -27,9 +27,8 @@ void inspect(Value *v, InspectionResult &r) {
   if (isString(v)) {
     if (auto *c = cast<CallInstr>(v)) {
       auto *func = util::getFunc(c->getCallee());
-      if (func && func->getUnmangledName() == "__add__" &&
-          std::distance(c->begin(), c->end()) == 2 && isString(c->front()) &&
-          isString(c->back())) {
+      if (func && func->getUnmangledName() == Module::ADD_MAGIC_NAME &&
+          c->numArgs() == 2 && isString(c->front()) && isString(c->back())) {
         inspect(c->front(), r);
         inspect(c->back(), r);
         return;
@@ -48,7 +47,7 @@ void StrAdditionOptimization::handle(CallInstr *v) {
   auto *M = v->getModule();
 
   auto *f = util::getFunc(v->getCallee());
-  if (!f || f->getUnmangledName() != "__add__")
+  if (!f || f->getUnmangledName() != Module::ADD_MAGIC_NAME)
     return;
 
   InspectionResult r;
