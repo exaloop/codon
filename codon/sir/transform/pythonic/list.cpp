@@ -13,13 +13,11 @@ namespace transform {
 namespace pythonic {
 namespace {
 
-bool isList(Value *v) {
-  return v->getType()->getName().rfind("std.internal.types.ptr.List[", 0) == 0;
-}
+static const std::string LIST = "std.internal.types.ptr.List";
+static const std::string SLICE = "std.internal.types.slice.Slice";
 
-bool isSlice(Value *v) {
-  return v->getType()->getName() == "std.internal.types.slice.Slice";
-}
+bool isList(Value *v) { return v->getType()->getName().rfind(LIST + "[", 0) == 0; }
+bool isSlice(Value *v) { return v->getType()->getName() == SLICE; }
 
 // The following "handlers" account for the possible sub-expressions we might
 // see when optimizing list1 + list2 + ... listN. Currently, we optimize:
@@ -38,8 +36,8 @@ bool isSlice(Value *v) {
 struct ElementHandler {
   std::vector<Var *> vars;
 
-  ElementHandler() : vars(){};
-  virtual ~ElementHandler(){};
+  ElementHandler() : vars() {}
+  virtual ~ElementHandler() {}
   virtual void setup(SeriesFlow *block, BodiedFunc *parent) = 0;
   virtual Value *length(Module *M) = 0;
   virtual Value *append(Value *result) = 0;
