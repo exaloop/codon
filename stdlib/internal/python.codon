@@ -348,6 +348,7 @@ def setup_python(python_loaded: bool):
         py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
     else:
         LD = os.getenv("CODON_PYTHON", default="libpython." + dlext())
+        assert os.path.exists(LD)
         py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     init_dl_handles(py_handle)
