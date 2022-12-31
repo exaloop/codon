@@ -502,10 +502,12 @@ class List:
         else:
             start, stop, step, length = s.adjust_indices(v.__len__())
             for i in range(start, stop, step):
-                ans.append(v._get(i))
+                ans.arr.ptr[ans.len] = v._get(i)
+                ans.len += 1
 
     def _list_add_opt_literal_append(ans: List[T], elem: T):
-        ans.append(elem)
+        ans.arr.ptr[ans.len] = elem
+        ans.len += 1
 
     def _list_add_opt_opt_new(capacity: int):
         return List[T](capacity=capacity)
