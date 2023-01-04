@@ -18,3 +18,15 @@ def splitext(p: str) -> Tuple[str, str]:
                 return p[:dotIndex], p[dotIndex:]
             filenameIndex += 1
     return p, p[:0]
+    
+def exists(path:str):
+    """
+    Returns True if path exists, False otherwise
+    """
+    from C import fopen(a:cobj,b:cobj)->cobj
+    from C import fclose(a:cobj)->int
+    ret = fopen(path.ptr,"r")
+    if ret:
+        fclose(ret)
+        return True
+    return False
