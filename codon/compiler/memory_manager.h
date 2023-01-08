@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "codon/sir/llvm/llvm.h"
+#include "codon/cir/llvm/llvm.h"
 
 namespace codon {
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -10,9 +10,9 @@
 #include "codon/compiler/error.h"
 #include "codon/dsl/plugins.h"
 #include "codon/parser/cache.h"
-#include "codon/sir/llvm/llvisitor.h"
-#include "codon/sir/module.h"
-#include "codon/sir/transform/manager.h"
+#include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/module.h"
+#include "codon/cir/transform/manager.h"
 
 namespace codon {
 

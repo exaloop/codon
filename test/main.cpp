@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
 #include <cstdio>
@@ -18,12 +18,12 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/common.h"
-#include "codon/sir/analyze/dataflow/capture.h"
-#include "codon/sir/analyze/dataflow/reaching.h"
-#include "codon/sir/util/inlining.h"
-#include "codon/sir/util/irtools.h"
-#include "codon/sir/util/operator.h"
-#include "codon/sir/util/outlining.h"
+#include "codon/cir/analyze/dataflow/capture.h"
+#include "codon/cir/analyze/dataflow/reaching.h"
+#include "codon/cir/util/inlining.h"
+#include "codon/cir/util/irtools.h"
+#include "codon/cir/util/operator.h"
+#include "codon/cir/util/outlining.h"
 #include "codon/util/common.h"
 
 #include "gtest/gtest.h"

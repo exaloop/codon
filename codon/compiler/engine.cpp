@@ -1,9 +1,9 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #include "engine.h"
 
 #include "codon/compiler/memory_manager.h"
-#include "codon/sir/llvm/optimize.h"
+#include "codon/cir/llvm/optimize.h"
 
 namespace codon {
 namespace jit {

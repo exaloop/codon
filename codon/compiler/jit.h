@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -12,9 +12,9 @@
 #include "codon/compiler/error.h"
 #include "codon/parser/cache.h"
 #include "codon/runtime/lib.h"
-#include "codon/sir/llvm/llvisitor.h"
-#include "codon/sir/transform/manager.h"
-#include "codon/sir/var.h"
+#include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/transform/manager.h"
+#include "codon/cir/var.h"
 
 #include "codon/compiler/jit_extern.h"
 
