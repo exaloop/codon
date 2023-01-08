@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -11,7 +11,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
-#include "codon/sir/sir.h"
+#include "codon/cir/cir.h"
 
 #define FILE_GENERATED "<generated>"
 #define MODULE_MAIN "__main__"

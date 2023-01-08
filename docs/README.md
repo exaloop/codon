@@ -1,4 +1,4 @@
-![Codon Pipeline](./img/pipeline.svg)
+<img src="./img/pipeline.svg" alt="Codon Pipeline" width="750" />
 
 Codon is a high-performance Python compiler that compiles Python code to
 native machine code without any runtime overhead. Typical speedups over

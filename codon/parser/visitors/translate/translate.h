@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -13,7 +13,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
 #include "codon/parser/visitors/visitor.h"
-#include "codon/sir/sir.h"
+#include "codon/cir/cir.h"
 
 namespace codon::ast {
 
