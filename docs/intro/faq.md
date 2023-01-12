@@ -121,9 +121,9 @@ to help provide a sense of where to look first:
 - [`codon/`](https://github.com/exaloop/codon/tree/develop/codon): compiler code
   - [`codon/parser/`](https://github.com/exaloop/codon/tree/develop/codon/parser):
     parser and type checker code: this is the first step of compilation
-  - [`codon/sir/`](https://github.com/exaloop/codon/tree/develop/codon/sir):
+  - [`codon/cir/`](https://github.com/exaloop/codon/tree/develop/codon/cir):
     Codon IR and optimizations: the second step of compilation
-  - [`codon/sir/llvm/`](https://github.com/exaloop/codon/tree/develop/codon/sir/llvm):
+  - [`codon/cir/llvm/`](https://github.com/exaloop/codon/tree/develop/codon/cir/llvm):
     conversion from Codon IR to LLVM IR and machine code: the last step of compilation
   - [`codon/runtime/`](https://github.com/exaloop/codon/tree/develop/codon/runtime):
     runtime library: used during execution

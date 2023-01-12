@@ -100,7 +100,7 @@ In other words, a simple form of constant folding that only looks at addition on
 The resulting pass would like this:
 
 ``` cpp
-#include "codon/sir/transform/pass.h"
+#include "codon/cir/transform/pass.h"
 
 using namespace codon::ir;
 
@@ -206,7 +206,7 @@ Assume we want our pass to insert a call to `validate()` after each assignment t
 and the argument passed to `foo()`. We would do something like the following:
 
 ``` cpp
-#include "codon/sir/transform/pass.h"
+#include "codon/cir/transform/pass.h"
 
 using namespace codon::ir;
 
@@ -267,8 +267,8 @@ would subclass `CustomType`. Let's look at an example where we extend CIR to add
 ``` cpp
 using namespace codon::ir;
 
-#include "codon/sir/dsl/nodes.h"
-#include "codon/sir/llvm/llvisitor.h"
+#include "codon/cir/dsl/nodes.h"
+#include "codon/cir/llvm/llvisitor.h"
 
 class Builder : public dsl::codegen::TypeBuilder {
 public:
