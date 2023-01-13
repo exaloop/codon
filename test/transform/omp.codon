@@ -457,7 +457,7 @@ def test_omp_reductions():
     @par
     for i in L[1:1001]:
         c += f32(i)
-    assert c == sum(f32(i) for i in range(1001))
+    assert c == sum((f32(i) for i in range(1001)), f32(0))
 
     c = f32(1.)
     @par
