@@ -310,10 +310,6 @@ class Vec[T, N: Static[int]]:
     def scatter(self: Vec[T, N]) -> List[T]:
         return [self[i] for i in staticrange(N)]
 
-    @llvm
-    def __rshift__(self: Vec[T, N], shift: Static[int]) -> Vec[T, N]:
-        %0 = lshr <{=N} x {=T}> %self, {=shift}
-        ret <{=N} x {=T}> %0
 
 u8x16 = Vec[u8, 16]
 u8x32 = Vec[u8, 32]

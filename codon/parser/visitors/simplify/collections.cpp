@@ -102,7 +102,6 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     } else {
       resultExpr = transform(N<StmtExpr>(noOptStmt, var));
     }
-
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
     stmts.push_back(
@@ -115,7 +114,16 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     // Generators: converted to lambda functions that yield the target expression
     prev->stmts.push_back(N<YieldStmt>(clone(expr->expr)));
     stmts.push_back(suite);
-    resultExpr = N<CallExpr>(N<DotExpr>(N<CallExpr>(makeAnonFn(stmts)), "__iter__"));
+
+    auto anon = makeAnonFn(stmts);
+    if (auto call = anon->getCall()) {
+      seqassert(!call->args.empty() && call->args.back().value->getEllipsis(),
+                "bad lambda: {}", *call);
+      call->args.pop_back();
+    } else {
+      anon = N<CallExpr>(anon);
+    }
+    resultExpr = anon;
   }
   std::swap(avoidDomination, ctx->avoidDomination);
 }
