@@ -197,6 +197,7 @@ set(CODON_HPPFILES
     codon/cir/transform/parallel/schedule.h
     codon/cir/transform/pass.h
     codon/cir/transform/pythonic/dict.h
+    codon/cir/transform/pythonic/generator.h
     codon/cir/transform/pythonic/io.h
     codon/cir/transform/pythonic/list.h
     codon/cir/transform/pythonic/str.h
@@ -304,6 +305,7 @@ set(CODON_CPPFILES
     codon/cir/transform/parallel/schedule.cpp
     codon/cir/transform/pass.cpp
     codon/cir/transform/pythonic/dict.cpp
+    codon/cir/transform/pythonic/generator.cpp
     codon/cir/transform/pythonic/io.cpp
     codon/cir/transform/pythonic/list.cpp
     codon/cir/transform/pythonic/str.cpp
