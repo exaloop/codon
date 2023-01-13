@@ -8,10 +8,10 @@
 #include <utility>
 #include <vector>
 
-#include "codon/parser/ast.h"
 #include "codon/cir/base.h"
 #include "codon/cir/util/packs.h"
 #include "codon/cir/util/visitor.h"
+#include "codon/parser/ast.h"
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 

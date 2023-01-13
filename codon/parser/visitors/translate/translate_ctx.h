@@ -7,11 +7,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "codon/cir/cir.h"
+#include "codon/cir/types/types.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
-#include "codon/cir/cir.h"
-#include "codon/cir/types/types.h"
 
 namespace codon::ast {
 

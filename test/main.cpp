@@ -15,15 +15,15 @@
 #include <unistd.h>
 #include <vector>
 
-#include "codon/compiler/compiler.h"
-#include "codon/compiler/error.h"
-#include "codon/parser/common.h"
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/util/inlining.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/outlining.h"
+#include "codon/compiler/compiler.h"
+#include "codon/compiler/error.h"
+#include "codon/parser/common.h"
 #include "codon/util/common.h"
 
 #include "gtest/gtest.h"

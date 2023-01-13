@@ -6,12 +6,12 @@
 #include <memory>
 #include <utility>
 
-#include "codon/parser/cache.h"
 #include "codon/cir/module.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/iterators.h"
 #include "codon/cir/util/visitor.h"
 #include "codon/cir/value.h"
+#include "codon/parser/cache.h"
 #include <fmt/format.h>
 
 namespace codon {

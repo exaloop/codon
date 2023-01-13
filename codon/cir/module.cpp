@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <memory>
 
-#include "codon/parser/cache.h"
 #include "codon/cir/func.h"
+#include "codon/parser/cache.h"
 
 namespace codon {
 namespace ir {

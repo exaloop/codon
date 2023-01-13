@@ -189,9 +189,9 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
 
 /// Select the best method indicated of an object that matches the given argument
 /// types. See @c findMatchingMethods for details.
-types::FuncTypePtr
-TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
-                                 const std::vector<ExprPtr> &args) {
+types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
+                                                    const std::string &member,
+                                                    const std::vector<ExprPtr> &args) {
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args)
     callArgs.push_back({"", a});

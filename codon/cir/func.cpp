@@ -4,12 +4,12 @@
 
 #include <algorithm>
 
-#include "codon/parser/common.h"
 #include "codon/cir/module.h"
 #include "codon/cir/util/iterators.h"
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/visitor.h"
 #include "codon/cir/var.h"
+#include "codon/parser/common.h"
 
 namespace codon {
 namespace ir {

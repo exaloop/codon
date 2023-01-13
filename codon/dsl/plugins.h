@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "codon/cir/util/iterators.h"
 #include "codon/compiler/error.h"
 #include "codon/dsl/dsl.h"
-#include "codon/cir/util/iterators.h"
 #include "llvm/Support/DynamicLibrary.h"
 
 namespace codon {

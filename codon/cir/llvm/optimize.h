@@ -4,8 +4,8 @@
 
 #include <memory>
 
-#include "codon/dsl/plugins.h"
 #include "codon/cir/llvm/llvm.h"
+#include "codon/dsl/plugins.h"
 
 namespace codon {
 namespace ir {

@@ -10,13 +10,13 @@
 #include <unistd.h>
 #include <utility>
 
+#include "codon/cir/dsl/codegen.h"
+#include "codon/cir/llvm/optimize.h"
+#include "codon/cir/util/irtools.h"
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
 #include "codon/parser/common.h"
 #include "codon/runtime/lib.h"
-#include "codon/cir/dsl/codegen.h"
-#include "codon/cir/llvm/optimize.h"
-#include "codon/cir/util/irtools.h"
 #include "codon/util/common.h"
 
 namespace codon {

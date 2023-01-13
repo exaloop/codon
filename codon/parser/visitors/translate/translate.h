@@ -8,12 +8,12 @@
 #include <unordered_set>
 #include <vector>
 
+#include "codon/cir/cir.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
 #include "codon/parser/visitors/visitor.h"
-#include "codon/cir/cir.h"
 
 namespace codon::ast {
 

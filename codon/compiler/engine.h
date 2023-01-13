@@ -5,8 +5,8 @@
 #include <memory>
 #include <vector>
 
-#include "codon/compiler/debug_listener.h"
 #include "codon/cir/llvm/llvm.h"
+#include "codon/compiler/debug_listener.h"
 
 namespace codon {
 namespace jit {
