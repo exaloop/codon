@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -9,7 +9,7 @@
 
 #include "codon/compiler/error.h"
 #include "codon/dsl/dsl.h"
-#include "codon/sir/util/iterators.h"
+#include "codon/cir/util/iterators.h"
 #include "llvm/Support/DynamicLibrary.h"
 
 namespace codon {

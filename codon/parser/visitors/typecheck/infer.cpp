@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #include <limits>
 #include <map>
@@ -11,7 +11,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/sir/types/types.h"
+#include "codon/cir/types/types.h"
 
 using fmt::format;
 using namespace codon::error;

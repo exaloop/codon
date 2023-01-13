@@ -1,4 +1,4 @@
-# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative, associative, distributive
 
@@ -260,7 +260,7 @@ class UInt:
         elif N == 64:
             return UInt[N](Int[N](what))
         else:
-            return UInt[N](__internal__.int_zext(what, 64, N))
+            return UInt[N](__internal__.int_sext(what, 64, N))
 
     @pure
     @llvm

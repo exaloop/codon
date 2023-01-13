@@ -1,11 +1,11 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
 #include "codon/parser/cache.h"
-#include "codon/sir/sir.h"
-#include "codon/sir/transform/manager.h"
-#include "codon/sir/transform/pass.h"
+#include "codon/cir/cir.h"
+#include "codon/cir/transform/manager.h"
+#include "codon/cir/transform/pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include <functional>
 #include <string>

@@ -1,4 +1,4 @@
-# Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 _MAX: Static[int] = 0x7FFFFFFFFFFFFFFF
 
@@ -713,7 +713,7 @@ class str:
 
         Return a copy of the string str with trailing whitespace removed.
         If chars is given, remove characters in chars instead.
-        Unlike Python, lstrip() deals with just ASCII characters.
+        Unlike Python, rstrip() deals with just ASCII characters.
         """
         i = len(self) - 1
         while i >= 0 and self._at(i)._has_char(chars):
@@ -727,7 +727,7 @@ class str:
         Return a copy of the string str with leading and trailing
         whitespace removed.
         If chars is given, remove characters in chars instead.
-        Unlike Python, lstrip() deals with just ASCII characters.
+        Unlike Python, strip() deals with just ASCII characters.
         """
         return self.lstrip(chars).rstrip(chars)
 

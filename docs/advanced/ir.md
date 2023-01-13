@@ -1,14 +1,14 @@
 After type checking but before native code generation, the Codon compiler
 makes use of a new [intermediate representation](https://en.wikipedia.org/wiki/Intermediate_representation)
-called SIR, where a number of higher-level optimizations, transformations and analyses take place.
-SIR offers a comprehensive framework for writing new optimizations or
+called CIR, where a number of higher-level optimizations, transformations and analyses take place.
+CIR offers a comprehensive framework for writing new optimizations or
 analyses without having to deal with cumbersome abstract syntax trees (ASTs).
-In this section we'll give an overview of SIR, discuss the types of things
+In this section we'll give an overview of CIR, discuss the types of things
 you might want to use it for, and give a few examples.
 
 # At a glance
 
-Here is a small (simplified) example showcasing SIR in action. Consider the code:
+Here is a small (simplified) example showcasing CIR in action. Consider the code:
 
 ``` python
 def fib(n):
@@ -44,17 +44,17 @@ names have been cleaned up for simplicity):
 
 A few interesting points to consider:
 
-- SIR is hierarchical like ASTS, but unlike ASTs it uses a vastly reduced
+- CIR is hierarchical like ASTS, but unlike ASTs it uses a vastly reduced
   set of nodes, making it much easier to work with and reason about.
-- Operators are expressed as function calls. In fact, SIR has no explicit
+- Operators are expressed as function calls. In fact, CIR has no explicit
   concept of `+`, `-`, etc. and instead expresses these via their corresponding
   magic methods (`__add__`, `__sub__`, etc.).
-- SIR has no concept of generic types. By the time SIR is generated, all types
+- CIR has no concept of generic types. By the time CIR is generated, all types
   need to have been resolved.
 
 # Structure
 
-SIR is comprised of a set of *nodes*, each with a specific semantic meaning.
+CIR is comprised of a set of *nodes*, each with a specific semantic meaning.
 There are nodes for representing constants (e.g. `42`), instructions (e.g. `call`)
 control flow (e.g. `if`), types (e.g. `int`) and so on.
 
@@ -75,10 +75,10 @@ and some examples:
 
 # Uses
 
-SIR provides a framework for doing program optimizations, analyses and transformations.
+CIR provides a framework for doing program optimizations, analyses and transformations.
 These operations are collectively known as IR *passes*.
 
-A number of built-in passes and other functionalities are provided by SIR. These can be
+A number of built-in passes and other functionalities are provided by CIR. These can be
 used as building blocks to create new passes. Examples include:
 
 - Control-flow graph creation
@@ -100,7 +100,7 @@ In other words, a simple form of constant folding that only looks at addition on
 The resulting pass would like this:
 
 ``` cpp
-#include "codon/sir/transform/pass.h"
+#include "codon/cir/transform/pass.h"
 
 using namespace codon::ir;
 
@@ -142,19 +142,19 @@ are some notable points:
   and if so we extract the first and second arguments.
 - We cast these arguments to `IntConst`. If the results are non-null, then both arguments were in fact
   integer constants, meaning we can replace the original call instruction with a new constant that
-  represents the result of the addition. In SIR, all nodes are "replaceable" via a `replaceAll()` method.
+  represents the result of the addition. In CIR, all nodes are "replaceable" via a `replaceAll()` method.
 - Lastly, notice that all passes have a `KEY` field to uniquely identify them.
 
 ## Bidirectionality
 
-An important and often very useful feature of SIR is that it is *bidirectional*, meaning it's possible
+An important and often very useful feature of CIR is that it is *bidirectional*, meaning it's possible
 to return to the type checking stage to generate new IR nodes that were not initially present in the
 module. For example, imagine that your pass needs to use a `List` with some new element type; that list's
-methods need to be instantiated by the type checker for use in SIR. In practice this bidirectionality
+methods need to be instantiated by the type checker for use in CIR. In practice this bidirectionality
 often lets you write large parts of your optimization or transformation in Codon, and pull out the necessary
 functions or types as needed in the pass.
 
-SIR's `Module` class has three methods to enable this feature:
+CIR's `Module` class has three methods to enable this feature:
 
 ``` cpp
   /// Gets or realizes a function.
@@ -206,7 +206,7 @@ Assume we want our pass to insert a call to `validate()` after each assignment t
 and the argument passed to `foo()`. We would do something like the following:
 
 ``` cpp
-#include "codon/sir/transform/pass.h"
+#include "codon/cir/transform/pass.h"
 
 using namespace codon::ir;
 
@@ -260,15 +260,15 @@ arguments, one for `float` arguments and finally one for `str` arguments.
 
 # Extending the IR
 
-SIR is extensible, and it is possible to add new constants, instructions, flows and types. This can be
+CIR is extensible, and it is possible to add new constants, instructions, flows and types. This can be
 done by subclassing the corresponding *custom* base class; to create a custom type, for example, you
-would subclass `CustomType`. Let's look at an example where we extend SIR to add a 32-bit float type:
+would subclass `CustomType`. Let's look at an example where we extend CIR to add a 32-bit float type:
 
 ``` cpp
 using namespace codon::ir;
 
-#include "codon/sir/dsl/nodes.h"
-#include "codon/sir/llvm/llvisitor.h"
+#include "codon/cir/dsl/nodes.h"
+#include "codon/cir/llvm/llvisitor.h"
 
 class Builder : public dsl::codegen::TypeBuilder {
 public:
@@ -311,7 +311,7 @@ When subclassing nodes other than types (e.g. instructions, flows, etc.), be sur
 
 The `codon/ir/util/` directory has a number of utility and generally helpful functions, for things like
 cloning IR, inlining/outlining, matching and more. `codon/ir/util/irtools.h` in particular has many helpful
-functions for performing various common tasks. If you're working with SIR, be sure to take a look at these
+functions for performing various common tasks. If you're working with CIR, be sure to take a look at these
 functions to make your life easier!
 
 # Standard pass pipeline
