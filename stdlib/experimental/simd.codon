@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
-@tuple
+@tuple(container=False)  # disallow default __getitem__
 class Vec[T, N: Static[int]]:
     ZERO_16x8i = Vec[u8,16](u8(0))
     FF_16x8i = Vec[u8,16](u8(0xff))
@@ -306,6 +306,14 @@ class Vec[T, N: Static[int]]:
             return f"<{self[0]}, {self[1]}, {self[2]}, {self[3]}, {self[4]}, {self[5]}, {self[6]}, {self[7]}, {self[8]}, {self[9]}, {self[10]}, {self[11]}, {self[12]}, {self[13]}, {self[14]}, {self[15]}>"
         else:
             return "?"
+
+    def scatter(self: Vec[T, N]) -> List[T]:
+        return [self[i] for i in staticrange(N)]
+
+    @llvm
+    def __rshift__(self: Vec[T, N], shift: Static[int]) -> Vec[T, N]:
+        %0 = lshr <{=N} x {=T}> %self, {=shift}
+        ret <{=N} x {=T}> %0
 
 u8x16 = Vec[u8, 16]
 u8x32 = Vec[u8, 32]

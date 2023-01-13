@@ -636,7 +636,7 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 
   // In-place operations: check if `lhs.__iop__(lhs, rhs)` exists
   if (!method && expr->inPlace) {
-    method = findBestMethod(lt, format("__i{}__", magic), {lt, rt});
+    method = findBestMethod(lt, format("__i{}__", magic), {expr->lexpr, expr->rexpr});
   }
 
   if (method)
@@ -667,11 +667,11 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   }
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
-  auto method = findBestMethod(lt, format("__{}__", magic), {lt, rt});
+  auto method = findBestMethod(lt, format("__{}__", magic), {expr->lexpr, expr->rexpr});
 
   // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
-  if (!method &&
-      (method = findBestMethod(rt, format("__{}__", rightMagic), {rt, lt}))) {
+  if (!method && (method = findBestMethod(rt, format("__{}__", rightMagic),
+                                          {expr->rexpr, expr->lexpr}))) {
     swap(expr->lexpr, expr->rexpr);
   }
 

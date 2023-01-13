@@ -157,12 +157,10 @@ print d  #: {0: 9}
 #%% comprehension_opt,barebones
 @extend
 class List:
-    def __init__(self, dummy: bool, other):
-        if hasattr(other, '__len__'):
-            print 'optimize', other.__len__()
-            self.__init__(other.__len__())
-        else:
-            self.__init__()
+    def __init__(self, cap: int):
+        print 'optimize', cap
+        self.arr = Array[T](cap)
+        self.len = 0
 def foo():
     yield 0
     yield 1
