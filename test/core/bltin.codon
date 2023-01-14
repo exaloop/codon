@@ -108,6 +108,24 @@ def test_gen_builtins():
 
     assert sum(g2()) == 2
 
+    class A:
+        iadd_count = 0
+        n: int
+
+        def __init__(self, n):
+            self.n = n
+
+        def __add__(self, other):
+            return A(self.n + other.n)
+
+        def __iadd__(self, other):
+            A.iadd_count += 1
+            self.n += other.n
+            return self
+
+    assert sum((A(i) for i in range(5)), A(100)).n == 110
+    assert A.iadd_count == 0
+
     def g3(a, b):
         for i in range(10):
             yield a

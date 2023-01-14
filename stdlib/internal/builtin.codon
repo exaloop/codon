@@ -261,10 +261,11 @@ def sum(x, start=0):
     s = _sum_start(x, start)
 
     for a in x:
+        # don't use += to avoid calling iadd
         if isinstance(a, bool):
-            s += (1 if a else 0)
+            s = s + (1 if a else 0)
         else:
-            s += a
+            s = s + a
 
     return s
 
