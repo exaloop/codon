@@ -14,8 +14,8 @@ in mind.
 - **Strings:** Codon currently uses ASCII strings unlike
   Python's unicode strings.
 
-- **Dictionaries:** Codon's dictionary type is not sorted
-  internally, unlike Python's.
+- **Dictionaries:** Codon's dictionary type does not preserve
+  insertion order, unlike Python's as of 3.6.
 
 # Type checking
 
