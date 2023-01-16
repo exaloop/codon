@@ -25,6 +25,7 @@ bool isAll(Func *f) {
   return f && f->getName().rfind("std.internal.builtin.all:", 0) == 0;
 }
 
+// Replaces yields with updates to the accumulator variable.
 struct GeneratorSumTransformer : public util::Operator {
   Var *accumulator;
   bool valid;
@@ -35,6 +36,10 @@ struct GeneratorSumTransformer : public util::Operator {
   void handle(YieldInstr *v) override {
     auto *M = v->getModule();
     auto *val = v->getValue();
+    if (!val) {
+      valid = false;
+      return;
+    }
 
     Value *rhs = val;
     if (val->getType()->is(M->getBoolType())) {
@@ -61,6 +66,7 @@ struct GeneratorSumTransformer : public util::Operator {
   void handle(YieldInInstr *v) override { valid = false; }
 };
 
+// Replaces yields with conditional returns of the any/all answer.
 struct GeneratorAnyAllTransformer : public util::Operator {
   bool any; // true=any, false=all
   bool valid;
@@ -71,19 +77,23 @@ struct GeneratorAnyAllTransformer : public util::Operator {
   void handle(YieldInstr *v) override {
     auto *M = v->getModule();
     auto *val = v->getValue();
-    auto *valBool = (*M->getBoolType())(*val);
+    auto *valBool = val ? (*M->getBoolType())(*val) : nullptr;
     if (!valBool) {
       valid = false;
       return;
+    } else if (!any) {
+      valBool = M->Nr<TernaryInstr>(valBool, M->getBool(false), M->getBool(true));
     }
 
-    auto *newReturn = M->Nr<ReturnInstr>(M->getBool(true));
+    auto *newReturn = M->Nr<ReturnInstr>(M->getBool(any));
     see(newReturn);
-    auto *rep = M->Nr<IfFlow>(val, util::series(newReturn));
+    auto *rep = M->Nr<IfFlow>(valBool, util::series(newReturn));
     v->replaceAll(rep);
   }
 
   void handle(ReturnInstr *v) override {
+    if (saw(v))
+      return;
     auto *M = v->getModule();
     auto *newReturn = M->Nr<ReturnInstr>(M->getBool(!any));
     see(newReturn);
@@ -203,7 +213,7 @@ void GeneratorArgumentOptimization::handle(CallInstr *v) {
     }
   } else {
     bool any = isAny(func), all = isAll(func);
-    if (!(any || all) || v->numArgs() != 1 || v->getType()->is(M->getBoolType()))
+    if (!(any || all) || v->numArgs() != 1 || !v->getType()->is(M->getBoolType()))
       return;
 
     auto *call = cast<CallInstr>(v->front());
