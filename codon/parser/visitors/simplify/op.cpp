@@ -99,7 +99,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
 /// for identifier analysis.
 void SimplifyVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
-  for (auto &tp: expr->typeParams)
+  for (auto &tp : expr->typeParams)
     transform(tp, true);
 }
 
