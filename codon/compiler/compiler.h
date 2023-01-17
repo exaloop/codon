@@ -7,12 +7,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "codon/compiler/error.h"
-#include "codon/dsl/plugins.h"
-#include "codon/parser/cache.h"
 #include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/module.h"
 #include "codon/cir/transform/manager.h"
+#include "codon/compiler/error.h"
+#include "codon/dsl/plugins.h"
+#include "codon/parser/cache.h"
 
 namespace codon {
 

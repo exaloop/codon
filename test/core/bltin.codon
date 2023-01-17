@@ -86,6 +86,70 @@ def test_map_filter():
     assert list(filter(lambda i: i%2 == 0, map(lambda i: i*i, range(10)))) == [0, 4, 16, 36, 64]
 
 @test
+def test_gen_builtins():
+    assert sum([1, 2, 3]) == 6
+    assert sum([1, 2, 3], 0.5) == 6.5
+    assert sum([True, False, True, False, True], 0.5) == 3.5
+    assert sum(List[float]()) == 0
+    assert sum(i/2 for i in range(10)) == 22.5
+
+    def g1():
+        yield 1.5
+        yield 2.5
+        return
+        yield 3.5
+
+    assert sum(g1(), 10) == 14.0
+
+    def g2():
+        yield True
+        yield False
+        yield True
+
+    assert sum(g2()) == 2
+
+    class A:
+        iadd_count = 0
+        n: int
+
+        def __init__(self, n):
+            self.n = n
+
+        def __add__(self, other):
+            return A(self.n + other.n)
+
+        def __iadd__(self, other):
+            A.iadd_count += 1
+            self.n += other.n
+            return self
+
+    assert sum((A(i) for i in range(5)), A(100)).n == 110
+    assert A.iadd_count == 0
+
+    def g3(a, b):
+        for i in range(10):
+            yield a
+        yield b
+
+    assert all([True, True])
+    assert all(i for i in range(0))
+    assert not all([True, False])
+    assert all(List[str]())
+    assert all(g3(True, True))
+    assert not all(g3(True, False))
+    assert not all(g3(False, True))
+    assert not all(g3(False, False))
+
+    assert any([True, True])
+    assert not any(i for i in range(0))
+    assert not any([False, False])
+    assert not any(List[bool]())
+    assert any(g3(True, True))
+    assert any(g3(True, False))
+    assert any(g3(False, True))
+    assert not any(g3(False, False))
+
+@test
 def test_int_format():
     n = 0
     assert (str(n), bin(n), oct(n), hex(n)) == ('0', '0b0', '0o0', '0x0')
@@ -269,6 +333,7 @@ def test_files(open_fn):
 
 test_min_max()
 test_map_filter()
+test_gen_builtins()
 test_int_format()
 test_reversed()
 test_divmod()

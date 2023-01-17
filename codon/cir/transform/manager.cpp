@@ -18,6 +18,7 @@
 #include "codon/cir/transform/parallel/openmp.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/cir/transform/pythonic/dict.h"
+#include "codon/cir/transform/pythonic/generator.h"
 #include "codon/cir/transform/pythonic/io.h"
 #include "codon/cir/transform/pythonic/list.h"
 #include "codon/cir/transform/pythonic/str.h"
@@ -162,6 +163,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<pythonic::DictArithmeticOptimization>());
     registerPass(std::make_unique<pythonic::ListAdditionOptimization>());
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
+    registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
 
     // lowering

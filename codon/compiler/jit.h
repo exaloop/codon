@@ -7,14 +7,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/transform/manager.h"
+#include "codon/cir/var.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/engine.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/cache.h"
 #include "codon/runtime/lib.h"
-#include "codon/cir/llvm/llvisitor.h"
-#include "codon/cir/transform/manager.h"
-#include "codon/cir/var.h"
 
 #include "codon/compiler/jit_extern.h"
 

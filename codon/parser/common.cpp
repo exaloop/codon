@@ -207,9 +207,12 @@ std::string library_path() {
 
 namespace {
 
-void addPath(std::vector<std::string> &paths, const std::string &path) {
-  if (llvm::sys::fs::exists(path))
+bool addPath(std::vector<std::string> &paths, const std::string &path) {
+  if (llvm::sys::fs::exists(path)) {
     paths.push_back(getAbsolutePath(path));
+    return true;
+  }
+  return false;
 }
 
 std::vector<std::string> getStdLibPaths(const std::string &argv0,
@@ -244,7 +247,9 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
     }
   if (!isStdLib && startswith(s, module0Root))
     root = module0Root;
-  const std::string ext = ".codon";
+  std::string ext = ".codon";
+  if (!((root.empty() || startswith(s, root)) && endswith(s, ext)))
+    ext = ".py";
   seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
              "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
@@ -279,6 +284,14 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
       addPath(paths, std::string(path));
       path = llvm::SmallString<128>(parentRelativeTo);
       llvm::sys::path::append(path, what, "__init__.codon");
+      addPath(paths, std::string(path));
+
+      path = llvm::SmallString<128>(parentRelativeTo);
+      llvm::sys::path::append(path, what);
+      llvm::sys::path::replace_extension(path, "py");
+      addPath(paths, std::string(path));
+      path = llvm::SmallString<128>(parentRelativeTo);
+      llvm::sys::path::append(path, what, "__init__.py");
       addPath(paths, std::string(path));
     }
   }

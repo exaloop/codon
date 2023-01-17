@@ -155,7 +155,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Generalize generics and remove them from the context
   for (const auto &g : generics) {
     for (auto &u : g->getUnbounds())
-      u->getUnbound()->kind = LinkType::Generic;
+      if (u->getUnbound())
+        u->getUnbound()->kind = LinkType::Generic;
   }
 
   // Construct the type
@@ -163,8 +164,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       baseType, ctx->cache->functions[stmt->name].ast.get(), explicits);
 
   funcTyp->setSrcInfo(getSrcInfo());
-  if (isClassMember && stmt->attributes.has(Attr::Method))
+  if (isClassMember && stmt->attributes.has(Attr::Method)) {
     funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
+  }
   funcTyp =
       std::static_pointer_cast<FuncType>(funcTyp->generalize(ctx->typecheckLevel));
 

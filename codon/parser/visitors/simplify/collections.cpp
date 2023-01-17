@@ -53,15 +53,19 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
 
   auto loops = clone_nop(expr->loops); // Clone as loops will be modified
 
-  std::string optimizeVar;
-  if (expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
-      loops[0].conds.empty()) {
-    // List comprehension optimization:
-    // Use `iter.__len__()` when creating list if there is a single for loop
-    // without any if conditions in the comprehension
-    optimizeVar = ctx->cache->getTemporaryVar("i");
-    stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(optimizeVar), loops[0].gen)));
-    loops[0].gen = N<IdExpr>(optimizeVar);
+  // List comprehension optimization:
+  // Use `iter.__len__()` when creating list if there is a single for loop
+  // without any if conditions in the comprehension
+  bool canOptimize = expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
+                     loops[0].conds.empty();
+  if (canOptimize) {
+    auto iter = transform(loops[0].gen);
+    IdExpr *id;
+    if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
+      // Turn off this optimization for static items
+      canOptimize &= !startswith(id->value, "std.internal.types.range.staticrange");
+      canOptimize &= !startswith(id->value, "statictuple");
+    }
   }
 
   SuiteStmt *prev = nullptr;
@@ -72,16 +76,32 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
   if (expr->kind == GeneratorExpr::ListGenerator) {
     // List comprehensions
     std::vector<ExprPtr> args;
-    if (!optimizeVar.empty()) {
-      // Use special List.__init__(bool, [optimizeVar]) constructor
-      args = {N<BoolExpr>(true), N<IdExpr>(optimizeVar)};
-    }
-    stmts.push_back(
-        transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"), args))));
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(expr->expr))));
-    stmts.push_back(transform(suite));
-    resultExpr = N<StmtExpr>(stmts, transform(var));
+    auto noOptStmt =
+        N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
+    if (canOptimize) {
+      seqassert(suite->getSuite() && !suite->getSuite()->stmts.empty() &&
+                    CAST(suite->getSuite()->stmts[0], ForStmt),
+                "bad comprehension transformation");
+      auto optimizeVar = ctx->cache->getTemporaryVar("i");
+      auto optSuite = clone(suite);
+      CAST(optSuite->getSuite()->stmts[0], ForStmt)->iter = N<IdExpr>(optimizeVar);
+
+      auto optStmt = N<SuiteStmt>(
+          N<AssignStmt>(N<IdExpr>(optimizeVar), clone(expr->loops[0].gen)),
+          N<AssignStmt>(
+              clone(var),
+              N<CallExpr>(N<IdExpr>("List"),
+                          N<CallExpr>(N<DotExpr>(N<IdExpr>(optimizeVar), "__len__")))),
+          optSuite);
+      resultExpr = transform(
+          N<IfExpr>(N<CallExpr>(N<IdExpr>("hasattr"), clone(expr->loops[0].gen),
+                                N<StringExpr>("__len__")),
+                    N<StmtExpr>(optStmt, clone(var)), N<StmtExpr>(noOptStmt, var)));
+    } else {
+      resultExpr = transform(N<StmtExpr>(noOptStmt, var));
+    }
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
     stmts.push_back(
@@ -94,7 +114,16 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     // Generators: converted to lambda functions that yield the target expression
     prev->stmts.push_back(N<YieldStmt>(clone(expr->expr)));
     stmts.push_back(suite);
-    resultExpr = N<CallExpr>(N<DotExpr>(N<CallExpr>(makeAnonFn(stmts)), "__iter__"));
+
+    auto anon = makeAnonFn(stmts);
+    if (auto call = anon->getCall()) {
+      seqassert(!call->args.empty() && call->args.back().value->getEllipsis(),
+                "bad lambda: {}", *call);
+      call->args.pop_back();
+    } else {
+      anon = N<CallExpr>(anon);
+    }
+    resultExpr = anon;
   }
   std::swap(avoidDomination, ctx->avoidDomination);
 }

@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.15.3"
+  VERSION "0.15.4"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.1.1")
+set(CODON_JIT_PYTHON_VERSION "0.1.2")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -197,6 +197,7 @@ set(CODON_HPPFILES
     codon/cir/transform/parallel/schedule.h
     codon/cir/transform/pass.h
     codon/cir/transform/pythonic/dict.h
+    codon/cir/transform/pythonic/generator.h
     codon/cir/transform/pythonic/io.h
     codon/cir/transform/pythonic/list.h
     codon/cir/transform/pythonic/str.h
@@ -304,6 +305,7 @@ set(CODON_CPPFILES
     codon/cir/transform/parallel/schedule.cpp
     codon/cir/transform/pass.cpp
     codon/cir/transform/pythonic/dict.cpp
+    codon/cir/transform/pythonic/generator.cpp
     codon/cir/transform/pythonic/io.cpp
     codon/cir/transform/pythonic/list.cpp
     codon/cir/transform/pythonic/str.cpp

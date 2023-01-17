@@ -909,22 +909,30 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
   for (auto parent = t->funcParent; parent;) {
     if (auto f = parent->getFunc()) {
       // Add parent function generics
-      for (auto &g : f->funcGenerics)
+      for (auto &g : f->funcGenerics) {
+        // LOG("   -> {} := {}", g.name, g.type->debugString(true));
         ctx->add(TypecheckItem::Type, g.name, g.type);
+      }
       parent = f->funcParent;
     } else {
       // Add parent class generics
       seqassert(parent->getClass(), "not a class: {}", parent);
-      for (auto &g : parent->getClass()->generics)
+      for (auto &g : parent->getClass()->generics) {
+        // LOG("   => {} := {}", g.name, g.type->debugString(true));
         ctx->add(TypecheckItem::Type, g.name, g.type);
-      for (auto &g : parent->getClass()->hiddenGenerics)
+      }
+      for (auto &g : parent->getClass()->hiddenGenerics) {
+        // LOG("   :> {} := {}", g.name, g.type->debugString(true));
         ctx->add(TypecheckItem::Type, g.name, g.type);
+      }
       break;
     }
   }
   // Add function generics
-  for (auto &g : t->funcGenerics)
+  for (auto &g : t->funcGenerics) {
+    // LOG("   >> {} := {}", g.name, g.type->debugString(true));
     ctx->add(TypecheckItem::Type, g.name, g.type);
+  }
 }
 
 /// Generate a partial type `Partial.N<mask>` for a given function.

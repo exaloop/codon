@@ -24,13 +24,6 @@ class List:
         self.arr = Array[T](capacity)
         self.len = 0
 
-    def __init__(self, dummy: bool, other):
-        """Dummy __init__ used for list comprehension optimization"""
-        if hasattr(other, "__len__"):
-            self.__init__(other.__len__())
-        else:
-            self.__init__()
-
     def __init__(self, arr: Array[T], len: int):
         self.arr = arr
         self.len = len

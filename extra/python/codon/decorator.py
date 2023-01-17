@@ -17,13 +17,21 @@ sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 from .codon_jit import JITWrapper, JITError, codon_library
 
 if "CODON_PATH" not in os.environ:
+    codon_path = []
     codon_lib_path = codon_library()
-    if not codon_lib_path:
+    if codon_lib_path:
+        codon_path.append(Path(codon_lib_path).parent / "stdlib")
+    codon_path.append(
+        Path(os.path.expanduser("~")) / ".codon" / "lib" / "codon" / "stdlib"
+    )
+    for path in codon_path:
+        if path.exists():
+            os.environ["CODON_PATH"] = str(path.resolve())
+            break
+    else:
         raise RuntimeError(
             "Cannot locate Codon. Please install Codon or set CODON_PATH."
         )
-    codon_path = (Path(codon_lib_path).parent / "stdlib").resolve()
-    os.environ["CODON_PATH"] = str(codon_path)
 
 pod_conversions = {
     type(None): "pyobj",

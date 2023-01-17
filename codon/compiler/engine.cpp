@@ -2,8 +2,8 @@
 
 #include "engine.h"
 
-#include "codon/compiler/memory_manager.h"
 #include "codon/cir/llvm/optimize.h"
+#include "codon/compiler/memory_manager.h"
 
 namespace codon {
 namespace jit {

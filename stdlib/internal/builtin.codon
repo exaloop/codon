@@ -248,19 +248,26 @@ def round(x, n=0):
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
 
-def sum(xi):
-    """
-    Return the sum of the items added together from xi
-    """
-    x = iter(xi)
-    if not x.done():
-        s = x.next()
-        while not x.done():
-            s += x.next()
-        x.destroy()
-        return s
+def _sum_start(x, start):
+    if isinstance(x.__iter__(), Generator[float]) and isinstance(start, int):
+        return float(start)
     else:
-        x.destroy()
+        return start
+
+def sum(x, start=0):
+    """
+    Return the sum of the items added together from x
+    """
+    s = _sum_start(x, start)
+
+    for a in x:
+        # don't use += to avoid calling iadd
+        if isinstance(a, bool):
+            s = s + (1 if a else 0)
+        else:
+            s = s + a
+
+    return s
 
 def repr(x):
     """Return the string representation of x"""

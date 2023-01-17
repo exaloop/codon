@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include "codon/dsl/plugins.h"
-#include "codon/cir/llvm/llvm.h"
 #include "codon/cir/cir.h"
+#include "codon/cir/llvm/llvm.h"
+#include "codon/dsl/plugins.h"
 #include "codon/util/common.h"
 
 #include <string>
