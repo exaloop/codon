@@ -587,6 +587,98 @@ def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) ->
         diff <= abs_tol
     )
 
+def fsum(seq):
+    def _fsum_realloc(p: Ptr[float], ps: Ptr[float], n: int, m: int):
+        from internal.gc import realloc, sizeof
+        v = Ptr[float]()
+        m += m
+        if n < m:
+            if p == ps:
+                v = Ptr[float](m)
+                str.memcpy(v.as_byte(), ps.as_byte(), n * sizeof(float))
+            else:
+                v = Ptr[float](realloc(p.as_byte(), m * sizeof(float), n * sizeof(float)))
+        return v, m
+
+    _NUM_PARTIALS: Static[int] = 32
+    ps_arr = __array__[float](_NUM_PARTIALS)
+    ps = ps_arr.ptr
+    p = ps
+    n, m = 0, _NUM_PARTIALS
+    xsave, special_sum, inf_sum = 0.0, 0.0, 0.0
+    hi, yr, lo = 0.0, 0.0, 0.0
+
+    for item in seq:
+        x = float(item)
+        xsave = x
+        i = 0
+
+        for j in range(n):  # for y in partials
+            y = p[j]
+            if fabs(x) < fabs(y):
+                x, y = y, x
+            hi = x + y
+            yr = hi - x
+            lo = y - yr
+            if lo != 0.0:
+                p[i] = lo
+                i += 1
+            x = hi
+
+        n = i
+        if x != 0.0:
+            if not isfinite(x):
+                # a nonfinite x could arise either as
+                # a result of intermediate overflow, or
+                if isfinite(xsave):
+                    raise OverflowError("intermediate overflow in fsum")
+                if isinf(xsave):
+                    inf_sum += xsave
+                special_sum += xsave
+                # reset partials
+                n = 0
+            else:
+                if n >= m:
+                    p, m = _fsum_realloc(p, ps, n, m)
+                p[n] = x
+                n += 1
+
+    if special_sum != 0.0:
+        if isnan(inf_sum):
+            raise ValueError("-inf + inf in fsum")
+        else:
+            return special_sum
+
+    hi = 0.0
+    if n > 0:
+        hi = p[n - 1]
+        n -= 1
+        # sum_exact(ps, hi) from the top, stop when the sum becomes inexact
+        while n > 0:
+            x = hi
+            y = p[n - 1]
+            n -= 1
+            # assert fabs(y) < fabs(x)
+            hi = x + y
+            yr = hi - x
+            lo = y - yr
+            if lo != 0.0:
+                break
+
+        # Make half-even rounding work across multiple partials.
+        # Needed so that sum([1e-16, 1, 1e16]) will round-up the last
+        # digit to two instead of down to zero (the 1e-16 makes the 1
+        # slightly closer to two).  With a potential 1 ULP rounding
+        # error fixed-up, math.fsum() can guarantee commutativity.
+        if n > 0 and ((lo < 0.0 and p[n-1] < 0.0) or (lo > 0.0 and p[n-1] > 0.0)):
+            y = lo * 2.0
+            x = hi + y
+            yr = x - hi
+            if y == yr:
+                hi = x
+
+    return hi
+
 # 32-bit float ops
 
 e32 = float32(e)
