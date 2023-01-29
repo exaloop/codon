@@ -553,7 +553,7 @@ constexpr int PYEXT_METH_COEXIST = 0x0040;
 constexpr int PYEXT_METH_FASTCALL = 0x0080;
 constexpr int PYEXT_METH_METHOD = 0x0200;
 // https://github.com/python/cpython/blob/main/Include/modsupport.h
-constexpr int PYEXT_PYTHON_ABI_VERSION = 3;
+constexpr int PYEXT_PYTHON_ABI_VERSION = 1013;
 } // namespace
 
 void LLVMVisitor::writeToPythonExtension(
@@ -611,7 +611,7 @@ void LLVMVisitor::writeToPythonExtension(
   auto *pyMethodDefArrayType = llvm::ArrayType::get(pyMethodDefType, pyMethods.size());
   auto *pyMethodDefArray = new llvm::GlobalVariable(
       *M, pyMethodDefArrayType,
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
 
   // Construct PyModuleDef array
@@ -653,7 +653,7 @@ void LLVMVisitor::writeToPythonExtension(
       pyMethodArrayConst, null, null, null, null);
   auto *pyModuleVar =
       new llvm::GlobalVariable(*M, pyModuleDef->getType(),
-                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+                               /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
                                pyModuleDef, ".pyext_module");
   auto *pyModuleConst = llvm::ConstantExpr::getBitCast(pyModuleVar, ptr);
 
