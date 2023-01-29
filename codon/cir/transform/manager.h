@@ -11,6 +11,7 @@
 
 #include "codon/cir/analyze/analysis.h"
 #include "codon/cir/module.h"
+#include "codon/cir/transform/lowering/pyextension.h"
 #include "codon/cir/transform/pass.h"
 
 namespace codon {
@@ -94,6 +95,12 @@ private:
   /// whether to use Python (vs. C) numeric semantics in passes
   bool pyNumerics;
 
+  /// true if we are compiling as a Python extension
+  bool pyExtension;
+
+  /// pointer to Python extension lowering pass, if applicable
+  lowering::PythonExtensionLowering *pyExtensionPass;
+
 public:
   /// PassManager initialization mode.
   enum Init {
@@ -104,16 +111,17 @@ public:
   };
 
   explicit PassManager(Init init, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false)
+                       bool pyNumerics = false, bool pyExtension = false)
       : km(), passes(), analyses(), executionOrder(), results(),
-        disabled(std::move(disabled)), pyNumerics(pyNumerics) {
+        disabled(std::move(disabled)), pyNumerics(pyNumerics), pyExtension(pyExtension),
+        pyExtensionPass(nullptr) {
     registerStandardPasses(init);
   }
 
   explicit PassManager(bool debug = false, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false)
+                       bool pyNumerics = false, bool pyExtension = false)
       : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled),
-                    pyNumerics) {}
+                    pyNumerics, pyExtension) {}
 
   /// Checks if the given pass is included in this manager.
   /// @param key the pass key
@@ -172,6 +180,11 @@ public:
   /// @return true if the pass or analysis is disabled
   bool isDisabled(const std::string &key) {
     return std::find(disabled.begin(), disabled.end(), key) != disabled.end();
+  }
+
+  /// @return the Python extension lowering pass, or null if none
+  lowering::PythonExtensionLowering *getPythonExtensionPass() const {
+    return pyExtensionPass;
   }
 
 private:

@@ -404,9 +404,9 @@ void executeCommand(const std::vector<std::string> &args) {
 void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   const std::string llvmCtor = "llvm.global_ctors";
   auto *main = M->getFunction("main");
-  main->setName(".main"); // avoid clash with other main
   if (M->getNamedValue(llvmCtor) || !main)
     return;
+  main->setName(".main"); // avoid clash with other main
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
   auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
@@ -539,6 +539,137 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 #endif
 
   llvm::sys::fs::remove(objFile);
+}
+
+namespace {
+// https://github.com/python/cpython/blob/main/Include/methodobject.h
+constexpr int PYEXT_METH_VARARGS = 0x0001;
+constexpr int PYEXT_METH_KEYWORDS = 0x0002;
+constexpr int PYEXT_METH_NOARGS = 0x0004;
+constexpr int PYEXT_METH_O = 0x0008;
+constexpr int PYEXT_METH_CLASS = 0x0010;
+constexpr int PYEXT_METH_STATIC = 0x0020;
+constexpr int PYEXT_METH_COEXIST = 0x0040;
+constexpr int PYEXT_METH_FASTCALL = 0x0080;
+constexpr int PYEXT_METH_METHOD = 0x0200;
+// https://github.com/python/cpython/blob/main/Include/modsupport.h
+constexpr int PYEXT_PYTHON_ABI_VERSION = 3;
+} // namespace
+
+void LLVMVisitor::writeToPythonExtension(
+    const std::string &name, const std::vector<std::pair<Func *, Func *>> &funcs,
+    const std::string &filename, const std::string &argv0,
+    const std::vector<std::string> &libs, const std::string &lflags) {
+  // Construct PyMethodDef array
+  auto *ptr = B->getInt8PtrTy();
+  auto *null = llvm::Constant::getNullValue(ptr);
+  auto *pyMethodDefType = llvm::StructType::get(ptr, ptr, B->getInt32Ty(), ptr);
+  std::vector<llvm::Constant *> pyMethods;
+
+  for (auto &p : funcs) {
+    auto *original = p.first;
+    auto *generated = p.second;
+    auto llvmName = getNameForFunction(generated);
+    auto *llvmFunc = M->getNamedValue(llvmName);
+    seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
+
+    auto name = original->getUnmangledName();
+    auto *nameVar = new llvm::GlobalVariable(
+        *M, llvm::ArrayType::get(B->getInt8Ty(), name.length() + 1),
+        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantDataArray::getString(*context, name), ".pyext_func_name");
+    nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+    auto *nameConst = llvm::ConstantExpr::getBitCast(nameVar, ptr);
+    auto *funcConst = llvm::ConstantExpr::getBitCast(llvmFunc, ptr);
+    auto *flagConst = B->getInt32(PYEXT_METH_FASTCALL);
+    auto *docsConst = null;
+    if (auto *docsAttr = original->getAttribute<DocstringAttribute>()) {
+      auto docs = docsAttr->docstring;
+      auto *docsVar = new llvm::GlobalVariable(
+          *M, llvm::ArrayType::get(B->getInt8Ty(), docs.length() + 1),
+          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantDataArray::getString(*context, docs), ".pyext_docstring");
+      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
+    }
+    pyMethods.push_back(llvm::ConstantStruct::get(pyMethodDefType, nameConst, funcConst,
+                                                  flagConst, docsConst));
+  }
+  pyMethods.push_back(
+      llvm::ConstantStruct::get(pyMethodDefType, null, null, B->getInt32(0), null));
+
+  auto *pyMethodDefArrayType = llvm::ArrayType::get(pyMethodDefType, pyMethods.size());
+  auto *pyMethodDefArray = new llvm::GlobalVariable(
+      *M, pyMethodDefArrayType,
+      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
+
+  // Construct PyModuleDef array
+  auto *pyObjectType = llvm::StructType::get(B->getInt64Ty(), ptr);
+  auto *pyModuleDefBaseType =
+      llvm::StructType::get(pyObjectType, ptr, B->getInt64Ty(), ptr);
+  auto *pyModuleDefType =
+      llvm::StructType::get(pyModuleDefBaseType, ptr, ptr, B->getInt64Ty(),
+                            pyMethodDefType->getPointerTo(), ptr, ptr, ptr, ptr);
+
+  auto *pyObjectConst = llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null);
+  auto *pyModuleDefBaseConst = llvm::ConstantStruct::get(
+      pyModuleDefBaseType, pyObjectConst, null, B->getInt64(0), null);
+
+  auto *nameVar = new llvm::GlobalVariable(
+      *M, llvm::ArrayType::get(B->getInt8Ty(), name.length() + 1),
+      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantDataArray::getString(*context, name), ".pyext_module_name");
+  nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+  auto nameConst = llvm::ConstantExpr::getBitCast(nameVar, ptr);
+
+  auto *docsConst = null;
+  if (!funcs.empty()) {
+    if (auto *docsAttr =
+            funcs[0].first->getModule()->getAttribute<DocstringAttribute>()) {
+      auto docs = docsAttr->docstring;
+      auto *docsVar = new llvm::GlobalVariable(
+          *M, llvm::ArrayType::get(B->getInt8Ty(), docs.length() + 1),
+          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantDataArray::getString(*context, docs), ".pyext_docstring");
+      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
+    }
+  }
+
+  auto *pyMethodArrayConst = llvm::ConstantExpr::getBitCast(pyMethodDefArray, ptr);
+  auto *pyModuleDef = llvm::ConstantStruct::get(
+      pyModuleDefType, pyModuleDefBaseConst, nameConst, docsConst, B->getInt64(-1),
+      pyMethodArrayConst, null, null, null, null);
+  auto *pyModuleVar =
+      new llvm::GlobalVariable(*M, pyModuleDef->getType(),
+                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+                               pyModuleDef, ".pyext_module");
+  auto *pyModuleConst = llvm::ConstantExpr::getBitCast(pyModuleVar, ptr);
+
+  // Construct initialization hook
+  auto pyModuleCreate = cast<llvm::Function>(
+      M->getOrInsertFunction("PyModule_Create2", ptr, ptr, B->getInt32Ty())
+          .getCallee());
+  pyModuleCreate->setDoesNotThrow();
+
+  auto *pyModuleInit =
+      cast<llvm::Function>(M->getOrInsertFunction("PyInit_" + name, ptr).getCallee());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
+  B->SetInsertPoint(entry);
+  if (auto *main = M->getFunction("main")) {
+    main->setName(".main");
+    B->CreateCall({main->getFunctionType(), main},
+                  {B->getInt32(0),
+                   llvm::ConstantPointerNull::get(B->getInt8PtrTy()->getPointerTo())});
+  }
+  B->CreateRet(B->CreateCall(pyModuleCreate,
+                             {pyModuleConst, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
+
+  // Generate shared object
+  // (This will not create a global ctor since we renamed the 'main' function above.)
+  writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,

@@ -23,7 +23,7 @@ Func *generateExtensionFunc(Func *f) {
 
   auto *M = f->getModule();
   auto *cobj = M->getPointerType(M->getByteType());
-  auto *ext = M->Nr<BodiedFunc>("__py_extension");
+  auto *ext = M->Nr<BodiedFunc>("__.py_extension.__");
   ext->realize(M->getFuncType(cobj, {cobj, M->getPointerType(cobj), M->getIntType()}),
                {"self", "args", "nargs"});
   auto *body = M->Nr<SeriesFlow>();
@@ -62,8 +62,7 @@ void PythonExtensionLowering::run(Module *module) {
       if (!util::hasAttribute(f, EXPORT_ATTR))
         continue;
 
-      std::cout << f->getName() << std::endl;
-      std::cout << *generateExtensionFunc(f) << std::endl;
+      extFuncs.emplace_back(f, generateExtensionFunc(f));
     }
   }
 }

@@ -4,12 +4,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/transform/lowering/pyextension.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
@@ -83,7 +85,7 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
     codon::getLogger().parse(std::string(d));
 }
 
-enum BuildKind { LLVM, Bitcode, Object, Executable, Library, Detect };
+enum BuildKind { LLVM, Bitcode, Object, Executable, Library, PyExtension, Detect };
 enum OptMode { Debug, Release };
 enum Numerics { C, Python };
 } // namespace
@@ -109,8 +111,9 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
-std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &args,
-                                               bool standalone) {
+std::unique_ptr<codon::Compiler> processSource(
+    const std::vector<const char *> &args, bool standalone,
+    std::function<bool()> pyExtension = [] { return false; }) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
                                    llvm::cl::init("-"));
   auto regs = llvm::cl::getRegisteredOptions();
@@ -163,9 +166,9 @@ std::unique_ptr<codon::Compiler> processSource(const std::vector<const char *> &
 
   const bool isDebug = (optMode == OptMode::Debug);
   std::vector<std::string> disabledOptsVec(disabledOpts);
-  auto compiler = std::make_unique<codon::Compiler>(args[0], isDebug, disabledOptsVec,
-                                                    /*isTest=*/false,
-                                                    (numerics == Numerics::Python));
+  auto compiler = std::make_unique<codon::Compiler>(
+      args[0], isDebug, disabledOptsVec,
+      /*isTest=*/false, (numerics == Numerics::Python), pyExtension());
   compiler->getLLVMVisitor()->setStandalone(standalone);
 
   // load plugins
@@ -296,13 +299,15 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
                                     llvm::cl::desc("Pass given flags to linker"));
   llvm::cl::opt<BuildKind> buildKind(
       llvm::cl::desc("output type"),
-      llvm::cl::values(clEnumValN(LLVM, "llvm", "Generate LLVM IR"),
-                       clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
-                       clEnumValN(Object, "obj", "Generate native object file"),
-                       clEnumValN(Executable, "exe", "Generate executable"),
-                       clEnumValN(Library, "lib", "Generate shared library"),
-                       clEnumValN(Detect, "detect",
-                                  "Detect output type based on output file extension")),
+      llvm::cl::values(
+          clEnumValN(LLVM, "llvm", "Generate LLVM IR"),
+          clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
+          clEnumValN(Object, "obj", "Generate native object file"),
+          clEnumValN(Executable, "exe", "Generate executable"),
+          clEnumValN(Library, "lib", "Generate shared library"),
+          clEnumValN(PyExtension, "pyext", "Generate Python extension module"),
+          clEnumValN(Detect, "detect",
+                     "Detect output type based on output file extension")),
       llvm::cl::init(Detect));
   llvm::cl::opt<std::string> output(
       "o",
@@ -310,7 +315,8 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
           "Write compiled output to specified file. Supported extensions: "
           "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
 
-  auto compiler = processSource(args, /*standalone=*/true);
+  auto compiler = processSource(args, /*standalone=*/true,
+                                [&] { return buildKind == BuildKind::PyExtension; });
   if (!compiler)
     return EXIT_FAILURE;
   std::vector<std::string> libsVec(libs);
@@ -329,6 +335,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = ".o";
     break;
   case BuildKind::Library:
+  case BuildKind::PyExtension:
     extension = isMacOS() ? ".dylib" : ".so";
     break;
   case BuildKind::Executable:
@@ -357,6 +364,12 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   case BuildKind::Library:
     compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, true, libsVec,
                                                   lflags);
+    break;
+  case BuildKind::PyExtension:
+    compiler->getLLVMVisitor()->writeToPythonExtension(
+        "mymodule", // TODO
+        compiler->getPassManager()->getPythonExtensionPass()->getExtensionFunctions(),
+        filename, argv0, libsVec, lflags);
     break;
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
