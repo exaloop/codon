@@ -71,7 +71,7 @@ void compilationError(const std::string &msg, const std::string &file, int line,
 void compilationWarning(const std::string &msg, const std::string &file, int line,
                         int col, int len, int errorCode, bool terminate,
                         MessageGroupPos pos) {
-  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, errorCode, len,
+  compilationMessage("\033[1;33mwarning:\033[0m", msg, file, line, col, len, errorCode,
                      pos);
   if (terminate)
     exit(EXIT_FAILURE);

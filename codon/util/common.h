@@ -158,11 +158,11 @@ enum MessageGroupPos {
 };
 
 void compilationError(const std::string &msg, const std::string &file = "",
-                      int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                      int line = 0, int col = 0, int len = 0, int errorCode = -1,
                       bool terminate = true, MessageGroupPos pos = NONE);
 
 void compilationWarning(const std::string &msg, const std::string &file = "",
-                        int line = 0, int col = 0, int len = 0, int erroCode = -1,
+                        int line = 0, int col = 0, int len = 0, int errorCode = -1,
                         bool terminate = false, MessageGroupPos pos = NONE);
 
 } // namespace codon
