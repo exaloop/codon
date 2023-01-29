@@ -13,6 +13,7 @@ PyImport_AddModuleObject = Function[[cobj], cobj](cobj())
 PyImport_ImportModule = Function[[cobj], cobj](cobj())
 PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
 PyErr_NormalizeException = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
+PyErr_SetString = Function[[cobj, cobj], NoneType](cobj())
 PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PyEval_GetGlobals = Function[[], cobj](cobj())
 PyEval_GetBuiltins = Function[[], cobj](cobj())
@@ -106,6 +107,7 @@ PyObject_IsInstance = Function[[cobj, cobj], i32](cobj())
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
+PyExc_TypeError = cobj()
 Py_LT = 0
 Py_LE = 1
 Py_EQ = 2
@@ -158,6 +160,7 @@ def init_dl_handles(py_handle: cobj):
     global PyImport_ImportModule
     global PyErr_Fetch
     global PyErr_NormalizeException
+    global PyErr_SetString
     global PyRun_SimpleString
     global PyEval_GetGlobals
     global PyEval_GetBuiltins
@@ -243,6 +246,7 @@ def init_dl_handles(py_handle: cobj):
     global Py_None
     global Py_True
     global Py_False
+    global PyExc_TypeError
 
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
@@ -252,6 +256,7 @@ def init_dl_handles(py_handle: cobj):
     PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
     PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
     PyErr_NormalizeException = dlsym(py_handle, "PyErr_NormalizeException")
+    PyErr_SetString = dlsym(py_handle, "PyErr_SetString")
     PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
     PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
     PyEval_GetBuiltins = dlsym(py_handle, "PyEval_GetBuiltins")
@@ -337,6 +342,7 @@ def init_dl_handles(py_handle: cobj):
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
+    PyExc_TypeError = dlsym(py_handle, "PyExc_TypeError")
 
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
@@ -708,6 +714,13 @@ def _get_identifier(typ: str) -> pyobj:
 
 def _isinstance(what: pyobj, typ: pyobj) -> bool:
     return bool(pyobj.exc_wrap(PyObject_IsInstance(what.p, typ.p)))
+
+def _extension_bad_args(got: int, expected: int) -> bool:
+    if got != expected:
+        PyErr_SetString(PyExc_TypeError,
+                        f"expected {expected} arguments, but got {got}".c_str());
+        return True
+    return False
 
 # Type conversions
 

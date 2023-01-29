@@ -582,7 +582,16 @@ void LLVMVisitor::writeToPythonExtension(
 
     auto *nameConst = llvm::ConstantExpr::getBitCast(nameVar, ptr);
     auto *funcConst = llvm::ConstantExpr::getBitCast(llvmFunc, ptr);
-    auto *flagConst = B->getInt32(PYEXT_METH_FASTCALL);
+    auto numArgs = std::distance(original->arg_begin(), original->arg_end());
+    int flag = 0;
+    if (numArgs == 0) {
+      flag = PYEXT_METH_NOARGS;
+    } else if (numArgs == 1) {
+      flag = PYEXT_METH_O;
+    } else {
+      flag = PYEXT_METH_FASTCALL;
+    }
+    auto *flagConst = B->getInt32(flag);
     auto *docsConst = null;
     if (auto *docsAttr = original->getAttribute<DocstringAttribute>()) {
       auto docs = docsAttr->docstring;
