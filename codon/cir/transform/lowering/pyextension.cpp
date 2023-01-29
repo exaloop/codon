@@ -17,6 +17,14 @@ namespace {
 const std::string PYTHON_MODULE = "std.internal.python";
 const std::string EXPORT_ATTR = "std.internal.attributes.export";
 
+void extensionWarning(const std::string &parent, const std::string &method,
+                      types::Type *type, const SrcInfo &src) {
+  compilationWarning("[Python extension lowering] type '" + type->getName() +
+                         "' does not have '" + method +
+                         "' method; ignoring exported function '" + parent + "'",
+                     src.file, src.line, src.col);
+}
+
 Func *generateExtensionFunc(Func *f) {
   auto *M = f->getModule();
   auto *cobj = M->getPointerType(M->getByteType());
@@ -51,7 +59,11 @@ Func *generateExtensionFunc(Func *f) {
   for (auto it = f->arg_begin(); it != f->arg_end(); ++it) {
     auto *type = (*it)->getType();
     auto *fromPy = M->getOrRealizeMethod(type, "__from_py__", {cobj});
-    seqassertn(fromPy, "__from_py__ method not found");
+    if (!fromPy) {
+      extensionWarning(f->getUnmangledName(), "__from_py__", type, f->getSrcInfo());
+      M->remove(ext);
+      return nullptr;
+    }
     seqassertn(numArgs != 0, "unexpected argument");
     auto *argItem = (numArgs == 1) ? M->Nr<VarValue>(args)
                                    : (*M->Nr<VarValue>(args))[*M->getInt(idx++)];
@@ -61,7 +73,11 @@ Func *generateExtensionFunc(Func *f) {
 
   auto *retType = util::getReturnType(f);
   auto *toPy = M->getOrRealizeMethod(retType, "__to_py__", {retType});
-  seqassertn(toPy, "__to_py__ method not found");
+  if (!toPy) {
+    extensionWarning(f->getUnmangledName(), "__to_py__", retType, f->getSrcInfo());
+    M->remove(ext);
+    return nullptr;
+  }
   auto *retVal = util::call(toPy, {util::call(f, vars)});
   body->push_back(M->Nr<ReturnInstr>(retVal));
   return ext;
