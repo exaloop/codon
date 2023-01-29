@@ -19,7 +19,7 @@ const std::string EXPORT_ATTR = "std.internal.attributes.export";
 
 void extensionWarning(const std::string &parent, const std::string &method,
                       types::Type *type, const SrcInfo &src) {
-  compilationWarning("[Python extension lowering] type '" + type->getName() +
+  compilationWarning("Python extension lowering: type '" + type->getName() +
                          "' does not have '" + method +
                          "' method; ignoring exported function '" + parent + "'",
                      src.file, src.line, src.col);

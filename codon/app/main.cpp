@@ -17,6 +17,7 @@
 #include "codon/compiler/jit.h"
 #include "codon/util/common.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 
 namespace {
 void versMsg(llvm::raw_ostream &out) {
@@ -314,6 +315,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
       llvm::cl::desc(
           "Write compiled output to specified file. Supported extensions: "
           "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
+  llvm::cl::opt<std::string> pyModule(
+      "module", llvm::cl::desc("Python extension module name (only applicable when "
+                               "building Python extension module)"));
 
   auto compiler = processSource(args, /*standalone=*/true,
                                 [&] { return buildKind == BuildKind::PyExtension; });
@@ -367,7 +371,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     break;
   case BuildKind::PyExtension:
     compiler->getLLVMVisitor()->writeToPythonExtension(
-        "mymodule", // TODO
+        pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule,
         compiler->getPassManager()->getPythonExtensionPass()->getExtensionFunctions(),
         filename, argv0, libsVec, lflags);
     break;
