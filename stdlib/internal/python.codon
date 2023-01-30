@@ -107,7 +107,7 @@ PyObject_IsInstance = Function[[cobj, cobj], i32](cobj())
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
-PyExc_TypeError = cobj()
+PyExc_RuntimeError = cobj()
 Py_LT = 0
 Py_LE = 1
 Py_EQ = 2
@@ -246,7 +246,7 @@ def init_dl_handles(py_handle: cobj):
     global Py_None
     global Py_True
     global Py_False
-    global PyExc_TypeError
+    global PyExc_RuntimeError
 
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
@@ -342,7 +342,7 @@ def init_dl_handles(py_handle: cobj):
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
-    PyExc_TypeError = Ptr[cobj](dlsym(py_handle, "PyExc_TypeError"))[0]
+    PyExc_RuntimeError = Ptr[cobj](dlsym(py_handle, "PyExc_RuntimeError"))[0]
 
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
@@ -717,7 +717,7 @@ def _isinstance(what: pyobj, typ: pyobj) -> bool:
 
 def _extension_bad_args(got: int, expected: int) -> bool:
     if got != expected:
-        PyErr_SetString(PyExc_TypeError,
+        PyErr_SetString(PyExc_RuntimeError,
                         f"expected {expected} arguments, but got {got}".c_str())
         return True
     return False

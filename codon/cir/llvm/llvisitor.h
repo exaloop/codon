@@ -198,6 +198,9 @@ private:
   // Shared library setup
   void setupGlobalCtorForSharedLibrary();
 
+  // Python extension setup
+  llvm::Function *createPyTryCatchWrapper(llvm::Function *func);
+
   // LLVM passes
   void runLLVMPipeline();
 
