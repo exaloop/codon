@@ -1775,3 +1775,46 @@ class Div(BinOp):
 expr : Expr = Mul(Const(3), Add(Const(10), Const(5)))
 print(expr.eval()) #: 45
 
+
+#%% polymorphism_4
+class A(object):
+    a: int
+    def __init__(self, a: int):
+        self.a = a
+
+    def test_a(self, n: int):
+        print("test_a:A", n)
+
+    def test(self, n: int):
+        print("test:A", n)
+
+    def test2(self, n: int):
+        print("test2:A", n)
+
+class B(A):
+    b: int
+    def __init__(self, a: int, b: int):
+        super().__init__(a)
+        self.b = b
+
+    def test(self, n: int):
+        print("test:B", n)
+
+    def test2(self, n: int):
+        print("test2:B", n)
+
+class C(B):
+    pass
+
+b = B(1, 2)
+b.test_a(1)
+b.test(1)
+#: test_a:A 1
+#: test:B 1
+
+a: A = b
+a.test(1)
+a.test2(2)
+#: test:B 1
+#: test2:B 2
+

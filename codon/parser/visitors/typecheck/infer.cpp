@@ -387,6 +387,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                                 N<IntExpr>(ctx->cache->classRealizationCnt + 1))));
   initAllVT.ast->suite = suite;
   auto typ = initAllVT.realizations.begin()->second->type;
+  LOG_REALIZE("[poly] {} : {}", typ, *suite);
   typ->ast = initAllVT.ast.get();
   auto fx = realizeFunc(typ.get(), true);
 
@@ -402,30 +403,37 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   suite = N<SuiteStmt>();
   for (auto &[_, cls] : ctx->cache->classes) {
     for (auto &[r, real] : cls.realizations) {
+      size_t vtSz = 0;
+      for (auto &[base, vtable] : real->vtables) {
+        if (!vtable.ir)
+          vtSz += vtable.table.size();
+      }
+      auto var = initFn.ast->args[0].name;
+      // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
+      suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+          N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
+          N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
+                                          std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
+                      N<IntExpr>(vtSz + 2)))));
+      // __internal__.class_set_typeinfo(p[real.ID], real.ID)
+      suite->stmts.push_back(N<ExprStmt>(
+          N<CallExpr>(N<IdExpr>("__internal__.class_set_typeinfo:0"),
+                      N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
+                      N<IntExpr>(real->id))));
+      vtSz = 0;
       for (auto &[base, vtable] : real->vtables) {
         if (!vtable.ir) {
-          auto var = initFn.ast->args[0].name;
-          // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
-          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
-              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
-                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
-                          N<IntExpr>(vtable.table.size() + 2)))));
-          // __internal__.class_set_typeinfo(p[real.ID], real.ID)
-          suite->stmts.push_back(N<ExprStmt>(
-              N<CallExpr>(N<IdExpr>("__internal__.class_set_typeinfo:0"),
-                          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
-                          N<IntExpr>(real->id))));
           for (auto &[k, v] : vtable.table) {
             auto &[fn, id] = v;
             std::vector<ExprPtr> ids;
             for (auto &t : fn->getArgTypes())
               ids.push_back(NT<IdExpr>(t->realizedName()));
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+            LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, fn);
             suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
                 N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
                            "__setitem__"),
-                N<IntExpr>(id),
+                N<IntExpr>(vtSz + id),
                 N<CallExpr>(N<DotExpr>(
                     N<CallExpr>(
                         NT<InstantiateExpr>(
@@ -438,12 +446,14 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                         N<IdExpr>(fn->realizedName())),
                     "__raw__")))));
           }
+          vtSz += vtable.table.size();
         }
       }
     }
   }
   initFn.ast->suite = suite;
   typ = initFn.realizations.begin()->second->type;
+  LOG_REALIZE("[poly] {} : {}", typ, suite->toString(2));
   typ->ast = initFn.ast.get();
   realizeFunc(typ.get(), true);
 
@@ -469,6 +479,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                 N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
       }
 
+    LOG_REALIZE("[poly] {} : {}", t, *suite);
     initObjFns.ast->suite = suite;
     t->ast = initObjFns.ast.get();
     realizeFunc(t.get(), true);
@@ -502,6 +513,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         N<DotExpr>(NT<InstantiateExpr>(
                        NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
                    "__elemsize__"));
+    LOG_REALIZE("[poly] {} : {}", t, *suite);
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
     realizeFunc(t.get(), true);
