@@ -342,7 +342,7 @@ def init_dl_handles(py_handle: cobj):
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
-    PyExc_TypeError = dlsym(py_handle, "PyExc_TypeError")
+    PyExc_TypeError = Ptr[cobj](dlsym(py_handle, "PyExc_TypeError"))[0]
 
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
@@ -718,7 +718,7 @@ def _isinstance(what: pyobj, typ: pyobj) -> bool:
 def _extension_bad_args(got: int, expected: int) -> bool:
     if got != expected:
         PyErr_SetString(PyExc_TypeError,
-                        f"expected {expected} arguments, but got {got}".c_str());
+                        f"expected {expected} arguments, but got {got}".c_str())
         return True
     return False
 
