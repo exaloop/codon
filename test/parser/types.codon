@@ -1477,6 +1477,9 @@ x : Union[A,B,C] = A()
 print x.foo(), x.foo().__class__.__name__
 #: 1 Union[List[bool],int,str]
 
+xx = Union[int, str](0)
+print(xx)  #: 0
+
 #%% generator_capture_nonglobal,barebones
 # Issue #49
 def foo(iter):
