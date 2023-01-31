@@ -814,8 +814,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
              type->getArgTypes()[0]->getHeterogenousTuple()) {
     // Special case: do not realize auto-generated heterogenous __getitem__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
-  } else if (startswith(ast->name, "Function.__call__")) {
-    // Special case: Function.__call__
+  } else if (startswith(ast->name, "Function.__call_internal__")) {
+    // Special case: Function.__call_internal__
     /// TODO: move to IR one day
     std::vector<StmtPtr> items;
     items.push_back(nullptr);
