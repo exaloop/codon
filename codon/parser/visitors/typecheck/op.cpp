@@ -745,14 +745,18 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     sliceAdjustIndices(sz, &start, &stop, step);
 
     // Generate a sub-tuple
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
+    auto ass = N<AssignStmt>(var, expr);
     std::vector<ExprPtr> te;
     for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
         E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
-      te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
+      te.push_back(N<DotExpr>(clone(var), classItem->fields[i].name));
     }
-    return {true, transform(N<CallExpr>(
-                      N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te))};
+    ExprPtr e = transform(N<StmtExpr>(
+        std::vector<StmtPtr>{ass},
+        N<CallExpr>(N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te)));
+    return {true, e};
   }
 
   return {false, nullptr};
