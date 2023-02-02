@@ -336,10 +336,10 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     extension = ".bc";
     break;
   case BuildKind::Object:
+  case BuildKind::PyExtension:
     extension = ".o";
     break;
   case BuildKind::Library:
-  case BuildKind::PyExtension:
     extension = isMacOS() ? ".dylib" : ".so";
     break;
   case BuildKind::Executable:
@@ -373,7 +373,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     compiler->getLLVMVisitor()->writeToPythonExtension(
         pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule,
         compiler->getPassManager()->getPythonExtensionPass()->getExtensionFunctions(),
-        filename, argv0, libsVec, lflags);
+        filename);
     break;
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);

@@ -349,14 +349,9 @@ public:
   /// @param name the module's name
   /// @param funcs extension functions
   /// @param filename the file to write to
-  /// @param argv0 compiler's argv[0] used to set rpath
-  /// @param libs library names to link
-  /// @param lflags extra flags to pass linker
   void writeToPythonExtension(const std::string &name,
                               const std::vector<std::pair<Func *, Func *>> &funcs,
-                              const std::string &filename, const std::string &argv0,
-                              const std::vector<std::string> &libs = {},
-                              const std::string &lflags = "");
+                              const std::string &filename);
   /// Runs optimization passes on module and writes the result
   /// to the specified file. The output type is determined by
   /// the file extension (.ll for LLVM IR, .bc for LLVM bitcode

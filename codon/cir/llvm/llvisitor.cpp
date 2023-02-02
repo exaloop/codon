@@ -646,8 +646,7 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
 
 void LLVMVisitor::writeToPythonExtension(
     const std::string &name, const std::vector<std::pair<Func *, Func *>> &funcs,
-    const std::string &filename, const std::string &argv0,
-    const std::vector<std::string> &libs, const std::string &lflags) {
+    const std::string &filename) {
   // Construct PyMethodDef array
   auto *ptr = B->getInt8PtrTy();
   auto *null = llvm::Constant::getNullValue(ptr);
@@ -765,9 +764,7 @@ void LLVMVisitor::writeToPythonExtension(
   B->CreateRet(B->CreateCall(pyModuleCreate,
                              {pyModuleConst, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
 
-  // Generate shared object
-  // (This will not create a global ctor since we renamed the 'main' function above.)
-  writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
+  writeToObjectFile(filename);
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
