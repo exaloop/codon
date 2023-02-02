@@ -1232,3 +1232,14 @@ def foo():
 foo()
 #! name 'x' is not defined
 #! name 'b' is not defined
+
+#%% capture_recursive,barebones
+def f(x: int) -> int:
+    z = 2 * x
+    def g(y: int) -> int:
+        if y == 0:
+            return 1
+        else:
+            return g(y - 1) * z
+    return g(4)
+print(f(3))  #: 1296
