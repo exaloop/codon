@@ -610,16 +610,35 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *last = B->CreateInBoundsGEP(B->getInt8Ty(), buf, msgLen);
   B->CreateStore(B->getInt8(0), last);
 
-  auto *pyErrSetString = M->getNamedValue("PyErr_SetString");
-  seqassertn(pyErrSetString, "'PyErr_SetString' not found in module");
-  auto *pyExcRuntimeError = M->getNamedValue("PyExc_RuntimeError");
-  seqassertn(pyExcRuntimeError, "'PyExc_RuntimeError' not found in module");
+  const std::string pyErrSetStringName = "PyErr_SetString";
+  llvm::Value *pyErrSetString = M->getNamedValue(pyErrSetStringName);
+  if (!pyErrSetString) {
+    pyErrSetString = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pyErrSetStringName, B->getVoidTy(), B->getInt8PtrTy(),
+                               B->getInt8PtrTy())
+            .getCallee());
+  } else {
+    pyErrSetString = B->CreateLoad(B->getInt8PtrTy(), pyErrSetString);
+  }
+
+  const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
+  llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
+  if (!pyExcRuntimeError) {
+    auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
+        *M, B->getInt8PtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
+        /*Initializer=*/nullptr, pyExcRuntimeErrorName);
+    pyExcRuntimeErrorVar->setDSOLocal(true);
+    pyExcRuntimeError = pyExcRuntimeErrorVar;
+  } else {
+    pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
+  }
+
   B->CreateCall(llvm::FunctionCallee(
                     llvm::FunctionType::get(B->getVoidTy(),
                                             {B->getInt8PtrTy(), B->getInt8PtrTy()},
                                             /*isVarArg=*/false),
-                    B->CreateLoad(B->getInt8PtrTy(), pyErrSetString)),
-                {B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError), buf});
+                    pyErrSetString),
+                {pyExcRuntimeError, buf});
   B->CreateRet(llvm::Constant::getNullValue(wrap->getReturnType()));
 
   return wrap;
