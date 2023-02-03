@@ -18,6 +18,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/DebugInfo/Symbolize/Symbolize.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
