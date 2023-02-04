@@ -6,7 +6,6 @@
 
 #include "codon/cir/llvm/gpu.h"
 #include "codon/util/common.h"
-#include "llvm/CodeGen/CommandFlags.h"
 
 static llvm::codegen::RegisterCodeGenFlags CFG;
 
