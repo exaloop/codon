@@ -384,7 +384,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   auto &initAllVT = ctx->cache->functions[rep];
   auto suite = N<SuiteStmt>(
       N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.class_make_n_vtables:0"),
-                                N<IntExpr>(ctx->cache->classRealizationCnt + 1))));
+                                N<IdExpr>("__vtable_size__"))));
   initAllVT.ast->suite = suite;
   auto typ = initAllVT.realizations.begin()->second->type;
   LOG_REALIZE("[poly] {} : {}", typ, *suite);

@@ -11,6 +11,8 @@ from C import seq_print(str)
 from C import exit(int)
 from C import malloc(int) -> cobj as c_malloc
 
+__vtable_size__ = 0
+
 @extend
 class __internal__:
     @pure
