@@ -1480,6 +1480,17 @@ print x.foo(), x.foo().__class__.__name__
 xx = Union[int, str](0)
 print(xx)  #: 0
 
+#%% union_error,barebones
+a: Union[int, str] = 123
+print(123 == a)  #: True
+print(a == 123)  #: True
+try:
+    a = "foo"
+    print(a == 123)
+except TypeError:
+    print("oops", a)  #: oops 'foo'
+
+
 #%% generator_capture_nonglobal,barebones
 # Issue #49
 def foo(iter):

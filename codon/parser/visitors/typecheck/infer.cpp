@@ -936,21 +936,21 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
       auto kwargs = N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)));
       std::vector<CallExpr::Arg> callArgs;
       ExprPtr check =
-          N<CallExpr>(N<IdExpr>("hasattr"), callee->clone(), N<StringExpr>(fnName),
-                      args->clone(), kwargs->clone());
+          N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
+                      N<StringExpr>(fnName), args->clone(), kwargs->clone());
       suite->stmts.push_back(N<IfStmt>(
           N<BinaryExpr>(
               check, "&&",
               N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
                                         N<IdExpr>(selfVar)),
                             "==", N<IntExpr>(tag))),
-          N<ReturnStmt>(N<CallExpr>(callee, args, kwargs))));
+          N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(callee, args, kwargs)))));
       tag++;
     }
     suite->stmts.push_back(
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
-    suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
+    // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
     unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
