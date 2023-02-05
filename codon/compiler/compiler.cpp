@@ -41,6 +41,7 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
           getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
+  cache->pythonExt = pyExtension;
   cache->pythonCompat = pyNumerics;
   module->setCache(cache.get());
   llvisitor->setDebug(debug);

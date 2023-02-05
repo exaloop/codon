@@ -46,3 +46,5 @@ import internal.python
 
 if __py_numerics__:
     import internal.pynumerics
+if __py_extension__:
+    internal.python.ensure_initialized()

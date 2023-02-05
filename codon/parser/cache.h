@@ -236,6 +236,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
   bool pythonCompat = false;
+  /// Set if Codon operates in Python extension mode
+  bool pythonExt = false;
 
 public:
   explicit Cache(std::string argv0 = "");
