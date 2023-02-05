@@ -7,7 +7,6 @@
 #include <string>
 
 #include "codon/util/common.h"
-#include "llvm/CodeGen/CommandFlags.h"
 
 namespace codon {
 namespace ir {

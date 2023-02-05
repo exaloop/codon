@@ -211,9 +211,15 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
                                                       const SrcInfo *src) {
+  auto builder = llvm::EngineBuilder();
+  builder.setMArch(llvm::codegen::getMArch());
+  builder.setMCPU(llvm::codegen::getCPUStr());
+  builder.setMAttrs(llvm::codegen::getFeatureList());
+
+  auto target = builder.selectTarget();
   auto M = std::make_unique<llvm::Module>("codon", context);
-  M->setTargetTriple(llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
-  M->setDataLayout(llvm::EngineBuilder().selectTarget()->createDataLayout());
+  M->setTargetTriple(target->getTargetTriple().str());
+  M->setDataLayout(target->createDataLayout());
   B = std::make_unique<llvm::IRBuilder<>>(context);
 
   auto *srcInfo = src ? src : getDefaultSrcInfo();
@@ -597,11 +603,14 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *objPtr = B->CreateExtractValue(loadedExc, 1);
 
   auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
-  auto *excHeader = llvm::StructType::get(strType, strType);
+  auto *excHeader =
+      llvm::StructType::get(strType, strType, strType, strType, B->getInt64Ty(),
+                            B->getInt64Ty(), B->getInt8PtrTy());
   auto *header = B->CreateLoad(excHeader, objPtr);
   auto *msg = B->CreateExtractValue(header, 1);
   auto *msgLen = B->CreateExtractValue(msg, 0);
   auto *msgPtr = B->CreateExtractValue(msg, 1);
+  auto *pyType = B->CreateExtractValue(header, 6);
 
   // copy msg into new null-terminated buffer
   auto alloc = makeAllocFunc(/*atomic=*/true);
@@ -633,12 +642,14 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
     pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
   }
 
+  auto *havePyType =
+      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getInt8PtrTy()));
   B->CreateCall(llvm::FunctionCallee(
                     llvm::FunctionType::get(B->getVoidTy(),
                                             {B->getInt8PtrTy(), B->getInt8PtrTy()},
                                             /*isVarArg=*/false),
                     pyErrSetString),
-                {pyExcRuntimeError, buf});
+                {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
   B->CreateRet(llvm::Constant::getNullValue(wrap->getReturnType()));
 
   return wrap;
