@@ -3,7 +3,7 @@
 # distutils: language=c++
 # cython: language_level=3
 # cython: c_string_type=unicode
-# cython: c_string_encoding=ascii
+# cython: c_string_encoding=utf8
 
 from libcpp.string cimport string
 from libcpp.vector cimport vector

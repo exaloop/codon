@@ -783,16 +783,31 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
                     .type->getStatic()
                     ->evaluate()
                     .getString();
-  std::vector<TypePtr> args{typ};
+  std::vector<std::pair<std::string, TypePtr>> args{{"", typ}};
   if (expr->expr->isId("hasattr:0")) {
     // Case: the first hasattr overload allows passing argument types via *args
     auto tup = expr->args[1].value->getTuple();
     seqassert(tup, "not a tuple");
     for (auto &a : tup->items) {
-      transformType(a);
+      transform(a);
       if (!a->getType()->getClass())
         return nullptr;
-      args.push_back(a->getType());
+      args.push_back({"", a->getType()});
+    }
+    auto kwtup = expr->args[2].value->origExpr->getCall();
+    seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
+              "expected call: {}", expr->args[2].value->origExpr);
+    auto kw = expr->args[2].value->origExpr->getCall();
+    auto kwCls =
+        in(ctx->cache->classes, expr->args[2].value->getType()->getClass()->name);
+    seqassert(kwCls, "cannot find {}",
+              expr->args[2].value->getType()->getClass()->name);
+    for (size_t i = 0; i < kw->args.size(); i++) {
+      auto &a = kw->args[i].value;
+      transform(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      args.push_back({kwCls->fields[i].name, a->getType()});
     }
   }
 

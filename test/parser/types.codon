@@ -1477,6 +1477,20 @@ x : Union[A,B,C] = A()
 print x.foo(), x.foo().__class__.__name__
 #: 1 Union[List[bool],int,str]
 
+xx = Union[int, str](0)
+print(xx)  #: 0
+
+#%% union_error,barebones
+a: Union[int, str] = 123
+print(123 == a)  #: True
+print(a == 123)  #: True
+try:
+    a = "foo"
+    print(a == 123)
+except TypeError:
+    print("oops", a)  #: oops 'foo'
+
+
 #%% generator_capture_nonglobal,barebones
 # Issue #49
 def foo(iter):
@@ -1774,4 +1788,47 @@ class Div(BinOp):
 # TODO: remove Expr requirement
 expr : Expr = Mul(Const(3), Add(Const(10), Const(5)))
 print(expr.eval()) #: 45
+
+
+#%% polymorphism_4
+class A(object):
+    a: int
+    def __init__(self, a: int):
+        self.a = a
+
+    def test_a(self, n: int):
+        print("test_a:A", n)
+
+    def test(self, n: int):
+        print("test:A", n)
+
+    def test2(self, n: int):
+        print("test2:A", n)
+
+class B(A):
+    b: int
+    def __init__(self, a: int, b: int):
+        super().__init__(a)
+        self.b = b
+
+    def test(self, n: int):
+        print("test:B", n)
+
+    def test2(self, n: int):
+        print("test2:B", n)
+
+class C(B):
+    pass
+
+b = B(1, 2)
+b.test_a(1)
+b.test(1)
+#: test_a:A 1
+#: test:B 1
+
+a: A = b
+a.test(1)
+a.test2(2)
+#: test:B 1
+#: test2:B 2
 

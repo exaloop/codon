@@ -119,9 +119,13 @@ class Int:
 
     @pure
     @llvm
-    def __floordiv__(self, other: Int[N]) -> Int[N]:
+    def _floordiv(self, other: Int[N]) -> Int[N]:
         %0 = sdiv i{=N} %self, %other
         ret i{=N} %0
+    def __floordiv__(self, other: Int[N]) -> Int[N]:
+        if N > 128:
+            compile_error("division is not supported on Int[N] when N > 128")
+        return self._floordiv(other)
 
     @pure
     @llvm
@@ -133,9 +137,13 @@ class Int:
 
     @pure
     @llvm
-    def __mod__(self, other: Int[N]) -> Int[N]:
+    def _mod(self, other: Int[N]) -> Int[N]:
         %0 = srem i{=N} %self, %other
         ret i{=N} %0
+    def __mod__(self, other: Int[N]) -> Int[N]:
+        if N > 128:
+            compile_error("modulus is not supported on Int[N] when N > 128")
+        return self._mod(other)
 
     def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
         d = self // other
@@ -344,9 +352,13 @@ class UInt:
 
     @pure
     @llvm
-    def __floordiv__(self, other: UInt[N]) -> UInt[N]:
+    def _floordiv(self, other: UInt[N]) -> UInt[N]:
         %0 = udiv i{=N} %self, %other
         ret i{=N} %0
+    def __floordiv__(self, other: UInt[N]) -> UInt[N]:
+        if N > 128:
+            compile_error("division is not supported on UInt[N] when N > 128")
+        return self._floordiv(other)
 
     @pure
     @llvm
@@ -358,9 +370,13 @@ class UInt:
 
     @pure
     @llvm
-    def __mod__(self, other: UInt[N]) -> UInt[N]:
+    def _mod(self, other: UInt[N]) -> UInt[N]:
         %0 = urem i{=N} %self, %other
         ret i{=N} %0
+    def __mod__(self, other: UInt[N]) -> UInt[N]:
+        if N > 128:
+            compile_error("modulus is not supported on UInt[N] when N > 128")
+        return self._mod(other)
 
     def __divmod__(self, other: UInt[N]) -> Tuple[UInt[N], UInt[N]]:
         return (self // other, self % other)

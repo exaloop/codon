@@ -11,6 +11,8 @@ from C import seq_print(str)
 from C import exit(int)
 from C import malloc(int) -> cobj as c_malloc
 
+__vtable_size__ = 0
+
 @extend
 class __internal__:
     @pure
@@ -438,8 +440,11 @@ class Function:
        return __internal__.raw_type_str(self.__raw__(), "function")
 
     @llvm
-    def __call__(self, *args) -> TR:
+    def __call_internal__(self: Function[T, TR], args: T) -> TR:
         noop  # compiler will populate this one
+
+    def __call__(self, *args) -> TR:
+        return Function.__call_internal__(self, args)
 
 __vtables__ = __internal__.class_init_vtables()
 def _____(): __vtables__  # make it global!

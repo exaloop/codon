@@ -108,7 +108,9 @@ class Ref[T]:
 @__internal__
 @tuple
 class Union[TU]:
-    pass
+    # compiler-generated
+    def __new__(val):
+        TU
 
 # dummy
 @__internal__
@@ -153,7 +155,7 @@ def isinstance(obj, what):
 def overload():
     pass
 
-def hasattr(obj, attr: Static[str], *args):
+def hasattr(obj, attr: Static[str], *args, **kwargs):
     """Special handling"""
     pass
 
