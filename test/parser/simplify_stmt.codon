@@ -806,6 +806,18 @@ print X(1) + Y(2)  #: 5
 print Y(1) + X(2)  #: 4
 
 
+class A:
+    def __radd__(self, n: int):
+        return 0
+def f():
+    print('f')
+    return 1
+def g():
+    print('g')
+    return A()
+f() + g()
+#: f
+#: g
 
 #%% magic_2,barebones
 @tuple
@@ -1232,3 +1244,14 @@ def foo():
 foo()
 #! name 'x' is not defined
 #! name 'b' is not defined
+
+#%% capture_recursive,barebones
+def f(x: int) -> int:
+    z = 2 * x
+    def g(y: int) -> int:
+        if y == 0:
+            return 1
+        else:
+            return g(y - 1) * z
+    return g(4)
+print(f(3))  #: 1296

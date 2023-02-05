@@ -382,11 +382,11 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   // def class_init_vtables():
   //   return __internal__.class_make_n_vtables(<NUM_REALIZATIONS> + 1)
   auto &initAllVT = ctx->cache->functions[rep];
-  auto suite = N<SuiteStmt>(
-      N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.class_make_n_vtables:0"),
-                                N<IntExpr>(ctx->cache->classRealizationCnt + 1))));
+  auto suite = N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
+      N<IdExpr>("__internal__.class_make_n_vtables:0"), N<IdExpr>("__vtable_size__"))));
   initAllVT.ast->suite = suite;
   auto typ = initAllVT.realizations.begin()->second->type;
+  LOG_REALIZE("[poly] {} : {}", typ, *suite);
   typ->ast = initAllVT.ast.get();
   auto fx = realizeFunc(typ.get(), true);
 
@@ -402,30 +402,36 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   suite = N<SuiteStmt>();
   for (auto &[_, cls] : ctx->cache->classes) {
     for (auto &[r, real] : cls.realizations) {
+      size_t vtSz = 0;
+      for (auto &[base, vtable] : real->vtables) {
+        if (!vtable.ir)
+          vtSz += vtable.table.size();
+      }
+      auto var = initFn.ast->args[0].name;
+      // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
+      suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+          N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
+          N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
+                                          std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
+                      N<IntExpr>(vtSz + 2)))));
+      // __internal__.class_set_typeinfo(p[real.ID], real.ID)
+      suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+          N<IdExpr>("__internal__.class_set_typeinfo:0"),
+          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)), N<IntExpr>(real->id))));
+      vtSz = 0;
       for (auto &[base, vtable] : real->vtables) {
         if (!vtable.ir) {
-          auto var = initFn.ast->args[0].name;
-          // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
-          suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-              N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
-              N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
-                                              std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
-                          N<IntExpr>(vtable.table.size() + 2)))));
-          // __internal__.class_set_typeinfo(p[real.ID], real.ID)
-          suite->stmts.push_back(N<ExprStmt>(
-              N<CallExpr>(N<IdExpr>("__internal__.class_set_typeinfo:0"),
-                          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
-                          N<IntExpr>(real->id))));
           for (auto &[k, v] : vtable.table) {
             auto &[fn, id] = v;
             std::vector<ExprPtr> ids;
             for (auto &t : fn->getArgTypes())
               ids.push_back(NT<IdExpr>(t->realizedName()));
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+            LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, fn);
             suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
                 N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
                            "__setitem__"),
-                N<IntExpr>(id),
+                N<IntExpr>(vtSz + id),
                 N<CallExpr>(N<DotExpr>(
                     N<CallExpr>(
                         NT<InstantiateExpr>(
@@ -438,12 +444,14 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                         N<IdExpr>(fn->realizedName())),
                     "__raw__")))));
           }
+          vtSz += vtable.table.size();
         }
       }
     }
   }
   initFn.ast->suite = suite;
   typ = initFn.realizations.begin()->second->type;
+  LOG_REALIZE("[poly] {} : {}", typ, suite->toString(2));
   typ->ast = initFn.ast.get();
   realizeFunc(typ.get(), true);
 
@@ -469,6 +477,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                 N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
       }
 
+    LOG_REALIZE("[poly] {} : {}", t, *suite);
     initObjFns.ast->suite = suite;
     t->ast = initObjFns.ast.get();
     realizeFunc(t.get(), true);
@@ -502,6 +511,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         N<DotExpr>(NT<InstantiateExpr>(
                        NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
                    "__elemsize__"));
+    LOG_REALIZE("[poly] {} : {}", t, *suite);
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
     realizeFunc(t.get(), true);
@@ -802,8 +812,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
              type->getArgTypes()[0]->getHeterogenousTuple()) {
     // Special case: do not realize auto-generated heterogenous __getitem__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
-  } else if (startswith(ast->name, "Function.__call__")) {
-    // Special case: Function.__call__
+  } else if (startswith(ast->name, "Function.__call_internal__")) {
+    // Special case: Function.__call_internal__
     /// TODO: move to IR one day
     std::vector<StmtPtr> items;
     items.push_back(nullptr);
@@ -826,6 +836,14 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     ll.push_back(format("ret {{}} %{}", as.size()));
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
+  } else if (startswith(ast->name, "Union.__new__:0")) {
+    auto unionType = type->funcParent->getUnion();
+    seqassert(unionType, "expected union, got {}", type->funcParent);
+
+    StmtPtr suite = N<ReturnStmt>(N<CallExpr>(
+        N<IdExpr>("__internal__.new_union:0"), N<IdExpr>(type->ast->args[0].name),
+        N<IdExpr>(unionType->realizedTypeName())));
+    ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.new_union:0")) {
     // Special case: __internal__.new_union
     // def __internal__.new_union(value, U[T0, ..., TN]):
@@ -910,21 +928,29 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     auto suite = N<SuiteStmt>();
     int tag = 0;
     for (auto &t : unionTypes) {
+      auto callee =
+          N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
+                                 N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
+                     fnName);
+      auto args = N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1)));
+      auto kwargs = N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)));
+      std::vector<CallExpr::Arg> callArgs;
+      ExprPtr check =
+          N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
+                      N<StringExpr>(fnName), args->clone(), kwargs->clone());
       suite->stmts.push_back(N<IfStmt>(
-          N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
-                                    N<IdExpr>(selfVar)),
-                        "==", N<IntExpr>(tag)),
-          N<ReturnStmt>(N<CallExpr>(
-              N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
-                                     N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
-                         fnName),
-              N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1))),
-              N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)))))));
+          N<BinaryExpr>(
+              check, "&&",
+              N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
+                                        N<IdExpr>(selfVar)),
+                            "==", N<IntExpr>(tag))),
+          N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(callee, args, kwargs)))));
       tag++;
     }
     suite->stmts.push_back(
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
+    // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
     unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.get_union_first:0")) {

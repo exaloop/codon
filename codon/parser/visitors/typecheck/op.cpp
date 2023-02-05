@@ -657,8 +657,12 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   if (!lt->is("pyobj") && rt->is("pyobj")) {
     // Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
     // Assumes that pyobj implements all left and right magics
-    return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, format("__{}__", rightMagic)),
-                                 expr->lexpr));
+    auto l = ctx->cache->getTemporaryVar("l"), r = ctx->cache->getTemporaryVar("r");
+    return transform(
+        N<StmtExpr>(N<AssignStmt>(N<IdExpr>(l), expr->lexpr),
+                    N<AssignStmt>(N<IdExpr>(r), expr->rexpr),
+                    N<CallExpr>(N<DotExpr>(N<IdExpr>(r), format("__{}__", rightMagic)),
+                                N<IdExpr>(l))));
   }
   if (lt->getUnion()) {
     // Special case: `union op obj` -> `union.__magic__(rhs)`
@@ -667,19 +671,24 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   }
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
-  auto method = findBestMethod(lt, format("__{}__", magic), {expr->lexpr, expr->rexpr});
-
-  // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
-  if (!method && (method = findBestMethod(rt, format("__{}__", rightMagic),
-                                          {expr->rexpr, expr->lexpr}))) {
-    swap(expr->lexpr, expr->rexpr);
-  }
-
-  if (method) {
+  if (auto method =
+          findBestMethod(lt, format("__{}__", magic), {expr->lexpr, expr->rexpr})) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
         N<CallExpr>(N<IdExpr>(method->ast->name), expr->lexpr, expr->rexpr));
   }
+
+  // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
+  if (auto method = findBestMethod(rt, format("__{}__", rightMagic),
+                                   {expr->rexpr, expr->lexpr})) {
+    auto l = ctx->cache->getTemporaryVar("l"), r = ctx->cache->getTemporaryVar("r");
+    return transform(N<StmtExpr>(
+        N<AssignStmt>(N<IdExpr>(l), expr->lexpr),
+        N<AssignStmt>(N<IdExpr>(r), expr->rexpr),
+        N<CallExpr>(N<IdExpr>(method->ast->name), N<IdExpr>(r), N<IdExpr>(l))));
+  }
+  // 145
+
   return nullptr;
 }
 
@@ -745,14 +754,18 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     sliceAdjustIndices(sz, &start, &stop, step);
 
     // Generate a sub-tuple
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
+    auto ass = N<AssignStmt>(var, expr);
     std::vector<ExprPtr> te;
     for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
         E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
-      te.push_back(N<DotExpr>(clone(expr), classItem->fields[i].name));
+      te.push_back(N<DotExpr>(clone(var), classItem->fields[i].name));
     }
-    return {true, transform(N<CallExpr>(
-                      N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te))};
+    ExprPtr e = transform(N<StmtExpr>(
+        std::vector<StmtPtr>{ass},
+        N<CallExpr>(N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te)));
+    return {true, e};
   }
 
   return {false, nullptr};

@@ -170,7 +170,10 @@ void TranslateVisitor::visit(StringExpr *expr) {
 void TranslateVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   seqassert(val, "cannot find '{}'", expr->value);
-  if (auto *v = val->getVar())
+  if (expr->value == "__vtable_size__")
+    result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
+                                getType(expr->getType()));
+  else if (auto *v = val->getVar())
     result = make<ir::VarValue>(expr, v);
   else if (auto *f = val->getFunc())
     result = make<ir::VarValue>(expr, f);

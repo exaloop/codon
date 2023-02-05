@@ -282,8 +282,20 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
-  if (!captures.empty())
+  if (!captures.empty()) {
     finalExpr = N<CallExpr>(N<IdExpr>(stmt->name), partialArgs);
+    // Add updated self reference in case function is recursive!
+    auto pa = partialArgs;
+    for (auto &a : pa) {
+      if (!a.name.empty())
+        a.value = N<IdExpr>(a.name);
+      else
+        a.value = clone(a.value);
+    }
+    f->suite = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>(rootName), N<CallExpr>(N<IdExpr>(rootName), pa)),
+        suite);
+  }
 
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
