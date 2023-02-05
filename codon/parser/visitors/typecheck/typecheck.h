@@ -210,6 +210,9 @@ private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
                                     const std::string &member,
                                     const std::vector<ExprPtr> &args);
+  types::FuncTypePtr
+  findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
+                 const std::vector<std::pair<std::string, types::TypePtr>> &args);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,

@@ -155,7 +155,7 @@ def isinstance(obj, what):
 def overload():
     pass
 
-def hasattr(obj, attr: Static[str], *args):
+def hasattr(obj, attr: Static[str], *args, **kwargs):
     """Special handling"""
     pass
 
