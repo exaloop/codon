@@ -128,6 +128,7 @@ struct SeqExcHeader_t {
   seq_str_t file;
   seq_int_t line;
   seq_int_t col;
+  void *python_type;
 };
 
 void seq_exc_init() {

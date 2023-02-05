@@ -11,9 +11,6 @@ Py_Initialize = Function[[], NoneType](cobj())
 PyImport_AddModule = Function[[cobj], cobj](cobj())
 PyImport_AddModuleObject = Function[[cobj], cobj](cobj())
 PyImport_ImportModule = Function[[cobj], cobj](cobj())
-PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
-PyErr_NormalizeException = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
-PyErr_SetString = Function[[cobj, cobj], NoneType](cobj())
 PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PyEval_GetGlobals = Function[[], cobj](cobj())
 PyEval_GetBuiltins = Function[[], cobj](cobj())
@@ -103,17 +100,42 @@ PyObject_DelItem = Function[[cobj, cobj], int](cobj())
 PyObject_RichCompare = Function[[cobj, cobj, i32], cobj](cobj())
 PyObject_IsInstance = Function[[cobj, cobj], i32](cobj())
 
+# error handling
+PyErr_Fetch = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
+PyErr_NormalizeException = Function[[Ptr[cobj], Ptr[cobj], Ptr[cobj]], NoneType](cobj())
+PyErr_SetString = Function[[cobj, cobj], NoneType](cobj())
+
 # constants
 Py_None = cobj()
 Py_True = cobj()
 Py_False = cobj()
-PyExc_RuntimeError = cobj()
 Py_LT = 0
 Py_LE = 1
 Py_EQ = 2
 Py_NE = 3
 Py_GT = 4
 Py_GE = 5
+
+# exceptions
+PyExc_BaseException = cobj()
+PyExc_Exception = cobj()
+PyExc_NameError = cobj()
+PyExc_OSError = cobj()
+PyExc_IOError = cobj()
+PyExc_ValueError = cobj()
+PyExc_LookupError = cobj()
+PyExc_IndexError = cobj()
+PyExc_KeyError = cobj()
+PyExc_TypeError = cobj()
+PyExc_ArithmeticError = cobj()
+PyExc_ZeroDivisionError = cobj()
+PyExc_OverflowError = cobj()
+PyExc_AttributeError = cobj()
+PyExc_RuntimeError = cobj()
+PyExc_NotImplementedError = cobj()
+PyExc_StopIteration = cobj()
+PyExc_AssertionError = cobj()
+PyExc_SystemExit = cobj()
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
 
@@ -158,9 +180,6 @@ def init_dl_handles(py_handle: cobj):
     global PyImport_AddModule
     global PyImport_AddModuleObject
     global PyImport_ImportModule
-    global PyErr_Fetch
-    global PyErr_NormalizeException
-    global PyErr_SetString
     global PyRun_SimpleString
     global PyEval_GetGlobals
     global PyEval_GetBuiltins
@@ -243,10 +262,31 @@ def init_dl_handles(py_handle: cobj):
     global PyObject_DelItem
     global PyObject_RichCompare
     global PyObject_IsInstance
+    global PyErr_Fetch
+    global PyErr_NormalizeException
+    global PyErr_SetString
     global Py_None
     global Py_True
     global Py_False
+    global PyExc_BaseException
+    global PyExc_Exception
+    global PyExc_NameError
+    global PyExc_OSError
+    global PyExc_IOError
+    global PyExc_ValueError
+    global PyExc_LookupError
+    global PyExc_IndexError
+    global PyExc_KeyError
+    global PyExc_TypeError
+    global PyExc_ArithmeticError
+    global PyExc_ZeroDivisionError
+    global PyExc_OverflowError
+    global PyExc_AttributeError
     global PyExc_RuntimeError
+    global PyExc_NotImplementedError
+    global PyExc_StopIteration
+    global PyExc_AssertionError
+    global PyExc_SystemExit
 
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
@@ -254,9 +294,6 @@ def init_dl_handles(py_handle: cobj):
     PyImport_AddModule = dlsym(py_handle, "PyImport_AddModule")
     PyImport_AddModuleObject = dlsym(py_handle, "PyImport_AddModuleObject")
     PyImport_ImportModule = dlsym(py_handle, "PyImport_ImportModule")
-    PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
-    PyErr_NormalizeException = dlsym(py_handle, "PyErr_NormalizeException")
-    PyErr_SetString = dlsym(py_handle, "PyErr_SetString")
     PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
     PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
     PyEval_GetBuiltins = dlsym(py_handle, "PyEval_GetBuiltins")
@@ -339,10 +376,52 @@ def init_dl_handles(py_handle: cobj):
     PyObject_DelItem = dlsym(py_handle, "PyObject_DelItem")
     PyObject_RichCompare = dlsym(py_handle, "PyObject_RichCompare")
     PyObject_IsInstance = dlsym(py_handle, "PyObject_IsInstance")
+    PyErr_Fetch = dlsym(py_handle, "PyErr_Fetch")
+    PyErr_NormalizeException = dlsym(py_handle, "PyErr_NormalizeException")
+    PyErr_SetString = dlsym(py_handle, "PyErr_SetString")
     Py_None = dlsym(py_handle, "_Py_NoneStruct")
     Py_True = dlsym(py_handle, "_Py_TrueStruct")
     Py_False = dlsym(py_handle, "_Py_FalseStruct")
+    PyExc_BaseException = Ptr[cobj](dlsym(py_handle, "PyExc_BaseException"))[0]
+    PyExc_Exception = Ptr[cobj](dlsym(py_handle, "PyExc_Exception"))[0]
+    PyExc_NameError = Ptr[cobj](dlsym(py_handle, "PyExc_NameError"))[0]
+    PyExc_OSError = Ptr[cobj](dlsym(py_handle, "PyExc_OSError"))[0]
+    PyExc_IOError = Ptr[cobj](dlsym(py_handle, "PyExc_IOError"))[0]
+    PyExc_ValueError = Ptr[cobj](dlsym(py_handle, "PyExc_ValueError"))[0]
+    PyExc_LookupError = Ptr[cobj](dlsym(py_handle, "PyExc_LookupError"))[0]
+    PyExc_IndexError = Ptr[cobj](dlsym(py_handle, "PyExc_IndexError"))[0]
+    PyExc_KeyError = Ptr[cobj](dlsym(py_handle, "PyExc_KeyError"))[0]
+    PyExc_TypeError = Ptr[cobj](dlsym(py_handle, "PyExc_TypeError"))[0]
+    PyExc_ArithmeticError = Ptr[cobj](dlsym(py_handle, "PyExc_ArithmeticError"))[0]
+    PyExc_ZeroDivisionError = Ptr[cobj](dlsym(py_handle, "PyExc_ZeroDivisionError"))[0]
+    PyExc_OverflowError = Ptr[cobj](dlsym(py_handle, "PyExc_OverflowError"))[0]
+    PyExc_AttributeError = Ptr[cobj](dlsym(py_handle, "PyExc_AttributeError"))[0]
     PyExc_RuntimeError = Ptr[cobj](dlsym(py_handle, "PyExc_RuntimeError"))[0]
+    PyExc_NotImplementedError = Ptr[cobj](dlsym(py_handle, "PyExc_NotImplementedError"))[0]
+    PyExc_StopIteration = Ptr[cobj](dlsym(py_handle, "PyExc_StopIteration"))[0]
+    PyExc_AssertionError = Ptr[cobj](dlsym(py_handle, "PyExc_AssertionError"))[0]
+    PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit"))[0]
+
+def init_error_py_types():
+    BaseException._pytype = PyExc_BaseException
+    Exception._pytype = PyExc_Exception
+    NameError._pytype = PyExc_NameError
+    OSError._pytype = PyExc_OSError
+    IOError._pytype = PyExc_IOError
+    ValueError._pytype = PyExc_ValueError
+    LookupError._pytype = PyExc_LookupError
+    IndexError._pytype = PyExc_IndexError
+    KeyError._pytype = PyExc_KeyError
+    TypeError._pytype = PyExc_TypeError
+    ArithmeticError._pytype = PyExc_ArithmeticError
+    ZeroDivisionError._pytype = PyExc_ZeroDivisionError
+    OverflowError._pytype = PyExc_OverflowError
+    AttributeError._pytype = PyExc_AttributeError
+    RuntimeError._pytype = PyExc_RuntimeError
+    NotImplementedError._pytype = PyExc_NotImplementedError
+    StopIteration._pytype = PyExc_StopIteration
+    AssertionError._pytype = PyExc_AssertionError
+    SystemExit._pytype = PyExc_SystemExit
 
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
@@ -357,6 +436,7 @@ def setup_python(python_loaded: bool):
         py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     init_dl_handles(py_handle)
+    init_error_py_types()
 
     if not python_loaded:
         Py_Initialize()
