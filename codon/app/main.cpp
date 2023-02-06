@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "codon/cir/transform/lowering/pyextension.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
@@ -372,8 +371,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   case BuildKind::PyExtension:
     compiler->getLLVMVisitor()->writeToPythonExtension(
         pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule,
-        compiler->getPassManager()->getPythonExtensionPass()->getExtensionFunctions(),
-        filename);
+        compiler->getModule(), filename);
     break;
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);

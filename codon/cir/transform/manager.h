@@ -98,9 +98,6 @@ private:
   /// true if we are compiling as a Python extension
   bool pyExtension;
 
-  /// pointer to Python extension lowering pass, if applicable
-  lowering::PythonExtensionLowering *pyExtensionPass;
-
 public:
   /// PassManager initialization mode.
   enum Init {
@@ -113,8 +110,8 @@ public:
   explicit PassManager(Init init, std::vector<std::string> disabled = {},
                        bool pyNumerics = false, bool pyExtension = false)
       : km(), passes(), analyses(), executionOrder(), results(),
-        disabled(std::move(disabled)), pyNumerics(pyNumerics), pyExtension(pyExtension),
-        pyExtensionPass(nullptr) {
+        disabled(std::move(disabled)), pyNumerics(pyNumerics),
+        pyExtension(pyExtension) {
     registerStandardPasses(init);
   }
 
@@ -180,11 +177,6 @@ public:
   /// @return true if the pass or analysis is disabled
   bool isDisabled(const std::string &key) {
     return std::find(disabled.begin(), disabled.end(), key) != disabled.end();
-  }
-
-  /// @return the Python extension lowering pass, or null if none
-  lowering::PythonExtensionLowering *getPythonExtensionPass() const {
-    return pyExtensionPass;
   }
 
 private:

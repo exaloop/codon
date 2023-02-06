@@ -345,12 +345,13 @@ public:
                          bool library = false,
                          const std::vector<std::string> &libs = {},
                          const std::string &lflags = "");
-  /// Writes module as Python extension shared object.
+  /// Writes module as Python extension object. Exposes
+  /// functions based on "PythonWrapperAttribute" attached
+  /// to IR functions.
   /// @param name the module's name
-  /// @param funcs extension functions
+  /// @param module the IR module
   /// @param filename the file to write to
-  void writeToPythonExtension(const std::string &name,
-                              const std::vector<std::pair<Func *, Func *>> &funcs,
+  void writeToPythonExtension(const std::string &name, const Module *module,
                               const std::string &filename);
   /// Runs optimization passes on module and writes the result
   /// to the specified file. The output type is determined by

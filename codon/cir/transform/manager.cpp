@@ -148,12 +148,6 @@ void PassManager::invalidate(const std::string &key) {
 }
 
 void PassManager::registerStandardPasses(PassManager::Init init) {
-  std::unique_ptr<lowering::PythonExtensionLowering> pyExtPass;
-  if (pyExtension) {
-    pyExtPass = std::make_unique<lowering::PythonExtensionLowering>();
-    pyExtensionPass = pyExtPass.get();
-  }
-
   switch (init) {
   case Init::EMPTY:
     break;
@@ -162,7 +156,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
     if (pyExtension)
-      registerPass(std::move(pyExtPass));
+      registerPass(std::make_unique<lowering::PythonExtensionLowering>());
     break;
   }
   case Init::RELEASE:
@@ -210,7 +204,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                  {cfgKey, globalKey});
 
     if (pyExtension)
-      registerPass(std::move(pyExtPass));
+      registerPass(std::make_unique<lowering::PythonExtensionLowering>());
 
     if (init != Init::JIT) {
       // Don't demote globals in JIT mode, since they might be used later

@@ -94,7 +94,7 @@ void PythonExtensionLowering::run(Module *module) {
 
       if (auto *g = generateExtensionFunc(f)) {
         LOG("[pyext] exporting {}", f->getName());
-        extFuncs.emplace_back(f, g);
+        g->setAttribute(std::make_unique<PythonWrapperAttribute>(f));
       }
     }
   }

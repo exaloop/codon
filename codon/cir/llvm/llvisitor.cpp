@@ -655,18 +655,24 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   return wrap;
 }
 
-void LLVMVisitor::writeToPythonExtension(
-    const std::string &name, const std::vector<std::pair<Func *, Func *>> &funcs,
-    const std::string &filename) {
+void LLVMVisitor::writeToPythonExtension(const std::string &name, const Module *module,
+                                         const std::string &filename) {
   // Construct PyMethodDef array
   auto *ptr = B->getInt8PtrTy();
   auto *null = llvm::Constant::getNullValue(ptr);
   auto *pyMethodDefType = llvm::StructType::get(ptr, ptr, B->getInt32Ty(), ptr);
   std::vector<llvm::Constant *> pyMethods;
 
-  for (auto &p : funcs) {
-    auto *original = p.first;
-    auto *generated = p.second;
+  for (auto *var : *module) {
+    auto *generated = cast<Func>(var);
+    if (!generated)
+      continue;
+
+    auto *pyWrapAttr = generated->getAttribute<PythonWrapperAttribute>();
+    if (!pyWrapAttr)
+      continue;
+
+    auto *original = pyWrapAttr->original;
     auto llvmName = getNameForFunction(generated);
     auto *llvmFunc = M->getFunction(llvmName);
     seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
@@ -735,17 +741,14 @@ void LLVMVisitor::writeToPythonExtension(
   auto nameConst = llvm::ConstantExpr::getBitCast(nameVar, ptr);
 
   auto *docsConst = null;
-  if (!funcs.empty()) {
-    if (auto *docsAttr =
-            funcs[0].first->getModule()->getAttribute<DocstringAttribute>()) {
-      auto docs = docsAttr->docstring;
-      auto *docsVar = new llvm::GlobalVariable(
-          *M, llvm::ArrayType::get(B->getInt8Ty(), docs.length() + 1),
-          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-          llvm::ConstantDataArray::getString(*context, docs), ".pyext_docstring");
-      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
-    }
+  if (auto *docsAttr = module->getAttribute<DocstringAttribute>()) {
+    auto docs = docsAttr->docstring;
+    auto *docsVar = new llvm::GlobalVariable(
+        *M, llvm::ArrayType::get(B->getInt8Ty(), docs.length() + 1),
+        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantDataArray::getString(*context, docs), ".pyext_docstring");
+    docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+    docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
   }
 
   auto *pyMethodArrayConst = llvm::ConstantExpr::getBitCast(pyMethodDefArray, ptr);
