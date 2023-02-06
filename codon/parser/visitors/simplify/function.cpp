@@ -314,6 +314,10 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   } else {
     resultStmt = f;
   }
+
+  if (ctx->isGlobal() && ctx->getModule().empty()) {
+    ctx->makeExport.insert(f->name);
+  }
 }
 
 /// Make a capturing anonymous function with the provided suite and argument names.

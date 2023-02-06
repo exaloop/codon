@@ -673,6 +673,8 @@ void LLVMVisitor::writeToPythonExtension(
     llvmFunc = createPyTryCatchWrapper(llvmFunc);
 
     auto name = original->getUnmangledName();
+    if (ast::startswith(name, "._py_"))
+      name = name.substr(5);
     auto *nameVar = new llvm::GlobalVariable(
         *M, llvm::ArrayType::get(B->getInt8Ty(), name.length() + 1),
         /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,

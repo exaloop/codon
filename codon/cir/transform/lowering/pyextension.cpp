@@ -92,8 +92,10 @@ void PythonExtensionLowering::run(Module *module) {
       if (!util::hasAttribute(f, EXPORT_ATTR))
         continue;
 
-      if (auto *g = generateExtensionFunc(f))
+      if (auto *g = generateExtensionFunc(f)) {
+        LOG("[pyext] exporting {}", f->getName());
         extFuncs.emplace_back(f, g);
+      }
     }
   }
 }
