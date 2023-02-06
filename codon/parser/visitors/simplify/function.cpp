@@ -284,7 +284,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   if (!captures.empty()) {
     finalExpr = N<CallExpr>(N<IdExpr>(stmt->name), partialArgs);
-    // Add updated self reference if case function is recursive!
+    // Add updated self reference in case function is recursive!
     auto pa = partialArgs;
     for (auto &a : pa) {
       if (!a.name.empty())
