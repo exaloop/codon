@@ -15,6 +15,11 @@ __vtable_size__ = 0
 
 @extend
 class __internal__:
+    def yield_final(val):
+        pass
+    def yield_in_no_suspend(T: type) -> T:
+        pass
+
     @pure
     @derives
     @llvm

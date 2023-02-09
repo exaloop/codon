@@ -315,8 +315,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     resultStmt = f;
   }
 
-  if (ctx->isGlobal() && ctx->getModule().empty()) {
-    ctx->makeExport.insert(f->name);
+  if (ctx->cache->pythonExt) {
+    if (ctx->isGlobal() && ctx->getModule().empty())
+      ctx->makeExport.insert(f->name);
   }
 }
 
