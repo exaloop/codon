@@ -278,6 +278,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst =
       std::static_pointer_cast<FunctionStmt>(stmt->clone());
+  ctx->cache->functions[canonicalName].module = ctx->getModule();
 
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;

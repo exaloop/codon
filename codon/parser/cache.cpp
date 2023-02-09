@@ -12,6 +12,7 @@
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/cir/pyextension.h"
 
 namespace codon::ast {
 
@@ -227,6 +228,16 @@ std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
       }
   }
   return result;
+}
+
+std::shared_ptr<ir::PyModule> Cache::getPythonModule() {
+  LOG("====== module generation =======");
+
+  for (auto &[cn, c]: classes)
+    LOG("-> {} {}", cn, c.module);
+
+
+  return nullptr;
 }
 
 } // namespace codon::ast

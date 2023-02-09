@@ -177,6 +177,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
       ctx->cache->classes[canonicalName].ast->validate();
+      ctx->cache->classes[canonicalName].module = ctx->getModule();
 
       // Codegen default magic methods
       for (auto &m : stmt->attributes.magics) {

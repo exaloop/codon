@@ -12,6 +12,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
+#include "codon/cir/pyextension.h"
 
 #define FILE_GENERATED "<generated>"
 #define MODULE_MAIN "__main__"
@@ -156,6 +157,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
 
+    /// Module information
+    std::string module;
+
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
@@ -185,6 +189,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
     /// Unrealized function type.
     types::FuncTypePtr type;
+
+    /// Module information
+    std::string module;
 
     Function() : ast(nullptr), origAst(nullptr), type(nullptr) {}
   };
@@ -300,6 +307,8 @@ public:
   void parseCode(const std::string &code);
 
   static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
+
+  std::shared_ptr<ir::PyModule> getPythonModule();
 };
 
 } // namespace codon::ast

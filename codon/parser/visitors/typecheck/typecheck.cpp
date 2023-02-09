@@ -29,6 +29,7 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   }
   if (s->getSuite()) {
     v.prepareVTables();
+    auto _ = cache->getPythonModule();
   }
   return s;
 }
