@@ -205,7 +205,8 @@ void TranslateVisitor::visit(CallExpr *expr) {
     arrayType->setAstType(expr->getType());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
-  } else if (expr->expr->getId() && startswith(expr->expr->getId()->value, "__internal__.yield_in_no_suspend:0")) {
+  } else if (expr->expr->getId() && startswith(expr->expr->getId()->value,
+                                               "__internal__.yield_in_no_suspend:0")) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
@@ -338,7 +339,8 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
 void TranslateVisitor::visit(ExprStmt *stmt) {
   if (stmt->expr->getCall() &&
       stmt->expr->getCall()->expr->isId("__internal__.yield_final:0")) {
-    result = make<ir::YieldInstr>(stmt, transform(stmt->expr->getCall()->args[0].value), true);
+    result = make<ir::YieldInstr>(stmt, transform(stmt->expr->getCall()->args[0].value),
+                                  true);
     ctx->getBase()->setGenerator();
   } else {
     result = transform(stmt->expr);
