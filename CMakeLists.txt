@@ -181,6 +181,7 @@ set(CODON_HPPFILES
     codon/cir/llvm/llvm.h
     codon/cir/llvm/optimize.h
     codon/cir/module.h
+    codon/cir/pyextension.h
     codon/cir/cir.h
     codon/cir/transform/cleanup/canonical.h
     codon/cir/transform/cleanup/dead_code.h
