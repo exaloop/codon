@@ -481,6 +481,7 @@ struct FunctionStmt : public Stmt {
   size_t getKwStarArgs() const;
 
   FunctionStmt *getFunction() override { return this; }
+  std::string getDocstr();
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
@@ -515,6 +516,7 @@ struct ClassStmt : public Stmt {
 
   void parseDecorators();
   static bool isClassVar(const Param &p);
+  std::string getDocstr();
 };
 
 /// Yield-from statement (yield from expr).

@@ -27,10 +27,8 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!s) {
     v.error("cannot typecheck the program");
   }
-  if (s->getSuite()) {
+  if (s->getSuite())
     v.prepareVTables();
-    auto _ = cache->getPythonModule();
-  }
   return s;
 }
 

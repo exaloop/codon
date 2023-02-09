@@ -56,6 +56,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     }
 
   TranslateVisitor(cache->codegenCtx).transform(stmts);
+  auto _ = cache->getPythonModule();
   return main;
 }
 
