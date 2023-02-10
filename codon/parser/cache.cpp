@@ -417,10 +417,11 @@ void Cache::populatePythonModule() {
         } else if (n == "__init__") {
           py.init = f;
         } else {
-          py.methods.push_back(ir::PyFunction{n, fna->getDocstr(), f,
-                                              fna->hasAttr(Attr::Method)
-                                                  ? ir::PyFunction::Type::METHOD
-                                                  : ir::PyFunction::Type::CLASS});
+          py.methods.push_back(
+              ir::PyFunction{n, fna->getDocstr(), f,
+                             fna->hasAttr(Attr::Method) ? ir::PyFunction::Type::METHOD
+                                                        : ir::PyFunction::Type::CLASS,
+                             int(fna->args.size()) - fna->hasAttr(Attr::Method)});
         }
         // LOG(">| [{}] {}", functions[stubName].realizations.size(), *f);
       }
@@ -448,7 +449,8 @@ void Cache::populatePythonModule() {
       LOG("[py] functn {} => {}", rev(fn), fnn);
       auto ir = getFn(fnn);
       pyModule->functions.push_back(ir::PyFunction{rev(fn), f.ast->getDocstr(), ir,
-                                                   ir::PyFunction::Type::TOPLEVEL});
+                                                   ir::PyFunction::Type::TOPLEVEL,
+                                                   int(f.ast->args.size())});
     }
 }
 
