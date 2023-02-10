@@ -17,6 +17,7 @@ struct PyFunction {
   std::string doc;
   Func *func = nullptr;
   Type type = Type::TOPLEVEL;
+  int nargs = 0;
 };
 
 struct PyMember {
