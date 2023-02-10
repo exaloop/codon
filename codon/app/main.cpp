@@ -369,9 +369,10 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
                                                   lflags);
     break;
   case BuildKind::PyExtension:
-    compiler->getLLVMVisitor()->writeToPythonExtension(
-        pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule,
-        compiler->getModule(), filename);
+    compiler->getCache()->pyModule->name =
+        pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule;
+    compiler->getLLVMVisitor()->writeToPythonExtension(*compiler->getCache()->pyModule,
+                                                       filename);
     break;
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);

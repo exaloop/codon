@@ -4,6 +4,7 @@
 
 #include "codon/cir/cir.h"
 #include "codon/cir/llvm/llvm.h"
+#include "codon/cir/pyextension.h"
 #include "codon/dsl/plugins.h"
 #include "codon/util/common.h"
 
@@ -345,14 +346,10 @@ public:
                          bool library = false,
                          const std::vector<std::string> &libs = {},
                          const std::string &lflags = "");
-  /// Writes module as Python extension object. Exposes
-  /// functions based on "PythonWrapperAttribute" attached
-  /// to IR functions.
-  /// @param name the module's name
-  /// @param module the IR module
+  /// Writes module as Python extension object.
+  /// @param pymod extension module
   /// @param filename the file to write to
-  void writeToPythonExtension(const std::string &name, const Module *module,
-                              const std::string &filename);
+  void writeToPythonExtension(const PyModule &pymod, const std::string &filename);
   /// Runs optimization passes on module and writes the result
   /// to the specified file. The output type is determined by
   /// the file extension (.ll for LLVM IR, .bc for LLVM bitcode
