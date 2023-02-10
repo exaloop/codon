@@ -318,6 +318,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: transform `pyobj.member` to `pyobj._getattr("member")`
   if (typ->is("pyobj")) {
+    LOG("-> /p {}", expr->toString());
     return transform(
         N<CallExpr>(N<DotExpr>(expr->expr, "_getattr"), N<StringExpr>(expr->member)));
   }

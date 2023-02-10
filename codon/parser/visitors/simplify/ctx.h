@@ -166,8 +166,6 @@ struct SimplifyContext : public Context<SimplifyItem> {
   bool allowTypeOf;
   /// Set if all assignments should not be dominated later on.
   bool avoidDomination = false;
-  /// Canonical names of functions that should be exported (e.g., for Python use)
-  std::unordered_set<std::string> makeExport;
 
 public:
   SimplifyContext(std::string filename, Cache *cache);

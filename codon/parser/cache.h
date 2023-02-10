@@ -191,9 +191,10 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     types::FuncTypePtr type;
 
     /// Module information
-    std::string module;
+    std::string rootName = "";
+    bool isToplevel = false;
 
-    Function() : ast(nullptr), origAst(nullptr), type(nullptr) {}
+    Function() : ast(nullptr), origAst(nullptr), type(nullptr), rootName(""), isToplevel(false) {}
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.

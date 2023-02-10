@@ -106,25 +106,6 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
                         ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
                         ctx->scope.stmts[ctx->scope.blocks.back()].end());
   suite->stmts.push_back(n);
-
-  auto exports = ctx->makeExport;
-  for (auto &fn : exports) {
-    std::vector<Param> args;
-    std::vector<ExprPtr> callArgs;
-    auto t = N<IdExpr>("pyobj");
-    t->markType();
-    for (auto &a : ctx->cache->functions[fn].ast->args) {
-      args.push_back(
-          Param{ctx->cache->rev(a.name), a.type ? a.type->clone() : t->clone()});
-      callArgs.push_back(N<IdExpr>(ctx->cache->rev(a.name)));
-    }
-    // TODO: what to do in case of overrides?
-    auto ast = N<FunctionStmt>("._py_" + ctx->cache->rev(fn), nullptr, args,
-                               N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-                                   N<IdExpr>(ctx->cache->rev(fn)), callArgs))),
-                               Attr({Attr::Export}));
-    suite->stmts.push_back(SimplifyVisitor(ctx, preamble).transform(ast));
-  }
 #undef N
 
   if (!ctx->cache->errors.empty())
