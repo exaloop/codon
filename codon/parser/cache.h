@@ -308,7 +308,8 @@ public:
 
   static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
 
-  std::shared_ptr<ir::PyModule> getPythonModule();
+  std::shared_ptr<ir::PyModule> pyModule = nullptr;
+  void populatePythonModule();
 };
 
 } // namespace codon::ast
