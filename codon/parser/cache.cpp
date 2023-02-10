@@ -269,7 +269,8 @@ void Cache::populatePythonModule() {
     } else if (fna->args.size() == 1 + isMethod) {
       ExprPtr po = N<IdExpr>(params[1].name);
       if (fna->args[isMethod].type) {
-        po = N<CallExpr>(N<DotExpr>(fna->args[isMethod].type->clone(), "__from_py__"), po);
+        po = N<CallExpr>(N<DotExpr>(fna->args[isMethod].type->clone(), "__from_py__"),
+                         po);
       } else {
         po = N<CallExpr>(N<IdExpr>("pyobj"), po);
       }

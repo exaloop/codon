@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "codon/cir/cir.h"
+#include "codon/cir/pyextension.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
-#include "codon/cir/pyextension.h"
 
 #define FILE_GENERATED "<generated>"
 #define MODULE_MAIN "__main__"
@@ -194,7 +194,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::string rootName = "";
     bool isToplevel = false;
 
-    Function() : ast(nullptr), origAst(nullptr), type(nullptr), rootName(""), isToplevel(false) {}
+    Function()
+        : ast(nullptr), origAst(nullptr), type(nullptr), rootName(""),
+          isToplevel(false) {}
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
