@@ -112,6 +112,7 @@ struct PyType {
   std::vector<PyFunction> methods;
   std::vector<PyMember> members;
   std::vector<PyGetSet> getset;
+  Func *typePtrHook = nullptr;
 };
 
 struct PyModule {
