@@ -717,73 +717,54 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     return llvmFunc;
   };
 
-  // Handle functions
-  std::vector<llvm::Constant *> pyMethods;
-  for (auto &pyfunc : pymod.functions) {
-    auto *nameVar = new llvm::GlobalVariable(
-        *M, llvm::ArrayType::get(i8, pyfunc.name.length() + 1),
+  auto pyString = [&](const std::string &str) -> llvm::Constant * {
+    if (str.empty())
+      return null;
+    auto *var = new llvm::GlobalVariable(
+        *M, llvm::ArrayType::get(i8, str.length() + 1),
         /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-        llvm::ConstantDataArray::getString(*context, pyfunc.name), ".pyext_func_name");
-    nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        llvm::ConstantDataArray::getString(*context, str), ".pyext_str");
+    var->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+    return var;
+  };
 
-    int flag = 0;
-    switch (pyfunc.nargs) {
-    case 0:
-      flag = PYEXT_METH_NOARGS;
-    case 1:
-      flag = PYEXT_METH_O;
-    default:
-      flag = PYEXT_METH_FASTCALL;
+  auto pyFunctions = [&](const std::vector<PyFunction> &functions) {
+    std::vector<llvm::Constant *> pyMethods;
+    for (auto &pyfunc : functions) {
+      int flag = 0;
+      switch (pyfunc.nargs) {
+      case 0:
+        flag = PYEXT_METH_NOARGS;
+      case 1:
+        flag = PYEXT_METH_O;
+      default:
+        flag = PYEXT_METH_FASTCALL;
+      }
+
+      pyMethods.push_back(llvm::ConstantStruct::get(
+          pyMethodDefType, pyString(pyfunc.name), pyFunc(pyfunc.func),
+          B->getInt32(flag), pyString(pyfunc.doc)));
     }
+    pyMethods.push_back(
+        llvm::ConstantStruct::get(pyMethodDefType, null, null, zero32, null));
 
-    auto *flagConst = B->getInt32(flag);
-    auto *docsConst = null;
-    if (pyfunc.doc.empty()) {
-      auto *docsVar = new llvm::GlobalVariable(
-          *M, llvm::ArrayType::get(i8, pyfunc.doc.length() + 1),
-          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-          llvm::ConstantDataArray::getString(*context, pyfunc.doc), ".pyext_docstring");
-      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
-    }
-    pyMethods.push_back(llvm::ConstantStruct::get(
-        pyMethodDefType, nameVar, pyFunc(pyfunc.func), flagConst, docsConst));
-  }
-  pyMethods.push_back(
-      llvm::ConstantStruct::get(pyMethodDefType, null, null, zero32, null));
-
-  auto *pyMethodDefArrayType = llvm::ArrayType::get(pyMethodDefType, pyMethods.size());
-  auto *pyMethodDefArray = new llvm::GlobalVariable(
-      *M, pyMethodDefArrayType,
-      /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
-      llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
+    auto *pyMethodDefArrayType =
+        llvm::ArrayType::get(pyMethodDefType, pyMethods.size());
+    auto *pyMethodDefArray = new llvm::GlobalVariable(
+        *M, pyMethodDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
+    return pyMethodDefArray;
+  };
 
   // Construct PyModuleDef array
   auto *pyObjectConst = llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null);
   auto *pyModuleDefBaseConst =
       llvm::ConstantStruct::get(pyModuleDefBaseType, pyObjectConst, null, zero64, null);
 
-  auto *nameVar = new llvm::GlobalVariable(
-      *M, llvm::ArrayType::get(i8, pymod.name.length() + 1),
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-      llvm::ConstantDataArray::getString(*context, pymod.name), ".pyext_module_name");
-  nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  auto nameConst = llvm::ConstantExpr::getBitCast(nameVar, ptr);
-
-  auto *docsConst = null;
-  if (!pymod.doc.empty()) {
-    auto *docsVar = new llvm::GlobalVariable(
-        *M, llvm::ArrayType::get(i8, pymod.doc.length() + 1),
-        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-        llvm::ConstantDataArray::getString(*context, pymod.doc), ".pyext_docstring");
-    docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-    docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
-  }
-
-  auto *pyMethodArrayConst = llvm::ConstantExpr::getBitCast(pyMethodDefArray, ptr);
   auto *pyModuleDef = llvm::ConstantStruct::get(
-      pyModuleDefType, pyModuleDefBaseConst, nameConst, docsConst, B->getInt64(-1),
-      pyMethodArrayConst, null, null, null, null);
+      pyModuleDefType, pyModuleDefBaseConst, pyString(pymod.name), pyString(pymod.doc),
+      B->getInt64(-1), pyFunctions(pymod.functions), null, null, null, null);
   auto *pyModuleVar =
       new llvm::GlobalVariable(*M, pyModuleDef->getType(),
                                /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
@@ -915,35 +896,35 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         llvm::ConstantStruct::get(
             pyVarObjectType,
             llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
-            zero64),         // PyObject_VAR_HEAD
-        nameConst,           // const char *tp_name;
-        B->getInt64(pySize), // Py_ssize_t tp_basicsize;
-        zero64,              // Py_ssize_t tp_itemsize;
+            zero64),           // PyObject_VAR_HEAD
+        pyString(pytype.name), // const char *tp_name;
+        B->getInt64(pySize),   // Py_ssize_t tp_basicsize;
+        zero64,                // Py_ssize_t tp_itemsize;
         // destructor tp_dealloc;
-        zero64,                  // Py_ssize_t tp_vectorcall_offset;
-        null,                    // getattrfunc tp_getattr;
-        null,                    // setattrfunc tp_setattr;
-        null,                    // PyAsyncMethods *tp_as_async;
-        pyFunc(pytype.repr),     // reprfunc tp_repr;
-        numberSlotsConst,        // PyNumberMethods *tp_as_number;
-        sequenceSlotsConst,      // PySequenceMethods *tp_as_sequence;
-        null,                    // PyMappingMethods *tp_as_mapping;
-        pyFunc(pytype.hash),     // hashfunc tp_hash;
-        pyFunc(pytype.call),     // ternaryfunc tp_call;
-        pyFunc(pytype.str),      // reprfunc tp_str;
-        null,                    // getattrofunc tp_getattro;
-        null,                    // setattrofunc tp_setattro;
-        null,                    // PyBufferProcs *tp_as_buffer;
-        zero64,                  // unsigned long tp_flags;
-        docsConst,               // const char *tp_doc;
-        null,                    // traverseproc tp_traverse;
-        null,                    // inquiry tp_clear;
-        pyFunc(pytype.cmp),      // richcmpfunc tp_richcompare;
-        zero64,                  // Py_ssize_t tp_weaklistoffset;
-        pyFunc(pytype.iter),     // getiterfunc tp_iter;
-        pyFunc(pytype.iternext), // iternextfunc tp_iternext;
-        // PyMethodDef *tp_methods;
-        null, // PyMemberDef *tp_members;
+        zero64,                      // Py_ssize_t tp_vectorcall_offset;
+        null,                        // getattrfunc tp_getattr;
+        null,                        // setattrfunc tp_setattr;
+        null,                        // PyAsyncMethods *tp_as_async;
+        pyFunc(pytype.repr),         // reprfunc tp_repr;
+        numberSlotsConst,            // PyNumberMethods *tp_as_number;
+        sequenceSlotsConst,          // PySequenceMethods *tp_as_sequence;
+        null,                        // PyMappingMethods *tp_as_mapping;
+        pyFunc(pytype.hash),         // hashfunc tp_hash;
+        pyFunc(pytype.call),         // ternaryfunc tp_call;
+        pyFunc(pytype.str),          // reprfunc tp_str;
+        null,                        // getattrofunc tp_getattro;
+        null,                        // setattrofunc tp_setattro;
+        null,                        // PyBufferProcs *tp_as_buffer;
+        zero64,                      // unsigned long tp_flags;
+        docsConst,                   // const char *tp_doc;
+        null,                        // traverseproc tp_traverse;
+        null,                        // inquiry tp_clear;
+        pyFunc(pytype.cmp),          // richcmpfunc tp_richcompare;
+        zero64,                      // Py_ssize_t tp_weaklistoffset;
+        pyFunc(pytype.iter),         // getiterfunc tp_iter;
+        pyFunc(pytype.iternext),     // iternextfunc tp_iternext;
+        pyFunctions(pytype.methods), // PyMethodDef *tp_methods;
+        null,                        // PyMemberDef *tp_members;
         // PyGetSetDef *tp_getset;
         null,                // PyTypeObject *tp_base;
         null,                // PyObject *tp_dict;
