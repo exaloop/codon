@@ -670,6 +670,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *pyModuleDefType =
       llvm::StructType::create("PyModuleDef", pyModuleDefBaseType, ptr, ptr, i64,
                                pyMethodDefType->getPointerTo(), ptr, ptr, ptr, ptr);
+  auto *pyGetSetDefType =
+      llvm::StructType::create("PyGetSetDef", ptr, ptr, ptr, ptr, ptr);
   std::vector<llvm::Type *> pyNumberMethodsFields(36, ptr);
   auto *pyNumberMethodsType =
       llvm::StructType::create(*context, pyNumberMethodsFields, "PyNumberMethods");
@@ -755,6 +757,24 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
     return pyMethodDefArray;
+  };
+
+  auto pyGetSet = [&](const std::vector<PyGetSet> &getset) {
+    std::vector<llvm::Constant *> pyGS;
+    for (auto &gs : getset) {
+      pyGS.push_back(llvm::ConstantStruct::get(pyGetSetDefType, pyString(gs.name),
+                                               pyFunc(gs.get), pyFunc(gs.set),
+                                               pyString(gs.doc), null));
+    }
+    pyGS.push_back(
+        llvm::ConstantStruct::get(pyGetSetDefType, null, null, null, null, null));
+
+    auto *pyGetSetDefArrayType = llvm::ArrayType::get(pyGetSetDefType, pyGS.size());
+    auto *pyGetSetDefArray = new llvm::GlobalVariable(
+        *M, pyGetSetDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyGetSetDefArrayType, pyGS), ".pyext_getset");
+    return pyGetSetDefArray;
   };
 
   // Construct PyModuleDef array
@@ -925,27 +945,27 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         pyFunc(pytype.iternext),     // iternextfunc tp_iternext;
         pyFunctions(pytype.methods), // PyMethodDef *tp_methods;
         null,                        // PyMemberDef *tp_members;
-        // PyGetSetDef *tp_getset;
-        null,                // PyTypeObject *tp_base;
-        null,                // PyObject *tp_dict;
-        null,                // descrgetfunc tp_descr_get;
-        null,                // descrsetfunc tp_descr_set;
-        zero64,              // Py_ssize_t tp_dictoffset;
-        pyFunc(pytype.init), // initproc tp_init;
-        alloc,               // allocfunc tp_alloc;
-        null,                // newfunc tp_new;
-        free,                // freefunc tp_free;
-        null,                // inquiry tp_is_gc;
-        null,                // PyObject *tp_bases;
-        null,                // PyObject *tp_mro;
-        null,                // PyObject *tp_cache;
-        null,                // void *tp_subclasses;
-        null,                // PyObject *tp_weaklist;
-        null,                // destructor tp_del;
-        zero32,              // unsigned int tp_version_tag;
-        pyFunc(pytype.del),  // destructor tp_finalize;
-        null,                // vectorcallfunc tp_vectorcall;
-        B->getInt8(0),       // char tp_watched;
+        pyGetSet(pytype.getset),     // PyGetSetDef *tp_getset;
+        null,                        // PyTypeObject *tp_base;
+        null,                        // PyObject *tp_dict;
+        null,                        // descrgetfunc tp_descr_get;
+        null,                        // descrsetfunc tp_descr_set;
+        zero64,                      // Py_ssize_t tp_dictoffset;
+        pyFunc(pytype.init),         // initproc tp_init;
+        alloc,                       // allocfunc tp_alloc;
+        null,                        // newfunc tp_new;
+        free,                        // freefunc tp_free;
+        null,                        // inquiry tp_is_gc;
+        null,                        // PyObject *tp_bases;
+        null,                        // PyObject *tp_mro;
+        null,                        // PyObject *tp_cache;
+        null,                        // void *tp_subclasses;
+        null,                        // PyObject *tp_weaklist;
+        null,                        // destructor tp_del;
+        zero32,                      // unsigned int tp_version_tag;
+        pyFunc(pytype.del),          // destructor tp_finalize;
+        null,                        // vectorcallfunc tp_vectorcall;
+        B->getInt8(0),               // char tp_watched;
     };
 
     // TODO
