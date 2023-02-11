@@ -105,6 +105,7 @@ struct PyType {
   Func *str = nullptr;
   Func *cmp = nullptr;
   Func *iter = nullptr;
+  Func *iternext = nullptr;
   Func *del = nullptr;
   Func *new_ = nullptr;
   Func *init = nullptr;

@@ -660,29 +660,68 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   // Setup LLVM types & constants
   auto *i64 = B->getInt64Ty();
   auto *i32 = B->getInt32Ty();
+  auto *i8 = B->getInt8Ty();
   auto *ptr = B->getInt8PtrTy();
   auto *pyMethodDefType = llvm::StructType::create("PyMethodDef", ptr, ptr, i32, ptr);
   auto *pyObjectType = llvm::StructType::create("PyObject", i64, ptr);
+  auto *pyVarObjectType = llvm::StructType::create("PyVarObject", pyObjectType, i64);
   auto *pyModuleDefBaseType =
       llvm::StructType::create("PyMethodDefBase", pyObjectType, ptr, i64, ptr);
   auto *pyModuleDefType =
       llvm::StructType::create("PyModuleDef", pyModuleDefBaseType, ptr, ptr, i64,
                                pyMethodDefType->getPointerTo(), ptr, ptr, ptr, ptr);
-
+  std::vector<llvm::Type *> pyNumberMethodsFields(36, ptr);
+  auto *pyNumberMethodsType =
+      llvm::StructType::create(*context, pyNumberMethodsFields, "PyNumberMethods");
+  std::vector<llvm::Type *> pySequenceMethodsFields(10, ptr);
+  auto *pySequenceMethodsType =
+      llvm::StructType::create(*context, pySequenceMethodsFields, "PySequenceMethods");
+  std::vector<llvm::Type *> pyMappingMethodsFields(3, ptr);
+  auto *pyMappingMethodsType =
+      llvm::StructType::create(*context, pyMappingMethodsFields, "PyMappingMethods");
+  std::vector<llvm::Type *> pyAsyncMethodsFields(4, ptr);
+  auto *pyAsyncMethodsType =
+      llvm::StructType::create(*context, pyAsyncMethodsFields, "PyAsyncMethods");
+  auto *pyBufferProcsType = llvm::StructType::create("PyBufferProcs", ptr, ptr);
+  auto *pyTypeObjectType = llvm::StructType::create(
+      "PyTypeObject", pyVarObjectType, ptr, i64, i64, ptr, i64, ptr, ptr, ptr, ptr, ptr,
+      ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr, ptr, i64, ptr, ptr,
+      ptr, ptr, ptr, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr,
+      ptr, ptr, ptr, i32, ptr, ptr, i8);
   auto *zero64 = B->getInt64(0);
   auto *zero32 = B->getInt32(0);
+  auto *zero8 = B->getInt8(0);
   auto *null = llvm::Constant::getNullValue(ptr);
+  auto *pyTypeType = new llvm::GlobalVariable(*M, ptr, /*isConstant=*/false,
+                                              llvm::GlobalValue::ExternalLinkage,
+                                              /*Initializer=*/nullptr, "PyType_Type");
+
+  auto allocUncollectable = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("seq_alloc_uncollectable", ptr, i64).getCallee());
+  allocUncollectable->setDoesNotThrow();
+  allocUncollectable->setReturnDoesNotAlias();
+  allocUncollectable->setOnlyAccessesInaccessibleMemory();
+
+  auto free = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("seq_free", B->getVoidTy(), ptr).getCallee());
+  free->setDoesNotThrow();
+
+  // Helpers
+  auto pyFunc = [&](Func *func) -> llvm::Constant * {
+    if (!func)
+      return null;
+    auto llvmName = getNameForFunction(func);
+    auto *llvmFunc = M->getFunction(llvmName);
+    seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
+    llvmFunc = createPyTryCatchWrapper(llvmFunc);
+    return llvmFunc;
+  };
 
   // Handle functions
   std::vector<llvm::Constant *> pyMethods;
   for (auto &pyfunc : pymod.functions) {
-    auto llvmName = getNameForFunction(pyfunc.func);
-    auto *llvmFunc = M->getFunction(llvmName);
-    seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
-    llvmFunc = createPyTryCatchWrapper(llvmFunc);
-
     auto *nameVar = new llvm::GlobalVariable(
-        *M, llvm::ArrayType::get(B->getInt8Ty(), pyfunc.name.length() + 1),
+        *M, llvm::ArrayType::get(i8, pyfunc.name.length() + 1),
         /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantDataArray::getString(*context, pyfunc.name), ".pyext_func_name");
     nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
@@ -701,14 +740,14 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     auto *docsConst = null;
     if (pyfunc.doc.empty()) {
       auto *docsVar = new llvm::GlobalVariable(
-          *M, llvm::ArrayType::get(B->getInt8Ty(), pyfunc.doc.length() + 1),
+          *M, llvm::ArrayType::get(i8, pyfunc.doc.length() + 1),
           /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
           llvm::ConstantDataArray::getString(*context, pyfunc.doc), ".pyext_docstring");
       docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
       docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
     }
-    pyMethods.push_back(llvm::ConstantStruct::get(pyMethodDefType, nameVar, llvmFunc,
-                                                  flagConst, docsConst));
+    pyMethods.push_back(llvm::ConstantStruct::get(
+        pyMethodDefType, nameVar, pyFunc(pyfunc.func), flagConst, docsConst));
   }
   pyMethods.push_back(
       llvm::ConstantStruct::get(pyMethodDefType, null, null, zero32, null));
@@ -721,11 +760,11 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
 
   // Construct PyModuleDef array
   auto *pyObjectConst = llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null);
-  auto *pyModuleDefBaseConst = llvm::ConstantStruct::get(
-      pyModuleDefBaseType, pyObjectConst, null, B->getInt64(0), null);
+  auto *pyModuleDefBaseConst =
+      llvm::ConstantStruct::get(pyModuleDefBaseType, pyObjectConst, null, zero64, null);
 
   auto *nameVar = new llvm::GlobalVariable(
-      *M, llvm::ArrayType::get(B->getInt8Ty(), pymod.name.length() + 1),
+      *M, llvm::ArrayType::get(i8, pymod.name.length() + 1),
       /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantDataArray::getString(*context, pymod.name), ".pyext_module_name");
   nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
@@ -734,7 +773,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *docsConst = null;
   if (!pymod.doc.empty()) {
     auto *docsVar = new llvm::GlobalVariable(
-        *M, llvm::ArrayType::get(B->getInt8Ty(), pymod.doc.length() + 1),
+        *M, llvm::ArrayType::get(i8, pymod.doc.length() + 1),
         /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantDataArray::getString(*context, pymod.doc), ".pyext_docstring");
     docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
@@ -767,7 +806,171 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   B->CreateRet(B->CreateCall(pyModuleCreate,
                              {pyModuleConst, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
 
-  // TODO: Codegen types, methods, etc.
+  for (auto &pytype : pymod.types) {
+    std::vector<llvm::Constant *> numberSlots = {
+        pyFunc(pytype.add),       // nb_add
+        pyFunc(pytype.sub),       // nb_subtract
+        pyFunc(pytype.mul),       // nb_multiply
+        pyFunc(pytype.mod),       // nb_remainder
+        pyFunc(pytype.divmod),    // nb_divmod
+        pyFunc(pytype.pow),       // nb_power
+        pyFunc(pytype.neg),       // nb_negative
+        pyFunc(pytype.pos),       // nb_positive
+        pyFunc(pytype.abs),       // nb_absolute
+        pyFunc(pytype.bool_),     // nb_bool
+        pyFunc(pytype.invert),    // nb_invert
+        pyFunc(pytype.lshift),    // nb_lshift
+        pyFunc(pytype.rshift),    // nb_rshift
+        pyFunc(pytype.and_),      // nb_and
+        pyFunc(pytype.xor_),      // nb_xor
+        pyFunc(pytype.or_),       // nb_or
+        pyFunc(pytype.int_),      // nb_int
+        null,                     // nb_reserved
+        pyFunc(pytype.float_),    // nb_float
+        pyFunc(pytype.iadd),      // nb_inplace_add
+        pyFunc(pytype.isub),      // nb_inplace_subtract
+        pyFunc(pytype.imul),      // nb_inplace_multiply
+        pyFunc(pytype.imod),      // nb_inplace_remainder
+        pyFunc(pytype.ipow),      // nb_inplace_power
+        pyFunc(pytype.ilshift),   // nb_inplace_lshift
+        pyFunc(pytype.irshift),   // nb_inplace_rshift
+        pyFunc(pytype.iand),      // nb_inplace_and
+        pyFunc(pytype.ixor),      // nb_inplace_xor
+        pyFunc(pytype.ior),       // nb_inplace_or
+        pyFunc(pytype.floordiv),  // nb_floor_divide
+        pyFunc(pytype.truediv),   // nb_true_divide
+        pyFunc(pytype.ifloordiv), // nb_inplace_floor_divide
+        pyFunc(pytype.itruediv),  // nb_inplace_true_divide
+        pyFunc(pytype.index),     // nb_index
+        pyFunc(pytype.matmul),    // nb_matrix_multiply
+        pyFunc(pytype.imatmul),   // nb_inplace_matrix_multiply
+    };
+
+    std::vector<llvm::Constant *> sequenceSlots = {
+        pyFunc(pytype.len),      // sq_length
+        null,                    // sq_concat
+        null,                    // sq_repeat
+        pyFunc(pytype.getitem),  // sq_item
+        null,                    // was_sq_slice
+        pyFunc(pytype.setitem),  // sq_ass_item
+        null,                    // was_sq_ass_slice
+        pyFunc(pytype.contains), // sq_contains
+        null,                    // sq_inplace_concat
+        null,                    // sq_inplace_repeat
+    };
+
+    bool needNumberSlots =
+        std::find_if(numberSlots.begin(), numberSlots.end(),
+                     [&](auto *v) { return v != null; }) != numberSlots.end();
+    bool needSequenceSlots =
+        std::find_if(sequenceSlots.begin(), sequenceSlots.end(),
+                     [&](auto *v) { return v != null; }) != sequenceSlots.end();
+
+    auto *numberSlotsConst =
+        needNumberSlots ? llvm::ConstantStruct::get(pyNumberMethodsType, numberSlots)
+                        : null;
+    auto *sequenceSlotsConst =
+        needSequenceSlots
+            ? llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots)
+            : null;
+
+    auto *nameVar = new llvm::GlobalVariable(
+        *M, llvm::ArrayType::get(B->getInt8Ty(), pytype.name.length() + 1),
+        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantDataArray::getString(*context, pytype.name), ".pyext_type_name");
+    nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+    auto *docsConst = null;
+    if (pytype.doc.empty()) {
+      auto *docsVar = new llvm::GlobalVariable(
+          *M, llvm::ArrayType::get(B->getInt8Ty(), pytype.doc.length() + 1),
+          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantDataArray::getString(*context, pytype.doc),
+          ".pyext_type_docstring");
+      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
+    }
+
+    auto *refType = cast<types::RefType>(pytype.type);
+    auto *llvmType = getLLVMType(pytype.type);
+    auto *objectType = llvm::StructType::get(pyObjectType, llvmType);
+    auto codonSize =
+        refType
+            ? M->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents()))
+            : 0;
+    auto pySize = M->getDataLayout().getTypeAllocSize(objectType);
+    auto *alloc = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pytype.name + ".py_alloc", ptr, ptr, i64).getCallee());
+    /*
+    {
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
+      B->SetInsertPoint(entry);
+
+      auto *memory = B->CreateCall(allocUncollectable, pySize);
+      // TODO
+    }
+    */
+
+    std::vector<llvm::Constant *> typeSlots = {
+        llvm::ConstantStruct::get(
+            pyVarObjectType,
+            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
+            zero64),         // PyObject_VAR_HEAD
+        nameConst,           // const char *tp_name;
+        B->getInt64(pySize), // Py_ssize_t tp_basicsize;
+        zero64,              // Py_ssize_t tp_itemsize;
+        // destructor tp_dealloc;
+        zero64,                  // Py_ssize_t tp_vectorcall_offset;
+        null,                    // getattrfunc tp_getattr;
+        null,                    // setattrfunc tp_setattr;
+        null,                    // PyAsyncMethods *tp_as_async;
+        pyFunc(pytype.repr),     // reprfunc tp_repr;
+        numberSlotsConst,        // PyNumberMethods *tp_as_number;
+        sequenceSlotsConst,      // PySequenceMethods *tp_as_sequence;
+        null,                    // PyMappingMethods *tp_as_mapping;
+        pyFunc(pytype.hash),     // hashfunc tp_hash;
+        pyFunc(pytype.call),     // ternaryfunc tp_call;
+        pyFunc(pytype.str),      // reprfunc tp_str;
+        null,                    // getattrofunc tp_getattro;
+        null,                    // setattrofunc tp_setattro;
+        null,                    // PyBufferProcs *tp_as_buffer;
+        zero64,                  // unsigned long tp_flags;
+        docsConst,               // const char *tp_doc;
+        null,                    // traverseproc tp_traverse;
+        null,                    // inquiry tp_clear;
+        pyFunc(pytype.cmp),      // richcmpfunc tp_richcompare;
+        zero64,                  // Py_ssize_t tp_weaklistoffset;
+        pyFunc(pytype.iter),     // getiterfunc tp_iter;
+        pyFunc(pytype.iternext), // iternextfunc tp_iternext;
+        // PyMethodDef *tp_methods;
+        null, // PyMemberDef *tp_members;
+        // PyGetSetDef *tp_getset;
+        null,                // PyTypeObject *tp_base;
+        null,                // PyObject *tp_dict;
+        null,                // descrgetfunc tp_descr_get;
+        null,                // descrsetfunc tp_descr_set;
+        zero64,              // Py_ssize_t tp_dictoffset;
+        pyFunc(pytype.init), // initproc tp_init;
+        alloc,               // allocfunc tp_alloc;
+        null,                // newfunc tp_new;
+        free,                // freefunc tp_free;
+        null,                // inquiry tp_is_gc;
+        null,                // PyObject *tp_bases;
+        null,                // PyObject *tp_mro;
+        null,                // PyObject *tp_cache;
+        null,                // void *tp_subclasses;
+        null,                // PyObject *tp_weaklist;
+        null,                // destructor tp_del;
+        zero32,              // unsigned int tp_version_tag;
+        pyFunc(pytype.del),  // destructor tp_finalize;
+        null,                // vectorcallfunc tp_vectorcall;
+        B->getInt8(0),       // char tp_watched;
+    };
+
+    // TODO
+  }
+
+  // set tp_base in module init func
 
   writeToObjectFile(filename);
 }
