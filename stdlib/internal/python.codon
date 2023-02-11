@@ -978,3 +978,7 @@ class Optional:
             return Optional[T]()
         else:
             return Optional[T](T.__from_py__(o))
+
+
+__pyenv__: Optional[pyobj] = None
+def _____(): __pyenv__  # make it global!

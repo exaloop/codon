@@ -161,6 +161,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   StmtPtr suite = nullptr;
   ExprPtr ret = nullptr;
   std::unordered_map<std::string, std::pair<std::string, ExprPtr>> captures;
+  std::unordered_set<std::string> pyCaptures;
   {
     // Set up the base
     SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
@@ -239,6 +240,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       } else {
         if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
           ctx->getBase()->captures = &captures;
+        if (stmt->attributes.has("std.internal.attributes.pycapture"))
+          ctx->getBase()->pyCaptures = &pyCaptures;
         suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
       }
     }

@@ -33,6 +33,10 @@ def nocapture():
     pass
 
 @__attribute__
+def pycapture():
+    pass
+
+@__attribute__
 def derives():
     pass
 
