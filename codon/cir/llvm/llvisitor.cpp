@@ -774,9 +774,9 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     std::vector<llvm::Constant *> pyMemb;
     for (auto &memb : members) {
       // Calculate offset by creating const GEP into null ptr
-      std::vector<llvm::Constant *> indexes = {zero64, B->getInt64(1)};
+      std::vector<llvm::Constant *> indexes = {zero64, B->getInt32(1)};
       for (auto idx : memb.indexes) {
-        indexes.push_back(B->getInt64(idx));
+        indexes.push_back(B->getInt32(idx));
       }
       auto offset = llvm::ConstantExpr::getPtrToInt(
           llvm::ConstantExpr::getGetElementPtr(type, null, indexes), i64);
@@ -921,7 +921,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       auto *codonObject = B->CreateCall(
           makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
       B->CreateStore(codonObject,
-                     B->CreateConstInBoundsGEP2_64(objectType, pythonObject, 0, 1));
+                     B->CreateGEP(objectType, pythonObject, {zero64, B->getInt32(1)}));
     }
     B->CreateRet(pythonObject);
 
@@ -989,12 +989,11 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
 
     if (pytype.typePtrHook) {
       auto *hook = llvm::cast<llvm::Function>(pyFunc(pytype.typePtrHook));
-      for (auto &basicblock : *hook) {
-        basicblock.eraseFromParent();
+      for (auto it = llvm::inst_begin(hook), end = llvm::inst_end(hook); it != end;
+           ++it) {
+        if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&*it))
+          ret->setOperand(0, pyTypeObjectVar);
       }
-      auto *entry = llvm::BasicBlock::Create(*context, "entry", hook);
-      B->SetInsertPoint(entry);
-      B->CreateRet(pyTypeObjectVar);
     }
 
     typeVars.emplace(pytype.type, pyTypeObjectVar);
@@ -1013,18 +1012,32 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       M->getOrInsertFunction("PyModule_AddObject", i32, ptr, ptr, ptr).getCallee());
   pyModuleAddObject->setDoesNotThrow();
 
-  auto *pyIncRef = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("Py_IncRef", B->getVoidTy(), ptr).getCallee());
-  pyIncRef->setDoesNotThrow();
-
-  auto *pyDecRef = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("Py_DecRef", B->getVoidTy(), ptr).getCallee());
-  pyDecRef->setDoesNotThrow();
-
   auto *pyModuleInit = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
   auto *block = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
   B->SetInsertPoint(block);
+
+  auto *refModFuncType = llvm::FunctionType::get(B->getVoidTy(), {ptr},
+                                                 /*isVarArg=*/false);
+
+  const std::string pyIncRefName = "Py_IncRef";
+  llvm::Value *pyIncRef = M->getNamedValue(pyIncRefName);
+  if (!pyIncRef) {
+    pyIncRef = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pyIncRefName, refModFuncType).getCallee());
+  } else {
+    pyIncRef = B->CreateLoad(B->getInt8PtrTy(), pyIncRef);
+  }
+
+  const std::string pyDecRefName = "Py_DecRef";
+  llvm::Value *pyDecRef = M->getNamedValue(pyDecRefName);
+  if (!pyDecRef) {
+    pyDecRef = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pyDecRefName, refModFuncType).getCallee());
+  } else {
+    pyDecRef = B->CreateLoad(B->getInt8PtrTy(), pyDecRef);
+  }
+
   if (auto *main = M->getFunction("main")) {
     main->setName(".main");
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
@@ -1058,7 +1071,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     seqassertn(it != typeVars.end(), "type not found");
     auto *typeVar = it->second;
 
-    B->CreateCall(pyIncRef, typeVar);
+    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyIncRef), typeVar);
     auto *status =
         B->CreateCall(pyModuleAddObject, {mod, pyString(pytype.name), typeVar});
     fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
@@ -1066,8 +1079,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
 
     B->SetInsertPoint(fail);
-    B->CreateCall(pyDecRef, typeVar);
-    B->CreateCall(pyDecRef, mod);
+    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyDecRef), typeVar);
+    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyDecRef), mod);
     B->CreateRet(null);
 
     B->SetInsertPoint(block);
