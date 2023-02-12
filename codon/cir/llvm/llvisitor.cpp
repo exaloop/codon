@@ -925,6 +925,9 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     }
     B->CreateRet(pythonObject);
 
+    auto *pyNew = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction("PyType_GenericNew", ptr, ptr, ptr, ptr).getCallee());
+
     std::vector<llvm::Constant *> typeSlots = {
         llvm::ConstantStruct::get(
             pyVarObjectType,
@@ -966,7 +969,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         zero64,                                   // tp_dictoffset
         pyFunc(pytype.init),                      // tp_init
         alloc,                                    // tp_alloc
-        null,                                     // tp_new
+        pyNew,                                    // tp_new
         free,                                     // tp_free
         null,                                     // tp_is_gc
         null,                                     // tp_bases
@@ -1017,6 +1020,11 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *block = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
   B->SetInsertPoint(block);
 
+  if (auto *main = M->getFunction("main")) {
+    main->setName(".main");
+    B->CreateCall({main->getFunctionType(), main}, {zero32, null});
+  }
+
   auto *refModFuncType = llvm::FunctionType::get(B->getVoidTy(), {ptr},
                                                  /*isVarArg=*/false);
 
@@ -1036,11 +1044,6 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         M->getOrInsertFunction(pyDecRefName, refModFuncType).getCallee());
   } else {
     pyDecRef = B->CreateLoad(B->getInt8PtrTy(), pyDecRef);
-  }
-
-  if (auto *main = M->getFunction("main")) {
-    main->setName(".main");
-    B->CreateCall({main->getFunctionType(), main}, {zero32, null});
   }
 
   // Set base types
