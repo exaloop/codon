@@ -1013,6 +1013,14 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       M->getOrInsertFunction("PyModule_AddObject", i32, ptr, ptr, ptr).getCallee());
   pyModuleAddObject->setDoesNotThrow();
 
+  auto *pyIncRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_IncRef", B->getVoidTy(), ptr).getCallee());
+  pyIncRef->setDoesNotThrow();
+
+  auto *pyDecRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_DecRef", B->getVoidTy(), ptr).getCallee());
+  pyDecRef->setDoesNotThrow();
+
   auto *pyModuleInit = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
   auto *block = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
@@ -1050,7 +1058,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     seqassertn(it != typeVars.end(), "type not found");
     auto *typeVar = it->second;
 
-    // TODO incref typeVar
+    B->CreateCall(pyIncRef, typeVar);
     auto *status =
         B->CreateCall(pyModuleAddObject, {mod, pyString(pytype.name), typeVar});
     fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
@@ -1058,8 +1066,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
 
     B->SetInsertPoint(fail);
-    // TODO decref typeVar
-    // TODO decref mod
+    B->CreateCall(pyDecRef, typeVar);
+    B->CreateCall(pyDecRef, mod);
     B->CreateRet(null);
 
     B->SetInsertPoint(block);
