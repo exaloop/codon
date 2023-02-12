@@ -22,30 +22,37 @@ struct PyFunction {
 
 struct PyMember {
   enum Type {
-    SHORT,
-    INT,
-    LONG,
-    FLOAT,
-    DOUBLE,
-    STRING,
-    OBJECT,
-    OBJECT_EX,
-    CHAR,
-    BYTE,
-    UBYTE,
-    UINT,
-    USHORT,
-    ULONG,
-    BOOL,
-    LONGLONG,
-    ULONGLONG,
-    PYSSIZET
+    SHORT = 0,
+    INT = 1,
+    LONG = 2,
+    FLOAT = 3,
+    DOUBLE = 4,
+    STRING = 5,
+    OBJECT = 6,
+    CHAR = 7,
+    BYTE = 8,
+    UBYTE = 9,
+    USHORT = 10,
+    UINT = 11,
+    ULONG = 12,
+    STRING_INPLACE = 13,
+    BOOL = 14,
+    OBJECT_EX = 16,
+    LONGLONG = 17,
+    ULONGLONG = 18,
+    PYSSIZET = 19,
   };
 
   std::string name;
   std::string doc;
   Type type = Type::SHORT;
   bool readonly = false;
+  /// Indexes of the member. For example, in the
+  /// tuple (a, (b, c, (d,))), 'a' would have indexes
+  /// [0], 'b' would have indexes [1, 0], 'c' would
+  /// have indexes [1, 1], and 'd' would have indexes
+  /// [1, 2, 0]. This corresponds to an LLVM GEP.
+  std::vector<int> indexes;
 };
 
 struct PyGetSet {

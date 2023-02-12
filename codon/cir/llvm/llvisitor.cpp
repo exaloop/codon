@@ -560,6 +560,8 @@ constexpr int PYEXT_METH_FASTCALL = 0x0080;
 constexpr int PYEXT_METH_METHOD = 0x0200;
 // https://github.com/python/cpython/blob/main/Include/modsupport.h
 constexpr int PYEXT_PYTHON_ABI_VERSION = 1013;
+// https://github.com/python/cpython/blob/main/Include/descrobject.h
+constexpr int PYEXT_READONLY = 1;
 } // namespace
 
 llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
@@ -670,6 +672,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *pyModuleDefType =
       llvm::StructType::create("PyModuleDef", pyModuleDefBaseType, ptr, ptr, i64,
                                pyMethodDefType->getPointerTo(), ptr, ptr, ptr, ptr);
+  auto *pyMemberDefType =
+      llvm::StructType::create("PyMemberDef", ptr, i32, i64, i32, ptr);
   auto *pyGetSetDefType =
       llvm::StructType::create("PyGetSetDef", ptr, ptr, ptr, ptr, ptr);
   std::vector<llvm::Type *> pyNumberMethodsFields(36, ptr);
@@ -730,7 +734,10 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     return var;
   };
 
-  auto pyFunctions = [&](const std::vector<PyFunction> &functions) {
+  auto pyFunctions = [&](const std::vector<PyFunction> &functions) -> llvm::Constant * {
+    if (functions.empty())
+      return null;
+
     std::vector<llvm::Constant *> pyMethods;
     for (auto &pyfunc : functions) {
       int flag = 0;
@@ -759,7 +766,40 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     return pyMethodDefArray;
   };
 
-  auto pyGetSet = [&](const std::vector<PyGetSet> &getset) {
+  auto pyMembers = [&](const std::vector<PyMember> &members,
+                       llvm::StructType *type) -> llvm::Constant * {
+    if (members.empty())
+      return null;
+
+    std::vector<llvm::Constant *> pyMemb;
+    for (auto &memb : members) {
+      // Calculate offset by creating const GEP into null ptr
+      std::vector<llvm::Constant *> indexes = {zero64, B->getInt64(1)};
+      for (auto idx : memb.indexes) {
+        indexes.push_back(B->getInt64(idx));
+      }
+      auto offset = llvm::ConstantExpr::getPtrToInt(
+          llvm::ConstantExpr::getGetElementPtr(type, null, indexes), i64);
+
+      pyMemb.push_back(llvm::ConstantStruct::get(
+          pyMemberDefType, pyString(memb.name), B->getInt32(memb.type), offset,
+          B->getInt32(memb.readonly ? PYEXT_READONLY : 0), pyString(memb.doc)));
+    }
+    pyMemb.push_back(
+        llvm::ConstantStruct::get(pyMemberDefType, null, zero32, zero64, zero32, null));
+
+    auto *pyMemberDefArrayType = llvm::ArrayType::get(pyMemberDefType, pyMemb.size());
+    auto *pyMemberDefArray = new llvm::GlobalVariable(
+        *M, pyMemberDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyMemberDefArrayType, pyMemb), ".pyext_members");
+    return pyMemberDefArray;
+  };
+
+  auto pyGetSet = [&](const std::vector<PyGetSet> &getset) -> llvm::Constant * {
+    if (getset.empty())
+      return null;
+
     std::vector<llvm::Constant *> pyGS;
     for (auto &gs : getset) {
       pyGS.push_back(llvm::ConstantStruct::get(pyGetSetDefType, pyString(gs.name),
@@ -894,51 +934,51 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         B->getInt64(pySize),                      // tp_basicsize
         zero64,                                   // tp_itemsize
         free,                                     // tp_dealloc
-        zero64,                                   //  tp_vectorcall_offset
-        null,                                     //  tp_getattr
-        null,                                     //  tp_setattr
-        null,                                     //  tp_as_async
-        pyFunc(pytype.repr),                      //  tp_repr
-        numberSlotsConst,                         //  tp_as_number
-        sequenceSlotsConst,                       //  tp_as_sequence
-        null,                                     //  tp_as_mapping
-        pyFunc(pytype.hash),                      //  tp_hash
-        pyFunc(pytype.call),                      //  tp_call
-        pyFunc(pytype.str),                       //  tp_str
-        null,                                     //  tp_getattro
-        null,                                     //  tp_setattro
-        null,                                     //  tp_as_buffer
+        zero64,                                   // tp_vectorcall_offset
+        null,                                     // tp_getattr
+        null,                                     // tp_setattr
+        null,                                     // tp_as_async
+        pyFunc(pytype.repr),                      // tp_repr
+        numberSlotsConst,                         // tp_as_number
+        sequenceSlotsConst,                       // tp_as_sequence
+        null,                                     // tp_as_mapping
+        pyFunc(pytype.hash),                      // tp_hash
+        pyFunc(pytype.call),                      // tp_call
+        pyFunc(pytype.str),                       // tp_str
+        null,                                     // tp_getattro
+        null,                                     // tp_setattro
+        null,                                     // tp_as_buffer
         zero64,                                   // tp_flags
         pyString(pytype.doc),                     // tp_doc
-        null,                                     //  tp_traverse
-        null,                                     //  tp_clear
-        pyFunc(pytype.cmp),                       //  tp_richcompare
-        zero64,                                   //  tp_weaklistoffset
-        pyFunc(pytype.iter),                      //  tp_iter
-        pyFunc(pytype.iternext),                  //  tp_iternext
-        pyFunctions(pytype.methods),              //  tp_methods
-        null,                                     //  tp_members
-        pyGetSet(pytype.getset),                  //  tp_getset
-        null,                                     //  tp_base
-        null,                                     //  tp_dict
-        null,                                     //  tp_descr_get
-        null,                                     //  tp_descr_set
-        zero64,                                   //  tp_dictoffset
-        pyFunc(pytype.init),                      //  tp_init
-        alloc,                                    //  tp_alloc
-        null,                                     //  tp_new
-        free,                                     //  tp_free
-        null,                                     //  tp_is_gc
-        null,                                     //  tp_bases
-        null,                                     //  tp_mro
-        null,                                     //  tp_cache
-        null,                                     //  tp_subclasses
-        null,                                     //  tp_weaklist
-        null,                                     //  tp_del
-        zero32,                                   //  tp_version_tag
-        pyFunc(pytype.del),                       //  tp_finalize
-        null,                                     //  tp_vectorcall
-        B->getInt8(0),                            //  tp_watched
+        null,                                     // tp_traverse
+        null,                                     // tp_clear
+        pyFunc(pytype.cmp),                       // tp_richcompare
+        zero64,                                   // tp_weaklistoffset
+        pyFunc(pytype.iter),                      // tp_iter
+        pyFunc(pytype.iternext),                  // tp_iternext
+        pyFunctions(pytype.methods),              // tp_methods
+        pyMembers(pytype.members, objectType),    // tp_members
+        pyGetSet(pytype.getset),                  // tp_getset
+        null,                                     // tp_base
+        null,                                     // tp_dict
+        null,                                     // tp_descr_get
+        null,                                     // tp_descr_set
+        zero64,                                   // tp_dictoffset
+        pyFunc(pytype.init),                      // tp_init
+        alloc,                                    // tp_alloc
+        null,                                     // tp_new
+        free,                                     // tp_free
+        null,                                     // tp_is_gc
+        null,                                     // tp_bases
+        null,                                     // tp_mro
+        null,                                     // tp_cache
+        null,                                     // tp_subclasses
+        null,                                     // tp_weaklist
+        null,                                     // tp_del
+        zero32,                                   // tp_version_tag
+        pyFunc(pytype.del),                       // tp_finalize
+        null,                                     // tp_vectorcall
+        B->getInt8(0),                            // tp_watched
     };
 
     auto *pyTypeObjectVar = new llvm::GlobalVariable(
