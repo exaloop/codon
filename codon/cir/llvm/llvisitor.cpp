@@ -1056,6 +1056,24 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     }
   }
 
+  // Call PyType_Ready
+  for (auto &pytype : pymod.types) {
+    auto it = typeVars.find(pytype.type);
+    seqassertn(it != typeVars.end(), "type not found");
+    auto *typeVar = it->second;
+
+    auto *fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+    block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+    auto *status = B->CreateCall(pyTypeReady, typeVar);
+    B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
+
+    B->SetInsertPoint(fail);
+    B->CreateRet(null);
+
+    B->SetInsertPoint(block);
+  }
+
+  // Create module
   auto *mod = B->CreateCall(pyModuleCreate,
                             {pyModuleVar, B->getInt32(PYEXT_PYTHON_ABI_VERSION)});
   auto *fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
@@ -1066,6 +1084,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   B->CreateRet(null);
 
   B->SetInsertPoint(block);
+
+  // Add types
   for (auto &pytype : pymod.types) {
     auto it = typeVars.find(pytype.type);
     seqassertn(it != typeVars.end(), "type not found");
