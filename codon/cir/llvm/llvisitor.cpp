@@ -875,23 +875,6 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
             ? llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots)
             : null;
 
-    auto *nameVar = new llvm::GlobalVariable(
-        *M, llvm::ArrayType::get(B->getInt8Ty(), pytype.name.length() + 1),
-        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-        llvm::ConstantDataArray::getString(*context, pytype.name), ".pyext_type_name");
-    nameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-    auto *docsConst = null;
-    if (pytype.doc.empty()) {
-      auto *docsVar = new llvm::GlobalVariable(
-          *M, llvm::ArrayType::get(B->getInt8Ty(), pytype.doc.length() + 1),
-          /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-          llvm::ConstantDataArray::getString(*context, pytype.doc),
-          ".pyext_type_docstring");
-      docsVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-      docsConst = llvm::ConstantExpr::getBitCast(docsVar, ptr);
-    }
-
     auto *refType = cast<types::RefType>(pytype.type);
     auto *llvmType = getLLVMType(pytype.type);
     auto *objectType = llvm::StructType::get(pyObjectType, llvmType);
@@ -900,17 +883,23 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
             ? M->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents()))
             : 0;
     auto pySize = M->getDataLayout().getTypeAllocSize(objectType);
+
     auto *alloc = llvm::cast<llvm::Function>(
         M->getOrInsertFunction(pytype.name + ".py_alloc", ptr, ptr, i64).getCallee());
-    /*
-    {
-      auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
-      B->SetInsertPoint(entry);
-
-      auto *memory = B->CreateCall(allocUncollectable, pySize);
-      // TODO
+    auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
+    B->SetInsertPoint(entry);
+    auto *pythonObject = B->CreateCall(allocUncollectable, B->getInt64(pySize));
+    auto *header = B->CreateInsertValue(
+        llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null),
+        alloc->arg_begin(), 1);
+    B->CreateStore(header, pythonObject);
+    if (refType) {
+      auto *codonObject = B->CreateCall(
+          makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
+      B->CreateStore(codonObject,
+                     B->CreateConstInBoundsGEP2_32(objectType, pythonObject, 0, 1));
     }
-    */
+    B->CreateRet(pythonObject);
 
     std::vector<llvm::Constant *> typeSlots = {
         llvm::ConstantStruct::get(
@@ -920,7 +909,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         pyString(pytype.name), // const char *tp_name;
         B->getInt64(pySize),   // Py_ssize_t tp_basicsize;
         zero64,                // Py_ssize_t tp_itemsize;
-        // destructor tp_dealloc;
+        free,
         zero64,                      // Py_ssize_t tp_vectorcall_offset;
         null,                        // getattrfunc tp_getattr;
         null,                        // setattrfunc tp_setattr;
@@ -936,7 +925,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         null,                        // setattrofunc tp_setattro;
         null,                        // PyBufferProcs *tp_as_buffer;
         zero64,                      // unsigned long tp_flags;
-        docsConst,                   // const char *tp_doc;
+        pyString(pytype.doc),        // const char *tp_doc;
         null,                        // traverseproc tp_traverse;
         null,                        // inquiry tp_clear;
         pyFunc(pytype.cmp),          // richcmpfunc tp_richcompare;
@@ -968,7 +957,11 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         B->getInt8(0),               // char tp_watched;
     };
 
-    // TODO
+    auto *pyTypeObjectVar = new llvm::GlobalVariable(
+        *M, pyTypeObjectType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantStruct::get(pyTypeObjectType, typeSlots),
+        ".pyext_type." + pytype.name);
   }
 
   // set tp_base in module init func
