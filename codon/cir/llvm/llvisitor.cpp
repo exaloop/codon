@@ -807,6 +807,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   B->CreateRet(B->CreateCall(pyModuleCreate,
                              {pyModuleConst, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
 
+  std::unordered_map<types::Type *, llvm::GlobalVariable *> typeVars;
+
   for (auto &pytype : pymod.types) {
     std::vector<llvm::Constant *> numberSlots = {
         pyFunc(pytype.add),       // nb_add
@@ -962,6 +964,18 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantStruct::get(pyTypeObjectType, typeSlots),
         ".pyext_type." + pytype.name);
+
+    if (pytype.typePtrHook) {
+      auto *hook = llvm::cast<llvm::Function>(pyFunc(pytype.typePtrHook));
+      for (auto &basicblock : *hook) {
+        basicblock.eraseFromParent();
+      }
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", hook);
+      B->SetInsertPoint(entry);
+      B->CreateRet(pyTypeObjectVar);
+    }
+
+    typeVars.emplace(pytype.type, pyTypeObjectVar);
   }
 
   // set tp_base in module init func
