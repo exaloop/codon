@@ -789,26 +789,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       new llvm::GlobalVariable(*M, pyModuleDef->getType(),
                                /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
                                pyModuleDef, ".pyext_module");
-  auto *pyModuleConst = llvm::ConstantExpr::getBitCast(pyModuleVar, ptr);
-
-  // Construct initialization hook
-  auto *pyModuleCreate = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("PyModule_Create2", ptr, ptr, i32).getCallee());
-  pyModuleCreate->setDoesNotThrow();
-
-  auto *pyModuleInit = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
-  auto *entry = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
-  B->SetInsertPoint(entry);
-  if (auto *main = M->getFunction("main")) {
-    main->setName(".main");
-    B->CreateCall({main->getFunctionType(), main}, {zero32, null});
-  }
-  B->CreateRet(B->CreateCall(pyModuleCreate,
-                             {pyModuleConst, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
 
   std::unordered_map<types::Type *, llvm::GlobalVariable *> typeVars;
-
   for (auto &pytype : pymod.types) {
     std::vector<llvm::Constant *> numberSlots = {
         pyFunc(pytype.add),       // nb_add
@@ -907,56 +889,56 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         llvm::ConstantStruct::get(
             pyVarObjectType,
             llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
-            zero64),           // PyObject_VAR_HEAD
-        pyString(pytype.name), // const char *tp_name;
-        B->getInt64(pySize),   // Py_ssize_t tp_basicsize;
-        zero64,                // Py_ssize_t tp_itemsize;
-        free,
-        zero64,                      // Py_ssize_t tp_vectorcall_offset;
-        null,                        // getattrfunc tp_getattr;
-        null,                        // setattrfunc tp_setattr;
-        null,                        // PyAsyncMethods *tp_as_async;
-        pyFunc(pytype.repr),         // reprfunc tp_repr;
-        numberSlotsConst,            // PyNumberMethods *tp_as_number;
-        sequenceSlotsConst,          // PySequenceMethods *tp_as_sequence;
-        null,                        // PyMappingMethods *tp_as_mapping;
-        pyFunc(pytype.hash),         // hashfunc tp_hash;
-        pyFunc(pytype.call),         // ternaryfunc tp_call;
-        pyFunc(pytype.str),          // reprfunc tp_str;
-        null,                        // getattrofunc tp_getattro;
-        null,                        // setattrofunc tp_setattro;
-        null,                        // PyBufferProcs *tp_as_buffer;
-        zero64,                      // unsigned long tp_flags;
-        pyString(pytype.doc),        // const char *tp_doc;
-        null,                        // traverseproc tp_traverse;
-        null,                        // inquiry tp_clear;
-        pyFunc(pytype.cmp),          // richcmpfunc tp_richcompare;
-        zero64,                      // Py_ssize_t tp_weaklistoffset;
-        pyFunc(pytype.iter),         // getiterfunc tp_iter;
-        pyFunc(pytype.iternext),     // iternextfunc tp_iternext;
-        pyFunctions(pytype.methods), // PyMethodDef *tp_methods;
-        null,                        // PyMemberDef *tp_members;
-        pyGetSet(pytype.getset),     // PyGetSetDef *tp_getset;
-        null,                        // PyTypeObject *tp_base;
-        null,                        // PyObject *tp_dict;
-        null,                        // descrgetfunc tp_descr_get;
-        null,                        // descrsetfunc tp_descr_set;
-        zero64,                      // Py_ssize_t tp_dictoffset;
-        pyFunc(pytype.init),         // initproc tp_init;
-        alloc,                       // allocfunc tp_alloc;
-        null,                        // newfunc tp_new;
-        free,                        // freefunc tp_free;
-        null,                        // inquiry tp_is_gc;
-        null,                        // PyObject *tp_bases;
-        null,                        // PyObject *tp_mro;
-        null,                        // PyObject *tp_cache;
-        null,                        // void *tp_subclasses;
-        null,                        // PyObject *tp_weaklist;
-        null,                        // destructor tp_del;
-        zero32,                      // unsigned int tp_version_tag;
-        pyFunc(pytype.del),          // destructor tp_finalize;
-        null,                        // vectorcallfunc tp_vectorcall;
-        B->getInt8(0),               // char tp_watched;
+            zero64),                              // PyObject_VAR_HEAD
+        pyString(pymod.name + "." + pytype.name), // tp_name
+        B->getInt64(pySize),                      // tp_basicsize
+        zero64,                                   // tp_itemsize
+        free,                                     // tp_dealloc
+        zero64,                                   //  tp_vectorcall_offset
+        null,                                     //  tp_getattr
+        null,                                     //  tp_setattr
+        null,                                     //  tp_as_async
+        pyFunc(pytype.repr),                      //  tp_repr
+        numberSlotsConst,                         //  tp_as_number
+        sequenceSlotsConst,                       //  tp_as_sequence
+        null,                                     //  tp_as_mapping
+        pyFunc(pytype.hash),                      //  tp_hash
+        pyFunc(pytype.call),                      //  tp_call
+        pyFunc(pytype.str),                       //  tp_str
+        null,                                     //  tp_getattro
+        null,                                     //  tp_setattro
+        null,                                     //  tp_as_buffer
+        zero64,                                   // tp_flags
+        pyString(pytype.doc),                     // tp_doc
+        null,                                     //  tp_traverse
+        null,                                     //  tp_clear
+        pyFunc(pytype.cmp),                       //  tp_richcompare
+        zero64,                                   //  tp_weaklistoffset
+        pyFunc(pytype.iter),                      //  tp_iter
+        pyFunc(pytype.iternext),                  //  tp_iternext
+        pyFunctions(pytype.methods),              //  tp_methods
+        null,                                     //  tp_members
+        pyGetSet(pytype.getset),                  //  tp_getset
+        null,                                     //  tp_base
+        null,                                     //  tp_dict
+        null,                                     //  tp_descr_get
+        null,                                     //  tp_descr_set
+        zero64,                                   //  tp_dictoffset
+        pyFunc(pytype.init),                      //  tp_init
+        alloc,                                    //  tp_alloc
+        null,                                     //  tp_new
+        free,                                     //  tp_free
+        null,                                     //  tp_is_gc
+        null,                                     //  tp_bases
+        null,                                     //  tp_mro
+        null,                                     //  tp_cache
+        null,                                     //  tp_subclasses
+        null,                                     //  tp_weaklist
+        null,                                     //  tp_del
+        zero32,                                   //  tp_version_tag
+        pyFunc(pytype.del),                       //  tp_finalize
+        null,                                     //  tp_vectorcall
+        B->getInt8(0),                            //  tp_watched
     };
 
     auto *pyTypeObjectVar = new llvm::GlobalVariable(
@@ -978,7 +960,23 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     typeVars.emplace(pytype.type, pyTypeObjectVar);
   }
 
-  // set tp_base in module init func
+  // Construct initialization hook
+  auto *pyModuleCreate = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyModule_Create2", ptr, ptr, i32).getCallee());
+  pyModuleCreate->setDoesNotThrow();
+
+  auto *pyModuleInit = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
+  B->SetInsertPoint(entry);
+  if (auto *main = M->getFunction("main")) {
+    main->setName(".main");
+    B->CreateCall({main->getFunctionType(), main}, {zero32, null});
+  }
+  B->CreateRet(B->CreateCall(pyModuleCreate,
+                             {pyModuleVar, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
+
+  // TODO: add types; set tp_base in module init func
 
   writeToObjectFile(filename);
 }
