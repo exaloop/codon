@@ -921,7 +921,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       auto *codonObject = B->CreateCall(
           makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
       B->CreateStore(codonObject,
-                     B->CreateConstInBoundsGEP2_32(objectType, pythonObject, 0, 1));
+                     B->CreateConstInBoundsGEP2_64(objectType, pythonObject, 0, 1));
     }
     B->CreateRet(pythonObject);
 
@@ -1005,18 +1005,66 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       M->getOrInsertFunction("PyModule_Create2", ptr, ptr, i32).getCallee());
   pyModuleCreate->setDoesNotThrow();
 
+  auto *pyTypeReady = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyType_Ready", i32, ptr).getCallee());
+  pyTypeReady->setDoesNotThrow();
+
+  auto *pyModuleAddObject = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyModule_AddObject", i32, ptr, ptr, ptr).getCallee());
+  pyModuleAddObject->setDoesNotThrow();
+
   auto *pyModuleInit = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
-  auto *entry = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
-  B->SetInsertPoint(entry);
+  auto *block = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
+  B->SetInsertPoint(block);
   if (auto *main = M->getFunction("main")) {
     main->setName(".main");
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
   }
-  B->CreateRet(B->CreateCall(pyModuleCreate,
-                             {pyModuleVar, B->getInt32(PYEXT_PYTHON_ABI_VERSION)}));
 
-  // TODO: add types; set tp_base in module init func
+  // Set base types
+  for (auto &pytype : pymod.types) {
+    if (pytype.base) {
+      auto subcIt = typeVars.find(pytype.type);
+      auto baseIt = typeVars.find(pytype.base->type);
+      seqassertn(subcIt != typeVars.end() && baseIt != typeVars.end(),
+                 "types not found");
+      // 30 is the index of tp_base
+      B->CreateStore(baseIt->second, B->CreateConstInBoundsGEP2_64(
+                                         pyTypeObjectType, subcIt->second, 0, 30));
+    }
+  }
+
+  auto *mod = B->CreateCall(pyModuleCreate,
+                            {pyModuleVar, B->getInt32(PYEXT_PYTHON_ABI_VERSION)});
+  auto *fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+  block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+
+  B->CreateCondBr(B->CreateICmpEQ(mod, null), fail, block);
+  B->SetInsertPoint(fail);
+  B->CreateRet(null);
+
+  B->SetInsertPoint(block);
+  for (auto &pytype : pymod.types) {
+    auto it = typeVars.find(pytype.type);
+    seqassertn(it != typeVars.end(), "type not found");
+    auto *typeVar = it->second;
+
+    // TODO incref typeVar
+    auto *status =
+        B->CreateCall(pyModuleAddObject, {mod, pyString(pytype.name), typeVar});
+    fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+    block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+    B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
+
+    B->SetInsertPoint(fail);
+    // TODO decref typeVar
+    // TODO decref mod
+    B->CreateRet(null);
+
+    B->SetInsertPoint(block);
+  }
+  B->CreateRet(mod);
 
   writeToObjectFile(filename);
 }
