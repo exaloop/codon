@@ -753,6 +753,18 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         flag = PYEXT_METH_FASTCALL;
       }
 
+      switch (pyfunc.type) {
+      case PyFunction::CLASS:
+        flag |= PYEXT_METH_CLASS;
+      case PyFunction::STATIC:
+        flag |= PYEXT_METH_STATIC;
+      default:
+        break;
+      }
+
+      if (pyfunc.coexist)
+        flag |= PYEXT_METH_COEXIST;
+
       pyMethods.push_back(llvm::ConstantStruct::get(
           pyMethodDefType, pyString(pyfunc.name), pyFunc(pyfunc.func),
           B->getInt32(flag), pyString(pyfunc.doc)));
