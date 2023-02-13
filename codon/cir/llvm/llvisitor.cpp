@@ -713,15 +713,18 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   free->setDoesNotThrow();
 
   // Helpers
-  auto pyFunc = [&](Func *func) -> llvm::Constant * {
+  auto pyFuncWrap = [&](Func *func, bool wrap) -> llvm::Constant * {
     if (!func)
       return null;
     auto llvmName = getNameForFunction(func);
     auto *llvmFunc = M->getFunction(llvmName);
     seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
-    llvmFunc = createPyTryCatchWrapper(llvmFunc);
+    if (wrap)
+      llvmFunc = createPyTryCatchWrapper(llvmFunc);
     return llvmFunc;
   };
+
+  auto pyFunc = [&](Func *func) -> llvm::Constant * { return pyFuncWrap(func, true); };
 
   auto pyString = [&](const std::string &str) -> llvm::Constant * {
     if (str.empty())
@@ -991,7 +994,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         ".pyext_type." + pytype.name);
 
     if (pytype.typePtrHook) {
-      auto *hook = llvm::cast<llvm::Function>(pyFunc(pytype.typePtrHook));
+      auto *hook = llvm::cast<llvm::Function>(pyFuncWrap(pytype.typePtrHook, false));
       for (auto it = llvm::inst_begin(hook), end = llvm::inst_end(hook); it != end;
            ++it) {
         if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&*it))
