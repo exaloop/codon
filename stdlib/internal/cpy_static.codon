@@ -102,9 +102,12 @@ from C import PyErr_NormalizeException(Ptr[cobj], Ptr[cobj], Ptr[cobj]) -> None
 from C import PyErr_SetString(cobj, cobj) -> None
 
 # constants
-from C import _Py_NoneStruct: cobj as Py_None
-from C import _Py_TrueStruct: cobj as Py_True
-from C import _Py_FalseStruct: cobj as Py_False
+from C import _Py_NoneStruct: cobj
+from C import _Py_TrueStruct: cobj
+from C import _Py_FalseStruct: cobj
+Py_None = __ptr__(_Py_NoneStruct).as_byte()
+Py_True = __ptr__(_Py_TrueStruct).as_byte()
+Py_False = __ptr__(_Py_FalseStruct).as_byte()
 Py_LT = 0
 Py_LE = 1
 Py_EQ = 2
@@ -113,42 +116,22 @@ Py_GT = 4
 Py_GE = 5
 
 # exceptions
-from C import PyExc_BaseException: Ptr[cobj] as _PyExc_BaseException
-from C import PyExc_Exception: Ptr[cobj] as _PyExc_Exception
-from C import PyExc_NameError: Ptr[cobj] as _PyExc_NameError
-from C import PyExc_OSError: Ptr[cobj] as _PyExc_OSError
-from C import PyExc_IOError: Ptr[cobj] as _PyExc_IOError
-from C import PyExc_ValueError: Ptr[cobj] as _PyExc_ValueError
-from C import PyExc_LookupError: Ptr[cobj] as _PyExc_LookupError
-from C import PyExc_IndexError: Ptr[cobj] as _PyExc_IndexError
-from C import PyExc_KeyError: Ptr[cobj] as _PyExc_KeyError
-from C import PyExc_TypeError: Ptr[cobj] as _PyExc_TypeError
-from C import PyExc_ArithmeticError: Ptr[cobj] as _PyExc_ArithmeticError
-from C import PyExc_ZeroDivisionError: Ptr[cobj] as _PyExc_ZeroDivisionError
-from C import PyExc_OverflowError: Ptr[cobj] as _PyExc_OverflowError
-from C import PyExc_AttributeError: Ptr[cobj] as _PyExc_AttributeError
-from C import PyExc_RuntimeError: Ptr[cobj] as _PyExc_RuntimeError
-from C import PyExc_NotImplementedError: Ptr[cobj] as _PyExc_NotImplementedError
-from C import PyExc_StopIteration: Ptr[cobj] as _PyExc_StopIteration
-from C import PyExc_AssertionError: Ptr[cobj] as _PyExc_AssertionError
-from C import PyExc_SystemExit: Ptr[cobj] as _PyExc_SystemExit
-
-PyExc_BaseException = _PyExc_BaseException[0]
-PyExc_Exception = _PyExc_Exception[0]
-PyExc_NameError = _PyExc_NameError[0]
-PyExc_OSError = _PyExc_OSError[0]
-PyExc_IOError = _PyExc_IOError[0]
-PyExc_ValueError = _PyExc_ValueError[0]
-PyExc_LookupError = _PyExc_LookupError[0]
-PyExc_IndexError = _PyExc_IndexError[0]
-PyExc_KeyError = _PyExc_KeyError[0]
-PyExc_TypeError = _PyExc_TypeError[0]
-PyExc_ArithmeticError = _PyExc_ArithmeticError[0]
-PyExc_ZeroDivisionError = _PyExc_ZeroDivisionError[0]
-PyExc_OverflowError = _PyExc_OverflowError[0]
-PyExc_AttributeError = _PyExc_AttributeError[0]
-PyExc_RuntimeError = _PyExc_RuntimeError[0]
-PyExc_NotImplementedError = _PyExc_NotImplementedError[0]
-PyExc_StopIteration = _PyExc_StopIteration[0]
-PyExc_AssertionError = _PyExc_AssertionError[0]
-PyExc_SystemExit = _PyExc_SystemExit[0]
+from C import PyExc_BaseException: cobj
+from C import PyExc_Exception: cobj
+from C import PyExc_NameError: cobj
+from C import PyExc_OSError: cobj
+from C import PyExc_IOError: cobj
+from C import PyExc_ValueError: cobj
+from C import PyExc_LookupError: cobj
+from C import PyExc_IndexError: cobj
+from C import PyExc_KeyError: cobj
+from C import PyExc_TypeError: cobj
+from C import PyExc_ArithmeticError: cobj
+from C import PyExc_ZeroDivisionError: cobj
+from C import PyExc_OverflowError: cobj
+from C import PyExc_AttributeError: cobj
+from C import PyExc_RuntimeError: cobj
+from C import PyExc_NotImplementedError: cobj
+from C import PyExc_StopIteration: cobj
+from C import PyExc_AssertionError: cobj
+from C import PyExc_SystemExit: cobj
