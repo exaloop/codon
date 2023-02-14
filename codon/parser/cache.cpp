@@ -245,45 +245,134 @@ void Cache::populatePythonModule() {
     bool isMethod = className.empty() ? false : fna->hasAttr(Attr::Method);
     auto name =
         fmt::format("{}{}", className.empty() ? "" : className + ".", canonicalName);
+
+    auto wrapArg = [&](ExprPtr po, int ai) {
+      if (fna->args[ai].type) {
+        return N<CallExpr>(N<DotExpr>(fna->args[ai].type->clone(), "__from_py__"), po);
+      } else {
+        return N<CallExpr>(N<IdExpr>("pyobj"), po);
+      }
+    };
+
+    StmtPtr ret = nullptr;
+    ExprPtr retType = N<IdExpr>("cobj");
     LOG("[py] {}: {} => {}", isMethod ? "method" : "classm", name, isMethod);
-    params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
-              Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")}};
-    if (fna->args.size() > 1 + isMethod) {
-      params.back().type = N<InstantiateExpr>(N<IdExpr>("Ptr"), params.back().type);
-      params.push_back(Param{sctx->generateCanonicalName("nargs"), N<IdExpr>("int")});
-    }
-    ExprPtr po = N<IdExpr>(params[0].name);
-    if (!className.empty())
-      po = N<CallExpr>(N<DotExpr>(N<IdExpr>(className), "__from_py__"), po);
-    if (isMethod)
-      args.push_back(po);
-    if (fna->args.size() > 1 + isMethod) {
-      for (size_t ai = isMethod; ai < fna->args.size(); ai++) {
-        ExprPtr po = N<IndexExpr>(N<IdExpr>(params[1].name), N<IntExpr>(ai - isMethod));
-        if (fna->args[ai].type) {
-          po = N<CallExpr>(N<DotExpr>(fna->args[ai].type->clone(), "__from_py__"), po);
+    if (isMethod && in(std::set<std::string>{"__abs__", "__pos__", "__neg__",
+                                             "__invert__", "__int__", "__float__",
+                                             "__index__", "__repr__", "__str__"},
+                       rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
+      ret = N<ReturnStmt>(N<CallExpr>(N<DotExpr>(
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)}),
+          "__to_py__")));
+    } else if (isMethod &&
+               in(std::set<std::string>{"__len__", "__hash__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
+      ret = N<ReturnStmt>(
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)}));
+      retType = N<IdExpr>("i64");
+    } else if (isMethod && in(std::set<std::string>{"__bool__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
+      ret = N<ReturnStmt>(N<CallExpr>(
+          N<IdExpr>("i32"),
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)})));
+      retType = N<IdExpr>("i32");
+    } else if (isMethod && in(std::set<std::string>{"__del__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
+      ret = N<ExprStmt>(N<CallExpr>(
+          N<IdExpr>("i32"),
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)})));
+      retType = N<IdExpr>("i32");
+    } else if (isMethod &&
+               in(std::set<std::string>{"__contains__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")}};
+      ret = N<ReturnStmt>(N<CallExpr>(
+          N<IdExpr>("i32"),
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0),
+                                           wrapArg(N<IdExpr>(params[1].name), 1)})));
+      retType = N<IdExpr>("i32");
+    } else if (isMethod && in(std::set<std::string>{"__init__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("kwargs"), N<IdExpr>("cobj")}};
+      std::vector<ExprPtr> tupTypes;
+      for (size_t ai = 1; ai < fna->args.size(); ai++)
+        tupTypes.push_back(fna->args[ai].type ? fna->args[ai].type->clone()
+                                              : N<IdExpr>("pyobj"));
+      ExprPtr tup = N<InstantiateExpr>(
+          N<IdExpr>(fmt::format("Tuple.N{}", tupTypes.size())), tupTypes);
+      tup = N<CallExpr>(N<DotExpr>(tup, "__from_py__"), N<IdExpr>(params[1].name));
+      ret = N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<IdExpr>(canonicalName),
+                                                 wrapArg(N<IdExpr>(params[0].name), 0),
+                                                 N<StarExpr>(tup))),
+                         N<ReturnStmt>(N<CallExpr>(N<IdExpr>("i32"), N<IntExpr>(0))));
+      retType = N<IdExpr>("i32");
+    } else if (isMethod && in(std::set<std::string>{"__call__"}, rev(canonicalName))) {
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("kwargs"), N<IdExpr>("cobj")}};
+      std::vector<ExprPtr> tupTypes;
+      for (size_t ai = 1; ai < fna->args.size(); ai++)
+        tupTypes.push_back(fna->args[ai].type ? fna->args[ai].type->clone()
+                                              : N<IdExpr>("pyobj"));
+      ExprPtr tup = N<InstantiateExpr>(
+          N<IdExpr>(fmt::format("Tuple.N{}", tupTypes.size())), tupTypes);
+      tup = N<CallExpr>(N<DotExpr>(tup, "__from_py__"), N<IdExpr>(params[1].name));
+      ret = N<ReturnStmt>(N<CallExpr>(N<DotExpr>(
+          N<CallExpr>(N<IdExpr>(canonicalName), wrapArg(N<IdExpr>(params[0].name), 0),
+                      N<StarExpr>(tup)),
+          "__to_py__")));
+    } else {
+      // def wrapper(self: cobj, arg: cobj) -> cobj
+      // def wrapper(self: cobj, args: Ptr[cobj], nargs: int) -> cobj
+      // new, setitem, iter, iternext, cmp: wtf
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")}};
+      if (fna->args.size() > 1 + isMethod) {
+        params.back().type = N<InstantiateExpr>(N<IdExpr>("Ptr"), params.back().type);
+        params.push_back(Param{sctx->generateCanonicalName("nargs"), N<IdExpr>("int")});
+      }
+      ExprPtr po = N<IdExpr>(params[0].name);
+      if (!className.empty())
+        po = N<CallExpr>(N<DotExpr>(N<IdExpr>(className), "__from_py__"), po);
+      if (isMethod)
+        args.push_back(po);
+      if (fna->args.size() > 1 + isMethod) {
+        for (size_t ai = isMethod; ai < fna->args.size(); ai++) {
+          ExprPtr po =
+              N<IndexExpr>(N<IdExpr>(params[1].name), N<IntExpr>(ai - isMethod));
+          if (fna->args[ai].type) {
+            po =
+                N<CallExpr>(N<DotExpr>(fna->args[ai].type->clone(), "__from_py__"), po);
+          } else {
+            po = N<CallExpr>(N<IdExpr>("pyobj"), po);
+          }
+          args.push_back(po);
+        }
+      } else if (fna->args.size() == 1 + isMethod) {
+        ExprPtr po = N<IdExpr>(params[1].name);
+        if (fna->args[isMethod].type) {
+          po = N<CallExpr>(N<DotExpr>(fna->args[isMethod].type->clone(), "__from_py__"),
+                           po);
         } else {
           po = N<CallExpr>(N<IdExpr>("pyobj"), po);
         }
         args.push_back(po);
       }
-    } else if (fna->args.size() == 1 + isMethod) {
-      ExprPtr po = N<IdExpr>(params[1].name);
-      if (fna->args[isMethod].type) {
-        po = N<CallExpr>(N<DotExpr>(fna->args[isMethod].type->clone(), "__from_py__"),
-                         po);
-      } else {
-        po = N<CallExpr>(N<IdExpr>("pyobj"), po);
-      }
-      args.push_back(po);
+      ret = N<ReturnStmt>(N<CallExpr>(
+          N<DotExpr>(N<CallExpr>(N<IdExpr>(canonicalName), args), "__to_py__")));
     }
     auto stubName = sctx->generateCanonicalName(fmt::format("_py.{}", name));
-    auto node = N<FunctionStmt>(
-        stubName, N<IdExpr>("cobj"), params,
-        N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-            N<DotExpr>(N<CallExpr>(N<IdExpr>(canonicalName), args), "__to_py__")))),
-        Attr({Attr::ForceRealize}));
+    auto node = N<FunctionStmt>(stubName, retType, params, N<SuiteStmt>(ret),
+                                Attr({Attr::ForceRealize}));
     functions[node->name].ast = node;
+    // LOG(">| {}", node->toString(2));
     auto tv = TypecheckVisitor(typeCtx);
     auto tnode = tv.transform(node);
     seqassertn(tnode, "blah");
@@ -308,8 +397,6 @@ void Cache::populatePythonModule() {
   int oldAge = typeCtx->age;
   typeCtx->age = 99999;
 
-  // def wrapper(self: cobj, arg: cobj) -> cobj
-  // def wrapper(self: cobj, args: Ptr[cobj], nargs: int) -> cobj
   for (const auto &[cn, c] : classes)
     if (c.module.empty() && startswith(cn, "Pyx")) {
       ir::PyType py{rev(cn), c.ast->getDocstr()};
@@ -474,7 +561,6 @@ void Cache::populatePythonModule() {
                                                         : ir::PyFunction::Type::CLASS,
                              int(fna->args.size()) - fna->hasAttr(Attr::Method)});
         }
-        // LOG(">| [{}] {}", functions[stubName].realizations.size(), *f);
       }
 
       if (c.realizations.size() != 1)
