@@ -1,0 +1,154 @@
+# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+
+# general
+from C import Py_DecRef(cobj) -> None
+from C import Py_IncRef(cobj) -> None
+from C import Py_Initialize() -> None
+from C import PyImport_AddModule(cobj) -> cobj
+from C import PyImport_AddModuleObject(cobj) -> cobj
+from C import PyImport_ImportModule(cobj) -> cobj
+from C import PyRun_SimpleString(cobj) -> None
+from C import PyEval_GetGlobals() -> cobj
+from C import PyEval_GetBuiltins() -> cobj
+
+# conversions
+from C import PyLong_AsLong(cobj) -> int
+from C import PyLong_FromLong(int) -> cobj
+from C import PyFloat_AsDouble(cobj) -> float
+from C import PyFloat_FromDouble(float) -> cobj
+from C import PyBool_FromLong(int) -> cobj
+from C import PyBytes_AsString(cobj) -> cobj
+from C import PyList_New(int) -> cobj
+from C import PyList_GetItem(cobj, int) -> cobj
+from C import PyList_SetItem(cobj, int, cobj) -> cobj
+from C import PyDict_New() -> cobj
+from C import PyDict_Next(cobj, Ptr[int], Ptr[cobj], Ptr[cobj]) -> int
+from C import PyDict_GetItem(cobj, cobj) -> cobj
+from C import PyDict_SetItem(cobj, cobj, cobj) -> cobj
+from C import PySet_Add(cobj, cobj) -> cobj
+from C import PySet_New(cobj) -> cobj
+from C import PyTuple_New(int) -> cobj
+from C import PyTuple_Size(cobj) -> int
+from C import PyTuple_GetItem(cobj, int) -> cobj
+from C import PyTuple_SetItem(cobj, int, cobj) -> None
+from C import PyUnicode_AsEncodedString(cobj, cobj, cobj) -> cobj
+from C import PyUnicode_DecodeFSDefaultAndSize(cobj, int) -> cobj
+from C import PyUnicode_FromString(cobj) -> cobj
+from C import PyComplex_FromDoubles(float, float) -> cobj
+from C import PyComplex_RealAsDouble(cobj) -> float
+from C import PyComplex_ImagAsDouble(cobj) -> float
+from C import PyIter_Next(cobj) -> cobj
+from C import PySlice_New(cobj, cobj, cobj) -> cobj
+from C import PySlice_Unpack(cobj, Ptr[int], Ptr[int], Ptr[int]) -> int
+
+# number
+from C import PyNumber_Add(cobj, cobj) -> cobj
+from C import PyNumber_Subtract(cobj, cobj) -> cobj
+from C import PyNumber_Multiply(cobj, cobj) -> cobj
+from C import PyNumber_MatrixMultiply(cobj, cobj) -> cobj
+from C import PyNumber_FloorDivide(cobj, cobj) -> cobj
+from C import PyNumber_TrueDivide(cobj, cobj) -> cobj
+from C import PyNumber_Remainder(cobj, cobj) -> cobj
+from C import PyNumber_Divmod(cobj, cobj) -> cobj
+from C import PyNumber_Power(cobj, cobj, cobj) -> cobj
+from C import PyNumber_Negative(cobj) -> cobj
+from C import PyNumber_Positive(cobj) -> cobj
+from C import PyNumber_Absolute(cobj) -> cobj
+from C import PyNumber_Invert(cobj) -> cobj
+from C import PyNumber_Lshift(cobj, cobj) -> cobj
+from C import PyNumber_Rshift(cobj, cobj) -> cobj
+from C import PyNumber_And(cobj, cobj) -> cobj
+from C import PyNumber_Xor(cobj, cobj) -> cobj
+from C import PyNumber_Or(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceAdd(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceSubtract(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceMultiply(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceMatrixMultiply(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceFloorDivide(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceTrueDivide(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceRemainder(cobj, cobj) -> cobj
+from C import PyNumber_InPlacePower(cobj, cobj, cobj) -> cobj
+from C import PyNumber_InPlaceLshift(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceRshift(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceAnd(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceXor(cobj, cobj) -> cobj
+from C import PyNumber_InPlaceOr(cobj, cobj) -> cobj
+from C import PyNumber_Long(cobj) -> cobj
+from C import PyNumber_Float(cobj) -> cobj
+from C import PyNumber_Index(cobj) -> cobj
+
+# object
+from C import PyObject_Call(cobj, cobj, cobj) -> cobj
+from C import PyObject_GetAttr(cobj, cobj) -> cobj
+from C import PyObject_GetAttrString(cobj, cobj) -> cobj
+from C import PyObject_GetIter(cobj) -> cobj
+from C import PyObject_HasAttrString(cobj, cobj) -> int
+from C import PyObject_IsTrue(cobj) -> int
+from C import PyObject_Length(cobj) -> int
+from C import PyObject_LengthHint(cobj, int) -> int
+from C import PyObject_SetAttrString(cobj, cobj, cobj) -> cobj
+from C import PyObject_Str(cobj) -> cobj
+from C import PyObject_Repr(cobj) -> cobj
+from C import PyObject_Hash(cobj) -> int
+from C import PyObject_GetItem(cobj, cobj) -> cobj
+from C import PyObject_SetItem(cobj, cobj, cobj) -> int
+from C import PyObject_DelItem(cobj, cobj) -> int
+from C import PyObject_RichCompare(cobj, cobj, i32) -> cobj
+from C import PyObject_IsInstance(cobj, cobj) -> i32
+
+# error handling
+from C import PyErr_Fetch(Ptr[cobj], Ptr[cobj], Ptr[cobj]) -> None
+from C import PyErr_NormalizeException(Ptr[cobj], Ptr[cobj], Ptr[cobj]) -> None
+from C import PyErr_SetString(cobj, cobj) -> None
+
+# constants
+from C import _Py_NoneStruct: cobj as Py_None
+from C import _Py_TrueStruct: cobj as Py_True
+from C import _Py_FalseStruct: cobj as Py_False
+Py_LT = 0
+Py_LE = 1
+Py_EQ = 2
+Py_NE = 3
+Py_GT = 4
+Py_GE = 5
+
+# exceptions
+from C import PyExc_BaseException: Ptr[cobj] as _PyExc_BaseException
+from C import PyExc_Exception: Ptr[cobj] as _PyExc_Exception
+from C import PyExc_NameError: Ptr[cobj] as _PyExc_NameError
+from C import PyExc_OSError: Ptr[cobj] as _PyExc_OSError
+from C import PyExc_IOError: Ptr[cobj] as _PyExc_IOError
+from C import PyExc_ValueError: Ptr[cobj] as _PyExc_ValueError
+from C import PyExc_LookupError: Ptr[cobj] as _PyExc_LookupError
+from C import PyExc_IndexError: Ptr[cobj] as _PyExc_IndexError
+from C import PyExc_KeyError: Ptr[cobj] as _PyExc_KeyError
+from C import PyExc_TypeError: Ptr[cobj] as _PyExc_TypeError
+from C import PyExc_ArithmeticError: Ptr[cobj] as _PyExc_ArithmeticError
+from C import PyExc_ZeroDivisionError: Ptr[cobj] as _PyExc_ZeroDivisionError
+from C import PyExc_OverflowError: Ptr[cobj] as _PyExc_OverflowError
+from C import PyExc_AttributeError: Ptr[cobj] as _PyExc_AttributeError
+from C import PyExc_RuntimeError: Ptr[cobj] as _PyExc_RuntimeError
+from C import PyExc_NotImplementedError: Ptr[cobj] as _PyExc_NotImplementedError
+from C import PyExc_StopIteration: Ptr[cobj] as _PyExc_StopIteration
+from C import PyExc_AssertionError: Ptr[cobj] as _PyExc_AssertionError
+from C import PyExc_SystemExit: Ptr[cobj] as _PyExc_SystemExit
+
+PyExc_BaseException = _PyExc_BaseException[0]
+PyExc_Exception = _PyExc_Exception[0]
+PyExc_NameError = _PyExc_NameError[0]
+PyExc_OSError = _PyExc_OSError[0]
+PyExc_IOError = _PyExc_IOError[0]
+PyExc_ValueError = _PyExc_ValueError[0]
+PyExc_LookupError = _PyExc_LookupError[0]
+PyExc_IndexError = _PyExc_IndexError[0]
+PyExc_KeyError = _PyExc_KeyError[0]
+PyExc_TypeError = _PyExc_TypeError[0]
+PyExc_ArithmeticError = _PyExc_ArithmeticError[0]
+PyExc_ZeroDivisionError = _PyExc_ZeroDivisionError[0]
+PyExc_OverflowError = _PyExc_OverflowError[0]
+PyExc_AttributeError = _PyExc_AttributeError[0]
+PyExc_RuntimeError = _PyExc_RuntimeError[0]
+PyExc_NotImplementedError = _PyExc_NotImplementedError[0]
+PyExc_StopIteration = _PyExc_StopIteration[0]
+PyExc_AssertionError = _PyExc_AssertionError[0]
+PyExc_SystemExit = _PyExc_SystemExit[0]
