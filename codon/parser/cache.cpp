@@ -550,8 +550,6 @@ void Cache::populatePythonModule() {
           py.iter = f;
         } else if (n == "__del__") {
           py.del = f;
-        } else if (n == "__new__") {
-          py.new_ = f;
         } else if (n == "__init__") {
           py.init = f;
         } else {

@@ -115,7 +115,6 @@ struct PyType {
   Func *iter = nullptr;
   Func *iternext = nullptr;
   Func *del = nullptr;
-  Func *new_ = nullptr;
   Func *init = nullptr;
   std::vector<PyFunction> methods;
   std::vector<PyMember> members;
