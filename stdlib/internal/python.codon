@@ -69,16 +69,14 @@ def setup_python(python_loaded: bool):
     if _PY_INITIALIZED:
         return
 
-    if not __py_extension__:
-        py_handle = cobj()
-        if python_loaded:
-            py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
-        else:
-            LD = os.getenv("CODON_PYTHON", default="libpython." + dlext())
-            py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
+    py_handle = cobj()
+    if python_loaded:
+        py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
+    else:
+        LD = os.getenv("CODON_PYTHON", default="libpython." + dlext())
+        py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
-        init_dl_handles(py_handle)
-
+    init_dl_handles(py_handle)
     init_error_py_types()
 
     if not python_loaded:
@@ -87,8 +85,9 @@ def setup_python(python_loaded: bool):
     _PY_INITIALIZED = True
 
 def ensure_initialized(python_loaded: bool = False):
-    setup_python(python_loaded)
-    PyRun_SimpleString(_PY_INIT.c_str())
+    if not __py_extension__:
+        setup_python(python_loaded)
+        PyRun_SimpleString(_PY_INIT.c_str())
 
 def setup_decorator():
     setup_python(True)
