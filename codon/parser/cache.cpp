@@ -232,6 +232,9 @@ std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
 }
 
 void Cache::populatePythonModule() {
+  if (!pythonExt)
+    return;
+
   LOG("[py] ====== module generation =======");
 
 #define N std::make_shared
@@ -388,8 +391,6 @@ void Cache::populatePythonModule() {
     return f;
   };
 
-  // if (!pythonExt)
-  //   return;
   if (!pyModule)
     pyModule = std::make_shared<ir::PyModule>();
   using namespace ast;
