@@ -52,6 +52,17 @@ std::string LLVMVisitor::getNameForFunction(const Func *x) {
   }
 }
 
+std::string LLVMVisitor::getNameForVar(const Var *x) {
+  if (auto *f = cast<Func>(x))
+    return getNameForFunction(f);
+
+  if (x->isExternal()) {
+    return x->getName();
+  } else {
+    return "." + x->getName();
+  }
+}
+
 LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
@@ -118,11 +129,16 @@ void LLVMVisitor::registerGlobal(const Var *var) {
                                           : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
-          external ? nullptr : llvm::Constant::getNullValue(llvmType), var->getName());
+          external ? nullptr : llvm::Constant::getNullValue(llvmType),
+          getNameForVar(var));
       insertVar(var, storage);
 
       if (external) {
-        storage->setDSOLocal(true);
+        if (db.jit) {
+          storage->setDSOLocal(true);
+        } else {
+          storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
+        }
       } else {
         // debug info
         auto *srcInfo = getSrcInfo(var);
@@ -145,13 +161,14 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
         auto name = var->getName();
-        if (auto *global = M->getNamedValue(name))
+        auto privName = getNameForVar(var);
+        if (auto *global = M->getNamedValue(privName))
           return global;
 
         llvm::Type *llvmType = getLLVMType(var->getType());
         auto *storage = new llvm::GlobalVariable(*M, llvmType, /*isConstant=*/false,
                                                  llvm::GlobalValue::ExternalLinkage,
-                                                 /*Initializer=*/nullptr, name);
+                                                 /*Initializer=*/nullptr, privName);
         storage->setExternallyInitialized(true);
 
         // debug info
@@ -621,16 +638,10 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *last = B->CreateInBoundsGEP(B->getInt8Ty(), buf, msgLen);
   B->CreateStore(B->getInt8(0), last);
 
-  const std::string pyErrSetStringName = "PyErr_SetString";
-  llvm::Value *pyErrSetString = M->getNamedValue(pyErrSetStringName);
-  if (!pyErrSetString) {
-    pyErrSetString = llvm::cast<llvm::Function>(
-        M->getOrInsertFunction(pyErrSetStringName, B->getVoidTy(), B->getInt8PtrTy(),
-                               B->getInt8PtrTy())
-            .getCallee());
-  } else {
-    pyErrSetString = B->CreateLoad(B->getInt8PtrTy(), pyErrSetString);
-  }
+  auto *pyErrSetString = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getInt8PtrTy(),
+                             B->getInt8PtrTy())
+          .getCallee());
 
   const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
   llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
@@ -638,21 +649,22 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
     auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
         *M, B->getInt8PtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
         /*Initializer=*/nullptr, pyExcRuntimeErrorName);
-    pyExcRuntimeErrorVar->setDSOLocal(true);
+    pyExcRuntimeErrorVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
     pyExcRuntimeError = pyExcRuntimeErrorVar;
-  } else {
-    pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
   }
+  pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
 
   auto *havePyType =
       B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getInt8PtrTy()));
-  B->CreateCall(llvm::FunctionCallee(
-                    llvm::FunctionType::get(B->getVoidTy(),
-                                            {B->getInt8PtrTy(), B->getInt8PtrTy()},
-                                            /*isVarArg=*/false),
-                    pyErrSetString),
+  B->CreateCall(pyErrSetString,
                 {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
-  B->CreateRet(llvm::Constant::getNullValue(wrap->getReturnType()));
+
+  auto *retType = wrap->getReturnType();
+  if (retType == B->getInt32Ty()) {
+    B->CreateRet(B->getInt32(-1));
+  } else {
+    B->CreateRet(llvm::Constant::getNullValue(retType));
+  }
 
   return wrap;
 }
@@ -1018,6 +1030,14 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   }
 
   // Construct initialization hook
+  auto pyIncRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_IncRef", B->getVoidTy(), ptr).getCallee());
+  pyIncRef->setDoesNotThrow();
+
+  auto pyDecRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_DecRef", B->getVoidTy(), ptr).getCallee());
+  pyDecRef->setDoesNotThrow();
+
   auto *pyModuleCreate = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("PyModule_Create2", ptr, ptr, i32).getCallee());
   pyModuleCreate->setDoesNotThrow();
@@ -1038,27 +1058,6 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   if (auto *main = M->getFunction("main")) {
     main->setName(".main");
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
-  }
-
-  auto *refModFuncType = llvm::FunctionType::get(B->getVoidTy(), {ptr},
-                                                 /*isVarArg=*/false);
-
-  const std::string pyIncRefName = "Py_IncRef";
-  llvm::Value *pyIncRef = M->getNamedValue(pyIncRefName);
-  if (!pyIncRef) {
-    pyIncRef = llvm::cast<llvm::Function>(
-        M->getOrInsertFunction(pyIncRefName, refModFuncType).getCallee());
-  } else {
-    pyIncRef = B->CreateLoad(B->getInt8PtrTy(), pyIncRef);
-  }
-
-  const std::string pyDecRefName = "Py_DecRef";
-  llvm::Value *pyDecRef = M->getNamedValue(pyDecRefName);
-  if (!pyDecRef) {
-    pyDecRef = llvm::cast<llvm::Function>(
-        M->getOrInsertFunction(pyDecRefName, refModFuncType).getCallee());
-  } else {
-    pyDecRef = B->CreateLoad(B->getInt8PtrTy(), pyDecRef);
   }
 
   // Set base types
@@ -1109,7 +1108,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     seqassertn(it != typeVars.end(), "type not found");
     auto *typeVar = it->second;
 
-    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyIncRef), typeVar);
+    B->CreateCall(pyIncRef, typeVar);
     auto *status =
         B->CreateCall(pyModuleAddObject, {mod, pyString(pytype.name), typeVar});
     fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
@@ -1117,8 +1116,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
 
     B->SetInsertPoint(fail);
-    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyDecRef), typeVar);
-    B->CreateCall(llvm::FunctionCallee(refModFuncType, pyDecRef), mod);
+    B->CreateCall(pyDecRef, typeVar);
+    B->CreateCall(pyDecRef, mod);
     B->CreateRet(null);
 
     B->SetInsertPoint(block);
@@ -2309,10 +2308,10 @@ void LLVMVisitor::visit(const BoolConst *x) {
 void LLVMVisitor::visit(const StringConst *x) {
   B->SetInsertPoint(block);
   std::string s = x->getVal();
-  auto *strVar = new llvm::GlobalVariable(
-      *M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-      llvm::ConstantDataArray::getString(*context, s), "str_literal");
+  auto *strVar =
+      new llvm::GlobalVariable(*M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
+                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+                               llvm::ConstantDataArray::getString(*context, s), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
   llvm::Value *ptr = B->CreateBitCast(strVar, B->getInt8PtrTy());

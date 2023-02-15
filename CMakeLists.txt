@@ -193,7 +193,6 @@ set(CODON_HPPFILES
     codon/cir/transform/folding/rule.h
     codon/cir/transform/lowering/imperative.h
     codon/cir/transform/lowering/pipeline.h
-    codon/cir/transform/lowering/pyextension.h
     codon/cir/transform/manager.h
     codon/cir/transform/parallel/openmp.h
     codon/cir/transform/parallel/schedule.h
@@ -302,7 +301,6 @@ set(CODON_CPPFILES
     codon/cir/transform/folding/folding.cpp
     codon/cir/transform/lowering/imperative.cpp
     codon/cir/transform/lowering/pipeline.cpp
-    codon/cir/transform/lowering/pyextension.cpp
     codon/cir/transform/manager.cpp
     codon/cir/transform/parallel/openmp.cpp
     codon/cir/transform/parallel/schedule.cpp

@@ -217,6 +217,7 @@ private:
 
 public:
   static std::string getNameForFunction(const Func *x);
+  static std::string getNameForVar(const Var *x);
 
   static std::string getDebugNameForVariable(const Var *x) {
     std::string name = x->getName();

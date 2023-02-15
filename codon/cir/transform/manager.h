@@ -11,7 +11,6 @@
 
 #include "codon/cir/analyze/analysis.h"
 #include "codon/cir/module.h"
-#include "codon/cir/transform/lowering/pyextension.h"
 #include "codon/cir/transform/pass.h"
 
 namespace codon {

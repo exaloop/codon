@@ -155,8 +155,6 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
-    if (pyExtension)
-      registerPass(std::make_unique<lowering::PythonExtensionLowering>());
     break;
   }
   case Init::RELEASE:
@@ -202,9 +200,6 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
                  {cfgKey, globalKey});
-
-    if (pyExtension)
-      registerPass(std::make_unique<lowering::PythonExtensionLowering>());
 
     if (init != Init::JIT) {
       // Don't demote globals in JIT mode, since they might be used later

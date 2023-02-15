@@ -403,124 +403,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit"))[0]
 
 def init_handles_static():
-    global Py_IncRef
-    global Py_Initialize
-    global PyImport_AddModule
-    global PyImport_AddModuleObject
-    global PyImport_ImportModule
-    global PyRun_SimpleString
-    global PyEval_GetGlobals
-    global PyEval_GetBuiltins
-    global PyLong_AsLong
-    global PyLong_FromLong
-    global PyFloat_AsDouble
-    global PyFloat_FromDouble
-    global PyBool_FromLong
-    global PyBytes_AsString
-    global PyList_New
-    global PyList_GetItem
-    global PyList_SetItem
-    global PyDict_New
-    global PyDict_Next
-    global PyDict_GetItem
-    global PyDict_SetItem
-    global PySet_Add
-    global PySet_New
-    global PyTuple_New
-    global PyTuple_Size
-    global PyTuple_GetItem
-    global PyTuple_SetItem
-    global PyUnicode_AsEncodedString
-    global PyUnicode_DecodeFSDefaultAndSize
-    global PyUnicode_FromString
-    global PyComplex_FromDoubles
-    global PyComplex_RealAsDouble
-    global PyComplex_ImagAsDouble
-    global PyIter_Next
-    global PySlice_New
-    global PySlice_Unpack
-    global PyNumber_Add
-    global PyNumber_Subtract
-    global PyNumber_Multiply
-    global PyNumber_MatrixMultiply
-    global PyNumber_FloorDivide
-    global PyNumber_TrueDivide
-    global PyNumber_Remainder
-    global PyNumber_Divmod
-    global PyNumber_Power
-    global PyNumber_Negative
-    global PyNumber_Positive
-    global PyNumber_Absolute
-    global PyNumber_Invert
-    global PyNumber_Lshift
-    global PyNumber_Rshift
-    global PyNumber_And
-    global PyNumber_Xor
-    global PyNumber_Or
-    global PyNumber_InPlaceAdd
-    global PyNumber_InPlaceSubtract
-    global PyNumber_InPlaceMultiply
-    global PyNumber_InPlaceMatrixMultiply
-    global PyNumber_InPlaceFloorDivide
-    global PyNumber_InPlaceTrueDivide
-    global PyNumber_InPlaceRemainder
-    global PyNumber_InPlacePower
-    global PyNumber_InPlaceLshift
-    global PyNumber_InPlaceRshift
-    global PyNumber_InPlaceAnd
-    global PyNumber_InPlaceXor
-    global PyNumber_InPlaceOr
-    global PyNumber_Long
-    global PyNumber_Float
-    global PyNumber_Index
-    global PyObject_Call
-    global PyObject_GetAttr
-    global PyObject_GetAttrString
-    global PyObject_GetIter
-    global PyObject_HasAttrString
-    global PyObject_IsTrue
-    global PyObject_Length
-    global PyObject_LengthHint
-    global PyObject_SetAttrString
-    global PyObject_Str
-    global PyObject_Repr
-    global PyObject_Hash
-    global PyObject_GetItem
-    global PyObject_SetItem
-    global PyObject_DelItem
-    global PyObject_RichCompare
-    global PyObject_IsInstance
-    global PyErr_Fetch
-    global PyErr_NormalizeException
-    global PyErr_SetString
-    global Py_None
-    global Py_True
-    global Py_False
-    global PyExc_BaseException
-    global PyExc_Exception
-    global PyExc_NameError
-    global PyExc_OSError
-    global PyExc_IOError
-    global PyExc_ValueError
-    global PyExc_LookupError
-    global PyExc_IndexError
-    global PyExc_KeyError
-    global PyExc_TypeError
-    global PyExc_ArithmeticError
-    global PyExc_ZeroDivisionError
-    global PyExc_OverflowError
-    global PyExc_AttributeError
-    global PyExc_RuntimeError
-    global PyExc_NotImplementedError
-    global PyExc_StopIteration
-    global PyExc_AssertionError
-    global PyExc_SystemExit
-
-
     from C import Py_DecRef(cobj) as _Py_DecRef
-    global Py_DecRef
-    Py_DecRef = _Py_DecRef
-
     from C import Py_IncRef(cobj) as _Py_IncRef
     from C import Py_Initialize() as _Py_Initialize
     from C import PyImport_AddModule(cobj) -> cobj as _PyImport_AddModule
@@ -633,6 +516,120 @@ def init_handles_static():
     from C import PyExc_StopIteration: cobj as _PyExc_StopIteration
     from C import PyExc_AssertionError: cobj as _PyExc_AssertionError
     from C import PyExc_SystemExit: cobj as _PyExc_SystemExit
+
+    global Py_DecRef
+    global Py_IncRef
+    global Py_Initialize
+    global PyImport_AddModule
+    global PyImport_AddModuleObject
+    global PyImport_ImportModule
+    global PyRun_SimpleString
+    global PyEval_GetGlobals
+    global PyEval_GetBuiltins
+    global PyLong_AsLong
+    global PyLong_FromLong
+    global PyFloat_AsDouble
+    global PyFloat_FromDouble
+    global PyBool_FromLong
+    global PyBytes_AsString
+    global PyList_New
+    global PyList_GetItem
+    global PyList_SetItem
+    global PyDict_New
+    global PyDict_Next
+    global PyDict_GetItem
+    global PyDict_SetItem
+    global PySet_Add
+    global PySet_New
+    global PyTuple_New
+    global PyTuple_Size
+    global PyTuple_GetItem
+    global PyTuple_SetItem
+    global PyUnicode_AsEncodedString
+    global PyUnicode_DecodeFSDefaultAndSize
+    global PyUnicode_FromString
+    global PyComplex_FromDoubles
+    global PyComplex_RealAsDouble
+    global PyComplex_ImagAsDouble
+    global PyIter_Next
+    global PySlice_New
+    global PySlice_Unpack
+    global PyNumber_Add
+    global PyNumber_Subtract
+    global PyNumber_Multiply
+    global PyNumber_MatrixMultiply
+    global PyNumber_FloorDivide
+    global PyNumber_TrueDivide
+    global PyNumber_Remainder
+    global PyNumber_Divmod
+    global PyNumber_Power
+    global PyNumber_Negative
+    global PyNumber_Positive
+    global PyNumber_Absolute
+    global PyNumber_Invert
+    global PyNumber_Lshift
+    global PyNumber_Rshift
+    global PyNumber_And
+    global PyNumber_Xor
+    global PyNumber_Or
+    global PyNumber_InPlaceAdd
+    global PyNumber_InPlaceSubtract
+    global PyNumber_InPlaceMultiply
+    global PyNumber_InPlaceMatrixMultiply
+    global PyNumber_InPlaceFloorDivide
+    global PyNumber_InPlaceTrueDivide
+    global PyNumber_InPlaceRemainder
+    global PyNumber_InPlacePower
+    global PyNumber_InPlaceLshift
+    global PyNumber_InPlaceRshift
+    global PyNumber_InPlaceAnd
+    global PyNumber_InPlaceXor
+    global PyNumber_InPlaceOr
+    global PyNumber_Long
+    global PyNumber_Float
+    global PyNumber_Index
+    global PyObject_Call
+    global PyObject_GetAttr
+    global PyObject_GetAttrString
+    global PyObject_GetIter
+    global PyObject_HasAttrString
+    global PyObject_IsTrue
+    global PyObject_Length
+    global PyObject_LengthHint
+    global PyObject_SetAttrString
+    global PyObject_Str
+    global PyObject_Repr
+    global PyObject_Hash
+    global PyObject_GetItem
+    global PyObject_SetItem
+    global PyObject_DelItem
+    global PyObject_RichCompare
+    global PyObject_IsInstance
+    global PyErr_Fetch
+    global PyErr_NormalizeException
+    global PyErr_SetString
+    global Py_None
+    global Py_True
+    global Py_False
+    global PyExc_BaseException
+    global PyExc_Exception
+    global PyExc_NameError
+    global PyExc_OSError
+    global PyExc_IOError
+    global PyExc_ValueError
+    global PyExc_LookupError
+    global PyExc_IndexError
+    global PyExc_KeyError
+    global PyExc_TypeError
+    global PyExc_ArithmeticError
+    global PyExc_ZeroDivisionError
+    global PyExc_OverflowError
+    global PyExc_AttributeError
+    global PyExc_RuntimeError
+    global PyExc_NotImplementedError
+    global PyExc_StopIteration
+    global PyExc_AssertionError
+    global PyExc_SystemExit
 
     Py_DecRef = _Py_DecRef
     Py_IncRef = _Py_IncRef
@@ -792,6 +789,7 @@ def setup_python(python_loaded: bool):
 def ensure_initialized(python_loaded: bool = False):
     if __py_extension__:
         init_handles_static()
+        init_error_py_types()
     else:
         setup_python(python_loaded)
         PyRun_SimpleString(_PY_INIT.c_str())
@@ -1144,12 +1142,6 @@ def _get_identifier(typ: str) -> pyobj:
 def _isinstance(what: pyobj, typ: pyobj) -> bool:
     return bool(pyobj.exc_wrap(PyObject_IsInstance(what.p, typ.p)))
 
-def _extension_bad_args(got: int, expected: int) -> bool:
-    if got != expected:
-        PyErr_SetString(PyExc_RuntimeError,
-                        f"expected {expected} arguments, but got {got}".c_str())
-        return True
-    return False
 
 # Type conversions
 
