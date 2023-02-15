@@ -403,7 +403,6 @@ def init_handles_dlopen(py_handle: cobj):
     PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit"))[0]
 
 def init_handles_static():
-    global Py_DecRef
     global Py_IncRef
     global Py_Initialize
     global PyImport_AddModule
@@ -517,7 +516,11 @@ def init_handles_static():
     global PyExc_AssertionError
     global PyExc_SystemExit
 
+
     from C import Py_DecRef(cobj) as _Py_DecRef
+    global Py_DecRef
+    Py_DecRef = _Py_DecRef
+
     from C import Py_IncRef(cobj) as _Py_IncRef
     from C import Py_Initialize() as _Py_Initialize
     from C import PyImport_AddModule(cobj) -> cobj as _PyImport_AddModule

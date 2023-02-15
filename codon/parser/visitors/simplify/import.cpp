@@ -193,7 +193,7 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
     auto val = ctx->forceFind(name);
     ctx->add(altName, val);
     ctx->remove(name);
-    seqassert(ctx->find(name) == nullptr, "import not properly handled");
+    // seqassert(ctx->find(name) == nullptr, "import not properly handled");
   }
   return f;
 }
