@@ -26,6 +26,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   auto typ = Type::makeType(ctx->cache, stmt->name, ctx->cache->rev(stmt->name),
                             stmt->isRecord())
                  ->getClass();
+  if (stmt->isRecord() && stmt->hasAttr(Attr::Internal))
+    typ->getRecord()->isInternal = true;
   if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
     // Special handling of partial types (e.g., `Partial.0001.foo`)
     if (auto p = in(ctx->cache->partials, stmt->name))
