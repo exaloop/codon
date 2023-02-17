@@ -759,17 +759,22 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       switch (pyfunc.nargs) {
       case 0:
         flag = PYEXT_METH_NOARGS;
+        break;
       case 1:
         flag = PYEXT_METH_O;
+        break;
       default:
         flag = PYEXT_METH_FASTCALL;
+        break;
       }
 
       switch (pyfunc.type) {
       case PyFunction::CLASS:
         flag |= PYEXT_METH_CLASS;
+        break;
       case PyFunction::STATIC:
         flag |= PYEXT_METH_STATIC;
+        break;
       default:
         break;
       }
