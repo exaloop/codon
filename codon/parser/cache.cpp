@@ -582,6 +582,8 @@ void Cache::populatePythonModule() {
   for (const auto &[fn, f] : functions)
     if (f.isToplevel) {
       auto fnn = overloads[f.rootName].back().name; // last overload
+      if (startswith(rev(fnn), "_"))
+        continue;
       LOG("[py] functn {} => {}", rev(fn), fnn);
       auto ir = getFn(fnn);
       pyModule->functions.push_back(ir::PyFunction{rev(fn), f.ast->getDocstr(), ir,
