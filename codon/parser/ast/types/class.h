@@ -83,7 +83,8 @@ struct RecordType : public ClassType {
       Cache *cache, std::string name, std::string niceName,
       std::vector<ClassType::Generic> generics = std::vector<ClassType::Generic>(),
       std::vector<TypePtr> args = std::vector<TypePtr>(), bool isInternal = false);
-  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args, bool isInternal = false);
+  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args,
+             bool isInternal = false);
 
 public:
   int unify(Type *typ, Unification *undo) override;

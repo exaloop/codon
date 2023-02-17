@@ -129,11 +129,13 @@ std::string ClassType::realizedTypeName() const {
 }
 
 RecordType::RecordType(Cache *cache, std::string name, std::string niceName,
-                       std::vector<Generic> generics, std::vector<TypePtr> args, bool isInternal)
+                       std::vector<Generic> generics, std::vector<TypePtr> args,
+                       bool isInternal)
     : ClassType(cache, std::move(name), std::move(niceName), std::move(generics)),
       args(std::move(args)), isInternal(false) {}
 
-RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args, bool isInternal)
+RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args,
+                       bool isInternal)
     : ClassType(base), args(std::move(args)), isInternal(isInternal) {}
 
 int RecordType::unify(Type *typ, Unification *us) {
@@ -157,7 +159,8 @@ int RecordType::unify(Type *typ, Unification *us) {
     }
     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
     if (startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE)) {
-      if (!args.empty() || (!isInternal && !tr->isInternal)) // prevent int<->() unification
+      if (!args.empty() ||
+          (!isInternal && !tr->isInternal)) // prevent int<->() unification
         return s1 + int(name == tr->name);
       else
         return -1;
