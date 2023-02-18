@@ -569,6 +569,8 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
     unify(expr->type, ctx->getType("bool"));
     return nullptr;
   }
+  if (expr->lexpr->isType() && expr->rexpr->isType())
+    return transform(N<BoolExpr>(lc->realizedName() == rc->realizedName()));
   if (!lc->getRecord() && !rc->getRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
     return transform(
