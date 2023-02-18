@@ -238,19 +238,19 @@ void Cache::populatePythonModule() {
   LOG("[py] ====== module generation =======");
 
 #define N std::make_shared
+  auto sctx = imports[MAIN_IMPORT].ctx;
   auto getFn = [&](const std::string &canonicalName,
                    const std::string &className = "") -> ir::Func * {
-    auto &fna = functions[canonicalName].ast;
+    auto fna = in(functions, canonicalName) ? functions[canonicalName].ast : nullptr;
     std::vector<Param> params;
     std::vector<ExprPtr> args;
-    auto sctx = imports[MAIN_IMPORT].ctx;
 
     bool isMethod = className.empty() ? false : fna->hasAttr(Attr::Method);
     auto name =
         fmt::format("{}{}", className.empty() ? "" : className + ".", canonicalName);
 
     auto wrapArg = [&](ExprPtr po, int ai) {
-      if (fna->args[ai].type) {
+      if (fna && fna->args[ai].type) {
         return N<CallExpr>(N<DotExpr>(fna->args[ai].type->clone(), "__from_py__"), po);
       } else {
         return N<CallExpr>(N<IdExpr>("pyobj"), po);
@@ -259,6 +259,7 @@ void Cache::populatePythonModule() {
 
     StmtPtr ret = nullptr;
     ExprPtr retType = N<IdExpr>("cobj");
+    const int *p = nullptr;
     LOG("[py] {}: {} => {}", isMethod ? "method" : "classm", name, isMethod);
     if (isMethod && in(std::set<std::string>{"__abs__", "__pos__", "__neg__",
                                              "__invert__", "__int__", "__float__",
@@ -276,22 +277,21 @@ void Cache::populatePythonModule() {
           N<CallExpr>(N<IdExpr>(canonicalName),
                       std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)}));
       retType = N<IdExpr>("i64");
-    } else if (isMethod && in(std::set<std::string>{"__bool__"}, rev(canonicalName))) {
+    } else if (isMethod && rev(canonicalName) == "__bool__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
       ret = N<ReturnStmt>(N<CallExpr>(
           N<IdExpr>("i32"),
           N<CallExpr>(N<IdExpr>(canonicalName),
                       std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)})));
       retType = N<IdExpr>("i32");
-    } else if (isMethod && in(std::set<std::string>{"__del__"}, rev(canonicalName))) {
+    } else if (isMethod && rev(canonicalName) == "__del__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
       ret = N<ExprStmt>(N<CallExpr>(
           N<IdExpr>("i32"),
           N<CallExpr>(N<IdExpr>(canonicalName),
                       std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0)})));
       retType = N<IdExpr>("i32");
-    } else if (isMethod &&
-               in(std::set<std::string>{"__contains__"}, rev(canonicalName))) {
+    } else if (isMethod && rev(canonicalName) == "__contains__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")}};
       ret = N<ReturnStmt>(N<CallExpr>(
@@ -300,7 +300,7 @@ void Cache::populatePythonModule() {
                       std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0),
                                            wrapArg(N<IdExpr>(params[1].name), 1)})));
       retType = N<IdExpr>("i32");
-    } else if (isMethod && in(std::set<std::string>{"__init__"}, rev(canonicalName))) {
+    } else if (isMethod && rev(canonicalName) == "__init__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("kwargs"), N<IdExpr>("cobj")}};
@@ -316,7 +316,7 @@ void Cache::populatePythonModule() {
                                                  N<StarExpr>(tup))),
                          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("i32"), N<IntExpr>(0))));
       retType = N<IdExpr>("i32");
-    } else if (isMethod && in(std::set<std::string>{"__call__"}, rev(canonicalName))) {
+    } else if (isMethod && rev(canonicalName) == "__call__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("kwargs"), N<IdExpr>("cobj")}};
@@ -331,10 +331,42 @@ void Cache::populatePythonModule() {
           N<CallExpr>(N<IdExpr>(canonicalName), wrapArg(N<IdExpr>(params[0].name), 0),
                       N<StarExpr>(tup)),
           "__to_py__")));
+    } else if (isMethod && in(std::set<std::string>{"__lt__", "__le__", "__eq__",
+                                                    "__ne__", "__gt__", "__ge__"},
+                              rev(canonicalName))) {
+      params = std::vector<Param>{
+          Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+          Param{sctx->generateCanonicalName("other"), N<IdExpr>("cobj")}};
+      ret = N<ReturnStmt>(N<CallExpr>(N<DotExpr>(
+          N<CallExpr>(N<IdExpr>(canonicalName),
+                      std::vector<ExprPtr>{wrapArg(N<IdExpr>(params[0].name), 0),
+                                           wrapArg(N<IdExpr>(params[1].name), 1)}),
+          "__to_py__")));
+    } else if (isMethod && rev(canonicalName) == "__setitem__") {
+      // TODO: return -1 if __delitem__ does not exist? right now it assumes it...
+      params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("index"), N<IdExpr>("cobj")},
+                Param{sctx->generateCanonicalName("value"), N<IdExpr>("cobj")}};
+      retType = N<IdExpr>("i32");
+      ret = N<SuiteStmt>(std::vector<StmtPtr>{
+          N<IfStmt>(
+              N<BinaryExpr>(N<CallExpr>(N<IdExpr>("hasattr"), N<IdExpr>(className),
+                                        N<StringExpr>("__delitem__")),
+                            "&&",
+                            N<BinaryExpr>(N<IdExpr>(params[2].name),
+                                          "==", N<CallExpr>(N<IdExpr>("cobj")))),
+              N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(className), "__delitem__"),
+                                      wrapArg(N<IdExpr>(params[0].name), 0),
+                                      wrapArg(N<IdExpr>(params[1].name), 1))),
+              N<ExprStmt>(N<CallExpr>(N<IdExpr>(canonicalName),
+                                      wrapArg(N<IdExpr>(params[0].name), 0),
+                                      wrapArg(N<IdExpr>(params[1].name), 1),
+                                      wrapArg(N<IdExpr>(params[2].name), 2)))),
+          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("i32"), N<IntExpr>(0)))});
     } else {
       // def wrapper(self: cobj, arg: cobj) -> cobj
       // def wrapper(self: cobj, args: Ptr[cobj], nargs: int) -> cobj
-      // new, setitem, iter, iternext, cmp: wtf
+      // iter, iternext: todo
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
                 Param{sctx->generateCanonicalName("args"), N<IdExpr>("cobj")}};
       if (fna->args.size() > 1 + isMethod) {
@@ -388,6 +420,8 @@ void Cache::populatePythonModule() {
     for (auto &fn : pr)
       TranslateVisitor(codegenCtx).transform(functions[fn.first].ast->clone());
     auto f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
+    classes[className].methods[node->name] = node->name;
+    overloads[node->name] = std::vector<Overload>{{node->name, 0}};
     return f;
   };
 
@@ -545,8 +579,6 @@ void Cache::populatePythonModule() {
           py.call = f;
         } else if (n == "__str__") {
           py.str = f;
-        } else if (n == "__cmp__") {
-          py.cmp = f;
         } else if (n == "__iter__") {
           py.iter = f;
         } else if (n == "__del__") {
@@ -559,6 +591,22 @@ void Cache::populatePythonModule() {
                              fna->hasAttr(Attr::Method) ? ir::PyFunction::Type::METHOD
                                                         : ir::PyFunction::Type::CLASS,
                              int(fna->args.size()) - fna->hasAttr(Attr::Method)});
+        }
+      }
+
+      for (auto &m : py.methods) {
+        if (in(std::set<std::string>{"__lt__", "__le__", "__eq__", "__ne__", "__gt__",
+                                     "__ge__"},
+               m.name)) {
+          auto f = realizeFunction(
+              typeCtx->forceFind("__internal__.cmp_py:0")->type->getFunc(),
+              {typeCtx->forceFind("cobj")->type, typeCtx->forceFind("cobj")->type, typeCtx->forceFind("cobj")->type,
+               typeCtx->forceFind("i32")->type},
+              {tc, std::make_shared<types::StaticType>(this, m.func->getUnmangledName())});
+          LOG("==> {}", m.func->getUnmangledName());
+          LOG("--> {}", *f);
+          py.cmp = f;
+          break;
         }
       }
 
