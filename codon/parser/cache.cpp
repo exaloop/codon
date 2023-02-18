@@ -603,8 +603,6 @@ void Cache::populatePythonModule() {
               {typeCtx->forceFind("cobj")->type, typeCtx->forceFind("cobj")->type, typeCtx->forceFind("cobj")->type,
                typeCtx->forceFind("i32")->type},
               {tc, std::make_shared<types::StaticType>(this, m.func->getUnmangledName())});
-          LOG("==> {}", m.func->getUnmangledName());
-          LOG("--> {}", *f);
           py.cmp = f;
           break;
         }
