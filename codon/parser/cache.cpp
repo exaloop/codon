@@ -265,7 +265,8 @@ void Cache::populatePythonModule() {
     StmtPtr ret = nullptr;
     ExprPtr retType = N<IdExpr>("cobj");
     const int *p = nullptr;
-    LOG("[py] {}: {} => {} ({})", isMethod ? "method" : "classm", name, isMethod, rev(canonicalName));
+    LOG("[py] {}: {} => {} ({})", isMethod ? "method" : "classm", name, isMethod,
+        rev(canonicalName));
     if (isMethod && in(std::set<std::string>{"__abs__", "__pos__", "__neg__",
                                              "__invert__", "__int__", "__float__",
                                              "__index__", "__repr__", "__str__"},
@@ -673,7 +674,8 @@ void Cache::populatePythonModule() {
 
         py.getset.push_back({mn, "", functions[gstub].realizations.begin()->second->ir,
                              functions[sstub].realizations.begin()->second->ir});
-        LOG("[py] {}: {}.{} => {}: {}, {}", "member", cn, mn, py.members.back().type, gstub, sstub);
+        LOG("[py] {}: {}.{} => {}: {}, {}", "member", cn, mn, py.members.back().type,
+            gstub, sstub);
       }
       pyModule->types.push_back(py);
     }
