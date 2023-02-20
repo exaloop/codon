@@ -463,22 +463,3 @@ class PyObject:
 class PyWrapper[T]:
     head: PyObject
     data: T
-
-
-@extend
-class __internal__:
-    def py_type(T: type) -> Ptr[byte]:
-        return Ptr[byte]()
-
-    def to_py(o) -> Ptr[byte]:
-        pytype = __internal__.py_type(type(o))
-        obj = Ptr[PyWrapper[type(o)]](alloc_uncollectable(sizeof(type(o))))
-        obj[0] = PyWrapper(PyObject(1, pytype), o)
-        return obj.as_byte()
-
-    def from_py(o: Ptr[byte], T: type) -> T:
-        obj = Ptr[PyWrapper[T]](o)[0]
-        pytype = __internal__.py_type(T)
-        if obj.head.pytype != pytype:
-            raise TypeError("Python object has incompatible type")
-        return obj.data

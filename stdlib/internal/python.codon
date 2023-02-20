@@ -1333,6 +1333,22 @@ def _____(): __pyenv__  # make it global!
 
 @extend
 class __internal__:
+    def py_type(T: type) -> Ptr[byte]:
+        return Ptr[byte]()
+
+    def to_py(o) -> Ptr[byte]:
+        pytype = __internal__.py_type(type(o))
+        obj = Ptr[PyWrapper[type(o)]](alloc_uncollectable(sizeof(type(o))))
+        obj[0] = PyWrapper(PyObject(1, pytype), o)
+        return obj.as_byte()
+
+    def from_py(o: Ptr[byte], T: type) -> T:
+        obj = Ptr[PyWrapper[T]](o)[0]
+        pytype = __internal__.py_type(T)
+        if obj.head.pytype != pytype:
+            raise TypeError("Python object has incompatible type")
+        return obj.data
+
     def cmp_py(obj: cobj, other: cobj, op: i32, C: type, name: Static[str]) -> cobj:
         if hasattr(C, "__lt__") and op == 0i32:
             return getattr(C, name)(obj, other)
@@ -1349,3 +1365,32 @@ class __internal__:
         else:
             Py_IncRef(Py_NotImplemented)
             return Py_NotImplemented
+
+class _PyextIterWrap:
+    _gen: cobj
+    T: type
+
+    def _init(obj: cobj, T: type) -> cobj:
+        return _PyextIterWrap(T.__from_py__(obj)).__to_py__()
+
+    @realize_without_self
+    def __init__(self, it: T):
+        self._gen = it.__iter__().__raw__()
+
+    def _iter(obj: cobj) -> cobj:
+        T  # need separate fn for each instantiation
+        return obj
+
+    def _iternext(self: cobj) -> cobj:
+        pt = _PyextIterWrap[T].__from_py__(self)
+        gt = type(T().__iter__())(pt._gen)
+        if gt.done():
+            return cobj()
+        else:
+            return gt.next().__to_py__()
+
+    def __to_py__(self):
+        return __internal__.to_py(self)
+
+    def __from_py__(obj: cobj):
+        return __internal__.from_py(obj, _PyextIterWrap[T])
