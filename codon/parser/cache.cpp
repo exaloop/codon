@@ -621,12 +621,14 @@ void Cache::populatePythonModule() {
       auto &r = c.realizations.begin()->second;
       py.type = realizeType(r->type);
       for (auto &[mn, mt] : r->fields) {
-        py.members.push_back(ir::PyMember{mn, "",
-                                          mt->is("int") ? ir::PyMember::Type::LONGLONG
-                                          : mt->is("float")
-                                              ? ir::PyMember::Type::DOUBLE
-                                              : ir::PyMember::Type::OBJECT,
-                                          true});
+        // This will be handled later
+        // py.members.push_back(ir::PyMember{mn, "",
+        //                                   mt->is("int") ?
+        //                                   ir::PyMember::Type::LONGLONG :
+        //                                   mt->is("float")
+        //                                       ? ir::PyMember::Type::DOUBLE
+        //                                       : ir::PyMember::Type::OBJECT,
+        //                                   true});
 
         // Generate getters & setters
         std::vector<Param> params{
@@ -646,13 +648,15 @@ void Cache::populatePythonModule() {
         params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")},
                   Param{sctx->generateCanonicalName("what"), N<IdExpr>("cobj")},
                   Param{sctx->generateCanonicalName("closure"), N<IdExpr>("cobj")}};
-        retType = N<IdExpr>("NoneType");
-        ret = N<AssignMemberStmt>(
-            N<CallExpr>(N<DotExpr>(N<IdExpr>(cn), "__from_py__"),
-                        N<IdExpr>(params[0].name)),
-            mn,
-            N<CallExpr>(N<DotExpr>(N<IdExpr>(mt->realizedName()), "__from_py__"),
-                        N<IdExpr>(params[1].name)));
+        retType = N<IdExpr>("i32");
+        ret = N<SuiteStmt>(
+            N<AssignMemberStmt>(
+                N<CallExpr>(N<DotExpr>(N<IdExpr>(cn), "__from_py__"),
+                            N<IdExpr>(params[0].name)),
+                mn,
+                N<CallExpr>(N<DotExpr>(N<IdExpr>(mt->realizedName()), "__from_py__"),
+                            N<IdExpr>(params[1].name))),
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("i32"), N<IntExpr>(0))));
         auto sstub = sctx->generateCanonicalName(fmt::format("_py._set_{}", mn));
         auto snode = N<FunctionStmt>(sstub, retType, params, N<SuiteStmt>(ret),
                                      Attr({Attr::ForceRealize}));
@@ -674,8 +678,7 @@ void Cache::populatePythonModule() {
 
         py.getset.push_back({mn, "", functions[gstub].realizations.begin()->second->ir,
                              functions[sstub].realizations.begin()->second->ir});
-        LOG("[py] {}: {}.{} => {}: {}, {}", "member", cn, mn, py.members.back().type,
-            gstub, sstub);
+        LOG("[py] {}: {}.{} => {}, {}", "member", cn, mn, gstub, sstub);
       }
       pyModule->types.push_back(py);
     }
