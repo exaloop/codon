@@ -407,6 +407,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         if (!vtable.ir)
           vtSz += vtable.table.size();
       }
+      if (!vtSz)
+        continue;
       auto var = initFn.ast->args[0].name;
       // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
       suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
