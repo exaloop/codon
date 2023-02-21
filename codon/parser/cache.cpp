@@ -371,8 +371,9 @@ void Cache::populatePythonModule() {
           N<ReturnStmt>(N<CallExpr>(N<IdExpr>("i32"), N<IntExpr>(0)))});
     } else if (isMethod && rev(canonicalName) == "__iter__") {
       params = {Param{sctx->generateCanonicalName("self"), N<IdExpr>("cobj")}};
-      ret = N<ReturnStmt>(N<CallExpr>(N<IdExpr>("std.internal.python._PyextIterWrap._init:0"),
-                                      N<IdExpr>(params[0].name), N<IdExpr>(className)));
+      ret = N<ReturnStmt>(
+          N<CallExpr>(N<IdExpr>("std.internal.python._PyextIterWrap._init:0"),
+                      N<IdExpr>(params[0].name), N<IdExpr>(className)));
     } else {
       // def wrapper(self: cobj, arg: cobj) -> cobj
       // def wrapper(self: cobj, args: Ptr[cobj], nargs: int) -> cobj
@@ -689,7 +690,7 @@ void Cache::populatePythonModule() {
 
   // Handle __iternext__ wrappers
   auto cin = "std.internal.python._PyextIterWrap";
-  for (auto &[cn, cr]: classes[cin].realizations) {
+  for (auto &[cn, cr] : classes[cin].realizations) {
     LOG("[py] iterfn: {}", cn);
     ir::PyType py{cn, ""};
     auto tc = cr->type;
@@ -701,12 +702,13 @@ void Cache::populatePythonModule() {
     }
 
     auto &methods = classes[cin].methods;
-    for (auto &n: std::vector<std::string>{"_iter", "_iternext"}) {
+    for (auto &n : std::vector<std::string>{"_iter", "_iternext"}) {
       auto fnn = overloads[methods[n]].begin()->name; // default first overload!
       auto &fna = functions[fnn];
       auto ft = typeCtx->instantiate(fna.type, tc->getClass());
       auto rtv = TypecheckVisitor(typeCtx).realize(ft);
-      auto f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
+      auto f =
+          functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
       if (n == "_iter")
         py.iter = f;
       else
