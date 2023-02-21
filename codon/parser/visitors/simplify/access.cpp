@@ -167,7 +167,6 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
     if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
       crossCaptureBoundary = true;
   }
-  seqassert(i < ctx->bases.size(), "invalid base for '{}'", val->canonicalName);
 
   // Mark methods (class functions that access class generics)
   if (parentClassGeneric)
