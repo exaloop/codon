@@ -6,28 +6,33 @@ class __internal__:
 
 @tuple
 @__internal__
+@__notuple__
 class bool:
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class byte:
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class int:
     MAX = 9223372036854775807
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class float:
     MIN_10_EXP = -307
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class float32:
     MIN_10_EXP = -37
     pass
@@ -44,6 +49,7 @@ class type:
 
 @tuple
 @__internal__
+@__notuple__
 class Function[T, TR]:
     pass
 
@@ -54,27 +60,32 @@ class Callable[T, TR]:
 
 @tuple
 @__internal__
+@__notuple__
 class Ptr[T]:
     pass
 cobj = Ptr[byte]
 
 @tuple
 @__internal__
+@__notuple__
 class Generator[T]:
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class Optional:
     T: type = NoneType
 
 @tuple
 @__internal__
+@__notuple__
 class Int[N: Static[int]]:
     pass
 
 @tuple
 @__internal__
+@__notuple__
 class UInt[N: Static[int]]:
     pass
 
@@ -105,8 +116,9 @@ function = Function
 class Ref[T]:
     pass
 
-@__internal__
 @tuple
+@__internal__
+@__notuple__
 class Union[TU]:
     # compiler-generated
     def __new__(val):

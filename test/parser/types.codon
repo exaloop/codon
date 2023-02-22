@@ -1019,7 +1019,8 @@ print [a for a in ()]  #: []
 def foo(*args):
     return [a for a in args]
 args, result = ((), [()])
-print list(foo(*args)) == result  #: False
+print list(foo(*args))  #: []
+print result  #: [()]
 
 
 #%% type_error_reporting

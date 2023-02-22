@@ -564,6 +564,8 @@ void ClassStmt::parseDecorators() {
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
       attributes.customAttr.insert("deduce");
+    } else if (d->isId("__notuple__")) {
+      attributes.customAttr.insert("__notuple__");
     } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple)) {
         attributes.set(Attr::Tuple);
