@@ -25,6 +25,7 @@ class Generator:
         ret ptr %self
 
     @pure
+    @derives
     @llvm
     def __new__(ptr: cobj) -> Generator[T]:
         ret ptr %ptr
