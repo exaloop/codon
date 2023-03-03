@@ -1515,66 +1515,239 @@ __pyenv__: Optional[pyobj] = None
 def _____(): __pyenv__  # make it global!
 
 
-@extend
-class __internal__:
-    def py_type(T: type) -> Ptr[byte]:
-        return Ptr[byte]()
+import internal.static as _S
+class _PyWrap:
+    def _wrap(args, T: type, F: Static[str], map):
+        for fn in _S.fn_overloads(T, F):
+            if _S.fn_can_call(fn, *args):
+                try:
+                    return map(fn, args)
+                except PyError:
+                    pass
+        raise PyError("cannot dispatch " + F)
 
-    def to_py(o) -> Ptr[byte]:
-        pytype = __internal__.py_type(type(o))
-        obj = Ptr[PyWrapper[type(o)]](alloc_uncollectable(sizeof(type(o))))
-        obj[0] = PyWrapper(PyObject(1, pytype), o)
-        return obj.as_byte()
+    def _wrap_unary(obj: cobj, T: type, F: Static[str]) -> cobj:
+        return _PyWrap._wrap(
+            (pyobj(obj), ), T=T, F=F,
+            map=lambda f, a: f(*a).__to_py__()
+        )
+    def wrap_magic_abs(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__abs__")
+    def wrap_magic_pos(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__pos__")
+    def wrap_magic_neg(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__neg__")
+    def wrap_magic_invert(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__invert__")
+    def wrap_magic_int(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__int__")
+    def wrap_magic_float(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__float__")
+    def wrap_magic_index(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__index__")
+    def wrap_magic_repr(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__repr__")
+    def wrap_magic_str(obj: cobj, T: type):
+        return _PyWrap._wrap_unary(obj, T, "__str__")
 
-    def from_py(o: Ptr[byte], T: type) -> T:
-        obj = Ptr[PyWrapper[T]](o)[0]
-        pytype = __internal__.py_type(T)
-        if obj.head.pytype != pytype:
-            raise TypeError("Python object has incompatible type")
-        return obj.data
+    def _wrap_hash(obj: cobj, T: type, F: Static[str]) -> i64:
+        return _PyWrap._wrap(
+            (pyobj(obj), ), T=T, F=F,
+            map=lambda f, a: f(*a)
+        )
+    def wrap_magic_len(obj: cobj, T: type):
+        return _PyWrap._wrap_hash(obj, T, "__len__")
+    def wrap_magic_hash(obj: cobj, T: type):
+        return _PyWrap._wrap_hash(obj, T, "__hash__")
 
-    def cmp_py(obj: cobj, other: cobj, op: i32, C: type, name: Static[str]) -> cobj:
+    def wrap_magic_bool(obj: cobj, T: type) -> i32:
+        return _PyWrap._wrap(
+            (pyobj(obj), ), T=T, F="__bool__",
+            map=lambda f, a: i32(f(*a))
+        )
+
+    def wrap_magic_del(obj: cobj, T: type):
+        _PyWrap._wrap(
+            (pyobj(obj), ), T=T, F="__del__",
+            map=lambda f, a: f(*a)
+        )
+
+    def wrap_magic_contains(obj: cobj, arg: cobj, T: type) -> i32:
+        return _PyWrap._wrap(
+            (pyobj(obj), pyobj(arg)), T=T, F="__contains__",
+            map=lambda f, a: i32(f(*a))
+        )
+
+    def wrap_magic_init(obj: cobj, _args: cobj, _kwds: cobj, T: type) -> i32:
+        args = pyobj(_args)
+        kwds = pyobj(_kwds)
+        for fn in _S.fn_overloads(T, "__init__"):
+            try:
+                ai = -1
+                # TODO: default values do not work
+                a = tuple(
+                    kwds[n] if n in kwds else args[(ai := ai + 1)]
+                    for _, n in _S.fn_args(fn)
+                )
+                a = (pyobj(obj), *a)
+                if _S.fn_can_call(fn, *a):
+                    fn(*a)
+                    return i32(0)
+            except PyError:
+                pass
+        return i32(-1)
+
+    def wrap_magic_call(obj: cobj, _args: cobj, _kwds: cobj, T: type) -> cobj:
+        args = pyobj(_args)
+        kwds = pyobj(_kwds)
+        for fn in _S.fn_overloads(T, "__call__"):
+            try:
+                ai = -1
+                a = tuple(  # TODO: default values do not work
+                    kwds[n] if n in kwds else args[(ai := ai + 1)]
+                    for _, n in _S.fn_args(fn)
+                )
+                a = (pyobj(obj), *a)
+                if _S.fn_can_call(fn, *a):
+                    return fn(*a).__to_py__()
+            except PyError:
+                pass
+        raise PyError("cannot dispatch __call__")
+
+    def _wrap_cmp(obj: cobj, other: cobj, T: type, F: Static[str]) -> cobj:
+        return _PyWrap._wrap(
+            (pyobj(obj), pyobj(other)), T=T, F=F,
+            map=lambda f, a: f(*a).__to_py__()
+        )
+    def wrap_magic_lt(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__lt__")
+    def wrap_magic_le(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__le__")
+    def wrap_magic_eq(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__eq__")
+    def wrap_magic_ne(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__ne__")
+    def wrap_magic_gt(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__gt__")
+    def wrap_magic_ge(obj: cobj, other: cobj, T: type):
+        return _PyWrap._wrap_cmp(obj, other, T, "__ge__")
+    def wrap_cmp(obj: cobj, other: cobj, op: i32, C: type) -> cobj:
         if hasattr(C, "__lt__") and op == 0i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_lt(obj, other, C)
         elif hasattr(C, "__le__") and op == 1i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_le(obj, other, C)
         elif hasattr(C, "__eq__") and op == 2i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_eq(obj, other, C)
         elif hasattr(C, "__ne__") and op == 3i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_ne(obj, other, C)
         elif hasattr(C, "__gt__") and op == 4i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_gt(obj, other, C)
         elif hasattr(C, "__ge__") and op == 5i32:
-            return getattr(C, name)(obj, other)
+            return _PyWrap.wrap_magic_ge(obj, other, C)
         else:
             Py_IncRef(Py_NotImplemented)
             return Py_NotImplemented
 
-class _PyextIterWrap:
-    _gen: cobj
-    T: type
+    def wrap_magic_setitem(obj: cobj, idx: cobj, val: cobj, T: type) -> i32:
+        if val == cobj():
+            try:
+                if hasattr(T, "__delitem__"):
+                    T.__delitem__(pyobj(obj), pyobj(idx))
+                    return 0
+            except PyError:
+                pass
+            return -1
+        try:
+            _PyWrap._wrap(
+                (pyobj(obj), pyobj(idx), pyobj(val)), T=T, F="__setitem__",
+                map=lambda f, a: f(*a).__to_py__()
+            )
+            return 0
+        except PyError:
+            return -1
 
-    def _init(obj: cobj, T: type) -> cobj:
-        return _PyextIterWrap(T.__from_py__(obj)).__to_py__()
+    class IterWrap:
+        _gen: cobj
+        T: type
 
-    @realize_without_self
-    def __init__(self, it: T):
-        self._gen = it.__iter__().__raw__()
+        def _init(obj: cobj, T: type) -> cobj:
+            return _PyWrap.IterWrap(T.__from_py__(obj)).__to_py__()
 
-    def _iter(obj: cobj) -> cobj:
-        T  # need separate fn for each instantiation
-        return obj
+        @realize_without_self
+        def __init__(self, it: T):
+            self._gen = it.__iter__().__raw__()
 
-    def _iternext(self: cobj) -> cobj:
-        pt = _PyextIterWrap[T].__from_py__(self)
-        gt = type(T().__iter__())(pt._gen)
-        if gt.done():
-            return cobj()
-        else:
-            return gt.next().__to_py__()
+        def _iter(obj: cobj) -> cobj:
+            T  # need separate fn for each instantiation
+            return obj
 
-    def __to_py__(self):
-        return __internal__.to_py(self)
+        def _iternext(self: cobj) -> cobj:
+            pt = _PyWrap.IterWrap[T].__from_py__(self)
+            gt = type(T().__iter__())(pt._gen)
+            if gt.done():
+                return cobj()
+            else:
+                return gt.next().__to_py__()
 
-    def __from_py__(obj: cobj):
-        return __internal__.from_py(obj, _PyextIterWrap[T])
+        def __to_py__(self):
+            return _PyWrap.wrap_to_py(self)
+
+        def __from_py__(obj: cobj):
+            return _PyWrap.wrap_from_py(obj, _PyWrap.IterWrap[T])
+
+    def wrap_magic_iter(obj: cobj, T: type) -> cobj:
+        return _PyWrap.IterWrap._init(obj, T)
+
+    def wrap_single(obj: cobj, arg: cobj, T: type, F: Static[str], method: Static[int]):
+        a = (pyobj(obj), pyobj(arg)) if method else (pyobj(arg),)
+        return _PyWrap._wrap(
+            a, T=T, F=F,
+            map=lambda f, a: f(*a).__to_py__()
+        )
+
+    def wrap_multiple(obj: cobj, args: Ptr[cobj], nargs: i32, T: type, F: Static[str], method: Static[int]):
+        def _err():
+            raise PyError("argument mismatch")
+            return pyobj()
+
+        a = (pyobj(obj), ) if method else ()
+        for fn in _S.fn_overloads(T, F):
+            try:
+                ai = -1
+                an = (
+                    pyobj(args[i]) if i < nargs else _err()
+                    for i, _ in _S.fn_args(fn)
+                )
+                if len(an) != nargs:
+                    _err()
+                if _S.fn_can_call(fn, (*a, *an)):
+                    return fn(*a, *an).__to_py__()
+            except PyError:
+                pass
+        PyError("cannot dispatch " + F)
+
+    def wrap_get(obj: cobj, closure: cobj, T: type, S: Static[str]):
+        return getattr(T.__from_py__(obj), S).__to_py__()
+    def wrap_set(obj: cobj, what: cobj, closure: cobj,  T: type, S: Static[str]) -> i32:
+        try:
+            t = T.__from_py__(obj)
+            setattr(t, S, type(getattr(t, S)).__from_py__(what))
+            return i32(0)
+        except PyError:
+            return i32(-1)
+
+    def py_type(T: type) -> cobj:
+        return cobj()
+
+    def wrap_to_py(o) -> cobj:
+        pytype = _PyWrap.py_type(type(o))
+        obj = Ptr[PyWrapper[type(o)]](alloc_uncollectable(sizeof(type(o))))
+        obj[0] = PyWrapper(PyObject(1, pytype), o)
+        return obj.as_byte()
+
+    def wrap_from_py(o: cobj, T: type) -> T:
+        obj = Ptr[PyWrapper[T]](o)[0]
+        pytype = _PyWrap.py_type(T)
+        if obj.head.pytype != pytype:
+            raise TypeError("Python object has incompatible type")
+        return obj.data

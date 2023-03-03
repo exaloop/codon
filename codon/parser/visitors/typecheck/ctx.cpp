@@ -305,4 +305,44 @@ std::string TypeContext::debugInfo() {
                      getRealizationBase()->iteration, getSrcInfo());
 }
 
+std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
+TypeContext::getFunctionArgs(types::TypePtr t) {
+  if (!t->getFunc())
+    return nullptr;
+  auto fn = t->getFunc();
+  auto ret = std::make_shared<
+      std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>();
+  for (auto &t : fn->funcGenerics)
+    ret->first.push_back(t.type);
+  for (auto &t : fn->generics[0].type->getRecord()->args)
+    ret->second.push_back(t);
+  return ret;
+}
+
+std::shared_ptr<std::string> TypeContext::getStaticString(types::TypePtr t) {
+  if (auto s = t->getStatic()) {
+    auto r = s->evaluate();
+    if (r.type == StaticValue::STRING)
+      return std::make_shared<std::string>(r.getString());
+  }
+  return nullptr;
+}
+
+std::shared_ptr<int64_t> TypeContext::getStaticInt(types::TypePtr t) {
+  if (auto s = t->getStatic()) {
+    auto r = s->evaluate();
+    if (r.type == StaticValue::INT)
+      return std::make_shared<int64_t>(r.getInt());
+  }
+  return nullptr;
+}
+
+types::FuncTypePtr TypeContext::extractFunction(types::TypePtr t) {
+  if (auto f = t->getFunc())
+    return f;
+  if (auto p = t->getPartial())
+    return p->func;
+  return nullptr;
+}
+
 } // namespace codon::ast

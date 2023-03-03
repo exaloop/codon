@@ -178,6 +178,9 @@ def hasattr(obj, attr: Static[str]):
 def getattr(obj, attr: Static[str]):
     pass
 
+def setattr(obj, attr: Static[str], what):
+    pass
+
 def tuple(iterable):
     pass
 

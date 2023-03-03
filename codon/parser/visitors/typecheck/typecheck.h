@@ -139,11 +139,13 @@ private: // Node typechecking rules
   ExprPtr transformStaticLen(CallExpr *expr);
   ExprPtr transformHasAttr(CallExpr *expr);
   ExprPtr transformGetAttr(CallExpr *expr);
+  ExprPtr transformSetAttr(CallExpr *expr);
   ExprPtr transformCompileError(CallExpr *expr);
   ExprPtr transformTupleFn(CallExpr *expr);
   ExprPtr transformTypeFn(CallExpr *expr);
   ExprPtr transformRealizedFn(CallExpr *expr);
   ExprPtr transformStaticPrintFn(CallExpr *expr);
+  ExprPtr transformInternalStaticFn(CallExpr *expr);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
   void addFunctionGenerics(const types::FuncType *t);
   std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
@@ -213,6 +215,7 @@ private:
   types::FuncTypePtr
   findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
+  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
@@ -228,6 +231,10 @@ public:
   friend class Cache;
   friend class types::CallableTrait;
   friend class types::UnionType;
+
+private: // Helpers
+  std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
+      unpackTupleTypes(ExprPtr);
 };
 
 } // namespace codon::ast

@@ -168,17 +168,22 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
   auto fn = [&](const std::string &var, const ExprPtr &expr) {
-    bool staticInt = expr->isStatic();
-    auto t = NT<IndexExpr>(
-        N<IdExpr>("Static"),
-        N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
     auto brk = N<BreakStmt>();
     brk->setDone(); // Avoid transforming this one to continue
     // var [: Static] := expr; suite...
-    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
-                             N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(var), expr->clone(),
-                                                        staticInt ? t : nullptr),
-                                          clone(stmt->suite), brk));
+    auto loop = N<WhileStmt>(
+        N<IdExpr>(loopVar),
+        N<SuiteStmt>(
+            expr ? N<AssignStmt>(N<IdExpr>(var), expr->clone(),
+                                 expr->isStatic()
+                                     ? NT<IndexExpr>(N<IdExpr>("Static"),
+                                                     N<IdExpr>(expr->staticValue.type ==
+                                                                       StaticValue::INT
+                                                                   ? "int"
+                                                                   : "str"))
+                                     : nullptr)
+                 : nullptr,
+            clone(stmt->suite), brk));
     loop->gotoVar = loopVar;
     return loop;
   };
@@ -212,6 +217,55 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
       E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, ed);
     for (int i = 0; i < ed; i++)
       block->stmts.push_back(fn(var, N<IntExpr>(i)));
+  } else if (iter && startswith(iter->value, "std.internal.static.fn_overloads")) {
+    if (auto fna = ctx->getFunctionArgs(iter->type)) {
+      auto [generics, args] = *fna;
+      auto typ = generics[0]->getClass();
+      auto name = ctx->getStaticString(generics[1]);
+      seqassert(name, "bad static string");
+      if (auto n = in(ctx->cache->classes[typ->name].methods, *name)) {
+        for (auto &method : ctx->cache->overloads[*n]) {
+          if (endswith(method.name, ":dispatch") ||
+              !ctx->cache->functions[method.name].type)
+            continue;
+          if (method.age <= ctx->age)
+            block->stmts.push_back(fn(var, N<IdExpr>(method.name)));
+        }
+      }
+    } else {
+      error("bad call to fn_overloads");
+    }
+  } else if (iter && startswith(iter->value, "std.internal.static.fn_args")) {
+    auto &suiteVec = stmt->suite->getSuite()->stmts;
+    int validI = 0;
+    for (; validI < suiteVec.size(); validI++) {
+      if (auto a = suiteVec[validI]->getAssign())
+        if (auto i = suiteVec[0]->getAssign()->rhs->getIndex())
+          if (i->expr->isId(var))
+            continue;
+      break;
+    }
+    if (validI != 2)
+      error("fn_args needs two variables in for loop");
+
+    if (auto fna = ctx->getFunctionArgs(iter->type)) {
+      auto [generics, args] = *fna;
+      auto typ = ctx->extractFunction(args[0]);
+      if (!typ)
+        error("fn_args needs a function");
+      for (size_t i = 0; i < typ->ast->args.size(); i++) {
+        suiteVec[0]->getAssign()->rhs = N<IntExpr>(i);
+        suiteVec[0]->getAssign()->type =
+            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"));
+        suiteVec[1]->getAssign()->rhs =
+            N<StringExpr>(ctx->cache->rev(typ->ast->args[i].name));
+        suiteVec[1]->getAssign()->type =
+            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("str"));
+        block->stmts.push_back(fn("", nullptr));
+      }
+    } else {
+      error("bad call to fn_args");
+    }
   } else {
     return nullptr;
   }
@@ -226,6 +280,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
       transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
                              N<WhileStmt>(N<IdExpr>(loopVar), block)));
   ctx->blockLevel--;
+  // LOG("-> {} :: {}", getSrcInfo(), loop->toString(2));
   return loop;
 }
 

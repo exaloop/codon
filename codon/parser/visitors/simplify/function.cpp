@@ -257,6 +257,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     stmt->attributes.parentClass = ctx->getBase()->name;
     // Add the method to the class' method list
     ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
+  } else {
+    // Hack so that we can later use same helpers for class overloads
+    ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
   }
 
   // Handle captures. Add additional argument to the function for every capture.

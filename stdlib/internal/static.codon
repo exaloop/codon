@@ -1,0 +1,18 @@
+
+def fn_overloads(T: type, F: Static[str]):
+    pass
+
+def fn_args(F):  # function: (i, name)
+    pass
+
+def fn_arg_has_type(F, i: Static[int]):
+    pass
+
+def fn_arg_get_type(F, i: Static[int]):
+    pass
+
+def fn_can_call(F, *args, **kwargs):
+    pass
+
+def class_args(T: type):
+    pass

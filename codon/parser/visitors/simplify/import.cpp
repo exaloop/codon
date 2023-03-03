@@ -90,7 +90,6 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
         // `__` while the standard library is being loaded
         auto c = i.second.front();
         if (c->isConditional() && i.first.find('.') == std::string::npos) {
-          LOG("-> fix {} :: {}", import.moduleName, i.first);
           c = import.ctx->findDominatingBinding(i.first);
         }
         // Imports should ignore  noShadow property

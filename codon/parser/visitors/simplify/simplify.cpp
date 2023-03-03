@@ -86,6 +86,8 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
 
   // Prepare the code
   auto suite = N<SuiteStmt>();
+  suite->stmts.push_back(N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
+                                      std::vector<ExprPtr>{N<IdExpr>(Attr::Internal)}));
   for (auto &d : defines) {
     // Load compile-time defines (e.g., codon run -DFOO=1 ...)
     suite->stmts.push_back(

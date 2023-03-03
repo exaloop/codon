@@ -17,6 +17,7 @@
 build/
 build_*/
 install/
+install_*/
 extra/python/src/jit.cpp
 extra/jupyter/build/
 

@@ -166,6 +166,12 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(N<StringExpr>(expr->expr->type->prettyString()));
     return nullptr;
   }
+  // Special case: expr.__is_static__
+  if (expr->member == "__is_static__") {
+    if (expr->expr->isDone())
+      return transform(N<BoolExpr>(expr->expr->isStatic()));
+    return nullptr;
+  }
   // Special case: cls.__vtable_id__
   if (expr->expr->isType() && expr->member == "__vtable_id__") {
     if (auto c = realize(expr->expr->type))

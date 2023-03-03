@@ -157,6 +157,13 @@ private:
   void dump(int pad);
   /// Pretty-print the current realization context.
   std::string debugInfo();
+
+public:
+  std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
+  getFunctionArgs(types::TypePtr t);
+  std::shared_ptr<std::string> getStaticString(types::TypePtr t);
+  std::shared_ptr<int64_t> getStaticInt(types::TypePtr t);
+  types::FuncTypePtr extractFunction(types::TypePtr t);
 };
 
 } // namespace codon::ast
