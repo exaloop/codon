@@ -1641,7 +1641,7 @@ class _PyWrap:
                     return fn(*an).__to_py__()
             except PyError:
                 pass
-        PyError("cannot dispatch " + F)
+        raise PyError("cannot dispatch " + F)
 
     def wrap_multiple(obj: cobj, args: Ptr[cobj], nargs: int, T: type, F: Static[str]):
         # print(f'[c] nonmethod: {T.__class__.__name__} {F} {obj} {args} {nargs}')
@@ -1661,7 +1661,7 @@ class _PyWrap:
                     return fn(*an).__to_py__()
             except PyError:
                 pass
-        PyError("cannot dispatch " + F)
+        raise PyError("cannot dispatch " + F)
 
     def wrap_get(obj: cobj, closure: cobj, T: type, S: Static[str]):
         return getattr(T.__from_py__(obj), S).__to_py__()
