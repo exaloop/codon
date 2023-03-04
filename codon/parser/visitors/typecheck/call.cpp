@@ -966,8 +966,7 @@ ExprPtr TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
       auto n = fn->ast->args[i].name;
       trimStars(n);
       n = ctx->cache->rev(n);
-      v.push_back(N<TupleExpr>(std::vector<ExprPtr>{
-          N<IntExpr>(i), N<StringExpr>(n)}));
+      v.push_back(N<TupleExpr>(std::vector<ExprPtr>{N<IntExpr>(i), N<StringExpr>(n)}));
     }
     return transform(N<TupleExpr>(v));
   } else {

@@ -445,13 +445,12 @@ void Cache::populatePythonModule() {
         } else if (n == "__init__") {
           py.init = f;
         } else {
-          py.methods.push_back(
-              ir::PyFunction{n, fna->getDocstr(), f,
-                             fna->hasAttr(Attr::Method) ? ir::PyFunction::Type::METHOD
-                                                        : ir::PyFunction::Type::CLASS,
-                             // always use FASTCALL for now; works even for 0- or 1- arg methods
-                             2
-                             });
+          py.methods.push_back(ir::PyFunction{
+              n, fna->getDocstr(), f,
+              fna->hasAttr(Attr::Method) ? ir::PyFunction::Type::METHOD
+                                         : ir::PyFunction::Type::CLASS,
+              // always use FASTCALL for now; works even for 0- or 1- arg methods
+              2});
         }
       }
 
