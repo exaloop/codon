@@ -23,6 +23,7 @@ PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
 PyList_New = Function[[int], cobj](cobj())
+PyList_Size = Function[[cobj], int](cobj())
 PyList_GetItem = Function[[cobj, int], cobj](cobj())
 PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
@@ -204,6 +205,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PyBool_FromLong
     global PyBytes_AsString
     global PyList_New
+    global PyList_Size
     global PyList_GetItem
     global PyList_SetItem
     global PyDict_New
@@ -330,6 +332,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
     PyBytes_AsString = dlsym(py_handle, "PyBytes_AsString")
     PyList_New = dlsym(py_handle, "PyList_New")
+    PyList_Size = dlsym(py_handle, "PyList_Size")
     PyList_GetItem = dlsym(py_handle, "PyList_GetItem")
     PyList_SetItem = dlsym(py_handle, "PyList_SetItem")
     PyDict_New = dlsym(py_handle, "PyDict_New")
@@ -457,6 +460,7 @@ def init_handles_static():
     from C import PyBool_FromLong(int) -> cobj as _PyBool_FromLong
     from C import PyBytes_AsString(cobj) -> cobj as _PyBytes_AsString
     from C import PyList_New(int) -> cobj as _PyList_New
+    from C import PyList_Size(cobj) -> int as _PyList_Size
     from C import PyList_GetItem(cobj, int) -> cobj as _PyList_GetItem
     from C import PyList_SetItem(cobj, int, cobj) -> cobj as _PyList_SetItem
     from C import PyDict_New() -> cobj as _PyDict_New
@@ -583,6 +587,7 @@ def init_handles_static():
     global PyBool_FromLong
     global PyBytes_AsString
     global PyList_New
+    global PyList_Size
     global PyList_GetItem
     global PyList_SetItem
     global PyDict_New
@@ -709,6 +714,7 @@ def init_handles_static():
     PyBool_FromLong = _PyBool_FromLong
     PyBytes_AsString = _PyBytes_AsString
     PyList_New = _PyList_New
+    PyList_Size = _PyList_Size
     PyList_GetItem = _PyList_GetItem
     PyList_SetItem = _PyList_SetItem
     PyDict_New = _PyDict_New
@@ -1221,8 +1227,12 @@ class _PyObject_Struct:
     refcnt: int
     pytype: cobj
 
-def _is_type(o: cobj, t: cobj):
-    return Ptr[_PyObject_Struct](o)[0].pytype == t
+def _conversion_error(name: Static[str]):
+    raise PyError("conversion error: Python object did not have type '" + name + "'")
+
+def _ensure_type(o: cobj, t: cobj, name: Static[str]):
+    if Ptr[_PyObject_Struct](o)[0].pytype != t:
+        _conversion_error(name)
 
 
 # Type conversions
@@ -1233,10 +1243,9 @@ class NoneType:
         Py_IncRef(Py_None)
         return Py_None
 
-    def __from_py__(i: cobj) -> None:
-        return
-
-    def __try_from_py__(i: cobj) -> Optional[NoneType]:
+    def __from_py__(x: cobj) -> None:
+        if x != Py_None:
+            _conversion_error("NoneType")
         return
 
 @extend
@@ -1247,11 +1256,6 @@ class int:
     def __from_py__(i: cobj) -> int:
         return pyobj.exc_wrap(PyLong_AsLong(i))
 
-    def __try_from_py__(i: cobj) -> Optional[int]:
-        if _is_type(i, PyLong_Type):
-            return PyLong_AsLong(i)
-        return None
-
 @extend
 class float:
     def __to_py__(self) -> cobj:
@@ -1260,23 +1264,14 @@ class float:
     def __from_py__(d: cobj) -> float:
         return pyobj.exc_wrap(PyFloat_AsDouble(d))
 
-    def __try_from_py__(d: cobj) -> Optional[float]:
-        if _is_type(d, PyFloat_Type):
-            return PyFloat_AsDouble(d)
-        return None
-
 @extend
 class bool:
     def __to_py__(self) -> cobj:
         return pyobj.exc_wrap(PyBool_FromLong(int(self)))
 
     def __from_py__(b: cobj) -> bool:
-        return pyobj.exc_wrap(PyObject_IsTrue(b)) != 0
-
-    def __try_from_py__(b: cobj) -> Optional[bool]:
-        if _is_type(b, PyBool_Type):
-            return PyObject_IsTrue(b) != 0
-        return None
+        _ensure_type(b, PyBool_Type, "bool")
+        return PyObject_IsTrue(b) != 0
 
 @extend
 class byte:
@@ -1286,12 +1281,6 @@ class byte:
     def __from_py__(c: cobj) -> byte:
         return str.__from_py__(c).ptr[0]
 
-    def __try_from_py__(c: cobj) -> Optional[byte]:
-        x = str.__try_from_py__(c)
-        if x is None or len(x) != 1:
-            return None
-        return x.ptr[0]
-
 @extend
 class str:
     def __to_py__(self) -> cobj:
@@ -1300,27 +1289,16 @@ class str:
     def __from_py__(s: cobj) -> str:
         return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
 
-    def __try_from_py__(s: cobj) -> Optional[str]:
-        if _is_type(s, PyUnicode_Type):
-            return pyobj.to_str(s, "strict")
-        return None
-
 @extend
 class complex:
     def __to_py__(self) -> cobj:
         return pyobj.exc_wrap(PyComplex_FromDoubles(self.real, self.imag))
 
     def __from_py__(c: cobj) -> complex:
-        real = pyobj.exc_wrap(PyComplex_RealAsDouble(c))
-        imag = pyobj.exc_wrap(PyComplex_ImagAsDouble(c))
+        _ensure_type(c, PyComplex_Type, "complex")
+        real = PyComplex_RealAsDouble(c)
+        imag = PyComplex_ImagAsDouble(c)
         return complex(real, imag)
-
-    def __try_from_py__(c: cobj) -> Optional[complex]:
-        if _is_type(c, PyComplex_Type):
-            real = PyComplex_RealAsDouble(c)
-            imag = PyComplex_ImagAsDouble(c)
-            return complex(real, imag)
-        return None
 
 @extend
 class List:
@@ -1335,26 +1313,13 @@ class List:
         return pylist
 
     def __from_py__(v: cobj) -> List[T]:
-        n = pyobj.exc_wrap(PyObject_Length(v))
+        _ensure_type(v, PyList_Type, "list")
+        n = PyList_Size(v)
         t = List[T](n)
         for i in range(n):
             elem = PyList_GetItem(v, i)
-            pyobj.exc_check()
             t.append(T.__from_py__(elem))
         return t
-
-    def __try_from_py__(v: cobj) -> Optional[List[T]]:
-        if _is_type(v, PyList_Type):
-            n = PyObject_Length(v)
-            t = List[T](n)
-            for i in range(n):
-                elem = PyList_GetItem(v, i)
-                x = T.__try_from_py__(elem)
-                if x is None:
-                    return None
-                t.append(x)
-            return t
-        return None
 
 @extend
 class Dict:
@@ -1367,31 +1332,16 @@ class Dict:
         return pydict
 
     def __from_py__(d: cobj) -> Dict[K, V]:
+        _ensure_type(d, PyDict_Type, "dict")
         b = dict[K, V]()
         pos = 0
         k_ptr = cobj()
         v_ptr = cobj()
         while PyDict_Next(d, __ptr__(pos), __ptr__(k_ptr), __ptr__(v_ptr)):
-            pyobj.exc_check()
             k = K.__from_py__(k_ptr)
             v = V.__from_py__(v_ptr)
             b[k] = v
         return b
-
-    def __try_from_py__(d: cobj) -> Optional[Dict[K, V]]:
-        if _is_type(d, PyDict_Type):
-            b = dict[K, V]()
-            pos = 0
-            k_ptr = cobj()
-            v_ptr = cobj()
-            while PyDict_Next(d, __ptr__(pos), __ptr__(k_ptr), __ptr__(v_ptr)):
-                k = K.__try_from_py__(k_ptr)
-                v = V.__try_from_py__(v_ptr)
-                if k is None or v is None:
-                    return None
-                b[k] = v
-            return b
-        return None
 
 @extend
 class Set:
@@ -1404,8 +1354,9 @@ class Set:
         return pyset
 
     def __from_py__(s: cobj) -> Set[K]:
+        _ensure_type(s, PySet_Type, "set")
         b = set[K]()
-        s_iter = pyobj.exc_wrap(PyObject_GetIter(s))
+        s_iter = PyObject_GetIter(s)
         while True:
             k_ptr = pyobj.exc_wrap(PyIter_Next(s_iter))
             if not k_ptr:
@@ -1415,23 +1366,6 @@ class Set:
             b.add(k)
         pyobj.decref(s_iter)
         return b
-
-    def __try_from_py__(s: cobj) -> Optional[Set[K]]:
-        if _is_type(s, PySet_Type):
-            b = set[K]()
-            s_iter = PyObject_GetIter(s)
-            while True:
-                k_ptr = PyIter_Next(s_iter)
-                if not k_ptr:
-                    break
-                k = K.__try_from_py__(k_ptr)
-                if k is None:
-                    return None
-                pyobj.decref(k_ptr)
-                b.add(k)
-            pyobj.decref(s_iter)
-            return b
-        return None
 
 @extend
 class DynamicTuple:
@@ -1445,23 +1379,12 @@ class DynamicTuple:
         return pytup
 
     def __from_py__(t: cobj) -> DynamicTuple[T]:
-        n = pyobj.exc_wrap(PyTuple_Size(t))
+        _ensure_type(t, PyTuple_Type, "tuple")
+        n = PyTuple_Size(t)
         p = Ptr[T](n)
         for i in range(n):
             p[i] = T.__from_py__(PyTuple_GetItem(t, i))
         return DynamicTuple(p, n)
-
-    def __try_from_py__(t: cobj) -> Optional[DynamicTuple[T]]:
-        if _is_type(t, PyTuple_Type):
-            n = PyTuple_Size(t)
-            p = Ptr[T](n)
-            for i in range(n):
-                x = T.__try_from_py__(PyTuple_GetItem(t, i))
-                if x is None:
-                    return None
-                p[i] = x
-            return DynamicTuple(p, n)
-        return None
 
 @extend
 class Slice:
@@ -1475,20 +1398,12 @@ class Slice:
         return PySlice_New(start_py, stop_py, step_py)
 
     def __from_py__(s: cobj) -> Slice:
+        _ensure_type(s, PySlice_Type, "slice")
         start = 0
         stop = 0
         step = 0
-        pyobj.exc_wrap(PySlice_Unpack(s, __ptr__(start), __ptr__(stop), __ptr__(step)))
+        PySlice_Unpack(s, __ptr__(start), __ptr__(stop), __ptr__(step))
         return Slice(Optional(start), Optional(stop), Optional(step))
-
-    def __try_from_py__(s: cobj) -> Optional[Slice]:
-        if _is_type(s, PySlice_Type):
-            start = 0
-            stop = 0
-            step = 0
-            PySlice_Unpack(s, __ptr__(start), __ptr__(stop), __ptr__(step))
-            return Slice(Optional(start), Optional(stop), Optional(step))
-        return None
 
 @extend
 class Optional:
@@ -1503,12 +1418,6 @@ class Optional:
             return Optional[T]()
         else:
             return Optional[T](T.__from_py__(o))
-
-    def __try_from_py__(o: cobj) -> Optional[Optional[T]]:
-        if o == Py_None:
-            return Optional[Optional[T]]()
-        else:
-            return Optional[Optional[T]](T.__try_from_py__(o))
 
 
 __pyenv__: Optional[pyobj] = None
