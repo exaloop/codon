@@ -840,7 +840,7 @@ ExprPtr TypecheckVisitor::transformSetAttr(CallExpr *expr) {
   return transform(N<StmtExpr>(N<AssignMemberStmt>(expr->args[0].value,
                                                    staticTyp->evaluate().getString(),
                                                    expr->args[1].value),
-                               N<NoneExpr>()));
+                               N<CallExpr>(N<IdExpr>("NoneType"))));
 }
 
 /// Raise a compiler error.
@@ -872,6 +872,7 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
 ExprPtr TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   expr->markType();
   transform(expr->args[0].value);
+
   unify(expr->type, expr->args[0].value->getType());
 
   if (!realize(expr->type))
@@ -961,9 +962,13 @@ ExprPtr TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
     std::vector<ExprPtr> v;
-    for (size_t i = 0; i < fn->ast->args.size(); i++)
+    for (size_t i = 0; i < fn->ast->args.size(); i++) {
+      auto n = fn->ast->args[i].name;
+      trimStars(n);
+      n = ctx->cache->rev(n);
       v.push_back(N<TupleExpr>(std::vector<ExprPtr>{
-          N<IntExpr>(i), N<StringExpr>(ctx->cache->rev(fn->ast->args[i].name))}));
+          N<IntExpr>(i), N<StringExpr>(n)}));
+    }
     return transform(N<TupleExpr>(v));
   } else {
     return nullptr;

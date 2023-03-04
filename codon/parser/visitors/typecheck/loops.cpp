@@ -224,7 +224,9 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
       auto name = ctx->getStaticString(generics[1]);
       seqassert(name, "bad static string");
       if (auto n = in(ctx->cache->classes[typ->name].methods, *name)) {
-        for (auto &method : ctx->cache->overloads[*n]) {
+        auto &mt = ctx->cache->overloads[*n];
+        for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+          auto &method = mt[mti];
           if (endswith(method.name, ":dispatch") ||
               !ctx->cache->functions[method.name].type)
             continue;
