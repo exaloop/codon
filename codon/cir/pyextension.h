@@ -18,6 +18,7 @@ struct PyFunction {
   Func *func = nullptr;
   Type type = Type::TOPLEVEL;
   int nargs = 0;
+  bool keywords = false;
   bool coexist = false;
 };
 

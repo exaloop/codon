@@ -756,16 +756,20 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     std::vector<llvm::Constant *> pyMethods;
     for (auto &pyfunc : functions) {
       int flag = 0;
-      switch (pyfunc.nargs) {
-      case 0:
-        flag = PYEXT_METH_NOARGS;
-        break;
-      case 1:
-        flag = PYEXT_METH_O;
-        break;
-      default:
-        flag = PYEXT_METH_FASTCALL;
-        break;
+      if (pyfunc.keywords) {
+        flag = PYEXT_METH_FASTCALL | PYEXT_METH_KEYWORDS;
+      } else {
+        switch (pyfunc.nargs) {
+        case 0:
+          flag = PYEXT_METH_NOARGS;
+          break;
+        case 1:
+          flag = PYEXT_METH_O;
+          break;
+        default:
+          flag = PYEXT_METH_FASTCALL;
+          break;
+        }
       }
 
       switch (pyfunc.type) {
