@@ -522,15 +522,20 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   if (plugins) {
     for (auto *plugin : *plugins) {
-      auto dylibPath = plugin->info.dylibPath;
-      if (dylibPath.empty())
-        continue;
+      if (plugin->info.linkArgs.empty()) {
+        auto dylibPath = plugin->info.dylibPath;
+        if (dylibPath.empty())
+          continue;
 
-      auto stem = llvm::sys::path::stem(dylibPath);
-      if (stem.startswith("lib"))
-        stem = stem.substr(3);
+        auto stem = llvm::sys::path::stem(dylibPath);
+        if (stem.startswith("lib"))
+          stem = stem.substr(3);
 
-      command.push_back("-l" + stem.str());
+        command.push_back("-l" + stem.str());
+      } else {
+        for (auto &l: plugin->info.linkArgs)
+          command.push_back(l);
+      }
     }
   }
 
