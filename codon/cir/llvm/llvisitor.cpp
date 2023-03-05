@@ -484,7 +484,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     rpaths.push_back(std::string(path));
   }
 
-  std::vector<std::string> command = {"gcc"};
+  std::vector<std::string> command = {"g++"};
   // Avoid "argument unused during compilation" warning
   command.push_back("-Wno-unused-command-line-argument");
   // MUST go before -llib to compile on Linux
