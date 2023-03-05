@@ -1,0 +1,9 @@
+{
+    "display_name": "Codon",
+    "argv": [
+        "/usr/local/bin/",
+        "jupyter",
+        "{connection_file}"
+    ],
+    "language": "python"
+}
