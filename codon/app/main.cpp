@@ -14,6 +14,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
+#include "codon/util/jupyter.h"
 #include "codon/util/common.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
@@ -384,15 +385,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   return EXIT_SUCCESS;
 }
 
-#ifdef CODON_JUPYTER
-namespace codon {
-int startJupyterKernel(const std::string &argv0,
-                       const std::vector<std::string> &plugins,
-                       const std::string &configPath);
-}
-#endif
 int jupyterMode(const std::vector<const char *> &args) {
-#ifdef CODON_JUPYTER
   llvm::cl::list<std::string> plugins("plugin",
                                       llvm::cl::desc("Load specified plugin"));
   llvm::cl::opt<std::string> input(llvm::cl::Positional,
@@ -401,11 +394,6 @@ int jupyterMode(const std::vector<const char *> &args) {
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   int code = codon::startJupyterKernel(args[0], plugins, input);
   return code;
-#else
-  fmt::print("Jupyter support not included. Please recompile with "
-             "-DCODON_JUPYTER.");
-  return EXIT_FAILURE;
-#endif
 }
 
 void showCommandsAndExit() {

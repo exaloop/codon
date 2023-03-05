@@ -107,13 +107,16 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    auto staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args,
-                                           stmt->attributes, canonicalName);
-    if (ctx->cache->isJit && !stmt->baseClasses.empty())
-      E(Error::CUSTOM, stmt->baseClasses[0],
-        "inheritance is not yet supported in JIT mode");
-    auto baseASTs = parseBaseClasses(stmt->baseClasses, args, stmt->attributes,
-                                     canonicalName, transformedTypeAst);
+    std::vector<ClassStmt *> staticBaseASTs, baseASTs;
+    if (!stmt->attributes.has(Attr::Extend)) {
+      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes,
+                                        canonicalName);
+      if (ctx->cache->isJit && !stmt->baseClasses.empty())
+        E(Error::CUSTOM, stmt->baseClasses[0],
+          "inheritance is not yet supported in JIT mode");
+      parseBaseClasses(stmt->baseClasses, args, stmt->attributes, canonicalName,
+                       transformedTypeAst);
+    }
 
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
