@@ -920,8 +920,8 @@ print(1 - a) #: [ 0 -1 -2]
 from python import re.split(str, str) -> List[str] as rs
 print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
-#%% python_import_void
-from python import os.system(str) -> None
+#%% python_import_fn_2
+from python import os.system(str) -> int
 system("echo 'hello!'")  #: hello!
 
 #%% python_pydef
