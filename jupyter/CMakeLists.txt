@@ -79,7 +79,7 @@ CPMAddPackage(
     VERSION 2.2.0
     GIT_TAG 2.2.0
     EXCLUDE_FROM_ALL YES
-    PATCH_COMMAND patch -N -u CMakeLists.txt -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
+    PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
     OPTIONS "BUILD_EXAMPLES OFF"
             "XEUS_BUILD_SHARED_LIBS OFF"
             "XEUS_STATIC_DEPENDENCIES ON"
