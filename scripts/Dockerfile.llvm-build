@@ -1,7 +1,10 @@
 FROM quay.io/pypa/manylinux2014_x86_64
 
 RUN yum -y update
-RUN yum -y install devtoolset-7 ninja-build cmake3
+RUN yum -y install devtoolset-7 ninja-build cmake3 bzip2-devel
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install --upgrade twine setuptools wheel
+
 RUN mkdir -p /opt/llvm-codon
 RUN git clone --depth 1 -b codon https://github.com/exaloop/llvm-project /github/llvm-src
 RUN scl enable devtoolset-7 -- \
@@ -19,4 +22,5 @@ RUN scl enable devtoolset-7 -- \
 RUN scl enable devtoolset-7 -- cmake3 --build /github/llvm-src/llvm/build
 RUN cmake3 --install /github/llvm-src/llvm/build
 RUN cd /github/llvm-src && tar cjvf /opt/llvm-codon-$(git rev-parse --short HEAD).tar.bz2 -C /opt llvm-codon/
-CMD cp /opt/llvm-codon-*.tar.bz2 /mnt/
+RUN cp /opt/llvm-codon-*.tar.bz2 /mnt/
+CMD echo "done"

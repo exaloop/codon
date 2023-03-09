@@ -13,6 +13,10 @@ if(NOT CODON_PATH)
     set(CODON_PATH "$ENV{HOME}/.codon")
 endif()
 message(STATUS "Found Codon in ${CODON_PATH}")
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "${CODON_PATH}/lib/codon/" CACHE PATH "Use the existing Codon installation" FORCE)
+endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -93,3 +97,5 @@ target_include_directories(codon_jupyter PRIVATE "${CODON_PATH}/include" ${LLVM_
 add_dependencies(codon_jupyter xeus-static nlohmann_json)
 target_link_directories(codon_jupyter PRIVATE "${CODON_PATH}/lib/codon")
 target_link_libraries(codon_jupyter PRIVATE xeus-static codonc)
+
+install(TARGETS codon_jupyter DESTINATION .)
