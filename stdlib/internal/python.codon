@@ -877,6 +877,24 @@ def ensure_initialized(python_loaded: bool = False):
 def setup_decorator():
     setup_python(True)
 
+@tuple
+class _PyArg_Parser:
+    initialized: i32
+    format: cobj
+    keywords: Ptr[cobj]
+    fname: cobj
+    custom_msg: cobj
+    pos: i32
+    min: i32
+    max: i32
+    kwtuple: cobj
+    next: cobj
+
+    def __new__(fname: cobj, keywords: Ptr[cobj], format: cobj):
+        z = i32(0)
+        o = cobj()
+        return _PyArg_Parser(z, format, keywords, fname, o, z, z, z, o, o)
+
 @extend
 class pyobj:
     @__internal__
