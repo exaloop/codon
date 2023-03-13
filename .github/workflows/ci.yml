@@ -39,7 +39,7 @@ jobs:
 
       - name: Save Release URL File for Publish
         if: steps.check.outputs.MAKE_RELEASE
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v3
         with:
           name: release_url
           path: release_url.txt
@@ -49,11 +49,11 @@ jobs:
     name: Codon CI (manylinux)
     needs: [ release ]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Cache Dependencies
         id: cache-deps
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: llvm
           key: manylinux-llvm
@@ -63,7 +63,7 @@ jobs:
 
       - name: Load Release URL File
         if: contains(github.ref, 'tags/v')
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v3
         with:
           name: release_url
 
@@ -105,8 +105,8 @@ jobs:
     name: Codon CI
     needs: [ release ]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
@@ -133,7 +133,7 @@ jobs:
 
       - name: Cache Dependencies
         id: cache-deps
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: llvm
           key: ${{ runner.os }}-llvm
@@ -191,7 +191,7 @@ jobs:
 
       - name: Load Release URL File
         if: contains(github.ref, 'tags/v')
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v3
         with:
           name: release_url
 
