@@ -1652,22 +1652,21 @@ class _PyWrap:
         return _PyWrap.IterWrap._init(obj, T)
 
     def wrap_multiple(
-        obj: cobj, _args: cobj, nargs: int, _kwds: cobj, T: type, F: Static[str],
+        obj: cobj, args: Ptr[cobj], nargs: int, _kwds: cobj, T: type, F: Static[str],
         M: Static[int] = 1
     ):
-        args = _PyWrap._wrap_arg(_args)
         kwds = _PyWrap._wrap_arg(_kwds) if _kwds != cobj() else None
         for fn in _S.fn_overloads(T, F):
             try:
-                a = [pyobj(cobj(), steal=True) for _ in _S.fn_args(fn)]
+                ax = tuple(pyobj(cobj(), steal=True) for _ in _S.fn_args(fn))
+                a = Ptr[pyobj](__ptr__(ax).as_byte())
                 ai, ki = 0, 0
                 for i, n in staticenumerate(_S.fn_args(fn)):
                     if M == 1 and i == 0:
-                        print('le method')
                         a[i] = _PyWrap._wrap_arg(obj)
                         continue
                     if ai < nargs:
-                        a[i] = args[ai]
+                        a[i] = _PyWrap._wrap_arg(args[ai])
                         ai += 1
                     elif kwds and n in kwds:
                         a[i] = kwds[n]
