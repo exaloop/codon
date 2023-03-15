@@ -43,5 +43,5 @@ for accessing data (details below).
 - `fannkuch`: See [*Performing Lisp analysis of the FANNKUCH benchmark*](https://dl.acm.org/doi/10.1145/382109.382124) by Kenneth R. Anderson and Duane Rettig. Benchmark
               involves generating permutations and repeatedly reversing elements of a list. Codon version is multithreaded with a dynamic schedule via one additional
               `@par(schedule='dynamic')` line.
-- `word_count`: Counts occurences of words in a file using a dictionary. The file should be passed to the benchmark script through the `DATA_WORD_COUNT` environment variable.
+- `word_count`: Counts occurrences of words in a file using a dictionary. The file should be passed to the benchmark script through the `DATA_WORD_COUNT` environment variable.
 - `primes`: Counts the number of prime numbers below a threshold. Codon version is multithreaded with a dynamic schedule via one additional `@par(schedule='dynamic')` line.
