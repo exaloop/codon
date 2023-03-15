@@ -966,9 +966,30 @@ ExprPtr TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
       auto n = fn->ast->args[i].name;
       trimStars(n);
       n = ctx->cache->rev(n);
-      v.push_back(N<TupleExpr>(std::vector<ExprPtr>{N<IntExpr>(i), N<StringExpr>(n)}));
+      v.push_back(N<StringExpr>(n));
     }
     return transform(N<TupleExpr>(v));
+  } else if (expr->expr->isId("std.internal.static.fn_has_default")) {
+    expr->staticValue.type = StaticValue::INT;
+    auto fn = expr->args[0].value->type->getFunc();
+    if (!fn)
+      error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
+    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    seqassert(idx, "expected a static integer");
+    auto &args = fn->ast->args;
+    if (*idx < 0 || *idx >= args.size())
+      error("argument out of bounds");
+    return transform(N<IntExpr>(args[*idx].defaultValue != nullptr));
+  } else if (expr->expr->isId("std.internal.static.fn_get_default")) {
+    auto fn = expr->args[0].value->type->getFunc();
+    if (!fn)
+      error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
+    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    seqassert(idx, "expected a static integer");
+    auto &args = fn->ast->args;
+    if (*idx < 0 || *idx >= args.size())
+      error("argument out of bounds");
+    return transform(args[*idx].defaultValue);
   } else {
     return nullptr;
   }

@@ -1443,6 +1443,17 @@ def _____(): __pyenv__  # make it global!
 
 
 import internal.static as _S
+
+
+class _PyWrapError(Static[PyError]):
+    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
+        super().__init__("_PyWrapError", message)
+        self.pytype = pytype
+
+    def __init__(self, e: PyError):
+        self.__init__("_PyWrapError", e.message, e.pytype)
+
+
 class _PyWrap:
     def _wrap_arg(arg: cobj):
         return pyobj(arg, steal=True)
@@ -1451,7 +1462,7 @@ class _PyWrap:
             if _S.fn_can_call(fn, *args):
                 try:
                     return map(fn, args)
-                except PyError:
+                except PyError as e:
                     pass
         raise PyError("cannot dispatch " + F)
 
@@ -1524,7 +1535,7 @@ class _PyWrap:
                 a = tuple(
                     _PyWrap._wrap_arg(obj) if i == 0 else
                     (kwds[n] if kwds and n in kwds else args[(ai := ai + 1)])
-                    for i, n in _S.fn_args(fn)
+                    for i, n in staticenumerate(_S.fn_args(fn))
                 )
                 if ai + 1 != args.__len__():
                     continue
@@ -1545,7 +1556,7 @@ class _PyWrap:
                 a = tuple(
                     _PyWrap._wrap_arg(obj) if i == 0 else
                     (kwds[n] if kwds and n in kwds else args[(ai := ai + 1)])
-                    for i, n in _S.fn_args(fn)
+                    for i, n in staticenumerate(_S.fn_args(fn))
                 )
                 if ai + 1 != args.__len__():
                     continue
@@ -1640,43 +1651,40 @@ class _PyWrap:
         # print('[c] iter')
         return _PyWrap.IterWrap._init(obj, T)
 
-    def wrap_multiple_method(obj: cobj, args: Ptr[cobj], nargs: int, T: type, F: Static[str]):
-        # print(f'[c] method: {T.__class__.__name__} {F} {obj} {args} {nargs}')
-        def _err() -> pyobj:
-            raise PyError("argument mismatch")
-
+    def wrap_multiple(
+        obj: cobj, _args: cobj, nargs: int, _kwds: cobj, T: type, F: Static[str],
+        M: Static[int] = 1
+    ):
+        args = _PyWrap._wrap_arg(_args)
+        kwds = _PyWrap._wrap_arg(_kwds) if _kwds != cobj() else None
         for fn in _S.fn_overloads(T, F):
             try:
-                ai = -1
-                an = tuple(
-                    _PyWrap._wrap_arg(obj) if i == 0 else
-                    (_PyWrap._wrap_arg(args[i]) if i < nargs else _err())
-                    for i, _ in _S.fn_args(fn)
-                )
-                if len(an) != nargs + 1:
-                    _err()
-                if _S.fn_can_call(fn, *an):
-                    return fn(*an).__to_py__()
-            except PyError:
-                pass
-        raise PyError("cannot dispatch " + F)
+                a = [pyobj(cobj(), steal=True) for _ in _S.fn_args(fn)]
+                ai, ki = 0, 0
+                for i, n in staticenumerate(_S.fn_args(fn)):
+                    if M == 1 and i == 0:
+                        print('le method')
+                        a[i] = _PyWrap._wrap_arg(obj)
+                        continue
+                    if ai < nargs:
+                        a[i] = args[ai]
+                        ai += 1
+                    elif kwds and n in kwds:
+                        a[i] = kwds[n]
+                        ki += 1
+                    else:
+                        if _S.fn_has_default(fn, i):
+                            a[i] = _S.fn_get_default(fn, i)
+                        else:
+                            raise PyError("missing argument")
+                if ai < nargs:
+                    raise PyError("too many *args")
+                if kwds and ki < kwds.__len__():
+                    raise PyError("too many **kwargs")
+                ta = tuple(unwrap(a[i]) for i, _ in staticenumerate(_S.fn_args(fn)))
 
-    def wrap_multiple(obj: cobj, args: Ptr[cobj], nargs: int, T: type, F: Static[str]):
-        # print(f'[c] nonmethod: {T.__class__.__name__} {F} {obj} {args} {nargs}')
-        def _err() -> pyobj:
-            raise PyError("argument mismatch")
-
-        for fn in _S.fn_overloads(T, F):
-            try:
-                ai = -1
-                an = tuple(
-                    _PyWrap._wrap_arg(args[i]) if i < nargs else _err()
-                    for i, _ in _S.fn_args(fn)
-                )
-                if len(an) != nargs:
-                    _err()
-                if _S.fn_can_call(fn, *an):
-                    return fn(*an).__to_py__()
+                if _S.fn_can_call(fn, *ta):
+                    return fn(*ta).__to_py__()
             except PyError:
                 pass
         raise PyError("cannot dispatch " + F)
@@ -1707,3 +1715,5 @@ class _PyWrap:
         if obj.head.pytype != pytype:
             raise TypeError("Python object has incompatible type")
         return obj.data
+
+

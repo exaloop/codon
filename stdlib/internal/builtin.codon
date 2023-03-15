@@ -221,6 +221,11 @@ def enumerate(x, start: int = 0):
         yield (i, a)
         i += 1
 
+def staticenumerate(tup):
+    i = -1
+    return tuple(((i := i + 1), t) for t in tup)
+    i
+
 def echo(x):
     """
     Print and return argument

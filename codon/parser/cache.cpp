@@ -330,8 +330,6 @@ void Cache::populatePythonModule() {
         auto fna = functions[canonicalName].ast;
         bool isMethod = fna->hasAttr(Attr::Method);
         std::string call = pyWrap + ".wrap_multiple";
-        if (isMethod)
-          call += "_method";
         bool isMagic = false;
         if (startswith(n, "__") && endswith(n, "__")) {
           if (auto i = in(classes[pyWrap].methods,
@@ -346,6 +344,7 @@ void Cache::populatePythonModule() {
         auto generics = std::vector<types::TypePtr>{tc};
         if (!isMagic) {
           generics.push_back(std::make_shared<types::StaticType>(this, n));
+          generics.push_back(std::make_shared<types::StaticType>(this, (int)isMethod));
         }
         auto f = realizeIR(functions[fnName].type, generics);
         if (!f)
@@ -451,6 +450,7 @@ void Cache::populatePythonModule() {
                                          : ir::PyFunction::Type::CLASS,
               // always use FASTCALL for now; works even for 0- or 1- arg methods
               2});
+          py.methods.back().keywords = true;
         }
       }
 

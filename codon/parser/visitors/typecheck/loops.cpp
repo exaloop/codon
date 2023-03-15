@@ -237,7 +237,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     } else {
       error("bad call to fn_overloads");
     }
-  } else if (iter && startswith(iter->value, "std.internal.static.fn_args")) {
+  } else if (iter && startswith(iter->value, "std.internal.builtin.staticenumerate")) {
     auto &suiteVec = stmt->suite->getSuite()->stmts;
     int validI = 0;
     for (; validI < suiteVec.size(); validI++) {
@@ -252,17 +252,15 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
 
     if (auto fna = ctx->getFunctionArgs(iter->type)) {
       auto [generics, args] = *fna;
-      auto typ = ctx->extractFunction(args[0]);
+      auto typ = args[0]->getRecord();
       if (!typ)
-        error("fn_args needs a function");
-      for (size_t i = 0; i < typ->ast->args.size(); i++) {
+        error("fn_args needs a tuple");
+      for (size_t i = 0; i < typ->args.size(); i++) {
         suiteVec[0]->getAssign()->rhs = N<IntExpr>(i);
         suiteVec[0]->getAssign()->type =
             NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"));
         suiteVec[1]->getAssign()->rhs =
-            N<StringExpr>(ctx->cache->rev(typ->ast->args[i].name));
-        suiteVec[1]->getAssign()->type =
-            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("str"));
+            N<IndexExpr>(stmt->iter->getCall()->args[0].value->clone(), N<IntExpr>(i));
         block->stmts.push_back(fn("", nullptr));
       }
     } else {
@@ -282,7 +280,6 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
       transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
                              N<WhileStmt>(N<IdExpr>(loopVar), block)));
   ctx->blockLevel--;
-  // LOG("-> {} :: {}", getSrcInfo(), loop->toString(2));
   return loop;
 }
 

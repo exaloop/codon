@@ -15,5 +15,11 @@ def fn_arg_get_type(F, i: Static[int]):
 def fn_can_call(F, *args, **kwargs):
     pass
 
+def fn_has_default(F, i: Static[int]):
+    pass
+
+def fn_get_default(F, i: Static[int]):
+    pass
+
 def class_args(T: type):
     pass
