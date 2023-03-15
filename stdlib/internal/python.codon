@@ -1655,37 +1655,66 @@ class _PyWrap:
         obj: cobj, args: Ptr[cobj], nargs: int, _kwds: cobj, T: type, F: Static[str],
         M: Static[int] = 1
     ):
-        kwds = _PyWrap._wrap_arg(_kwds) if _kwds != cobj() else None
-        for fn in _S.fn_overloads(T, F):
-            try:
-                ax = tuple(pyobj(cobj(), steal=True) for _ in _S.fn_args(fn))
-                a = Ptr[pyobj](__ptr__(ax).as_byte())
-                ai, ki = 0, 0
-                for i, n in staticenumerate(_S.fn_args(fn)):
-                    if M == 1 and i == 0:
-                        a[i] = _PyWrap._wrap_arg(obj)
-                        continue
-                    if ai < nargs:
-                        a[i] = _PyWrap._wrap_arg(args[ai])
-                        ai += 1
-                    elif kwds and n in kwds:
-                        a[i] = kwds[n]
-                        ki += 1
-                    else:
-                        if _S.fn_has_default(fn, i):
-                            a[i] = _S.fn_get_default(fn, i)
-                        else:
-                            raise PyError("missing argument")
-                if ai < nargs:
-                    raise PyError("too many *args")
-                if kwds and ki < kwds.__len__():
-                    raise PyError("too many **kwargs")
-                ta = tuple(unwrap(a[i]) for i, _ in staticenumerate(_S.fn_args(fn)))
+        kwds = Ptr[str]()
+        nkw = 0
+        if _kwds:
+            nkw = PyTuple_Size(_kwds)
+            kwds = Ptr[str](nkw)
+            for i in range(nkw):
+                kwds[i] = str.__from_py__(PyTuple_GetItem(_kwds, i))
 
-                if _S.fn_can_call(fn, *ta):
-                    return fn(*ta).__to_py__()
+        # print('nargs =', nargs)
+        # print('nkw   = ', nkw, [kwds[i] for i in range(nkw)])
+        # print('M:', M)
+
+        for fn in _S.fn_overloads(T, F):
+            # print('args  =', _S.fn_args(fn))
+            args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
+            pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
+
+            if nargs + M > len(args_ordered):
+                continue
+
+            if M:
+                pargs[0] = obj
+
+            for i in range(nargs):
+                pargs[i + M] = args[i]
+
+            for i in range(nargs, nargs + nkw):
+                kw = kwds[i - nargs]
+                o = args[i]
+
+                found = False
+                j = M
+                for k in _S.fn_args(fn)[M:]:
+                    if kw == k:
+                        if not pargs[j]:
+                            pargs[j] = o
+                        else:
+                            raise TypeError(F + "() got multiple values for argument '" + k + "'")
+                        found = True
+                        break
+                    j += 1
+                if not found:
+                    raise TypeError(F + "() got an unexpected keyword argument '" + kw + "'")
+
+            for i, k in staticenumerate(_S.fn_args(fn)):
+                if M and i == 0:
+                    continue
+
+                if not pargs[i]:
+                    if _S.fn_has_default(fn, i):
+                        pargs[i] = _S.fn_get_default(fn, i).__to_py__()  # TODO: remove this unnecessary conversion
+                    else:
+                        raise TypeError(F + "() missing required positional argument: '" + k + "'")
+
+            try:
+                ta = tuple(pyobj(a, steal=True) for a in args_ordered)
+                return fn(*ta).__to_py__()
             except PyError:
-                pass
+                continue
+
         raise PyError("cannot dispatch " + F)
 
     def wrap_get(obj: cobj, closure: cobj, T: type, S: Static[str]):
