@@ -242,17 +242,48 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   if (!gen->type->canRealize())
     return; // Wait until the iterator can be realized
 
-  auto tuple = gen->type->getRecord();
-  if (!tuple ||
-      !(startswith(tuple->name, TYPE_TUPLE) || startswith(tuple->name, TYPE_KWTUPLE)))
-    E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
-
   auto block = N<SuiteStmt>();
   // `tuple = tuple_generator`
   auto tupleVar = ctx->cache->getTemporaryVar("tuple");
   block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-  // `a := tuple[i]` for each i
+  seqassert(expr->loops[0].vars->getId(), "tuple() not simplified");
+  std::vector<std::string> vars{expr->loops[0].vars->getId()->value};
+  auto suiteVec = expr->expr->getStmtExpr() ? expr->expr->getStmtExpr()->stmts[0]->getSuite() : nullptr;
+  auto oldSuite = suiteVec ? suiteVec->clone() : nullptr;
+  for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
+    if (auto a = suiteVec->stmts[validI]->getAssign())
+      if (a->rhs && a->rhs->getIndex())
+        if (a->rhs->getIndex()->expr->isId(vars[0])) {
+          vars.push_back(a->lhs->getId()->value);
+          suiteVec->stmts[validI] = nullptr;
+          continue;
+        }
+    break;
+  }
+  if (vars.size() > 1)
+    vars.erase(vars.begin());
+  auto [ok, staticItems] = transformStaticLoopCall(
+      vars, expr->loops[0].gen, [&](StmtPtr wrap) {
+        return N<StmtExpr>( wrap, clone(expr->expr));
+  });
+  if (ok) {
+    std::vector<ExprPtr> tupleItems;
+    for (auto &i : staticItems)
+      tupleItems.push_back(std::dynamic_pointer_cast<Expr>(i));
+    resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
+    return;
+  } else if (oldSuite) {
+    expr->expr->getStmtExpr()->stmts[0] = oldSuite;
+  }
+
+
+  auto tuple = gen->type->getRecord();
+  if (!tuple ||
+      !(startswith(tuple->name, TYPE_TUPLE) || startswith(tuple->name, TYPE_KWTUPLE)))
+    E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
+
+  // `a := tuple[i]; expr...` for each i
   std::vector<ExprPtr> items;
   items.reserve(tuple->args.size());
   for (int ai = 0; ai < tuple->args.size(); ai++) {
@@ -262,7 +293,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
                     clone(expr->expr)));
   }
 
-  // `((a := tuple[0]), (a := tuple[1]), ...)`
+  // `((a := tuple[0]; expr), (a := tuple[1]; expr), ...)`
   resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(items)));
 }
 

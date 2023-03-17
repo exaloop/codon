@@ -145,7 +145,7 @@ private: // Node typechecking rules
   ExprPtr transformTypeFn(CallExpr *expr);
   ExprPtr transformRealizedFn(CallExpr *expr);
   ExprPtr transformStaticPrintFn(CallExpr *expr);
-  ExprPtr transformInternalStaticFn(CallExpr *expr);
+  std::pair<bool, ExprPtr> transformInternalStaticFn(CallExpr *expr);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
   void addFunctionGenerics(const types::FuncType *t);
   std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
@@ -235,6 +235,9 @@ public:
 private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
       unpackTupleTypes(ExprPtr);
+  std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
+  transformStaticLoopCall(const std::vector<std::string> &, ExprPtr,
+                          std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)>);
 };
 
 } // namespace codon::ast

@@ -1668,26 +1668,26 @@ class _PyWrap:
         # print('M:', M)
 
         for fn in _S.fn_overloads(T, F):
-            # print('args  =', _S.fn_args(fn))
             args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
             pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
 
             if nargs + M > len(args_ordered):
                 continue
-
             if M:
                 pargs[0] = obj
 
             for i in range(nargs):
                 pargs[i + M] = args[i]
-
             for i in range(nargs, nargs + nkw):
                 kw = kwds[i - nargs]
+                __static_print__(kw)
                 o = args[i]
 
                 found = False
                 j = M
-                for k in _S.fn_args(fn)[M:]:
+                for i, k in staticenumerate(_S.fn_args(fn)):
+                    if M and i == 0:
+                        continue
                     if kw == k:
                         if not pargs[j]:
                             pargs[j] = o
@@ -1709,11 +1709,21 @@ class _PyWrap:
                     else:
                         raise TypeError(F + "() missing required positional argument: '" + k + "'")
 
-            try:
-                ta = tuple(pyobj(a, steal=True) for a in args_ordered)
-                return fn(*ta).__to_py__()
-            except PyError:
-                continue
+            def e(k):
+                raise TypeError(F + "() missing required positional argument: '" + k + "'")
+            ta = tuple(
+                0 if M and i == 0 else
+                (pyobj(pargs[i], steal=True) if i != cobj() else
+                    (_S.fn_get_default(fn, i) if _S.fn_has_default(fn, i) else e(k)))
+                for i, k in staticenumerate(_S.fn_args(fn))
+            )
+            __static_print__(ta)
+            if _S.fn_can_call(fn, *ta):
+                try:
+                    tn = _S.fn_wrap_call_args(fn, *ta)
+                except PyError:
+                    continue
+                return fn(*tn).__to_py__()
 
         raise PyError("cannot dispatch " + F)
 
