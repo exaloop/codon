@@ -161,6 +161,20 @@ class __internal__:
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
 
+    def tuple_add(t, i):
+        if isinstance(i, Tuple):
+            return (*t, *i)
+        else:
+            return tuple(j + i for j in t)
+
+    def tuple_mul(t, i: Static[int]):
+        if i < 1:
+            return ()
+        elif i == 1:
+            return t
+        else:
+            return (*(__internal__.tuple_mul(t, i - 1)), *t)
+
     # ...
 
     @pure

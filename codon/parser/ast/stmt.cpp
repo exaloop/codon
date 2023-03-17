@@ -633,6 +633,7 @@ void ClassStmt::parseDecorators() {
   }
   if (startswith(name, TYPE_TUPLE)) {
     tupleMagics["add"] = true;
+    tupleMagics["mul"] = true;
   } else {
     tupleMagics["dict"] = true;
   }

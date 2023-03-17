@@ -804,11 +804,18 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     stmts.emplace_back(N<ReturnStmt>(I("d")));
   } else if (op == "add") {
     // def __add__(self, tup):
-    //   return (*self, *t)
+    //   return __internal__.tuple_add(self, tup)
     fargs.emplace_back(Param{"self", typExpr->clone()});
     fargs.emplace_back(Param{"tup", nullptr});
-    stmts.emplace_back(N<ReturnStmt>(N<TupleExpr>(
-        std::vector<ExprPtr>{N<StarExpr>(I("self")), N<StarExpr>(I("tup"))})));
+    stmts.emplace_back(N<ReturnStmt>(
+        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_add"), I("self"), I("tup"))));
+  } else if (op == "mul") {
+    // def __mul__(self, i: Static[int]):
+    //   return __internal__.tuple_add(self, tup)
+    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back(Param{"i", N<IndexExpr>(I("Static"), I("int"))});
+    stmts.emplace_back(N<ReturnStmt>(
+        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_mul"), I("self"), I("i"))));
   } else if (op == "tuplesize") {
     // def __tuplesize__() -> int:
     //   return Tuple[arg_types...].__elemsize__
