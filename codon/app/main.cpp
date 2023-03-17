@@ -14,8 +14,8 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
-#include "codon/util/jupyter.h"
 #include "codon/util/common.h"
+#include "codon/util/jupyter.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 

@@ -2,11 +2,11 @@
 
 #include "common.h"
 
+#include "llvm/Support/Path.h"
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
-#include "llvm/Support/Path.h"
 
 namespace codon {
 namespace {

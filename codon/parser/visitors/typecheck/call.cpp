@@ -943,8 +943,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
     seqassert(idx, "expected a static integer");
     auto &args = fn->getArgTypes();
-    return {true, transform(
-        N<BoolExpr>(*idx >= 0 && *idx < args.size() && args[*idx]->canRealize()))};
+    return {true, transform(N<BoolExpr>(*idx >= 0 && *idx < args.size() &&
+                                        args[*idx]->canRealize()))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_get_type")) {
     auto fn = expr->args[0].value->type->getFunc();
     if (!fn)
@@ -1015,7 +1015,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       return {true, nullptr};
 
     std::vector<ExprPtr> tupArgs;
-    for (auto &a: zzz->getCall()->args)
+    for (auto &a : zzz->getCall()->args)
       tupArgs.push_back(a.value);
     return {true, transform(N<TupleExpr>(tupArgs))};
   } else {

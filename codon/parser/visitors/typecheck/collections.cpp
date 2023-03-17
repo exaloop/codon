@@ -249,7 +249,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
   seqassert(expr->loops[0].vars->getId(), "tuple() not simplified");
   std::vector<std::string> vars{expr->loops[0].vars->getId()->value};
-  auto suiteVec = expr->expr->getStmtExpr() ? expr->expr->getStmtExpr()->stmts[0]->getSuite() : nullptr;
+  auto suiteVec = expr->expr->getStmtExpr()
+                      ? expr->expr->getStmtExpr()->stmts[0]->getSuite()
+                      : nullptr;
   auto oldSuite = suiteVec ? suiteVec->clone() : nullptr;
   for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
     if (auto a = suiteVec->stmts[validI]->getAssign())
@@ -263,10 +265,10 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   }
   if (vars.size() > 1)
     vars.erase(vars.begin());
-  auto [ok, staticItems] = transformStaticLoopCall(
-      vars, expr->loops[0].gen, [&](StmtPtr wrap) {
-        return N<StmtExpr>( wrap, clone(expr->expr));
-  });
+  auto [ok, staticItems] =
+      transformStaticLoopCall(vars, expr->loops[0].gen, [&](StmtPtr wrap) {
+        return N<StmtExpr>(wrap, clone(expr->expr));
+      });
   if (ok) {
     std::vector<ExprPtr> tupleItems;
     for (auto &i : staticItems)
@@ -276,7 +278,6 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   } else if (oldSuite) {
     expr->expr->getStmtExpr()->stmts[0] = oldSuite;
   }
-
 
   auto tuple = gen->type->getRecord();
   if (!tuple ||
