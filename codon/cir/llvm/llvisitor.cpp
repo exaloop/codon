@@ -533,7 +533,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
         command.push_back("-l" + stem.str());
       } else {
-        for (auto &l: plugin->info.linkArgs)
+        for (auto &l : plugin->info.linkArgs)
           command.push_back(l);
       }
     }
@@ -932,13 +932,26 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         std::find_if(sequenceSlots.begin(), sequenceSlots.end(),
                      [&](auto *v) { return v != null; }) != sequenceSlots.end();
 
-    auto *numberSlotsConst =
-        needNumberSlots ? llvm::ConstantStruct::get(pyNumberMethodsType, numberSlots)
-                        : null;
-    auto *sequenceSlotsConst =
-        needSequenceSlots
-            ? llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots)
-            : null;
+    llvm::Constant *numberSlotsConst = null;
+    llvm::Constant *sequenceSlotsConst = null;
+
+    if (needNumberSlots) {
+      auto *pyNumberSlotsVar = new llvm::GlobalVariable(
+          *M, pyNumberMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pyNumberMethodsType, numberSlots),
+          ".pyext_number_slots." + pytype.name);
+      numberSlotsConst = pyNumberSlotsVar;
+    }
+
+    if (needSequenceSlots) {
+      auto *pySequenceSlotsVar = new llvm::GlobalVariable(
+          *M, pySequenceMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots),
+          ".pyext_sequence_slots." + pytype.name);
+      numberSlotsConst = pySequenceSlotsVar;
+    }
 
     auto *refType = cast<types::RefType>(pytype.type);
     auto *llvmType = getLLVMType(pytype.type);
