@@ -1676,62 +1676,53 @@ class _PyWrap:
                 kwds[i] = str.__from_py__(PyTuple_GetItem(_kwds, i))
 
         for fn in _S.fn_overloads(T, F):
-            args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
-            pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
+            try:
+                args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
+                pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
 
-            if nargs + M > len(args_ordered):
-                continue
-            if M:
-                pargs[0] = obj
-
-            for i in range(nargs):
-                pargs[i + M] = args[i]
-            for i in range(nargs, nargs + nkw):
-                kw = kwds[i - nargs]
-                __static_print__(kw)
-                o = args[i]
-
-                found = False
-                j = M
-                for i, k in staticenumerate(_S.fn_args(fn)):
-                    if M and i == 0:
-                        continue
-                    if kw == k:
-                        if not pargs[j]:
-                            pargs[j] = o
-                        else:
-                            raise TypeError(F + "() got multiple values for argument '" + k + "'")
-                        found = True
-                        break
-                    j += 1
-                if not found:
-                    raise TypeError(F + "() got an unexpected keyword argument '" + kw + "'")
-
-            for i, k in staticenumerate(_S.fn_args(fn)):
-                if M and i == 0:
+                if nargs + M > len(args_ordered):
                     continue
+                if M:
+                    pargs[0] = obj
 
-                if not pargs[i]:
-                    if _S.fn_has_default(fn, i):
-                        pargs[i] = _S.fn_get_default(fn, i).__to_py__()  # TODO: remove this unnecessary conversion
-                    else:
-                        raise TypeError(F + "() missing required positional argument: '" + k + "'")
+                for i in range(nargs):
+                    pargs[i + M] = args[i]
+                for i in range(nargs, nargs + nkw):
+                    kw = kwds[i - nargs]
+                    __static_print__(kw)
+                    o = args[i]
 
-            def e(k):
-                raise TypeError(F + "() missing required positional argument: '" + k + "'")
-            ta = tuple(
-                0 if M and i == 0 else
-                (pyobj(pargs[i], steal=True) if i != cobj() else
-                    (_S.fn_get_default(fn, i) if _S.fn_has_default(fn, i) else e(k)))
-                for i, k in staticenumerate(_S.fn_args(fn))
-            )
-            __static_print__(ta)
-            if _S.fn_can_call(fn, *ta):
-                try:
-                    tn = _S.fn_wrap_call_args(fn, *ta)
-                except PyError:
-                    continue
-                return fn(*tn).__to_py__()
+                    found = False
+                    j = M
+                    for i, k in staticenumerate(_S.fn_args(fn)):
+                        if M and i == 0:
+                            continue
+                        if kw == k:
+                            if not pargs[j]:
+                                pargs[j] = o
+                            else:
+                                raise TypeError(F + "() got multiple values for argument '" + k + "'")
+                            found = True
+                            break
+                        j += 1
+                    if not found:
+                        raise TypeError(F + "() got an unexpected keyword argument '" + kw + "'")
+
+                def e(k):
+                    raise TypeError(F + "() missing required positional argument: '" + k + "'")
+                ta = tuple(
+                    (pyobj(pargs[i], steal=True) if pargs[i] != cobj() else
+                        (_S.fn_get_default(fn, i) if _S.fn_has_default(fn, i) else e(k)))
+                    for i, k in staticenumerate(_S.fn_args(fn))
+                )
+                if _S.fn_can_call(fn, *ta):
+                    try:
+                        tn = _S.fn_wrap_call_args(fn, *ta)
+                    except PyError:
+                        raise TypeError("cannot cast arguments")
+                    return fn(*tn).__to_py__()
+            except TypeError:
+                pass
 
         raise TypeError("cannot dispatch " + F)
 
