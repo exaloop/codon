@@ -495,7 +495,10 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
     if (calleeFn->ast->args[i].status == Param::Generic) {
       if (calleeFn->ast->args[i].defaultValue &&
           calleeFn->funcGenerics[j].type->getUnbound()) {
+        ctx->addBlock(); // add function generics to typecheck default arguments
+        addFunctionGenerics(calleeFn->getFunc().get());
         auto def = transform(clone(calleeFn->ast->args[i].defaultValue));
+        ctx->popBlock();
         unify(calleeFn->funcGenerics[j].type,
               def->isStatic() ? Type::makeStatic(ctx->cache, def) : def->getType());
       }
@@ -553,7 +556,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformTupleFn(expr)};
   } else if (val == "__realized__") {
     return {true, transformRealizedFn(expr)};
-  } else if (val == "__static_print__") {
+  } else if (val == "std.internal.static.static_print") {
     return {false, transformStaticPrintFn(expr)};
   } else {
     return transformInternalStaticFn(expr);

@@ -29,3 +29,7 @@ def fn_get_default(F, i: Static[int]):
 
 def class_args(T: type):
     pass
+
+@no_type_wrap
+def static_print(*args):
+    pass

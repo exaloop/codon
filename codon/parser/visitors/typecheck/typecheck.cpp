@@ -65,6 +65,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       ctx->changedNodes++;
   }
   realize(typ);
+  LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), expr, expr->isDone() ? "[done]" : "");
   return expr;
 }
 
@@ -119,6 +120,8 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   }
   if (stmt->done)
     ctx->changedNodes++;
+  // LOG_TYPECHECK("[stmt] {}: {}{}", getSrcInfo(), stmt, stmt->isDone() ? "[done]" :
+  // "");
   return stmt;
 }
 
@@ -314,16 +317,24 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
+  auto doArgWrap =
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap");
+  if (!doArgWrap)
+    return true;
+  auto doTypeWrap =
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap");
   if (callee && expr->isType()) {
     auto c = expr->type->getClass();
     if (!c)
       return false;
-    if (c->getRecord())
-      expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
-    else
-      expr = transform(N<CallExpr>(
-          N<IdExpr>("__internal__.class_ctr:0"),
-          std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+    if (doTypeWrap) {
+      if (c->getRecord())
+        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+      else
+        expr = transform(N<CallExpr>(
+            N<IdExpr>("__internal__.class_ctr:0"),
+            std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+    }
   }
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,

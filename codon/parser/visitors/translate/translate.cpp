@@ -432,7 +432,6 @@ void TranslateVisitor::visit(ForStmt *stmt) {
         fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
     bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
-    LOG_TYPECHECK("parsed {}", stmt->decorator);
   }
 
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var);

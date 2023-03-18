@@ -16,6 +16,8 @@
 using fmt::format;
 using namespace codon::error;
 
+const int MAX_TYPECHECK_ITER = 1000;
+
 namespace codon::ast {
 
 using namespace types;
@@ -49,6 +51,12 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
 
   for (ctx->getRealizationBase()->iteration = 1;;
        ctx->getRealizationBase()->iteration++) {
+    LOG_TYPECHECK("[iter] {} :: {}", ctx->getRealizationBase()->name,
+                  ctx->getRealizationBase()->iteration);
+    if (ctx->getRealizationBase()->iteration >= MAX_TYPECHECK_ITER)
+      error(result, "cannot typecheck '{}' in reasonable time",
+            ctx->cache->rev(ctx->getRealizationBase()->name));
+
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or
     //   (2) failure: no expression or statements were marked as done during an
