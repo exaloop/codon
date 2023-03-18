@@ -1709,6 +1709,7 @@ class _PyWrap:
 
                 def _err(k, T: type = NoneType) -> T:
                     raise TypeError(F + "() missing required positional argument: '" + k + "'")
+
                 def _get_arg(F, p, k, i: Static[int]):
                     if _S.fn_arg_has_type(F, i):
                         return _S.fn_arg_get_type(F, i).__from_py__(p[i]) if p[i] != cobj() else (
