@@ -1475,40 +1475,120 @@ class _PyWrap:
         )
     def wrap_magic_abs(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__abs__")
-
     def wrap_magic_pos(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__pos__")
-
     def wrap_magic_neg(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__neg__")
-
     def wrap_magic_invert(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__invert__")
-
     def wrap_magic_int(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__int__")
-
     def wrap_magic_float(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__float__")
-
     def wrap_magic_index(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__index__")
-
     def wrap_magic_repr(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__repr__")
-
     def wrap_magic_str(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__str__")
+
+    def _wrap_binary(obj: cobj, obj2: cobj, T: type, F: Static[str]) -> cobj:
+        return _PyWrap._wrap(
+            (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(obj2)), T=T, F=F,
+            map=lambda f, a: f(*a).__to_py__()
+        )
+    def wrap_magic_add(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__add__")
+    def wrap_magic_radd(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__radd__")
+    def wrap_magic_iadd(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__iadd__")
+    def wrap_magic_sub(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__sub__")
+    def wrap_magic_rsub(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rsub__")
+    def wrap_magic_isub(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__isub__")
+    def wrap_magic_mul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__mul__")
+    def wrap_magic_rmul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rmul__")
+    def wrap_magic_imul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__imul__")
+    def wrap_magic_mod(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__mod__")
+    def wrap_magic_rmod(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rmod__")
+    def wrap_magic_imod(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__imod__")
+    def wrap_magic_divmod(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__divmod__")
+    def wrap_magic_rdivmod(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rdivmod__")
+    def wrap_magic_lshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__lshift__")
+    def wrap_magic_rlshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rlshift__")
+    def wrap_magic_ilshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__ilshift__")
+    def wrap_magic_rshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rshift__")
+    def wrap_magic_rrshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rrshift__")
+    def wrap_magic_irshift(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__irshift__")
+    def wrap_magic_and(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__and__")
+    def wrap_magic_rand(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rand__")
+    def wrap_magic_iand(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__iand__")
+    def wrap_magic_xor(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__xor__")
+    def wrap_magic_rxor(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rxor__")
+    def wrap_magic_ixor(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__ixor__")
+    def wrap_magic_or(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__or__")
+    def wrap_magic_ror(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__ror__")
+    def wrap_magic_ior(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__ior__")
+    def wrap_magic_floordiv(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__floordiv__")
+    def wrap_magic_ifloordiv(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__ifloordiv__")
+    def wrap_magic_truediv(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__truediv__")
+    def wrap_magic_itruediv(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__itruediv__")
+    def wrap_magic_matmul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__matmul__")
+    def wrap_magic_rmatmul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__rmatmul__")
+    def wrap_magic_imatmul(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_binary(obj, obj2, T, "__imatmul__")
+
+    def _wrap_ternary(obj: cobj, obj2: cobj, obj3: cobj, T: type, F: Static[str]) -> cobj:
+        return _PyWrap._wrap(
+            (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(obj2)), _PyWrap._wrap_arg(obj3), T=T, F=F,
+            map=lambda f, a: f(*a).__to_py__()
+        )
+    def wrap_magic_pow(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_ternary(obj, obj2, cobj(), T, "__pow__")
+    def wrap_magic_rpow(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_ternary(obj, obj2, cobj(), T, "__rpow__")
+    def wrap_magic_ipow(obj: cobj, obj2: cobj, T: type):
+        return _PyWrap._wrap_ternary(obj, obj2, cobj(), T, "__ipow__")
 
     def _wrap_hash(obj: cobj, T: type, F: Static[str]) -> i64:
         return _PyWrap._wrap(
             (_PyWrap._wrap_arg(obj), ), T=T, F=F,
             map=lambda f, a: f(*a)
         )
-
     def wrap_magic_len(obj: cobj, T: type):
         return _PyWrap._wrap_hash(obj, T, "__len__")
-
     def wrap_magic_hash(obj: cobj, T: type):
         return _PyWrap._wrap_hash(obj, T, "__hash__")
 
