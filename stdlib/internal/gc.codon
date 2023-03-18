@@ -16,6 +16,11 @@ def seq_alloc_atomic(a: int) -> cobj:
 def seq_alloc_uncollectable(a: int) -> cobj:
     pass
 
+@pure
+@C
+def seq_alloc_atomic_uncollectable(a: int) -> cobj:
+    pass
+
 @nocapture
 @derives
 @C
@@ -70,6 +75,11 @@ def alloc_atomic(sz: int):
 # but not collected itself. Should be free'd explicitly.
 def alloc_uncollectable(sz: int):
     return seq_alloc_uncollectable(sz)
+
+# Allocates a block of memory via GC that is scanned,
+# but not collected itself. Should be free'd explicitly.
+def alloc_atomic_uncollectable(sz: int):
+    return seq_alloc_atomic_uncollectable(sz)
 
 def realloc(p: cobj, newsz: int, oldsz: int):
     return seq_realloc(p, newsz, oldsz)

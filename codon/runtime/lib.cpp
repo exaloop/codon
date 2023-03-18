@@ -173,6 +173,14 @@ SEQ_FUNC void *seq_alloc_uncollectable(size_t n) {
 #endif
 }
 
+SEQ_FUNC void *seq_alloc_atomic_uncollectable(size_t n) {
+#if USE_STANDARD_MALLOC
+  return malloc(n);
+#else
+  return GC_MALLOC_ATOMIC_UNCOLLECTABLE(n);
+#endif
+}
+
 SEQ_FUNC void *seq_calloc(size_t m, size_t n) {
 #if USE_STANDARD_MALLOC
   return calloc(m, n);
