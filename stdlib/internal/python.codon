@@ -1689,7 +1689,6 @@ class _PyWrap:
                     pargs[i + M] = args[i]
                 for i in range(nargs, nargs + nkw):
                     kw = kwds[i - nargs]
-                    __static_print__(kw)
                     o = args[i]
 
                     found = False
@@ -1708,13 +1707,20 @@ class _PyWrap:
                     if not found:
                         raise TypeError(F + "() got an unexpected keyword argument '" + kw + "'")
 
-                def e(k):
+                def _err(k, T: type = NoneType) -> T:
                     raise TypeError(F + "() missing required positional argument: '" + k + "'")
-                ta = tuple(
-                    (pyobj(pargs[i], steal=True) if pargs[i] != cobj() else
-                        (_S.fn_get_default(fn, i) if _S.fn_has_default(fn, i) else e(k)))
-                    for i, k in staticenumerate(_S.fn_args(fn))
-                )
+                def _get_arg(F, p, k, i: Static[int]):
+                    if _S.fn_arg_has_type(F, i):
+                        return _S.fn_arg_get_type(F, i).__from_py__(p[i]) if p[i] != cobj() else (
+                            _S.fn_get_default(F, i) if _S.fn_has_default(F, i)
+                            else _err(k, _S.fn_arg_get_type(F, i))  # need to appease type checker
+                        )
+                    else:
+                        return pyobj(p[i], steal=True) if p[i] != cobj() else (
+                            _S.fn_get_default(F, i) if _S.fn_has_default(F, i) else _err(k)
+                        )
+                ta = tuple(_get_arg(fn, pargs, k, i) for i, k in staticenumerate(_S.fn_args(fn)))
+                __static_print__(ta)
                 if _S.fn_can_call(fn, *ta):
                     try:
                         tn = _S.fn_wrap_call_args(fn, *ta)
