@@ -177,7 +177,7 @@ module:
 
 ``` python
 from threading import Lock
-lock = Lock()  # or RLock for re-entrant lock
+lock = Lock()  # or RLock for reentrant lock
 
 @par
 for i in range(100):
