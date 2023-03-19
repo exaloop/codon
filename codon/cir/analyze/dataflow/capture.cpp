@@ -300,7 +300,7 @@ struct CaptureContext {
 };
 
 // This visitor answers the questions of what vars are
-// releavant to track in a capturing expression. For
+// relevant to track in a capturing expression. For
 // example, in "a[i] = x", the expression "a[i]" captures
 // "x"; in this case we need to track "a" but the variable
 // "i" (typically) we would not care about.
