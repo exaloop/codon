@@ -84,9 +84,9 @@ def test_combinations():
         [0, 2, 3],
         [1, 2, 3],
     ]
-    test_intermediat = itertools.combinations(range(4), 3)
-    next(test_intermediat)
-    assert list(test_intermediat) == [[0, 1, 3], [0, 2, 3], [1, 2, 3]]
+    test_intermediate = itertools.combinations(range(4), 3)
+    next(test_intermediate)
+    assert list(test_intermediate) == [[0, 1, 3], [0, 2, 3], [1, 2, 3]]
 
 
 @test
