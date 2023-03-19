@@ -238,7 +238,7 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     for (auto i = chain.size(); i-- > importEnd;) {
       if (fctx->getModule() == "std.python" && importEnd < chain.size()) {
         // Special case: importing from Python.
-        // Fake SimplifyItem that inidcates std.python access
+        // Fake SimplifyItem that indicates std.python access
         val = std::make_shared<SimplifyItem>(SimplifyItem::Var, "", "",
                                              fctx->getModule(), std::vector<int>{});
         return {importEnd, val};
