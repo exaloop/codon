@@ -1023,7 +1023,7 @@ print list(foo(*args)) == result  #: False
 
 
 #%% type_error_reporting
-# TODO: imporove this certainly
+# TODO: improve this certainly
 def tee(iterable, n=2):
     from collections import deque
     it = iter(iterable)
