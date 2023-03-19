@@ -190,7 +190,7 @@ def quantiles(
 
 def _lcm(x: int, y: int):
     """
-    Returns the lowest common multiple bewteen x and y
+    Returns the lowest common multiple between x and y
     """
     greater = 0
     if x > y:
