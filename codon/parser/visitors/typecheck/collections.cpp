@@ -199,6 +199,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
 /// @example
 ///   `(a1, ..., aN)` -> `Tuple.N.__new__(a1, ..., aN)`
 void TypecheckVisitor::visit(TupleExpr *expr) {
+  expr->setType(ctx->getUnbound());
   for (int ai = 0; ai < expr->items.size(); ai++)
     if (auto star = expr->items[ai]->getStar()) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
@@ -226,6 +227,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
   auto tupleName = generateTuple(expr->items.size());
   resultExpr =
       transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), clone(expr->items)));
+  unify(expr->type, resultExpr->type);
 }
 
 /// Transform a tuple generator expression.

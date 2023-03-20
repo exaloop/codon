@@ -1856,3 +1856,14 @@ a.test2(2)
 #: test:B 1
 #: test2:B 2
 
+
+#%% no_generic,barebones
+def foo(a, b: Static[int]):
+    pass
+foo(5)  #! generic 'b' not provided
+
+
+#%% no_generic_2,barebones
+def f(a, b, T: type):
+    print(a, b)
+f(1, 2)  #! generic 'T' not provided

@@ -590,7 +590,7 @@ def f(x):
     return g(x)
 print f(5) #: 6
 
-##% nested_generic_static,barebones
+#%% nested_generic_static,barebones
 def foo():
     N: Static[int] = 5
     Z: Static[int] = 15

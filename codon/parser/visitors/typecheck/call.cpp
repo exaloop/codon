@@ -281,8 +281,10 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
   };
 
   // Handle reordered arguments (see @c reorderNamedArgs for details)
+  bool partial = false;
   auto reorderFn = [&](int starArgIndex, int kwstarArgIndex,
-                       const std::vector<std::vector<int>> &slots, bool partial) {
+                       const std::vector<std::vector<int>> &slots, bool _partial) {
+    partial = _partial;
     ctx->addBlock(); // add function generics to typecheck default arguments
     addFunctionGenerics(calleeFn->getFunc().get());
     for (size_t si = 0, pi = 0; si < slots.size(); si++) {
@@ -410,18 +412,28 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
                 (!expr->hasAttr(ExprAttr::OrderedCall) &&
                  typeArgs.size() == calleeFn->funcGenerics.size()),
             "bad vector sizes");
-  for (size_t si = 0;
-       !expr->hasAttr(ExprAttr::OrderedCall) && si < calleeFn->funcGenerics.size();
-       si++) {
-    if (typeArgs[si]) {
-      auto typ = typeArgs[si]->type;
-      if (calleeFn->funcGenerics[si].type->isStaticType()) {
-        if (!typeArgs[si]->isStatic()) {
-          E(Error::EXPECTED_STATIC, typeArgs[si]);
+  if (!calleeFn->funcGenerics.empty()) {
+    auto niGenerics = calleeFn->ast->getNonInferrableGenerics();
+    for (size_t si = 0;
+         !expr->hasAttr(ExprAttr::OrderedCall) && si < calleeFn->funcGenerics.size();
+         si++) {
+      if (typeArgs[si]) {
+        auto typ = typeArgs[si]->type;
+        if (calleeFn->funcGenerics[si].type->isStaticType()) {
+          if (!typeArgs[si]->isStatic()) {
+            E(Error::EXPECTED_STATIC, typeArgs[si]);
+          }
+          typ = Type::makeStatic(ctx->cache, typeArgs[si]);
         }
-        typ = Type::makeStatic(ctx->cache, typeArgs[si]);
+        unify(typ, calleeFn->funcGenerics[si].type);
+      } else {
+        if (calleeFn->funcGenerics[si].type->getUnbound() &&
+            !calleeFn->ast->args[si].defaultValue &&
+            !partial &&
+            in(niGenerics, calleeFn->funcGenerics[si].name)) {
+          error("generic '{}' not provided", calleeFn->funcGenerics[si].niceName);
+        }
       }
-      unify(typ, calleeFn->funcGenerics[si].type);
     }
   }
 

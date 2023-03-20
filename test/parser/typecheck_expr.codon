@@ -191,7 +191,7 @@ foo(int, float)  #! foo() takes 1 arguments (2 given)
 #%% instantiate_err_2,barebones
 def foo[N, T]():
     return N()
-foo(int)  #! cannot typecheck the program
+foo(int)  #! generic 'T' not provided
 
 #%% instantiate_err_3,barebones
 Ptr[int, float]()  #! Ptr takes 1 generics (2 given)

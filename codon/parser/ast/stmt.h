@@ -482,6 +482,7 @@ struct FunctionStmt : public Stmt {
 
   FunctionStmt *getFunction() override { return this; }
   std::string getDocstr();
+  std::unordered_set<std::string> getNonInferrableGenerics();
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
