@@ -103,7 +103,7 @@ after 3 years.
 
 ## How can I use Codon for production or commercial use?
 
-Please reach out to [info@exaloop.io](mailto:info@exaloop.io) to inquire about about a
+Please reach out to [info@exaloop.io](mailto:info@exaloop.io) to inquire about a
 production-use license.
 
 # Contributing

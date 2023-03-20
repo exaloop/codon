@@ -1023,7 +1023,7 @@ print list(foo(*args)) == result  #: False
 
 
 #%% type_error_reporting
-# TODO: imporove this certainly
+# TODO: improve this certainly
 def tee(iterable, n=2):
     from collections import deque
     it = iter(iterable)
@@ -1160,7 +1160,7 @@ print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optiona
 #%% traits_error_2,barebones
 z: Callable[[int],int] = 4 #! 'Callable[[int],int]' does not match expected type 'int'
 
-#%% assign_wrapers,barebones
+#%% assign_wrappers,barebones
 a = 1.5
 print a #: 1.5
 if 1:

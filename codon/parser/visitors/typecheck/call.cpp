@@ -770,7 +770,7 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 }
 
 /// Transform hasattr method to a static boolean expression.
-/// This method also supports supports additional argument types that are used to check
+/// This method also supports additional argument types that are used to check
 /// for a matching overload (not available in Python).
 ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   expr->staticValue.type = StaticValue::INT;

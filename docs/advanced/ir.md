@@ -239,7 +239,7 @@ public:
 const std::string ValidateFoo::KEY = "validate-foo";
 ```
 
-Note that `insertAfter` is a conveience method of `Operator` that inserts the given node "after" the node
+Note that `insertAfter` is a convenience method of `Operator` that inserts the given node "after" the node
 being visited (along with `insertBefore` which inserts *before* the node being visited).
 
 Running this pass on the snippet above, we would get:
