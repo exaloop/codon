@@ -950,7 +950,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
           /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
           llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots),
           ".pyext_sequence_slots." + pytype.name);
-      numberSlotsConst = pySequenceSlotsVar;
+      sequenceSlotsConst = pySequenceSlotsVar;
     }
 
     auto *refType = cast<types::RefType>(pytype.type);
