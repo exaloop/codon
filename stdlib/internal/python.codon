@@ -29,7 +29,9 @@ PyList_SetItem = Function[[cobj, int, cobj], cobj](cobj())
 PyDict_New = Function[[], cobj](cobj())
 PyDict_Next = Function[[cobj, Ptr[int], Ptr[cobj], Ptr[cobj]], int](cobj())
 PyDict_GetItem = Function[[cobj, cobj], cobj](cobj())
+PyDict_GetItemString = Function[[cobj, cobj], cobj](cobj())
 PyDict_SetItem = Function[[cobj, cobj, cobj], cobj](cobj())
+PyDict_Size = Function[[cobj], int](cobj())
 PySet_Add = Function[[cobj, cobj], cobj](cobj())
 PySet_New = Function[[cobj], cobj](cobj())
 PyTuple_New = Function[[int], cobj](cobj())
@@ -211,7 +213,9 @@ def init_handles_dlopen(py_handle: cobj):
     global PyDict_New
     global PyDict_Next
     global PyDict_GetItem
+    global PyDict_GetItemString
     global PyDict_SetItem
+    global PyDict_Size
     global PySet_Add
     global PySet_New
     global PyTuple_New
@@ -338,7 +342,9 @@ def init_handles_dlopen(py_handle: cobj):
     PyDict_New = dlsym(py_handle, "PyDict_New")
     PyDict_Next = dlsym(py_handle, "PyDict_Next")
     PyDict_GetItem = dlsym(py_handle, "PyDict_GetItem")
+    PyDict_GetItemString = dlsym(py_handle, "PyDict_GetItemString")
     PyDict_SetItem = dlsym(py_handle, "PyDict_SetItem")
+    PyDict_Size = dlsym(py_handle, "PyDict_Size")
     PySet_Add = dlsym(py_handle, "PySet_Add")
     PySet_New = dlsym(py_handle, "PySet_New")
     PyTuple_New = dlsym(py_handle, "PyTuple_New")
@@ -466,7 +472,9 @@ def init_handles_static():
     from C import PyDict_New() -> cobj as _PyDict_New
     from C import PyDict_Next(cobj, Ptr[int], Ptr[cobj], Ptr[cobj]) -> int as _PyDict_Next
     from C import PyDict_GetItem(cobj, cobj) -> cobj as _PyDict_GetItem
+    from C import PyDict_GetItemString(cobj, cobj) -> cobj as _PyDict_GetItemString
     from C import PyDict_SetItem(cobj, cobj, cobj) -> cobj as _PyDict_SetItem
+    from C import PyDict_Size(cobj) -> int as _PyDict_Size
     from C import PySet_Add(cobj, cobj) -> cobj as _PySet_Add
     from C import PySet_New(cobj) -> cobj as _PySet_New
     from C import PyTuple_New(int) -> cobj as _PyTuple_New
@@ -593,7 +601,9 @@ def init_handles_static():
     global PyDict_New
     global PyDict_Next
     global PyDict_GetItem
+    global PyDict_GetItemString
     global PyDict_SetItem
+    global PyDict_Size
     global PySet_Add
     global PySet_New
     global PyTuple_New
@@ -720,7 +730,9 @@ def init_handles_static():
     PyDict_New = _PyDict_New
     PyDict_Next = _PyDict_Next
     PyDict_GetItem = _PyDict_GetItem
+    PyDict_GetItemString = _PyDict_GetItemString
     PyDict_SetItem = _PyDict_SetItem
+    PyDict_Size = _PyDict_Size
     PySet_Add = _PySet_Add
     PySet_New = _PySet_New
     PyTuple_New = _PyTuple_New
@@ -1455,24 +1467,119 @@ class _PyWrapError(Static[PyError]):
 
 
 class _PyWrap:
-    def _wrap_arg(arg: cobj):
-        return pyobj(arg, steal=True)
-
     def _wrap(args, T: type, F: Static[str], map):
         for fn in _S.fn_overloads(T, F):
-            if _S.fn_can_call(fn, *args):
+            a = _PyWrap._args_from_py(fn, args)
+            if a is None:
+                continue
+
+            if _S.fn_can_call(fn, *a):
                 try:
-                    return map(fn, args)
+                    return map(fn, a)
                 except PyError as e:
                     pass
         raise TypeError("cannot dispatch " + F)
 
     def _wrap_unary(obj: cobj, T: type, F: Static[str]) -> cobj:
-        # print(f'[c] unary: {T.__class__.__name__} {F}')
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), ), T=T, F=F,
+            (obj,), T=T, F=F,
             map=lambda f, a: f(*a).__to_py__()
         )
+
+    def _args_from_py(fn, args):
+        def err(fail: Ptr[bool], T: type = NoneType) -> T:
+            fail[0] = True
+            # auto-return zero-initialized T
+
+        def get_arg(F, p, k, fail: Ptr[bool], i: Static[int]):
+            if _S.fn_arg_has_type(F, i):
+                return _S.fn_arg_get_type(F, i).__from_py__(p[i]) if p[i] != cobj() else (
+                    _S.fn_get_default(F, i) if _S.fn_has_default(F, i)
+                    else err(fail, _S.fn_arg_get_type(F, i))
+                )
+            else:
+                return pyobj(p[i], steal=False) if p[i] != cobj() else (
+                    _S.fn_get_default(F, i) if _S.fn_has_default(F, i) else err(fail)
+                )
+
+        fail = False
+        pargs = Ptr[cobj](__ptr__(args).as_byte())
+        try:
+            ta = tuple(get_arg(fn, pargs, k, __ptr__(fail), i) for i, k in staticenumerate(_S.fn_args(fn)))
+            if fail:
+                return None
+            return _S.fn_wrap_call_args(fn, *ta)
+        except PyError:
+            return None
+
+    def _reorder_args(fn, self: cobj, args: cobj, kwargs: cobj, M: Static[int] = 1):
+        nargs = PyTuple_Size(args)
+        nkwargs = PyDict_Size(kwargs) if kwargs != cobj() else 0
+
+        args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
+        pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
+
+        if nargs + nkwargs + M > len(args_ordered):
+            return None
+
+        if M:
+            pargs[0] = self
+
+        for i in range(nargs):
+            pargs[i + M] = PyTuple_GetItem(args, i)
+
+        kwused = 0
+        for i, k in staticenumerate(_S.fn_args(fn)):
+            if i < nargs + M:
+                continue
+
+            p = PyDict_GetItemString(kwargs, k.ptr) if nkwargs else cobj()
+            if p != cobj():
+                pargs[i] = p
+                kwused += 1
+
+        if kwused != nkwargs:
+            return None
+
+        return _PyWrap._args_from_py(fn, args_ordered)
+
+    def _reorder_args_fastcall(
+        fn, self: cobj, args: Ptr[cobj], nargs: int,
+        kwds: Ptr[str], nkw: int, M: Static[int] = 1
+    ):
+        args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
+        pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
+
+        if nargs + M > len(args_ordered):
+            return None
+
+        if M:
+            pargs[0] = self
+
+        for i in range(nargs):
+            pargs[i + M] = args[i]
+
+        for i in range(nargs, nargs + nkw):
+            kw = kwds[i - nargs]
+            o = args[i]
+
+            found = False
+            j = M
+            for i, k in staticenumerate(_S.fn_args(fn)):
+                if M and i == 0:
+                    continue
+                if kw == k:
+                    if not pargs[j]:
+                        pargs[j] = o
+                    else:
+                        return None
+                    found = True
+                    break
+                j += 1
+            if not found:
+                return None
+
+        return _PyWrap._args_from_py(fn, args_ordered)
 
     def wrap_magic_abs(obj: cobj, T: type):
         return _PyWrap._wrap_unary(obj, T, "__abs__")
@@ -1503,7 +1610,7 @@ class _PyWrap:
 
     def _wrap_binary(obj: cobj, obj2: cobj, T: type, F: Static[str]) -> cobj:
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(obj2)), T=T, F=F,
+            (obj, obj2), T=T, F=F,
             map=lambda f, a: f(*a).__to_py__()
         )
 
@@ -1626,7 +1733,7 @@ class _PyWrap:
 
     def _wrap_hash(obj: cobj, T: type, F: Static[str]) -> i64:
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), ), T=T, F=F,
+            (obj,), T=T, F=F,
             map=lambda f, a: f(*a)
         )
 
@@ -1638,72 +1745,42 @@ class _PyWrap:
 
     def wrap_magic_bool(obj: cobj, T: type) -> i32:
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), ), T=T, F="__bool__",
+            (obj,), T=T, F="__bool__",
             map=lambda f, a: i32(f(*a))
         )
 
     def wrap_magic_del(obj: cobj, T: type):
         _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), ), T=T, F="__del__",
+            (obj,), T=T, F="__del__",
             map=lambda f, a: f(*a)
         )
 
     def wrap_magic_contains(obj: cobj, arg: cobj, T: type) -> i32:
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(arg)), T=T, F="__contains__",
+            (obj, arg,), T=T, F="__contains__",
             map=lambda f, a: i32(f(*a))
         )
 
-    def wrap_magic_init(obj: cobj, _args: cobj, _kwds: cobj, T: type) -> i32:
-        # print(f'[c] init: {T.__class__.__name__}')
-
-        args = _PyWrap._wrap_arg(_args)
-        kwds = _PyWrap._wrap_arg(_kwds) if _kwds != cobj() else None
-
-        # print(f'[c] args:   {args}')
-        # print(f'[c] kwargs: {kwds}')
-
+    def wrap_magic_init(obj: cobj, args: cobj, kwargs: cobj, T: type) -> i32:
         for fn in _S.fn_overloads(T, "__init__"):
-            try:
-                ai = -1
-                # TODO: default values do not work; same for *args/**kwargs
-                a = tuple(
-                    _PyWrap._wrap_arg(obj) if i == 0 else
-                    (kwds[n] if kwds and n in kwds else args[(ai := ai + 1)])
-                    for i, n in staticenumerate(_S.fn_args(fn))
-                )
-                if ai + 1 != args.__len__():
-                    continue
-                if _S.fn_can_call(fn, *a):
-                    fn(*a)
-                    return i32(0)
-            except PyError:
-                pass
+            a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
+            if a is not None and _S.fn_can_call(fn, *a):
+                fn(*a)
+                return i32(0)
+
         raise TypeError("could not dispatch __init__ call for given arguments")
 
-    def wrap_magic_call(obj: cobj, _args: cobj, _kwds: cobj, T: type) -> cobj:
-        args = _PyWrap._wrap_arg(_args)
-        kwds = _PyWrap._wrap_arg(_kwds) if _kwds != cobj() else None
+    def wrap_magic_call(obj: cobj, args: cobj, kwargs: cobj, T: type) -> cobj:
         for fn in _S.fn_overloads(T, "__call__"):
-            try:
-                ai = -1
-                # TODO: default values do not work; same for *args/**kwargs
-                a = tuple(
-                    _PyWrap._wrap_arg(obj) if i == 0 else
-                    (kwds[n] if kwds and n in kwds else args[(ai := ai + 1)])
-                    for i, n in staticenumerate(_S.fn_args(fn))
-                )
-                if ai + 1 != args.__len__():
-                    continue
-                if _S.fn_can_call(fn, *a):
-                    return fn(*a).__to_py__()
-            except PyError:
-                pass
-        raise TypeError("cannot dispatch __call__")
+            a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
+            if a is not None and _S.fn_can_call(fn, *a):
+                return fn(*a).__to_py__()
+
+        raise TypeError("could not dispatch __call__ call for given arguments")
 
     def _wrap_cmp(obj: cobj, other: cobj, T: type, F: Static[str]) -> cobj:
         return _PyWrap._wrap(
-            (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(other)), T=T, F=F,
+            (obj, other), T=T, F=F,
             map=lambda f, a: f(*a).__to_py__()
         )
 
@@ -1745,15 +1822,16 @@ class _PyWrap:
     def wrap_magic_setitem(obj: cobj, idx: cobj, val: cobj, T: type) -> i32:
         if val == cobj():
             if hasattr(T, "__delitem__"):
-                T.__delitem__(_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(idx))
-                return i32(0)
+                return _PyWrap._wrap(
+                    (obj, idx), T=T, F="__delitem__",
+                    map=lambda f, a: i32(0)
+                )
             raise TypeError("type " + T.__name__ + " has no attribute __delitem__")
         else:
-            _PyWrap._wrap(
-                (_PyWrap._wrap_arg(obj), _PyWrap._wrap_arg(idx), _PyWrap._wrap_arg(val)), T=T, F="__setitem__",
-                map=lambda f, a: f(*a).__to_py__()
+            return _PyWrap._wrap(
+                (obj, idx, val), T=T, F="__setitem__",
+                map=lambda f, a: i32(0)
             )
-        return i32(0)
 
     class IterWrap:
         _gen: cobj
@@ -1800,61 +1878,9 @@ class _PyWrap:
                 kwds[i] = str.__from_py__(PyTuple_GetItem(_kwds, i))
 
         for fn in _S.fn_overloads(T, F):
-            try:
-                args_ordered = tuple(cobj() for _ in _S.fn_args(fn))
-                pargs = Ptr[cobj](__ptr__(args_ordered).as_byte())
-
-                if nargs + M > len(args_ordered):
-                    continue
-                if M:
-                    pargs[0] = obj
-
-                for i in range(nargs):
-                    pargs[i + M] = args[i]
-                for i in range(nargs, nargs + nkw):
-                    kw = kwds[i - nargs]
-                    o = args[i]
-
-                    found = False
-                    j = M
-                    for i, k in staticenumerate(_S.fn_args(fn)):
-                        if M and i == 0:
-                            continue
-                        if kw == k:
-                            if not pargs[j]:
-                                pargs[j] = o
-                            else:
-                                raise TypeError(F + "() got multiple values for argument '" + k + "'")
-                            found = True
-                            break
-                        j += 1
-                    if not found:
-                        raise TypeError(F + "() got an unexpected keyword argument '" + kw + "'")
-
-                def _err(k, T: type = NoneType) -> T:
-                    raise TypeError(F + "() missing required positional argument: '" + k + "'")
-
-                def _get_arg(F, p, k, i: Static[int]):
-                    if _S.fn_arg_has_type(F, i):
-                        return _S.fn_arg_get_type(F, i).__from_py__(p[i]) if p[i] != cobj() else (
-                            _S.fn_get_default(F, i) if _S.fn_has_default(F, i)
-                            else _err(k, _S.fn_arg_get_type(F, i))  # need to appease type checker
-                        )
-                    else:
-                        return pyobj(p[i], steal=True) if p[i] != cobj() else (
-                            _S.fn_get_default(F, i) if _S.fn_has_default(F, i) else _err(k)
-                        )
-
-                ta = tuple(_get_arg(fn, pargs, k, i) for i, k in staticenumerate(_S.fn_args(fn)))
-                __static_print__(ta)
-                if _S.fn_can_call(fn, *ta):
-                    try:
-                        tn = _S.fn_wrap_call_args(fn, *ta)
-                    except PyError:
-                        raise TypeError("cannot cast arguments")
-                    return fn(*tn).__to_py__()
-            except TypeError:
-                pass
+            a = _PyWrap._reorder_args_fastcall(fn, obj, args, nargs, kwds, nkw, M)
+            if a is not None and _S.fn_can_call(fn, *a):
+                return fn(*a).__to_py__()
 
         raise TypeError("cannot dispatch " + F)
 
