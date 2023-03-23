@@ -2,7 +2,8 @@
 
 from internal.gc import (
     free, register_finalizer, seq_alloc,
-    seq_alloc_atomic, seq_gc_add_roots, alloc_uncollectable
+    seq_alloc_atomic, seq_gc_add_roots, alloc_uncollectable,
+    alloc_atomic_uncollectable, atomic
 )
 
 @pure

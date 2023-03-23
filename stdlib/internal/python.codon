@@ -1897,8 +1897,12 @@ class _PyWrap:
         return cobj()
 
     def wrap_to_py(o) -> cobj:
-        pytype = _PyWrap.py_type(type(o))
-        obj = Ptr[PyWrapper[type(o)]](alloc_uncollectable(sizeof(type(o))))
+        O = type(o)
+        P = PyWrapper[O]
+        sz = sizeof(P)
+        pytype = _PyWrap.py_type(O)
+        mem = alloc_atomic_uncollectable(sz) if atomic(O) else alloc_uncollectable(sz)
+        obj = Ptr[P](mem.as_byte())
         obj[0] = PyWrapper(PyObject(1, pytype), o)
         return obj.as_byte()
 
