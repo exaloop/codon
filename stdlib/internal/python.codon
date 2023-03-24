@@ -1130,7 +1130,7 @@ class pyobj:
     def __iter__(self) -> Generator[pyobj]:
         it = PyObject_GetIter(self.p)
         if not it:
-            raise ValueError("Python object is not iterable")
+            raise TypeError("Python object is not iterable")
         try:
             while i := PyIter_Next(it):
                 yield pyobj(pyobj.exc_wrap(i), steal=True)
@@ -1467,18 +1467,20 @@ class _PyWrapError(Static[PyError]):
 
 
 class _PyWrap:
+    def _dispatch_error(F: Static[str]):
+        raise TypeError("could not find callable method '" + F + "' for given arguments")
+
     def _wrap(args, T: type, F: Static[str], map):
         for fn in _S.fn_overloads(T, F):
             a = _PyWrap._args_from_py(fn, args)
             if a is None:
                 continue
-
             if _S.fn_can_call(fn, *a):
                 try:
                     return map(fn, a)
                 except PyError as e:
                     pass
-        raise TypeError("cannot dispatch " + F)
+        _PyWrap._dispatch_error(F)
 
     def _wrap_unary(obj: cobj, T: type, F: Static[str]) -> cobj:
         return _PyWrap._wrap(
@@ -1762,21 +1764,21 @@ class _PyWrap:
         )
 
     def wrap_magic_init(obj: cobj, args: cobj, kwargs: cobj, T: type) -> i32:
-        for fn in _S.fn_overloads(T, "__init__"):
+        F: Static[str] = "__init__"
+        for fn in _S.fn_overloads(T, F):
             a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
             if a is not None and _S.fn_can_call(fn, *a):
                 fn(*a)
                 return i32(0)
-
-        raise TypeError("could not dispatch __init__ call for given arguments")
+        _PyWrap._dispatch_error(F)
 
     def wrap_magic_call(obj: cobj, args: cobj, kwargs: cobj, T: type) -> cobj:
-        for fn in _S.fn_overloads(T, "__call__"):
+        F: Static[str] = "__call__"
+        for fn in _S.fn_overloads(T, F):
             a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
             if a is not None and _S.fn_can_call(fn, *a):
                 return fn(*a).__to_py__()
-
-        raise TypeError("could not dispatch __call__ call for given arguments")
+        _PyWrap._dispatch_error(F)
 
     def _wrap_cmp(obj: cobj, other: cobj, T: type, F: Static[str]) -> cobj:
         return _PyWrap._wrap(
@@ -1821,12 +1823,13 @@ class _PyWrap:
 
     def wrap_magic_setitem(obj: cobj, idx: cobj, val: cobj, T: type) -> i32:
         if val == cobj():
-            if hasattr(T, "__delitem__"):
+            F: Static[str] = "__delitem__"
+            if hasattr(T, F):
                 return _PyWrap._wrap(
-                    (obj, idx), T=T, F="__delitem__",
+                    (obj, idx), T=T, F=F,
                     map=lambda f, a: i32(0)
                 )
-            raise TypeError("type " + T.__name__ + " has no attribute __delitem__")
+            _PyWrap._dispatch_error(F)
         else:
             return _PyWrap._wrap(
                 (obj, idx, val), T=T, F="__setitem__",
@@ -1882,7 +1885,7 @@ class _PyWrap:
             if a is not None and _S.fn_can_call(fn, *a):
                 return fn(*a).__to_py__()
 
-        raise TypeError("cannot dispatch " + F)
+        _PyWrap._dispatch_error(F)
 
     def wrap_get(obj: cobj, closure: cobj, T: type, S: Static[str]):
         return getattr(T.__from_py__(obj), S).__to_py__()
@@ -1910,5 +1913,5 @@ class _PyWrap:
         obj = Ptr[PyWrapper[T]](o)[0]
         pytype = _PyWrap.py_type(T)
         if obj.head.pytype != pytype:
-            raise PyError("Python object has incompatible type")
+            _conversion_error(T.__name__)
         return obj.data
