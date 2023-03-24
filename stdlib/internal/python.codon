@@ -1748,7 +1748,7 @@ class _PyWrap:
     def wrap_magic_bool(obj: cobj, T: type) -> i32:
         return _PyWrap._wrap(
             (obj,), T=T, F="__bool__",
-            map=lambda f, a: i32(f(*a))
+            map=lambda f, a: i32(1) if f(*a) else i32(0)
         )
 
     def wrap_magic_del(obj: cobj, T: type):
@@ -1760,7 +1760,7 @@ class _PyWrap:
     def wrap_magic_contains(obj: cobj, arg: cobj, T: type) -> i32:
         return _PyWrap._wrap(
             (obj, arg,), T=T, F="__contains__",
-            map=lambda f, a: i32(f(*a))
+            map=lambda f, a: i32(1) if f(*a) else i32(0)
         )
 
     def wrap_magic_init(obj: cobj, args: cobj, kwargs: cobj, T: type) -> i32:
