@@ -1,6 +1,6 @@
 # Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
 # Codon PEG grammar
-# Adpoted from Python 3's PEG grammar (https://docs.python.org/3/reference/grammar.html)
+# Adopted from Python 3's PEG grammar (https://docs.python.org/3/reference/grammar.html)
 
 # TODO: nice docstrs
 

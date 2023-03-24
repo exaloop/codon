@@ -393,7 +393,7 @@ test_inv_cdf()
 
 
 @test
-def test_ND_qualtiles():
+def test_ND_quartiles():
     PRECISION = 1e-6
     Z = statistics.NormalDist(0.0, 1.0)
     for n, expected in [
@@ -406,7 +406,7 @@ def test_ND_qualtiles():
             assert math.fabs(actual[i] - expected[i]) < PRECISION
 
 
-test_ND_qualtiles()
+test_ND_quartiles()
 
 
 @test

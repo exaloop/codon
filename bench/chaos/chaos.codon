@@ -232,7 +232,7 @@ class Chaosgame(object):
 
     def create_image_chaos(self, w, h, iterations, filename, rng_seed):
         # Always use the same sequence of random numbers
-        # to get reproductible benchmark
+        # to get reproducible benchmark
         random.seed(rng_seed)
 
         im = [[1] * h for i in range(w)]

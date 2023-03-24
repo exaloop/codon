@@ -383,7 +383,7 @@ struct TryStmt : public Stmt {
 struct ThrowStmt : public Stmt {
   ExprPtr expr;
   // True if a statement was transformed during type-checking stage
-  // (to avoid setting up ExcHeader multuple times).
+  // (to avoid setting up ExcHeader multiple times).
   bool transformed;
 
   explicit ThrowStmt(ExprPtr expr, bool transformed = false);

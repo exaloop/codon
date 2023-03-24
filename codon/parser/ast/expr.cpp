@@ -387,16 +387,16 @@ CallExpr::CallExpr(ExprPtr expr, std::vector<ExprPtr> args)
   validate();
 }
 void CallExpr::validate() const {
-  bool namesStarted = false, foundEllispis = false;
+  bool namesStarted = false, foundEllipsis = false;
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
         !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
       E(Error::CALL_NAME_ORDER, a.value);
     if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
       E(Error::CALL_NAME_STAR, a.value);
-    if (a.value->getEllipsis() && foundEllispis)
+    if (a.value->getEllipsis() && foundEllipsis)
       E(Error::CALL_ELLIPSIS, a.value);
-    foundEllispis |= bool(a.value->getEllipsis());
+    foundEllipsis |= bool(a.value->getEllipsis());
     namesStarted |= !a.name.empty();
   }
 }
