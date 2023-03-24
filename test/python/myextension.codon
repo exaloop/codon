@@ -161,11 +161,14 @@ class Vec:
         self.tag = f'({self.tag}^={x})'
         return self
 
-    def __int__(self):
-        return int(self.b)
+    #def __int__(self):
+    #    return int(self.b)
 
-    def __float__(self):
-        return self.b
+    #def __float__(self):
+    #    return self.b
+
+    #def __index__(self):
+    #    return int(self.a)
 
     def __floordiv__(self, x: float):
         return Vec(self.a // x, self.b // x, f'({self.tag}//{x})')
@@ -184,9 +187,6 @@ class Vec:
         self.b /= x
         self.tag = f'({self.tag}/={x})'
         return self
-
-    def __index__(self):
-        return int(self.a)
 
     def __matmul__(self, other: Vec):
         return (self.a * other.a) + (self.b * other.b)
@@ -208,7 +208,7 @@ class Vec:
         elif idx == 11:
             return self.a + self.b
         else:
-            raise KeyError('bad vec key' + str(idx))
+            raise KeyError('bad vec key ' + str(idx))
 
     def __setitem__(self, idx: int, val: float):
         if idx == 0:
@@ -219,7 +219,10 @@ class Vec:
             self.a = val
             self.b = val
         else:
-            raise KeyError('bad vec key' + str(idx) + ' with val ' + str(val))
+            raise KeyError('bad vec key ' + str(idx) + ' with val ' + str(val))
+
+    def __delitem__(self, idx: int):
+        self[idx] = 0.0
 
     def __contains__(self, val: float):
         return self.a == val or self.b == val

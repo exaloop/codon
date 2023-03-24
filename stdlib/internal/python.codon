@@ -1821,20 +1821,24 @@ class _PyWrap:
             Py_IncRef(Py_NotImplemented)
             return Py_NotImplemented
 
+    def wrap_magic_getitem(obj: cobj, idx: cobj, T: type):
+        return _PyWrap._wrap(
+            (obj, idx), T=T, F="__getitem__",
+            map=lambda f, a: f(*a).__to_py__()
+        )
+
     def wrap_magic_setitem(obj: cobj, idx: cobj, val: cobj, T: type) -> i32:
         if val == cobj():
-            F: Static[str] = "__delitem__"
-            if hasattr(T, F):
-                return _PyWrap._wrap(
-                    (obj, idx), T=T, F=F,
-                    map=lambda f, a: i32(0)
-                )
-            _PyWrap._dispatch_error(F)
-        else:
-            return _PyWrap._wrap(
-                (obj, idx, val), T=T, F="__setitem__",
-                map=lambda f, a: i32(0)
+            _PyWrap._wrap(
+                (obj, idx), T=T, F="__delitem__",
+                map=lambda f, a: f(*a)
             )
+        else:
+            _PyWrap._wrap(
+                (obj, idx, val), T=T, F="__setitem__",
+                map=lambda f, a: f(*a)
+            )
+        return i32(0)
 
     class IterWrap:
         _gen: cobj

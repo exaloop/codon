@@ -916,13 +916,19 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         pyFunc(pytype.len),      // sq_length
         null,                    // sq_concat
         null,                    // sq_repeat
-        pyFunc(pytype.getitem),  // sq_item
+        null,                    // sq_item
         null,                    // was_sq_slice
-        pyFunc(pytype.setitem),  // sq_ass_item
+        null,                    // sq_ass_item
         null,                    // was_sq_ass_slice
         pyFunc(pytype.contains), // sq_contains
         null,                    // sq_inplace_concat
         null,                    // sq_inplace_repeat
+    };
+
+    std::vector<llvm::Constant *> mappingSlots = {
+        null,                   // mp_length
+        pyFunc(pytype.getitem), // mp_subscript
+        pyFunc(pytype.setitem), // mp_ass_subscript
     };
 
     bool needNumberSlots =
@@ -931,9 +937,13 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     bool needSequenceSlots =
         std::find_if(sequenceSlots.begin(), sequenceSlots.end(),
                      [&](auto *v) { return v != null; }) != sequenceSlots.end();
+    bool needMappingSlots =
+        std::find_if(mappingSlots.begin(), mappingSlots.end(),
+                     [&](auto *v) { return v != null; }) != mappingSlots.end();
 
     llvm::Constant *numberSlotsConst = null;
     llvm::Constant *sequenceSlotsConst = null;
+    llvm::Constant *mappingSlotsConst = null;
 
     if (needNumberSlots) {
       auto *pyNumberSlotsVar = new llvm::GlobalVariable(
@@ -951,6 +961,15 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
           llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots),
           ".pyext_sequence_slots." + pytype.name);
       sequenceSlotsConst = pySequenceSlotsVar;
+    }
+
+    if (needMappingSlots) {
+      auto *pyMappingSlotsVar = new llvm::GlobalVariable(
+          *M, pyMappingMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pyMappingMethodsType, mappingSlots),
+          ".pyext_mapping_slots." + pytype.name);
+      mappingSlotsConst = pyMappingSlotsVar;
     }
 
     auto *refType = cast<types::RefType>(pytype.type);
@@ -998,7 +1017,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         pyFunc(pytype.repr),                      // tp_repr
         numberSlotsConst,                         // tp_as_number
         sequenceSlotsConst,                       // tp_as_sequence
-        null,                                     // tp_as_mapping
+        mappingSlotsConst,                        // tp_as_mapping
         pyFunc(pytype.hash),                      // tp_hash
         pyFunc(pytype.call),                      // tp_call
         pyFunc(pytype.str),                       // tp_str
