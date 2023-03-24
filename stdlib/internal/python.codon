@@ -1853,12 +1853,19 @@ class _PyWrap:
 
         def _iter(obj: cobj) -> cobj:
             T  # need separate fn for each instantiation
+            p = Ptr[PyObject](obj)
+            o = p[0]
+            p[0] = PyObject(o.refcnt + 1, o.pytype)
             return obj
 
         def _iternext(self: cobj) -> cobj:
             pt = _PyWrap.IterWrap[T].__from_py__(self)
+            if pt._gen == cobj():
+                return cobj()
+
             gt = type(T().__iter__())(pt._gen)
             if gt.done():
+                pt._gen = cobj()
                 return cobj()
             else:
                 return gt.next().__to_py__()
