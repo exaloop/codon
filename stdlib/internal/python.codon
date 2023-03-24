@@ -1890,7 +1890,7 @@ class _PyWrap:
     def wrap_get(obj: cobj, closure: cobj, T: type, S: Static[str]):
         return getattr(T.__from_py__(obj), S).__to_py__()
 
-    def wrap_set(obj: cobj, what: cobj, closure: cobj,  T: type, S: Static[str]) -> i32:
+    def wrap_set(obj: cobj, what: cobj, closure: cobj, T: type, S: Static[str]) -> i32:
         t = T.__from_py__(obj)
         val = type(getattr(t, S)).__from_py__(what)
         setattr(t, S, val)
