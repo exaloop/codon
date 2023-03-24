@@ -428,8 +428,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         unify(typ, calleeFn->funcGenerics[si].type);
       } else {
         if (calleeFn->funcGenerics[si].type->getUnbound() &&
-            !calleeFn->ast->args[si].defaultValue &&
-            !partial &&
+            !calleeFn->ast->args[si].defaultValue && !partial &&
             in(niGenerics, calleeFn->funcGenerics[si].name)) {
           error("generic '{}' not provided", calleeFn->funcGenerics[si].niceName);
         }
