@@ -65,7 +65,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   transform(expr->ifexpr);
   transform(expr->elsexpr);
   // Add __bool__ wrapper
-  if (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
+  while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
   // Add wrappers and unify both sides
   wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
@@ -96,7 +96,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
     return;
   }
 
-  if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
+  while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   ctx->blockLevel++;
   transform(stmt->ifSuite);
