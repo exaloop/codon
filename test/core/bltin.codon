@@ -259,6 +259,34 @@ def test_divmod():
         assert math.isclose(result[1], exp_result[1])
 
 @test
+def test_pow():
+    assert pow(3, 4) == 81
+    assert pow(-3, 3) == -27
+    assert pow(1, 0) == 1
+    assert pow(-1, 0) == 1
+    assert pow(0, 0) == 1
+    assert pow(12, 12, 42) == 36
+    assert pow(1234, 4321, 99) == 46
+    assert pow(9999, 9999, 2) == 1
+    assert pow(0, 0, 1) == 0
+
+    try:
+        pow(1, -1, 2)
+        assert False
+    except ValueError as e:
+        assert 'negative' in str(e)
+
+    try:
+        pow(1, 1, 0)
+        assert False
+    except ValueError as e:
+        assert 'cannot be 0' in str(e)
+
+    assert pow(1.5, 2) == 2.25
+    assert pow(9, 0.5) == 3.0
+    assert pow(2.0, -1.0) == 0.5
+
+@test
 def test_num_from_str():
     assert int('0') == 0
     assert int('010') == 10
@@ -337,6 +365,7 @@ test_gen_builtins()
 test_int_format()
 test_reversed()
 test_divmod()
+test_pow()
 test_num_from_str()
 test_files(open)
 import gzip

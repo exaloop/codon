@@ -323,6 +323,29 @@ def oct(n):
 def hex(n):
     return _int_format(n.__index__(), 16, "0x")
 
+def pow(base: float, exp: float):
+    return base ** exp
+
+@overload
+def pow(base: int, exp: int, mod: Optional[int] = None):
+    if exp < 0:
+        raise ValueError("pow() negative int exponent not supported")
+
+    if mod is not None:
+        if mod == 0:
+            raise ValueError("pow() 3rd argument cannot be 0")
+        base %= mod
+
+    result = 1
+    while exp > 0:
+        if exp & 1:
+            x = result * base
+            result = x % mod if mod is not None else x
+        y = base * base
+        base = y % mod if mod is not None else y
+        exp >>= 1
+    return result % mod if mod is not None else result
+
 @extend
 class int:
     def _from_str(s: str, base: int):
