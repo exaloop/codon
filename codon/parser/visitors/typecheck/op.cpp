@@ -21,8 +21,10 @@ using namespace types;
 void TypecheckVisitor::visit(UnaryExpr *expr) {
   transform(expr->expr);
 
+  static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
+      staticOps = {{StaticValue::INT, {"-", "+", "!"}}, {StaticValue::STRING, {"@"}}};
   // Handle static expressions
-  if (expr->expr->isStatic()) {
+  if (expr->expr->isStatic() && in(staticOps[expr->expr->staticValue.type], expr->op)) {
     resultExpr = evaluateStaticUnary(expr);
     return;
   }
