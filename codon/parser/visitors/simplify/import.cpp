@@ -323,8 +323,10 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // str is not defined when loading internal.core; __name__ is not needed anyway
     n = nullptr;
   }
-  n = SimplifyVisitor(ictx, preamble)
-          .transform(N<SuiteStmt>(n, parseFile(ctx->cache, file.path)));
+  n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
+  n = SimplifyVisitor(ictx, preamble).transform(n);
+  if (!ctx->cache->errors.empty())
+    throw exc::ParserException();
   // Add comment to the top of import for easier dump inspection
   auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
   if (ctx->isStdlibLoading) {
