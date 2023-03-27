@@ -29,6 +29,10 @@ class Vec:
     def nop():
         return 'nop'
 
+    @property
+    def c(self):
+        return self.a + self.b
+
     def __str__(self):
         return f'{self.tag}: <{self.a}, {self.b}>'
 
@@ -41,7 +45,7 @@ class Vec:
     def __iadd__(self, other: Vec):
         self.a += other.a
         self.b += other.b
-        self.tag = f'({self.tag}+i+{other.tag})'
+        self.tag = f'({self.tag}+={other.tag})'
         return self
 
     def __add__(self, x: float):
@@ -62,7 +66,7 @@ class Vec:
     def __isub__(self, other: Vec):
         self.a -= other.a
         self.b -= other.b
-        self.tag = f'({self.tag}+={other.tag})'
+        self.tag = f'({self.tag}-={other.tag})'
         return self
 
     def __mul__(self, x: float):
@@ -194,7 +198,7 @@ class Vec:
     def __imatmul__(self, x: float):
         self.a *= x
         self.b *= x
-        self.tag = f'({self.tag}@{x})'
+        self.tag = f'({self.tag}@={x})'
         return self
 
     def __len__(self):
@@ -269,3 +273,7 @@ class Vec:
 
     def __del__(self):
         Vec.d += 1
+
+    @property
+    def nd(self):
+        return Vec.d
