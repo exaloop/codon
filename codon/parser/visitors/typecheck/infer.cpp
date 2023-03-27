@@ -586,8 +586,15 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         std::vector<types::TypePtr> args = fp->getArgTypes();
         args[0] = ct;
         auto m = findBestMethod(ct, fnName, args);
-        if (!m)
-          E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(), fnName);
+        if (!m) {
+          // Print a nice error message
+          std::vector<std::string> a;
+          for (auto &t : args)
+            a.emplace_back(fmt::format("{}", t->prettyString()));
+          std::string argsNice = fmt::format("({})", fmt::join(a, ", "));
+          E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(), fnName,
+            argsNice);
+        }
 
         std::vector<std::string> ns;
         for (auto &a : args)
