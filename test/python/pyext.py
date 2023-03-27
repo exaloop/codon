@@ -238,3 +238,34 @@ assert x >= x
 
 assert list(iter(x)) == ['x']
 assert list(iter(x+y+y)) == list('((x+y)+y)')
+
+assert 100 in y
+assert 1000 in y
+assert 100.5 not in y
+assert 'y' in y
+assert 'x' not in y
+
+assert y[0] == 100
+assert y[1] == 1000
+assert y[11] == 1100
+try:
+    y[-1]
+except KeyError as e:
+    assert str(e) == "'bad vec key -1'"
+else:
+    assert False
+
+y[0] = 99.9
+assert equal(y, 99.9, 1000, 'y')
+y[1] = -42.6
+assert equal(y, 99.9, -42.6, 'y')
+y[11] = 7.7
+assert equal(y, 7.7, 7.7, 'y')
+try:
+    y[2] = 1.2
+except KeyError as e:
+    assert str(e) == "'bad vec key 2 with val 1.2'"
+else:
+    assert False
+del y[1]
+assert equal(y, 7.7, 0.0, 'y')
