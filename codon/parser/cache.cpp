@@ -329,6 +329,8 @@ void Cache::populatePythonModule() {
           continue;
         auto fna = functions[canonicalName].ast;
         bool isMethod = fna->hasAttr(Attr::Method);
+        bool isProperty = fna->hasAttr(Attr::Property);
+
         std::string call = pyWrap + ".wrap_multiple";
         bool isMagic = false;
         if (startswith(n, "__") && endswith(n, "__")) {
@@ -338,11 +340,16 @@ void Cache::populatePythonModule() {
             isMagic = true;
           }
         }
+        if (isProperty)
+          call = pyWrap + ".wrap_get";
 
         auto fnName = call + ":0";
         seqassertn(in(functions, fnName), "bad name");
         auto generics = std::vector<types::TypePtr>{tc};
-        if (!isMagic) {
+        if (isProperty) {
+          generics.push_back(
+              std::make_shared<types::StaticType>(this, rev(canonicalName)));
+        } else if (!isMagic) {
           generics.push_back(std::make_shared<types::StaticType>(this, n));
           generics.push_back(std::make_shared<types::StaticType>(this, (int)isMethod));
         }
@@ -350,8 +357,10 @@ void Cache::populatePythonModule() {
         if (!f)
           continue;
 
-        LOG("[py] {} -> {}", n, call);
-        if (n == "__repr__") {
+        LOG("[py] {} -> {} ({}; {})", n, call, isMethod, isProperty);
+        if (isProperty) {
+          py.getset.push_back({rev(canonicalName), "", f, nullptr});
+        } else if (n == "__repr__") {
           py.repr = f;
         } else if (n == "__add__") {
           py.add = f;
