@@ -347,9 +347,31 @@ def test_files(open_fn):
     with open_fn(path) as f:
         assert f.read(3) == 'hel'
         assert f.read() == 'lo\nworld\n'
+        f.seek(0, 0)
+        assert f.tell() == 0
+        assert f.read() == 'hello\nworld\n'
+
+    try:
+        f.tell()
+        assert False
+    except IOError:
+        pass
+
+    try:
+        f.seek(0, 0)
+        assert False
+    except IOError:
+        pass
+
+    try:
+        f.flush()
+        assert False
+    except IOError:
+        pass
 
     f = open_fn(path, 'a')
     f.write('goodbye')
+    f.flush()
     f.close()
 
     with open_fn(path) as f:

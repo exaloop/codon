@@ -59,15 +59,18 @@ class File:
         return str(buf, ret)
 
     def tell(self) -> int:
+        self._ensure_open()
         ret = _C.ftell(self.fp)
         self._errcheck("error in tell")
         return ret
 
     def seek(self, offset: int, whence: int):
+        self._ensure_open()
         _C.fseek(self.fp, offset, i32(whence))
         self._errcheck("error in seek")
 
     def flush(self):
+        self._ensure_open()
         _C.fflush(self.fp)
 
     def close(self):
@@ -198,12 +201,20 @@ class gzFile:
         return str(buf, int(ret))
 
     def tell(self) -> int:
+        self._ensure_open()
         ret = _C.gztell(self.fp)
         _gz_errcheck(self.fp)
         return ret
 
     def seek(self, offset: int, whence: int):
+        self._ensure_open()
         _C.gzseek(self.fp, offset, i32(whence))
+        _gz_errcheck(self.fp)
+
+    def flush(self):
+        Z_FINISH = 4
+        self._ensure_open()
+        _C.gzflush(self.fp, i32(Z_FINISH))
         _gz_errcheck(self.fp)
 
     def _iter(self) -> Generator[str]:
