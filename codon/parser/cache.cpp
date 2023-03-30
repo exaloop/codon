@@ -334,8 +334,10 @@ void Cache::populatePythonModule() {
         std::string call = pyWrap + ".wrap_multiple";
         bool isMagic = false;
         if (startswith(n, "__") && endswith(n, "__")) {
-          if (auto i = in(classes[pyWrap].methods,
-                          "wrap_magic_" + n.substr(2, n.size() - 4))) {
+          auto m = n.substr(2, n.size() - 4);
+          if (m == "new" && c.ast->hasAttr(Attr::Tuple))
+            m = "init";
+          if (auto i = in(classes[pyWrap].methods, "wrap_magic_" + m)) {
             call = *i;
             isMagic = true;
           }
