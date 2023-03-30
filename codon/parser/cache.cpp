@@ -452,7 +452,7 @@ void Cache::populatePythonModule() {
           py.iter = f;
         } else if (n == "__del__") {
           py.del = f;
-        } else if (n == "__init__") {
+        } else if (n == "__init__" || (c.ast->hasAttr(Attr::Tuple) && n == "__new__")) {
           py.init = f;
         } else {
           py.methods.push_back(ir::PyFunction{
