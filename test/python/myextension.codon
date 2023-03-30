@@ -301,12 +301,14 @@ class Vec:
     def __del__(self):
         Vec.d += 1
 
-    @property
-    def nd(self):
+    def nd():
         return Vec.d
 
 def f6(x: float, t: str):
     return Vec(x, x, t)
+
+def reset():
+    Vec.n = 0
 
 @tuple
 class Foo:
