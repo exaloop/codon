@@ -25,6 +25,7 @@
 
 * [Python integration](interop/python.md)
 * [Python decorator](interop/decorator.md)
+* [Python extensions](interop/pyext.md)
 * [C/C++ integration](interop/cpp.md)
 * [Jupyter integration](interop/jupyter.md)
 
