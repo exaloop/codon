@@ -3,6 +3,80 @@ import myext as m
 def equal(v, a, b, tag):
     return v.a == a and v.b == b and v.tag == tag
 
+# functions #
+#############
+
+assert m.f1(2.2, 3.3) == (2.2, 3.3)
+assert m.f1(2.2, 3.3) == (2.2, 3.3)
+assert m.f1(3.3) == (3.3, 2.22)
+assert m.f1() == (1.11, 2.22)
+assert m.f1(a=2.2, b=3.3) == (2.2, 3.3)
+assert m.f1(2.2, b=3.3) == (2.2, 3.3)
+assert m.f1(b=3.3, a=2.2) == (2.2, 3.3)
+assert m.f1(a=2.2) == (2.2, 2.22)
+assert m.f1(b=3.3) == (1.11, 3.3)
+
+try:
+    m.f1(1.1, 2.2, 3.3)
+except:
+    pass
+else:
+    assert False
+
+try:
+    m.f1(z=1)
+except:
+    pass
+else:
+    assert False
+
+assert m.f2() == ({1: 'one'}, {2}, [3])
+
+try:
+    m.f2(1)
+except:
+    pass
+else:
+    assert False
+
+try:
+    m.f2(z=1, y=5)
+except:
+    pass
+else:
+    assert False
+
+assert m.f3(42) == 84
+assert m.f3(1.5) == 3.0
+assert m.f3('x') == 'xx'
+
+try:
+    m.f3(1, 2)
+except:
+    pass
+else:
+    assert False
+
+try:
+    m.f3(a=1, b=2)
+except:
+    pass
+else:
+    assert False
+
+assert m.f4() == ['f4()']
+assert m.f4(2.2, 3.3) == (2.2, 3.3)
+assert m.f4(3.3) == (3.3, 2.22)
+assert m.f4(a=2.2, b=3.3) == (2.2, 3.3)
+assert m.f4(2.2, b=3.3) == (2.2, 3.3)
+assert m.f4(b=3.3, a=2.2) == (2.2, 3.3)
+assert m.f4(a=2.2) == (2.2, 2.22)
+assert m.f4(b=3.3) == (1.11, 3.3)
+assert m.f4('foo') == ('foo', 'foo')
+assert m.f4({1}) == {1}
+assert m.f5() is None
+assert equal(m.f6(1.9, 't'), 1.9, 1.9, 't')
+
 # constructors #
 ################
 
@@ -53,6 +127,13 @@ else:
 
 try:
     x.foo(1, 2, b=2)
+except:
+    pass
+else:
+    assert False
+
+try:
+    x.foo(1, z=2)
 except:
     pass
 else:

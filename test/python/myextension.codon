@@ -1,5 +1,32 @@
 print('Hello from Codon')
 
+def f1(a: float = 1.11, b: float = 2.22):
+    return (a, b)
+
+def f2():
+    return ({1: 'one'}, {2}, [3])
+
+def f3(x):
+    return x * 2
+
+def f4(x):
+    return x
+
+@overload
+def f4(a: float = 1.11, b: float = 2.22):
+    return f1(a=a, b=b)
+
+@overload
+def f4():
+    return ['f4()']
+
+@overload
+def f4(x: str):
+    return x, x
+
+def f5():
+    pass
+
 @dataclass(python=True)
 class Vec:
     a: float
@@ -277,3 +304,20 @@ class Vec:
     @property
     def nd(self):
         return Vec.d
+
+def f6(x: float, t: str):
+    return Vec(x, x, t)
+
+@tuple
+class Foo:
+    a: List[str]
+    x: Dict[str, int]
+
+    def __new__(a: List[str]) -> Foo:
+        return (a, {s: i for i, s in enumerate(a)})
+
+    def __iter__(self):
+        return iter(self.a)
+
+    def __repr__(self):
+        return f'Foo({self.a}, {self.x})'
