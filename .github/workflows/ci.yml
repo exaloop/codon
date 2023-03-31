@@ -233,7 +233,7 @@ jobs:
           path: codon-linux-x86_64.tar.gz
 
       - name: Publish on TestPyPI
-        if: startsWith(matrix.os, 'ubuntu')
+        if: github.ref == 'refs/heads/develop' && startsWith(matrix.os, 'ubuntu')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
