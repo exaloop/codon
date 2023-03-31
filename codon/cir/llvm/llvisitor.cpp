@@ -983,20 +983,36 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
 
     auto *alloc = llvm::cast<llvm::Function>(
         M->getOrInsertFunction(pytype.name + ".py_alloc", ptr, ptr, i64).getCallee());
-    auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
-    B->SetInsertPoint(entry);
-    auto *pythonObject = B->CreateCall(allocUncollectable, B->getInt64(pySize));
-    auto *header = B->CreateInsertValue(
-        llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null),
-        alloc->arg_begin(), 1);
-    B->CreateStore(header, pythonObject);
-    if (refType) {
-      auto *codonObject = B->CreateCall(
-          makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
-      B->CreateStore(codonObject,
-                     B->CreateGEP(objectType, pythonObject, {zero64, B->getInt32(1)}));
+    {
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
+      B->SetInsertPoint(entry);
+      auto *pythonObject = B->CreateCall(allocUncollectable, B->getInt64(pySize));
+      auto *header = B->CreateInsertValue(
+          llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null),
+          alloc->arg_begin(), 1);
+      B->CreateStore(header, pythonObject);
+      if (refType) {
+        auto *codonObject = B->CreateCall(
+            makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
+        B->CreateStore(codonObject, B->CreateGEP(objectType, pythonObject,
+                                                 {zero64, B->getInt32(1)}));
+      }
+      B->CreateRet(pythonObject);
     }
-    B->CreateRet(pythonObject);
+
+    auto *delFn = pyFuncWrap(pytype.del, /*wrap=*/false);
+    auto *dealloc = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pytype.name + ".py_dealloc", B->getVoidTy(), ptr)
+            .getCallee());
+    {
+      llvm::Value *obj = dealloc->arg_begin();
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", dealloc);
+      B->SetInsertPoint(entry);
+      if (delFn != null)
+        B->CreateCall(llvm::FunctionCallee(dealloc->getFunctionType(), delFn), obj);
+      B->CreateCall(free, obj);
+      B->CreateRetVoid();
+    }
 
     auto *pyNew = llvm::cast<llvm::Function>(
         M->getOrInsertFunction("PyType_GenericNew", ptr, ptr, ptr, ptr).getCallee());
@@ -1009,7 +1025,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         pyString(pymod.name + "." + pytype.name), // tp_name
         B->getInt64(pySize),                      // tp_basicsize
         zero64,                                   // tp_itemsize
-        free,                                     // tp_dealloc
+        dealloc,                                  // tp_dealloc
         zero64,                                   // tp_vectorcall_offset
         null,                                     // tp_getattr
         null,                                     // tp_setattr
@@ -1052,7 +1068,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
         null,                                     // tp_weaklist
         null,                                     // tp_del
         zero32,                                   // tp_version_tag
-        pyFunc(pytype.del),                       // tp_finalize
+        free,                                     // tp_finalize
         null,                                     // tp_vectorcall
         B->getInt8(0),                            // tp_watched
     };
