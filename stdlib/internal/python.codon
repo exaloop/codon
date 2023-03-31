@@ -1764,13 +1764,24 @@ class _PyWrap:
         )
 
     def wrap_magic_init(obj: cobj, args: cobj, kwargs: cobj, T: type) -> i32:
-        F: Static[str] = "__init__"
-        for fn in _S.fn_overloads(T, F):
-            a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
-            if a is not None and _S.fn_can_call(fn, *a):
-                fn(*a)
-                return i32(0)
-        _PyWrap._dispatch_error(F)
+        if isinstance(T, ByRef):
+            F: Static[str] = "__init__"
+            for fn in _S.fn_overloads(T, F):
+                a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
+                if a is not None and _S.fn_can_call(fn, *a):
+                    fn(*a)
+                    return i32(0)
+            _PyWrap._dispatch_error(F)
+        else:
+            F: Static[str] = "__new__"
+            for fn in _S.fn_overloads(T, F):
+                a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=0)
+                if a is not None and _S.fn_can_call(fn, *a):
+                    x = fn(*a)
+                    p = Ptr[PyObject](obj) + 1
+                    Ptr[T](p.as_byte())[0] = x
+                    return i32(0)
+            _PyWrap._dispatch_error(F)
 
     def wrap_magic_call(obj: cobj, args: cobj, kwargs: cobj, T: type) -> cobj:
         F: Static[str] = "__call__"
