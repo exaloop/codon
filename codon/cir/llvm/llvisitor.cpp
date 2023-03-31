@@ -1348,6 +1348,7 @@ llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(const std::string &name) {
     tidx = new llvm::GlobalVariable(
         *M, typeInfoType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantStruct::get(typeInfoType, B->getInt32(idx)), typeVarName);
+    tidx->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   }
   return tidx;
 }
