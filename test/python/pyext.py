@@ -1,4 +1,5 @@
 import myext as m
+import myext2 as m2
 
 def equal(v, a, b, tag):
     ok = (v.a == a and v.b == b and v.tag == tag)
@@ -7,82 +8,91 @@ def equal(v, a, b, tag):
         print('EXP:', a, b, tag)
     return ok
 
-def test_codon_extensions():
+saw_fun = False
+saw_set = False
+saw_foo = False
+
+def test_codon_extensions(m):
     m.reset()
 
     # functions #
     #############
 
-    assert m.f1(2.2, 3.3) == (2.2, 3.3)
-    assert m.f1(2.2, 3.3) == (2.2, 3.3)
-    assert m.f1(3.3) == (3.3, 2.22)
-    assert m.f1() == (1.11, 2.22)
-    assert m.f1(a=2.2, b=3.3) == (2.2, 3.3)
-    assert m.f1(2.2, b=3.3) == (2.2, 3.3)
-    assert m.f1(b=3.3, a=2.2) == (2.2, 3.3)
-    assert m.f1(a=2.2) == (2.2, 2.22)
-    assert m.f1(b=3.3) == (1.11, 3.3)
+    global saw_fun
 
-    try:
-        m.f1(1.1, 2.2, 3.3)
-    except:
-        pass
-    else:
-        assert False
+    if hasattr(m, 'f1'):
+        assert m.f1(2.2, 3.3) == (2.2, 3.3)
+        assert m.f1(2.2, 3.3) == (2.2, 3.3)
+        assert m.f1(3.3) == (3.3, 2.22)
+        assert m.f1() == (1.11, 2.22)
+        assert m.f1(a=2.2, b=3.3) == (2.2, 3.3)
+        assert m.f1(2.2, b=3.3) == (2.2, 3.3)
+        assert m.f1(b=3.3, a=2.2) == (2.2, 3.3)
+        assert m.f1(a=2.2) == (2.2, 2.22)
+        assert m.f1(b=3.3) == (1.11, 3.3)
 
-    try:
-        m.f1(z=1)
-    except:
-        pass
-    else:
-        assert False
+        try:
+            m.f1(1.1, 2.2, 3.3)
+        except:
+            pass
+        else:
+            assert False
 
-    assert m.f2() == ({1: 'one'}, {2}, [3])
+        try:
+            m.f1(z=1)
+        except:
+            pass
+        else:
+            assert False
 
-    try:
-        m.f2(1)
-    except:
-        pass
-    else:
-        assert False
+        assert m.f2() == ({1: 'one'}, {2}, [3])
 
-    try:
-        m.f2(z=1, y=5)
-    except:
-        pass
-    else:
-        assert False
+        try:
+            m.f2(1)
+        except:
+            pass
+        else:
+            assert False
 
-    assert m.f3(42) == 84
-    assert m.f3(1.5) == 3.0
-    assert m.f3('x') == 'xx'
+        try:
+            m.f2(z=1, y=5)
+        except:
+            pass
+        else:
+            assert False
 
-    try:
-        m.f3(1, 2)
-    except:
-        pass
-    else:
-        assert False
+        assert m.f3(42) == 84
+        assert m.f3(1.5) == 3.0
+        assert m.f3('x') == 'xx'
 
-    try:
-        m.f3(a=1, b=2)
-    except:
-        pass
-    else:
-        assert False
+        try:
+            m.f3(1, 2)
+        except:
+            pass
+        else:
+            assert False
 
-    assert m.f4() == ['f4()']
-    assert m.f4(2.2, 3.3) == (2.2, 3.3)
-    assert m.f4(3.3) == (3.3, 2.22)
-    assert m.f4(a=2.2, b=3.3) == (2.2, 3.3)
-    assert m.f4(2.2, b=3.3) == (2.2, 3.3)
-    assert m.f4(b=3.3, a=2.2) == (2.2, 3.3)
-    assert m.f4(a=2.2) == (2.2, 2.22)
-    assert m.f4(b=3.3) == (1.11, 3.3)
-    assert m.f4('foo') == ('foo', 'foo')
-    assert m.f4({1}) == {1}
-    assert m.f5() is None
-    assert equal(m.f6(1.9, 't'), 1.9, 1.9, 't')
+        try:
+            m.f3(a=1, b=2)
+        except:
+            pass
+        else:
+            assert False
+
+        assert m.f4() == ['f4()']
+        assert m.f4(2.2, 3.3) == (2.2, 3.3)
+        assert m.f4(3.3) == (3.3, 2.22)
+        assert m.f4(a=2.2, b=3.3) == (2.2, 3.3)
+        assert m.f4(2.2, b=3.3) == (2.2, 3.3)
+        assert m.f4(b=3.3, a=2.2) == (2.2, 3.3)
+        assert m.f4(a=2.2) == (2.2, 2.22)
+        assert m.f4(b=3.3) == (1.11, 3.3)
+        assert m.f4('foo') == ('foo', 'foo')
+        assert m.f4({1}) == {1}
+        assert m.f5() is None
+        assert equal(m.f6(1.9, 't'), 1.9, 1.9, 't')
+
+        saw_fun = True
 
     # constructors #
     ################
@@ -197,10 +207,11 @@ def test_codon_extensions():
     # fields #
     ##########
 
-    t.a = 99
-    assert equal(t, 99, 11, 'v2')
-    t.tag = 't'
-    assert equal(t, 99, 11, 't')
+    if hasattr(t, '__setitem__'):
+        t.a = 99
+        assert equal(t, 99, 11, 'v2')
+        t.tag = 't'
+        assert equal(t, 99, 11, 't')
 
     # magics #
     ##########
@@ -343,22 +354,53 @@ def test_codon_extensions():
     else:
         assert False
 
-    y[0] = 99.9
-    assert equal(y, 99.9, 1000, 'y')
-    y[1] = -42.6
-    assert equal(y, 99.9, -42.6, 'y')
-    y[11] = 7.7
-    assert equal(y, 7.7, 7.7, 'y')
-    try:
-        y[2] = 1.2
-    except KeyError as e:
-        assert str(e) == "'bad vec key 2 with val 1.2'"
-    else:
-        assert False
-    del y[1]
-    assert equal(y, 7.7, 0.0, 'y')
+    global saw_set
+    if hasattr(y, '__setitem__'):
+        y[0] = 99.9
+        assert equal(y, 99.9, 1000, 'y')
+        y[1] = -42.6
+        assert equal(y, 99.9, -42.6, 'y')
+        y[11] = 7.7
+        assert equal(y, 7.7, 7.7, 'y')
+        try:
+            y[2] = 1.2
+        except KeyError as e:
+            assert str(e) == "'bad vec key 2 with val 1.2'"
+        else:
+            assert False
 
-for _ in range(5000):
-    test_codon_extensions()
+        del y[1]
+        assert equal(y, 7.7, 0.0, 'y')
 
-print(m.Vec.nd())
+        saw_set = True
+
+    assert m.Vec.nd() > 0
+
+    # tuple classes #
+    #################
+    global saw_foo
+    if hasattr(m, 'Foo'):
+        x = m.Foo(list('hello'))
+        assert x.a == list('hello')
+        assert x.x == {s: i for i, s in enumerate('hello')}
+        assert x.hello() == 'x'
+
+        try:
+            x.a = ['bye']
+        except AttributeError:
+            pass
+        else:
+            assert False
+
+        assert int(x) == 42
+        assert float(x) == 3.14
+        assert x.__index__() == 99
+        saw_foo = True
+
+for _ in range(3000):
+    test_codon_extensions(m)
+    test_codon_extensions(m2)
+
+assert saw_fun
+assert saw_set
+assert saw_foo

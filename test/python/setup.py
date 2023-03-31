@@ -56,3 +56,13 @@ setup(
     ],
     cmdclass={'build_ext': BuildCodonExt}
 )
+
+setup(
+    name='myext2',
+    version='0.1',
+    packages=['myext2'],
+    ext_modules=[
+        CodonExtension('myext2', 'myextension2.codon'),
+    ],
+    cmdclass={'build_ext': BuildCodonExt}
+)

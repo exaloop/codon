@@ -1,33 +1,6 @@
-print('Hello from Codon')
+print('Hello from Codon 2')
 
-def f1(a: float = 1.11, b: float = 2.22):
-    return (a, b)
-
-def f2():
-    return ({1: 'one'}, {2}, [3])
-
-def f3(x):
-    return x * 2
-
-def f4(x):
-    return x
-
-@overload
-def f4(a: float = 1.11, b: float = 2.22):
-    return f1(a=a, b=b)
-
-@overload
-def f4():
-    return ['f4()']
-
-@overload
-def f4(x: str):
-    return x, x
-
-def f5():
-    pass
-
-@dataclass(python=True)
+@tuple
 class Vec:
     a: float
     b: float
@@ -35,14 +8,13 @@ class Vec:
     n: ClassVar[int] = 0
     d: ClassVar[int] = 0
 
-    def __init__(self, a: float, b: float, tag: str):
-        self.a = a
-        self.b = b
-        self.tag = tag
+    def __new__(a: float, b: float, tag: str) -> Vec:
+        return (a, b, tag)
 
-    def __init__(self, a: float = 0.0, b: float = 0.0):
-        self.__init__(a, b, 'v' + str(Vec.n))
+    def __new__(a: float = 0.0, b: float = 0.0):
+        v = Vec(a, b, 'v' + str(Vec.n))
         Vec.n += 1
+        return v
 
     def foo(self, a: float = 1.11, b: float = 2.22):
         return (self.a, a, b)
@@ -70,19 +42,21 @@ class Vec:
         return Vec(self.a + other.a, self.b + other.b, f'({self.tag}+{other.tag})')
 
     def __iadd__(self, other: Vec):
-        self.a += other.a
-        self.b += other.b
-        self.tag = f'({self.tag}+={other.tag})'
-        return self
+        a, b = self.a, self.b
+        a += other.a
+        b += other.b
+        tag = f'({self.tag}+={other.tag})'
+        return Vec(a, b, tag)
 
     def __add__(self, x: float):
         return Vec(self.a + x, self.b + x, f'({self.tag}+{x})')
 
     def __iadd__(self, x: float):
-        self.a += x
-        self.b += x
-        self.tag = f'({self.tag}+={x})'
-        return self
+        a, b = self.a, self.b
+        a += x
+        b += x
+        tag = f'({self.tag}+={x})'
+        return Vec(a, b, tag)
 
     def __add__(self, x: int):
         return Vec(self.a + x, self.b + x, f'({self.tag}++{x})')
@@ -91,28 +65,31 @@ class Vec:
         return Vec(self.a - other.a, self.b - other.b, f'({self.tag}-{other.tag})')
 
     def __isub__(self, other: Vec):
-        self.a -= other.a
-        self.b -= other.b
-        self.tag = f'({self.tag}-={other.tag})'
-        return self
+        a, b = self.a, self.b
+        a -= other.a
+        b -= other.b
+        tag = f'({self.tag}-={other.tag})'
+        return Vec(a, b, tag)
 
     def __mul__(self, x: float):
         return Vec(self.a * x, self.b * x, f'({self.tag}*{x})')
 
     def __imul__(self, x: float):
-        self.a *= x
-        self.b *= x
-        self.tag = f'({self.tag}*={x})'
-        return self
+        a, b = self.a, self.b
+        a *= x
+        b *= x
+        tag = f'({self.tag}*={x})'
+        return Vec(a, b, tag)
 
     def __mod__(self, x: float):
         return Vec(self.a % x, self.b % x, f'({self.tag}%{x})')
 
     def __imod__(self, x: float):
-        self.a %= x
-        self.b %= x
-        self.tag = f'({self.tag}%={x})'
-        return self
+        a, b = self.a, self.b
+        a %= x
+        b %= x
+        tag = f'({self.tag}%={x})'
+        return Vec(a, b, tag)
 
     def __divmod__(self, x: float):
         raise ArithmeticError('no divmod')
@@ -122,10 +99,11 @@ class Vec:
         return Vec(self.a ** x, self.b ** x, f'({self.tag}**{x})')
 
     def __ipow__(self, x: float):
-        self.a **= x
-        self.b **= x
-        self.tag = f'({self.tag}**={x})'
-        return self
+        a, b = self.a, self.b
+        a **= x
+        b **= x
+        tag = f'({self.tag}**={x})'
+        return Vec(a, b, tag)
 
     def __neg__(self):
         return Vec(-self.a, -self.b, f'(-{self.tag})')
@@ -148,49 +126,54 @@ class Vec:
         return Vec(self.a * y, self.b * y, f'({self.tag}<<{x})')
 
     def __ilshift__(self, x: int):
+        a, b = self.a, self.b
         y = 1 << x
-        self.a *= y
-        self.b *= y
-        self.tag = f'({self.tag}<<={x})'
-        return self
+        a *= y
+        b *= y
+        tag = f'({self.tag}<<={x})'
+        return Vec(a, b, tag)
 
     def __rshift__(self, x: int):
         y = 1 << x
         return Vec(self.a / y, self.b / y, f'({self.tag}>>{x})')
 
     def __irshift__(self, x: int):
+        a, b = self.a, self.b
         y = 1 << x
-        self.a /= y
-        self.b /= y
-        self.tag = f'({self.tag}>>={x})'
-        return self
+        a /= y
+        b /= y
+        tag = f'({self.tag}>>={x})'
+        return Vec(a, b, tag)
 
     def __and__(self, x: int):
         return Vec(int(self.a) & x, int(self.b) & x, f'({self.tag}&{x})')
 
     def __iand__(self, x: int):
-        self.a = int(self.a) & x
-        self.b = int(self.b) & x
-        self.tag = f'({self.tag}&={x})'
-        return self
+        a, b = self.a, self.b
+        a = int(self.a) & x
+        b = int(self.b) & x
+        tag = f'({self.tag}&={x})'
+        return Vec(a, b, tag)
 
     def __or__(self, x: int):
         return Vec(int(self.a) | x, int(self.b) | x, f'({self.tag}|{x})')
 
     def __ior__(self, x: int):
-        self.a = int(self.a) | x
-        self.b = int(self.b) | x
-        self.tag = f'({self.tag}|={x})'
-        return self
+        a, b = self.a, self.b
+        a = int(self.a) | x
+        b = int(self.b) | x
+        tag = f'({self.tag}|={x})'
+        return Vec(a, b, tag)
 
     def __xor__(self, x: int):
         return Vec(int(self.a) ^ x, int(self.b) ^ x, f'({self.tag}^{x})')
 
     def __ixor__(self, x: int):
-        self.a = int(self.a) ^ x
-        self.b = int(self.b) ^ x
-        self.tag = f'({self.tag}^={x})'
-        return self
+        a, b = self.a, self.b
+        a = int(self.a) ^ x
+        b = int(self.b) ^ x
+        tag = f'({self.tag}^={x})'
+        return Vec(a, b, tag)
 
     #def __int__(self):
     #    return int(self.b)
@@ -205,28 +188,31 @@ class Vec:
         return Vec(self.a // x, self.b // x, f'({self.tag}//{x})')
 
     def __ifloordiv__(self, x: float):
-        self.a //= x
-        self.b //= x
-        self.tag = f'({self.tag}//={x})'
-        return self
+        a, b = self.a, self.b
+        a //= x
+        b //= x
+        tag = f'({self.tag}//={x})'
+        return Vec(a, b, tag)
 
     def __truediv__(self, x: float):
         return Vec(self.a / x, self.b / x, f'({self.tag}/{x})')
 
     def __itruediv__(self, x: float):
-        self.a /= x
-        self.b /= x
-        self.tag = f'({self.tag}/={x})'
-        return self
+        a, b = self.a, self.b
+        a /= x
+        b /= x
+        tag = f'({self.tag}/={x})'
+        return Vec(a, b, tag)
 
     def __matmul__(self, other: Vec):
         return (self.a * other.a) + (self.b * other.b)
 
     def __imatmul__(self, x: float):
-        self.a *= x
-        self.b *= x
-        self.tag = f'({self.tag}@={x})'
-        return self
+        a, b = self.a, self.b
+        a *= x
+        b *= x
+        tag = f'({self.tag}@={x})'
+        return Vec(a, b, tag)
 
     def __len__(self):
         return len(self.tag)
@@ -240,20 +226,6 @@ class Vec:
             return self.a + self.b
         else:
             raise KeyError('bad vec key ' + str(idx))
-
-    def __setitem__(self, idx: int, val: float):
-        if idx == 0:
-            self.a = val
-        elif idx == 1:
-            self.b = val
-        elif idx == 11:
-            self.a = val
-            self.b = val
-        else:
-            raise KeyError('bad vec key ' + str(idx) + ' with val ' + str(val))
-
-    def __delitem__(self, idx: int):
-        self[idx] = 0.0
 
     def __contains__(self, val: float):
         return self.a == val or self.b == val
@@ -304,34 +276,5 @@ class Vec:
     def nd():
         return Vec.d
 
-def f6(x: float, t: str):
-    return Vec(x, x, t)
-
 def reset():
     Vec.n = 0
-
-@tuple
-class Foo:
-    a: List[str]
-    x: Dict[str, int]
-
-    def __new__(a: List[str]) -> Foo:
-        return (a, {s: i for i, s in enumerate(a)})
-
-    def __iter__(self):
-        return iter(self.a)
-
-    def __repr__(self):
-        return f'Foo({self.a}, {self.x})'
-
-    def hello(self):
-        return 'x'
-
-    def __int__(self):
-        return 42
-
-    def __float__(self):
-        return 3.14
-
-    def __index__(self):
-        return 99
