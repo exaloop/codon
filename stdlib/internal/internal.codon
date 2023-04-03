@@ -1,19 +1,9 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import (
-    free, register_finalizer, seq_alloc,
-    seq_alloc_atomic, seq_gc_add_roots, alloc_uncollectable,
-    alloc_atomic_uncollectable, atomic
+    alloc, alloc_atomic, alloc_uncollectable, alloc_atomic_uncollectable,
+    free, atomic, sizeof, register_finalizer
 )
-
-@pure
-@C
-def seq_check_errno() -> str:
-    pass
-
-from C import seq_print(str)
-from C import exit(int)
-from C import malloc(int) -> cobj as c_malloc
 
 __vtable_size__ = 0
 
@@ -35,7 +25,7 @@ class __internal__:
     def class_new(T: type) -> T:
         """Create a new reference (class) type"""
         sz = T.__tuplesize__()
-        p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
+        p = alloc_atomic(sz) if T.__atomic__ else alloc(sz)
         register_finalizer(p)
         pf = __internal__.to_class_ptr(p, T)
         __internal__.class_set_obj_vtable(pf)
@@ -63,8 +53,7 @@ class __internal__:
 
     def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
         """Create a global vtable."""
-        p = Ptr[Ptr[cobj]](sz)
-        seq_gc_add_roots(p.as_byte(), (p + sz).as_byte())
+        p = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
         __internal__.class_populate_vtables(p)
         return p
 
@@ -214,11 +203,17 @@ class __internal__:
         return AssertionError(s)
 
     def seq_assert_test(file: str, line: int, msg: str):
+        from C import seq_print(str)
         s = f": {msg}" if msg else ""
         s = f"\033[1;31mTEST FAILED:\033[0m {file} (line {line}){s}\n"
         seq_print(s)
 
     def check_errno(prefix: str):
+        @pure
+        @C
+        def seq_check_errno() -> str:
+            pass
+
         msg = seq_check_errno()
         if msg:
             raise OSError(prefix + msg)

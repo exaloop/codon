@@ -81,16 +81,16 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
 /// Lowers allocations of known, small size to alloca when possible.
 /// Also removes unused allocations.
 struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
-  std::string alloc;
-  std::string allocAtomic;
+  std::vector<std::string> allocators;
   std::string realloc;
   std::string free;
 
-  AllocationRemover(const std::string &alloc = "seq_alloc",
-                    const std::string &allocAtomic = "seq_alloc_atomic",
-                    const std::string &realloc = "seq_realloc",
-                    const std::string &free = "seq_free")
-      : alloc(alloc), allocAtomic(allocAtomic), realloc(realloc), free(free) {}
+  explicit AllocationRemover(
+      std::vector<std::string> allocators = {"seq_alloc", "seq_alloc_atomic",
+                                             "seq_alloc_uncollectable",
+                                             "seq_alloc_atomic_uncollectable"},
+      const std::string &realloc = "seq_realloc", const std::string &free = "seq_free")
+      : allocators(std::move(allocators)), realloc(realloc), free(free) {}
 
   static bool sizeOkToDemote(uint64_t size) { return 0 < size && size <= 1024; }
 
@@ -110,8 +110,8 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 
   bool isAlloc(const llvm::Value *value) {
     if (auto *func = getCalledFunction(value)) {
-      return func->arg_size() == 1 &&
-             (func->getName() == alloc || func->getName() == allocAtomic);
+      return func->arg_size() == 1 && std::find(allocators.begin(), allocators.end(),
+                                                func->getName()) != allocators.end();
     }
     return false;
   }
