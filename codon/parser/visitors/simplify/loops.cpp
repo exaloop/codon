@@ -57,12 +57,6 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
   ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
   stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   transformConditionalScope(stmt->suite);
-  ctx->leaveConditionalBlock();
-  // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
-    ctx->findDominatingBinding(var);
-  }
-  ctx->getBase()->loops.pop_back();
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
@@ -70,6 +64,13 @@ void SimplifyVisitor::visit(WhileStmt *stmt) {
                               N<IfStmt>(transform(N<IdExpr>(breakVar)),
                                         transformConditionalScope(stmt->elseSuite)));
   }
+
+  ctx->leaveConditionalBlock();
+  // Dominate loop variables
+  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
+    ctx->findDominatingBinding(var);
+  }
+  ctx->getBase()->loops.pop_back();
 }
 
 /// Transform for loop.
@@ -114,11 +115,6 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     stmts.push_back(stmt->suite);
     stmt->suite = transform(N<SuiteStmt>(stmts));
   }
-  ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
-  // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars)
-    ctx->findDominatingBinding(var);
-  ctx->getBase()->loops.pop_back();
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
@@ -126,6 +122,12 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
                               N<IfStmt>(transform(N<IdExpr>(breakVar)),
                                         transformConditionalScope(stmt->elseSuite)));
   }
+
+  ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
+  // Dominate loop variables
+  for (auto &var : ctx->getBase()->getLoop()->seenVars)
+    ctx->findDominatingBinding(var);
+  ctx->getBase()->loops.pop_back();
 }
 
 /// Transform and check for OpenMP decorator.

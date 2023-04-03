@@ -27,9 +27,10 @@ std::shared_ptr<peg::Grammar> initParser() {
   init_codon_actions(*g);
   ~(*g)["NLP"] <=
       peg::usr([](const char *s, size_t n, peg::SemanticValues &, std::any &dt) {
-        return std::any_cast<ParseContext &>(dt).parens
-                   ? 0
-                   : (n >= 1 && s[0] == '\\' ? 1 : -1);
+        auto e = (n >= 1 && s[0] == '\\' ? 1 : -1);
+        if (std::any_cast<ParseContext &>(dt).parens && e == -1)
+          e = 0;
+        return e;
       });
   for (auto &x : *g) {
     auto v = peg::LinkReferences(*g, x.second.params);

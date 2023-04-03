@@ -235,6 +235,19 @@ for i in [1]:
 else:
     print 'nope'
 
+best = 4
+for s in [3, 4, 5]:
+    for i in [s]:
+        if s >= best:
+            print('b:', best)
+            break
+    else:
+        print('s:', s)
+        best = s
+#: s: 3
+#: b: 3
+#: b: 3
+
 #%% match
 def foo(x):
     match x:
@@ -471,6 +484,8 @@ bar()
 from a.b.rec1_err import bar
 #! cannot import name 'bar' from 'a.b.rec1_err'
 #! name 'bar' is not defined
+# TODO: get rid of this!
+#! no module named 'rec2_err'
 
 #%% import_err_1,barebones
 class Foo:
