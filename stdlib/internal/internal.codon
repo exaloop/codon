@@ -84,6 +84,22 @@ class __internal__:
         """Calculates the byte distance of base class B and derived class D. Compiler generated."""
         return 0
 
+    def class_copy(obj: T, T: type) -> T:
+        # See class_new
+        sz = T.__tuplesize__()
+        p = alloc_atomic(sz) if T.__atomic__ else alloc(sz)
+        register_finalizer(p)
+
+        str.memcpy(p, obj.__raw__(), sizeof(obj))
+        return __internal__.to_class_ptr(p, T)
+
+    def class_super(obj: D, B: type, D: type) -> B:
+        pf = __internal__.to_class_ptr(obj.__raw__() + __internal__.class_base_derived_dist(B, D), B)
+        pn = __internal__.class_copy(pf)
+        # Replace vtables
+        __internal__.class_set_obj_vtable(pn)  # replace vtables to point to its vtables!
+        return pn
+
     # Unions
 
     @llvm

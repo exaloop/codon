@@ -201,6 +201,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     // vtable
     bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
     isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
+    isVirtual &= !expr->expr->isType();
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
       // Special case: route the call through a vtable

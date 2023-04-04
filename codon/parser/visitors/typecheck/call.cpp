@@ -638,10 +638,13 @@ ExprPtr TypecheckVisitor::transformSuper() {
       E(Error::CALL_SUPER_PARENT, getSrcInfo());
 
     auto superTyp = ctx->instantiate(vCands[1]->type, typ)->getClass();
-    // LOG("-> {}", superTyp);
     auto self = N<IdExpr>(funcTyp->ast->args[0].name);
     self->type = typ;
-    return castToSuperClass(self, superTyp, true);
+
+    auto typExpr = N<IdExpr>(superTyp->name);
+    typExpr->setType(superTyp);
+    return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
+                                 self, typExpr));
   }
 
   auto name = cands.front(); // the first inherited type
