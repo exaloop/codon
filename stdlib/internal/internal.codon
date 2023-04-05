@@ -20,17 +20,16 @@ class __internal__:
     def class_raw(obj) -> Ptr[byte]:
         ret ptr %obj
 
-    def class_new_shared(T: type) -> T:
-        sz = tuple(T).__elemsize__
+    def class_alloc(T: type) -> T:
+        """Allocates a new reference (class) type"""
+        sz = sizeof(tuple(T))
         p = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(p)
         return __internal__.to_class_ptr(p, T)
 
-    @pure
-    @derives
     def class_new(T: type) -> T:
         """Create a new reference (class) type"""
-        pf = __internal__.class_new_shared(T)
+        pf = __internal__.class_alloc(T)
         __internal__.class_set_obj_vtable(pf)
         return pf
 
@@ -88,8 +87,8 @@ class __internal__:
         return 0
 
     def class_copy(obj: T, T: type) -> T:
-        p = __internal__.class_new_shared(T)
-        str.memcpy(p.__raw__(), obj.__raw__(), tuple(T).__elemsize__)
+        p = __internal__.class_alloc(T)
+        str.memcpy(p.__raw__(), obj.__raw__(), sizeof(tuple(T)))
         return p
 
     def class_super(obj: D, B: type, D: type) -> B:

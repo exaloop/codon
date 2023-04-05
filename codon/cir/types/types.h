@@ -291,8 +291,6 @@ private:
     return !std::any_of(fields.begin(), fields.end(),
                         [](auto &field) { return !field.getType()->isAtomic(); });
   }
-
-  bool doIsContentAtomic() const override;
 };
 
 /// Membered type that is passed by reference. Similar to Python classes.
@@ -336,6 +334,8 @@ private:
   std::vector<Type *> doGetUsedTypes() const override { return {contents}; }
 
   bool doIsAtomic() const override { return false; }
+
+  bool doIsContentAtomic() const override;
 
   Value *doConstruct(std::vector<Value *> args) override;
 };
