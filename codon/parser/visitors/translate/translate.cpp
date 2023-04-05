@@ -234,14 +234,18 @@ void TranslateVisitor::visit(CallExpr *expr) {
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
-  if (expr->member == "__atomic__" || expr->member == "__elemsize__") {
+  if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
+      expr->member == "__contents_atomic__") {
     seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
     auto type = ctx->find(expr->expr->getId()->value)->getType();
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
     result = make<ir::TypePropertyInstr>(
         expr, type,
-        expr->member == "__atomic__" ? ir::TypePropertyInstr::Property::IS_ATOMIC
-                                     : ir::TypePropertyInstr::Property::SIZEOF);
+        expr->member == "__atomic__"
+            ? ir::TypePropertyInstr::Property::IS_ATOMIC
+            : (expr->member == "__contents_atomic__"
+                   ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
+                   : ir::TypePropertyInstr::Property::SIZEOF));
   } else {
     result = make<ir::ExtractInstr>(expr, transform(expr->expr), expr->member);
   }

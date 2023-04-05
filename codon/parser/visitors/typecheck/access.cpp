@@ -347,6 +347,8 @@ TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
     return ctx->getType("int");
   if (member == "__atomic__")
     return ctx->getType("bool");
+  if (member == "__contents_atomic__")
+    return ctx->getType("bool");
   if (member == "__name__")
     return ctx->getType("str");
   return nullptr;

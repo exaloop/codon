@@ -22,8 +22,7 @@ class __internal__:
 
     def class_new_shared(T: type) -> T:
         sz = tuple(T).__elemsize__
-        atomic = tuple(T).__atomic__
-        p = alloc_atomic(sz) if atomic else alloc(sz)
+        p = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(p)
         return __internal__.to_class_ptr(p, T)
 
