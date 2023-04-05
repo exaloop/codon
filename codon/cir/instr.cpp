@@ -114,6 +114,8 @@ types::Type *TypePropertyInstr::doGetType() const {
   switch (property) {
   case Property::IS_ATOMIC:
     return getModule()->getBoolType();
+  case Property::IS_CONTENT_ATOMIC:
+    return getModule()->getBoolType();
   case Property::SIZEOF:
     return getModule()->getIntType();
   default:

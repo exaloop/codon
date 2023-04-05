@@ -3062,6 +3062,9 @@ void LLVMVisitor::visit(const TypePropertyInstr *x) {
   case TypePropertyInstr::Property::IS_ATOMIC:
     value = B->getInt8(x->getInspectType()->isAtomic() ? 1 : 0);
     break;
+  case TypePropertyInstr::Property::IS_CONTENT_ATOMIC:
+    value = B->getInt8(x->getInspectType()->isContentAtomic() ? 1 : 0);
+    break;
   default:
     seqassertn(0, "unknown type property");
   }

@@ -269,7 +269,7 @@ protected:
 /// Instr representing getting information about a type.
 class TypePropertyInstr : public AcceptorExtend<TypePropertyInstr, Instr> {
 public:
-  enum Property { IS_ATOMIC, SIZEOF };
+  enum Property { IS_ATOMIC, IS_CONTENT_ATOMIC, SIZEOF };
 
 private:
   /// the type being inspected

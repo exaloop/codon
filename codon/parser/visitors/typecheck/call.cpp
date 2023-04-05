@@ -896,7 +896,6 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   for (auto &field : ctx->cache->classes[cls->name].fields)
     args.emplace_back(N<DotExpr>(N<IdExpr>(var), field.name));
 
-
   return transform(N<StmtExpr>(
       N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
       N<CallExpr>(N<IdExpr>(format("{}{}", TYPE_TUPLE, args.size())), args)));

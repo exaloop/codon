@@ -101,6 +101,12 @@ std::vector<Type *> RecordType::doGetUsedTypes() const {
   return ret;
 }
 
+bool RecordType::doIsContentAtomic() const {
+  return !std::any_of(fields.begin(), fields.end(), [](auto &field) {
+    return field.getName().rfind(".__vtable__", 0) != 0 && !field.getType()->isAtomic();
+  });
+}
+
 Type *RecordType::getMemberType(const std::string &n) const {
   auto it = std::find_if(fields.begin(), fields.end(),
                          [n](auto &x) { return x.getName() == n; });
