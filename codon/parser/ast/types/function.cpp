@@ -158,6 +158,7 @@ std::string FuncType::realizedName() const {
 PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
                          std::shared_ptr<FuncType> func, std::vector<char> known)
     : RecordType(*baseType), func(std::move(func)), known(std::move(known)) {}
+
 int PartialType::unify(Type *typ, Unification *us) {
   return this->RecordType::unify(typ, us);
 }

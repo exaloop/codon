@@ -223,7 +223,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       return nullptr;
   }
 
-  LOG_TYPECHECK("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
+  LOG_REALIZE("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
 
   // Realizations should always be visible, so add them to the toplevel
   ctx->addToplevel(realized->realizedTypeName(),
@@ -267,6 +267,16 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       cls->getContents()->setAttribute(
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
+
+  // Fix for partial types
+  if (auto p = type->getPartial()) {
+    auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func, p->known);
+    ctx->addToplevel(pt->realizedName(),
+                     std::make_shared<TypecheckItem>(TypecheckItem::Type, pt));
+    ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
+        ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
+  }
+
   return realized;
 }
 
@@ -479,9 +489,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto suite = N<SuiteStmt>();
     for (auto &f : fields)
       if (startswith(f.name, VAR_VTABLE)) {
-        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
         suite->stmts.push_back(N<AssignMemberStmt>(
-            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
+            N<IdExpr>(varName), f.name,
             N<IndexExpr>(
                 N<IdExpr>("__vtables__"),
                 N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));

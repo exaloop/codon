@@ -873,11 +873,30 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   if (!cls)
     return nullptr;
 
+  // tuple(ClassType) is a tuple type that corresponds to a class
+  if (expr->args.front().value->isType()) {
+    if (!realize(cls))
+      return expr->clone();
+
+    std::vector<ExprPtr> items;
+    auto tn = generateTuple(ctx->cache->classes[cls->name].fields.size());
+    for (auto &ft : ctx->cache->classes[cls->name].fields) {
+      auto t = ctx->instantiate(ft.type, cls);
+      auto rt = realize(t);
+      seqassert(rt, "cannot realize '{}' in {}", t, ft.name);
+      items.push_back(NT<IdExpr>(t->realizedName()));
+    }
+    auto e = transform(NT<InstantiateExpr>(N<IdExpr>(tn), items));
+    return e;
+  }
+
   std::vector<ExprPtr> args;
   args.reserve(ctx->cache->classes[cls->name].fields.size());
   std::string var = ctx->cache->getTemporaryVar("tup");
   for (auto &field : ctx->cache->classes[cls->name].fields)
     args.emplace_back(N<DotExpr>(N<IdExpr>(var), field.name));
+
+
   return transform(N<StmtExpr>(
       N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
       N<CallExpr>(N<IdExpr>(format("{}{}", TYPE_TUPLE, args.size())), args)));

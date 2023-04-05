@@ -195,19 +195,18 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     unify(expr->type, ctx->instantiate(bestMethod, typ));
 
     // Handle virtual calls
-    auto baseClass = expr->expr->type->getClass();
-    auto vtableName = format("{}.{}", VAR_VTABLE, baseClass->name);
+    auto vtableName = format("{}.{}", VAR_VTABLE, typ->name);
     // A function is deemed virtual if it is marked as such and if a base class has a
     // vtable
-    bool isVirtual = in(ctx->cache->classes[baseClass->name].virtuals, expr->member);
-    isVirtual &= ctx->findMember(baseClass->name, vtableName) != nullptr;
+    bool isVirtual = in(ctx->cache->classes[typ->name].virtuals, expr->member);
+    isVirtual &= ctx->findMember(typ->name, vtableName) != nullptr;
     isVirtual &= !expr->expr->isType();
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
       // Special case: route the call through a vtable
       if (realize(expr->type)) {
         auto fn = expr->type->getFunc();
-        auto vid = getRealizationID(expr->expr->type->getClass().get(), fn.get());
+        auto vid = getRealizationID(typ.get(), fn.get());
 
         // Function[Tuple[TArg1, TArg2, ...], TRet]
         std::vector<ExprPtr> ids;

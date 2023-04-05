@@ -1626,6 +1626,35 @@ B[Ho]()
 #: init B Ho
 
 
+class Vehicle:
+    def drive(self):
+        return "I'm driving a vehicle"
+
+class Car(Vehicle):
+    def drive(self):
+        return "I'm driving a car"
+
+class Truck(Vehicle):
+    def drive(self):
+        return "I'm driving a truck"
+
+class SUV(Car, Truck):
+    def drive(self):
+        return "I'm driving an SUV"
+
+suv = SUV()
+def moo(s):
+    print(s.drive())
+moo(suv)
+moo(Truck())
+moo(Car())
+moo(Vehicle())
+#: I'm driving an SUV
+#: I'm driving a truck
+#: I'm driving a car
+#: I'm driving a vehicle
+
+
 #%% polymorphism_error_1,barebones
 class M[T]:
     m: T

@@ -844,6 +844,8 @@ Base.test(a)
 #: a.test
 #: base.test
 #: base.test
+#: a.test
+#: base.test
 
 #%% super_tuple,barebones
 @tuple
