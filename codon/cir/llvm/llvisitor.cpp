@@ -1186,7 +1186,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   }
   B->CreateRet(mod);
 
-  writeToObjectFile(filename);
+  writeToObjectFile(filename, /*pic=*/true);
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
