@@ -135,26 +135,6 @@ private:
   std::ostream &doFormat(std::ostream &os) const override;
 };
 
-/// Attribute used to mark Python wrappers of Codon functions
-struct PythonWrapperAttribute : public Attribute {
-  static const std::string AttributeName;
-
-  /// the function being wrapped
-  Func *original;
-
-  /// Constructs a PythonWrapperAttribute.
-  /// @param original the function being wrapped
-  explicit PythonWrapperAttribute(Func *original) : original(original) {}
-
-  bool needsClone() const override { return false; }
-
-  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
-  std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
-
-private:
-  std::ostream &doFormat(std::ostream &os) const override;
-};
-
 /// Attribute attached to IR structures corresponding to tuple literals
 struct TupleLiteralAttribute : public Attribute {
   static const std::string AttributeName;

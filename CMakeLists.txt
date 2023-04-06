@@ -127,7 +127,6 @@ if(APPLE AND APPLE_ARM)
             ${CMAKE_BINARY_DIR})
 endif()
 
-
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})

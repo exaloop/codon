@@ -120,8 +120,6 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   }
   if (stmt->done)
     ctx->changedNodes++;
-  // LOG_TYPECHECK("[stmt] {}: {}{}", getSrcInfo(), stmt, stmt->isDone() ? "[done]" :
-  // "");
   return stmt;
 }
 

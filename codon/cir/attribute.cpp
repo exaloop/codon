@@ -39,22 +39,6 @@ std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
   return os;
 }
 
-const std::string PythonWrapperAttribute::AttributeName = "pythonWrapperAttribute";
-
-std::unique_ptr<Attribute> PythonWrapperAttribute::clone(util::CloneVisitor &cv) const {
-  return std::make_unique<PythonWrapperAttribute>(cast<Func>(cv.clone(original)));
-}
-
-std::unique_ptr<Attribute>
-PythonWrapperAttribute::forceClone(util::CloneVisitor &cv) const {
-  return std::make_unique<PythonWrapperAttribute>(cv.forceClone(original));
-}
-
-std::ostream &PythonWrapperAttribute::doFormat(std::ostream &os) const {
-  fmt::print(os, FMT_STRING("(pywrap {})"), original->referenceString());
-  return os;
-}
-
 const std::string SrcInfoAttribute::AttributeName = "srcInfoAttribute";
 
 const std::string DocstringAttribute::AttributeName = "docstringAttribute";
