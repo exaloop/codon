@@ -1,0 +1,52 @@
+FROM exaloop/codon-llvm:15.0.1
+ENV pass="codon-jupyter"
+
+# Install dependencies
+RUN yum -y install openssl-devel libsodium-devel libuuid-devel
+
+# Build Codon core
+RUN git clone -b pyext https://github.com/exaloop/codon /github/codon
+RUN cmake3 -S /github/codon -B /github/codon/build \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
+    -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
+    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm \
+    -DCMAKE_INSTALL_PREFIX=/opt/codon
+RUN cmake3 --build /github/codon/build
+RUN cmake3 --install /github/codon/build
+
+# Build Codon Jupyter support
+RUN cmake3 -S /github/codon/jupyter -B /github/codon/jupyter/build \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
+    -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
+    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm \
+    -DCODON_PATH=/opt/codon \
+    -DOPENSSL_ROOT_DIR=$(openssl version -d | cut -d' ' -f2 | tr -d '"') \
+    -DOPENSSL_CRYPTO_LIBRARY=/usr/lib64/libssl.so \
+    -DXEUS_USE_DYNAMIC_UUID=ON
+RUN cmake3 --build /github/codon/jupyter/build
+RUN cmake3 --install /github/codon/jupyter/build
+
+# Build Seq (bioinformatics plugin) for Codon
+RUN git clone -b develop https://github.com/exaloop/seq /github/seq
+RUN cmake3 -S /github/seq -B /github/seq/build \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
+    -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
+    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm \
+    -DCODON_PATH=/opt/codon
+RUN cmake3 --build /github/seq/build
+RUN cmake3 --install /github/seq/build
+
+# Set up Codon Jupyter kernel
+RUN pip3 install ipywidgets==7.6.5 numpy matplotlib pandas scipy jupyter plotly
+RUN mkdir -p /usr/share/jupyter/kernels/codon
+RUN echo '{"display_name": "Codon", "argv": [ "/opt/codon/bin/codon", "jupyter", "-plugin", "seq", "{connection_file}" ], "language": "python"}' > /usr/share/jupyter/kernels/codon/kernel.json
+
+# Launch Jupyter
+ENV CODON_PYTHON="/usr/lib64/libpython3.so"
+CMD jupyter notebook --port=8888 --no-browser --ip=0.0.0.0 --allow-root --NotebookApp.token=${pass}

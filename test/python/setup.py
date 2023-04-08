@@ -29,7 +29,7 @@ class BuildCodonExt(build_ext):
 
         optimization = '-debug' if self.debug else '-release'
         self.spawn([
-            '../../build/codon', 'build', optimization,
+            '../../build/codon', 'build', optimization, "--relocation-model=pic",
             '-pyext', '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
 
         print('-->', extension_path)
