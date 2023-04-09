@@ -1284,7 +1284,8 @@ class int:
         return pyobj.exc_wrap(PyLong_FromLong(self))
 
     def __from_py__(i: cobj) -> int:
-        return pyobj.exc_wrap(PyLong_AsLong(i))
+        _ensure_type(i, PyLong_Type, "int")
+        return PyLong_AsLong(i)
 
 @extend
 class float:
