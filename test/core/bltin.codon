@@ -1,3 +1,5 @@
+# Python-specific
+
 @test
 def test_min_max():
     assert max(2, 1, 1, 1, 1) == 2
@@ -392,3 +394,140 @@ test_num_from_str()
 test_files(open)
 import gzip
 test_files(gzip.open)
+
+
+# Codon-specific
+
+@pure
+@llvm
+def zext(x: int, T: type) -> T:
+    %0 = zext i64 %x to {=T}
+    ret {=T} %0
+
+@test
+def test_narrow_int_str(T: type):
+    z = T(0)
+    o = T(1)
+    a = T(42)
+    b = T(-9)
+
+    assert str(z) == '0'
+    assert str(-z) == '0'
+    assert str(o) == '1'
+    assert str(-o) == '-1'
+    assert str(o + o + o) == '3'
+    assert str((o + o + o + o) * (o + o + o)) == '12'
+    assert str(a) == '42'
+    assert str(b) == '-9'
+    assert repr(a) == f'Int[{T.N}](42)'
+
+@test
+def test_narrow_uint_str(T: type):
+    z = T(0)
+    o = T(1)
+    a = T(42)
+
+    assert str(z) == '0'
+    assert str(-z) == '0'
+    assert str(o) == '1'
+    assert str(o + o + o) == '3'
+    assert str((o + o + o + o) * (o + o + o)) == '12'
+    assert str(a) == '42'
+
+    if T.N == 32:
+        assert str(T(0xffffffff)) == '4294967295'
+
+    if T.N == 64:
+        assert str(T(0xffffffffffffffff)) == '18446744073709551615'
+
+    assert repr(a) == f'UInt[{T.N}](42)'
+
+@test
+def test_wide_int_str(T: type):
+    z = T(0)
+    o = T(1)
+    a = T(0xf23ff2341234)
+    b = T(-77777)
+
+    assert str(z) == '0'
+    assert str(-z) == '0'
+    assert str(o) == '1'
+    assert str(-o) == '-1'
+    assert str(o + o + o) == '3'
+    assert str((o + o + o + o) * (o + o + o)) == '12'
+    assert str(a) == '266356460360244'
+    assert str(b) == '-77777'
+    assert str(a * a) == '70945763975638233282255739536'
+    assert str(b * b) == '6049261729'
+    assert str(a * b) == '-20716406417438697588'
+
+    n = zext(0x7fffffffffffffff, T)
+    m = zext(0xffffffffffffffff, T)
+    s = T(64)
+    assert str((n << s) | m) == '170141183460469231731687303715884105727'
+    if T.N == 128:
+        assert str(T(1) << T(127)) == '-170141183460469231731687303715884105728'
+    if T.N > 500:
+        assert str(a * a * a * a * a * a * a * a) == '25334123245849102734940743817373556303530349383588924760280652082676453679304226528003335153202090430651964934127616'
+        assert str(a * a * a * a * a * a * a * a * b) == '-1970412103692405663415486231883863088619679984007395801080348277034326537815244826668515398210598987424817876681643589632'
+
+    assert repr(a) == f'Int[{T.N}](266356460360244)'
+    assert repr(a * b) == f'Int[{T.N}](-20716406417438697588)'
+
+@test
+def test_wide_uint_str(T: type):
+    z = T(0)
+    o = T(1)
+    a = T(0xf23ff2341234)
+
+    assert str(z) == '0'
+    assert str(-z) == '0'
+    assert str(o) == '1'
+    assert str(o + o + o) == '3'
+    assert str((o + o + o + o) * (o + o + o)) == '12'
+    assert str(a) == '266356460360244'
+    assert str(a * a) == '70945763975638233282255739536'
+
+    n = zext(0xffffffffffffffff, T)
+    s = T(64)
+    assert str((n << s) | n) == '340282366920938463463374607431768211455'
+    assert str((n << s) | (n - T(1))) == '340282366920938463463374607431768211454'
+    if T.N > 500:
+        assert str(a * a * a * a * a * a * a * a) == '25334123245849102734940743817373556303530349383588924760280652082676453679304226528003335153202090430651964934127616'
+
+    assert repr(a) == f'UInt[{T.N}](266356460360244)'
+    assert repr(a * a) == f'UInt[{T.N}](70945763975638233282255739536)'
+
+test_narrow_int_str(Int[7])
+test_narrow_int_str(Int[8])
+test_narrow_int_str(Int[10])
+test_narrow_int_str(Int[16])
+test_narrow_int_str(Int[32])
+test_narrow_int_str(Int[60])
+test_narrow_int_str(Int[63])
+test_narrow_int_str(Int[64])
+
+test_narrow_uint_str(UInt[7])
+test_narrow_uint_str(UInt[8])
+test_narrow_uint_str(UInt[10])
+test_narrow_uint_str(UInt[16])
+test_narrow_uint_str(UInt[32])
+test_narrow_uint_str(UInt[60])
+test_narrow_uint_str(UInt[63])
+test_narrow_uint_str(UInt[64])
+
+test_wide_int_str(Int[128])
+test_wide_int_str(Int[200])
+test_wide_int_str(Int[256])
+test_wide_int_str(Int[512])
+test_wide_int_str(Int[1024])
+test_wide_int_str(Int[2048])
+test_wide_int_str(Int[4096])
+
+test_wide_uint_str(UInt[128])
+test_wide_uint_str(UInt[200])
+test_wide_uint_str(UInt[256])
+test_wide_uint_str(UInt[512])
+test_wide_uint_str(UInt[1024])
+test_wide_uint_str(UInt[2048])
+test_wide_uint_str(UInt[4096])
