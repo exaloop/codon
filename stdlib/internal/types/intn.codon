@@ -238,6 +238,22 @@ class Int:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
+    def __pow__(self, exp: Int[N]) -> Int[N]:
+        zero = Int[N](0)
+        one = Int[N](1)
+
+        if exp < zero:
+            return zero
+        result = one
+        while True:
+            if exp & one:
+                result *= self
+            exp >>= one
+            if not exp:
+                break
+            self *= self
+        return result
+
     def __repr__(self) -> str:
         return f"Int[{N}]({self.__str__()})"
 
@@ -465,6 +481,22 @@ class UInt:
     def __xor__(self, other: UInt[N]) -> UInt[N]:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
+
+    def __pow__(self, exp: UInt[N]) -> UInt[N]:
+        zero = UInt[N](0)
+        one = UInt[N](1)
+
+        if exp < zero:
+            return zero
+        result = one
+        while True:
+            if exp & one:
+                result *= self
+            exp >>= one
+            if not exp:
+                break
+            self *= self
+        return result
 
     def __repr__(self) -> str:
         return f"UInt[{N}]({self.__str__()})"
