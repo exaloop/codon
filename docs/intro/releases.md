@@ -4,6 +4,9 @@ new version.
 
 # v0.16
 
+On top of the various bugfixes, the following features were introduced
+in this version:
+
 ## Python extensions
 
 A new build mode is added to `codon` called `pyext` which compiles
@@ -27,6 +30,10 @@ for more information and usage examples.
 New optimizations for specific patterns including `any()`/`all()` and
 multiple list concatenations. These patterns are now recognized and
 optimized in Codon's IR.
+
+## Static expressions
+
+Codon now ships with more compile-time static functions, such as `staticenumerate`.
 
 # v0.15
 

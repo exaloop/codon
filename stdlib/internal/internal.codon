@@ -169,7 +169,7 @@ class __internal__:
         if isinstance(i, Tuple):
             return (*t, *i)
         else:
-            return tuple(j + i for j in t)
+            compile_error("can only concatenate tuple to tuple")
 
     def tuple_mul(t, i: Static[int]):
         if i < 1:
