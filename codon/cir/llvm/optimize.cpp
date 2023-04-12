@@ -53,11 +53,9 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   if (debug) {
     // remove tail calls and fix linkage for stack traces
     for (auto &f : *module) {
-#ifdef __APPLE__
       // needed for debug symbols
       if (!jit)
         f.setLinkage(llvm::GlobalValue::ExternalLinkage);
-#endif
       if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline))
         f.addFnAttr(llvm::Attribute::AttrKind::NoInline);
       f.setUWTableKind(llvm::UWTableKind::Default);
