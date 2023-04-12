@@ -2,17 +2,18 @@ Below you can find release notes for each major Codon release,
 listing improvements, updates, optimizations and more for each
 new version.
 
-# v0.16
+These release notes generally do not include small bug fixes. See the
+[closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed))
+for more information.
 
-On top of the various bugfixes, the following features were introduced
-in this version:
+# v0.16
 
 ## Python extensions
 
 A new build mode is added to `codon` called `pyext` which compiles
 to Python extension modules, allowing Codon code to be imported and
-called directly from Python. Please see the [docs](../interop/pyext.md)
-for more information and usage examples.
+called directly from Python (similar to Cython). Please see the
+[docs](../interop/pyext.md) for more information and usage examples.
 
 ## Standard library updates
 
@@ -33,7 +34,7 @@ optimized in Codon's IR.
 
 ## Static expressions
 
-Codon now ships with more compile-time static functions, such as `staticenumerate`.
+Codon now supports more compile-time static functions, such as `staticenumerate`.
 
 # v0.15
 
