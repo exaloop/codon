@@ -95,6 +95,13 @@ class Int:
         ret i{=N} %0
 
     @pure
+    @llvm
+    def __abs__(self) -> Int[N]:
+        declare i{=N} @llvm.abs.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.abs.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %0
+
+    @pure
     @commutative
     @associative
     @llvm
@@ -231,11 +238,24 @@ class Int:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
-    def __repr__(self) -> str:
-        return f"Int[{N}]({int(self)})"
+    def __pow__(self, exp: Int[N]) -> Int[N]:
+        zero = Int[N](0)
+        one = Int[N](1)
 
-    def __str__(self) -> str:
-        return int(self).__repr__()
+        if exp < zero:
+            return zero
+        result = one
+        while True:
+            if exp & one:
+                result *= self
+            exp >>= one
+            if not exp:
+                break
+            self *= self
+        return result
+
+    def __repr__(self) -> str:
+        return f"Int[{N}]({self.__str__()})"
 
     @pure
     @llvm
@@ -326,6 +346,9 @@ class UInt:
     def __invert__(self) -> UInt[N]:
         %0 = xor i{=N} %self, -1
         ret i{=N} %0
+
+    def __abs__(self) -> UInt[N]:
+        return self
 
     @pure
     @commutative
@@ -459,11 +482,24 @@ class UInt:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
+    def __pow__(self, exp: UInt[N]) -> UInt[N]:
+        zero = UInt[N](0)
+        one = UInt[N](1)
+
+        if exp < zero:
+            return zero
+        result = one
+        while True:
+            if exp & one:
+                result *= self
+            exp >>= one
+            if not exp:
+                break
+            self *= self
+        return result
+
     def __repr__(self) -> str:
         return f"UInt[{N}]({self.__str__()})"
-
-    def __str__(self) -> str:
-        return self.__format__("")
 
     def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())

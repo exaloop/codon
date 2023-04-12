@@ -1,34 +1,35 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
-from internal.gc import free, register_finalizer, seq_alloc, seq_alloc_atomic, seq_gc_add_roots
-
-@pure
-@C
-def seq_check_errno() -> str:
-    pass
-
-from C import seq_print(str)
-from C import exit(int)
-from C import malloc(int) -> cobj as c_malloc
+from internal.gc import (
+    alloc, alloc_atomic, alloc_uncollectable, alloc_atomic_uncollectable,
+    free, atomic, sizeof, register_finalizer
+)
 
 __vtable_size__ = 0
 
 @extend
 class __internal__:
+    def yield_final(val):
+        pass
+    def yield_in_no_suspend(T: type) -> T:
+        pass
+
     @pure
     @derives
     @llvm
     def class_raw(obj) -> Ptr[byte]:
         ret ptr %obj
 
-    @pure
-    @derives
+    def class_alloc(T: type) -> T:
+        """Allocates a new reference (class) type"""
+        sz = sizeof(tuple(T))
+        p = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
+        register_finalizer(p)
+        return __internal__.to_class_ptr(p, T)
+
     def class_new(T: type) -> T:
         """Create a new reference (class) type"""
-        sz = T.__tuplesize__()
-        p = seq_alloc_atomic(sz) if T.__atomic__ else seq_alloc(sz)
-        register_finalizer(p)
-        pf = __internal__.to_class_ptr(p, T)
+        pf = __internal__.class_alloc(T)
         __internal__.class_set_obj_vtable(pf)
         return pf
 
@@ -54,8 +55,7 @@ class __internal__:
 
     def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
         """Create a global vtable."""
-        p = Ptr[Ptr[cobj]](sz)
-        seq_gc_add_roots(p.as_byte(), (p + sz).as_byte())
+        p = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
         __internal__.class_populate_vtables(p)
         return p
 
@@ -85,6 +85,18 @@ class __internal__:
     def class_base_derived_dist(B: type, D: type) -> int:
         """Calculates the byte distance of base class B and derived class D. Compiler generated."""
         return 0
+
+    def class_copy(obj: T, T: type) -> T:
+        p = __internal__.class_alloc(T)
+        str.memcpy(p.__raw__(), obj.__raw__(), sizeof(tuple(T)))
+        return p
+
+    def class_super(obj: D, B: type, D: type) -> B:
+        pf = __internal__.to_class_ptr(obj.__raw__() + __internal__.class_base_derived_dist(B, D), B)
+        pn = __internal__.class_copy(pf)
+        # Replace vtables
+        __internal__.class_set_obj_vtable(pn)  # replace vtables to point to its vtables!
+        return pn
 
     # Unions
 
@@ -153,6 +165,20 @@ class __internal__:
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
 
+    def tuple_add(t, i):
+        if isinstance(i, Tuple):
+            return (*t, *i)
+        else:
+            compile_error("can only concatenate tuple to tuple")
+
+    def tuple_mul(t, i: Static[int]):
+        if i < 1:
+            return ()
+        elif i == 1:
+            return t
+        else:
+            return (*(__internal__.tuple_mul(t, i - 1)), *t)
+
     # ...
 
     @pure
@@ -191,11 +217,17 @@ class __internal__:
         return AssertionError(s)
 
     def seq_assert_test(file: str, line: int, msg: str):
+        from C import seq_print(str)
         s = f": {msg}" if msg else ""
         s = f"\033[1;31mTEST FAILED:\033[0m {file} (line {line}){s}\n"
         seq_print(s)
 
     def check_errno(prefix: str):
+        @pure
+        @C
+        def seq_check_errno() -> str:
+            pass
+
         msg = seq_check_errno()
         if msg:
             raise OSError(prefix + msg)
@@ -448,3 +480,15 @@ class Function:
 
 __vtables__ = __internal__.class_init_vtables()
 def _____(): __vtables__  # make it global!
+
+
+@tuple
+class PyObject:
+    refcnt: int
+    pytype: Ptr[byte]
+
+
+@tuple
+class PyWrapper[T]:
+    head: PyObject
+    data: T

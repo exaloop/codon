@@ -95,6 +95,11 @@ public:
   /// @return true if the type is atomic
   bool isAtomic() const { return getActual()->doIsAtomic(); }
 
+  /// Checks if the contents (i.e. within an allocated block of memory)
+  /// of a type are atomic. Currently only meaningful for reference types.
+  /// @return true if the type's content is atomic
+  bool isContentAtomic() const { return getActual()->doIsContentAtomic(); }
+
   /// @return the ast type
   ast::types::TypePtr getAstType() const { return getActual()->astType; }
   /// Sets the ast type. Should not generally be used.
@@ -121,6 +126,7 @@ private:
 
   virtual std::vector<Type *> doGetUsedTypes() const { return {}; }
   virtual bool doIsAtomic() const = 0;
+  virtual bool doIsContentAtomic() const { return true; }
 
   virtual Value *doConstruct(std::vector<Value *> args);
 };
@@ -328,6 +334,8 @@ private:
   std::vector<Type *> doGetUsedTypes() const override { return {contents}; }
 
   bool doIsAtomic() const override { return false; }
+
+  bool doIsContentAtomic() const override;
 
   Value *doConstruct(std::vector<Value *> args) override;
 };

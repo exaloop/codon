@@ -470,6 +470,65 @@ size_t FunctionStmt::getKwStarArgs() const {
   }
   return i;
 }
+std::string FunctionStmt::getDocstr() {
+  if (auto s = suite->firstInBlock()) {
+    if (auto e = s->getExpr()) {
+      if (auto ss = e->expr->getString())
+        return ss->getValue();
+    }
+  }
+  return "";
+}
+
+// Search expression tree for a identifier
+class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {
+  std::string what;
+  bool result;
+
+public:
+  IdSearchVisitor(std::string what) : what(std::move(what)), result(false) {}
+  bool transform(const std::shared_ptr<Expr> &expr) override {
+    if (result)
+      return result;
+    IdSearchVisitor v(what);
+    if (expr)
+      expr->accept(v);
+    return result = v.result;
+  }
+  bool transform(const std::shared_ptr<Stmt> &stmt) override {
+    if (result)
+      return result;
+    IdSearchVisitor v(what);
+    if (stmt)
+      stmt->accept(v);
+    return result = v.result;
+  }
+  void visit(IdExpr *expr) override {
+    if (expr->value == what)
+      result = true;
+  }
+};
+
+/// Check if a function can be called with the given arguments.
+/// See @c reorderNamedArgs for details.
+std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() {
+  std::unordered_set<std::string> nonInferrableGenerics;
+  for (auto &a : args) {
+    if (a.status == Param::Generic && !a.defaultValue) {
+      bool inferrable = false;
+      for (auto &b : args)
+        if (b.type && IdSearchVisitor(a.name).transform(b.type)) {
+          inferrable = true;
+          break;
+        }
+      if (ret && IdSearchVisitor(a.name).transform(ret))
+        inferrable = true;
+      if (!inferrable)
+        nonInferrableGenerics.insert(a.name);
+    }
+  }
+  return nonInferrableGenerics;
+}
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
                      std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses,
@@ -555,6 +614,8 @@ void ClassStmt::parseDecorators() {
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
       attributes.customAttr.insert("deduce");
+    } else if (d->isId("__notuple__")) {
+      attributes.customAttr.insert("__notuple__");
     } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple)) {
         attributes.set(Attr::Tuple);
@@ -622,6 +683,7 @@ void ClassStmt::parseDecorators() {
   }
   if (startswith(name, TYPE_TUPLE)) {
     tupleMagics["add"] = true;
+    tupleMagics["mul"] = true;
   } else {
     tupleMagics["dict"] = true;
   }
@@ -643,6 +705,15 @@ bool ClassStmt::isClassVar(const Param &p) {
   if (auto i = p.type->getIndex())
     return i->expr->isId("ClassVar");
   return false;
+}
+std::string ClassStmt::getDocstr() {
+  if (auto s = suite->firstInBlock()) {
+    if (auto e = s->getExpr()) {
+      if (auto ss = e->expr->getString())
+        return ss->getValue();
+    }
+  }
+  return "";
 }
 
 YieldFromStmt::YieldFromStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}

@@ -28,6 +28,7 @@ private:
   std::string argv0;
   bool debug;
   bool pyNumerics;
+  bool pyExtension;
   std::string input;
   std::unique_ptr<PluginManager> plm;
   std::unique_ptr<ast::Cache> cache;
@@ -42,13 +43,14 @@ private:
 public:
   Compiler(const std::string &argv0, Mode mode,
            const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
-           bool pyNumerics = false);
+           bool pyNumerics = false, bool pyExtension = false);
 
   explicit Compiler(const std::string &argv0, bool debug = false,
                     const std::vector<std::string> &disabledPasses = {},
-                    bool isTest = false, bool pyNumerics = false)
+                    bool isTest = false, bool pyNumerics = false,
+                    bool pyExtension = false)
       : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,
-                 pyNumerics) {}
+                 pyNumerics, pyExtension) {}
 
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }

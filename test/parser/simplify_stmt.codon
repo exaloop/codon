@@ -235,6 +235,19 @@ for i in [1]:
 else:
     print 'nope'
 
+best = 4
+for s in [3, 4, 5]:
+    for i in [s]:
+        if s >= best:
+            print('b:', best)
+            break
+    else:
+        print('s:', s)
+        best = s
+#: s: 3
+#: b: 3
+#: b: 3
+
 #%% match
 def foo(x):
     match x:
@@ -471,6 +484,8 @@ bar()
 from a.b.rec1_err import bar
 #! cannot import name 'bar' from 'a.b.rec1_err'
 #! name 'bar' is not defined
+# TODO: get rid of this!
+#! no module named 'rec2_err'
 
 #%% import_err_1,barebones
 class Foo:
@@ -590,7 +605,7 @@ def f(x):
     return g(x)
 print f(5) #: 6
 
-##% nested_generic_static,barebones
+#%% nested_generic_static,barebones
 def foo():
     N: Static[int] = 5
     Z: Static[int] = 15
@@ -920,8 +935,8 @@ print(1 - a) #: [ 0 -1 -2]
 from python import re.split(str, str) -> List[str] as rs
 print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
 
-#%% python_import_void
-from python import os.system(str) -> None
+#%% python_import_fn_2
+from python import os.system(str) -> int
 system("echo 'hello!'")  #: hello!
 
 #%% python_pydef

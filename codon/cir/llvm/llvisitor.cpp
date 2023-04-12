@@ -52,6 +52,17 @@ std::string LLVMVisitor::getNameForFunction(const Func *x) {
   }
 }
 
+std::string LLVMVisitor::getNameForVar(const Var *x) {
+  if (auto *f = cast<Func>(x))
+    return getNameForFunction(f);
+
+  if (x->isExternal()) {
+    return x->getName();
+  } else {
+    return "." + x->getName();
+  }
+}
+
 LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
@@ -118,11 +129,16 @@ void LLVMVisitor::registerGlobal(const Var *var) {
                                           : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
-          external ? nullptr : llvm::Constant::getNullValue(llvmType), var->getName());
+          external ? nullptr : llvm::Constant::getNullValue(llvmType),
+          getNameForVar(var));
       insertVar(var, storage);
 
       if (external) {
-        storage->setDSOLocal(true);
+        if (db.jit) {
+          storage->setDSOLocal(true);
+        } else {
+          storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
+        }
       } else {
         // debug info
         auto *srcInfo = getSrcInfo(var);
@@ -145,13 +161,14 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
         auto name = var->getName();
-        if (auto *global = M->getNamedValue(name))
+        auto privName = getNameForVar(var);
+        if (auto *global = M->getNamedValue(privName))
           return global;
 
         llvm::Type *llvmType = getLLVMType(var->getType());
         auto *storage = new llvm::GlobalVariable(*M, llvmType, /*isConstant=*/false,
                                                  llvm::GlobalValue::ExternalLinkage,
-                                                 /*Initializer=*/nullptr, name);
+                                                 /*Initializer=*/nullptr, privName);
         storage->setExternallyInitialized(true);
 
         // debug info
@@ -410,9 +427,9 @@ void executeCommand(const std::vector<std::string> &args) {
 void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   const std::string llvmCtor = "llvm.global_ctors";
   auto *main = M->getFunction("main");
-  main->setName(".main"); // avoid clash with other main
   if (M->getNamedValue(llvmCtor) || !main)
     return;
+  main->setName(".main"); // avoid clash with other main
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
   auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
@@ -467,7 +484,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     rpaths.push_back(std::string(path));
   }
 
-  std::vector<std::string> command = {"gcc"};
+  std::vector<std::string> command = {"g++"};
   // Avoid "argument unused during compilation" warning
   command.push_back("-Wno-unused-command-line-argument");
   // MUST go before -llib to compile on Linux
@@ -505,15 +522,20 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   if (plugins) {
     for (auto *plugin : *plugins) {
-      auto dylibPath = plugin->info.dylibPath;
-      if (dylibPath.empty())
-        continue;
+      if (plugin->info.linkArgs.empty()) {
+        auto dylibPath = plugin->info.dylibPath;
+        if (dylibPath.empty())
+          continue;
 
-      auto stem = llvm::sys::path::stem(dylibPath);
-      if (stem.startswith("lib"))
-        stem = stem.substr(3);
+        auto stem = llvm::sys::path::stem(dylibPath);
+        if (stem.startswith("lib"))
+          stem = stem.substr(3);
 
-      command.push_back("-l" + stem.str());
+        command.push_back("-l" + stem.str());
+      } else {
+        for (auto &l : plugin->info.linkArgs)
+          command.push_back(l);
+      }
     }
   }
 
@@ -545,6 +567,626 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 #endif
 
   llvm::sys::fs::remove(objFile);
+}
+
+namespace {
+// https://github.com/python/cpython/blob/main/Include/methodobject.h
+constexpr int PYEXT_METH_VARARGS = 0x0001;
+constexpr int PYEXT_METH_KEYWORDS = 0x0002;
+constexpr int PYEXT_METH_NOARGS = 0x0004;
+constexpr int PYEXT_METH_O = 0x0008;
+constexpr int PYEXT_METH_CLASS = 0x0010;
+constexpr int PYEXT_METH_STATIC = 0x0020;
+constexpr int PYEXT_METH_COEXIST = 0x0040;
+constexpr int PYEXT_METH_FASTCALL = 0x0080;
+constexpr int PYEXT_METH_METHOD = 0x0200;
+// https://github.com/python/cpython/blob/main/Include/modsupport.h
+constexpr int PYEXT_PYTHON_ABI_VERSION = 1013;
+// https://github.com/python/cpython/blob/main/Include/descrobject.h
+constexpr int PYEXT_READONLY = 1;
+} // namespace
+
+llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
+  auto *wrap =
+      cast<llvm::Function>(M->getOrInsertFunction((func->getName() + ".tc_wrap").str(),
+                                                  func->getFunctionType())
+                               .getCallee());
+  wrap->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", wrap);
+  auto *normal = llvm::BasicBlock::Create(*context, "normal", wrap);
+  auto *unwind = llvm::BasicBlock::Create(*context, "unwind", wrap);
+
+  B->SetInsertPoint(entry);
+  std::vector<llvm::Value *> args;
+  for (auto &arg : wrap->args()) {
+    args.push_back(&arg);
+  }
+  auto *result = B->CreateInvoke(func, normal, unwind, args);
+
+  B->SetInsertPoint(normal);
+  B->CreateRet(result);
+
+  B->SetInsertPoint(unwind);
+  auto *caughtResult = B->CreateLandingPad(getPadType(), 1);
+  caughtResult->setCleanup(true);
+  caughtResult->addClause(getTypeIdxVar(nullptr));
+  auto *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
+  auto *unwindException = B->CreateExtractValue(caughtResult, 0);
+  auto *unwindExceptionClass = B->CreateLoad(
+      B->getInt64Ty(),
+      B->CreateStructGEP(
+          unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
+          0));
+  unwindException = B->CreateExtractValue(caughtResult, 0);
+  auto *excType = llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
+  auto *excVal =
+      B->CreatePointerCast(B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
+                                                 (uint64_t)seq_exc_offset()),
+                           excType->getPointerTo());
+  auto *loadedExc = B->CreateLoad(excType, excVal);
+  auto *objPtr = B->CreateExtractValue(loadedExc, 1);
+
+  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
+  auto *excHeader =
+      llvm::StructType::get(strType, strType, strType, strType, B->getInt64Ty(),
+                            B->getInt64Ty(), B->getInt8PtrTy());
+  auto *header = B->CreateLoad(excHeader, objPtr);
+  auto *msg = B->CreateExtractValue(header, 1);
+  auto *msgLen = B->CreateExtractValue(msg, 0);
+  auto *msgPtr = B->CreateExtractValue(msg, 1);
+  auto *pyType = B->CreateExtractValue(header, 6);
+
+  // copy msg into new null-terminated buffer
+  auto alloc = makeAllocFunc(/*atomic=*/true);
+  auto *buf = B->CreateCall(alloc, B->CreateAdd(msgLen, B->getInt64(1)));
+  B->CreateMemCpy(buf, {}, msgPtr, {}, msgLen);
+  auto *last = B->CreateInBoundsGEP(B->getInt8Ty(), buf, msgLen);
+  B->CreateStore(B->getInt8(0), last);
+
+  auto *pyErrSetString = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getInt8PtrTy(),
+                             B->getInt8PtrTy())
+          .getCallee());
+
+  const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
+  llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
+  if (!pyExcRuntimeError) {
+    auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
+        *M, B->getInt8PtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
+        /*Initializer=*/nullptr, pyExcRuntimeErrorName);
+    pyExcRuntimeErrorVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+    pyExcRuntimeError = pyExcRuntimeErrorVar;
+  }
+  pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
+
+  auto *havePyType =
+      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getInt8PtrTy()));
+  B->CreateCall(pyErrSetString,
+                {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
+
+  auto *retType = wrap->getReturnType();
+  if (retType == B->getInt32Ty()) {
+    B->CreateRet(B->getInt32(-1));
+  } else {
+    B->CreateRet(llvm::Constant::getNullValue(retType));
+  }
+
+  return wrap;
+}
+
+void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
+                                         const std::string &filename) {
+  // Setup LLVM types & constants
+  auto *i64 = B->getInt64Ty();
+  auto *i32 = B->getInt32Ty();
+  auto *i8 = B->getInt8Ty();
+  auto *ptr = B->getInt8PtrTy();
+  auto *pyMethodDefType = llvm::StructType::create("PyMethodDef", ptr, ptr, i32, ptr);
+  auto *pyObjectType = llvm::StructType::create("PyObject", i64, ptr);
+  auto *pyVarObjectType = llvm::StructType::create("PyVarObject", pyObjectType, i64);
+  auto *pyModuleDefBaseType =
+      llvm::StructType::create("PyMethodDefBase", pyObjectType, ptr, i64, ptr);
+  auto *pyModuleDefType =
+      llvm::StructType::create("PyModuleDef", pyModuleDefBaseType, ptr, ptr, i64,
+                               pyMethodDefType->getPointerTo(), ptr, ptr, ptr, ptr);
+  auto *pyMemberDefType =
+      llvm::StructType::create("PyMemberDef", ptr, i32, i64, i32, ptr);
+  auto *pyGetSetDefType =
+      llvm::StructType::create("PyGetSetDef", ptr, ptr, ptr, ptr, ptr);
+  std::vector<llvm::Type *> pyNumberMethodsFields(36, ptr);
+  auto *pyNumberMethodsType =
+      llvm::StructType::create(*context, pyNumberMethodsFields, "PyNumberMethods");
+  std::vector<llvm::Type *> pySequenceMethodsFields(10, ptr);
+  auto *pySequenceMethodsType =
+      llvm::StructType::create(*context, pySequenceMethodsFields, "PySequenceMethods");
+  std::vector<llvm::Type *> pyMappingMethodsFields(3, ptr);
+  auto *pyMappingMethodsType =
+      llvm::StructType::create(*context, pyMappingMethodsFields, "PyMappingMethods");
+  std::vector<llvm::Type *> pyAsyncMethodsFields(4, ptr);
+  auto *pyAsyncMethodsType =
+      llvm::StructType::create(*context, pyAsyncMethodsFields, "PyAsyncMethods");
+  auto *pyBufferProcsType = llvm::StructType::create("PyBufferProcs", ptr, ptr);
+  auto *pyTypeObjectType = llvm::StructType::create(
+      "PyTypeObject", pyVarObjectType, ptr, i64, i64, ptr, i64, ptr, ptr, ptr, ptr, ptr,
+      ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr, ptr, i64, ptr, ptr,
+      ptr, ptr, ptr, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr,
+      ptr, ptr, ptr, i32, ptr, ptr, i8);
+  auto *zero64 = B->getInt64(0);
+  auto *zero32 = B->getInt32(0);
+  auto *zero8 = B->getInt8(0);
+  auto *null = llvm::Constant::getNullValue(ptr);
+  auto *pyTypeType = new llvm::GlobalVariable(*M, ptr, /*isConstant=*/false,
+                                              llvm::GlobalValue::ExternalLinkage,
+                                              /*Initializer=*/nullptr, "PyType_Type");
+
+  auto allocUncollectable = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("seq_alloc_uncollectable", ptr, i64).getCallee());
+  allocUncollectable->setDoesNotThrow();
+  allocUncollectable->setReturnDoesNotAlias();
+  allocUncollectable->setOnlyAccessesInaccessibleMemory();
+
+  auto free = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("seq_free", B->getVoidTy(), ptr).getCallee());
+  free->setDoesNotThrow();
+
+  // Helpers
+  auto pyFuncWrap = [&](Func *func, bool wrap) -> llvm::Constant * {
+    if (!func)
+      return null;
+    auto llvmName = getNameForFunction(func);
+    auto *llvmFunc = M->getFunction(llvmName);
+    seqassertn(llvmFunc, "function {} not found in LLVM module", llvmName);
+    if (wrap)
+      llvmFunc = createPyTryCatchWrapper(llvmFunc);
+    return llvmFunc;
+  };
+
+  auto pyFunc = [&](Func *func) -> llvm::Constant * { return pyFuncWrap(func, true); };
+
+  auto pyString = [&](const std::string &str) -> llvm::Constant * {
+    if (str.empty())
+      return null;
+    auto *var = new llvm::GlobalVariable(
+        *M, llvm::ArrayType::get(i8, str.length() + 1),
+        /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantDataArray::getString(*context, str), ".pyext_str");
+    var->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+    return var;
+  };
+
+  auto pyFunctions = [&](const std::vector<PyFunction> &functions) -> llvm::Constant * {
+    if (functions.empty())
+      return null;
+
+    std::vector<llvm::Constant *> pyMethods;
+    for (auto &pyfunc : functions) {
+      int flag = 0;
+      if (pyfunc.keywords) {
+        flag = PYEXT_METH_FASTCALL | PYEXT_METH_KEYWORDS;
+      } else {
+        switch (pyfunc.nargs) {
+        case 0:
+          flag = PYEXT_METH_NOARGS;
+          break;
+        case 1:
+          flag = PYEXT_METH_O;
+          break;
+        default:
+          flag = PYEXT_METH_FASTCALL;
+          break;
+        }
+      }
+
+      switch (pyfunc.type) {
+      case PyFunction::CLASS:
+        flag |= PYEXT_METH_CLASS;
+        break;
+      case PyFunction::STATIC:
+        flag |= PYEXT_METH_STATIC;
+        break;
+      default:
+        break;
+      }
+
+      if (pyfunc.coexist)
+        flag |= PYEXT_METH_COEXIST;
+
+      pyMethods.push_back(llvm::ConstantStruct::get(
+          pyMethodDefType, pyString(pyfunc.name), pyFunc(pyfunc.func),
+          B->getInt32(flag), pyString(pyfunc.doc)));
+    }
+    pyMethods.push_back(
+        llvm::ConstantStruct::get(pyMethodDefType, null, null, zero32, null));
+
+    auto *pyMethodDefArrayType =
+        llvm::ArrayType::get(pyMethodDefType, pyMethods.size());
+    auto *pyMethodDefArray = new llvm::GlobalVariable(
+        *M, pyMethodDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyMethodDefArrayType, pyMethods), ".pyext_methods");
+    return pyMethodDefArray;
+  };
+
+  auto pyMembers = [&](const std::vector<PyMember> &members,
+                       llvm::StructType *type) -> llvm::Constant * {
+    if (members.empty())
+      return null;
+
+    std::vector<llvm::Constant *> pyMemb;
+    for (auto &memb : members) {
+      // Calculate offset by creating const GEP into null ptr
+      std::vector<llvm::Constant *> indexes = {zero64, B->getInt32(1)};
+      for (auto idx : memb.indexes) {
+        indexes.push_back(B->getInt32(idx));
+      }
+      auto offset = llvm::ConstantExpr::getPtrToInt(
+          llvm::ConstantExpr::getGetElementPtr(type, null, indexes), i64);
+
+      pyMemb.push_back(llvm::ConstantStruct::get(
+          pyMemberDefType, pyString(memb.name), B->getInt32(memb.type), offset,
+          B->getInt32(memb.readonly ? PYEXT_READONLY : 0), pyString(memb.doc)));
+    }
+    pyMemb.push_back(
+        llvm::ConstantStruct::get(pyMemberDefType, null, zero32, zero64, zero32, null));
+
+    auto *pyMemberDefArrayType = llvm::ArrayType::get(pyMemberDefType, pyMemb.size());
+    auto *pyMemberDefArray = new llvm::GlobalVariable(
+        *M, pyMemberDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyMemberDefArrayType, pyMemb), ".pyext_members");
+    return pyMemberDefArray;
+  };
+
+  auto pyGetSet = [&](const std::vector<PyGetSet> &getset) -> llvm::Constant * {
+    if (getset.empty())
+      return null;
+
+    std::vector<llvm::Constant *> pyGS;
+    for (auto &gs : getset) {
+      pyGS.push_back(llvm::ConstantStruct::get(pyGetSetDefType, pyString(gs.name),
+                                               pyFunc(gs.get), pyFunc(gs.set),
+                                               pyString(gs.doc), null));
+    }
+    pyGS.push_back(
+        llvm::ConstantStruct::get(pyGetSetDefType, null, null, null, null, null));
+
+    auto *pyGetSetDefArrayType = llvm::ArrayType::get(pyGetSetDefType, pyGS.size());
+    auto *pyGetSetDefArray = new llvm::GlobalVariable(
+        *M, pyGetSetDefArrayType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantArray::get(pyGetSetDefArrayType, pyGS), ".pyext_getset");
+    return pyGetSetDefArray;
+  };
+
+  // Construct PyModuleDef array
+  auto *pyObjectConst = llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null);
+  auto *pyModuleDefBaseConst =
+      llvm::ConstantStruct::get(pyModuleDefBaseType, pyObjectConst, null, zero64, null);
+
+  auto *pyModuleDef = llvm::ConstantStruct::get(
+      pyModuleDefType, pyModuleDefBaseConst, pyString(pymod.name), pyString(pymod.doc),
+      B->getInt64(-1), pyFunctions(pymod.functions), null, null, null, null);
+  auto *pyModuleVar =
+      new llvm::GlobalVariable(*M, pyModuleDef->getType(),
+                               /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+                               pyModuleDef, ".pyext_module");
+
+  std::unordered_map<types::Type *, llvm::GlobalVariable *> typeVars;
+  for (auto &pytype : pymod.types) {
+    std::vector<llvm::Constant *> numberSlots = {
+        pyFunc(pytype.add),       // nb_add
+        pyFunc(pytype.sub),       // nb_subtract
+        pyFunc(pytype.mul),       // nb_multiply
+        pyFunc(pytype.mod),       // nb_remainder
+        pyFunc(pytype.divmod),    // nb_divmod
+        pyFunc(pytype.pow),       // nb_power
+        pyFunc(pytype.neg),       // nb_negative
+        pyFunc(pytype.pos),       // nb_positive
+        pyFunc(pytype.abs),       // nb_absolute
+        pyFunc(pytype.bool_),     // nb_bool
+        pyFunc(pytype.invert),    // nb_invert
+        pyFunc(pytype.lshift),    // nb_lshift
+        pyFunc(pytype.rshift),    // nb_rshift
+        pyFunc(pytype.and_),      // nb_and
+        pyFunc(pytype.xor_),      // nb_xor
+        pyFunc(pytype.or_),       // nb_or
+        pyFunc(pytype.int_),      // nb_int
+        null,                     // nb_reserved
+        pyFunc(pytype.float_),    // nb_float
+        pyFunc(pytype.iadd),      // nb_inplace_add
+        pyFunc(pytype.isub),      // nb_inplace_subtract
+        pyFunc(pytype.imul),      // nb_inplace_multiply
+        pyFunc(pytype.imod),      // nb_inplace_remainder
+        pyFunc(pytype.ipow),      // nb_inplace_power
+        pyFunc(pytype.ilshift),   // nb_inplace_lshift
+        pyFunc(pytype.irshift),   // nb_inplace_rshift
+        pyFunc(pytype.iand),      // nb_inplace_and
+        pyFunc(pytype.ixor),      // nb_inplace_xor
+        pyFunc(pytype.ior),       // nb_inplace_or
+        pyFunc(pytype.floordiv),  // nb_floor_divide
+        pyFunc(pytype.truediv),   // nb_true_divide
+        pyFunc(pytype.ifloordiv), // nb_inplace_floor_divide
+        pyFunc(pytype.itruediv),  // nb_inplace_true_divide
+        pyFunc(pytype.index),     // nb_index
+        pyFunc(pytype.matmul),    // nb_matrix_multiply
+        pyFunc(pytype.imatmul),   // nb_inplace_matrix_multiply
+    };
+
+    std::vector<llvm::Constant *> sequenceSlots = {
+        pyFunc(pytype.len),      // sq_length
+        null,                    // sq_concat
+        null,                    // sq_repeat
+        null,                    // sq_item
+        null,                    // was_sq_slice
+        null,                    // sq_ass_item
+        null,                    // was_sq_ass_slice
+        pyFunc(pytype.contains), // sq_contains
+        null,                    // sq_inplace_concat
+        null,                    // sq_inplace_repeat
+    };
+
+    std::vector<llvm::Constant *> mappingSlots = {
+        null,                   // mp_length
+        pyFunc(pytype.getitem), // mp_subscript
+        pyFunc(pytype.setitem), // mp_ass_subscript
+    };
+
+    bool needNumberSlots =
+        std::find_if(numberSlots.begin(), numberSlots.end(),
+                     [&](auto *v) { return v != null; }) != numberSlots.end();
+    bool needSequenceSlots =
+        std::find_if(sequenceSlots.begin(), sequenceSlots.end(),
+                     [&](auto *v) { return v != null; }) != sequenceSlots.end();
+    bool needMappingSlots =
+        std::find_if(mappingSlots.begin(), mappingSlots.end(),
+                     [&](auto *v) { return v != null; }) != mappingSlots.end();
+
+    llvm::Constant *numberSlotsConst = null;
+    llvm::Constant *sequenceSlotsConst = null;
+    llvm::Constant *mappingSlotsConst = null;
+
+    if (needNumberSlots) {
+      auto *pyNumberSlotsVar = new llvm::GlobalVariable(
+          *M, pyNumberMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pyNumberMethodsType, numberSlots),
+          ".pyext_number_slots." + pytype.name);
+      numberSlotsConst = pyNumberSlotsVar;
+    }
+
+    if (needSequenceSlots) {
+      auto *pySequenceSlotsVar = new llvm::GlobalVariable(
+          *M, pySequenceMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pySequenceMethodsType, sequenceSlots),
+          ".pyext_sequence_slots." + pytype.name);
+      sequenceSlotsConst = pySequenceSlotsVar;
+    }
+
+    if (needMappingSlots) {
+      auto *pyMappingSlotsVar = new llvm::GlobalVariable(
+          *M, pyMappingMethodsType,
+          /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+          llvm::ConstantStruct::get(pyMappingMethodsType, mappingSlots),
+          ".pyext_mapping_slots." + pytype.name);
+      mappingSlotsConst = pyMappingSlotsVar;
+    }
+
+    auto *refType = cast<types::RefType>(pytype.type);
+    auto *llvmType = getLLVMType(pytype.type);
+    auto *objectType = llvm::StructType::get(pyObjectType, llvmType);
+    auto codonSize =
+        refType
+            ? M->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents()))
+            : 0;
+    auto pySize = M->getDataLayout().getTypeAllocSize(objectType);
+
+    auto *alloc = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pytype.name + ".py_alloc", ptr, ptr, i64).getCallee());
+    {
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", alloc);
+      B->SetInsertPoint(entry);
+      auto *pythonObject = B->CreateCall(allocUncollectable, B->getInt64(pySize));
+      auto *header = B->CreateInsertValue(
+          llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), null),
+          alloc->arg_begin(), 1);
+      B->CreateStore(header, pythonObject);
+      if (refType) {
+        auto *codonObject = B->CreateCall(
+            makeAllocFunc(refType->getContents()->isAtomic()), B->getInt64(codonSize));
+        B->CreateStore(codonObject, B->CreateGEP(objectType, pythonObject,
+                                                 {zero64, B->getInt32(1)}));
+      }
+      B->CreateRet(pythonObject);
+    }
+
+    auto *delFn = pyFuncWrap(pytype.del, /*wrap=*/false);
+    auto *dealloc = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction(pytype.name + ".py_dealloc", B->getVoidTy(), ptr)
+            .getCallee());
+    {
+      llvm::Value *obj = dealloc->arg_begin();
+      auto *entry = llvm::BasicBlock::Create(*context, "entry", dealloc);
+      B->SetInsertPoint(entry);
+      if (delFn != null)
+        B->CreateCall(llvm::FunctionCallee(dealloc->getFunctionType(), delFn), obj);
+      B->CreateCall(free, obj);
+      B->CreateRetVoid();
+    }
+
+    auto *pyNew = llvm::cast<llvm::Function>(
+        M->getOrInsertFunction("PyType_GenericNew", ptr, ptr, ptr, ptr).getCallee());
+
+    std::vector<llvm::Constant *> typeSlots = {
+        llvm::ConstantStruct::get(
+            pyVarObjectType,
+            llvm::ConstantStruct::get(pyObjectType, B->getInt64(1), pyTypeType),
+            zero64),                              // PyObject_VAR_HEAD
+        pyString(pymod.name + "." + pytype.name), // tp_name
+        B->getInt64(pySize),                      // tp_basicsize
+        zero64,                                   // tp_itemsize
+        dealloc,                                  // tp_dealloc
+        zero64,                                   // tp_vectorcall_offset
+        null,                                     // tp_getattr
+        null,                                     // tp_setattr
+        null,                                     // tp_as_async
+        pyFunc(pytype.repr),                      // tp_repr
+        numberSlotsConst,                         // tp_as_number
+        sequenceSlotsConst,                       // tp_as_sequence
+        mappingSlotsConst,                        // tp_as_mapping
+        pyFunc(pytype.hash),                      // tp_hash
+        pyFunc(pytype.call),                      // tp_call
+        pyFunc(pytype.str),                       // tp_str
+        null,                                     // tp_getattro
+        null,                                     // tp_setattro
+        null,                                     // tp_as_buffer
+        zero64,                                   // tp_flags
+        pyString(pytype.doc),                     // tp_doc
+        null,                                     // tp_traverse
+        null,                                     // tp_clear
+        pyFunc(pytype.cmp),                       // tp_richcompare
+        zero64,                                   // tp_weaklistoffset
+        pyFunc(pytype.iter),                      // tp_iter
+        pyFunc(pytype.iternext),                  // tp_iternext
+        pyFunctions(pytype.methods),              // tp_methods
+        pyMembers(pytype.members, objectType),    // tp_members
+        pyGetSet(pytype.getset),                  // tp_getset
+        null,                                     // tp_base
+        null,                                     // tp_dict
+        null,                                     // tp_descr_get
+        null,                                     // tp_descr_set
+        zero64,                                   // tp_dictoffset
+        pyFunc(pytype.init),                      // tp_init
+        alloc,                                    // tp_alloc
+        pyNew,                                    // tp_new
+        free,                                     // tp_free
+        null,                                     // tp_is_gc
+        null,                                     // tp_bases
+        null,                                     // tp_mro
+        null,                                     // tp_cache
+        null,                                     // tp_subclasses
+        null,                                     // tp_weaklist
+        null,                                     // tp_del
+        zero32,                                   // tp_version_tag
+        free,                                     // tp_finalize
+        null,                                     // tp_vectorcall
+        B->getInt8(0),                            // tp_watched
+    };
+
+    auto *pyTypeObjectVar = new llvm::GlobalVariable(
+        *M, pyTypeObjectType,
+        /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
+        llvm::ConstantStruct::get(pyTypeObjectType, typeSlots),
+        ".pyext_type." + pytype.name);
+
+    if (pytype.typePtrHook) {
+      auto *hook = llvm::cast<llvm::Function>(pyFuncWrap(pytype.typePtrHook, false));
+      for (auto it = llvm::inst_begin(hook), end = llvm::inst_end(hook); it != end;
+           ++it) {
+        if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&*it))
+          ret->setOperand(0, pyTypeObjectVar);
+      }
+    }
+
+    typeVars.emplace(pytype.type, pyTypeObjectVar);
+  }
+
+  // Construct initialization hook
+  auto pyIncRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_IncRef", B->getVoidTy(), ptr).getCallee());
+  pyIncRef->setDoesNotThrow();
+
+  auto pyDecRef = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("Py_DecRef", B->getVoidTy(), ptr).getCallee());
+  pyDecRef->setDoesNotThrow();
+
+  auto *pyModuleCreate = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyModule_Create2", ptr, ptr, i32).getCallee());
+  pyModuleCreate->setDoesNotThrow();
+
+  auto *pyTypeReady = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyType_Ready", i32, ptr).getCallee());
+  pyTypeReady->setDoesNotThrow();
+
+  auto *pyModuleAddObject = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyModule_AddObject", i32, ptr, ptr, ptr).getCallee());
+  pyModuleAddObject->setDoesNotThrow();
+
+  auto *pyModuleInit = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction("PyInit_" + pymod.name, ptr).getCallee());
+  auto *block = llvm::BasicBlock::Create(*context, "entry", pyModuleInit);
+  B->SetInsertPoint(block);
+
+  if (auto *main = M->getFunction("main")) {
+    main->setName(".main");
+    B->CreateCall({main->getFunctionType(), main}, {zero32, null});
+  }
+
+  // Set base types
+  for (auto &pytype : pymod.types) {
+    if (pytype.base) {
+      auto subcIt = typeVars.find(pytype.type);
+      auto baseIt = typeVars.find(pytype.base->type);
+      seqassertn(subcIt != typeVars.end() && baseIt != typeVars.end(),
+                 "types not found");
+      // 30 is the index of tp_base
+      B->CreateStore(baseIt->second, B->CreateConstInBoundsGEP2_64(
+                                         pyTypeObjectType, subcIt->second, 0, 30));
+    }
+  }
+
+  // Call PyType_Ready
+  for (auto &pytype : pymod.types) {
+    auto it = typeVars.find(pytype.type);
+    seqassertn(it != typeVars.end(), "type not found");
+    auto *typeVar = it->second;
+
+    auto *fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+    block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+    auto *status = B->CreateCall(pyTypeReady, typeVar);
+    B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
+
+    B->SetInsertPoint(fail);
+    B->CreateRet(null);
+
+    B->SetInsertPoint(block);
+  }
+
+  // Create module
+  auto *mod = B->CreateCall(pyModuleCreate,
+                            {pyModuleVar, B->getInt32(PYEXT_PYTHON_ABI_VERSION)});
+  auto *fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+  block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+
+  B->CreateCondBr(B->CreateICmpEQ(mod, null), fail, block);
+  B->SetInsertPoint(fail);
+  B->CreateRet(null);
+
+  B->SetInsertPoint(block);
+
+  // Add types
+  for (auto &pytype : pymod.types) {
+    auto it = typeVars.find(pytype.type);
+    seqassertn(it != typeVars.end(), "type not found");
+    auto *typeVar = it->second;
+
+    B->CreateCall(pyIncRef, typeVar);
+    auto *status =
+        B->CreateCall(pyModuleAddObject, {mod, pyString(pytype.name), typeVar});
+    fail = llvm::BasicBlock::Create(*context, "failure", pyModuleInit);
+    block = llvm::BasicBlock::Create(*context, "success", pyModuleInit);
+    B->CreateCondBr(B->CreateICmpSLT(status, zero32), fail, block);
+
+    B->SetInsertPoint(fail);
+    B->CreateCall(pyDecRef, typeVar);
+    B->CreateCall(pyDecRef, mod);
+    B->CreateRet(null);
+
+    B->SetInsertPoint(block);
+  }
+  B->CreateRet(mod);
+
+  writeToObjectFile(filename);
 }
 
 void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
@@ -706,6 +1348,7 @@ llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(const std::string &name) {
     tidx = new llvm::GlobalVariable(
         *M, typeInfoType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
         llvm::ConstantStruct::get(typeInfoType, B->getInt32(idx)), typeVarName);
+    tidx->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   }
   return tidx;
 }
@@ -1728,10 +2371,10 @@ void LLVMVisitor::visit(const BoolConst *x) {
 void LLVMVisitor::visit(const StringConst *x) {
   B->SetInsertPoint(block);
   std::string s = x->getVal();
-  auto *strVar = new llvm::GlobalVariable(
-      *M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-      llvm::ConstantDataArray::getString(*context, s), "str_literal");
+  auto *strVar =
+      new llvm::GlobalVariable(*M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
+                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+                               llvm::ConstantDataArray::getString(*context, s), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
   llvm::Value *ptr = B->CreateBitCast(strVar, B->getInt8PtrTy());
@@ -2418,6 +3061,9 @@ void LLVMVisitor::visit(const TypePropertyInstr *x) {
     break;
   case TypePropertyInstr::Property::IS_ATOMIC:
     value = B->getInt8(x->getInspectType()->isAtomic() ? 1 : 0);
+    break;
+  case TypePropertyInstr::Property::IS_CONTENT_ATOMIC:
+    value = B->getInt8(x->getInspectType()->isContentAtomic() ? 1 : 0);
     break;
   default:
     seqassertn(0, "unknown type property");

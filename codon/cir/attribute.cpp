@@ -41,6 +41,8 @@ std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
 
 const std::string SrcInfoAttribute::AttributeName = "srcInfoAttribute";
 
+const std::string DocstringAttribute::AttributeName = "docstringAttribute";
+
 const std::string TupleLiteralAttribute::AttributeName = "tupleLiteralAttribute";
 
 std::unique_ptr<Attribute> TupleLiteralAttribute::clone(util::CloneVisitor &cv) const {

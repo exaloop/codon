@@ -57,6 +57,22 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
     dylibPath = p.str();
   }
 
+  auto link = library["link"];
+  std::vector<std::string> linkArgs;
+  if (auto arr = link.as_array()) {
+    arr->for_each([&linkArgs](auto &&el) {
+      std::string l = el.value_or("");
+      if (!l.empty())
+        linkArgs.push_back(l);
+    });
+  } else {
+    std::string l = link.value_or("");
+    if (!l.empty())
+      linkArgs.push_back(l);
+  }
+  for (auto &l : linkArgs)
+    l = fmt::format(l, fmt::arg("root", llvm::sys::path::parent_path(tomlPath)));
+
   std::string codonLib = library["codon"].value_or("");
   std::string stdlibPath;
   if (!codonLib.empty()) {
@@ -71,7 +87,8 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
                     about["url"].value_or(""),
                     about["supported"].value_or(""),
                     stdlibPath,
-                    dylibPath};
+                    dylibPath,
+                    linkArgs};
 
   bool versionOk = false;
   try {

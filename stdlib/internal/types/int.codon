@@ -63,10 +63,9 @@ class int:
     @pure
     @llvm
     def __abs__(self) -> int:
-        %0 = icmp sgt i64 %self, 0
-        %1 = sub i64 0, %self
-        %2 = select i1 %0, i64 %self, i64 %1
-        ret i64 %2
+        declare i64 @llvm.abs.i64(i64, i1)
+        %0 = call i64 @llvm.abs.i64(i64 %self, i1 false)
+        ret i64 %0
 
     @pure
     @llvm

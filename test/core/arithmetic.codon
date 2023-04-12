@@ -105,3 +105,40 @@ def test_conversions():
     assert bool(Int[80](42)) == True
     assert str(Int[80](42)) == '42'
 test_conversions()
+
+@test
+def test_int_pow():
+    @nonpure
+    def f(n):
+        return n
+
+    assert f(3) ** f(2) == 9
+    assert f(27) ** f(7) == 10460353203
+    assert f(-27) ** f(7) == -10460353203
+    assert f(-27) ** f(6) == 387420489
+    assert f(1) ** f(0) == 1
+    assert f(1) ** f(1000) == 1
+    assert f(0) ** f(3) == 0
+    assert f(0) ** f(0) == 1
+
+    T1 = Int[512]
+    assert f(T1(3)) ** f(T1(2)) == T1(9)
+    assert f(T1(27)) ** f(T1(7)) == T1(10460353203)
+    assert f(T1(-27)) ** f(T1(7)) == T1(-10460353203)
+    assert f(T1(-27)) ** f(T1(6)) == T1(387420489)
+    assert f(T1(1)) ** f(T1(0)) == T1(1)
+    assert f(T1(1)) ** f(T1(1000)) == T1(1)
+    assert f(T1(0)) ** f(T1(3)) == T1(0)
+    assert f(T1(0)) ** f(T1(0)) == T1(1)
+    assert str(f(T1(31)) ** f(T1(31))) == '17069174130723235958610643029059314756044734431'
+    assert str(f(T1(-31)) ** f(T1(31))) == '-17069174130723235958610643029059314756044734431'
+
+    T2 = UInt[200]
+    assert f(T2(3)) ** f(T2(2)) == T2(9)
+    assert f(T2(27)) ** f(T2(7)) == T2(10460353203)
+    assert f(T2(1)) ** f(T2(0)) == T2(1)
+    assert f(T2(1)) ** f(T2(1000)) == T2(1)
+    assert f(T2(0)) ** f(T2(3)) == T2(0)
+    assert f(T2(0)) ** f(T2(0)) == T2(1)
+    assert str(f(T2(31)) ** f(T2(31))) == '17069174130723235958610643029059314756044734431'
+test_int_pow()

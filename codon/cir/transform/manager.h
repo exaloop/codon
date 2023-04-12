@@ -94,6 +94,9 @@ private:
   /// whether to use Python (vs. C) numeric semantics in passes
   bool pyNumerics;
 
+  /// true if we are compiling as a Python extension
+  bool pyExtension;
+
 public:
   /// PassManager initialization mode.
   enum Init {
@@ -104,16 +107,17 @@ public:
   };
 
   explicit PassManager(Init init, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false)
+                       bool pyNumerics = false, bool pyExtension = false)
       : km(), passes(), analyses(), executionOrder(), results(),
-        disabled(std::move(disabled)), pyNumerics(pyNumerics) {
+        disabled(std::move(disabled)), pyNumerics(pyNumerics),
+        pyExtension(pyExtension) {
     registerStandardPasses(init);
   }
 
   explicit PassManager(bool debug = false, std::vector<std::string> disabled = {},
-                       bool pyNumerics = false)
+                       bool pyNumerics = false, bool pyExtension = false)
       : PassManager(debug ? Init::DEBUG : Init::RELEASE, std::move(disabled),
-                    pyNumerics) {}
+                    pyNumerics, pyExtension) {}
 
   /// Checks if the given pass is included in this manager.
   /// @param key the pass key

@@ -56,3 +56,79 @@ class Ptr:
         if format_spec and err:
             _format_error(ret)
         return ret
+
+def _divmod_10(dividend, N: Static[int]):
+    T = type(dividend)
+    zero, one = T(0), T(1)
+    neg = dividend < zero
+    dvd = dividend.__abs__()
+
+    remainder = 0
+    quotient = zero
+
+    # Euclidean division
+    for bit_idx in range(N - 1, -1, -1):
+        mask = int((dvd & (one << T(bit_idx))) != zero)
+        remainder = (remainder << 1) + mask
+        if remainder >= 10:
+            quotient = (quotient << one) + one
+            remainder -= 10
+        else:
+            quotient = quotient << one
+
+    if neg:
+        quotient = -quotient
+        remainder = -remainder
+
+    return quotient, remainder
+
+@extend
+class Int:
+    def __str__(self) -> str:
+        if N <= 64:
+            return str(int(self))
+
+        if not self:
+            return '0'
+
+        s = _strbuf()
+        d = self
+
+        if d >= Int[N](0):
+            while True:
+                d, m = _divmod_10(d, N)
+                b = byte(48 + m)  # 48 == ord('0')
+                s.append(str(__ptr__(b), 1))
+                if not d:
+                    break
+        else:
+            while True:
+                d, m = _divmod_10(d, N)
+                b = byte(48 - m)  # 48 == ord('0')
+                s.append(str(__ptr__(b), 1))
+
+                if not d:
+                    break
+            s.append('-')
+
+        s.reverse()
+        return s.__str__()
+
+@extend
+class UInt:
+    def __str__(self) -> str:
+        if N <= 64:
+            return self.__format__("")
+
+        s = _strbuf()
+        d = self
+
+        while True:
+            d, m = _divmod_10(d, N)
+            b = byte(48 + int(m))  # 48 == ord('0')
+            s.append(str(__ptr__(b), 1))
+            if not d:
+                break
+
+        s.reverse()
+        return s.__str__()

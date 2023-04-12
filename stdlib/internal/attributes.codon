@@ -33,6 +33,10 @@ def nocapture():
     pass
 
 @__attribute__
+def pycapture():
+    pass
+
+@__attribute__
 def derives():
     pass
 
@@ -58,4 +62,12 @@ def realize_without_self():
 
 @__attribute__
 def virtual():
+    pass
+
+@__attribute__
+def no_argument_wrap():
+    pass
+
+@__attribute__
+def no_type_wrap():
     pass

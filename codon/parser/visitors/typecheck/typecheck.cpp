@@ -27,9 +27,8 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!s) {
     v.error("cannot typecheck the program");
   }
-  if (s->getSuite()) {
+  if (s->getSuite())
     v.prepareVTables();
-  }
   return s;
 }
 
@@ -66,6 +65,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       ctx->changedNodes++;
   }
   realize(typ);
+  LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), expr, expr->isDone() ? "[done]" : "");
   return expr;
 }
 
@@ -215,6 +215,105 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
   return m.empty() ? nullptr : m[0];
 }
 
+// Search expression tree for a identifier
+class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {
+  std::string what;
+  bool result;
+
+public:
+  IdSearchVisitor(std::string what) : what(std::move(what)), result(false) {}
+  bool transform(const std::shared_ptr<Expr> &expr) override {
+    if (result)
+      return result;
+    IdSearchVisitor v(what);
+    if (expr)
+      expr->accept(v);
+    return v.result;
+  }
+  bool transform(const std::shared_ptr<Stmt> &stmt) override {
+    if (result)
+      return result;
+    IdSearchVisitor v(what);
+    if (stmt)
+      stmt->accept(v);
+    return v.result;
+  }
+  void visit(IdExpr *expr) override {
+    if (expr->value == what)
+      result = true;
+  }
+};
+
+/// Check if a function can be called with the given arguments.
+/// See @c reorderNamedArgs for details.
+int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
+                              const std::vector<CallExpr::Arg> &args) {
+  std::vector<std::pair<types::TypePtr, size_t>> reordered;
+  auto niGenerics = fn->ast->getNonInferrableGenerics();
+  auto score = ctx->reorderNamedArgs(
+      fn.get(), args,
+      [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
+        for (int si = 0; si < slots.size(); si++) {
+          if (fn->ast->args[si].status == Param::Generic) {
+            if (slots[si].empty()) {
+              // is this "real" type?
+              if (in(niGenerics, fn->ast->args[si].name) &&
+                  !fn->ast->args[si].defaultValue)
+                return -1;
+              reordered.push_back({nullptr, 0});
+            } else {
+              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+            }
+          } else if (si == s || si == k || slots[si].size() != 1) {
+            // Ignore *args, *kwargs and default arguments
+            reordered.push_back({nullptr, 0});
+          } else {
+            reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+          }
+        }
+        return 0;
+      },
+      [](error::Error, const SrcInfo &, const std::string &) { return -1; });
+  for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+    auto expectTyp = fn->ast->args[ai].status == Param::Normal
+                         ? fn->getArgTypes()[mai++]
+                         : fn->funcGenerics[gi++].type;
+    auto [argType, argTypeIdx] = reordered[ai];
+    if (!argType)
+      continue;
+    if (fn->ast->args[ai].status != Param::Normal) {
+      // Check if this is a good generic!
+      if (expectTyp && expectTyp->isStaticType()) {
+        if (!args[argTypeIdx].value->isStatic()) {
+          score = -1;
+          break;
+        } else {
+          argType = Type::makeStatic(ctx->cache, args[argTypeIdx].value);
+        }
+      } else {
+        /// TODO: check if these are real types or if traits are satisfied
+        continue;
+      }
+    }
+    try {
+      ExprPtr dummy = std::make_shared<IdExpr>("");
+      dummy->type = argType;
+      dummy->setDone();
+      wrapExpr(dummy, expectTyp, fn);
+      types::Type::Unification undo;
+      if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
+        undo.undo();
+      } else {
+        score = -1;
+      }
+    } catch (const exc::ParserException &) {
+      // Ignore failed wraps
+      score = -1;
+    }
+  }
+  return score;
+}
+
 /// Select the best method among the provided methods given the list of arguments.
 /// See @c reorderNamedArgs for details.
 std::vector<types::FuncTypePtr>
@@ -227,63 +326,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
     if (!mi)
       continue; // avoid overloads that have not been seen yet
     auto method = ctx->instantiate(mi, typ)->getFunc();
-    std::vector<std::pair<types::TypePtr, size_t>> reordered;
-    auto score = ctx->reorderNamedArgs(
-        method.get(), args,
-        [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-          for (int si = 0; si < slots.size(); si++) {
-            if (method->ast->args[si].status == Param::Generic) {
-              if (slots[si].empty())
-                reordered.push_back({nullptr, 0});
-              else
-                reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
-            } else if (si == s || si == k || slots[si].size() != 1) {
-              // Ignore *args, *kwargs and default arguments
-              reordered.push_back({nullptr, 0});
-            } else {
-              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
-            }
-          }
-          return 0;
-        },
-        [](error::Error, const SrcInfo &, const std::string &) { return -1; });
-    for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
-      auto expectTyp = method->ast->args[ai].status == Param::Normal
-                           ? method->getArgTypes()[mai++]
-                           : method->funcGenerics[gi++].type;
-      auto [argType, argTypeIdx] = reordered[ai];
-      if (!argType)
-        continue;
-      if (method->ast->args[ai].status != Param::Normal) {
-        // Check if this is a good generic!
-        if (expectTyp && expectTyp->isStaticType()) {
-          if (!args[argTypeIdx].value->isStatic()) {
-            score = -1;
-            break;
-          } else {
-            argType = Type::makeStatic(ctx->cache, args[argTypeIdx].value);
-          }
-        } else {
-          /// TODO: check if these are real types or if traits are satisfied
-          continue;
-        }
-      }
-      try {
-        ExprPtr dummy = std::make_shared<IdExpr>("");
-        dummy->type = argType;
-        dummy->setDone();
-        wrapExpr(dummy, expectTyp, method);
-        types::Type::Unification undo;
-        if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
-          undo.undo();
-        } else {
-          score = -1;
-        }
-      } catch (const exc::ParserException &) {
-        // Ignore failed wraps
-        score = -1;
-      }
-    }
+    int score = canCall(method, args);
     if (score != -1) {
       results.push_back(mi);
     }
@@ -307,16 +350,24 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
+  auto doArgWrap =
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap");
+  if (!doArgWrap)
+    return true;
+  auto doTypeWrap =
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap");
   if (callee && expr->isType()) {
     auto c = expr->type->getClass();
     if (!c)
       return false;
-    if (c->getRecord())
-      expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
-    else
-      expr = transform(N<CallExpr>(
-          N<IdExpr>("__internal__.class_ctr:0"),
-          std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+    if (doTypeWrap) {
+      if (c->getRecord())
+        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+      else
+        expr = transform(N<CallExpr>(
+            N<IdExpr>("__internal__.class_ctr:0"),
+            std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+    }
   }
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
@@ -417,6 +468,34 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
   // No inheritance: `__internal__.to_class_ptr(dist, T)`
   return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
                                dist, typExpr));
+}
+
+/// Unpack a Tuple or KwTuple expression into (name, type) vector.
+/// Name is empty when handling Tuple; otherwise it matches names of KwTuple.
+std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
+TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
+  auto ret = std::make_shared<std::vector<std::pair<std::string, types::TypePtr>>>();
+  if (auto tup = expr->origExpr->getTuple()) {
+    for (auto &a : tup->items) {
+      transform(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      ret->push_back({"", a->getType()});
+    }
+  } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
+    auto kwCls = in(ctx->cache->classes, expr->getType()->getClass()->name);
+    seqassert(kwCls, "cannot find {}", expr->getType()->getClass()->name);
+    for (size_t i = 0; i < kw->args.size(); i++) {
+      auto &a = kw->args[i].value;
+      transform(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      ret->push_back({kwCls->fields[i].name, a->getType()});
+    }
+  } else {
+    return nullptr;
+  }
+  return ret;
 }
 
 } // namespace codon::ast

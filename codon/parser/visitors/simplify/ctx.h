@@ -112,6 +112,10 @@ struct SimplifyContext : public Context<SimplifyItem> {
     /// function after processing) and their types (indicating if they are a type, a
     /// static or a variable).
     std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures;
+
+    /// Map of identifiers that are to be fetched from Python.
+    std::unordered_set<std::string> *pyCaptures;
+
     /// Scope that defines the base.
     std::vector<int> scope;
 

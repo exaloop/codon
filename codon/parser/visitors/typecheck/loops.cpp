@@ -166,67 +166,170 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 ///        loop = False   # also set to False on break
 /// A separate suite is generated for each static iteration.
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
-  auto loopVar = ctx->cache->getTemporaryVar("loop");
-  auto fn = [&](const std::string &var, const ExprPtr &expr) {
-    bool staticInt = expr->isStatic();
-    auto t = NT<IndexExpr>(
-        N<IdExpr>("Static"),
-        N<IdExpr>(expr->staticValue.type == StaticValue::INT ? "int" : "str"));
-    auto brk = N<BreakStmt>();
-    brk->setDone(); // Avoid transforming this one to continue
-    // var [: Static] := expr; suite...
-    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
-                             N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(var), expr->clone(),
-                                                        staticInt ? t : nullptr),
-                                          clone(stmt->suite), brk));
-    loop->gotoVar = loopVar;
-    return loop;
-  };
-
   auto var = stmt->var->getId()->value;
   if (!stmt->iter->getCall() || !stmt->iter->getCall()->expr->getId())
     return nullptr;
   auto iter = stmt->iter->getCall()->expr->getId();
-  auto block = N<SuiteStmt>();
-  if (iter && startswith(iter->value, "statictuple:0")) {
-    auto &args = stmt->iter->getCall()->args[0].value->getCall()->args;
-    for (size_t i = 0; i < args.size(); i++)
-      block->stmts.push_back(fn(var, args[i].value));
-  } else if (iter &&
-             startswith(iter->value, "std.internal.types.range.staticrange:0")) {
-    int st =
-        iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
-    int ed =
-        iter->type->getFunc()->funcGenerics[1].type->getStatic()->evaluate().getInt();
-    int step =
-        iter->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
-    if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, abs(st - ed) / abs(step));
-    for (int i = st; step > 0 ? i < ed : i > ed; i += step)
-      block->stmts.push_back(fn(var, N<IntExpr>(i)));
-  } else if (iter &&
-             startswith(iter->value, "std.internal.types.range.staticrange:1")) {
-    int ed =
-        iter->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
-    if (ed > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, iter, MAX_STATIC_ITER, ed);
-    for (int i = 0; i < ed; i++)
-      block->stmts.push_back(fn(var, N<IntExpr>(i)));
-  } else {
+  auto loopVar = ctx->cache->getTemporaryVar("loop");
+
+  std::vector<std::string> vars{var};
+  auto suiteVec = stmt->suite->getSuite();
+  auto oldSuite = suiteVec ? suiteVec->clone() : nullptr;
+  for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
+    if (auto a = suiteVec->stmts[validI]->getAssign())
+      if (a->rhs && a->rhs->getIndex())
+        if (a->rhs->getIndex()->expr->isId(var)) {
+          vars.push_back(a->lhs->getId()->value);
+          suiteVec->stmts[validI] = nullptr;
+          continue;
+        }
+    break;
+  }
+  if (vars.size() > 1)
+    vars.erase(vars.begin());
+  auto [ok, items] = transformStaticLoopCall(vars, stmt->iter, [&](StmtPtr assigns) {
+    auto brk = N<BreakStmt>();
+    brk->setDone(); // Avoid transforming this one to continue
+    // var [: Static] := expr; suite...
+    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
+                             N<SuiteStmt>(assigns, clone(stmt->suite), brk));
+    loop->gotoVar = loopVar;
+    return loop;
+  });
+  if (!ok) {
+    if (oldSuite)
+      stmt->suite = oldSuite;
     return nullptr;
   }
-  ctx->blockLevel++;
 
   // Close the loop
+  ctx->blockLevel++;
   auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
   a->setUpdate();
+  auto block = N<SuiteStmt>();
+  for (auto &i : items)
+    block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
   block->stmts.push_back(a);
-
   auto loop =
       transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
                              N<WhileStmt>(N<IdExpr>(loopVar), block)));
   ctx->blockLevel--;
   return loop;
+}
+
+std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
+TypecheckVisitor::transformStaticLoopCall(
+    const std::vector<std::string> &vars, ExprPtr iter,
+    std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> wrap) {
+  if (!iter->getCall())
+    return {false, {}};
+  auto fn = iter->getCall()->expr->getId();
+  if (!fn || vars.empty())
+    return {false, {}};
+
+  auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
+
+  std::vector<std::shared_ptr<codon::SrcObject>> block;
+  if (startswith(fn->value, "statictuple:0")) {
+    auto &args = iter->getCall()->args[0].value->getCall()->args;
+    if (vars.size() != 1)
+      error("expected one item");
+    for (size_t i = 0; i < args.size(); i++) {
+      stmt->rhs = args[i].value;
+      if (stmt->rhs->isStatic()) {
+        stmt->type = NT<IndexExpr>(
+            N<IdExpr>("Static"),
+            N<IdExpr>(stmt->rhs->staticValue.type == StaticValue::INT ? "int" : "str"));
+      } else {
+        stmt->type = nullptr;
+      }
+      block.push_back(wrap(stmt->clone()));
+    }
+  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange:0")) {
+    if (vars.size() != 1)
+      error("expected one item");
+    int st =
+        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    int ed =
+        fn->type->getFunc()->funcGenerics[1].type->getStatic()->evaluate().getInt();
+    int step =
+        fn->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
+    if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
+      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
+    for (int i = st; step > 0 ? i < ed : i > ed; i += step) {
+      stmt->rhs = N<IntExpr>(i);
+      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+      block.push_back(wrap(stmt->clone()));
+    }
+  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange:1")) {
+    if (vars.size() != 1)
+      error("expected one item");
+    int ed =
+        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    if (ed > MAX_STATIC_ITER)
+      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
+    for (int i = 0; i < ed; i++) {
+      stmt->rhs = N<IntExpr>(i);
+      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+      block.push_back(wrap(stmt->clone()));
+    }
+  } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads")) {
+    if (vars.size() != 1)
+      error("expected one item");
+    if (auto fna = ctx->getFunctionArgs(fn->type)) {
+      auto [generics, args] = *fna;
+      auto typ = generics[0]->getClass();
+      auto name = ctx->getStaticString(generics[1]);
+      seqassert(name, "bad static string");
+      if (auto n = in(ctx->cache->classes[typ->name].methods, *name)) {
+        auto &mt = ctx->cache->overloads[*n];
+        for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+          auto &method = mt[mti];
+          if (endswith(method.name, ":dispatch") ||
+              !ctx->cache->functions[method.name].type)
+            continue;
+          if (method.age <= ctx->age) {
+            if (typ->getHeterogenousTuple()) {
+              auto &ast = ctx->cache->functions[method.name].ast;
+              if (ast->hasAttr("autogenerated") &&
+                  (endswith(ast->name, ".__iter__:0") ||
+                   endswith(ast->name, ".__getitem__:0"))) {
+                // ignore __getitem__ and other heterogenuous methods
+                continue;
+              }
+            }
+            stmt->rhs = N<IdExpr>(method.name);
+            block.push_back(wrap(stmt->clone()));
+          }
+        }
+      }
+    } else {
+      error("bad call to fn_overloads");
+    }
+  } else if (fn && startswith(fn->value, "std.internal.builtin.staticenumerate")) {
+    if (vars.size() != 2)
+      error("expected two items");
+    if (auto fna = ctx->getFunctionArgs(fn->type)) {
+      auto [generics, args] = *fna;
+      auto typ = args[0]->getRecord();
+      if (!typ)
+        error("staticenumerate needs a tuple");
+      for (size_t i = 0; i < typ->args.size(); i++) {
+        auto b = N<SuiteStmt>(
+            {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                           NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))),
+             N<AssignStmt>(N<IdExpr>(vars[1]),
+                           N<IndexExpr>(iter->getCall()->args[0].value->clone(),
+                                        N<IntExpr>(i)))});
+        block.push_back(wrap(b));
+      }
+    } else {
+      error("bad call to staticenumerate");
+    }
+  } else {
+    return {false, {}};
+  }
+  return {true, block};
 }
 
 } // namespace codon::ast

@@ -34,6 +34,8 @@ public:
     std::string stdlibPath;
     /// Plugin dynamic library path
     std::string dylibPath;
+    /// Linker arguments (to replace "-l dylibPath" if present)
+    std::vector<std::string> linkArgs;
   };
 
   using KeywordCallback =

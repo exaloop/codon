@@ -32,6 +32,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   auto preamble = std::make_shared<std::vector<StmtPtr>>();
   seqassertn(cache->module, "cache's module is not set");
 
+#define N std::make_shared
   // Load standard library if it has not been loaded
   if (!in(cache->imports, STDLIB_IMPORT)) {
     // Load the internal.__init__
@@ -63,11 +64,9 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
       // Load early compile-time defines (for standard library)
       preamble->push_back(
           SimplifyVisitor(stdlib, preamble)
-              .transform(std::make_shared<AssignStmt>(
-                  std::make_shared<IdExpr>(d.first),
-                  std::make_shared<IntExpr>(d.second),
-                  std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
-                                              std::make_shared<IdExpr>("int")))));
+              .transform(
+                  N<AssignStmt>(N<IdExpr>(d.first), N<IntExpr>(d.second),
+                                N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int")))));
     }
     preamble->push_back(SimplifyVisitor(stdlib, preamble)
                             .transform(parseFile(stdlib->cache, stdlibPath->path)));
@@ -86,28 +85,30 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
 
   // Prepare the code
-  auto suite = std::make_shared<SuiteStmt>();
+  auto suite = N<SuiteStmt>();
+  suite->stmts.push_back(N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
+                                      std::vector<ExprPtr>{N<IdExpr>(Attr::Internal)}));
   for (auto &d : defines) {
     // Load compile-time defines (e.g., codon run -DFOO=1 ...)
-    suite->stmts.push_back(std::make_shared<AssignStmt>(
-        std::make_shared<IdExpr>(d.first), std::make_shared<IntExpr>(d.second),
-        std::make_shared<IndexExpr>(std::make_shared<IdExpr>("Static"),
-                                    std::make_shared<IdExpr>("int"))));
+    suite->stmts.push_back(
+        N<AssignStmt>(N<IdExpr>(d.first), N<IntExpr>(d.second),
+                      N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
   }
   // Set up __name__
-  suite->stmts.push_back(std::make_shared<AssignStmt>(
-      std::make_shared<IdExpr>("__name__"), std::make_shared<StringExpr>(MODULE_MAIN)));
+  suite->stmts.push_back(
+      N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(MODULE_MAIN)));
   suite->stmts.push_back(node);
   auto n = SimplifyVisitor(ctx, preamble).transform(suite);
 
-  suite = std::make_shared<SuiteStmt>();
-  suite->stmts.push_back(std::make_shared<SuiteStmt>(*preamble));
+  suite = N<SuiteStmt>();
+  suite->stmts.push_back(N<SuiteStmt>(*preamble));
   // Add dominated assignment declarations
   if (in(ctx->scope.stmts, ctx->scope.blocks.back()))
     suite->stmts.insert(suite->stmts.end(),
                         ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
                         ctx->scope.stmts[ctx->scope.blocks.back()].end());
   suite->stmts.push_back(n);
+#undef N
 
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();

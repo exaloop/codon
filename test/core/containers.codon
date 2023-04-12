@@ -159,6 +159,19 @@ def test_dyn_tuple():
     assert t[3:0:-1] == D(3, 2)
 
     assert hash(D(1,2,3,4,5)) == hash((1,2,3,4,5))
+
+    assert (1, 2) + (3,) == (1, 2, 3)
+    assert (1,) + (2, 3) == (1, 2, 3)
+    assert (1, 2) + () == (1, 2)
+    assert () + () == ()
+    assert () + (1, 2) == (1, 2)
+    assert (1,) + (2,) == (1, 2)
+    assert (1, 2) * 3 == (1, 2, 1, 2, 1, 2)
+    assert () * 99 == ()
+    assert (1, 2, 3, 4) * 1 == (1, 2, 3, 4)
+    assert (1, 2) * 0 == ()
+    assert (1, 2) * (-1) == ()
+    assert () * -1 == ()
 test_dyn_tuple()
 
 @test

@@ -74,6 +74,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
   // IndexExpr[i1, ..., iN] is internally represented as
   // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
   std::vector<ExprPtr> items;
+  bool isTuple = expr->index->getTuple();
   if (auto t = expr->index->getTuple()) {
     items = t->items;
   } else {
@@ -91,7 +92,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
     resultExpr = N<InstantiateExpr>(expr->expr, items);
     resultExpr->markType();
   } else {
-    expr->index = items.size() == 1 ? items[0] : N<TupleExpr>(items);
+    expr->index = (!isTuple && items.size() == 1) ? items[0] : N<TupleExpr>(items);
   }
 }
 

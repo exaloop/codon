@@ -123,6 +123,13 @@ void RecordType::realize(std::vector<Type *> mTypes, std::vector<std::string> mN
 
 const char RefType::NodeId = 0;
 
+bool RefType::doIsContentAtomic() const {
+  auto *contents = getContents();
+  return !std::any_of(contents->begin(), contents->end(), [](auto &field) {
+    return field.getName().rfind(".__vtable__", 0) != 0 && !field.getType()->isAtomic();
+  });
+}
+
 Value *RefType::doConstruct(std::vector<Value *> args) {
   auto *module = getModule();
   auto *argsTuple = util::makeTuple(args, module);

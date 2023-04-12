@@ -161,6 +161,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   StmtPtr suite = nullptr;
   ExprPtr ret = nullptr;
   std::unordered_map<std::string, std::pair<std::string, ExprPtr>> captures;
+  std::unordered_set<std::string> pyCaptures;
   {
     // Set up the base
     SimplifyContext::BaseGuard br(ctx.get(), canonicalName);
@@ -239,6 +240,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
       } else {
         if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
           ctx->getBase()->captures = &captures;
+        if (stmt->attributes.has("std.internal.attributes.pycapture"))
+          ctx->getBase()->pyCaptures = &pyCaptures;
         suite = SimplifyVisitor(ctx, preamble).transformConditionalScope(stmt->suite);
       }
     }
@@ -254,6 +257,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     stmt->attributes.parentClass = ctx->getBase()->name;
     // Add the method to the class' method list
     ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
+  } else {
+    // Hack so that we can later use same helpers for class overloads
+    ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
   }
 
   // Handle captures. Add additional argument to the function for every capture.
@@ -278,6 +284,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst =
       std::static_pointer_cast<FunctionStmt>(stmt->clone());
+  ctx->cache->functions[canonicalName].isToplevel =
+      ctx->getModule().empty() && ctx->isGlobal();
+  ctx->cache->functions[canonicalName].rootName = rootName;
 
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;

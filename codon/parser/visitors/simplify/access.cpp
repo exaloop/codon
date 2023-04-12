@@ -19,8 +19,14 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     return;
   }
   auto val = ctx->findDominatingBinding(expr->value);
-  if (!val)
+
+  if (!val && ctx->getBase()->pyCaptures) {
+    ctx->getBase()->pyCaptures->insert(expr->value);
+    resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
+    return;
+  } else if (!val) {
     E(Error::ID_NOT_FOUND, expr, expr->value);
+  }
 
   // If we are accessing an outside variable, capture it or raise an error
   auto captured = checkCapture(val);
@@ -107,7 +113,11 @@ void SimplifyVisitor::visit(DotExpr *expr) {
     std::reverse(chain.begin(), chain.end());
     auto p = getImport(chain);
 
-    if (p.second->getModule() == "std.python") {
+    if (!p.second) {
+      seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
+      ctx->getBase()->pyCaptures->insert(chain[0]);
+      resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
+    } else if (p.second->getModule() == "std.python") {
       resultExpr = transform(N<CallExpr>(
           N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
           N<StringExpr>(chain[p.first++])));
@@ -157,7 +167,6 @@ bool SimplifyVisitor::checkCapture(const SimplifyContext::Item &val) {
     if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
       crossCaptureBoundary = true;
   }
-  seqassert(i < ctx->bases.size(), "invalid base for '{}'", val->canonicalName);
 
   // Mark methods (class functions that access class generics)
   if (parentClassGeneric)
@@ -250,8 +259,11 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
         }
       }
     }
-    if (itemName.empty() && importName.empty())
+    if (itemName.empty() && importName.empty()) {
+      if (ctx->getBase()->pyCaptures)
+        return {1, nullptr};
       E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
+    }
     if (itemName.empty())
       E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
         ctx->cache->imports[importName].moduleName);

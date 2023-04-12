@@ -1019,7 +1019,8 @@ print [a for a in ()]  #: []
 def foo(*args):
     return [a for a in args]
 args, result = ((), [()])
-print list(foo(*args)) == result  #: False
+print list(foo(*args))  #: []
+print result  #: [()]
 
 
 #%% type_error_reporting
@@ -1277,6 +1278,9 @@ for i in statictuple("x", 1, 3.3, 2):
 #: 3.3
 #: 2
 
+print tuple(Int[i+10](i) for i in statictuple(1, 2, 3)).__class__.__name__
+#: Tuple[Int[11],Int[12],Int[13]]
+
 for i in staticrange(0, 10):
     if i % 2 == 0: continue
     if i > 8: break
@@ -1299,6 +1303,9 @@ print('whoa')
 #: xyz Int[7]
 #: whoa
 
+print tuple(Int[i-10](i) for i in staticrange(30,33)).__class__.__name__
+#: Tuple[Int[20],Int[21],Int[22]]
+
 for i in statictuple(0, 2, 4, 7, 11, 12, 13):
     if i % 2 == 0: continue
     if i > 8: break
@@ -1311,6 +1318,23 @@ for i in staticrange(10):  # TODO: large values are too slow!
     pass
 print('done')
 #: done
+
+tt = (5, 'x', 3.14, False, [1, 2])
+for i, j in staticenumerate(tt):
+    print(foo(i * 2 + 1), j)
+#: static 1 Int[1]
+#: None 5
+#: static 3 Int[3]
+#: None x
+#: static 5 Int[5]
+#: None 3.14
+#: static 7 Int[7]
+#: None False
+#: static 9 Int[9]
+#: None [1, 2]
+
+print tuple((Int[i+1](i), j) for i, j in staticenumerate(tt)).__class__.__name__
+#: Tuple[Tuple[Int[1],int],Tuple[Int[2],str],Tuple[Int[3],float],Tuple[Int[4],bool],Tuple[Int[5],List[int]]]
 
 #%% static_range_error,barebones
 for i in staticrange(1000, -2000, -2):
@@ -1602,6 +1626,35 @@ B[Ho]()
 #: init B Ho
 
 
+class Vehicle:
+    def drive(self):
+        return "I'm driving a vehicle"
+
+class Car(Vehicle):
+    def drive(self):
+        return "I'm driving a car"
+
+class Truck(Vehicle):
+    def drive(self):
+        return "I'm driving a truck"
+
+class SUV(Car, Truck):
+    def drive(self):
+        return "I'm driving an SUV"
+
+suv = SUV()
+def moo(s):
+    print(s.drive())
+moo(suv)
+moo(Truck())
+moo(Car())
+moo(Vehicle())
+#: I'm driving an SUV
+#: I'm driving a truck
+#: I'm driving a car
+#: I'm driving a vehicle
+
+
 #%% polymorphism_error_1,barebones
 class M[T]:
     m: T
@@ -1832,3 +1885,14 @@ a.test2(2)
 #: test:B 1
 #: test2:B 2
 
+
+#%% no_generic,barebones
+def foo(a, b: Static[int]):
+    pass
+foo(5)  #! generic 'b' not provided
+
+
+#%% no_generic_2,barebones
+def f(a, b, T: type):
+    print(a, b)
+f(1, 2)  #! generic 'T' not provided

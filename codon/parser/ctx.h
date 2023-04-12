@@ -68,7 +68,6 @@ public:
         return;
       }
     }
-    seqassertn(false, "cannot find {} in the stack", name);
   }
   /// Return a top-most object with a given identifier or nullptr if it does not exist.
   virtual Item find(const std::string &name) const {

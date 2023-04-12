@@ -26,6 +26,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   auto typ = Type::makeType(ctx->cache, stmt->name, ctx->cache->rev(stmt->name),
                             stmt->isRecord())
                  ->getClass();
+  if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
+    typ->getRecord()->noTuple = true;
   if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
     // Special handling of partial types (e.g., `Partial.0001.foo`)
     if (auto p = in(ctx->cache->partials, stmt->name))
@@ -90,8 +92,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   ctx->typecheckLevel--;
 
   // Handle MRO
-  for (auto &m : ctx->cache->classes[stmt->name].mro)
+  for (auto &m : ctx->cache->classes[stmt->name].mro) {
     m = transformType(m);
+  }
 
   // Generalize generics and remove them from the context
   for (const auto &g : stmt->args)

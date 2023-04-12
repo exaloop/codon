@@ -91,8 +91,8 @@ print a.__copy__() #: 15
 print a.__hash__() #: 15
 print a.__bool__() #: True
 print a.__pos__() #: 15
-print a.__neg__() #: 18446744073709551601
-print a.__invert__() #: 18446744073709551600
+print a.__neg__() #: 10633823966279326983230456482242756593
+print a.__invert__() #: 10633823966279326983230456482242756592
 m = UInt[123](4)
 print a.__add__(m), a.__sub__(m), a.__mul__(m), a.__floordiv__(m), a.__truediv__(m) #: 19 11 60 3 3.75
 print a.__mod__(m), a.__lshift__(m), a.__rshift__(m) #: 3 240 0

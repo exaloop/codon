@@ -191,7 +191,7 @@ foo(int, float)  #! foo() takes 1 arguments (2 given)
 #%% instantiate_err_2,barebones
 def foo[N, T]():
     return N()
-foo(int)  #! cannot typecheck the program
+foo(int)  #! generic 'T' not provided
 
 #%% instantiate_err_3,barebones
 Ptr[int, float]()  #! Ptr takes 1 generics (2 given)
@@ -383,7 +383,7 @@ class A:
 a = A() #! argument 'ga' has recursive default value
 
 #%% call_err_4,barebones
-seq_print(1, name="56", name=2) #! keyword argument repeated: name
+seq_print_full(1, name="56", name=2) #! keyword argument repeated: name
 
 #%% call_partial,barebones
 def foo(i, j, k):
@@ -824,6 +824,28 @@ print c.__class__.__name__, c.foo()
 #: AX[str]
 #: CX[str,bool] CX:[BX:[AX:a]:False]:1
 
+#%% super_vtable_2
+class Base:
+    def test(self):
+        print('base.test')
+class A(Base):
+    def test(self):
+        super().test()
+        Base.test(self)
+        print('a.test')
+a = A()
+a.test()
+def moo(x: Base):
+    x.test()
+moo(a)
+Base.test(a)
+#: base.test
+#: base.test
+#: a.test
+#: base.test
+#: base.test
+#: a.test
+#: base.test
 
 #%% super_tuple,barebones
 @tuple

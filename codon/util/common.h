@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include "llvm/Support/Path.h"
 #include <chrono>
 #include <fmt/format.h>
 #include <fmt/ostream.h>

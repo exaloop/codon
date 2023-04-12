@@ -683,6 +683,11 @@ def gztell(a: cobj) -> int:
 def gzseek(a: cobj, b: int, c: i32) -> int:
     pass
 
+@nocapture
+@C
+def gzflush(a: cobj, b: i32) -> i32:
+    pass
+
 # <string.h>
 @pure
 @C

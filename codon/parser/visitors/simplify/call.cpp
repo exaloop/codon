@@ -78,6 +78,9 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
     E(Error::CALL_TUPLE_COMPREHENSION, args[0].value);
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
+
+  ctx->enterConditionalBlock();
+  ctx->getBase()->loops.push_back({"", ctx->scope.blocks, {}});
   if (auto i = var->getId()) {
     ctx->addVar(i->value, ctx->generateCanonicalName(i->value), var->getSrcInfo());
     var = transform(var);
@@ -89,6 +92,11 @@ SimplifyVisitor::transformTupleGenerator(const std::vector<CallExpr::Arg> &args)
     auto head = transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var)));
     ex = N<StmtExpr>(head, transform(ex));
   }
+  ctx->leaveConditionalBlock();
+  // Dominate loop variables
+  for (auto &var : ctx->getBase()->getLoop()->seenVars)
+    ctx->findDominatingBinding(var);
+  ctx->getBase()->loops.pop_back();
   return N<GeneratorExpr>(
       GeneratorExpr::Generator, ex,
       std::vector<GeneratorBody>{{var, transform(g->loops[0].gen), {}}});

@@ -129,12 +129,14 @@ std::string ClassType::realizedTypeName() const {
 }
 
 RecordType::RecordType(Cache *cache, std::string name, std::string niceName,
-                       std::vector<Generic> generics, std::vector<TypePtr> args)
+                       std::vector<Generic> generics, std::vector<TypePtr> args,
+                       bool noTuple)
     : ClassType(cache, std::move(name), std::move(niceName), std::move(generics)),
-      args(std::move(args)) {}
+      args(std::move(args)), noTuple(false) {}
 
-RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args)
-    : ClassType(base), args(std::move(args)) {}
+RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args,
+                       bool noTuple)
+    : ClassType(base), args(std::move(args)), noTuple(noTuple) {}
 
 int RecordType::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
@@ -157,7 +159,10 @@ int RecordType::unify(Type *typ, Unification *us) {
     }
     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
     if (startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE)) {
-      return s1 + int(name == tr->name);
+      if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
+        return s1 + int(name == tr->name);
+      else
+        return -1;
     }
     return this->ClassType::unify(tr.get(), us);
   } else if (auto t = typ->getLink()) {
@@ -172,7 +177,7 @@ TypePtr RecordType::generalize(int atLevel) {
   auto a = args;
   for (auto &t : a)
     t = t->generalize(atLevel);
-  return std::make_shared<RecordType>(c, a);
+  return std::make_shared<RecordType>(c, a, noTuple);
 }
 
 TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
@@ -182,7 +187,7 @@ TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
   auto a = args;
   for (auto &t : a)
     t = t->instantiate(atLevel, unboundCount, cache);
-  return std::make_shared<RecordType>(c, a);
+  return std::make_shared<RecordType>(c, a, noTuple);
 }
 
 std::vector<TypePtr> RecordType::getUnbounds() const {

@@ -1,0 +1,287 @@
+print('Hello from Codon 2')
+
+@tuple
+class Vec:
+    a: float
+    b: float
+    tag: str
+    n: ClassVar[int] = 0
+    d: ClassVar[int] = 0
+
+    def __new__(a: float, b: float, tag: str) -> Vec:
+        return (a, b, tag)
+
+    def __new__(a: float = 0.0, b: float = 0.0):
+        v = Vec(a, b, 'v' + str(Vec.n))
+        Vec.n += 1
+        return v
+
+    def foo(self, a: float = 1.11, b: float = 2.22):
+        return (self.a, a, b)
+
+    def bar(self):
+        return self
+
+    def baz(a: float = 1.11, b: float = 2.22):
+        return (a, b)
+
+    def nop():
+        return 'nop'
+
+    @property
+    def c(self):
+        return self.a + self.b
+
+    def __str__(self):
+        return f'{self.tag}: <{self.a}, {self.b}>'
+
+    def __repr__(self):
+        return f'Vec({self.a}, {self.b}, {repr(self.tag)})'
+
+    def __add__(self, other: Vec):
+        return Vec(self.a + other.a, self.b + other.b, f'({self.tag}+{other.tag})')
+
+    def __iadd__(self, other: Vec):
+        a, b = self.a, self.b
+        a += other.a
+        b += other.b
+        tag = f'({self.tag}+={other.tag})'
+        return Vec(a, b, tag)
+
+    def __add__(self, x: float):
+        return Vec(self.a + x, self.b + x, f'({self.tag}+{x})')
+
+    def __iadd__(self, x: float):
+        a, b = self.a, self.b
+        a += x
+        b += x
+        tag = f'({self.tag}+={x})'
+        return Vec(a, b, tag)
+
+    def __add__(self, x: int):
+        return Vec(self.a + x, self.b + x, f'({self.tag}++{x})')
+
+    def __sub__(self, other: Vec):
+        return Vec(self.a - other.a, self.b - other.b, f'({self.tag}-{other.tag})')
+
+    def __isub__(self, other: Vec):
+        a, b = self.a, self.b
+        a -= other.a
+        b -= other.b
+        tag = f'({self.tag}-={other.tag})'
+        return Vec(a, b, tag)
+
+    def __mul__(self, x: float):
+        return Vec(self.a * x, self.b * x, f'({self.tag}*{x})')
+
+    def __imul__(self, x: float):
+        a, b = self.a, self.b
+        a *= x
+        b *= x
+        tag = f'({self.tag}*={x})'
+        return Vec(a, b, tag)
+
+    def __mod__(self, x: float):
+        return Vec(self.a % x, self.b % x, f'({self.tag}%{x})')
+
+    def __imod__(self, x: float):
+        a, b = self.a, self.b
+        a %= x
+        b %= x
+        tag = f'({self.tag}%={x})'
+        return Vec(a, b, tag)
+
+    def __divmod__(self, x: float):
+        raise ArithmeticError('no divmod')
+        # return self.a / x, self.a % x
+
+    def __pow__(self, x: float):
+        return Vec(self.a ** x, self.b ** x, f'({self.tag}**{x})')
+
+    def __ipow__(self, x: float):
+        a, b = self.a, self.b
+        a **= x
+        b **= x
+        tag = f'({self.tag}**={x})'
+        return Vec(a, b, tag)
+
+    def __neg__(self):
+        return Vec(-self.a, -self.b, f'(-{self.tag})')
+
+    def __pos__(self):
+        return Vec(self.a, self.b, f'(+{self.tag})')
+
+    def __abs__(self):
+        import math
+        return math.hypot(self.a, self.b)
+
+    def __bool__(self):
+        return bool(self.a) and bool(self.b)
+
+    def __invert__(self):
+        return Vec(-self.a - 1, -self.b - 1, f'(~{self.tag})')
+
+    def __lshift__(self, x: int):
+        y = 1 << x
+        return Vec(self.a * y, self.b * y, f'({self.tag}<<{x})')
+
+    def __ilshift__(self, x: int):
+        a, b = self.a, self.b
+        y = 1 << x
+        a *= y
+        b *= y
+        tag = f'({self.tag}<<={x})'
+        return Vec(a, b, tag)
+
+    def __rshift__(self, x: int):
+        y = 1 << x
+        return Vec(self.a / y, self.b / y, f'({self.tag}>>{x})')
+
+    def __irshift__(self, x: int):
+        a, b = self.a, self.b
+        y = 1 << x
+        a /= y
+        b /= y
+        tag = f'({self.tag}>>={x})'
+        return Vec(a, b, tag)
+
+    def __and__(self, x: int):
+        return Vec(int(self.a) & x, int(self.b) & x, f'({self.tag}&{x})')
+
+    def __iand__(self, x: int):
+        a, b = self.a, self.b
+        a = int(self.a) & x
+        b = int(self.b) & x
+        tag = f'({self.tag}&={x})'
+        return Vec(a, b, tag)
+
+    def __or__(self, x: int):
+        return Vec(int(self.a) | x, int(self.b) | x, f'({self.tag}|{x})')
+
+    def __ior__(self, x: int):
+        a, b = self.a, self.b
+        a = int(self.a) | x
+        b = int(self.b) | x
+        tag = f'({self.tag}|={x})'
+        return Vec(a, b, tag)
+
+    def __xor__(self, x: int):
+        return Vec(int(self.a) ^ x, int(self.b) ^ x, f'({self.tag}^{x})')
+
+    def __ixor__(self, x: int):
+        a, b = self.a, self.b
+        a = int(self.a) ^ x
+        b = int(self.b) ^ x
+        tag = f'({self.tag}^={x})'
+        return Vec(a, b, tag)
+
+    #def __int__(self):
+    #    return int(self.b)
+
+    #def __float__(self):
+    #    return self.b
+
+    #def __index__(self):
+    #    return int(self.a)
+
+    def __floordiv__(self, x: float):
+        return Vec(self.a // x, self.b // x, f'({self.tag}//{x})')
+
+    def __ifloordiv__(self, x: float):
+        a, b = self.a, self.b
+        a //= x
+        b //= x
+        tag = f'({self.tag}//={x})'
+        return Vec(a, b, tag)
+
+    def __truediv__(self, x: float):
+        return Vec(self.a / x, self.b / x, f'({self.tag}/{x})')
+
+    def __itruediv__(self, x: float):
+        a, b = self.a, self.b
+        a /= x
+        b /= x
+        tag = f'({self.tag}/={x})'
+        return Vec(a, b, tag)
+
+    def __matmul__(self, other: Vec):
+        return (self.a * other.a) + (self.b * other.b)
+
+    def __imatmul__(self, x: float):
+        a, b = self.a, self.b
+        a *= x
+        b *= x
+        tag = f'({self.tag}@={x})'
+        return Vec(a, b, tag)
+
+    def __len__(self):
+        return len(self.tag)
+
+    def __getitem__(self, idx: int):
+        if idx == 0:
+            return self.a
+        elif idx == 1:
+            return self.b
+        elif idx == 11:
+            return self.a + self.b
+        else:
+            raise KeyError('bad vec key ' + str(idx))
+
+    def __contains__(self, val: float):
+        return self.a == val or self.b == val
+
+    def __contains__(self, val: str):
+        return self.tag == val
+
+    def __hash__(self):
+        return int(self.a + self.b)
+
+    def __call__(self, a: float = 1.11, b: float = 2.22):
+        return self.foo(a=a, b=b)
+
+    def __call__(self, x: str):
+        return (self.a, self.b, x)
+
+    def __call__(self):
+        return Vec(self.a, self.b, f'({self.tag}())')
+
+    def __iter__(self):
+        for c in self.tag:
+            yield c
+
+    def __eq__(self, other: Vec):
+        return self.a == other.a and self.b == other.b
+
+    def __eq__(self, x: float):
+        return self.a == x and self.b == x
+
+    def __ne__(self, other: Vec):
+        return self.a != other.a or self.b != other.b
+
+    def __lt__(self, other: Vec):
+        return abs(self) < abs(other)
+
+    def __le__(self, other: Vec):
+        return abs(self) <= abs(other)
+
+    def __gt__(self, other: Vec):
+        return abs(self) > abs(other)
+
+    def __ge__(self, other: Vec):
+        return abs(self) >= abs(other)
+
+    def __del__(self):
+        Vec.d += 1
+
+    def nd():
+        return Vec.d
+
+def reset():
+    Vec.n = 0
+
+def par_sum(n: int):
+    m = 0
+    @par(num_threads=4)
+    for i in range(n):
+        m += 3*i + 7
+    return m

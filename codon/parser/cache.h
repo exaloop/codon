@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "codon/cir/cir.h"
+#include "codon/cir/pyextension.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
@@ -156,6 +157,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
 
+    /// Module information
+    std::string module;
+
     Class() : ast(nullptr), originalAst(nullptr) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
@@ -186,7 +190,13 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Unrealized function type.
     types::FuncTypePtr type;
 
-    Function() : ast(nullptr), origAst(nullptr), type(nullptr) {}
+    /// Module information
+    std::string rootName = "";
+    bool isToplevel = false;
+
+    Function()
+        : ast(nullptr), origAst(nullptr), type(nullptr), rootName(""),
+          isToplevel(false) {}
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
@@ -236,6 +246,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
   bool pythonCompat = false;
+  /// Set if Codon operates in Python extension mode
+  bool pythonExt = false;
 
 public:
   explicit Cache(std::string argv0 = "");
@@ -298,6 +310,9 @@ public:
   void parseCode(const std::string &code);
 
   static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
+
+  std::shared_ptr<ir::PyModule> pyModule = nullptr;
+  void populatePythonModule();
 };
 
 } // namespace codon::ast

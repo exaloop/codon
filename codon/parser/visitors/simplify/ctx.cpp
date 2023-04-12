@@ -25,7 +25,7 @@ SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
 
 SimplifyContext::Base::Base(std::string name, Attr *attributes)
     : name(move(name)), attributes(attributes), deducedMembers(nullptr), selfName(),
-      captures(nullptr) {}
+      captures(nullptr), pyCaptures(nullptr) {}
 
 void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);

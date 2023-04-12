@@ -1,7 +1,6 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
-#ifdef CODON_JUPYTER
 #include <codon/compiler/jit.h>
 #include <nlohmann/json.hpp>
 #include <xeus/xinterpreter.hpp>
@@ -42,4 +41,3 @@ int startJupyterKernel(const std::string &argv0,
                        const std::string &configPath);
 
 } // namespace codon
-#endif

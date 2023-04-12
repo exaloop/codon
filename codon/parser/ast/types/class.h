@@ -77,13 +77,13 @@ using ClassTypePtr = std::shared_ptr<ClassType>;
 struct RecordType : public ClassType {
   /// List of tuple arguments.
   std::vector<TypePtr> args;
-  char flags = 0;
+  bool noTuple;
 
   explicit RecordType(
       Cache *cache, std::string name, std::string niceName,
       std::vector<ClassType::Generic> generics = std::vector<ClassType::Generic>(),
-      std::vector<TypePtr> args = std::vector<TypePtr>());
-  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args);
+      std::vector<TypePtr> args = std::vector<TypePtr>(), bool noTuple = false);
+  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args, bool noTuple = false);
 
 public:
   int unify(Type *typ, Unification *undo) override;

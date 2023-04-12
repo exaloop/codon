@@ -56,6 +56,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     }
 
   TranslateVisitor(cache->codegenCtx).transform(stmts);
+  cache->populatePythonModule();
   return main;
 }
 
@@ -205,6 +206,10 @@ void TranslateVisitor::visit(CallExpr *expr) {
     arrayType->setAstType(expr->getType());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
+  } else if (expr->expr->getId() && startswith(expr->expr->getId()->value,
+                                               "__internal__.yield_in_no_suspend:0")) {
+    result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
+    return;
   }
 
   auto ft = expr->expr->type->getFunc();
@@ -229,14 +234,18 @@ void TranslateVisitor::visit(CallExpr *expr) {
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
-  if (expr->member == "__atomic__" || expr->member == "__elemsize__") {
+  if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
+      expr->member == "__contents_atomic__") {
     seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
     auto type = ctx->find(expr->expr->getId()->value)->getType();
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
     result = make<ir::TypePropertyInstr>(
         expr, type,
-        expr->member == "__atomic__" ? ir::TypePropertyInstr::Property::IS_ATOMIC
-                                     : ir::TypePropertyInstr::Property::SIZEOF);
+        expr->member == "__atomic__"
+            ? ir::TypePropertyInstr::Property::IS_ATOMIC
+            : (expr->member == "__contents_atomic__"
+                   ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
+                   : ir::TypePropertyInstr::Property::SIZEOF));
   } else {
     result = make<ir::ExtractInstr>(expr, transform(expr->expr), expr->member);
   }
@@ -332,7 +341,16 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
   result = make<ir::ContinueInstr>(stmt);
 }
 
-void TranslateVisitor::visit(ExprStmt *stmt) { result = transform(stmt->expr); }
+void TranslateVisitor::visit(ExprStmt *stmt) {
+  if (stmt->expr->getCall() &&
+      stmt->expr->getCall()->expr->isId("__internal__.yield_final:0")) {
+    result = make<ir::YieldInstr>(stmt, transform(stmt->expr->getCall()->args[0].value),
+                                  true);
+    ctx->getBase()->setGenerator();
+  } else {
+    result = transform(stmt->expr);
+  }
+}
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
   if (stmt->lhs && stmt->lhs->isId(VAR_ARGV))
@@ -418,7 +436,6 @@ void TranslateVisitor::visit(ForStmt *stmt) {
         fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
     bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
-    LOG_TYPECHECK("parsed {}", stmt->decorator);
   }
 
   seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var);

@@ -32,15 +32,16 @@ ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool is
 
 Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                    const std::vector<std::string> &disabledPasses, bool isTest,
-                   bool pyNumerics)
-    : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics), input(),
-      plm(std::make_unique<PluginManager>(argv0)),
+                   bool pyNumerics, bool pyExtension)
+    : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics),
+      pyExtension(pyExtension), input(), plm(std::make_unique<PluginManager>(argv0)),
       cache(std::make_unique<ast::Cache>(argv0)),
       module(std::make_unique<ir::Module>()),
-      pm(std::make_unique<ir::transform::PassManager>(getPassManagerInit(mode, isTest),
-                                                      disabledPasses, pyNumerics)),
+      pm(std::make_unique<ir::transform::PassManager>(
+          getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
   cache->module = module.get();
+  cache->pythonExt = pyExtension;
   cache->pythonCompat = pyNumerics;
   module->setCache(cache.get());
   llvisitor->setDebug(debug);
@@ -181,6 +182,14 @@ std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
   std::unordered_map<std::string, std::string> earlyDefines;
   earlyDefines.emplace("__debug__", debug ? "1" : "0");
   earlyDefines.emplace("__py_numerics__", pyNumerics ? "1" : "0");
+  earlyDefines.emplace("__py_extension__", pyExtension ? "1" : "0");
+  earlyDefines.emplace("__apple__",
+#if __APPLE__
+                       "1"
+#else
+                       "0"
+#endif
+  );
   return earlyDefines;
 }
 

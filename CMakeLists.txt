@@ -1,16 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.15.5"
+  VERSION "0.16.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.1.3")
+set(CODON_JIT_PYTHON_VERSION "0.1.4")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/extra/python/codon/version.py")
 
-option(CODON_JUPYTER "build Codon Jupyter server" OFF)
 option(CODON_GPU "build Codon GPU backend" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -68,6 +67,10 @@ add_custom_command(
   COMMAND peg2cpp ${CMAKE_SOURCE_DIR}/codon/parser/peg/openmp.peg omp_rules.cpp
           omp
   DEPENDS peg2cpp codon/parser/peg/openmp.peg)
+
+# Codon Jupyter library
+set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
+add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
@@ -181,6 +184,7 @@ set(CODON_HPPFILES
     codon/cir/llvm/llvm.h
     codon/cir/llvm/optimize.h
     codon/cir/module.h
+    codon/cir/pyextension.h
     codon/cir/cir.h
     codon/cir/transform/cleanup/canonical.h
     codon/cir/transform/cleanup/dead_code.h
@@ -218,7 +222,6 @@ set(CODON_HPPFILES
     codon/cir/value.h
     codon/cir/var.h
     codon/util/common.h
-    extra/jupyter/jupyter.h
     codon/compiler/jit_extern.h)
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
@@ -320,16 +323,10 @@ set(CODON_CPPFILES
     codon/cir/util/visitor.cpp
     codon/cir/value.cpp
     codon/cir/var.cpp
-    codon/util/common.cpp
-    extra/jupyter/jupyter.cpp)
+    codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
-if(CODON_JUPYTER)
-  add_compile_definitions(CODON_JUPYTER)
-  add_dependencies(codonc xeus-static nlohmann_json)
-  target_link_libraries(codonc PRIVATE xeus-static)
-endif()
 if(ASAN)
   target_compile_options(
     codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
@@ -427,7 +424,7 @@ endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt codonc Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt codonc codon_jupyter Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -463,7 +460,7 @@ target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
-install(TARGETS codonrt codonc DESTINATION lib/codon)
+install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)

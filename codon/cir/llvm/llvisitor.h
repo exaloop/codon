@@ -4,6 +4,7 @@
 
 #include "codon/cir/cir.h"
 #include "codon/cir/llvm/llvm.h"
+#include "codon/cir/pyextension.h"
 #include "codon/dsl/plugins.h"
 #include "codon/util/common.h"
 
@@ -198,6 +199,9 @@ private:
   // Shared library setup
   void setupGlobalCtorForSharedLibrary();
 
+  // Python extension setup
+  llvm::Function *createPyTryCatchWrapper(llvm::Function *func);
+
   // LLVM passes
   void runLLVMPipeline();
 
@@ -213,6 +217,7 @@ private:
 
 public:
   static std::string getNameForFunction(const Func *x);
+  static std::string getNameForVar(const Var *x);
 
   static std::string getDebugNameForVariable(const Var *x) {
     std::string name = x->getName();
@@ -342,6 +347,10 @@ public:
                          bool library = false,
                          const std::vector<std::string> &libs = {},
                          const std::string &lflags = "");
+  /// Writes module as Python extension object.
+  /// @param pymod extension module
+  /// @param filename the file to write to
+  void writeToPythonExtension(const PyModule &pymod, const std::string &filename);
   /// Runs optimization passes on module and writes the result
   /// to the specified file. The output type is determined by
   /// the file extension (.ll for LLVM IR, .bc for LLVM bitcode

@@ -16,6 +16,8 @@
 using fmt::format;
 using namespace codon::error;
 
+const int MAX_TYPECHECK_ITER = 1000;
+
 namespace codon::ast {
 
 using namespace types;
@@ -49,6 +51,12 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
 
   for (ctx->getRealizationBase()->iteration = 1;;
        ctx->getRealizationBase()->iteration++) {
+    LOG_TYPECHECK("[iter] {} :: {}", ctx->getRealizationBase()->name,
+                  ctx->getRealizationBase()->iteration);
+    if (ctx->getRealizationBase()->iteration >= MAX_TYPECHECK_ITER)
+      error(result, "cannot typecheck '{}' in reasonable time",
+            ctx->cache->rev(ctx->getRealizationBase()->name));
+
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or
     //   (2) failure: no expression or statements were marked as done during an
@@ -215,7 +223,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       return nullptr;
   }
 
-  LOG_TYPECHECK("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
+  LOG_REALIZE("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
 
   // Realizations should always be visible, so add them to the toplevel
   ctx->addToplevel(realized->realizedTypeName(),
@@ -259,6 +267,16 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       cls->getContents()->setAttribute(
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
+
+  // Fix for partial types
+  if (auto p = type->getPartial()) {
+    auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func, p->known);
+    ctx->addToplevel(pt->realizedName(),
+                     std::make_shared<TypecheckItem>(TypecheckItem::Type, pt));
+    ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
+        ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
+  }
+
   return realized;
 }
 
@@ -407,6 +425,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         if (!vtable.ir)
           vtSz += vtable.table.size();
       }
+      if (!vtSz)
+        continue;
       auto var = initFn.ast->args[0].name;
       // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
       suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
@@ -469,9 +489,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto suite = N<SuiteStmt>();
     for (auto &f : fields)
       if (startswith(f.name, VAR_VTABLE)) {
-        auto name = f.name.substr(std::string(VAR_VTABLE).size() + 1);
         suite->stmts.push_back(N<AssignMemberStmt>(
-            N<IdExpr>(varName), format("{}.{}", VAR_VTABLE, name),
+            N<IdExpr>(varName), f.name,
             N<IndexExpr>(
                 N<IdExpr>("__vtables__"),
                 N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
@@ -576,8 +595,15 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         std::vector<types::TypePtr> args = fp->getArgTypes();
         args[0] = ct;
         auto m = findBestMethod(ct, fnName, args);
-        if (!m)
-          E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(), fnName);
+        if (!m) {
+          // Print a nice error message
+          std::vector<std::string> a;
+          for (auto &t : args)
+            a.emplace_back(fmt::format("{}", t->prettyString()));
+          std::string argsNice = fmt::format("({})", fmt::join(a, ", "));
+          E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(), fnName,
+            argsNice);
+        }
 
         std::vector<std::string> ns;
         for (auto &a : args)

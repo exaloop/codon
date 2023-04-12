@@ -794,3 +794,36 @@ def test_cmath_testcases():
 
 
 test_cmath_testcases()
+
+
+@test
+def test_complex64():
+    c64 = complex64
+    z = c64(.5 + .5j)
+    assert c64() == z * 0
+    assert z + 1 == c64(1.5, .5)
+    assert bool(z) == True
+    assert bool(0 * z) == False
+    assert +z == z
+    assert -z == c64(-.5 - .5j)
+    assert abs(z) == float32(0.7071067811865476)
+    assert z + 1 == c64(1.5 + .5j)
+    assert 1j + z == c64(.5 + 1.5j)
+    assert z * 2 == c64(1 + 1j)
+    assert 2j * z == c64(-1 + 1j)
+    assert z / .5 == c64(1 + 1j)
+    assert 1j / z == c64(1 + 1j)
+    assert z ** 2 == c64(.5j)
+    y = 1j ** z
+    assert math.isclose(float(y.real), 0.32239694194483454)
+    assert math.isclose(float(y.imag), 0.32239694194483454)
+    assert z != -z
+    assert z != 0
+    assert z.real == float32(.5)
+    assert (z + 1j).imag == float32(1.5)
+    assert z.conjugate() == c64(.5 - .5j)
+    assert z.__copy__() == z
+    assert hash(z)
+    assert c64(complex(z)) == z
+
+test_complex64()
