@@ -153,8 +153,8 @@ class BuildCodonExt(build_ext):
 
         codon_cmd = str(codon_path / 'bin' / 'codon')
         optimization = '-debug' if self.debug else '-release'
-        self.spawn([codon_cmd, 'build', optimization, '-pyext', '-o',
-                    str(extension_path) + ".o", '-module', ext.name, ext.source])
+        self.spawn([codon_cmd, 'build', optimization, '--relocation-model=pic', '-pyext',
+                    '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
 
         ext.runtime_library_dirs = [str(codon_path / 'lib' / 'codon')]
         self.compiler.link_shared_object(

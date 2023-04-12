@@ -13,14 +13,20 @@ for more information and usage examples.
 
 ## Standard library updates
 
-Various additions to the standard library, such as `math.fsum()` and
-the built-in `pow()`.
+- Various additions to the standard library, such as `math.fsum()` and
+  the built-in `pow()`.
+
+- Added `complex64`, which is a complex number with 32-bit float real and
+  imaginary components.
+
+- Better `Int[N]` and `UInt[N]` support: can now convert ints wider than
+  64-bit to string; now supports more operators.
 
 ## More Python-specific optimizations
 
 New optimizations for specific patterns including `any()`/`all()` and
 multiple list concatenations. These patterns are now recognized and
-optimized in the IR.
+optimized in Codon's IR.
 
 # v0.15
 
