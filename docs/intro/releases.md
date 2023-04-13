@@ -3,7 +3,7 @@ listing improvements, updates, optimizations and more for each
 new version.
 
 These release notes generally do not include small bug fixes. See the
-[closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed))
+[closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
 for more information.
 
 # v0.16
