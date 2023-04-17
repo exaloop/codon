@@ -488,12 +488,10 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     const auto &fields = ctx->cache->classes[clsTyp->name].fields;
     auto suite = N<SuiteStmt>();
     for (auto &f : fields)
-      if (startswith(f.name, VAR_VTABLE)) {
+      if (startswith(f.name, VAR_CLSID)) {
         suite->stmts.push_back(N<AssignMemberStmt>(
             N<IdExpr>(varName), f.name,
-            N<IndexExpr>(
-                N<IdExpr>("__vtables__"),
-                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
+            N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__id__")));
       }
 
     LOG_REALIZE("[poly] {} : {}", t, *suite);
@@ -516,7 +514,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto types = std::vector<ExprPtr>{};
     auto found = false;
     for (auto &f : fields) {
-      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
+      if (endswith(f.name, format(".{}", baseTyp->name))) {
         found = true;
         break;
       } else {

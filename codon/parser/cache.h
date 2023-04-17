@@ -29,7 +29,7 @@
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap"
 #define VAR_ARGV "__argv__"
-#define VAR_VTABLE ".__vtable__"
+#define VAR_CLSID ".__id__"
 
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200

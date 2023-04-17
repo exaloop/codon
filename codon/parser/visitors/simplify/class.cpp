@@ -328,14 +328,12 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
     // Add __vtable__ to parent classes if it is not there already
-    auto var = format("{}.{}", VAR_VTABLE, name);
+    auto var = format("{}.{}", VAR_CLSID, name);
     if (typeAst && (cachedCls->fields.empty() || cachedCls->fields[0].name != var)) {
       // LOG("[virtual] vtable({}) := {}", name, var);
       cachedCls->fields.insert(cachedCls->fields.begin(), {var, nullptr});
-      cachedCls->ast->args.insert(
-          cachedCls->ast->args.begin(),
-          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
-                nullptr});
+      cachedCls->ast->args.insert(cachedCls->ast->args.begin(),
+                                  Param{var, transformType(N<IdExpr>("int")), nullptr});
     }
 
     // Add generics first
@@ -348,8 +346,8 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
         if (si == subs.size())
           E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name),
             nGenerics, subs.size());
-        args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
-                                Param::HiddenGeneric});
+        args.emplace_back(a.name, a.type, transformType(subs[si++], false),
+                          Param::HiddenGeneric);
       } else if (a.status == Param::HiddenGeneric) {
         args.emplace_back(a);
       }
@@ -372,14 +370,12 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
     for (auto &a : ast->args) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a)) {
         auto name = a.name;
-        if (startswith(name, VAR_VTABLE)) { // prevent clashing names
-          int i = 0;
-          for (auto &aa : args)
-            i += bool(startswith(aa.name, a.name));
-          if (i)
-            name = format("{}#{}", name, i);
-        }
-        args.emplace_back(Param{name, a.type, a.defaultValue});
+        int i = 0;
+        for (auto &aa : args)
+          i += aa.name == a.name || startswith(aa.name, a.name + "#");
+        if (i)
+          name = format("{}#{}", name, i);
+        args.emplace_back(name, a.type, a.defaultValue);
       }
     }
   }
@@ -510,7 +506,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
 
   std::vector<Param> args;
   for (auto &a : allArgs)
-    if (!startswith(a.name, VAR_VTABLE))
+    if (!startswith(a.name, VAR_CLSID))
       args.push_back(a);
 
   if (op == "new") {

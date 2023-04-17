@@ -1132,7 +1132,8 @@ class Foo:
 class Bar:
     x: float
 class FooBar(Static[Foo], Static[Bar]):
-    pass #! duplicate data attribute 'x' in class definition
+    pass
+# right now works as we rename other fields
 
 #%% keyword_prefix,barebones
 def foo(return_, pass_, yield_, break_, continue_, print_, assert_):

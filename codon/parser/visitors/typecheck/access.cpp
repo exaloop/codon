@@ -172,8 +172,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(N<BoolExpr>(expr->expr->isStatic()));
     return nullptr;
   }
-  // Special case: cls.__vtable_id__
-  if (expr->expr->isType() && expr->member == "__vtable_id__") {
+  // Special case: cls.__id__
+  if (expr->expr->isType() && expr->member == "__id__") {
     if (auto c = realize(expr->expr->type))
       return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
                                       .realizations[c->getClass()->realizedTypeName()]
@@ -195,11 +195,11 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     unify(expr->type, ctx->instantiate(bestMethod, typ));
 
     // Handle virtual calls
-    auto vtableName = format("{}.{}", VAR_VTABLE, typ->name);
+    auto clsidName = format("{}.{}", VAR_CLSID, typ->name);
     // A function is deemed virtual if it is marked as such and if a base class has a
     // vtable
     bool isVirtual = in(ctx->cache->classes[typ->name].virtuals, expr->member);
-    isVirtual &= ctx->findMember(typ->name, vtableName) != nullptr;
+    isVirtual &= ctx->findMember(typ->name, clsidName) != nullptr;
     isVirtual &= !expr->expr->isType();
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
@@ -217,9 +217,12 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
             NT<IdExpr>("Function"),
             std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
                                  NT<IdExpr>(fn->getRetType()->realizedName())});
-        // Function[Tuple[TArg1, TArg2, ...], TRet](expr.__vtable__T[VIRTUAL_ID])
+        // Function[Tuple[TArg1, TArg2, ...],
+        // TRet](__vtables__[expr.__id__][T[VIRTUAL_ID]])
         auto e = N<CallExpr>(
-            fnType, N<IndexExpr>(N<DotExpr>(expr->expr, vtableName), N<IntExpr>(vid)));
+            fnType, N<IndexExpr>(N<IndexExpr>(N<IdExpr>("__vtables__"),
+                                              N<DotExpr>(expr->expr, clsidName)),
+                                 N<IntExpr>(vid)));
         return transform(e);
       }
     }

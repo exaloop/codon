@@ -39,9 +39,9 @@ class __internal__:
 
     def class_set_obj_vtable(pf: T, T: type) -> None:
         """
-        Initialize a vtable of a T() object. Compiler generated.
+        Initialize a vtable ID of a T() object. Compiler generated.
         Corresponds to:
-            pf.__vtable__ = __vtables__[pf.__vtable_id___]
+            pf.__id__ = pf.__id__
         """
         pass
 

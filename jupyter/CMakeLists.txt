@@ -46,23 +46,6 @@ if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
 endif()
 include(${CPM_DOWNLOAD_LOCATION})
 CPMAddPackage(
-  NAME libzmq
-  VERSION 4.3.4
-  URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-  EXCLUDE_FROM_ALL YES
-  OPTIONS "WITH_PERF_TOOL OFF"
-          "ZMQ_BUILD_TESTS OFF"
-          "ENABLE_CPACK OFF"
-          "BUILD_SHARED ON"
-          "WITH_LIBSODIUM OFF"
-          "WITH_TLS OFF")
-CPMAddPackage(
-    NAME cppzmq
-    URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
-    VERSION 4.8.1
-    EXCLUDE_FROM_ALL YES
-    OPTIONS "CPPZMQ_BUILD_TESTS OFF")
-CPMAddPackage(
     NAME xtl
     GITHUB_REPOSITORY "xtensor-stack/xtl"
     VERSION 0.7.3
@@ -76,8 +59,8 @@ CPMAddPackage(
 CPMAddPackage(
     NAME xeus
     GITHUB_REPOSITORY "jupyter-xeus/xeus"
-    VERSION 2.2.0
-    GIT_TAG 2.2.0
+    VERSION 3.0.5
+    GIT_TAG 3.0.5
     EXCLUDE_FROM_ALL YES
     PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
     OPTIONS "BUILD_EXAMPLES OFF"
