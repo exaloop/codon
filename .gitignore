@@ -55,6 +55,7 @@ Thumbs.db
 .idea
 .mypy_cache
 .vscode
+.cache
 
 extra/jupyter/share/jupyter/kernels/codon/kernel.json
 extra/python/codon/version.py
