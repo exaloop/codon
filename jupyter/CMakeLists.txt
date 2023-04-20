@@ -62,13 +62,13 @@ CPMAddPackage(
     VERSION 3.0.5
     GIT_TAG 3.0.5
     EXCLUDE_FROM_ALL YES
-    PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
+    PATCH_COMMAND git apply --reject --whitespace=fix ${CMAKE_SOURCE_DIR}/xeus.patch
     OPTIONS "BUILD_EXAMPLES OFF"
             "XEUS_BUILD_SHARED_LIBS OFF"
             "XEUS_STATIC_DEPENDENCIES ON"
             "CMAKE_POSITION_INDEPENDENT_CODE ON"
-            "XEUS_DISABLE_ARCH_NATIVE ON")
-# "XEUS_USE_DYNAMIC_UUID ${XEUS_USE_DYNAMIC_UUID}"
+            "XEUS_DISABLE_ARCH_NATIVE ON"
+            "XEUS_USE_DYNAMIC_UUID ${XEUS_USE_DYNAMIC_UUID}")
 if (xeus_ADDED)
     install(TARGETS nlohmann_json EXPORT xeus-targets)
 endif()
@@ -83,7 +83,8 @@ CPMAddPackage(
           "ENABLE_CPACK OFF"
           "BUILD_SHARED ON"
           "WITH_LIBSODIUM OFF"
-          "WITH_TLS OFF")
+          "WITH_TLS OFF"
+          "WITH_DOC OFF")
 CPMAddPackage(
     NAME cppzmq
     URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
