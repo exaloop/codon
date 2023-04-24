@@ -69,15 +69,20 @@ struct Span {
   seq_int_t end;
 };
 
-template <class Key, class Value>
-struct GCMapAllocator : public std::allocator<std::pair<const Key, Value>> {
-  using value_type = std::pair<const Key, Value>;
+template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
+  GCMapAllocator() = default;
+  GCMapAllocator(GCMapAllocator<KV> const &) = default;
 
-  value_type *allocate(std::size_t n) {
-    return (value_type *)seq_alloc(n * sizeof(value_type));
-  }
+  template <typename KV1>
+  GCMapAllocator(const GCMapAllocator<KV1>&) noexcept {}
 
-  void deallocate(value_type *p, std::size_t n) { seq_gc_free(p); }
+  KV *allocate(std::size_t n) { return (KV *)seq_alloc(n * sizeof(KV)); }
+
+  void deallocate(KV *p, std::size_t n) { seq_free(p); }
+
+  template <typename U> struct rebind {
+    using other = GCMapAllocator<U>;
+  };
 };
 
 static inline seq_str_t convert(const std::string &p) {
@@ -106,8 +111,8 @@ struct KeyHash {
   }
 };
 
-static thread_local std::unordered_map<Key, Regex, KeyHash, KeyEqual,
-                                       GCMapAllocator<Key, Regex>>
+static thread_local std::unordered_map<const Key, Regex, KeyHash, KeyEqual,
+                                       GCMapAllocator<std::pair<const Key, Regex>>>
     cache;
 
 static inline Regex *get(const seq_str_t &p, seq_int_t flags) {
