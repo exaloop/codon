@@ -50,7 +50,7 @@ section needs to be done with a lock or critical section. See below
 for more details.
 {% endhint %}
 
-Here is an example that finds the sum of prime numbers up to a
+Here is an example that finds the number of primes up to a
 user-defined limit, using a parallel loop on 16 threads with a dynamic
 schedule and chunk size of 100:
 
