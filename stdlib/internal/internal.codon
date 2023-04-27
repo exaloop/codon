@@ -81,14 +81,6 @@ class __internal__:
         """Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`"""
         return T(*args, **kwargs)
 
-    def class_set_obj_vtable(pf: T, T: type) -> None:
-        """
-        Initialize a vtable ID of a T() object. Compiler generated.
-        Corresponds to:
-            pf.__id__ = pf.__id__
-        """
-        pass
-
     def class_get_rtti_vtable(obj) -> Ptr[byte]:
         if not __has_rtti__(type(obj)):
             compile_error("class is not polymorphic")

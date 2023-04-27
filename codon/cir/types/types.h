@@ -313,6 +313,7 @@ public:
 
   /// @return true if the type is polymorphic and needs RTTI
   bool isPolymorphic() const { return polymorphic; }
+  void setPolymorphic() { polymorphic = true; }
 
   Type *getMemberType(const std::string &n) const override {
     return getContents()->getMemberType(n);

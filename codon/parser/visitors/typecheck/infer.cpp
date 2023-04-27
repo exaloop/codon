@@ -713,6 +713,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
     handle = module->unsafeGetMemberedType(realizedName, true);
+    if (ctx->cache->classes[t->name].rtti)
+      ir::cast<ir::types::RefType>(handle)->setPolymorphic();
   }
   handle->setSrcInfo(t->getSrcInfo());
   handle->setAstType(
