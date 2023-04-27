@@ -8,10 +8,8 @@
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 
-#define BINOP(o)                                                                       \
-  [](auto x, auto y) -> auto{ return x o y; }
-#define UNOP(o)                                                                        \
-  [](auto x) -> auto{ return o x; }
+#define BINOP(o) [](auto x, auto y) -> auto { return x o y; }
+#define UNOP(o) [](auto x) -> auto { return o x; }
 
 namespace codon {
 namespace ir {
@@ -252,7 +250,7 @@ void FoldingPass::registerStandardRules(Module *m) {
   if (pyNumerics) {
     registerRule("int-constant-floor-div",
                  intToIntBinaryNoZeroRHS(
-                     m, [](auto x, auto y) -> auto{ return pyDivmod(x, y).first; },
+                     m, [](auto x, auto y) -> auto { return pyDivmod(x, y).first; },
                      Module::FLOOR_DIV_MAGIC_NAME));
   } else {
     registerRule("int-constant-floor-div",
@@ -270,7 +268,7 @@ void FoldingPass::registerStandardRules(Module *m) {
   if (pyNumerics) {
     registerRule("int-constant-mod",
                  intToIntBinaryNoZeroRHS(
-                     m, [](auto x, auto y) -> auto{ return pyDivmod(x, y).second; },
+                     m, [](auto x, auto y) -> auto { return pyDivmod(x, y).second; },
                      Module::MOD_MAGIC_NAME));
   } else {
     registerRule("int-constant-mod",

@@ -16,9 +16,9 @@ using namespace codon::error;
 namespace codon::ast {
 
 SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
-    : Context<SimplifyItem>(move(filename)), cache(cache),
-      isStdlibLoading(false), moduleName{ImportFile::PACKAGE, "", ""},
-      isConditionalExpr(false), allowTypeOf(true) {
+    : Context<SimplifyItem>(move(filename)), cache(cache), isStdlibLoading(false),
+      moduleName{ImportFile::PACKAGE, "", ""}, isConditionalExpr(false),
+      allowTypeOf(true) {
   bases.emplace_back(Base(""));
   scope.blocks.push_back(scope.counter = 0);
 }
