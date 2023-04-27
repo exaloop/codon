@@ -194,12 +194,10 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (args) {
     unify(expr->type, ctx->instantiate(bestMethod, typ));
 
-    // Handle virtual calls
-    auto clsidName = format("{}.{}", VAR_CLSID, typ->name);
-    // A function is deemed virtual if it is marked as such and if a base class has a
-    // vtable
+    // A function is deemed virtual if it is marked as such and
+    // if a base class has a RTTI
     bool isVirtual = in(ctx->cache->classes[typ->name].virtuals, expr->member);
-    isVirtual &= ctx->findMember(typ->name, clsidName) != nullptr;
+    isVirtual &= ctx->cache->classes[typ->name].rtti;
     isVirtual &= !expr->expr->isType();
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
@@ -217,12 +215,14 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
             NT<IdExpr>("Function"),
             std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
                                  NT<IdExpr>(fn->getRetType()->realizedName())});
-        // Function[Tuple[TArg1, TArg2, ...],
-        // TRet](__vtables__[expr.__id__][T[VIRTUAL_ID]])
+        // Function[Tuple[TArg1, TArg2, ...],TRet](
+        //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
+        // )
         auto e = N<CallExpr>(
-            fnType, N<IndexExpr>(N<IndexExpr>(N<IdExpr>("__vtables__"),
-                                              N<DotExpr>(expr->expr, clsidName)),
-                                 N<IntExpr>(vid)));
+            fnType,
+            N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.class_get_rtti_vtable:0"),
+                                     expr->expr),
+                         N<IntExpr>(vid)));
         return transform(e);
       }
     }
