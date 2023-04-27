@@ -196,3 +196,6 @@ def __realized__(fn, args):
 
 def statictuple(*args):
     return args
+
+def __has_rtti__(T: type):
+    pass

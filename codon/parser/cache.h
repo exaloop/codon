@@ -29,7 +29,6 @@
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap"
 #define VAR_ARGV "__argv__"
-#define VAR_CLSID ".__id__"
 
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200
@@ -115,6 +114,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       std::string name;
       /// A corresponding generic field type.
       types::TypePtr type;
+      /// Base class name (if available)
+      std::string baseClass;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.
@@ -149,6 +150,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// ClassRealization instance.
     std::unordered_map<std::string, std::shared_ptr<ClassRealization>> realizations;
 
+    /// Set if a class is polymorphic and has RTTI.
+    bool rtti = false;
     /// List of virtual method names
     std::unordered_set<std::string> virtuals;
     /// MRO

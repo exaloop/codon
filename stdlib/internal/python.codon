@@ -2,6 +2,7 @@
 
 import os
 
+from gc import atomic, alloc_uncollectable
 from internal.dlopen import *
 
 # general

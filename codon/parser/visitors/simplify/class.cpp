@@ -86,8 +86,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         } else {
           ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
         }
-        args.emplace_back(Param{varName, transformType(clone(a.type), false),
-                                transformType(clone(a.defaultValue), false), a.status});
+        args.emplace_back(varName, transformType(clone(a.type), false),
+                          transformType(clone(a.defaultValue), false), a.status);
       }
     }
 
@@ -108,14 +108,15 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
     // Collect classes (and their fields) that are to be statically inherited
     std::vector<ClassStmt *> staticBaseASTs, baseASTs;
+    std::vector<std::string> args_classes(args.size(), "");
     if (!stmt->attributes.has(Attr::Extend)) {
-      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes,
-                                        canonicalName);
+      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, args_classes,
+                                        stmt->attributes, canonicalName);
       if (ctx->cache->isJit && !stmt->baseClasses.empty())
         E(Error::CUSTOM, stmt->baseClasses[0],
           "inheritance is not yet supported in JIT mode");
-      parseBaseClasses(stmt->baseClasses, args, stmt->attributes, canonicalName,
-                       transformedTypeAst);
+      parseBaseClasses(stmt->baseClasses, args, args_classes, stmt->attributes,
+                       canonicalName, transformedTypeAst);
     }
 
     // A ClassStmt will be separated into class variable assignments, method-free
@@ -126,8 +127,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &a : argsToParse) {
       if (a.status == Param::Normal) {
         if (!ClassStmt::isClassVar(a)) {
-          args.emplace_back(Param{a.name, transformType(clone(a.type), false),
-                                  transform(clone(a.defaultValue), true)});
+          args.emplace_back(a.name, transformType(clone(a.type), false),
+                            transform(clone(a.defaultValue), true));
+          args_classes.emplace_back();
         } else if (!stmt->attributes.has(Attr::Extend)) {
           // Handle class variables. Transform them later to allow self-references
           auto name = format("{}.{}", canonicalName, a.name);
@@ -153,7 +155,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     if (!stmt->attributes.has(Attr::Extend)) {
       for (size_t ai = 0; ai < args.size();) {
         if (args[ai].status == Param::Normal)
-          ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
+          ctx->cache->classes[canonicalName].fields.push_back(
+              Cache::Class::ClassField{args[ai].name, nullptr, args_classes[ai]});
         ai++;
       }
     }
@@ -289,7 +292,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
 std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
-    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args, const Attr &attr,
+    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args,
+    std::vector<std::string> &args_classes, const Attr &attr,
     const std::string &canonicalName, const ExprPtr &typeAst) {
   std::vector<ClassStmt *> asts;
 
@@ -327,14 +331,9 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
     if (asts.back()->attributes.has(Attr::Internal))
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
-    // Add __vtable__ to parent classes if it is not there already
-    auto var = format("{}.{}", VAR_CLSID, name);
-    if (typeAst && (cachedCls->fields.empty() || cachedCls->fields[0].name != var)) {
-      // LOG("[virtual] vtable({}) := {}", name, var);
-      cachedCls->fields.insert(cachedCls->fields.begin(), {var, nullptr});
-      cachedCls->ast->args.insert(cachedCls->ast->args.begin(),
-                                  Param{var, transformType(N<IdExpr>("int")), nullptr});
-    }
+    // Mark parent classes as polymorphic as well.
+    if (typeAst)
+      cachedCls->rtti = true;
 
     // Add generics first
     int nGenerics = 0;
@@ -348,8 +347,10 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
             nGenerics, subs.size());
         args.emplace_back(a.name, a.type, transformType(subs[si++], false),
                           Param::HiddenGeneric);
+        args_classes.emplace_back(asts.back()->name);
       } else if (a.status == Param::HiddenGeneric) {
         args.emplace_back(a);
+        args_classes.emplace_back(asts.back()->name);
       }
       if (a.status != Param::Normal) {
         if (auto st = getStaticGeneric(a.type.get())) {
@@ -376,12 +377,14 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
         if (i)
           name = format("{}#{}", name, i);
         args.emplace_back(name, a.type, a.defaultValue);
+        args_classes.emplace_back(ast->name);
       }
     }
   }
   if (typeAst) {
     if (!parentClasses.empty())
       mro.push_back(parentClasses);
+    ctx->cache->classes[canonicalName].rtti = true;
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
@@ -423,8 +426,8 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
           auto varName = ctx->generateCanonicalName(format("T{}", ++i));
           auto memberName = ctx->cache->rev(varName);
           ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
-          args.emplace_back(Param{varName, N<IdExpr>("type"), nullptr, Param::Generic});
-          args.emplace_back(Param{m, N<IdExpr>(varName)});
+          args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
+          args.emplace_back(m, N<IdExpr>(varName));
         }
         ctx->getBase()->deducedMembers = nullptr;
         return {transformed, f};
@@ -506,8 +509,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
 
   std::vector<Param> args;
   for (auto &a : allArgs)
-    if (!startswith(a.name, VAR_CLSID))
-      args.push_back(a);
+    args.push_back(a);
 
   if (op == "new") {
     // Classes: @internal def __new__() -> T
@@ -515,9 +517,9 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     ret = typExpr->clone();
     if (isRecord) {
       for (auto &a : args)
-        fargs.emplace_back(
-            Param{a.name, clone(a.type),
-                  a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
+        fargs.emplace_back(a.name, clone(a.type),
+                           a.defaultValue ? clone(a.defaultValue)
+                                          : N<CallExpr>(clone(a.type)));
       attr.set(Attr::Internal);
     } else {
       stmts.emplace_back(N<ReturnStmt>(
@@ -527,17 +529,17 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
     //            self.aI = aI ...
     ret = I("NoneType");
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     for (auto &a : args) {
       stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
-      fargs.emplace_back(
-          Param{a.name, clone(a.type),
-                a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
+      fargs.emplace_back(a.name, clone(a.type),
+                         a.defaultValue ? clone(a.defaultValue)
+                                        : N<CallExpr>(clone(a.type)));
     }
   } else if (op == "raw") {
     // Classes: def __raw__(self: T) -> Ptr[byte]:
     //            return __internal__.class_raw(self)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = N<IndexExpr>(I("Ptr"), I("byte"));
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "class_raw"), I("self"))));
@@ -545,8 +547,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // Tuples: def __getitem__(self: T, index: int) -> T1:
     //           return __internal__.tuple_getitem[T, T1](self, index)
     //         (error during a realizeFunc() method if T is a heterogeneous tuple)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"index", I("int")});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("index", I("int"));
     ret = !args.empty() ? clone(args[0].type) : I("NoneType");
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_getitem"), I("self"),
@@ -555,7 +557,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // Tuples: def __iter__(self: T) -> Generator[T]:
     //           yield self.aI ...
     //         (error during a realizeFunc() method if T is a heterogeneous tuple)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = N<IndexExpr>(I("Generator"), !args.empty() ? clone(args[0].type) : I("int"));
     for (auto &a : args)
       stmts.emplace_back(N<YieldStmt>(N<DotExpr>("self", a.name)));
@@ -566,8 +568,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // Tuples: def __contains__(self: T, what) -> bool:
     //            if isinstance(what, T1): if what == self.a1: return True ...
     //            return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"what", nullptr});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("what", nullptr);
     ret = I("bool");
     for (auto &a : args)
       stmts.push_back(N<IfStmt>(N<CallExpr>(I("isinstance"), I("what"), clone(a.type)),
@@ -579,8 +581,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // def __eq__(self: T, other: T) -> bool:
     //   if not self.arg1.__eq__(other.arg1): return False ...
     //   return True
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
     ret = I("bool");
     for (auto &a : args)
       stmts.push_back(N<IfStmt>(
@@ -593,8 +595,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     // def __ne__(self: T, other: T) -> bool:
     //   if self.arg1.__ne__(other.arg1): return True ...
     //   return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
     ret = I("bool");
     for (auto &a : args)
       stmts.emplace_back(
@@ -608,8 +610,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   elif self.arg1.__eq__(other.arg1):
     //      ... (arg2, ...) ...
     //   return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
     ret = I("bool");
     std::vector<StmtPtr> *v = &stmts;
     for (size_t i = 0; i + 1 < args.size(); i++) {
@@ -638,8 +640,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   elif self.arg1.__eq__(other.arg1):
     //      ... (arg2, ...) ...
     //   return True
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
     ret = I("bool");
     std::vector<StmtPtr> *v = &stmts;
     for (size_t i = 0; i + 1 < args.size(); i++) {
@@ -669,7 +671,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //     seed ^ ((self.arg1.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
     //   ) ...
     //   return seed
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = I("int");
     stmts.emplace_back(N<AssignStmt>(I("seed"), N<IntExpr>(0)));
     for (auto &a : args)
@@ -688,8 +690,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "pickle") {
     // def __pickle__(self: T, dest: Ptr[byte]) -> void:
     //   self.arg1.__pickle__(dest) ...
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"dest", N<IndexExpr>(I("Ptr"), I("byte"))});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("byte")));
     ret = I("NoneType");
     for (auto &a : args)
       stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
@@ -697,7 +699,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "unpickle") {
     // def __unpickle__(src: Ptr[byte]) -> T:
     //   return T(T1.__unpickle__(src),...)
-    fargs.emplace_back(Param{"src", N<IndexExpr>(I("Ptr"), I("byte"))});
+    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("byte")));
     ret = typExpr->clone();
     std::vector<ExprPtr> ar;
     ar.reserve(args.size());
@@ -707,7 +709,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "len") {
     // def __len__(self: T) -> int:
     //   return N (number of args)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = I("int");
     stmts.emplace_back(N<ReturnStmt>(N<IntExpr>(args.size())));
   } else if (op == "to_py") {
@@ -715,7 +717,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   o = pyobj._tuple_new(N)  (number of args)
     //   pyobj._tuple_set(o, 1, self.arg1.__to_py__()) ...
     //   return o
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = I("cobj");
     stmts.emplace_back(
         N<AssignStmt>(I("o"), N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_new"),
@@ -728,7 +730,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "from_py") {
     // def __from_py__(src: cobj) -> T:
     //   return T(T1.__from_py__(pyobj._tuple_get(src, 1)), ...)
-    fargs.emplace_back(Param{"src", I("cobj")});
+    fargs.emplace_back("src", I("cobj"));
     ret = typExpr->clone();
     std::vector<ExprPtr> ar;
     ar.reserve(args.size());
@@ -740,23 +742,23 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "to_gpu") {
     // def __to_gpu__(self: T, cache) -> T:
     //   return __internal__.class_to_gpu(self, cache)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"cache"});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("cache");
     ret = typExpr->clone();
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(I("__internal__"), "class_to_gpu"), I("self"), I("cache"))));
   } else if (op == "from_gpu") {
     // def __from_gpu__(self: T, other: T) -> None:
     //   __internal__.class_from_gpu(self, other)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
     ret = I("NoneType");
     stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
         N<DotExpr>(I("__internal__"), "class_from_gpu"), I("self"), I("other"))));
   } else if (op == "from_gpu_new") {
     // def __from_gpu_new__(other: T) -> T:
     //   return __internal__.class_from_gpu_new(other)
-    fargs.emplace_back(Param{"other", typExpr->clone()});
+    fargs.emplace_back("other", typExpr->clone());
     ret = typExpr->clone();
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "class_from_gpu_new"), I("other"))));
@@ -767,7 +769,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   a.__setitem__(0, self.arg1.__repr__()) ...
     //   n.__setitem__(0, "arg1") ...  (if not a Tuple.N; otherwise "")
     //   return __internal__.tuple_str(a.ptr, n.ptr, N)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     ret = I("str");
     if (!args.empty()) {
       stmts.emplace_back(
@@ -798,7 +800,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     //   d = List[str](N)
     //   d.append('arg1')  ...
     //   return d
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     stmts.emplace_back(
         N<AssignStmt>(I("d"), N<CallExpr>(N<IndexExpr>(I("List"), I("str")),
                                           N<IntExpr>(args.size()))));
@@ -809,15 +811,15 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   } else if (op == "add") {
     // def __add__(self, tup):
     //   return __internal__.tuple_add(self, tup)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"tup", nullptr});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("tup", nullptr);
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_add"), I("self"), I("tup"))));
   } else if (op == "mul") {
     // def __mul__(self, i: Static[int]):
     //   return __internal__.tuple_add(self, tup)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"i", N<IndexExpr>(I("Static"), I("int"))});
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("i", N<IndexExpr>(I("Static"), I("int")));
     stmts.emplace_back(N<ReturnStmt>(
         N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_mul"), I("self"), I("i"))));
   } else if (op == "tuplesize") {

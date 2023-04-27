@@ -569,6 +569,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformRealizedFn(expr)};
   } else if (val == "std.internal.static.static_print") {
     return {false, transformStaticPrintFn(expr)};
+  } else if (val == "__has_rtti__") {
+    return {true, transformHasRttiFn(expr)};
   } else {
     return transformInternalStaticFn(expr);
   }
@@ -644,7 +646,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     auto typExpr = N<IdExpr>(superTyp->name);
     typExpr->setType(superTyp);
     return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
-                                 self, typExpr));
+                                 self, typExpr, N<IntExpr>(1)));
   }
 
   auto name = cands.front(); // the first inherited type
@@ -659,7 +661,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     e->type = unify(superTyp, e->type); // see super_tuple test for this line
     return e;
   } else {
-    // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
+    // Case: reference types. Return `__internal__.class_super(self, T)`
     auto self = N<IdExpr>(funcTyp->ast->args[0].name);
     self->type = typ;
     return castToSuperClass(self, superTyp);
@@ -943,6 +945,18 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
                args[i].value->isStatic() ? " [static]" : "");
   }
   return nullptr;
+}
+
+/// Transform __has_rtti__ to a static boolean that indicates RTTI status of a type.
+ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
+  expr->staticValue.type = StaticValue::INT;
+  auto funcTyp = expr->expr->type->getFunc();
+  auto t = funcTyp->funcGenerics[0].type->getClass();
+  if (!t)
+    return nullptr;
+  auto c = in(ctx->cache->classes, t->name);
+  seqassert(c, "bad class {}", t->name);
+  return transform(N<BoolExpr>(const_cast<Cache::Class *>(c)->rtti));
 }
 
 // Transform internal.static calls
