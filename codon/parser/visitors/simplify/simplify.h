@@ -193,7 +193,6 @@ private: // Node simplification rules
   void visit(KeywordStarExpr *expr) override;
   void visit(RangeExpr *) override;
   void visit(SliceExpr *) override;
-  void visit(EllipsisExpr *) override;
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
   void visit(CustomStmt *) override;

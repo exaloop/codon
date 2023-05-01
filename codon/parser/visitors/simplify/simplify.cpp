@@ -248,11 +248,6 @@ void SimplifyVisitor::visit(StarExpr *expr) { transform(expr->what); }
 
 void SimplifyVisitor::visit(KeywordStarExpr *expr) { transform(expr->what); }
 
-/// Manually handled in @c CallExpr
-void SimplifyVisitor::visit(EllipsisExpr *expr) {
-  E(Error::UNEXPECTED_TYPE, expr, "ellipsis");
-}
-
 /// Only allowed in @c MatchStmt
 void SimplifyVisitor::visit(RangeExpr *expr) {
   E(Error::UNEXPECTED_TYPE, expr, "range");

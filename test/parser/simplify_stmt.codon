@@ -292,11 +292,6 @@ match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
 #! multiple ellipses in a pattern
 
-#%% match_err_2,barebones
-match [1, 2]:
-    case 1 | ...: pass
-#! unexpected ellipsis expression
-
 #%% global,barebones
 a = 1
 def foo():

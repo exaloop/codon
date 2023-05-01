@@ -277,7 +277,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
     if (!kw.name.empty())
       args.push_back(kw);
-    partialArgs.push_back({"", N<EllipsisExpr>()});
+    partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   }
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
@@ -335,8 +335,8 @@ ExprPtr SimplifyVisitor::makeAnonFn(std::vector<StmtPtr> suite,
   params.reserve(argNames.size());
   for (auto &s : argNames)
     params.emplace_back(Param(s));
-  auto f = transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(move(suite)),
-                                     Attr({Attr::Capture})));
+  auto f = transform(N<FunctionStmt>(
+      name, nullptr, params, N<SuiteStmt>(std::move(suite)), Attr({Attr::Capture})));
   if (auto fs = f->getSuite()) {
     seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(),
               "invalid function transform");

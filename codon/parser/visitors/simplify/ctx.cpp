@@ -16,7 +16,7 @@ using namespace codon::error;
 namespace codon::ast {
 
 SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
-    : Context<SimplifyItem>(move(filename)), cache(cache), isStdlibLoading(false),
+    : Context<SimplifyItem>(std::move(filename)), cache(cache), isStdlibLoading(false),
       moduleName{ImportFile::PACKAGE, "", ""}, isConditionalExpr(false),
       allowTypeOf(true) {
   bases.emplace_back(Base(""));
@@ -24,8 +24,8 @@ SimplifyContext::SimplifyContext(std::string filename, Cache *cache)
 }
 
 SimplifyContext::Base::Base(std::string name, Attr *attributes)
-    : name(move(name)), attributes(attributes), deducedMembers(nullptr), selfName(),
-      captures(nullptr), pyCaptures(nullptr) {}
+    : name(std::move(name)), attributes(attributes), deducedMembers(nullptr),
+      selfName(), captures(nullptr), pyCaptures(nullptr) {}
 
 void SimplifyContext::add(const std::string &name, const SimplifyContext::Item &var) {
   auto v = find(name);

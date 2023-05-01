@@ -8,12 +8,6 @@ from internal.gc import (
 __vtables__ = Ptr[Ptr[cobj]]()
 __vtable_size__ = 0
 
-@dataclass(pickle=False)
-class RTTI:
-    id: int
-    def __init__(self, i: int):
-        self.id = i
-
 @extend
 class __internal__:
     def yield_final(val):

@@ -19,9 +19,9 @@ namespace codon::ast {
 void SimplifyVisitor::visit(PrintStmt *stmt) {
   std::vector<CallExpr::Arg> args;
   for (auto &i : stmt->items)
-    args.push_back({"", transform(i)});
+    args.emplace_back("", transform(i));
   if (stmt->isInline)
-    args.push_back({"end", N<StringExpr>(" ")});
+    args.emplace_back("end", N<StringExpr>(" "));
   resultStmt = N<ExprStmt>(N<CallExpr>(transform(N<IdExpr>("print")), args));
 }
 
@@ -35,8 +35,8 @@ void SimplifyVisitor::visit(CallExpr *expr) {
 
   for (auto &i : expr->args) {
     if (auto el = i.value->getEllipsis()) {
-      if (el->isPipeArg || &(i) == &(expr->args.back()))
-        continue;
+      if (&(i) == &(expr->args.back()) && i.name.empty())
+        el->mode = EllipsisExpr::PARTIAL;
     }
     transform(i.value, true);
   }
@@ -145,7 +145,7 @@ ExprPtr SimplifyVisitor::transformFunctoolsPartial(std::vector<CallExpr::Arg> ar
     E(Error::CALL_PARTIAL, getSrcInfo());
   auto name = clone(args[0].value);
   args.erase(args.begin());
-  args.push_back({"", N<EllipsisExpr>()});
+  args.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   return transform(N<CallExpr>(name, args));
 }
 

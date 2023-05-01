@@ -243,7 +243,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       methodArgs.push_back(expr->expr);
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->attributes.has(Attr::Property))
-      methodArgs.push_back(N<EllipsisExpr>());
+      methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
     unify(expr->type, e->type);
     return e;
@@ -333,11 +333,11 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
-    return transform(
-        N<CallExpr>(N<IdExpr>("__internal__.get_union_method:0"),
-                    std::vector<CallExpr::Arg>{{"union", expr->expr},
-                                               {"method", N<StringExpr>(expr->member)},
-                                               {"", N<EllipsisExpr>()}}));
+    return transform(N<CallExpr>(
+        N<IdExpr>("__internal__.get_union_method:0"),
+        std::vector<CallExpr::Arg>{{"union", expr->expr},
+                                   {"method", N<StringExpr>(expr->member)},
+                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
   }
 
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);

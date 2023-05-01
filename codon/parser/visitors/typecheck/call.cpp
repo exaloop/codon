@@ -29,8 +29,14 @@ void TypecheckVisitor::visit(KeywordStarExpr *expr) {
 /// only remaining ellipses are those that belong to PipeExprs.
 void TypecheckVisitor::visit(EllipsisExpr *expr) {
   unify(expr->type, ctx->getUnbound());
-  if (expr->isPipeArg && realize(expr->type))
+  if (expr->mode == EllipsisExpr::PIPE && realize(expr->type)) {
     expr->setDone();
+  }
+
+  if (expr->mode == EllipsisExpr::STANDALONE) {
+    resultExpr = transform(N<CallExpr>(N<IdExpr>("Ellipsis")));
+    unify(expr->type, resultExpr->type);
+  }
 }
 
 /// Typecheck a call expression. This is the most complex expression to typecheck.
@@ -46,8 +52,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
   // Check if this call is partial call
   PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis() &&
-                       !expr->args.back().value->getEllipsis()->isPipeArg &&
-                       expr->args.back().name.empty()};
+                       expr->args.back().value->getEllipsis()->mode ==
+                           EllipsisExpr::PARTIAL};
   // Transform the callee
   if (!part.isPartial) {
     // Intercept method calls (e.g. `obj.method`) for faster compilation (because it
@@ -314,7 +320,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
           e = transform(e);
         if (partial) {
           part.args = e;
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           args.push_back({realName, e});
@@ -345,7 +351,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         e->setAttr(ExprAttr::KwStarArgument);
         if (partial) {
           part.kwArgs = e;
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           args.push_back({realName, e});
@@ -356,7 +362,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!part.known.empty() && part.known[si]) {
           args.push_back({realName, getPartialArg(pi++)});
         } else if (partial) {
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           auto es = calleeFn->ast->args[si].defaultValue->toString();

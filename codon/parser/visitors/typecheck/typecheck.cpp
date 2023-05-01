@@ -362,11 +362,12 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       return false;
     if (doTypeWrap) {
       if (c->getRecord())
-        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
       else
         expr = transform(N<CallExpr>(
             N<IdExpr>("__internal__.class_ctr:0"),
-            std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+            std::vector<CallExpr::Arg>{{"T", expr},
+                                       {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
     }
   }
 
