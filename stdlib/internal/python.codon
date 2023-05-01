@@ -910,9 +910,8 @@ class _PyArg_Parser:
 
 @extend
 class pyobj:
-    @__internal__
     def __new__() -> pyobj:
-        pass
+        return __internal__.class_alloc(pyobj)
 
     def __raw__(self) -> Ptr[byte]:
         return __internal__.class_raw(self)

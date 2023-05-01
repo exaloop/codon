@@ -88,6 +88,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         }
         args.emplace_back(varName, transformType(clone(a.type), false),
                           transformType(clone(a.defaultValue), false), a.status);
+        if (!stmt->attributes.has(Attr::Extend) && a.status == Param::Normal)
+          ctx->cache->classes[canonicalName].fields.push_back(
+              Cache::Class::ClassField{varName, nullptr, canonicalName});
       }
     }
 
@@ -108,15 +111,14 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 
     // Collect classes (and their fields) that are to be statically inherited
     std::vector<ClassStmt *> staticBaseASTs, baseASTs;
-    std::vector<std::string> args_classes(args.size(), "");
     if (!stmt->attributes.has(Attr::Extend)) {
-      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, args_classes,
-                                        stmt->attributes, canonicalName);
+      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes,
+                                        canonicalName);
       if (ctx->cache->isJit && !stmt->baseClasses.empty())
         E(Error::CUSTOM, stmt->baseClasses[0],
           "inheritance is not yet supported in JIT mode");
-      parseBaseClasses(stmt->baseClasses, args, args_classes, stmt->attributes,
-                       canonicalName, transformedTypeAst);
+      parseBaseClasses(stmt->baseClasses, args, stmt->attributes, canonicalName,
+                       transformedTypeAst);
     }
 
     // A ClassStmt will be separated into class variable assignments, method-free
@@ -129,7 +131,10 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         if (!ClassStmt::isClassVar(a)) {
           args.emplace_back(a.name, transformType(clone(a.type), false),
                             transform(clone(a.defaultValue), true));
-          args_classes.emplace_back();
+          if (!stmt->attributes.has(Attr::Extend)) {
+            ctx->cache->classes[canonicalName].fields.push_back(
+                Cache::Class::ClassField{a.name, nullptr, canonicalName});
+          }
         } else if (!stmt->attributes.has(Attr::Extend)) {
           // Handle class variables. Transform them later to allow self-references
           auto name = format("{}.{}", canonicalName, a.name);
@@ -149,16 +154,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &a : args) {
       if (a.status == Param::Normal)
         memberArgs.push_back(a.clone());
-    }
-
-    // Ensure that all fields and class variables are registered
-    if (!stmt->attributes.has(Attr::Extend)) {
-      for (size_t ai = 0; ai < args.size();) {
-        if (args[ai].status == Param::Normal)
-          ctx->cache->classes[canonicalName].fields.push_back(
-              Cache::Class::ClassField{args[ai].name, nullptr, args_classes[ai]});
-        ai++;
-      }
     }
 
     // Parse class members (arguments) and methods
@@ -292,8 +287,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
 std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
-    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args,
-    std::vector<std::string> &args_classes, const Attr &attr,
+    std::vector<ExprPtr> &baseClasses, std::vector<Param> &args, const Attr &attr,
     const std::string &canonicalName, const ExprPtr &typeAst) {
   std::vector<ClassStmt *> asts;
 
@@ -332,8 +326,9 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
     // Mark parent classes as polymorphic as well.
-    if (typeAst)
+    if (typeAst) {
       cachedCls->rtti = true;
+    }
 
     // Add generics first
     int nGenerics = 0;
@@ -347,10 +342,8 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
             nGenerics, subs.size());
         args.emplace_back(a.name, a.type, transformType(subs[si++], false),
                           Param::HiddenGeneric);
-        args_classes.emplace_back(asts.back()->name);
       } else if (a.status == Param::HiddenGeneric) {
         args.emplace_back(a);
-        args_classes.emplace_back(asts.back()->name);
       }
       if (a.status != Param::Normal) {
         if (auto st = getStaticGeneric(a.type.get())) {
@@ -368,6 +361,7 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
   }
   // Add normal fields
   for (auto &ast : asts) {
+    int ai = 0;
     for (auto &a : ast->args) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a)) {
         auto name = a.name;
@@ -376,15 +370,21 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
           i += aa.name == a.name || startswith(aa.name, a.name + "#");
         if (i)
           name = format("{}#{}", name, i);
+        seqassert(ctx->cache->classes[ast->name].fields[ai].name == a.name,
+                  "bad class fields: {} vs {}",
+                  ctx->cache->classes[ast->name].fields[ai].name, a.name);
         args.emplace_back(name, a.type, a.defaultValue);
-        args_classes.emplace_back(ast->name);
+        ctx->cache->classes[canonicalName].fields.push_back(Cache::Class::ClassField{
+            name, nullptr, ctx->cache->classes[ast->name].fields[ai].baseClass});
+        ai++;
       }
     }
   }
   if (typeAst) {
-    if (!parentClasses.empty())
+    if (!parentClasses.empty()) {
       mro.push_back(parentClasses);
-    ctx->cache->classes[canonicalName].rtti = true;
+      ctx->cache->classes[canonicalName].rtti = true;
+    }
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
@@ -428,6 +428,8 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
           ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
           args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
           args.emplace_back(m, N<IdExpr>(varName));
+          ctx->cache->classes[stmt->name].fields.push_back(
+              Cache::Class::ClassField{m, nullptr, stmt->name});
         }
         ctx->getBase()->deducedMembers = nullptr;
         return {transformed, f};
@@ -512,8 +514,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
     args.push_back(a);
 
   if (op == "new") {
-    // Classes: @internal def __new__() -> T
-    // Tuples: @internal def __new__(a1: T1, ..., aN: TN) -> T
+    // Classes: def __new__() -> T: return __internal__.class_new()
     ret = typExpr->clone();
     if (isRecord) {
       for (auto &a : args)

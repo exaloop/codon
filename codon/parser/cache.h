@@ -163,7 +163,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Module information
     std::string module;
 
-    Class() : ast(nullptr), originalAst(nullptr) {}
+    Class() : ast(nullptr), originalAst(nullptr), rtti(false) {}
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
