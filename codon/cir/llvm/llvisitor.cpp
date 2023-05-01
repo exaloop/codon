@@ -973,6 +973,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     }
 
     auto *refType = cast<types::RefType>(pytype.type);
+    seqassertn(!refType->isPolymorphic(),
+               "Python extension types cannot be polymorphic");
     auto *llvmType = getLLVMType(pytype.type);
     auto *objectType = llvm::StructType::get(pyObjectType, llvmType);
     auto codonSize =
@@ -1714,14 +1716,6 @@ void LLVMVisitor::visit(const InternalFunc *x) {
     }
   }
 
-  else if (internalFuncMatches<RefType>("__new__", x)) {
-    auto *refType = cast<RefType>(parentType);
-    auto allocFunc = makeAllocFunc(refType->getContents()->isAtomic());
-    llvm::Value *size = B->getInt64(
-        M->getDataLayout().getTypeAllocSize(getLLVMType(refType->getContents())));
-    result = B->CreateCall(allocFunc, size);
-  }
-
   else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     llvm::Type *baseType = getLLVMType(generatorType->getBase());
@@ -2100,7 +2094,12 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::RefType>(t)) {
-    return B->getInt8PtrTy();
+    auto *p = B->getInt8PtrTy();
+    if (x->isPolymorphic()) {
+      return llvm::StructType::get(*context, {p, p});
+    } else {
+      return p;
+    }
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
@@ -2251,8 +2250,39 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   }
 
   if (auto *x = cast<types::RefType>(t)) {
-    return db.builder->createReferenceType(llvm::dwarf::DW_TAG_reference_type,
-                                           getDITypeHelper(x->getContents(), cache));
+    auto *ref = db.builder->createReferenceType(
+        llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
+    if (x->isPolymorphic()) {
+      auto *p = B->getInt8PtrTy();
+      auto pointerSizeInBits = layout.getTypeAllocSizeInBits(p);
+      auto *rtti = db.builder->createBasicType("rtti", pointerSizeInBits,
+                                               llvm::dwarf::DW_ATE_address);
+      auto *structType = llvm::StructType::get(p, p);
+      auto *structLayout = layout.getStructLayout(structType);
+      auto *srcInfo = getSrcInfo(x);
+      llvm::DIFile *file = db.getFile(srcInfo->file);
+      std::vector<llvm::Metadata *> members;
+
+      llvm::DICompositeType *diType = db.builder->createStructType(
+          file, x->getName(), file, srcInfo->line, structLayout->getSizeInBits(),
+          /*AlignInBits=*/0, llvm::DINode::FlagZero, /*DerivedFrom=*/nullptr,
+          db.builder->getOrCreateArray(members));
+
+      members.push_back(db.builder->createMemberType(
+          diType, "data", file, srcInfo->line, pointerSizeInBits,
+          /*AlignInBits=*/0, structLayout->getElementOffsetInBits(0),
+          llvm::DINode::FlagZero, ref));
+
+      members.push_back(db.builder->createMemberType(
+          diType, "rtti", file, srcInfo->line, pointerSizeInBits,
+          /*AlignInBits=*/0, structLayout->getElementOffsetInBits(1),
+          llvm::DINode::FlagZero, rtti));
+
+      db.builder->replaceArrays(diType, db.builder->getOrCreateArray(members));
+      return diType;
+    } else {
+      return ref;
+    }
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
@@ -3014,8 +3044,12 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
 
   process(x->getVal());
   B->SetInsertPoint(block);
-  if (auto *refType = cast<types::RefType>(memberedType))
+  if (auto *refType = cast<types::RefType>(memberedType)) {
+    if (refType->isPolymorphic())
+      value =
+          B->CreateExtractValue(value, 0); // polymorphic ref type is tuple (data, rtti)
     value = B->CreateLoad(getLLVMType(refType->getContents()), value);
+  }
   value = B->CreateExtractValue(value, index);
 }
 
@@ -3031,6 +3065,8 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   llvm::Value *rhs = value;
 
   B->SetInsertPoint(block);
+  if (refType->isPolymorphic())
+    lhs = B->CreateExtractValue(lhs, 0); // polymorphic ref type is tuple (data, rtti)
   llvm::Value *load = B->CreateLoad(getLLVMType(refType->getContents()), lhs);
   load = B->CreateInsertValue(load, rhs, index);
   B->CreateStore(load, lhs);
