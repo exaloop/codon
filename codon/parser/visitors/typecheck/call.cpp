@@ -967,6 +967,7 @@ ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
 
 // Transform internal.static calls
 std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
+  unify(expr->type, ctx->getUnbound());
   if (expr->expr->isId("std.internal.static.fn_can_call")) {
     expr->staticValue.type = StaticValue::INT;
     auto typ = expr->args[0].value->getType()->getClass();
@@ -1074,6 +1075,54 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     for (auto &a : zzz->getCall()->args)
       tupArgs.push_back(a.value);
     return {true, transform(N<TupleExpr>(tupArgs))};
+  } else if (expr->expr->isId("std.internal.static.vars")) {
+    auto funcTyp = expr->expr->type->getFunc();
+    auto t = funcTyp->funcGenerics[0].type->getStatic();
+    if (!t)
+      return {true, nullptr};
+    auto withIdx = t->evaluate().getInt();
+
+    types::ClassTypePtr typ = nullptr;
+    std::vector<ExprPtr> tupleItems;
+    auto e = transform(expr->args[0].value);
+    if (!(typ = e->type->getClass()))
+      return {true, nullptr};
+
+    size_t idx = 0;
+    for (auto &f : ctx->cache->classes[typ->name].fields) {
+      auto k = N<StringExpr>(f.name);
+      auto v = N<DotExpr>(expr->args[0].value, f.name);
+      if (withIdx) {
+        auto i = N<IntExpr>(idx);
+        tupleItems.push_back(N<TupleExpr>(std::vector<ExprPtr>{i, k, v}));
+      } else {
+        tupleItems.push_back(N<TupleExpr>(std::vector<ExprPtr>{k, v}));
+      }
+      idx++;
+    }
+    return {true, transform(N<TupleExpr>(tupleItems))};
+  } else if (expr->expr->isId("std.internal.static.tuple_type")) {
+    auto funcTyp = expr->expr->type->getFunc();
+    auto t = funcTyp->funcGenerics[0].type;
+    if (!t || !realize(t))
+      return {true, nullptr};
+    auto tn = funcTyp->funcGenerics[1].type->getStatic();
+    if (!tn)
+      return {true, nullptr};
+    auto n = tn->evaluate().getInt();
+    types::TypePtr typ = nullptr;
+    if (t->getRecord()) {
+      if (n < 0 || n >= t->getRecord()->args.size())
+        error("invalid index");
+      typ = t->getRecord()->args[n];
+    } else {
+      if (n < 0 || n >= ctx->cache->classes[t->getClass()->name].fields.size())
+        error("invalid index");
+      typ = ctx->instantiate(ctx->cache->classes[t->getClass()->name].fields[n].type,
+                             t->getClass());
+    }
+    typ = realize(typ);
+    return {true, transform(NT<IdExpr>(typ->realizedName()))};
   } else {
     return {false, nullptr};
   }

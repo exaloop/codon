@@ -3,6 +3,9 @@
 @__internal__
 class __internal__:
     pass
+@__internal__
+class __magic__:
+    pass
 
 @tuple
 @__internal__
@@ -141,23 +144,10 @@ class ClassVar[T]:
 @__internal__
 class RTTI:
     id: int
-    def __new__() -> RTTI:
-        return __internal__.class_new(RTTI)
-    def __init__(self, i: int):
-        self.id = i
-    def __raw__(self):
-        return __internal__.class_raw_ptr(self)
-
 
 @__internal__
 class Ellipsis:
-    def __new__() -> Ellipsis:
-        return __internal__.class_new(Ellipsis)
-    def __init__(self):
-        pass
-    def __raw__(self):
-        return __internal__.class_raw_ptr(self)
-
+    pass
 @__internal__
 @tuple
 class CVar[T]:
