@@ -436,8 +436,7 @@ std::string SliceExpr::toString() const {
 }
 ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
-EllipsisExpr::EllipsisExpr(int mode)
-    : Expr(), mode(static_cast<typeof(STANDALONE)>(mode)) {}
+EllipsisExpr::EllipsisExpr(EllipsisType mode) : Expr(), mode(mode) {}
 std::string EllipsisExpr::toString() const {
   return wrapType(format(
       "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? "#:partial" : "")));
