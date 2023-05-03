@@ -34,7 +34,7 @@ def static_print(*args):
 def vars(obj, with_index: Static[int] = 0):
     pass
 
-def vars_types(T: type):
+def vars_types(T: type, with_index: Static[int] = 0):
     pass
 
 def tuple_type(T: type, N: Static[int]):

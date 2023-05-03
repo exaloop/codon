@@ -572,12 +572,10 @@ class __magic__:
     # @dataclass parameter: python=True
     def from_py(src: Ptr[byte], T: type) -> T:
         if isinstance(T, ByVal):
-            i = -1
-            def z():
-                nonlocal i
-                i += 1
-                return i
-            return tuple(type(t).__from_py__(pyobj._tuple_get(src, z())) for t in vars_types(T))
+            return tuple(
+                type(t).__from_py__(pyobj._tuple_get(src, i))
+                for i, t in vars_types(T, with_index=1)
+            )
         else:
             obj = T.__new__()
             for i, k, v in vars(obj, with_index=True):
