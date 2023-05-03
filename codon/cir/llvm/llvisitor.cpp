@@ -973,8 +973,10 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
     }
 
     auto *refType = cast<types::RefType>(pytype.type);
-    seqassertn(!refType->isPolymorphic(),
-               "Python extension types cannot be polymorphic");
+    if (refType) {
+      seqassertn(!refType->isPolymorphic(),
+                 "Python extension types cannot be polymorphic");
+    }
     auto *llvmType = getLLVMType(pytype.type);
     auto *objectType = llvm::StructType::get(pyObjectType, llvmType);
     auto codonSize =
