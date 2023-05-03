@@ -313,7 +313,9 @@ public:
 
   /// @return true if the type is polymorphic and needs RTTI
   bool isPolymorphic() const { return polymorphic; }
-  void setPolymorphic() { polymorphic = true; }
+  /// Sets whether the type is polymorphic. Should not generally be used.
+  /// @param p true if polymorphic
+  void setPolymorphic(bool p = true) { polymorphic = p; }
 
   Type *getMemberType(const std::string &n) const override {
     return getContents()->getMemberType(n);
