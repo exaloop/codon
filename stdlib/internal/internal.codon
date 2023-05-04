@@ -36,6 +36,8 @@ class __internal__:
         %0 = extractvalue {ptr, ptr} %obj, 0
         ret ptr %0
 
+    @pure
+    @derives
     @llvm
     def class_raw_rtti_rtti(obj: T, T: type) -> Ptr[byte]:
         %0 = extractvalue {ptr, ptr} %obj, 1
