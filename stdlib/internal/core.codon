@@ -146,13 +146,11 @@ class RTTI:
     id: int
 
 @__internal__
-class Ellipsis:
-    pass
-@__internal__
 @tuple
-class CVar[T]:
-    def __new__(name: Static[str]) -> T:
-        return T()
+class ellipsis:
+    def __new__() -> ellipsis:
+        return ()
+Ellipsis = ellipsis()
 
 @tuple
 @__internal__

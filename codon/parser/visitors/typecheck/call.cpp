@@ -34,7 +34,7 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
   }
 
   if (expr->mode == EllipsisExpr::STANDALONE) {
-    resultExpr = transform(N<CallExpr>(N<IdExpr>("Ellipsis")));
+    resultExpr = transform(N<CallExpr>(N<IdExpr>("ellipsis")));
     unify(expr->type, resultExpr->type);
   }
 }
