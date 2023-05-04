@@ -518,23 +518,42 @@ class __magic__:
     # @dataclass parameter: order=True
     def lt(slf, obj) -> bool:
         for k, v in vars(slf):
-            if v < getattr(obj, k):
+            z = getattr(obj, k)
+            if v < z:
                 return True
-            if not (v == getattr(obj, k)):
+            if not (v == z):
                 return False
         return False
 
     # @dataclass parameter: order=True
     def le(slf, obj) -> bool:
-        return slf < obj or slf == obj
-
-    # @dataclass parameter: order=True
-    def ge(slf, obj) -> bool:
-        return not slf < obj
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if v < z:
+                return True
+            if not (v == z):
+                return False
+        return True
 
     # @dataclass parameter: order=True
     def gt(slf, obj) -> bool:
-        return not slf < obj and not slf == obj
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return False
+
+    # @dataclass parameter: order=True
+    def ge(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return True
 
     # @dataclass parameter: hash=True
     def hash(slf) -> int:
