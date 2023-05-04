@@ -2,25 +2,39 @@ Below you can find release notes for each major Codon release,
 listing improvements, updates, optimizations and more for each
 new version.
 
+These release notes generally do not include small bug fixes. See the
+[closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
+for more information.
+
 # v0.16
 
 ## Python extensions
 
 A new build mode is added to `codon` called `pyext` which compiles
 to Python extension modules, allowing Codon code to be imported and
-called directly from Python. Please see the [docs](../interop/pyext.md)
-for more information and usage examples.
+called directly from Python (similar to Cython). Please see the
+[docs](../interop/pyext.md) for more information and usage examples.
 
 ## Standard library updates
 
-Various additions to the standard library, such as `math.fsum()` and
-the built-in `pow()`.
+- Various additions to the standard library, such as `math.fsum()` and
+  the built-in `pow()`.
+
+- Added `complex64`, which is a complex number with 32-bit float real and
+  imaginary components.
+
+- Better `Int[N]` and `UInt[N]` support: can now convert ints wider than
+  64-bit to string; now supports more operators.
 
 ## More Python-specific optimizations
 
 New optimizations for specific patterns including `any()`/`all()` and
 multiple list concatenations. These patterns are now recognized and
-optimized in the IR.
+optimized in Codon's IR.
+
+## Static expressions
+
+Codon now supports more compile-time static functions, such as `staticenumerate`.
 
 # v0.15
 

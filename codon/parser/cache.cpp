@@ -268,7 +268,8 @@ void Cache::populatePythonModule() {
   };
 
   const std::string pyWrap = "std.internal.python._PyWrap";
-  for (const auto &[cn, c] : classes) {
+  auto clss = classes; // needs copy as below fns can mutate this
+  for (const auto &[cn, c] : clss) {
     if (c.module.empty()) {
       if (!in(c.methods, "__to_py__") || !in(c.methods, "__from_py__"))
         continue;
@@ -526,7 +527,8 @@ void Cache::populatePythonModule() {
   }
 #undef N
 
-  for (const auto &[fn, f] : functions)
+  auto fns = functions; // needs copy as below fns can mutate this
+  for (const auto &[fn, f] : fns) {
     if (f.isToplevel) {
       std::string call = pyWrap + ".wrap_multiple";
       auto fnName = call + ":0";
@@ -543,6 +545,7 @@ void Cache::populatePythonModule() {
         pyModule->functions.back().keywords = true;
       }
     }
+  }
 
   // Handle pending realizations!
   auto pr = pendingRealizations; // copy it as it might be modified

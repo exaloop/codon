@@ -172,7 +172,7 @@ jobs:
           ln -s build/libcodonrt.${LIBEXT} .
           build/codon_test
           test/app/test.sh build
-          (cd test/python && python3 setup.py build_ext --inplace && python3 pyext.py)
+          (cd test/python && CODON_DIR=$(pwd)/../../codon-deploy python3 setup.py build_ext --inplace && python3 pyext.py)
         env:
           CODON_PATH: ./stdlib
           PYTHONPATH: .:./test/python

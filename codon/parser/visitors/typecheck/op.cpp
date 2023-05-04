@@ -112,7 +112,7 @@ std::vector<std::pair<size_t, ExprPtr>> findEllipsis(ExprPtr expr) {
     return {};
   for (size_t ai = 0; ai < call->args.size(); ai++) {
     if (auto el = call->args[ai].value->getEllipsis()) {
-      if (el->isPipeArg)
+      if (el->mode == EllipsisExpr::PIPE)
         return {{ai, expr}};
     } else if (call->args[ai].value->getCall()) {
       auto v = findEllipsis(call->args[ai].value);
@@ -168,19 +168,21 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
         }
       // No ellipses found? Prepend it as the first argument
       if (inTypePos == -1) {
-        call->args.insert(call->args.begin(), {"", N<EllipsisExpr>()});
+        call->args.insert(call->args.begin(),
+                          {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)});
         inTypePos = 0;
       }
     } else {
       // Case: not a call. Convert it to a call with a single ellipsis
-      expr->items[pi].expr = N<CallExpr>(expr->items[pi].expr, N<EllipsisExpr>());
+      expr->items[pi].expr =
+          N<CallExpr>(expr->items[pi].expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL));
       ec = &expr->items[pi].expr;
       inTypePos = 0;
     }
 
     // Set the ellipsis type
     auto el = (*ec)->getCall()->args[inTypePos].value->getEllipsis();
-    el->isPipeArg = true;
+    el->mode = EllipsisExpr::PIPE;
     // Don't unify unbound inType yet (it might become a generator that needs to be
     // extracted)
     if (inType && !inType->getUnbound())
@@ -196,7 +198,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (layers.size() > 1) {
       // Prepend layers
       for (auto &[pos, prepend] : layers) {
-        prepend->getCall()->args[pos].value = N<EllipsisExpr>(true);
+        prepend->getCall()->args[pos].value = N<EllipsisExpr>(EllipsisExpr::PIPE);
         expr->items.insert(expr->items.begin() + pi++, {"|>", prepend});
       }
       // Rewind the loop (yes, the current expression will get transformed again)

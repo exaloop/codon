@@ -36,8 +36,9 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
 
 @extend
 class __internal__:
-    def prn(*args):
-        print(*args)
+    def print(*args):
+        print(*args, flush=True, file=_C.seq_stdout())
+
 
 def min(*args):
     if staticlen(args) == 0:

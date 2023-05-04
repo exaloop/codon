@@ -63,10 +63,9 @@ class int:
     @pure
     @llvm
     def __abs__(self) -> int:
-        %0 = icmp sgt i64 %self, 0
-        %1 = sub i64 0, %self
-        %2 = select i1 %0, i64 %self, i64 %1
-        ret i64 %2
+        declare i64 @llvm.abs.i64(i64, i1)
+        %0 = call i64 @llvm.abs.i64(i64 %self, i1 false)
+        ret i64 %0
 
     @pure
     @llvm
@@ -408,8 +407,8 @@ class int:
         %tmp = atomicrmw max ptr %d, i64 %b seq_cst
         ret i64 %tmp
 
-    def __match__(self, i: int) -> bool:
-        return self == i
+    def __match__(self, obj: int) -> bool:
+        return self == obj
 
     @property
     def real(self) -> int:

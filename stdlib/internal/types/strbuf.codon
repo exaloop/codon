@@ -23,5 +23,14 @@ class strbuf:
         str.memcpy(self.data + self.n, s.ptr, adding)
         self.n = needed
 
+    def reverse(self):
+        a = 0
+        b = self.n - 1
+        p = self.data
+        while a < b:
+            p[a], p[b] = p[b], p[a]
+            a += 1
+            b -= 1
+
     def __str__(self):
         return str(self.data, self.n)

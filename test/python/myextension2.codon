@@ -278,3 +278,10 @@ class Vec:
 
 def reset():
     Vec.n = 0
+
+def par_sum(n: int):
+    m = 0
+    @par(num_threads=4)
+    for i in range(n):
+        m += 3*i + 7
+    return m

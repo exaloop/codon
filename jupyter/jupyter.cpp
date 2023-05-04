@@ -1,18 +1,17 @@
-// Copyright (C) 2022 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 #include "jupyter.h"
 
-#include <codecvt>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>
 #include <locale>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
+#include <xeus-zmq/xserver_zmq.hpp>
 #include <xeus/xhelper.hpp>
 #include <xeus/xkernel.hpp>
 #include <xeus/xkernel_configuration.hpp>
-#include <xeus/xserver_zmq.hpp>
 
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
@@ -35,6 +34,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
                                             bool silent, bool store_history,
                                             nl::json user_expressions,
                                             bool allow_stdin) {
+  LOG("[codon-jupyter] execute_request_impl");
   auto result = jit->execute(code);
   string failed;
   llvm::handleAllErrors(
@@ -105,25 +105,31 @@ void CodonJupyter::configure_impl() {
 }
 
 nl::json CodonJupyter::complete_request_impl(const string &code, int cursor_pos) {
+  LOG("[codon-jupyter] complete_request_impl");
   return nl::json{{"status", "ok"}};
 }
 
 nl::json CodonJupyter::inspect_request_impl(const string &code, int cursor_pos,
                                             int detail_level) {
+  LOG("[codon-jupyter] inspect_request_impl");
   return nl::json{{"status", "ok"}};
 }
 
 nl::json CodonJupyter::is_complete_request_impl(const string &code) {
+  LOG("[codon-jupyter] is_complete_request_impl");
   return nl::json{{"status", "complete"}};
 }
 
 nl::json CodonJupyter::kernel_info_request_impl() {
+  LOG("[codon-jupyter] kernel_info_request_impl");
   return xeus::create_info_reply("", "codon_kernel", CODON_VERSION, "python", "3.7",
                                  "text/x-python", ".codon", "python", "", "",
                                  "Codon Kernel");
 }
 
-void CodonJupyter::shutdown_request_impl() {}
+void CodonJupyter::shutdown_request_impl() {
+  LOG("[codon-jupyter] shutdown_request_impl");
+}
 
 int startJupyterKernel(const std::string &argv0,
                        const std::vector<std::string> &plugins,
@@ -131,6 +137,8 @@ int startJupyterKernel(const std::string &argv0,
   xeus::xconfiguration config = xeus::load_configuration(configPath);
 
   auto context = xeus::make_context<zmq::context_t>();
+
+  LOG("[codon-jupyter] startJupyterKernel");
   auto interpreter = std::make_unique<CodonJupyter>(argv0, plugins);
   xeus::xkernel kernel(config, xeus::get_user_name(), move(context), move(interpreter),
                        xeus::make_xserver_zmq);

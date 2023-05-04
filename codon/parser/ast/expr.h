@@ -559,9 +559,9 @@ struct SliceExpr : public Expr {
 struct EllipsisExpr : public Expr {
   /// True if this is a target partial argument within a PipeExpr.
   /// If true, this node will be handled differently during the type-checking stage.
-  bool isPipeArg;
+  enum EllipsisType { PIPE, PARTIAL, STANDALONE } mode;
 
-  explicit EllipsisExpr(bool isPipeArg = false);
+  explicit EllipsisExpr(EllipsisType mode = STANDALONE);
   EllipsisExpr(const EllipsisExpr &expr) = default;
 
   std::string toString() const override;

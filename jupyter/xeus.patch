@@ -1,6 +1,18 @@
---- build/_deps/xeus-src/CMakeLists.txt.orig	2022-10-12 18:38:44.000000000 -0700
-+++ build/_deps/xeus-src/CMakeLists.txt	2022-10-12 19:55:16.000000000 -0700
-@@ -53,6 +53,7 @@
+From 1b87a6fc56a5965066581decd40d0fced324ec1f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ibrahim=20Numanagic=CC=81?= <ibrahim@exaloop.io>
+Date: Thu, 20 Apr 2023 11:22:56 -0700
+Subject: [PATCH] Codon fixes
+
+---
+ CMakeLists.txt  | 13 ++++++++-----
+ src/xserver.cpp |  3 ---
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 53330ba..af02f69 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -53,6 +53,7 @@ option(XEUS_BUILD_SHARED_LIBS "Build xeus shared library." ON)
  option(XEUS_BUILD_STATIC_LIBS "Build xeus static library (default if BUILD_SHARED_LIBS is OFF)." ON)
  option(XEUS_STATIC_DEPENDENCIES "link statically with xeus dependencies" OFF)
  option(XEUS_EMSCRIPTEN_WASM_BUILD  "build for wasm via emscripten" OFF)
@@ -8,37 +20,58 @@
 
  # Test options
  option(XEUS_BUILD_TESTS "xeus test suite" OFF)
-@@ -85,6 +86,7 @@
- message(STATUS "XEUS_BUILD_STATIC_LIBS:     ${XEUS_BUILD_STATIC_LIBS}")
- message(STATUS "XEUS_STATIC_DEPENDENCIES:   ${XEUS_STATIC_DEPENDENCIES}")
- message(STATUS "XEUS_EMSCRIPTEN_WASM_BUILD: ${XEUS_EMSCRIPTEN_WASM_BUILD}")
+@@ -70,9 +71,10 @@ endif()
+
+ message(STATUS "XEUS_BUILD_SHARED_LIBS:          ${XEUS_BUILD_SHARED_LIBS}")
+ message(STATUS "XEUS_BUILD_STATIC_LIBS:          ${XEUS_BUILD_STATIC_LIBS}")
+-message(STATUS "XEUS_STATIC_DEPENDENCIES:        ${XEUS_STATIC_DEPENDENCIES}")
++message(STATUS "XEUS_STATIC_DEPENDENCIES:        ${XEUS_STATIC_DEPENDENCIES}")
+ message(STATUS "XEUS_EMSCRIPTEN_WASM_BUILD:      ${XEUS_EMSCRIPTEN_WASM_BUILD}")
+-message(STATUS "XEUS_BUILD_TESTS:                ${XEUS_BUILD_TESTS}")
++message(STATUS "XEUS_BUILD_TESTS:                ${XEUS_BUILD_TESTS}")
 +message(STATUS "XEUS_USE_DYNAMIC_UUID:      ${XEUS_USE_DYNAMIC_UUID}")
 
  # Dependencies
  # ============
-@@ -310,13 +312,15 @@
+@@ -170,12 +172,14 @@ macro(xeus_create_target target_name linkage output_name)
          if (APPLE)
              target_link_libraries(${target_name} PUBLIC "-framework CoreFoundation")
          else ()
 -            if (XEUS_STATIC_DEPENDENCIES)
 +            if ((NOT XEUS_USE_DYNAMIC_UUID) AND (XEUS_STATIC_DEPENDENCIES))
 +                message(STATUS "static libuuid linking")
-                 find_path(LIBUUID_INCLUDE_DIR uuid.h PATH_SUFFIXES uuid)
+                 find_path(LIBUUID_INCLUDE_DIR uuid/uuid.h)
                  find_library(LIBUUID_LIBRARY libuuid.a)
                  target_include_directories(${target_name} PRIVATE ${LIBUUID_INCLUDE_DIR})
-                 target_link_libraries(${target_name} PUBLIC ${LIBUUID_LIBRARY})
-                 target_link_libraries(${target_name} PUBLIC ${sodium_LIBRARY_RELEASE})
+-                target_link_libraries(${target_name} PRIVATE ${LIBUUID_LIBRARY})
++                target_link_libraries(${target_name} PRIVATE ${LIBUUID_LIBRARY})
              else ()
-+                message(STATUS "dynamic libuuid linking")
++            message(STATUS "dynamic libuuid linking")
                  find_package(LibUUID REQUIRED)
-                 target_link_libraries(${target_name} PUBLIC LibUUID::LibUUID)
+                 target_link_libraries(${target_name} PRIVATE LibUUID::LibUUID)
              endif ()
-@@ -362,8 +366,6 @@
+@@ -220,7 +224,6 @@ macro(xeus_create_target target_name linkage output_name)
+     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
          CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR
          CMAKE_CXX_COMPILER_ID MATCHES "Intel")
-
 -        target_compile_options(${target_name} PUBLIC -Wunused-parameter -Wextra -Wreorder)
--
-         if (NOT XEUS_DISABLE_ARCH_NATIVE)
-             target_compile_options(${target_name} PUBLIC -march=native)
-         endif ()
+         message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
+     endif()
+
+diff --git a/src/xserver.cpp b/src/xserver.cpp
+index 82acb78..04caa3b 100644
+--- a/src/xserver.cpp
++++ b/src/xserver.cpp
+@@ -40,9 +40,6 @@ namespace xeus
+
+     void xserver::start(xpub_message message)
+     {
+-        std::clog << "Run with XEUS " << XEUS_VERSION_MAJOR << "."
+-                                      << XEUS_VERSION_MINOR << "."
+-                                      << XEUS_VERSION_PATCH << std::endl;
+         start_impl(std::move(message));
+     }
+
+--
+2.40.0
+

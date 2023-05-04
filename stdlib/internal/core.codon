@@ -3,6 +3,9 @@
 @__internal__
 class __internal__:
     pass
+@__internal__
+class __magic__:
+    pass
 
 @tuple
 @__internal__
@@ -139,6 +142,13 @@ class ClassVar[T]:
     pass
 
 @__internal__
+class RTTI:
+    id: int
+
+@__internal__
+class Ellipsis:
+    pass
+@__internal__
 @tuple
 class CVar[T]:
     def __new__(name: Static[str]) -> T:
@@ -196,3 +206,6 @@ def __realized__(fn, args):
 
 def statictuple(*args):
     return args
+
+def __has_rtti__(T: type):
+    pass

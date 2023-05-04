@@ -396,28 +396,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 /// Intended to be called once the typechecking is done.
 /// TODO: add JIT compatibility.
 StmtPtr TypecheckVisitor::prepareVTables() {
-  auto rep = "__internal__.class_init_vtables:0";
-  // def class_init_vtables():
-  //   return __internal__.class_make_n_vtables(<NUM_REALIZATIONS> + 1)
-  auto &initAllVT = ctx->cache->functions[rep];
-  auto suite = N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-      N<IdExpr>("__internal__.class_make_n_vtables:0"), N<IdExpr>("__vtable_size__"))));
-  initAllVT.ast->suite = suite;
-  auto typ = initAllVT.realizations.begin()->second->type;
-  LOG_REALIZE("[poly] {} : {}", typ, *suite);
-  typ->ast = initAllVT.ast.get();
-  auto fx = realizeFunc(typ.get(), true);
-
-  rep = "__internal__.class_populate_vtables:0";
-  // def class_populate_vtables(p):
-  //   for real in <REALIZATIONS>:
-  //     if real.vtables:
-  //        p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
-  //        __internal__.class_set_typeinfo(p[real.ID], real.ID)
-  //        for f in real.vtables:
-  //          p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+  auto rep = "__internal__.class_populate_vtables:0"; // see internal.codon
   auto &initFn = ctx->cache->functions[rep];
-  suite = N<SuiteStmt>();
+  auto suite = N<SuiteStmt>();
   for (auto &[_, cls] : ctx->cache->classes) {
     for (auto &[r, real] : cls.realizations) {
       size_t vtSz = 0;
@@ -427,17 +408,11 @@ StmtPtr TypecheckVisitor::prepareVTables() {
       }
       if (!vtSz)
         continue;
-      auto var = initFn.ast->args[0].name;
-      // p.__setitem__(real.ID) = Ptr[cobj](real.vtables.size() + 2)
-      suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(N<IdExpr>(var), "__setitem__"), N<IntExpr>(real->id),
-          N<CallExpr>(NT<InstantiateExpr>(NT<IdExpr>("Ptr"),
-                                          std::vector<ExprPtr>{NT<IdExpr>("cobj")}),
-                      N<IntExpr>(vtSz + 2)))));
-      // __internal__.class_set_typeinfo(p[real.ID], real.ID)
-      suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>("__internal__.class_set_typeinfo:0"),
-          N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)), N<IntExpr>(real->id))));
+      // __internal__.class_set_rtti_vtable(real.ID, size, real.type)
+      suite->stmts.push_back(N<ExprStmt>(
+          N<CallExpr>(N<IdExpr>("__internal__.class_set_rtti_vtable:0"),
+                      N<IntExpr>(real->id), N<IntExpr>(vtSz + 2), NT<IdExpr>(r))));
+      // LOG("[poly] {} -> {}", r, real->id);
       vtSz = 0;
       for (auto &[base, vtable] : real->vtables) {
         if (!vtable.ir) {
@@ -449,9 +424,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
             LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, fn);
             suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-                N<DotExpr>(N<IndexExpr>(N<IdExpr>(var), N<IntExpr>(real->id)),
-                           "__setitem__"),
-                N<IntExpr>(vtSz + id),
+                N<IdExpr>("__internal__.class_set_rtti_vtable_fn:0"),
+                N<IntExpr>(real->id), N<IntExpr>(vtSz + id),
                 N<CallExpr>(N<DotExpr>(
                     N<CallExpr>(
                         NT<InstantiateExpr>(
@@ -462,7 +436,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                                     ids),
                                 NT<IdExpr>(fn->getRetType()->realizedName())}),
                         N<IdExpr>(fn->realizedName())),
-                    "__raw__")))));
+                    "__raw__")),
+                NT<IdExpr>(r))));
           }
           vtSz += vtable.table.size();
         }
@@ -470,43 +445,15 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     }
   }
   initFn.ast->suite = suite;
-  typ = initFn.realizations.begin()->second->type;
+  auto typ = initFn.realizations.begin()->second->type;
   LOG_REALIZE("[poly] {} : {}", typ, suite->toString(2));
   typ->ast = initFn.ast.get();
   realizeFunc(typ.get(), true);
 
-  rep = "__internal__.class_set_obj_vtable:0";
-  // def class_set_obj_vtable(pf):
-  //   pf.__vtable__ = __vtables__[pf.__vtable_id___]
-  auto &initObjFns = ctx->cache->functions[rep];
-  auto oldAst = initObjFns.ast;
-  for (auto &[_, real] : initObjFns.realizations) {
-    auto t = real->type;
-    auto clsTyp = t->getArgTypes()[0]->getClass();
-    auto varName = initObjFns.ast->args[0].name;
-
-    const auto &fields = ctx->cache->classes[clsTyp->name].fields;
-    auto suite = N<SuiteStmt>();
-    for (auto &f : fields)
-      if (startswith(f.name, VAR_VTABLE)) {
-        suite->stmts.push_back(N<AssignMemberStmt>(
-            N<IdExpr>(varName), f.name,
-            N<IndexExpr>(
-                N<IdExpr>("__vtables__"),
-                N<DotExpr>(N<IdExpr>(clsTyp->realizedName()), "__vtable_id__"))));
-      }
-
-    LOG_REALIZE("[poly] {} : {}", t, *suite);
-    initObjFns.ast->suite = suite;
-    t->ast = initObjFns.ast.get();
-    realizeFunc(t.get(), true);
-  }
-  initObjFns.ast = oldAst;
-
   auto &initDist = ctx->cache->functions["__internal__.class_base_derived_dist:0"];
   // def class_base_derived_dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
-  oldAst = initDist.ast;
+  auto oldAst = initDist.ast;
   for (auto &[_, real] : initDist.realizations) {
     auto t = real->type;
     auto baseTyp = t->funcGenerics[0].type->getClass();
@@ -516,7 +463,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto types = std::vector<ExprPtr>{};
     auto found = false;
     for (auto &f : fields) {
-      if (f.name == format("{}.{}", VAR_VTABLE, baseTyp->name)) {
+      if (f.baseClass == baseTyp->name) {
         found = true;
         break;
       } else {
@@ -524,7 +471,8 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         types.push_back(NT<IdExpr>(ft->realizedName()));
       }
     }
-    seqassert(found, "cannot find distance between {} and {}", derivedTyp->name,
+    seqassert(found || ctx->cache->classes[baseTyp->name].fields.empty(),
+              "cannot find distance between {} and {}", derivedTyp->name,
               baseTyp->name);
     StmtPtr suite = N<ReturnStmt>(
         N<DotExpr>(NT<InstantiateExpr>(
@@ -618,26 +566,19 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         // Thunk contents:
         // def _thunk.<BASE>.<FN>.<ARGS>(self, <ARGS...>):
         //   return <FN>(
-        //     __internal__.to_class_ptr(
-        //       self.__raw__() - __internal__.class_base_derived_dist(<BASE>,
-        //       <DERIVED>), <DERIVED>
-        //     ), <ARGS...>)
+        //     __internal__.class_base_to_derived(self, <BASE>, <DERIVED>),
+        //     <ARGS...>)
         std::vector<Param> fnArgs;
-        fnArgs.push_back(
-            Param{fp->ast->args[0].name, N<IdExpr>(cp->realizedName()), nullptr});
+        fnArgs.emplace_back(fp->ast->args[0].name, N<IdExpr>(cp->realizedName()),
+                            nullptr);
         for (size_t i = 1; i < args.size(); i++)
-          fnArgs.push_back(Param{fp->ast->args[i].name,
-                                 N<IdExpr>(args[i]->realizedName()), nullptr});
+          fnArgs.emplace_back(fp->ast->args[i].name, N<IdExpr>(args[i]->realizedName()),
+                              nullptr);
         std::vector<ExprPtr> callArgs;
-        callArgs.emplace_back(N<CallExpr>(
-            N<IdExpr>("__internal__.to_class_ptr:0"),
-            N<BinaryExpr>(
-                N<CallExpr>(N<DotExpr>(N<IdExpr>(fp->ast->args[0].name), "__raw__")),
-                "-",
-                N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
-                            N<IdExpr>(cp->realizedName()),
-                            N<IdExpr>(real->type->realizedName()))),
-            NT<IdExpr>(real->type->realizedName())));
+        callArgs.emplace_back(
+            N<CallExpr>(N<IdExpr>("__internal__.class_base_to_derived:0"),
+                        N<IdExpr>(fp->ast->args[0].name), N<IdExpr>(cp->realizedName()),
+                        N<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
           callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
         auto thunkAst = N<FunctionStmt>(
@@ -758,6 +699,10 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
     handle = module->unsafeGetMemberedType(realizedName, true);
+    if (ctx->cache->classes[t->name].rtti) {
+      // LOG("RTTI: {}", t->name);
+      ir::cast<ir::types::RefType>(handle)->setPolymorphic();
+    }
   }
   handle->setSrcInfo(t->getSrcInfo());
   handle->setAstType(

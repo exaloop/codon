@@ -337,7 +337,7 @@ PipeExpr::PipeExpr(std::vector<PipeExpr::Pipe> items)
     if (auto call = i.expr->getCall()) {
       for (auto &a : call->args)
         if (auto el = a.value->getEllipsis())
-          el->isPipeArg = true;
+          el->mode = EllipsisExpr::PIPE;
     }
   }
 }
@@ -436,9 +436,10 @@ std::string SliceExpr::toString() const {
 }
 ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
-EllipsisExpr::EllipsisExpr(bool isPipeArg) : Expr(), isPipeArg(isPipeArg) {}
+EllipsisExpr::EllipsisExpr(EllipsisType mode) : Expr(), mode(mode) {}
 std::string EllipsisExpr::toString() const {
-  return wrapType(format("ellipsis{}", isPipeArg ? " #:pipe" : ""));
+  return wrapType(format(
+      "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? "#:partial" : "")));
 }
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 

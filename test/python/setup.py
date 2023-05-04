@@ -1,8 +1,43 @@
 import os
-import pathlib
+import sys
+import shutil
 
+from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+
+
+codon_path = os.environ.get("CODON_DIR")
+if not codon_path:
+    c = shutil.which("codon")
+    if c:
+        codon_path = Path(c).parent / ".."
+else:
+    codon_path = Path(codon_path)
+for path in [
+    os.path.expanduser("~") + "/.codon",
+    os.getcwd() + "/..",
+]:
+    path = Path(path)
+    if not codon_path and path.exists():
+        codon_path = path
+        break
+
+if (
+    not codon_path
+    or not (codon_path / "include" / "codon").exists()
+    or not (codon_path / "lib" / "codon").exists()
+):
+    print(
+        "Cannot find Codon.",
+        'Please either install Codon (/bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"),',
+        "or set CODON_DIR if Codon is not in PATH or installed in ~/.codon",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+codon_path = codon_path.resolve()
+print("Codon: " + str(codon_path))
+
 
 class CodonExtension(Extension):
     def __init__(self, name, source):
@@ -22,18 +57,18 @@ class BuildCodonExt(build_ext):
             self.copy_extensions_to_source()
 
     def build_codon(self, ext):
-        extension_path = pathlib.Path(self.get_ext_fullpath(ext.name))
-        build_dir = pathlib.Path(self.build_temp)
+        extension_path = Path(self.get_ext_fullpath(ext.name))
+        build_dir = Path(self.build_temp)
         os.makedirs(build_dir, exist_ok=True)
         os.makedirs(extension_path.parent.absolute(), exist_ok=True)
 
         optimization = '-debug' if self.debug else '-release'
         self.spawn([
-            '../../build/codon', 'build', optimization,
+            str(codon_path / "bin" / "codon"), 'build', optimization, "--relocation-model=pic",
             '-pyext', '-o', str(extension_path) + ".o", '-module', ext.name, ext.source])
 
         print('-->', extension_path)
-        ext.runtime_library_dirs = ["../../build"]
+        ext.runtime_library_dirs = [str(codon_path / "lib" / "codon")]
         self.compiler.link_shared_object(
             [str(extension_path) + ".o"],
             str(extension_path),

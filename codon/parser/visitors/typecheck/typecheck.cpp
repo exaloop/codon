@@ -364,11 +364,12 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       return false;
     if (doTypeWrap) {
       if (c->getRecord())
-        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
       else
         expr = transform(N<CallExpr>(
             N<IdExpr>("__internal__.class_ctr:0"),
-            std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+            std::vector<CallExpr::Arg>{{"T", expr},
+                                       {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
     }
   }
 
@@ -453,23 +454,39 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
               ctx->instantiate(parentField.type, superTyp));
       }
   }
+  realize(superTyp);
   auto typExpr = N<IdExpr>(superTyp->name);
   typExpr->setType(superTyp);
-  // `dist = expr.__raw__()`
-  ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
-  if (isVirtual) {
-    // Virtual inheritance: `dist += class_base_derived_dist(super, type(expr))`
-    dist =
-        N<BinaryExpr>(dist, "+",
-                      N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
-                                  N<IdExpr>(superTyp->realizedName()),
-                                  N<CallExpr>(N<IdExpr>("type"), expr)));
-  }
-  realize(superTyp);
+  return transform(
+      N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"), expr, typExpr));
+}
 
-  // No inheritance: `__internal__.to_class_ptr(dist, T)`
-  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                               dist, typExpr));
+/// Unpack a Tuple or KwTuple expression into (name, type) vector.
+/// Name is empty when handling Tuple; otherwise it matches names of KwTuple.
+std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
+TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
+  auto ret = std::make_shared<std::vector<std::pair<std::string, types::TypePtr>>>();
+  if (auto tup = expr->origExpr->getTuple()) {
+    for (auto &a : tup->items) {
+      transform(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      ret->push_back({"", a->getType()});
+    }
+  } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
+    auto kwCls = in(ctx->cache->classes, expr->getType()->getClass()->name);
+    seqassert(kwCls, "cannot find {}", expr->getType()->getClass()->name);
+    for (size_t i = 0; i < kw->args.size(); i++) {
+      auto &a = kw->args[i].value;
+      transform(a);
+      if (!a->getType()->getClass())
+        return nullptr;
+      ret->push_back({kwCls->fields[i].name, a->getType()});
+    }
+  } else {
+    return nullptr;
+  }
+  return ret;
 }
 
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.

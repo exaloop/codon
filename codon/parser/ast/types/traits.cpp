@@ -21,7 +21,7 @@ bool Trait::isInstantiated() const { return false; }
 std::string Trait::realizedName() const { return ""; }
 
 CallableTrait::CallableTrait(Cache *cache, std::vector<TypePtr> args)
-    : Trait(cache), args(move(args)) {}
+    : Trait(cache), args(std::move(args)) {}
 
 int CallableTrait::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {

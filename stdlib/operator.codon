@@ -175,6 +175,7 @@ def attrgetter(attr: Static[str]):
         return getattr(obj, attr)
     return getter
 
+@overload
 def itemgetter(*items):
     if staticlen(items) == 1:
         item = items[0]
@@ -189,6 +190,10 @@ def itemgetter(*items):
             return tuple(obj[item] for item in items)
 
         return g
+
+@overload
+def itemgetter(item: Static[int]):
+    return lambda o: o[item]
 
 def methodcaller(name: Static[str], *args, **kwargs):
     def caller(obj):

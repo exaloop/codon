@@ -397,6 +397,17 @@ def test_codon_extensions(m):
         assert x.__index__() == 99
         saw_foo = True
 
+    # Codon-specific #
+    ##################
+    def par_sum_check(n):
+        m = 0
+        for i in range(n):
+            m += 3*i + 7
+        return m
+
+    for n in (0, 1, 10, 33, 999, 1237):
+        assert m.par_sum(n) == par_sum_check(n)
+
 for _ in range(3000):
     test_codon_extensions(m)
     test_codon_extensions(m2)

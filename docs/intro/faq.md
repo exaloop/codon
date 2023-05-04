@@ -33,6 +33,10 @@ handle cases where specific Python libraries or dynamism are required.
   Codon differs in a few places in order to eliminate any dynamic runtime or virtual
   machine, and thereby attain much better performance.
 
+- **Cython?** Like Cython, Codon has a [Python-extension build mode](../interop/pyext.md) that
+  compiles to Python extension modules, allowing Codon-compiled code to be imported and called
+  from plain Python.
+
 - **C++?** Codon often generates the same code as an equivalent C or C++ program. Codon
   can sometimes generate *better* code than C/C++ compilers for a variety of reasons, such
   as better container implementations, the fact that Codon does not use object files and
