@@ -16,8 +16,10 @@
 *.pyc
 build/
 build_*/
+build-*/
 install/
 install_*/
+install-*/
 extra/python/src/jit.cpp
 extra/jupyter/build/
 
@@ -55,6 +57,7 @@ Thumbs.db
 .idea
 .mypy_cache
 .vscode
+.cache
 
 extra/jupyter/share/jupyter/kernels/codon/kernel.json
 extra/python/codon/version.py

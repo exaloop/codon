@@ -170,7 +170,7 @@ StmtPtr SimplifyVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
   }
   pattern = transform(pattern); // transform to check for pattern errors
   if (pattern->getEllipsis())
-    pattern = N<CallExpr>(N<IdExpr>("Ellipsis"));
+    pattern = N<CallExpr>(N<IdExpr>("ellipsis"));
   // Fallback (`__match__`) pattern
   return N<IfStmt>(
       N<CallExpr>(N<IdExpr>("hasattr"), var->clone(), N<StringExpr>("__match__"),

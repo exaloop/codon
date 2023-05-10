@@ -34,7 +34,7 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
   }
 
   if (expr->mode == EllipsisExpr::STANDALONE) {
-    resultExpr = transform(N<CallExpr>(N<IdExpr>("Ellipsis")));
+    resultExpr = transform(N<CallExpr>(N<IdExpr>("ellipsis")));
     unify(expr->type, resultExpr->type);
   }
 }
@@ -87,10 +87,13 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     return;
 
   // Handle special calls
-  auto [isSpecial, specialExpr] = transformSpecialCall(expr);
-  if (isSpecial) {
-    resultExpr = specialExpr;
-    return;
+  if (!part.isPartial) {
+    auto [isSpecial, specialExpr] = transformSpecialCall(expr);
+    if (isSpecial) {
+      unify(expr->type, ctx->getUnbound());
+      resultExpr = specialExpr;
+      return;
+    }
   }
 
   // Typecheck arguments with the function signature

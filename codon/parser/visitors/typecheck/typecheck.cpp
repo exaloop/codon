@@ -489,32 +489,4 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
   return ret;
 }
 
-/// Unpack a Tuple or KwTuple expression into (name, type) vector.
-/// Name is empty when handling Tuple; otherwise it matches names of KwTuple.
-std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
-TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
-  auto ret = std::make_shared<std::vector<std::pair<std::string, types::TypePtr>>>();
-  if (auto tup = expr->origExpr->getTuple()) {
-    for (auto &a : tup->items) {
-      transform(a);
-      if (!a->getType()->getClass())
-        return nullptr;
-      ret->push_back({"", a->getType()});
-    }
-  } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
-    auto kwCls = in(ctx->cache->classes, expr->getType()->getClass()->name);
-    seqassert(kwCls, "cannot find {}", expr->getType()->getClass()->name);
-    for (size_t i = 0; i < kw->args.size(); i++) {
-      auto &a = kw->args[i].value;
-      transform(a);
-      if (!a->getType()->getClass())
-        return nullptr;
-      ret->push_back({kwCls->fields[i].name, a->getType()});
-    }
-  } else {
-    return nullptr;
-  }
-  return ret;
-}
-
 } // namespace codon::ast

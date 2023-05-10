@@ -36,6 +36,8 @@ class __internal__:
         %0 = extractvalue {ptr, ptr} %obj, 0
         ret ptr %0
 
+    @pure
+    @derives
     @llvm
     def class_raw_rtti_rtti(obj: T, T: type) -> Ptr[byte]:
         %0 = extractvalue {ptr, ptr} %obj, 1
@@ -44,13 +46,12 @@ class __internal__:
     def class_alloc(T: type) -> T:
         """Allocates a new reference (class) type"""
         sz = sizeof(tuple(T))
+        obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         if __has_rtti__(T):
-            obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
             register_finalizer(obj)
             rtti = RTTI(T.__id__).__raw__()
             return __internal__.to_class_ptr_rtti((obj, rtti), T)
         else:
-            obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
             register_finalizer(obj)
             return __internal__.to_class_ptr(obj, T)
 
@@ -269,7 +270,6 @@ class __internal__:
     def opt_ref_new(T: type) -> Optional[T]:
         ret ptr null
 
-    @pure
     def opt_ref_new_rtti(T: type) -> Optional[T]:
         obj = Ptr[byte]()
         rsz = sizeof(tuple(T))
@@ -452,8 +452,6 @@ class __magic__:
     # def init(self, a1, ..., aN): ...
 
     # always present for reference types only
-    @pure
-    @derives
     def raw(obj) -> Ptr[byte]:
         if __has_rtti__(type(obj)):
             return __internal__.class_raw_rtti_ptr(obj)
@@ -522,23 +520,42 @@ class __magic__:
     # @dataclass parameter: order=True
     def lt(slf, obj) -> bool:
         for k, v in vars(slf):
-            if v < getattr(obj, k):
+            z = getattr(obj, k)
+            if v < z:
                 return True
-            if not (v == getattr(obj, k)):
+            if not (v == z):
                 return False
         return False
 
     # @dataclass parameter: order=True
     def le(slf, obj) -> bool:
-        return slf < obj or slf == obj
-
-    # @dataclass parameter: order=True
-    def ge(slf, obj) -> bool:
-        return not slf < obj
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if v < z:
+                return True
+            if not (v == z):
+                return False
+        return True
 
     # @dataclass parameter: order=True
     def gt(slf, obj) -> bool:
-        return not slf < obj and not slf == obj
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return False
+
+    # @dataclass parameter: order=True
+    def ge(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return True
 
     # @dataclass parameter: hash=True
     def hash(slf) -> int:
@@ -669,15 +686,15 @@ class RTTI:
     def __raw__(self):
         return __internal__.class_raw_ptr(self)
 
-
 @extend
-class Ellipsis:
-    def __new__() -> Ellipsis:
-        return __magic__.new(Ellipsis)
-    def __init__(self):
-        pass
-    def __raw__(self):
-        return __internal__.class_raw_ptr(self)
-
+class ellipsis:
+    def __repr__(self):
+        return 'Ellipsis'
+    def __eq__(self, other: ellipsis):
+        return True
+    def __ne__(self, other: ellipsis):
+        return False
+    def __hash__(self):
+        return 269626442  # same as CPython
 
 __internal__.class_init_vtables()

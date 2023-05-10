@@ -228,10 +228,6 @@ TypecheckVisitor::transformStaticLoopCall(
     return {false, {}};
 
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
-<<<<<<< HEAD
-
-=======
->>>>>>> new-super
   std::vector<std::shared_ptr<codon::SrcObject>> block;
   if (startswith(fn->value, "statictuple:0")) {
     auto &args = iter->getCall()->args[0].value->getCall()->args;

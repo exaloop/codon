@@ -74,6 +74,7 @@ test_roundtrip(Optional(0))
 test_roundtrip(Optional(111))
 test_roundtrip(Optional[int]())
 test_roundtrip(None)
+test_roundtrip(...)
 
 @test
 def test_ops():

@@ -132,3 +132,9 @@ class UInt:
 
         s.reverse()
         return s.__str__()
+
+@extend
+class __magic__:
+    def repr_partial(slf) -> str:
+        h = slf.__class__.__name__
+        return f"partial({h})"
