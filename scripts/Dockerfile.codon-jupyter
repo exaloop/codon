@@ -5,7 +5,7 @@ ENV pass="codon-jupyter"
 RUN yum -y install openssl-devel libsodium-devel libuuid-devel
 
 # Build Codon core
-RUN git clone -b pyext https://github.com/exaloop/codon /github/codon
+RUN git clone -b develop https://github.com/exaloop/codon /github/codon
 RUN cmake3 -S /github/codon -B /github/codon/build \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \

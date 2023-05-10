@@ -29,8 +29,14 @@ void TypecheckVisitor::visit(KeywordStarExpr *expr) {
 /// only remaining ellipses are those that belong to PipeExprs.
 void TypecheckVisitor::visit(EllipsisExpr *expr) {
   unify(expr->type, ctx->getUnbound());
-  if (expr->isPipeArg && realize(expr->type))
+  if (expr->mode == EllipsisExpr::PIPE && realize(expr->type)) {
     expr->setDone();
+  }
+
+  if (expr->mode == EllipsisExpr::STANDALONE) {
+    resultExpr = transform(N<CallExpr>(N<IdExpr>("ellipsis")));
+    unify(expr->type, resultExpr->type);
+  }
 }
 
 /// Typecheck a call expression. This is the most complex expression to typecheck.
@@ -46,8 +52,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
   // Check if this call is partial call
   PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis() &&
-                       !expr->args.back().value->getEllipsis()->isPipeArg &&
-                       expr->args.back().name.empty()};
+                       expr->args.back().value->getEllipsis()->mode ==
+                           EllipsisExpr::PARTIAL};
   // Transform the callee
   if (!part.isPartial) {
     // Intercept method calls (e.g. `obj.method`) for faster compilation (because it
@@ -81,10 +87,13 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     return;
 
   // Handle special calls
-  auto [isSpecial, specialExpr] = transformSpecialCall(expr);
-  if (isSpecial) {
-    resultExpr = specialExpr;
-    return;
+  if (!part.isPartial) {
+    auto [isSpecial, specialExpr] = transformSpecialCall(expr);
+    if (isSpecial) {
+      unify(expr->type, ctx->getUnbound());
+      resultExpr = specialExpr;
+      return;
+    }
   }
 
   // Typecheck arguments with the function signature
@@ -314,7 +323,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
           e = transform(e);
         if (partial) {
           part.args = e;
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           args.push_back({realName, e});
@@ -345,7 +354,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         e->setAttr(ExprAttr::KwStarArgument);
         if (partial) {
           part.kwArgs = e;
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           args.push_back({realName, e});
@@ -356,7 +365,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         if (!part.known.empty() && part.known[si]) {
           args.push_back({realName, getPartialArg(pi++)});
         } else if (partial) {
-          args.push_back({realName, transform(N<EllipsisExpr>())});
+          args.push_back({realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL))});
           newMask[si] = 0;
         } else {
           auto es = calleeFn->ast->args[si].defaultValue->toString();
@@ -569,6 +578,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformRealizedFn(expr)};
   } else if (val == "std.internal.static.static_print") {
     return {false, transformStaticPrintFn(expr)};
+  } else if (val == "__has_rtti__") {
+    return {true, transformHasRttiFn(expr)};
   } else {
     return transformInternalStaticFn(expr);
   }
@@ -644,7 +655,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     auto typExpr = N<IdExpr>(superTyp->name);
     typExpr->setType(superTyp);
     return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
-                                 self, typExpr));
+                                 self, typExpr, N<IntExpr>(1)));
   }
 
   auto name = cands.front(); // the first inherited type
@@ -659,7 +670,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     e->type = unify(superTyp, e->type); // see super_tuple test for this line
     return e;
   } else {
-    // Case: reference types. Return `__internal__.to_class_ptr(self.__raw__(), T)`
+    // Case: reference types. Return `__internal__.class_super(self, T)`
     auto self = N<IdExpr>(funcTyp->ast->args[0].name);
     self->type = typ;
     return castToSuperClass(self, superTyp);
@@ -945,8 +956,21 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   return nullptr;
 }
 
+/// Transform __has_rtti__ to a static boolean that indicates RTTI status of a type.
+ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
+  expr->staticValue.type = StaticValue::INT;
+  auto funcTyp = expr->expr->type->getFunc();
+  auto t = funcTyp->funcGenerics[0].type->getClass();
+  if (!t)
+    return nullptr;
+  auto c = in(ctx->cache->classes, t->name);
+  seqassert(c, "bad class {}", t->name);
+  return transform(N<BoolExpr>(const_cast<Cache::Class *>(c)->rtti));
+}
+
 // Transform internal.static calls
 std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
+  unify(expr->type, ctx->getUnbound());
   if (expr->expr->isId("std.internal.static.fn_can_call")) {
     expr->staticValue.type = StaticValue::INT;
     auto typ = expr->args[0].value->getType()->getClass();
@@ -1054,6 +1078,54 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     for (auto &a : zzz->getCall()->args)
       tupArgs.push_back(a.value);
     return {true, transform(N<TupleExpr>(tupArgs))};
+  } else if (expr->expr->isId("std.internal.static.vars")) {
+    auto funcTyp = expr->expr->type->getFunc();
+    auto t = funcTyp->funcGenerics[0].type->getStatic();
+    if (!t)
+      return {true, nullptr};
+    auto withIdx = t->evaluate().getInt();
+
+    types::ClassTypePtr typ = nullptr;
+    std::vector<ExprPtr> tupleItems;
+    auto e = transform(expr->args[0].value);
+    if (!(typ = e->type->getClass()))
+      return {true, nullptr};
+
+    size_t idx = 0;
+    for (auto &f : ctx->cache->classes[typ->name].fields) {
+      auto k = N<StringExpr>(f.name);
+      auto v = N<DotExpr>(expr->args[0].value, f.name);
+      if (withIdx) {
+        auto i = N<IntExpr>(idx);
+        tupleItems.push_back(N<TupleExpr>(std::vector<ExprPtr>{i, k, v}));
+      } else {
+        tupleItems.push_back(N<TupleExpr>(std::vector<ExprPtr>{k, v}));
+      }
+      idx++;
+    }
+    return {true, transform(N<TupleExpr>(tupleItems))};
+  } else if (expr->expr->isId("std.internal.static.tuple_type")) {
+    auto funcTyp = expr->expr->type->getFunc();
+    auto t = funcTyp->funcGenerics[0].type;
+    if (!t || !realize(t))
+      return {true, nullptr};
+    auto tn = funcTyp->funcGenerics[1].type->getStatic();
+    if (!tn)
+      return {true, nullptr};
+    auto n = tn->evaluate().getInt();
+    types::TypePtr typ = nullptr;
+    if (t->getRecord()) {
+      if (n < 0 || n >= t->getRecord()->args.size())
+        error("invalid index");
+      typ = t->getRecord()->args[n];
+    } else {
+      if (n < 0 || n >= ctx->cache->classes[t->getClass()->name].fields.size())
+        error("invalid index");
+      typ = ctx->instantiate(ctx->cache->classes[t->getClass()->name].fields[n].type,
+                             t->getClass());
+    }
+    typ = realize(typ);
+    return {true, transform(NT<IdExpr>(typ->realizedName()))};
   } else {
     return {false, nullptr};
   }

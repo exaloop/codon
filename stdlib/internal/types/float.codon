@@ -391,8 +391,8 @@ class float:
             x = -2
         return x
 
-    def __match__(self, i: float) -> bool:
-        return self == i
+    def __match__(self, obj: float) -> bool:
+        return self == obj
 
     @property
     def real(self) -> float:
@@ -751,8 +751,8 @@ class float32:
     def __hash__(self) -> int:
         return self.__float__().__hash__()
 
-    def __match__(self, i: float32) -> bool:
-        return self == i
+    def __match__(self, obj: float32) -> bool:
+        return self == obj
 
 @extend
 class float:

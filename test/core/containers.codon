@@ -18,6 +18,25 @@ class A:
         else:
             return self.a
 
+@dataclass(init=True, order=True, eq=True)
+class A0:
+    pass
+
+@dataclass(init=True, order=True, eq=True)
+class A1:
+    a: int
+
+@dataclass(init=True, order=True, eq=True)
+class A2:
+    a: int
+    b: int
+
+@dataclass(init=True, order=True, eq=True)
+class A3:
+    a: int
+    b: int
+    c: int
+
 @test
 def test_tuple():
     def test_in():
@@ -33,10 +52,20 @@ def test_tuple():
         yield 'LE', a <= b
         yield 'GE', a >= b
 
+    assert list(test_cmp((1,), (2,))) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp((1,), (1,))) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp((2,), (1,))) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
     assert list(test_cmp((1,2), (1,2))) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
     assert list(test_cmp((1,2,2), (1,2,3))) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
     assert list(test_cmp((1,2,-1), (1,0,1))) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
     assert list(test_cmp((), ())) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp(A0(), A0())) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp(A1(1), A1(2))) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp(A1(1), A1(1))) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp(A1(2), A1(1))) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
+    assert list(test_cmp(A2(1,2), A2(1,2))) == [('EQ', True), ('NE', False), ('LT', False), ('GT', False), ('LE', True), ('GE', True)]
+    assert list(test_cmp(A3(1,2,2), A3(1,2,3))) == [('EQ', False), ('NE', True), ('LT', True), ('GT', False), ('LE', True), ('GE', False)]
+    assert list(test_cmp(A3(1,2,-1), A3(1,0,1))) == [('EQ', False), ('NE', True), ('LT', False), ('GT', True), ('LE', False), ('GE', True)]
 
     t = (1,2,3)
     assert (t[0], t[1], t[2]) == (1, 2, 3)

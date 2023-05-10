@@ -1,75 +1,103 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import (
-    alloc, alloc_atomic, alloc_uncollectable, alloc_atomic_uncollectable,
-    free, atomic, sizeof, register_finalizer
+    alloc, alloc_atomic, alloc_atomic_uncollectable,
+    free, sizeof, register_finalizer
 )
+from internal.static import vars_types, tuple_type, vars as _vars
 
+
+def vars(obj, with_index: Static[int] = 0):
+    return _vars(obj, with_index)
+
+
+__vtables__ = Ptr[Ptr[cobj]]()
 __vtable_size__ = 0
+
 
 @extend
 class __internal__:
     def yield_final(val):
         pass
+
     def yield_in_no_suspend(T: type) -> T:
         pass
 
     @pure
     @derives
     @llvm
-    def class_raw(obj) -> Ptr[byte]:
+    def class_raw_ptr(obj) -> Ptr[byte]:
         ret ptr %obj
+
+    @pure
+    @derives
+    @llvm
+    def class_raw_rtti_ptr(obj) -> Ptr[byte]:
+        %0 = extractvalue {ptr, ptr} %obj, 0
+        ret ptr %0
+
+    @pure
+    @derives
+    @llvm
+    def class_raw_rtti_rtti(obj: T, T: type) -> Ptr[byte]:
+        %0 = extractvalue {ptr, ptr} %obj, 1
+        ret ptr %0
 
     def class_alloc(T: type) -> T:
         """Allocates a new reference (class) type"""
         sz = sizeof(tuple(T))
-        p = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
-        register_finalizer(p)
-        return __internal__.to_class_ptr(p, T)
-
-    def class_new(T: type) -> T:
-        """Create a new reference (class) type"""
-        pf = __internal__.class_alloc(T)
-        __internal__.class_set_obj_vtable(pf)
-        return pf
+        obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
+        if __has_rtti__(T):
+            register_finalizer(obj)
+            rtti = RTTI(T.__id__).__raw__()
+            return __internal__.to_class_ptr_rtti((obj, rtti), T)
+        else:
+            register_finalizer(obj)
+            return __internal__.to_class_ptr(obj, T)
 
     def class_ctr(T: type, *args, **kwargs) -> T:
         """Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`"""
         return T(*args, **kwargs)
 
-    def class_set_obj_vtable(pf: T, T: type) -> None:
+    def class_init_vtables():
         """
-        Initialize a vtable of a T() object. Compiler generated.
-        Corresponds to:
-            pf.__vtable__ = __vtables__[pf.__vtable_id___]
+        Create a global vtable.
         """
-        pass
+        global __vtables__
+        sz = __vtable_size__ + 1
+        __vtables__ = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
+        __internal__.class_populate_vtables()
 
-    def class_init_vtables() -> Ptr[Ptr[cobj]]:
-        """
-        Create a global vtable. Compiler generated.
-        Corresponds to:
-            return __internal__.class_make_n_vtables(<number of class realizations>)
-        """
-        pass
-
-    def class_make_n_vtables(sz: int) -> Ptr[Ptr[cobj]]:
-        """Create a global vtable."""
-        p = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
-        __internal__.class_populate_vtables(p)
-        return p
-
-    def class_populate_vtables(p: Ptr[Ptr[cobj]]) -> None:
+    def class_populate_vtables() -> None:
         """
         Populate content of vtables. Compiler generated.
         Corresponds to:
             for each realized class C:
-                p.__setitem__(<C's realization ID>, Ptr[cobj](<C's vtable size> + 1))
-                __internal__.class_set_typeinfo(p[<C's realization ID>], <C's realization ID>)
+                __internal__.class_set_rtti_vtable(<C's realization ID>, <C's vtable size> + 1, T=C)
                 for each fn F in C's vtable:
-                    p[<C's realization ID>].__setitem__(<F's vtable ID>, Function(<instantiated F>).__raw__())
+                    __internal__.class_set_rtti_vtable_fn(
+                        <C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__(), T=C
+                    )
         """
         pass
+
+    def class_get_rtti_vtable(obj) -> Ptr[cobj]:
+        if not __has_rtti__(type(obj)):
+            compile_error("class is not polymorphic")
+        rtti = __internal__.class_raw_rtti_rtti(obj)
+        id = __internal__.to_class_ptr(rtti, RTTI).id
+        return __vtables__[id]
+
+    def class_set_rtti_vtable(id: int, sz: int, T: type):
+        if not __has_rtti__(T):
+            compile_error("class is not polymorphic")
+        __vtables__[id] = Ptr[cobj](sz + 1)
+        __internal__.class_set_typeinfo(__vtables__[id], id)
+
+    def class_set_rtti_vtable_fn(id: int, fid: int, f: cobj, T: type):
+        if not __has_rtti__(T):
+            compile_error("class is not polymorphic")
+        __vtables__[id][fid] = f
 
     def class_set_typeinfo(p: Ptr[cobj], typeinfo: T, T: type) -> None:
         i = Ptr[T](1)
@@ -86,17 +114,33 @@ class __internal__:
         """Calculates the byte distance of base class B and derived class D. Compiler generated."""
         return 0
 
+    @inline
+    def class_base_to_derived(b: B, B: type, D: type) -> D:
+        if not (__has_rtti__(D) and __has_rtti__(B)):
+            compile_error("classes are not polymorphic")
+        off = __internal__.class_base_derived_dist(B, D)
+        ptr = __internal__.class_raw_rtti_ptr(b) - off
+        pr = __internal__.class_raw_rtti_rtti(b)
+        return __internal__.to_class_ptr_rtti((ptr, pr), D)
+
     def class_copy(obj: T, T: type) -> T:
         p = __internal__.class_alloc(T)
         str.memcpy(p.__raw__(), obj.__raw__(), sizeof(tuple(T)))
         return p
 
-    def class_super(obj: D, B: type, D: type) -> B:
-        pf = __internal__.to_class_ptr(obj.__raw__() + __internal__.class_base_derived_dist(B, D), B)
-        pn = __internal__.class_copy(pf)
-        # Replace vtables
-        __internal__.class_set_obj_vtable(pn)  # replace vtables to point to its vtables!
-        return pn
+    def class_super(obj, B: type, change_rtti: Static[int] = 0) -> B:
+        D = type(obj)
+        if not __has_rtti__(D):  # static inheritance
+            return __internal__.to_class_ptr(obj.__raw__(), B)
+        else:
+            if not __has_rtti__(B):
+                compile_error("classes are not polymorphic")
+            off = __internal__.class_base_derived_dist(B, D)
+            ptr = __internal__.class_raw_rtti_ptr(obj) + off
+            pr = __internal__.class_raw_rtti_rtti(obj)
+            if change_rtti:
+                pr = RTTI(B.__id__).__raw__()
+            return __internal__.to_class_ptr_rtti((ptr, pr), B)
 
     # Unions
 
@@ -165,22 +209,6 @@ class __internal__:
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
 
-    def tuple_add(t, i):
-        if isinstance(i, Tuple):
-            return (*t, *i)
-        else:
-            compile_error("can only concatenate tuple to tuple")
-
-    def tuple_mul(t, i: Static[int]):
-        if i < 1:
-            return ()
-        elif i == 1:
-            return t
-        else:
-            return (*(__internal__.tuple_mul(t, i - 1)), *t)
-
-    # ...
-
     @pure
     @derives
     @llvm
@@ -242,6 +270,13 @@ class __internal__:
     def opt_ref_new(T: type) -> Optional[T]:
         ret ptr null
 
+    def opt_ref_new_rtti(T: type) -> Optional[T]:
+        obj = Ptr[byte]()
+        rsz = sizeof(tuple(T))
+        rtti = alloc_atomic(rsz) if RTTI.__contents_atomic__ else alloc(rsz)
+        __internal__.to_class_ptr(rtti, RTTI).id = T.__id__
+        return __internal__.opt_ref_new_arg(__internal__.to_class_ptr_rtti((obj, rtti), T))
+
     @pure
     @derives
     @llvm
@@ -256,6 +291,12 @@ class __internal__:
         ret ptr %what
 
     @pure
+    @derives
+    @llvm
+    def opt_ref_new_arg_rtti(what: T, T: type) -> Optional[T]:
+        ret { ptr, ptr } %what
+
+    @pure
     @llvm
     def opt_tuple_bool(what: Optional[T], T: type) -> bool:
         %0 = extractvalue { i1, {=T} } %what, 0
@@ -268,6 +309,10 @@ class __internal__:
         %0 = icmp ne ptr %what, null
         %1 = zext i1 %0 to i8
         ret i8 %1
+
+    @pure
+    def opt_ref_bool_rtti(what: Optional[T], T: type) -> bool:
+        return __internal__.class_raw_rtti_ptr() != cobj()
 
     @pure
     @derives
@@ -285,8 +330,20 @@ class __internal__:
     @pure
     @derives
     @llvm
+    def opt_ref_invert_rtti(what: Optional[T], T: type) -> T:
+        ret { ptr, ptr } %what
+
+    @pure
+    @derives
+    @llvm
     def to_class_ptr(p: Ptr[byte], T: type) -> T:
         ret ptr %p
+
+    @pure
+    @derives
+    @llvm
+    def to_class_ptr_rtti(p: Tuple[Ptr[byte], Ptr[byte]], T: type) -> T:
+        ret { ptr, ptr } %p
 
     def _tuple_offsetof(x, field: Static[int]) -> int:
         @pure
@@ -378,71 +435,200 @@ class __internal__:
         e.col = col
         return e
 
-    # TODO: keep this commented until static for lands
-    # @pure
-    # @llvm
-    # def __raw__(self) -> Ptr[byte]:
-    #     ret i8* %self
-    # def __iter__(self):
-    #     for _, i in self.__static_list__:
-    #         yield i
-    # def __contains__(self, what):
-    #     for _, i in self.__static_list__:
-    #         if isinstance(what, type(i)):
-    #             if what == i:
-    #                 return True
-    #     return False
-    # def __eq__(self, obj) -> bool:
-    #     for ii, i in self.__static_list__:
-    #         if not i == obj.__static_list__[ii]:
-    #             return False
-    #     return True
-    # def __ne__(self, obj) -> bool:
-    #     return not self == obj
-    # def __lt__(self, obj) -> bool:
-    #     for ii, i in self.__static_list__:
-    #         if i < obj.__static_list__[ii]:
-    #             return True
-    #         elif not i == obj.__static_list__[ii]:
-    #             return False
-    #     return False
-    # def __le__(self, obj) -> bool:
-    #     return self < obj or self == obj
-    # def __ge__(self, obj) -> bool:
-    #     return not self < obj
-    # def __gt__(self, obj) -> bool:
-    #     return not self < obj and not self == obj
-    # def __hash__(self) -> int:
-    #     seed = 0
-    #     for _, i in self.__static_list__:
-    #         seed = seed ^ ((i.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
-    #     return seed
-    # def __pickle__(self, dest: Ptr[byte]) -> None:
-    #     for _, i in self.__static_list__:
-    #         i.__pickle__(dest)
-    # # __unpickle
-    # def __len__(self):
-    #     return staticlen(self)
-    # def __to_py__(self) -> cobj:
-    #     o = pyobj._tuple_new(staticlen(self))
-    #     for ii, i in self.__static_list__:
-    #         pyobj._tuple_set(o, ii + 1, i.__to_py__())
-    #     return o
-    # # __from_py__
-    # def __repr__(self) -> str:
-    #     a = __array__[str](staticlen(self))
-    #     n = __array__[str](staticlen(self))
-    #     for ii, i in self.__static_list__:
-    #         a.__setitem__(ii, i.__repr__())
-    #         n.__setitem__(ii, i.__static_name__)
-    #     return __internal__.tuple_str(a.ptr, n.ptr, staticlen(self))
-    # def __dict__(self) -> str:
-    #     d = List[str](staticlen(self))
-    #     for _, i in self.__static_list__:
-    #         d.append(i.__static_name)
-    #     return d
-    # def __add__(self, obj):
-    #     return (*self, *obj)
+
+@extend
+class __magic__:
+    # always present
+    def tuplesize(T: type) -> int:
+        return (t() for t in vars_types(T)).__elemsize__
+
+    # @dataclass parameter: init=True for tuples;
+    # always present for reference types only
+    def new(T: type) -> T:
+        """Create a new reference (class) type"""
+        return __internal__.class_alloc(T)
+
+    # init is compiler-generated when init=True for reference types
+    # def init(self, a1, ..., aN): ...
+
+    # always present for reference types only
+    def raw(obj) -> Ptr[byte]:
+        if __has_rtti__(type(obj)):
+            return __internal__.class_raw_rtti_ptr(obj)
+        else:
+            return __internal__.class_raw_ptr(obj)
+
+    # always present for reference types only
+    def dict(slf) -> List[str]:
+        d = List[str](staticlen(slf))
+        for k, _ in vars(slf):
+            d.append(k)
+        return d
+
+    # always present for tuple types only
+    def len(slf) -> int:
+        return staticlen(slf)
+
+    # always present for tuple types only
+    def add(slf, obj):
+        if not isinstance(obj, Tuple):
+            compile_error("can only concatenate tuple to tuple")
+        return (*slf, *obj)
+
+    # always present for tuple types only
+    def mul(slf, i: Static[int]):
+        if i < 1:
+            return ()
+        elif i == 1:
+            return slf
+        else:
+            return (*(__magic__.mul(slf, i - 1)), *slf)
+
+    # always present for tuples
+    def contains(slf, what) -> bool:
+        for _, v in vars(slf):
+            if isinstance(what, type(v)):
+                if what == v:
+                    return True
+        return False
+
+    # @dataclass parameter: container=True
+    def getitem(slf, index: int):
+        if staticlen(slf) == 0:
+            raise IndexError(f"tuple index {index} out of range 0..0")
+        else:
+            return __internal__.tuple_getitem(slf, index, type(slf), tuple_type(slf, 0))
+
+    # @dataclass parameter: container=True
+    def iter(slf):
+        if staticlen(slf) == 0:
+            if int(0): yield 0  # set generator type without yielding anything
+        for _, v in vars(slf):
+            yield v
+
+    # @dataclass parameter: order=True or eq=True
+    def eq(slf, obj) -> bool:
+        for k, v in vars(slf):
+            if not (v == getattr(obj, k)):
+                return False
+        return True
+
+    # @dataclass parameter: order=True or eq=True
+    def ne(slf, obj) -> bool:
+        return not (slf == obj)
+
+    # @dataclass parameter: order=True
+    def lt(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if v < z:
+                return True
+            if not (v == z):
+                return False
+        return False
+
+    # @dataclass parameter: order=True
+    def le(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if v < z:
+                return True
+            if not (v == z):
+                return False
+        return True
+
+    # @dataclass parameter: order=True
+    def gt(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return False
+
+    # @dataclass parameter: order=True
+    def ge(slf, obj) -> bool:
+        for k, v in vars(slf):
+            z = getattr(obj, k)
+            if z < v:
+                return True
+            if not (v == z):
+                return False
+        return True
+
+    # @dataclass parameter: hash=True
+    def hash(slf) -> int:
+        seed = 0
+        for _, v in vars(slf):
+            seed = seed ^ ((v.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
+        return seed
+
+    # @dataclass parameter: pickle=True
+    def pickle(slf, dest: Ptr[byte]) -> None:
+        for _, v in vars(slf):
+            v.__pickle__(dest)
+
+    # @dataclass parameter: pickle=True
+    def unpickle(src: Ptr[byte], T: type) -> T:
+        if isinstance(T, ByVal):
+            return tuple(type(t).__unpickle__(src) for t in vars_types(T))
+        else:
+            obj = T.__new__()
+            for k, v in vars(obj):
+                setattr(obj, k, type(v).__unpickle__(src))
+            return obj
+
+    # @dataclass parameter: python=True
+    def to_py(slf) -> Ptr[byte]:
+        o = pyobj._tuple_new(staticlen(slf))
+        for i, _, v in vars(slf, with_index=1):
+            pyobj._tuple_set(o, i, v.__to_py__())
+        return o
+
+    # @dataclass parameter: python=True
+    def from_py(src: Ptr[byte], T: type) -> T:
+        if isinstance(T, ByVal):
+            return tuple(
+                type(t).__from_py__(pyobj._tuple_get(src, i))
+                for i, t in vars_types(T, with_index=1)
+            )
+        else:
+            obj = T.__new__()
+            for i, k, v in vars(obj, with_index=True):
+                setattr(obj, k, type(v).__from_py__(pyobj._tuple_get(src, i)))
+            return obj
+
+    # @dataclass parameter: gpu=True
+    def to_gpu(slf, cache):
+        return __internal__.class_to_gpu(slf, cache)
+
+    # @dataclass parameter: gpu=True
+    def from_gpu(slf: T, other: T, T: type):
+        __internal__.class_from_gpu(slf, other)
+
+    # @dataclass parameter: gpu=True
+    def from_gpu_new(other: T, T: type) -> T:
+        __internal__.class_from_gpu_new(other)
+
+    # @dataclass parameter: repr=True
+    def repr(slf) -> str:
+        if staticlen(slf) == 0:
+            return "()"
+        a = __array__[str](staticlen(slf))
+        n = __array__[str](staticlen(slf))
+        for i, k, v in vars(slf, with_index=True):
+            a[i] = v.__repr__()
+            if isinstance(slf, Tuple):
+                n[i] = ""
+            else:
+                n[i] = k
+        return __internal__.tuple_str(a.ptr, n.ptr, staticlen(slf))
+
+    # @dataclass parameter: repr=True
+    def str(slf) -> str:
+        return slf.__repr__()
+
 
 @dataclass(init=True)
 @tuple
@@ -478,9 +664,6 @@ class Function:
     def __call__(self, *args) -> TR:
         return Function.__call_internal__(self, args)
 
-__vtables__ = __internal__.class_init_vtables()
-def _____(): __vtables__  # make it global!
-
 
 @tuple
 class PyObject:
@@ -492,3 +675,26 @@ class PyObject:
 class PyWrapper[T]:
     head: PyObject
     data: T
+
+
+@extend
+class RTTI:
+    def __new__() -> RTTI:
+        return __magic__.new(RTTI)
+    def __init__(self, i: int):
+        self.id = i
+    def __raw__(self):
+        return __internal__.class_raw_ptr(self)
+
+@extend
+class ellipsis:
+    def __repr__(self):
+        return 'Ellipsis'
+    def __eq__(self, other: ellipsis):
+        return True
+    def __ne__(self, other: ellipsis):
+        return False
+    def __hash__(self):
+        return 269626442  # same as CPython
+
+__internal__.class_init_vtables()

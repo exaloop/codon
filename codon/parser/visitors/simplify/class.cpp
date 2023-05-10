@@ -86,8 +86,11 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         } else {
           ctx->addType(genName, varName, a.type->getSrcInfo())->generic = true;
         }
-        args.emplace_back(Param{varName, transformType(clone(a.type), false),
-                                transformType(clone(a.defaultValue), false), a.status});
+        args.emplace_back(varName, transformType(clone(a.type), false),
+                          transformType(clone(a.defaultValue), false), a.status);
+        if (!stmt->attributes.has(Attr::Extend) && a.status == Param::Normal)
+          ctx->cache->classes[canonicalName].fields.push_back(
+              Cache::Class::ClassField{varName, nullptr, canonicalName});
       }
     }
 
@@ -126,8 +129,12 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &a : argsToParse) {
       if (a.status == Param::Normal) {
         if (!ClassStmt::isClassVar(a)) {
-          args.emplace_back(Param{a.name, transformType(clone(a.type), false),
-                                  transform(clone(a.defaultValue), true)});
+          args.emplace_back(a.name, transformType(clone(a.type), false),
+                            transform(clone(a.defaultValue), true));
+          if (!stmt->attributes.has(Attr::Extend)) {
+            ctx->cache->classes[canonicalName].fields.push_back(
+                Cache::Class::ClassField{a.name, nullptr, canonicalName});
+          }
         } else if (!stmt->attributes.has(Attr::Extend)) {
           // Handle class variables. Transform them later to allow self-references
           auto name = format("{}.{}", canonicalName, a.name);
@@ -147,15 +154,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     for (auto &a : args) {
       if (a.status == Param::Normal)
         memberArgs.push_back(a.clone());
-    }
-
-    // Ensure that all fields and class variables are registered
-    if (!stmt->attributes.has(Attr::Extend)) {
-      for (size_t ai = 0; ai < args.size();) {
-        if (args[ai].status == Param::Normal)
-          ctx->cache->classes[canonicalName].fields.push_back({args[ai].name, nullptr});
-        ai++;
-      }
     }
 
     // Parse class members (arguments) and methods
@@ -327,15 +325,9 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
     if (asts.back()->attributes.has(Attr::Internal))
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
-    // Add __vtable__ to parent classes if it is not there already
-    auto var = format("{}.{}", VAR_VTABLE, name);
-    if (typeAst && (cachedCls->fields.empty() || cachedCls->fields[0].name != var)) {
-      // LOG("[virtual] vtable({}) := {}", name, var);
-      cachedCls->fields.insert(cachedCls->fields.begin(), {var, nullptr});
-      cachedCls->ast->args.insert(
-          cachedCls->ast->args.begin(),
-          Param{var, transformType(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>("cobj"))),
-                nullptr});
+    // Mark parent classes as polymorphic as well.
+    if (typeAst) {
+      cachedCls->rtti = true;
     }
 
     // Add generics first
@@ -348,8 +340,8 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
         if (si == subs.size())
           E(Error::GENERICS_MISMATCH, cls, ctx->cache->rev(asts.back()->name),
             nGenerics, subs.size());
-        args.emplace_back(Param{a.name, a.type, transformType(subs[si++], false),
-                                Param::HiddenGeneric});
+        args.emplace_back(a.name, a.type, transformType(subs[si++], false),
+                          Param::HiddenGeneric);
       } else if (a.status == Param::HiddenGeneric) {
         args.emplace_back(a);
       }
@@ -369,23 +361,30 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
   }
   // Add normal fields
   for (auto &ast : asts) {
+    int ai = 0;
     for (auto &a : ast->args) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a)) {
         auto name = a.name;
-        if (startswith(name, VAR_VTABLE)) { // prevent clashing names
-          int i = 0;
-          for (auto &aa : args)
-            i += bool(startswith(aa.name, a.name));
-          if (i)
-            name = format("{}#{}", name, i);
-        }
-        args.emplace_back(Param{name, a.type, a.defaultValue});
+        int i = 0;
+        for (auto &aa : args)
+          i += aa.name == a.name || startswith(aa.name, a.name + "#");
+        if (i)
+          name = format("{}#{}", name, i);
+        seqassert(ctx->cache->classes[ast->name].fields[ai].name == a.name,
+                  "bad class fields: {} vs {}",
+                  ctx->cache->classes[ast->name].fields[ai].name, a.name);
+        args.emplace_back(name, a.type, a.defaultValue);
+        ctx->cache->classes[canonicalName].fields.push_back(Cache::Class::ClassField{
+            name, nullptr, ctx->cache->classes[ast->name].fields[ai].baseClass});
+        ai++;
       }
     }
   }
   if (typeAst) {
-    if (!parentClasses.empty())
+    if (!parentClasses.empty()) {
       mro.push_back(parentClasses);
+      ctx->cache->classes[canonicalName].rtti = true;
+    }
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
     if (ctx->cache->classes[canonicalName].mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
@@ -427,8 +426,10 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
           auto varName = ctx->generateCanonicalName(format("T{}", ++i));
           auto memberName = ctx->cache->rev(varName);
           ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
-          args.emplace_back(Param{varName, N<IdExpr>("type"), nullptr, Param::Generic});
-          args.emplace_back(Param{m, N<IdExpr>(varName)});
+          args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
+          args.emplace_back(m, N<IdExpr>(varName));
+          ctx->cache->classes[stmt->name].fields.push_back(
+              Cache::Class::ClassField{m, nullptr, stmt->name});
         }
         ctx->getBase()->deducedMembers = nullptr;
         return {transformed, f};
@@ -491,16 +492,18 @@ void SimplifyVisitor::transformNestedClasses(ClassStmt *stmt,
 /// described by @param typExpr and its arguments.
 /// Currently generate:
 /// @li Constructors: __new__, __init__
-/// @li Utilities: __raw__, __hash__, __repr__
+/// @li Utilities: __raw__, __hash__, __repr__, __tuplesize__, __add__, __mul__, __len__
 /// @li Iteration: __iter__, __getitem__, __len__, __contains__
 /// @li Comparisons: __eq__, __ne__, __lt__, __le__, __gt__, __ge__
 /// @li Pickling: __pickle__, __unpickle__
 /// @li Python: __to_py__, __from_py__
+/// @li GPU: __to_gpu__, __from_gpu__, __from_gpu_new__
 /// TODO: move to Codon as much as possible
 StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typExpr,
                                       const std::vector<Param> &allArgs,
                                       bool isRecord) {
 #define I(s) N<IdExpr>(s)
+#define NS(x) N<DotExpr>(N<IdExpr>("__magic__"), (x))
   seqassert(typExpr, "typExpr is null");
   ExprPtr ret;
   std::vector<Param> fargs;
@@ -510,333 +513,132 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
 
   std::vector<Param> args;
   for (auto &a : allArgs)
-    if (!startswith(a.name, VAR_VTABLE))
-      args.push_back(a);
+    args.push_back(a);
 
   if (op == "new") {
-    // Classes: @internal def __new__() -> T
-    // Tuples: @internal def __new__(a1: T1, ..., aN: TN) -> T
     ret = typExpr->clone();
     if (isRecord) {
+      // Tuples: def __new__() -> T (internal)
       for (auto &a : args)
-        fargs.emplace_back(
-            Param{a.name, clone(a.type),
-                  a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
+        fargs.emplace_back(a.name, clone(a.type),
+                           a.defaultValue ? clone(a.defaultValue)
+                                          : N<CallExpr>(clone(a.type)));
       attr.set(Attr::Internal);
     } else {
-      stmts.emplace_back(N<ReturnStmt>(
-          N<CallExpr>(N<DotExpr>(I("__internal__"), "class_new"), typExpr->clone())));
+      // Classes: def __new__() -> T
+      stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), typExpr->clone())));
     }
   } else if (op == "init") {
-    // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> void:
+    // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> None:
     //            self.aI = aI ...
     ret = I("NoneType");
-    fargs.emplace_back(Param{"self", typExpr->clone()});
+    fargs.emplace_back("self", typExpr->clone());
     for (auto &a : args) {
       stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
-      fargs.emplace_back(
-          Param{a.name, clone(a.type),
-                a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type))});
+      fargs.emplace_back(a.name, clone(a.type),
+                         a.defaultValue ? clone(a.defaultValue)
+                                        : N<CallExpr>(clone(a.type)));
     }
   } else if (op == "raw") {
-    // Classes: def __raw__(self: T) -> Ptr[byte]:
-    //            return __internal__.class_raw(self)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = N<IndexExpr>(I("Ptr"), I("byte"));
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "class_raw"), I("self"))));
-  } else if (op == "getitem") {
-    // Tuples: def __getitem__(self: T, index: int) -> T1:
-    //           return __internal__.tuple_getitem[T, T1](self, index)
-    //         (error during a realizeFunc() method if T is a heterogeneous tuple)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"index", I("int")});
-    ret = !args.empty() ? clone(args[0].type) : I("NoneType");
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_getitem"), I("self"),
-                    I("index"), typExpr->clone(), ret->clone())));
-  } else if (op == "iter") {
-    // Tuples: def __iter__(self: T) -> Generator[T]:
-    //           yield self.aI ...
-    //         (error during a realizeFunc() method if T is a heterogeneous tuple)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = N<IndexExpr>(I("Generator"), !args.empty() ? clone(args[0].type) : I("int"));
-    for (auto &a : args)
-      stmts.emplace_back(N<YieldStmt>(N<DotExpr>("self", a.name)));
-    if (args.empty()) // Hack for empty tuple: yield from List[int]()
-      stmts.emplace_back(
-          N<YieldFromStmt>(N<CallExpr>(N<IndexExpr>(I("List"), I("int")))));
-  } else if (op == "contains") {
-    // Tuples: def __contains__(self: T, what) -> bool:
-    //            if isinstance(what, T1): if what == self.a1: return True ...
-    //            return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"what", nullptr});
-    ret = I("bool");
-    for (auto &a : args)
-      stmts.push_back(N<IfStmt>(N<CallExpr>(I("isinstance"), I("what"), clone(a.type)),
-                                N<IfStmt>(N<CallExpr>(N<DotExpr>(I("what"), "__eq__"),
-                                                      N<DotExpr>(I("self"), a.name)),
-                                          N<ReturnStmt>(N<BoolExpr>(true)))));
-    stmts.emplace_back(N<ReturnStmt>(N<BoolExpr>(false)));
-  } else if (op == "eq") {
-    // def __eq__(self: T, other: T) -> bool:
-    //   if not self.arg1.__eq__(other.arg1): return False ...
-    //   return True
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = I("bool");
-    for (auto &a : args)
-      stmts.push_back(N<IfStmt>(
-          N<UnaryExpr>("!",
-                       N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), a.name), "__eq__"),
-                                   N<DotExpr>(I("other"), a.name))),
-          N<ReturnStmt>(N<BoolExpr>(false))));
-    stmts.emplace_back(N<ReturnStmt>(N<BoolExpr>(true)));
-  } else if (op == "ne") {
-    // def __ne__(self: T, other: T) -> bool:
-    //   if self.arg1.__ne__(other.arg1): return True ...
-    //   return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = I("bool");
-    for (auto &a : args)
-      stmts.emplace_back(
-          N<IfStmt>(N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), a.name), "__ne__"),
-                                N<DotExpr>(I("other"), a.name)),
-                    N<ReturnStmt>(N<BoolExpr>(true))));
-    stmts.push_back(N<ReturnStmt>(N<BoolExpr>(false)));
-  } else if (op == "lt" || op == "gt") {
-    // def __lt__(self: T, other: T) -> bool:  (same for __gt__)
-    //   if self.arg1.__lt__(other.arg1): return True
-    //   elif self.arg1.__eq__(other.arg1):
-    //      ... (arg2, ...) ...
-    //   return False
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = I("bool");
-    std::vector<StmtPtr> *v = &stmts;
-    for (size_t i = 0; i + 1 < args.size(); i++) {
-      v->emplace_back(N<IfStmt>(
-          N<CallExpr>(
-              N<DotExpr>(N<DotExpr>(I("self"), args[i].name), format("__{}__", op)),
-              N<DotExpr>(I("other"), args[i].name)),
-          N<ReturnStmt>(N<BoolExpr>(true)),
-          N<IfStmt>(
-              N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__eq__"),
-                          N<DotExpr>(I("other"), args[i].name)),
-              N<SuiteStmt>())));
-      v = &((SuiteStmt *)(((IfStmt *)(((IfStmt *)(v->back().get()))->elseSuite.get()))
-                              ->ifSuite)
-                .get())
-               ->stmts;
-    }
-    if (!args.empty())
-      v->emplace_back(N<ReturnStmt>(N<CallExpr>(
-          N<DotExpr>(N<DotExpr>(I("self"), args.back().name), format("__{}__", op)),
-          N<DotExpr>(I("other"), args.back().name))));
-    stmts.emplace_back(N<ReturnStmt>(N<BoolExpr>(false)));
-  } else if (op == "le" || op == "ge") {
-    // def __le__(self: T, other: T) -> bool:  (same for __ge__)
-    //   if not self.arg1.__le__(other.arg1): return False
-    //   elif self.arg1.__eq__(other.arg1):
-    //      ... (arg2, ...) ...
-    //   return True
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = I("bool");
-    std::vector<StmtPtr> *v = &stmts;
-    for (size_t i = 0; i + 1 < args.size(); i++) {
-      v->emplace_back(N<IfStmt>(
-          N<UnaryExpr>("!", N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name),
-                                                   format("__{}__", op)),
-                                        N<DotExpr>(I("other"), args[i].name))),
-          N<ReturnStmt>(N<BoolExpr>(false)),
-          N<IfStmt>(
-              N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__eq__"),
-                          N<DotExpr>(I("other"), args[i].name)),
-              N<SuiteStmt>())));
-      v = &((SuiteStmt *)(((IfStmt *)(((IfStmt *)(v->back().get()))->elseSuite.get()))
-                              ->ifSuite)
-                .get())
-               ->stmts;
-    }
-    if (!args.empty())
-      v->emplace_back(N<ReturnStmt>(N<CallExpr>(
-          N<DotExpr>(N<DotExpr>(I("self"), args.back().name), format("__{}__", op)),
-          N<DotExpr>(I("other"), args.back().name))));
-    stmts.emplace_back(N<ReturnStmt>(N<BoolExpr>(true)));
-  } else if (op == "hash") {
-    // def __hash__(self: T) -> int:
-    //   seed = 0
-    //   seed = (
-    //     seed ^ ((self.arg1.__hash__() + 2654435769) + ((seed << 6) + (seed >> 2)))
-    //   ) ...
-    //   return seed
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = I("int");
-    stmts.emplace_back(N<AssignStmt>(I("seed"), N<IntExpr>(0)));
-    for (auto &a : args)
-      stmts.push_back(N<AssignStmt>(
-          I("seed"),
-          N<BinaryExpr>(
-              I("seed"), "^",
-              N<BinaryExpr>(
-                  N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), a.name),
-                                                       "__hash__")),
-                                "+", N<IntExpr>(0x9e3779b9)),
-                  "+",
-                  N<BinaryExpr>(N<BinaryExpr>(I("seed"), "<<", N<IntExpr>(6)), "+",
-                                N<BinaryExpr>(I("seed"), ">>", N<IntExpr>(2)))))));
-    stmts.emplace_back(N<ReturnStmt>(I("seed")));
-  } else if (op == "pickle") {
-    // def __pickle__(self: T, dest: Ptr[byte]) -> void:
-    //   self.arg1.__pickle__(dest) ...
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"dest", N<IndexExpr>(I("Ptr"), I("byte"))});
-    ret = I("NoneType");
-    for (auto &a : args)
-      stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(N<DotExpr>(I("self"), a.name), "__pickle__"), I("dest"))));
-  } else if (op == "unpickle") {
-    // def __unpickle__(src: Ptr[byte]) -> T:
-    //   return T(T1.__unpickle__(src),...)
-    fargs.emplace_back(Param{"src", N<IndexExpr>(I("Ptr"), I("byte"))});
-    ret = typExpr->clone();
-    std::vector<ExprPtr> ar;
-    ar.reserve(args.size());
-    for (auto &a : args)
-      ar.emplace_back(N<CallExpr>(N<DotExpr>(clone(a.type), "__unpickle__"), I("src")));
-    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
-  } else if (op == "len") {
-    // def __len__(self: T) -> int:
-    //   return N (number of args)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = I("int");
-    stmts.emplace_back(N<ReturnStmt>(N<IntExpr>(args.size())));
-  } else if (op == "to_py") {
-    // def __to_py__(self: T) -> cobj:
-    //   o = pyobj._tuple_new(N)  (number of args)
-    //   pyobj._tuple_set(o, 1, self.arg1.__to_py__()) ...
-    //   return o
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = I("cobj");
-    stmts.emplace_back(
-        N<AssignStmt>(I("o"), N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_new"),
-                                          N<IntExpr>(args.size()))));
-    for (int i = 0; i < args.size(); i++)
-      stmts.push_back(N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>(I("pyobj"), "_tuple_set"), I("o"), N<IntExpr>(i),
-          N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__to_py__")))));
-    stmts.emplace_back(N<ReturnStmt>(I("o")));
-  } else if (op == "from_py") {
-    // def __from_py__(src: cobj) -> T:
-    //   return T(T1.__from_py__(pyobj._tuple_get(src, 1)), ...)
-    fargs.emplace_back(Param{"src", I("cobj")});
-    ret = typExpr->clone();
-    std::vector<ExprPtr> ar;
-    ar.reserve(args.size());
-    for (int i = 0; i < args.size(); i++)
-      ar.push_back(N<CallExpr>(
-          N<DotExpr>(clone(args[i].type), "__from_py__"),
-          N<CallExpr>(N<DotExpr>(I("pyobj"), "_tuple_get"), I("src"), N<IntExpr>(i))));
-    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(typExpr->clone(), ar)));
-  } else if (op == "to_gpu") {
-    // def __to_gpu__(self: T, cache) -> T:
-    //   return __internal__.class_to_gpu(self, cache)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"cache"});
-    ret = typExpr->clone();
-    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
-        N<DotExpr>(I("__internal__"), "class_to_gpu"), I("self"), I("cache"))));
-  } else if (op == "from_gpu") {
-    // def __from_gpu__(self: T, other: T) -> None:
-    //   __internal__.class_from_gpu(self, other)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = I("NoneType");
-    stmts.emplace_back(N<ExprStmt>(N<CallExpr>(
-        N<DotExpr>(I("__internal__"), "class_from_gpu"), I("self"), I("other"))));
-  } else if (op == "from_gpu_new") {
-    // def __from_gpu_new__(other: T) -> T:
-    //   return __internal__.class_from_gpu_new(other)
-    fargs.emplace_back(Param{"other", typExpr->clone()});
-    ret = typExpr->clone();
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "class_from_gpu_new"), I("other"))));
-  } else if (op == "repr") {
-    // def __repr__(self: T) -> str:
-    //   a = __array__[str](N)  (number of args)
-    //   n = __array__[str](N)  (number of args)
-    //   a.__setitem__(0, self.arg1.__repr__()) ...
-    //   n.__setitem__(0, "arg1") ...  (if not a Tuple.N; otherwise "")
-    //   return __internal__.tuple_str(a.ptr, n.ptr, N)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    ret = I("str");
-    if (!args.empty()) {
-      stmts.emplace_back(
-          N<AssignStmt>(I("a"), N<CallExpr>(N<IndexExpr>(I("__array__"), I("str")),
-                                            N<IntExpr>(args.size()))));
-      stmts.emplace_back(
-          N<AssignStmt>(I("n"), N<CallExpr>(N<IndexExpr>(I("__array__"), I("str")),
-                                            N<IntExpr>(args.size()))));
-      for (int i = 0; i < args.size(); i++) {
-        stmts.push_back(N<ExprStmt>(N<CallExpr>(
-            N<DotExpr>(I("a"), "__setitem__"), N<IntExpr>(i),
-            N<CallExpr>(N<DotExpr>(N<DotExpr>(I("self"), args[i].name), "__repr__")))));
-
-        auto name = typExpr->getIndex() ? typExpr->getIndex()->expr->getId() : nullptr;
-        stmts.push_back(N<ExprStmt>(N<CallExpr>(
-            N<DotExpr>(I("n"), "__setitem__"), N<IntExpr>(i),
-            N<StringExpr>(
-                name && startswith(name->value, TYPE_TUPLE) ? "" : args[i].name))));
-      }
-      stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(
-          N<DotExpr>(I("__internal__"), "tuple_str"), N<DotExpr>(I("a"), "ptr"),
-          N<DotExpr>(I("n"), "ptr"), N<IntExpr>(args.size()))));
-    } else {
-      stmts.emplace_back(N<ReturnStmt>(N<StringExpr>("()")));
-    }
-  } else if (op == "dict") {
-    // def __dict__(self: T):
-    //   d = List[str](N)
-    //   d.append('arg1')  ...
-    //   return d
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    stmts.emplace_back(
-        N<AssignStmt>(I("d"), N<CallExpr>(N<IndexExpr>(I("List"), I("str")),
-                                          N<IntExpr>(args.size()))));
-    for (auto &a : args)
-      stmts.push_back(N<ExprStmt>(
-          N<CallExpr>(N<DotExpr>(I("d"), "append"), N<StringExpr>(a.name))));
-    stmts.emplace_back(N<ReturnStmt>(I("d")));
-  } else if (op == "add") {
-    // def __add__(self, tup):
-    //   return __internal__.tuple_add(self, tup)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"tup", nullptr});
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_add"), I("self"), I("tup"))));
-  } else if (op == "mul") {
-    // def __mul__(self, i: Static[int]):
-    //   return __internal__.tuple_add(self, tup)
-    fargs.emplace_back(Param{"self", typExpr->clone()});
-    fargs.emplace_back(Param{"i", N<IndexExpr>(I("Static"), I("int"))});
-    stmts.emplace_back(N<ReturnStmt>(
-        N<CallExpr>(N<DotExpr>(I("__internal__"), "tuple_mul"), I("self"), I("i"))));
+    // Classes: def __raw__(self: T)
+    fargs.emplace_back("self", typExpr->clone());
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "tuplesize") {
-    // def __tuplesize__() -> int:
-    //   return Tuple[arg_types...].__elemsize__
+    // def __tuplesize__() -> int
     ret = I("int");
-    std::vector<ExprPtr> items;
-    for (auto &a : allArgs)
-      items.push_back(clone(a.type));
-    stmts.emplace_back(N<ReturnStmt>(
-        N<DotExpr>(N<IndexExpr>(I("Tuple"), N<TupleExpr>(items)), "__elemsize__")));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op))));
+  } else if (op == "getitem") {
+    // Tuples: def __getitem__(self: T, index: int)
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("index", I("int"));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("index"))));
+  } else if (op == "iter") {
+    // Tuples: def __iter__(self: T)
+    fargs.emplace_back("self", typExpr->clone());
+    stmts.emplace_back(N<YieldFromStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "contains") {
+    // Tuples: def __contains__(self: T, what) -> bool
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("what", nullptr);
+    ret = I("bool");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("what"))));
+  } else if (op == "eq" || op == "ne" || op == "lt" || op == "le" || op == "gt" ||
+             op == "ge") {
+    // def __op__(self: T, obj: T) -> bool
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("obj", typExpr->clone());
+    ret = I("bool");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("obj"))));
+  } else if (op == "hash") {
+    // def __hash__(self: T) -> int
+    fargs.emplace_back("self", typExpr->clone());
+    ret = I("int");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "pickle") {
+    // def __pickle__(self: T, dest: Ptr[byte])
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("byte")));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("dest"))));
+  } else if (op == "unpickle") {
+    // def __unpickle__(src: Ptr[byte]) -> T
+    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("byte")));
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("src"), typExpr->clone())));
+  } else if (op == "len") {
+    // def __len__(self: T) -> int
+    fargs.emplace_back("self", typExpr->clone());
+    ret = I("int");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "to_py") {
+    // def __to_py__(self: T) -> Ptr[byte]
+    fargs.emplace_back("self", typExpr->clone());
+    ret = N<IndexExpr>(I("Ptr"), I("byte"));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "from_py") {
+    // def __from_py__(src: Ptr[byte]) -> T
+    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("byte")));
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("src"), typExpr->clone())));
+  } else if (op == "to_gpu") {
+    // def __to_gpu__(self: T, cache) -> T
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("cache");
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("cache"))));
+  } else if (op == "from_gpu") {
+    // def __from_gpu__(self: T, other: T)
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("other", typExpr->clone());
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("other"))));
+  } else if (op == "from_gpu_new") {
+    // def __from_gpu_new__(other: T) -> T
+    fargs.emplace_back("other", typExpr->clone());
+    ret = typExpr->clone();
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("other"))));
+  } else if (op == "repr") {
+    // def __repr__(self: T) -> str
+    fargs.emplace_back("self", typExpr->clone());
+    ret = I("str");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "dict") {
+    // def __dict__(self: T)
+    fargs.emplace_back("self", typExpr->clone());
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "add") {
+    // def __add__(self, obj)
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("obj", nullptr);
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("obj"))));
+  } else if (op == "mul") {
+    // def __mul__(self, i: Static[int])
+    fargs.emplace_back("self", typExpr->clone());
+    fargs.emplace_back("i", N<IndexExpr>(I("Static"), I("int")));
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("i"))));
   } else {
     seqassert(false, "invalid magic {}", op);
   }
 #undef I
+#undef NS
   auto t = std::make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
                                           N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());

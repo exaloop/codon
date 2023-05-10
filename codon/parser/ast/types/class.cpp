@@ -12,8 +12,8 @@ namespace codon::ast::types {
 
 ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
-    : Type(cache), name(move(name)), niceName(move(niceName)), generics(move(generics)),
-      hiddenGenerics(move(hiddenGenerics)) {}
+    : Type(cache), name(std::move(name)), niceName(std::move(niceName)),
+      generics(std::move(generics)), hiddenGenerics(std::move(hiddenGenerics)) {}
 ClassType::ClassType(const ClassTypePtr &base)
     : Type(base), name(base->name), niceName(base->niceName), generics(base->generics),
       hiddenGenerics(base->hiddenGenerics) {}

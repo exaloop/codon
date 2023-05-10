@@ -113,6 +113,8 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
   } catch (const exc::ParserException &exc) {
     std::vector<error::Message> messages;
     if (exc.messages.empty()) {
+      const int MAX_ERRORS = 5;
+      int ei = 0;
       for (auto &e : cache->errors) {
         for (unsigned i = 0; i < e.messages.size(); i++) {
           if (!e.messages[i].empty())
@@ -120,6 +122,8 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                                   e.locations[i].line, e.locations[i].col,
                                   e.locations[i].len, e.errorCode);
         }
+        if (ei++ > MAX_ERRORS)
+          break;
       }
       return llvm::make_error<error::ParserErrorInfo>(messages);
     } else {

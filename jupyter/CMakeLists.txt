@@ -46,40 +46,23 @@ if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
 endif()
 include(${CPM_DOWNLOAD_LOCATION})
 CPMAddPackage(
-  NAME libzmq
-  VERSION 4.3.4
-  URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-  EXCLUDE_FROM_ALL YES
-  OPTIONS "WITH_PERF_TOOL OFF"
-          "ZMQ_BUILD_TESTS OFF"
-          "ENABLE_CPACK OFF"
-          "BUILD_SHARED ON"
-          "WITH_LIBSODIUM OFF"
-          "WITH_TLS OFF")
-CPMAddPackage(
-    NAME cppzmq
-    URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
-    VERSION 4.8.1
-    EXCLUDE_FROM_ALL YES
-    OPTIONS "CPPZMQ_BUILD_TESTS OFF")
-CPMAddPackage(
     NAME xtl
     GITHUB_REPOSITORY "xtensor-stack/xtl"
-    VERSION 0.7.3
-    GIT_TAG 0.7.3
+    VERSION 0.7.5
+    GIT_TAG 0.7.5
     EXCLUDE_FROM_ALL YES
     OPTIONS "BUILD_TESTS OFF")
 CPMAddPackage(
     NAME json
     GITHUB_REPOSITORY "nlohmann/json"
-    VERSION 3.10.1)
+    VERSION 3.11.2)
 CPMAddPackage(
     NAME xeus
     GITHUB_REPOSITORY "jupyter-xeus/xeus"
-    VERSION 2.2.0
-    GIT_TAG 2.2.0
+    VERSION 3.0.5
+    GIT_TAG 3.0.5
     EXCLUDE_FROM_ALL YES
-    PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
+    PATCH_COMMAND git apply --reject --whitespace=fix ${CMAKE_SOURCE_DIR}/xeus.patch
     OPTIONS "BUILD_EXAMPLES OFF"
             "XEUS_BUILD_SHARED_LIBS OFF"
             "XEUS_STATIC_DEPENDENCIES ON"
@@ -90,12 +73,42 @@ if (xeus_ADDED)
     install(TARGETS nlohmann_json EXPORT xeus-targets)
 endif()
 
+CPMAddPackage(
+  NAME libzmq
+  VERSION 4.3.4
+  URL https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+  EXCLUDE_FROM_ALL YES
+  OPTIONS "WITH_PERF_TOOL OFF"
+          "ZMQ_BUILD_TESTS OFF"
+          "ENABLE_CPACK OFF"
+          "BUILD_SHARED ON"
+          "WITH_LIBSODIUM OFF"
+          "WITH_TLS OFF"
+          "WITH_DOC OFF")
+CPMAddPackage(
+    NAME cppzmq
+    URL https://github.com/zeromq/cppzmq/archive/refs/tags/v4.8.1.tar.gz
+    VERSION 4.9.0
+    EXCLUDE_FROM_ALL YES
+    OPTIONS "CPPZMQ_BUILD_TESTS OFF")
+CPMAddPackage(
+    NAME xeus-zmq
+    GITHUB_REPOSITORY "jupyter-xeus/xeus-zmq"
+    VERSION 1.0.3
+    GIT_TAG 1.0.3
+    EXCLUDE_FROM_ALL YES
+    PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
+    OPTIONS "XEUS_ZMQ_BUILD_TESTS OFF"
+            "XEUS_ZMQ_BUILD_SHARED_LIBS OFF"
+            "XEUS_ZMQ_STATIC_DEPENDENCIES ON"
+            "CMAKE_POSITION_INDEPENDENT_CODE ON")
+
 # Codon Jupyter library
 set(CODON_JUPYTER_FILES jupyter.h jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 target_include_directories(codon_jupyter PRIVATE "${CODON_PATH}/include" ${LLVM_INCLUDE_DIRS})
-add_dependencies(codon_jupyter xeus-static nlohmann_json)
+add_dependencies(codon_jupyter xeus-static xeus-zmq-static nlohmann_json)
 target_link_directories(codon_jupyter PRIVATE "${CODON_PATH}/lib/codon")
-target_link_libraries(codon_jupyter PRIVATE xeus-static codonc)
+target_link_libraries(codon_jupyter PRIVATE xeus-static xeus-zmq-static codonc)
 
 install(TARGETS codon_jupyter DESTINATION .)

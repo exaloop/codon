@@ -5,24 +5,32 @@ class Optional:
     def __new__() -> Optional[T]:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_new(T)
+        elif __has_rtti__(T):
+            return __internal__.opt_ref_new_rtti(T)
         else:
             return __internal__.opt_ref_new(T)
 
     def __new__(what: T) -> Optional[T]:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_new_arg(what, T)
+        elif __has_rtti__(T):
+            return __internal__.opt_ref_new_arg_rtti(what, T)
         else:
             return __internal__.opt_ref_new_arg(what, T)
 
     def __has__(self) -> bool:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_bool(self, T)
+        elif __has_rtti__(T):
+            return __internal__.opt_ref_bool_rtti(T)
         else:
             return __internal__.opt_ref_bool(self, T)
 
     def __val__(self) -> T:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_invert(self, T)
+        elif __has_rtti__(T):
+            return __internal__.opt_ref_invert_rtti(T)
         else:
             return __internal__.opt_ref_invert(self, T)
 

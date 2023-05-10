@@ -2,6 +2,7 @@
 
 import os
 
+from gc import atomic, alloc_uncollectable
 from internal.dlopen import *
 
 # general
@@ -909,9 +910,8 @@ class _PyArg_Parser:
 
 @extend
 class pyobj:
-    @__internal__
     def __new__() -> pyobj:
-        pass
+        return __internal__.class_alloc(pyobj)
 
     def __raw__(self) -> Ptr[byte]:
         return __internal__.class_raw(self)
@@ -1450,6 +1450,16 @@ class Optional:
         else:
             return Optional[T](T.__from_py__(o))
 
+@extend
+class ellipsis:
+    def __to_py__(self) -> cobj:
+        return Py_Ellipsis
+
+    def __from_py__(e: cobj) -> ellipsis:
+        if e == Py_Ellipsis:
+            return Ellipsis
+        else:
+            _conversion_error("ellipsis")
 
 __pyenv__: Optional[pyobj] = None
 def _____(): __pyenv__  # make it global!

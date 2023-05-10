@@ -292,11 +292,6 @@ match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
 #! multiple ellipses in a pattern
 
-#%% match_err_2,barebones
-match [1, 2]:
-    case 1 | ...: pass
-#! unexpected ellipsis expression
-
 #%% global,barebones
 a = 1
 def foo():
@@ -1132,7 +1127,8 @@ class Foo:
 class Bar:
     x: float
 class FooBar(Static[Foo], Static[Bar]):
-    pass #! duplicate data attribute 'x' in class definition
+    pass
+# right now works as we rename other fields
 
 #%% keyword_prefix,barebones
 def foo(return_, pass_, yield_, break_, continue_, print_, assert_):

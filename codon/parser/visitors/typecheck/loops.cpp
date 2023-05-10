@@ -228,7 +228,6 @@ TypecheckVisitor::transformStaticLoopCall(
     return {false, {}};
 
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
-
   std::vector<std::shared_ptr<codon::SrcObject>> block;
   if (startswith(fn->value, "statictuple:0")) {
     auto &args = iter->getCall()->args[0].value->getCall()->args;
@@ -325,6 +324,69 @@ TypecheckVisitor::transformStaticLoopCall(
       }
     } else {
       error("bad call to staticenumerate");
+    }
+  } else if (fn && startswith(fn->value, "std.internal.internal.vars:0")) {
+    if (auto fna = ctx->getFunctionArgs(fn->type)) {
+      auto [generics, args] = *fna;
+
+      auto withIdx = generics[0]->getStatic()->evaluate().getInt() != 0 ? 1 : 0;
+      if (!withIdx && vars.size() != 2)
+        error("expected two items");
+      else if (withIdx && vars.size() != 3)
+        error("expected three items");
+      auto typ = args[0]->getClass();
+      size_t idx = 0;
+      for (auto &f : ctx->cache->classes[typ->name].fields) {
+        std::vector<StmtPtr> stmts;
+        if (withIdx) {
+          stmts.push_back(
+              N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+        }
+        stmts.push_back(
+            N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
+                          NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("str"))));
+        stmts.push_back(
+            N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
+                          N<DotExpr>(iter->getCall()->args[0].value->clone(), f.name)));
+        auto b = N<SuiteStmt>(stmts);
+        block.push_back(wrap(b));
+        idx++;
+      }
+    } else {
+      error("bad call to vars");
+    }
+  } else if (fn && startswith(fn->value, "std.internal.static.vars_types:0")) {
+    if (auto fna = ctx->getFunctionArgs(fn->type)) {
+      auto [generics, args] = *fna;
+
+      auto typ = realize(generics[0]->getClass());
+      auto withIdx = generics[1]->getStatic()->evaluate().getInt() != 0 ? 1 : 0;
+      if (!withIdx && vars.size() != 1)
+        error("expected one item");
+      else if (withIdx && vars.size() != 2)
+        error("expected two items");
+
+      seqassert(typ, "vars_types expects a realizable type, got '{}' instead",
+                generics[0]);
+      size_t idx = 0;
+      for (auto &f : ctx->cache->classes[typ->getClass()->name].fields) {
+        auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
+        seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
+        std::vector<StmtPtr> stmts;
+        if (withIdx) {
+          stmts.push_back(
+              N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+        }
+        stmts.push_back(
+            N<AssignStmt>(N<IdExpr>(vars[withIdx]), NT<IdExpr>(ta->realizedName())));
+        auto b = N<SuiteStmt>(stmts);
+        block.push_back(wrap(b));
+        idx++;
+      }
+    } else {
+      error("bad call to vars");
     }
   } else {
     return {false, {}};

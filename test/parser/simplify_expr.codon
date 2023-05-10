@@ -338,9 +338,6 @@ f1(2) #: 1 2 3
 f2 = partial(foo, y=2)
 f2(1, 2) #: 1 2 2
 
-#%% ellipsis_err,barebones
-... #! unexpected ellipsis expression
-
 #%% lambda,barebones
 l = lambda a, b: a + b
 print l(1, 2) #: 3

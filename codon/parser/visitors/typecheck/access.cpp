@@ -172,8 +172,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       return transform(N<BoolExpr>(expr->expr->isStatic()));
     return nullptr;
   }
-  // Special case: cls.__vtable_id__
-  if (expr->expr->isType() && expr->member == "__vtable_id__") {
+  // Special case: cls.__id__
+  if (expr->expr->isType() && expr->member == "__id__") {
     if (auto c = realize(expr->expr->type))
       return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
                                       .realizations[c->getClass()->realizedTypeName()]
@@ -194,12 +194,10 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (args) {
     unify(expr->type, ctx->instantiate(bestMethod, typ));
 
-    // Handle virtual calls
-    auto vtableName = format("{}.{}", VAR_VTABLE, typ->name);
-    // A function is deemed virtual if it is marked as such and if a base class has a
-    // vtable
+    // A function is deemed virtual if it is marked as such and
+    // if a base class has a RTTI
     bool isVirtual = in(ctx->cache->classes[typ->name].virtuals, expr->member);
-    isVirtual &= ctx->findMember(typ->name, vtableName) != nullptr;
+    isVirtual &= ctx->cache->classes[typ->name].rtti;
     isVirtual &= !expr->expr->isType();
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
@@ -217,9 +215,14 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
             NT<IdExpr>("Function"),
             std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
                                  NT<IdExpr>(fn->getRetType()->realizedName())});
-        // Function[Tuple[TArg1, TArg2, ...], TRet](expr.__vtable__T[VIRTUAL_ID])
+        // Function[Tuple[TArg1, TArg2, ...],TRet](
+        //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
+        // )
         auto e = N<CallExpr>(
-            fnType, N<IndexExpr>(N<DotExpr>(expr->expr, vtableName), N<IntExpr>(vid)));
+            fnType,
+            N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.class_get_rtti_vtable:0"),
+                                     expr->expr),
+                         N<IntExpr>(vid)));
         return transform(e);
       }
     }
@@ -240,7 +243,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       methodArgs.push_back(expr->expr);
     // If a method is marked with @property, just call it directly
     if (!bestMethod->ast->attributes.has(Attr::Property))
-      methodArgs.push_back(N<EllipsisExpr>());
+      methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
     unify(expr->type, e->type);
     return e;
@@ -330,11 +333,11 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
-    return transform(
-        N<CallExpr>(N<IdExpr>("__internal__.get_union_method:0"),
-                    std::vector<CallExpr::Arg>{{"union", expr->expr},
-                                               {"method", N<StringExpr>(expr->member)},
-                                               {"", N<EllipsisExpr>()}}));
+    return transform(N<CallExpr>(
+        N<IdExpr>("__internal__.get_union_method:0"),
+        std::vector<CallExpr::Arg>{{"union", expr->expr},
+                                   {"method", N<StringExpr>(expr->member)},
+                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
   }
 
   // For debugging purposes: ctx->findMethod(typ->name, expr->member);

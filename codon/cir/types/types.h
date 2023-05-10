@@ -298,6 +298,8 @@ class RefType : public AcceptorExtend<RefType, MemberedType> {
 private:
   /// the internal contents of the type
   Type *contents;
+  /// true if type is polymorphic and needs RTTI
+  bool polymorphic;
 
 public:
   static const char NodeId;
@@ -305,8 +307,15 @@ public:
   /// Constructs a reference type.
   /// @param name the type's name
   /// @param contents the type's contents
-  RefType(std::string name, RecordType *contents)
-      : AcceptorExtend(std::move(name)), contents(contents) {}
+  /// @param polymorphic true if type is polymorphic
+  RefType(std::string name, RecordType *contents, bool polymorphic = false)
+      : AcceptorExtend(std::move(name)), contents(contents), polymorphic(polymorphic) {}
+
+  /// @return true if the type is polymorphic and needs RTTI
+  bool isPolymorphic() const { return polymorphic; }
+  /// Sets whether the type is polymorphic. Should not generally be used.
+  /// @param p true if polymorphic
+  void setPolymorphic(bool p = true) { polymorphic = p; }
 
   Type *getMemberType(const std::string &n) const override {
     return getContents()->getMemberType(n);

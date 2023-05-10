@@ -61,7 +61,7 @@ struct function_iterator_adaptor {
 /// @return the adaptor
 template <typename It> auto dereference_adaptor(It it) {
   auto f = [](const auto &v) -> auto & { return *v; };
-  auto m = [](const auto &v) -> auto{ return v.get(); };
+  auto m = [](const auto &v) -> auto { return v.get(); };
   return function_iterator_adaptor<It, decltype(f), decltype(m)>(it, std::move(f),
                                                                  std::move(m));
 }

@@ -362,11 +362,12 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       return false;
     if (doTypeWrap) {
       if (c->getRecord())
-        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>()));
+        expr = transform(N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
       else
         expr = transform(N<CallExpr>(
             N<IdExpr>("__internal__.class_ctr:0"),
-            std::vector<CallExpr::Arg>{{"T", expr}, {"", N<EllipsisExpr>()}}));
+            std::vector<CallExpr::Arg>{{"T", expr},
+                                       {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
     }
   }
 
@@ -451,23 +452,11 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
               ctx->instantiate(parentField.type, superTyp));
       }
   }
+  realize(superTyp);
   auto typExpr = N<IdExpr>(superTyp->name);
   typExpr->setType(superTyp);
-  // `dist = expr.__raw__()`
-  ExprPtr dist = N<CallExpr>(N<DotExpr>(expr, "__raw__"));
-  if (isVirtual) {
-    // Virtual inheritance: `dist += class_base_derived_dist(super, type(expr))`
-    dist =
-        N<BinaryExpr>(dist, "+",
-                      N<CallExpr>(N<IdExpr>("__internal__.class_base_derived_dist:0"),
-                                  N<IdExpr>(superTyp->realizedName()),
-                                  N<CallExpr>(N<IdExpr>("type"), expr)));
-  }
-  realize(superTyp);
-
-  // No inheritance: `__internal__.to_class_ptr(dist, T)`
-  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "to_class_ptr"),
-                               dist, typExpr));
+  return transform(
+      N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"), expr, typExpr));
 }
 
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.
