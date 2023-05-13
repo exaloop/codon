@@ -76,7 +76,8 @@ So, in short:
     - we want to be as close to bare metal as possible (speed!); and
     - we want the compiler to help us optimize our code and detect as many bugs as possible ahead of time.
 
-While there are many fantastic attempts to improve Python's performance (e.g., [PyPy](https://www.pypy.org/), [new CPython](https://github.com/faster-cpython/), [Numba](https://numba.pydata.org/), [Mojo](https://docs.modular.com/mojo/), to name a few), nearly all of them are limited by either legacy constraints, limited scope, or a commitment to the absolute semantical compatibility with (C)Python. Codon takes a different approach: we originally started with a small compiler that targeted a limited subset of Python and kept (and will keep) expanding it until the gap is small enough not to matter anymore.
+While there are many fantastic attempts to improve Python's performance (e.g., [PyPy](https://www.pypy.org/), [new CPython](https://github.com/faster-cpython/), [Numba](https://numba.pydata.org/), [Mojo](https://docs.modular.com/mojo/), to name a few), nearly all of them are limited by either legacy constraints, limited scope, or a commitment to the absolute semantical compatibility with (C)Python. Codon takes a different approach: we originally started with a small compiler that targeted a limited subset of Python and kept (and will keep) expanding it until the gap is small enough not to matter anymore. (If you happen to be a Ruby fan,
+then you can notice that our goals are similar to those of [Crystal](https://github.com/crystal-lang/crystal)).
 
 For more nitty-gritty details, go ahead and check our [Differences with Python](https://docs.exaloop.io/codon/general/differences).
 
