@@ -72,9 +72,9 @@ However, this flexibility is often not needed and is typically avoided in many c
 
 So, in short:
 
-    - We want Python's syntax, semantics and ease of use (we don't want you to learn yet another language);
-    - we want to be as close to bare metal as possible (speed!); and
-    - we want the compiler to help us optimize our code and detect as many bugs as possible ahead of time.
+- We want Python's syntax, semantics and ease of use (we don't want you to learn yet another language);
+- we want to be as close to bare metal as possible (speed!); and
+- we want the compiler to help us optimize our code and detect as many bugs as possible ahead of time.
 
 While there are many fantastic attempts to improve Python's performance (e.g., [PyPy](https://www.pypy.org/), [new CPython](https://github.com/faster-cpython/), [Numba](https://numba.pydata.org/), [Mojo](https://docs.modular.com/mojo/), to name a few), nearly all of them are limited by either legacy constraints, limited scope, or a commitment to the absolute semantical compatibility with (C)Python. Codon takes a different approach: we originally started with a small compiler that targeted a limited subset of Python and kept (and will keep) expanding it until the gap is small enough not to matter anymore. (If you happen to be a Ruby fan,
 then you can notice that our goals are similar to those of [Crystal](https://github.com/crystal-lang/crystal)).
@@ -199,3 +199,4 @@ Plain Python functions and libraries can also be called from within Codon via
 ## Documentation
 
 Please see [docs.exaloop.io](https://docs.exaloop.io/codon) for in-depth documentation.
+
