@@ -15,7 +15,7 @@ can create a shared library containing `foo` (assuming source file
 *foo.codon*):
 
 ``` bash
-codon build -o libfoo.so foo.codon
+codon build --relocation-model=pic --lib -o libfoo.so foo.codon
 ```
 
 Now we can call `foo` from a C program:
@@ -37,6 +37,27 @@ Compile:
 gcc -o foo -L. -lfoo foo.c
 ```
 
+when it is cpp file, mark the codon export function as `extern "C"`
+``` c++
+#include <stdint.h>
+#include <stdio.h>
+
+extern "C" int64_t foo(int64_t);
+
+int main() {
+  printf("%llu\n", foo(10));
+}
+```
+Compile:
+``` bash
+g++ -o foo -L. -lfoo foo.cc
+```
+
+export the `LD_LIBRARY_PATH`
+
+```shell
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$`pwd`
+```
 Now running `./foo` should invoke `foo()` as defined in Codon, with an
 argument of `10`.
 
@@ -44,12 +65,12 @@ argument of `10`.
 
 The following table shows the conversions between Codon and C/C++ types:
 
-  | Codon     | C/C++                                |
+| Codon     | C/C++                                |
   |-----------|--------------------------------------|
-  | `int`     | `long` or `int64_t`                  |
-  | `float`   | `double`                             |
-  | `bool`    | `bool`                               |
-  | `byte`    | `char` or `int8_t`                   |
-  | `str`     | `{int64_t, char*}` (length and data) |
-  | `class`   | Pointer to corresponding tuple       |
-  | `@tuple`  | Struct of fields                     |
+| `int`     | `long` or `int64_t`                  |
+| `float`   | `double`                             |
+| `bool`    | `bool`                               |
+| `byte`    | `char` or `int8_t`                   |
+| `str`     | `{int64_t, char*}` (length and data) |
+| `class`   | Pointer to corresponding tuple       |
+| `@tuple`  | Struct of fields                     |
