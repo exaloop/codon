@@ -679,6 +679,28 @@ def fsum(seq):
 
     return hi
 
+def prod(iterable, start = 1):
+    def prod_generator(iterable: Generator[T], start, T: type):
+        if T is float:
+            result = float(start)
+        else:
+            result = start
+
+        for a in iterable:
+            result *= a
+        return result
+
+    def prod_tuple(iterable, start):
+        if staticlen(iterable) == 0:
+            return start
+        else:
+            return prod(iterable[1:], start=(start * iterable[0]))
+
+    if isinstance(iterable, Tuple):
+        return prod_tuple(iterable, start)
+    else:
+        return prod_generator(iterable, start)
+
 # 32-bit float ops
 
 e32 = float32(e)
