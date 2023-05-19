@@ -23,63 +23,34 @@
 
 ## What is Codon?
 
-Codon is a high-performance compiler that compiles Python and Python-like code to native machine code with minimal overhead.
+Codon is a high-performance Python implementation that compiles to native machine code without
+any runtime overhead. Typical speedups over vanilla Python are on the order of 10-100x or more, on
+a single thread. Codon's performance is typically on par with (and sometimes better than) that of
+C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many times
+higher still.
 
-Typical speedups over Python are on the order of 10-100x or more, on a single thread. Codon's performance is typically on par with
-(and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
-times higher still.
-
-Codon is a high-performance compiler that compiles Python and Python-like code to native machine code with minimal overhead.
-
-Typical speedups over Python are on the order of 10-100x or more on a single thread. Codon's performance is typically on par with
-(and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
-times higher still.
+*Think of Codon as Python reimagined for static, ahead-of-time compilation, built from the ground
+up with best possible performance in mind.*
 
 ### Goals
 
-Think of Codon as a Python reimagined for _statical compilation_ entirely from scratch. The goals of Codon are:
+- **No learning curve:** Be as close to CPython as possible in terms of syntax, semantics and libraries
+- **Top-notch performance:** At *least* on par with low-level languages like C, C++ or Rust
+- **Hardware support:** Full, seamless support for parallelism, multithreading (no GIL!), GPU and more
+- **Optimizations:** Comprehensive optimization framework that can target high-level Python constructs
+  and libraries
 
-- Syntactical compatibility with Python (with extensions allowed)
-- Semantical comparability with Python (aim is not to be 100% identical with Python, but close enough for the majority of everyday use cases)
-- Top-notch performance and easy implementation of compile-time optimizations for new problems (something libraries in any mainstream language cannot do)
-- Seamless interoperability with (C)Python, C/C++ and other languages.
+### Non-goals
 
-The performance is achieved by the following design choices:
+- *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
+  aspects of Python that are not suitable for static compilation -- we don't support these in Codon.
+  There are ways to use Codon in larger Python codebases via its [JIT decorator](https://docs.exaloop.io/codon/interoperability/decorator)
+  or [Python extension backend](https://docs.exaloop.io/codon/interoperability/pyext). See also
+  [*"Differences with Python"*](https://docs.exaloop.io/codon/general/differences) in the docs.
 
-- Static ahead-of-time type-checking with minimal reliance on type annotations
-- Static instantiation of types and functions
-- Compile-time expressions, statements and branches
-- Lightweight object representation (as close to C as possible)
-- Compile-time elision of any metadata that will not be needed
-- Aggressive compile-time optimizations whenever possible
-- Codon IR framework for module-level optimization passes
-
-Codon stems from the scientific computing environment: its precursor is [Seq project](https://github.com/seq-lang/seq),
-a DSL for bioinformatics, a field where every CPU cycle matters.
-
-### Where are you at right now?
-
-Long answer—please see [Roadmap](https://docs.exaloop.io/codon/general/roadmap) for details.
-
-### Why?
-
-Python is arguably the world's programming language: it is widely taught and [used](https://survey.stackoverflow.co/2022) across many disciplines and demographics and is highly popular within non-CS communities. It provides readable, clean and analyzable syntax, simple semantics,
-and has unmatched library coverage. However, its Achilles heel was (and still is) the performance: a typical codebase in pure Python
- is many orders of magnitude slower than its C/C++/Rust counterpart.
-
-Most of the slowdown comes from the extreme flexibility of Python's semantics and legacy considerations.
-However, this flexibility is often not needed and is typically avoided in many contexts. By getting rid of it, we can achieve significant performance gains. When and how? That's where Codon kicks in! We aim to combine [modern compiler techniques](https://dl.acm.org/doi/abs/10.1145/3578360.3580275) with Python syntax and semantics to get the best of both worlds whenever possible.
-
-So, in short:
-
-- We want Python's syntax, semantics and ease of use (we don't want you to learn yet another language);
-- we want to be as close to bare metal as possible (speed!); and
-- we want the compiler to help us optimize our code and detect as many bugs as possible ahead of time.
-
-While there are many fantastic attempts to improve Python's performance (e.g., [PyPy](https://www.pypy.org/), [new CPython](https://github.com/faster-cpython/), [Numba](https://numba.pydata.org/), [Mojo](https://docs.modular.com/mojo/), to name a few), nearly all of them are limited by either legacy constraints, limited scope, or a commitment to the absolute semantical compatibility with (C)Python. Codon takes a different approach: we originally started with a small compiler that targeted a limited subset of Python and kept (and will keep) expanding it until the gap is small enough not to matter anymore. (If you happen to be a Ruby fan,
-then you can notice that our goals are similar to those of [Crystal](https://github.com/crystal-lang/crystal)).
-
-For more nitty-gritty details, go ahead and check our [Differences with Python](https://docs.exaloop.io/codon/general/differences).
+- *New syntax and language constructs:* We try to avoid adding new syntax, keywords or other language
+  features as much as possible. While Codon does add some new syntax in a couple places (e.g. to express
+  parallelism), we try to make it as familiar and intuitive as possible.
 
 ## Install
 
