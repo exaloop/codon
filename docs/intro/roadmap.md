@@ -1,39 +1,32 @@
-The main goal of Codon is to close the gap between it and Python as much as possible without sacrificing [its major objectives](https://github.com/exaloop/codon).
-This is far from being trivial and will take some time (hey, it took Python 30+ years to get there!).
-We are currently addressing the missing features on a need basis. The current roadmap roughly looks as follows:
+Codon's goal is to be as close to CPython as possible while still
+being fully statically compilable. While Codon already supports
+much of Python, there is still much to be done to fully realize
+its potential. Here is a high-level roadmap of the things we want
+to add, implement or explore.
 
-# Language
+# Core features
 
-- Fix any outstanding parsing and compilation bugs (a never-ending quest)!
-
-- Type system improvements
-  - `Any` type support
+- Type system improvements:
   - First-class types and compile-time metaclasses
-  - Back-references to functions and classes
-  - Better OOP support
-  - Better handling of unions
-  - Automatic boxing and unboxing of by-value objects
-  - Dynamic (runtime) tuples and non-homogenous dictionaries
-  - Better support for `Optional[T]` handling
-  - Variardic type arguments (e.g., `Foo[Bar, ...]`)
+  - Full class member deduction
+  - Implicit union types to support mixed-type collections
+  - Variadic type arguments (e.g. `Foo[Bar, ...]`)
 
 - Parallelism
   - `async`/`await` support
-  - More OpenMP hooks
-  - Go-like channels
-  - Automatic locking where needed
   - `multiprocessing` support
-
-- Performance
-  - Support code/model auto-tuning in Codon IR
-  - Integrate `polyll`
+  - Automatic locking in parallel code (e.g. if mutating a
+    data structure shared between threads)
+  - Race detection
 
 - Compatibility with Python 3.10+:
   - Argument separators (`/` and `*`)
   - Constructor object matching in the `match` statement
-  - Support accessing various object properties (`__dict__`, `__slots__` etc.) as much as possible in static context
+  - Support accessing various object properties (`__dict__`, `__slots__`
+    etc.) as much as possible in a static context
 
-- Automatic switching between Codon and CPython (i.e., compile only compatible functions and leave the rest to Python)
+- Optional automatic switching between Codon and CPython (i.e.
+  compile only compatible functions and leave the rest to Python)
 
 - Better error messages
   - Warning support
@@ -42,64 +35,76 @@ We are currently addressing the missing features on a need basis. The current ro
 
 - Modules and incremental compilation
   - Cache compilation modules
-  - Fast generics compilation in debug mode for quick turnaround
+  - Fast generics compilation in debug mode for quick turnarounds
 
 - Memory management
   - Auto-tune GC
-  - Allow alternative GC backends
-    - Use ARC instead of GC in performance-heavy loops
-  - Fix GC-related performance issues in multi-threaded mode
+  - Optional alternative memory management modes like reference
+    counting
 
 - GPU support
   - Target Apple, AMD and Intel GPUs
+  - GPU-specific compiler optimizations (e.g. for using various
+    Python constructs on the GPU)
 
 - Interoperability with other languages
+  - Direct C++ interoperability via Clang
   - R interoperability
-  - C++ interoperability via Clang
 
 # Libraries
 
-Currently, missing Python functionality can be easily accessed through `from python import xyz` statement. In most cases, that is good enough,
-as many libraries are just thin wrappers around C calls, and their performance is not a major consideration.
+Currently, missing Python functionality can be easily accessed via a
+`from python import foo` statement, which is sufficient in most cases
+as many libraries are just thin wrappers around a C library and/or not
+performance-sensitive.
 
-In near future, we would like to support the following modules natively:
+However, in the near future, we would like to support the following
+modules natively:
 
 - Python's standard library
   - Complete builtins support
   - 1-to-1 compatibility with existing Python functions and modules
   - File modules: `os`, `sys`, `struct`, `pathlib` and so on
-  - Pretty much everything else on a need basis
-- Testing infrastructure
-- Native Numpy support
-- Native Pandas support
+  - Pretty much everything else on an as-needed basis
 
-# Infrastructure / Tools
+- Native NumPy, Pandas, etc.: Having Codon-native versions of the most
+  popular 3rd-party libraries would allow them to work with Codon's
+  other features like multithreading or GPU. It also enables us to
+  do library-specific compiler optimizations, like fusions or expression
+  rewrites for NumPy. We're currently prioritizing NumPy and Pandas but
+  aim to later target other popular libraries as well.
 
-- A sane package manager akin to Rust's [Cargo](https://github.com/rust-lang/cargo)
-  - Think of something better and try to avoid Python's packaging hell
+- Python's testing infrastructure
+
+# Infrastructure & Tools
+
 - Windows support
-  - In theory doable with some changes; developers with Windows experience are needed to facilitate this
-- Auto-detection of Python libraries
+
+- A sane package manager similar to Rust's
+  [Cargo](https://github.com/rust-lang/cargo)
+
+- Auto-detection of installed Python libraries
+
 - Improved `codon.jit` library support
   - Better error messages
   - Better installation flow
-- Fully static binary support akin to Go
-  - Remove `libcodonrt` dependency if needed
+
+- Fully static binary support like Go
+  - Remove `libcodonrt` (runtime library) dependency if needed
   - Remove `libcpp` dependency
-- Better Jupyter support
-  - Auto-complete and code inspection
+
+- Improved Jupyter support
+  - Auto-completion and code inspection
   - Jupyter magic command support
-- Plugins for Visual Studio Code, vim, Emacs and so on
+
+- Plugins for Visual Studio Code, Vim, Emacs and so on
 
 # Documentation
 
-- Completely document major differences with Python
-- Document Codon IR API
-- Document all major gotchas
+- Fully document major differences with CPython
+- Document Codon IR API, with guides and tutorials
 - Document all supported modules
-- Document everything else!
 
 # Nice to have
 
-- New parser
 - Implement Codon in Codon
