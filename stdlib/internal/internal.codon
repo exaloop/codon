@@ -201,7 +201,7 @@ class __internal__:
         if idx < 0:
             idx += len
         if idx < 0 or idx >= len:
-            raise IndexError(f"tuple index {idx} out of range 0..{len}")
+            raise IndexError("tuple index out of range")
         return idx
 
     def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
@@ -495,7 +495,7 @@ class __magic__:
     # @dataclass parameter: container=True
     def getitem(slf, index: int):
         if staticlen(slf) == 0:
-            raise IndexError(f"tuple index {index} out of range 0..0")
+            __internal__.tuple_fix_index(index, 0)  # raise exception
         else:
             return __internal__.tuple_getitem(slf, index, type(slf), tuple_type(slf, 0))
 

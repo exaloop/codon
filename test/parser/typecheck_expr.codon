@@ -230,11 +230,11 @@ print a[3:5] #: ()
 
 #%% static_index_err,barebones
 a = (1, 2)
-a[5] #! tuple index out of range (expected 0..1, got instead 5)
+a[5] #! tuple index out of range
 
 #%% static_index_err_2,barebones
 a = (1, 2)
-a[-3] #! tuple index out of range (expected 0..1, got instead -1)
+a[-3] #! tuple index out of range
 
 #%% index_func_instantiate,barebones
 class X:
