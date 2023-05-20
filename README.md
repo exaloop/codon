@@ -2,21 +2,19 @@
  <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
 
-<h4 align="center">
+<h3 align="center">
   <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
   &nbsp;&#183;&nbsp;
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
   &nbsp;&#183;&nbsp;
-  <a href="https://github.com/exaloop/codon/discussions" target="_blank"><b>Forum</b></a>
-  &nbsp;&#183;&nbsp;
   <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
   &nbsp;&#183;&nbsp;
   <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
-</h4>
+</h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
   <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
