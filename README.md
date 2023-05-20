@@ -46,8 +46,9 @@ up with best possible performance in mind.*
 - :x: *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
   aspects of Python that are not suitable for static compilation — we don't support these in Codon.
   There are ways to use Codon in larger Python codebases via its [JIT decorator](https://docs.exaloop.io/codon/interoperability/decorator)
-  or [Python extension backend](https://docs.exaloop.io/codon/interoperability/pyext). See also
-  [*"Differences with Python"*](https://docs.exaloop.io/codon/general/differences) in the docs.
+  or [Python extension backend](https://docs.exaloop.io/codon/interoperability/pyext). Codon also supports
+  calling any Python module via its [Python interoperability](https://docs.exaloop.io/codon/interoperability/python).
+  See also [*"Differences with Python"*](https://docs.exaloop.io/codon/general/differences) in the docs.
 
 - :x: *New syntax and language constructs:* We try to avoid adding new syntax, keywords or other language
   features as much as possible. While Codon does add some new syntax in a couple places (e.g. to express
@@ -101,9 +102,21 @@ codon build -release -llvm fib.py
 
 See [the docs](https://docs.exaloop.io/codon/general/intro) for more options and examples.
 
-This prime counting example showcases Codon's [OpenMP](https://www.openmp.org/) support, enabled with the addition of one line.
-The `@par` annotation tells the compiler to parallelize the following `for`-loop, in this case using a dynamic schedule, chunk size
-of 100, and 16 threads.
+You can import and use any Python package from Codon. For example:
+
+```python
+from python import matplotlib.pyplot as plt
+data = [x**2 for x in range(10)]
+plt.plot(data)
+plt.show()
+```
+
+(Just remember to set the `CODON_PYTHON` environment variable to the CPython shared library,
+as explained in the [the docs](https://docs.exaloop.io/codon/interoperability/python).)
+
+This prime counting example showcases Codon's [OpenMP](https://www.openmp.org/) support, enabled
+with the addition of one line. The `@par` annotation tells the compiler to parallelize the
+following `for`-loop, in this case using a dynamic schedule, chunk size of 100, and 16 threads.
 
 ```python
 from sys import argv
@@ -157,16 +170,6 @@ mandelbrot(pixels, grid=(N*N)//1024, block=1024)
 ```
 
 GPU programming can also be done using the `@par` syntax with `@par(gpu=True)`.
-
-## What isn't Codon?
-
-While Codon supports nearly all of Python's syntax, it is not a drop-in replacement, and large codebases might require modifications
-to be run through the Codon compiler. For example, some of Python's modules are not yet implemented within Codon, and a few of Python's
-dynamic features are disallowed. The Codon compiler produces detailed error messages to help identify and resolve any incompatibilities.
-
-Codon can be used within larger Python codebases via the [`@codon.jit` decorator](https://docs.exaloop.io/codon/interoperability/decorator).
-Plain Python functions and libraries can also be called from within Codon via
-[Python interoperability](https://docs.exaloop.io/codon/interoperability/python).
 
 ## Documentation
 
