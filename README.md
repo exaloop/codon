@@ -2,19 +2,21 @@
  <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
 </p>
 
-<h3 align="center">
+<h4 align="center">
   <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
-  &nbsp;&#65372;&nbsp;
+  &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
-  &nbsp;&#65372;&nbsp;
+  &nbsp;&#183;&nbsp;
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
-  &nbsp;&#65372;&nbsp;
+  &nbsp;&#183;&nbsp;
   <a href="https://github.com/exaloop/codon/discussions" target="_blank"><b>Forum</b></a>
   &nbsp;&#65372;&nbsp;
   <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
-  &nbsp;&#65372;&nbsp;
+  &nbsp;&#183;&nbsp;
+  <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
+  &nbsp;&#183;&nbsp;
   <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
-</h3>
+</h4>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
   <img src="https://github.com/exaloop/codon/actions/workflows/ci.yml/badge.svg"
@@ -34,21 +36,22 @@ up with best possible performance in mind.*
 
 ### Goals
 
-- **No learning curve:** Be as close to CPython as possible in terms of syntax, semantics and libraries
-- **Top-notch performance:** At *least* on par with low-level languages like C, C++ or Rust
-- **Hardware support:** Full, seamless support for parallelism, multithreading (no GIL!), GPU and more
-- **Optimizations:** Comprehensive optimization framework that can target high-level Python constructs
+- :bulb: **No learning curve:** Be as close to CPython as possible in terms of syntax, semantics and libraries
+- :rocket: **Top-notch performance:** At *least* on par with low-level languages like C, C++ or Rust
+- :computer: **Hardware support:** Full, seamless support for parallelism, multithreading (no GIL!), GPU and more
+- :chart_with_upwards_trend: **Optimizations:** Comprehensive optimization framework that can target high-level Python constructs
   and libraries
+- :battery: **Interoperability:** Full interoperability with Python's ecosystem of packages and libraries
 
 ### Non-goals
 
-- *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
+- :x: *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
   aspects of Python that are not suitable for static compilation -- we don't support these in Codon.
   There are ways to use Codon in larger Python codebases via its [JIT decorator](https://docs.exaloop.io/codon/interoperability/decorator)
   or [Python extension backend](https://docs.exaloop.io/codon/interoperability/pyext). See also
   [*"Differences with Python"*](https://docs.exaloop.io/codon/general/differences) in the docs.
 
-- *New syntax and language constructs:* We try to avoid adding new syntax, keywords or other language
+- :x: *New syntax and language constructs:* We try to avoid adding new syntax, keywords or other language
   features as much as possible. While Codon does add some new syntax in a couple places (e.g. to express
   parallelism), we try to make it as familiar and intuitive as possible.
 
