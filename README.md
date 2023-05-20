@@ -10,7 +10,7 @@
   <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
   &nbsp;&#183;&nbsp;
   <a href="https://github.com/exaloop/codon/discussions" target="_blank"><b>Forum</b></a>
-  &nbsp;&#65372;&nbsp;
+  &nbsp;&#183;&nbsp;
   <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
