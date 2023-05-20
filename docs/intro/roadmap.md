@@ -69,10 +69,8 @@ modules natively:
 
 - Native NumPy, Pandas, etc.: Having Codon-native versions of the most
   popular 3rd-party libraries would allow them to work with Codon's
-  other features like multithreading or GPU. It also enables us to
-  do library-specific compiler optimizations, like fusions or expression
-  rewrites for NumPy. We're currently prioritizing NumPy and Pandas but
-  aim to later target other popular libraries as well.
+  other features like multithreading and GPU. We're currently prioritizing
+  NumPy and Pandas but aim to later target other popular libraries as well.
 
 - Unicode support
 
