@@ -73,8 +73,7 @@ template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
   GCMapAllocator() = default;
   GCMapAllocator(GCMapAllocator<KV> const &) = default;
 
-  template <typename KV1>
-  GCMapAllocator(const GCMapAllocator<KV1>&) noexcept {}
+  template <typename KV1> GCMapAllocator(const GCMapAllocator<KV1> &) noexcept {}
 
   KV *allocate(std::size_t n) { return (KV *)seq_alloc(n * sizeof(KV)); }
 
