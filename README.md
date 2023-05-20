@@ -46,7 +46,7 @@ up with best possible performance in mind.*
 ### Non-goals
 
 - :x: *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
-  aspects of Python that are not suitable for static compilation -- we don't support these in Codon.
+  aspects of Python that are not suitable for static compilation — we don't support these in Codon.
   There are ways to use Codon in larger Python codebases via its [JIT decorator](https://docs.exaloop.io/codon/interoperability/decorator)
   or [Python extension backend](https://docs.exaloop.io/codon/interoperability/pyext). See also
   [*"Differences with Python"*](https://docs.exaloop.io/codon/general/differences) in the docs.
