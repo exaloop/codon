@@ -74,6 +74,8 @@ modules natively:
   rewrites for NumPy. We're currently prioritizing NumPy and Pandas but
   aim to later target other popular libraries as well.
 
+- Unicode support
+
 - Python's testing infrastructure
 
 # Infrastructure & Tools
