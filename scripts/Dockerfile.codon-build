@@ -11,7 +11,7 @@ RUN mkdir -p /github/codon
 COPY cmake /github/codon/cmake
 COPY codon /github/codon/codon
 COPY docs /github/codon/docs
-COPY extra /github/codon/extra
+COPY jit /github/codon/jit
 COPY stdlib /github/codon/stdlib
 COPY test /github/codon/test
 COPY CMakeLists.txt /github/codon
