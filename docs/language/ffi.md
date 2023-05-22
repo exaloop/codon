@@ -26,7 +26,7 @@ foo2 = my2(4, 3.2)
 ```
 
 {% hint style="warning" %}
-When importing external non-Codon functions, you must explicitly specify
+When importing C functions, you must explicitly specify
 argument and return types.
 {% endhint %}
 

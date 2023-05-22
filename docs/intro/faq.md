@@ -82,6 +82,9 @@ which can be used within Python codebases. This will compile only the annotated 
 and automatically handle data conversions to and from Codon. It also allows for
 the use of any Codon-specific modules or extensions, such as multithreading.
 
+Codon can also [compile to Python extension modules](../interop/pyext.md) that can be
+imported and used from Python.
+
 ## What about interoperability with other languages and frameworks?
 
 Interoperability is and will continue to be a priority for Codon.
