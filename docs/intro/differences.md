@@ -1,8 +1,11 @@
-While Codon's syntax and semantics are virtually identical
+While Codon's syntax and semantics are nearly identical
 to Python's, there are some notable differences that are
 worth mentioning. Most of these design decisions were made
 with the trade-off between performance and Python compatibility
 in mind.
+
+Please see our [roadmap](roadmap.md) for more information about
+how we plan to close some of these gaps in the future.
 
 # Data types
 
@@ -16,6 +19,10 @@ in mind.
 
 - **Dictionaries:** Codon's dictionary type does not preserve
   insertion order, unlike Python's as of 3.6.
+
+- **Tuples**: Since tuples compile down to structs, tuple lengths
+  must be known at compile time, meaning you can't convert an
+  arbitrarily-sized list to a tuple, for instance.
 
 # Type checking
 

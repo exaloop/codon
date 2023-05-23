@@ -26,6 +26,9 @@ const std::string EXPORT_ATTR = "std.internal.attributes.export";
 const std::string INLINE_ATTR = "std.internal.attributes.inline";
 const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
 const std::string GPU_KERNEL_ATTR = "std.gpu.kernel";
+
+const std::string MAIN_UNCLASH = ".main.unclash";
+const std::string MAIN_CTOR = ".main.ctor";
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -426,18 +429,24 @@ void executeCommand(const std::vector<std::string> &args) {
 
 void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   const std::string llvmCtor = "llvm.global_ctors";
-  auto *main = M->getFunction("main");
-  if (M->getNamedValue(llvmCtor) || !main)
+  if (M->getNamedValue(llvmCtor))
     return;
-  main->setName(".main"); // avoid clash with other main
+
+  auto *main = M->getFunction(MAIN_UNCLASH);
+  if (!main) {
+    main = M->getFunction("main");
+    if (!main)
+      return;
+    main->setName(MAIN_UNCLASH); // avoid clash with other main
+  }
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
   auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
                                             B->getInt8PtrTy());
   auto *ctorArrayTy = llvm::ArrayType::get(ctorEntryTy, 1);
 
-  auto *ctor = cast<llvm::Function>(
-      M->getOrInsertFunction(".main.ctor", ctorFuncTy).getCallee());
+  auto *ctor =
+      cast<llvm::Function>(M->getOrInsertFunction(MAIN_CTOR, ctorFuncTy).getCallee());
   ctor->setLinkage(llvm::GlobalValue::InternalLinkage);
   auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
   B->SetInsertPoint(entry);
@@ -1122,7 +1131,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   B->SetInsertPoint(block);
 
   if (auto *main = M->getFunction("main")) {
-    main->setName(".main");
+    main->setName(MAIN_UNCLASH);
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
   }
 
@@ -1461,8 +1470,10 @@ void LLVMVisitor::visit(const Module *x) {
   auto *strlenFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("strlen", B->getInt64Ty(), B->getInt8PtrTy()).getCallee());
 
+  // check if main exists already as an exported function
+  const std::string mainName = M->getFunction("main") ? MAIN_UNCLASH : "main";
   auto *canonicalMainFunc = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("main", B->getInt32Ty(), B->getInt32Ty(),
+      M->getOrInsertFunction(mainName, B->getInt32Ty(), B->getInt32Ty(),
                              B->getInt8PtrTy()->getPointerTo())
           .getCallee());
 

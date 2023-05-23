@@ -58,14 +58,16 @@ Thumbs.db
 .mypy_cache
 .vscode
 .cache
-
-extra/jupyter/share/jupyter/kernels/codon/kernel.json
-extra/python/codon/version.py
-scratch*.*
-_*
 .ipynb_checkpoints
+
+# CMake generated files #
+#########################
+jupyter/share/jupyter/kernels/codon/kernel.json
+jit/codon/version.py
 
 # Testing files #
 #################
 temp/
 playground/
+scratch*.*
+_*
