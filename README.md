@@ -36,7 +36,7 @@ up with best possible performance in mind.*
 
 - :bulb: **No learning curve:** Be as close to CPython as possible in terms of syntax, semantics and libraries
 - :rocket: **Top-notch performance:** At *least* on par with low-level languages like C, C++ or Rust
-- :computer: **Hardware support:** Full, seamless support for parallelism, multithreading (no GIL!), GPU and more
+- :computer: **Hardware support:** Full, seamless support for multicore programming, multithreading (no GIL!), GPU and more
 - :chart_with_upwards_trend: **Optimizations:** Comprehensive optimization framework that can target high-level Python constructs
   and libraries
 - :battery: **Interoperability:** Full interoperability with Python's ecosystem of packages and libraries
