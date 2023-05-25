@@ -64,7 +64,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
     }
     ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
-    if (realize(stmt->lhs->type))
+    if (realize(stmt->lhs->type) || !stmt->type)
       stmt->setDone();
   } else if (stmt->type && stmt->type->getType()->isStaticType()) {
     // Static assignments (e.g., `x: Static[int] = 5`)
