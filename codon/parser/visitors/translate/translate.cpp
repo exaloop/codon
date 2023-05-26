@@ -372,6 +372,10 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     auto isGlobal = in(ctx->cache->globals, var);
     ir::Var *v = nullptr;
 
+    // dead declaration due to static compilation
+    if (!stmt->rhs && !stmt->type && !stmt->lhs->type->getClass())
+      return;
+
     if (isGlobal) {
       seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
                 var);

@@ -9,6 +9,11 @@ class __magic__:
 
 @tuple
 @__internal__
+class NoneType:
+    pass
+
+@tuple
+@__internal__
 @__notuple__
 class bool:
     pass
@@ -38,11 +43,6 @@ class float:
 @__notuple__
 class float32:
     MIN_10_EXP = -37
-    pass
-
-@tuple
-@__internal__
-class NoneType:
     pass
 
 @tuple
