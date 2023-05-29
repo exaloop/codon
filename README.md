@@ -23,10 +23,61 @@
 
 ## What is Codon?
 
-Codon is a high-performance Python compiler that compiles Python code to native machine code without any runtime overhead.
+Codon is a high-performance compiler that compiles Python and Python-like code to native machine code with minimal overhead.
+
 Typical speedups over Python are on the order of 10-100x or more, on a single thread. Codon's performance is typically on par with
 (and sometimes better than) that of C/C++. Unlike Python, Codon supports native multithreading, which can lead to speedups many
-times higher still. Codon grew out of the [Seq project](https://github.com/seq-lang/seq).
+times higher still.
+
+### Goals
+
+Think of Codon as a Python reimagined for _statical compilation_ completely from scratch. The goals of Codon are:
+
+- Complete support of Python's syntax (extensions are allowed)
+- Semantics as close as Python's (not 100\% identical, but close enough for most common use-cases)
+- Top-notch performance and easy implementation of compile-time optimizations for new domains
+     (something that libraries in any mainstream language cannot do).
+- Seamless interoperability with CPython, C/C++ and/or other languages.
+
+The perfomance is achieved by the following design choices:
+
+- Static ahead-of-time type-checking with minimal reliance on type annotations.
+- Static instantiation of types and functions.
+- Compile-time expressions, statements and branches.
+- Lightweight object representation (as close to C as possible).
+- Compile-time elision of any metadata that will not be needed.
+- Aggressive compile-time optimizations whenever possible.
+
+Codon stems from the scientific computing environment: its percursor was [Seq project](https://github.com/seq-lang/seq),
+a DSL for bioinformatics where every saved CPU cycle counts.
+
+For more information, please consult [Differences with Python]().
+
+### Where are you at right now?
+
+Long answer—please see [Roadmap]() for details.
+
+### Why?
+
+Python is arguably the world's programming language: it is [most widely taught](), [used]() and is
+widely popular among non-CS oriented communities. It provides clean (and analyzable) syntax, [simple semantics],
+and has unmatched library coverage. However, its Achilee's heel was (and still is) the performance: typicall pure Python
+code is many orders of magnitude slower than its C/C++/Rust counterpart.
+
+Most of the performance hit comes from the extreme flexibility of its semantics, as well from legacy considerations.
+However, this flexiblity is often not needed and is typically not used (or even known) in many contexts. Thus, we can
+often get rid of it to achieve large performance gains. When and how? That's where Codon kicks in! We aim to combine
+[modern compiler techniques](cite) with [Python syntax and semantics]() to get the best of both worlds whenever possible.
+
+So, TL;DR:
+
+    - We want Python's syntax, semantics and ease of use (we don't want you to learn yet another language)
+    - We want to be as close to bare metal as possible (speeeeed!)
+    - We want compiler to help us optimize and detect as many bugs as possible ahead-of-time
+
+While there are many amazing attempts to imrpove Python's performance (e.g., [PyPy], new CPython, Numba, Mojo, to name a few), nearly all of them are limited by either legacy constraints, limited scope, or a commitment to the absolute 100\%
+semantical compatibility with (C)Python. Codon took a different approach: we started with a small compiler that targeted
+limited subset of Python, and will keep expanding it until the gap is small enough not to matter.
 
 ## Install
 

@@ -1,5 +1,5 @@
 ---
-Checks: 'clang-diagnostic-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,bugprone-*,concurrency-*,performance-*,portability-*,-modernize-use-nodiscard,-modernize-use-trailing-return-type,-cppcoreguidelines-special-member-functions'
+Checks: 'clang-diagnostic-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,bugprone-*,concurrency-*,performance-*,portability-*,-modernize-use-nodiscard,-modernize-use-trailing-return-type,-cppcoreguidelines-special-member-functions,-bugprone-easily-swappable-parameters,-bugprone-assignment-in-if-condition'
 WarningsAsErrors: false
 HeaderFilterRegex: '(build/.+)|(codon/util/.+)'
 AnalyzeTemporaryDtors: false

@@ -1,4 +1,4 @@
-While Codon's syntax and semantics are virtually identical
+While Codon's syntax and semantics are nearly identical
 to Python's, there are some notable differences that are
 worth mentioning. Most of these design decisions were made
 with the trade-off between performance and Python compatibility
@@ -16,6 +16,9 @@ in mind.
 
 - **Dictionaries:** Codon's dictionary type does not preserve
   insertion order, unlike Python's as of 3.6.
+
+- **Tuples**: Codon's tuples are _by-value_ objects (i.e., they
+  are not references) and their size must be known at compile-time.
 
 # Type checking
 
@@ -44,3 +47,6 @@ does *not* change `int`s from 64-bit.
 While most of the commonly used builtin modules have Codon-native
 implementations, a few are not yet implemented. However these can
 still be used within Codon via `from python import`.
+
+
+Many other missing features are also described in [Roadmap].

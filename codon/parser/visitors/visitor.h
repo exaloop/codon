@@ -85,7 +85,7 @@ template <typename TE, typename TS>
 /**
  * Callback AST visitor.
  * This visitor extends base ASTVisitor and stores node's source location (SrcObject).
- * Function simplify() will visit a node and return the appropriate transformation. As
+ * Function transform() will visit a node and return the appropriate transformation. As
  * each node type (expression or statement) might return a different type,
  * this visitor is generic for each different return type.
  */

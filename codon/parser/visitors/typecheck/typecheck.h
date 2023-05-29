@@ -11,7 +11,6 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -37,7 +36,14 @@ class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   StmtPtr resultStmt;
 
 public:
-  static StmtPtr apply(Cache *cache, const StmtPtr &stmts);
+  // static StmtPtr apply(Cache *cache, const StmtPtr &stmts);
+  static StmtPtr
+  apply(Cache *cache, const StmtPtr &node, const std::string &file,
+        const std::unordered_map<std::string, std::string> &defines = {},
+        const std::unordered_map<std::string, std::string> &earlyDefines = {},
+        bool barebones = false);
+  static StmtPtr apply(const std::shared_ptr<TypeContext> &cache, const StmtPtr &node,
+                       const std::string &file = "<internal>");
 
 public:
   explicit TypecheckVisitor(
@@ -50,16 +56,21 @@ public: // Convenience transformators
     auto e = expr;
     return transform(e);
   }
+  ExprPtr transform(ExprPtr &expr, bool allowTypes);
+  ExprPtr transform(ExprPtr &&expr, bool allowTypes) {
+    return transform(expr, allowTypes);
+  }
   StmtPtr transform(StmtPtr &s) override;
   StmtPtr transform(const StmtPtr &stmt) override {
     auto s = stmt;
     return transform(s);
   }
-  ExprPtr transformType(ExprPtr &expr);
-  ExprPtr transformType(const ExprPtr &expr) {
+  ExprPtr transformType(ExprPtr &expr, bool allowTypeOf = true);
+  ExprPtr transformType(const ExprPtr &expr, bool allowTypeOf = true) {
     auto e = expr;
-    return transformType(e);
+    return transformType(e, allowTypeOf);
   }
+  StmtPtr transformConditionalScope(StmtPtr &stmt);
 
 private:
   void defaultVisit(Expr *e) override;
@@ -70,12 +81,17 @@ private: // Node typechecking rules
   void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
   void visit(IntExpr *) override;
+  ExprPtr transformInt(IntExpr *);
   void visit(FloatExpr *) override;
+  ExprPtr transformFloat(FloatExpr *);
   void visit(StringExpr *) override;
+  ExprPtr transformFString(const std::string &);
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
+  bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
+  std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
   ExprPtr transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
   ExprPtr getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
   types::TypePtr findSpecialMember(const std::string &);
@@ -87,13 +103,17 @@ private: // Node typechecking rules
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
-  void visit(GeneratorExpr *) override;
   ExprPtr transformComprehension(const std::string &, const std::string &,
                                  std::vector<ExprPtr> &);
+  void visit(GeneratorExpr *) override;
+  void visit(DictGeneratorExpr *) override;
+  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &, SuiteStmt *&);
 
   /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
+  void visit(MatchStmt *) override;
+  StmtPtr transformPattern(const ExprPtr &, ExprPtr, StmtPtr);
 
   /* Operators (op.cpp) */
   void visit(UnaryExpr *) override;
@@ -105,6 +125,7 @@ private: // Node typechecking rules
   std::pair<std::string, std::string> getMagic(const std::string &);
   ExprPtr transformBinaryInplaceMagic(BinaryExpr *, bool);
   ExprPtr transformBinaryMagic(BinaryExpr *);
+  void visit(ChainBinaryExpr *) override;
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
   std::pair<bool, ExprPtr> transformStaticTupleIndex(const types::ClassTypePtr &,
@@ -115,6 +136,7 @@ private: // Node typechecking rules
   void visit(SliceExpr *) override;
 
   /* Calls (call.cpp) */
+  void visit(PrintStmt *) override;
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
     bool isPartial = false;                   // true if the call is partial
@@ -131,55 +153,97 @@ private: // Node typechecking rules
   ExprPtr callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
   bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
   std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
-  ExprPtr transformSuperF(CallExpr *expr);
+  ExprPtr transformTupleGenerator(CallExpr *);
+  ExprPtr transformNamedTuple(CallExpr *);
+  ExprPtr transformFunctoolsPartial(CallExpr *);
+  ExprPtr transformSuperF(CallExpr *);
   ExprPtr transformSuper();
-  ExprPtr transformPtr(CallExpr *expr);
-  ExprPtr transformArray(CallExpr *expr);
-  ExprPtr transformIsInstance(CallExpr *expr);
-  ExprPtr transformStaticLen(CallExpr *expr);
-  ExprPtr transformHasAttr(CallExpr *expr);
-  ExprPtr transformGetAttr(CallExpr *expr);
-  ExprPtr transformSetAttr(CallExpr *expr);
-  ExprPtr transformCompileError(CallExpr *expr);
-  ExprPtr transformTupleFn(CallExpr *expr);
-  ExprPtr transformTypeFn(CallExpr *expr);
-  ExprPtr transformRealizedFn(CallExpr *expr);
-  ExprPtr transformStaticPrintFn(CallExpr *expr);
-  ExprPtr transformHasRttiFn(CallExpr *expr);
-  std::pair<bool, ExprPtr> transformInternalStaticFn(CallExpr *expr);
-  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &cls);
+  ExprPtr transformPtr(CallExpr *);
+  ExprPtr transformArray(CallExpr *);
+  ExprPtr transformIsInstance(CallExpr *);
+  ExprPtr transformStaticLen(CallExpr *);
+  ExprPtr transformHasAttr(CallExpr *);
+  ExprPtr transformGetAttr(CallExpr *);
+  ExprPtr transformSetAttr(CallExpr *);
+  ExprPtr transformCompileError(CallExpr *);
+  ExprPtr transformTupleFn(CallExpr *);
+  ExprPtr transformTypeFn(CallExpr *);
+  ExprPtr transformRealizedFn(CallExpr *);
+  ExprPtr transformStaticPrintFn(CallExpr *);
+  ExprPtr transformHasRttiFn(CallExpr *);
+  std::pair<bool, ExprPtr> transformInternalStaticFn(CallExpr *);
+  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &);
   void addFunctionGenerics(const types::FuncType *t);
-  std::string generatePartialStub(const std::vector<char> &mask, types::FuncType *fn);
+  std::string generatePartialStub(const std::vector<char> &, types::FuncType *);
 
   /* Assignments (assign.cpp) */
+  void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
   void transformUpdate(AssignStmt *);
+  StmtPtr transformAssignment(ExprPtr, ExprPtr, ExprPtr = nullptr, bool = false);
+  void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
+  void visit(DelStmt *) override;
   void visit(AssignMemberStmt *) override;
   std::pair<bool, ExprPtr> transformInplaceUpdate(AssignStmt *);
+
+  /* Imports (import.cpp) */
+  void visit(ImportStmt *) override;
+  StmtPtr transformSpecialImport(ImportStmt *);
+  std::vector<std::string> getImportPath(Expr *, size_t = 0);
+  StmtPtr transformCImport(const std::string &, const std::vector<Param> &,
+                           const Expr *, const std::string &);
+  StmtPtr transformCVarImport(const std::string &, const Expr *, const std::string &);
+  StmtPtr transformCDLLImport(const Expr *, const std::string &,
+                              const std::vector<Param> &, const Expr *,
+                              const std::string &, bool);
+  StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, Expr *,
+                                const std::string &);
+  StmtPtr transformNewImport(const ImportFile &);
 
   /* Loops (loops.cpp) */
   void visit(BreakStmt *) override;
   void visit(ContinueStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
+  ExprPtr transformForDecorator(const ExprPtr &);
   StmtPtr transformHeterogenousTupleFor(ForStmt *);
   StmtPtr transformStaticForLoop(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
+  void visit(AssertStmt *) override;
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
+  void visit(WithStmt *) override;
 
   /* Functions (function.cpp) */
   void visit(YieldExpr *) override;
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
+  void visit(YieldFromStmt *) override;
+  void visit(LambdaExpr *) override;
+  void visit(GlobalStmt *) override;
   void visit(FunctionStmt *) override;
+  ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
+  StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
+                                    const Expr *, Stmt *);
+  StmtPtr transformLLVMDefinition(Stmt *);
+  std::pair<bool, std::string> getDecorator(const ExprPtr &);
   ExprPtr partializeFunction(const types::FuncTypePtr &);
   std::shared_ptr<types::RecordType> getFuncTypeBase(size_t);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  void parseBaseClasses(ClassStmt *);
+  std::vector<ClassStmt *> parseBaseClasses(std::vector<ExprPtr> &,
+                                            std::vector<Param> &, const Attr &,
+                                            const std::string &,
+                                            const ExprPtr & = nullptr);
+  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
+                                                       std::vector<Param> &);
+  std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
+  void transformNestedClasses(ClassStmt *, std::vector<StmtPtr> &,
+                              std::vector<StmtPtr> &, std::vector<StmtPtr> &);
+  StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
+                       bool);
   std::string generateTuple(size_t, const std::string & = TYPE_TUPLE,
                             std::vector<std::string> = {}, bool = true);
 
@@ -188,6 +252,7 @@ private: // Node typechecking rules
   void visit(ExprStmt *) override;
   void visit(StmtExpr *) override;
   void visit(CommentStmt *stmt) override;
+  void visit(CustomStmt *) override;
 
 private:
   /* Type inference (infer.cpp) */
@@ -230,6 +295,7 @@ public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
 
   friend class Cache;
+  friend class TypeContext;
   friend class types::CallableTrait;
   friend class types::UnionType;
 
@@ -237,8 +303,9 @@ private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
       unpackTupleTypes(ExprPtr);
   std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
-  transformStaticLoopCall(const std::vector<std::string> &, ExprPtr,
-                          std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)>);
+  transformStaticLoopCall(
+      const std::vector<std::string> &, const ExprPtr &,
+      const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &);
 };
 
 } // namespace codon::ast

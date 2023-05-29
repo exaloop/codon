@@ -21,8 +21,8 @@ const int INDENT_SIZE = 2;
 
 namespace codon::ast {
 
-Stmt::Stmt() : done(false), age(-1) {}
-Stmt::Stmt(const codon::SrcInfo &s) : done(false), age(-1) { setSrcInfo(s); }
+Stmt::Stmt() : done(false) {}
+Stmt::Stmt(const codon::SrcInfo &s) : done(false) { setSrcInfo(s); }
 std::string Stmt::toString() const { return toString(-1); }
 void Stmt::validate() const {}
 
@@ -84,7 +84,8 @@ AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type)
       update(Assign) {}
 AssignStmt::AssignStmt(const AssignStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
-      type(ast::clone(stmt.type)), update(stmt.update) {}
+      type(ast::clone(stmt.type)), preamble(ast::clone(stmt.preamble)),
+      update(stmt.update) {}
 std::string AssignStmt::toString(int) const {
   return format("({} {}{}{})", update != Assign ? "update" : "assign", lhs->toString(),
                 rhs ? " " + rhs->toString() : "",

@@ -37,8 +37,6 @@
 namespace codon::ast {
 
 /// Forward declarations
-struct SimplifyContext;
-class SimplifyVisitor;
 struct TypeContext;
 struct TranslateContext;
 
@@ -57,23 +55,20 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::unordered_map<std::string, std::string> reverseIdentifierLookup;
   /// Number of code-generated source code positions. Used to generate the next unique
   /// source-code position information.
-  int generatedSrcInfoCount;
+  int generatedSrcInfoCount = 0;
   /// Number of unbound variables so far. Used to generate the next unique unbound
   /// identifier.
-  int unboundCount;
+  int unboundCount = 256;
   /// Number of auto-generated variables so far. Used to generate the next unique
   /// variable name in getTemporaryVar() below.
-  int varCount;
-  /// Stores the count of imported files. Used to track class method ages
-  /// and to prevent using extended methods before they were seen.
-  int age;
+  int varCount = 0;
 
   /// Holds module import data.
   struct Import {
     /// Absolute filename of an import.
     std::string filename;
-    /// Import simplify context.
-    std::shared_ptr<SimplifyContext> ctx;
+    /// Import typechecking context.
+    std::shared_ptr<TypeContext> ctx;
     /// Unique import variable for checking already loaded imports.
     std::string importVar;
     /// File content (line:col indexable)
@@ -205,22 +200,13 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// corresponding Function instance.
   std::unordered_map<std::string, Function> functions;
 
-  struct Overload {
-    /// Canonical name of an overload (e.g. Foo.__init__.1).
-    std::string name;
-    /// Overload age (how many class extension were seen before a method definition).
-    /// Used to prevent the usage of an overload before it was defined in the code.
-    /// TODO: I have no recollection of how this was supposed to work. Most likely
-    /// it does not work at all...
-    int age;
-  };
   /// Maps a "root" name of each function to the list of names of the function
-  /// overloads.
-  std::unordered_map<std::string, std::vector<Overload>> overloads;
+  /// overloads (canonical names).
+  std::unordered_map<std::string, std::vector<std::string>> overloads;
 
   /// Pointer to the later contexts needed for IR API access.
-  std::shared_ptr<TypeContext> typeCtx;
-  std::shared_ptr<TranslateContext> codegenCtx;
+  std::shared_ptr<TypeContext> typeCtx = nullptr;
+  std::shared_ptr<TranslateContext> codegenCtx = nullptr;
   /// Set of function realizations that are to be translated to IR.
   std::set<std::pair<std::string, std::string>> pendingRealizations;
   /// Mapping of partial record names to function pointers and corresponding masks.
@@ -229,19 +215,19 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Custom operators
   std::unordered_map<std::string,
-                     std::pair<bool, std::function<StmtPtr(ast::SimplifyVisitor *,
+                     std::pair<bool, std::function<StmtPtr(ast::TypecheckVisitor *,
                                                            ast::CustomStmt *)>>>
       customBlockStmts;
   std::unordered_map<std::string,
-                     std::function<StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>>
+                     std::function<StmtPtr(ast::TypecheckVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
   /// Plugin-added import paths
   std::vector<std::string> pluginImportPaths;
 
   /// Set if the Codon is running in JIT mode.
-  bool isJit;
-  int jitCell;
+  bool isJit = false;
+  int jitCell = 0;
 
   std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
   std::unordered_map<std::string, int> generatedTuples;

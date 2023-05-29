@@ -55,7 +55,7 @@ struct StaticValue {
  * A Seq AST expression.
  * Each AST expression is intended to be instantiated as a shared_ptr.
  */
-struct Expr : public codon::SrcObject {
+struct Expr : public codon::SrcObject, public std::enable_shared_from_this<Expr> {
   using base_type = Expr;
 
   // private:
@@ -198,7 +198,7 @@ struct BoolExpr : public Expr {
 /// @li 13u
 /// @li 000_010b
 struct IntExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify stage.
+  /// Expression value is stored as a string that is parsed during typechecking.
   std::string value;
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
@@ -221,7 +221,7 @@ struct IntExpr : public Expr {
 /// @li 13.15z
 /// @li e-12
 struct FloatExpr : public Expr {
-  /// Expression value is stored as a string that is parsed during the simplify stage.
+  /// Expression value is stored as a string that is parsed during typechecking.
   std::string value;
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
@@ -363,7 +363,7 @@ struct GeneratorBody {
 /// @li (f + 1 for j in k if j for f in j)
 struct GeneratorExpr : public Expr {
   /// Generator kind: normal generator, list comprehension, set comprehension.
-  enum GeneratorKind { Generator, ListGenerator, SetGenerator };
+  enum GeneratorKind { Generator, ListGenerator, SetGenerator, TupleGenerator };
 
   GeneratorKind kind;
   ExprPtr expr;
@@ -618,7 +618,7 @@ struct RangeExpr : public Expr {
   ACCEPT(ASTVisitor);
 };
 
-/// The following nodes are created after the simplify stage.
+/// The following nodes are created during typechecking.
 
 /// Statement expression (stmts...; expr).
 /// Statements are evaluated only if the expression is evaluated

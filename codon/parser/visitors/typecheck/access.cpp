@@ -6,7 +6,6 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -23,24 +22,87 @@ using namespace types;
 /// For tuple identifiers, generate appropriate class. See @c generateTuple for
 /// details.
 void TypecheckVisitor::visit(IdExpr *expr) {
-  // Generate tuple stubs if needed
   if (isTuple(expr->value))
     generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
-  // Replace identifiers that have been superseded by domination analysis during the
-  // simplification
-  while (auto s = in(ctx->cache->replacements, expr->value))
-    expr->value = s->first;
+  auto val = ctx->findDominatingBinding(expr->value, this);
 
-  auto val = ctx->find(expr->value);
-  if (!val) {
-    // Handle overloads
-    if (in(ctx->cache->overloads, expr->value))
-      val = ctx->forceFind(getDispatch(expr->value)->ast->name);
-    seqassert(val, "cannot find '{}'", expr->value);
+  if (!val && ctx->getBase()->pyCaptures) {
+    ctx->getBase()->pyCaptures->insert(expr->value);
+    resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
+    return;
+  } else if (!val) {
+    E(Error::ID_NOT_FOUND, expr, expr->value);
   }
-  unify(expr->type, ctx->instantiate(val->type));
 
+  // If we are accessing an outside variable, capture it or raise an error
+  auto captured = checkCapture(val);
+  if (captured)
+    val = ctx->forceFind(expr->value);
+
+  // Track loop variables to dominate them later. Example:
+  // x = 1
+  // while True:
+  //   if x > 10: break
+  //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
+  if (auto loop = ctx->getBase()->getLoop()) {
+    bool inside = val->scope.size() >= loop->scope.size() &&
+                  val->scope[loop->scope.size() - 1] == loop->scope.back();
+    if (!inside)
+      loop->seenVars.insert(expr->value);
+  }
+
+  // Replace the variable with its canonical name
+  expr->value = val->canonicalName;
+  val->references.push_back(expr->shared_from_this());
+
+  // Mark global as "seen" to prevent later creation of local variables
+  // with the same name. Example:
+  // x = 1
+  // def foo():
+  //   print(x)  # mark x as seen
+  //   x = 2     # so that this is an error
+  if (!val->isGeneric() && ctx->isOuter(val) &&
+      !in(ctx->getBase()->seenGlobalIdentifiers, ctx->cache->rev(val->canonicalName))) {
+    ctx->getBase()->seenGlobalIdentifiers[ctx->cache->rev(val->canonicalName)] =
+        expr->clone();
+  }
+
+  // Flag the expression as a type expression if it points to a class or a generic
+  if (val->isType())
+    expr->markType();
+
+  // Variable binding check for variables that are defined within conditional blocks
+  if (!val->accessChecked.empty()) {
+    bool checked = false;
+    for (auto &a : val->accessChecked) {
+      if (a.size() <= ctx->scope.blocks.size() &&
+          a[a.size() - 1] == ctx->scope.blocks[a.size() - 1]) {
+        checked = true;
+        break;
+      }
+    }
+    if (!checked) {
+      // Prepend access with __internal__.undef([var]__used__, "[var name]")
+      auto checkStmt = N<ExprStmt>(N<CallExpr>(
+          N<DotExpr>("__internal__", "undef"),
+          N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
+          N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
+      if (!ctx->isConditionalExpr) {
+        // If the expression is not conditional, we can just do the check once
+        prependStmts->push_back(checkStmt);
+        val->accessChecked.push_back(ctx->scope.blocks);
+      } else {
+        // Otherwise, this check must be always called
+        resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
+      }
+    }
+  }
+
+  // todo)) handle overloads [each overloaded fn is basically a new FnOverload object]
+
+  // Set up type
+  unify(expr->type, ctx->instantiate(val->type));
   if (val->type->isStaticType()) {
     // Evaluate static expression if possible
     expr->staticValue.type = StaticValue::Type(val->type->isStaticType());
@@ -57,9 +119,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     return;
   }
 
-  if (val->isType())
-    expr->markType();
-
   // Realize a type or a function if possible and replace the identifier with the fully
   // typed identifier (e.g., `foo` -> `foo[int]`)
   if (realize(expr->type)) {
@@ -69,13 +128,189 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
 }
 
+/// Flatten imports.
+/// @example
+///   `a.b.c`      -> canonical name of `c` in `a.b` if `a.b` is an import
+///   `a.B.c`      -> canonical name of `c` in class `a.B`
+///   `python.foo` -> internal.python._get_identifier("foo")
+/// Other cases are handled during the type checking.
 /// See @c transformDot for details.
 void TypecheckVisitor::visit(DotExpr *expr) {
-  // Make sure to unify the current type with the transformed type
-  if ((resultExpr = transformDot(expr)))
-    unify(expr->type, resultExpr->type);
-  if (!expr->type)
-    unify(expr->type, ctx->getUnbound());
+  if (!expr->type) {
+    // First flatten the imports:
+    // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
+    std::vector<std::string> chain;
+    Expr *root = expr;
+    for (; root->getDot(); root = root->getDot()->expr.get())
+      chain.push_back(root->getDot()->member);
+
+    if (auto id = root->getId()) {
+      // Case: a.bar.baz
+      chain.push_back(id->value);
+      std::reverse(chain.begin(), chain.end());
+      auto [pos, val] = getImport(chain);
+
+      if (!val) {
+        seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
+        ctx->getBase()->pyCaptures->insert(chain[0]);
+        resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
+      } else if (val->getModule() == "std.python") {
+        resultExpr = transform(N<CallExpr>(
+            N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
+            N<StringExpr>(chain[pos++])));
+      } else if (val->getModule() == ctx->getModule() && pos == 1) {
+        resultExpr = transform(N<IdExpr>(chain[0]), true);
+      } else {
+        resultExpr = N<IdExpr>(val->canonicalName);
+        if (val->isType() && pos == chain.size())
+          resultExpr->markType();
+      }
+      while (pos < chain.size())
+        resultExpr = N<DotExpr>(resultExpr, chain[pos++]);
+      resultExpr = transformDot(resultExpr->getDot());
+    } else {
+      transform(expr->expr, true);
+      resultExpr = transformDot(expr);
+    }
+  } else {
+    resultExpr = transformDot(expr);
+  }
+}
+
+/// Access identifiers from outside of the current function/class scope.
+/// Either use them as-is (globals), capture them if allowed (nonlocals),
+/// or raise an error.
+bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
+  if (!ctx->isOuter(val))
+    return false;
+  if ((val->isType() && !val->isGeneric()) || val->isFunc())
+    return false;
+
+  // Ensure that outer variables can be captured (i.e., do not cross no-capture
+  // boundary). Example:
+  // def foo():
+  //   x = 1
+  //   class T:      # <- boundary (classes cannot capture locals)
+  //     t: int = x  # x cannot be accessed
+  //     def bar():  # <- another boundary
+  //                 # (class methods cannot capture locals except class generics)
+  //       print(x)  # x cannot be accessed
+  bool crossCaptureBoundary = false;
+  bool localGeneric = val->isGeneric() && val->getBaseName() == ctx->getBaseName();
+  bool parentClassGeneric =
+      val->isGeneric() && !ctx->getBase()->isType() &&
+      (ctx->bases.size() > 1 && ctx->bases[ctx->bases.size() - 2].isType() &&
+       ctx->bases[ctx->bases.size() - 2].name == val->getBaseName());
+  auto i = ctx->bases.size();
+  for (; i-- > 0;) {
+    if (ctx->bases[i].name == val->getBaseName())
+      break;
+    if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
+      crossCaptureBoundary = true;
+  }
+
+  // Mark methods (class functions that access class generics)
+  if (parentClassGeneric)
+    ctx->getBase()->attributes->set(Attr::Method);
+
+  // Ignore generics
+  if (parentClassGeneric || localGeneric)
+    return false;
+
+  // Case: a global variable that has not been marked with `global` statement
+  if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
+    val->noShadow = true;
+    if (!val->isStatic())
+      ctx->cache->addGlobal(val->canonicalName);
+    return false;
+  }
+
+  // Check if a real variable (not a static) is defined outside the current scope
+  if (crossCaptureBoundary)
+    E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), ctx->cache->rev(val->canonicalName));
+
+  // Case: a nonlocal variable that has not been marked with `nonlocal` statement
+  //       and capturing is enabled
+  auto captures = ctx->getBase()->captures;
+  if (captures && !in(*captures, val->canonicalName)) {
+    // Captures are transformed to function arguments; generate new name for that
+    // argument
+    ExprPtr typ = nullptr;
+    if (val->isType())
+      typ = N<IdExpr>("type");
+    if (auto st = val->isStatic())
+      typ = N<IndexExpr>(N<IdExpr>("Static"),
+                         N<IdExpr>(st == StaticValue::INT ? "int" : "str"));
+    auto [newName, _] = (*captures)[val->canonicalName] = {
+        ctx->generateCanonicalName(val->canonicalName), typ};
+    ctx->cache->reverseIdentifierLookup[newName] = newName;
+    // Add newly generated argument to the context
+    std::shared_ptr<TypecheckItem> newVal = nullptr;
+    if (val->isType())
+      newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+    else
+      newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+    newVal->baseName = ctx->getBaseName();
+    newVal->noShadow = true; // todo)) needed here? remove noshadow on fn boundaries?
+    newVal->scope = ctx->getBase()->scope;
+    return true;
+  }
+
+  // Case: a nonlocal variable that has not been marked with `nonlocal` statement
+  //       and capturing is *not* enabled
+  E(Error::ID_NONLOCAL, getSrcInfo(), ctx->cache->rev(val->canonicalName));
+  return false;
+}
+
+/// Check if a access chain (a.b.c.d...) contains an import or class prefix.
+std::pair<size_t, TypeContext::Item>
+TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
+  size_t importEnd = 0;
+  std::string importName;
+
+  // Find the longest prefix that corresponds to the existing import
+  // (e.g., `a.b.c.d` -> `a.b.c` if there is `import a.b.c`)
+  TypeContext::Item val = nullptr;
+  for (auto i = chain.size(); i-- > 0;) {
+    val = ctx->find(join(chain, "/", 0, i + 1));
+    if (val && val->isImport()) {
+      importName = val->importPath, importEnd = i + 1;
+      break;
+    }
+  }
+
+  if (importEnd != chain.size()) { // false when a.b.c points to import itself
+    // Find the longest prefix that corresponds to the existing class
+    // (e.g., `a.b.c` -> `a.b` if there is `class a: class b:`)
+    std::string itemName;
+    size_t itemEnd = 0;
+    auto fctx = importName.empty() ? ctx : ctx->cache->imports[importName].ctx;
+    for (auto i = chain.size(); i-- > importEnd;) {
+      if (fctx->getModule() == "std.python" && importEnd < chain.size()) {
+        // Special case: importing from Python.
+        // Fake TypecheckItem that indicates std.python access
+        val = std::make_shared<TypecheckItem>(TypecheckItem::Var, "", "",
+                                              fctx->getModule(), std::vector<int>{});
+        return {importEnd, val};
+      } else {
+        val = fctx->find(join(chain, ".", importEnd, i + 1));
+        if (val && (importName.empty() || val->isType() || !val->isConditional())) {
+          itemName = val->canonicalName, itemEnd = i + 1;
+          break;
+        }
+      }
+    }
+    if (itemName.empty() && importName.empty()) {
+      if (ctx->getBase()->pyCaptures)
+        return {1, nullptr};
+      E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
+    }
+    if (itemName.empty())
+      E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
+        ctx->cache->imports[importName].moduleName);
+    importEnd = itemEnd;
+  }
+  return {importEnd, val};
 }
 
 /// Find an overload dispatch function for a given overload. If it does not exist and
@@ -90,17 +325,17 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 
   // Single overload: just return it
   if (overloads.size() == 1)
-    return ctx->forceFind(overloads.front().name)->type->getFunc();
+    return ctx->forceFind(overloads.front())->type->getFunc();
 
   // Check if dispatch exists
   for (auto &m : overloads)
-    if (endswith(ctx->cache->functions[m.name].ast->name, ":dispatch"))
-      return ctx->cache->functions[m.name].type;
+    if (endswith(ctx->cache->functions[m].ast->name, ":dispatch"))
+      return ctx->cache->functions[m].type;
 
   // Dispatch does not exist. Generate it
   auto name = fn + ":dispatch";
   ExprPtr root; // Root function name used for calling
-  auto a = ctx->cache->functions[overloads[0].name].ast;
+  auto a = ctx->cache->functions[overloads[0]].ast;
   if (!a->attributes.parentClass.empty())
     root = N<DotExpr>(N<IdExpr>(a->attributes.parentClass),
                       ctx->cache->reverseIdentifierLookup[fn]);
@@ -116,9 +351,9 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   auto baseType = getFuncTypeBase(2);
   auto typ = std::make_shared<FuncType>(baseType, ast.get());
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
-  ctx->add(TypecheckItem::Func, name, typ);
+  ctx->addFunc(name, name, getSrcInfo(), typ);
 
-  overloads.insert(overloads.begin(), {name, 0});
+  overloads.insert(overloads.begin(), name);
   ctx->cache->functions[name].ast = ast;
   ctx->cache->functions[name].type = typ;
   prependStmts->push_back(ast);
@@ -347,13 +582,13 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
 TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
   if (member == "__elemsize__")
-    return ctx->getType("int");
+    return ctx->forceFind("int")->type;
   if (member == "__atomic__")
-    return ctx->getType("bool");
+    return ctx->forceFind("bool")->type;
   if (member == "__contents_atomic__")
-    return ctx->getType("bool");
+    return ctx->forceFind("bool")->type;
   if (member == "__name__")
-    return ctx->getType("str");
+    return ctx->forceFind("str")->type;
   return nullptr;
 }
 
@@ -417,8 +652,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
       for (auto &m : ctx->cache->overloads[id->value])
-        if (!endswith(m.name, ":dispatch"))
-          methods.push_back(ctx->cache->functions[m.name].type);
+        if (!endswith(m, ":dispatch"))
+          methods.push_back(ctx->cache->functions[m].type);
       std::reverse(methods.begin(), methods.end());
       auto m = findMatchingMethods(nullptr, methods, *methodArgs);
       bestMethod = m.empty() ? nullptr : m[0];

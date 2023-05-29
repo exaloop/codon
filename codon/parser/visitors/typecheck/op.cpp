@@ -6,7 +6,6 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -55,9 +54,14 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 void TypecheckVisitor::visit(BinaryExpr *expr) {
   // Transform lexpr and rexpr. Ignore Nones for now
   if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
-    transform(expr->lexpr);
+    transform(expr->lexpr, startswith(expr->op, "is"));
+
+  auto tmp = ctx->isConditionalExpr;
+  // The second operand of the and/or expression is conditional
+  ctx->isConditionalExpr = expr->op == "&&" || expr->op == "||";
   if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
-    transform(expr->rexpr);
+    transform(expr->rexpr, startswith(expr->op, "is"));
+  ctx->isConditionalExpr = tmp;
 
   static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
       staticOps = {{StaticValue::INT,
@@ -99,6 +103,31 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         expr->rexpr->type->prettyString());
     }
   }
+}
+
+/// Transform chain binary expression.
+/// @example
+///   `a <= b <= c` -> `(a <= (chain := b)) and (chain <= c)`
+/// The assignment above ensures that all expressions are executed only once.
+void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
+  seqassert(expr->exprs.size() >= 2, "not enough expressions in ChainBinaryExpr");
+  std::vector<ExprPtr> items;
+  std::string prev;
+  for (int i = 1; i < expr->exprs.size(); i++) {
+    auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
+    prev = ctx->generateCanonicalName("chain");
+    auto r =
+        (i + 1 == expr->exprs.size())
+            ? clone(expr->exprs[i].second)
+            : N<StmtExpr>(N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second)),
+                          N<IdExpr>(prev));
+    items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
+  }
+
+  ExprPtr final = items.back();
+  for (auto i = items.size() - 1; i-- > 0;)
+    final = N<BinaryExpr>(items[i], "&&", final);
+  resultExpr = transform(final);
 }
 
 /// Helper function that locates the pipe ellipsis within a collection of (possibly
@@ -220,7 +249,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (pi + 1 < expr->items.size())
       inType = getIterableType(inType);
   }
-  unify(expr->type, (hasGenerator ? ctx->getType("NoneType") : inType));
+  unify(expr->type, (hasGenerator ? ctx->forceFind("NoneType")->type : inType));
   if (done)
     expr->setDone();
 }
@@ -232,8 +261,11 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   `foo[idx]` -> `foo.__getitem__(idx)`
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
-  // Handle `Static[T]` constructs
   if (expr->expr->isId("Static")) {
+    // Special case: static types. Ensure that static is supported
+    if (!expr->index->isId("int") && !expr->index->isId("str"))
+      E(Error::BAD_STATIC_TYPE, expr->index);
+    expr->markType();
     auto typ = ctx->getUnbound();
     typ->isStatic = getStaticGeneric(expr);
     unify(expr->type, typ);
@@ -241,8 +273,37 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     return;
   }
 
-  transform(expr->expr);
-  seqassert(!expr->expr->isType(), "index not converted to instantiate");
+  if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
+    // Special case: tuples. Change to Tuple.N
+    auto t = expr->index->getTuple();
+    expr->expr = NT<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
+  } else {
+    transform(expr->expr, true);
+  }
+
+  // IndexExpr[i1, ..., iN] is internally represented as
+  // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
+  std::vector<ExprPtr> items;
+  bool isTuple = expr->index->getTuple();
+  if (auto t = expr->index->getTuple()) {
+    items = t->items;
+  } else {
+    items.push_back(expr->index);
+  }
+  for (auto &i : items) {
+    if (i->getList() && expr->expr->isType()) {
+      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
+      // `Function[...]`)
+      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
+    }
+    transform(i, true);
+  }
+  if (expr->expr->isType()) {
+    resultExpr = transform(NT<InstantiateExpr>(expr->expr, items));
+    return;
+  }
+
+  expr->index = (!isTuple && items.size() == 1) ? items[0] : N<TupleExpr>(items);
   auto cls = expr->expr->getType()->getClass();
   if (!cls) {
     // Wait until the type becomes known
@@ -251,8 +312,9 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
 
   // Case: static tuple access
-  auto [isTuple, tupleExpr] = transformStaticTupleIndex(cls, expr->expr, expr->index);
-  if (isTuple) {
+  auto [isStaticTuple, tupleExpr] =
+      transformStaticTupleIndex(cls, expr->expr, expr->index);
+  if (isStaticTuple) {
     if (!tupleExpr) {
       unify(expr->type, ctx->getUnbound());
     } else {
@@ -361,7 +423,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        unify(expr->type, ctx->getType("bool"));
+        unify(expr->type, ctx->forceFind("bool")->type);
         if (!expr->isStatic())
           expr->staticValue.type = StaticValue::INT;
       }
@@ -386,7 +448,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         return transform(N<IntExpr>(value));
     } else {
       // Cannot be evaluated yet: just set the type
-      unify(expr->type, ctx->getType("int"));
+      unify(expr->type, ctx->forceFind("int")->type);
       if (!expr->isStatic())
         expr->staticValue.type = StaticValue::INT;
     }
@@ -432,7 +494,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
           expr->staticValue.type = StaticValue::STRING;
-        unify(expr->type, ctx->getType("str"));
+        unify(expr->type, ctx->forceFind("str")->type);
       }
     } else {
       // `"a" == "b"` -> `False` (also handles `!=`)
@@ -446,7 +508,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
         // Cannot be evaluated yet: just set the type
         if (!expr->isStatic())
           expr->staticValue.type = StaticValue::INT;
-        unify(expr->type, ctx->getType("bool"));
+        unify(expr->type, ctx->forceFind("bool")->type);
       }
     }
     return nullptr;
@@ -500,7 +562,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     // Cannot be evaluated yet: just set the type
     if (!expr->isStatic())
       expr->staticValue.type = StaticValue::INT;
-    unify(expr->type, ctx->getType("int"));
+    unify(expr->type, ctx->forceFind("int")->type);
   }
 
   return nullptr;
@@ -570,7 +632,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   auto rc = realize(expr->rexpr->getType());
   if (!lc || !rc) {
     // Types not known: return early
-    unify(expr->type, ctx->getType("bool"));
+    unify(expr->type, ctx->forceFind("bool")->type);
     return nullptr;
   }
   if (expr->lexpr->isType() && expr->rexpr->isType())
@@ -634,7 +696,7 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
-    auto ptr = ctx->instantiateGeneric(ctx->getType("Ptr"), {lt});
+    auto ptr = ctx->instantiateGeneric(ctx->forceFind("Ptr")->type, {lt});
     if ((method = findBestMethod(lt, format("__atomic_{}__", magic), {ptr, rt}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->lexpr);
     }

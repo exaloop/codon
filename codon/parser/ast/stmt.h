@@ -36,8 +36,6 @@ struct Stmt : public codon::SrcObject {
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).
   bool done;
-  /// Statement age.
-  int age;
 
 public:
   Stmt();
@@ -143,6 +141,7 @@ struct ExprStmt : public Stmt {
 /// @li a, b, c = 5, *z
 struct AssignStmt : public Stmt {
   ExprPtr lhs, rhs, type;
+  StmtPtr preamble = nullptr;
 
   AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr);
   AssignStmt(const AssignStmt &stmt);
@@ -562,7 +561,7 @@ struct CustomStmt : public Stmt {
   ACCEPT(ASTVisitor);
 };
 
-/// The following nodes are created after the simplify stage.
+/// The following nodes are created during typechecking.
 
 /// Member assignment statement (lhs.member = rhs).
 /// @li: a.x = b

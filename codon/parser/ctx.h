@@ -74,6 +74,11 @@ public:
     auto it = map.find(name);
     return it != map.end() ? it->second.front() : nullptr;
   }
+  /// Return all objects that share a common identifier or nullptr if it does not exist.
+  virtual std::list<Item> *find_all(const std::string &name) {
+    auto it = map.find(name);
+    return it != map.end() ? &(it->second) : nullptr;
+  }
   /// Add a new block (i.e. adds a stack level).
   virtual void addBlock() { stack.push_front(std::list<std::string>()); }
   /// Remove the top-most block and all variables it holds.
@@ -81,6 +86,12 @@ public:
     for (auto &name : stack.front())
       removeFromMap(name);
     stack.pop_front();
+  }
+
+  void removeFromTopStack(const std::string &name) {
+    auto it = std::find(stack.front().begin(), stack.front().end(), name);
+    if (it != stack.front().end())
+      stack.front().erase(it);
   }
 
   /// The absolute path of a current module.

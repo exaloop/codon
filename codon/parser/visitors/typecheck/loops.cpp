@@ -5,7 +5,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -14,18 +14,35 @@ namespace codon::ast {
 
 using namespace types;
 
-/// Nothing to typecheck; just call setDone
+/// Ensure that `break` is in a loop.
+/// Transform if a loop break variable is available
+/// (e.g., a break within loop-else block).
+/// @example
+///   `break` -> `no_break = False; break`
+
 void TypecheckVisitor::visit(BreakStmt *stmt) {
-  stmt->setDone();
-  if (!ctx->staticLoops.back().empty()) {
-    auto a = N<AssignStmt>(N<IdExpr>(ctx->staticLoops.back()), N<BoolExpr>(false));
-    a->setUpdate();
-    resultStmt = transform(N<SuiteStmt>(a, stmt->clone()));
+  if (!ctx->getBase()->getLoop())
+    E(Error::EXPECTED_LOOP, stmt, "break");
+  if (!ctx->getBase()->getLoop()->breakVar.empty()) {
+    resultStmt = N<SuiteStmt>(
+        transform(N<AssignStmt>(N<IdExpr>(ctx->getBase()->getLoop()->breakVar),
+                                N<BoolExpr>(false))),
+        N<BreakStmt>());
+  } else {
+    stmt->setDone();
+    if (!ctx->staticLoops.back().empty()) {
+      auto a = N<AssignStmt>(N<IdExpr>(ctx->staticLoops.back()), N<BoolExpr>(false));
+      a->setUpdate();
+      resultStmt = transform(N<SuiteStmt>(a, stmt->clone()));
+    }
   }
 }
 
-/// Nothing to typecheck; just call setDone
+/// Ensure that `continue` is in a loop
 void TypecheckVisitor::visit(ContinueStmt *stmt) {
+  if (!ctx->getBase()->getLoop())
+    E(Error::EXPECTED_LOOP, stmt, "continue");
+
   stmt->setDone();
   if (!ctx->staticLoops.back().empty()) {
     resultStmt = N<BreakStmt>();
@@ -33,14 +50,46 @@ void TypecheckVisitor::visit(ContinueStmt *stmt) {
   }
 }
 
-/// Typecheck while statements.
+/// Transform a while loop.
+/// @example
+///   `while cond: ...`           ->  `while cond.__bool__(): ...`
+///   `while cond: ... else: ...` -> ```no_break = True
+///                                     while cond.__bool__():
+///                                       ...
+///                                     if no_break: ...```
 void TypecheckVisitor::visit(WhileStmt *stmt) {
+  // Check for while-else clause
+  std::string breakVar;
+  if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
+    // no_break = True
+    breakVar = ctx->cache->getTemporaryVar("no_break");
+    prependStmts->push_back(
+        transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true))));
+  }
+
+  ctx->enterConditionalBlock();
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
-  transform(stmt->cond);
+  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
+  stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
+
   ctx->blockLevel++;
-  transform(stmt->suite);
+  transformConditionalScope(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
+
+  // Complete while-else clause
+  if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
+    resultStmt = N<SuiteStmt>(N<WhileStmt>(*stmt),
+                              N<IfStmt>(transform(N<IdExpr>(breakVar)),
+                                        transformConditionalScope(stmt->elseSuite)));
+  }
+
+  ctx->leaveConditionalBlock();
+  // Dominate loop variables
+  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
+    ctx->findDominatingBinding(var, this);
+  }
+  ctx->getBase()->loops.pop_back();
 
   if (stmt->cond->isDone() && stmt->suite->isDone())
     stmt->setDone();
@@ -49,8 +98,19 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 /// Typecheck for statements. Wrap the iterator expression with `__iter__` if needed.
 /// See @c transformHeterogenousTupleFor for iterating heterogenous tuples.
 void TypecheckVisitor::visit(ForStmt *stmt) {
-  transform(stmt->decorator);
-  transform(stmt->iter);
+  stmt->decorator = transformForDecorator(stmt->decorator);
+  // transform(stmt->decorator);
+
+  std::string breakVar;
+  // Needs in-advance transformation to prevent name clashes with the iterator variable
+  stmt->iter = transform(stmt->iter);
+
+  // Check for for-else clause
+  StmtPtr assign = nullptr;
+  if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
+    breakVar = ctx->cache->getTemporaryVar("no_break");
+    assign = transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true)));
+  }
 
   // Extract the iterator type of the for
   auto iterType = stmt->iter->getType()->getClass();
@@ -77,40 +137,91 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     stmt->wrapped = true;
   }
 
+  ctx->enterConditionalBlock();
+  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
+  std::string varName;
+  if (auto i = stmt->var->getId()) {
+    auto val = ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
+                           stmt->var->getSrcInfo());
+    val->avoidDomination = ctx->avoidDomination;
+    transform(stmt->var);
+    stmt->suite = N<SuiteStmt>(stmt->suite);
+  } else {
+    varName = ctx->cache->getTemporaryVar("for");
+    auto val = ctx->addVar(varName, varName, stmt->var->getSrcInfo());
+    auto var = N<IdExpr>(varName);
+    std::vector<StmtPtr> stmts;
+    // Add for_var = [for variables]
+    stmts.push_back(N<AssignStmt>(stmt->var, clone(var)));
+    stmt->var = var;
+    stmts.push_back(stmt->suite);
+    stmt->suite = N<SuiteStmt>(stmts);
+  }
+
   auto var = stmt->var->getId();
   seqassert(var, "corrupt for variable: {}", stmt->var);
 
-  // Handle dominated for bindings
-  auto changed = in(ctx->cache->replacements, var->value);
-  while (auto s = in(ctx->cache->replacements, var->value))
-    var->value = s->first, changed = s;
-  if (changed && changed->second) {
-    auto u =
-        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
-    u->setUpdate();
-    stmt->suite = N<SuiteStmt>(u, stmt->suite);
-  }
-  if (changed)
-    var->setAttr(ExprAttr::Dominated);
-
   // Unify iterator variable and the iterator type
-  auto val = ctx->find(var->value);
-  if (!changed)
-    val = ctx->add(TypecheckItem::Var, var->value,
-                   ctx->getUnbound(stmt->var->getSrcInfo()));
+  auto val = ctx->addVar(var->value, var->value, getSrcInfo(),
+                         ctx->getUnbound(stmt->var->getSrcInfo()));
+  val->root = stmt;
   if (iterType && iterType->name != "Generator")
     E(Error::EXPECTED_GENERATOR, stmt->iter);
   unify(stmt->var->type,
         iterType ? unify(val->type, iterType->generics[0].type) : val->type);
 
-  ctx->staticLoops.push_back("");
+  ctx->staticLoops.emplace_back("");
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
 
+  // Complete while-else clause
+  if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
+    resultStmt = N<SuiteStmt>(assign, N<ForStmt>(*stmt),
+                              N<IfStmt>(transform(N<IdExpr>(breakVar)),
+                                        transformConditionalScope(stmt->elseSuite)));
+    val->root = resultStmt->getSuite()->stmts[1].get();
+  }
+
+  ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
+  // Dominate loop variables
+  for (auto &var : ctx->getBase()->getLoop()->seenVars)
+    ctx->findDominatingBinding(var, this);
+  ctx->getBase()->loops.pop_back();
+
   if (stmt->iter->isDone() && stmt->suite->isDone())
     stmt->setDone();
+}
+
+/// Transform and check for OpenMP decorator.
+/// @example
+///   `@par(num_threads=2, openmp="schedule(static)")` ->
+///   `for_par(num_threads=2, schedule="static")`
+ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
+  if (!decorator)
+    return nullptr;
+  ExprPtr callee = decorator;
+  if (auto c = callee->getCall())
+    callee = c->expr;
+  if (!callee || !callee->isId("par"))
+    E(Error::LOOP_DECORATOR, decorator);
+  std::vector<CallExpr::Arg> args;
+  std::string openmp;
+  std::vector<CallExpr::Arg> omp;
+  if (auto c = decorator->getCall())
+    for (auto &a : c->args) {
+      if (a.name == "openmp" ||
+          (a.name.empty() && openmp.empty() && a.value->getString())) {
+        omp = parseOpenMP(ctx->cache, a.value->getString()->getValue(),
+                          a.value->getSrcInfo());
+      } else {
+        args.emplace_back(a.name, transform(a.value));
+      }
+    }
+  for (auto &a : omp)
+    args.emplace_back(a.name, transform(a.value));
+  return N<CallExpr>(transform(N<IdExpr>("for_par")), args);
 }
 
 /// Handle heterogeneous tuple iteration.
@@ -187,7 +298,8 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   }
   if (vars.size() > 1)
     vars.erase(vars.begin());
-  auto [ok, items] = transformStaticLoopCall(vars, stmt->iter, [&](StmtPtr assigns) {
+  auto [ok,
+        items] = transformStaticLoopCall(vars, stmt->iter, [&](const StmtPtr &assigns) {
     auto brk = N<BreakStmt>();
     brk->setDone(); // Avoid transforming this one to continue
     // var [: Static] := expr; suite...
@@ -219,8 +331,8 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
 
 std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
 TypecheckVisitor::transformStaticLoopCall(
-    const std::vector<std::string> &vars, ExprPtr iter,
-    std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> wrap) {
+    const std::vector<std::string> &vars, const ExprPtr &iter,
+    const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &wrap) {
   if (!iter->getCall())
     return {false, {}};
   auto fn = iter->getCall()->expr->getId();
@@ -233,8 +345,8 @@ TypecheckVisitor::transformStaticLoopCall(
     auto &args = iter->getCall()->args[0].value->getCall()->args;
     if (vars.size() != 1)
       error("expected one item");
-    for (size_t i = 0; i < args.size(); i++) {
-      stmt->rhs = args[i].value;
+    for (auto &a : args) {
+      stmt->rhs = a.value;
       if (stmt->rhs->isStatic()) {
         stmt->type = NT<IndexExpr>(
             N<IdExpr>("Static"),
@@ -247,11 +359,11 @@ TypecheckVisitor::transformStaticLoopCall(
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange:0")) {
     if (vars.size() != 1)
       error("expected one item");
-    int st =
+    auto st =
         fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
-    int ed =
+    auto ed =
         fn->type->getFunc()->funcGenerics[1].type->getStatic()->evaluate().getInt();
-    int step =
+    auto step =
         fn->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
@@ -263,7 +375,7 @@ TypecheckVisitor::transformStaticLoopCall(
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange:1")) {
     if (vars.size() != 1)
       error("expected one item");
-    int ed =
+    auto ed =
         fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
     if (ed > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
@@ -284,22 +396,21 @@ TypecheckVisitor::transformStaticLoopCall(
         auto &mt = ctx->cache->overloads[*n];
         for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
           auto &method = mt[mti];
-          if (endswith(method.name, ":dispatch") ||
-              !ctx->cache->functions[method.name].type)
+          if (endswith(method, ":dispatch") || !ctx->cache->functions[method].type)
             continue;
-          if (method.age <= ctx->age) {
-            if (typ->getHeterogenousTuple()) {
-              auto &ast = ctx->cache->functions[method.name].ast;
-              if (ast->hasAttr("autogenerated") &&
-                  (endswith(ast->name, ".__iter__:0") ||
-                   endswith(ast->name, ".__getitem__:0"))) {
-                // ignore __getitem__ and other heterogenuous methods
-                continue;
-              }
+          // if (method.age <= ctx->age) {
+          if (typ->getHeterogenousTuple()) {
+            auto &ast = ctx->cache->functions[method].ast;
+            if (ast->hasAttr("autogenerated") &&
+                (endswith(ast->name, ".__iter__:0") ||
+                 endswith(ast->name, ".__getitem__:0"))) {
+              // ignore __getitem__ and other heterogenuous methods
+              continue;
             }
-            stmt->rhs = N<IdExpr>(method.name);
-            block.push_back(wrap(stmt->clone()));
           }
+            stmt->rhs = N<IdExpr>(method);
+            block.push_back(wrap(stmt->clone()));
+            // }
         }
       }
     } else {

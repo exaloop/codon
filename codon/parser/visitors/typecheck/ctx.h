@@ -16,6 +16,8 @@
 
 namespace codon::ast {
 
+class TypecheckVisitor;
+
 /**
  * Typecheck context identifier.
  * Can be either a function, a class (type), or a variable.
@@ -30,7 +32,7 @@ struct TypecheckItem : public SrcObject {
   std::string canonicalName;
   /// Full module name
   std::string moduleName;
-  /// Full scope information
+  /// Full base scope information
   std::vector<int> scope;
   /// Non-empty string if a variable is import variable
   std::string importPath;
@@ -48,16 +50,14 @@ struct TypecheckItem : public SrcObject {
   /// (e.g., a loop variable in a comprehension).
   bool avoidDomination = false;
 
-  /// Type
-  types::TypePtr type;
+  std::list<ExprPtr> references;
+  Stmt *root = nullptr;
 
-  TypecheckItem(Kind kind, std::string baseName, std::string canonicalName,
-               std::string moduleName, std::vector<int> scope,
-               std::string importPath = "", types::TypePtr type = nullptr)
-      : kind(kind), baseName(std::move(baseName)),
-        canonicalName(std::move(canonicalName)), moduleName(std::move(moduleName)),
-        scope(std::move(scope)), importPath(std::move(importPath)),
-        type(std::move(type)) {}
+  /// Type
+  types::TypePtr type = nullptr;
+
+  TypecheckItem(Kind, std::string, std::string, std::string, std::vector<int> = {},
+                std::string = "", types::TypePtr = nullptr);
 
   /* Convenience getters */
   std::string getBaseName() const { return baseName; }
@@ -81,15 +81,13 @@ struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
 
-
-
   /// Holds the information about current scope.
   /// A scope is defined as a stack of conditional blocks
   /// (i.e., blocks that might not get executed during the runtime).
   /// Used mainly to support Python's variable scoping rules.
-  struct {
+  struct Scope {
     /// Scope counter. Each conditional block gets a new scope ID.
-    int counter;
+    int counter = 0;
     /// Current hierarchy of conditional blocks.
     std::vector<int> blocks;
     /// List of statements that are to be prepended to a block
@@ -107,7 +105,7 @@ struct TypeContext : public Context<TypecheckItem> {
     Attr *attributes;
     /// Set if the base is class base and if class is marked with @deduce.
     /// Stores the list of class fields in the order of traversal.
-    std::shared_ptr<std::vector<std::string>> deducedMembers;
+    std::shared_ptr<std::vector<std::string>> deducedMembers = nullptr;
     /// Canonical name of `self` parameter that is used to deduce class fields
     /// (e.g., self in self.foo).
     std::string selfName;
@@ -116,13 +114,20 @@ struct TypeContext : public Context<TypecheckItem> {
     /// (representing the canonical function argument names that are appended to the
     /// function after processing) and their types (indicating if they are a type, a
     /// static or a variable).
-    std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures;
+    std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures =
+        nullptr;
 
     /// Map of identifiers that are to be fetched from Python.
-    std::unordered_set<std::string> *pyCaptures;
+    std::unordered_set<std::string> *pyCaptures = nullptr;
 
     /// Scope that defines the base.
     std::vector<int> scope;
+
+    std::vector<StmtPtr> preamble;
+
+    /// Set of seen global identifiers used to prevent later creation of local variables
+    /// with the same name.
+    std::unordered_map<std::string, ExprPtr> seenGlobalIdentifiers;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
@@ -158,25 +163,18 @@ struct TypeContext : public Context<TypecheckItem> {
     }
   };
 
-  /// Set of seen global identifiers used to prevent later creation of local variables
-  /// with the same name.
-  std::unordered_map<std::string, std::unordered_map<std::string, ExprPtr>>
-      seenGlobalIdentifiers;
-
   /// Set if the standard library is currently being loaded.
-  bool isStdlibLoading;
+  bool isStdlibLoading = false;
   /// Current module. The default module is named `__main__`.
-  ImportFile moduleName;
+  ImportFile moduleName = {ImportFile::PACKAGE, "", ""};
   /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
   /// and b) to disallow assignment expressions there.
-  bool isConditionalExpr;
+  bool isConditionalExpr = false;
   /// Allow type() expressions. Currently used to disallow type() in class
   /// and function definitions.
-  bool allowTypeOf;
+  bool allowTypeOf = true;
   /// Set if all assignments should not be dominated later on.
   bool avoidDomination = false;
-
-
 
   /// A realization base definition. Each function realization defines a new base scope.
   /// Used to properly realize enclosed functions and to prevent mess with mutually
@@ -185,7 +183,7 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Function name
     std::string name;
     /// Function type
-    types::TypePtr type;
+    types::TypePtr type = nullptr;
     /// The return type of currently realized function
     types::TypePtr returnType = nullptr;
     /// Typechecking iteration
@@ -194,38 +192,36 @@ struct TypeContext : public Context<TypecheckItem> {
   std::vector<RealizationBase> realizationBases;
 
   /// The current type-checking level (for type instantiation and generalization).
-  int typecheckLevel;
+  int typecheckLevel = 0;
   std::set<types::TypePtr> pendingDefaults;
-  int changedNodes;
+  int changedNodes = 0;
 
-  /// The age of the currently parsed statement.
-  int age;
   /// Number of nested realizations. Used to prevent infinite instantiations.
-  int realizationDepth;
+  int realizationDepth = 0;
   /// Nested default argument calls. Used to prevent infinite CallExpr chains
   /// (e.g. class A: def __init__(a: A = A())).
   std::set<std::string> defaultCallDepth;
 
   /// Number of nested blocks (0 for toplevel)
-  int blockLevel;
+  int blockLevel = 0;
   /// True if an early return is found (anything afterwards won't be typechecked)
-  bool returnEarly;
+  bool returnEarly = false;
   /// Stack of static loop control variables (used to emulate goto statements).
   std::vector<std::string> staticLoops;
 
 public:
   explicit TypeContext(Cache *cache, std::string filename = "");
 
-
-
   void add(const std::string &name, const Item &var) override;
   /// Convenience method for adding an object to the context.
   Item addVar(const std::string &name, const std::string &canonicalName,
               const SrcInfo &srcInfo = SrcInfo(), const types::TypePtr &type = nullptr);
   Item addType(const std::string &name, const std::string &canonicalName,
-               const SrcInfo &srcInfo = SrcInfo(), const types::TypePtr &type = nullptr);
+               const SrcInfo &srcInfo = SrcInfo(),
+               const types::TypePtr &type = nullptr);
   Item addFunc(const std::string &name, const std::string &canonicalName,
-               const SrcInfo &srcInfo = SrcInfo(), const types::TypePtr &type = nullptr);
+               const SrcInfo &srcInfo = SrcInfo(),
+               const types::TypePtr &type = nullptr);
   /// Add the item to the standard library module, thus ensuring its visibility from all
   /// modules.
   Item addAlwaysVisible(const Item &item);
@@ -237,7 +233,7 @@ public:
   Item forceFind(const std::string &name) const;
   /// Get an item from the context. Perform domination analysis for accessing items
   /// defined in the conditional blocks (i.e., Python scoping).
-  Item findDominatingBinding(const std::string &name);
+  Item findDominatingBinding(const std::string &name, TypecheckVisitor *);
 
   /// Return a canonical name of the current base.
   /// An empty string represents the toplevel base.
@@ -247,14 +243,15 @@ public:
   /// Pretty-print the current context state.
   void dump() override;
 
+  /// Enter a conditional block.
+  void enterConditionalBlock();
+  /// Leave a conditional block. Populate stmts (if set) with the declarations of
+  /// newly added identifiers that dominate the children blocks.
+  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr);
+
   /// Generate a unique identifier (name) for a given string.
   std::string generateCanonicalName(const std::string &name, bool includeBase = false,
                                     bool zeroId = false) const;
-  /// Enter a conditional block.
-  void enterConditionalBlock();
-  /// Leave a conditional block. Populate stmts (if set) with the declarations of newly
-  /// added identifiers that dominate the children blocks.
-  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr);
   /// True if we are at the toplevel.
   bool isGlobal() const;
   /// True if we are within a conditional block.
@@ -270,17 +267,12 @@ public:
   /// Get the enclosing class base (or nullptr if such does not exist).
   Base *getClassBase();
 
-
   /// Convenience method for adding an object to the context.
   std::shared_ptr<TypecheckItem>
   addToplevel(const std::string &name, const std::shared_ptr<TypecheckItem> &item) {
     map[name].push_front(item);
     return item;
   }
-  types::TypePtr getType(const std::string &name) const;
-
-  /// Pretty-print the current context state.
-  void dump() override { dump(0); }
 
 public:
   /// Get the current realization depth (i.e., the number of nested realizations).
@@ -340,6 +332,8 @@ public:
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
                        const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
                        const std::vector<char> &known = std::vector<char>());
+
+  bool isCanonicalName(const std::string &name) const;
 
 private:
   /// Pretty-print the current context state.

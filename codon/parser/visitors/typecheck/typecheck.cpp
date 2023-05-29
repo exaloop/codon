@@ -8,6 +8,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include <fmt/format.h>
@@ -19,17 +20,141 @@ namespace codon::ast {
 
 using namespace types;
 
-StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
+/// Simplify an AST node. Load standard library if needed.
+/// @param cache     Pointer to the shared cache ( @c Cache )
+/// @param file      Filename to be used for error reporting
+/// @param barebones Use the bare-bones standard library for faster testing
+/// @param defines   User-defined static values (typically passed as `codon run -DX=Y`).
+///                  Each value is passed as a string.
+StmtPtr TypecheckVisitor::apply(
+    Cache *cache, const StmtPtr &node, const std::string &file,
+    const std::unordered_map<std::string, std::string> &defines,
+    const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
+  auto preamble = std::vector<StmtPtr>();
+  seqassertn(cache->module, "cache's module is not set");
+
+#define N std::make_shared
+  // Load standard library if it has not been loaded
+  if (!in(cache->imports, STDLIB_IMPORT)) {
+    // Load the internal.__init__
+    auto stdlib = std::make_shared<TypeContext>(cache, STDLIB_IMPORT);
+    auto stdlibPath =
+        getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
+    const std::string initFile = "__init__.codon";
+    if (!stdlibPath || !endswith(stdlibPath->path, initFile))
+      E(Error::COMPILER_NO_STDLIB);
+
+    /// Use __init_test__ for faster testing (e.g., #%% name,barebones)
+    /// TODO: get rid of it one day...
+    if (barebones) {
+      stdlibPath->path =
+          stdlibPath->path.substr(0, stdlibPath->path.size() - initFile.size()) +
+          "__init_test__.codon";
+    }
+    stdlib->setFilename(stdlibPath->path);
+    cache->imports[STDLIB_IMPORT] = {stdlibPath->path, stdlib};
+    stdlib->isStdlibLoading = true;
+    stdlib->moduleName = {ImportFile::STDLIB, stdlibPath->path, "__init__"};
+    // Load the standard library
+    stdlib->setFilename(stdlibPath->path);
+    // Core definitions
+    auto core = TypecheckVisitor(stdlib).transform(
+        parseCode(stdlib->cache, stdlibPath->path, "from internal.core import *"));
+    preamble.insert(preamble.end(), stdlib->getBase()->preamble.begin(),
+                    stdlib->getBase()->preamble.end());
+    stdlib->getBase()->preamble.clear();
+    preamble.push_back(core);
+    for (auto &d : earlyDefines) {
+      // Load early compile-time defines (for standard library)
+      auto def = TypecheckVisitor(stdlib).transform(
+          N<AssignStmt>(N<IdExpr>(d.first), N<IntExpr>(d.second),
+                        N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+      preamble.insert(preamble.end(), stdlib->getBase()->preamble.begin(),
+                      stdlib->getBase()->preamble.end());
+      stdlib->getBase()->preamble.clear();
+      preamble.push_back(def);
+    }
+    auto std =
+        TypecheckVisitor(stdlib).transform(parseFile(stdlib->cache, stdlibPath->path));
+    preamble.insert(preamble.end(), stdlib->getBase()->preamble.begin(),
+                    stdlib->getBase()->preamble.end());
+    stdlib->getBase()->preamble.clear();
+    preamble.push_back(std);
+    stdlib->isStdlibLoading = false;
+  }
+
+  // Set up the context and the cache
+  auto ctx = std::make_shared<TypeContext>(cache, file);
+  cache->imports[file].filename = file;
+  cache->imports[file].ctx = ctx;
+  cache->imports[MAIN_IMPORT] = {file, ctx};
+  ctx->setFilename(file);
+  ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
   if (!cache->typeCtx)
     cache->typeCtx = std::make_shared<TypeContext>(cache);
-  TypecheckVisitor v(cache->typeCtx);
-  auto s = v.inferTypes(clone(stmts), true);
-  if (!s) {
+
+  // Prepare the code
+  auto suite = N<SuiteStmt>();
+  suite->stmts.push_back(N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
+                                      std::vector<ExprPtr>{N<IdExpr>(Attr::Internal)}));
+  for (auto &d : defines) {
+    // Load compile-time defines (e.g., codon run -DFOO=1 ...)
+    suite->stmts.push_back(
+        N<AssignStmt>(N<IdExpr>(d.first), N<IntExpr>(d.second),
+                      N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+  }
+  // Set up __name__
+  suite->stmts.push_back(
+      N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(MODULE_MAIN)));
+  suite->stmts.push_back(node);
+
+  auto v = TypecheckVisitor(ctx);
+  auto n = v.inferTypes(suite, true);
+  if (!n) {
     v.error("cannot typecheck the program");
   }
-  if (s->getSuite())
+
+  suite = N<SuiteStmt>();
+  suite->stmts.push_back(N<SuiteStmt>(preamble));
+  suite->stmts.insert(suite->stmts.end(), ctx->getBase()->preamble.begin(),
+                      ctx->getBase()->preamble.end());
+  ctx->getBase()->preamble.clear();
+
+  // Add dominated assignment declarations
+  if (in(ctx->scope.stmts, ctx->scope.blocks.back()))
+    suite->stmts.insert(suite->stmts.end(),
+                        ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
+                        ctx->scope.stmts[ctx->scope.blocks.back()].end());
+  suite->stmts.push_back(n);
+  if (n->getSuite())
     v.prepareVTables();
-  return s;
+#undef N
+
+  if (!ctx->cache->errors.empty())
+    throw exc::ParserException();
+
+  return suite;
+}
+
+/// Simplify an AST node. Assumes that the standard library is loaded.
+StmtPtr TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx,
+                                const StmtPtr &node, const std::string &file) {
+  auto oldFilename = ctx->getFilename();
+  ctx->setFilename(file);
+  auto v = TypecheckVisitor(ctx);
+  auto n = v.inferTypes(node, true);
+  ctx->setFilename(oldFilename);
+  if (!n) {
+    v.error("cannot typecheck the program");
+  }
+  if (!ctx->cache->errors.empty()) {
+    throw exc::ParserException();
+  }
+
+  auto suite = std::make_shared<SuiteStmt>(ctx->getBase()->preamble);
+  ctx->getBase()->preamble.clear();
+  suite->stmts.push_back(n);
+  return suite;
 }
 
 /**************************************************************************************/
@@ -42,11 +167,15 @@ TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
 
 /**************************************************************************************/
 
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr); }
+
 /// Transform an expression node.
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
 
+  if (!expr->type)
+    unify(expr->type, ctx->getUnbound());
   auto typ = expr->type;
   if (!expr->done) {
     TypecheckVisitor v(ctx, prependStmts);
@@ -59,7 +188,10 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
-    seqassert(expr->type, "type not set for {}", expr);
+    if (!allowTypes && expr && expr->isType())
+      E(Error::UNEXPECTED_TYPE, expr, "type");
+    if (!expr->type)
+      unify(expr->type, ctx->getUnbound());
     unify(typ, expr->type);
     if (expr->done)
       ctx->changedNodes++;
@@ -70,14 +202,19 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
 }
 
 /// Transform a type expression node.
+/// @param allowTypeOf Set if `type()` expressions are allowed. Usually disallowed in
+///                    class/function definitions.
 /// Special case: replace `None` with `NoneType`
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
-ExprPtr TypecheckVisitor::transformType(ExprPtr &expr) {
+ExprPtr TypecheckVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
+  auto oldTypeOf = ctx->allowTypeOf;
+  ctx->allowTypeOf = allowTypeOf;
   if (expr && expr->getNone()) {
     expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
     expr->markType();
   }
   transform(expr);
+  ctx->allowTypeOf = oldTypeOf;
   if (expr) {
     if (!expr->isType() && expr->isStatic()) {
       expr->setType(Type::makeStatic(ctx->cache, expr));
@@ -101,12 +238,9 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
 
   TypecheckVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
-  auto oldAge = ctx->age;
-  stmt->age = ctx->age = std::max(stmt->age, oldAge);
   ctx->pushSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
   ctx->popSrcInfo();
-  ctx->age = oldAge;
   if (v.resultStmt)
     stmt = v.resultStmt;
   if (!v.prependStmts->empty()) {
@@ -123,6 +257,25 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   // LOG_TYPECHECK("[stmt] {}: {}{}", getSrcInfo(), stmt, stmt->isDone() ? "[done]" :
   // "");
   return stmt;
+}
+
+/// Transform a statement in conditional scope.
+/// Because variables and forward declarations within conditional scopes can be
+/// added later after the domination analysis, ensure that all such declarations
+/// are prepended.
+StmtPtr TypecheckVisitor::transformConditionalScope(StmtPtr &stmt) {
+  if (stmt) {
+    ctx->enterConditionalBlock();
+    transform(stmt);
+    SuiteStmt *suite = stmt->getSuite();
+    if (!suite) {
+      stmt = N<SuiteStmt>(stmt);
+      suite = stmt->getSuite();
+    }
+    ctx->leaveConditionalBlock(&suite->stmts);
+    return stmt;
+  }
+  return stmt = nullptr;
 }
 
 void TypecheckVisitor::defaultVisit(Stmt *s) {
@@ -170,6 +323,20 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
     stmt->setDone();
 }
 
+void TypecheckVisitor::visit(CustomStmt *stmt) {
+  if (stmt->suite) {
+    auto fn = ctx->cache->customBlockStmts.find(stmt->keyword);
+    seqassert(fn != ctx->cache->customBlockStmts.end(), "unknown keyword {}",
+              stmt->keyword);
+    resultStmt = fn->second.second(this, stmt);
+  } else {
+    auto fn = ctx->cache->customExprStmts.find(stmt->keyword);
+    seqassert(fn != ctx->cache->customExprStmts.end(), "unknown keyword {}",
+              stmt->keyword);
+    resultStmt = fn->second(this, stmt);
+  }
+}
+
 void TypecheckVisitor::visit(CommentStmt *stmt) { stmt->setDone(); }
 
 /**************************************************************************************/
@@ -181,7 +348,7 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
                                  const std::vector<types::TypePtr> &args) {
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args) {
-    callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
+    callArgs.emplace_back("", std::make_shared<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a);
   }
   auto methods = ctx->findMethod(typ->name, member, false);
@@ -196,7 +363,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
                                                     const std::vector<ExprPtr> &args) {
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args)
-    callArgs.push_back({"", a});
+    callArgs.emplace_back("", a);
   auto methods = ctx->findMethod(typ->name, member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
@@ -209,7 +376,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
     const std::vector<std::pair<std::string, types::TypePtr>> &args) {
   std::vector<CallExpr::Arg> callArgs;
   for (auto &[n, a] : args) {
-    callArgs.push_back({n, std::make_shared<NoneExpr>()}); // dummy expression
+    callArgs.emplace_back(n, std::make_shared<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a);
   }
   auto methods = ctx->findMethod(typ->name, member, false);
@@ -220,10 +387,10 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
 // Search expression tree for a identifier
 class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {
   std::string what;
-  bool result;
+  bool result = false;
 
 public:
-  IdSearchVisitor(std::string what) : what(std::move(what)), result(false) {}
+  IdSearchVisitor(std::string what) : what(std::move(what)) {}
   bool transform(const std::shared_ptr<Expr> &expr) override {
     if (result)
       return result;
@@ -262,15 +429,15 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
               if (in(niGenerics, fn->ast->args[si].name) &&
                   !fn->ast->args[si].defaultValue)
                 return -1;
-              reordered.push_back({nullptr, 0});
+              reordered.emplace_back(nullptr, 0);
             } else {
-              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+              reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
             }
           } else if (si == s || si == k || slots[si].size() != 1) {
             // Ignore *args, *kwargs and default arguments
-            reordered.push_back({nullptr, 0});
+            reordered.emplace_back(nullptr, 0);
           } else {
-            reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+            reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
           }
         }
         return 0;

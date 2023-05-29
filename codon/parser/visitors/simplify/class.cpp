@@ -200,8 +200,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                 rootName = ctx->generateCanonicalName(ctx->cache->rev(f->name), true);
               auto newCanonicalName =
                   format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
-              ctx->cache->overloads[rootName].push_back(
-                  {newCanonicalName, ctx->cache->age});
+              ctx->cache->overloads[rootName].push_back(newCanonicalName);
               ctx->cache->reverseIdentifierLookup[newCanonicalName] =
                   ctx->cache->rev(f->name);
               auto nf = std::dynamic_pointer_cast<FunctionStmt>(f->clone());

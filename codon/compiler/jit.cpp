@@ -8,7 +8,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
@@ -40,11 +39,9 @@ llvm::Error JIT::init() {
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
-  auto transformed =
-      ast::SimplifyVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(),
-                                  JIT_FILENAME, {}, compiler->getEarlyDefines());
-
-  auto typechecked = ast::TypecheckVisitor::apply(cache, std::move(transformed));
+  auto typechecked =
+      ast::TypecheckVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(),
+                                   JIT_FILENAME, {}, compiler->getEarlyDefines());
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
   cache->isJit = true; // we still need main(), so set isJit after it has been set
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
@@ -96,8 +93,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
   ast::Cache bCache = *cache;
-  ast::SimplifyContext bSimplify = *sctx;
-  ast::SimplifyContext stdlibSimplify = *(cache->imports[STDLIB_IMPORT].ctx);
+  auto bTypecheck = *sctx;
+  auto stdlibTypecheck = *(cache->imports[STDLIB_IMPORT].ctx);
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
@@ -108,17 +105,14 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
             std::make_shared<ast::StringExpr>(mode)));
       }
-    auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+    auto s = ast::TypecheckVisitor(sctx, preamble).transform(node);
     if (!cache->errors.empty())
       throw exc::ParserException();
-    auto simplified = std::make_shared<ast::SuiteStmt>();
+    auto typechecked = std::make_shared<ast::SuiteStmt>();
     for (auto &s : *preamble)
-      simplified->stmts.push_back(s);
-    simplified->stmts.push_back(s);
+      typechecked->stmts.push_back(s);
+    typechecked->stmts.push_back(s);
     // TODO: unroll on errors...
-
-    auto *cache = compiler->getCache();
-    auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
 
     // add newly realized functions
     std::vector<ast::StmtPtr> v;
@@ -154,8 +148,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
           cache->module->remove(r.second->ir);
         }
     *cache = bCache;
-    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
-    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
+    *(cache->imports[MAIN_IMPORT].ctx) = bTypecheck;
+    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibTypecheck;
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
 

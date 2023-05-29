@@ -71,9 +71,6 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
     preamble->push_back(SimplifyVisitor(stdlib, preamble)
                             .transform(parseFile(stdlib->cache, stdlibPath->path)));
     stdlib->isStdlibLoading = false;
-
-    // The whole standard library has the age of zero to allow back-references
-    cache->age++;
   }
 
   // Set up the context and the cache
@@ -121,16 +118,10 @@ StmtPtr SimplifyVisitor::apply(const std::shared_ptr<SimplifyContext> &ctx,
                                const StmtPtr &node, const std::string &file,
                                int atAge) {
   std::vector<StmtPtr> stmts;
-  int oldAge = ctx->cache->age;
-  if (atAge != -1)
-    ctx->cache->age = atAge;
   auto preamble = std::make_shared<std::vector<StmtPtr>>();
   stmts.emplace_back(SimplifyVisitor(ctx, preamble).transform(node));
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();
-
-  if (atAge != -1)
-    ctx->cache->age = oldAge;
   auto suite = std::make_shared<SuiteStmt>();
   for (auto &s : *preamble)
     suite->stmts.push_back(s);
@@ -206,13 +197,11 @@ StmtPtr SimplifyVisitor::transform(StmtPtr &stmt) {
   ctx->popSrcInfo();
   if (v.resultStmt)
     stmt = v.resultStmt;
-  stmt->age = ctx->cache->age;
   if (!v.prependStmts->empty()) {
     // Handle prepends
     if (stmt)
       v.prependStmts->push_back(stmt);
     stmt = N<SuiteStmt>(*v.prependStmts);
-    stmt->age = ctx->cache->age;
   }
   return stmt;
 }

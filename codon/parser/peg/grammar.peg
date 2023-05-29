@@ -85,7 +85,7 @@ assignment <-
     vector<StmtPtr> stmts;
     for (int i = int(VS.size()) - 2; i >= 0; i--)
       stmts.push_back(ast<AssignStmt>(LOC, ac_expr(VS[i]), ac_expr(VS[i + 1])));
-    return ast<SuiteStmt>(LOC, move(stmts));
+    return ast<SuiteStmt>(LOC, std::move(stmts));
   }
   / star_expression _ augassign '=' ^ _ star_expressions {
     return ast<AssignStmt>(LOC,
@@ -161,7 +161,7 @@ import_from <-
           auto p = ac<pair<any, string>>(i);
           auto t = ac<tuple<ExprPtr, vector<Param>, ExprPtr, bool>>(p.first);
           return ast<ImportStmt>(LOC,
-            f, get<0>(t), move(get<1>(t)), get<2>(t), p.second, int(VS.tokens.size()), get<3>(t)
+            f, get<0>(t), std::move(get<1>(t)), get<2>(t), p.second, int(VS.tokens.size()), get<3>(t)
           );
         }
       )
@@ -391,7 +391,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   for (auto &i: s->stmts) {
     if (auto a = const_cast<AssignStmt*>(i->getAssign()))
       if (a->lhs->getId()) {
-        args.push_back(Param(a->getSrcInfo(), a->lhs->getId()->value, move(a->type), move(a->rhs)));
+        args.push_back(Param(a->getSrcInfo(), a->lhs->getId()->value, std::move(a->type), std::move(a->rhs)));
         continue;
       }
     suite->stmts.push_back(i);
@@ -399,7 +399,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   for (auto &p: generics)
     args.push_back(p);
   return ast<ClassStmt>(LOC,
-    ac<string>(V0), move(args), suite, vector<ExprPtr>{}, baseClasses
+    ac<string>(V0), std::move(args), suite, vector<ExprPtr>{}, baseClasses
   );
 }
 match_stmt <- 'match' SPACE expression _ ':' (_ EOL)+
@@ -460,7 +460,7 @@ pipe <-
     vector<PipeExpr::Pipe> v;
     for (int i = 0; i < VS.size(); i++)
       v.push_back(PipeExpr::Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
-    return ast<PipeExpr>(LOC, move(v));
+    return ast<PipeExpr>(LOC, std::move(v));
   }
   / disjunction { return ac_expr(V0); }
 disjunction <-
@@ -492,7 +492,7 @@ comparison <- bitwise_or compare_op_bitwise_or* {
     vector<pair<string, ExprPtr>> v{pair(string(), ac_expr(V0))};
     auto vp = VS.transform<pair<string, ExprPtr>>(1);
     v.insert(v.end(), vp.begin(), vp.end());
-    return ast<ChainBinaryExpr>(LOC, move(v));
+    return ast<ChainBinaryExpr>(LOC, std::move(v));
   }
 }
 compare_op_bitwise_or <-

@@ -7,7 +7,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
@@ -80,24 +79,13 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
 
     cache->module0 = file;
 
-    Timer t2("simplify");
+    Timer t2("typecheck");
     t2.logged = true;
-    auto transformed =
-        ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt), abspath, defines,
-                                    getEarlyDefines(), (testFlags > 1));
-    LOG_TIME("[T] parse = {:.1f}", totalPeg);
-    LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
-
-    if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-      auto fo = fopen("_dump_simplify.sexp", "w");
-      fmt::print(fo, "{}\n", transformed->toString(0));
-      fclose(fo);
-    }
-
-    Timer t3("typecheck");
     auto typechecked =
-        ast::TypecheckVisitor::apply(cache.get(), std::move(transformed));
-    t3.log();
+        ast::TypecheckVisitor::apply(cache.get(), std::move(codeStmt), abspath, defines,
+                                     getEarlyDefines(), (testFlags > 1));
+    LOG_TIME("[T] parse = {:.1f}", totalPeg);
+    LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
       fmt::print(fo, "{}\n", typechecked->toString(0));

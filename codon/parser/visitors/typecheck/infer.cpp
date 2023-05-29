@@ -10,7 +10,6 @@
 #include "codon/cir/types/types.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -226,8 +225,10 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   LOG_REALIZE("[realize] ty {} -> {}", realized->name, realized->realizedTypeName());
 
   // Realizations should always be visible, so add them to the toplevel
-  ctx->addToplevel(realized->realizedTypeName(),
-                   std::make_shared<TypecheckItem>(TypecheckItem::Type, realized));
+  auto val = std::make_shared<TypecheckItem>(
+      TypecheckItem::Type, "", realized->realizedTypeName(), ctx->getModule());
+  val->type = realized;
+  ctx->addToplevel(realized->realizedTypeName(), val);
   auto realization =
       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()] =
           std::make_shared<Cache::Class::ClassRealization>();
@@ -271,8 +272,10 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   // Fix for partial types
   if (auto p = type->getPartial()) {
     auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func, p->known);
-    ctx->addToplevel(pt->realizedName(),
-                     std::make_shared<TypecheckItem>(TypecheckItem::Type, pt));
+    auto val = std::make_shared<TypecheckItem>(TypecheckItem::Type, "",
+                                               pt->realizedName(), ctx->getModule());
+    val->type = pt;
+    ctx->addToplevel(pt->realizedName(), val);
     ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
         ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
   }
@@ -314,8 +317,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     if (ast->args[i].status == Param::Normal) {
       std::string varName = ast->args[i].name;
       trimStars(varName);
-      ctx->add(TypecheckItem::Var, varName,
-               std::make_shared<LinkType>(type->getArgTypes()[j++]));
+      ctx->addVar(varName, varName, getSrcInfo(),
+                  std::make_shared<LinkType>(type->getArgTypes()[j++]));
     }
 
   // Populate realization table in advance to support recursive realizations
@@ -328,8 +331,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   r->ir = oldIR;
 
   // Realizations should always be visible, so add them to the toplevel
-  ctx->addToplevel(
-      key, std::make_shared<TypecheckItem>(TypecheckItem::Func, type->getFunc()));
+  auto val =
+      std::make_shared<TypecheckItem>(TypecheckItem::Func, "", key, ctx->getModule());
+  val->type = type->getFunc();
+  ctx->addToplevel(key, val);
 
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
@@ -356,7 +361,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->ret && type->getRetType()->getUnbound())
-      unify(type->getRetType(), ctx->getType("NoneType"));
+      unify(type->getRetType(), ctx->forceFind("NoneType")->type);
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
@@ -366,7 +371,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   for (auto &i : ast->args) {
     std::string varName = i.name;
     trimStars(varName);
-    args.emplace_back(Param{varName, nullptr, nullptr, i.status});
+    args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
                            ast->suite);
@@ -382,8 +387,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   }
   if (force)
     realizations[type->realizedName()]->ast = r->ast;
-  ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
-                                             TypecheckItem::Func, type->getFunc()));
+  val = std::make_shared<TypecheckItem>(TypecheckItem::Func, "", type->realizedName(),
+                                        ctx->getModule());
+  val->type = type->getFunc();
+  ctx->addToplevel(type->realizedName(), val);
   ctx->realizationBases.pop_back();
   ctx->popBlock();
   ctx->typecheckLevel--;
@@ -501,8 +508,8 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   auto sig = [](types::FuncType *fp) {
     std::vector<std::string> gs;
     for (auto &a : fp->getArgTypes())
-      gs.push_back(a->realizedName());
-    gs.push_back("|");
+      gs.emplace_back(a->realizedName());
+    gs.emplace_back("|");
     for (auto &a : fp->funcGenerics)
       if (!a.name.empty())
         gs.push_back(a.type->realizedName());
@@ -518,7 +525,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                  ->vtables[cp->realizedName()];
 
   // Add or extract thunk ID
-  size_t vid;
+  size_t vid = 0;
   if (auto i = in(vt.table, key)) {
     vid = i->second;
   } else {
@@ -868,7 +875,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     auto selfVar = ast->args[0].name;
     auto suite = N<SuiteStmt>();
     int tag = 0;
-    for (auto t : unionTypes) {
+    for (const auto &t : unionTypes) {
       if (t->realizedName() == targetType->realizedName()) {
         suite->stmts.push_back(N<IfStmt>(
             N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
@@ -922,7 +929,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
     // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
-    unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
+    unify(type->getRetType(), ctx->instantiate(ctx->forceFind("Union")->type));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
     // def __internal__.get_union_first(union: Union[T0]):

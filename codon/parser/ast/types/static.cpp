@@ -139,7 +139,7 @@ StaticValue StaticType::evaluate() const {
     return expr->staticValue;
   cache->typeCtx->addBlock();
   for (auto &g : generics)
-    cache->typeCtx->add(TypecheckItem::Type, g.name, g.type);
+    cache->typeCtx->addType(g.name, g.name, getSrcInfo(), g.type);
   auto en = TypecheckVisitor(cache->typeCtx).transform(expr->clone());
   seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated", en);
   cache->typeCtx->popBlock();
@@ -157,9 +157,9 @@ void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &se
                 : genTyp->getStatic()->generics.empty()
                     ? 0
                     : genTyp->getStatic()->generics[0].id;
-      generics.emplace_back(ClassType::Generic(
-          ei->value, cache->typeCtx->cache->reverseIdentifierLookup[ei->value], genTyp,
-          id));
+      generics.emplace_back(ei->value,
+                            cache->typeCtx->cache->reverseIdentifierLookup[ei->value],
+                            genTyp, id);
       seen.insert(ei->value);
     }
   } else if (auto eu = e->getUnary()) {
