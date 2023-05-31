@@ -225,6 +225,11 @@ def sqrt(a: float) -> float:
 
 @pure
 @C
+def cbrt(a: float) -> float:
+    pass
+
+@pure
+@C
 def pow(a: float, b: float) -> float:
     pass
 
@@ -411,6 +416,11 @@ def log10f(a: float32) -> float32:
 @pure
 @C
 def sqrtf(a: float32) -> float32:
+    pass
+
+@pure
+@C
+def cbrtf(a: float32) -> float32:
     pass
 
 @pure
