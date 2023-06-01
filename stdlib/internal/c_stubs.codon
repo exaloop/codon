@@ -240,6 +240,11 @@ def round(a: float) -> float:
 
 @pure
 @C
+def nextafter(a: float, b: float) -> float:
+    pass
+
+@pure
+@C
 def acos(a: float) -> float:
     pass
 
@@ -431,6 +436,11 @@ def powf(a: float32, b: float32) -> float32:
 @pure
 @C
 def roundf(a: float32) -> float32:
+    pass
+
+@pure
+@C
+def nextafterf(a: float32, b: float32) -> float32:
     pass
 
 @pure
