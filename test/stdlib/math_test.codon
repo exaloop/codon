@@ -411,16 +411,73 @@ def test_remainder():
 
 @test
 def test_gcd():
-    assert math.gcd(0.0, 0.0) == 0
-    assert math.gcd(1.0, 0.0) == 1
-    assert math.gcd(-1.0, 0.0) == 1
-    assert math.gcd(0.0, -1.0) == 1
-    assert math.gcd(0.0, 1.0) == 1
-    assert math.gcd(7.0, 1.0) == 1
-    assert math.gcd(7.0, -1.0) == 1
-    assert math.gcd(-23.0, 15.0) == 1
-    assert math.gcd(120.0, 84.0) == 12
-    assert math.gcd(84.0, -120.0) == 12
+    assert math.gcd(0, 0) == 0
+    assert math.gcd(1, 0) == 1
+    assert math.gcd(-1, 0) == 1
+    assert math.gcd(0, 1) == 1
+    assert math.gcd(0, -1) == 1
+    assert math.gcd(7, 1) == 1
+    assert math.gcd(7, -1) == 1
+    assert math.gcd(-23, 15) == 1
+    assert math.gcd(120, 84) == 12
+    assert math.gcd(84, -120) == 12
+    assert math.gcd(Int[128]('1216342683557601535506311712'), Int[128]('436522681849110124616458784')) == Int[128](32)
+
+    x = 43461
+    y = 1064
+    for c in (652560, 576559230):
+        a = x * c
+        b = y * c
+        assert math.gcd(a, b) == c
+        assert math.gcd(b, a) == c
+        assert math.gcd(-a, b) == c
+        assert math.gcd(b, -a) == c
+        assert math.gcd(a, -b) == c
+        assert math.gcd(-b, a) == c
+        assert math.gcd(-a, -b) == c
+        assert math.gcd(-b, -a) == c
+
+    assert math.gcd() == 0
+    assert math.gcd(120) == 120
+    assert math.gcd(-120) == 120
+    assert math.gcd(120, 84, 102) == 6
+    assert math.gcd(120, 1, 84) == 1
+
+
+@test
+def test_lcm():
+    assert math.lcm(0, 0) == 0
+    assert math.lcm(1, 0) == 0
+    assert math.lcm(-1, 0) == 0
+    assert math.lcm(0, 1) == 0
+    assert math.lcm(0, -1) == 0
+    assert math.lcm(7, 1) == 7
+    assert math.lcm(7, -1) == 7
+    assert math.lcm(-23, 15) == 345
+    assert math.lcm(120, 84) == 840
+    assert math.lcm(84, -120) == 840
+    #assert math.lcm(1216342683557601535506311712, 436522681849110124616458784) == 16592536571065866494401400422922201534178938447014944
+
+    x = 4346103
+    y = 1064501
+    for c in (8171, 58657):
+        a = x * c
+        b = y * c
+        d = x * y * c
+        assert math.lcm(a, b) == d
+        assert math.lcm(b, a) == d
+        assert math.lcm(-a, b) == d
+        assert math.lcm(b, -a) == d
+        assert math.lcm(a, -b) == d
+        assert math.lcm(-b, a) == d
+        assert math.lcm(-a, -b) == d
+        assert math.lcm(-b, -a) == d
+
+    assert math.lcm() == 1
+    assert math.lcm(120) == 120
+    assert math.lcm(-120) == 120
+    assert math.lcm(120, 84, 102) == 14280
+    assert math.lcm(120, 0, 84) == 0
 
 
 @test
@@ -714,6 +771,7 @@ test_gamma()
 test_lgamma()
 test_remainder()
 test_gcd()
+test_lcm()
 test_frexp()
 test_modf()
 test_isclose()
@@ -1132,20 +1190,6 @@ def test_float32_remainder():
 
 
 @test
-def test_float32_gcd():
-    assert math.gcd(0.0f32, 0.0f32) == 0.0f32
-    assert math.gcd(1.0f32, 0.0f32) == 1.0f32
-    assert math.gcd(-1.0f32, 0.0f32) == 1.0f32
-    assert math.gcd(0.0f32, -1.0f32) == 1.0f32
-    assert math.gcd(0.0f32, 1.0f32) == 1.0f32
-    assert math.gcd(7.0f32, 1.0f32) == 1.0f32
-    assert math.gcd(7.0f32, -1.0f32) == 1.0f32
-    assert math.gcd(-23.0f32, 15.0f32) == 1.0f32
-    assert math.gcd(120.0f32, 84.0f32) == 12.0f32
-    assert math.gcd(84.0f32, -120.0f32) == 12.0f32
-
-
-@test
 def test_float32_frexp():
     assert math.frexp(-2.0f32) == (-0.5f32, 2)
     assert math.frexp(-1.0f32) == (-0.5f32, 1)
@@ -1222,7 +1266,6 @@ test_float32_erfc()
 test_float32_gamma()
 test_float32_lgamma()
 test_float32_remainder()
-test_float32_gcd()
 test_float32_frexp()
 test_float32_modf()
 test_float32_isclose()
