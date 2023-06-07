@@ -8,9 +8,9 @@ import os
 import functools
 import itertools
 import ast
-import shutil
 import astunparse
 from pathlib import Path
+from typing import Literal
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
@@ -131,6 +131,9 @@ def _obj_to_str(obj, **kwargs) -> str:
         extra_spaces = lines[0].find("@")
         obj_str = "".join(l[extra_spaces:] for l in lines[1:])
         if kwargs.get("pyvars", None):
+            for i in kwargs["pyvars"]:
+                if not isinstance(i, str):
+                    raise ValueError("pyvars only takes string literals")
             node = ast.fix_missing_locations(
                 RewriteFunctionArgs(kwargs["pyvars"]).visit(ast.parse(obj_str))
             )

@@ -89,9 +89,6 @@ llvm::Error JIT::compile(const ir::Func *input) {
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                         const std::string &file, int line) {
   auto *cache = compiler->getCache();
-  ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
-                                     /*startLine=*/line);
-
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
@@ -101,6 +98,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
+    ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
+                                       /*startLine=*/line);
     auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
