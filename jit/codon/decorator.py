@@ -195,7 +195,7 @@ def jit(fn=None, debug=None, sample_size=5, pyvars=None):
     def _decorate(f):
         try:
             obj_name, obj_str = _parse_decorated(f, pyvars=pyvars)
-            print(obj_name, obj_str)
+            # print(obj_name, obj_str)
             _jit.execute(
                 obj_str,
                 f.__code__.co_filename,
