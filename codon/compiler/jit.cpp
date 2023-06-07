@@ -249,8 +249,9 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
     wrap << "a" << i;
   }
   for (unsigned i = 0; i < pyVars.size(); i++) {
-    wrap << ", "
-         << "py" << i;
+    if (i > 0 || types.size() > 0)
+      wrap << ", ";
+    wrap << "py" << i;
   }
   wrap << ").__to_py__()\n";
 
