@@ -10,7 +10,6 @@ import itertools
 import ast
 import astunparse
 from pathlib import Path
-from typing import Literal
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
