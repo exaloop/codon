@@ -272,13 +272,6 @@ jobs:
           echo "LIBEXT=dll" >> $GITHUB_ENV
           echo "OS_NAME=windows" >> $GITHUB_ENV
 
-      - name: Set up Python
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy cython wheel astunparse
-          which python
-          which pip
-
       - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v2
