@@ -256,12 +256,11 @@ jobs:
     steps:
       - uses: msys2/setup-msys2@v2
         with:
-        update: true
-        install: >-
-          mingw-w64-x86_64-clang
-          mingw-w64-x86_64-cmake
-          mingw-w64-x86_64-uasm
-          zip
+          install: >-
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-uasm
+            zip
 
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
