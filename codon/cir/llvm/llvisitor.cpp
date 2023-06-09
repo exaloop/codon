@@ -6,9 +6,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
+
+#ifdef _WIN32
+#else
+#include <sys/wait.h>
+#endif
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
@@ -410,6 +414,9 @@ void executeCommand(const std::vector<std::string> &args) {
   LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
+#ifdef _WIN32
+  /// TODO WIN32
+#else
   if (fork() == 0) {
     int status = execvp(cArgs[0], (char *const *)&cArgs[0]);
     exit(status);
@@ -424,6 +431,7 @@ void executeCommand(const std::vector<std::string> &args) {
                        std::to_string(WEXITSTATUS(status)));
     }
   }
+#endif
 }
 } // namespace
 

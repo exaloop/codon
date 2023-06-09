@@ -10,10 +10,19 @@
 #include <sstream>
 #include <string>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <tuple>
 #include <unistd.h>
 #include <vector>
+
+#ifdef _WIN32
+// TODO: These are here just to get compilation going on WIN32
+#define _W_INT(w) (*(int *)&(w)) /* convert union wait to int */
+#define _WSTATUS(x) (_W_INT(x) & 0177)
+#define WIFEXITED(x) (_WSTATUS(x) == 0)
+#define WEXITSTATUS(x) ((_W_INT(x) >> 8) & 0x000000ff)
+#else
+#include <sys/wait.h>
+#endif
 
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
@@ -251,6 +260,9 @@ public:
     return string(TEST_DIR) + "/" + basename;
   }
   int runInChildProcess() {
+#ifdef WIN32
+/// TODO WIN32
+#else
     assert(pipe(out_pipe) != -1);
     pid = fork();
     GC_atfork_prepare();
@@ -313,6 +325,7 @@ public:
       close(out_pipe[0]);
       return status;
     }
+#endif
     return -1;
   }
   string result() { return string(buf.data()); }

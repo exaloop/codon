@@ -248,3 +248,94 @@ jobs:
           user: __token__
           password: ${{ secrets.PYPI_TOKEN }}
 
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+        update: true
+        install: >-
+          mingw-w64-x86_64-clang
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-uasm
+          zip
+
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Setup
+        run: |
+          echo "LIBEXT=dll" >> $GITHUB_ENV
+          echo "OS_NAME=windows" >> $GITHUB_ENV
+
+      - name: Set up Python
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install numpy cython wheel astunparse
+          which python
+          which pip
+
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v2
+        with:
+          path: llvm
+          key: ${{ runner.os }}-llvm
+
+      - name: Build Dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          export PATH=/mingw64/bin:$PATH
+          export LLVM_BRANCH="codon"
+          export SRCDIR="${PWD}/llvm-project"
+          export INSTALLDIR="${PWD}/llvm"
+          git clone --depth 1 -b "${LLVM_BRANCH}" https://github.com/exaloop/llvm-project "${SRCDIR}"
+          mkdir -p "${SRCDIR}/llvm/build"
+          cd "${SRCDIR}/llvm/build"
+          cmake -S ${SRCDIR}/llvm -G Ninja \
+            -B ${SRCDIR}/llvm/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_ENABLE_RTTI=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_TARGETS_TO_BUILD=x86 \
+            -DLLVM_BUILD_TOOLS=OFF
+          cmake --build ${SRCDIR}/llvm/build --config Release
+          cmake --install ${SRCDIR}/llvm/build --prefix=${INSTALLDIR}
+          ${INSTALLDIR}/bin/llvm-config --cmakedir
+        env:
+          CC: /mingw64/bin/clang.exe
+          CXX: /mingw64/bin/clang++.exe
+
+      - name: Build
+        run: |
+          export PATH=/mingw64/bin:$PATH
+          export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_ASM_MASM_COMPILER=/mingw64/bin/uasm.exe \
+            -DLIBOMP_ASMFLAGS=-win64
+          cmake --build build --config Release -- VERBOSE=1
+          cmake --install build --prefix=codon-deploy
+        env:
+          CC: /mingw64/bin/clang.exe
+          CXX: /mingw64/bin/clang++.exe
+
+      - name: Prepare Artifacts
+        run: |
+          zip -r codon-windows-x86_64.zip codon-deploy
+          du -sh codon-deploy
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-x86_64
+          path: codon-windows-x86_64.zip
+

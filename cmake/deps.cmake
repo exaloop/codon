@@ -6,6 +6,21 @@ if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
 endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
+# CPMAddPackage(
+#     NAME  libunistd
+#     GITHUB_REPOSITORY "robinrowe/libunistd"
+#     VERSION master
+#     GIT_TAG ff791340466556f815e04a0280c31ad266a1d15d
+#     EXCLUDE_FROM_ALL YES
+#     OPTIONS "CMAKE_BUILD_TYPE Release")
+# if(libunistd_ADDED)
+#     set_target_properties(libportable PROPERTIES CMAKE_CXX_STANDARD 17)
+#     set_target_properties(libsqlite PROPERTIES EXCLUDE_FROM_ALL ON)
+#     set_target_properties(libuuid PROPERTIES EXCLUDE_FROM_ALL ON)
+#     set_target_properties(libregex PROPERTIES EXCLUDE_FROM_ALL ON)
+#     set_target_properties(libxxhash PROPERTIES EXCLUDE_FROM_ALL ON)
+# endif()
+
 CPMAddPackage(
     NAME peglib
     GITHUB_REPOSITORY "exaloop/cpp-peglib"
@@ -32,11 +47,12 @@ CPMAddPackage(
 CPMAddPackage(
     NAME zlibng
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
-    VERSION 2.0.5
-    GIT_TAG 2.0.5
+    VERSION 2.1.2
+    GIT_TAG 2.1.2
     EXCLUDE_FROM_ALL YES
     OPTIONS "HAVE_OFF64_T ON"
             "ZLIB_COMPAT ON"
+            "WITH_GTEST OFF"
             "ZLIB_ENABLE_TESTS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 if(zlibng_ADDED)
@@ -75,26 +91,46 @@ if(bz2_ADDED)
         POSITION_INDEPENDENT_CODE ON)
 endif()
 
-CPMAddPackage(
-    NAME bdwgc
-    GITHUB_REPOSITORY "ivmai/bdwgc"
-    VERSION 8.0.5
-    GIT_TAG d0ba209660ea8c663e06d9a68332ba5f42da54ba
-    EXCLUDE_FROM_ALL YES
-    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
-            "BUILD_SHARED_LIBS OFF"
-            "enable_threads ON"
-            "enable_large_config ON"
-            "enable_thread_local_alloc ON"
-            "enable_handle_fork ON")
+if (WIN32)
+    CPMAddPackage(
+        NAME bdwgc
+        GITHUB_REPOSITORY "ivmai/bdwgc"
+        VERSION 8.0.5
+        GIT_TAG d0ba209660ea8c663e06d9a68332ba5f42da54ba
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+                "BUILD_SHARED_LIBS OFF"
+                "enable_threads ON"
+                "enable_large_config ON"
+                "enable_thread_local_alloc ON"
+                "disable_handle_fork ON"
+                "enable_single_obj_compilation on")
+else()
+    CPMAddPackage(
+        NAME bdwgc
+        GITHUB_REPOSITORY "ivmai/bdwgc"
+        VERSION 8.0.5
+        GIT_TAG d0ba209660ea8c663e06d9a68332ba5f42da54ba
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+                "BUILD_SHARED_LIBS OFF"
+                "enable_threads ON"
+                "enable_large_config ON"
+                "enable_thread_local_alloc ON"
+                "enable_handle_fork ON")
+endif()
 if(bdwgc_ADDED)
     set_target_properties(cord PROPERTIES EXCLUDE_FROM_ALL ON)
+    # if(WIN32 AND NOT EXISTS "${bdwgc_SOURCE_DIR}/libatomic_ops")
+    #     file(COPY "${libatomic_ops_SOURCE_DIR}" DESTINATION "${bdwgc_SOURCE_DIR}/")
+    #     file(RENAME "${bdwgc_SOURCE_DIR}/libatomic_ops-src" "${bdwgc_SOURCE_DIR}/libatomic_ops")
+    # endif()
 endif()
 
 CPMAddPackage(
     NAME openmp
     GITHUB_REPOSITORY "exaloop/openmp"
-    GIT_TAG 11daa2021c590dc74a0e734b4783570b619d88c9
+    GIT_TAG 376ec88480b9eeead8193a6bd4bb743efc6c5ea5
     EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_BUILD_TYPE Release"
             "OPENMP_ENABLE_LIBOMPTARGET OFF"
@@ -108,14 +144,10 @@ CPMAddPackage(
 if(backtrace_ADDED)
     set(backtrace_SOURCES
         "${backtrace_SOURCE_DIR}/atomic.c"
-        "${backtrace_SOURCE_DIR}/backtrace.c"
         "${backtrace_SOURCE_DIR}/dwarf.c"
         "${backtrace_SOURCE_DIR}/fileline.c"
-        "${backtrace_SOURCE_DIR}/mmapio.c"
-        "${backtrace_SOURCE_DIR}/mmap.c"
         "${backtrace_SOURCE_DIR}/posix.c"
         "${backtrace_SOURCE_DIR}/print.c"
-        "${backtrace_SOURCE_DIR}/simple.c"
         "${backtrace_SOURCE_DIR}/sort.c"
         "${backtrace_SOURCE_DIR}/state.c")
 
@@ -129,10 +161,27 @@ if(backtrace_ADDED)
     set(HAVE_SYNC_FUNCTIONS 1)
     if(APPLE)
         set(HAVE_MACH_O_DYLD_H 1)
-        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/macho.c")
+        list(APPEND backtrace_SOURCES
+            "${backtrace_SOURCE_DIR}/macho.c"
+            "${backtrace_SOURCE_DIR}/mmapio.c"
+            "${backtrace_SOURCE_DIR}/mmap.c"
+            "${backtrace_SOURCE_DIR}/simple.c"
+            "${backtrace_SOURCE_DIR}/backtrace.c")
+    elseif(WIN32)
+        set(HAVE_SYS_MMAN_H 0)
+        list(APPEND backtrace_SOURCES
+            "${backtrace_SOURCE_DIR}/pecoff.c"
+            "${backtrace_SOURCE_DIR}/alloc.c"
+            "${backtrace_SOURCE_DIR}/read.c"
+            "${backtrace_SOURCE_DIR}/nounwind.c")
     else()
         set(HAVE_MACH_O_DYLD_H 0)
-        list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/elf.c")
+        list(APPEND backtrace_SOURCES
+            "${backtrace_SOURCE_DIR}/elf.c"
+            "${backtrace_SOURCE_DIR}/mmapio.c"
+            "${backtrace_SOURCE_DIR}/mmap.c"
+            "${backtrace_SOURCE_DIR}/simple.c"
+            "${backtrace_SOURCE_DIR}/backtrace.c")
     endif()
     # Generate backtrace-supported.h based on the above.
     configure_file(
@@ -141,7 +190,7 @@ if(backtrace_ADDED)
     configure_file(
         ${CMAKE_SOURCE_DIR}/cmake/backtrace-config.h.in
         ${backtrace_SOURCE_DIR}/config.h)
-    add_library(backtrace STATIC ${backtrace_SOURCES})
+    add_library(backtrace OBJECT ${backtrace_SOURCES})
     target_include_directories(backtrace BEFORE PRIVATE "${backtrace_SOURCE_DIR}")
     set_target_properties(backtrace PROPERTIES
         COMPILE_FLAGS "-funwind-tables -D_GNU_SOURCE"

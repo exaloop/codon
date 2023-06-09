@@ -13,10 +13,10 @@ configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
 option(CODON_GPU "build Codon GPU backend" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
-      "${CMAKE_CXX_FLAGS} -pedantic -fvisibility-inlines-hidden -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-deprecated-declarations"
+      "${CMAKE_CXX_FLAGS} -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-deprecated-declarations"
   )
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-type")
@@ -49,7 +49,7 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
   set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
   set(STATIC_LIBCPP "")
-else()
+elseif(NOT WIN32)
   set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
   set(STATIC_LIBCPP "-static-libstdc++")
 endif()
@@ -97,7 +97,7 @@ if(APPLE)
 else()
   target_link_libraries(
     codonrt
-    PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
+    PRIVATE $<TARGET_FILE:gc> -Wl,--whole-archive $<TARGET_FILE:zlibstatic>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             -Wl,--no-whole-archive)
 endif()
@@ -129,7 +129,8 @@ endif()
 
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
+separate_arguments(LLDEF NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+add_definitions(${LLDEF})
 set(CODON_HPPFILES
     codon/compiler/compiler.h
     codon/compiler/debug_listener.h
@@ -370,6 +371,8 @@ llvm_map_components_to_libnames(
   Passes)
 if(APPLE)
   target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt)
+elseif(WIN32)
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt codonrt)
 else()
   target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt dl codonrt)
 endif()
