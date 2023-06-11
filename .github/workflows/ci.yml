@@ -314,7 +314,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_ASM_MASM_COMPILER=/mingw64/bin/uasm.exe \
             -DLIBOMP_ASMFLAGS=-win64
-          cmake --build build --config Release -- VERBOSE=1
+          cmake --build build --config Release -v
           cmake --install build --prefix=codon-deploy
         env:
           CC: /mingw64/bin/clang.exe
