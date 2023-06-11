@@ -301,7 +301,6 @@ jobs:
             -DLLVM_BUILD_TOOLS=OFF
           cmake --build ${SRCDIR}/llvm/build --config Release
           cmake --install ${SRCDIR}/llvm/build --prefix=${INSTALLDIR}
-          ${INSTALLDIR}/bin/llvm-config --cmakedir
         env:
           CC: /mingw64/bin/clang.exe
           CXX: /mingw64/bin/clang++.exe
@@ -309,9 +308,9 @@ jobs:
       - name: Build
         run: |
           export PATH=/mingw64/bin:$PATH
-          export LLVM_DIR=$(llvm/bin/llvm-config --cmakedir)
           cmake -S . -B build \
             -G Ninja \
+            -DLLVM_DIR=llvm/lib/cmake/llvm \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_ASM_MASM_COMPILER=/mingw64/bin/uasm.exe \
             -DLIBOMP_ASMFLAGS=-win64
