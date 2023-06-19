@@ -225,12 +225,22 @@ def sqrt(a: float) -> float:
 
 @pure
 @C
+def cbrt(a: float) -> float:
+    pass
+
+@pure
+@C
 def pow(a: float, b: float) -> float:
     pass
 
 @pure
 @C
 def round(a: float) -> float:
+    pass
+
+@pure
+@C
+def nextafter(a: float, b: float) -> float:
     pass
 
 @pure
@@ -415,12 +425,22 @@ def sqrtf(a: float32) -> float32:
 
 @pure
 @C
+def cbrtf(a: float32) -> float32:
+    pass
+
+@pure
+@C
 def powf(a: float32, b: float32) -> float32:
     pass
 
 @pure
 @C
 def roundf(a: float32) -> float32:
+    pass
+
+@pure
+@C
+def nextafterf(a: float32, b: float32) -> float32:
     pass
 
 @pure
