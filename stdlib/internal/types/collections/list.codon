@@ -8,11 +8,9 @@ class List:
         self.arr = Array[T](10)
         self.len = 0
 
-    def __init__(self, it: Generator[T]):
-        self.arr = Array[T](10)
+    def __init__(self, capacity: int):
+        self.arr = Array[T](capacity)
         self.len = 0
-        for i in it:
-            self.append(i)
 
     def __init__(self, other: List[T]):
         self.arr = Array[T](other.len)
@@ -20,9 +18,11 @@ class List:
         for i in other:
             self.append(i)
 
-    def __init__(self, capacity: int):
-        self.arr = Array[T](capacity)
+    def __init__(self, it: Generator[T]):
+        self.arr = Array[T](10)
         self.len = 0
+        for i in it:
+            self.append(i)
 
     def __init__(self, arr: Array[T], len: int):
         self.arr = arr

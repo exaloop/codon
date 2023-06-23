@@ -145,6 +145,10 @@ This also allows imported Python modules to be accessed by Codon. All `pyvars`
 are passed as Python objects. Note that JIT'd functions can call each other
 by default.
 
+{% hint style="info" %}
+`pyvars` takes in variable names as strings, not the variables themselves.
+{% endhint %}
+
 # Debugging
 
 `@codon.jit` takes an optional `debug` parameter that can be used to print debug

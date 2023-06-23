@@ -284,6 +284,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
       simplePipeline &= !isGen(fn);
 
     std::vector<ir::Value *> args;
+    args.reserve(call->args.size());
     for (auto &a : call->args)
       args.emplace_back(a.value->getEllipsis() ? nullptr : transform(a.value));
     stages.emplace_back(fn, args, isGen(fn), false);
@@ -642,7 +643,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     ltrim(lp);
     rtrim(lp);
     // Extract declares and constants.
-    if (isDeclare && !startswith(lp, "declare ")) {
+    if (isDeclare && !startswith(lp, "declare ") && !startswith(lp, "@")) {
       bool isConst = lp.find("private constant") != std::string::npos;
       if (!isConst) {
         isDeclare = false;
