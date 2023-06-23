@@ -39,7 +39,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   //   if x > 10: break
   //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
   if (ctx->getBase()->getLoop()) {
-    for (size_t li = ctx->getBase()->loops.size(); li-- > 0; ) {
+    for (size_t li = ctx->getBase()->loops.size(); li-- > 0;) {
       auto &loop = ctx->getBase()->loops[li];
       bool inside = val->scope.size() >= loop.scope.size() &&
                     val->scope[loop.scope.size() - 1] == loop.scope.back();
