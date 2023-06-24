@@ -104,6 +104,12 @@ const V *in(const std::unordered_map<K, V> &m, const U &item) {
   auto f = m.find(item);
   return f != m.end() ? &(f->second) : nullptr;
 }
+/// @return True if an item is found in an unordered_map m.
+template <typename K, typename V, typename U>
+V *in(std::unordered_map<K, V> &m, const U &item) {
+  auto f = m.find(item);
+  return f != m.end() ? &(f->second) : nullptr;
+}
 /// @return vector c transformed by the function f.
 template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
   std::vector<typename std::result_of<F(const T &)>::type> ret;

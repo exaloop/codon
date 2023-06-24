@@ -64,7 +64,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     ctx->enterConditionalBlock();
     if (!c.var.empty()) {
       c.var = ctx->generateCanonicalName(c.var);
-      ctx->addVar(ctx->cache->rev(c.var), c.var, c.suite->getSrcInfo());
+      ctx->addVar(ctx->cache->rev(c.var), c.var, ctx->getUnbound());
     }
     transform(c.exc);
     if (c.exc && c.exc->type->is("pyobj")) {
@@ -92,8 +92,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       transformType(c.exc);
       if (!c.var.empty()) {
         // Handle dominated except bindings
-        auto val = ctx->addVar(c.var, c.var, getSrcInfo(), c.exc->getType());
-        val->root = stmt;
+        auto val = ctx->addVar(c.var, c.var, c.exc->getType());
         unify(val->type, c.exc->getType());
       }
       ctx->blockLevel++;
@@ -110,7 +109,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
     TryStmt::Catch c{pyVar, transformType(exc), pyCatchStmt};
 
-    auto val = ctx->addVar(pyVar, pyVar, getSrcInfo(), c.exc->getType());
+    auto val = ctx->addVar(pyVar, pyVar, c.exc->getType());
     unify(val->type, c.exc->getType());
     ctx->blockLevel++;
     transform(c.suite);
@@ -142,12 +141,11 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
   transform(stmt->expr);
 
   if (!(stmt->expr->getCall() &&
-        stmt->expr->getCall()->expr->isId("__internal__.set_header:0"))) {
+        stmt->expr->getCall()->expr->isId("__internal__.set_header"))) {
     stmt->expr = transform(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "set_header"), stmt->expr,
-        N<StringExpr>(ctx->getRealizationBase()->name),
-        N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
-        N<IntExpr>(stmt->getSrcInfo().col)));
+        N<StringExpr>(ctx->getBase()->name), N<StringExpr>(stmt->getSrcInfo().file),
+        N<IntExpr>(stmt->getSrcInfo().line), N<IntExpr>(stmt->getSrcInfo().col)));
   }
   if (stmt->expr->isDone())
     stmt->setDone();

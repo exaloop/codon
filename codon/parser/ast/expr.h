@@ -15,6 +15,7 @@ namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   ExprPtr clone() const override;                                                      \
+  ExprPtr full_clone() const override;                                                 \
   void accept(X &visitor) override
 
 // Forward declarations
@@ -95,6 +96,8 @@ public:
   void validate() const;
   /// Deep copy a node.
   virtual std::shared_ptr<Expr> clone() const = 0;
+  /// Deep copy a node; preserve types/attributes!
+  virtual std::shared_ptr<Expr> full_clone() const = 0;
   /// Accept an AST visitor.
   virtual void accept(ASTVisitor &visitor) = 0;
 

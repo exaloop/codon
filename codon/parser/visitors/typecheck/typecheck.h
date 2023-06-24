@@ -26,7 +26,8 @@ class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   /// Shared simplification context.
   std::shared_ptr<TypeContext> ctx;
   /// Statements to prepend before the current statement.
-  std::shared_ptr<std::vector<StmtPtr>> prependStmts;
+  std::shared_ptr<std::vector<StmtPtr>> prependStmts = nullptr;
+  std::shared_ptr<std::vector<StmtPtr>> preamble = nullptr;
 
   /// Each new expression is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
@@ -45,9 +46,15 @@ public:
   static StmtPtr apply(const std::shared_ptr<TypeContext> &cache, const StmtPtr &node,
                        const std::string &file = "<internal>");
 
+private:
+  static void loadStdLibrary(Cache *, const std::shared_ptr<std::vector<StmtPtr>> &,
+                             const std::unordered_map<std::string, std::string> &,
+                             bool);
+
 public:
   explicit TypecheckVisitor(
       std::shared_ptr<TypeContext> ctx,
+      const std::shared_ptr<std::vector<StmtPtr>> &preamble = nullptr,
       const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
 
 public: // Convenience transformators
@@ -89,6 +96,7 @@ private: // Node typechecking rules
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
+  TypeContext::Item findDominatingBinding(const std::string &, TypeContext *);
   bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
@@ -235,8 +243,8 @@ private: // Node typechecking rules
   void visit(ClassStmt *) override;
   std::vector<ClassStmt *> parseBaseClasses(std::vector<ExprPtr> &,
                                             std::vector<Param> &, const Attr &,
-                                            const std::string &,
-                                            const ExprPtr & = nullptr);
+                                            const std::string &, const ExprPtr &,
+                                            types::ClassTypePtr &);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                        std::vector<Param> &);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
@@ -254,13 +262,15 @@ private: // Node typechecking rules
   void visit(CommentStmt *stmt) override;
   void visit(CustomStmt *) override;
 
-private:
+public:
   /* Type inference (infer.cpp) */
   types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b);
   types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b) {
     auto x = a;
     return unify(x, b);
   }
+
+private:
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
   types::TypePtr realize(types::TypePtr);
   types::TypePtr realizeFunc(types::FuncType *, bool = false);
@@ -270,6 +280,10 @@ private:
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
+
+  types::TypePtr getClassGeneric(const types::ClassTypePtr &, int = 0);
+  std::string getClassStaticStr(const types::ClassTypePtr &, int = 0);
+  int64_t getClassStaticInt(const types::ClassTypePtr &, int = 0);
 
 private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
@@ -293,6 +307,7 @@ private:
 
 public:
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
+  std::shared_ptr<TypeContext> getCtx() const { return ctx; }
 
   friend class Cache;
   friend class TypeContext;
@@ -306,6 +321,23 @@ private: // Helpers
   transformStaticLoopCall(
       const std::vector<std::string> &, const ExprPtr &,
       const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &);
+};
+
+class NameVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+  TypecheckVisitor *tv;
+  ExprPtr resultExpr = nullptr;
+  StmtPtr resultStmt = nullptr;
+
+public:
+  NameVisitor(TypecheckVisitor *tv) : tv(tv) {}
+  ExprPtr transform(const std::shared_ptr<Expr> &expr) override;
+  ExprPtr transform(std::shared_ptr<Expr> &expr) override;
+  StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override;
+  StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
+  void visit(IdExpr *expr) override;
+  void visit(AssignStmt *stmt) override;
+  void visit(TryStmt *stmt) override;
+  void visit(ForStmt *stmt) override;
 };
 
 } // namespace codon::ast

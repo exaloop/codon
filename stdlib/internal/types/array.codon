@@ -39,3 +39,10 @@ class Array:
         return (e - s, self.ptr + s)
 
 array = Array
+
+# Forward declarations
+@dataclass(init=False)
+class List:
+    len: int
+    arr: Array[T]
+    T: type

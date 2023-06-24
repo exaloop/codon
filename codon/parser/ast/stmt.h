@@ -30,7 +30,7 @@ struct FunctionStmt;
  * A Seq AST statement.
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
-struct Stmt : public codon::SrcObject {
+struct Stmt : public codon::SrcObject, public std::enable_shared_from_this<Stmt> {
   using base_type = Stmt;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a

@@ -7,10 +7,6 @@ class __internal__:
 class __magic__:
     pass
 
-@__internal__
-class __magic__:
-    pass
-
 @tuple
 @__internal__
 @__notuple__
@@ -162,6 +158,15 @@ class __array__:
     T: type
     def __new__(sz: Static[int]) -> Array[T]:
         pass
+
+@dataclass(init=True)
+@tuple
+@__internal__
+class Import:
+    path: Static[str]
+    name: str
+    def __new__(P: Static[str], name: str) -> Import[P]:
+        return (name, )
 
 def __ptr__(var):
     pass

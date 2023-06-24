@@ -190,7 +190,7 @@ TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
 }
 
 std::string TypeTrait::debugString(char mode) const {
-  return fmt::format("Trait[{}]", type->debugString(mode));
+  return fmt::format("Trait[{}]", type->getClass() ? type->getClass()->name : "-");
 }
 
 } // namespace codon::ast::types

@@ -1,7 +1,6 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative, associative, distributive
-from internal.types.complex import complex
 
 @extend
 class int:
@@ -28,9 +27,6 @@ class int:
     def __float__(self) -> float:
         %tmp = sitofp i64 %self to double
         ret double %tmp
-
-    def __complex__(self) -> complex:
-        return complex(float(self), 0.0)
 
     def __index__(self) -> int:
         return self

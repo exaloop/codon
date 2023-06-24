@@ -19,7 +19,7 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
   if (realize(expr->type)) {
     // Realize the appropriate `Optional.__new__` for the translation stage
     auto cls = expr->type->getClass();
-    auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__:0")->type;
+    auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__")->type;
     auto t = realize(ctx->instantiate(f, cls)->getFunc());
     expr->setDone();
   }

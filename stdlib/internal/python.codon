@@ -1948,3 +1948,11 @@ class _PyWrap:
         if obj.head.pytype != pytype:
             _conversion_error(T.__name__)
         return obj.data
+
+
+class PyError(Static[Exception]):
+    pytype: pyobj
+
+    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
+        super().__init__("PyError", message)
+        self.pytype = pytype

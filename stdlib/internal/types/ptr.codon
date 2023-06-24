@@ -190,12 +190,6 @@ class Ptr:
 ptr = Ptr
 Jar = Ptr[byte]
 
-# Forward declarations
-class List:
-    len: int
-    arr: Array[T]
-    T: type
-
 @extend
 class NoneType:
     def __new__() -> NoneType:

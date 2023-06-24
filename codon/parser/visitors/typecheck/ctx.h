@@ -23,49 +23,42 @@ class TypecheckVisitor;
  * Can be either a function, a class (type), or a variable.
  */
 struct TypecheckItem : public SrcObject {
-  /// Identifier kind
-  enum Kind { Func, Type, Var } kind;
-
-  /// Base name (e.g., foo.bar.baz)
-  std::string baseName;
   /// Unique identifier (canonical name)
   std::string canonicalName;
+  /// Base name (e.g., foo.bar.baz)
+  std::string baseName;
   /// Full module name
   std::string moduleName;
+  /// Type
+  types::TypePtr type = nullptr;
+
   /// Full base scope information
-  std::vector<int> scope;
-  /// Non-empty string if a variable is import variable
-  std::string importPath;
+  std::vector<int> scope = {0};
   /// List of scopes where the identifier is accessible
   /// without __used__ check
   std::vector<std::vector<int>> accessChecked;
   /// Set if an identifier cannot be shadowed
   /// (e.g., global-marked variables)
-  bool noShadow = false;
-  /// Set if an identifier is a class or a function generic
-  bool generic = false;
-  /// Set if an identifier is a static variable.
-  char staticType = 0;
+  bool canShadow = true;
   /// Set if an identifier should not be dominated
   /// (e.g., a loop variable in a comprehension).
   bool avoidDomination = false;
 
-  std::list<ExprPtr> references;
-  Stmt *root = nullptr;
+  /// Set if an identifier is a class or a function generic
+  bool generic = false;
+  /// Set if an identifier is a static variable.
+  char staticType = 0;
 
-  /// Type
-  types::TypePtr type = nullptr;
-
-  TypecheckItem(Kind, std::string, std::string, std::string, std::vector<int> = {},
-                std::string = "", types::TypePtr = nullptr);
+  TypecheckItem(std::string, std::string, std::string, types::TypePtr,
+                std::vector<int> = {0});
 
   /* Convenience getters */
   std::string getBaseName() const { return baseName; }
   std::string getModule() const { return moduleName; }
-  bool isVar() const { return kind == Var; }
-  bool isFunc() const { return kind == Func; }
-  bool isType() const { return kind == Type; }
-  bool isImport() const { return !importPath.empty(); }
+  bool isVar() const { return type->getLink() != nullptr && !generic; }
+  bool isFunc() const { return type->getFunc() != nullptr; }
+  bool isType() const { return !isFunc() && !isVar(); }
+
   bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
   /// True if an identifier is within a conditional block
   /// (i.e., a block that might not be executed during the runtime)
@@ -100,15 +93,25 @@ struct TypeContext : public Context<TypecheckItem> {
   struct Base {
     /// Canonical name of a function or a class that owns this base.
     std::string name;
+    /// Function type
+    types::TypePtr type = nullptr;
+    /// The return type of currently realized function
+    types::TypePtr returnType = nullptr;
+    /// Typechecking iteration
+    int iteration = 0;
     /// Tracks function attributes (e.g. if it has @atomic or @test attributes).
     /// Only set for functions.
-    Attr *attributes;
-    /// Set if the base is class base and if class is marked with @deduce.
-    /// Stores the list of class fields in the order of traversal.
-    std::shared_ptr<std::vector<std::string>> deducedMembers = nullptr;
-    /// Canonical name of `self` parameter that is used to deduce class fields
-    /// (e.g., self in self.foo).
-    std::string selfName;
+    Attr *attributes = nullptr;
+
+    struct {
+      /// Set if the base is class base and if class is marked with @deduce.
+      /// Stores the list of class fields in the order of traversal.
+      std::shared_ptr<std::vector<std::string>> deducedMembers = nullptr;
+      /// Canonical name of `self` parameter that is used to deduce class fields
+      /// (e.g., self in self.foo).
+      std::string selfName;
+    } deduce;
+
     /// Map of captured identifiers (i.e., identifiers not defined in a function).
     /// Captured (canonical) identifiers are mapped to the new canonical names
     /// (representing the canonical function argument names that are appended to the
@@ -122,8 +125,6 @@ struct TypeContext : public Context<TypecheckItem> {
 
     /// Scope that defines the base.
     std::vector<int> scope;
-
-    std::vector<StmtPtr> preamble;
 
     /// Set of seen global identifiers used to prevent later creation of local variables
     /// with the same name.
@@ -142,8 +143,9 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
+    std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
+
   public:
-    explicit Base(std::string name, Attr *attributes = nullptr);
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
     bool isType() const { return attributes == nullptr; }
   };
@@ -153,7 +155,8 @@ struct TypeContext : public Context<TypecheckItem> {
   struct BaseGuard {
     TypeContext *holder;
     BaseGuard(TypeContext *holder, const std::string &name) : holder(holder) {
-      holder->bases.emplace_back(Base(name));
+      holder->bases.emplace_back();
+      holder->bases.back().name = name;
       holder->bases.back().scope = holder->scope.blocks;
       holder->addBlock();
     }
@@ -163,10 +166,10 @@ struct TypeContext : public Context<TypecheckItem> {
     }
   };
 
-  /// Set if the standard library is currently being loaded.
-  bool isStdlibLoading = false;
   /// Current module. The default module is named `__main__`.
   ImportFile moduleName = {ImportFile::PACKAGE, "", ""};
+  /// Set if the standard library is currently being loaded.
+  bool isStdlibLoading = false;
   /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
   /// and b) to disallow assignment expressions there.
   bool isConditionalExpr = false;
@@ -175,21 +178,6 @@ struct TypeContext : public Context<TypecheckItem> {
   bool allowTypeOf = true;
   /// Set if all assignments should not be dominated later on.
   bool avoidDomination = false;
-
-  /// A realization base definition. Each function realization defines a new base scope.
-  /// Used to properly realize enclosed functions and to prevent mess with mutually
-  /// recursive enclosed functions.
-  struct RealizationBase {
-    /// Function name
-    std::string name;
-    /// Function type
-    types::TypePtr type = nullptr;
-    /// The return type of currently realized function
-    types::TypePtr returnType = nullptr;
-    /// Typechecking iteration
-    int iteration = 0;
-  };
-  std::vector<RealizationBase> realizationBases;
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel = 0;
@@ -215,13 +203,11 @@ public:
   void add(const std::string &name, const Item &var) override;
   /// Convenience method for adding an object to the context.
   Item addVar(const std::string &name, const std::string &canonicalName,
-              const SrcInfo &srcInfo = SrcInfo(), const types::TypePtr &type = nullptr);
+              const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
   Item addType(const std::string &name, const std::string &canonicalName,
-               const SrcInfo &srcInfo = SrcInfo(),
-               const types::TypePtr &type = nullptr);
+               const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
   Item addFunc(const std::string &name, const std::string &canonicalName,
-               const SrcInfo &srcInfo = SrcInfo(),
-               const types::TypePtr &type = nullptr);
+               const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
   /// Add the item to the standard library module, thus ensuring its visibility from all
   /// modules.
   Item addAlwaysVisible(const Item &item);
@@ -231,9 +217,6 @@ public:
   /// Get an item that exists in the context. If the item does not exist, assertion is
   /// raised.
   Item forceFind(const std::string &name) const;
-  /// Get an item from the context. Perform domination analysis for accessing items
-  /// defined in the conditional blocks (i.e., Python scoping).
-  Item findDominatingBinding(const std::string &name, TypecheckVisitor *);
 
   /// Return a canonical name of the current base.
   /// An empty string represents the toplevel base.
@@ -247,11 +230,12 @@ public:
   void enterConditionalBlock();
   /// Leave a conditional block. Populate stmts (if set) with the declarations of
   /// newly added identifiers that dominate the children blocks.
-  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr);
+  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr,
+                             TypecheckVisitor *t = nullptr);
 
   /// Generate a unique identifier (name) for a given string.
   std::string generateCanonicalName(const std::string &name, bool includeBase = false,
-                                    bool zeroId = false) const;
+                                    bool noSuffix = false) const;
   /// True if we are at the toplevel.
   bool isGlobal() const;
   /// True if we are within a conditional block.
@@ -277,8 +261,6 @@ public:
 public:
   /// Get the current realization depth (i.e., the number of nested realizations).
   size_t getRealizationDepth() const;
-  /// Get the current base.
-  RealizationBase *getRealizationBase();
   /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
   std::string getRealizationStackName() const;
 
@@ -343,10 +325,10 @@ private:
 
 public:
   std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
-  getFunctionArgs(types::TypePtr t);
-  std::shared_ptr<std::string> getStaticString(types::TypePtr t);
-  std::shared_ptr<int64_t> getStaticInt(types::TypePtr t);
-  types::FuncTypePtr extractFunction(types::TypePtr t);
+  getFunctionArgs(const types::TypePtr &);
+  std::shared_ptr<std::string> getStaticString(const types::TypePtr &);
+  std::shared_ptr<int64_t> getStaticInt(const types::TypePtr &);
+  types::FuncTypePtr extractFunction(const types::TypePtr &);
 };
 
 } // namespace codon::ast

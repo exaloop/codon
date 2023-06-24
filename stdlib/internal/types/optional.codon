@@ -1,6 +1,14 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 @extend
+class __internal__:
+    @pure
+    @llvm
+    def opt_tuple_new(T: type) -> Optional[T]:
+        ret { i1, {=T} } { i1 false, {=T} undef }
+
+
+@extend
 class Optional:
     def __new__() -> Optional[T]:
         if isinstance(T, ByVal):

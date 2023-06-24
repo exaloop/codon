@@ -36,8 +36,12 @@ int LinkType::unify(Type *typ, Unification *undo) {
     return -1;
   } else {
     // Case 3: Unbound unification
-    if (isStaticType() != typ->isStaticType())
-      return -1;
+    if (isStaticType() != typ->isStaticType()) {
+      if (!isStaticType())
+        isStatic = typ->isStaticType();
+      else
+        return -1;
+    }
     if (auto ts = typ->getStatic()) {
       if (ts->expr->getId())
         return unify(ts->generics[0].type.get(), undo);
@@ -154,11 +158,12 @@ bool LinkType::isInstantiated() const { return kind == Link && type->isInstantia
 std::string LinkType::debugString(char mode) const {
   if (kind == Unbound || kind == Generic) {
     if (mode == 2) {
-      return fmt::format("{}{}{}", kind == Unbound ? '?' : '#', id,
+      return fmt::format("{}{}{}{}", genericName.empty() ? "" : genericName + ":",
+                         kind == Unbound ? '?' : '#', id,
                          trait ? ":" + trait->debugString(mode) : "");
-    }
-    if (trait)
+    } else if (trait) {
       return trait->debugString(mode);
+    }
     return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
   }
   return type->debugString(mode);

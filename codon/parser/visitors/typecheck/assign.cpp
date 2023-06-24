@@ -48,125 +48,18 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
-  std::vector<StmtPtr> stmts;
   if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
     // Update case: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
-    resultStmt = transform(transformAssignment(stmt->lhs, stmt->rhs, nullptr, true));
-  } else if (stmt->type) {
-    // Type case: `a: T = b, c` (no unpacking)
-    resultStmt = transform(transformAssignment(stmt->lhs, stmt->rhs, stmt->type));
-  } else if (!stmt->lhs->getId()) {
+    resultStmt = transformAssignment(stmt->lhs, stmt->rhs, nullptr, true);
+  } else if (!stmt->type && !stmt->lhs->getId()) {
     // Normal case
+    std::vector<StmtPtr> stmts;
     unpackAssignments(stmt->lhs, stmt->rhs, stmts);
     resultStmt = transform(N<SuiteStmt>(stmts));
   } else {
-    auto assign = transformAssignment(stmt->lhs, stmt->rhs, stmt->type);
-
-    // Update statements are handled by @c visitUpdate
-    if (stmt->isUpdate()) {
-      transformUpdate(stmt);
-      return;
-    }
-
-    seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs);
-    std::string lhs = stmt->lhs->getId()->value;
-
-    // Special case: this assignment has been dominated and is not a true assignment but
-    //               an update of the dominating binding.
-    if (auto changed = in(ctx->cache->replacements, lhs)) {
-      while (auto s = in(ctx->cache->replacements, lhs))
-        lhs = changed->first, changed = s;
-      if (stmt->rhs && changed->second) {
-        // Mark the dominating binding as used: `var.__used__ = True`
-        auto u = N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)),
-                               N<BoolExpr>(true));
-        u->setUpdate();
-        prependStmts->push_back(transform(u));
-      } else if (changed->second && !stmt->rhs) {
-        // This assignment was a declaration only. Just mark the dominating binding as
-        // used: `var.__used__ = True`
-        stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
-        stmt->rhs = N<BoolExpr>(true);
-      }
-      seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
-      // Change this to the update and follow the update logic
-      stmt->setUpdate();
-      transformUpdate(stmt);
-      return;
-    }
-
-    transform(stmt->rhs);
-    transformType(stmt->type);
-    if (!stmt->rhs) {
-      // Forward declarations (e.g., dominating bindings, C imports etc.).
-      // The type is unknown and will be deduced later
-      unify(stmt->lhs->type, ctx->getUnbound(stmt->lhs->getSrcInfo()));
-      if (stmt->type) {
-        unify(stmt->lhs->type,
-              ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
-      }
-      ctx->addVar(lhs, lhs, getSrcInfo(), stmt->lhs->type);
-      if (realize(stmt->lhs->type))
-        stmt->setDone();
-    } else if (stmt->type && stmt->type->getType()->isStaticType()) {
-      // Static assignments (e.g., `x: Static[int] = 5`)
-      if (!stmt->rhs->isStatic())
-        E(Error::EXPECTED_STATIC, stmt->rhs);
-      seqassert(stmt->rhs->staticValue.evaluated, "static not evaluated");
-      unify(stmt->lhs->type,
-            unify(stmt->type->type, Type::makeStatic(ctx->cache, stmt->rhs)));
-      auto val = ctx->addVar(lhs, lhs, getSrcInfo(), stmt->lhs->type);
-      if (in(ctx->cache->globals, lhs)) {
-        // Make globals always visible!
-        ctx->addToplevel(lhs, val);
-      }
-      if (realize(stmt->lhs->type))
-        stmt->setDone();
-    } else {
-      // Normal assignments
-      unify(stmt->lhs->type, ctx->getUnbound());
-      if (stmt->type) {
-        unify(stmt->lhs->type,
-              ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
-      }
-      // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-      if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
-        unify(stmt->lhs->type, stmt->rhs->type);
-      auto type = stmt->lhs->getType();
-      auto kind = TypecheckItem::Var;
-      if (stmt->rhs->isType())
-        kind = TypecheckItem::Type;
-      else if (type->getFunc())
-        kind = TypecheckItem::Func;
-      // Generalize non-variable types. That way we can support cases like:
-      // `a = foo(x, ...); a(1); a('s')`
-      auto val = std::make_shared<TypecheckItem>(kind, ctx->getBaseName(), lhs,
-                                                 ctx->getModule(), ctx->scope.blocks);
-      val->setSrcInfo(getSrcInfo());
-      val->type =
-          kind != TypecheckItem::Var ? type->generalize(ctx->typecheckLevel - 1) : type;
-      if (in(ctx->cache->globals, lhs)) {
-        // Make globals always visible!
-        ctx->addToplevel(lhs, val);
-        if (kind != TypecheckItem::Var)
-          ctx->cache->globals.erase(lhs);
-      } else if (startswith(ctx->getRealizationBase()->name, "._import_") &&
-                 kind == TypecheckItem::Type) {
-        // Make import toplevel type aliases (e.g., `a = Ptr[byte]`) visible
-        ctx->addToplevel(lhs, val);
-      } else {
-        ctx->add(lhs, val);
-      }
-
-      if (stmt->lhs->getId() && kind != TypecheckItem::Var) {
-        // Special case: type/function renames
-        stmt->rhs->type = nullptr;
-        stmt->setDone();
-      } else if (stmt->rhs->isDone() && realize(stmt->lhs->type)) {
-        stmt->setDone();
-      }
-    }
+    // Type case: `a: T = b, c` (no unpacking); all other (invalid) cases
+    resultStmt = transformAssignment(stmt->lhs, stmt->rhs, stmt->type);
   }
 }
 
@@ -218,11 +111,12 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
     transform(dot->expr, true);
     // If we are deducing class members, check if we can deduce a member from this
     // assignment
-    auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers : nullptr;
-    if (deduced && dot->expr->isId(ctx->getBase()->selfName) &&
-        !in(*deduced, dot->member))
-      deduced->push_back(dot->member);
-    return N<AssignMemberStmt>(dot->expr, dot->member, transform(rhs));
+    // todo)) deduction!
+    // auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers :
+    // nullptr; if (deduced && dot->expr->isId(ctx->getBase()->selfName) &&
+    //     !in(*deduced, dot->member))
+    //   deduced->push_back(dot->member);
+    return transform(N<AssignMemberStmt>(dot->expr, dot->member, transform(rhs)));
   }
 
   // Case: a (: t) = b
@@ -243,15 +137,16 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
   auto val = ctx->find(e->value);
   // Make sure that existing values that cannot be shadowed (e.g. imported globals) are
   // only updated
-  mustExist |= val && val->noShadow && !ctx->isOuter(val);
+  mustExist |= val && !val->canShadow && !ctx->isOuter(val);
   if (mustExist) {
-    val = ctx->findDominatingBinding(e->value, this);
+    val = findDominatingBinding(e->value, ctx.get());
     if (val && val->isVar() && !ctx->isOuter(val)) {
-      auto s = N<AssignStmt>(transform(lhs, false), transform(rhs));
+      auto s = N<AssignStmt>(lhs, rhs);
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
         s->setAtomicUpdate();
       else
         s->setUpdate();
+      transformUpdate(s.get());
       return s;
     } else {
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value);
@@ -264,23 +159,55 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
-  val = nullptr;
-  if (rhs && rhs->isType()) {
-    val = ctx->addType(e->value, canonical, lhs->getSrcInfo());
-  } else {
-    val = ctx->addVar(e->value, canonical, lhs->getSrcInfo());
-    if (auto st = getStaticGeneric(type.get()))
-      val->staticType = st;
-    if (ctx->avoidDomination)
-      val->avoidDomination = true;
+  unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
+  if (assign->type) {
+    unify(assign->lhs->type,
+          ctx->instantiate(assign->type->getSrcInfo(), assign->type->getType()));
   }
+  val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
+                                        assign->lhs->type, ctx->scope.blocks);
+  val->setSrcInfo(getSrcInfo());
+  if (auto st = getStaticGeneric(assign->type.get()))
+    val->staticType = st;
+  if (ctx->avoidDomination)
+    val->avoidDomination = true;
+  ctx->Context<TypecheckItem>::add(e->value, val);
+  ctx->addAlwaysVisible(val);
+  LOG("added ass/{}: {}", val->isVar() ? "v" : (val->isFunc() ? "f" : "t"),
+      val->canonicalName);
+
+  if (assign->rhs && assign->type && assign->type->getType()->isStaticType()) {
+    // Static assignments (e.g., `x: Static[int] = 5`)
+    if (!assign->rhs->isStatic())
+      E(Error::EXPECTED_STATIC, assign->rhs);
+    seqassert(assign->rhs->staticValue.evaluated, "static not evaluated");
+    unify(assign->lhs->type,
+          unify(assign->type->type, Type::makeStatic(ctx->cache, assign->rhs)));
+  } else if (assign->rhs) {
+    // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
+    if (wrapExpr(assign->rhs, assign->lhs->getType()))
+      unify(assign->lhs->type, assign->rhs->type);
+    if (rhs->isType())
+      val->type = val->type->getClass();
+    auto type = assign->lhs->getType();
+    // Generalize non-variable types. That way we can support cases like:
+    // `a = foo(x, ...); a(1); a('s')`
+    if (!val->isVar())
+      val->type = val->type->generalize(ctx->typecheckLevel - 1);
+
+    // todo)) if (in(ctx->cache->globals, lhs)) {
+  }
+
+  if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->type)) {
+    assign->setDone();
+  }
+
   // Clean up seen tags if shadowing a name
   ctx->getBase()->seenGlobalIdentifiers.erase(e->value);
-
   // Register all toplevel variables as global in JIT mode
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
                   (canonical == VAR_ARGV);
-  if (isGlobal && !val->isGeneric())
+  if (isGlobal && val->isVar())
     ctx->cache->addGlobal(canonical);
 
   return assign;

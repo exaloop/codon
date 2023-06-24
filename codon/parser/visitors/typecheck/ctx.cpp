@@ -17,84 +17,84 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-TypecheckItem::TypecheckItem(TypecheckItem::Kind kind, std::string baseName,
-                             std::string canonicalName, std::string moduleName,
-                             std::vector<int> scope, std::string importPath,
-                             types::TypePtr type)
-    : kind(kind), baseName(std::move(baseName)),
-      canonicalName(std::move(canonicalName)), moduleName(std::move(moduleName)),
-      scope(std::move(scope)), importPath(std::move(importPath)),
-      type(std::move(type)) {}
+TypecheckItem::TypecheckItem(std::string canonicalName, std::string baseName,
+                             std::string moduleName, types::TypePtr type,
+                             std::vector<int> scope)
+    : canonicalName(std::move(canonicalName)), baseName(std::move(baseName)),
+      moduleName(std::move(moduleName)), type(std::move(type)),
+      scope(std::move(scope)) {}
 
 TypeContext::TypeContext(Cache *cache, std::string filename)
     : Context<TypecheckItem>(std::move(filename)), cache(cache) {
-  bases.emplace_back("");
+  bases.emplace_back();
   scope.blocks.emplace_back(scope.counter = 0);
-  realizationBases.emplace_back();
   pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
 }
 
-TypeContext::Base::Base(std::string name, Attr *attributes)
-    : name(std::move(name)), attributes(attributes) {}
-
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   auto v = find(name);
-  if (v && v->noShadow)
+  if (v && !v->canShadow)
     E(Error::ID_INVALID_BIND, getSrcInfo(), name);
   Context<TypecheckItem>::add(name, var);
 }
 
 TypeContext::Item TypeContext::addVar(const std::string &name,
                                       const std::string &canonicalName,
-                                      const SrcInfo &srcInfo,
-                                      const types::TypePtr &type) {
+                                      const types::TypePtr &type,
+                                      const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<TypecheckItem>(TypecheckItem::Var, getBaseName(),
-                                           canonicalName, getModule(), scope.blocks);
+  seqassert(type->getLink(), "bad var");
+  auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
+                                           type, scope.blocks);
   t->setSrcInfo(srcInfo);
-  t->type = type;
   Context<TypecheckItem>::add(name, t);
-  Context<TypecheckItem>::add(canonicalName, t);
+  addAlwaysVisible(t);
+  // LOG("added var/{}: {}", t->isVar() ? "v" : (t->isFunc() ? "f" : "t"),
+  // canonicalName);
   return t;
 }
 
 TypeContext::Item TypeContext::addType(const std::string &name,
                                        const std::string &canonicalName,
-                                       const SrcInfo &srcInfo,
-                                       const types::TypePtr &type) {
+                                       const types::TypePtr &type,
+                                       const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<TypecheckItem>(TypecheckItem::Type, getBaseName(),
-                                           canonicalName, getModule(), scope.blocks);
+  // seqassert(type->getClass(), "bad type");
+  auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
+                                           type, scope.blocks);
   t->setSrcInfo(srcInfo);
-  t->type = type;
   Context<TypecheckItem>::add(name, t);
-  Context<TypecheckItem>::add(canonicalName, t);
+  addAlwaysVisible(t);
+  // LOG("added typ/{}: {}", t->isVar() ? "v" : (t->isFunc() ? "f" : "t"),
+  // canonicalName);
   return t;
 }
 
 TypeContext::Item TypeContext::addFunc(const std::string &name,
                                        const std::string &canonicalName,
-                                       const SrcInfo &srcInfo,
-                                       const types::TypePtr &type) {
+                                       const types::TypePtr &type,
+                                       const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  auto t = std::make_shared<TypecheckItem>(TypecheckItem::Func, getBaseName(),
-                                           canonicalName, getModule(), scope.blocks);
+  seqassert(type->getFunc(), "bad func");
+  auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
+                                           type, scope.blocks);
   t->setSrcInfo(srcInfo);
-  t->type = type;
   Context<TypecheckItem>::add(name, t);
-  Context<TypecheckItem>::add(canonicalName, t);
+  addAlwaysVisible(t);
+  // LOG("added fun/{}: {}", t->isVar() ? "v" : (t->isFunc() ? "f" : "t"),
+  // canonicalName);
   return t;
 }
 
 TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item) {
-  auto i = std::make_shared<TypecheckItem>(item->kind, item->baseName,
-                                           item->canonicalName, item->moduleName,
-                                           std::vector<int>{0}, item->importPath);
-  auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
-  if (!stdlib->find(i->canonicalName)) {
-    stdlib->add(i->canonicalName, i);
+  if (!cache->typeCtx->Context<TypecheckItem>::find(item->canonicalName)) {
+    cache->typeCtx->add(item->canonicalName, item);
+
+    // Realizations etc.
+    if (!in(cache->reverseIdentifierLookup, item->canonicalName))
+      cache->reverseIdentifierLookup[item->canonicalName] = item->canonicalName;
   }
-  return i;
+  return item;
 }
 
 TypeContext::Item TypeContext::find(const std::string &name) const {
@@ -106,7 +106,12 @@ TypeContext::Item TypeContext::find(const std::string &name) const {
   // Note: the standard library items cannot be dominated.
   auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
   if (stdlib.get() != this)
-    t = stdlib->find(name);
+    t = stdlib->Context<TypecheckItem>::find(name);
+
+  // Maybe we are looking for a canonical identifier?
+  if (!t && cache->typeCtx.get() != this)
+    t = cache->typeCtx->Context<TypecheckItem>::find(name);
+
   return t;
 }
 
@@ -114,158 +119,6 @@ TypeContext::Item TypeContext::forceFind(const std::string &name) const {
   auto f = find(name);
   seqassert(f, "cannot find '{}'", name);
   return f;
-}
-
-TypeContext::Item TypeContext::findDominatingBinding(const std::string &name,
-                                                     TypecheckVisitor *tv) {
-  auto it = map.find(name);
-  if (it == map.end()) {
-    return find(name);
-  } else if (isCanonicalName(name)) {
-    return *(it->second.begin());
-  }
-  seqassert(!it->second.empty(), "corrupted TypecheckContext ({})", name);
-
-  // The item is found. Let's see is it accessible now.
-
-  std::string canonicalName;
-  auto lastGood = it->second.begin();
-  bool isOutside = (*lastGood)->getBaseName() != getBaseName();
-  int prefix = int(scope.blocks.size());
-  // Iterate through all bindings with the given name and find the closest binding that
-  // dominates the current scope.
-  for (auto i = it->second.begin(); i != it->second.end(); i++) {
-    // Find the longest block prefix between the binding and the current scope.
-    int p = std::min(prefix, int((*i)->scope.size()));
-    while (p >= 0 && (*i)->scope[p - 1] != scope.blocks[p - 1])
-      p--;
-    // We reached the toplevel. Break.
-    if (p < 0)
-      break;
-    // We went outside the function scope. Break.
-    if (!isOutside && (*i)->getBaseName() != getBaseName())
-      break;
-    prefix = p;
-    lastGood = i;
-    // The binding completely dominates the current scope. Break.
-    if ((*i)->scope.size() <= scope.blocks.size() &&
-        (*i)->scope.back() == scope.blocks[(*i)->scope.size() - 1])
-      break;
-  }
-  seqassert(lastGood != it->second.end(), "corrupted scoping ({})", name);
-  if (lastGood != it->second.begin() && !(*lastGood)->isVar())
-    E(Error::CLASS_INVALID_BIND, getSrcInfo(), name);
-
-  bool hasUsed = false;
-  types::TypePtr type = nullptr;
-  if ((*lastGood)->scope.size() == prefix) {
-    // The current scope is dominated by a binding. Use that binding.
-    canonicalName = (*lastGood)->canonicalName;
-    type = (*lastGood)->type;
-  } else {
-    // The current scope is potentially reachable by multiple bindings that are
-    // not dominated by a common binding. Create such binding in the scope that
-    // dominates (covers) all of them.
-    canonicalName = generateCanonicalName(name);
-    auto item = std::make_shared<TypecheckItem>(
-        (*lastGood)->kind, (*lastGood)->baseName, canonicalName,
-        (*lastGood)->moduleName,
-        std::vector<int>(scope.blocks.begin(), scope.blocks.begin() + prefix),
-        (*lastGood)->importPath);
-    item->accessChecked = {(*lastGood)->scope};
-    type = item->type = getUnbound(getSrcInfo());
-    lastGood = it->second.insert(++lastGood, item);
-    // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
-    // to the dominating scope.
-    getBase()->preamble.push_back(tv->N<AssignStmt>(
-        tv->transform(tv->N<IdExpr>(canonicalName)), nullptr, nullptr));
-    getBase()->preamble.push_back(tv->N<AssignStmt>(
-        tv->transform(tv->N<IdExpr>(fmt::format("{}.__used__", canonicalName))),
-        tv->transform(tv->N<BoolExpr>(false)), nullptr));
-
-    // Reached the toplevel? Register the binding as global.
-    if (prefix == 1) {
-      cache->addGlobal(canonicalName);
-      cache->addGlobal(fmt::format("{}.__used__", canonicalName));
-    }
-    hasUsed = true;
-  }
-  // Remove all bindings after the dominant binding.
-  for (auto i = it->second.begin(); i != it->second.end(); i++) {
-    if (i == lastGood)
-      break;
-    if (!(*i)->canDominate())
-      continue;
-    // These bindings (and their canonical identifiers) will be replaced by the
-    // dominating binding during the type checking pass.
-
-    seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
-              getSrcInfo(), canonicalName);
-    for (auto &ref : (*i)->references) {
-      ref->getId()->value = canonicalName;
-      tv->unify(type, ref->type);
-    }
-
-    auto update = tv->N<AssignStmt>(tv->N<IdExpr>(format("{}.__used__", canonicalName)),
-                                    tv->N<BoolExpr>(true));
-    update->setUpdate();
-    if (auto a = (*i)->root->getAssign()) {
-      a->lhs->getId()->value = canonicalName;
-      tv->unify(type, a->lhs->getType());
-      if (hasUsed) {
-        if (a->preamble) {
-          a->preamble->getAssign()->lhs->getId()->value = update->lhs->getId()->value;
-        } else {
-          a->preamble = tv->transform(update);
-        }
-      }
-    } else if (auto ts = dynamic_cast<TryStmt *>((*i)->root)) {
-      for (auto &c : ts->catches)
-        if (c.var == (*i)->canonicalName) {
-          c.var = canonicalName;
-          c.exc->setAttr(ExprAttr::Dominated);
-          tv->unify(type, c.exc->getType());
-          if (hasUsed) {
-            seqassert(c.suite->getSuite(), "not a Suite");
-            if (c.suite->getSuite() && !c.suite->getSuite()->stmts.empty() &&
-                c.suite->getSuite()->stmts[0]->getAssign() &&
-                c.suite->getSuite()->stmts[0]->getAssign()->lhs->isId(
-                    format("{}.__used__", (*i)->canonicalName))) {
-              c.suite->getSuite()->stmts[0]->getAssign()->lhs->getId()->value =
-                  update->lhs->getId()->value;
-            } else {
-              c.suite->getSuite()->stmts.insert(c.suite->getSuite()->stmts.begin(),
-                                                tv->transform(update));
-            }
-          }
-        }
-    } else if (auto fs = dynamic_cast<ForStmt *>((*i)->root)) {
-      fs->var->getId()->value = canonicalName;
-      fs->var->setAttr(ExprAttr::Dominated);
-      tv->unify(type, fs->var->getType());
-      if (hasUsed) {
-        seqassert(fs->suite->getSuite(), "not a Suite");
-        if (fs->suite->getSuite() && !fs->suite->getSuite()->stmts.empty() &&
-            fs->suite->getSuite()->stmts[0]->getAssign() &&
-            fs->suite->getSuite()->stmts[0]->getAssign()->lhs->isId(
-                format("{}.__used__", (*i)->canonicalName))) {
-          fs->suite->getSuite()->stmts[0]->getAssign()->lhs->getId()->value =
-              update->lhs->getId()->value;
-        } else {
-          fs->suite->getSuite()->stmts.insert(fs->suite->getSuite()->stmts.begin(),
-                                              tv->transform(update));
-        }
-      }
-    } else {
-      seqassert(false, "bad identifier root: '{}'", canonicalName);
-    }
-
-    auto it = std::find(stack.front().begin(), stack.front().end(), name);
-    if (it != stack.front().end())
-      stack.front().erase(it);
-  }
-  it->second.erase(it->second.begin(), lastGood);
-  return it->second.front();
 }
 
 /// Getters and setters
@@ -287,20 +140,23 @@ bool TypeContext::isCanonicalName(const std::string &name) const {
 }
 
 std::string TypeContext::generateCanonicalName(const std::string &name,
-                                               bool includeBase, bool zeroId) const {
+                                               bool includeBase, bool noSuffix) const {
   std::string newName = name;
   bool alreadyGenerated = name.find('.') != std::string::npos;
   if (includeBase && !alreadyGenerated) {
     std::string base = getBaseName();
     if (base.empty())
       base = getModule();
-    if (base == "std.internal.core")
+    if (base == "std.internal.core") {
+      noSuffix = true;
       base = "";
+    }
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;
-  newName = format("{}.{}", newName, num);
-  if (name != newName && !zeroId)
+  if (!noSuffix && !alreadyGenerated)
+    newName = format("{}.{}", newName, num);
+  if (name != newName)
     cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;
   return newName;
@@ -308,7 +164,106 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
 
 void TypeContext::enterConditionalBlock() { scope.blocks.push_back(++scope.counter); }
 
-void TypeContext::leaveConditionalBlock(std::vector<StmtPtr> *stmts) {
+ExprPtr NameVisitor::transform(const std::shared_ptr<Expr> &expr) {
+  NameVisitor v(tv);
+  if (expr)
+    expr->accept(v);
+  return v.resultExpr ? v.resultExpr : expr;
+}
+ExprPtr NameVisitor::transform(std::shared_ptr<Expr> &expr) {
+  NameVisitor v(tv);
+  if (expr)
+    expr->accept(v);
+  if (v.resultExpr)
+    expr = v.resultExpr;
+  return expr;
+}
+StmtPtr NameVisitor::transform(const std::shared_ptr<Stmt> &stmt) {
+  NameVisitor v(tv);
+  if (stmt)
+    stmt->accept(v);
+  return v.resultStmt ? v.resultStmt : stmt;
+}
+StmtPtr NameVisitor::transform(std::shared_ptr<Stmt> &stmt) {
+  NameVisitor v(tv);
+  if (stmt)
+    stmt->accept(v);
+  if (v.resultExpr)
+    stmt = v.resultStmt;
+  return stmt;
+}
+void NameVisitor::visit(IdExpr *expr) {
+  while (auto s = in(tv->getCtx()->getBase()->replacements, expr->value)) {
+    expr->value = s->first;
+    tv->unify(expr->type, tv->getCtx()->forceFind(s->first)->type);
+  }
+}
+void NameVisitor::visit(AssignStmt *stmt) {
+  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs);
+  std::string lhs = stmt->lhs->getId()->value;
+  if (auto changed = in(tv->getCtx()->getBase()->replacements, lhs)) {
+    while (auto s = in(tv->getCtx()->getBase()->replacements, lhs))
+      lhs = changed->first, changed = s;
+    if (stmt->rhs && changed->second) {
+      // Mark the dominating binding as used: `var.__used__ = True`
+      auto u =
+          N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
+      u->setUpdate();
+      stmt->setUpdate();
+      resultStmt = N<SuiteStmt>(u, stmt->shared_from_this());
+    } else if (changed->second && !stmt->rhs) {
+      // This assignment was a declaration only.
+      // Just mark the dominating binding as used: `var.__used__ = True`
+      stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
+      stmt->rhs = N<BoolExpr>(true);
+      stmt->setUpdate();
+    }
+    seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
+  }
+}
+void NameVisitor::visit(TryStmt *stmt) {
+  for (auto &c : stmt->catches) {
+    if (!c.var.empty()) {
+      // Handle dominated except bindings
+      auto changed = in(tv->getCtx()->getBase()->replacements, c.var);
+      while (auto s = in(tv->getCtx()->getBase()->replacements, c.var))
+        c.var = s->first, changed = s;
+      if (changed && changed->second) {
+        auto update =
+            N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
+        update->setUpdate();
+        c.suite = N<SuiteStmt>(update, c.suite);
+      }
+      if (changed)
+        c.exc->setAttr(ExprAttr::Dominated);
+    }
+  }
+}
+void NameVisitor::visit(ForStmt *stmt) {
+  auto var = stmt->var->getId();
+  seqassert(var, "corrupt for variable: {}", stmt->var);
+  auto changed = in(tv->getCtx()->getBase()->replacements, var->value);
+  while (auto s = in(tv->getCtx()->getBase()->replacements, var->value))
+    var->value = s->first, changed = s;
+  if (changed && changed->second) {
+    auto u =
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
+    u->setUpdate();
+    stmt->suite = N<SuiteStmt>(u, stmt->suite);
+  }
+  if (changed)
+    var->setAttr(ExprAttr::Dominated);
+}
+
+void TypeContext::leaveConditionalBlock(std::vector<StmtPtr> *stmts,
+                                        TypecheckVisitor *tv) {
+  if (stmts && in(scope.stmts, scope.blocks.back())) {
+    stmts->insert(stmts->begin(), scope.stmts[scope.blocks.back()].begin(),
+                  scope.stmts[scope.blocks.back()].end());
+    NameVisitor nv(tv);
+    for (auto &s : *stmts)
+      nv.transform(s);
+  }
   scope.blocks.pop_back();
 }
 
@@ -334,17 +289,13 @@ TypeContext::Base *TypeContext::getClassBase() {
   return nullptr;
 }
 
-TypeContext::RealizationBase *TypeContext::getRealizationBase() {
-  return &(realizationBases.back());
-}
-
-size_t TypeContext::getRealizationDepth() const { return realizationBases.size(); }
+size_t TypeContext::getRealizationDepth() const { return bases.size(); }
 
 std::string TypeContext::getRealizationStackName() const {
-  if (realizationBases.empty())
+  if (bases.empty())
     return "";
   std::vector<std::string> s;
-  for (auto &b : realizationBases)
+  for (auto &b : bases)
     if (b.type)
       s.push_back(b.type->realizedName());
   return join(s, ":");
@@ -577,21 +528,31 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 void TypeContext::dump(int pad) {
   auto ordered =
       std::map<std::string, decltype(map)::mapped_type>(map.begin(), map.end());
-  LOG("base: {}", getRealizationStackName());
+  LOG("current module: {} ({})", moduleName.module, moduleName.path);
+  LOG("current base:   {} / {}", getRealizationStackName(), getBase()->name);
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
-    LOG("{}{:.<25} {}", std::string(size_t(pad) * 2, ' '), i.first, t->type);
+    LOG("{}{:.<25}", std::string(size_t(pad) * 2, ' '), i.first);
+    LOG("   ... kind:      {}", t->isType() * 100 + t->isFunc() * 10 + t->isVar());
+    LOG("   ... canonical: {}", t->canonicalName);
+    LOG("   ... base:      {}", t->baseName);
+    LOG("   ... module:    {}", t->moduleName);
+    LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
+    LOG("   ... scope:     {}", t->scope);
+    LOG("   ... access:    {}", t->accessChecked);
+    LOG("   ... shdw/dom:  {} / {}", t->canShadow, t->avoidDomination);
+    LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->staticType));
   }
 }
 
 std::string TypeContext::debugInfo() {
-  return fmt::format("[{}:i{}@{}]", getRealizationBase()->name,
-                     getRealizationBase()->iteration, getSrcInfo());
+  return fmt::format("[{}:i{}@{}]", getBase()->name, getBase()->iteration,
+                     getSrcInfo());
 }
 
 std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
-TypeContext::getFunctionArgs(types::TypePtr t) {
+TypeContext::getFunctionArgs(const types::TypePtr &t) {
   if (!t->getFunc())
     return nullptr;
   auto fn = t->getFunc();
@@ -604,7 +565,7 @@ TypeContext::getFunctionArgs(types::TypePtr t) {
   return ret;
 }
 
-std::shared_ptr<std::string> TypeContext::getStaticString(types::TypePtr t) {
+std::shared_ptr<std::string> TypeContext::getStaticString(const types::TypePtr &t) {
   if (auto s = t->getStatic()) {
     auto r = s->evaluate();
     if (r.type == StaticValue::STRING)
@@ -613,7 +574,7 @@ std::shared_ptr<std::string> TypeContext::getStaticString(types::TypePtr t) {
   return nullptr;
 }
 
-std::shared_ptr<int64_t> TypeContext::getStaticInt(types::TypePtr t) {
+std::shared_ptr<int64_t> TypeContext::getStaticInt(const types::TypePtr &t) {
   if (auto s = t->getStatic()) {
     auto r = s->evaluate();
     if (r.type == StaticValue::INT)
@@ -622,7 +583,7 @@ std::shared_ptr<int64_t> TypeContext::getStaticInt(types::TypePtr t) {
   return nullptr;
 }
 
-types::FuncTypePtr TypeContext::extractFunction(types::TypePtr t) {
+types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {
   if (auto f = t->getFunc())
     return f;
   if (auto p = t->getPartial())

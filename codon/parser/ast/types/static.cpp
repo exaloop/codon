@@ -137,12 +137,11 @@ std::string StaticType::realizedName() const {
 StaticValue StaticType::evaluate() const {
   if (expr->staticValue.evaluated)
     return expr->staticValue;
-  cache->typeCtx->addBlock();
+  auto ctx = std::make_shared<TypeContext>(cache);
   for (auto &g : generics)
-    cache->typeCtx->addType(g.name, g.name, getSrcInfo(), g.type);
-  auto en = TypecheckVisitor(cache->typeCtx).transform(expr->clone());
+    ctx->addType(g.name, g.name, g.type);
+  auto en = TypecheckVisitor(ctx).transform(expr->clone());
   seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated", en);
-  cache->typeCtx->popBlock();
   return en->staticValue;
 }
 
@@ -157,8 +156,7 @@ void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &se
                 : genTyp->getStatic()->generics.empty()
                     ? 0
                     : genTyp->getStatic()->generics[0].id;
-      generics.emplace_back(ei->value,
-                            cache->typeCtx->cache->reverseIdentifierLookup[ei->value],
+      generics.emplace_back(ei->value, cache->reverseIdentifierLookup[ei->value],
                             genTyp, id);
       seen.insert(ei->value);
     }

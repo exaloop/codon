@@ -71,15 +71,12 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   if (!stmt->what) {
     // Case: import foo
     auto name = stmt->as.empty() ? path : stmt->as;
-    auto var = importVar + "_var";
-    // Construct `import_var = Import([module], [path])` (for printing imports etc.)
+    // Construct `import_var = Import([path], [module])` (for printing imports etc.)
     resultStmt = N<SuiteStmt>(
-        resultStmt, transform(N<AssignStmt>(N<IdExpr>(var),
-                                            N<CallExpr>(N<IdExpr>("Import"),
-                                                        N<StringExpr>(file->module),
-                                                        N<StringExpr>(file->path)),
-                                            N<IdExpr>("Import"))));
-    ctx->addVar(name, var, stmt->getSrcInfo())->importPath = file->path;
+        resultStmt,
+        transform(N<AssignStmt>(
+            N<IdExpr>(name), N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
+                                         N<StringExpr>(file->module)))));
   } else if (stmt->what->isId("*")) {
     // Case: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
@@ -91,7 +88,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         // `__` while the standard library is being loaded
         auto c = i.second.front();
         if (c->isConditional() && i.first.find('.') == std::string::npos) {
-          c = import.ctx->findDominatingBinding(i.first, this);
+          c = findDominatingBinding(i.first, import.ctx.get());
         }
         // Imports should ignore  noShadow property
         ctx->Context<TypecheckItem>::add(i.first, c);
@@ -106,14 +103,11 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     if (c->isConditional())
-      c = import.ctx->findDominatingBinding(i->value, this);
+      c = findDominatingBinding(i->value, import.ctx.get());
     // Imports should ignore  noShadow property
     ctx->Context<TypecheckItem>::add(stmt->as.empty() ? i->value : stmt->as, c);
   }
-
-  if (!resultStmt) {
-    resultStmt = N<SuiteStmt>(); // erase it
-  }
+  resultStmt = transform(!resultStmt ? N<SuiteStmt>() : resultStmt); // erase it
 }
 
 /// Transform special `from C` and `from python` imports.
@@ -204,9 +198,10 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
 StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Expr *type,
                                               const std::string &altName) {
   auto canonical = ctx->generateCanonicalName(name);
-  auto val = ctx->addVar(altName.empty() ? name : altName, canonical);
-  val->noShadow = true;
-  auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, transformType(type->clone()));
+  auto typ = transformType(type->clone());
+  auto val = ctx->addVar(altName.empty() ? name : altName, canonical, typ->type);
+  val->canShadow = false;
+  auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttr(ExprAttr::ExternVar);
   return s;
 }
@@ -313,18 +308,17 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
-  auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
-  import->second.moduleName = file.module;
+  auto import =
+      ctx->cache->imports.insert({file.path, {file.module, file.path, ictx}}).first;
 
   // __name__ = [import name]
-  StmtPtr n =
-      N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
-  if (ictx->moduleName.module == "internal.core") {
+  StmtPtr n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(file.module));
+  if (file.module == "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
-  n = TypecheckVisitor(ictx).transform(n);
+  n = TypecheckVisitor(ictx, preamble).transform(n);
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();
   // Add comment to the top of import for easier dump inspection
@@ -341,8 +335,8 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
-    ctx->cache->imports[MAIN_IMPORT].ctx->bases[0].preamble.push_back(N<AssignStmt>(
-        N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false)));
+    preamble->push_back(N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
+                                      N<BoolExpr>(false)));
     ctx->cache->addGlobal(importDoneVar);
 
     // Wrap all imported top-level statements into a function.
@@ -371,12 +365,11 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     }
 
     // Create import function manually with ForceRealize
-    ctx->cache->functions[importVar + ":0"].ast =
-        N<FunctionStmt>(importVar + ":0", nullptr, std::vector<Param>{},
-                        N<SuiteStmt>(stmts), Attr({Attr::ForceRealize}));
-    ctx->cache->imports[MAIN_IMPORT].ctx->bases[0].preamble.push_back(
-        ctx->cache->functions[importVar + ":0"].ast->clone());
-    ctx->cache->overloads[importVar].push_back(importVar + ":0");
+    ctx->cache->functions[importVar].ast =
+        N<FunctionStmt>(importVar, nullptr, std::vector<Param>{}, N<SuiteStmt>(stmts),
+                        Attr({Attr::ForceRealize}));
+    preamble->push_back(ctx->cache->functions[importVar].ast->clone());
+    ctx->cache->overloads[importVar].push_back(importVar);
   }
   return nullptr;
 }

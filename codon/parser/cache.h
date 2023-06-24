@@ -64,7 +64,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   int varCount = 0;
 
   /// Holds module import data.
-  struct Import {
+  struct Module {
+    /// Relative module name (e.g., `foo.bar`)
+    std::string name;
     /// Absolute filename of an import.
     std::string filename;
     /// Import typechecking context.
@@ -73,8 +75,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::string importVar;
     /// File content (line:col indexable)
     std::vector<std::string> content;
-    /// Relative module name (e.g., `foo.bar`)
-    std::string moduleName;
   };
 
   /// Absolute path of seqc executable (if available).
@@ -85,8 +85,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   ir::Module *module = nullptr;
 
   /// Table of imported files that maps an absolute filename to a Import structure.
-  /// By convention, the key of the Codon's standard library is "".
-  std::unordered_map<std::string, Import> imports;
+  /// By convention, the key of the Codon's standard library is ":stdlib:",
+  /// and the main module is "".
+  std::unordered_map<std::string, Module> imports;
 
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step and in JIT.
@@ -94,10 +95,13 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Stores class data for each class (type) in the source code.
   struct Class {
+    /// Module information
+    std::string module;
+
     /// Generic (unrealized) class template AST.
-    std::shared_ptr<ClassStmt> ast;
+    std::shared_ptr<ClassStmt> ast = nullptr;
     /// Non-simplified AST. Used for base class instantiation.
-    std::shared_ptr<ClassStmt> originalAst;
+    std::shared_ptr<ClassStmt> originalAst = nullptr;
 
     /// Class method lookup table. Each non-canonical name points
     /// to a root function name of a corresponding method.
@@ -155,10 +159,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
 
-    /// Module information
-    std::string module;
-
-    Class() : ast(nullptr), originalAst(nullptr), rtti(false) {}
+    bool hasRTTI() const { return rtti; }
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding
   /// Class instance.
@@ -166,10 +167,12 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   size_t classRealizationCnt = 0;
 
   struct Function {
+    /// Module information
+    std::string module;
     /// Generic (unrealized) function template AST.
-    std::shared_ptr<FunctionStmt> ast;
+    std::shared_ptr<FunctionStmt> ast = nullptr;
     /// Non-simplified AST.
-    std::shared_ptr<FunctionStmt> origAst;
+    std::shared_ptr<FunctionStmt> origAst = nullptr;
 
     /// A function realization.
     struct FunctionRealization {
@@ -186,15 +189,10 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations;
 
     /// Unrealized function type.
-    types::FuncTypePtr type;
+    types::FuncTypePtr type = nullptr;
 
-    /// Module information
-    std::string rootName = "";
+    std::string rootName;
     bool isToplevel = false;
-
-    Function()
-        : ast(nullptr), origAst(nullptr), type(nullptr), rootName(""),
-          isToplevel(false) {}
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
@@ -229,7 +227,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   bool isJit = false;
   int jitCell = 0;
 
-  std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
   std::unordered_map<std::string, int> generatedTuples;
   std::vector<exc::ParserException> errors;
 

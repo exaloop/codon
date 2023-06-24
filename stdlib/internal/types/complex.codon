@@ -287,6 +287,9 @@ class int:
 
 @extend
 class float:
+    def __complex__(self) -> complex:
+        return complex(self, 0.0)
+
     def __suffix_j__(x: float) -> complex:
         return complex(0, x)
 
@@ -566,3 +569,8 @@ class complex64:
         declare float @llvm.log.f32(float)
         %y = call float @llvm.log.f32(float %x)
         ret float %y
+
+@extend
+class int:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)

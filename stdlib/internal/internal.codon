@@ -262,11 +262,6 @@ class __internal__:
 
     @pure
     @llvm
-    def opt_tuple_new(T: type) -> Optional[T]:
-        ret { i1, {=T} } { i1 false, {=T} undef }
-
-    @pure
-    @llvm
     def opt_ref_new(T: type) -> Optional[T]:
         ret ptr null
 
@@ -630,12 +625,8 @@ class __magic__:
         return slf.__repr__()
 
 
-@dataclass(init=True)
-@tuple
+@extend
 class Import:
-    name: str
-    file: str
-
     def __repr__(self) -> str:
         return f"<module '{self.name}' from '{self.file}'>"
 

@@ -369,6 +369,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
         t = Type::makeStatic(ctx->cache, expr->typeParams[i]);
+        t = ctx->instantiate(t);
       } else {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
@@ -458,13 +459,14 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 }
 
 /// Division and modulus implementations.
-std::pair<int, int> divMod(const std::shared_ptr<TypeContext> &ctx, int a, int b) {
+std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int64_t a,
+                                   int64_t b) {
   if (!b)
     E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
   if (ctx->cache->pythonCompat) {
     // Use Python implementation.
-    int d = a / b;
-    int m = a - d * b;
+    int64_t d = a / b;
+    int64_t m = a - d * b;
     if (m && ((b ^ m) < 0)) {
       m += b;
       d -= 1;
@@ -800,7 +802,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
 
   auto classItem = in(ctx->cache->classes, tuple->name);
   seqassert(classItem, "cannot find class '{}'", tuple->name);
-  auto sz = classItem->fields.size();
+  auto sz = int64_t(classItem->fields.size());
   int64_t start = 0, stop = sz, step = 1;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`

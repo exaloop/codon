@@ -337,7 +337,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         }
         ExprPtr e = N<TupleExpr>(extra);
         e->setAttr(ExprAttr::StarArgument);
-        if (!expr->expr->isId("hasattr:0"))
+        if (!expr->expr->isId("hasattr"))
           e = transform(e);
         if (partial) {
           part.args = e;
@@ -570,7 +570,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   if (!expr->expr->getId())
     return {false, nullptr};
   auto val = expr->expr->getId()->value;
-  if (val == "tuple") {
+  if (val == "tuple" && expr->args.size() == 1 &&
+      CAST(expr->args.front().value, GeneratorExpr)) {
     return {true, transformTupleGenerator(expr)};
   } else if (val == "std.collections.namedtuple") {
     return {true, transformNamedTuple(expr)};
@@ -578,11 +579,11 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformFunctoolsPartial(expr)};
   } else if (val == "superf") {
     return {true, transformSuperF(expr)};
-  } else if (val == "super:0") {
+  } else if (val == "super") {
     return {true, transformSuper()};
   } else if (val == "__ptr__") {
     return {true, transformPtr(expr)};
-  } else if (val == "__array__.__new__:0") {
+  } else if (val == "__array__.__new__") {
     return {true, transformArray(expr)};
   } else if (val == "isinstance") {
     return {true, transformIsInstance(expr)};
@@ -594,7 +595,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformGetAttr(expr)};
   } else if (val == "setattr") {
     return {true, transformSetAttr(expr)};
-  } else if (val == "type.__new__:0") {
+  } else if (val == "type.__new__") {
     return {true, transformTypeFn(expr)};
   } else if (val == "compile_error") {
     return {true, transformCompileError(expr)};
@@ -605,6 +606,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   } else if (val == "std.internal.static.static_print") {
     return {false, transformStaticPrintFn(expr)};
   } else if (val == "__has_rtti__") {
+    LOG("- rtti has {}", getSrcInfo());
     return {true, transformHasRttiFn(expr)};
   } else {
     return transformInternalStaticFn(expr);
@@ -627,12 +629,12 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   ctx->enterConditionalBlock();
   ctx->getBase()->loops.push_back({"", ctx->scope.blocks, {}});
   if (auto i = var->getId()) {
-    ctx->addVar(i->value, ctx->generateCanonicalName(i->value), var->getSrcInfo());
+    ctx->addVar(i->value, ctx->generateCanonicalName(i->value), ctx->getUnbound());
     var = transform(var);
     ex = transform(ex);
   } else {
     std::string varName = ctx->cache->getTemporaryVar("for");
-    ctx->addVar(varName, varName, var->getSrcInfo());
+    ctx->addVar(varName, varName, ctx->getUnbound());
     var = N<IdExpr>(varName);
     auto head = transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var)));
     ex = N<StmtExpr>(head, transform(ex));
@@ -640,7 +642,7 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   ctx->leaveConditionalBlock();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
-    ctx->findDominatingBinding(var, this);
+    findDominatingBinding(var, ctx.get());
   ctx->getBase()->loops.pop_back();
   return N<GeneratorExpr>(
       GeneratorExpr::TupleGenerator, ex,
@@ -705,7 +707,7 @@ ExprPtr TypecheckVisitor::transformFunctoolsPartial(CallExpr *expr) {
 ///      cls.foo()```
 ///   prints "foo 1" followed by "foo 2"
 ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
-  auto func = ctx->getRealizationBase()->type->getFunc();
+  auto func = ctx->getBase()->type->getFunc();
 
   // Find list of matching superf methods
   std::vector<types::FuncTypePtr> supers;
@@ -740,9 +742,9 @@ ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
 /// to the first inherited type.
 /// TODO: only an empty super() is currently supported.
 ExprPtr TypecheckVisitor::transformSuper() {
-  if (!ctx->getRealizationBase()->type)
+  if (!ctx->getBase()->type)
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
-  auto funcTyp = ctx->getRealizationBase()->type->getFunc();
+  auto funcTyp = ctx->getBase()->type->getFunc();
   if (!funcTyp || !funcTyp->ast->hasAttr(Attr::Method))
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
   if (funcTyp->getArgTypes().empty())
@@ -791,7 +793,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
 ExprPtr TypecheckVisitor::transformPtr(CallExpr *expr) {
   auto id = expr->args[0].value->getId();
   auto val = id ? ctx->find(id->value) : nullptr;
-  if (!val || val->kind != TypecheckItem::Var)
+  if (!val || !val->isVar())
     E(Error::CALL_PTR_VAR, expr->args[0]);
 
   transform(expr->args[0].value);
@@ -859,12 +861,12 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     if (tag == -1)
       return transform(N<BoolExpr>(false));
     return transform(N<BinaryExpr>(
-        N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"), expr->args[0].value),
+        N<CallExpr>(N<IdExpr>("__internal__.union_get_tag"), expr->args[0].value),
         "==", N<IntExpr>(tag)));
   } else if (typExpr->type->is("pyobj") && !typExpr->isType()) {
     if (typ->is("pyobj")) {
       expr->staticValue.type = StaticValue::NOT_STATIC;
-      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance:0"),
+      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance"),
                                    expr->args[0].value, expr->args[1].value));
     } else {
       return transform(N<BoolExpr>(false));
@@ -923,7 +925,7 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
                     ->evaluate()
                     .getString();
   std::vector<std::pair<std::string, TypePtr>> args{{"", typ}};
-  if (expr->expr->isId("hasattr:0")) {
+  if (expr->expr->isId("hasattr")) {
     // Case: the first hasattr overload allows passing argument types via *args
     auto tup = expr->args[1].value->getTuple();
     seqassert(tup, "not a tuple");
@@ -933,7 +935,6 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
         return nullptr;
       args.emplace_back("", a->getType());
     }
-    auto kwtup = expr->args[2].value->origExpr->getCall();
     seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
               "expected call: {}", expr->args[2].value->origExpr);
     auto kw = expr->args[2].value->origExpr->getCall();
@@ -1075,7 +1076,7 @@ ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
     return nullptr;
   auto c = in(ctx->cache->classes, t->name);
   seqassert(c, "bad class {}", t->name);
-  return transform(N<BoolExpr>(const_cast<Cache::Class *>(c)->rtti));
+  return transform(N<BoolExpr>(c->hasRTTI()));
 }
 
 // Transform internal.static calls
@@ -1269,33 +1270,37 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
 /// Find all generics on which a function depends on and add them to the current
 /// context.
 void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
+  auto addT = [&](const std::string &name, const types::TypePtr &type) {
+    TypeContext::Item v = nullptr;
+    if (auto c = type->getClass()) {
+      v = ctx->addType(ctx->cache->rev(name), name, c);
+    } else {
+      v = ctx->addType(ctx->cache->rev(name), name, type);
+      v->generic = true;
+    }
+    // LOG(" <=> {} :: {} ({}) / {}", type->debugString(2), ctx->cache->rev(name), name,
+    //     v->isType());
+    ctx->add(name, v);
+  };
   for (auto parent = t->funcParent; parent;) {
     if (auto f = parent->getFunc()) {
       // Add parent function generics
-      for (auto &g : f->funcGenerics) {
-        // LOG("   -> {} := {}", g.name, g.type->debugString(true));
-        ctx->addType(g.name, g.name, getSrcInfo(), g.type);
-      }
+      for (auto &g : f->funcGenerics)
+        addT(g.name, g.type);
       parent = f->funcParent;
     } else {
       // Add parent class generics
       seqassert(parent->getClass(), "not a class: {}", parent);
-      for (auto &g : parent->getClass()->generics) {
-        // LOG("   => {} := {}", g.name, g.type->debugString(true));
-        ctx->addType(g.name, g.name, getSrcInfo(), g.type);
-      }
-      for (auto &g : parent->getClass()->hiddenGenerics) {
-        // LOG("   :> {} := {}", g.name, g.type->debugString(true));
-        ctx->addType(g.name, g.name, getSrcInfo(), g.type);
-      }
+      for (auto &g : parent->getClass()->generics)
+        addT(g.name, g.type);
+      for (auto &g : parent->getClass()->hiddenGenerics)
+        addT(g.name, g.type);
       break;
     }
   }
   // Add function generics
-  for (auto &g : t->funcGenerics) {
-    // LOG("   >> {} := {}", g.name, g.type->debugString(true));
-    ctx->addType(g.name, g.name, getSrcInfo(), g.type);
-  }
+  for (auto &g : t->funcGenerics)
+    addT(g.name, g.type);
 }
 
 /// Generate a partial type `Partial.N<mask>` for a given function.

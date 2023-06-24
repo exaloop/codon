@@ -22,7 +22,7 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
     E(Error::FN_OUTSIDE_ERROR, expr, "yield");
 
   unify(expr->type, ctx->getUnbound());
-  unify(ctx->getRealizationBase()->returnType,
+  unify(ctx->getBase()->returnType,
         ctx->instantiateGeneric(ctx->forceFind("Generator")->type, {expr->type}));
   if (realize(expr->type))
     expr->setDone();
@@ -48,19 +48,19 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
   if (transform(stmt->expr)) {
     // Wrap expression to match the return type
-    if (!ctx->getRealizationBase()->returnType->getUnbound())
-      if (!wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType)) {
+    if (!ctx->getBase()->returnType->getUnbound())
+      if (!wrapExpr(stmt->expr, ctx->getBase()->returnType)) {
         return;
       }
 
     // Special case: partialize functions if we are returning them
     if (stmt->expr->getType()->getFunc() &&
-        !(ctx->getRealizationBase()->returnType->getClass() &&
-          ctx->getRealizationBase()->returnType->is("Function"))) {
+        !(ctx->getBase()->returnType->getClass() &&
+          ctx->getBase()->returnType->is("Function"))) {
       stmt->expr = partializeFunction(stmt->expr->type->getFunc());
     }
 
-    unify(ctx->getRealizationBase()->returnType, stmt->expr->type);
+    unify(ctx->getBase()->returnType, stmt->expr->type);
   } else {
     // Just set the expr for the translation stage. However, do not unify the return
     // type! This might be a `return` in a generator.
@@ -82,7 +82,7 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
     E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
 
   stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
-  unify(ctx->getRealizationBase()->returnType,
+  unify(ctx->getBase()->returnType,
         ctx->instantiateGeneric(ctx->forceFind("Generator")->type, {stmt->expr->type}));
 
   if (stmt->expr->isDone())
@@ -104,7 +104,7 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) {
     E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
 
   // Dominate the binding
-  auto val = ctx->findDominatingBinding(stmt->var, this);
+  auto val = findDominatingBinding(stmt->var, ctx.get());
   if (!val || !val->isVar())
     E(Error::ID_NOT_FOUND, stmt, stmt->var);
   if (val->getBaseName() == ctx->getBaseName())
@@ -121,10 +121,10 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) {
   // Register as global if needed
   ctx->cache->addGlobal(val->canonicalName);
 
-  val = ctx->addVar(stmt->var, val->canonicalName, stmt->getSrcInfo());
+  val = ctx->addVar(stmt->var, val->canonicalName, val->type);
   val->baseName = ctx->getBaseName();
   // Globals/nonlocals cannot be shadowed in children scopes (as in Python)
-  val->noShadow = true;
+  val->canShadow = false;
   // Erase the statement
   resultStmt = N<SuiteStmt>();
 }
@@ -138,9 +138,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                                            stmt->suite->firstInBlock());
     return;
   }
-
-  // Function should be constructed only once
-  stmt->setDone();
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
@@ -168,24 +165,28 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     if (auto c = ctx->find(stmt->name)) {
       if (c->isFunc() && c->getModule() == ctx->getModule() &&
           c->getBaseName() == ctx->getBaseName())
-        rootName = c->canonicalName;
+        rootName = ctx->cache->functions[c->canonicalName].rootName;
     }
   }
   if (rootName.empty())
-    rootName = ctx->generateCanonicalName(stmt->name, true);
+    rootName = ctx->generateCanonicalName(stmt->name, true, isClassMember);
   // Append overload number to the name
-  auto canonicalName =
-      format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+  auto canonicalName = rootName;
+  if (!ctx->cache->overloads[rootName].empty())
+    canonicalName += format(":{}", ctx->cache->overloads[rootName].size());
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
 
-  // Ensure that function binding does not shadow anything.
-  // Function bindings cannot be dominated either
-  if (!isClassMember) {
-    auto funcVal = ctx->find(stmt->name);
-    if (funcVal && funcVal->noShadow)
+  if (isClassMember) {
+   // Set the enclosing class name
+   stmt->attributes.parentClass = ctx->getBase()->name;
+   // Add the method to the class' method list
+   ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
+  } else {
+   // Ensure that function binding does not shadow anything.
+   // Function bindings cannot be dominated either
+   auto funcVal = ctx->find(stmt->name);
+   if (funcVal && !funcVal->canShadow)
       E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
-    funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
-    ctx->addAlwaysVisible(funcVal);
   }
 
   std::vector<Param> args;
@@ -208,7 +209,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Mark as method if the first argument is self
       if (isClassMember && stmt->attributes.has(Attr::HasSelf) && a.name == "self") {
-        ctx->getBase()->selfName = name;
+        // ctx->getBase()->selfName = name;
         stmt->attributes.set(Attr::Method);
       }
 
@@ -237,46 +238,52 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         // Generic and static types
         auto generic = ctx->getUnbound();
         auto typId = generic->getLink()->id;
-        generic->genericName = ctx->cache->rev(a.name);
-        if (a.defaultValue) {
-          auto defType = transformType(clone(a.defaultValue));
-          generic->defaultType = defType->type;
-        }
+        generic->genericName = varName;
         if (auto st = getStaticGeneric(a.type.get())) {
-          auto val = ctx->addVar(varName, name, stmt->getSrcInfo(), generic);
+          auto val = ctx->addVar(varName, name, generic);
           val->generic = true;
           val->staticType = st;
-          generic->isStatic = true;
+          generic->isStatic = st;
+          if (a.defaultValue) {
+            auto defType = transform(clone(a.defaultValue));
+            generic->defaultType = defType->type;
+          }
         } else {
-          auto val = ctx->addType(varName, name, stmt->getSrcInfo(), generic);
+          auto val = ctx->addType(varName, name, generic);
           val->generic = true;
+          if (a.defaultValue) {
+            auto defType = transformType(clone(a.defaultValue));
+            generic->defaultType = defType->type;
+          }
         }
-        explicits.emplace_back(a.name, ctx->cache->rev(a.name),
-                               generic->generalize(ctx->typecheckLevel), typId);
+        explicits.emplace_back(name, varName, generic->generalize(ctx->typecheckLevel),
+                               typId);
       }
     }
 
     // Prepare list of all generic types
-    std::vector<TypePtr> generics;
     ClassTypePtr parentClass = nullptr;
     if (isClassMember && stmt->attributes.has(Attr::Method)) {
       // Get class generics (e.g., T for `class Cls[T]: def foo:`)
-      auto parentClassAST = ctx->cache->classes[stmt->attributes.parentClass].ast.get();
+      // auto parentClassAST =
+      // ctx->cache->classes[stmt->attributes.parentClass].ast.get();
       parentClass = ctx->forceFind(stmt->attributes.parentClass)->type->getClass();
       parentClass = parentClass->instantiate(ctx->typecheckLevel - 1, nullptr, nullptr)
                         ->getClass();
-      seqassert(parentClass, "parent class not set");
-      for (int i = 0, j = 0, k = 0; i < parentClassAST->args.size(); i++) {
-        if (parentClassAST->args[i].status != Param::Normal) {
-          generics.push_back(parentClassAST->args[i].status == Param::Generic
-                                 ? parentClass->generics[j++].type
-                                 : parentClass->hiddenGenerics[k++].type);
-          ctx->addType(parentClassAST->args[i].name, parentClassAST->args[i].name,
-                       getSrcInfo(), generics.back());
-        }
-      }
+      // seqassert(parentClass, "parent class not set");
+      // for (int i = 0, j = 0, k = 0; i < parentClassAST->args.size(); i++) {
+      //   if (parentClassAST->args[i].status != Param::Normal) {
+      //     generics.push_back(parentClassAST->args[i].status == Param::Generic
+      //                            ? parentClass->generics[j++].type
+      //                            : parentClass->hiddenGenerics[k++].type);
+      //     ctx->addType(parentClassAST->args[i].name, parentClassAST->args[i].name,
+      //                  generics.back())
+      //         ->generic = true;
+      //   }
+      // }
     }
     // Add function generics
+    std::vector<TypePtr> generics;
     for (const auto &i : explicits)
       generics.push_back(ctx->find(i.name)->type);
 
@@ -284,11 +291,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Base type: `Function[[args,...], ret]`
     baseType = getFuncTypeBase(stmt->args.size() - explicits.size());
     ctx->typecheckLevel++;
-    if (stmt->ret) {
-      unify(baseType->generics[1].type, transformType(stmt->ret)->getType());
-    } else {
-      generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
-    }
 
     // Parse arguments to the context. Needs to be done after adding generics
     // to support cases like `foo(a: T, T: type)`
@@ -306,36 +308,42 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       std::string canName = stmt->args[ai].name;
       trimStars(canName);
       if (!stmt->args[ai].type) {
-        if (parentClass && ai == 0 && ctx->cache->rev(stmt->args[ai].name) == "self") {
+        if (parentClass && ai == 0 && stmt->args[ai].name == "self") {
           // Special case: self in methods
           unify(argType->args[aj], parentClass);
         } else {
           unify(argType->args[aj], ctx->getUnbound());
+          generics.push_back(argType->args[aj]);
         }
-        generics.push_back(argType->args[aj++]);
       } else if (startswith(stmt->args[ai].name, "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during
         // call typechecking
         unify(argType->args[aj], ctx->getUnbound());
-        generics.push_back(argType->args[aj++]);
+        generics.push_back(argType->args[aj]);
       } else {
         unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
-        generics.push_back(argType->args[aj++]);
+        // generics.push_back(argType->args[aj++]);
       }
-      ctx->addVar(ctx->cache->rev(canName), canName, stmt->getSrcInfo(),
-                  argType->args[aj]);
+      aj++;
+      // ctx->addVar(ctx->cache->rev(canName), canName, argType->args[aj]);
     }
     ctx->typecheckLevel--;
 
     // Parse the return type
     ret = transformType(stmt->ret, false);
+    if (ret) {
+      unify(baseType->generics[1].type, ret->getType());
+    } else {
+      generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
+    }
 
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
       for (auto &u : g->getUnbounds())
-        if (u->getUnbound())
+        if (u->getUnbound()) {
           u->getUnbound()->kind = LinkType::Generic;
+        }
     }
 
     // Parse function body
@@ -349,45 +357,56 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           ctx->getBase()->captures = &captures;
         if (stmt->attributes.has("std.internal.attributes.pycapture"))
           ctx->getBase()->pyCaptures = &pyCaptures;
+        suite = clone(stmt->suite);
         // suite = SimplifyVisitor(ctx,
         // preamble).transformConditionalScope(stmt->suite);
       }
     }
   }
-  stmt->attributes.module =
-      format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
-             ctx->moduleName.module);
+  stmt->attributes.module = ctx->moduleName.path;
+  // format(
+  //     "{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" :
+  //     "::", ctx->moduleName.module);
   ctx->cache->overloads[rootName].push_back(canonicalName);
+
+  // Make function AST and cache it for later realization
+  auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
+  ctx->cache->functions[canonicalName].module = ctx->getModule();
+  ctx->cache->functions[canonicalName].ast = f;
+  ctx->cache->functions[canonicalName].origAst =
+      std::static_pointer_cast<FunctionStmt>(stmt->clone());
+  ctx->cache->functions[canonicalName].isToplevel =
+      ctx->getModule().empty() && ctx->isGlobal();
+  ctx->cache->functions[canonicalName].rootName = rootName;
+  f->setDone();
 
   // Construct the type
   auto funcTyp = std::make_shared<types::FuncType>(
-      baseType, ctx->cache->functions[stmt->name].ast.get(), explicits);
-
+      baseType, ctx->cache->functions[canonicalName].ast.get(), explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->attributes.has(Attr::Method)) {
     funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
   }
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
+  ctx->cache->functions[canonicalName].type = funcTyp;
+  ctx->addFunc(stmt->name, canonicalName, funcTyp);
+  if (isClassMember)
+    ctx->remove(stmt->name);
 
   // Special method handling
   if (isClassMember) {
-    // Set the enclosing class name
-    stmt->attributes.parentClass = ctx->getBase()->name;
-    // Add the method to the class' method list
-    ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
-
     auto m =
         ctx->cache->getMethod(ctx->find(stmt->attributes.parentClass)->type->getClass(),
-                              ctx->cache->rev(stmt->name));
+                              ctx->cache->rev(canonicalName));
     bool found = false;
     for (auto &i : ctx->cache->overloads[m])
-      if (i == stmt->name) {
+      if (i == canonicalName) {
         ctx->cache->functions[i].type = funcTyp;
         found = true;
         break;
       }
-    seqassert(found, "cannot find matching class method for {}", stmt->name);
+    seqassert(found, "cannot find matching class method for {}", canonicalName);
   } else {
     // Hack so that we can later use same helpers for class overloads
     ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
@@ -410,22 +429,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   //     args.push_back(kw);
   //   partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   // }
-  // Make function AST and cache it for later realization
-  auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
-  ctx->cache->functions[canonicalName].ast = f;
-  ctx->cache->functions[canonicalName].origAst =
-      std::static_pointer_cast<FunctionStmt>(stmt->clone());
-  ctx->cache->functions[canonicalName].isToplevel =
-      ctx->getModule().empty() && ctx->isGlobal();
-  ctx->cache->functions[canonicalName].rootName = rootName;
-
-  // Update the visited table
-  // Functions should always be visible, so add them to the toplevel
-  auto val = std::make_shared<TypecheckItem>(TypecheckItem::Func, ctx->getBaseName(),
-                                             stmt->name, ctx->getModule());
-  val->type = funcTyp;
-  ctx->addToplevel(stmt->name, val);
-  ctx->cache->functions[stmt->name].type = funcTyp;
 
   // Ensure that functions with @C, @force_realize, and @export attributes can be
   // realized
@@ -436,13 +439,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   // Debug information
-  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp);
+  LOG("[stmt] added func {}: {}", canonicalName, funcTyp->debugString(2));
 
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   // if (!captures.empty()) {
-  //   finalExpr = N<CallExpr>(N<IdExpr>(stmt->name), partialArgs);
+  //   finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
   //   // Add updated self reference in case function is recursive!
   //   auto pa = partialArgs;
   //   for (auto &a : pa) {
@@ -463,13 +466,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         E(Error::FN_NO_DECORATORS, stmt->decorators[i]);
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
-                              finalExpr ? finalExpr : N<IdExpr>(stmt->name));
+                              finalExpr ? finalExpr : N<IdExpr>(canonicalName));
     }
   }
 
   if (finalExpr) {
     resultStmt =
-        N<SuiteStmt>(f, transform(N<AssignStmt>(N<IdExpr>(stmt->name), finalExpr)));
+        N<SuiteStmt>(f, transform(N<AssignStmt>(N<IdExpr>(canonicalName), finalExpr)));
   } else {
     resultStmt = f;
   }
@@ -603,11 +606,8 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(const ExprPtr &e) {
   if (id && id->getId()) {
     auto ci = ctx->find(id->getId()->value);
     if (ci && ci->isFunc()) {
-      if (ctx->cache->overloads[ci->canonicalName].size() == 1) {
-        return {ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0]]
-                    .ast->attributes.isAttribute,
-                ci->canonicalName};
-      }
+      return {ctx->cache->functions[ci->canonicalName].ast->attributes.isAttribute,
+              ci->canonicalName};
     }
   }
   return {false, ""};

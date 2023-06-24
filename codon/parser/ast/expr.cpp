@@ -11,7 +11,14 @@
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
-  ExprPtr T::clone() const { return std::make_shared<T>(*this); }                      \
+  ExprPtr T::clone() const {                                                           \
+    auto e = std::make_shared<T>(*this);                                               \
+    e->type = nullptr;                                                                 \
+    e->done = false;                                                                   \
+    e->attributes = 0;                                                                 \
+    return e;                                                                          \
+  }                                                                                    \
+  ExprPtr T::full_clone() const { return std::make_shared<T>(*this); }                 \
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
@@ -126,6 +133,7 @@ IntExpr::IntExpr(const std::string &value, std::string suffix)
           std::make_unique<int64_t>(std::stoull(this->value.substr(2), nullptr, 2));
     else
       intValue = std::make_unique<int64_t>(std::stoull(this->value, nullptr, 0));
+    staticValue = StaticValue(*intValue);
   } catch (std::out_of_range &) {
     intValue = nullptr;
   }

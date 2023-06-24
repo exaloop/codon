@@ -16,7 +16,9 @@
 
 namespace codon::ast {
 
-Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {}
+Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {
+  typeCtx = std::make_shared<TypeContext>(this, ".root");
+}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
@@ -59,17 +61,17 @@ std::string Cache::getContent(const SrcInfo &info) {
 
 types::ClassTypePtr Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
-  if (f && f->kind == TypecheckItem::Type)
+  if (f && f->isType())
     return f->type->getClass();
   return nullptr;
 }
 
 types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   auto f = typeCtx->find(name);
-  if (f && f->type && f->kind == TypecheckItem::Func)
+  if (f && f->type && f->isFunc())
     return f->type->getFunc();
   f = typeCtx->find(name + ":0");
-  if (f && f->type && f->kind == TypecheckItem::Func)
+  if (f && f->type && f->isFunc())
     return f->type->getFunc();
   return nullptr;
 }
@@ -79,6 +81,7 @@ types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &m
   auto e = std::make_shared<IdExpr>(typ->name);
   e->type = typ->getClass();
   seqassertn(e->type, "not a class");
+
   auto f = TypecheckVisitor(typeCtx).findBestMethod(e->type->getClass(), member, args);
   return f;
 }

@@ -85,13 +85,6 @@ class CError(Static[Exception]):
         super().__init__("CError", message)
         self.python_type = self.__class__._pytype
 
-class PyError(Static[Exception]):
-    pytype: pyobj
-
-    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
-        super().__init__("PyError", message)
-        self.pytype = pytype
-
 class TypeError(Static[Exception]):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):

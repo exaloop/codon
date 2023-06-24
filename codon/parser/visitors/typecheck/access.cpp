@@ -25,14 +25,20 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (isTuple(expr->value))
     generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
-  auto val = ctx->findDominatingBinding(expr->value, this);
-
+  auto val = findDominatingBinding(expr->value, ctx.get());
   if (!val && ctx->getBase()->pyCaptures) {
     ctx->getBase()->pyCaptures->insert(expr->value);
     resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
     return;
   } else if (!val) {
-    E(Error::ID_NOT_FOUND, expr, expr->value);
+    if (in(ctx->cache->overloads, expr->value))
+      val = ctx->forceFind(getDispatch(expr->value)->ast->name);
+    if (!val) {
+      ctx->dump();
+      // LOG("=================================================================");
+      // ctx->cache->typeCtx->dump();
+      E(Error::ID_NOT_FOUND, expr, expr->value);
+    }
   }
 
   // If we are accessing an outside variable, capture it or raise an error
@@ -54,7 +60,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 
   // Replace the variable with its canonical name
   expr->value = val->canonicalName;
-  val->references.push_back(expr->shared_from_this());
 
   // Mark global as "seen" to prevent later creation of local variables
   // with the same name. Example:
@@ -99,8 +104,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     }
   }
 
-  // todo)) handle overloads [each overloaded fn is basically a new FnOverload object]
-
   // Set up type
   unify(expr->type, ctx->instantiate(val->type));
   if (val->type->isStaticType()) {
@@ -111,10 +114,11 @@ void TypecheckVisitor::visit(IdExpr *expr) {
               expr->toString());
     if (s && s->expr->staticValue.evaluated) {
       // Replace the identifier with static expression
-      if (s->expr->staticValue.type == StaticValue::STRING)
+      if (s->expr->staticValue.type == StaticValue::STRING) {
         resultExpr = transform(N<StringExpr>(s->expr->staticValue.getString()));
-      else
+      } else {
         resultExpr = transform(N<IntExpr>(s->expr->staticValue.getInt()));
+      }
     }
     return;
   }
@@ -135,46 +139,101 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 ///   `python.foo` -> internal.python._get_identifier("foo")
 /// Other cases are handled during the type checking.
 /// See @c transformDot for details.
-void TypecheckVisitor::visit(DotExpr *expr) {
-  if (!expr->type) {
-    // First flatten the imports:
-    // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
-    std::vector<std::string> chain;
-    Expr *root = expr;
-    for (; root->getDot(); root = root->getDot()->expr.get())
-      chain.push_back(root->getDot()->member);
+void TypecheckVisitor::visit(DotExpr *expr) { resultExpr = transformDot(expr); }
 
-    if (auto id = root->getId()) {
-      // Case: a.bar.baz
-      chain.push_back(id->value);
-      std::reverse(chain.begin(), chain.end());
-      auto [pos, val] = getImport(chain);
-
-      if (!val) {
-        seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
-        ctx->getBase()->pyCaptures->insert(chain[0]);
-        resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
-      } else if (val->getModule() == "std.python") {
-        resultExpr = transform(N<CallExpr>(
-            N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
-            N<StringExpr>(chain[pos++])));
-      } else if (val->getModule() == ctx->getModule() && pos == 1) {
-        resultExpr = transform(N<IdExpr>(chain[0]), true);
-      } else {
-        resultExpr = N<IdExpr>(val->canonicalName);
-        if (val->isType() && pos == chain.size())
-          resultExpr->markType();
-      }
-      while (pos < chain.size())
-        resultExpr = N<DotExpr>(resultExpr, chain[pos++]);
-      resultExpr = transformDot(resultExpr->getDot());
-    } else {
-      transform(expr->expr, true);
-      resultExpr = transformDot(expr);
-    }
-  } else {
-    resultExpr = transformDot(expr);
+/// Get an item from the context. Perform domination analysis for accessing items
+/// defined in the conditional blocks (i.e., Python scoping).
+TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &name,
+                                                          TypeContext *ctx) {
+  auto it = ctx->find_all(name);
+  if (!it) {
+    return ctx->find(name);
+  } else if (ctx->isCanonicalName(name)) {
+    return *(it->begin());
   }
+  seqassert(!it->empty(), "corrupted TypecheckContext ({})", name);
+
+  // The item is found. Let's see is it accessible now.
+
+  std::string canonicalName;
+  auto lastGood = it->begin();
+  bool isOutside = (*lastGood)->getBaseName() != ctx->getBaseName();
+  int prefix = int(ctx->scope.blocks.size());
+  // Iterate through all bindings with the given name and find the closest binding that
+  // dominates the current scope.
+  for (auto i = it->begin(); i != it->end(); i++) {
+    // Find the longest block prefix between the binding and the current scope.
+    int p = std::min(prefix, int((*i)->scope.size()));
+    while (p >= 0 && (*i)->scope[p - 1] != ctx->scope.blocks[p - 1])
+      p--;
+    // We reached the toplevel. Break.
+    if (p < 0)
+      break;
+    // We went outside the function scope. Break.
+    if (!isOutside && (*i)->getBaseName() != ctx->getBaseName())
+      break;
+    prefix = p;
+    lastGood = i;
+    // The binding completely dominates the current scope. Break.
+    if ((*i)->scope.size() <= ctx->scope.blocks.size() &&
+        (*i)->scope.back() == ctx->scope.blocks[(*i)->scope.size() - 1])
+      break;
+  }
+  seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
+  if (lastGood != it->begin() && !(*lastGood)->isVar())
+    E(Error::CLASS_INVALID_BIND, getSrcInfo(), name);
+
+  bool hasUsed = false;
+  types::TypePtr type = nullptr;
+  if ((*lastGood)->scope.size() == prefix) {
+    // The current scope is dominated by a binding. Use that binding.
+    canonicalName = (*lastGood)->canonicalName;
+    type = (*lastGood)->type;
+  } else {
+    // The current scope is potentially reachable by multiple bindings that are
+    // not dominated by a common binding. Create such binding in the scope that
+    // dominates (covers) all of them.
+    canonicalName = ctx->generateCanonicalName(name);
+    auto item = std::make_shared<TypecheckItem>(
+        canonicalName, (*lastGood)->baseName, (*lastGood)->moduleName,
+        ctx->getUnbound(getSrcInfo()),
+        std::vector<int>(ctx->scope.blocks.begin(),
+                         ctx->scope.blocks.begin() + prefix));
+    item->accessChecked = {(*lastGood)->scope};
+    type = item->type;
+    lastGood = it->insert(++lastGood, item);
+    // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
+    // to the dominating scope.
+    ctx->scope.stmts[ctx->scope.blocks[prefix - 1]].push_back(
+        N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(canonicalName), nullptr, nullptr),
+                     N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", canonicalName)),
+                                   N<BoolExpr>(false), nullptr)));
+
+    // Reached the toplevel? Register the binding as global.
+    if (prefix == 1) {
+      ctx->cache->addGlobal(canonicalName);
+      ctx->cache->addGlobal(fmt::format("{}.__used__", canonicalName));
+    }
+    hasUsed = true;
+  }
+  // Remove all bindings after the dominant binding.
+  for (auto i = it->begin(); i != it->end(); i++) {
+    if (i == lastGood)
+      break;
+    if (!(*i)->canDominate())
+      continue;
+    // These bindings (and their canonical identifiers) will be replaced by the
+    // dominating binding during the type checking pass.
+
+    ctx->getBase()->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
+    ctx->getBase()->replacements[format("{}.__used__", (*i)->canonicalName)] = {
+        format("{}.__used__", canonicalName), false};
+    seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
+              getSrcInfo(), canonicalName);
+    ctx->removeFromTopStack(name);
+  }
+  it->erase(it->begin(), lastGood);
+  return it->front();
 }
 
 /// Access identifiers from outside of the current function/class scope.
@@ -219,7 +278,7 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
 
   // Case: a global variable that has not been marked with `global` statement
   if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
-    val->noShadow = true;
+    val->canShadow = false;
     if (!val->isStatic())
       ctx->cache->addGlobal(val->canonicalName);
     return false;
@@ -247,11 +306,11 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
     // Add newly generated argument to the context
     std::shared_ptr<TypecheckItem> newVal = nullptr;
     if (val->isType())
-      newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+      newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, val->type);
     else
-      newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, getSrcInfo());
+      newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, val->type);
     newVal->baseName = ctx->getBaseName();
-    newVal->noShadow = true; // todo)) needed here? remove noshadow on fn boundaries?
+    newVal->canShadow = false; // todo)) needed here? remove noshadow on fn boundaries?
     newVal->scope = ctx->getBase()->scope;
     return true;
   }
@@ -272,9 +331,11 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
   // (e.g., `a.b.c.d` -> `a.b.c` if there is `import a.b.c`)
   TypeContext::Item val = nullptr;
   for (auto i = chain.size(); i-- > 0;) {
-    val = ctx->find(join(chain, "/", 0, i + 1));
-    if (val && val->isImport()) {
-      importName = val->importPath, importEnd = i + 1;
+    auto name = join(chain, "/", 0, i + 1);
+    val = ctx->find(name);
+    if (val && val->type->is("Import") && name != "Import") {
+      importName = getClassStaticStr(val->type->getClass());
+      importEnd = i + 1;
       break;
     }
   }
@@ -289,12 +350,16 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       if (fctx->getModule() == "std.python" && importEnd < chain.size()) {
         // Special case: importing from Python.
         // Fake TypecheckItem that indicates std.python access
-        val = std::make_shared<TypecheckItem>(TypecheckItem::Var, "", "",
-                                              fctx->getModule(), std::vector<int>{});
+        val = std::make_shared<TypecheckItem>("", "", fctx->getModule(),
+                                              fctx->getUnbound());
         return {importEnd, val};
       } else {
         val = fctx->find(join(chain, ".", importEnd, i + 1));
-        if (val && (importName.empty() || val->isType() || !val->isConditional())) {
+        bool isOverload = val && val->isFunc() &&
+                          in(ctx->cache->overloads, val->canonicalName) &&
+                          ctx->cache->overloads[val->canonicalName].size() > 1;
+        if (val && !isOverload &&
+            (importName.empty() || val->isType() || !val->isConditional())) {
           itemName = val->canonicalName, itemEnd = i + 1;
           break;
         }
@@ -305,9 +370,10 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
         return {1, nullptr};
       E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
     }
-    if (itemName.empty())
+    if (itemName.empty()) {
       E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
-        ctx->cache->imports[importName].moduleName);
+        ctx->cache->imports[importName].name);
+    }
     importEnd = itemEnd;
   }
   return {importEnd, val};
@@ -351,7 +417,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   auto baseType = getFuncTypeBase(2);
   auto typ = std::make_shared<FuncType>(baseType, ast.get());
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
-  ctx->addFunc(name, name, getSrcInfo(), typ);
+  ctx->addFunc(name, name, typ);
 
   overloads.insert(overloads.begin(), name);
   ctx->cache->functions[name].ast = ast;
@@ -376,12 +442,49 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 /// See @c getClassMember and @c getBestOverload
 ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
                                        std::vector<CallExpr::Arg> *args) {
+  // First flatten the imports:
+  // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
+  std::vector<std::string> chain;
+  Expr *root = expr;
+  for (; root->getDot(); root = root->getDot()->expr.get())
+    chain.push_back(root->getDot()->member);
+
+  ExprPtr nexpr = expr->shared_from_this();
+  if (auto id = root->getId()) {
+    // Case: a.bar.baz
+    chain.push_back(id->value);
+    std::reverse(chain.begin(), chain.end());
+    auto [pos, val] = getImport(chain);
+    if (!val) {
+      seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
+      ctx->getBase()->pyCaptures->insert(chain[0]);
+      nexpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
+    } else if (val->getModule() == "std.python") {
+      nexpr = transform(N<CallExpr>(
+          N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
+          N<StringExpr>(chain[pos++])));
+    } else if (val->getModule() == ctx->getModule() && pos == 1) {
+      nexpr = transform(N<IdExpr>(chain[0]), true);
+    } else {
+      nexpr = N<IdExpr>(val->canonicalName);
+      if (val->isType() && pos == chain.size())
+        nexpr->markType();
+    }
+    while (pos < chain.size())
+      nexpr = N<DotExpr>(nexpr, chain[pos++]);
+  }
+  if (!nexpr->getDot()) {
+    return transform(nexpr);
+  } else {
+    expr->expr = nexpr->getDot()->expr;
+    expr->member = nexpr->getDot()->member;
+  }
+
   // Special case: obj.__class__
   if (expr->member == "__class__") {
     /// TODO: prevent cls.__class__ and type(cls)
     return transformType(NT<CallExpr>(NT<IdExpr>("type"), expr->expr));
   }
-
   transform(expr->expr);
 
   // Special case: fn.__name__
@@ -455,7 +558,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         // )
         auto e = N<CallExpr>(
             fnType,
-            N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.class_get_rtti_vtable:0"),
+            N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.class_get_rtti_vtable"),
                                      expr->expr),
                          N<IntExpr>(vid)));
         return transform(e);
@@ -569,7 +672,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
     return transform(N<CallExpr>(
-        N<IdExpr>("__internal__.get_union_method:0"),
+        N<IdExpr>("__internal__.get_union_method"),
         std::vector<CallExpr::Arg>{{"union", expr->expr},
                                    {"method", N<StringExpr>(expr->member)},
                                    {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));

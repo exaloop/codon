@@ -4,4 +4,6 @@ WarningsAsErrors: false
 HeaderFilterRegex: '(build/.+)|(codon/util/.+)'
 AnalyzeTemporaryDtors: false
 FormatStyle: llvm
-...
+CheckOptions:
+  - key:             cppcoreguidelines-macro-usage.CheckCapsOnly
+    value:           '1'
