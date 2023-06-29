@@ -258,8 +258,9 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
             if (slots[si].empty()) {
               // is this "real" type?
               if (in(niGenerics, fn->ast->args[si].name) &&
-                  !fn->ast->args[si].defaultValue)
+                  !fn->ast->args[si].defaultValue) {
                 return -1;
+              }
               reordered.push_back({nullptr, 0});
             } else {
               reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
