@@ -153,6 +153,7 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
         (*lastGood)->importPath);
     item->accessChecked = {(*lastGood)->scope};
     lastGood = it->second.insert(++lastGood, item);
+    stack.front().push_back(name);
     // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
     // to the dominating scope.
     scope.stmts[scope.blocks[prefix - 1]].push_back(std::make_unique<AssignStmt>(
@@ -175,6 +176,7 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
       continue;
     // These bindings (and their canonical identifiers) will be replaced by the
     // dominating binding during the type checking pass.
+    // LOG("## {} => {} ({})", (*i)->canonicalName, canonicalName, getSrcInfo());
     cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
     cache->replacements[format("{}.__used__", (*i)->canonicalName)] = {
         format("{}.__used__", canonicalName), false};
