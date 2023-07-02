@@ -543,7 +543,9 @@ def combinations_with_replacement(pool, r: int):
     pool_list = _as_list(pool)
     n = len(pool)
 
-    if r > n:
+    if n == 0:
+        if r == 0:
+            yield List[pool_list.T](capacity=0)
         return
 
     pool = pool_list.arr.ptr
@@ -581,6 +583,10 @@ def combinations_with_replacement(pool, r: Static[int]):
     if r < 0:
         compile_error("r must be non-negative")
 
+    if r == 0:
+        yield ()
+        return
+
     if isinstance(pool, list):
         pool_list = pool
     else:
@@ -588,7 +594,7 @@ def combinations_with_replacement(pool, r: Static[int]):
 
     n = len(pool)
 
-    if r > n:
+    if n == 0:
         return
 
     pool = pool_list.arr.ptr

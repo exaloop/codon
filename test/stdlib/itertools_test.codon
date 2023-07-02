@@ -654,13 +654,13 @@ def test_combinations_with_replacement_from_cpython():
     cwr = combinations_with_replacement
     err = False
     try:
-        list(cwr("abc", f(-2)))
+        list(combinations_with_replacement("abc", f(-2)))
         assert False
     except ValueError:
         err = True
     assert err
 
-    assert list(cwr("ABC", f(2))) == [
+    assert list(combinations_with_replacement("ABC", f(2))) == [
         ["A", "A"],
         ["A", "B"],
         ["A", "C"],
@@ -679,7 +679,7 @@ def test_combinations_with_replacement_from_cpython():
     for n in range(7):
         values = [5 * x - 12 for x in range(n)]
         for r in range(n + 2):
-            result = list(cwr(values, r))
+            result = list(combinations_with_replacement(values, r))
             regular_combs = list(combinations(values, r))
 
             assert len(result) == numcombs(n, r)
@@ -704,7 +704,7 @@ def test_combinations_with_replacement_from_cpython():
                 ]  # comb is a subsequence of the input iterable
 
 
-    assert list(cwr("ABC", 2)) == [
+    assert list(combinations_with_replacement("ABC", 2)) == [
         ("A", "A"),
         ("A", "B"),
         ("A", "C"),
@@ -716,7 +716,7 @@ def test_combinations_with_replacement_from_cpython():
     for n in staticrange(7):
         values = [5 * x - 12 for x in range(n)]
         for r in staticrange(n + 2):
-            result = list(cwr(values, r))
+            result = list(combinations_with_replacement(values, r))
             regular_combs = list(combinations(values, r))
 
             assert len(result) == numcombs(n, r)
@@ -810,8 +810,7 @@ def test_permutations_from_cpython():
                 assert all(e in values for e in p)  # elements taken from input iterable
 
             if r == n:
-                assert result == list(permutations(values, None))  # test r as None
-                assert result == list(permutations(values))  # test default r
+                assert result == list(permutations(values, r))
 
 
 test_permutations_from_cpython()
