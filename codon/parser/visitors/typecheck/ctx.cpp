@@ -286,7 +286,8 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
                        Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->name),
                             cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
-  return score + onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  return s != -1 ? score + s : -1;
 }
 
 void TypeContext::dump(int pad) {

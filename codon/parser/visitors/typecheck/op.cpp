@@ -310,7 +310,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       } else {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
-        if (!expr->typeParams[i]->isType())
+        if (expr->typeParams[i]->type->getClass() && !expr->typeParams[i]->isType())
           E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
         t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                              expr->typeParams[i]->getType());

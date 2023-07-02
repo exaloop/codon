@@ -86,6 +86,9 @@ public:
     return item;
   }
   std::shared_ptr<TypecheckItem> find(const std::string &name) const override;
+  std::shared_ptr<TypecheckItem> find(const char *name) const {
+    return find(std::string(name));
+  }
   /// Find an internal type. Assumes that it exists.
   std::shared_ptr<TypecheckItem> forceFind(const std::string &name) const;
   types::TypePtr getType(const std::string &name) const;

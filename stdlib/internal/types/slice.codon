@@ -6,6 +6,9 @@ class Slice:
     stop: Optional[int]
     step: Optional[int]
 
+    def __new__(stop: Optional[int]):
+        return Slice(None, stop, None)
+
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
         step: int = self.step if self.step is not None else 1
         start: int = 0
@@ -46,6 +49,11 @@ class Slice:
                 return start, stop, step, (stop - start - 1) // step + 1
 
         return start, stop, step, 0
+
+    def indices(self, length: int):
+        if length < 0:
+            raise ValueError("length should not be negative")
+        return self.adjust_indices(length)[:-1]
 
     def __repr__(self):
         return f"slice({self.start}, {self.stop}, {self.step})"
