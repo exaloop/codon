@@ -63,7 +63,9 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     ctx->changedNodes = 0;
     auto returnEarly = ctx->returnEarly;
     ctx->returnEarly = false;
-    TypecheckVisitor(ctx, preamble).transform(result);
+    auto tv = TypecheckVisitor(ctx, preamble);
+    tv.transform(result);
+    NameVisitor::apply(&tv, result);
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
@@ -168,7 +170,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         }
         auto name = f->ast->name;
         std::string name_args;
-        if (startswith(name, "._import_")) {
+        if (startswith(name, "%_import_")) {
           name = name.substr(9);
           auto p = name.rfind('_');
           if (p != std::string::npos)
@@ -348,7 +350,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
     if (!ret) {
       realizations.erase(key);
-      if (!startswith(ast->name, "._lambda")) {
+      if (!startswith(ast->name, "%_lambda")) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.

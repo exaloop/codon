@@ -61,7 +61,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
-    ctx->enterConditionalBlock();
+    enterConditionalBlock();
     if (!c.var.empty()) {
       c.var = ctx->generateCanonicalName(c.var);
       ctx->addVar(ctx->cache->rev(c.var), c.var, ctx->getUnbound());
@@ -101,7 +101,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       done &= (!c.exc || c.exc->isDone()) && c.suite->isDone();
       catches.push_back(c);
     }
-    ctx->leaveConditionalBlock();
+    leaveConditionalBlock();
   }
   if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
     // Process PyError catches

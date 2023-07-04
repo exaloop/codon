@@ -78,15 +78,23 @@ struct TypeContext : public Context<TypecheckItem> {
   /// A scope is defined as a stack of conditional blocks
   /// (i.e., blocks that might not get executed during the runtime).
   /// Used mainly to support Python's variable scoping rules.
-  struct Scope {
-    /// Scope counter. Each conditional block gets a new scope ID.
-    int counter = 0;
-    /// Current hierarchy of conditional blocks.
-    std::vector<int> blocks;
+  struct ScopeBlock {
+    int id;
+    std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
     /// List of statements that are to be prepended to a block
     /// after its transformation.
-    std::map<int, std::vector<StmtPtr>> stmts;
-  } scope;
+    std::vector<StmtPtr> stmts;
+    ScopeBlock(int id) : id(id) {}
+  };
+  /// Current hierarchy of conditional blocks.
+  std::vector<ScopeBlock> scope;
+  std::vector<int> getScope() const {
+    std::vector<int> result;
+    result.reserve(scope.size());
+    for (const auto &b : scope)
+      result.emplace_back(b.id);
+    return result;
+  }
 
   /// Holds the information about current base.
   /// A base is defined as a function or a class block.
@@ -143,8 +151,6 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
-    std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
-
   public:
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
     bool isType() const { return attributes == nullptr; }
@@ -157,7 +163,7 @@ struct TypeContext : public Context<TypecheckItem> {
     BaseGuard(TypeContext *holder, const std::string &name) : holder(holder) {
       holder->bases.emplace_back();
       holder->bases.back().name = name;
-      holder->bases.back().scope = holder->scope.blocks;
+      holder->bases.back().scope = holder->getScope();
       holder->addBlock();
     }
     ~BaseGuard() {
@@ -225,13 +231,6 @@ public:
   std::string getModule() const;
   /// Pretty-print the current context state.
   void dump() override;
-
-  /// Enter a conditional block.
-  void enterConditionalBlock();
-  /// Leave a conditional block. Populate stmts (if set) with the declarations of
-  /// newly added identifiers that dominate the children blocks.
-  void leaveConditionalBlock(std::vector<StmtPtr> *stmts = nullptr,
-                             TypecheckVisitor *t = nullptr);
 
   /// Generate a unique identifier (name) for a given string.
   std::string generateCanonicalName(const std::string &name, bool includeBase = false,
@@ -329,6 +328,9 @@ public:
   std::shared_ptr<std::string> getStaticString(const types::TypePtr &);
   std::shared_ptr<int64_t> getStaticInt(const types::TypePtr &);
   types::FuncTypePtr extractFunction(const types::TypePtr &);
+
+protected:
+  void removeFromMap(const std::string &name) override;
 };
 
 } // namespace codon::ast

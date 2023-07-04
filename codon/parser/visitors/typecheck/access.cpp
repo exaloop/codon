@@ -51,11 +51,16 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   // while True:
   //   if x > 10: break
   //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
-  if (auto loop = ctx->getBase()->getLoop()) {
-    bool inside = val->scope.size() >= loop->scope.size() &&
-                  val->scope[loop->scope.size() - 1] == loop->scope.back();
-    if (!inside)
-      loop->seenVars.insert(expr->value);
+  if (ctx->getBase()->getLoop()) {
+    for (size_t li = ctx->getBase()->loops.size(); li-- > 0;) {
+      auto &loop = ctx->getBase()->loops[li];
+      bool inside = val->scope.size() >= loop.scope.size() &&
+                    val->scope[loop.scope.size() - 1] == loop.scope.back();
+      if (!inside)
+        loop.seenVars.insert(expr->value);
+      else
+        break;
+    }
   }
 
   // Replace the variable with its canonical name
@@ -81,8 +86,8 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (!val->accessChecked.empty()) {
     bool checked = false;
     for (auto &a : val->accessChecked) {
-      if (a.size() <= ctx->scope.blocks.size() &&
-          a[a.size() - 1] == ctx->scope.blocks[a.size() - 1]) {
+      if (a.size() <= ctx->scope.size() &&
+          a[a.size() - 1] == ctx->scope[a.size() - 1].id) {
         checked = true;
         break;
       }
@@ -96,7 +101,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
       if (!ctx->isConditionalExpr) {
         // If the expression is not conditional, we can just do the check once
         prependStmts->push_back(checkStmt);
-        val->accessChecked.push_back(ctx->scope.blocks);
+        val->accessChecked.push_back(ctx->getScope());
       } else {
         // Otherwise, this check must be always called
         resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(*expr));
@@ -148,9 +153,10 @@ TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &nam
   auto it = ctx->find_all(name);
   if (!it) {
     return ctx->find(name);
-  } else if (ctx->isCanonicalName(name)) {
-    return *(it->begin());
   }
+  // else if (ctx->isCanonicalName(name)) {
+  //   return *(it->begin());
+  // }
   seqassert(!it->empty(), "corrupted TypecheckContext ({})", name);
 
   // The item is found. Let's see is it accessible now.
@@ -158,13 +164,13 @@ TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &nam
   std::string canonicalName;
   auto lastGood = it->begin();
   bool isOutside = (*lastGood)->getBaseName() != ctx->getBaseName();
-  int prefix = int(ctx->scope.blocks.size());
+  int prefix = int(ctx->scope.size());
   // Iterate through all bindings with the given name and find the closest binding that
   // dominates the current scope.
   for (auto i = it->begin(); i != it->end(); i++) {
     // Find the longest block prefix between the binding and the current scope.
     int p = std::min(prefix, int((*i)->scope.size()));
-    while (p >= 0 && (*i)->scope[p - 1] != ctx->scope.blocks[p - 1])
+    while (p >= 0 && (*i)->scope[p - 1] != ctx->scope[p - 1].id)
       p--;
     // We reached the toplevel. Break.
     if (p < 0)
@@ -175,8 +181,8 @@ TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &nam
     prefix = p;
     lastGood = i;
     // The binding completely dominates the current scope. Break.
-    if ((*i)->scope.size() <= ctx->scope.blocks.size() &&
-        (*i)->scope.back() == ctx->scope.blocks[(*i)->scope.size() - 1])
+    if ((*i)->scope.size() <= ctx->scope.size() &&
+        (*i)->scope.back() == ctx->scope[(*i)->scope.size() - 1].id)
       break;
   }
   seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
@@ -194,17 +200,18 @@ TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &nam
     // not dominated by a common binding. Create such binding in the scope that
     // dominates (covers) all of them.
     canonicalName = ctx->generateCanonicalName(name);
+    auto scope = ctx->getScope();
     auto item = std::make_shared<TypecheckItem>(
         canonicalName, (*lastGood)->baseName, (*lastGood)->moduleName,
         ctx->getUnbound(getSrcInfo()),
-        std::vector<int>(ctx->scope.blocks.begin(),
-                         ctx->scope.blocks.begin() + prefix));
+        std::vector<int>(scope.begin(), scope.begin() + prefix));
+    LOG("--> {} / {}", canonicalName, item->scope);
     item->accessChecked = {(*lastGood)->scope};
     type = item->type;
     lastGood = it->insert(++lastGood, item);
     // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
     // to the dominating scope.
-    ctx->scope.stmts[ctx->scope.blocks[prefix - 1]].push_back(
+    ctx->scope[prefix - 1].stmts.push_back(
         N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(canonicalName), nullptr, nullptr),
                      N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", canonicalName)),
                                    N<BoolExpr>(false), nullptr)));
@@ -225,8 +232,8 @@ TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &nam
     // These bindings (and their canonical identifiers) will be replaced by the
     // dominating binding during the type checking pass.
 
-    ctx->getBase()->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
-    ctx->getBase()->replacements[format("{}.__used__", (*i)->canonicalName)] = {
+    ctx->scope[prefix - 1].replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
+    ctx->scope[prefix - 1].replacements[format("{}.__used__", (*i)->canonicalName)] = {
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);

@@ -8,6 +8,7 @@ from internal.static import vars_types, tuple_type, vars as _vars
 
 
 def vars(obj, with_index: Static[int] = 0):
+    __static_print__(with_index)
     return _vars(obj, with_index)
 
 

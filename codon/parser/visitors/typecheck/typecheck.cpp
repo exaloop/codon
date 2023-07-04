@@ -9,7 +9,6 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
-#include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include <fmt/format.h>
 
@@ -69,11 +68,11 @@ StmtPtr TypecheckVisitor::apply(
   suite->stmts.push_back(tv.N<SuiteStmt>(*preamble));
 
   // Add dominated assignment declarations
-  if (in(ctx->scope.stmts, ctx->scope.blocks.back()))
-    suite->stmts.insert(suite->stmts.end(),
-                        ctx->scope.stmts[ctx->scope.blocks.back()].begin(),
-                        ctx->scope.stmts[ctx->scope.blocks.back()].end());
+  suite->stmts.insert(suite->stmts.end(), ctx->scope.back().stmts.begin(),
+                      ctx->scope.back().stmts.end());
   suite->stmts.push_back(n);
+  NameVisitor::apply(&tv, suite->stmts);
+
   if (n->getSuite())
     tv.prepareVTables();
 
@@ -111,25 +110,29 @@ void TypecheckVisitor::loadStdLibrary(
   stdlib->setFilename(stdlibPath->path);
 
   // 1. Core definitions
-  auto core = TypecheckVisitor(stdlib, preamble)
-                  .transform(parseCode(stdlib->cache, stdlibPath->path,
-                                       "from internal.core import *"));
+  auto core = parseCode(stdlib->cache, stdlibPath->path, "from internal.core import *");
+  auto tv = TypecheckVisitor(stdlib, preamble);
+  core = tv.transform(core);
+  NameVisitor::apply(&tv, core);
   preamble->push_back(core);
   LOG("core done");
 
   // 2. Load early compile-time defines (for standard library)
   for (auto &d : earlyDefines) {
     auto tv = TypecheckVisitor(stdlib, preamble);
-    auto def = tv.transform(
+    auto s =
         tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
-                         tv.N<IndexExpr>(tv.N<IdExpr>("Static"), tv.N<IdExpr>("int"))));
+                         tv.N<IndexExpr>(tv.N<IdExpr>("Static"), tv.N<IdExpr>("int")));
+    auto def = tv.transform(s);
     preamble->push_back(def);
   }
   LOG("defs done");
 
   // 3. Load stdlib
-  auto std = TypecheckVisitor(stdlib, preamble)
-                 .transform(parseFile(stdlib->cache, stdlibPath->path));
+  auto std = parseFile(stdlib->cache, stdlibPath->path);
+  tv = TypecheckVisitor(stdlib, preamble);
+  std = tv.transform(std);
+  NameVisitor::apply(&tv, std);
   preamble->push_back(std);
   stdlib->isStdlibLoading = false;
   LOG("stdlib done");
@@ -193,7 +196,14 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
       E(Error::UNEXPECTED_TYPE, expr, "type");
     if (!expr->type)
       unify(expr->type, ctx->getUnbound());
-    unify(typ, expr->type);
+    if (auto s = typ->isStaticType()) { // realize replaced T with int/str
+      if (!(s == StaticValue::INT && expr->getInt()) &&
+          !(s == StaticValue::STRING && expr->getString())) {
+        unify(typ, expr->type);
+      }
+    } else {
+      unify(typ, expr->type);
+    }
     if (expr->done)
       ctx->changedNodes++;
   }
@@ -266,17 +276,12 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
 /// are prepended.
 StmtPtr TypecheckVisitor::transformConditionalScope(StmtPtr &stmt) {
   if (stmt) {
-    ctx->enterConditionalBlock();
+    enterConditionalBlock();
     transform(stmt);
-    SuiteStmt *suite = stmt->getSuite();
-    if (!suite) {
-      stmt = N<SuiteStmt>(stmt);
-      suite = stmt->getSuite();
-    }
-    ctx->leaveConditionalBlock(&suite->stmts);
+    leaveConditionalBlock(stmt);
     return stmt;
   }
-  return stmt = nullptr;
+  return stmt;
 }
 
 void TypecheckVisitor::defaultVisit(Stmt *s) {
@@ -521,11 +526,11 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
   auto doArgWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap");
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap.0");
   if (!doArgWrap)
     return true;
   auto doTypeWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap");
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap.0");
   if (callee && expr->isType()) {
     auto c = expr->type->getClass();
     if (!c)
@@ -687,6 +692,141 @@ int64_t TypecheckVisitor::getClassStaticInt(const types::ClassTypePtr &cls, int 
   }
   seqassert(false, "bad int static generic");
   return -1;
+}
+
+void TypecheckVisitor::enterConditionalBlock() {
+  ctx->scope.emplace_back(ctx->cache->blockCount++);
+}
+
+ExprPtr NameVisitor::transform(const std::shared_ptr<Expr> &expr) {
+  NameVisitor v(tv);
+  if (expr)
+    expr->accept(v);
+  return v.resultExpr ? v.resultExpr : expr;
+}
+ExprPtr NameVisitor::transform(std::shared_ptr<Expr> &expr) {
+  NameVisitor v(tv);
+  if (expr)
+    expr->accept(v);
+  if (v.resultExpr)
+    expr = v.resultExpr;
+  return expr;
+}
+StmtPtr NameVisitor::transform(const std::shared_ptr<Stmt> &stmt) {
+  NameVisitor v(tv);
+  if (stmt)
+    stmt->accept(v);
+  return v.resultStmt ? v.resultStmt : stmt;
+}
+StmtPtr NameVisitor::transform(std::shared_ptr<Stmt> &stmt) {
+  NameVisitor v(tv);
+  if (stmt)
+    stmt->accept(v);
+  if (v.resultStmt)
+    stmt = v.resultStmt;
+  return stmt;
+}
+void NameVisitor::visit(IdExpr *expr) {
+  while (auto s = in(tv->getCtx()->scope.back().replacements, expr->value)) {
+    expr->value = s->first;
+    tv->unify(expr->type, tv->getCtx()->forceFind(s->first)->type);
+  }
+}
+void NameVisitor::visit(AssignStmt *stmt) {
+  seqassert(stmt->lhs->getId(), "invalid AssignStmt {}", stmt->lhs);
+  std::string lhs = stmt->lhs->getId()->value;
+  if (auto changed = in(tv->getCtx()->scope.back().replacements, lhs)) {
+    while (auto s = in(tv->getCtx()->scope.back().replacements, lhs))
+      lhs = changed->first, changed = s;
+    if (stmt->rhs && changed->second) {
+      // Mark the dominating binding as used: `var.__used__ = True`
+      auto u =
+          N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
+      u->setUpdate();
+      stmt->setUpdate();
+      // u->setDone();
+      resultStmt = N<SuiteStmt>(u, stmt->shared_from_this());
+      // resultStmt->done = stmt->done;
+    } else if (changed->second && !stmt->rhs) {
+      // This assignment was a declaration only.
+      // Just mark the dominating binding as used: `var.__used__ = True`
+      stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
+      stmt->rhs = N<BoolExpr>(true);
+      stmt->setUpdate();
+    }
+    stmt->setUpdate();
+    transform(stmt->lhs);
+    transform(stmt->rhs);
+    transform(stmt->type);
+    seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
+  }
+}
+void NameVisitor::visit(TryStmt *stmt) {
+  for (auto &c : stmt->catches) {
+    if (!c.var.empty()) {
+      // Handle dominated except bindings
+      auto changed = in(tv->getCtx()->scope.back().replacements, c.var);
+      while (auto s = in(tv->getCtx()->scope.back().replacements, c.var))
+        c.var = s->first, changed = s;
+      if (changed && changed->second) {
+        auto update =
+            N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
+        update->setUpdate();
+        c.suite = N<SuiteStmt>(update, c.suite);
+      }
+      if (changed)
+        c.exc->setAttr(ExprAttr::Dominated);
+    }
+  }
+}
+void NameVisitor::visit(ForStmt *stmt) {
+  auto var = stmt->var->getId();
+  seqassert(var, "corrupt for variable: {}", stmt->var);
+  auto changed = in(tv->getCtx()->scope.back().replacements, var->value);
+  while (auto s = in(tv->getCtx()->scope.back().replacements, var->value))
+    var->value = s->first, changed = s;
+  if (changed && changed->second) {
+    auto u =
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)), N<BoolExpr>(true));
+    u->setUpdate();
+    stmt->suite = N<SuiteStmt>(u, stmt->suite);
+  }
+  if (changed)
+    var->setAttr(ExprAttr::Dominated);
+}
+void NameVisitor::visit(FunctionStmt *) {}
+void NameVisitor::apply(TypecheckVisitor *tv, std::vector<StmtPtr> &v) {
+  NameVisitor nv(tv);
+  if (!tv->getCtx()->scope.back().replacements.empty())
+    for (auto &s : v)
+      nv.transform(s);
+}
+void NameVisitor::apply(TypecheckVisitor *tv, StmtPtr &s) {
+  NameVisitor nv(tv);
+  if (!tv->getCtx()->scope.back().replacements.empty()) {
+    // LOG("=> {}", tv->getCtx()->scope.back().replacements);
+    // LOG("=> {}", s->toString(2));
+    nv.transform(s);
+    // LOG("<= {}", s->toString(2));
+  }
+}
+void NameVisitor::apply(TypecheckVisitor *tv, ExprPtr &s) {
+  NameVisitor nv(tv);
+  if (!tv->getCtx()->scope.back().replacements.empty())
+    nv.transform(s);
+}
+
+void TypecheckVisitor::leaveConditionalBlock() { ctx->scope.pop_back(); }
+
+void TypecheckVisitor::leaveConditionalBlock(StmtPtr &stmts) {
+  ctx->scope.back().stmts.push_back(stmts);
+  stmts = N<SuiteStmt>(ctx->scope.back().stmts);
+  stmts->done = true;
+  for (auto &s : stmts->getSuite()->stmts)
+    stmts->done &= s->done;
+  NameVisitor::apply(this, stmts);
+  ctx->scope.pop_back();
+  seqassert(!ctx->scope.empty(), "empty scope");
 }
 
 } // namespace codon::ast

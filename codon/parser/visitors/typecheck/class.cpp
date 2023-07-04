@@ -26,7 +26,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
   // classItem will be added later when the scope is different
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
-                                                   ctx->scope.blocks);
+                                                   ctx->getScope());
   classItem->setSrcInfo(stmt->getSrcInfo());
   types::ClassTypePtr typ = nullptr;
   if (!stmt->attributes.has(Attr::Extend)) {
@@ -49,11 +49,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Tuple types are added after class contents are parsed to prevent
     // recursive record types (note: these are allowed for reference types)
     if (!stmt->attributes.has(Attr::Tuple)) {
+      auto v = ctx->find(name);
+      if (v && !v->canShadow)
+        E(Error::ID_INVALID_BIND, getSrcInfo(), name);
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
-      // LOG("added typ/{}: {}",
-      //     classItem->isVar() ? "v" : (classItem->isFunc() ? "f" : "t"),
-      //     classItem->canonicalName);
     }
   } else {
     // Find the canonical name and AST of the class that is to be extended
@@ -191,7 +191,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           //                           : ctx->generateCanonicalName(a.name);
           args.emplace_back(varName, transformType(clone(a.type), false),
                             transform(clone(a.defaultValue), true));
-          LOG("  -> {}", varName);
           ctx->cache->classes[canonicalName].fields.push_back(Cache::Class::ClassField{
               varName, args.back().type->getType(), canonicalName});
         }
@@ -235,19 +234,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           E(Error::CLASS_INVALID_BIND, stmt, name);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
-        // LOG("added typ/{}: {}",
-        //     classItem->isVar() ? "v" : (classItem->isFunc() ? "f" : "t"),
-        //     classItem->canonicalName);
       }
       // Create a cached AST.
       stmt->attributes.module = ctx->moduleName.status == ImportFile::STDLIB
                                     ? STDLIB_IMPORT
                                     : ctx->moduleName.path;
-      ;
-      // format(
-      //     "{}{}",
-      //     ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
-      //     ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;

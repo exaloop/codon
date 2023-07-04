@@ -90,8 +90,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         if (c->isConditional() && i.first.find('.') == std::string::npos) {
           c = findDominatingBinding(i.first, import.ctx.get());
         }
-        // Imports should ignore  noShadow property
-        ctx->Context<TypecheckItem>::add(i.first, c);
+        // Imports should ignore noShadow property
+        ctx->add(i.first, c);
       }
     }
   } else {
@@ -104,8 +104,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
       E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     if (c->isConditional())
       c = findDominatingBinding(i->value, import.ctx.get());
-    // Imports should ignore  noShadow property
-    ctx->Context<TypecheckItem>::add(stmt->as.empty() ? i->value : stmt->as, c);
+    // Imports should ignore noShadow property
+    ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
   }
   resultStmt = transform(!resultStmt ? N<SuiteStmt>() : resultStmt); // erase it
 }
@@ -184,6 +184,10 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
                               nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
+    auto v = ctx->find(altName);
+    if (v && !v->canShadow)
+      E(Error::ID_INVALID_BIND, getSrcInfo(), altName);
+
     auto val = ctx->forceFind(name);
     ctx->add(altName, val);
     ctx->remove(name);
@@ -318,7 +322,10 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
-  n = TypecheckVisitor(ictx, preamble).transform(n);
+  auto tv = TypecheckVisitor(ictx, preamble);
+  n = tv.transform(n);
+  NameVisitor::apply(&tv, n);
+
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();
   // Add comment to the top of import for easier dump inspection

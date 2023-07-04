@@ -67,9 +67,9 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
         transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true))));
   }
 
-  ctx->enterConditionalBlock();
+  enterConditionalBlock();
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
-  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
+  ctx->getBase()->loops.push_back({breakVar, ctx->getScope(), {}});
   stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
 
   ctx->blockLevel++;
@@ -83,8 +83,7 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
                               N<IfStmt>(transform(N<IdExpr>(breakVar)),
                                         transformConditionalScope(stmt->elseSuite)));
   }
-
-  ctx->leaveConditionalBlock();
+  leaveConditionalBlock();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars) {
     findDominatingBinding(var, ctx.get());
@@ -137,30 +136,23 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     stmt->wrapped = true;
   }
 
-  ctx->enterConditionalBlock();
-  ctx->getBase()->loops.push_back({breakVar, ctx->scope.blocks, {}});
-  std::string varName;
-  TypeContext::Item val = nullptr;
-  if (auto i = stmt->var->getId()) {
-    val = ctx->addVar(i->value, varName = ctx->generateCanonicalName(i->value),
-                      ctx->getUnbound());
-    val->avoidDomination = ctx->avoidDomination;
-    transform(stmt->var);
-    stmt->suite = N<SuiteStmt>(stmt->suite);
-  } else {
-    varName = ctx->cache->getTemporaryVar("for");
-    val = ctx->addVar(varName, varName, ctx->getUnbound());
+  enterConditionalBlock();
+  ctx->getBase()->loops.push_back({breakVar, ctx->getScope(), {}});
+  if (!stmt->var->getId()) {
+    auto varName = ctx->cache->getTemporaryVar("for");
     auto var = N<IdExpr>(varName);
-    std::vector<StmtPtr> stmts;
-    // Add for_var = [for variables]
-    stmts.push_back(N<AssignStmt>(stmt->var, clone(var)));
+    stmt->suite =
+        N<SuiteStmt>(N<AssignStmt>(clone(stmt->var), clone(var)), stmt->suite);
     stmt->var = var;
-    stmts.push_back(stmt->suite);
-    stmt->suite = N<SuiteStmt>(stmts);
   }
 
   auto var = stmt->var->getId();
   seqassert(var, "corrupt for variable: {}", stmt->var);
+
+  auto val = ctx->addVar(var->value, ctx->generateCanonicalName(var->value),
+                         ctx->getUnbound());
+  val->avoidDomination = ctx->avoidDomination;
+  transform(stmt->var);
 
   // Unify iterator variable and the iterator type
   if (iterType && iterType->name != "Generator")
@@ -180,8 +172,8 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
                               N<IfStmt>(transform(N<IdExpr>(breakVar)),
                                         transformConditionalScope(stmt->elseSuite)));
   }
+  leaveConditionalBlock(stmt->suite);
 
-  ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
     findDominatingBinding(var, ctx.get());
@@ -251,7 +243,7 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
   // `for cnt in range(tuple_size): ...`
   block->stmts.push_back(
       N<ForStmt>(N<IdExpr>(cntVar),
-                 N<CallExpr>(N<IdExpr>("std.internal.types.range.range"),
+                 N<CallExpr>(N<IdExpr>("std.internal.types.range.range.0"),
                              N<IntExpr>(tupleArgs.size())),
                  N<SuiteStmt>(forBlock)));
 
@@ -274,54 +266,50 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 ///        loop = False   # also set to False on break
 /// A separate suite is generated for each static iteration.
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
-  auto var = stmt->var->getId()->value;
   if (!stmt->iter->getCall() || !stmt->iter->getCall()->expr->getId())
     return nullptr;
-  auto iter = stmt->iter->getCall()->expr->getId();
   auto loopVar = ctx->cache->getTemporaryVar("loop");
 
-  std::vector<std::string> vars{var};
-  auto suiteVec = stmt->suite->getSuite();
-  auto oldSuite = suiteVec ? suiteVec->clone() : nullptr;
-  for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
-    if (auto a = suiteVec->stmts[validI]->getAssign())
-      if (a->rhs && a->rhs->getIndex())
-        if (a->rhs->getIndex()->expr->isId(var)) {
-          vars.push_back(a->lhs->getId()->value);
-          suiteVec->stmts[validI] = nullptr;
-          continue;
-        }
-    break;
+  std::vector<std::string> vars;
+  if (auto i = stmt->var->getId()) {
+    vars.emplace_back(i->value);
+  } else if (auto t = stmt->var->getTuple()) {
+    for (auto &it : t->items) {
+      if (auto i = it->getId())
+        vars.emplace_back(i->value);
+      else
+        return nullptr;
+    }
+  } else {
+    return nullptr;
   }
-  if (vars.size() > 1)
-    vars.erase(vars.begin());
-  auto [ok,
-        items] = transformStaticLoopCall(vars, stmt->iter, [&](const StmtPtr &assigns) {
-    auto brk = N<BreakStmt>();
-    brk->setDone(); // Avoid transforming this one to continue
-    // var [: Static] := expr; suite...
-    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
-                             N<SuiteStmt>(assigns, clone(stmt->suite), brk));
-    loop->gotoVar = loopVar;
-    return loop;
-  });
+  auto [ok, items] =
+      transformStaticLoopCall(vars, stmt->iter, [&](const StmtPtr &assigns) {
+        auto brk = N<BreakStmt>();
+        brk->setDone(); // Avoid transforming this one to continue
+        // var [: Static] := expr; suite...
+        auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
+                                 N<SuiteStmt>(assigns, clone(stmt->suite), brk));
+        loop->gotoVar = loopVar;
+        return loop;
+      });
   if (!ok) {
-    if (oldSuite)
-      stmt->suite = oldSuite;
+    // if (oldSuite)
+    // stmt->suite = oldSuite;
     return nullptr;
   }
 
   // Close the loop
-  ctx->blockLevel++;
   auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
-  a->setUpdate();
   auto block = N<SuiteStmt>();
   for (auto &i : items)
     block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
   block->stmts.push_back(a);
-  auto loop =
-      transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
-                             N<WhileStmt>(N<IdExpr>(loopVar), block)));
+  ctx->blockLevel++;
+  LOG("[loop] {}: {}", getSrcInfo(), loopVar);
+  StmtPtr loop = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                              N<WhileStmt>(N<IdExpr>(loopVar), block));
+  transformConditionalScope(loop);
   ctx->blockLevel--;
   return loop;
 }
@@ -353,7 +341,7 @@ TypecheckVisitor::transformStaticLoopCall(
       }
       block.push_back(wrap(stmt->clone()));
     }
-  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange")) {
+  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
       error("expected one item");
     auto st =
@@ -369,7 +357,7 @@ TypecheckVisitor::transformStaticLoopCall(
       stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(stmt->clone()));
     }
-  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange:1")) {
+  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
     if (vars.size() != 1)
       error("expected one item");
     auto ed =
@@ -381,7 +369,7 @@ TypecheckVisitor::transformStaticLoopCall(
       stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(stmt->clone()));
     }
-  } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads")) {
+  } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads.0")) {
     if (vars.size() != 1)
       error("expected one item");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
@@ -413,7 +401,7 @@ TypecheckVisitor::transformStaticLoopCall(
     } else {
       error("bad call to fn_overloads");
     }
-  } else if (fn && startswith(fn->value, "std.internal.builtin.staticenumerate")) {
+  } else if (fn && startswith(fn->value, "std.internal.builtin.staticenumerate.0")) {
     if (vars.size() != 2)
       error("expected two items");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
@@ -433,7 +421,7 @@ TypecheckVisitor::transformStaticLoopCall(
     } else {
       error("bad call to staticenumerate");
     }
-  } else if (fn && startswith(fn->value, "std.internal.internal.vars")) {
+  } else if (fn && startswith(fn->value, "std.internal.internal.vars.0")) {
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
@@ -464,7 +452,7 @@ TypecheckVisitor::transformStaticLoopCall(
     } else {
       error("bad call to vars");
     }
-  } else if (fn && startswith(fn->value, "std.internal.static.vars_types")) {
+  } else if (fn && startswith(fn->value, "std.internal.static.vars_types.0")) {
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 

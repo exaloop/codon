@@ -27,7 +27,7 @@
 #define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
-#define FN_UNWRAP "std.internal.types.optional.unwrap"
+#define FN_UNWRAP "std.internal.types.optional.unwrap.0"
 #define VAR_ARGV "__argv__"
 
 #define MAX_INT_WIDTH 10000
@@ -62,6 +62,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   /// Number of auto-generated variables so far. Used to generate the next unique
   /// variable name in getTemporaryVar() below.
   int varCount = 0;
+  /// Scope counter. Each conditional block gets a new scope ID.
+  int blockCount = 1;
 
   /// Holds module import data.
   struct Module {
@@ -240,7 +242,7 @@ public:
 
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.
-  std::string getTemporaryVar(const std::string &prefix = "", char sigil = '.');
+  std::string getTemporaryVar(const std::string &prefix = "", char sigil = '%');
   /// Get the non-canonical version of a canonical name.
   std::string rev(const std::string &s);
 

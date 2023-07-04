@@ -106,9 +106,9 @@ public:
   /// Pretty-prints the current context state.
   virtual void dump() {}
 
-private:
+protected:
   /// Remove an identifier from the map only.
-  void removeFromMap(const std::string &name) {
+  virtual void removeFromMap(const std::string &name) {
     auto i = map.find(name);
     if (i == map.end())
       return;

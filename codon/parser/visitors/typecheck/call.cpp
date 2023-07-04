@@ -205,6 +205,8 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
           el->mode = EllipsisExpr::PARTIAL;
       }
       // Case: normal argument (no expansion)
+      if (args[ai].value->toString() == "('with_index.0)")
+        LOG("--");
       transform(args[ai++].value);
     }
   }
@@ -573,9 +575,9 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   if (val == "tuple" && expr->args.size() == 1 &&
       CAST(expr->args.front().value, GeneratorExpr)) {
     return {true, transformTupleGenerator(expr)};
-  } else if (val == "std.collections.namedtuple") {
+  } else if (val == "std.collections.namedtuple.0") {
     return {true, transformNamedTuple(expr)};
-  } else if (val == "std.functools.partial") {
+  } else if (val == "std.functools.partial.0") {
     return {true, transformFunctoolsPartial(expr)};
   } else if (val == "superf") {
     return {true, transformSuperF(expr)};
@@ -589,7 +591,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformIsInstance(expr)};
   } else if (val == "staticlen") {
     return {true, transformStaticLen(expr)};
-  } else if (startswith(val, "hasattr:")) {
+  } else if (val == "hasattr" || val == "hasattr:1") {
     return {true, transformHasAttr(expr)};
   } else if (val == "getattr") {
     return {true, transformGetAttr(expr)};
@@ -603,7 +605,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformTupleFn(expr)};
   } else if (val == "__realized__") {
     return {true, transformRealizedFn(expr)};
-  } else if (val == "std.internal.static.static_print") {
+  } else if (val == "std.internal.static.static_print.0") {
     return {false, transformStaticPrintFn(expr)};
   } else if (val == "__has_rtti__") {
     LOG("- rtti has {}", getSrcInfo());
@@ -626,8 +628,8 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
 
-  ctx->enterConditionalBlock();
-  ctx->getBase()->loops.push_back({"", ctx->scope.blocks, {}});
+  enterConditionalBlock();
+  ctx->getBase()->loops.push_back({"", ctx->getScope(), {}});
   if (auto i = var->getId()) {
     ctx->addVar(i->value, ctx->generateCanonicalName(i->value), ctx->getUnbound());
     var = transform(var);
@@ -639,7 +641,7 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
     auto head = transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var)));
     ex = N<StmtExpr>(head, transform(ex));
   }
-  ctx->leaveConditionalBlock();
+  leaveConditionalBlock();
   // Dominate loop variables
   for (auto &var : ctx->getBase()->getLoop()->seenVars)
     findDominatingBinding(var, ctx.get());
@@ -866,7 +868,7 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   } else if (typExpr->type->is("pyobj") && !typExpr->isType()) {
     if (typ->is("pyobj")) {
       expr->staticValue.type = StaticValue::NOT_STATIC;
-      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance"),
+      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance.0"),
                                    expr->args[0].value, expr->args[1].value));
     } else {
       return transform(N<BoolExpr>(false));
@@ -1082,7 +1084,7 @@ ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
 // Transform internal.static calls
 std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *expr) {
   unify(expr->type, ctx->getUnbound());
-  if (expr->expr->isId("std.internal.static.fn_can_call")) {
+  if (expr->expr->isId("std.internal.static.fn_can_call.0")) {
     expr->staticValue.type = StaticValue::INT;
     auto typ = expr->args[0].value->getType()->getClass();
     if (!typ)
@@ -1106,7 +1108,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       callArgs.back().value->setType(a.second);
     }
     return {true, transform(N<BoolExpr>(canCall(fn, callArgs) >= 0))};
-  } else if (expr->expr->isId("std.internal.static.fn_arg_has_type")) {
+  } else if (expr->expr->isId("std.internal.static.fn_arg_has_type.0")) {
     expr->staticValue.type = StaticValue::INT;
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
@@ -1116,7 +1118,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto &args = fn->getArgTypes();
     return {true, transform(N<BoolExpr>(*idx >= 0 && *idx < args.size() &&
                                         args[*idx]->canRealize()))};
-  } else if (expr->expr->isId("std.internal.static.fn_arg_get_type")) {
+  } else if (expr->expr->isId("std.internal.static.fn_arg_get_type.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
@@ -1126,7 +1128,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     if (*idx < 0 || *idx >= args.size() || !args[*idx]->canRealize())
       error("argument does not have type");
     return {true, transform(NT<IdExpr>(args[*idx]->realizedName()))};
-  } else if (expr->expr->isId("std.internal.static.fn_args")) {
+  } else if (expr->expr->isId("std.internal.static.fn_args.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
@@ -1139,7 +1141,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       v.push_back(N<StringExpr>(n));
     }
     return {true, transform(N<TupleExpr>(v))};
-  } else if (expr->expr->isId("std.internal.static.fn_has_default")) {
+  } else if (expr->expr->isId("std.internal.static.fn_has_default.0")) {
     expr->staticValue.type = StaticValue::INT;
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
@@ -1150,7 +1152,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     if (*idx < 0 || *idx >= args.size())
       error("argument out of bounds");
     return {true, transform(N<IntExpr>(args[*idx].defaultValue != nullptr))};
-  } else if (expr->expr->isId("std.internal.static.fn_get_default")) {
+  } else if (expr->expr->isId("std.internal.static.fn_get_default.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
@@ -1160,7 +1162,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     if (*idx < 0 || *idx >= args.size())
       error("argument out of bounds");
     return {true, transform(args[*idx].defaultValue)};
-  } else if (expr->expr->isId("std.internal.static.fn_wrap_call_args")) {
+  } else if (expr->expr->isId("std.internal.static.fn_wrap_call_args.0")) {
     auto typ = expr->args[0].value->getType()->getClass();
     if (!typ)
       return {true, nullptr};
@@ -1190,7 +1192,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     for (auto &a : zzz->getCall()->args)
       tupArgs.push_back(a.value);
     return {true, transform(N<TupleExpr>(tupArgs))};
-  } else if (expr->expr->isId("std.internal.static.vars")) {
+  } else if (expr->expr->isId("std.internal.static.vars.0")) {
     auto funcTyp = expr->expr->type->getFunc();
     auto t = funcTyp->funcGenerics[0].type->getStatic();
     if (!t)
@@ -1216,7 +1218,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       idx++;
     }
     return {true, transform(N<TupleExpr>(tupleItems))};
-  } else if (expr->expr->isId("std.internal.static.tuple_type")) {
+  } else if (expr->expr->isId("std.internal.static.tuple_type.0")) {
     auto funcTyp = expr->expr->type->getFunc();
     auto t = funcTyp->funcGenerics[0].type;
     if (!t || !realize(t))

@@ -105,13 +105,16 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
             std::make_shared<ast::StringExpr>(mode)));
       }
-    auto s = ast::TypecheckVisitor(sctx, preamble).transform(node);
+    auto tv = ast::TypecheckVisitor(sctx, preamble);
+    tv.transform(node);
+    ast::NameVisitor::apply(&tv, node);
+
     if (!cache->errors.empty())
       throw exc::ParserException();
     auto typechecked = std::make_shared<ast::SuiteStmt>();
     for (auto &s : *preamble)
       typechecked->stmts.push_back(s);
-    typechecked->stmts.push_back(s);
+    typechecked->stmts.push_back(node);
     // TODO: unroll on errors...
 
     // add newly realized functions

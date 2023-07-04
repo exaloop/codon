@@ -26,15 +26,10 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
   std::swap(avoidDomination, ctx->avoidDomination);
   if (ctx->isConditionalExpr) {
     // Make sure to transform both suite _AND_ the expression in the same scope
-    ctx->enterConditionalBlock();
+    enterConditionalBlock();
     transform(s);
     transform(expr->var);
-    SuiteStmt *suite = s->getSuite();
-    if (!suite) {
-      s = N<SuiteStmt>(s);
-      suite = s->getSuite();
-    }
-    ctx->leaveConditionalBlock(&suite->stmts);
+    leaveConditionalBlock(s);
   } else {
     s = transform(s);
     transform(expr->var);
@@ -82,7 +77,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     auto val = ctx->find(ei->value);
     if (!val)
       E(Error::ID_NOT_FOUND, ei, ei->value);
-    if (ctx->scope.blocks != val->scope)
+    if (ctx->getScope() != val->scope)
       E(Error::DEL_NOT_ALLOWED, ei, ei->value);
     ctx->remove(ei->value);
   } else {
@@ -165,16 +160,14 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
           ctx->instantiate(assign->type->getSrcInfo(), assign->type->getType()));
   }
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
-                                        assign->lhs->type, ctx->scope.blocks);
+                                        assign->lhs->type, ctx->getScope());
   val->setSrcInfo(getSrcInfo());
   if (auto st = getStaticGeneric(assign->type.get()))
     val->staticType = st;
   if (ctx->avoidDomination)
     val->avoidDomination = true;
-  ctx->Context<TypecheckItem>::add(e->value, val);
+  ctx->add(e->value, val);
   ctx->addAlwaysVisible(val);
-  LOG("added ass/{}: {}", val->isVar() ? "v" : (val->isFunc() ? "f" : "t"),
-      val->canonicalName);
 
   if (assign->rhs && assign->type && assign->type->getType()->isStaticType()) {
     // Static assignments (e.g., `x: Static[int] = 5`)

@@ -80,6 +80,14 @@ public: // Convenience transformators
   StmtPtr transformConditionalScope(StmtPtr &stmt);
 
 private:
+  /// Enter a conditional block.
+  void enterConditionalBlock();
+  /// Leave a conditional block. Populate stmts (if set) with the declarations of
+  /// newly added identifiers that dominate the children blocks.
+  void leaveConditionalBlock();
+  void leaveConditionalBlock(StmtPtr &);
+
+private:
   void defaultVisit(Expr *e) override;
   void defaultVisit(Stmt *s) override;
 
@@ -330,6 +338,9 @@ class NameVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
 public:
   NameVisitor(TypecheckVisitor *tv) : tv(tv) {}
+  static void apply(TypecheckVisitor *tv, std::vector<StmtPtr> &v);
+  static void apply(TypecheckVisitor *tv, StmtPtr &s);
+  static void apply(TypecheckVisitor *tv, ExprPtr &s);
   ExprPtr transform(const std::shared_ptr<Expr> &expr) override;
   ExprPtr transform(std::shared_ptr<Expr> &expr) override;
   StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override;
@@ -338,6 +349,7 @@ public:
   void visit(AssignStmt *stmt) override;
   void visit(TryStmt *stmt) override;
   void visit(ForStmt *stmt) override;
+  void visit(FunctionStmt *stmt) override;
 };
 
 } // namespace codon::ast
