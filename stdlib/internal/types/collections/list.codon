@@ -9,6 +9,8 @@ class List:
         self.len = 0
 
     def __init__(self, capacity: int):
+        if capacity < 0:
+            capacity = 0
         self.arr = Array[T](capacity)
         self.len = 0
 
@@ -372,6 +374,8 @@ class List:
     def _resize_if_full(self):
         if self.len == self.arr.len:
             new_cap = (1 + 3 * self.len) // 2
+            if new_cap <= 0:
+                new_cap = 1
             self._resize(new_cap)
 
     def __hash__(self) -> int:
