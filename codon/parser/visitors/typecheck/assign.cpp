@@ -31,7 +31,7 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
     transform(expr->var);
     leaveConditionalBlock(s);
   } else {
-    s = transform(s);
+    transform(s);
     transform(expr->var);
   }
   std::swap(avoidDomination, ctx->avoidDomination);

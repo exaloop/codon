@@ -268,8 +268,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // auto parentClassAST =
       // ctx->cache->classes[stmt->attributes.parentClass].ast.get();
       parentClass = ctx->forceFind(stmt->attributes.parentClass)->type->getClass();
-      parentClass = parentClass->instantiate(ctx->typecheckLevel - 1, nullptr, nullptr)
-                        ->getClass();
+      // parentClass = parentClass->instantiate(ctx->typecheckLevel - 1, nullptr,
+      // nullptr)
+      // ->getClass();
       // seqassert(parentClass, "parent class not set");
       // for (int i = 0, j = 0, k = 0; i < parentClassAST->args.size(); i++) {
       //   if (parentClassAST->args[i].status != Param::Normal) {
@@ -439,7 +440,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   // Debug information
-  LOG("[stmt] added func {}: {}", canonicalName, funcTyp->debugString(2));
+  // LOG("[stmt] added func {}: {}", canonicalName, funcTyp->debugString(2));
 
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;

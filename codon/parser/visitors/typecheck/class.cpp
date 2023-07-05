@@ -97,6 +97,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         generic->getUnbound()->id = val->type->getLink()->id;
         ctx->addType(ctx->cache->rev(val->canonicalName), val->canonicalName, generic)
             ->generic = true;
+        args.emplace_back(val->canonicalName, nullptr, nullptr, a.status);
       }
     } else {
       // Add all generics before parent classes, fields and methods
@@ -345,7 +346,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     for (auto &m : ctx->cache->classes[canonicalName].fields)
       LOG("       - member: {}: {:D}", m.name, m.type);
     for (auto &m : ctx->cache->classes[canonicalName].methods)
-      LOG("       - method: {}: {}", m.first, m.second);
+      LOG("       - method: {}: {} ({:D})", m.first, m.second,
+          ctx->cache->functions[m.second].type);
   } catch (const exc::ParserException &) {
     if (!stmt->attributes.has(Attr::Tuple))
       ctx->remove(name);

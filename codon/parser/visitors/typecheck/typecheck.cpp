@@ -293,6 +293,8 @@ void TypecheckVisitor::defaultVisit(Stmt *s) {
 /// Typecheck statement expressions.
 void TypecheckVisitor::visit(StmtExpr *expr) {
   auto done = true;
+  if (expr->expr->isId("chain.0"))
+    LOG("--");
   for (auto &s : expr->stmts) {
     transform(s);
     done &= s->isDone();

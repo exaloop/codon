@@ -1217,6 +1217,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       }
       idx++;
     }
+    LOG("-> {}", tupleItems);
     return {true, transform(N<TupleExpr>(tupleItems))};
   } else if (expr->expr->isId("std.internal.static.tuple_type.0")) {
     auto funcTyp = expr->expr->type->getFunc();

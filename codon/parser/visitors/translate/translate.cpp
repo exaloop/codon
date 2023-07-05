@@ -198,7 +198,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
               expr->args[0].value->getId()->value);
     result = make<ir::PointerValue>(expr, val->getVar());
     return;
-  } else if (expr->expr->isId("__array__.__new__:0")) {
+  } else if (expr->expr->isId("__array__.__new__")) {
     auto fnt = expr->expr->type->getFunc();
     auto szt = fnt->funcGenerics[0].type->getStatic();
     auto sz = szt->evaluate().getInt();
@@ -209,7 +209,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
   } else if (expr->expr->getId() && startswith(expr->expr->getId()->value,
-                                               "__internal__.yield_in_no_suspend:0")) {
+                                               "__internal__.yield_in_no_suspend")) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }

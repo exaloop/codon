@@ -326,6 +326,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       trimStars(varName);
       auto v = ctx->addVar(ctx->cache->rev(varName), varName,
                            std::make_shared<LinkType>(type->getArgTypes()[j++]));
+      // LOG("[param] {} -> {}", v->canonicalName, v->type);
     }
 
   // Populate realization table in advance to support recursive realizations
@@ -342,10 +343,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       std::make_shared<TypecheckItem>(key, "", ctx->getModule(), type->getFunc());
   ctx->addAlwaysVisible(val);
 
+  auto ast_suite = clone(ast->suite);
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
-    auto ret = inferTypes(ast->suite);
+    auto ret = inferTypes(ast_suite);
     ctx->blockLevel = oldBlockLevel;
 
     if (!ret) {
@@ -354,7 +356,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.
-        LOG("[error=>] {}", ast->suite->toString(2));
+        LOG("[error=>] {}", ast_suite->toString(2));
         // inferTypes(ast->suite, ctx);
         error("cannot typecheck the program");
       }
@@ -364,6 +366,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       getLogger().level--;
       this->ctx = oldCtx;
       return nullptr; // inference must be delayed
+    } else {
+      ast_suite = ret;
     }
 
     // Use NoneType as the return type when the return type is not specified and
@@ -383,7 +387,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
-                           ast->suite);
+                           ast_suite);
   r->ast->attributes = ast->attributes;
 
   if (!in(ctx->cache->pendingRealizations,

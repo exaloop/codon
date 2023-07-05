@@ -30,8 +30,8 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 
   if (expr->op == "!") {
     // `not expr` -> `expr.__bool__().__invert__()`
-    resultExpr = transform(N<CallExpr>(N<DotExpr>(
-        N<CallExpr>(N<DotExpr>(clone(expr->expr), "__bool__")), "__invert__")));
+    resultExpr = transform(N<CallExpr>(
+        N<DotExpr>(N<CallExpr>(N<DotExpr>(expr->expr, "__bool__")), "__invert__")));
   } else {
     std::string magic;
     if (expr->op == "~")
@@ -43,7 +43,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
     else
       seqassert(false, "invalid unary operator '{}'", expr->op);
     resultExpr =
-        transform(N<CallExpr>(N<DotExpr>(clone(expr->expr), format("__{}__", magic))));
+        transform(N<CallExpr>(N<DotExpr>(expr->expr, format("__{}__", magic))));
   }
 }
 

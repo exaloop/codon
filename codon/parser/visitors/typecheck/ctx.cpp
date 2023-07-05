@@ -33,8 +33,8 @@ TypeContext::TypeContext(Cache *cache, std::string filename)
 
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   seqassert(!var->scope.empty(), "bad scope for '{}'", name);
-  // LOG("[ctx] {} @ {}: + {}: {} ({})", getModule(), getSrcInfo(), name,
-  //     var->canonicalName, var->scope);
+  // LOG("[ctx] {} @ {}: + {}: {} ({:D})", getModule(), getSrcInfo(), name,
+  // var->canonicalName, var->type);
   Context<TypecheckItem>::add(name, var);
 }
 
@@ -86,6 +86,7 @@ TypeContext::Item TypeContext::addFunc(const std::string &name,
 }
 
 TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item) {
+  add(item->canonicalName, item);
   if (!cache->typeCtx->Context<TypecheckItem>::find(item->canonicalName)) {
     cache->typeCtx->add(item->canonicalName, item);
 
