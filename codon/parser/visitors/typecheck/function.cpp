@@ -371,6 +371,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
+  ctx->cache->functions[canonicalName].captures = Name2Visitor::apply(
+      N<FunctionStmt>(stmt->name, stmt->ret, stmt->args, stmt->suite));
   ctx->cache->functions[canonicalName].module = ctx->getModule();
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst =

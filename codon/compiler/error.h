@@ -165,6 +165,7 @@ enum Error {
   CALL_ELLIPSIS,
   IMPORT_IDENTIFIER,
   IMPORT_FN,
+  IMPORT_STAR,
   FN_LLVM,
   FN_LAST_KWARG,
   FN_MULTIPLE_ARGS,
@@ -274,6 +275,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::IMPORT_FN:
     return fmt::format(
         "function signatures only allowed when importing C or Python functions");
+  case Error::IMPORT_STAR:
+    return fmt::format("import * only allowed at module level");
   case Error::FN_LLVM:
     return fmt::format("return types required for LLVM and C functions");
   case Error::FN_LAST_KWARG:
