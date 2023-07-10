@@ -26,11 +26,14 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
   auto val = findDominatingBinding(expr->value, ctx.get());
-  if (!val && ctx->getBase()->pyCaptures) {
-    ctx->getBase()->pyCaptures->insert(expr->value);
-    resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
-    return;
-  } else if (!val) {
+  // if (!val && ctx->getBase()->pyCaptures) {
+  //   ctx->getBase()->pyCaptures->insert(expr->value);
+  //   resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
+  //   return;
+  // } else
+  // if (ctx->isOuter(val) && !ctx->isCanonicalName(expr->value))
+  //   ctx->getBase()->captures.insert(expr->value);
+  if (!val) {
     if (in(ctx->cache->overloads, expr->value))
       val = ctx->forceFind(getDispatch(expr->value)->ast->name);
     if (!val) {
@@ -271,7 +274,7 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
   for (; i-- > 0;) {
     if (ctx->bases[i].name == val->getBaseName())
       break;
-    if (!localGeneric && !parentClassGeneric && !ctx->bases[i].captures)
+    if (!localGeneric && !parentClassGeneric)
       crossCaptureBoundary = true;
   }
 
@@ -297,30 +300,29 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is enabled
-  auto captures = ctx->getBase()->captures;
-  if (captures && !in(*captures, val->canonicalName)) {
-    // Captures are transformed to function arguments; generate new name for that
-    // argument
-    ExprPtr typ = nullptr;
-    if (val->isType())
-      typ = N<IdExpr>("type");
-    if (auto st = val->isStatic())
-      typ = N<IndexExpr>(N<IdExpr>("Static"),
-                         N<IdExpr>(st == StaticValue::INT ? "int" : "str"));
-    auto [newName, _] = (*captures)[val->canonicalName] = {
-        ctx->generateCanonicalName(val->canonicalName), typ};
-    ctx->cache->reverseIdentifierLookup[newName] = newName;
-    // Add newly generated argument to the context
-    std::shared_ptr<TypecheckItem> newVal = nullptr;
-    if (val->isType())
-      newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, val->type);
-    else
-      newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, val->type);
-    newVal->baseName = ctx->getBaseName();
-    newVal->canShadow = false; // todo)) needed here? remove noshadow on fn boundaries?
-    newVal->scope = ctx->getBase()->scope;
-    return true;
-  }
+  // auto captures = ctx->getBase()->captures;
+  // if (captures && !in(*captures, val->canonicalName)) {
+  //   // Captures are transformed to function arguments; generate new name for that
+  //   // argument
+  //   ExprPtr typ = nullptr;
+  //   if (val->isType())
+  //     typ = N<IdExpr>("type");
+  //   if (auto st = val->isStatic())
+  //     typ = N<IndexExpr>(N<IdExpr>("Static"),
+  //                        N<IdExpr>(st == StaticValue::INT ? "int" : "str"));
+  //   auto [newName, _] = (*captures)[val->canonicalName] = {
+  //       ctx->generateCanonicalName(val->canonicalName), typ};
+  //   ctx->cache->reverseIdentifierLookup[newName] = newName;
+  //   // Add newly generated argument to the context
+  //   std::shared_ptr<TypecheckItem> newVal = nullptr;
+  //   if (val->isType())
+  //     newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, val->type);
+  //   else
+  //     newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, val->type);
+  //   newVal->baseName = ctx->getBaseName();
+  //   newVal->canShadow = false; // todo)) needed here? remove noshadow on fn
+  //   boundaries? newVal->scope = ctx->getBase()->scope; return true;
+  // }
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled

@@ -175,6 +175,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::shared_ptr<FunctionStmt> ast = nullptr;
     /// Non-simplified AST.
     std::shared_ptr<FunctionStmt> origAst = nullptr;
+    std::set<std::string> captures;
 
     /// A function realization.
     struct FunctionRealization {

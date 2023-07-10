@@ -192,8 +192,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   std::vector<Param> args;
   StmtPtr suite = nullptr;
   ExprPtr ret = nullptr;
-  std::unordered_map<std::string, std::pair<std::string, ExprPtr>> captures;
-  std::unordered_set<std::string> pyCaptures;
   std::vector<ClassType::Generic> explicits;
   std::shared_ptr<types::RecordType> baseType = nullptr;
   {
@@ -354,10 +352,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       } else if (stmt->attributes.has(Attr::C)) {
         // Do nothing
       } else {
-        if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) && !isClassMember)
-          ctx->getBase()->captures = &captures;
-        if (stmt->attributes.has("std.internal.attributes.pycapture"))
-          ctx->getBase()->pyCaptures = &pyCaptures;
+        // if ((isEnclosedFunc || stmt->attributes.has(Attr::Capture)) &&
+        // !isClassMember)
+        //   ctx->getBase()->captures = &captures;
+        // if (stmt->attributes.has("std.internal.attributes.pycapture"))
+        //   ctx->getBase()->pyCaptures = &pyCaptures;
         suite = clone(stmt->suite);
         // suite = SimplifyVisitor(ctx,
         // preamble).transformConditionalScope(stmt->suite);

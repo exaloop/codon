@@ -352,4 +352,48 @@ public:
   void visit(FunctionStmt *stmt) override;
 };
 
+// class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+//   TypecheckVisitor *tv;
+//   ExprPtr resultExpr = nullptr;
+//   StmtPtr resultStmt = nullptr;
+
+// public:
+//   Name2Visitor() {}
+//   static void apply(TypecheckVisitor *tv, std::vector<StmtPtr> &v);
+//   static void apply(TypecheckVisitor *tv, StmtPtr &s);
+//   static void apply(TypecheckVisitor *tv, ExprPtr &s);
+//   ExprPtr transform(const std::shared_ptr<Expr> &expr) override;
+//   ExprPtr transform(std::shared_ptr<Expr> &expr) override;
+//   StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override;
+//   StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
+
+//   void visit(IdExpr *expr) {
+//     auto name = expr->value;
+//     if (add) {
+//       if (in(local, name))
+//         error;
+//       local.insert(name);
+//     } else {
+//       if (!in(local, name))
+//         seen.insert(name);
+//     }
+//   }
+//   void visit(AssignStmt *stmt) override {
+//     add = true;
+//     transform(stmt->lhs);
+//     add = false;
+//     transform(stmt->rhs);
+//     transform(stmt->type);
+//   }
+//   void visit(TryStmt *stmt) {
+
+//   }
+//   void visit(ForStmt *stmt) {
+
+//   }
+//   void visit(FunctionStmt *stmt) {
+
+//   }
+// };
+
 } // namespace codon::ast

@@ -136,6 +136,8 @@ class ByVal: pass
 class ByRef: pass
 @__internal__
 class Tuple: pass
+@__internal__
+class KwTuple: pass
 
 @__internal__
 class ClassVar[T]:
@@ -216,3 +218,17 @@ def statictuple(*args):
 
 def __has_rtti__(T: type):
     pass
+
+# class Type[T]: ...
+
+# @__internal__
+# class Function:
+#     F: Static[str]
+
+# @__internal__
+# class PartialFunction:
+#     F: Static[str]
+#     args: T
+#     kwargs: K
+#     T: type # Tuple
+#     K: type # KwTuple

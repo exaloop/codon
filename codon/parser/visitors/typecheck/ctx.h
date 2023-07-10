@@ -125,8 +125,7 @@ struct TypeContext : public Context<TypecheckItem> {
     /// (representing the canonical function argument names that are appended to the
     /// function after processing) and their types (indicating if they are a type, a
     /// static or a variable).
-    std::unordered_map<std::string, std::pair<std::string, ExprPtr>> *captures =
-        nullptr;
+    // std::unordered_set<std::string> captures;
 
     /// Map of identifiers that are to be fetched from Python.
     std::unordered_set<std::string> *pyCaptures = nullptr;
