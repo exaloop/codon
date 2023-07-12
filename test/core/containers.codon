@@ -299,6 +299,24 @@ def test_list():
     assert list(reversed(list('abc'))) == ['c', 'b', 'a']
     assert list(list('abc')[::-1]) == ['c', 'b', 'a']
     assert list(reversed(List[str]())) == List[str]()
+
+    # https://github.com/exaloop/codon/issues/402
+    b1 = [1 for _ in range(0)]
+    b2 = [str(x) for x in b1]
+    b3 = List[float](capacity=0)
+    b4 = List[float](capacity=-1)
+    assert len(b1) == 0
+    assert len(b2) == 0
+    assert len(b3) == 0
+    assert len(b4) == 0
+    b1.append(42)
+    b2.append('a')
+    b3.append(4.2)
+    b4.append(2.4)
+    assert b1 == [42]
+    assert b2 == ['a']
+    assert b3 == [4.2]
+    assert b4 == [2.4]
 test_list()
 
 @test
