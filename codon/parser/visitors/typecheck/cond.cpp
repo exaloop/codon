@@ -107,8 +107,8 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   ctx->blockLevel++;
-  transformConditionalScope(stmt->ifSuite);
-  transformConditionalScope(stmt->elseSuite);
+  transform(stmt->ifSuite);
+  transform(stmt->elseSuite);
   ctx->blockLevel--;
 
   if (stmt->cond->isDone() && (!stmt->ifSuite || stmt->ifSuite->isDone()) &&
@@ -136,12 +136,10 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
   auto result = N<SuiteStmt>();
   result->stmts.push_back(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
   for (auto &c : stmt->cases) {
-    enterConditionalBlock();
     StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
     if (c.guard)
       suite = N<IfStmt>(clone(c.guard), suite);
     result->stmts.push_back(transformPattern(N<IdExpr>(var), clone(c.pattern), suite));
-    leaveConditionalBlock(result->stmts.back());
   }
   // Make sure to break even if there is no case _ to prevent infinite loop
   result->stmts.push_back(N<BreakStmt>());

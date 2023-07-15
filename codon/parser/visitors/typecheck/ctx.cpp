@@ -436,7 +436,6 @@ void TypeContext::dump(int pad) {
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
     LOG("   ... scope:     {}", t->scope);
     LOG("   ... access:    {}", t->accessChecked);
-    LOG("   ... shdw/dom:  {} / {}", t->canShadow, t->avoidDomination);
     LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->staticType));
   }
 }

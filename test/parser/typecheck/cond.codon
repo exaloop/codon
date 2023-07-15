@@ -1,0 +1,106 @@
+
+#%% cond,barebones
+a = 5
+print (1 <= a <= 10), (1 >= a >= -5) #: True False
+
+#%% if,barebones
+c = 5
+a = 1 if c < 5 else 2
+b = -(1 if c else 2)
+print a, b #: 2 -1
+
+
+
+#%% range_err,barebones
+1 ... 3 #! unexpected range expression
+
+#%% match
+def foo(x):
+    match x:
+        case 1:
+            print 'int'
+        case 2 ... 10:
+            print 'range'
+        case 'ACGT':
+            print 'string'
+        case (a, 1):
+            print 'tuple_wild', a
+        case []:
+            print 'list'
+        case [[]]:
+            print 'list list'
+        case [1, 2]:
+            print 'list 2'
+        case [1, z, ...] if z < 5:
+            print 'list 3', z
+        case [1, _, ..., zz] | (1, zz):
+            print 'list 4', zz
+        case (1 ... 10, s := ('ACGT', 1 ... 4)):
+            print 'complex', s
+        case _:
+            print 'else'
+foo(1) #: int
+foo(5) #: range
+foo('ACGT') #: string
+foo((9, 1)) #: tuple_wild 9
+foo(List[int]()) #: list
+foo([List[int]()]) #: list list
+foo([1, 2]) #: list 2
+foo([1, 3]) #: list 3 3
+foo([1, 5]) #: else
+foo([1, 5, 10]) #: list 4 10
+foo((1, 33)) #: list 4 33
+foo((9, ('ACGT', 3))) #: complex ('ACGT', 3)
+foo(range(10)) #: else
+
+#%% match_err_1,barebones
+match [1, 2]:
+    case [1, ..., 2, ..., 3]: pass
+#! multiple ellipses in a pattern
+
+#%% if,barebones
+y = 1 if True else 2
+print y.__class__.__name__ #: int
+
+a = None
+b = 5
+z = a if bool(True) else b # needs bool to prevent static evaluation
+print z, z.__class__.__name__ #: None Optional[int]
+
+zz = 1.11 if True else None
+print zz, zz.__class__.__name__ #: 1.11 float
+
+#%% if,barebones
+for a, b in [(1, 2), (3, 3), (5, 4)]:
+    if a > b:
+        print '1',
+    elif a == b:
+        print '=',
+    else:
+        print '2',
+print '_'  #: 2 = 1 _
+
+if 1:
+    print '1' #: 1
+
+#%% static_if,barebones
+def foo(x, N: Static[int]):
+    if isinstance(x, int):
+        return x + 1
+    elif isinstance(x, float):
+        return x.__pow__(.5)
+    elif isinstance(x, Tuple[int, str]):
+        return f'foo: {x[1]}'
+    elif isinstance(x, Tuple) and (N >= 3 or staticlen(x) > 2):
+        return x[2:]
+    elif hasattr(x, '__len__'):
+        return 'len ' + str(x.__len__())
+    else:
+        compile_error('invalid type')
+print foo(N=1, x=1) #: 2
+print foo(N=1, x=2.0) #: 1.41421
+print foo(N=1, x=(1, 'bar')) #: foo: bar
+print foo(N=1, x=(1, 2)) #: len 2
+print foo(N=3, x=(1, 2)) #: ()
+print foo(N=1, x=(1, 2, 3)) #: (3)
+

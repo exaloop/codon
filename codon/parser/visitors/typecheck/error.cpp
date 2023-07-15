@@ -52,7 +52,7 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
-  transformConditionalScope(stmt->suite);
+  transform(stmt->suite);
   ctx->blockLevel--;
 
   std::vector<TryStmt::Catch> catches;
@@ -61,7 +61,6 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
-    enterConditionalBlock();
     if (!c.var.empty()) {
       c.var = ctx->generateCanonicalName(c.var);
       ctx->addVar(ctx->cache->rev(c.var), c.var, ctx->getUnbound());
@@ -96,12 +95,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         unify(val->type, c.exc->getType());
       }
       ctx->blockLevel++;
-      transformConditionalScope(c.suite);
+      transform(c.suite);
       ctx->blockLevel--;
       done &= (!c.exc || c.exc->isDone()) && c.suite->isDone();
       catches.push_back(c);
     }
-    leaveConditionalBlock();
   }
   if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
     // Process PyError catches

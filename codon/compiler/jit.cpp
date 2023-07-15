@@ -106,8 +106,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
+    ast::Name2Visitor::apply(sctx->cache, node);
     tv.transform(node);
-    ast::NameVisitor::apply(&tv, node);
 
     if (!cache->errors.empty())
       throw exc::ParserException();

@@ -205,8 +205,6 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
           el->mode = EllipsisExpr::PARTIAL;
       }
       // Case: normal argument (no expansion)
-      if (args[ai].value->toString() == "('with_index.0)")
-        LOG("--");
       transform(args[ai++].value);
     }
   }
@@ -608,7 +606,6 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   } else if (val == "std.internal.static.static_print.0") {
     return {false, transformStaticPrintFn(expr)};
   } else if (val == "__has_rtti__") {
-    LOG("- rtti has {}", getSrcInfo());
     return {true, transformHasRttiFn(expr)};
   } else {
     return transformInternalStaticFn(expr);
@@ -628,8 +625,7 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   auto var = clone(g->loops[0].vars);
   auto ex = clone(g->expr);
 
-  enterConditionalBlock();
-  ctx->getBase()->loops.push_back({"", ctx->getScope(), {}});
+  ctx->getBase()->loops.emplace_back("");
   if (auto i = var->getId()) {
     ctx->addVar(i->value, ctx->generateCanonicalName(i->value), ctx->getUnbound());
     var = transform(var);
@@ -641,10 +637,6 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
     auto head = transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var)));
     ex = N<StmtExpr>(head, transform(ex));
   }
-  leaveConditionalBlock();
-  // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars)
-    findDominatingBinding(var, ctx.get());
   ctx->getBase()->loops.pop_back();
   return N<GeneratorExpr>(
       GeneratorExpr::TupleGenerator, ex,
@@ -1217,7 +1209,6 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       }
       idx++;
     }
-    LOG("-> {}", tupleItems);
     return {true, transform(N<TupleExpr>(tupleItems))};
   } else if (expr->expr->isId("std.internal.static.tuple_type.0")) {
     auto funcTyp = expr->expr->type->getFunc();

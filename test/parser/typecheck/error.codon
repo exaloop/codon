@@ -1,0 +1,46 @@
+#%% assert,barebones
+assert True
+assert True, "blah"
+
+try:
+    assert False
+except AssertionError as e:
+    print e.message[:15], e.message[-24:] #: Assert failed ( simplify_stmt.codon:164)
+
+try:
+    assert False, f"hehe {1}"
+except AssertionError as e:
+    print e.message[:23], e.message[-24:] #: Assert failed: hehe 1 ( simplify_stmt.codon:169)
+
+#%% try_throw,barebones
+class MyError(Static[Exception]):
+    def __init__(self, message: str):
+        super().__init__('MyError', message)
+try:
+    raise MyError("hello!")
+except MyError as e:
+    print str(e)  #: hello!
+try:
+    raise OSError("hello os!")
+# TODO: except (MyError, OSError) as e:
+#     print str(e)
+except MyError:
+    print "my"
+except OSError as o:
+    print "os", o.typename, len(o.message), o.file[-20:], o.line
+    #: os OSError 9 typecheck_stmt.codon 249
+finally:
+    print "whoa"  #: whoa
+
+# Test function name
+def foo():
+    raise MyError("foo!")
+try:
+    foo()
+except MyError as e:
+    print e.typename, e.message #: MyError foo!
+
+#%% throw_error,barebones
+raise 'hello'
+#! exceptions must derive from BaseException
+

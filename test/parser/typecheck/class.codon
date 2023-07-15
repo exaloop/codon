@@ -1,0 +1,439 @@
+#%% class_err_1,barebones
+@extend
+@foo
+class Foo:
+    pass
+#! cannot combine '@extend' with other attributes or decorators
+
+#%% class_err_1b,barebones
+size_t = i32
+@extend
+class size_t:
+    pass
+#! class name 'size_t' is not defined
+
+#%% class_err_2,barebones
+def foo():
+    @extend
+    class Foo:
+        pass
+#! class extension must be a top-level statement
+
+#%% class_nested,barebones
+class Foo:
+    foo: int
+    class Bar:
+        bar: int
+        b: Optional[Foo.Bar]
+        c: Optional[int]
+        class Moo:
+            # TODO: allow nested class reference to the upclass
+            # x: Foo.Bar
+            x: int
+y = Foo(1)
+z = Foo.Bar(2, None, 4)
+m = Foo.Bar.Moo(5)
+print y.foo #: 1
+print z.bar, z.b.__bool__(), z.c, m.x  #: 2 False 4 5
+
+#%% class_nested_2,barebones
+@tuple
+class Foo:
+    @tuple
+    class Bar:
+        x: int
+    x: int
+    b: Bar
+    c: Foo.Bar
+f = Foo(5, Foo.Bar(6), Foo.Bar(7))
+print(f) #: (x: 5, b: (x: 6), c: (x: 7))
+
+#%% class_nested_err,barebones
+class Foo:
+    class Bar:
+        b: Ptr[Bar]
+#! name 'Bar' is not defined
+
+#%% class_err_4,barebones
+@extend
+class Foo:
+    pass
+#! class name 'Foo' is not defined
+
+#%% class_err_5,barebones
+class Foo[T, U]:
+    pass
+@extend
+class Foo[T]:
+    pass
+#! class extensions cannot define data attributes and generics or inherit other classes
+
+#%% class_err_7,barebones
+class Foo:
+    a: int
+    a: int
+#! duplicate data attribute 'a' in class definition
+
+#%% class_err_tuple_no_recursive,barebones
+@tuple
+class Foo:
+    a: Foo
+#! name 'Foo' is not defined
+
+#%% class_err_8,barebones
+class Foo:
+    while True: pass
+#! unexpected expression in class definition
+
+#%% class_err_9,barebones
+class F[T: Static[float]]:
+    pass
+#! expected 'int' or 'str' (only integers and strings can be static)
+
+#%% class_err_10,barebones
+def foo[T]():
+    class A:
+        x: T
+#! name 'T' cannot be captured
+
+#%% class_err_11,barebones
+def foo(x):
+    class A:
+        def bar():
+            print x
+#! name 'x' cannot be captured
+
+#%% class_err_12,barebones
+def foo(x):
+    T = type(x)
+    class A:
+        def bar():
+            print T()
+#! name 'T' cannot be captured
+
+#%% recursive_class,barebones
+class Node[T]:
+    data: T
+    children: List[Node[T]]
+    def __init__(self, data: T):
+        self.data = data
+        self.children = []
+print Node(2).data #: 2
+
+class Node2:
+    data: int
+    children: List[Node2]
+    def __init__(self, data: int):
+        self.data = data
+        self.children = []
+print Node2(3).data #: 3
+
+#%% class_auto_init,barebones
+class X[T]:
+    a: int = 4
+    b: int
+    c: T
+    d: str = 'oops'
+    def __str__(self):
+        return f'X({self.a},{self.b},{self.c},{self.d})'
+x = X[float]()
+print x #: X(4,0,0,oops)
+y = X(c='darius',a=5)
+print y #: X(5,0,darius,oops)
+
+#%% magic,barebones
+@tuple
+class Foo:
+    x: int
+    y: int
+a, b = Foo(1, 2), Foo(1, 3)
+print a, b #: (x: 1, y: 2) (x: 1, y: 3)
+print a.__len__() #: 2
+print a.__hash__(), b.__hash__() #: 175247769363 175247769360
+print a == a, a == b #: True False
+print a != a, a != b #: False True
+print a < a, a < b, b < a #: False True False
+print a <= a, a <= b, b <= a #: True True False
+print a > a, a > b, b > a #: False False True
+print a >= a, a >= b, b >= a #: True False True
+print a.__getitem__(1)  #: 2
+print list(a.__iter__()) #: [1, 2]
+
+#%% magic_class,barebones
+@dataclass(eq=True, order=True)
+class Foo:
+    x: int
+    y: int
+    def __str__(self): return f'{self.x}_{self.y}'
+a, b = Foo(1, 2), Foo(1, 3)
+print a, b #: 1_2 1_3
+print a == a, a == b #: True False
+print a != a, a != b #: False True
+print a < a, a < b, b < a #: False True False
+print a <= a, a <= b, b <= a #: True True False
+print a > a, a > b, b > a #: False False True
+print a >= a, a >= b, b >= a #: True False True
+
+# Right magic test
+class X:
+    x: int
+class Y:
+    y: int
+    def __eq__(self, o: X): return self.y == o.x
+    def __ne__(self, o: X): return self.y != o.x
+    def __le__(self, o: X): return self.y <= o.x
+    def __lt__(self, o: X): return self.y <  o.x
+    def __ge__(self, o: X): return self.y >= o.x
+    def __gt__(self, o: X): return self.y >  o.x
+    def __add__(self, o: X):  return self.y + o.x + 1
+    def __radd__(self, o: X): return self.y + o.x + 2
+print Y(1) == X(1), Y(1) != X(1)  #: True False
+print X(1) == Y(1), X(1) != Y(1)  #: True False
+print Y(1) <= X(2), Y(1) < X(2)  #: True True
+print X(1) <= Y(2), X(1) < Y(2)  #: True True
+print Y(1) >= X(2), Y(1) > X(2)  #: False False
+print X(1) >= Y(2), X(1) > Y(2)  #: False False
+print X(1) + Y(2)  #: 5
+print Y(1) + X(2)  #: 4
+
+
+class A:
+    def __radd__(self, n: int):
+        return 0
+def f():
+    print('f')
+    return 1
+def g():
+    print('g')
+    return A()
+f() + g()
+#: f
+#: g
+
+#%% magic_2,barebones
+@tuple
+class Foo:
+    pass
+a, b = Foo(), Foo()
+print a, b #: () ()
+print a.__len__() #: 0
+print a.__hash__(), b.__hash__() #: 0 0
+print a == a, a == b #: True True
+print a != a, a != b #: False False
+print a < a, a < b, b < a #: False False False
+print a <= a, a <= b, b <= a #: True True True
+print a > a, a > b, b > a #: False False False
+print a >= a, a >= b, b >= a #: True True True
+
+# TODO: pickle / to_py / from_py
+
+#%% magic_contains,barebones
+sponge = (1, 'z', 1.55, 'q', 48556)
+print 1.1 in sponge #: False
+print 'q' in sponge #: True
+print True in sponge #: False
+
+bob = (1, 2, 3)
+print 1.1 in sponge #: False
+print 1 in sponge #: True
+print 0 in sponge #: False
+
+#%% magic_err_2,barebones
+@tuple
+class Foo:
+    pass
+try:
+    print Foo().__getitem__(1)
+except IndexError:
+    print 'error'  #: error
+
+#%% magic_empty_tuple,barebones
+@tuple
+class Foo:
+    pass
+print list(Foo().__iter__())  #: []
+
+#%% magic_err_4,barebones
+@tuple(eq=False)
+class Foo:
+    x: int
+Foo(1).__eq__(Foo(1)) #! 'Foo' object has no attribute '__eq__'
+
+#%% magic_err_5,barebones
+@tuple(pickle=False)
+class Foo:
+    x: int
+p = Ptr[byte]()
+Foo(1).__pickle__(p) #! 'Foo' object has no attribute '__pickle__'
+
+#%% magic_err_6,barebones
+@tuple(container=False)
+class Foo:
+    x: int
+Foo(1).__getitem__(0) #! 'Foo' object has no attribute '__getitem__'
+
+#%% magic_err_7,barebones
+@tuple(python=False)
+class Foo:
+    x: int
+p = Ptr[byte]()
+Foo(1).__to_py__(p) #! 'Foo' object has no attribute '__to_py__'
+
+#%% inherit_class_4,barebones
+class defdict[K,V](Static[Dict[K,V]]):
+    fx: Function[[],V]
+    def __init__(self, d: Dict[K,V], fx: Function[[], V]):
+        self.__init__()
+        for k,v in d.items(): self[k] = v
+        self.fx = fx
+    def __getitem__(self, key: K) -> V:
+        if key in self:
+            return self.values[self.keys.index(key)]
+        else:
+            self[key] = self.fx()
+            return self[key]
+z = defdict({'ha':1}, lambda: -1)
+print z
+print z['he']
+print z
+#: {'ha': 1}
+#: -1
+#: {'ha': 1, 'he': -1}
+
+class Foo:
+    x: int
+    def foo(self):
+        return f'foo {self.x}'
+class Bar[T]:
+    y: T
+    def bar(self):
+        return f'bar {self.y}/{self.y.__class__.__name__}'
+class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
+    def baz(self):
+        return f'baz! {self.foo()} {self.bar()}'
+print FooBarBaz[str]().foo() #: foo 0
+print FooBarBaz[float]().bar() #: bar 0/float
+print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
+
+#%% inherit_class_err_5,barebones
+class defdict(Static[Dict[str,float]]):
+    def __init__(self, d: Dict[str, float]):
+        self.__init__(d.items())
+z = defdict()
+z[1.1] #! 'defdict' object has no method '__getitem__' with arguments (defdict, float)
+
+#%% inherit_tuple,barebones
+class Foo:
+    a: int
+    b: str
+    def __init__(self, a: int):
+        self.a, self.b = a, 'yoo'
+@tuple
+class FooTup(Static[Foo]): pass
+
+f = Foo(5)
+print f.a, f.b #: 5 yoo
+fp = FooTup(6, 's')
+print fp #: (a: 6, b: 's')
+
+#%% inherit_class_err_1,barebones
+class defdict(Static[Array[int]]):
+    pass #! reference classes cannot inherit tuple classes
+
+#%% inherit_class_err_2,barebones
+@tuple
+class defdict(Static[int]):
+    pass #! internal classes cannot inherit other classes
+
+#%% inherit_class_err_3,barebones
+class defdict(Static[Dict[int, float, float]]):
+    pass #! Dict takes 2 generics (3 given)
+
+#%% inherit_class_err_4,barebones
+class Foo:
+    x: int
+class Bar:
+    x: float
+class FooBar(Static[Foo], Static[Bar]):
+    pass
+# right now works as we rename other fields
+
+
+#%% class_deduce,barebones
+@deduce
+class Foo:
+    def __init__(self, x):
+        self.x = [x]
+        self.y = 1, x
+
+f = Foo(1)
+print(f.x, f.y, f.__class__.__name__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
+
+f: Foo = Foo('s')
+print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
+
+@deduce
+class Bar:
+    def __init__(self, y):
+        self.y = Foo(y)
+
+b = Bar(3.1)
+print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
+
+#%% class_var,barebones
+class Foo:
+    cx = 15
+    x: int = 10
+    cy: ClassVar[str] = "ho"
+    class Bar:
+        bx = 1.1
+print(Foo.cx)  #: 15
+f = Foo()
+print(Foo.cy, f.cy)  #: ho ho
+print(Foo.Bar.bx)  #: 1.1
+
+Foo.cx = 10
+print(Foo.cx)  #: 10
+
+def x():
+    class Foo:
+        i = 0
+        f = Foo()
+        def __init__(self):
+            Foo.i += 1
+        def __repr__(self):
+            return 'heh-cls'
+    Foo(), Foo(), Foo()
+    print Foo.f, Foo.i  #: heh-cls 4
+    return Foo()
+f = x()
+print f.f, f.i  #: heh-cls 5
+
+@tuple
+class Fot:
+    f = Fot()
+    def __repr__(self):
+        return 'heh-tup'
+print Fot.f  #: heh-tup
+
+#%% extend,barebones
+@extend
+class int:
+    def run_lola_run(self):
+        while self > 0:
+            yield self
+            self -= 1
+print list((5).run_lola_run())  #: [5, 4, 3, 2, 1]
+
+#%% staticmethod,barebones
+class Foo:
+    def __repr__(self):
+        return 'Foo'
+    def m(self):
+        print 'm', self
+    @staticmethod
+    def sm(i):
+        print 'sm', i
+Foo.sm(1)  #: sm 1
+Foo().sm(2)  #: sm 2
+Foo().m()  #: m Foo

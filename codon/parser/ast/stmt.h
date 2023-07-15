@@ -439,6 +439,7 @@ struct Attr {
   bool isAttribute;
 
   std::set<std::string> magics;
+  std::set<std::string> captures;
 
   // Set of attributes
   std::set<std::string> customAttr;

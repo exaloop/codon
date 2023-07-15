@@ -406,8 +406,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 ///   `start::step` -> `Slice(start, Optional.__new__(), step)`
 void TypecheckVisitor::visit(SliceExpr *expr) {
   ExprPtr none = N<CallExpr>(N<DotExpr>(TYPE_OPTIONAL, "__new__"));
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("Slice");
   resultExpr = transform(N<CallExpr>(
-      N<IdExpr>(TYPE_SLICE), expr->start ? expr->start : clone(none),
+      N<IdExpr>(name->canonicalName), expr->start ? expr->start : clone(none),
       expr->stop ? expr->stop : clone(none), expr->step ? expr->step : clone(none)));
 }
 
@@ -810,7 +811,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
     return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
-  } else if (auto slice = CAST(index, SliceExpr)) {
+  } else if (auto slice = CAST(index->origExpr, SliceExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
         !getInt(&step, slice->step))

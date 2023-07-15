@@ -1,0 +1,468 @@
+from typing import Optional
+
+#%% id_fstring_error,barebones
+f"a{b + 3}" #! name 'b' is not defined
+
+#%% id_access,barebones
+def foo():
+    a = 5
+    def bar():
+        print(a)
+    bar()  #: 5
+    a = 4
+    bar()  #: 4
+foo()
+
+d = {}
+def foo():
+    a = 5
+    def goo():
+        d['x'] = 'y'
+        print(a)
+    return goo
+foo()()
+print(d)
+#: 5
+#: {'x': 'y'}
+
+#%% nonlocal,barebones
+def goo(ww):
+    z = 0
+    def foo(x):
+        f = 10
+        def bar(y):
+            nonlocal z
+            f = x + y
+            z += y
+            print('goo.foo.bar', f, z)
+        bar(5)
+        print('goo.foo', f)
+        return bar
+    b = foo(10)
+    print('goo', z)
+    return b
+b = goo('s')
+# goo.foo.bar 15 5
+# goo.foo 10
+# goo 5
+b(11)
+# goo.foo.bar 21 16
+b(12)
+# goo.foo.bar 22 28
+b = goo(1)  # test another instantiation
+# goo.foo.bar 15 5
+# goo.foo 10
+# goo 5
+b(11)
+# goo.foo.bar 21 16
+b(13)
+# goo.foo.bar 23 29
+
+#%% nonlocal_error,barebones
+def goo():
+    z = 0
+    def foo():
+        z += 1
+    foo()
+goo()  #! local variable 'z' referenced before assignment
+
+#%% new_scoping,barebones
+try:
+    if True and (x := (True or (y := 1 + 2))):
+        pass
+    try:
+        print(x)  #: True
+        print(y)
+    except NameError:
+        print("Error")  #: Error
+    print(x) #: True
+    if len("s") > 0:
+        print(x)  #: True
+        print(y)
+    print(y)  # TODO: test for __used__ usage
+    print(y)  # (right now manual inspection is needed)
+except NameError as e:
+    print(e)  #: name 'y' is not defined
+
+t = True
+y = 0 if t else (xx := 1)
+try:
+    print(xx)
+except NameError:
+    print("Error")  #: Error
+
+def foo():
+    if len("s") == 3:
+        x = 3
+    def bar(y):
+        print(x + y)
+    x = 5
+    return bar
+f = foo()
+f(5)  #: 10
+
+#%% new_scoping_loops_try,barebones
+for i in range(10):
+    pass
+print(i) #: 9
+
+j = 6
+for j in range(0):
+    pass
+print(j) #: 6
+
+for j in range(1):
+    pass
+print(j) #: 0
+
+z = 6
+for z in []:
+    pass
+print(z) #: 6
+
+for z in [1, 2]:
+    pass
+print(z) #: 2
+
+try:
+    raise ValueError("hi")
+except ValueError as e:
+    ee = e
+print(ee) #: hi
+try:
+    print(e) #: hi
+except NameError:
+    print('error')  #: error
+
+try:
+    pass
+except ValueError as ve:
+    pass
+try:
+    print(ve)
+except NameError:
+    print('error') #: error
+
+#%% dot_access_error_NOPY,barebones
+class Foo:
+    x: int = 1
+Foo.x #! 'Foo' object has no attribute 'x'
+
+#%% scoping_same_name,barebones
+def match(pattern: str, string: str, flags: int = 0):
+    pass
+
+def match(match):
+    if True:
+        match = 0
+    match
+
+match(1)
+
+#%% dot_case_1,barebones
+a = []
+print(a[0].loop())  #! 'int' object has no attribute 'loop'
+a.append(5)
+
+#%% dot_case_2_NOPY,barebones
+a = Optional(0)
+print(a.__bool__()) #: False
+print(a.__add__(1)) #: 1
+
+#%% dot_case_4_NOPY,barebones
+a = [5]
+print(a.len) #: 1
+
+#%% dot_case_4_err,barebones
+a = [5]
+a.foo #! 'List[int]' object has no attribute 'foo'
+
+#%% dot_case_6_NOPY,barebones
+# Did heavy changes to this testcase because
+# of the automatic optional wraps/unwraps and promotions
+class Foo:
+    def bar(self, a):
+        print('generic', a, a.__class__.__name__)
+    def bar(self, a: Optional[float]):
+        print('optional', a)
+    def bar(self, a: int):
+        print('normal', a)
+f = Foo()
+f.bar(1) #: normal 1
+f.bar(1.1) #: optional 1.1
+f.bar(Optional('s')) #: generic s Optional[str]
+f.bar('hehe') #: generic hehe str
+
+
+#%% dot_case_6b_NOPY,barebones
+class Foo:
+    def bar(self, a, b):
+        print('1', a, b)
+    def bar(self, a, b: str):
+        print('2', a, b)
+    def bar(self, a: str, b):
+        print('3', a, b)
+f = Foo()
+# Take the newest highest scoring method
+f.bar('s', 't') #: 3 s t
+f.bar(1, 't') #: 2 1 t
+f.bar('s', 1) #: 3 s 1
+f.bar(1, 2) #: 1 1 2
+
+#%% dot,barebones
+class Foo:
+    def clsmethod():
+        print('foo')
+    def method(self, a):
+        print(a)
+Foo.clsmethod() #: foo
+Foo.method(Foo(), 1) #: 1
+m1 = Foo.method
+m1(Foo(), 's') #: s
+m2 = Foo().method
+m2(1.1) #: 1.1
+
+#%% dot_error_static,barebones
+class Foo:
+    def clsmethod():
+        print('foo')
+    def method(self, a):
+        print(a)
+Foo().clsmethod() #! 'Foo' object has no method 'clsmethod' with arguments (Foo)
+
+#%% nested_class_error,barebones
+class X:
+    def foo(self, x):
+        return x
+    class Y:
+        def bar(self, x):
+            return x
+y = X.Y()
+y.foo(1) #! 'X.Y' object has no attribute 'foo'
+
+#%% nested_deep_class_NOPY,barebones
+class A[T]:
+    a: T
+    class B[U]:
+        b: U
+        class C[V]:
+            c: V
+            def foo[W](t: V, u: V, v: V, w: W):
+                return (t, u, v, w)
+
+print(A.B.C[bool].foo(W=str, ...).__class__.__name__) #: foo[bool,bool,bool,str,str]
+print(A.B.C.foo(1,1,1,True)) #: (1, 1, 1, True)
+print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
+print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
+print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
+
+x = A.B.C[bool]()
+print(x.__class__.__name__) #: A.B.C[bool]
+
+#%% nested_deep_class_error_NOPY,barebones
+class A[T]:
+    a: T
+    class B[U]:
+        b: U
+        class C[V]:
+            c: V
+            def foo[W](t: V, u: V, v: V, w: W):
+                return (t, u, v, w)
+
+print A.B.C[str].foo(1,1,1,True) #! 'A.B.C[str]' object has no method 'foo' with arguments (int, int, int, bool)
+
+#%% nested_deep_class_error_2_NOPY,barebones
+class A[T]:
+    a: T
+    class B[U]:
+        b: U
+        class C[V]:
+            c: V
+            def foo[W](t: V, u: V, v: V, w: W):
+                return (t, u, v, w)
+print A.B[int].C[float].foo(1,1,1,True) #! 'A.B[int]' object has no attribute 'C'
+
+#%% nested_class_function,barebones
+def f(x):
+    def g(y):
+        return y
+    a = g(1)
+    b = g('s')
+    c = g(x)
+    return a, b, c
+print f(1.1).__class__.__name__ #: Tuple[int,str,float]
+print f(False).__class__.__name__ #: Tuple[int,str,bool]
+
+class A[T]:
+    a: T
+    class B[U]:
+        b: U
+        class C[V]:
+            c: V
+            def f(x):
+                def g(y):
+                    return y
+                a = g(1)
+                b = g('s')
+                c = g(x)
+                return a, b, c
+print A.B.C.f(1.1).__class__.__name__ #: Tuple[int,str,float]
+print A.B.C[Optional[int]].f(False).__class__.__name__ #: Tuple[int,str,bool]
+
+#%% rec_class_1_NOPY,barebones
+class A:
+    y: A
+    def __init__(self): pass  # necessary to prevent recursive instantiation!
+x = A()
+print(x.__class__.__name__, x.y.__class__.__name__) #: A A
+
+#%% rec_class_2_NOPY,barebones
+class A[T]:
+    a: T
+    b: A[T]
+    c: A[str]
+    def __init__(self): pass
+a = A[int]()
+print a.__class__.__name__, a.b.__class__.__name__, a.c.__class__.__name__, a.b.b.__class__.__name__, a.b.c.__class__.__name__
+#: A[int] A[int] A[str] A[int] A[str]
+print a.c.b.__class__.__name__, a.c.c.__class__.__name__, a.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.b.__class__.__name__
+#: A[str] A[str] A[int]
+
+#%% rec_class_3_NOPY,barebones
+class X:
+    x: int
+    rec: X
+    def __init__(self): pass
+    def foo(x: X, y: int):
+        return y
+    class Y:
+        y: int
+        def bar(self, y):
+            print y
+            return self.y
+x, y = X(), X.Y()
+print x.__class__.__name__, y.__class__.__name__
+#: X X.Y
+print X.foo(x, 4), x.foo(5)
+#: 4 5
+print y.bar(1), y.bar('s'), X.Y.bar(y, True)
+#: 1
+#: s
+#: True
+#: 0 0 0
+
+#%% rec_class_4_NOPY,barebones
+class A[T]:
+    a: T
+    b: A[T]
+    c: A[str]
+    def __init__(self): pass
+class B[T]:
+    a: T
+    b: A[T]
+    c: B[T]
+    def __init__(self): pass
+    class Nest1[U]:
+        n: U
+    class Nest2[T, U]:
+        m: T
+        n: U
+b = B[float]()
+print b.__class__.__name__, b.a.__class__.__name__, b.b.__class__.__name__, b.c.__class__.__name__, b.c.b.c.a.__class__.__name__
+#: B[float] float A[float] B[float] str
+
+n1 = B.Nest1[int]()
+print n1.n, n1.__class__.__name__, n1.n.__class__.__name__ #: 0 B.Nest1[int] int
+
+n1: B.Nest2 = B.Nest2[float, int]()
+print (n1.m, n1.n), n1.__class__.__name__, n1.m.__class__.__name__, n1.n.__class__.__name__ #: (0, 0) B.Nest2[float,int] float int
+
+#%% class_fn_access_NOPY,barebones
+class X[T]:
+    def foo[U](self, x: T, y: U):
+        return (x+x, y+y)
+y = X[X[int]]()
+print y.__class__.__name__ #: X[X[int]]
+print X[float].foo(U=int, ...).__class__.__name__ #: foo[X[float],float,int,int]
+print X[int]().foo(1, 's') #: (2, 'ss')
+
+#%% class_partial_access_NOPY,barebones
+class X[T]:
+    def foo[U](self, x, y: U):
+        return (x+x, y+y)
+y = X[X[int]]()
+# TODO: should this even be the case?
+# print y.foo(U=float,...).__class__.__name__  ->  X.foo[X[X[int]],...,...]
+print y.foo(1, 2.2, float) #: (2, 4.4)
+
+#%% fn_overloads_NOPY,barebones
+def foo(x):
+    return 1, x
+
+print(foo(''))  #: (1, '')
+
+@overload
+def foo(x, y):
+    def foo(x, y):
+        return f'{x}_{y}'
+    return 2, foo(x, y)
+
+@overload
+def foo(x):
+    if x == '':
+        return 3, 0
+    return 3, 1 + foo(x[1:])[1]
+
+print foo('hi') #: (3, 2)
+print foo('hi', 1) #: (2, 'hi_1')
+
+#%% fn_shadow,barebones
+def foo(x):
+    return 1, x
+print(foo('hi')) #: (1, 'hi')
+
+def foo(x):
+    return 2, x
+print(foo('hi')) #: (2, 'hi')
+
+#%% fn_overloads_error_NOPY,barebones
+def foo(x):
+    return 1, x
+@overload
+def foo(x, y):
+    return 2, x, y
+foo('hooooooooy!', 1, 2) #! no function 'foo' with arguments (str, int, int)
+
+#%% generator_capture_nonglobal,barebones
+# Issue #49
+def foo(iter):
+    print(iter.__class__.__name__, list(iter))
+
+for x in range(2):
+    foo(1 for _ in range(x))
+#: Generator[int] []
+#: Generator[int] [1]
+for x in range(2):
+    for y in range(x):
+        foo('z' for _ in range(y))
+#: Generator[str] []
+
+#%% nonlocal_capture_loop,barebones
+# Issue #51
+def kernel(fn):
+    def wrapper(*args, grid, block):
+        print(grid, block, fn(*args))
+    return wrapper
+def test_mandelbrot():
+    MAX    = 10  # maximum Mandelbrot iterations
+    N      = 2   # width and height of image
+    pixels = [0 for _ in range(N)]
+    def scale(x, a, b):
+        return a + (x/N)*(b - a)
+    @kernel
+    def k(pixels):
+        i = 0
+        while i < MAX: i += 1  # this is needed for test to make sense
+        return (MAX, N, pixels, scale(N, -2, 0.4))
+    k(pixels, grid=(N*N)//1024, block=1024)
+test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.4)

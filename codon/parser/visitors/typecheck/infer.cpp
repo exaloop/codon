@@ -65,7 +65,6 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     ctx->returnEarly = false;
     auto tv = TypecheckVisitor(ctx, preamble);
     tv.transform(result);
-    NameVisitor::apply(&tv, result);
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
@@ -308,9 +307,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
   // Find function parents
   ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
-  LOG("[realize] fn {} -> {} : base {} ; depth = {} ; ctx-base: {}", type->ast->name,
-      type->realizedName(), ctx->getRealizationStackName(), ctx->getRealizationDepth(),
-      ctx->getBaseName());
+  LOG_TYPECHECK("[realize] fn {} -> {} : base {} ; depth = {} ; ctx-base: {}",
+                type->ast->name, type->realizedName(), ctx->getRealizationStackName(),
+                ctx->getRealizationDepth(), ctx->getBaseName());
 
   // Clone the generic AST that is to be realized
   auto ast = generateSpecialAst(type);

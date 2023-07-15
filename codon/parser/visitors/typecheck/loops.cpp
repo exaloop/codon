@@ -67,26 +67,20 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
         transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true))));
   }
 
-  enterConditionalBlock();
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
-  ctx->getBase()->loops.push_back({breakVar, ctx->getScope(), {}});
+  ctx->getBase()->loops.emplace_back(breakVar);
   stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
 
   ctx->blockLevel++;
-  transformConditionalScope(stmt->suite);
+  transform(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
-    resultStmt = N<SuiteStmt>(N<WhileStmt>(*stmt),
-                              N<IfStmt>(transform(N<IdExpr>(breakVar)),
-                                        transformConditionalScope(stmt->elseSuite)));
-  }
-  leaveConditionalBlock();
-  // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
-    findDominatingBinding(var, ctx.get());
+    resultStmt =
+        N<SuiteStmt>(N<WhileStmt>(*stmt), N<IfStmt>(transform(N<IdExpr>(breakVar)),
+                                                    transform(stmt->elseSuite)));
   }
   ctx->getBase()->loops.pop_back();
 
@@ -136,8 +130,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     stmt->wrapped = true;
   }
 
-  enterConditionalBlock();
-  ctx->getBase()->loops.push_back({breakVar, ctx->getScope(), {}});
+  ctx->getBase()->loops.emplace_back(breakVar);
   if (!stmt->var->getId()) {
     auto varName = ctx->cache->getTemporaryVar("for");
     auto var = N<IdExpr>(varName);
@@ -151,7 +144,6 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   auto val = ctx->addVar(var->value, ctx->generateCanonicalName(var->value),
                          ctx->getUnbound());
-  val->avoidDomination = ctx->avoidDomination;
   transform(stmt->var);
 
   // Unify iterator variable and the iterator type
@@ -168,15 +160,11 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
-    resultStmt = N<SuiteStmt>(assign, N<ForStmt>(*stmt),
-                              N<IfStmt>(transform(N<IdExpr>(breakVar)),
-                                        transformConditionalScope(stmt->elseSuite)));
+    resultStmt = N<SuiteStmt>(
+        assign, N<ForStmt>(*stmt),
+        N<IfStmt>(transform(N<IdExpr>(breakVar)), transform(stmt->elseSuite)));
   }
-  leaveConditionalBlock(stmt->suite);
 
-  // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars)
-    findDominatingBinding(var, ctx.get());
   ctx->getBase()->loops.pop_back();
 
   if (stmt->iter->isDone() && stmt->suite->isDone())
@@ -270,19 +258,25 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     return nullptr;
   auto loopVar = ctx->cache->getTemporaryVar("loop");
 
-  std::vector<std::string> vars;
-  if (auto i = stmt->var->getId()) {
-    vars.emplace_back(i->value);
-  } else if (auto t = stmt->var->getTuple()) {
-    for (auto &it : t->items) {
-      if (auto i = it->getId())
-        vars.emplace_back(i->value);
-      else
-        return nullptr;
+  auto oldSuite = clone(stmt->suite);
+  std::vector<std::string> vars{stmt->var->getId()->value};
+  if (auto s = stmt->suite->getSuite()) {
+    if (!s->stmts.empty()) {
+      if (auto sa = s->stmts[0]->getSuite()) {
+        for (auto &sai : sa->stmts)
+          if (auto a = sai->getAssign()) {
+            if (a->rhs && a->rhs->getIndex())
+              if (a->rhs->getIndex()->expr->isId(vars[0])) {
+                vars.push_back(a->lhs->getId()->value);
+                sai = nullptr;
+              }
+          }
+      }
     }
-  } else {
-    return nullptr;
   }
+  if (vars.size() > 1)
+    vars.erase(vars.begin());
+
   auto [ok, items] =
       transformStaticLoopCall(vars, stmt->iter, [&](const StmtPtr &assigns) {
         auto brk = N<BreakStmt>();
@@ -294,22 +288,22 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
         return loop;
       });
   if (!ok) {
-    // if (oldSuite)
-    // stmt->suite = oldSuite;
+    if (oldSuite)
+      stmt->suite = oldSuite;
     return nullptr;
   }
 
   // Close the loop
   auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+  a->setUpdate();
   auto block = N<SuiteStmt>();
   for (auto &i : items)
     block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
   block->stmts.push_back(a);
   ctx->blockLevel++;
-  LOG("[loop] {}: {}", getSrcInfo(), loopVar);
   StmtPtr loop = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
                               N<WhileStmt>(N<IdExpr>(loopVar), block));
-  transformConditionalScope(loop);
+  transform(loop);
   ctx->blockLevel--;
   return loop;
 }

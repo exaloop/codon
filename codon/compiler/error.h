@@ -339,7 +339,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::ASSIGN_INVALID:
     return fmt::format("cannot assign to given expression");
   case Error::ASSIGN_LOCAL_REFERENCE:
-    return fmt::format("local variable '{}' referenced before assignment", args...);
+    return fmt::format("local variable '{}' referenced before assignment at {}",
+                       args...);
   case Error::ASSIGN_MULTI_STAR:
     return fmt::format("multiple starred expressions in assignment");
   case Error::INT_RANGE:

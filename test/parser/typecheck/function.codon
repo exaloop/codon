@@ -1,0 +1,544 @@
+
+#%% lambda,barebones
+l = lambda a, b: a + b
+print l(1, 2) #: 3
+
+e = 5
+lp = lambda x: x + e
+print lp(1) #: 6
+
+e = 7
+print lp(2) #: 9
+
+def foo[T](a: T, l: Callable[[T], T]):
+    return l(a)
+print foo(4, lp) #: 11
+
+def foox(a, l):
+    return l(a)
+print foox(4, lp) #: 11
+
+#%% nested_lambda,barebones
+def foo():
+    print list(a*a for a in range(3))
+foo()  #: [0, 1, 4]
+
+#%% return_fail,barebones
+return #! 'return' outside function
+
+#%% yield_fail,barebones
+yield 5 #! 'yield' outside function
+
+#%% yield_fail_2,barebones
+(yield) #! 'yield' outside function
+
+#%% yieldexpr,barebones
+def mysum(start):
+    m = start
+    while True:
+        a = (yield)
+        print a.__class__.__name__ #: int
+        if a == -1:
+            break
+        m += a
+    yield m
+iadder = mysum(0)
+next(iadder)
+for i in range(10):
+    iadder.send(i)
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+#: int
+print iadder.send(-1)  #: 45
+
+#%% return,barebones
+def foo():
+    return 1
+print foo()  #: 1
+
+def bar():
+    print 2
+    return
+    print 1
+bar()  #: 2
+
+#%% yield,barebones
+def foo():
+    yield 1
+print [i for i in foo()], str(foo())[:16]  #: [1] <generator at 0x
+
+#%% yield_void,barebones
+def foo():
+    yield
+    print 1
+y = foo()
+print y.done()  #: False
+y.next()  #: 1
+# TODO: next() should work here!
+print y.done()  #: True
+
+#%% yield_return,barebones
+def foo():
+    yield 1
+    return
+    yield 2
+print list(foo())  #: [1]
+
+#%% global,barebones
+a = 1
+def foo():
+    global a
+    a += 1
+print a,
+foo()
+print a  #: 1 2
+
+#%% global_err,barebones
+a = 1
+global a #! 'global' outside function
+
+#%% global_err_2,barebones
+def foo():
+    global b #! name 'b' is not defined
+
+#%% global_err_3,barebones
+def foo():
+    b = 1
+    def bar():
+        global b #! no binding for global 'b' found
+
+#%% global_err_4,barebones
+a = 1
+def foo():
+    a += 1
+foo()  #! local variable 'a' referenced before assignment
+
+#%% global_ref,barebones
+a = [1]
+def foo():
+    a.append(2)
+foo()
+print a #: [1, 2]
+
+#%% yield_from,barebones
+def foo():
+    yield from range(3)
+    yield from range(10, 13)
+    yield -1
+print list(foo())  #: [0, 1, 2, 10, 11, 12, -1]
+
+#%% with,barebones
+class Foo:
+    i: int
+    def __enter__(self: Foo):
+        print '> foo! ' + str(self.i)
+    def __exit__(self: Foo):
+        print '< foo! ' + str(self.i)
+    def foo(self: Foo):
+        print 'woof'
+class Bar:
+    s: str
+    def __enter__(self: Bar):
+        print '> bar! ' + self.s
+    def __exit__(self: Bar):
+        print '< bar! ' + self.s
+    def bar(self: Bar):
+        print 'meow'
+with Foo(0) as f:
+#: > foo! 0
+    f.foo()  #: woof
+#: < foo! 0
+with Foo(1) as f, Bar('s') as b:
+#: > foo! 1
+#: > bar! s
+    f.foo()  #: woof
+    b.bar()  #: meow
+#: < bar! s
+#: < foo! 1
+with Foo(2), Bar('t') as q:
+#: > foo! 2
+#: > bar! t
+    print 'eeh'  #: eeh
+    q.bar()  #: meow
+#: < bar! t
+#: < foo! 2
+
+
+#%% function_err_0,barebones
+def foo(a, b, a):
+    pass #! duplicate argument 'a' in function definition
+
+#%% function_err_0b,barebones
+def foo(a, b=1, c):
+    pass #! non-default argument 'c' follows default argument
+
+#%% function_err_0b_ok,barebones
+def foo(a, b=1, *c):
+    pass
+
+#%% function_err_0c,barebones
+def foo(a, b=1, *c, *d):
+    pass #! multiple star arguments provided
+
+#%% function_err_0e,barebones
+def foo(a, b=1, *c = 1):
+    pass #! star arguments cannot have default values
+
+#%% function_err_0f,barebones
+def foo(a, b=1, **c, **kwargs):
+    pass #! kwargs must be the last argument
+
+#%% function_err_0h,barebones
+def foo(a, b=1, **c = 1):
+    pass #! star arguments cannot have default values
+
+#%% function_err_0i,barebones
+def foo(a, **c, d):
+    pass #! kwargs must be the last argument
+
+#%% function_err_1,barebones
+def foo():
+    @__force__
+    def bar(): pass #! builtin function must be a top-level statement
+
+#%% function_err_2,barebones
+def f[T: Static[float]]():
+    pass
+#! expected 'int' or 'str' (only integers and strings can be static)
+
+#%% function_err_3,barebones
+def f(a, b=a):
+    pass
+#! name 'a' is not defined
+
+#%% function_llvm_err_1,barebones
+@llvm
+def foo():
+    blah
+#! return types required for LLVM and C functions
+
+#%% function_llvm_err_2,barebones
+@llvm
+def foo() -> int:
+    a{={=}}
+#! invalid LLVM code
+
+#%% function_llvm_err_4,barebones
+a = 5
+@llvm
+def foo() -> int:
+    a{=a
+#! invalid LLVM code
+
+#%% function_self,barebones
+class Foo:
+    def foo(self):
+        return 'F'
+f = Foo()
+print f.foo() #: F
+
+#%% function_self_err,barebones
+class Foo:
+    def foo(self):
+        return 'F'
+Foo.foo(1) #! 'Foo' object has no method 'foo' with arguments (int)
+
+#%% function_nested,barebones
+def foo(v):
+    value = v
+    def bar():
+        return value
+    return bar
+baz = foo(2)
+print baz() #: 2
+
+def f(x):
+    a=1
+    def g(y):
+        return a+y
+    return g(x)
+print f(5) #: 6
+
+#%% nested_generic_static,barebones
+def foo():
+    N: Static[int] = 5
+    Z: Static[int] = 15
+    T = Int[Z]
+    def bar():
+        x = __array__[T](N)
+        print(x.__class__.__name__)
+    return bar
+foo()()  #: Array[Int[15]]
+
+def f[T]():
+    def g():
+        return T()
+    return g()
+print f(int) #: 0
+
+
+
+#%% block_unroll,barebones
+# Ensure that block unrolling is done in RAII manner on error
+def foo():
+    while True:
+        def magic(a: x):
+            return
+        print b
+foo()
+#! name 'x' is not defined
+#! name 'b' is not defined
+
+#%% capture_recursive,barebones
+def f(x: int) -> int:
+    z = 2 * x
+    def g(y: int) -> int:
+        if y == 0:
+            return 1
+        else:
+            return g(y - 1) * z
+    return g(4)
+print(f(3))  #: 1296
+
+#%% id_static,barebones
+def foo[N: Static[int]]():
+    print N
+foo(5) #: 5
+
+def fox(N: Static[int]):
+    print N
+fox(6) #: 6
+
+#%% function_typecheck_level,barebones
+def foo(x):
+    def bar(z):  # bar has a parent foo(), however its unbounds must not be generalized!
+        print z
+    bar(x)
+    bar('x')
+foo(1)
+#: 1
+#: x
+foo('s')
+#: s
+#: x
+
+#%% function_builtin_error,barebones
+@__force__
+def foo(x):
+    pass
+#! builtin, exported and external functions cannot be generic
+
+#%% early_return,barebones
+def foo(x):
+    print  x-1
+    return
+    print len(x)
+foo(5) #: 4
+
+def foo2(x):
+    if isinstance(x, int):
+        print  x+1
+        return
+    print len(x)
+foo2(1) #: 2
+foo2('s') #: 1
+
+#%% static_fn,barebones
+class A[TA]:
+    a: TA
+    def dump(a, b, c):
+        print a, b, c
+    def m2():
+        A.dump(1, 2, 's')
+    def __str__(self):
+        return 'A'
+A.dump(1, 2, 3)  #: 1 2 3
+A[int].m2()  #: 1 2 s
+A.m2()  #: 1 2 s
+c = A[str]('s')
+c.dump('y', 1.1)  #: A y 1.1
+
+#%% static_fn_overload,barebones
+def foo(x: Static[int]):
+    print('int', x)
+
+@overload
+def foo(x: Static[str]):
+    print('str', x)
+
+foo(10)
+#: int 10
+foo('s')
+#: str s
+
+#%% instantiate_function_2,barebones
+def fx[T](x: T) -> T:
+    def g[T](z):
+        return z(T())
+    return g(fx, T)
+print fx(1.1).__class__.__name__, fx(1).__class__.__name__ #: float int
+
+#%% void,barebones
+def foo():
+    print 'foo'
+def bar(x):
+    print 'bar', x.__class__.__name__
+a = foo()  #: foo
+bar(a)  #: bar NoneType
+
+def x():
+  pass
+b = lambda: x()
+b()
+x() if True else x()
+
+#%% void_2,barebones
+def foo():
+    i = 0
+    while i < 10:
+        print i  #: 0
+        yield
+        i += 10
+a = list(foo())
+print(a)  #: [None]
+
+#%% global_none,barebones
+a, b = None, None
+def foo():
+    global a, b
+    a = [1, 2]
+    b = 3
+print a, b,
+foo()
+print a, b #: None None [1, 2] 3
+
+#%% return_fn,barebones
+def retfn(a):
+    def inner(b, *args, **kwargs):
+        print a, b, args, kwargs
+    print inner.__class__.__name__ #: inner[...,...,int,...]
+    return inner(15, ...)
+f = retfn(1)
+print f.__class__.__name__ #: inner[int,...,int,...]
+f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
+
+#%% decorator_manual,barebones
+def foo(x, *args, **kwargs):
+    print x, args, kwargs
+    return 1
+def dec(fn, a):
+    print 'decorating', fn.__class__.__name__ #: decorating foo[...,...,...]
+    def inner(*args, **kwargs):
+        print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
+        return fn(a, *args, **kwargs)
+    return inner(...)
+ff = dec(foo(...), 10)
+print ff(5.5, 's', z=True)
+#: 10 (5.5, 's') (z: True)
+#: 1
+
+
+#%% decorator,barebones
+def foo(x, *args, **kwargs):
+    print x, args, kwargs
+    return 1
+def dec(a):
+    def f(fn):
+        print 'decorating', fn.__class__.__name__
+        def inner(*args, **kwargs):
+            print 'decorator', args, kwargs
+            return fn(a, *args, **kwargs)
+        return inner
+    return f
+ff = dec(10)(foo)
+print ff(5.5, 's', z=True)
+#: decorating foo[...,...,...]
+#: decorator (5.5, 's') (z: True)
+#: 10 (5.5, 's') (z: True)
+#: 1
+
+@dec(a=5)
+def zoo(e, b, *args):
+    return f'zoo: {e}, {b}, {args}'
+print zoo(2, 3)
+print zoo('s', 3)
+#: decorating zoo[...,...,...]
+#: decorator (2, 3) ()
+#: zoo: 5, 2, (3)
+#: decorator ('s', 3) ()
+#: zoo: 5, s, (3)
+
+def mydecorator(func):
+    def inner():
+        print("before")
+        func()
+        print("after")
+    return inner
+@mydecorator
+def foo2():
+    print("foo")
+foo2()
+#: before
+#: foo
+#: after
+
+def timeme(func):
+    def inner(*args, **kwargs):
+        begin = 1
+        end = func(*args, **kwargs) - begin
+        print('time needed for', func.__class__.__name__, 'is', end)
+    return inner
+@timeme
+def factorial(num):
+    n = 1
+    for i in range(1,num + 1):
+        n *= i
+    print(n)
+    return n
+factorial(10)
+#: 3628800
+#: time needed for factorial[...] is 3628799
+
+def dx1(func):
+    def inner():
+        x = func()
+        return x * x
+    return inner
+def dx2(func):
+    def inner():
+        x = func()
+        return 2 * x
+    return inner
+@dx1
+@dx2
+def num():
+    return 10
+print(num()) #: 400
+
+def dy1(func):
+    def inner(*a, **kw):
+        x = func(*a, **kw)
+        return x * x
+    return inner
+def dy2(func):
+    def inner(*a, **kw):
+        x = func(*a, **kw)
+        return 2 * x
+    return inner
+@dy1
+@dy2
+def num2(a, b):
+    return a+b
+print(num2(10, 20)) #: 3600
+
+#%% c_void_return,barebones
+from C import seq_print(str)
+x = seq_print("not ")
+print x  #: not None

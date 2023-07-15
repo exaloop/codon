@@ -1,0 +1,45 @@
+#%% pass,barebones
+pass
+
+#%% print,barebones
+print 1,
+print 1, 2  #: 1 1 2
+
+print 1, 2  #: 1 2
+print(3, "4", sep="-", end=" !\n") #: 3-4 !
+
+print(1, 2) #: 1 2
+print (1, 2) #: (1, 2)
+
+def foo(i, j):
+    return i + j
+print 3 |> foo(1)  #: 4
+
+#%% typeof_definition_error,barebones
+a = 1
+class X:
+    b: type(a) #! cannot use type() in type signatures
+
+#%% typeof_definition_error_2,barebones
+def foo(a)->type(a): pass #! cannot use type() in type signatures
+
+#%% typeof_definition_error_3,barebones
+a=1
+b: type(a) = 1 #! cannot use type() in type signatures
+
+#%% multi_error,barebones
+a = 55
+print z  #! name 'z' is not defined
+print(a, q, w)  #! name 'q' is not defined
+print quit  #! name 'quit' is not defined
+
+#%% static_unify,barebones
+def foo(x: Callable[[1,2], 3]): pass  #! '1' does not match expected type 'T1'
+
+#%% static_unify_2,barebones
+def foo(x: List[1]): pass  #! '1' does not match expected type 'T'
+
+#%% expr,barebones
+a = 5; b = 3
+print a, b  #: 5 3
+

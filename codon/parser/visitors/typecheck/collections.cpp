@@ -52,8 +52,9 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
 /// See @c transformComprehension
 void TypecheckVisitor::visit(ListExpr *expr) {
   expr->setType(ctx->getUnbound());
-  if ((resultExpr = transformComprehension("std.internal.types.ptr.List", "append",
-                                           expr->items))) {
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("List");
+  if ((resultExpr =
+           transformComprehension(name->canonicalName, "append", expr->items))) {
     resultExpr->setAttr(ExprAttr::List);
   }
 }
@@ -103,8 +104,6 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   }
 
   SuiteStmt *prev = nullptr;
-  auto avoidDomination = true;
-  std::swap(avoidDomination, ctx->avoidDomination);
   auto suite = transformGeneratorBody(loops, prev);
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
@@ -221,7 +220,6 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     }
     resultExpr = anon;
   }
-  std::swap(avoidDomination, ctx->avoidDomination);
 }
 
 /// Transform a dictionary comprehension to the corresponding statement expression.
@@ -230,8 +228,6 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 ///                                      for i in j: if a: gen.__setitem__(i+a, j+1)```
 void TypecheckVisitor::visit(DictGeneratorExpr *expr) {
   SuiteStmt *prev = nullptr;
-  auto avoidDomination = true;
-  std::swap(avoidDomination, ctx->avoidDomination);
   auto suite = transformGeneratorBody(expr->loops, prev);
 
   std::vector<StmtPtr> stmts;
@@ -241,7 +237,6 @@ void TypecheckVisitor::visit(DictGeneratorExpr *expr) {
                                                 clone(expr->key), clone(expr->expr))));
   stmts.push_back(transform(suite));
   resultExpr = N<StmtExpr>(stmts, transform(var));
-  std::swap(avoidDomination, ctx->avoidDomination);
 }
 
 /// Transform a collection of type `type` to a statement expression:

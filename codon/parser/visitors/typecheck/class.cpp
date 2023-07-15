@@ -49,9 +49,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Tuple types are added after class contents are parsed to prevent
     // recursive record types (note: these are allowed for reference types)
     if (!stmt->attributes.has(Attr::Tuple)) {
-      auto v = ctx->find(name);
-      if (v && !v->canShadow)
-        E(Error::ID_INVALID_BIND, getSrcInfo(), name);
+      // auto v = ctx->find(name);
+      // if (v && !v->canShadow)
+      //   E(Error::ID_INVALID_BIND, getSrcInfo(), name);
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
     }
@@ -230,9 +230,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       if (stmt->attributes.has(Attr::Tuple)) {
         // Ensure that class binding does not shadow anything.
         // Class bindings cannot be dominated either
-        auto v = ctx->find(name);
-        if (v && !v->canShadow)
-          E(Error::CLASS_INVALID_BIND, stmt, name);
+        // auto v = ctx->find(name);
+        // if (v && !v->canShadow)
+        //   E(Error::CLASS_INVALID_BIND, stmt, name);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
       }
@@ -341,13 +341,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->remove(g.name);
       }
     // Debug information
-    LOG("[class] {} -> {:D} / {}", canonicalName, typ,
-        ctx->cache->classes[canonicalName].fields.size());
+    LOG_TYPECHECK("[class] {} -> {:D} / {}", canonicalName, typ,
+                  ctx->cache->classes[canonicalName].fields.size());
     for (auto &m : ctx->cache->classes[canonicalName].fields)
-      LOG("       - member: {}: {:D}", m.name, m.type);
+      LOG_TYPECHECK("       - member: {}: {:D}", m.name, m.type);
     for (auto &m : ctx->cache->classes[canonicalName].methods)
-      LOG("       - method: {}: {} ({:D})", m.first, m.second,
-          ctx->cache->functions[m.second].type);
+      LOG_TYPECHECK("       - method: {}: {} ({:D})", m.first, m.second,
+                    ctx->cache->functions[m.second].type);
   } catch (const exc::ParserException &) {
     if (!stmt->attributes.has(Attr::Tuple))
       ctx->remove(name);

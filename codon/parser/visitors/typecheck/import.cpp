@@ -88,7 +88,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         // `__` while the standard library is being loaded
         auto c = i.second.front();
         if (c->isConditional() && i.first.find('.') == std::string::npos) {
-          c = findDominatingBinding(i.first, import.ctx.get());
+          c = import.ctx->find(i.first);
         }
         // Imports should ignore noShadow property
         ctx->add(i.first, c);
@@ -103,7 +103,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->value, file->module);
     if (c->isConditional())
-      c = findDominatingBinding(i->value, import.ctx.get());
+      c = import.ctx->find(i->value);
     // Imports should ignore noShadow property
     ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
   }
@@ -185,9 +185,6 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
     auto v = ctx->find(altName);
-    if (v && !v->canShadow)
-      E(Error::ID_INVALID_BIND, getSrcInfo(), altName);
-
     auto val = ctx->forceFind(name);
     ctx->add(altName, val);
     ctx->remove(name);
@@ -204,7 +201,6 @@ StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Exp
   auto canonical = ctx->generateCanonicalName(name);
   auto typ = transformType(type->clone());
   auto val = ctx->addVar(altName.empty() ? name : altName, canonical, typ->type);
-  val->canShadow = false;
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttr(ExprAttr::ExternVar);
   return s;
@@ -322,9 +318,9 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
+  Name2Visitor::apply(ctx->cache, n);
   auto tv = TypecheckVisitor(ictx, preamble);
   n = tv.transform(n);
-  NameVisitor::apply(&tv, n);
 
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();

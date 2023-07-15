@@ -1,0 +1,400 @@
+
+#%% unary,barebones
+a, b = False, 1
+print not a, not b, ~b, +b, -b, -(+(-b)) #: True False -2 1 -1 1
+
+#%% binary,barebones
+x, y = 1, 0
+c = [1, 2, 3]
+
+print x and y, x or y #: False True
+print x in c, x not in c #: True False
+print c is c, c is not c #: True False
+
+z: Optional[int] = None
+print z is None, None is z, None is not z, None is None #: True True False True
+
+#%% chain_binary,barebones
+def foo():
+    print 'foo'
+    return 15
+a = b = c = foo() #: foo
+print a, b, c #: 15 15 15
+
+x = y = []
+x.append(1)
+print x, y #: [1] [1]
+
+print 1 <= foo() <= 10 #: foo
+#: False
+print 15 >= foo()+1 < 30 > 20 > foo()
+#: foo
+#: False
+print 15 >= foo()-1 < 30 > 20 > foo()
+#: foo
+#: foo
+#: True
+
+print True == (b == 15) #: True
+
+#%% pipe_error,barebones
+def b(a, b, c, d):
+    pass
+1 |> b(1, ..., 2, ...)  #! multiple ellipsis expressions
+
+#%% index_normal,barebones
+t: tuple[int, int] = (1, 2)
+print t #: (1, 2)
+
+tt: Tuple[int] = (1, )
+print tt #: (1)
+
+def foo(i: int) -> int:
+    return i + 1
+f: Callable[[int], int] = foo
+print f(1) #: 2
+fx: function[[int], int] = foo
+print fx(2) #: 3
+fxx: Function[[int], int] = foo
+print fxx(3) #: 4
+
+#%% index_special,barebones
+class Foo:
+    def __getitem__(self, foo):
+        print foo
+f = Foo()
+f[0,0] #: (0, 0)
+f[0,:] #: (0, slice(None, None, None))
+f[:,:] #: (slice(None, None, None), slice(None, None, None))
+f[:,0] #: (slice(None, None, None), 0)
+
+#%% index_error,barebones
+Ptr[9.99] #! expected type expression
+
+#%% index_error_b,barebones
+Ptr['s'] #! ''s'' does not match expected type 'T'
+
+#%% index_error_static,barebones
+Ptr[1] #! '1' does not match expected type 'T'
+
+#%% index_error_2,barebones
+Ptr[int, 's'] #! Ptr takes 1 generics (2 given)
+
+#%% index_error_3,barebones
+Ptr[1, 's'] #! Ptr takes 1 generics (2 given)
+
+#%% callable_error,barebones
+def foo(x: Callable[[]]): pass  #! Callable takes 2 generics (1 given)
+
+#%% binary,barebones
+@extend
+class float:
+    def __add__(self, i: int): print 'add'; return 0
+    def __sub__(self, i: int): print 'sub'; return 0
+    def __mul__(self, i: int): print 'mul'; return 0
+    def __pow__(self, i: int): print 'pow'; return 0
+    def __truediv__(self, i: int): print 'truediv'; return 0
+    def __floordiv__(self, i: int): print 'div'; return 0
+    def __matmul__(self, i: int): print 'matmul'; return 0
+    def __mod__(self, i: int): print 'mod'; return 0
+    def __lt__(self, i: int): print 'lt'; return 0
+    def __le__(self, i: int): print 'le'; return 0
+    def __gt__(self, i: int): print 'gt'; return 0
+    def __ge__(self, i: int): print 'ge'; return 0
+    def __eq__(self, i: int): print 'eq'; return 0
+    def __ne__(self, i: int): print 'ne'; return 0
+    def __lshift__(self, i: int): print 'lshift'; return 0
+    def __rshift__(self, i: int): print 'rshift'; return 0
+    def __and__(self, i: int): print 'and'; return 0
+    def __or__(self, i: int): print 'or'; return 0
+    def __xor__(self, i: int): print 'xor'; return 0
+# double assignment to disable propagation
+def f(x): return x
+a = f(1.0)
+a = f(5.0)
+a + f(1) #: add
+# wrap in function to disable canonicalization
+a - f(1) #: sub
+a * f(2) #: mul
+a ** f(2) #: pow
+a // f(2) #: div
+a / f(2) #: truediv
+a @ f(1) #: matmul
+a % f(1) #: mod
+a < f(1) #: lt
+a <= f(1) #: le
+a > f(1) #: gt
+a >= f(1) #: ge
+a == f(1) #: eq
+a != f(1) #: ne
+a << f(1) #: lshift
+a >> f(1) #: rshift
+a & f(1) #: and
+a | f(1) #: or
+a ^ f(1) #: xor
+
+#%% binary_rmagic,barebones
+class Foo[T]:
+    def __add__(self, other: T):
+        print 'add'
+        return self
+    def __radd__(self, other: T):
+        print 'radd'
+        return self
+foo = Foo[int]()
+foo + 1 #: add
+1 + foo #: radd
+
+#%% binary_short_circuit,barebones
+def moo():
+    print 'moo'
+    return True
+print True or moo() #: True
+print moo() or True #: moo
+#: True
+print False and moo() #: False
+print moo() and False #: moo
+#: False
+
+#%% binary_is,barebones
+print 5 is None #: False
+print None is None #: True
+print (None if bool(True) else 1) is None #: True
+print (None if bool(False) else 1) is None #: False
+
+print 5 is 5.0 #: False
+print 5 is 6 #: False
+print 5 is 5 #: True
+print 5 is 1.12 #: False
+class Foo:
+    a: int
+x = Foo(1)
+y = Foo(1)
+z = x
+print x is x, x is y, x is z, z is x, z is y #: True False True True False
+
+a, b, c, d = Optional(5), Optional[int](), Optional(5), Optional(4)
+print a is a, a is b, b is b, a is c, a is d #: True False True True False
+aa, bb, cc, dd = Optional(Foo(1)), Optional[Foo](), Optional(Foo(1)), Optional(Foo(2))
+print aa is aa, aa is bb, bb is bb, aa is cc, aa is dd #: True False True False False
+
+
+#%% pipe,barebones
+def foo(a, b):
+    return a+b
+bar = lambda c, d: c+d
+def hai(e):
+    while e > 0:
+        yield e
+        e -= 2
+def echo(s):
+    print s
+foo(1,2) |> bar(4) |> echo  #: 7
+foo(1,2) |> bar(4) |> hai |> echo
+#: 7
+#: 5
+#: 3
+#: 1
+
+#%% pipe_prepend,barebones
+def foo(a: Optional[int]):
+    print a
+    return 1
+5 |> foo #: 5
+None |> foo #: None
+print (None |> foo).__class__.__name__ #: int
+
+def foo2(a: int):
+    print a
+    return 1
+Optional(5) |> foo2 #: 5
+try:
+    Optional[int]() |> foo2
+except ValueError as e:
+    print e.message #: optional is None
+
+#%% pipe_prepend_error,barebones
+def foo2(a: int):
+    print a
+    return 1
+try:
+    None |> foo2
+except ValueError:
+    print 'exception' #: exception
+# Explanation: None can also be Optional[Generator[int]]
+# We cannot decide if this is a generator to be unrolled in a pipe,
+# or just an argument to be passed to a function.
+# So this will default to NoneType at the end.
+
+#%% instantiate_err,barebones
+def foo[N]():
+    return N()
+foo(int, float)  #! foo() takes 1 arguments (2 given)
+
+#%% instantiate_err_2,barebones
+def foo[N, T]():
+    return N()
+foo(int)  #! generic 'T' not provided
+
+#%% instantiate_err_3,barebones
+Ptr[int, float]()  #! Ptr takes 1 generics (2 given)
+
+#%% slice,barebones
+z = [1, 2, 3, 4, 5]
+y = (1, 'foo', True)
+print z[2], y[1]  #: 3 foo
+print z[:1], z[1:], z[1:3], z[:4:2], z[::-1]  #: [1] [2, 3, 4, 5] [2, 3] [1, 3] [5, 4, 3, 2, 1]
+
+#%% static_index,barebones
+a = (1, '2s', 3.3)
+print a[1] #: 2s
+print a[0:2], a[:2], a[1:] #: (1, '2s') (1, '2s') ('2s', 3.3)
+print a[0:3:2], a[-1:] #: (1, 3.3) (3.3)
+
+#%% static_index_side,barebones
+def foo(a):
+    print(a)
+    return a
+
+print (foo(2), foo(1))[::-1]
+#: 2
+#: 1
+#: (1, 2)
+print (foo(1), foo(2), foo(3), foo(4))[2]
+#: 1
+#: 2
+#: 3
+#: 4
+#: 3
+
+#%% static_index_lenient,barebones
+a = (1, 2)
+print a[3:5] #: ()
+
+#%% static_index_err,barebones
+a = (1, 2)
+a[5] #! tuple index out of range (expected 0..1, got instead 5)
+
+#%% static_index_err_2,barebones
+a = (1, 2)
+a[-3] #! tuple index out of range (expected 0..1, got instead -1)
+
+#%% index_func_instantiate,barebones
+class X:
+    def foo[T](self, x: T):
+        print x.__class__.__name__, x
+x = X()
+x.foo(5, int) #: int 5
+
+#%% index,barebones
+l = [1, 2, 3]
+print l[2] #: 3
+
+#%% index_two_rounds,barebones
+l = []
+print l[::-1] #: []
+l.append(('str', 1, True, 5.15))
+print l, l.__class__.__name__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
+
+#%% nested_generic,barebones
+x = Array[Array[int]](0)
+f = Optional[Optional[Optional[int]]](Optional[Optional[int]](Optional[int](5)))
+print x.len, f  #: 0 5
+
+#%% static,barebones
+class Num[N_: Static[int]]:
+    def __str__(self):
+        return f'[{N_}]'
+    def __init__(self):
+        pass
+def foo[N: Static[int]]():
+    print Num[N*2]()
+foo(3) #: [6]
+
+class XX[N_: Static[int]]:
+    a: Num[N_*2]
+    def __init__(self):
+        self.a = Num()
+y = XX[5]()
+print y.a, y.__class__.__name__, y.a.__class__.__name__ #: [10] XX[5] Num[10]
+
+@tuple
+class FooBar[N: Static[int]]:
+    x: Int[N]
+z = FooBar(i32(5))
+print z, z.__class__.__name__, z.x.__class__.__name__ #: (x: Int[32](5)) FooBar[32] Int[32]
+
+@tuple
+class Foo[N: Static[int]]:
+    x: Int[2*N]
+    def __new__(x: Int[2*N]) -> Foo[N]:
+        return (x,)
+foo = Foo[10](Int[20](0))
+print foo.__class__.__name__, foo.x.__class__.__name__ #: Foo[10] Int[20]
+
+#%% static_2,barebones
+class Num[N: Static[int]]:
+    def __str__(self):
+        return f'~{N}'
+    def __init__(self):
+        pass
+class Foo[T, A: Static[int], B: Static[int]]:
+    a: Num[A+B]
+    b: Num[A-B]
+    c: Num[A if A > 3 else B]
+    t: T
+    def __init__(self):
+        self.a = Num()
+        self.b = Num()
+        self.c = Num()
+        self.t = T()
+    def __str__(self):
+        return f'<{self.a} {self.b} {self.c} :: {self.t}>'
+print Foo[int, 3, 4](), Foo[int, 5, 4]()
+#: <~7 ~-1 ~4 :: 0> <~9 ~1 ~5 :: 0>
+
+#%% static_int,barebones
+def foo(n: Static[int]):
+    print n
+
+a: Static[int] = 5
+foo(a < 1)   #: 0
+foo(a <= 1)  #: 0
+foo(a > 1)   #: 1
+foo(a >= 1)  #: 1
+foo(a == 1)  #: 0
+foo(a != 1)  #: 1
+foo(a and 1) #: 1
+foo(a or 1)  #: 1
+foo(a + 1)   #: 6
+foo(a - 1)   #: 4
+foo(a * 1)   #: 5
+foo(a // 2)  #: 2
+foo(a % 2)   #: 1
+foo(a & 2)   #: 0
+foo(a | 2)   #: 7
+foo(a ^ 1)   #: 4
+
+#%% static_str,barebones
+class X:
+    s: Static[str]
+    i: Int[1 + (s == "abc")]
+    def __init__(self: X[s], s: Static[str]):
+        i = Int[1+(s=="abc")]()
+        print s, self.s, self.i.__class__.__name__
+def foo(x: Static[str], y: Static[str]):
+    print x+y
+z: Static[str] = "woo"
+foo("he", z)  #: hewoo
+X(s='lolo') #: lolo lolo Int[1]
+X('abc') #: abc abc Int[2]
+
+#%% partial_star_pipe_args,barebones
+iter(['A', 'C']) |> print
+#: A
+#: C
+iter(range(4)) |> print('x', ..., 1)
+#: x 0 1
+#: x 1 1
+#: x 2 1
+#: x 3 1

@@ -104,7 +104,7 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) {
     E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
 
   // Dominate the binding
-  auto val = findDominatingBinding(stmt->var, ctx.get());
+  auto val = ctx->find(stmt->var);
   if (!val || !val->isVar())
     E(Error::ID_NOT_FOUND, stmt, stmt->var);
   if (val->getBaseName() == ctx->getBaseName())
@@ -123,8 +123,6 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) {
 
   val = ctx->addVar(stmt->var, val->canonicalName, val->type);
   val->baseName = ctx->getBaseName();
-  // Globals/nonlocals cannot be shadowed in children scopes (as in Python)
-  val->canShadow = false;
   // Erase the statement
   resultStmt = N<SuiteStmt>();
 }
@@ -185,8 +183,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
    // Ensure that function binding does not shadow anything.
    // Function bindings cannot be dominated either
    auto funcVal = ctx->find(stmt->name);
-   if (funcVal && !funcVal->canShadow)
-      E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
+   //  if (funcVal && !funcVal->canShadow)
+   // E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
   }
 
   std::vector<Param> args;
@@ -371,8 +369,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
-  ctx->cache->functions[canonicalName].captures = Name2Visitor::apply(
-      N<FunctionStmt>(stmt->name, stmt->ret, stmt->args, stmt->suite));
   ctx->cache->functions[canonicalName].module = ctx->getModule();
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst =

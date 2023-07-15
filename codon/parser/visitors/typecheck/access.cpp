@@ -25,7 +25,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (isTuple(expr->value))
     generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
-  auto val = findDominatingBinding(expr->value, ctx.get());
+  auto val = ctx->find(expr->value);
   // if (!val && ctx->getBase()->pyCaptures) {
   //   ctx->getBase()->pyCaptures->insert(expr->value);
   //   resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
@@ -49,37 +49,8 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (captured)
     val = ctx->forceFind(expr->value);
 
-  // Track loop variables to dominate them later. Example:
-  // x = 1
-  // while True:
-  //   if x > 10: break
-  //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
-  if (ctx->getBase()->getLoop()) {
-    for (size_t li = ctx->getBase()->loops.size(); li-- > 0;) {
-      auto &loop = ctx->getBase()->loops[li];
-      bool inside = val->scope.size() >= loop.scope.size() &&
-                    val->scope[loop.scope.size() - 1] == loop.scope.back();
-      if (!inside)
-        loop.seenVars.insert(expr->value);
-      else
-        break;
-    }
-  }
-
   // Replace the variable with its canonical name
   expr->value = val->canonicalName;
-
-  // Mark global as "seen" to prevent later creation of local variables
-  // with the same name. Example:
-  // x = 1
-  // def foo():
-  //   print(x)  # mark x as seen
-  //   x = 2     # so that this is an error
-  if (!val->isGeneric() && ctx->isOuter(val) &&
-      !in(ctx->getBase()->seenGlobalIdentifiers, ctx->cache->rev(val->canonicalName))) {
-    ctx->getBase()->seenGlobalIdentifiers[ctx->cache->rev(val->canonicalName)] =
-        expr->clone();
-  }
 
   // Flag the expression as a type expression if it points to a class or a generic
   if (val->isType())
@@ -149,103 +120,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 /// See @c transformDot for details.
 void TypecheckVisitor::visit(DotExpr *expr) { resultExpr = transformDot(expr); }
 
-/// Get an item from the context. Perform domination analysis for accessing items
-/// defined in the conditional blocks (i.e., Python scoping).
-TypeContext::Item TypecheckVisitor::findDominatingBinding(const std::string &name,
-                                                          TypeContext *ctx) {
-  auto it = ctx->find_all(name);
-  if (!it) {
-    return ctx->find(name);
-  }
-  // else if (ctx->isCanonicalName(name)) {
-  //   return *(it->begin());
-  // }
-  seqassert(!it->empty(), "corrupted TypecheckContext ({})", name);
-
-  // The item is found. Let's see is it accessible now.
-
-  std::string canonicalName;
-  auto lastGood = it->begin();
-  bool isOutside = (*lastGood)->getBaseName() != ctx->getBaseName();
-  int prefix = int(ctx->scope.size());
-  // Iterate through all bindings with the given name and find the closest binding that
-  // dominates the current scope.
-  for (auto i = it->begin(); i != it->end(); i++) {
-    // Find the longest block prefix between the binding and the current scope.
-    int p = std::min(prefix, int((*i)->scope.size()));
-    while (p >= 0 && (*i)->scope[p - 1] != ctx->scope[p - 1].id)
-      p--;
-    // We reached the toplevel. Break.
-    if (p < 0)
-      break;
-    // We went outside the function scope. Break.
-    if (!isOutside && (*i)->getBaseName() != ctx->getBaseName())
-      break;
-    prefix = p;
-    lastGood = i;
-    // The binding completely dominates the current scope. Break.
-    if ((*i)->scope.size() <= ctx->scope.size() &&
-        (*i)->scope.back() == ctx->scope[(*i)->scope.size() - 1].id)
-      break;
-  }
-  seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
-  if (lastGood != it->begin() && !(*lastGood)->isVar())
-    E(Error::CLASS_INVALID_BIND, getSrcInfo(), name);
-
-  bool hasUsed = false;
-  types::TypePtr type = nullptr;
-  if ((*lastGood)->scope.size() == prefix) {
-    // The current scope is dominated by a binding. Use that binding.
-    canonicalName = (*lastGood)->canonicalName;
-    type = (*lastGood)->type;
-  } else {
-    // The current scope is potentially reachable by multiple bindings that are
-    // not dominated by a common binding. Create such binding in the scope that
-    // dominates (covers) all of them.
-    canonicalName = ctx->generateCanonicalName(name);
-    auto scope = ctx->getScope();
-    auto item = std::make_shared<TypecheckItem>(
-        canonicalName, (*lastGood)->baseName, (*lastGood)->moduleName,
-        ctx->getUnbound(getSrcInfo()),
-        std::vector<int>(scope.begin(), scope.begin() + prefix));
-    LOG("--> {} / {}", canonicalName, item->scope);
-    item->accessChecked = {(*lastGood)->scope};
-    type = item->type;
-    lastGood = it->insert(++lastGood, item);
-    // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
-    // to the dominating scope.
-    ctx->scope[prefix - 1].stmts.push_back(
-        N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(canonicalName), nullptr, nullptr),
-                     N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", canonicalName)),
-                                   N<BoolExpr>(false), nullptr)));
-
-    // Reached the toplevel? Register the binding as global.
-    if (prefix == 1) {
-      ctx->cache->addGlobal(canonicalName);
-      ctx->cache->addGlobal(fmt::format("{}.__used__", canonicalName));
-    }
-    hasUsed = true;
-  }
-  // Remove all bindings after the dominant binding.
-  for (auto i = it->begin(); i != it->end(); i++) {
-    if (i == lastGood)
-      break;
-    if (!(*i)->canDominate())
-      continue;
-    // These bindings (and their canonical identifiers) will be replaced by the
-    // dominating binding during the type checking pass.
-
-    ctx->scope[prefix - 1].replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
-    ctx->scope[prefix - 1].replacements[format("{}.__used__", (*i)->canonicalName)] = {
-        format("{}.__used__", canonicalName), false};
-    seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
-              getSrcInfo(), canonicalName);
-    ctx->removeFromTopStack(name);
-  }
-  it->erase(it->begin(), lastGood);
-  return it->front();
-}
-
 /// Access identifiers from outside of the current function/class scope.
 /// Either use them as-is (globals), capture them if allowed (nonlocals),
 /// or raise an error.
@@ -288,7 +162,6 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
 
   // Case: a global variable that has not been marked with `global` statement
   if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
-    val->canShadow = false;
     if (!val->isStatic())
       ctx->cache->addGlobal(val->canonicalName);
     return false;

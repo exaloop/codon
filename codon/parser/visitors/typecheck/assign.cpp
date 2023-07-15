@@ -19,23 +19,7 @@ using namespace types;
 /// @example
 ///   `(expr := var)` -> `var = expr; var`
 void TypecheckVisitor::visit(AssignExpr *expr) {
-  seqassert(expr->var->getId(), "only simple assignment expression are supported");
-
-  StmtPtr s = N<AssignStmt>(clone(expr->var), expr->expr);
-  auto avoidDomination = false; // walruses always leak
-  std::swap(avoidDomination, ctx->avoidDomination);
-  if (ctx->isConditionalExpr) {
-    // Make sure to transform both suite _AND_ the expression in the same scope
-    enterConditionalBlock();
-    transform(s);
-    transform(expr->var);
-    leaveConditionalBlock(s);
-  } else {
-    transform(s);
-    transform(expr->var);
-  }
-  std::swap(avoidDomination, ctx->avoidDomination);
-  resultExpr = transform(N<StmtExpr>(std::vector<StmtPtr>{s}, expr->var));
+  seqassert(false, "AssignExpr should be inlined by a previous pass: '{}'", *expr);
 }
 
 /// Transform assignments. Handle dominated assignments, forward declarations, static
@@ -43,19 +27,13 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
+  bool mustUpdate = stmt->isUpdate();
   if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
     // Update case: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
-    resultStmt = transformAssignment(stmt->lhs, stmt->rhs, nullptr, true);
-  } else if (!stmt->type && !stmt->lhs->getId()) {
-    // Normal case
-    std::vector<StmtPtr> stmts;
-    unpackAssignments(stmt->lhs, stmt->rhs, stmts);
-    resultStmt = transform(N<SuiteStmt>(stmts));
-  } else {
-    // Type case: `a: T = b, c` (no unpacking); all other (invalid) cases
-    resultStmt = transformAssignment(stmt->lhs, stmt->rhs, stmt->type);
+    mustUpdate = true;
   }
+  resultStmt = transformAssignment(stmt, mustUpdate);
 }
 
 /// Transform deletions.
@@ -91,18 +69,17 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 ///   `a.x = b`     -> @c AssignMemberStmt
 ///   `a: type` = b -> @c AssignStmt
 ///   `a = b`       -> @c AssignStmt or @c UpdateStmt (see below)
-StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr type,
-                                              bool mustExist) {
-  if (auto idx = lhs->getIndex()) {
+StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
+  if (auto idx = stmt->lhs->getIndex()) {
     // Case: a[x] = b
-    seqassert(!type, "unexpected type annotation");
+    seqassert(!stmt->type, "unexpected type annotation");
     return transform(N<ExprStmt>(
-        N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, rhs)));
+        N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, stmt->rhs)));
   }
 
-  if (auto dot = lhs->getDot()) {
+  if (auto dot = stmt->lhs->getDot()) {
     // Case: a.x = b
-    seqassert(!type, "unexpected type annotation");
+    seqassert(!stmt->type, "unexpected type annotation");
     transform(dot->expr, true);
     // If we are deducing class members, check if we can deduce a member from this
     // assignment
@@ -111,32 +88,20 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
     // nullptr; if (deduced && dot->expr->isId(ctx->getBase()->selfName) &&
     //     !in(*deduced, dot->member))
     //   deduced->push_back(dot->member);
-    return transform(N<AssignMemberStmt>(dot->expr, dot->member, transform(rhs)));
+    return transform(N<AssignMemberStmt>(dot->expr, dot->member, transform(stmt->rhs)));
   }
 
   // Case: a (: t) = b
-  auto e = lhs->getId();
+  auto e = stmt->lhs->getId();
   if (!e)
-    E(Error::ASSIGN_INVALID, lhs);
-
-  // Disable creation of local variables that share the name with some global if such
-  // global was already accessed within the current scope. Example:
-  // x = 1
-  // def foo():
-  //   print(x)  # x is seen here
-  //   x = 2     # this should error
-  if (in(ctx->getBase()->seenGlobalIdentifiers, e->value))
-    E(Error::ASSIGN_LOCAL_REFERENCE, ctx->getBase()->seenGlobalIdentifiers[e->value],
-      e->value);
+    E(Error::ASSIGN_INVALID, stmt->lhs);
 
   auto val = ctx->find(e->value);
-  // Make sure that existing values that cannot be shadowed (e.g. imported globals) are
-  // only updated
-  mustExist |= val && !val->canShadow && !ctx->isOuter(val);
+  // Make sure that existing values that cannot be shadowed are only updated
+  // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
-    val = findDominatingBinding(e->value, ctx.get());
     if (val && val->isVar() && !ctx->isOuter(val)) {
-      auto s = N<AssignStmt>(lhs, rhs);
+      auto s = N<AssignStmt>(stmt->lhs, stmt->rhs);
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
         s->setAtomicUpdate();
       else
@@ -144,16 +109,16 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
       transformUpdate(s.get());
       return s;
     } else {
-      E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value);
+      E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value, e->getSrcInfo());
     }
   }
 
-  transform(rhs, true);
-  transformType(type, false);
+  transform(stmt->rhs, true);
+  transformType(stmt->type, false);
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
-  auto assign = N<AssignStmt>(N<IdExpr>(canonical), rhs, type);
+  auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
   unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
   if (assign->type) {
     unify(assign->lhs->type,
@@ -164,8 +129,6 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
   val->setSrcInfo(getSrcInfo());
   if (auto st = getStaticGeneric(assign->type.get()))
     val->staticType = st;
-  if (ctx->avoidDomination)
-    val->avoidDomination = true;
   ctx->add(e->value, val);
   ctx->addAlwaysVisible(val);
 
@@ -180,7 +143,7 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(assign->rhs, assign->lhs->getType()))
       unify(assign->lhs->type, assign->rhs->type);
-    if (rhs->isType())
+    if (stmt->rhs->isType())
       val->type = val->type->getClass();
     auto type = assign->lhs->getType();
     // Generalize non-variable types. That way we can support cases like:
@@ -195,88 +158,19 @@ StmtPtr TypecheckVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr 
     assign->setDone();
   }
 
-  // Clean up seen tags if shadowing a name
-  ctx->getBase()->seenGlobalIdentifiers.erase(e->value);
   // Register all toplevel variables as global in JIT mode
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
                   (canonical == VAR_ARGV);
   if (isGlobal && val->isVar())
     ctx->cache->addGlobal(canonical);
 
+  if (!stmt->rhs) {
+    val->accessChecked = {ctx->getScope()};
+    auto u =
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__", canonical)), N<BoolExpr>(false));
+    return transform(N<SuiteStmt>(u, assign));
+  }
   return assign;
-}
-
-/// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
-/// expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
-/// Handle Python unpacking rules.
-/// @example
-///   `(a, b) = c`     -> `a = c[0]; b = c[1]`
-///   `a, b = c`       -> `a = c[0]; b = c[1]`
-///   `[a, *x, b] = c` -> `a = c[0]; x = c[1:-1]; b = c[-1]`.
-/// Non-trivial right-hand expressions are first stored in a temporary variable.
-/// @example
-///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
-/// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-void TypecheckVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
-                                         std::vector<StmtPtr> &stmts) {
-  std::vector<ExprPtr> leftSide;
-  if (auto et = lhs->getTuple()) {
-    // Case: (a, b) = ...
-    for (auto &i : et->items)
-      leftSide.push_back(i);
-  } else if (auto el = lhs->getList()) {
-    // Case: [a, b] = ...
-    for (auto &i : el->items)
-      leftSide.push_back(i);
-  } else {
-    // Case: simple assignment (a = b, a.x = b, or a[x] = b)
-    stmts.push_back(transformAssignment(clone(lhs), clone(rhs)));
-    return;
-  }
-
-  // Prepare the right-side expression
-  auto srcPos = rhs->getSrcInfo();
-  if (!rhs->getId()) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = ctx->cache->getTemporaryVar("assign");
-    ExprPtr newRhs = N<IdExpr>(srcPos, var);
-    stmts.push_back(transformAssignment(newRhs, clone(rhs)));
-    rhs = newRhs;
-  }
-
-  // Process assignments until the fist StarExpr (if any)
-  size_t st = 0;
-  for (; st < leftSide.size(); st++) {
-    if (leftSide[st]->getStar())
-      break;
-    // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide = N<IndexExpr>(srcPos, clone(rhs), N<IntExpr>(srcPos, st));
-    // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    unpackAssignments(leftSide[st], rightSide, stmts);
-  }
-  // Process StarExpr (if any) and the assignments that follow it
-  if (st < leftSide.size() && leftSide[st]->getStar()) {
-    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    auto rightSide = N<IndexExpr>(
-        srcPos, clone(rhs),
-        N<SliceExpr>(srcPos, N<IntExpr>(srcPos, st),
-                     // this slice is either [st:] or [st:-lhs_len + st + 1]
-                     leftSide.size() == st + 1
-                         ? nullptr
-                         : N<IntExpr>(srcPos, -leftSide.size() + st + 1),
-                     nullptr));
-    unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts);
-    st += 1;
-    // Process remaining assignments. They will use negative indices (-1, -2 etc.)
-    // because we do not know how big is StarExpr
-    for (; st < leftSide.size(); st++) {
-      if (leftSide[st]->getStar())
-        E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
-      rightSide = N<IndexExpr>(srcPos, clone(rhs),
-                               N<IntExpr>(srcPos, -int(leftSide.size() - st)));
-      unpackAssignments(leftSide[st], rightSide, stmts);
-    }
-  }
 }
 
 /// Transform binding updates. Special handling is done for atomic or in-place

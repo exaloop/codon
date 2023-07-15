@@ -37,12 +37,6 @@ struct TypecheckItem : public SrcObject {
   /// List of scopes where the identifier is accessible
   /// without __used__ check
   std::vector<std::vector<int>> accessChecked;
-  /// Set if an identifier cannot be shadowed
-  /// (e.g., global-marked variables)
-  bool canShadow = true;
-  /// Set if an identifier should not be dominated
-  /// (e.g., a loop variable in a comprehension).
-  bool avoidDomination = false;
 
   /// Set if an identifier is a class or a function generic
   bool generic = false;
@@ -65,8 +59,6 @@ struct TypecheckItem : public SrcObject {
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
   char isStatic() const { return staticType; }
-  /// True if an identifier is a loop variable in a comprehension
-  bool canDominate() const { return !avoidDomination; }
 };
 
 /** Context class that tracks identifiers during the typechecking. **/
@@ -133,20 +125,13 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Scope that defines the base.
     std::vector<int> scope;
 
-    /// Set of seen global identifiers used to prevent later creation of local variables
-    /// with the same name.
-    std::unordered_map<std::string, ExprPtr> seenGlobalIdentifiers;
-
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
     /// variable created while parsing a loop-else construct. If a loop has no else
     /// block, the corresponding loop variable is empty.
     struct Loop {
       std::string breakVar;
-      std::vector<int> scope;
-      /// List of variables "seen" before their assignment within a loop.
-      /// Used to dominate variables that are updated within a loop.
-      std::unordered_set<std::string> seenVars;
+      Loop(const std::string &breakVar) : breakVar(breakVar) {}
     };
     std::vector<Loop> loops;
 
@@ -181,8 +166,6 @@ struct TypeContext : public Context<TypecheckItem> {
   /// Allow type() expressions. Currently used to disallow type() in class
   /// and function definitions.
   bool allowTypeOf = true;
-  /// Set if all assignments should not be dominated later on.
-  bool avoidDomination = false;
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel = 0;

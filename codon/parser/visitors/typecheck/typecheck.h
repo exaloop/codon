@@ -77,15 +77,6 @@ public: // Convenience transformators
     auto e = expr;
     return transformType(e, allowTypeOf);
   }
-  StmtPtr transformConditionalScope(StmtPtr &stmt);
-
-private:
-  /// Enter a conditional block.
-  void enterConditionalBlock();
-  /// Leave a conditional block. Populate stmts (if set) with the declarations of
-  /// newly added identifiers that dominate the children blocks.
-  void leaveConditionalBlock();
-  void leaveConditionalBlock(StmtPtr &);
 
 private:
   void defaultVisit(Expr *e) override;
@@ -104,7 +95,6 @@ private: // Node typechecking rules
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
-  TypeContext::Item findDominatingBinding(const std::string &, TypeContext *);
   bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
@@ -196,7 +186,7 @@ private: // Node typechecking rules
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
   void transformUpdate(AssignStmt *);
-  StmtPtr transformAssignment(ExprPtr, ExprPtr, ExprPtr = nullptr, bool = false);
+  StmtPtr transformAssignment(AssignStmt *, bool = false);
   void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
   void visit(AssignMemberStmt *) override;
@@ -308,12 +298,12 @@ private:
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
-  bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
-                const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
   ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp, bool = false);
   StmtPtr prepareVTables();
 
 public:
+  bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
+                const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
 
@@ -331,155 +321,89 @@ private: // Helpers
       const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &);
 };
 
-class NameVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
-  TypecheckVisitor *tv;
+class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+  struct Context {
+    /// A pointer to the shared cache.
+    Cache *cache;
+
+    /// Holds the information about current scope.
+    /// A scope is defined as a stack of conditional blocks
+    /// (i.e., blocks that might not get executed during the runtime).
+    /// Used mainly to support Python's variable scoping rules.
+    struct ScopeBlock {
+      int id;
+      /// List of statements that are to be prepended to a block
+      /// after its transformation.
+      std::vector<StmtPtr> stmts;
+
+      /// List of variables "seen" before their assignment within a loop.
+      /// Used to dominate variables that are updated within a loop.
+      std::shared_ptr<std::unordered_set<std::string>> seenVars = nullptr;
+      ScopeBlock(int id) : id(id), seenVars(nullptr) {}
+    };
+    /// Current hierarchy of conditional blocks.
+    std::vector<ScopeBlock> scope;
+    std::vector<int> getScope() const {
+      std::vector<int> result;
+      result.reserve(scope.size());
+      for (const auto &b : scope)
+        result.emplace_back(b.id);
+      return result;
+    }
+
+    struct Item {
+      std::vector<int> scope;
+      Stmt *binding;
+    };
+    std::unordered_map<std::string, std::list<Item>> map;
+
+    std::set<std::string> captures;
+    std::set<std::string> childCaptures;      // for functions!
+    std::vector<std::set<std::string>> temps; // for comprehensions
+    std::map<std::string, SrcInfo> firstSeen;
+
+    bool adding = false;
+    Stmt *root = nullptr;
+    bool functionScope = false;
+  };
+  std::shared_ptr<Context> ctx = nullptr;
   ExprPtr resultExpr = nullptr;
   StmtPtr resultStmt = nullptr;
 
 public:
-  NameVisitor(TypecheckVisitor *tv) : tv(tv) {}
-  static void apply(TypecheckVisitor *tv, std::vector<StmtPtr> &v);
-  static void apply(TypecheckVisitor *tv, StmtPtr &s);
-  static void apply(TypecheckVisitor *tv, ExprPtr &s);
+  static void apply(Cache *, StmtPtr &s);
   ExprPtr transform(const std::shared_ptr<Expr> &expr) override;
-  ExprPtr transform(std::shared_ptr<Expr> &expr) override;
   StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override;
+  ExprPtr transform(std::shared_ptr<Expr> &expr) override;
   StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
+
+  void visitName(const std::string &name, bool = false, Stmt * = nullptr,
+                 const SrcInfo & = SrcInfo());
+  void transformAdding(ExprPtr &e, Stmt *);
+
   void visit(IdExpr *expr) override;
+  void visit(GeneratorExpr *expr) override;
+  void visit(DictGeneratorExpr *expr) override;
+  void visit(AssignExpr *expr) override;
   void visit(AssignStmt *stmt) override;
-  void visit(TryStmt *stmt) override;
+  void visit(IfStmt *stmt) override;
+  void visit(MatchStmt *stmt) override;
+  void visit(WhileStmt *stmt) override;
   void visit(ForStmt *stmt) override;
+  void visit(ImportStmt *stmt) override;
+  // todo)) delstmt?
+  void visit(TryStmt *stmt) override;
   void visit(FunctionStmt *stmt) override;
-};
+  void visit(ClassStmt *stmt) override;
 
-class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
-  std::set<std::string> *names = nullptr;
-  std::set<std::string> *captures = nullptr;
-  std::map<std::string, SrcInfo> *firstSeen = nullptr;
-  bool adding = false;
-  bool functionScope = false;
-
-public:
-  static std::set<std::string> apply(const StmtPtr &s) {
-    std::set<std::string> names, captures;
-    std::map<std::string, SrcInfo> firstSeen;
-    Name2Visitor v;
-    v.names = &names;
-    v.captures = &captures;
-    v.firstSeen = &firstSeen;
-    if (auto f = s->getFunction()) {
-      v.functionScope = true;
-      for (auto &a : f->args)
-        v.visitName(a.name, true, a.getSrcInfo());
-    }
-    v.transform(s);
-    return captures;
-  }
-  ExprPtr transform(const std::shared_ptr<Expr> &expr) override {
-    Name2Visitor v(*this);
-    if (expr)
-      expr->accept(v);
-    return expr;
-  }
-  StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override {
-    Name2Visitor v(*this);
-    if (stmt)
-      stmt->accept(v);
-    return stmt;
-  }
-
-  void visitName(const std::string &name, bool adding, const SrcInfo &src) {
-    if (adding) {
-      if (in(*captures, name))
-        E(error::Error::ASSIGN_LOCAL_REFERENCE, (*firstSeen)[name], name);
-      names->insert(name);
-    } else {
-      if (!in(*firstSeen, name))
-        (*firstSeen)[name] = src;
-      if (!in(*names, name))
-        captures->insert(name);
-    }
-  }
-  void transformAdding(ExprPtr &e) {
-    auto oa = true;
-    std::swap(oa, adding);
-    transform(e);
-    std::swap(oa, adding);
-  }
-
-  void visit(IdExpr *expr) override {
-    visitName(expr->value, adding, expr->getSrcInfo());
-  }
-  void visit(GeneratorExpr *expr) override {
-    for (auto &l : expr->loops) {
-      transform(l.gen);
-      transformAdding(l.vars);
-      for (auto &c : l.conds)
-        transform(c);
-    }
-    transform(expr->expr);
-  }
-  void visit(DictGeneratorExpr *expr) override {
-    transform(expr->key);
-    transform(expr->expr);
-    for (auto &l : expr->loops) {
-      transform(l.gen);
-      transformAdding(l.vars);
-      for (auto &c : l.conds)
-        transform(c);
-    }
-  }
-  void visit(AssignExpr *expr) override {
-    transform(expr->expr);
-    transformAdding(expr->var);
-  }
-  void visit(AssignStmt *stmt) override {
-    transform(stmt->rhs);
-    transform(stmt->type);
-    transformAdding(stmt->lhs);
-  }
-  void visit(ForStmt *stmt) override {
-    transform(stmt->iter);
-    transform(stmt->decorator);
-    for (auto &a : stmt->ompArgs)
-      transform(a.value);
-
-    transformAdding(stmt->var);
-    transform(stmt->suite);
-    transform(stmt->elseSuite);
-  }
-  void visit(ImportStmt *stmt) override {
-    if (functionScope && stmt->what->isId("*"))
-      E(error::Error::IMPORT_STAR, stmt);
-
-    transform(stmt->from);
-    if (stmt->as.empty())
-      transformAdding(stmt->what);
-    else
-      visitName(stmt->as, true, stmt->getSrcInfo());
-    for (auto &a : stmt->args) {
-      transform(a.type);
-      transform(a.defaultValue);
-    }
-    transform(stmt->ret);
-  }
-  // todo)) delstmt? matchstmt?
-  void visit(TryStmt *stmt) override {
-    transform(stmt->suite);
-    for (auto &a : stmt->catches) {
-      transform(a.exc);
-      if (!a.var.empty())
-        visitName(a.var, true, a.exc->getSrcInfo());
-      transform(a.suite);
-    }
-    transform(stmt->finally);
-  }
-  void visit(FunctionStmt *stmt) override {
-    visitName(stmt->name, true, stmt->getSrcInfo());
-  }
-  void visit(ClassStmt *stmt) override {
-    visitName(stmt->name, true, stmt->getSrcInfo());
-  }
+  Context::Item *findDominatingBinding(const std::string &, bool = true);
+  void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
+  /// Enter a conditional block.
+  void enterConditionalBlock();
+  /// Leave a conditional block. Populate stmts (if set) with the declarations of
+  /// newly added identifiers that dominate the children blocks.
+  void leaveConditionalBlock();
+  void leaveConditionalBlock(StmtPtr &);
 };
 
 } // namespace codon::ast
