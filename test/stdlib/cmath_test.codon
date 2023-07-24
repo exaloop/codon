@@ -826,4 +826,17 @@ def test_complex64():
     assert hash(z)
     assert c64(complex(z)) == z
 
+    z = c64(1.5, 2.5)
+    assert z.real == f32(1.5)
+    assert z.imag == f32(2.5)
+    z = c64(3.5)
+    assert z.real == f32(3.5)
+    assert z.imag == f32(0.0)
+    z = c64(f32(4.5), f32(5.5))
+    assert z.real == f32(4.5)
+    assert z.imag == f32(5.5)
+    z = c64(f32(6.5))
+    assert z.real == f32(6.5)
+    assert z.imag == f32(0.0)
+
 test_complex64()

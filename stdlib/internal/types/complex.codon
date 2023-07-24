@@ -300,6 +300,9 @@ class complex64:
     def __new__(other):
         return complex64(other.__complex__())
 
+    def __new__(real: f32):
+        return complex64(real, f32(0.0))
+
     def __new__(other: complex) -> complex64:
         return (f32(other.real), f32(other.imag))
 
