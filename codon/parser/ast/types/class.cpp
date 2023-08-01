@@ -213,6 +213,33 @@ bool RecordType::isInstantiated() const {
 }
 
 std::string RecordType::debugString(char mode) const {
+  if (name == "Partial" && generics[0].type->canRealize() && false) {
+    auto func = getPartialFunc();
+    std::vector<std::string> gs;
+    for (auto &a : func->generics)
+      if (!a.name.empty())
+        gs.push_back(a.type->debugString(mode));
+    std::vector<std::string> as;
+    int i = 0, gi = 0;
+    auto known = getPartialMask();
+    for (; i < known.size(); i++)
+      if (func->ast->args[i].status == Param::Normal) {
+        if (!known[i])
+          as.emplace_back("...");
+        else
+          as.emplace_back(gs[gi++]);
+      }
+    auto fnname = func->ast->name;
+    if (mode == 0) {
+      fnname = cache->rev(func->ast->name);
+      // if (func->funcParent)
+      // fnname = fmt::format("{}.{}", func->funcParent->debugString(mode), fnname);
+    } else if (mode == 2) {
+      fnname = func->debugString(mode);
+    }
+    return fmt::format("{}[{}{}]", fnname, join(as, ","),
+                       mode == 2 ? fmt::format(";{}", join(gs, ",")) : "");
+  }
   return fmt::format("{}", this->ClassType::debugString(mode));
 }
 
@@ -225,6 +252,43 @@ std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
         return getRecord();
   }
   return nullptr;
+}
+
+std::string RecordType::realizedName() const {
+  if (name == "Partial" && generics[0].type->canRealize() && false) {
+    auto func = getPartialFunc();
+    std::vector<std::string> gs;
+    gs.push_back(func->ast->name);
+    for (auto &a : func->generics)
+      if (!a.name.empty())
+        gs.push_back(a.type->realizedName());
+    std::string s = join(gs, ",");
+    return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+  }
+  return ClassType::realizedName();
+}
+
+std::shared_ptr<RecordType> RecordType::getPartial() {
+  return (name == "Partial") ? std::static_pointer_cast<RecordType>(shared_from_this())
+                             : nullptr;
+}
+
+std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
+  seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
+  auto n = generics[0].type->getStatic()->evaluate().getString();
+  auto f = in(cache->functions, n);
+  seqassert(f, "cannot locate '{}'", n);
+  return f->type;
+}
+
+std::vector<char> RecordType::getPartialMask() const {
+  seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
+  auto n = generics[1].type->getStatic()->evaluate().getString();
+  std::vector<char> r(n.size(), 0);
+  for (size_t i = 0; i < n.size(); i++)
+    if (n[i] == '1')
+      r[i] = 1;
+  return r;
 }
 
 } // namespace codon::ast::types

@@ -37,11 +37,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     typ = Type::makeType(ctx->cache, canonicalName, name, stmt->isRecord())->getClass();
     if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
       typ->getRecord()->noTuple = true;
-    if (stmt->isRecord() && startswith(stmt->name, TYPE_PARTIAL)) {
-      // Special handling of partial types (e.g., `Partial.0001.foo`)
-      if (auto p = in(ctx->cache->partials, stmt->name))
-        typ = std::make_shared<PartialType>(typ->getRecord(), p->first, p->second);
-    }
     typ->setSrcInfo(stmt->getSrcInfo());
     classItem->type = typ;
 
@@ -765,28 +760,12 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
 
 /// Generate a tuple class `Tuple.N[T1,...,TN]`.
 /// @param len       Tuple length (`N`)
-/// @param name      Tuple name. `Tuple` by default.
-///                  Can be something else (e.g., `KwTuple`)
-/// @param names     Member names. By default `item1`...`itemN`.
-/// @param hasSuffix Set if the tuple name should have `.N` suffix.
-std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
-                                            std::vector<std::string> names,
-                                            bool hasSuffix) {
-  auto key = join(names, ";");
-  std::string suffix;
-  if (!names.empty()) {
-    // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
-    // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
-    // combination.
-    if (!in(ctx->cache->generatedTuples, key))
-      ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size());
-    suffix = format("_{}", ctx->cache->generatedTuples[key]);
-  } else {
-    for (size_t i = 1; i <= len; i++)
-      names.push_back(format("item{}", i));
-  }
+std::string TypecheckVisitor::generateTuple(size_t len) {
+  std::vector<std::string> names;
+  for (size_t i = 1; i <= len; i++)
+    names.push_back(format("item{}", i));
 
-  auto typeName = format("{}{}", name, hasSuffix ? format("{}{}", len, suffix) : "");
+  auto typeName = format("{}{}", TYPE_TUPLE, len);
   if (!ctx->find(typeName)) {
     // Generate the appropriate ClassStmt
     std::vector<Param> args;
@@ -797,32 +776,29 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
     StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
                                 std::vector<ExprPtr>{N<IdExpr>("tuple")});
 
-    // Add getItem for KwArgs:
-    //   `def __getitem__(self, key: Static[str]): return getattr(self, key)`
-    auto getItem = N<FunctionStmt>(
-        "__getitem__", nullptr,
-        std::vector<Param>{Param{"self"}, Param{"key", N<IndexExpr>(N<IdExpr>("Static"),
-                                                                    N<IdExpr>("str"))}},
-        N<SuiteStmt>(N<ReturnStmt>(
-            N<CallExpr>(N<IdExpr>("getattr"), N<IdExpr>("self"), N<IdExpr>("key")))));
-    if (startswith(typeName, TYPE_KWTUPLE))
-      stmt->getClass()->suite = getItem;
-
-    // Add getItem for KwArgs:
-    //   `def __repr__(self,): return __magic__.repr_partial(self)`
-    auto repr = N<FunctionStmt>(
-        "__repr__", nullptr, std::vector<Param>{Param{"self"}},
-        N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-            N<DotExpr>(N<IdExpr>("__magic__"), "repr_partial"), N<IdExpr>("self")))));
-    if (startswith(typeName, TYPE_PARTIAL))
-      stmt->getClass()->suite = repr;
-
     // Simplify in the standard library context and type check
     stmt = TypecheckVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
                                    FILE_GENERATED);
     prependStmts->push_back(stmt);
   }
   return typeName;
+}
+
+int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
+  auto key = join(names, ";");
+  std::string suffix;
+  if (!names.empty()) {
+    // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
+    // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
+    // combination.
+    if (!in(ctx->cache->generatedTuples, key)) {
+      ctx->cache->generatedTupleNames.push_back(names);
+      ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size()) + 1;
+    }
+    return ctx->cache->generatedTuples[key];
+  } else {
+    return 0;
+  }
 }
 
 } // namespace codon::ast

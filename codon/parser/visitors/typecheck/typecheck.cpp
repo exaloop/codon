@@ -178,6 +178,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
 
   if (!expr->type)
     unify(expr->type, ctx->getUnbound());
+
   auto typ = expr->type;
   if (!expr->done) {
     TypecheckVisitor v(ctx, preamble, prependStmts);
@@ -631,14 +632,18 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
       ret->push_back({"", a->getType()});
     }
   } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
-    auto kwCls = in(ctx->cache->classes, expr->getType()->getClass()->name);
-    seqassert(kwCls, "cannot find {}", expr->getType()->getClass()->name);
-    for (size_t i = 0; i < kw->args.size(); i++) {
-      auto &a = kw->args[i].value;
-      transform(a);
-      if (!a->getType()->getClass())
+    auto val = kw->type->getRecord();
+    if (!val || val->name != "NamedTuple" || val->args[0]->getRecord() ||
+        !val->generics[0].type->canRealize())
+      return nullptr;
+    auto id = val->generics[0].type->getStatic()->evaluate().getInt();
+    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+    auto names = ctx->cache->generatedTupleNames[id];
+    auto types = val->args[0]->getRecord();
+    for (size_t i = 0; i < types->args.size(); i++) {
+      if (!types->args[i])
         return nullptr;
-      ret->push_back({kwCls->fields[i].name, a->getType()});
+      ret->push_back({names[i], types->args[i]});
     }
   } else {
     return nullptr;
@@ -676,6 +681,22 @@ int64_t TypecheckVisitor::getClassStaticInt(const types::ClassTypePtr &cls, int 
   }
   seqassert(false, "bad int static generic");
   return -1;
+}
+
+std::vector<std::pair<std::string, ExprPtr>>
+TypecheckVisitor::extractNamedTuple(ExprPtr expr) {
+  std::vector<std::pair<std::string, ExprPtr>> ret;
+
+  seqassert(expr->type->is("NamedTuple") &&
+                expr->type->getRecord()->generics[0].type->canRealize(),
+            "bad named tuple: {}", expr);
+  auto id = expr->type->getRecord()->generics[0].type->getStatic()->evaluate().getInt();
+  seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+  auto names = ctx->cache->generatedTupleNames[id];
+  for (size_t i = 0; i < names.size(); i++) {
+    ret.emplace_back(names[i], N<IndexExpr>(N<DotExpr>(expr, "args"), N<IntExpr>(i)));
+  }
+  return ret;
 }
 
 } // namespace codon::ast

@@ -113,8 +113,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if ((resultStmt = transformStaticForLoop(stmt)))
     return;
 
-  bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE) ||
-                           startswith(iterType->name, TYPE_KWTUPLE);
+  bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE);
   if (maybeHeterogenous && !iterType->canRealize()) {
     return; // wait until the tuple is fully realizable
   } else if (maybeHeterogenous && iterType->getHeterogenousTuple()) {

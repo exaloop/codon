@@ -11,6 +11,8 @@
 
 namespace codon::ast::types {
 
+struct FuncType;
+
 /**
  * A generic class reference type. All Seq types inherit from this class.
  */
@@ -96,11 +98,17 @@ public:
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
+  std::string realizedName() const override;
 
   std::shared_ptr<RecordType> getRecord() override {
     return std::static_pointer_cast<RecordType>(shared_from_this());
   }
   std::shared_ptr<RecordType> getHeterogenousTuple() override;
+
+public:
+  std::shared_ptr<RecordType> getPartial() override;
+  std::shared_ptr<FuncType> getPartialFunc() const;
+  std::vector<char> getPartialMask() const;
 };
 
 } // namespace codon::ast::types

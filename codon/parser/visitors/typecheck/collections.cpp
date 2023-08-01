@@ -43,8 +43,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       expr->items[ai] = transform(expr->items[ai]);
     }
   auto tupleName = generateTuple(expr->items.size());
-  resultExpr =
-      transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), clone(expr->items)));
+  resultExpr = transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), expr->items));
   unify(expr->type, resultExpr->type);
 }
 
@@ -189,8 +188,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     }
 
     auto tuple = gen->type->getRecord();
-    if (!tuple ||
-        !(startswith(tuple->name, TYPE_TUPLE) || startswith(tuple->name, TYPE_KWTUPLE)))
+    if (!tuple || !startswith(tuple->name, TYPE_TUPLE))
       E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
 
     // `a := tuple[i]; expr...` for each i

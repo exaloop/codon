@@ -21,10 +21,8 @@
 #define STDLIB_INTERNAL_MODULE "internal"
 
 #define TYPE_TUPLE "Tuple.N"
-#define TYPE_KWTUPLE "KwTuple.N"
 #define TYPE_TYPEVAR "TypeVar"
 #define TYPE_CALLABLE "Callable"
-#define TYPE_PARTIAL "Partial.N"
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap.0"
@@ -210,9 +208,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::shared_ptr<TranslateContext> codegenCtx = nullptr;
   /// Set of function realizations that are to be translated to IR.
   std::set<std::pair<std::string, std::string>> pendingRealizations;
-  /// Mapping of partial record names to function pointers and corresponding masks.
-  std::unordered_map<std::string, std::pair<types::FuncTypePtr, std::vector<char>>>
-      partials;
 
   /// Custom operators
   std::unordered_map<std::string,
@@ -231,6 +226,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   int jitCell = 0;
 
   std::unordered_map<std::string, int> generatedTuples;
+  std::vector<std::vector<std::string>> generatedTupleNames = {{}};
   std::vector<exc::ParserException> errors;
 
   /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)

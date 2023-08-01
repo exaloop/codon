@@ -66,7 +66,7 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
 
-  types::PartialType *p = nullptr;
+  types::RecordType *p = nullptr;
   if (expr->attributes) {
     if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
         expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
@@ -112,28 +112,32 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
       ctx->seqItems.pop_back();
     }
     if (expr->hasAttr(ExprAttr::Partial)) {
+      LOG("++ {}", expr);
       std::vector<ir::Value *> v;
       seqassert(p, "invalid partial element");
       int j = 0;
-      for (int i = 0; i < p->known.size(); i++) {
-        if (p->known[i] && p->func->ast->args[i].status == Param::Normal) {
+      auto known = p->getPartialMask();
+      auto func = p->getPartialFunc();
+      for (int i = 0; i < known.size(); i++) {
+        if (known[i] && func->ast->args[i].status == Param::Normal) {
           seqassert(j < ctx->seqItems.back().size() &&
                         ctx->seqItems.back()[j].first == ExprAttr::SequenceItem,
                     "invalid partial element");
           v.push_back(ctx->seqItems.back()[j++].second);
-        } else if (p->func->ast->args[i].status == Param::Normal) {
+        } else if (func->ast->args[i].status == Param::Normal) {
           v.push_back({nullptr});
         }
       }
       ir->setAttribute(
-          std::make_unique<ir::PartialFunctionAttribute>(p->func->ast->name, v));
+          std::make_unique<ir::PartialFunctionAttribute>(func->ast->name, v));
       ctx->seqItems.pop_back();
     }
     if (expr->hasAttr(ExprAttr::SequenceItem)) {
-      ctx->seqItems.back().push_back({ExprAttr::SequenceItem, ir});
+      LOG("++ {}", expr);
+      ctx->seqItems.back().emplace_back(ExprAttr::SequenceItem, ir);
     }
     if (expr->hasAttr(ExprAttr::StarSequenceItem)) {
-      ctx->seqItems.back().push_back({ExprAttr::StarSequenceItem, ir});
+      ctx->seqItems.back().emplace_back(ExprAttr::StarSequenceItem, ir);
     }
   }
 

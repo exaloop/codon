@@ -142,10 +142,6 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
       }
     } else if (auto c = typ->getClass()) {
       auto t = realizeType(c.get());
-      if (auto p = typ->getPartial()) {
-        // Ensure that the partial type is preserved
-        t = std::make_shared<PartialType>(t->getRecord(), p->func, p->known);
-      }
       if (t) {
         return unify(t, typ);
       }
@@ -270,14 +266,15 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     }
 
   // Fix for partial types
-  if (auto p = type->getPartial()) {
-    auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func, p->known);
-    auto val =
-        std::make_shared<TypecheckItem>(pt->realizedName(), "", ctx->getModule(), pt);
-    ctx->addAlwaysVisible(val);
-    ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
-        ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
-  }
+  // if (auto p = type->getPartial()) {
+  //   auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func,
+  //   p->known); auto val =
+  //       std::make_shared<TypecheckItem>(pt->realizedName(), "", ctx->getModule(),
+  //       pt);
+  //   ctx->addAlwaysVisible(val);
+  //   ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
+  //       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
+  // }
 
   return realized;
 }

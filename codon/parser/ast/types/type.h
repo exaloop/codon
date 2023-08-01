@@ -13,6 +13,7 @@
 namespace codon::ast {
 struct Cache;
 struct Expr;
+struct TypeContext;
 } // namespace codon::ast
 
 namespace codon::ast::types {
@@ -22,7 +23,6 @@ struct FuncType;
 struct ClassType;
 struct LinkType;
 struct RecordType;
-struct PartialType;
 struct StaticType;
 struct UnionType;
 
@@ -103,7 +103,7 @@ public:
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
   virtual std::shared_ptr<FuncType> getFunc() { return nullptr; }
-  virtual std::shared_ptr<PartialType> getPartial() { return nullptr; }
+  virtual std::shared_ptr<RecordType> getPartial() { return nullptr; }
   virtual std::shared_ptr<ClassType> getClass() { return nullptr; }
   virtual std::shared_ptr<RecordType> getRecord() { return nullptr; }
   virtual std::shared_ptr<LinkType> getLink() { return nullptr; }

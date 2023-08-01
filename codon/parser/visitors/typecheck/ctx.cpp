@@ -481,7 +481,7 @@ types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {
   if (auto f = t->getFunc())
     return f;
   if (auto p = t->getPartial())
-    return p->func;
+    return p->getPartialFunc();
   return nullptr;
 }
 

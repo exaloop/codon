@@ -147,7 +147,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
   }
 
-  bool isClassMember = ctx->inClass(), isEnclosedFunc = ctx->inFunction();
+  bool isClassMember = ctx->inClass();
   if (stmt->attributes.has(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))
     E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "builtin function");
 
@@ -185,6 +185,37 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
    auto funcVal = ctx->find(stmt->name);
    //  if (funcVal && !funcVal->canShadow)
    // E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
+  }
+
+  // Handle captures. Add additional argument to the function for every capture.
+  // Make sure to account for **kwargs if present
+  std::map<std::string, TypeContext::Item> captures;
+  for (auto &c : stmt->attributes.captures) {
+   if (auto v = ctx->find(c)) {
+      if (!v->isGlobal() && !v->isGeneric()) {
+        captures[c] = v;
+      }
+   }
+  }
+  std::vector<CallExpr::Arg> partialArgs;
+  if (!captures.empty()) {
+   std::vector<std::string> itemKeys;
+   for (const auto &[key, _] : captures)
+      itemKeys.push_back(key);
+   LOG("=> {}: {}", canonicalName, itemKeys);
+
+   Param kw;
+   if (!stmt->args.empty() && startswith(stmt->args.back().name, "**")) {
+      kw = stmt->args.back();
+      stmt->args.pop_back();
+   }
+   for (auto &[c, v] : captures) {
+      stmt->args.emplace_back(c);
+      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+   }
+   if (!kw.name.empty())
+      stmt->args.push_back(kw);
+   partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   }
 
   std::vector<Param> args;
@@ -410,24 +441,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
   }
 
-  // Handle captures. Add additional argument to the function for every capture.
-  // Make sure to account for **kwargs if present
-  // std::vector<CallExpr::Arg> partialArgs;
-  // if (!captures.empty()) {
-  //   Param kw;
-  //   if (!args.empty() && startswith(args.back().name, "**")) {
-  //     kw = args.back();
-  //     args.pop_back();
-  //   }
-  //   for (auto &c : captures) {
-  //     args.emplace_back(Param{c.second.first, c.second.second, nullptr});
-  //     partialArgs.push_back({c.second.first, N<IdExpr>(ctx->cache->rev(c.first))});
-  //   }
-  //   if (!kw.name.empty())
-  //     args.push_back(kw);
-  //   partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-  // }
-
   // Ensure that functions with @C, @force_realize, and @export attributes can be
   // realized
   if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
@@ -442,20 +455,21 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
-  // if (!captures.empty()) {
-  //   finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
-  //   // Add updated self reference in case function is recursive!
-  //   auto pa = partialArgs;
-  //   for (auto &a : pa) {
-  //     if (!a.name.empty())
-  //       a.value = N<IdExpr>(a.name);
-  //     else
-  //       a.value = clone(a.value);
-  //   }
-  //   f->suite = N<SuiteStmt>(
-  //       N<AssignStmt>(N<IdExpr>(rootName), N<CallExpr>(N<IdExpr>(rootName), pa)),
-  //       suite);
-  // }
+  if (!captures.empty()) {
+    finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
+    // Add updated self reference in case function is recursive!
+    auto pa = partialArgs;
+    for (auto &a : pa) {
+      if (!a.name.empty())
+        a.value = N<IdExpr>(a.name);
+      else
+        a.value = clone(a.value);
+    }
+    // todo)) right now this adds a capture hook for recursive calls
+    f->suite = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>(rootName), N<CallExpr>(N<IdExpr>(rootName), pa)),
+        suite);
+  }
 
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
@@ -470,7 +484,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   if (finalExpr) {
     resultStmt =
-        N<SuiteStmt>(f, transform(N<AssignStmt>(N<IdExpr>(canonicalName), finalExpr)));
+        N<SuiteStmt>(f, transform(N<AssignStmt>(N<IdExpr>(stmt->name), finalExpr)));
+    LOG("-> {}", resultStmt->toString(2));
   } else {
     resultStmt = f;
   }
@@ -623,18 +638,7 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
     }
 
   // Generate partial class
-  auto partialTypeName = generatePartialStub(mask, fn.get());
-  std::string var = ctx->cache->getTemporaryVar("partial");
-  // Generate kwtuple for potential **kwargs
-  auto kwName = generateTuple(0, TYPE_KWTUPLE, {});
-  // `partial = Partial.MASK((), KwTuple())`
-  // (`()` for *args and `KwTuple()` for **kwargs)
-  ExprPtr call =
-      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
-                                N<CallExpr>(N<IdExpr>(partialTypeName), N<TupleExpr>(),
-                                            N<CallExpr>(N<IdExpr>(kwName)))),
-                  N<IdExpr>(var));
-  call->setAttr(ExprAttr::Partial);
+  auto call = generatePartialCall(mask, fn.get());
   transform(call);
   seqassert(call->type->getPartial(), "expected partial type");
   return call;

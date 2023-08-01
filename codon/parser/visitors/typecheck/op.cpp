@@ -772,8 +772,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
   if (!tuple->getRecord())
     return {false, nullptr};
-  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_KWTUPLE) &&
-      !startswith(tuple->name, TYPE_PARTIAL)) {
+  if (!startswith(tuple->name, TYPE_TUPLE)) {
     if (tuple->is(TYPE_OPTIONAL)) {
       if (auto newTuple = tuple->generics[0].type->getClass()) {
         return transformStaticTupleIndex(

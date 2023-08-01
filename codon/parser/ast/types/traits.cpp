@@ -37,8 +37,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (auto pt = tr->getPartial()) {
       int ic = 0;
       std::unordered_map<int, TypePtr> c;
-      trFun = pt->func->instantiate(0, &ic, &c)->getRecord();
-      known = pt->known;
+      trFun = pt->getPartialFunc()->instantiate(0, &ic, &c)->getRecord();
+      known = pt->getPartialMask();
     } else {
       known = std::vector<char>(tr->generics[0].type->getRecord()->args.size(), 0);
     }
@@ -113,10 +113,15 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           }
         }
         auto tv = TypecheckVisitor(cache->typeCtx);
-        auto name = tv.generateTuple(starArgTypes.size(), TYPE_KWTUPLE, names);
+        auto name = tv.generateTuple(starArgTypes.size());
         auto t = cache->typeCtx->forceFind(name)->type;
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
-        if (t->unify(trInArgs[kwStar].get(), us) == -1)
+        auto id = tv.generateKwId(names);
+        auto kt = cache->typeCtx->forceFind("NamedTuple")->type;
+        kt = cache->typeCtx
+                 ->instantiateGeneric(kt, {t, std::make_shared<StaticType>(cache, id)})
+                 ->getClass();
+        if (kt->unify(trInArgs[kwStar].get(), us) == -1)
           return -1;
       }
 

@@ -180,7 +180,6 @@ private: // Node typechecking rules
   std::pair<bool, ExprPtr> transformInternalStaticFn(CallExpr *);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &);
   void addFunctionGenerics(const types::FuncType *t);
-  std::string generatePartialStub(const std::vector<char> &, types::FuncType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
@@ -250,8 +249,8 @@ private: // Node typechecking rules
                               std::vector<StmtPtr> &, std::vector<StmtPtr> &);
   StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
                        bool);
-  std::string generateTuple(size_t, const std::string & = TYPE_TUPLE,
-                            std::vector<std::string> = {}, bool = true);
+  std::string generateTuple(size_t);
+  int generateKwId(const std::vector<std::string> & = {});
 
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;
@@ -300,12 +299,15 @@ private:
                       const std::vector<CallExpr::Arg> &args);
   ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp, bool = false);
   StmtPtr prepareVTables();
+  std::vector<std::pair<std::string, ExprPtr>> extractNamedTuple(ExprPtr);
 
 public:
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
   bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
+  ExprPtr generatePartialCall(const std::vector<char> &, types::FuncType *,
+                              ExprPtr = nullptr, ExprPtr = nullptr);
 
   friend class Cache;
   friend class TypeContext;
@@ -365,6 +367,7 @@ class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     bool adding = false;
     Stmt *root = nullptr;
     bool functionScope = false;
+    bool inClass = false;
   };
   std::shared_ptr<Context> ctx = nullptr;
   ExprPtr resultExpr = nullptr;
@@ -404,6 +407,8 @@ public:
   /// newly added identifiers that dominate the children blocks.
   void leaveConditionalBlock();
   void leaveConditionalBlock(StmtPtr &);
+
+  void transformBlock(StmtPtr &s);
 };
 
 } // namespace codon::ast

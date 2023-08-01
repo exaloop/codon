@@ -136,8 +136,6 @@ class ByVal: pass
 class ByRef: pass
 @__internal__
 class Tuple: pass
-@__internal__
-class KwTuple: pass
 
 @__internal__
 class ClassVar[T]:
@@ -221,14 +219,41 @@ def __has_rtti__(T: type):
 
 # class Type[T]: ...
 
-# @__internal__
-# class Function:
-#     F: Static[str]
 
-# @__internal__
-# class PartialFunction:
-#     F: Static[str]
-#     args: T
-#     kwargs: K
-#     T: type # Tuple
-#     K: type # KwTuple
+#(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
+@__internal__
+@tuple
+class NamedTuple:
+    args: T
+    N: Static[int]  # name cache ID
+    T: type
+
+    # todo)) nicer way to express type(())
+    def __new__(args: T = (), T: type) -> NamedTuple[0, T]:
+        return ((), )
+
+    def __new__(args: T, N: Static[int], T: type) -> NamedTuple[N, T]:
+        return (args, )
+
+    def __getitem__(self, key: Static[str]):
+        return getattr(self, key)
+
+
+@__internal__
+@tuple
+class Partial:
+    args: T  # format: (agr1, arg2, ..., (star_args...))
+    kwargs: K
+
+    F: Static[str] # function
+    M: Static[str] # mask
+    T: type # Tuple
+    K: type # NamedTuple
+
+    def __new__(args: T, kwargs: K, F: Static[str], M: Static[str], T: type, K: type) -> Partial[F, M, T, K]:
+        __static_print__(args)
+        __static_print__(kwargs)
+        return (args, kwargs)
+
+    def __repr__(self):
+        return __magic__.repr_partial(self)

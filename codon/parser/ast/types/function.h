@@ -67,30 +67,30 @@ using FuncTypePtr = std::shared_ptr<FuncType>;
  * Note: partials only work on Seq functions. Function pointer partials
  *       will become a partials of Function.__call__ Seq function.
  */
-struct PartialType : public RecordType {
-  /// Seq function that is being partialized. Always generic (not instantiated).
-  FuncTypePtr func;
-  /// Arguments that are already provided (1 for known argument, 0 for expecting).
-  std::vector<char> known;
+// struct PartialType : public RecordType {
+//   /// Seq function that is being partialized. Always generic (not instantiated).
+//   FuncTypePtr func;
+//   /// Arguments that are already provided (1 for known argument, 0 for expecting).
+//   std::vector<char> known;
 
-public:
-  PartialType(const std::shared_ptr<RecordType> &baseType,
-              std::shared_ptr<FuncType> func, std::vector<char> known);
+// public:
+//   PartialType(const std::shared_ptr<RecordType> &baseType,
+//               std::shared_ptr<FuncType> func, std::vector<char> known);
 
-public:
-  int unify(Type *typ, Unification *us) override;
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+// public:
+//   int unify(Type *typ, Unification *us) override;
+//   TypePtr generalize(int atLevel) override;
+//   TypePtr instantiate(int atLevel, int *unboundCount,
+//                       std::unordered_map<int, TypePtr> *cache) override;
 
-  std::string debugString(char mode) const override;
-  std::string realizedName() const override;
+//   std::string debugString(char mode) const override;
+//   std::string realizedName() const override;
 
-public:
-  std::shared_ptr<PartialType> getPartial() override {
-    return std::static_pointer_cast<PartialType>(shared_from_this());
-  }
-};
-using PartialTypePtr = std::shared_ptr<PartialType>;
+// public:
+//   std::shared_ptr<PartialType> getPartial() override {
+//     return std::static_pointer_cast<PartialType>(shared_from_this());
+//   }
+// };
+// using PartialTypePtr = std::shared_ptr<PartialType>;
 
 } // namespace codon::ast::types

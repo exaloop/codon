@@ -121,31 +121,28 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
   // Emit the final call
   if (part.isPartial) {
-    // Case: partial call. `calleeFn(args...)` -> `Partial.N<known>.<fn>(args...)`
-    auto partialTypeName = generatePartialStub(part.known, calleeFn->getFunc().get());
+    // Case: partial call. `calleeFn(args...)` -> `Partial(args..., fn, mask)`
     std::vector<ExprPtr> newArgs;
     for (auto &r : expr->args)
       if (!r.value->getEllipsis()) {
         newArgs.push_back(r.value);
         newArgs.back()->setAttr(ExprAttr::SequenceItem);
+        LOG("== setAttr: {}", newArgs.back());
       }
     newArgs.push_back(part.args);
-    newArgs.push_back(part.kwArgs);
+    auto partialCall = generatePartialCall(part.known, calleeFn->getFunc().get(),
+                                           N<TupleExpr>(newArgs), part.kwArgs);
 
     std::string var = ctx->cache->getTemporaryVar("part");
     ExprPtr call = nullptr;
     if (!part.var.empty()) {
       // Callee is already a partial call
       auto stmts = expr->expr->getStmtExpr()->stmts;
-      stmts.push_back(N<AssignStmt>(N<IdExpr>(var),
-                                    N<CallExpr>(N<IdExpr>(partialTypeName), newArgs)));
+      stmts.push_back(N<AssignStmt>(N<IdExpr>(var), partialCall));
       call = N<StmtExpr>(stmts, N<IdExpr>(var));
     } else {
-      // New partial call: `(part = Partial.N<known>.<fn>(stored_args...); part)`
-      call =
-          N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var),
-                                    N<CallExpr>(N<IdExpr>(partialTypeName), newArgs)),
-                      N<IdExpr>(var));
+      // New partial call: `(part = Partial(stored_args...); part)`
+      call = N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var), partialCall), N<IdExpr>(var));
     }
     call->setAttr(ExprAttr::Partial);
     resultExpr = transform(call);
@@ -256,28 +253,34 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
 
   auto calleeFn = callee->getFunc();
   if (auto partType = callee->getPartial()) {
+    auto mask = partType->getPartialMask();
+    auto func = partType->getPartialFunc();
+
     // Case: calling partial object `p`. Transform roughly to
     // `part = callee; partial_fn(*part.args, args...)`
     ExprPtr var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("partcall"));
-    expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr),
-                                       N<IdExpr>(partType->func->ast->name)));
+    expr->expr = transform(
+        N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr), N<IdExpr>(func->ast->name)));
 
     // Ensure that we got a function
     calleeFn = expr->expr->type->getFunc();
     seqassert(calleeFn, "not a function: {}", expr->expr->type);
 
+    LOG("=> got {} . {}", calleeFn->debugString(2), func);
+
     // Unify partial generics with types known thus far
-    for (size_t i = 0, j = 0, k = 0; i < partType->known.size(); i++)
-      if (partType->func->ast->args[i].status == Param::Generic) {
-        if (partType->known[i])
+    auto knownArgTypes = partType->generics[2].type->getRecord();
+    for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
+      if (func->ast->args[i].status == Param::Generic) {
+        if (mask[i])
           unify(calleeFn->funcGenerics[j].type,
-                ctx->instantiate(partType->func->funcGenerics[j].type));
+                ctx->instantiate(func->funcGenerics[j].type));
         j++;
-      } else if (partType->known[i]) {
-        unify(calleeFn->getArgTypes()[i - j], partType->generics[k].type);
+      } else if (mask[i]) {
+        unify(calleeFn->getArgTypes()[i - j], knownArgTypes->generics[k].type);
         k++;
       }
-    part.known = partType->known;
+    part.known = mask;
     return {calleeFn, nullptr};
   } else if (!callee->getFunc()) {
     // Case: callee is not a function. Try __call__ method instead
@@ -300,7 +303,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
 
   // Extract pi-th partial argument from a partial object
   auto getPartialArg = [&](size_t pi) {
-    auto id = transform(N<IdExpr>(part.var));
+    auto id = transform(N<DotExpr>(N<IdExpr>(part.var), "args"));
     // Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
     auto ex = transformStaticTupleIndex(id->type->getClass(), id, N<IntExpr>(pi));
     seqassert(ex.first && ex.second, "partial indexing failed: {}", id->type);
@@ -331,7 +334,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         // Case: *args. Build the tuple that holds them all
         std::vector<ExprPtr> extra;
         if (!part.known.empty())
-          extra.push_back(N<StarExpr>(getPartialArg(-2)));
+          extra.push_back(N<StarExpr>(getPartialArg(-1)));
         for (auto &e : slots[si]) {
           extra.push_back(expr->args[e].value);
         }
@@ -352,23 +355,23 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
                    expr->args[slots[si][0]].value->hasAttr(ExprAttr::KwStarArgument))) {
         // Case: **kwargs. Build the named tuple that holds them all
         std::vector<std::string> names;
-        std::vector<CallExpr::Arg> values;
+        std::vector<ExprPtr> values;
         if (!part.known.empty()) {
-          auto e = getPartialArg(-1);
-          auto t = e->getType()->getRecord();
-          seqassert(t && startswith(t->name, TYPE_KWTUPLE), "{} not a kwtuple", e);
-          auto &ff = ctx->cache->classes[t->name].fields;
-          for (int i = 0; i < t->getRecord()->args.size(); i++) {
-            names.emplace_back(ff[i].name);
-            values.emplace_back(transform(N<DotExpr>(clone(e), ff[i].name)));
+          auto e =
+              transform(N<DotExpr>(N<DotExpr>(N<IdExpr>(part.var), "kwargs"), "args"));
+          for (auto &[n, ne] : extractNamedTuple(e)) {
+            names.emplace_back(n);
+            values.emplace_back(transform(ne));
           }
         }
         for (auto &e : slots[si]) {
           names.emplace_back(expr->args[e].name);
           values.emplace_back(expr->args[e].value);
         }
-        auto kwName = generateTuple(names.size(), TYPE_KWTUPLE, names);
-        auto e = transform(N<CallExpr>(N<IdExpr>(kwName), values));
+
+        auto kwid = generateKwId(names);
+        auto e = transform(N<CallExpr>(N<IdExpr>("NamedTuple"), N<TupleExpr>(values),
+                                       N<IntExpr>(kwid)));
         e->setAttr(ExprAttr::KwStarArgument);
         if (partial) {
           part.kwArgs = e;
@@ -431,8 +434,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     if (!part.args)
       part.args = transform(N<TupleExpr>()); // use ()
     if (!part.kwArgs) {
-      auto kwName = generateTuple(0, TYPE_KWTUPLE, {});
-      part.kwArgs = transform(N<CallExpr>(N<IdExpr>(kwName))); // use KwTuple()
+      part.kwArgs = transform(N<CallExpr>(N<IdExpr>("NamedTuple"))); // use NamedTuple()
     }
   }
 
@@ -958,7 +960,22 @@ ExprPtr TypecheckVisitor::transformGetAttr(CallExpr *expr) {
   auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
   if (!staticTyp->canRealize())
     return nullptr;
-  return transform(N<DotExpr>(expr->args[0].value, staticTyp->evaluate().getString()));
+  auto name = staticTyp->evaluate().getString();
+
+  // special handling for NamedTuple
+  if (expr->args[0].value->type && expr->args[0].value->type->is("NamedTuple")) {
+    auto val = expr->args[0].value->type->getRecord();
+    auto id = val->generics[0].type->getStatic()->evaluate().getInt();
+    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+    auto names = ctx->cache->generatedTupleNames[id];
+    for (size_t i = 0; i < names.size(); i++)
+      if (names[i] == name) {
+        return transform(
+            N<IndexExpr>(N<DotExpr>(expr->args[0].value, "args"), N<IntExpr>(i)));
+      }
+    E(Error::DOT_NO_ATTR, expr, val->prettyString(), name);
+  }
+  return transform(N<DotExpr>(expr->args[0].value, name));
 }
 
 /// Transform setattr method to a AssignMemberStmt.
@@ -1297,17 +1314,14 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
     addT(g.name, g.type);
 }
 
-/// Generate a partial type `Partial.N<mask>` for a given function.
+/// Return a partial type call `Partial(args, kwargs, fn, mask)` for a given function
+/// and a mask.
 /// @param mask a 0-1 vector whose size matches the number of function arguments.
 ///             1 indicates that the argument has been provided and is cached within
 ///             the partial object.
-/// @example
-///   ```@tuple
-///      class Partial.N101[T0, T2]:
-///        item0: T0  # the first cached argument
-///        item2: T2  # the third cached argument
-std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
-                                                  types::FuncType *fn) {
+ExprPtr TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
+                                              types::FuncType *fn, ExprPtr args,
+                                              ExprPtr kwargs) {
   std::string strMask(mask.size(), '1');
   int tupleSize = 0, genericSize = 0;
   for (size_t i = 0; i < mask.size(); i++) {
@@ -1318,12 +1332,16 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     else
       genericSize++;
   }
-  auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
-  if (!ctx->find(typeName)) {
-    ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
-    generateTuple(tupleSize + 2, typeName, {}, false);
-  }
-  return typeName;
+
+  if (!args)
+    args = N<TupleExpr>(std::vector<ExprPtr>{N<TupleExpr>()});
+  if (!kwargs)
+    kwargs = N<CallExpr>(N<IdExpr>("NamedTuple"));
+
+  LOG("{}: partializing {}", getSrcInfo(), fn->ast->name);
+  auto e = N<CallExpr>(N<IdExpr>("Partial"), args, kwargs, N<StringExpr>(fn->ast->name),
+                       N<StringExpr>(strMask));
+  return e;
 }
 
 } // namespace codon::ast

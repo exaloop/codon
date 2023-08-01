@@ -155,61 +155,39 @@ std::string FuncType::realizedName() const {
                      ast->name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
-                         std::shared_ptr<FuncType> func, std::vector<char> known)
-    : RecordType(*baseType), func(std::move(func)), known(std::move(known)) {}
+// PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
+//                          std::shared_ptr<FuncType> func, std::vector<char> known)
+//     : RecordType(*baseType), func(std::move(func)), known(std::move(known)) {}
 
-int PartialType::unify(Type *typ, Unification *us) {
-  return this->RecordType::unify(typ, us);
-}
+// int PartialType::unify(Type *typ, Unification *us) {
+//   return this->RecordType::unify(typ, us);
+// }
 
-TypePtr PartialType::generalize(int atLevel) {
-  return std::make_shared<PartialType>(
-      std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), func,
-      known);
-}
+// TypePtr PartialType::generalize(int atLevel) {
+//   return std::make_shared<PartialType>(
+//       std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)),
+//       func, known);
+// }
 
-TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
-                                 std::unordered_map<int, TypePtr> *cache) {
-  auto rec = std::static_pointer_cast<RecordType>(
-      this->RecordType::instantiate(atLevel, unboundCount, cache));
-  return std::make_shared<PartialType>(rec, func, known);
-}
+// TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
+//                                  std::unordered_map<int, TypePtr> *cache) {
+//   auto rec = std::static_pointer_cast<RecordType>(
+//       this->RecordType::instantiate(atLevel, unboundCount, cache));
+//   return std::make_shared<PartialType>(rec, func, known);
+// }
 
-std::string PartialType::debugString(char mode) const {
-  std::vector<std::string> gs;
-  for (auto &a : generics)
-    if (!a.name.empty())
-      gs.push_back(a.type->debugString(mode));
-  std::vector<std::string> as;
-  int i = 0, gi = 0;
-  for (; i < known.size(); i++)
-    if (func->ast->args[i].status == Param::Normal) {
-      if (!known[i])
-        as.emplace_back("...");
-      else
-        as.emplace_back(gs[gi++]);
-    }
-  auto fnname = func->ast->name;
-  if (mode == 0) {
-    fnname = cache->rev(func->ast->name);
-    // if (func->funcParent)
-    // fnname = fmt::format("{}.{}", func->funcParent->debugString(mode), fnname);
-  } else if (mode == 2) {
-    fnname = func->debugString(mode);
-  }
-  return fmt::format("{}[{}{}]", fnname, join(as, ","),
-                     mode == 2 ? fmt::format(";{}", join(gs, ",")) : "");
-}
+// std::string PartialType::debugString(char mode) const {
 
-std::string PartialType::realizedName() const {
-  std::vector<std::string> gs;
-  gs.push_back(func->ast->name);
-  for (auto &a : generics)
-    if (!a.name.empty())
-      gs.push_back(a.type->realizedName());
-  std::string s = join(gs, ",");
-  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
-}
+// }
+
+// std::string PartialType::realizedName() const {
+//   std::vector<std::string> gs;
+//   gs.push_back(func->ast->name);
+//   for (auto &a : generics)
+//     if (!a.name.empty())
+//       gs.push_back(a.type->realizedName());
+//   std::string s = join(gs, ",");
+//   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+// }
 
 } // namespace codon::ast::types

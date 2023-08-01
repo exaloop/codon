@@ -7,6 +7,7 @@
 
 #include "codon/cir/func.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon {
 namespace ir {
@@ -46,8 +47,11 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
-      ret.push_back(std::make_shared<codon::ast::types::PartialType>(
-          t->getAstType()->getRecord(), f, mask));
+
+      ast::TypecheckVisitor tv(cache->typeCtx);
+      auto exprPtr = tv.generatePartialCall(mask, f.get());
+      tv.transform(exprPtr);
+      ret.push_back(exprPtr->type);
     } else {
       ret.push_back(t->getAstType());
     }

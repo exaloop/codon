@@ -21,12 +21,11 @@ void Name2Visitor::apply(Cache *cache, StmtPtr &s) {
   auto c = std::make_shared<Name2Visitor::Context>();
   c->cache = cache;
   c->functionScope = false;
-  c->scope.emplace_back(0);
   Name2Visitor v;
   v.ctx = c;
-  v.enterConditionalBlock();
-  v.transform(s);
-  v.leaveConditionalBlock(s);
+  v.transformBlock(s);
+
+  LOG("-> {}", s->toString(2));
 }
 
 ExprPtr Name2Visitor::transform(const std::shared_ptr<Expr> &expr) {
@@ -63,11 +62,17 @@ StmtPtr Name2Visitor::transform(std::shared_ptr<Stmt> &stmt) {
 
 void Name2Visitor::visitName(const std::string &name, bool adding, Stmt *root,
                              const SrcInfo &src) {
+  if (adding && ctx->inClass)
+    return;
   if (adding) {
     if (in(ctx->captures, name))
       E(error::Error::ASSIGN_LOCAL_REFERENCE, ctx->firstSeen[name], name, src);
-    if (in(ctx->childCaptures, name)) {
-      // never been seen; add a reference back
+    if (in(ctx->childCaptures, name) && ctx->functionScope) {
+      auto newScope = std::vector<int>{ctx->scope[0].id};
+      auto b = N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr);
+      auto newItem = Name2Visitor::Context::Item{newScope, b.get()};
+      ctx->scope.front().stmts.emplace_back(b);
+      ctx->map[name].push_back(newItem);
     }
     ctx->map[name].push_front({ctx->getScope(), root});
     if (!root)
@@ -447,23 +452,14 @@ void Name2Visitor::visit(FunctionStmt *stmt) {
   auto c = std::make_shared<Name2Visitor::Context>();
   c->cache = ctx->cache;
   c->functionScope = true;
-  c->scope.emplace_back(0);
   Name2Visitor v;
+  c->scope.emplace_back(0);
   v.ctx = c;
   v.visitName(stmt->name, true, stmt, stmt->getSrcInfo());
   for (auto &a : stmt->args)
     v.visitName(a.name, true, stmt, a.getSrcInfo());
-  v.enterConditionalBlock();
-  v.transform(stmt->suite);
-  v.leaveConditionalBlock(stmt->suite);
-  for (auto &n : c->childCaptures) {
-    if (!v.findDominatingBinding(n, false))
-      c->captures.insert(n); // propagate!
-  }
-  if (!c->scope.back().stmts.empty()) {
-    c->scope.back().stmts.push_back(stmt->suite);
-    stmt->suite = N<SuiteStmt>(c->scope.back().stmts);
-  }
+  c->scope.pop_back();
+  v.transformBlock(stmt->suite);
 
   stmt->attributes.captures = c->captures;
   for (const auto &n : c->captures) {
@@ -472,6 +468,25 @@ void Name2Visitor::visit(FunctionStmt *stmt) {
 
   // LOG("=> {} :: cap {}", stmt->name, c->captures);
   // LOG("{}", stmt->toString(2));
+}
+
+void Name2Visitor::transformBlock(StmtPtr &s) {
+  ctx->scope.emplace_back(0);
+  transform(s);
+  if (!ctx->scope.back().stmts.empty()) {
+    ctx->scope.back().stmts.push_back(s);
+    s = N<SuiteStmt>(ctx->scope.back().stmts);
+    ctx->scope.back().stmts.clear();
+  }
+  for (auto &n : ctx->childCaptures) {
+    if (!findDominatingBinding(n, false))
+      ctx->captures.insert(n); // propagate!
+  }
+  if (!ctx->scope.back().stmts.empty()) {
+    ctx->scope.back().stmts.push_back(s);
+    s = N<SuiteStmt>(ctx->scope.back().stmts);
+  }
+  ctx->scope.pop_back();
 }
 
 void Name2Visitor::visit(ClassStmt *stmt) {
@@ -483,7 +498,10 @@ void Name2Visitor::visit(ClassStmt *stmt) {
     transform(a.type);
     transform(a.defaultValue);
   }
+  auto inClass = true;
+  std::swap(inClass, ctx->inClass);
   transform(stmt->suite);
+  std::swap(inClass, ctx->inClass);
   //   for (auto &d : stmt->decorators)
   //     transform(d);
   for (auto &d : stmt->baseClasses)
