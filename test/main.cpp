@@ -406,12 +406,23 @@ auto getTypeTests(const vector<string> &files) {
 INSTANTIATE_TEST_SUITE_P(
     TypeTests, SeqTest,
     testing::ValuesIn(getTypeTests({
-      "parser/simplify_expr.codon",
-      "parser/simplify_stmt.codon",
-      "parser/typecheck_expr.codon",
-      "parser/typecheck_stmt.codon",
-      "parser/types.codon",
-      "parser/llvm.codon"
+      "parser/typecheck/access.codon",
+      "parser/typecheck/assign.codon",
+      "parser/typecheck/basic.codon",
+      "parser/typecheck/call.codon",
+      "parser/typecheck/class.codon",
+      "parser/typecheck/collections.codon",
+      "parser/typecheck/cond.codon",
+      "parser/typecheck/ctx.codon",
+      "parser/typecheck/error.codon",
+      "parser/typecheck/function.codon",
+      "parser/typecheck/import.codon",
+      "parser/typecheck/infer.codon",
+      "parser/typecheck/loops.codon",
+      "parser/typecheck/op.codon",
+      "parser/typecheck/parser.codon",
+      "parser/typecheck/python.codon",
+      "parser/typecheck/typecheck.codon"
     })),
     getTypeTestNameFromParam);
 
@@ -463,6 +474,7 @@ INSTANTIATE_TEST_SUITE_P(
     StdlibTests, SeqTest,
     testing::Combine(
       testing::Values(
+        "stdlib/llvm_test.codon"
         "stdlib/str_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",

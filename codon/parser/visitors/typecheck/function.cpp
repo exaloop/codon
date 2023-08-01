@@ -202,7 +202,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
    std::vector<std::string> itemKeys;
    for (const auto &[key, _] : captures)
       itemKeys.push_back(key);
-   LOG("=> {}: {}", canonicalName, itemKeys);
 
    Param kw;
    if (!stmt->args.empty() && startswith(stmt->args.back().name, "**")) {
@@ -356,7 +355,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       aj++;
       // ctx->addVar(ctx->cache->rev(canName), canName, argType->args[aj]);
     }
-    ctx->typecheckLevel--;
 
     // Parse the return type
     ret = transformType(stmt->ret, false);
@@ -365,6 +363,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     } else {
       generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
     }
+    ctx->typecheckLevel--;
 
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
@@ -485,7 +484,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (finalExpr) {
     resultStmt =
         N<SuiteStmt>(f, transform(N<AssignStmt>(N<IdExpr>(stmt->name), finalExpr)));
-    LOG("-> {}", resultStmt->toString(2));
   } else {
     resultStmt = f;
   }

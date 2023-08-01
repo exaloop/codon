@@ -88,10 +88,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (a.status != Param::Generic)
           continue;
         auto val = ctx->forceFind(a.name);
-        auto generic = ctx->instantiate(val->type);
-        generic->getUnbound()->id = val->type->getLink()->id;
-        ctx->addType(ctx->cache->rev(val->canonicalName), val->canonicalName, generic)
-            ->generic = true;
+        val->type->getLink()->kind = LinkType::Unbound;
+        ctx->add(ctx->cache->rev(val->canonicalName), val);
         args.emplace_back(val->canonicalName, nullptr, nullptr, a.status);
       }
     } else {
@@ -285,11 +283,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       if (autoDeducedInit.first)
         fnStmts.push_back(autoDeducedInit.first);
     }
+
     // Add class methods
     for (const auto &sp : getClassMethods(stmt->suite))
       if (sp && sp->getFunction()) {
-        if (sp.get() != autoDeducedInit.second)
+        if (sp.get() != autoDeducedInit.second) {
           fnStmts.push_back(transform(sp));
+        }
       }
 
     // After popping context block, record types and nested classes will disappear.
@@ -341,8 +341,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     for (auto &m : ctx->cache->classes[canonicalName].fields)
       LOG_TYPECHECK("       - member: {}: {:D}", m.name, m.type);
     for (auto &m : ctx->cache->classes[canonicalName].methods)
-      LOG_TYPECHECK("       - method: {}: {} ({:D})", m.first, m.second,
-                    ctx->cache->functions[m.second].type);
+      LOG_TYPECHECK("       - method: {}: {} ({:D} // {:D})", m.first, m.second,
+                    ctx->cache->functions[m.second].type,
+                    ctx->cache->functions[m.second].type
+                        ? ctx->cache->functions[m.second].type->funcParent
+                        : nullptr);
   } catch (const exc::ParserException &) {
     if (!stmt->attributes.has(Attr::Tuple))
       ctx->remove(name);

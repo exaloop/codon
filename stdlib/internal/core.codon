@@ -251,8 +251,8 @@ class Partial:
     K: type # NamedTuple
 
     def __new__(args: T, kwargs: K, F: Static[str], M: Static[str], T: type, K: type) -> Partial[F, M, T, K]:
-        __static_print__(args)
-        __static_print__(kwargs)
+        # __static_print__(args)
+        # __static_print__(kwargs)
         return (args, kwargs)
 
     def __repr__(self):

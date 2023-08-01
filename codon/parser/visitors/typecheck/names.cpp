@@ -24,8 +24,7 @@ void Name2Visitor::apply(Cache *cache, StmtPtr &s) {
   Name2Visitor v;
   v.ctx = c;
   v.transformBlock(s);
-
-  LOG("-> {}", s->toString(2));
+  // LOG("-> {}", s->toString(2));
 }
 
 ExprPtr Name2Visitor::transform(const std::shared_ptr<Expr> &expr) {
