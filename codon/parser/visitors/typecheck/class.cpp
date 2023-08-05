@@ -166,8 +166,17 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
                                                                     N<IdExpr>("str"))}},
         N<SuiteStmt>(N<ReturnStmt>(
             N<CallExpr>(N<IdExpr>("hasattr"), N<IdExpr>("self"), N<IdExpr>("key")))));
+    auto getDef = N<FunctionStmt>(
+        "get", nullptr,
+        std::vector<Param>{
+            Param{"self"},
+            Param{"key", N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("str"))},
+            Param{"default", nullptr, N<CallExpr>(N<IdExpr>("NoneType"))}},
+        N<SuiteStmt>(N<ReturnStmt>(
+            N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "kwargs_get"),
+                        N<IdExpr>("self"), N<IdExpr>("key"), N<IdExpr>("default")))));
     if (startswith(typeName, TYPE_KWTUPLE))
-      stmt->getClass()->suite = N<SuiteStmt>(getItem, contains);
+      stmt->getClass()->suite = N<SuiteStmt>(getItem, contains, getDef);
 
     // Add repr for KwArgs:
     //   `def __repr__(self): return __magic__.repr_partial(self)`
