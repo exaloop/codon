@@ -151,19 +151,26 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
     StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
                                 std::vector<ExprPtr>{N<IdExpr>("tuple")});
 
-    // Add getItem for KwArgs:
+    // Add helpers for KwArgs:
     //   `def __getitem__(self, key: Static[str]): return getattr(self, key)`
+    //   `def __contains__(self, key: Static[str]): return hasattr(self, key)`
     auto getItem = N<FunctionStmt>(
         "__getitem__", nullptr,
         std::vector<Param>{Param{"self"}, Param{"key", N<IndexExpr>(N<IdExpr>("Static"),
                                                                     N<IdExpr>("str"))}},
         N<SuiteStmt>(N<ReturnStmt>(
             N<CallExpr>(N<IdExpr>("getattr"), N<IdExpr>("self"), N<IdExpr>("key")))));
+    auto contains = N<FunctionStmt>(
+        "__contains__", nullptr,
+        std::vector<Param>{Param{"self"}, Param{"key", N<IndexExpr>(N<IdExpr>("Static"),
+                                                                    N<IdExpr>("str"))}},
+        N<SuiteStmt>(N<ReturnStmt>(
+            N<CallExpr>(N<IdExpr>("hasattr"), N<IdExpr>("self"), N<IdExpr>("key")))));
     if (startswith(typeName, TYPE_KWTUPLE))
-      stmt->getClass()->suite = getItem;
+      stmt->getClass()->suite = N<SuiteStmt>(getItem, contains);
 
-    // Add getItem for KwArgs:
-    //   `def __repr__(self,): return __magic__.repr_partial(self)`
+    // Add repr for KwArgs:
+    //   `def __repr__(self): return __magic__.repr_partial(self)`
     auto repr = N<FunctionStmt>(
         "__repr__", nullptr, std::vector<Param>{Param{"self"}},
         N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
