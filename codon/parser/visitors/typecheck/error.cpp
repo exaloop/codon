@@ -91,7 +91,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       transformType(c.exc);
       if (!c.var.empty()) {
         // Handle dominated except bindings
-        auto val = ctx->addVar(c.var, c.var, c.exc->getType());
+        auto val =
+            ctx->addVar(c.var, c.var, std::make_shared<LinkType>(c.exc->getType()));
         unify(val->type, c.exc->getType());
       }
       ctx->blockLevel++;

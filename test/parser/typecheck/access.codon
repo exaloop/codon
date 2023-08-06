@@ -94,9 +94,9 @@ except NameError:
 def foo():
     if len("s") == 3:
         x = 3
+    x = 5  ## TODO: MOVE AFTER THE FN ONCE REF-CAPTURES ARE IMPLEMENTED
     def bar(y):
         print(x + y)
-    x = 5
     return bar
 f = foo()
 f(5)  #: 10

@@ -318,7 +318,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
-  Name2Visitor::apply(ctx->cache, n);
+  ScopingVisitor::apply(ctx->cache, n);
   auto tv = TypecheckVisitor(ictx, preamble);
   n = tv.transform(n);
 

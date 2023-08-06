@@ -34,9 +34,6 @@ struct TypecheckItem : public SrcObject {
 
   /// Full base scope information
   std::vector<int> scope = {0};
-  /// List of scopes where the identifier is accessible
-  /// without __used__ check
-  std::vector<std::vector<int>> accessChecked;
 
   /// Set if an identifier is a class or a function generic
   bool generic = false;
@@ -160,9 +157,6 @@ struct TypeContext : public Context<TypecheckItem> {
   ImportFile moduleName = {ImportFile::PACKAGE, "", ""};
   /// Set if the standard library is currently being loaded.
   bool isStdlibLoading = false;
-  /// Tracks if we are in a dependent part of a short-circuiting expression (e.g. b in a
-  /// and b) to disallow assignment expressions there.
-  bool isConditionalExpr = false;
   /// Allow type() expressions. Currently used to disallow type() in class
   /// and function definitions.
   bool allowTypeOf = true;

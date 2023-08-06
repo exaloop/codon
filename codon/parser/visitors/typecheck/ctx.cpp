@@ -435,7 +435,6 @@ void TypeContext::dump(int pad) {
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
     LOG("   ... scope:     {}", t->scope);
-    LOG("   ... access:    {}", t->accessChecked);
     LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->staticType));
   }
 }

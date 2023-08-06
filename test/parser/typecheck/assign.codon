@@ -10,9 +10,11 @@ print(a, b, c)  #: 5 6.16 None
 #%% walrus,barebones
 def foo(x):
     return x * x
-if x := foo(4):
+if x := foo(3):
     pass
 if (x := foo(4)) and False:
+    print('Nope')
+if False and (x := foo(5)):
     print('Nope')
 print(x) #: 16
 

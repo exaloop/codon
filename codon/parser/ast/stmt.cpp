@@ -79,9 +79,9 @@ std::string ExprStmt::toString(int) const {
 }
 ACCEPT_IMPL(ExprStmt, ASTVisitor);
 
-AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type)
+AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type, UpdateMode update)
     : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)),
-      update(Assign) {}
+      update(update) {}
 AssignStmt::AssignStmt(const AssignStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
       type(ast::clone(stmt.type)), preamble(ast::clone(stmt.preamble)),

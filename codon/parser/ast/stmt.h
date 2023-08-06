@@ -140,10 +140,13 @@ struct ExprStmt : public Stmt {
 /// @li a: Optional[int] = 5
 /// @li a, b, c = 5, *z
 struct AssignStmt : public Stmt {
+  enum UpdateMode { Assign, Update, UpdateAtomic };
+
   ExprPtr lhs, rhs, type;
   StmtPtr preamble = nullptr;
 
-  AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr);
+  AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr,
+             UpdateMode update = UpdateMode::Assign);
   AssignStmt(const AssignStmt &stmt);
 
   std::string toString(int indent) const override;
@@ -157,7 +160,7 @@ struct AssignStmt : public Stmt {
   void setAtomicUpdate() { update = UpdateAtomic; }
 
 private:
-  enum { Assign, Update, UpdateAtomic } update;
+  UpdateMode update;
 };
 
 /// Deletion statement (del expr).

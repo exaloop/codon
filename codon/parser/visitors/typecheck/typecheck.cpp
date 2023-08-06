@@ -59,9 +59,10 @@ StmtPtr TypecheckVisitor::apply(
       tv.N<AssignStmt>(tv.N<IdExpr>("__name__"), tv.N<StringExpr>(MODULE_MAIN)));
   stmts.push_back(node);
 
-  Name2Visitor::apply(cache, suite);
+  ScopingVisitor::apply(cache, suite);
   auto n = tv.inferTypes(suite, true);
   if (!n) {
+    LOG("[error=>] {}", suite->toString(2));
     tv.error("cannot typecheck the program");
   }
 
@@ -112,7 +113,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 1. Core definitions
   auto core = parseCode(stdlib->cache, stdlibPath->path, "from internal.core import *");
-  Name2Visitor::apply(stdlib->cache, core);
+  ScopingVisitor::apply(stdlib->cache, core);
   auto tv = TypecheckVisitor(stdlib, preamble);
   core = tv.transform(core);
   preamble->push_back(core);
@@ -129,7 +130,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 3. Load stdlib
   auto std = parseFile(stdlib->cache, stdlibPath->path);
-  Name2Visitor::apply(stdlib->cache, std);
+  ScopingVisitor::apply(stdlib->cache, std);
   tv = TypecheckVisitor(stdlib, preamble);
   std = tv.transform(std);
   preamble->push_back(std);

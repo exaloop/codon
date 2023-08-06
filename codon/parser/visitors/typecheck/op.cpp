@@ -55,13 +55,8 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   // Transform lexpr and rexpr. Ignore Nones for now
   if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
     transform(expr->lexpr, startswith(expr->op, "is"));
-
-  auto tmp = ctx->isConditionalExpr;
-  // The second operand of the and/or expression is conditional
-  ctx->isConditionalExpr = expr->op == "&&" || expr->op == "||";
   if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
     transform(expr->rexpr, startswith(expr->op, "is"));
-  ctx->isConditionalExpr = tmp;
 
   static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
       staticOps = {{StaticValue::INT,

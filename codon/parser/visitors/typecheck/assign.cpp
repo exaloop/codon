@@ -119,7 +119,10 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
-  unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
+  if (stmt->lhs->type)
+    unify(assign->lhs->type, stmt->lhs->type);
+  else
+    unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
   if (assign->type) {
     unify(assign->lhs->type,
           ctx->instantiate(assign->type->getSrcInfo(), assign->type->getType()));
@@ -164,12 +167,6 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   if (isGlobal && val->isVar())
     ctx->cache->addGlobal(canonical);
 
-  if (!stmt->rhs) {
-    val->accessChecked = {ctx->getScope()};
-    auto u =
-        N<AssignStmt>(N<IdExpr>(format("{}.__used__", canonical)), N<BoolExpr>(false));
-    return transform(N<SuiteStmt>(u, assign));
-  }
   return assign;
 }
 
@@ -180,6 +177,14 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->lhs);
   if (stmt->lhs->isStatic())
     E(Error::ASSIGN_UNEXPECTED_STATIC, stmt->lhs);
+
+  // auto lhs = stmt->lhs->getId();
+  // seqassert(lhs, "not an identifier: '{}'", stmt->lhs);
+  // auto val = ctx->forceFind(lhs->value);
+  // unify(lhs->type, ctx->instantiate(val->type));
+  // lhs->value = val->canonicalName;
+  // if (lhs->type->isStaticType())
+  //   E(Error::ASSIGN_UNEXPECTED_STATIC, lhs);
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);

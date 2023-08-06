@@ -323,7 +323,7 @@ private: // Helpers
       const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &);
 };
 
-class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
   struct Context {
     /// A pointer to the shared cache.
     Cache *cache;
@@ -355,7 +355,11 @@ class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
     struct Item {
       std::vector<int> scope;
-      Stmt *binding;
+      Stmt *binding = nullptr;
+
+      /// List of scopes where the identifier is accessible
+      /// without __used__ check
+      std::vector<std::vector<int>> accessChecked;
     };
     std::unordered_map<std::string, std::list<Item>> map;
 
@@ -368,6 +372,7 @@ class Name2Visitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     Stmt *root = nullptr;
     bool functionScope = false;
     bool inClass = false;
+    bool isConditional = false;
   };
   std::shared_ptr<Context> ctx = nullptr;
   ExprPtr resultExpr = nullptr;
@@ -384,20 +389,22 @@ public:
                  const SrcInfo & = SrcInfo());
   void transformAdding(ExprPtr &e, Stmt *);
 
-  void visit(IdExpr *expr) override;
-  void visit(GeneratorExpr *expr) override;
-  void visit(DictGeneratorExpr *expr) override;
-  void visit(AssignExpr *expr) override;
-  void visit(AssignStmt *stmt) override;
-  void visit(IfStmt *stmt) override;
-  void visit(MatchStmt *stmt) override;
-  void visit(WhileStmt *stmt) override;
-  void visit(ForStmt *stmt) override;
-  void visit(ImportStmt *stmt) override;
+  void visit(IdExpr *) override;
+  void visit(GeneratorExpr *) override;
+  void visit(DictGeneratorExpr *) override;
+  void visit(AssignExpr *) override;
+  void visit(IfExpr *) override;
+  void visit(BinaryExpr *) override;
+  void visit(AssignStmt *) override;
+  void visit(IfStmt *) override;
+  void visit(MatchStmt *) override;
+  void visit(WhileStmt *) override;
+  void visit(ForStmt *) override;
+  void visit(ImportStmt *) override;
   // todo)) delstmt?
-  void visit(TryStmt *stmt) override;
-  void visit(FunctionStmt *stmt) override;
-  void visit(ClassStmt *stmt) override;
+  void visit(TryStmt *) override;
+  void visit(FunctionStmt *) override;
+  void visit(ClassStmt *) override;
 
   Context::Item *findDominatingBinding(const std::string &, bool = true);
   void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);

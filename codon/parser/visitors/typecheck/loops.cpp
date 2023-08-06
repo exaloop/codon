@@ -257,22 +257,36 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     return nullptr;
   auto loopVar = ctx->cache->getTemporaryVar("loop");
 
+  std::function<int(StmtPtr &, int, const std::function<void(StmtPtr &)> &)> iter;
+  iter = [&iter](StmtPtr &s, int n, const std::function<void(StmtPtr &)> &fn) -> int {
+    if (n <= 0)
+      return 0;
+    if (auto su = s->getSuite()) {
+      int i = 0;
+      for (auto &si : su->stmts) {
+        i += iter(si, n - i, fn);
+        if (i >= n)
+          break;
+      }
+      return i;
+    } else {
+      fn(s);
+      return 1;
+    }
+  };
+
   auto oldSuite = clone(stmt->suite);
   std::vector<std::string> vars{stmt->var->getId()->value};
-  if (auto s = stmt->suite->getSuite()) {
-    if (!s->stmts.empty()) {
-      if (auto sa = s->stmts[0]->getSuite()) {
-        for (auto &sai : sa->stmts)
-          if (auto a = sai->getAssign()) {
-            if (a->rhs && a->rhs->getIndex())
-              if (a->rhs->getIndex()->expr->isId(vars[0])) {
-                vars.push_back(a->lhs->getId()->value);
-                sai = nullptr;
-              }
-          }
-      }
+
+  iter(stmt->suite, 2, [&](StmtPtr &s) {
+    if (auto a = s->getAssign()) {
+      if (a->rhs && a->rhs->getIndex())
+        if (a->rhs->getIndex()->expr->isId(vars[0])) {
+          vars.push_back(a->lhs->getId()->value);
+          s = nullptr;
+        }
     }
-  }
+  });
   if (vars.size() > 1)
     vars.erase(vars.begin());
 

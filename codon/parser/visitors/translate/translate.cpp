@@ -112,7 +112,6 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
       ctx->seqItems.pop_back();
     }
     if (expr->hasAttr(ExprAttr::Partial)) {
-      LOG("++ {}", expr);
       std::vector<ir::Value *> v;
       seqassert(p, "invalid partial element");
       int j = 0;
@@ -133,7 +132,6 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
       ctx->seqItems.pop_back();
     }
     if (expr->hasAttr(ExprAttr::SequenceItem)) {
-      LOG("++ {}", expr);
       ctx->seqItems.back().emplace_back(ExprAttr::SequenceItem, ir);
     }
     if (expr->hasAttr(ExprAttr::StarSequenceItem)) {

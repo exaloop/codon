@@ -127,7 +127,6 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       if (!r.value->getEllipsis()) {
         newArgs.push_back(r.value);
         newArgs.back()->setAttr(ExprAttr::SequenceItem);
-        LOG("== setAttr: {}", newArgs.back());
       }
     newArgs.push_back(part.args);
     auto partialCall = generatePartialCall(part.known, calleeFn->getFunc().get(),

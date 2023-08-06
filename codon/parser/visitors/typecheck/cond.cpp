@@ -35,9 +35,6 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
   transform(expr->cond);
 
-  auto tmp = ctx->isConditionalExpr;
-  ctx->isConditionalExpr = true;
-
   // Static if evaluation
   if (expr->cond->isStatic()) {
     resultExpr = evaluateStaticCondition(
@@ -65,11 +62,9 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     } else {
       unify(expr->type, ctx->getUnbound());
     }
-    ctx->isConditionalExpr = tmp;
   } else {
     transform(expr->ifexpr);
     transform(expr->elsexpr);
-    ctx->isConditionalExpr = tmp;
 
     // Add __bool__ wrapper
     while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
