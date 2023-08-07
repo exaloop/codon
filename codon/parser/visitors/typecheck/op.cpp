@@ -22,7 +22,8 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
   transform(expr->expr);
 
   static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
-      staticOps = {{StaticValue::INT, {"-", "+", "!"}}, {StaticValue::STRING, {"@"}}};
+      staticOps = {{StaticValue::INT, {"-", "+", "!", "~"}},
+                   {StaticValue::STRING, {"@"}}};
   // Handle static expressions
   if (expr->expr->isStatic() && in(staticOps[expr->expr->staticValue.type], expr->op)) {
     resultExpr = evaluateStaticUnary(expr);
@@ -62,7 +63,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
       staticOps = {{StaticValue::INT,
                     {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//",
-                     "%", "&", "|", "^"}},
+                     "%", "&", "|", "^", ">>", "<<"}},
                    {StaticValue::STRING, {"==", "!=", "+"}}};
   if (expr->lexpr->isStatic() && expr->rexpr->isStatic() &&
       expr->lexpr->staticValue.type == expr->rexpr->staticValue.type &&
@@ -377,6 +378,8 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         ;
       else if (expr->op == "-")
         value = -value;
+      else if (expr->op == "~")
+        value = ~value;
       else
         value = !bool(value);
       LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
@@ -484,6 +487,10 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       lvalue = lvalue & rvalue;
     else if (expr->op == "|")
       lvalue = lvalue | rvalue;
+    else if (expr->op == ">>")
+      lvalue = lvalue >> rvalue;
+    else if (expr->op == "<<")
+      lvalue = lvalue << rvalue;
     else if (expr->op == "//")
       lvalue = divMod(ctx, lvalue, rvalue).first;
     else if (expr->op == "%")
