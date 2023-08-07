@@ -371,7 +371,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   }
 
   // Case: static integers
-  if (expr->op == "-" || expr->op == "+" || expr->op == "!") {
+  if (expr->op == "-" || expr->op == "+" || expr->op == "!" || expr->op == "~") {
     if (expr->expr->staticValue.evaluated) {
       int64_t value = expr->expr->staticValue.getInt();
       if (expr->op == "+")
