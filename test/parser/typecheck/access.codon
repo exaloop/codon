@@ -1,3 +1,4 @@
+#%% __ignore__
 from typing import Optional
 
 #%% id_fstring_error,barebones
@@ -64,7 +65,7 @@ def goo():
     def foo():
         z += 1
     foo()
-goo()  #! local variable 'z' referenced before assignment
+goo()  #! local variable 'z' referenced before assignment at access.codon:65:9
 
 #%% new_scoping,barebones
 try:
@@ -128,18 +129,15 @@ try:
     raise ValueError("hi")
 except ValueError as e:
     ee = e
+print(e) #: hi
 print(ee) #: hi
-try:
-    print(e) #: hi
-except NameError:
-    print('error')  #: error
 
 try:
     pass
-except ValueError as ve:
+except ValueError as f:
     pass
 try:
-    print(ve)
+    print(f.message)
 except NameError:
     print('error') #: error
 

@@ -256,8 +256,12 @@ void ImportStmt::validate() const {
 }
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
 
+TryStmt::Catch::Catch(const std::string &var, ExprPtr exc, StmtPtr suite)
+    : var(var), exc(std::move(exc)), suite(std::move(suite)) {}
 TryStmt::Catch TryStmt::Catch::clone() const {
-  return {var, ast::clone(exc), ast::clone(suite)};
+  auto c = Catch(var, ast::clone(exc), ast::clone(suite));
+  c.setSrcInfo(getSrcInfo());
+  return c;
 }
 
 TryStmt::TryStmt(StmtPtr suite, std::vector<Catch> catches, StmtPtr finally)

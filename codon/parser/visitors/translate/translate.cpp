@@ -499,6 +499,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c.var.empty()) {
+      LOG("-> xx {} / {}", c.var, c.exc->hasAttr(ExprAttr::Dominated));
       if (!ctx->find(c.var) || !c.exc->hasAttr(ExprAttr::Dominated)) {
         catchVar = make<ir::Var>(stmt, excType, false, false, c.var);
       } else {

@@ -355,7 +355,7 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
     struct Item {
       std::vector<int> scope;
-      Stmt *binding = nullptr;
+      SrcObject *binding = nullptr;
 
       /// List of scopes where the identifier is accessible
       /// without __used__ check
@@ -369,7 +369,7 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     std::map<std::string, SrcInfo> firstSeen;
 
     bool adding = false;
-    Stmt *root = nullptr;
+    SrcObject *root = nullptr;
     bool functionScope = false;
     bool inClass = false;
     bool isConditional = false;
@@ -385,9 +385,9 @@ public:
   ExprPtr transform(std::shared_ptr<Expr> &expr) override;
   StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
 
-  void visitName(const std::string &name, bool = false, Stmt * = nullptr,
+  void visitName(const std::string &name, bool = false, SrcObject * = nullptr,
                  const SrcInfo & = SrcInfo());
-  void transformAdding(ExprPtr &e, Stmt *);
+  void transformAdding(ExprPtr &e, SrcObject *);
 
   void visit(IdExpr *) override;
   void visit(GeneratorExpr *) override;

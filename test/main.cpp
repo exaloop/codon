@@ -381,9 +381,10 @@ auto getTypeTests(const vector<string> &files) {
     int line = 0;
     while (getline(fin, l)) {
       if (l.substr(0, 3) == "#%%") {
-        if (line)
+        if (line && testName != "__ignore__") {
           cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
                                         codeLine, barebones, false));
+        }
         auto t = ast::split(l.substr(4), ',');
         barebones = (t.size() > 1 && t[1] == "barebones");
         testName = t[0];
@@ -395,7 +396,7 @@ auto getTypeTests(const vector<string> &files) {
       }
       line++;
     }
-    if (line)
+    if (line && testName != "__ignore__")
       cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
                                     codeLine, barebones, false));
   }

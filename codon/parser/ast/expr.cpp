@@ -38,7 +38,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
     is.insert(findStar(is), "*");
-  auto s = format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
+  auto s = format("({}{})", is,
+                  type && !done ? format(" #:type \"{}\"", type->toString()) : "");
   // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
   return s;
 }

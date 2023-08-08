@@ -130,26 +130,19 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);
-  if (!stmt->var->getId()) {
-    auto varName = ctx->cache->getTemporaryVar("for");
-    auto var = N<IdExpr>(varName);
-    stmt->suite =
-        N<SuiteStmt>(N<AssignStmt>(clone(stmt->var), clone(var)), stmt->suite);
-    stmt->var = var;
-  }
-
   auto var = stmt->var->getId();
   seqassert(var, "corrupt for variable: {}", stmt->var);
 
-  auto val = ctx->addVar(var->value, ctx->generateCanonicalName(var->value),
-                         ctx->getUnbound());
+  if (!stmt->var->hasAttr(ExprAttr::Dominated)) {
+    ctx->addVar(var->value, ctx->generateCanonicalName(var->value), ctx->getUnbound());
+  }
   transform(stmt->var);
 
   // Unify iterator variable and the iterator type
   if (iterType && iterType->name != "Generator")
     E(Error::EXPECTED_GENERATOR, stmt->iter);
-  unify(stmt->var->type,
-        iterType ? unify(val->type, iterType->generics[0].type) : val->type);
+  if (iterType)
+    unify(stmt->var->type, iterType->generics[0].type);
 
   ctx->staticLoops.emplace_back("");
   ctx->blockLevel++;

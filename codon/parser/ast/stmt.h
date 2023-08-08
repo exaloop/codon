@@ -358,13 +358,14 @@ struct ImportStmt : public Stmt {
 ///           catch: pass
 ///           finally: print
 struct TryStmt : public Stmt {
-  struct Catch {
+  struct Catch : public codon::SrcObject {
     /// empty string if a catch is unnamed.
     std::string var;
     /// nullptr if there is no explicit exception type.
     ExprPtr exc;
     StmtPtr suite;
 
+    Catch(const std::string&, ExprPtr, StmtPtr);
     Catch clone() const;
   };
 

@@ -61,9 +61,13 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
   auto done = stmt->suite->isDone();
   for (auto &c : stmt->catches) {
+    TypeContext::Item val = nullptr;
     if (!c.var.empty()) {
-      c.var = ctx->generateCanonicalName(c.var);
-      ctx->addVar(ctx->cache->rev(c.var), c.var, ctx->getUnbound());
+      if (!c.exc->hasAttr(ExprAttr::Dominated))
+        val = ctx->addVar(c.var, ctx->generateCanonicalName(c.var), ctx->getUnbound());
+      else
+        val = ctx->forceFind(c.var);
+      c.var = val->canonicalName;
     }
     transform(c.exc);
     if (c.exc && c.exc->type->is("pyobj")) {
@@ -89,12 +93,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     } else {
       // Handle all other exceptions
       transformType(c.exc);
-      if (!c.var.empty()) {
-        // Handle dominated except bindings
-        auto val =
-            ctx->addVar(c.var, c.var, std::make_shared<LinkType>(c.exc->getType()));
+      if (val)
         unify(val->type, c.exc->getType());
-      }
       ctx->blockLevel++;
       transform(c.suite);
       ctx->blockLevel--;

@@ -100,10 +100,14 @@ std::string escapeFStringBraces(const std::string &str, int start, int len) {
   return t;
 }
 int findStar(const std::string &s) {
+  bool start = false;
   int i = 0;
-  for (; i < s.size(); i++)
-    if (s[i] == ' ' || s[i] == ')')
+  for (; i < s.size(); i++) {
+    if (s[i] == '(')
+      start = true;
+    if (start && (s[i] == '\n' || s[i] == ' ' || s[i] == ')'))
       break;
+  }
   return i;
 }
 size_t startswith(const std::string &str, const std::string &prefix) {

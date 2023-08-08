@@ -1337,7 +1337,7 @@ ExprPtr TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
   if (!kwargs)
     kwargs = N<CallExpr>(N<IdExpr>("NamedTuple"));
 
-  LOG("{}: partializing {}", getSrcInfo(), fn->ast->name);
+  // LOG("{}: partializing {}", getSrcInfo(), fn->ast->name);
   auto e = N<CallExpr>(N<IdExpr>("Partial"), args, kwargs, N<StringExpr>(fn->ast->name),
                        N<StringExpr>(strMask));
   return e;
