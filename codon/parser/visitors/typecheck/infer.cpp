@@ -246,7 +246,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     auto ftyp = ctx->instantiate(field.type, realized);
     if (!realize(ftyp)) {
       realize(ftyp);
-      E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), ctx->cache->rev(field.name),
+      E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         realized->prettyString());
     }
     // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);

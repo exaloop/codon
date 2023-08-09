@@ -271,7 +271,7 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto oldSuite = clone(stmt->suite);
   std::vector<std::string> vars{stmt->var->getId()->value};
 
-  iter(stmt->suite, 2, [&](StmtPtr &s) {
+  iter(stmt->suite, 3, [&](StmtPtr &s) {
     if (auto a = s->getAssign()) {
       if (a->rhs && a->rhs->getIndex())
         if (a->rhs->getIndex()->expr->isId(vars[0])) {

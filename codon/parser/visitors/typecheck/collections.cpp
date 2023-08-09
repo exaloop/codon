@@ -34,7 +34,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       auto &ff = ctx->cache->classes[typ->name].fields;
       for (int i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
-                           transform(N<DotExpr>(clone(star->what), ff[i].name)));
+                           transform(N<DotExpr>(star->what, ff[i].name)));
       }
       // Remove the star
       expr->items.erase(expr->items.begin() + ai);
@@ -289,7 +289,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
 
   TypePtr collectionTyp = ctx->getUnbound();
   bool done = true;
-  bool isDict = endswith(type, "Dict");
+  bool isDict = endswith(type, "Dict.0");
   for (auto &i : items) {
     ClassTypePtr typ = nullptr;
     if (!isDict && i->getStar()) {

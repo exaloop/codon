@@ -265,8 +265,6 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     calleeFn = expr->expr->type->getFunc();
     seqassert(calleeFn, "not a function: {}", expr->expr->type);
 
-    LOG("=> got {} . {}", calleeFn->debugString(2), func);
-
     // Unify partial generics with types known thus far
     auto knownArgTypes = partType->generics[2].type->getRecord();
     for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)

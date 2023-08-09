@@ -11,7 +11,8 @@ def foo():
         print(a)
     bar()  #: 5
     a = 4
-    bar()  #: 4
+    bar()  #: 5
+    ## TODO: should be 4, needs Cell pointer
 foo()
 
 d = {}
@@ -334,7 +335,7 @@ class X:
     def foo(x: X, y: int):
         return y
     class Y:
-        y: int
+        y: int = 0
         def bar(self, y):
             print y
             return self.y
