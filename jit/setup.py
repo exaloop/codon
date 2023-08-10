@@ -65,7 +65,7 @@ else:
 
 jit_extension = Extension(
     "codon.codon_jit",
-    sources=["codon/jit.pyx", "codon/jit.pxd"],
+    sources=["codon/jit.pyx"],
     libraries=libraries,
     language="c++",
     extra_compile_args=["-w"],
@@ -77,7 +77,7 @@ jit_extension = Extension(
 setup(
     name="codon-jit",
     version=__version__,
-    install_requires=["cython==0.29.36", "astunparse"],
+    install_requires=["cython", "astunparse"],
     python_requires=">=3.6",
     description="Codon JIT decorator",
     url="https://exaloop.io",

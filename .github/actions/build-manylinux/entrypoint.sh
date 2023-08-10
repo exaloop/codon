@@ -30,7 +30,7 @@ cmake --install build --prefix=codon-deploy
 
 # build cython
 export PATH=$PATH:$(pwd)/llvm/bin
-python3 -m pip install cython==0.29.36 wheel astunparse
+python3 -m pip install cython wheel astunparse
 (cd codon-deploy/python && python3 setup.py sdist)
 CODON_DIR=$(pwd)/codon-deploy python3 -m pip install -v codon-deploy/python/dist/*.gz
 python3 test/python/cython_jit.py

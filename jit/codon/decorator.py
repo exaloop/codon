@@ -216,7 +216,7 @@ def jit(fn=None, debug=None, sample_size=5, pyvars=None):
                         file=sys.stderr,
                     )
                 return _jit.run_wrapper(
-                    obj_name, types, f.__module__, pyvars, args, 1 if debug else 0
+                    obj_name, list(types), f.__module__, list(pyvars), args, 1 if debug else 0
                 )
             except JITError:
                 _reset_jit()

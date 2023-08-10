@@ -126,7 +126,7 @@ jobs:
       - name: Set up Python
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy cython==0.29.36 wheel astunparse
+          python -m pip install numpy cython wheel astunparse
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
