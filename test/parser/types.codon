@@ -1231,6 +1231,21 @@ def foo(x):
 print foo('hi') #: (3, 2)
 print foo('hi', 1) #: (2, 'hi_1')
 
+
+def fox(a: int, b: int, c: int, dtype: type = int):
+    print('fox 1:', a, b, c)
+
+@overload
+def fox(a: int, b: int, dtype: type = int):
+    print('fox 2:', a, b, dtype.__class__.__name__)
+
+fox(1, 2, float)
+#: fox 2: 1 2 float
+fox(1, 2)
+#: fox 2: 1 2 int
+fox(1, 2, 3)
+#: fox 1: 1 2 3
+
 #%% fn_shadow,barebones
 def foo(x):
     return 1, x

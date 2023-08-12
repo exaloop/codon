@@ -889,6 +889,20 @@ def test_omp_collapse():
 
     assert A6 == B6
 
+@test
+def test_omp_ordered(N: int = 1000):
+    @omp.ordered
+    def f(A, i):
+        A.append(i)
+
+    A = []
+
+    @par(schedule='dynamic', chunk_size=1, num_threads=2, ordered=True)
+    for i in range(N):
+        f(A, i)
+
+    assert A == list(range(N))
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
@@ -901,3 +915,4 @@ test_omp_transform(111.1, 222.2, 333.3)
 test_omp_nested()
 test_omp_corner_cases()
 test_omp_collapse()
+test_omp_ordered()

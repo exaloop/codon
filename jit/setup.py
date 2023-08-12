@@ -65,7 +65,7 @@ else:
 
 jit_extension = Extension(
     "codon.codon_jit",
-    sources=["codon/jit.pyx", "codon/jit.pxd"],
+    sources=["codon/jit.pyx"],
     libraries=libraries,
     language="c++",
     extra_compile_args=["-w"],
