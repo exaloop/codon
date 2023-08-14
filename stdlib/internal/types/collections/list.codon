@@ -8,11 +8,11 @@ class List:
         self.arr = Array[T](10)
         self.len = 0
 
-    def __init__(self, it: Generator[T]):
-        self.arr = Array[T](10)
+    def __init__(self, capacity: int):
+        if capacity < 0:
+            capacity = 0
+        self.arr = Array[T](capacity)
         self.len = 0
-        for i in it:
-            self.append(i)
 
     def __init__(self, other: List[T]):
         self.arr = Array[T](other.len)
@@ -20,9 +20,11 @@ class List:
         for i in other:
             self.append(i)
 
-    def __init__(self, capacity: int):
-        self.arr = Array[T](capacity)
+    def __init__(self, it: Generator[T]):
+        self.arr = Array[T](10)
         self.len = 0
+        for i in it:
+            self.append(i)
 
     def __init__(self, arr: Array[T], len: int):
         self.arr = arr
@@ -372,6 +374,8 @@ class List:
     def _resize_if_full(self):
         if self.len == self.arr.len:
             new_cap = (1 + 3 * self.len) // 2
+            if new_cap <= 0:
+                new_cap = 1
             self._resize(new_cap)
 
     def __hash__(self) -> int:

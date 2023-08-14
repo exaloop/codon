@@ -103,7 +103,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   unify(stmt->var->type,
         iterType ? unify(val->type, iterType->generics[0].type) : val->type);
 
-  ctx->staticLoops.push_back("");
+  ctx->staticLoops.emplace_back();
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;

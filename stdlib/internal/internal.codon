@@ -435,6 +435,12 @@ class __internal__:
         e.col = col
         return e
 
+    def kwargs_get(kw, key: Static[str], default):
+        if hasattr(kw, key):
+            return getattr(kw, key)
+        else:
+            return default
+
 
 @extend
 class __magic__:

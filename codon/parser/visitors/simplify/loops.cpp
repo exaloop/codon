@@ -125,8 +125,9 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
 
   ctx->leaveConditionalBlock(&(stmt->suite->getSuite()->stmts));
   // Dominate loop variables
-  for (auto &var : ctx->getBase()->getLoop()->seenVars)
+  for (auto &var : ctx->getBase()->getLoop()->seenVars) {
     ctx->findDominatingBinding(var);
+  }
   ctx->getBase()->loops.pop_back();
 }
 

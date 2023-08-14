@@ -333,140 +333,426 @@ def zip_longest(*args):
 
 # Combinatoric iterators
 
-def combinations(pool: Generator[T], r: int, T: type) -> Generator[List[T]]:
-    """
-    Return successive r-length combinations of elements in the iterable.
-
-    combinations(range(4), 3) --> (0,1,2), (0,1,3), (0,2,3), (1,2,3)
-    """
-
-    def combinations_helper(pool: List[T], r: int, T: type) -> Generator[List[T]]:
-        n = len(pool)
-        if r > n:
-            return
-        indices = list(range(r))
-        yield [pool[i] for i in indices]
-        while True:
-            b = -1
-            for i in reversed(range(r)):
-                if indices[i] != i + n - r:
-                    b = i
-                    break
-            if b == -1:
-                return
-            indices[b] += 1
-            for j in range(b + 1, r):
-                indices[j] = indices[j - 1] + 1
-            yield [pool[i] for i in indices]
-
-    if r < 0:
-        raise ValueError("r must be non-negative")
-    if hasattr(pool, "__getitem__") and hasattr(pool, "__len__"):
-        return combinations_helper(pool, r)
+def _as_list(x):
+    if isinstance(x, list):
+        return x
     else:
-        return combinations_helper([a for a in pool], r)
+        return list(x)
 
-def combinations_with_replacement(
-    pool: Generator[T], r: int, T: type
-) -> Generator[List[T]]:
-    """
-    Return successive r-length combinations of elements in the iterable
-    allowing individual elements to have successive repeats.
-    """
-
-    def combinations_with_replacement_helper(
-        pool: List[T], r: int, T: type
-    ) -> Generator[List[T]]:
-        n = len(pool)
-        if not n and r:
-            return
-        indices = [0 for _ in range(r)]
-        yield [pool[i] for i in indices]
-        while True:
-            b = -1
-            for i in reversed(range(r)):
-                if indices[i] != n - 1:
-                    b = i
-                    break
-            if b == -1:
-                return
-            newval = indices[b] + 1
-            for j in range(r - b):
-                indices[b + j] = newval
-            yield [pool[i] for i in indices]
-
-    if r < 0:
-        raise ValueError("r must be non-negative")
-    if hasattr(pool, "__getitem__") and hasattr(pool, "__len__"):
-        return combinations_with_replacement_helper(pool, r)
-    else:
-        return combinations_with_replacement_helper([a for a in pool], r)
-
-def permutations(
-    pool: Generator[T], r: Optional[int] = None, T: type
-) -> Generator[List[T]]:
-    """
-    Return successive r-length permutations of elements in the iterable.
-    """
-
-    def permutations_helper(
-        pool: List[T], r: Optional[int], T: type
-    ) -> Generator[List[T]]:
-        n = len(pool)
-        r: int = r if r is not None else n
-        if r > n:
-            return
-
-        indices = list(range(n))
-        cycles = list(range(n, n - r, -1))
-        yield [pool[i] for i in indices[:r]]
-        while n:
-            b = -1
-            for i in reversed(range(r)):
-                cycles[i] -= 1
-                if cycles[i] == 0:
-                    indices = indices[:i] + indices[i + 1 :] + indices[i : i + 1]
-                    cycles[i] = n - i
-                else:
-                    b = i
-                    j = cycles[i]
-                    indices[i], indices[-j] = indices[-j], indices[i]
-                    yield [pool[i] for i in indices[:r]]
-                    break
-            if b == -1:
-                return
-
-    if r is not None and r.__val__() < 0:
-        raise ValueError("r must be non-negative")
-    if hasattr(pool, "__getitem__") and hasattr(pool, "__len__"):
-        return permutations_helper(pool, r)
-    else:
-        return permutations_helper([a for a in pool], r)
-
-@inline
-def product(*args):
-    """
-    Cartesian product of input iterables.
-    """
-    if staticlen(args) == 0:
-        yield ()
-    else:
-        for a in args[0]:
-            rest = args[1:]
-            for b in product(*rest):
-                yield (a, *b)
-
-@inline
-@overload
-def product(*args, repeat: int):
-    """
-    Cartesian product of input iterables.
-    """
+def product(*iterables, repeat: int):
     if repeat < 0:
-        raise ValueError("repeat argument cannot be negative")
-    pools = [list(pool) for _ in range(repeat) for pool in args]
-    result = [List[type(pools[0][0])]()]
-    for pool in pools:
-        result = [x + [y] for x in result for y in pool]
-    for prod in result:
-        yield prod
+        raise ValueError("repeat must be non-negative")
+
+    if repeat == 0:
+        nargs = 0
+    else:
+        nargs = len(iterables)
+
+    npools = nargs * repeat
+    indices = Ptr[int](npools)
+
+    pools = list(capacity=npools)
+    i = 0
+
+    while i < nargs:
+        p = _as_list(iterables[i])
+        if len(p) == 0:
+            return
+        pools.append(p)
+        indices[i] = 0
+        i += 1
+
+    while i < npools:
+        pools.append(pools[i - nargs])
+        indices[i] = 0
+        i += 1
+
+    result = list(capacity=npools)
+    for i in range(npools):
+        result.append(pools[i][0])
+
+    while True:
+        yield result
+
+        result = result.copy()
+        i = npools - 1
+        while i >= 0:
+            pool = pools[i]
+            indices[i] += 1
+
+            if indices[i] == len(pool):
+                indices[i] = 0
+                result[i] = pool[0]
+            else:
+                result[i] = pool[indices[i]]
+                break
+
+            i -= 1
+
+        if i < 0:
+            break
+
+@overload
+def product(*iterables, repeat: Static[int] = 1):
+    if repeat < 0:
+        compile_error("repeat must be non-negative")
+
+    # handle some common cases
+    if repeat == 0:
+        yield ()
+    elif repeat == 1 and staticlen(iterables) == 1:
+        it0 = iterables[0]
+        for a in it0:
+            yield (a,)
+    elif repeat == 1 and staticlen(iterables) == 2:
+        it0 = iterables[0]
+        it1 = iterables[1]
+        for a in it0:
+            for b in it1:
+                yield (a, b)
+    elif repeat == 1 and staticlen(iterables) == 3:
+        it0 = iterables[0]
+        it1 = iterables[1]
+        it2 = iterables[2]
+        for a in it0:
+            for b in it1:
+                for c in it2:
+                    yield (a, b, c)
+    else:
+        nargs: Static[int] = staticlen(iterables)
+        npools: Static[int] = nargs * repeat
+        indices_tuple = (0,) * npools
+        indices = Ptr[int](__ptr__(indices_tuple).as_byte())
+        pools = tuple(_as_list(it) for it in iterables) * repeat
+
+        for i in staticrange(nargs):
+            if len(pools[i]) == 0:
+                return
+
+        result = tuple(pool[0] for pool in pools)
+
+        while True:
+            yield result
+
+            i = npools - 1
+            while i >= 0:
+                pool = pools[i]
+                indices[i] += 1
+
+                if indices[i] == len(pool):
+                    indices[i] = 0
+                else:
+                    break
+
+                i -= 1
+
+            if i < 0:
+                break
+
+            result = tuple(pools[i][indices[i]] for i in staticrange(npools))
+
+def combinations(pool, r: int):
+    if r < 0:
+        raise ValueError("r must be non-negative")
+
+    pool_list = _as_list(pool)
+    n = len(pool)
+
+    if r > n:
+        return
+
+    pool = pool_list.arr.ptr
+    indices = Ptr[int](r)
+    result = list(capacity=r)
+
+    for i in range(r):
+        indices[i] = i
+        result.append(pool[i])
+
+    while True:
+        yield result
+
+        i = r - 1
+        while i >= 0 and indices[i] == i + n - r:
+            i -= 1
+
+        if i < 0:
+            break
+
+        indices[i] += 1
+
+        for j in range(i + 1, r):
+            indices[j] = indices[j-1] + 1
+
+        result = result.copy()
+        while i < r:
+            result[i] = pool[indices[i]]
+            i += 1
+
+@overload
+def combinations(pool, r: Static[int]):
+    def empty(T: type) -> T:
+        pass
+
+    if r < 0:
+        compile_error("r must be non-negative")
+
+    if isinstance(pool, list):
+        pool_list = pool
+    else:
+        pool_list = list(pool)
+
+    n = len(pool)
+
+    if r > n:
+        return
+
+    pool = pool_list.arr.ptr
+    indices_tuple = (0,) * r
+    indices = Ptr[int](__ptr__(indices_tuple).as_byte())
+    result_tuple = (empty(pool.T),) * r
+    result = Ptr[pool.T](__ptr__(result_tuple).as_byte())
+
+    for i in range(r):
+        indices[i] = i
+        result[i] = pool[i]
+
+    while True:
+        yield result_tuple
+
+        i = r - 1
+        while i >= 0 and indices[i] == i + n - r:
+            i -= 1
+
+        if i < 0:
+            break
+
+        indices[i] += 1
+
+        for j in range(i + 1, r):
+            indices[j] = indices[j-1] + 1
+
+        while i < r:
+            result[i] = pool[indices[i]]
+            i += 1
+
+def combinations_with_replacement(pool, r: int):
+    if r < 0:
+        raise ValueError("r must be non-negative")
+
+    pool_list = _as_list(pool)
+    n = len(pool)
+
+    if n == 0:
+        if r == 0:
+            yield List[pool_list.T](capacity=0)
+        return
+
+    pool = pool_list.arr.ptr
+    indices = Ptr[int](r)
+    result = list(capacity=r)
+
+    for i in range(r):
+        indices[i] = 0
+        result.append(pool[0])
+
+    while True:
+        yield result
+
+        i = r - 1
+        while i >= 0 and indices[i] == n - 1:
+            i -= 1
+
+        if i < 0:
+            break
+
+        result = result.copy()
+        index = indices[i] + 1
+        elem = pool[index]
+
+        while i < r:
+            indices[i] = index
+            result[i] = elem
+            i += 1
+
+@overload
+def combinations_with_replacement(pool, r: Static[int]):
+    def empty(T: type) -> T:
+        pass
+
+    if r < 0:
+        compile_error("r must be non-negative")
+
+    if r == 0:
+        yield ()
+        return
+
+    if isinstance(pool, list):
+        pool_list = pool
+    else:
+        pool_list = list(pool)
+
+    n = len(pool)
+
+    if n == 0:
+        return
+
+    pool = pool_list.arr.ptr
+    indices_tuple = (0,) * r
+    indices = Ptr[int](__ptr__(indices_tuple).as_byte())
+    result_tuple = (empty(pool.T),) * r
+    result = Ptr[pool.T](__ptr__(result_tuple).as_byte())
+
+    for i in range(r):
+        result[i] = pool[0]
+
+    while True:
+        yield result_tuple
+
+        i = r - 1
+        while i >= 0 and indices[i] == n - 1:
+            i -= 1
+
+        if i < 0:
+            break
+
+        index = indices[i] + 1
+        elem = pool[index]
+
+        while i < r:
+            indices[i] = index
+            result[i] = elem
+            i += 1
+
+def _permutations_non_static(pool, r = None):
+    pool_list = _as_list(pool)
+    n = len(pool)
+
+    if r is None:
+        return _permutations_non_static(pool_list, n)
+    elif not isinstance(r, int):
+        compile_error("Expected int as r")
+
+    if r < 0:
+        raise ValueError("r must be non-negative")
+
+    if r > n:
+        return
+
+    indices = Ptr[int](n)
+    cycles = Ptr[int](r)
+
+    for i in range(n):
+        indices[i] = i
+
+    for i in range(r):
+        cycles[i] = n - i
+
+    pool = pool_list.arr.ptr
+    result = list(capacity=r)
+
+    for i in range(r):
+        result.append(pool[i])
+
+    while True:
+        yield result
+
+        if n == 0:
+            break
+
+        result = result.copy()
+        i = r - 1
+        while i >= 0:
+            cycles[i] -= 1
+            if cycles[i] == 0:
+                index = indices[i]
+                for j in range(i, n - 1):
+                    indices[j] = indices[j+1]
+                indices[n-1] = index
+                cycles[i] = n - i
+            else:
+                j = cycles[i]
+                index = indices[i]
+                indices[i] = indices[n - j]
+                indices[n - j] = index
+
+                for k in range(i, r):
+                    index = indices[k]
+                    result[k] = pool[index]
+
+                break
+            i -= 1
+
+        if i < 0:
+            break
+
+def _permutations_static(pool, r: Static[int]):
+    def empty(T: type) -> T:
+        pass
+
+    pool_list = _as_list(pool)
+    n = len(pool)
+
+    if r < 0:
+        raise compile_error("r must be non-negative")
+
+    if r > n:
+        return
+
+    indices = Ptr[int](n)
+    cycles_tuple = (0,) * r
+    cycles = Ptr[int](__ptr__(cycles_tuple).as_byte())
+
+    for i in range(n):
+        indices[i] = i
+
+    for i in range(r):
+        cycles[i] = n - i
+
+    pool = pool_list.arr.ptr
+    result_tuple = (empty(pool.T),) * r
+    result = Ptr[pool.T](__ptr__(result_tuple).as_byte())
+
+    for i in range(r):
+        result[i] = pool[i]
+
+    while True:
+        yield result_tuple
+
+        if n == 0:
+            break
+
+        i = r - 1
+        while i >= 0:
+            cycles[i] -= 1
+            if cycles[i] == 0:
+                index = indices[i]
+                for j in range(i, n - 1):
+                    indices[j] = indices[j+1]
+                indices[n-1] = index
+                cycles[i] = n - i
+            else:
+                j = cycles[i]
+                index = indices[i]
+                indices[i] = indices[n - j]
+                indices[n - j] = index
+
+                for k in range(i, r):
+                    index = indices[k]
+                    result[k] = pool[index]
+
+                break
+            i -= 1
+
+        if i < 0:
+            break
+
+def permutations(pool, r = None):
+    if isinstance(pool, Tuple) and r is None:
+        return _permutations_static(pool, staticlen(pool))
+    else:
+        return _permutations_non_static(pool, r)
+
+@overload
+def permutations(pool, r: Static[int]):
+    return _permutations_static(pool, r)

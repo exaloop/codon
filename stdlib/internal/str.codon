@@ -591,7 +591,7 @@ class str:
         fill = width - len(self)
         p = zf.ptr
 
-        if p[fill] == plus or p[fill] == minus:
+        if len(self) > 0 and (p[fill] == plus or p[fill] == minus):
             p[0] = p[fill]
             p[fill] = zero
 

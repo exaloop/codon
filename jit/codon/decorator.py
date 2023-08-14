@@ -8,7 +8,6 @@ import os
 import functools
 import itertools
 import ast
-import shutil
 import astunparse
 from pathlib import Path
 
@@ -130,9 +129,13 @@ def _obj_to_str(obj, **kwargs) -> str:
         lines = inspect.getsourcelines(obj)[0]
         extra_spaces = lines[0].find("@")
         obj_str = "".join(l[extra_spaces:] for l in lines[1:])
-        if kwargs.get("pyvars", None):
+        pyvars = kwargs.get("pyvars", None)
+        if pyvars:
+            for i in pyvars:
+                if not isinstance(i, str):
+                    raise ValueError("pyvars only takes string literals")
             node = ast.fix_missing_locations(
-                RewriteFunctionArgs(kwargs["pyvars"]).visit(ast.parse(obj_str))
+                RewriteFunctionArgs(pyvars).visit(ast.parse(obj_str))
             )
             obj_str = astunparse.unparse(node)
     else:
@@ -213,7 +216,7 @@ def jit(fn=None, debug=None, sample_size=5, pyvars=None):
                         file=sys.stderr,
                     )
                 return _jit.run_wrapper(
-                    obj_name, types, f.__module__, pyvars, args, 1 if debug else 0
+                    obj_name, list(types), f.__module__, list(pyvars), args, 1 if debug else 0
                 )
             except JITError:
                 _reset_jit()

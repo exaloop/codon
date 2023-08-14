@@ -253,17 +253,23 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
   auto score = ctx->reorderNamedArgs(
       fn.get(), args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-        for (int si = 0; si < slots.size(); si++) {
+        for (int si = 0, gi = 0; si < slots.size(); si++) {
           if (fn->ast->args[si].status == Param::Generic) {
             if (slots[si].empty()) {
               // is this "real" type?
               if (in(niGenerics, fn->ast->args[si].name) &&
-                  !fn->ast->args[si].defaultValue)
+                  !fn->ast->args[si].defaultValue) {
                 return -1;
+              }
               reordered.push_back({nullptr, 0});
             } else {
+              seqassert(gi < fn->funcGenerics.size(), "bad fn");
+              if (!fn->funcGenerics[gi].type->isStaticType() &&
+                  !args[slots[si][0]].value->isType())
+                return -1;
               reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
             }
+            gi++;
           } else if (si == s || si == k || slots[si].size() != 1) {
             // Ignore *args, *kwargs and default arguments
             reordered.push_back({nullptr, 0});

@@ -23,7 +23,7 @@ class complex:
         return self
 
     def __bool__(self) -> bool:
-        return self.real != 0.0 and self.imag != 0.0
+        return self.real != 0.0 or self.imag != 0.0
 
     def __pos__(self) -> complex:
         return self
@@ -300,6 +300,9 @@ class complex64:
     def __new__(other):
         return complex64(other.__complex__())
 
+    def __new__(real: f32):
+        return complex64(real, f32(0.0))
+
     def __new__(other: complex) -> complex64:
         return (f32(other.real), f32(other.imag))
 
@@ -310,7 +313,7 @@ class complex64:
         return complex(float(self.real), float(self.imag))
 
     def __bool__(self) -> bool:
-        return self.real != f32(0.0) and self.imag != f32(0.0)
+        return self.real != f32(0.0) or self.imag != f32(0.0)
 
     def __pos__(self) -> complex64:
         return self

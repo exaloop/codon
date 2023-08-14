@@ -38,11 +38,16 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   // while True:
   //   if x > 10: break
   //   x = x + 1  # x must be dominated after the loop to ensure that it gets updated
-  if (auto loop = ctx->getBase()->getLoop()) {
-    bool inside = val->scope.size() >= loop->scope.size() &&
-                  val->scope[loop->scope.size() - 1] == loop->scope.back();
-    if (!inside)
-      loop->seenVars.insert(expr->value);
+  if (ctx->getBase()->getLoop()) {
+    for (size_t li = ctx->getBase()->loops.size(); li-- > 0;) {
+      auto &loop = ctx->getBase()->loops[li];
+      bool inside = val->scope.size() >= loop.scope.size() &&
+                    val->scope[loop.scope.size() - 1] == loop.scope.back();
+      if (!inside)
+        loop.seenVars.insert(expr->value);
+      else
+        break;
+    }
   }
 
   // Replace the variable with its canonical name

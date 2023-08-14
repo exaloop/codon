@@ -61,7 +61,9 @@ def underten(x):
 
 @test
 def test_combinations():
-    assert list(itertools.combinations("ABCD", 2)) == [
+    f = lambda x: x  # hack to get non-static argument
+
+    assert list(itertools.combinations("ABCD", f(2))) == [
         ["A", "B"],
         ["A", "C"],
         ["A", "D"],
@@ -69,7 +71,7 @@ def test_combinations():
         ["B", "D"],
         ["C", "D"],
     ]
-    test_intermediate = itertools.combinations("ABCD", 2)
+    test_intermediate = itertools.combinations("ABCD", f(2))
     next(test_intermediate)
     assert list(test_intermediate) == [
         ["A", "C"],
@@ -78,20 +80,49 @@ def test_combinations():
         ["B", "D"],
         ["C", "D"],
     ]
-    assert list(itertools.combinations(range(4), 3)) == [
+    assert list(itertools.combinations(range(4), f(3))) == [
         [0, 1, 2],
         [0, 1, 3],
         [0, 2, 3],
         [1, 2, 3],
     ]
-    test_intermediate = itertools.combinations(range(4), 3)
+    test_intermediate = itertools.combinations(range(4), f(3))
     next(test_intermediate)
     assert list(test_intermediate) == [[0, 1, 3], [0, 2, 3], [1, 2, 3]]
+
+    assert list(itertools.combinations("ABCD", 2)) == [
+        ("A", "B"),
+        ("A", "C"),
+        ("A", "D"),
+        ("B", "C"),
+        ("B", "D"),
+        ("C", "D"),
+    ]
+    test_intermediate = itertools.combinations("ABCD", 2)
+    next(test_intermediate)
+    assert list(test_intermediate) == [
+        ("A", "C"),
+        ("A", "D"),
+        ("B", "C"),
+        ("B", "D"),
+        ("C", "D"),
+    ]
+    assert list(itertools.combinations(range(4), 3)) == [
+        (0, 1, 2),
+        (0, 1, 3),
+        (0, 2, 3),
+        (1, 2, 3),
+    ]
+    test_intermediate = itertools.combinations(range(4), 3)
+    next(test_intermediate)
+    assert list(test_intermediate) == [(0, 1, 3), (0, 2, 3), (1, 2, 3)]
 
 
 @test
 def test_combinations_with_replacement():
-    assert list(itertools.combinations_with_replacement(range(3), 3)) == [
+    f = lambda x: x  # hack to get non-static argument
+
+    assert list(itertools.combinations_with_replacement(range(3), f(3))) == [
         [0, 0, 0],
         [0, 0, 1],
         [0, 0, 2],
@@ -103,7 +134,7 @@ def test_combinations_with_replacement():
         [1, 2, 2],
         [2, 2, 2],
     ]
-    assert list(itertools.combinations_with_replacement("ABC", 2)) == [
+    assert list(itertools.combinations_with_replacement("ABC", f(2))) == [
         ["A", "A"],
         ["A", "B"],
         ["A", "C"],
@@ -111,7 +142,7 @@ def test_combinations_with_replacement():
         ["B", "C"],
         ["C", "C"],
     ]
-    test_intermediate = itertools.combinations_with_replacement("ABC", 2)
+    test_intermediate = itertools.combinations_with_replacement("ABC", f(2))
     next(test_intermediate)
     assert list(test_intermediate) == [
         ["A", "B"],
@@ -121,6 +152,35 @@ def test_combinations_with_replacement():
         ["C", "C"],
     ]
 
+    assert list(itertools.combinations_with_replacement(range(3), 3)) == [
+        (0, 0, 0),
+        (0, 0, 1),
+        (0, 0, 2),
+        (0, 1, 1),
+        (0, 1, 2),
+        (0, 2, 2),
+        (1, 1, 1),
+        (1, 1, 2),
+        (1, 2, 2),
+        (2, 2, 2),
+    ]
+    assert list(itertools.combinations_with_replacement("ABC", 2)) == [
+        ("A", "A"),
+        ("A", "B"),
+        ("A", "C"),
+        ("B", "B"),
+        ("B", "C"),
+        ("C", "C"),
+    ]
+    test_intermediate = itertools.combinations_with_replacement("ABC", 2)
+    next(test_intermediate)
+    assert list(test_intermediate) == [
+        ("A", "B"),
+        ("A", "C"),
+        ("B", "B"),
+        ("B", "C"),
+        ("C", "C"),
+    ]
 
 @test
 def test_islice():
@@ -243,7 +303,9 @@ def test_filterfalse():
 
 @test
 def test_permutations():
-    assert list(itertools.permutations(range(3), 2)) == [
+    f = lambda x: x  # hack to get non-static argument
+
+    assert list(itertools.permutations(range(3), f(2))) == [
         [0, 1],
         [0, 2],
         [1, 0],
@@ -255,6 +317,24 @@ def test_permutations():
     for n in range(3):
         values = [5 * x - 12 for x in range(n)]
         for r in range(n + 2):
+            result = list(itertools.permutations(values, f(r)))
+            if r > n:  # right number of perms
+                assert len(result) == 0
+            # factorial is not yet implemented in math
+            # else: fact(n) / fact(n - r)
+
+    assert list(itertools.permutations(range(3), 2)) == [
+        (0, 1),
+        (0, 2),
+        (1, 0),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+    ]
+
+    for n in staticrange(3):
+        values = [5 * x - 12 for x in range(n)]
+        for r in staticrange(n + 2):
             result = list(itertools.permutations(values, r))
             if r > n:  # right number of perms
                 assert len(result) == 0
@@ -487,18 +567,19 @@ test_chain_from_iterable_from_cpython()
 
 @test
 def test_combinations_from_cpython():
+    f = lambda x: x  # hack to get non-static argument
     from math import factorial as fact
 
     err = False
     try:
-        list(combinations("abc", -2))
+        list(combinations("abc", f(-2)))
         assert False
     except ValueError:
         err = True
     assert err
 
-    assert list(combinations("abc", 32)) == []  # r > n
-    assert list(combinations("ABCD", 2)) == [
+    assert list(combinations("abc", f(32))) == []  # r > n
+    assert list(combinations("ABCD", f(2))) == [
         ["A", "B"],
         ["A", "C"],
         ["A", "D"],
@@ -506,7 +587,7 @@ def test_combinations_from_cpython():
         ["B", "D"],
         ["C", "D"],
     ]
-    assert list(combinations(range(4), 3)) == [
+    assert list(combinations(range(4), f(3))) == [
         [0, 1, 2],
         [0, 1, 3],
         [0, 2, 3],
@@ -516,7 +597,7 @@ def test_combinations_from_cpython():
     for n in range(7):
         values = [5 * x - 12 for x in range(n)]
         for r in range(n + 2):
-            result = list(combinations(values, r))
+            result = list(combinations(values, f(r)))
 
             assert len(result) == (0 if r > n else fact(n) // fact(r) // fact(n - r))
             assert len(result) == len(set(result))  # no repeats
@@ -531,21 +612,55 @@ def test_combinations_from_cpython():
                 ]  # comb is a subsequence of the input iterable
 
 
+    assert list(combinations("abc", 32)) == []  # r > n
+    assert list(combinations("ABCD", 2)) == [
+        ("A", "B"),
+        ("A", "C"),
+        ("A", "D"),
+        ("B", "C"),
+        ("B", "D"),
+        ("C", "D"),
+    ]
+    assert list(combinations(range(4), 3)) == [
+        (0, 1, 2),
+        (0, 1, 3),
+        (0, 2, 3),
+        (1, 2, 3),
+    ]
+
+    for n in staticrange(7):
+        values = [5 * x - 12 for x in range(n)]
+        for r in staticrange(n + 2):
+            result = list(combinations(values, r))
+
+            assert len(result) == (0 if r > n else fact(n) // fact(r) // fact(n - r))
+            assert len(result) == len(set(result))  # no repeats
+            # assert result == sorted(result)                     # lexicographic order
+            for c in result:
+                assert len(c) == r  # r-length combinations
+                assert len(set(c)) == r  # no duplicate elements
+                assert list(c) == sorted(c)  # keep original ordering
+                assert all(e in values for e in c)  # elements taken from input iterable
+                assert list(c) == [
+                    e for e in values if e in c
+                ]  # comb is a subsequence of the input iterable
+
 test_combinations_from_cpython()
 
 
 @test
 def test_combinations_with_replacement_from_cpython():
+    f = lambda x: x  # hack to get non-static argument
     cwr = combinations_with_replacement
     err = False
     try:
-        list(cwr("abc", -2))
+        list(combinations_with_replacement("abc", f(-2)))
         assert False
     except ValueError:
         err = True
     assert err
 
-    assert list(cwr("ABC", 2)) == [
+    assert list(combinations_with_replacement("ABC", f(2))) == [
         ["A", "A"],
         ["A", "B"],
         ["A", "C"],
@@ -564,7 +679,44 @@ def test_combinations_with_replacement_from_cpython():
     for n in range(7):
         values = [5 * x - 12 for x in range(n)]
         for r in range(n + 2):
-            result = list(cwr(values, r))
+            result = list(combinations_with_replacement(values, r))
+            regular_combs = list(combinations(values, r))
+
+            assert len(result) == numcombs(n, r)
+            assert len(result) == len(set(result))  # no repeats
+            # assert result == sorted(result)                     # lexicographic order
+
+            if n == 0 or r <= 1:
+                assert result == regular_combs  # cases that should be identical
+            else:
+                assert set(result) >= set(regular_combs)
+
+            for c in result:
+                assert len(c) == r  # r-length combinations
+                noruns = [k for k, v in groupby(c)]  # combo without consecutive repeats
+                assert len(noruns) == len(
+                    set(noruns)
+                )  # no repeats other than consecutive
+                assert list(c) == sorted(c)  # keep original ordering
+                assert all(e in values for e in c)  # elements taken from input iterable
+                assert noruns == [
+                    e for e in values if e in c
+                ]  # comb is a subsequence of the input iterable
+
+
+    assert list(combinations_with_replacement("ABC", 2)) == [
+        ("A", "A"),
+        ("A", "B"),
+        ("A", "C"),
+        ("B", "B"),
+        ("B", "C"),
+        ("C", "C"),
+    ]
+
+    for n in staticrange(7):
+        values = [5 * x - 12 for x in range(n)]
+        for r in staticrange(n + 2):
+            result = list(combinations_with_replacement(values, r))
             regular_combs = list(combinations(values, r))
 
             assert len(result) == numcombs(n, r)
@@ -594,18 +746,19 @@ test_combinations_with_replacement_from_cpython()
 
 @test
 def test_permutations_from_cpython():
+    f = lambda x: x  # hack to get non-static argument
     from math import factorial as fact
 
     err = False
     try:
-        list(permutations("abc", -2))
+        list(permutations("abc", f(-2)))
         assert False
     except ValueError:
         err = True
     assert err
 
-    assert list(permutations("abc", 32)) == []
-    assert list(permutations(range(3), 2)) == [
+    assert list(permutations("abc", f(32))) == []
+    assert list(permutations(range(3), f(2))) == [
         [0, 1],
         [0, 2],
         [1, 0],
@@ -631,6 +784,33 @@ def test_permutations_from_cpython():
             if r == n:
                 assert result == list(permutations(values, None))  # test r as None
                 assert result == list(permutations(values))  # test default r
+
+    assert list(permutations("abc", 32)) == []
+    assert list(permutations(range(3), 2)) == [
+        (0, 1),
+        (0, 2),
+        (1, 0),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+    ]
+
+    for n in staticrange(7):
+        values = [5 * x - 12 for x in range(n)]
+        for r in staticrange(n + 2):
+            result = list(permutations(values, r))
+            assert len(result) == (
+                0 if r > n else fact(n) // fact(n - r)
+            )  # right number of perms
+            assert len(result) == len(set(result))  # no repeats
+            # assert result == sorted(result)                # lexicographic order
+            for p in result:
+                assert len(p) == r  # r-length permutations
+                assert len(set(p)) == r  # no duplicate elements
+                assert all(e in values for e in p)  # elements taken from input iterable
+
+            if r == n:
+                assert result == list(permutations(values, r))
 
 
 test_permutations_from_cpython()
@@ -688,6 +868,49 @@ def test_combinatorics_from_cpython():
     for n in range(6):
         s = "ABCDEFG"[:n]
         for r in range(8):
+            prod = list(product(s, repeat=r))
+            cwr = list(combinations_with_replacement(s, r))
+            perm = list(permutations(s, r))
+            comb = list(combinations(s, r))
+
+            # Check size
+            assert len(prod) == n ** r
+            assert len(cwr) == (
+                (fact(n + r - 1) // fact(r) // fact(n - 1)) if n else (0 if r else 1)
+            )
+            assert len(perm) == (0 if r > n else fact(n) // fact(n - r))
+            assert len(comb) == (0 if r > n else fact(n) // fact(r) // fact(n - r))
+
+            # Check lexicographic order without repeated tuples
+            assert prod == sorted(set(prod))
+            assert cwr == sorted(set(cwr))
+            assert perm == sorted(set(perm))
+            assert comb == sorted(set(comb))
+
+            # Check interrelationships
+            assert cwr == [
+                t for t in prod if sorted(t) == list(t)
+            ]  # cwr: prods which are sorted
+            assert perm == [
+                t for t in prod if len(set(t)) == r
+            ]  # perm: prods with no dups
+            assert comb == [
+                t for t in perm if sorted(t) == list(t)
+            ]  # comb: perms that are sorted
+            assert comb == [
+                t for t in cwr if len(set(t)) == r
+            ]  # comb: cwrs without dups
+            assert comb == list(
+                filter(set(cwr).__contains__, perm)
+            )  # comb: perm that is a cwr
+            assert comb == list(
+                filter(set(perm).__contains__, cwr)
+            )  # comb: cwr that is a perm
+            assert comb == sorted(set(cwr) & set(perm))  # comb: both a cwr and a perm
+
+    for n in staticrange(6):
+        s = "ABCDEFG"[:n]
+        for r in staticrange(8):
             prod = list(product(s, repeat=r))
             cwr = list(combinations_with_replacement(s, r))
             perm = list(permutations(s, r))

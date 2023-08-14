@@ -797,6 +797,21 @@ test_cmath_testcases()
 
 
 @test
+def test_complex_bool():
+    z = complex(0, 0)
+    assert not bool(z)
+    z = complex(1, 0)
+    assert bool(z)
+    z = complex(0, -1)
+    assert bool(z)
+    z = complex(1, -1)
+    assert bool(z)
+
+
+test_complex_bool()
+
+
+@test
 def test_complex64():
     c64 = complex64
     z = c64(.5 + .5j)
@@ -825,5 +840,28 @@ def test_complex64():
     assert z.__copy__() == z
     assert hash(z)
     assert c64(complex(z)) == z
+
+    z = c64(1.5, 2.5)
+    assert z.real == f32(1.5)
+    assert z.imag == f32(2.5)
+    z = c64(3.5)
+    assert z.real == f32(3.5)
+    assert z.imag == f32(0.0)
+    z = c64(f32(4.5), f32(5.5))
+    assert z.real == f32(4.5)
+    assert z.imag == f32(5.5)
+    z = c64(f32(6.5))
+    assert z.real == f32(6.5)
+    assert z.imag == f32(0.0)
+
+    z = c64(0, 0)
+    assert not bool(z)
+    z = c64(1, 0)
+    assert bool(z)
+    z = c64(0, -1)
+    assert bool(z)
+    z = c64(1, -1)
+    assert bool(z)
+
 
 test_complex64()
