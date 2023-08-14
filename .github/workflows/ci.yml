@@ -284,7 +284,7 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           export PATH=/mingw64/bin:$PATH
-          export LLVM_BRANCH="codon"
+          export LLVM_BRANCH="codon-16"
           export SRCDIR="${PWD}/llvm-project"
           export INSTALLDIR="${PWD}/llvm"
           git clone --depth 1 -b "${LLVM_BRANCH}" https://github.com/exaloop/llvm-project "${SRCDIR}"
