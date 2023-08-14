@@ -127,13 +127,15 @@ llvm::Error DebugPlugin::notifyFailed(llvm::orc::MaterializationResponsibility &
   return llvm::Error::success();
 }
 
-llvm::Error DebugPlugin::notifyRemovingResources(llvm::orc::ResourceKey key) {
+llvm::Error DebugPlugin::notifyRemovingResources(llvm::orc::JITDylib &jd,
+                                                 llvm::orc::ResourceKey key) {
   std::lock_guard<std::mutex> lock(pluginMutex);
   registeredObjs.erase(key);
   return llvm::Error::success();
 }
 
-void DebugPlugin::notifyTransferringResources(llvm::orc::ResourceKey dstKey,
+void DebugPlugin::notifyTransferringResources(llvm::orc::JITDylib &jd,
+                                              llvm::orc::ResourceKey dstKey,
                                               llvm::orc::ResourceKey srcKey) {
   std::lock_guard<std::mutex> lock(pluginMutex);
   auto it = registeredObjs.find(srcKey);

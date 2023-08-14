@@ -73,8 +73,10 @@ public:
                            llvm::MemoryBufferRef inputObject) override;
   llvm::Error notifyEmitted(llvm::orc::MaterializationResponsibility &mr) override;
   llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility &mr) override;
-  llvm::Error notifyRemovingResources(llvm::orc::ResourceKey key) override;
-  void notifyTransferringResources(llvm::orc::ResourceKey dstKey,
+  llvm::Error notifyRemovingResources(llvm::orc::JITDylib &jd,
+                                      llvm::orc::ResourceKey key) override;
+  void notifyTransferringResources(llvm::orc::JITDylib &jd,
+                                   llvm::orc::ResourceKey dstKey,
                                    llvm::orc::ResourceKey srcKey) override;
   void modifyPassConfig(llvm::orc::MaterializationResponsibility &mr,
                         llvm::jitlink::LinkGraph &,
