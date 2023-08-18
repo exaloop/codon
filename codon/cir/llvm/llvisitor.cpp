@@ -92,9 +92,9 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeExpandMemCmpPassPass(registry);
   llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   llvm::initializeSelectOptimizePass(registry);
+  llvm::initializeCallBrPreparePass(registry);
   llvm::initializeCodeGenPreparePass(registry);
   llvm::initializeAtomicExpandPass(registry);
-  llvm::initializeRewriteSymbolsLegacyPassPass(registry);
   llvm::initializeWinEHPreparePass(registry);
   llvm::initializeDwarfEHPrepareLegacyPassPass(registry);
   llvm::initializeSafeStackLegacyPassPass(registry);
@@ -109,7 +109,6 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeExpandVectorPredicationPass(registry);
   llvm::initializeWasmEHPreparePass(registry);
   llvm::initializeWriteBitcodePassPass(registry);
-  llvm::initializeHardwareLoopsPass(registry);
   llvm::initializeReplaceWithVeclibLegacyPass(registry);
   llvm::initializeJMCInstrumenterPass(registry);
 }
