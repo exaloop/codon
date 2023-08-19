@@ -1258,6 +1258,9 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
         return L;
       });
   builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
+  if (auto *orcRuntimeLibPath = std::getenv("CODON_ORC")) {
+    builder.setPlatformSetUp(llvm::orc::ExecutorNativePlatform(orcRuntimeLibPath));
+  }
 
   auto jit = llvm::cantFail(builder.create());
   jit->getMainJITDylib().addGenerator(

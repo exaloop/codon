@@ -284,7 +284,7 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           export PATH=/mingw64/bin:$PATH
-          export LLVM_BRANCH="codon-16"
+          export LLVM_BRANCH="release/17.x"
           export SRCDIR="${PWD}/llvm-project"
           export INSTALLDIR="${PWD}/llvm"
           git clone --depth 1 -b "${LLVM_BRANCH}" https://github.com/exaloop/llvm-project "${SRCDIR}"
@@ -301,6 +301,20 @@ jobs:
             -DLLVM_BUILD_TOOLS=OFF
           cmake --build ${SRCDIR}/llvm/build --config Release
           cmake --install ${SRCDIR}/llvm/build --prefix=${INSTALLDIR}
+          mkdir -p "${SRCDIR}/compiler-rt/build"
+          cd "${SRCDIR}/compiler-rt/build"
+          cmake -S ${SRCDIR}/compiler-rt -G Ninja \
+            -B ${SRCDIR}/compiler-rt/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCOMPILER_RT_BUILD_ORC=ON \
+            -DCOMPILER_RT_BUILD_BUILTINS=OFF \
+            -DCOMPILER_RT_DISABLE_AARCH64_FMV=OFF \
+            -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+            -DCOMPILER_RT_BUILD_XRAY=OFF \
+            -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+            -DCOMPILER_RT_BUILD_PROFILE=OFF \
+            -DCOMPILER_RT_BUILD_MEMPROF=OFF
+          cmake --build ${SRCDIR}/compiler-rt/build --config Release
         env:
           CC: /mingw64/bin/clang.exe
           CXX: /mingw64/bin/clang++.exe
