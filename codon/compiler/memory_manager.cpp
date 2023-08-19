@@ -178,9 +178,10 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
     auto &AG = KV.first;
     auto &Seg = KV.second;
 
-    auto &SegAddr = (AG.getMemDeallocPolicy() == llvm::orc::MemDeallocPolicy::Standard)
-                        ? NextStandardSegAddr
-                        : NextFinalizeSegAddr;
+    auto &SegAddr =
+        (AG.getMemLifetimePolicy() == llvm::orc::MemLifetimePolicy::Standard)
+            ? NextStandardSegAddr
+            : NextFinalizeSegAddr;
 
     Seg.WorkingMem = SegAddr.toPtr<char *>();
     Seg.Addr = SegAddr;
