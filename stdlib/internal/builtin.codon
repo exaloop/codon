@@ -34,6 +34,16 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
     if flush:
         _C.fflush(fp)
 
+def input(prompt: str = '') -> str:
+    if (prompt != ''):
+        print(prompt, end='')
+    buf = Ptr[byte]()
+    sz = 0
+    rd = _C.getline(Ptr[Ptr[byte]](__ptr__(buf)), Ptr[int](__ptr__(sz)), _C.seq_stdin())
+    if rd == -1:
+        return ''
+    return str(buf, rd - 1)
+
 @extend
 class __internal__:
     def print(*args):
