@@ -1248,6 +1248,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
         auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
             es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+        /*
         L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
             es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
         L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
@@ -1255,6 +1256,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
         auto dbPlugin = std::make_unique<DebugPlugin>();
         dbp = dbPlugin.get();
         L->addPlugin(std::move(dbPlugin));
+        */
         return L;
       });
   builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
