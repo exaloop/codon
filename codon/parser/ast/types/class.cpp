@@ -104,8 +104,6 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? niceName : name;
-  if (startswith(n, TYPE_TUPLE))
-    n = "Tuple";
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
 
@@ -158,7 +156,7 @@ int RecordType::unify(Type *typ, Unification *us) {
         return -1;
     }
     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
-    if (startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE)) {
+    if (name == TYPE_TUPLE || tr->name == TYPE_TUPLE) {
       if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
         return s1 + int(name == tr->name);
       else

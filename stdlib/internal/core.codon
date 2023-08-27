@@ -134,6 +134,8 @@ class TypeVar[T]: pass
 class ByVal: pass
 @__internal__
 class ByRef: pass
+
+@tuple
 @__internal__
 class Tuple: pass
 
@@ -147,10 +149,7 @@ class RTTI:
 
 @__internal__
 @tuple
-class ellipsis:
-    def __new__() -> ellipsis:
-        return ()
-Ellipsis = ellipsis()
+class ellipsis: pass
 
 @tuple
 @__internal__

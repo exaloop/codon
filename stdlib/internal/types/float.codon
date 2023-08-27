@@ -760,3 +760,4 @@ class float:
         return float32.__new__(double)
 
 f32 = float32
+f64 = float32

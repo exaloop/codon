@@ -94,25 +94,23 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         starArgTypes.insert(starArgTypes.end(), inArgs.begin() + i, inArgs.end());
 
         auto tv = TypecheckVisitor(cache->typeCtx);
-        auto name = tv.generateTuple(starArgTypes.size());
-        auto t = cache->typeCtx->forceFind(name)->type;
-        t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
+        auto t = cache->typeCtx->instantiateTuple(starArgTypes)->getClass();
         if (t->unify(trInArgs[star].get(), us) == -1)
           return -1;
       }
       if (kwStar < trInArgs.size()) {
+        auto tv = TypecheckVisitor(cache->typeCtx);
         std::vector<std::string> names;
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->args.back()->getRecord();
           seqassert(ts, "bad partial *args/**kwargs");
-          auto &ff = cache->classes[ts->name].fields;
+          auto ff = tv.getClassFields(ts.get());
           for (size_t i = 0; i < ts->args.size(); i++) {
             names.emplace_back(ff[i].name);
             starArgTypes.emplace_back(ts->args[i]);
           }
         }
-        auto tv = TypecheckVisitor(cache->typeCtx);
         auto name = tv.generateTuple(starArgTypes.size(), TYPE_KWTUPLE, names);
         auto t = cache->typeCtx->forceFind(name)->type;
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
@@ -168,8 +166,7 @@ TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
 
 std::string CallableTrait::debugString(char mode) const {
   auto s = args[0]->debugString(mode);
-  return fmt::format("Callable[{},{}]", startswith(s, "Tuple") ? s.substr(5) : s,
-                     args[1]->debugString(mode));
+  return fmt::format("Callable[{},{}]", s, args[1]->debugString(mode));
 }
 
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}

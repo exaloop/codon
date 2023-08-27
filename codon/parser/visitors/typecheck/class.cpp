@@ -117,7 +117,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     LOG_REALIZE("       - member: {}: {}", m.name, m.type);
 }
 
-/// Generate a tuple class `Tuple.N[T1,...,TN]`.
+/// Generate a tuple class `Tuple[T1,...,TN]`.
 /// @param len       Tuple length (`N`)
 /// @param name      Tuple name. `Tuple` by default.
 ///                  Can be something else (e.g., `KwTuple`)
@@ -175,7 +175,7 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
         N<SuiteStmt>(N<ReturnStmt>(
             N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "kwargs_get"),
                         N<IdExpr>("self"), N<IdExpr>("key"), N<IdExpr>("default")))));
-    if (startswith(typeName, TYPE_KWTUPLE))
+    if (typeName == TYPE_KWTUPLE)
       stmt->getClass()->suite = N<SuiteStmt>(getItem, contains, getDef);
 
     // Add repr for KwArgs:

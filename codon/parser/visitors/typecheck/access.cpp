@@ -20,13 +20,7 @@ using namespace types;
 /// replace it with its value (e.g., a @c IntExpr ). Also ensure that the identifier of
 /// a generic function or a type is fully qualified (e.g., replace `Ptr` with
 /// `Ptr[byte]`).
-/// For tuple identifiers, generate appropriate class. See @c generateTuple for
-/// details.
 void TypecheckVisitor::visit(IdExpr *expr) {
-  // Generate tuple stubs if needed
-  if (isTuple(expr->value))
-    generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
-
   // Replace identifiers that have been superseded by domination analysis during the
   // simplification
   while (auto s = in(ctx->cache->replacements, expr->value))
@@ -210,10 +204,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         std::vector<ExprPtr> ids;
         for (auto &t : fn->getArgTypes())
           ids.push_back(NT<IdExpr>(t->realizedName()));
-        auto name = generateTuple(ids.size());
         auto fnType = NT<InstantiateExpr>(
             NT<IdExpr>("Function"),
-            std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(name), ids),
+            std::vector<ExprPtr>{NT<InstantiateExpr>(NT<IdExpr>(TYPE_TUPLE), ids),
                                  NT<IdExpr>(fn->getRetType()->realizedName())});
         // Function[Tuple[TArg1, TArg2, ...],TRet](
         //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
@@ -264,7 +257,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: object member access (`obj.member`)
   if (!expr->expr->isType()) {
-    if (auto member = ctx->findMember(typ->name, expr->member)) {
+    if (auto member = ctx->findMember(typ, expr->member)) {
       unify(expr->type, ctx->instantiate(member, typ));
       if (expr->expr->isDone() && realize(expr->type))
         expr->setDone();

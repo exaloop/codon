@@ -271,8 +271,13 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
-  TypePtr typ =
-      ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
+
+  TypePtr typ = nullptr;
+  if (expr->typeExpr->isId(TYPE_TUPLE)) {
+    typ = ctx->instantiateTuple(expr->typeParams.size());
+  } else {
+    typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
+  }
   seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr);
 
   auto &generics = typ->getClass()->generics;
@@ -303,6 +308,24 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     typ->getLink()->trait = std::make_shared<TypeTrait>(expr->typeParams[0]->type);
     unify(expr->type, typ);
   } else {
+    if (expr->typeExpr->getId() && isTuple(expr->typeExpr->getId()->value) &&
+        !expr->typeParams.empty()) {
+      transform(expr->typeParams[0]);
+      if (expr->typeParams[0]->staticValue.type == StaticValue::INT) {
+        if (!expr->typeParams[0]->staticValue.evaluated) {
+          auto typ = ctx->getUnbound();
+          unify(expr->type, typ);
+          return;
+        }
+        auto n = std::max(expr->typeParams[0]->staticValue.getInt(), 0ll);
+        std::vector<ExprPtr> types;
+        for (auto i = 0; i < n; i++)
+          types.insert(types.end(), expr->typeParams.begin() + 1,
+                       expr->typeParams.end());
+        resultExpr = transform(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), types));
+        return;
+      }
+    }
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
@@ -714,7 +737,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
   if (!tuple->getRecord())
     return {false, nullptr};
-  if (!startswith(tuple->name, TYPE_TUPLE) && !startswith(tuple->name, TYPE_KWTUPLE) &&
+  if (tuple->name != TYPE_TUPLE && tuple->name != TYPE_KWTUPLE &&
       !startswith(tuple->name, TYPE_PARTIAL)) {
     if (tuple->is(TYPE_OPTIONAL)) {
       if (auto newTuple = tuple->generics[0].type->getClass()) {
@@ -743,16 +766,15 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     return false;
   };
 
-  auto classItem = in(ctx->cache->classes, tuple->name);
-  seqassert(classItem, "cannot find class '{}'", tuple->name);
-  auto sz = classItem->fields.size();
+  auto classFields = getClassFields(tuple.get());
+  auto sz = int64_t(tuple->getRecord()->args.size());
   int64_t start = 0, stop = sz, step = 1;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
-    return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
+    return {true, transform(N<DotExpr>(expr, classFields[i].name))};
   } else if (auto slice = CAST(index, SliceExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
@@ -773,11 +795,11 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
       if (i < 0 || i >= sz)
         E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
-      te.push_back(N<DotExpr>(clone(var), classItem->fields[i].name));
+      te.push_back(N<DotExpr>(clone(var), classFields[i].name));
     }
-    ExprPtr e = transform(N<StmtExpr>(
-        std::vector<StmtPtr>{ass},
-        N<CallExpr>(N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te)));
+    ExprPtr e = transform(
+        N<StmtExpr>(std::vector<StmtPtr>{ass},
+                    N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_TUPLE), "__new__"), te)));
     return {true, e};
   }
 

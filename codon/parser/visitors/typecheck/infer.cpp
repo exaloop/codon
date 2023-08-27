@@ -200,7 +200,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
-  for (auto &field : ctx->cache->classes[type->name].fields) {
+  for (auto field : getClassFields(type)) {
     if (!field.type)
       return nullptr;
   }
@@ -247,12 +247,11 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<ir::types::Type *> typeArgs;   // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
-  for (auto &field : ctx->cache->classes[realized->name].fields) {
+  for (auto &field : getClassFields(realized.get())) {
     auto ftyp = ctx->instantiate(field.type, realized);
     if (!realize(ftyp))
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         ftyp->prettyString());
-    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
     realization->fields.emplace_back(field.name, ftyp);
     names.emplace_back(field.name);
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
@@ -431,9 +430,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                         NT<InstantiateExpr>(
                             NT<IdExpr>("Function"),
                             std::vector<ExprPtr>{
-                                NT<InstantiateExpr>(
-                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
-                                    ids),
+                                NT<InstantiateExpr>(NT<IdExpr>(TYPE_TUPLE), ids),
                                 NT<IdExpr>(fn->getRetType()->realizedName())}),
                         N<IdExpr>(fn->realizedName())),
                     "__raw__")),
@@ -459,7 +456,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto baseTyp = t->funcGenerics[0].type->getClass();
     auto derivedTyp = t->funcGenerics[1].type->getClass();
 
-    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
+    const auto &fields = getClassFields(derivedTyp.get());
     auto types = std::vector<ExprPtr>{};
     auto found = false;
     for (auto &f : fields) {
@@ -471,13 +468,11 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         types.push_back(NT<IdExpr>(ft->realizedName()));
       }
     }
-    seqassert(found || ctx->cache->classes[baseTyp->name].fields.empty(),
+    seqassert(found || getClassFields(baseTyp.get()).empty(),
               "cannot find distance between {} and {}", derivedTyp->name,
               baseTyp->name);
     StmtPtr suite = N<ReturnStmt>(
-        N<DotExpr>(NT<InstantiateExpr>(
-                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
-                   "__elemsize__"));
+        N<DotExpr>(NT<InstantiateExpr>(NT<IdExpr>(TYPE_TUPLE), types), "__elemsize__"));
     LOG_REALIZE("[poly] {} : {}", t, *suite);
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
@@ -518,7 +513,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                  ->vtables[cp->realizedName()];
 
   // Add or extract thunk ID
-  size_t vid;
+  size_t vid = 0;
   if (auto i = in(vt.table, key)) {
     vid = i->second;
   } else {
@@ -685,10 +680,13 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     std::vector<std::string> names;
     std::map<std::string, SrcInfo> memberInfo;
     for (int ai = 0; ai < tr->args.size(); ai++) {
-      names.emplace_back(ctx->cache->classes[t->name].fields[ai].name);
+      auto n = t->name == TYPE_TUPLE ? format("item{}", ai + 1)
+                                     : ctx->cache->classes[t->name].fields[ai].name;
+      names.emplace_back(n);
       typeArgs.emplace_back(forceFindIRType(tr->args[ai]));
-      memberInfo[ctx->cache->classes[t->name].fields[ai].name] =
-          ctx->cache->classes[t->name].fields[ai].type->getSrcInfo();
+      memberInfo[n] = t->name == TYPE_TUPLE
+                          ? tr->getSrcInfo()
+                          : ctx->cache->classes[t->name].fields[ai].type->getSrcInfo();
     }
     auto record =
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));

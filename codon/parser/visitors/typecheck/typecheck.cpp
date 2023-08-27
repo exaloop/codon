@@ -328,6 +328,8 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
+
+  // Special case: tuples
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
@@ -451,8 +453,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
 ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
                                            bool isVirtual) {
   ClassTypePtr typ = expr->type->getClass();
-  for (auto &field : ctx->cache->classes[typ->name].fields) {
-    for (auto &parentField : ctx->cache->classes[superTyp->name].fields)
+  for (auto &field : getClassFields(typ.get())) {
+    for (auto &parentField : getClassFields(superTyp.get()))
       if (field.name == parentField.name) {
         unify(ctx->instantiate(field.type, typ),
               ctx->instantiate(parentField.type, superTyp));
@@ -491,6 +493,21 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
     return nullptr;
   }
   return ret;
+}
+
+std::vector<Cache::Class::ClassField>
+TypecheckVisitor::getClassFields(types::ClassType *t) {
+  seqassert(t && in(ctx->cache->classes, t->name), "cannot find '{}'",
+            t ? t->name : "<null>");
+  if (t->is(TYPE_TUPLE)) {
+    std::vector<Cache::Class::ClassField> v;
+    for (size_t i = 0; i < t->generics.size(); i++)
+      v.push_back(
+          Cache::Class::ClassField{format("item{}", i + 1), t->generics[i].type, ""});
+    return v;
+  } else {
+    return ctx->cache->classes[t->name].fields;
+  }
 }
 
 } // namespace codon::ast

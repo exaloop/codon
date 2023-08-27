@@ -232,11 +232,10 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
   return call;
 }
 
-/// Generate and return `Function[Tuple.N[args...], ret]` type
+/// Generate and return `Function[Tuple[args...], ret]` type
 std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
   auto baseType = ctx->instantiate(ctx->forceFind("Function")->type)->getRecord();
-  unify(baseType->generics[0].type,
-        ctx->instantiate(ctx->forceFind(generateTuple(nargs))->type)->getRecord());
+  unify(baseType->generics[0].type, ctx->instantiateTuple(nargs)->getRecord());
   return baseType;
 }
 

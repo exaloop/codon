@@ -152,20 +152,15 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  auto name = tv.generateTuple(types.size());
-  auto t = typeCtx->find(name);
-  seqassertn(t && t->type, "cannot find {}", name);
-  return realizeType(t->type->getClass(), types);
+  return realizeType(typeCtx->instantiateTuple(types));
 }
 
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
-  auto tup = tv.generateTuple(types.size() - 1);
   const auto &ret = types[0];
-  auto argType = typeCtx->instantiateGeneric(
-      typeCtx->find(tup)->type,
+  auto argType = typeCtx->instantiateTuple(
       std::vector<types::TypePtr>(types.begin() + 1, types.end()));
   auto t = typeCtx->find("Function");
   seqassertn(t && t->type, "cannot find 'Function'");
@@ -175,8 +170,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
 ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
 
-  auto tup = tv.generateTuple(types.size());
-  auto argType = typeCtx->instantiateGeneric(typeCtx->find(tup)->type, types);
+  auto argType = typeCtx->instantiateTuple(types);
   auto t = typeCtx->find("Union");
   seqassertn(t && t->type, "cannot find 'Union'");
   return realizeType(t->type->getClass(), {argType});

@@ -10,6 +10,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/simplify/ctx.h"
 
 using fmt::format;
 using namespace codon::error;
@@ -126,6 +127,28 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
   return instantiate(srcInfo, root, g);
 }
 
+std::shared_ptr<types::RecordType>
+TypeContext::instantiateTuple(const SrcInfo &srcInfo,
+                              const std::vector<types::TypePtr> &generics) {
+  auto key = format("_{}:{}", TYPE_TUPLE, generics.size());
+  std::shared_ptr<types::RecordType> root = nullptr;
+  if (auto val = find(key)) {
+    root = val->type->getRecord();
+  } else {
+    root = std::make_shared<types::RecordType>(cache, TYPE_TUPLE, TYPE_TUPLE);
+    for (int i = 0; i < generics.size(); i++) { // generate unique ID
+      auto g = getUnbound()->getLink();
+      g->kind = types::LinkType::Generic;
+      g->genericName = format("T{}", i + 1);
+      auto gn = cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(g->genericName);
+      root->generics.emplace_back(gn, g->genericName, g, g->id);
+      root->args.emplace_back(g);
+    }
+    addToplevel(key, std::make_shared<TypecheckItem>(TypecheckItem::Type, root));
+  }
+  return instantiateGeneric(srcInfo, root, generics)->getRecord();
+}
+
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
                                                         const std::string &method,
                                                         bool hideShadowed) const {
@@ -166,9 +189,23 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
   return vv;
 }
 
-types::TypePtr TypeContext::findMember(const std::string &typeName,
+types::TypePtr TypeContext::findMember(const types::ClassTypePtr &type,
                                        const std::string &member) const {
-  if (auto cls = in(cache->classes, typeName)) {
+  if (type->is(TYPE_TUPLE)) {
+    if (!startswith(member, "item") || member.size() < 5)
+      return nullptr;
+    int id = 0;
+    for (int i = 4; i < member.size(); i++) {
+      if (member[i] >= '0' + (i == 4) && member[i] <= '9')
+        id = id * 10 + member[i] - '0';
+      else
+        return nullptr;
+    }
+    if (id < 1 || id > type->generics.size())
+      return nullptr;
+    return type->generics[id - 1].type;
+  }
+  if (auto cls = in(cache->classes, type->name)) {
     for (auto &pt : cls->mro) {
       if (auto pc = pt->type->getClass()) {
         auto mc = in(cache->classes, pc->name);

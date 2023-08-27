@@ -126,8 +126,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       seqassert(collectionTyp->getRecord() &&
                     collectionTyp->getRecord()->args.size() == 2,
                 "bad dict");
-      auto tname = generateTuple(2);
-      auto tt = unify(typ, ctx->instantiate(ctx->getType(tname)))->getRecord();
+      auto tt = unify(typ, ctx->instantiateTuple(2))->getRecord();
       auto nt = collectionTyp->getRecord()->args;
       for (int di = 0; di < 2; di++) {
         if (!nt[di]->getClass())
@@ -135,7 +134,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
         else if (auto dt = superTyp(nt[di]->getClass(), tt->args[di]->getClass()))
           nt[di] = dt;
       }
-      collectionTyp = ctx->instantiateGeneric(ctx->getType(tname), nt);
+      collectionTyp = ctx->instantiateTuple(nt);
     }
   }
   if (!done)
@@ -195,9 +194,9 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
 }
 
 /// Transform tuples.
-/// Generate tuple classes (e.g., `Tuple.N`) if not available.
+/// Generate tuple classes (e.g., `Tuple`) if not available.
 /// @example
-///   `(a1, ..., aN)` -> `Tuple.N.__new__(a1, ..., aN)`
+///   `(a1, ..., aN)` -> `Tuple.__new__(a1, ..., aN)`
 void TypecheckVisitor::visit(TupleExpr *expr) {
   expr->setType(ctx->getUnbound());
   for (int ai = 0; ai < expr->items.size(); ai++)
@@ -213,7 +212,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
         return; // continue later when the type becomes known
       if (!typ->getRecord())
         E(Error::CALL_BAD_UNPACK, star, typ->prettyString());
-      auto &ff = ctx->cache->classes[typ->name].fields;
+      auto ff = getClassFields(typ.get());
       for (int i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
                            transform(N<DotExpr>(clone(star->what), ff[i].name)));
@@ -224,15 +223,13 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     } else {
       expr->items[ai] = transform(expr->items[ai]);
     }
-  auto tupleName = generateTuple(expr->items.size());
-  resultExpr =
-      transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), clone(expr->items)));
+  resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), clone(expr->items)));
   unify(expr->type, resultExpr->type);
 }
 
 /// Transform a tuple generator expression.
 /// @example
-///   `tuple(expr for i in tuple_generator)` -> `Tuple.N.__new__(expr...)`
+///   `tuple(expr for i in tuple_generator)` -> `Tuple.__new__(expr...)`
 void TypecheckVisitor::visit(GeneratorExpr *expr) {
   seqassert(expr->kind == GeneratorExpr::Generator && expr->loops.size() == 1 &&
                 expr->loops[0].conds.empty(),
@@ -282,8 +279,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   }
 
   auto tuple = gen->type->getRecord();
-  if (!tuple ||
-      !(startswith(tuple->name, TYPE_TUPLE) || startswith(tuple->name, TYPE_KWTUPLE)))
+  if (!tuple || !(tuple->name == TYPE_TUPLE || tuple->name == TYPE_KWTUPLE))
     E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
 
   // `a := tuple[i]; expr...` for each i
