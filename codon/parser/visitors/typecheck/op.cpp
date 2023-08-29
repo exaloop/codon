@@ -272,9 +272,18 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
 
+  std::shared_ptr<types::StaticType> repeats = nullptr;
+  if (expr->typeExpr->isId(TYPE_TUPLE) && !expr->typeParams.empty()) {
+    transform(expr->typeParams[0]);
+    if (expr->typeParams[0]->staticValue.type == StaticValue::INT) {
+      repeats = Type::makeStatic(ctx->cache, expr->typeParams[0]);
+    }
+  }
+
   TypePtr typ = nullptr;
+  size_t typeParamsSize = expr->typeParams.size() - (repeats != nullptr);
   if (expr->typeExpr->isId(TYPE_TUPLE)) {
-    typ = ctx->instantiateTuple(expr->typeParams.size());
+    typ = ctx->instantiateTuple(typeParamsSize);
   } else {
     typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
   }
@@ -282,9 +291,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
-  if (!isUnion && expr->typeParams.size() != generics.size())
+  if (!isUnion && typeParamsSize != generics.size())
     E(Error::GENERICS_MISMATCH, expr, ctx->cache->rev(typ->getClass()->name),
-      generics.size(), expr->typeParams.size());
+      generics.size(), typeParamsSize);
 
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
     // Case: Callable[...] trait instantiation
@@ -308,25 +317,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     typ->getLink()->trait = std::make_shared<TypeTrait>(expr->typeParams[0]->type);
     unify(expr->type, typ);
   } else {
-    if (expr->typeExpr->getId() && isTuple(expr->typeExpr->getId()->value) &&
-        !expr->typeParams.empty()) {
-      transform(expr->typeParams[0]);
-      if (expr->typeParams[0]->staticValue.type == StaticValue::INT) {
-        if (!expr->typeParams[0]->staticValue.evaluated) {
-          auto typ = ctx->getUnbound();
-          unify(expr->type, typ);
-          return;
-        }
-        auto n = std::max(expr->typeParams[0]->staticValue.getInt(), 0ll);
-        std::vector<ExprPtr> types;
-        for (auto i = 0; i < n; i++)
-          types.insert(types.end(), expr->typeParams.begin() + 1,
-                       expr->typeParams.end());
-        resultExpr = transform(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), types));
-        return;
-      }
-    }
-    for (size_t i = 0; i < expr->typeParams.size(); i++) {
+    for (size_t i = (repeats != nullptr); i < expr->typeParams.size(); i++) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
       if (expr->typeParams[i]->isStatic()) {
@@ -342,7 +333,11 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       if (isUnion)
         typ->getUnion()->addType(t);
       else
-        unify(t, generics[i].type);
+        unify(t, generics[i - (repeats != nullptr)].type);
+    }
+    if (repeats) {
+      typ->getRecord()->repeats = repeats;
+      LOG("rep: {:D} {:D}", typ, repeats);
     }
     if (isUnion) {
       typ->getUnion()->seal();
@@ -737,7 +732,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
   if (!tuple->getRecord())
     return {false, nullptr};
-  if (tuple->name != TYPE_TUPLE && tuple->name != TYPE_KWTUPLE &&
+  if (tuple->name != TYPE_TUPLE && !startswith(tuple->name, TYPE_KWTUPLE) &&
       !startswith(tuple->name, TYPE_PARTIAL)) {
     if (tuple->is(TYPE_OPTIONAL)) {
       if (auto newTuple = tuple->generics[0].type->getClass()) {

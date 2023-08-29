@@ -95,6 +95,18 @@ StmtPtr SimplifyVisitor::transformAssignment(ExprPtr lhs, ExprPtr rhs, ExprPtr t
   if (auto idx = lhs->getIndex()) {
     // Case: a[x] = b
     seqassert(!type, "unexpected type annotation");
+    if (auto b = rhs->getBinary()) {
+      if (mustExist && b->inPlace && !b->rexpr->getId()) {
+        auto var = ctx->cache->getTemporaryVar("assign");
+        seqassert(rhs->getBinary(), "not a bin");
+        return transform(N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(var), idx->index),
+            N<ExprStmt>(N<CallExpr>(
+                N<DotExpr>(idx->expr, "__setitem__"), N<IdExpr>(var),
+                N<BinaryExpr>(N<IndexExpr>(idx->expr->clone(), N<IdExpr>(var)), b->op,
+                              b->rexpr, true)))));
+      }
+    }
     return transform(N<ExprStmt>(
         N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, rhs)));
   }

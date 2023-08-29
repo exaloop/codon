@@ -138,12 +138,8 @@ public:
   instantiateTuple(const std::vector<types::TypePtr> &generics) {
     return instantiateTuple(getSrcInfo(), generics);
   }
-  std::shared_ptr<types::RecordType> instantiateTuple(size_t n) {
-    std::vector<types::TypePtr> t(n);
-    for (size_t i = 0; i < n; i++)
-      t[i] = getUnbound();
-    return instantiateTuple(getSrcInfo(), t);
-  }
+  std::shared_ptr<types::RecordType> instantiateTuple(size_t n);
+  std::string generateTuple(size_t n);
 
   /// Returns the list of generic methods that correspond to typeName.method.
   std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,

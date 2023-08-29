@@ -159,6 +159,7 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   transform(stmt->lhs);
+  auto pr = (format("{}", getSrcInfo()) == "scratch.codon:12:9");
 
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass, stmt->member);
@@ -187,6 +188,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 
     transform(stmt->rhs);
     auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
+    if (pr)
+      LOG("-> {:D} => {:D} // {}", member, typ, stmt->rhs);
     if (!wrapExpr(stmt->rhs, typ))
       return;
     unify(stmt->rhs->type, typ);

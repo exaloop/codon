@@ -279,7 +279,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   }
 
   auto tuple = gen->type->getRecord();
-  if (!tuple || !(tuple->name == TYPE_TUPLE || tuple->name == TYPE_KWTUPLE))
+  if (!tuple || !(tuple->name == TYPE_TUPLE || startswith(tuple->name, TYPE_KWTUPLE)))
     E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
 
   // `a := tuple[i]; expr...` for each i

@@ -128,13 +128,13 @@ std::string ClassType::realizedTypeName() const {
 
 RecordType::RecordType(Cache *cache, std::string name, std::string niceName,
                        std::vector<Generic> generics, std::vector<TypePtr> args,
-                       bool noTuple)
+                       bool noTuple, const std::shared_ptr<StaticType> &repeats)
     : ClassType(cache, std::move(name), std::move(niceName), std::move(generics)),
-      args(std::move(args)), noTuple(false) {}
+      args(std::move(args)), noTuple(false), repeats(repeats) {}
 
 RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args,
-                       bool noTuple)
-    : ClassType(base), args(std::move(args)), noTuple(noTuple) {}
+                       bool noTuple, const std::shared_ptr<StaticType> &repeats)
+    : ClassType(base), args(std::move(args)), noTuple(noTuple), repeats(repeats) {}
 
 int RecordType::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getRecord()) {
@@ -144,6 +144,17 @@ int RecordType::unify(Type *typ, Unification *us) {
     if (tr->name == "int" && name == "Int") {
       auto t64 = std::make_shared<StaticType>(cache, 64);
       return generics[0].type->unify(t64.get(), us);
+    }
+
+    if (getRepeats())
+      flatten();
+    if (tr->getRepeats())
+      tr->flatten();
+    // TODO: we now support very limited unification strategy where repetitions must
+    // match. We should expand this later on...
+    if (repeats || tr->repeats) {
+      if (!repeats || !tr->repeats || repeats->unify(tr->repeats.get(), us) == -1)
+        return -1;
     }
 
     int s1 = 2, s = 0;
@@ -175,7 +186,8 @@ TypePtr RecordType::generalize(int atLevel) {
   auto a = args;
   for (auto &t : a)
     t = t->generalize(atLevel);
-  return std::make_shared<RecordType>(c, a, noTuple);
+  auto r = repeats ? repeats->generalize(atLevel)->getStatic() : nullptr;
+  return std::make_shared<RecordType>(c, a, noTuple, r);
 }
 
 TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
@@ -185,11 +197,17 @@ TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
   auto a = args;
   for (auto &t : a)
     t = t->instantiate(atLevel, unboundCount, cache);
-  return std::make_shared<RecordType>(c, a, noTuple);
+  auto r = repeats ? repeats->instantiate(atLevel, unboundCount, cache)->getStatic()
+                   : nullptr;
+  return std::make_shared<RecordType>(c, a, noTuple, r);
 }
 
 std::vector<TypePtr> RecordType::getUnbounds() const {
   std::vector<TypePtr> u;
+  if (repeats) {
+    auto tu = repeats->getUnbounds();
+    u.insert(u.begin(), tu.begin(), tu.end());
+  }
   for (auto &a : args) {
     auto tu = a->getUnbounds();
     u.insert(u.begin(), tu.begin(), tu.end());
@@ -200,20 +218,57 @@ std::vector<TypePtr> RecordType::getUnbounds() const {
 }
 
 bool RecordType::canRealize() const {
-  return std::all_of(args.begin(), args.end(),
+  return getRepeats() >= 0 &&
+         std::all_of(args.begin(), args.end(),
                      [](auto &a) { return a->canRealize(); }) &&
          this->ClassType::canRealize();
 }
 
 bool RecordType::isInstantiated() const {
-  return std::all_of(args.begin(), args.end(),
+  return (!repeats || repeats->isInstantiated()) &&
+         std::all_of(args.begin(), args.end(),
                      [](auto &a) { return a->isInstantiated(); }) &&
          this->ClassType::isInstantiated();
 }
 
-std::string RecordType::debugString(char mode) const {
-  return fmt::format("{}", this->ClassType::debugString(mode));
+std::string RecordType::realizedName() const {
+  if (!_rn.empty())
+    return _rn;
+  if (name == TYPE_TUPLE) {
+    std::vector<std::string> gs;
+    auto n = getRepeats();
+    if (n == -1)
+      gs.push_back(repeats->realizedName());
+    for (int i = 0; i < std::max(n, 0ll); i++)
+      for (auto &a : args)
+        gs.push_back(a->realizedName());
+    std::string s = join(gs, ",");
+    if (canRealize())
+      const_cast<RecordType *>(this)->_rn =
+          fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+    return _rn;
+  }
+  return ClassType::realizedName();
 }
+
+std::string RecordType::debugString(char mode) const {
+  if (name == TYPE_TUPLE) {
+    std::vector<std::string> gs;
+    auto n = getRepeats();
+    if (n == -1)
+      gs.push_back(repeats->debugString(mode));
+    for (int i = 0; i < std::max(n, 0ll); i++)
+      for (auto &a : args)
+        gs.push_back(a->debugString(mode));
+    return fmt::format("{}{}", name,
+                       gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
+  } else {
+    return fmt::format("{}{}", repeats ? repeats->debugString(mode) + "," : "",
+                       this->ClassType::debugString(mode));
+  }
+}
+
+std::string RecordType::realizedTypeName() const { return realizedName(); }
 
 std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
@@ -224,6 +279,26 @@ std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
         return getRecord();
   }
   return nullptr;
+}
+
+/// Returns -1 if the type cannot be realized yet
+int64_t RecordType::getRepeats() const {
+  if (!repeats)
+    return 1;
+  if (repeats->canRealize())
+    return std::max(repeats->evaluate().getInt(), 0ll);
+  return -1;
+}
+
+void RecordType::flatten() {
+  auto n = getRepeats();
+  seqassert(n >= 0, "bad call to flatten");
+
+  auto a = args;
+  args.clear();
+  for (int64_t i = 0; i < n; i++)
+    args.insert(args.end(), a.begin(), a.end());
+  repeats = nullptr;
 }
 
 } // namespace codon::ast::types

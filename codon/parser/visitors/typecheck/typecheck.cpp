@@ -328,8 +328,6 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<CallExpr::Arg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
-
-  // Special case: tuples
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
@@ -495,16 +493,13 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
   return ret;
 }
 
-std::vector<Cache::Class::ClassField>
+std::vector<Cache::Class::ClassField> &
 TypecheckVisitor::getClassFields(types::ClassType *t) {
   seqassert(t && in(ctx->cache->classes, t->name), "cannot find '{}'",
             t ? t->name : "<null>");
-  if (t->is(TYPE_TUPLE)) {
-    std::vector<Cache::Class::ClassField> v;
-    for (size_t i = 0; i < t->generics.size(); i++)
-      v.push_back(
-          Cache::Class::ClassField{format("item{}", i + 1), t->generics[i].type, ""});
-    return v;
+  if (t->is(TYPE_TUPLE) && !t->getRecord()->args.empty()) {
+    auto key = ctx->generateTuple(t->getRecord()->args.size());
+    return ctx->cache->classes[key].fields;
   } else {
     return ctx->cache->classes[t->name].fields;
   }

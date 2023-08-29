@@ -223,8 +223,10 @@ void TranslateVisitor::visit(CallExpr *expr) {
     seqassert(!expr->args[i].value->getEllipsis(), "ellipsis not elided");
     if (i + 1 == expr->args.size() && isVariadic) {
       auto call = expr->args[i].value->getCall();
-      seqassert(call && call->expr->getId() && call->expr->getId()->value == TYPE_TUPLE,
-                "expected *args tuple");
+      seqassert(
+          call && call->expr->getId() &&
+              startswith(call->expr->getId()->value, std::string(TYPE_TUPLE) + "."),
+          "expected *args tuple");
       for (auto &arg : call->args)
         items.emplace_back(transform(arg.value));
     } else {

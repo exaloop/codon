@@ -23,8 +23,8 @@ class Tuple:
 
     def __add__(slf, obj):
         return __magic__.add(slf, obj)
-    def __mul__(slf, obj):
-        return __magic__.mul(slf, obj)
+    def __mul__(slf, n: Static[int]):
+        return __magic__.mul(slf, n)
     def __contains__(slf, obj):
         return __magic__.contains(slf, obj)
     def __getitem__(slf, idx):
@@ -51,6 +51,8 @@ class Tuple:
         return __magic__.le(slf, obj)
     def __pickle__(slf, dest):
         return __magic__.pickle(slf, dest)
+    def __unpickle__(src):
+        return __magic__.unpickle(src)
     def __to_py__(slf):
         return __magic__.to_py(slf)
     def __from_py__(src):

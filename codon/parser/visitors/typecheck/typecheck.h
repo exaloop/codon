@@ -228,7 +228,7 @@ private:
 
 public:
   bool isTuple(const std::string &s) const { return s == TYPE_TUPLE; }
-  std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *);
+  std::vector<Cache::Class::ClassField> &getClassFields(types::ClassType *);
 
   friend class Cache;
   friend class types::CallableTrait;

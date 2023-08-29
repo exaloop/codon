@@ -175,7 +175,7 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
         N<SuiteStmt>(N<ReturnStmt>(
             N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "kwargs_get"),
                         N<IdExpr>("self"), N<IdExpr>("key"), N<IdExpr>("default")))));
-    if (typeName == TYPE_KWTUPLE)
+    if (startswith(typeName, TYPE_KWTUPLE))
       stmt->getClass()->suite = N<SuiteStmt>(getItem, contains, getDef);
 
     // Add repr for KwArgs:

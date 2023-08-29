@@ -61,7 +61,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     return;
 
   bool maybeHeterogenous =
-      iterType->name == TYPE_TUPLE || iterType->name == TYPE_KWTUPLE;
+      iterType->name == TYPE_TUPLE || startswith(iterType->name, TYPE_KWTUPLE);
   if (maybeHeterogenous && !iterType->canRealize()) {
     return; // wait until the tuple is fully realizable
   } else if (maybeHeterogenous && iterType->getHeterogenousTuple()) {

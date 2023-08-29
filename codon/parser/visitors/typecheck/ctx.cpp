@@ -106,6 +106,9 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
     t->setSrcInfo(srcInfo);
     pendingDefaults.insert(t);
   }
+  if (auto r = t->getRecord())
+    if (r->repeats && r->repeats->canRealize())
+      r->flatten();
   return t;
 }
 
@@ -130,23 +133,39 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
 std::shared_ptr<types::RecordType>
 TypeContext::instantiateTuple(const SrcInfo &srcInfo,
                               const std::vector<types::TypePtr> &generics) {
-  auto key = format("_{}:{}", TYPE_TUPLE, generics.size());
-  std::shared_ptr<types::RecordType> root = nullptr;
-  if (auto val = find(key)) {
-    root = val->type->getRecord();
-  } else {
-    root = std::make_shared<types::RecordType>(cache, TYPE_TUPLE, TYPE_TUPLE);
-    for (int i = 0; i < generics.size(); i++) { // generate unique ID
-      auto g = getUnbound()->getLink();
-      g->kind = types::LinkType::Generic;
-      g->genericName = format("T{}", i + 1);
-      auto gn = cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(g->genericName);
-      root->generics.emplace_back(gn, g->genericName, g, g->id);
-      root->args.emplace_back(g);
-    }
-    addToplevel(key, std::make_shared<TypecheckItem>(TypecheckItem::Type, root));
-  }
+  auto key = generateTuple(generics.size());
+  auto root = forceFind(key)->type->getRecord();
   return instantiateGeneric(srcInfo, root, generics)->getRecord();
+}
+
+std::string TypeContext::generateTuple(size_t n) {
+  auto key = format("_{}:{}", TYPE_TUPLE, n);
+  if (in(cache->classes, key))
+    return key;
+  cache->classes[key].fields.clear();
+  auto root = std::make_shared<types::RecordType>(cache, TYPE_TUPLE, TYPE_TUPLE);
+  for (int i = 0; i < n; i++) { // generate unique ID
+    auto g = getUnbound()->getLink();
+    g->kind = types::LinkType::Generic;
+    g->genericName = format("T{}", i + 1);
+    auto gn = cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(g->genericName);
+    root->generics.emplace_back(gn, g->genericName, g, g->id);
+    root->args.emplace_back(g);
+    cache->classes[key].fields.push_back(
+        Cache::Class::ClassField{format("item{}", i + 1), g, ""});
+  }
+  addToplevel(key, std::make_shared<TypecheckItem>(TypecheckItem::Type, root));
+  return key;
+}
+
+std::shared_ptr<types::RecordType> TypeContext::instantiateTuple(size_t n) {
+  std::vector<types::TypePtr> t(n);
+  for (size_t i = 0; i < n; i++) {
+    auto g = getUnbound()->getLink();
+    g->genericName = format("T{}", i + 1);
+    t[i] = g;
+  }
+  return instantiateTuple(getSrcInfo(), t);
 }
 
 std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
@@ -201,9 +220,12 @@ types::TypePtr TypeContext::findMember(const types::ClassTypePtr &type,
       else
         return nullptr;
     }
-    if (id < 1 || id > type->generics.size())
+    auto sz = type->getRecord()->getRepeats();
+    if (sz != -1)
+      type->getRecord()->flatten();
+    if (id < 1 || id > type->getRecord()->args.size())
       return nullptr;
-    return type->generics[id - 1].type;
+    return type->getRecord()->args[id - 1];
   }
   if (auto cls = in(cache->classes, type->name)) {
     for (auto &pt : cls->mro) {

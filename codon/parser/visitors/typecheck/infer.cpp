@@ -183,7 +183,6 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         }
         e.trackRealize(fmt::format("{}{}", name, name_args), getSrcInfo());
       }
-
     } else {
       e.trackRealize(typ->prettyString(), getSrcInfo());
     }
@@ -197,6 +196,9 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
 types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   if (!type || !type->canRealize())
     return nullptr;
+
+  if (auto tr = type->getRecord())
+    tr->flatten();
 
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
@@ -249,6 +251,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
   for (auto &field : getClassFields(realized.get())) {
     auto ftyp = ctx->instantiate(field.type, realized);
+    LOG("==> {:D}: {} -> {:D}", realized, field.name, ftyp);
     if (!realize(ftyp))
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         ftyp->prettyString());
@@ -676,6 +679,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
     handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
   } else if (auto tr = t->getRecord()) {
+    seqassert(tr->getRepeats() >= 0, "repeats not resolved: '{}'", tr->debugString(2));
+    tr->flatten();
     std::vector<ir::types::Type *> typeArgs;
     std::vector<std::string> names;
     std::map<std::string, SrcInfo> memberInfo;

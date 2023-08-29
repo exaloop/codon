@@ -186,7 +186,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
       }
       if (stmt->name == TYPE_TUPLE) {
-        for (int i = 1; i < 100; i++)
+        for (int i = 1; i < 50; i++)
           fnStmts.push_back(
               transform(codegenMagic(format("new.{}", i), typeAst, memberArgs,
                                      stmt->attributes.has(Attr::Tuple))));

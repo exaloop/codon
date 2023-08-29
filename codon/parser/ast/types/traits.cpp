@@ -166,7 +166,8 @@ TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
 
 std::string CallableTrait::debugString(char mode) const {
   auto s = args[0]->debugString(mode);
-  return fmt::format("Callable[{},{}]", s, args[1]->debugString(mode));
+  return fmt::format("Callable[{},{}]", startswith(s, "Tuple") ? s.substr(5) : s,
+                     args[1]->debugString(mode));
 }
 
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}

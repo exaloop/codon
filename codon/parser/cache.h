@@ -21,7 +21,7 @@
 #define STDLIB_INTERNAL_MODULE "internal"
 
 #define TYPE_TUPLE "Tuple"
-#define TYPE_KWTUPLE "KwTuple"
+#define TYPE_KWTUPLE "KwTuple.N"
 #define TYPE_TYPEVAR "TypeVar"
 #define TYPE_CALLABLE "Callable"
 #define TYPE_PARTIAL "Partial.N"

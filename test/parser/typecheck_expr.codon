@@ -773,7 +773,7 @@ z = tuple(c)
 print z, z.__class__.__name__  #: (3, 'heh') Tuple[int,str]
 
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! '1' does not match expected type 'T1'
+def foo(x: Callable[[1,2], 3]): pass  #! Callable cannot take static types
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! '1' does not match expected type 'T'
