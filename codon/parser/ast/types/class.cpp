@@ -298,6 +298,7 @@ void RecordType::flatten() {
   args.clear();
   for (int64_t i = 0; i < n; i++)
     args.insert(args.end(), a.begin(), a.end());
+
   repeats = nullptr;
 }
 

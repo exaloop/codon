@@ -665,7 +665,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
     std::vector<ExprPtr> members;
     for (auto &field : getClassFields(superTyp.get()))
       members.push_back(N<DotExpr>(N<IdExpr>(funcTyp->ast->args[0].name), field.name));
-    ExprPtr e = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), members));
+    ExprPtr e = transform(N<TupleExpr>(members));
     e->type = unify(superTyp, e->type); // see super_tuple test for this line
     return e;
   } else {
@@ -840,7 +840,7 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     }
   }
 
-  bool exists = !ctx->findMethod(typ->getClass()->name, member).empty() ||
+  bool exists = !ctx->findMethod(typ->getClass().get(), member).empty() ||
                 ctx->findMember(typ->getClass(), member);
   if (exists && args.size() > 1)
     exists &= findBestMethod(typ, member, args) != nullptr;
@@ -905,7 +905,7 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
     args.emplace_back(N<DotExpr>(N<IdExpr>(var), field.name));
 
   return transform(N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
-                               N<CallExpr>(N<IdExpr>(TYPE_TUPLE), args)));
+                               N<TupleExpr>(args)));
 }
 
 /// Transform type function to a type IdExpr identifier.

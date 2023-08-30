@@ -185,12 +185,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         fnStmts.push_back(transform(
             codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
       }
-      if (stmt->name == TYPE_TUPLE) {
-        for (int i = 1; i < 50; i++)
-          fnStmts.push_back(
-              transform(codegenMagic(format("new.{}", i), typeAst, memberArgs,
-                                     stmt->attributes.has(Attr::Tuple))));
-      }
       // Add inherited methods
       for (auto &base : staticBaseASTs) {
         for (auto &mm : ctx->cache->classes[base->name].methods)
@@ -534,21 +528,23 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
       // Classes: def __new__() -> T
       stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), typExpr->clone())));
     }
-  } else if (startswith(op, "new.")) {
-    // special handle for tuple[t1, t2, ...]
-    int sz = atoi(op.substr(4).c_str());
-    std::vector<ExprPtr> ts;
-    for (int i = 0; i < sz; i++) {
-      fargs.emplace_back(format("a{}", i + 1), I(format("T{}", i + 1)));
-      ts.emplace_back(I(format("T{}", i + 1)));
-    }
-    for (int i = 0; i < sz; i++) {
-      fargs.emplace_back(format("T{}", i + 1), I("type"));
-    }
-    ret = N<InstantiateExpr>(I(TYPE_TUPLE), ts);
-    ret->markType();
-    attr.set(Attr::Internal);
-  } else if (op == "init") {
+  }
+  // else if (startswith(op, "new.")) {
+  //   // special handle for tuple[t1, t2, ...]
+  //   int sz = atoi(op.substr(4).c_str());
+  //   std::vector<ExprPtr> ts;
+  //   for (int i = 0; i < sz; i++) {
+  //     fargs.emplace_back(format("a{}", i + 1), I(format("T{}", i + 1)));
+  //     ts.emplace_back(I(format("T{}", i + 1)));
+  //   }
+  //   for (int i = 0; i < sz; i++) {
+  //     fargs.emplace_back(format("T{}", i + 1), I("type"));
+  //   }
+  //   ret = N<InstantiateExpr>(I(TYPE_TUPLE), ts);
+  //   ret->markType();
+  //   attr.set(Attr::Internal);
+  // }
+  else if (op == "init") {
     // Classes: def __init__(self: T, a1: T1, ..., aN: TN) -> None:
     //            self.aI = aI ...
     ret = I("NoneType");
@@ -659,9 +655,8 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   }
 #undef I
 #undef NS
-  auto t = std::make_shared<FunctionStmt>(
-      format("__{}__", startswith(op, "new.") ? "new" : op), ret, fargs,
-      N<SuiteStmt>(stmts), attr);
+  auto t = std::make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
+                                          N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
 }

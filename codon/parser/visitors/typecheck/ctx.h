@@ -142,9 +142,9 @@ public:
   std::string generateTuple(size_t n);
 
   /// Returns the list of generic methods that correspond to typeName.method.
-  std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
+  std::vector<types::FuncTypePtr> findMethod(types::ClassType *type,
                                              const std::string &method,
-                                             bool hideShadowed = true) const;
+                                             bool hideShadowed = true);
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   types::TypePtr findMember(const types::ClassTypePtr &, const std::string &) const;

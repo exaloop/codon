@@ -182,7 +182,7 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
     callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -195,7 +195,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args)
     callArgs.push_back({"", a});
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -210,7 +210,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
     callArgs.push_back({n, std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }

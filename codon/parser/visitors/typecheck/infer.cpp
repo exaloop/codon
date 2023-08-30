@@ -249,9 +249,16 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<ir::types::Type *> typeArgs;   // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
+  if (realized->is(TYPE_TUPLE))
+    realized->getRecord()->flatten();
+  int i = 0;
   for (auto &field : getClassFields(realized.get())) {
     auto ftyp = ctx->instantiate(field.type, realized);
-    LOG("==> {:D}: {} -> {:D}", realized, field.name, ftyp);
+    // HACK: repeated tuples have no generics so this is needed to fix the instantiation
+    // above
+    if (realized->is(TYPE_TUPLE))
+      unify(ftyp, realized->getRecord()->args[i]);
+
     if (!realize(ftyp))
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         ftyp->prettyString());
@@ -259,6 +266,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     names.emplace_back(field.name);
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
     memberInfo[field.name] = field.type->getSrcInfo();
+    i++;
   }
 
   // Set IR attributes

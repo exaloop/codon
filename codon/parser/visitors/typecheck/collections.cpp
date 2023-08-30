@@ -223,7 +223,8 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     } else {
       expr->items[ai] = transform(expr->items[ai]);
     }
-  resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), clone(expr->items)));
+  auto s = ctx->generateTuple(expr->items.size());
+  resultExpr = transform(N<CallExpr>(N<IdExpr>(s), clone(expr->items)));
   unify(expr->type, resultExpr->type);
 }
 

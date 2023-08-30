@@ -181,7 +181,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return nullptr;
 
   // Check if this is a method or member access
-  if (ctx->findMethod(typ->name, expr->member).empty())
+  if (ctx->findMethod(typ.get(), expr->member).empty())
     return getClassMember(expr, args);
   auto bestMethod = getBestOverload(expr, args);
 
@@ -333,7 +333,8 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
                                    {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
   }
 
-  // For debugging purposes: ctx->findMethod(typ->name, expr->member);
+  // For debugging purposes:
+  // ctx->findMethod(typ.get(), expr->member);
   E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->member);
   return nullptr;
 }
@@ -365,7 +366,7 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     bool addSelf = true;
     if (auto dot = expr->getDot()) {
       auto methods =
-          ctx->findMethod(dot->expr->type->getClass()->name, dot->member, false);
+          ctx->findMethod(dot->expr->type->getClass().get(), dot->member, false);
       if (!methods.empty() && methods.front()->ast->attributes.has(Attr::StaticMethod))
         addSelf = false;
     }
@@ -403,7 +404,7 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     if (auto dot = expr->getDot()) {
       // Case: method overloads (DotExpr)
       auto methods =
-          ctx->findMethod(dot->expr->type->getClass()->name, dot->member, false);
+          ctx->findMethod(dot->expr->type->getClass().get(), dot->member, false);
       auto m = findMatchingMethods(dot->expr->type->getClass(), methods, *methodArgs);
       bestMethod = m.empty() ? nullptr : m[0];
     } else if (auto id = expr->getId()) {

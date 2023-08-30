@@ -337,7 +337,6 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     }
     if (repeats) {
       typ->getRecord()->repeats = repeats;
-      LOG("rep: {:D} {:D}", typ, repeats);
     }
     if (isUnion) {
       typ->getUnion()->seal();

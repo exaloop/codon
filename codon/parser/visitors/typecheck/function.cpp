@@ -75,6 +75,42 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Function should be constructed only once
   stmt->setDone();
 
+  auto funcTyp = makeFunctionType(stmt);
+  // If this is a class method, update the method lookup table
+  bool isClassMember = !stmt->attributes.parentClass.empty();
+  if (isClassMember) {
+    auto m =
+        ctx->cache->getMethod(ctx->find(stmt->attributes.parentClass)->type->getClass(),
+                              ctx->cache->rev(stmt->name));
+    bool found = false;
+    for (auto &i : ctx->cache->overloads[m])
+      if (i.name == stmt->name) {
+        ctx->cache->functions[i.name].type = funcTyp;
+        found = true;
+        break;
+      }
+    seqassert(found, "cannot find matching class method for {}", stmt->name);
+  }
+
+  // Update the visited table
+  // Functions should always be visible, so add them to the toplevel
+  ctx->addToplevel(stmt->name,
+                   std::make_shared<TypecheckItem>(TypecheckItem::Func, funcTyp));
+  ctx->cache->functions[stmt->name].type = funcTyp;
+
+  // Ensure that functions with @C, @force_realize, and @export attributes can be
+  // realized
+  if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
+      (stmt->attributes.has(Attr::C) && !stmt->attributes.has(Attr::CVarArg))) {
+    if (!funcTyp->canRealize())
+      E(Error::FN_REALIZE_BUILTIN, stmt);
+  }
+
+  // Debug information
+  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp);
+}
+
+types::FuncTypePtr TypecheckVisitor::makeFunctionType(FunctionStmt *stmt) {
   // Handle generics
   bool isClassMember = !stmt->attributes.parentClass.empty();
   auto explicits = std::vector<ClassType::Generic>();
@@ -169,38 +205,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
   funcTyp =
       std::static_pointer_cast<FuncType>(funcTyp->generalize(ctx->typecheckLevel));
-
-  // If this is a class method, update the method lookup table
-  if (isClassMember) {
-    auto m =
-        ctx->cache->getMethod(ctx->find(stmt->attributes.parentClass)->type->getClass(),
-                              ctx->cache->rev(stmt->name));
-    bool found = false;
-    for (auto &i : ctx->cache->overloads[m])
-      if (i.name == stmt->name) {
-        ctx->cache->functions[i.name].type = funcTyp;
-        found = true;
-        break;
-      }
-    seqassert(found, "cannot find matching class method for {}", stmt->name);
-  }
-
-  // Update the visited table
-  // Functions should always be visible, so add them to the toplevel
-  ctx->addToplevel(stmt->name,
-                   std::make_shared<TypecheckItem>(TypecheckItem::Func, funcTyp));
-  ctx->cache->functions[stmt->name].type = funcTyp;
-
-  // Ensure that functions with @C, @force_realize, and @export attributes can be
-  // realized
-  if (stmt->attributes.has(Attr::ForceRealize) || stmt->attributes.has(Attr::Export) ||
-      (stmt->attributes.has(Attr::C) && !stmt->attributes.has(Attr::CVarArg))) {
-    if (!funcTyp->canRealize())
-      E(Error::FN_REALIZE_BUILTIN, stmt);
-  }
-
-  // Debug information
-  LOG_REALIZE("[stmt] added func {}: {}", stmt->name, funcTyp);
+  return funcTyp;
 }
 
 /// Make an empty partial call `fn(...)` for a given function.

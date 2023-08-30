@@ -16,56 +16,6 @@ __vtable_size__ = 0
 
 
 @extend
-class Tuple:
-    @__internal__
-    def __new__() -> Tuple:
-        pass
-
-    def __add__(slf, obj):
-        return __magic__.add(slf, obj)
-    def __mul__(slf, n: Static[int]):
-        return __magic__.mul(slf, n)
-    def __contains__(slf, obj):
-        return __magic__.contains(slf, obj)
-    def __getitem__(slf, idx):
-        return __magic__.getitem(slf, idx)
-    def __iter__(slf):
-        yield from __magic__.iter(slf)
-    def __hash__(slf):
-        return __magic__.hash(slf)
-    def __repr__(slf):
-        return __magic__.repr(slf)
-    def __len__(slf):
-        return __magic__.len(slf)
-    def __eq__(slf, obj):
-        return __magic__.eq(slf, obj)
-    def __ne__(slf, obj):
-        return __magic__.ne(slf, obj)
-    def __gt__(slf, obj):
-        return __magic__.gt(slf, obj)
-    def __ge__(slf, obj):
-        return __magic__.ge(slf, obj)
-    def __lt__(slf, obj):
-        return __magic__.lt(slf, obj)
-    def __le__(slf, obj):
-        return __magic__.le(slf, obj)
-    def __pickle__(slf, dest):
-        return __magic__.pickle(slf, dest)
-    def __unpickle__(src):
-        return __magic__.unpickle(src)
-    def __to_py__(slf):
-        return __magic__.to_py(slf)
-    def __from_py__(src):
-        return __magic__.from_py(src)
-    def __to_gpu__(slf, cache):
-        return __magic__.to_gpu(slf, cache)
-    def __from_gpu__(slf, other):
-        return __magic__.from_gpu(slf, other)
-    def __from_gpu_new__(slf, other):
-        return __magic__.from_gpu_new(slf, other)
-
-
-@extend
 class ellipsis:
     def __new__() -> ellipsis:
         return ()

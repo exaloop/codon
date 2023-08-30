@@ -177,6 +177,10 @@ private: // Node typechecking rules
   ExprPtr partializeFunction(const types::FuncTypePtr &);
   std::shared_ptr<types::RecordType> getFuncTypeBase(size_t);
 
+public:
+  types::FuncTypePtr makeFunctionType(FunctionStmt *);
+
+private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
   void parseBaseClasses(ClassStmt *);
