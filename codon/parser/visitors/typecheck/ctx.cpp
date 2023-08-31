@@ -214,12 +214,16 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
         }
       if (f.ast->ret && f.ast->ret->isId(TYPE_TUPLE))
         f.ast->ret = eType;
+      // TODO: resurrect Tuple[N].__new__(defaults...)
       if (method == "__new__") {
         for (size_t i = 0; i < sz; i++) {
           auto n = format("item{}", i + 1);
           f.ast->args.emplace_back(
               cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(n),
-              std::make_shared<IdExpr>(format("T{}", i + 1)));
+              std::make_shared<IdExpr>(format("T{}", i + 1))
+              // std::make_shared<CallExpr>(
+              // std::make_shared<IdExpr>(format("T{}", i + 1)))
+          );
         }
       }
       cache->reverseIdentifierLookup[f.ast->name] = method;

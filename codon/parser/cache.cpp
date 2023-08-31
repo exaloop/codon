@@ -152,7 +152,8 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  return realizeType(typeCtx->instantiateTuple(types), types);
+  auto t = typeCtx->instantiateTuple(types);
+  return realizeType(t, types);
 }
 
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
