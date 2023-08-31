@@ -146,16 +146,26 @@ int RecordType::unify(Type *typ, Unification *us) {
       return generics[0].type->unify(t64.get(), us);
     }
 
-    if (getRepeats())
-      flatten();
-    if (tr->getRepeats())
-      tr->flatten();
     // TODO: we now support very limited unification strategy where repetitions must
     // match. We should expand this later on...
     if (repeats || tr->repeats) {
-      if (!repeats || !tr->repeats || repeats->unify(tr->repeats.get(), us) == -1)
-        return -1;
+      if (!repeats && tr->repeats) {
+        auto n = std::make_shared<StaticType>(cache, args.size());
+        if (tr->repeats->unify(n.get(), us) == -1)
+          return -1;
+      } else if (!tr->repeats) {
+        auto n = std::make_shared<StaticType>(cache, tr->args.size());
+        if (repeats->unify(n.get(), us) == -1)
+          return -1;
+      } else {
+        if (repeats->unify(tr->repeats.get(), us) == -1)
+          return -1;
+      }
     }
+    if (getRepeats() != -1)
+      flatten();
+    if (tr->getRepeats() != -1)
+      tr->flatten();
 
     int s1 = 2, s = 0;
     if (args.size() != tr->args.size())
