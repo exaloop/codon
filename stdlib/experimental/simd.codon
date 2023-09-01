@@ -1,20 +1,6 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 
-# TODO: Add join method to str
-@extend
-class str:
-    def join(self, l: List) -> str:
-        if len(l) == 0: return ""
-        if len(l) == 1: return str(l[0])
-
-        s = ""
-        for i in range(len(l) - 1): s += f"{l[i]}{self}"
-        s += str(l[-1])
-
-        return s
-
-
 @tuple(container=False)  # disallow default __getitem__
 class Vec[T, N: Static[int]]:
     ZERO_16x8i = Vec[u8,16](u8(0))
@@ -237,7 +223,7 @@ class Vec[T, N: Static[int]]:
         if isinstance(T, f32) and N == 8:
             if isinstance(x, f32):
                 return Vec._mm256_set1_ps(x)
-            if isinstance(x, Ptr[f32]):  # TODO: multi-elif does NOT work with statics [why?!]
+            if isinstance(x, Ptr[f32]):
                 return Vec._mm256_loadu_ps(x)
             if isinstance(x, List[f32]):
                 return Vec._mm256_loadu_ps(x.arr.ptr)
@@ -246,7 +232,7 @@ class Vec[T, N: Static[int]]:
         if isinstance(T, f32) and N == 16:
             if isinstance(x, f32):
                 return Vec._mm512_set1_ps(x)
-            if isinstance(x, Ptr[f32]):  # TODO: multi-elif does NOT work with statics [why?!]
+            if isinstance(x, Ptr[f32]):
                 return Vec._mm512_loadu_ps(x)
             if isinstance(x, List[f32]):
                 return Vec._mm512_loadu_ps(x.arr.ptr)
@@ -255,14 +241,14 @@ class Vec[T, N: Static[int]]:
         if isinstance(T, f64) and N == 4:
             if isinstance(x, f64):
                 return Vec._mm256_set1_pd(x)
-            if isinstance(x, Ptr[f64]):  # TODO: multi-elif does NOT work with statics [why?!]
+            if isinstance(x, Ptr[f64]):
                 return Vec._mm256_loadu_pd(x)
             if isinstance(x, List[f64]):
                 return Vec._mm256_loadu_pd(x.arr.ptr)
         if isinstance(T, f64) and N == 8:
             if isinstance(x, f64):
                 return Vec._mm512_set1_pd(x)
-            if isinstance(x, Ptr[f64]):  # TODO: multi-elif does NOT work with statics [why?!]
+            if isinstance(x, Ptr[f64]):
                 return Vec._mm512_loadu_pd(x)
             if isinstance(x, List[f64]):
                 return Vec._mm512_loadu_pd(x.arr.ptr)
@@ -696,13 +682,12 @@ class Vec[T, N: Static[int]]:
             return self.fmul(other)
         compile_error("invalid SIMD vector multiplication")
 
-    # TODO: (Codon bug) The method bellow cannot be typechecked if N is generic
-    # @llvm
-    # def __truediv__(self: Vec[u64, N], other: Vec[u64, N]) -> Vec[f64, N]:
-    #     %0 = uitofp <{=N} x i64> %self to <{=N} x double>
-    #     %1 = uitofp <{=N} x i64> %other to <{=N} x double>
-    #     %2 = fdiv <{=N} x double> %0, %1
-    #     ret <{=N} x double> %2
+    @llvm
+    def __truediv__(self: Vec[u64, N], other: Vec[u64, N]) -> Vec[f64, N]:
+        %0 = uitofp <{=N} x i64> %self to <{=N} x double>
+        %1 = uitofp <{=N} x i64> %other to <{=N} x double>
+        %2 = fdiv <{=N} x double> %0, %1
+        ret <{=N} x double> %2
 
     @llvm
     def __truediv__(self: Vec[u64, 4], other: Vec[u64, 4]) -> Vec[f64, 4]:

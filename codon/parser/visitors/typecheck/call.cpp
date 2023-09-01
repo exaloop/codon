@@ -765,7 +765,10 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 
   // Check super types (i.e., statically inherited) as well
   for (auto &tx : getSuperTypes(typ->getClass())) {
-    if (tx->unify(typExpr->type.get(), nullptr) >= 0)
+    types::Type::Unification us;
+    auto s = tx->unify(typExpr->type.get(), &us);
+    us.undo();
+    if (s >= 0)
       return transform(N<BoolExpr>(true));
   }
   return transform(N<BoolExpr>(false));
