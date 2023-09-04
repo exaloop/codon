@@ -99,8 +99,9 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
-      if (l->defaultType)
+      if (l->defaultType) {
         pendingDefaults.insert(i.second);
+      }
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {

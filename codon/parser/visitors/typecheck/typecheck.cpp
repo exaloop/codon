@@ -61,8 +61,9 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
     }
     seqassert(expr->type, "type not set for {}", expr);
     unify(typ, expr->type);
-    if (expr->done)
+    if (expr->done) {
       ctx->changedNodes++;
+    }
   }
   realize(typ);
   LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), expr, expr->isDone() ? "[done]" : "");
