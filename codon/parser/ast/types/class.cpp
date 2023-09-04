@@ -249,7 +249,7 @@ std::string RecordType::realizedName() const {
     auto n = getRepeats();
     if (n == -1)
       gs.push_back(repeats->realizedName());
-    for (int i = 0; i < std::max(n, 0ll); i++)
+    for (int i = 0; i < std::max(n, int64_t(0)); i++)
       for (auto &a : args)
         gs.push_back(a->realizedName());
     std::string s = join(gs, ",");
@@ -267,7 +267,7 @@ std::string RecordType::debugString(char mode) const {
     auto n = getRepeats();
     if (n == -1)
       gs.push_back(repeats->debugString(mode));
-    for (int i = 0; i < std::max(n, 0ll); i++)
+    for (int i = 0; i < std::max(n, int64_t(0)); i++)
       for (auto &a : args)
         gs.push_back(a->debugString(mode));
     return fmt::format("{}{}", name,
@@ -296,7 +296,7 @@ int64_t RecordType::getRepeats() const {
   if (!repeats)
     return 1;
   if (repeats->canRealize())
-    return std::max(repeats->evaluate().getInt(), 0ll);
+    return std::max(repeats->evaluate().getInt(), int64_t(0));
   return -1;
 }
 
