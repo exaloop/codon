@@ -180,10 +180,6 @@ class str:
                 buf.append(a)
         return buf.__str__()
 
-
-    def join(self, l: List) -> str:
-        return self.join([str(i) for i in l])
-
     def join(self, l: List[str]) -> str:
         if len(l) == 0:
             return ""

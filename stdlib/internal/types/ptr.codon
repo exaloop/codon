@@ -184,11 +184,6 @@ class Ptr:
     def as_byte(self) -> Ptr[byte]:
         ret ptr %self
 
-    @llvm
-    def store(self, what: T) -> None:
-        store {=T} %what, ptr %self
-        ret {} {}
-
     def __repr__(self) -> str:
         return self.__format__("")
 
