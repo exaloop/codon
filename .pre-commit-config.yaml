@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v17.0.2
+    hooks:
+      - id: clang-format
+        types:
+          - c++
