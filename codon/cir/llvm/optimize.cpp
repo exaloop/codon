@@ -63,7 +63,7 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
       f.addFnAttr("no-frame-pointer-elim-non-leaf");
       f.addFnAttr("no-jump-tables", "false");
 
-      for (auto &block : f.getBasicBlockList()) {
+      for (auto &block : f) {
         for (auto &inst : block) {
           if (auto *call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
             call->setTailCall(false);

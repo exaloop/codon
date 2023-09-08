@@ -179,7 +179,7 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
     auto &Seg = KV.second;
 
     auto &SegAddr =
-        (AG.getMemDeallocPolicy() == llvm::jitlink::MemDeallocPolicy::Standard)
+        (AG.getMemLifetimePolicy() == llvm::orc::MemLifetimePolicy::Standard)
             ? NextStandardSegAddr
             : NextFinalizeSegAddr;
 
@@ -189,7 +189,7 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
     SegAddr += llvm::alignTo(Seg.ContentSize + Seg.ZeroFillSize, PageSize);
 
     if (static_cast<int>(AG.getMemProt()) &
-        static_cast<int>(llvm::jitlink::MemProt::Write)) {
+        static_cast<int>(llvm::orc::MemProt::Write)) {
       seq_gc_add_roots((void *)Seg.Addr.getValue(), (void *)SegAddr.getValue());
     }
   }

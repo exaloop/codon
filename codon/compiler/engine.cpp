@@ -57,13 +57,12 @@ llvm::Expected<std::unique_ptr<Engine>> Engine::create() {
 
   auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(*epc));
 
-  auto epciu =
-      llvm::orc::EPCIndirectionUtils::Create(sess->getExecutorProcessControl());
+  auto epciu = llvm::orc::EPCIndirectionUtils::Create(*sess);
   if (!epciu)
     return epciu.takeError();
 
   (*epciu)->createLazyCallThroughManager(
-      *sess, llvm::pointerToJITTargetAddress(&handleLazyCallThroughError));
+      *sess, llvm::orc::ExecutorAddr::fromPtr(&handleLazyCallThroughError));
 
   if (auto err = llvm::orc::setUpInProcessLCTMReentryViaEPCIU(**epciu))
     return std::move(err);
@@ -87,7 +86,7 @@ llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,
   return optimizeLayer.add(rt, std::move(module));
 }
 
-llvm::Expected<llvm::JITEvaluatedSymbol> Engine::lookup(llvm::StringRef name) {
+llvm::Expected<llvm::orc::ExecutorSymbolDef> Engine::lookup(llvm::StringRef name) {
   return sess->lookup({&mainJD}, mangle(name.str()));
 }
 

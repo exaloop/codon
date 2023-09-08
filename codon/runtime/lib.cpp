@@ -25,6 +25,11 @@
 #include "codon/runtime/lib.h"
 #include <gc.h>
 
+#ifdef _WIN32
+#define gmtime_r(a, b) gmtime_s(b, a)
+#define localtime_r(a, b) localtime_s(b, a)
+#endif
+
 /*
  * General
  */
@@ -45,12 +50,18 @@ void seq_nvptx_init();
 
 int seq_flags;
 
+SEQ_FUNC void seq_gc_remove_roots(void *start, void *end) {
+#if !USE_STANDARD_MALLOC && !_WIN32
+  GC_remove_roots(start, end);
+#endif
+}
+
 SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
-                          GC_add_roots, GC_remove_roots);
+                          GC_add_roots, seq_gc_remove_roots);
   seq_exc_init();
 #ifdef CODON_GPU
   seq_nvptx_init();
@@ -228,12 +239,6 @@ SEQ_FUNC void seq_register_finalizer(void *p, void (*f)(void *obj, void *data)) 
 SEQ_FUNC void seq_gc_add_roots(void *start, void *end) {
 #if !USE_STANDARD_MALLOC
   GC_add_roots(start, end);
-#endif
-}
-
-SEQ_FUNC void seq_gc_remove_roots(void *start, void *end) {
-#if !USE_STANDARD_MALLOC
-  GC_remove_roots(start, end);
 #endif
 }
 

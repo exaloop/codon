@@ -9,7 +9,6 @@
 #include <sstream>
 #include <string>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <tuple>
 #include <unistd.h>
 #include <vector>

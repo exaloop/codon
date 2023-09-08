@@ -6,9 +6,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
+
+#ifdef _WIN32
+#else
+#include <sys/wait.h>
+#endif
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
@@ -80,22 +84,21 @@ LLVMVisitor::LLVMVisitor()
   auto &registry = *llvm::PassRegistry::getPassRegistry();
   llvm::initializeCore(registry);
   llvm::initializeScalarOpts(registry);
-  llvm::initializeObjCARCOpts(registry);
   llvm::initializeVectorization(registry);
   llvm::initializeIPO(registry);
   llvm::initializeAnalysis(registry);
   llvm::initializeTransformUtils(registry);
   llvm::initializeInstCombine(registry);
-  llvm::initializeAggressiveInstCombine(registry);
-  llvm::initializeInstrumentation(registry);
   llvm::initializeTarget(registry);
 
+  llvm::initializeExpandLargeDivRemLegacyPassPass(registry);
+  llvm::initializeExpandLargeFpConvertLegacyPassPass(registry);
   llvm::initializeExpandMemCmpPassPass(registry);
   llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   llvm::initializeSelectOptimizePass(registry);
+  llvm::initializeCallBrPreparePass(registry);
   llvm::initializeCodeGenPreparePass(registry);
   llvm::initializeAtomicExpandPass(registry);
-  llvm::initializeRewriteSymbolsLegacyPassPass(registry);
   llvm::initializeWinEHPreparePass(registry);
   llvm::initializeDwarfEHPrepareLegacyPassPass(registry);
   llvm::initializeSafeStackLegacyPassPass(registry);
@@ -110,8 +113,6 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeExpandVectorPredicationPass(registry);
   llvm::initializeWasmEHPreparePass(registry);
   llvm::initializeWriteBitcodePassPass(registry);
-  llvm::initializeHardwareLoopsPass(registry);
-  llvm::initializeTypePromotionPass(registry);
   llvm::initializeReplaceWithVeclibLegacyPass(registry);
   llvm::initializeJMCInstrumenterPass(registry);
 }
@@ -410,6 +411,9 @@ void executeCommand(const std::vector<std::string> &args) {
   LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
+#ifdef _WIN32
+  /// TODO WIN32
+#else
   if (fork() == 0) {
     int status = execvp(cArgs[0], (char *const *)&cArgs[0]);
     exit(status);
@@ -424,6 +428,7 @@ void executeCommand(const std::vector<std::string> &args) {
                        std::to_string(WEXITSTATUS(status)));
     }
   }
+#endif
 }
 } // namespace
 
@@ -1243,6 +1248,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
         auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
             es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+        /*
         L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
             es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
         L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
@@ -1250,9 +1256,13 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
         auto dbPlugin = std::make_unique<DebugPlugin>();
         dbp = dbPlugin.get();
         L->addPlugin(std::move(dbPlugin));
+        */
         return L;
       });
   builder.setJITTargetMachineBuilder(llvm::orc::JITTargetMachineBuilder(triple));
+  if (auto *orcRuntimeLibPath = std::getenv("CODON_ORC")) {
+    builder.setPlatformSetUp(llvm::orc::ExecutorNativePlatform(orcRuntimeLibPath));
+  }
 
   auto jit = llvm::cantFail(builder.create());
   jit->getMainJITDylib().addGenerator(
@@ -1855,7 +1865,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   // set up debug info
   // for now we just set all to func's source location
   auto *srcInfo = getSrcInfo(x);
-  for (auto &block : func->getBasicBlockList()) {
+  for (auto &block : *func) {
     for (auto &inst : block) {
       if (!inst.getDebugLoc()) {
         inst.setDebugLoc(llvm::DebugLoc(llvm::DILocation::get(

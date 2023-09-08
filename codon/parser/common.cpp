@@ -10,6 +10,12 @@
 #include "llvm/Support/Path.h"
 #include <fmt/format.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <intrin.h>
+#include <windows.h>
+#endif
+
 namespace codon::ast {
 
 /// String and collection utilities
@@ -166,6 +172,67 @@ std::string library_path() {
     }
     break;
   }
+#elif _WIN32
+  HMODULE module;
+  int length = -1;
+
+  if (GetModuleHandleEx(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          (LPCTSTR)__builtin_extract_return_addr(__builtin_return_address(0)),
+          &module)) {
+    char *out = (char *)malloc(MAX_PATH + 1);
+    size_t capacity = MAX_PATH;
+    wchar_t buffer1[MAX_PATH];
+    wchar_t buffer2[MAX_PATH];
+    wchar_t *path = NULL;
+    int length = -1;
+    bool ok;
+
+    for (ok = false; !ok; ok = true) {
+      DWORD size;
+      int length_, length__;
+
+      size = GetModuleFileNameW(module, buffer1, sizeof(buffer1) / sizeof(buffer1[0]));
+
+      if (size == 0) {
+        break;
+      } else if (size == (DWORD)(sizeof(buffer1) / sizeof(buffer1[0]))) {
+        DWORD size_ = size;
+        do {
+          wchar_t *path_;
+          path_ = (wchar_t *)realloc(path, sizeof(wchar_t) * size_ * 2);
+          if (!path_)
+            break;
+          size_ *= 2;
+          path = path_;
+          size = GetModuleFileNameW(module, path, size_);
+        } while (size == size_);
+
+        if (size == size_)
+          break;
+      } else
+        path = buffer1;
+
+      if (!_wfullpath(buffer2, path, MAX_PATH))
+        break;
+      length_ = (int)wcslen(buffer2);
+      length__ =
+          WideCharToMultiByte(CP_UTF8, 0, buffer2, length_, out, capacity, NULL, NULL);
+
+      if (length__ == 0)
+        length__ =
+            WideCharToMultiByte(CP_UTF8, 0, buffer2, length_, NULL, 0, NULL, NULL);
+      if (length__ == 0)
+        break;
+      length = length__;
+    }
+
+    if (path != buffer1)
+      free(path);
+    result = std::string(out);
+    free(out);
+  }
 #else
   for (int r = 0; r < 5; r++) {
     FILE *maps = fopen("/proc/self/maps", "r");
@@ -261,12 +328,10 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
 } // namespace
 
 std::string getAbsolutePath(const std::string &path) {
-  char *c = realpath(path.c_str(), nullptr);
-  if (!c)
+  llvm::SmallString<128> out;
+  if (llvm::sys::fs::real_path(path, out))
     return path;
-  std::string result(c);
-  free(c);
-  return result;
+  return std::string(out);
 }
 
 std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
