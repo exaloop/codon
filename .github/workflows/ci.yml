@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v')
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v') && startsWith(matrix.os, 'macos')
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
