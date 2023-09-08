@@ -53,7 +53,7 @@ jobs:
 
       - name: Cache Dependencies
         id: cache-deps
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: llvm
           key: manylinux-llvm
@@ -133,7 +133,7 @@ jobs:
 
       - name: Cache Dependencies
         id: cache-deps
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: llvm
           key: ${{ runner.os }}-llvm
