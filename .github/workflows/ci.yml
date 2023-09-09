@@ -39,7 +39,7 @@ jobs:
 
       - name: Save Release URL File for Publish
         if: steps.check.outputs.MAKE_RELEASE
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v3
         with:
           name: release_url
           path: release_url.txt
