@@ -37,7 +37,7 @@ class float:
     @pure
     @llvm
     def __bool__(self) -> bool:
-        %0 = fcmp one double %self, 0.000000e+00
+        %0 = fcmp une double %self, 0.000000e+00
         %1 = zext i1 %0 to i8
         ret i8 %1
 
@@ -118,10 +118,9 @@ class float:
     @pure
     @llvm
     def __ne__(a: float, b: float) -> bool:
-        entry:
-            %tmp = fcmp one double %a, %b
-            %res = zext i1 %tmp to i8
-            ret i8 %res
+        %tmp = fcmp une double %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
 
     @pure
     @llvm
@@ -443,7 +442,7 @@ class float32:
     @pure
     @llvm
     def __bool__(self) -> bool:
-        %0 = fcmp one float %self, 0.000000e+00
+        %0 = fcmp une float %self, 0.000000e+00
         %1 = zext i1 %0 to i8
         ret i8 %1
 
@@ -521,10 +520,9 @@ class float32:
     @pure
     @llvm
     def __ne__(a: float32, b: float32) -> bool:
-        entry:
-            %tmp = fcmp one float %a, %b
-            %res = zext i1 %tmp to i8
-            ret i8 %res
+        %tmp = fcmp une float %a, %b
+        %res = zext i1 %tmp to i8
+        ret i8 %res
 
     @pure
     @llvm
