@@ -42,7 +42,9 @@ def input(prompt: str = '') -> str:
     rd = _C.getline(Ptr[Ptr[byte]](__ptr__(buf)), Ptr[int](__ptr__(sz)), _C.seq_stdin())
     if rd == -1:
         return ''
-    return str(buf, rd - 1)
+    if buf[rd - 1] == byte(10):
+        rd -= 1
+    return str(buf, rd)
 
 @extend
 class __internal__:
