@@ -77,7 +77,7 @@ struct StringExpr;
 struct TupleExpr;
 struct UnaryExpr;
 struct Stmt;
-struct ExprStmt;
+struct SuiteStmt;
 
 struct StaticValue {
   std::variant<int64_t, std::string> value;
@@ -403,8 +403,7 @@ struct GeneratorExpr : public Expr {
   };
 
   GeneratorKind kind;
-  std::shared_ptr<ExprStmt> expr; // wrap in ExprStmt
-  std::vector<std::shared_ptr<Stmt>> loops;
+  std::shared_ptr<Stmt> loops;
 
   GeneratorExpr(GeneratorKind kind, ExprPtr expr,
                 std::vector<std::shared_ptr<Stmt>> loops);
@@ -412,10 +411,17 @@ struct GeneratorExpr : public Expr {
   GeneratorExpr(const GeneratorExpr &, bool);
 
   std::string toString(int) const override;
+
+  int loopCount() const;
+  std::shared_ptr<Stmt> getFinalSuite() const;
+  ExprPtr getFinalExpr();
+  void setFinalExpr(ExprPtr);
+  void setFinalStmt(std::shared_ptr<Stmt>);
   ACCEPT(ASTVisitor);
 
 private:
-  void formCompleteStmt();
+  std::shared_ptr<Stmt> *getFinalStmt();
+  void formCompleteStmt(const std::vector<std::shared_ptr<Stmt>> &);
 };
 
 /// Conditional expression [cond if ifexpr else elsexpr].

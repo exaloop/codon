@@ -151,7 +151,7 @@ void ScopingVisitor::transformAdding(ExprPtr &e, std::shared_ptr<SrcObject> root
     std::swap(root, ctx->root);
     std::swap(adding, ctx->adding);
   } else {
-    seqassert(false, "bad assignment: {}", e);
+    E(Error::ASSIGN_INVALID, e);
   }
 }
 
@@ -278,7 +278,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
 /// TODO)) dominate assignexprs in comprehensions?!
 void ScopingVisitor::visit(GeneratorExpr *expr) {
   ctx->temps.emplace_back();
-  transform(expr->loops.front());
+  transform(expr->loops);
   for (auto &n : ctx->temps.back()) {
     while (ctx->map[n].begin()->binding)
       ctx->map[n].pop_front();

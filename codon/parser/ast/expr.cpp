@@ -260,23 +260,24 @@ ACCEPT_IMPL(DictExpr, ASTVisitor);
 
 GeneratorExpr::GeneratorExpr(GeneratorExpr::GeneratorKind kind, ExprPtr expr,
                              std::vector<StmtPtr> loops)
-    : Expr(), kind(kind), loops(std::move(loops)) {
-  this->expr = std::make_shared<ExprStmt>(std::move(expr));
-  formCompleteStmt();
+    : Expr(), kind(kind) {
+  seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
+  loops.push_back(
+      std::make_shared<SuiteStmt>(std::make_shared<ExprStmt>(std::move(expr))));
+  formCompleteStmt(loops);
 }
 GeneratorExpr::GeneratorExpr(ExprPtr key, ExprPtr expr, std::vector<StmtPtr> loops)
-    : Expr(), kind(GeneratorExpr::DictGenerator), loops(std::move(loops)) {
+    : Expr(), kind(GeneratorExpr::DictGenerator) {
+  seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
   ExprPtr t = std::make_shared<TupleExpr>(
       std::vector<ExprPtr>{std::move(key), std::move(expr)});
-  this->expr = std::make_shared<ExprStmt>(t);
-  formCompleteStmt();
+  loops.push_back(std::make_shared<SuiteStmt>(std::make_shared<ExprStmt>(t)));
+  formCompleteStmt(loops);
 }
 GeneratorExpr::GeneratorExpr(const GeneratorExpr &expr, bool clean)
-    : Expr(expr, clean), kind(expr.kind), expr(ast::clone(expr.expr, clean)),
-      loops(ast::clone(expr.loops, clean)) {
-  formCompleteStmt();
-}
-std::string GeneratorExpr::toString(int) const {
+    : Expr(expr, clean), kind(expr.kind), loops(ast::clone(expr.loops, clean)) {}
+std::string GeneratorExpr::toString(int indent) const {
+  auto pad = indent >= 0 ? ("\n" + std::string(indent + 2 * INDENT_SIZE, ' ')) : " ";
   std::string prefix;
   if (kind == GeneratorKind::ListGenerator)
     prefix = "list-";
@@ -284,19 +285,65 @@ std::string GeneratorExpr::toString(int) const {
     prefix = "set-";
   if (kind == GeneratorKind::DictGenerator)
     prefix = "dict-";
-  auto l = combine(loops, " ");
+  auto l = loops->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1);
   return wrapType(format("{}gen {}", prefix, l));
 }
 ACCEPT_IMPL(GeneratorExpr, ASTVisitor);
-void GeneratorExpr::formCompleteStmt() {
-  StmtPtr final = expr;
+ExprPtr GeneratorExpr::getFinalExpr() {
+  auto s = *(getFinalStmt());
+  if (s->getExpr())
+    return s->getExpr()->expr;
+  return nullptr;
+}
+int GeneratorExpr::loopCount() const {
+  int cnt = 0;
+  for (StmtPtr i = loops;;) {
+    if (auto sf = i->getFor()) {
+      i = sf->suite;
+      cnt++;
+    } else if (auto si = i->getIf()) {
+      i = si->ifSuite;
+      cnt++;
+    } else if (auto ss = i->getSuite()) {
+      if (ss->stmts.empty())
+        break;
+      i = ss->stmts.back();
+    } else
+      break;
+  }
+  return cnt;
+}
+void GeneratorExpr::setFinalExpr(ExprPtr expr) {
+  *(getFinalStmt()) = std::make_shared<ExprStmt>(expr);
+}
+void GeneratorExpr::setFinalStmt(StmtPtr stmt) { *(getFinalStmt()) = stmt; }
+std::shared_ptr<Stmt> GeneratorExpr::getFinalSuite() const { return loops; }
+StmtPtr *GeneratorExpr::getFinalStmt() {
+  for (StmtPtr *i = &loops;;) {
+    if (auto sf = (*i)->getFor())
+      i = &(sf->suite);
+    else if (auto si = (*i)->getIf())
+      i = &(si->ifSuite);
+    else if (auto ss = (*i)->getSuite()) {
+      if (ss->stmts.empty())
+        return i;
+      i = &(ss->stmts.back());
+    } else
+      return i;
+  }
+  seqassert(false, "bad generator");
+  return nullptr;
+}
+void GeneratorExpr::formCompleteStmt(const std::vector<StmtPtr> &loops) {
+  StmtPtr final = nullptr;
   for (size_t i = loops.size(); i-- > 0;) {
-    if (auto s = loops[i]->getIf())
-      s->ifSuite = final;
-    else if (auto f = loops[i]->getFor())
-      f->suite = final;
+    if (auto si = loops[i]->getIf())
+      si->ifSuite = final;
+    else if (auto sf = loops[i]->getFor())
+      sf->suite = final;
     final = loops[i];
   }
+  this->loops = loops[0];
 }
 // StmtPtr &GeneratorExpr::getFinalStmt(StmtPtr &s) {
 //   if (auto i = s->getIf())

@@ -86,10 +86,10 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   // List comprehension optimization:
   // Use `iter.__len__()` when creating list if there is a single for loop
   // without any if conditions in the comprehension
-  bool canOptimize = expr->kind == GeneratorExpr::ListGenerator &&
-                     expr->loops.size() == 1 && expr->loops.front()->getFor();
+  bool canOptimize =
+      expr->kind == GeneratorExpr::ListGenerator && expr->loopCount() == 1;
   if (canOptimize) {
-    auto iter = transform(expr->loops.front()->getFor()->iter);
+    auto iter = transform(expr->getFinalSuite()->getFor()->iter);
     IdExpr *id = nullptr;
     if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
       // Turn off this optimization for static items
@@ -101,13 +101,14 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
     // List comprehensions
-    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "append"), expr->expr->expr);
-    auto suite = expr->loops.front();
+    expr->setFinalExpr(
+        N<CallExpr>(N<DotExpr>(clone(var), "append"), expr->getFinalExpr()));
+    auto suite = expr->getFinalSuite();
     auto noOptStmt =
         N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
     if (canOptimize) {
       auto optimizeVar = ctx->cache->getTemporaryVar("i");
-      auto origIter = expr->loops.front()->getFor()->iter;
+      auto origIter = expr->getFinalSuite()->getFor()->iter;
 
       auto optStmt = clone(noOptStmt);
       optStmt->getSuite()->stmts[1]->getFor()->iter = N<IdExpr>(optimizeVar);
@@ -128,20 +129,21 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
     auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")));
-    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "add"), expr->expr->expr);
-    auto suite = expr->loops.front();
+    expr->setFinalExpr(
+        N<CallExpr>(N<DotExpr>(clone(var), "add"), expr->getFinalExpr()));
+    auto suite = expr->getFinalSuite();
     resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
   } else if (expr->kind == GeneratorExpr::DictGenerator) {
     // Set comprehensions
     auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")));
-    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
-                                   N<StarExpr>(expr->expr->expr));
-    auto suite = expr->loops.front();
+    expr->setFinalExpr(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
+                                   N<StarExpr>(expr->getFinalExpr())));
+    auto suite = expr->getFinalSuite();
     resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
   } else if (expr->kind == GeneratorExpr::TupleGenerator) {
-    seqassert(expr->loops.size() == 1, "invalid tuple generator");
+    seqassert(expr->loopCount() == 1, "invalid tuple generator");
     unify(expr->type, ctx->getUnbound());
-    auto gen = transform(expr->loops.front()->getFor()->iter);
+    auto gen = transform(expr->getFinalSuite()->getFor()->iter);
     if (!gen->type->canRealize())
       return; // Wait until the iterator can be realized
 
@@ -150,9 +152,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     auto tupleVar = ctx->cache->getTemporaryVar("tuple");
     block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-    seqassert(expr->loops.front()->getFor()->var->getId(), "tuple() not simplified");
-    std::vector<std::string> vars{expr->loops.front()->getFor()->var->getId()->value};
-    auto finalExpr = expr->expr->expr;
+    seqassert(expr->getFinalSuite()->getFor()->var->getId(), "tuple() not simplified");
+    std::vector<std::string> vars{expr->getFinalSuite()->getFor()->var->getId()->value};
+    auto finalExpr = expr->getFinalExpr();
     auto suiteVec = finalExpr->getStmtExpr()
                         ? finalExpr->getStmtExpr()->stmts[0]->getSuite()
                         : nullptr;
@@ -170,7 +172,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     if (vars.size() > 1)
       vars.erase(vars.begin());
     auto [ok, staticItems] = transformStaticLoopCall(
-        vars, expr->loops.front()->getFor()->iter,
+        vars, expr->getFinalSuite()->getFor()->iter,
         [&](const StmtPtr &wrap) { return N<StmtExpr>(wrap, clone(finalExpr)); });
     if (ok) {
       std::vector<ExprPtr> tupleItems;
@@ -179,7 +181,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
       resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
       return;
     } else if (oldSuite) {
-      expr->expr->expr->getStmtExpr()->stmts[0] = oldSuite;
+      expr->getFinalExpr()->getStmtExpr()->stmts[0] = oldSuite;
     }
 
     auto tuple = gen->type->getRecord();
@@ -191,17 +193,17 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     items.reserve(tuple->args.size());
     for (int ai = 0; ai < tuple->args.size(); ai++) {
       items.emplace_back(
-          N<StmtExpr>(N<AssignStmt>(clone(expr->loops.front()->getFor()->var),
+          N<StmtExpr>(N<AssignStmt>(clone(expr->getFinalSuite()->getFor()->var),
                                     N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))),
-                      clone(expr->expr->expr)));
+                      clone(expr->getFinalExpr())));
     }
-
     // `((a := tuple[0]; expr), (a := tuple[1]; expr), ...)`
     resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(items)));
   } else {
-    transform(expr->loops.front());
+    transform(
+        expr->getFinalSuite()); // we assume that the internal data will be changed
     unify(expr->type, ctx->instantiateGeneric(ctx->forceFind("Generator")->type,
-                                              {expr->expr->expr->type}));
+                                              {expr->getFinalExpr()->type}));
     if (realize(expr->type))
       expr->setDone();
   }

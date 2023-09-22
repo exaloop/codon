@@ -171,12 +171,7 @@ public:
     for (auto &i : expr->items)
       transform(i);
   }
-  void visit(GeneratorExpr *expr) override {
-    transform(expr->expr);
-    for (auto &l : expr->loops) {
-      transform(l);
-    }
-  }
+  void visit(GeneratorExpr *expr) override { transform(expr->loops); }
   void visit(IfExpr *expr) override {
     transform(expr->cond);
     transform(expr->ifexpr);

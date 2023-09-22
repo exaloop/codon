@@ -618,14 +618,14 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
 /// Transform `tuple(i for i in tup)` into a GeneratorExpr that will be handled during
 /// the type checking.
 ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
-  GeneratorExpr *g = nullptr;
   // We currently allow only a simple iterations over tuples
-  if (expr->args.size() != 1 ||
-      !(g = CAST(expr->args[0].value->origExpr, GeneratorExpr)) ||
-      g->kind != GeneratorExpr::Generator || g->loops.size() != 1)
+  if (expr->args.size() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
-  return transform(
-      N<GeneratorExpr>(GeneratorExpr::TupleGenerator, g->expr->expr, g->loops));
+  auto g = CAST(expr->args[0].value->origExpr, GeneratorExpr);
+  if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
+    E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
+  g->kind = GeneratorExpr::TupleGenerator;
+  return transform(g->shared_from_this());
 }
 
 /// Transform named tuples.

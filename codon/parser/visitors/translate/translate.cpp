@@ -245,11 +245,8 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
   ctx->bases.push_back(cast<ir::BodiedFunc>(fn));
   ctx->addSeries(body);
 
-  if (auto i = expr->loops.back()->getIf())
-    i->ifSuite = N<YieldStmt>(expr->expr->expr);
-  if (auto f = expr->loops.back()->getFor())
-    f->suite = N<YieldStmt>(expr->expr->expr);
-  transform(expr->loops.front());
+  expr->setFinalStmt(N<YieldStmt>(expr->getFinalExpr()));
+  transform(expr->getFinalSuite());
   ctx->popSeries();
   ctx->bases.pop_back();
   cast<ir::BodiedFunc>(fn)->setBody(body);

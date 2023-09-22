@@ -58,11 +58,12 @@ std::string join(const T &items, const std::string &delim = " ", size_t start = 
 }
 /// Combine items separated by a delimiter into a string.
 template <typename T>
-std::string combine(const std::vector<T> &items, const std::string &delim = " ") {
+std::string combine(const std::vector<T> &items, const std::string &delim = " ",
+                    const int indent = -1) {
   std::string s;
   for (int i = 0; i < items.size(); i++)
     if (items[i])
-      s += (i ? delim : "") + items[i]->toString();
+      s += (i ? delim : "") + items[i]->toString(indent);
   return s;
 }
 template <typename T>
