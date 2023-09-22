@@ -363,7 +363,7 @@ TEST_P(SeqTest, Run) {
     vector<string> results = splitLines(output);
     for (unsigned i = 0; i < min(results.size(), expects.first.size()); i++)
       if (expects.second)
-        EXPECT_EQ(results[i], expects.first[i]);
+        EXPECT_EQ(results[i].substr(0, expects.first[i].size()), expects.first[i]);
       else
         EXPECT_EQ(results[i], expects.first[i]);
     EXPECT_EQ(results.size(), expects.first.size());

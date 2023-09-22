@@ -83,17 +83,13 @@ void TypecheckVisitor::visit(DictExpr *expr) {
 /// @example
 ///   `tuple(expr for i in tuple_generator)` -> `Tuple.N.__new__(expr...)`
 void TypecheckVisitor::visit(GeneratorExpr *expr) {
-  std::vector<StmtPtr> stmts;
-
-  auto loops = clone_nop(expr->loops); // Clone as loops will be modified
-
   // List comprehension optimization:
   // Use `iter.__len__()` when creating list if there is a single for loop
   // without any if conditions in the comprehension
-  bool canOptimize = expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
-                     loops[0].conds.empty();
+  bool canOptimize = expr->kind == GeneratorExpr::ListGenerator &&
+                     expr->loops.size() == 1 && expr->loops.front()->getFor();
   if (canOptimize) {
-    auto iter = transform(loops[0].gen);
+    auto iter = transform(expr->loops.front()->getFor()->iter);
     IdExpr *id = nullptr;
     if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
       // Turn off this optimization for static items
@@ -102,51 +98,50 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     }
   }
 
-  SuiteStmt *prev = nullptr;
-  auto suite = transformGeneratorBody(loops, prev);
   ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
     // List comprehensions
-    std::vector<ExprPtr> args;
-    prev->stmts.push_back(
-        N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(expr->expr))));
+    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "append"), expr->expr->expr);
+    auto suite = expr->loops.front();
     auto noOptStmt =
         N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
     if (canOptimize) {
-      seqassert(suite->getSuite() && !suite->getSuite()->stmts.empty() &&
-                    CAST(suite->getSuite()->stmts[0], ForStmt),
-                "bad comprehension transformation");
       auto optimizeVar = ctx->cache->getTemporaryVar("i");
-      auto optSuite = clone(suite);
-      CAST(optSuite->getSuite()->stmts[0], ForStmt)->iter = N<IdExpr>(optimizeVar);
+      auto origIter = expr->loops.front()->getFor()->iter;
 
-      auto optStmt = N<SuiteStmt>(
-          N<AssignStmt>(N<IdExpr>(optimizeVar), clone(expr->loops[0].gen)),
+      auto optStmt = clone(noOptStmt);
+      optStmt->getSuite()->stmts[1]->getFor()->iter = N<IdExpr>(optimizeVar);
+      optStmt = N<SuiteStmt>(
+          N<AssignStmt>(N<IdExpr>(optimizeVar), clone(origIter)),
           N<AssignStmt>(
               clone(var),
               N<CallExpr>(N<IdExpr>("List"),
                           N<CallExpr>(N<DotExpr>(N<IdExpr>(optimizeVar), "__len__")))),
-          optSuite);
-      resultExpr = transform(
-          N<IfExpr>(N<CallExpr>(N<IdExpr>("hasattr"), clone(expr->loops[0].gen),
-                                N<StringExpr>("__len__")),
-                    N<StmtExpr>(optStmt, clone(var)), N<StmtExpr>(noOptStmt, var)));
+          optStmt->getSuite()->stmts[1]);
+      resultExpr = N<IfExpr>(
+          N<CallExpr>(N<IdExpr>("hasattr"), clone(origIter), N<StringExpr>("__len__")),
+          N<StmtExpr>(optStmt, clone(var)), N<StmtExpr>(noOptStmt, var));
+      resultExpr = transform(resultExpr);
     } else {
       resultExpr = transform(N<StmtExpr>(noOptStmt, var));
     }
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
-    stmts.push_back(
-        transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")))));
-    prev->stmts.push_back(
-        N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "add"), clone(expr->expr))));
-    stmts.push_back(transform(suite));
-    resultExpr = N<StmtExpr>(stmts, transform(var));
+    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")));
+    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "add"), expr->expr->expr);
+    auto suite = expr->loops.front();
+    resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
+  } else if (expr->kind == GeneratorExpr::DictGenerator) {
+    // Set comprehensions
+    auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")));
+    expr->expr->expr = N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
+                                   N<StarExpr>(expr->expr->expr));
+    auto suite = expr->loops.front();
+    resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
   } else if (expr->kind == GeneratorExpr::TupleGenerator) {
-    seqassert(expr->loops.size() == 1 && expr->loops[0].conds.empty(),
-              "invalid tuple generator");
+    seqassert(expr->loops.size() == 1, "invalid tuple generator");
     unify(expr->type, ctx->getUnbound());
-    auto gen = transform(expr->loops[0].gen);
+    auto gen = transform(expr->loops.front()->getFor()->iter);
     if (!gen->type->canRealize())
       return; // Wait until the iterator can be realized
 
@@ -155,12 +150,13 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     auto tupleVar = ctx->cache->getTemporaryVar("tuple");
     block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-    seqassert(expr->loops[0].vars->getId(), "tuple() not simplified");
-    std::vector<std::string> vars{expr->loops[0].vars->getId()->value};
-    auto suiteVec = expr->expr->getStmtExpr()
-                        ? expr->expr->getStmtExpr()->stmts[0]->getSuite()
+    seqassert(expr->loops.front()->getFor()->var->getId(), "tuple() not simplified");
+    std::vector<std::string> vars{expr->loops.front()->getFor()->var->getId()->value};
+    auto finalExpr = expr->expr->expr;
+    auto suiteVec = finalExpr->getStmtExpr()
+                        ? finalExpr->getStmtExpr()->stmts[0]->getSuite()
                         : nullptr;
-    auto oldSuite = suiteVec ? suiteVec->clone() : nullptr;
+    auto oldSuite = suiteVec ? clone(suiteVec) : nullptr;
     for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
       if (auto a = suiteVec->stmts[validI]->getAssign())
         if (a->rhs && a->rhs->getIndex())
@@ -173,10 +169,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     }
     if (vars.size() > 1)
       vars.erase(vars.begin());
-    auto [ok, staticItems] =
-        transformStaticLoopCall(vars, expr->loops[0].gen, [&](const StmtPtr &wrap) {
-          return N<StmtExpr>(wrap, clone(expr->expr));
-        });
+    auto [ok, staticItems] = transformStaticLoopCall(
+        vars, expr->loops.front()->getFor()->iter,
+        [&](const StmtPtr &wrap) { return N<StmtExpr>(wrap, clone(finalExpr)); });
     if (ok) {
       std::vector<ExprPtr> tupleItems;
       for (auto &i : staticItems)
@@ -184,7 +179,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
       resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
       return;
     } else if (oldSuite) {
-      expr->expr->getStmtExpr()->stmts[0] = oldSuite;
+      expr->expr->expr->getStmtExpr()->stmts[0] = oldSuite;
     }
 
     auto tuple = gen->type->getRecord();
@@ -196,45 +191,20 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     items.reserve(tuple->args.size());
     for (int ai = 0; ai < tuple->args.size(); ai++) {
       items.emplace_back(
-          N<StmtExpr>(N<AssignStmt>(clone(expr->loops[0].vars),
+          N<StmtExpr>(N<AssignStmt>(clone(expr->loops.front()->getFor()->var),
                                     N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))),
-                      clone(expr->expr)));
+                      clone(expr->expr->expr)));
     }
 
     // `((a := tuple[0]; expr), (a := tuple[1]; expr), ...)`
     resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(items)));
   } else {
-    // Generators: converted to lambda functions that yield the target expression
-    prev->stmts.push_back(N<YieldStmt>(clone(expr->expr)));
-    stmts.push_back(suite);
-
-    auto anon = makeAnonFn(stmts);
-    if (auto call = anon->getCall()) {
-      seqassert(!call->args.empty() && call->args.back().value->getEllipsis(),
-                "bad lambda: {}", *call);
-      call->args.pop_back();
-    } else {
-      anon = N<CallExpr>(anon);
-    }
-    resultExpr = anon;
+    transform(expr->loops.front());
+    unify(expr->type, ctx->instantiateGeneric(ctx->forceFind("Generator")->type,
+                                              {expr->expr->expr->type}));
+    if (realize(expr->type))
+      expr->setDone();
   }
-}
-
-/// Transform a dictionary comprehension to the corresponding statement expression.
-/// @example
-///   `{i+a: j+1 for i in j if a}` -> ```gen = Dict()
-///                                      for i in j: if a: gen.__setitem__(i+a, j+1)```
-void TypecheckVisitor::visit(DictGeneratorExpr *expr) {
-  SuiteStmt *prev = nullptr;
-  auto suite = transformGeneratorBody(expr->loops, prev);
-
-  std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
-  stmts.push_back(transform(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")))));
-  prev->stmts.push_back(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
-                                                clone(expr->key), clone(expr->expr))));
-  stmts.push_back(transform(suite));
-  resultExpr = N<StmtExpr>(stmts, transform(var));
 }
 
 /// Transform a collection of type `type` to a statement expression:
@@ -385,34 +355,6 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
     }
   }
   return transform(N<StmtExpr>(stmts, var));
-}
-
-/// Transforms a list of @c GeneratorBody loops to the corresponding set of for loops.
-/// @example
-///   `for i in j if a for k in i if a if b` ->
-///   `for i in j: if a: for k in i: if a: if b: [prev]`
-/// @param prev (out-argument): A pointer to the innermost block (suite) where the
-///                             comprehension (or generator) expression should reside
-StmtPtr
-TypecheckVisitor::transformGeneratorBody(const std::vector<GeneratorBody> &loops,
-                                         SuiteStmt *&prev) {
-  StmtPtr suite = N<SuiteStmt>(), newSuite = nullptr;
-  prev = dynamic_cast<SuiteStmt *>(suite.get());
-  for (auto &l : loops) {
-    newSuite = N<SuiteStmt>();
-    auto nextPrev = dynamic_cast<SuiteStmt *>(newSuite.get());
-
-    auto forStmt = N<ForStmt>(l.vars->clone(), l.gen->clone(), newSuite);
-    prev->stmts.push_back(forStmt);
-    prev = nextPrev;
-    for (auto &cond : l.conds) {
-      newSuite = N<SuiteStmt>();
-      nextPrev = dynamic_cast<SuiteStmt *>(newSuite.get());
-      prev->stmts.push_back(N<IfStmt>(cond->clone(), newSuite));
-      prev = nextPrev;
-    }
-  }
-  return suite;
 }
 
 } // namespace codon::ast

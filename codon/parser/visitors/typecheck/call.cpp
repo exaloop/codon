@@ -78,13 +78,14 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       if (auto edt = transformDot(dot, &expr->args))
         expr->expr = edt;
     } else if (auto id = expr->expr->getId()) {
+      transform(expr->expr);
+      id = expr->expr->getId();
       // Pick the best function overload
-      auto overloads = in(ctx->cache->overloads, id->value);
-      if (overloads && overloads->size() > 1) {
+      if (endswith(id->value, ":dispatch")) {
         if (auto bestMethod = getBestOverload(id, &expr->args)) {
           auto t = id->type;
           expr->expr = N<IdExpr>(bestMethod->ast->name);
-          expr->expr->setType(unify(t, ctx->instantiate(bestMethod)));
+          expr->expr->setType(ctx->instantiate(bestMethod));
         }
       }
     }
@@ -176,7 +177,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
                     {"", transform(N<DotExpr>(clone(star->what), fields[i].name))});
       }
       args.erase(args.begin() + ai);
-    } else if (auto kwstar = CAST(args[ai].value, KeywordStarExpr)) {
+    } else if (auto kwstar = args[ai].value->getKwStar()) {
       // Case: **kwargs expansion
       kwstar->what = transform(kwstar->what);
       auto typ = kwstar->what->type->getClass();
@@ -186,13 +187,16 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       }
       if (!typ)
         return false;
-      if (!typ->getRecord() || startswith(typ->name, TYPE_TUPLE))
+      if (!typ->is("NamedTuple"))
         E(Error::CALL_BAD_KWUNPACK, args[ai], typ->prettyString());
-      auto &fields = ctx->cache->classes[typ->name].fields;
-      for (size_t i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
-        args.insert(args.begin() + ai,
-                    {fields[i].name,
-                     transform(N<DotExpr>(clone(kwstar->what), fields[i].name))});
+      auto id = typ->generics[0].type->getStatic()->evaluate().getInt();
+      seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
+                id);
+      auto names = ctx->cache->generatedTupleNames[id];
+      for (size_t i = 0; i < names.size(); i++, ai++) {
+        args.insert(
+            args.begin() + ai,
+            {names[i], transform(N<DotExpr>(kwstar->what, format("item{}", i + 1)))});
       }
       args.erase(args.begin() + ai);
     } else {
@@ -618,28 +622,10 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   // We currently allow only a simple iterations over tuples
   if (expr->args.size() != 1 ||
       !(g = CAST(expr->args[0].value->origExpr, GeneratorExpr)) ||
-      g->kind != GeneratorExpr::Generator || g->loops.size() != 1 ||
-      !g->loops[0].conds.empty())
+      g->kind != GeneratorExpr::Generator || g->loops.size() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
-  auto var = clone(g->loops[0].vars);
-  auto ex = clone(g->expr);
-
-  ctx->getBase()->loops.emplace_back("");
-  if (auto i = var->getId()) {
-    ctx->addVar(i->value, ctx->generateCanonicalName(i->value), ctx->getUnbound());
-    var = transform(var);
-    ex = transform(ex);
-  } else {
-    std::string varName = ctx->cache->getTemporaryVar("for");
-    ctx->addVar(varName, varName, ctx->getUnbound());
-    var = N<IdExpr>(varName);
-    auto head = transform(N<AssignStmt>(clone(g->loops[0].vars), clone(var)));
-    ex = N<StmtExpr>(head, transform(ex));
-  }
-  ctx->getBase()->loops.pop_back();
-  return N<GeneratorExpr>(
-      GeneratorExpr::TupleGenerator, ex,
-      std::vector<GeneratorBody>{{var, transform(g->loops[0].gen), {}}});
+  return transform(
+      N<GeneratorExpr>(GeneratorExpr::TupleGenerator, g->expr->expr, g->loops));
 }
 
 /// Transform named tuples.
@@ -683,10 +669,9 @@ ExprPtr TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
 ExprPtr TypecheckVisitor::transformFunctoolsPartial(CallExpr *expr) {
   if (expr->args.empty())
     E(Error::CALL_PARTIAL, getSrcInfo());
-  auto name = clone(expr->args[0].value);
   std::vector<CallExpr::Arg> args(expr->args.begin() + 1, expr->args.end());
   args.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-  return transform(N<CallExpr>(name, args));
+  return transform(N<CallExpr>(expr->args[0].value, args));
 }
 
 /// Typecheck superf method. This method provides the access to the previous matching
@@ -1005,7 +990,7 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   // tuple(ClassType) is a tuple type that corresponds to a class
   if (expr->args.front().value->isType()) {
     if (!realize(cls))
-      return expr->clone();
+      return expr->shared_from_this();
 
     std::vector<ExprPtr> items;
     auto tn = generateTuple(ctx->cache->classes[cls->name].fields.size());

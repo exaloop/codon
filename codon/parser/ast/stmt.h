@@ -15,7 +15,7 @@ namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   using Stmt::toString;                                                                \
-  StmtPtr clone() const override;                                                      \
+  NodePtr clone(bool) const override;                                                  \
   void accept(X &visitor) override
 
 // Forward declarations
@@ -25,12 +25,15 @@ struct ClassStmt;
 struct ExprStmt;
 struct SuiteStmt;
 struct FunctionStmt;
+struct ForStmt;
+struct IfStmt;
+struct TryStmt;
 
 /**
  * A Seq AST statement.
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
-struct Stmt : public codon::SrcObject, public std::enable_shared_from_this<Stmt> {
+struct Stmt : public Node, public std::enable_shared_from_this<Stmt> {
   using base_type = Stmt;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
@@ -40,22 +43,11 @@ struct Stmt : public codon::SrcObject, public std::enable_shared_from_this<Stmt>
 public:
   Stmt();
   Stmt(const Stmt &s) = default;
+  Stmt(const Stmt &, bool);
   explicit Stmt(const codon::SrcInfo &s);
 
-  /// Convert a node to an S-expression.
-  std::string toString() const;
-  virtual std::string toString(int indent) const = 0;
   /// Validate a node. Throw ParseASTException if a node is not valid.
   void validate() const;
-  /// Deep copy a node.
-  virtual std::shared_ptr<Stmt> clone() const = 0;
-  /// Accept an AST visitor.
-  virtual void accept(ASTVisitor &) = 0;
-
-  /// Allow pretty-printing to C++ streams.
-  friend std::ostream &operator<<(std::ostream &out, const Stmt &stmt) {
-    return out << stmt.toString();
-  }
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
   virtual AssignStmt *getAssign() { return nullptr; }
@@ -63,6 +55,9 @@ public:
   virtual ExprStmt *getExpr() { return nullptr; }
   virtual SuiteStmt *getSuite() { return nullptr; }
   virtual FunctionStmt *getFunction() { return nullptr; }
+  virtual TryStmt *getTry() { return nullptr; }
+  virtual IfStmt *getIf() { return nullptr; }
+  virtual ForStmt *getFor() { return nullptr; }
 
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
@@ -80,12 +75,11 @@ struct SuiteStmt : public Stmt {
 
   std::vector<StmtPtr> stmts;
 
-  /// These constructors flattens the provided statement vector (see flatten() below).
   explicit SuiteStmt(std::vector<StmtPtr> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
   SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
-  SuiteStmt(const SuiteStmt &stmt);
+  SuiteStmt(const SuiteStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -98,14 +92,14 @@ struct SuiteStmt : public Stmt {
 
   /// Flatten all nested SuiteStmt objects that do not own a block in the statement
   /// vector. This is shallow flattening.
-  static void flatten(const StmtPtr &s, std::vector<StmtPtr> &stmts);
+  void shallow_flatten();
 };
 
 /// Break statement.
 /// @li break
 struct BreakStmt : public Stmt {
   BreakStmt() = default;
-  BreakStmt(const BreakStmt &stmt) = default;
+  BreakStmt(const BreakStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -115,7 +109,7 @@ struct BreakStmt : public Stmt {
 /// @li continue
 struct ContinueStmt : public Stmt {
   ContinueStmt() = default;
-  ContinueStmt(const ContinueStmt &stmt) = default;
+  ContinueStmt(const ContinueStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -127,7 +121,7 @@ struct ExprStmt : public Stmt {
   ExprPtr expr;
 
   explicit ExprStmt(ExprPtr expr);
-  ExprStmt(const ExprStmt &stmt);
+  ExprStmt(const ExprStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -147,7 +141,7 @@ struct AssignStmt : public Stmt {
 
   AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr,
              UpdateMode update = UpdateMode::Assign);
-  AssignStmt(const AssignStmt &stmt);
+  AssignStmt(const AssignStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -170,7 +164,7 @@ struct DelStmt : public Stmt {
   ExprPtr expr;
 
   explicit DelStmt(ExprPtr expr);
-  DelStmt(const DelStmt &stmt);
+  DelStmt(const DelStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -184,7 +178,7 @@ struct PrintStmt : public Stmt {
   bool isInline;
 
   explicit PrintStmt(std::vector<ExprPtr> items, bool isInline);
-  PrintStmt(const PrintStmt &stmt);
+  PrintStmt(const PrintStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -198,7 +192,7 @@ struct ReturnStmt : public Stmt {
   ExprPtr expr;
 
   explicit ReturnStmt(ExprPtr expr = nullptr);
-  ReturnStmt(const ReturnStmt &stmt);
+  ReturnStmt(const ReturnStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -212,7 +206,7 @@ struct YieldStmt : public Stmt {
   ExprPtr expr;
 
   explicit YieldStmt(ExprPtr expr = nullptr);
-  YieldStmt(const YieldStmt &stmt);
+  YieldStmt(const YieldStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -227,7 +221,7 @@ struct AssertStmt : public Stmt {
   ExprPtr message;
 
   explicit AssertStmt(ExprPtr expr, ExprPtr message = nullptr);
-  AssertStmt(const AssertStmt &stmt);
+  AssertStmt(const AssertStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -247,7 +241,7 @@ struct WhileStmt : public Stmt {
   std::string gotoVar = "";
 
   WhileStmt(ExprPtr cond, StmtPtr suite, StmtPtr elseSuite = nullptr);
-  WhileStmt(const WhileStmt &stmt);
+  WhileStmt(const WhileStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -270,7 +264,9 @@ struct ForStmt : public Stmt {
 
   ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite = nullptr,
           ExprPtr decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
-  ForStmt(const ForStmt &stmt);
+  ForStmt(const ForStmt &, bool);
+
+  ForStmt *getFor() override { return this; }
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -289,7 +285,9 @@ struct IfStmt : public Stmt {
   StmtPtr ifSuite, elseSuite;
 
   IfStmt(ExprPtr cond, StmtPtr ifSuite, StmtPtr elseSuite = nullptr);
-  IfStmt(const IfStmt &stmt);
+  IfStmt(const IfStmt &, bool);
+
+  IfStmt *getIf() override { return this; }
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -305,13 +303,13 @@ struct MatchStmt : public Stmt {
     ExprPtr guard;
     StmtPtr suite;
 
-    MatchCase clone() const;
+    MatchCase clone(bool) const;
   };
   ExprPtr what;
   std::vector<MatchCase> cases;
 
   MatchStmt(ExprPtr what, std::vector<MatchCase> cases);
-  MatchStmt(const MatchStmt &stmt);
+  MatchStmt(const MatchStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -344,7 +342,7 @@ struct ImportStmt : public Stmt {
   ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args = {},
              ExprPtr ret = nullptr, std::string as = "", size_t dots = 0,
              bool isFunction = true);
-  ImportStmt(const ImportStmt &stmt);
+  ImportStmt(const ImportStmt &, bool);
 
   std::string toString(int indent) const override;
   void validate() const;
@@ -366,16 +364,20 @@ struct TryStmt : public Stmt {
     StmtPtr suite;
 
     Catch(const std::string&, ExprPtr, StmtPtr);
-    Catch clone() const;
+    Catch(const Catch &, bool);
+    std::shared_ptr<Catch> clone(bool) const;
   };
 
   StmtPtr suite;
-  std::vector<Catch> catches;
+  std::vector<std::shared_ptr<Catch>> catches;
   /// nullptr if there is no finally block.
   StmtPtr finally;
 
-  TryStmt(StmtPtr suite, std::vector<Catch> catches, StmtPtr finally = nullptr);
-  TryStmt(const TryStmt &stmt);
+  TryStmt(StmtPtr suite, std::vector<std::shared_ptr<Catch>> catches,
+          StmtPtr finally = nullptr);
+  TryStmt(const TryStmt &, bool);
+
+  TryStmt *getTry() override { return this; }
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -390,7 +392,7 @@ struct ThrowStmt : public Stmt {
   bool transformed;
 
   explicit ThrowStmt(ExprPtr expr, bool transformed = false);
-  ThrowStmt(const ThrowStmt &stmt);
+  ThrowStmt(const ThrowStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -403,7 +405,7 @@ struct GlobalStmt : public Stmt {
   bool nonLocal;
 
   explicit GlobalStmt(std::string var, bool nonLocal = false);
-  GlobalStmt(const GlobalStmt &stmt) = default;
+  GlobalStmt(const GlobalStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -443,7 +445,9 @@ struct Attr {
   bool isAttribute;
 
   std::set<std::string> magics;
-  std::set<std::string> captures;
+
+  enum CaptureType { Read, Global, Nonlocal };
+  std::unordered_map<std::string, CaptureType> captures;
 
   // Set of attributes
   std::set<std::string> customAttr;
@@ -468,7 +472,7 @@ struct FunctionStmt : public Stmt {
 
   FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args, StmtPtr suite,
                Attr attributes = Attr(), std::vector<ExprPtr> decorators = {});
-  FunctionStmt(const FunctionStmt &stmt);
+  FunctionStmt(const FunctionStmt &, bool);
 
   std::string toString(int indent) const override;
   void validate() const;
@@ -507,7 +511,7 @@ struct ClassStmt : public Stmt {
             std::vector<ExprPtr> decorators = {}, std::vector<ExprPtr> baseClasses = {},
             std::vector<ExprPtr> staticBaseClasses = {});
   ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
-  ClassStmt(const ClassStmt &stmt);
+  ClassStmt(const ClassStmt &, bool);
 
   std::string toString(int indent) const override;
   void validate() const;
@@ -530,7 +534,7 @@ struct YieldFromStmt : public Stmt {
   ExprPtr expr;
 
   explicit YieldFromStmt(ExprPtr expr);
-  YieldFromStmt(const YieldFromStmt &stmt);
+  YieldFromStmt(const YieldFromStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -546,7 +550,7 @@ struct WithStmt : public Stmt {
 
   WithStmt(std::vector<ExprPtr> items, std::vector<std::string> vars, StmtPtr suite);
   WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> items, StmtPtr suite);
-  WithStmt(const WithStmt &stmt);
+  WithStmt(const WithStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -560,7 +564,7 @@ struct CustomStmt : public Stmt {
   StmtPtr suite;
 
   CustomStmt(std::string keyword, ExprPtr expr, StmtPtr suite);
-  CustomStmt(const CustomStmt &stmt);
+  CustomStmt(const CustomStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -576,7 +580,7 @@ struct AssignMemberStmt : public Stmt {
   ExprPtr rhs;
 
   AssignMemberStmt(ExprPtr lhs, std::string member, ExprPtr rhs);
-  AssignMemberStmt(const AssignMemberStmt &stmt);
+  AssignMemberStmt(const AssignMemberStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -588,7 +592,7 @@ struct CommentStmt : public Stmt {
   std::string comment;
 
   explicit CommentStmt(std::string comment);
-  CommentStmt(const CommentStmt &stmt) = default;
+  CommentStmt(const CommentStmt &, bool);
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);
@@ -597,19 +601,3 @@ struct CommentStmt : public Stmt {
 #undef ACCEPT
 
 } // namespace codon::ast
-
-template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<std::is_base_of<codon::ast::Stmt, T>::value, char>>
-    : fmt::ostream_formatter {};
-
-template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<
-           std::is_convertible<T, std::shared_ptr<codon::ast::Stmt>>::value, char>>
-    : fmt::formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
-  }
-};

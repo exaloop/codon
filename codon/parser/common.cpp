@@ -104,9 +104,11 @@ int findStar(const std::string &s) {
   int i = 0;
   for (; i < s.size(); i++) {
     if (s[i] == '(')
-      start = true;
-    if (start && (s[i] == '\n' || s[i] == ' ' || s[i] == ')'))
-      break;
+      return i + 1;
+    if (!isspace(s[i]))
+      return i;
+    // if (start && (s[i] == '\n' || s[i] == ' ' || s[i] == ')'))
+    // break;
   }
   return i;
 }

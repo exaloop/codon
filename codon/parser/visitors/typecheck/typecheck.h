@@ -112,8 +112,6 @@ private: // Node typechecking rules
   ExprPtr transformComprehension(const std::string &, const std::string &,
                                  std::vector<ExprPtr> &);
   void visit(GeneratorExpr *) override;
-  void visit(DictGeneratorExpr *) override;
-  StmtPtr transformGeneratorBody(const std::vector<GeneratorBody> &, SuiteStmt *&);
 
   /* Conditional expression and statements (cond.cpp) */
   void visit(IfExpr *) override;
@@ -225,10 +223,9 @@ private: // Node typechecking rules
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(YieldFromStmt *) override;
-  void visit(LambdaExpr *) override;
+  // void visit(LambdaExpr *) override;
   void visit(GlobalStmt *) override;
   void visit(FunctionStmt *) override;
-  ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
   StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
                                     const Expr *, Stmt *);
   StmtPtr transformLLVMDefinition(Stmt *);
@@ -353,23 +350,31 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
       return result;
     }
 
-    struct Item {
+    struct Item : public codon::SrcObject {
       std::vector<int> scope;
-      SrcObject *binding = nullptr;
+      std::shared_ptr<SrcObject> binding = nullptr;
 
       /// List of scopes where the identifier is accessible
       /// without __used__ check
       std::vector<std::vector<int>> accessChecked;
+
+      Item(const codon::SrcInfo &src, std::vector<int> scope,
+           std::shared_ptr<SrcObject> binding = nullptr,
+           std::vector<std::vector<int>> accessChecked = {})
+          : scope(std::move(scope)), binding(std::move(binding)),
+            accessChecked(std::move(accessChecked)) {
+        setSrcInfo(src);
+      }
     };
     std::unordered_map<std::string, std::list<Item>> map;
 
-    std::set<std::string> captures;
-    std::set<std::string> childCaptures;      // for functions!
+    std::unordered_map<std::string, Attr::CaptureType> captures;
+    std::unordered_map<std::string, Attr::CaptureType> childCaptures; // for functions!
     std::vector<std::set<std::string>> temps; // for comprehensions
     std::map<std::string, SrcInfo> firstSeen;
 
     bool adding = false;
-    SrcObject *root = nullptr;
+    std::shared_ptr<SrcObject> root = nullptr;
     bool functionScope = false;
     bool inClass = false;
     bool isConditional = false;
@@ -385,14 +390,15 @@ public:
   ExprPtr transform(std::shared_ptr<Expr> &expr) override;
   StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
 
-  void visitName(const std::string &name, bool = false, SrcObject * = nullptr,
+  void visitName(const std::string &name, bool = false,
+                 const std::shared_ptr<SrcObject> & = nullptr,
                  const SrcInfo & = SrcInfo());
-  void transformAdding(ExprPtr &e, SrcObject *);
+  void transformAdding(ExprPtr &e, std::shared_ptr<SrcObject>);
 
   void visit(IdExpr *) override;
   void visit(GeneratorExpr *) override;
-  void visit(DictGeneratorExpr *) override;
   void visit(AssignExpr *) override;
+  void visit(LambdaExpr *) override;
   void visit(IfExpr *) override;
   void visit(BinaryExpr *) override;
   void visit(AssignStmt *) override;
@@ -401,10 +407,12 @@ public:
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(ImportStmt *) override;
-  // todo)) delstmt?
+  void visit(DelStmt *) override;
   void visit(TryStmt *) override;
+  void visit(GlobalStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
+  void visit(WithStmt *) override;
 
   Context::Item *findDominatingBinding(const std::string &, bool = true);
   void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
@@ -416,6 +424,7 @@ public:
   void leaveConditionalBlock(StmtPtr &);
 
   void transformBlock(StmtPtr &s);
+  ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
 };
 
 } // namespace codon::ast

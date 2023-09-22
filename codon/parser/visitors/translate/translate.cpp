@@ -12,6 +12,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
@@ -189,6 +190,71 @@ void TranslateVisitor::visit(IfExpr *expr) {
   auto ifexpr = transform(expr->ifexpr);
   auto elsexpr = transform(expr->elsexpr);
   result = make<ir::TernaryInstr>(expr, cond, ifexpr, elsexpr);
+}
+
+// Search expression tree for a identifier
+class IdVisitor : public CallbackASTVisitor<bool, bool> {
+public:
+  std::unordered_set<std::string> ids;
+
+  bool transform(const std::shared_ptr<Expr> &expr) override {
+    IdVisitor v;
+    if (expr)
+      expr->accept(v);
+    ids.insert(v.ids.begin(), v.ids.end());
+    return true;
+  }
+  bool transform(const std::shared_ptr<Stmt> &stmt) override {
+    IdVisitor v;
+    if (stmt)
+      stmt->accept(v);
+    ids.insert(v.ids.begin(), v.ids.end());
+    return true;
+  }
+  void visit(IdExpr *expr) override { ids.insert(expr->value); }
+};
+
+void TranslateVisitor::visit(GeneratorExpr *expr) {
+  auto name =
+      ctx->cache->imports[MAIN_IMPORT].ctx->generateCanonicalName("%_generator");
+  ir::Func *fn = ctx->cache->module->Nr<ir::BodiedFunc>(name);
+  fn->setGlobal();
+  fn->setGenerator();
+  std::vector<std::string> names;
+  std::vector<codon::ir::types::Type *> types;
+  std::vector<ir::Value *> items;
+
+  IdVisitor v;
+  expr->accept(v);
+  for (auto &i : v.ids) {
+    auto val = ctx->find(i);
+    if (val && !val->getFunc() && !val->getType() && !val->getVar()->isGlobal()) {
+      types.push_back(val->getVar()->getType());
+      names.push_back(i);
+      items.emplace_back(make<ir::VarValue>(expr, val->getVar()));
+    }
+  }
+  auto irType = ctx->cache->module->unsafeGetFuncType(
+      name, ctx->forceFind(expr->type->realizedName())->getType(), types, false);
+  fn->realize(irType, names);
+
+  ctx->addBlock();
+  for (auto &n : names)
+    ctx->add(TranslateItem::Var, n, fn->getArgVar(n));
+  auto body = make<ir::SeriesFlow>(expr, "body");
+  ctx->bases.push_back(cast<ir::BodiedFunc>(fn));
+  ctx->addSeries(body);
+
+  if (auto i = expr->loops.back()->getIf())
+    i->ifSuite = N<YieldStmt>(expr->expr->expr);
+  if (auto f = expr->loops.back()->getFor())
+    f->suite = N<YieldStmt>(expr->expr->expr);
+  transform(expr->loops.front());
+  ctx->popSeries();
+  ctx->bases.pop_back();
+  cast<ir::BodiedFunc>(fn)->setBody(body);
+  ctx->popBlock();
+  result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, fn), std::move(items));
 }
 
 void TranslateVisitor::visit(CallExpr *expr) {
@@ -496,20 +562,19 @@ void TranslateVisitor::visit(TryStmt *stmt) {
   auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries);
   for (auto &c : stmt->catches) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
-    auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
+    auto *excType = c->exc ? getType(c->exc->getType()) : nullptr;
     ir::Var *catchVar = nullptr;
-    if (!c.var.empty()) {
-      LOG("-> xx {} / {}", c.var, c.exc->hasAttr(ExprAttr::Dominated));
-      if (!ctx->find(c.var) || !c.exc->hasAttr(ExprAttr::Dominated)) {
-        catchVar = make<ir::Var>(stmt, excType, false, false, c.var);
+    if (!c->var.empty()) {
+      if (!ctx->find(c->var) || !c->exc->hasAttr(ExprAttr::Dominated)) {
+        catchVar = make<ir::Var>(stmt, excType, false, false, c->var);
       } else {
-        catchVar = ctx->find(c.var)->getVar();
+        catchVar = ctx->find(c->var)->getVar();
       }
-      ctx->add(TranslateItem::Var, c.var, catchVar);
+      ctx->add(TranslateItem::Var, c->var, catchVar);
       ctx->getBase()->push_back(catchVar);
     }
     ctx->addSeries(catchBody);
-    transform(c.suite);
+    transform(c->suite);
     ctx->popSeries();
     tc->push_back(ir::TryCatchFlow::Catch(catchBody, excType, catchVar));
   }
@@ -560,7 +625,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   for (int i = 0, j = 0; i < ast->args.size(); i++)
     if (ast->args[i].status == Param::Normal) {
       if (!type->getArgTypes()[j]->getFunc()) {
-        names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
+        names.push_back(ctx->cache->rev(ast->args[i].name));
         indices.push_back(i);
       }
       j++;

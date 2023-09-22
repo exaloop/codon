@@ -66,7 +66,7 @@ def goo():
     def foo():
         z += 1
     foo()
-goo()  #! local variable 'z' referenced before assignment at access.codon:65:9
+goo()  #! local variable 'z' referenced before assignment
 
 #%% new_scoping,barebones
 try:
@@ -430,7 +430,8 @@ def foo(x):
 @overload
 def foo(x, y):
     return 2, x, y
-foo('hooooooooy!', 1, 2) #! no function 'foo' with arguments (str, int, int)
+foo('hooooooooy!', 1, 2)
+#! no function 'foo' with arguments (str, int, int)
 
 #%% generator_capture_nonglobal,barebones
 # Issue #49

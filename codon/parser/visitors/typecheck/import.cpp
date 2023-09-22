@@ -176,11 +176,11 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
       fnArgs.emplace_back("*args", nullptr, nullptr);
     } else {
       fnArgs.emplace_back(args[ai].name.empty() ? format("a{}", ai) : args[ai].name,
-                          args[ai].type->clone(), nullptr);
+                          clone(args[ai].type), nullptr);
     }
   }
   ctx->generateCanonicalName(name); // avoid canonicalName == name
-  StmtPtr f = N<FunctionStmt>(name, ret ? ret->clone() : N<IdExpr>("NoneType"), fnArgs,
+  StmtPtr f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs,
                               nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
@@ -199,7 +199,7 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
 StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Expr *type,
                                               const std::string &altName) {
   auto canonical = ctx->generateCanonicalName(name);
-  auto typ = transformType(type->clone());
+  auto typ = transformType(clone(type));
   auto val = ctx->addVar(altName.empty() ? name : altName, canonical, typ->type);
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttr(ExprAttr::ExternVar);
@@ -217,8 +217,8 @@ TypecheckVisitor::transformCDLLImport(const Expr *dylib, const std::string &name
                                       const std::string &altName, bool isFunction) {
   ExprPtr type = nullptr;
   if (isFunction) {
-    std::vector<ExprPtr> fnArgs{N<ListExpr>(std::vector<ExprPtr>{}),
-                                ret ? ret->clone() : N<IdExpr>("NoneType")};
+    std::vector<ExprPtr> fnArgs{N<ListExpr>(),
+                                ret ? clone(ret) : N<IdExpr>("NoneType")};
     for (const auto &a : args) {
       seqassert(a.name.empty(), "unexpected argument name");
       seqassert(!a.defaultValue, "unexpected default argument");
@@ -228,13 +228,14 @@ TypecheckVisitor::transformCDLLImport(const Expr *dylib, const std::string &name
 
     type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
   } else {
-    type = ret->clone();
+    type = clone(ret);
   }
 
+  ExprPtr c = clone(dylib);
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallExpr::Arg>{CallExpr::Arg(dylib->clone()),
+                  std::vector<CallExpr::Arg>{CallExpr::Arg(c),
                                              CallExpr::Arg(N<StringExpr>(name)),
                                              {"Fn", type}})));
 }
@@ -284,8 +285,8 @@ StmtPtr TypecheckVisitor::transformPythonImport(Expr *what,
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
-  auto retType = (ret && !ret->getNone()) ? ret->clone() : N<IdExpr>("NoneType");
-  auto retExpr = N<CallExpr>(N<DotExpr>(retType->clone(), "__from_py__"),
+  auto retType = (ret && !ret->getNone()) ? clone(ret) : N<IdExpr>("NoneType");
+  auto retExpr = N<CallExpr>(N<DotExpr>(clone(retType), "__from_py__"),
                              N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
   auto retStmt = N<ReturnStmt>(retExpr);
   // Create a function
@@ -371,7 +372,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     ctx->cache->functions[importVar].ast =
         N<FunctionStmt>(importVar, nullptr, std::vector<Param>{}, N<SuiteStmt>(stmts),
                         Attr({Attr::ForceRealize}));
-    preamble->push_back(ctx->cache->functions[importVar].ast->clone());
+    preamble->push_back(clone(ctx->cache->functions[importVar].ast));
     ctx->cache->overloads[importVar].push_back(importVar);
   }
   return nullptr;

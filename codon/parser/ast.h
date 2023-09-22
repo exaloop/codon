@@ -2,6 +2,10 @@
 
 #pragma once
 
+#include <memory>
+#include <ostream>
+#include <string>
+
 #include "codon/parser/ast/error.h"
 #include "codon/parser/ast/expr.h"
 #include "codon/parser/ast/stmt.h"

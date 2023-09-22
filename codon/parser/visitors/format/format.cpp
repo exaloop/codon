@@ -128,32 +128,20 @@ void FormatVisitor::visit(DictExpr *expr) {
 }
 
 void FormatVisitor::visit(GeneratorExpr *expr) {
-  std::string s;
-  for (auto &i : expr->loops) {
-    std::string cond;
-    for (auto &k : i.conds)
-      cond += fmt::format(" if {}", transform(k));
-    s += fmt::format("for {} in {}{}", i.vars->toString(), i.gen->toString(), cond);
-  }
-  if (expr->kind == GeneratorExpr::ListGenerator)
-    result = renderExpr(expr, "[{} {}]", transform(expr->expr), s);
-  else if (expr->kind == GeneratorExpr::SetGenerator)
-    result = renderExpr(expr, "{{{} {}}}", transform(expr->expr), s);
-  else
-    result = renderExpr(expr, "({} {})", transform(expr->expr), s);
-}
-
-void FormatVisitor::visit(DictGeneratorExpr *expr) {
-  std::string s;
-  for (auto &i : expr->loops) {
-    std::string cond;
-    for (auto &k : i.conds)
-      cond += fmt::format(" if {}", transform(k));
-
-    s += fmt::format("for {} in {}{}", i.vars->toString(), i.gen->toString(), cond);
-  }
-  result =
-      renderExpr(expr, "{{{}: {} {}}}", transform(expr->key), transform(expr->expr), s);
+  seqassert(false, "not implemented");
+  // std::string s;
+  // for (auto &i : expr->loops) {
+  //   std::string cond;
+  //   for (auto &k : i.conds)
+  //     cond += fmt::format(" if {}", transform(k));
+  //   s += fmt::format("for {} in {}{}", i.vars->toString(), i.gen->toString(), cond);
+  // }
+  // if (expr->kind == GeneratorExpr::ListGenerator)
+  //   result = renderExpr(expr, "[{} {}]", transform(expr->expr), s);
+  // else if (expr->kind == GeneratorExpr::SetGenerator)
+  //   result = renderExpr(expr, "{{{} {}}}", transform(expr->expr), s);
+  // else
+  //   result = renderExpr(expr, "({} {})", transform(expr->expr), s);
 }
 
 void FormatVisitor::visit(IfExpr *expr) {
@@ -323,9 +311,9 @@ void FormatVisitor::visit(TryStmt *stmt) {
   std::vector<std::string> catches;
   for (auto &c : stmt->catches) {
     catches.push_back(
-        fmt::format("{} {}{}:{}{}", keyword("catch"), transform(c.exc),
-                    c.var == "" ? "" : fmt::format("{} {}", keyword("as"), c.var),
-                    newline(), transform(c.suite.get(), 1)));
+        fmt::format("{} {}{}:{}{}", keyword("catch"), transform(c->exc),
+                    c->var == "" ? "" : fmt::format("{} {}", keyword("as"), c->var),
+                    newline(), transform(c->suite.get(), 1)));
   }
   result =
       fmt::format("{}:{}{}{}{}", keyword("try"), newline(),

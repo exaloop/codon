@@ -299,8 +299,15 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
       break;
     }
     if (transform(s)) {
-      stmts.push_back(s);
-      done &= stmts.back()->isDone();
+      if (!s->getSuite()) {
+        done &= s->isDone();
+        stmts.push_back(s);
+      } else {
+        for (auto &ss : s->getSuite()->stmts) {
+          done &= ss->isDone();
+          stmts.push_back(ss);
+        }
+      }
     }
   }
   stmt->stmts = stmts;
@@ -375,35 +382,6 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
-
-// Search expression tree for a identifier
-class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {
-  std::string what;
-  bool result = false;
-
-public:
-  IdSearchVisitor(std::string what) : what(std::move(what)) {}
-  bool transform(const std::shared_ptr<Expr> &expr) override {
-    if (result)
-      return result;
-    IdSearchVisitor v(what);
-    if (expr)
-      expr->accept(v);
-    return v.result;
-  }
-  bool transform(const std::shared_ptr<Stmt> &stmt) override {
-    if (result)
-      return result;
-    IdSearchVisitor v(what);
-    if (stmt)
-      stmt->accept(v);
-    return v.result;
-  }
-  void visit(IdExpr *expr) override {
-    if (expr->value == what)
-      result = true;
-  }
-};
 
 /// Check if a function can be called with the given arguments.
 /// See @c reorderNamedArgs for details.

@@ -73,7 +73,6 @@ public:
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
-  void visit(DictGeneratorExpr *) override;
   void visit(InstantiateExpr *expr) override;
   void visit(IfExpr *) override;
   void visit(UnaryExpr *) override;

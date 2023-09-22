@@ -33,7 +33,7 @@ void TypecheckVisitor::visit(BreakStmt *stmt) {
     if (!ctx->staticLoops.back().empty()) {
       auto a = N<AssignStmt>(N<IdExpr>(ctx->staticLoops.back()), N<BoolExpr>(false));
       a->setUpdate();
-      resultStmt = transform(N<SuiteStmt>(a, stmt->clone()));
+      resultStmt = transform(N<SuiteStmt>(a, stmt->shared_from_this()));
     }
   }
 }
@@ -268,10 +268,10 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
     }
   };
 
-  auto oldSuite = clone(stmt->suite);
+  auto suite = clean_clone(stmt->suite);
   std::vector<std::string> vars{stmt->var->getId()->value};
 
-  iter(stmt->suite, 3, [&](StmtPtr &s) {
+  iter(suite, 3, [&](StmtPtr &s) {
     if (auto a = s->getAssign()) {
       if (a->rhs && a->rhs->getIndex())
         if (a->rhs->getIndex()->expr->isId(vars[0])) {
@@ -288,16 +288,13 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
         auto brk = N<BreakStmt>();
         brk->setDone(); // Avoid transforming this one to continue
         // var [: Static] := expr; suite...
-        auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
-                                 N<SuiteStmt>(assigns, clone(stmt->suite), brk));
+        auto loop =
+            N<WhileStmt>(N<IdExpr>(loopVar), N<SuiteStmt>(assigns, clone(suite), brk));
         loop->gotoVar = loopVar;
         return loop;
       });
-  if (!ok) {
-    if (oldSuite)
-      stmt->suite = oldSuite;
+  if (!ok)
     return nullptr;
-  }
 
   // Close the loop
   auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
@@ -339,7 +336,7 @@ TypecheckVisitor::transformStaticLoopCall(
       } else {
         stmt->type = nullptr;
       }
-      block.push_back(wrap(stmt->clone()));
+      block.push_back(wrap(clone(stmt)));
     }
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
@@ -355,7 +352,7 @@ TypecheckVisitor::transformStaticLoopCall(
     for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
       stmt->rhs = N<IntExpr>(i);
       stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
-      block.push_back(wrap(stmt->clone()));
+      block.push_back(wrap(clone(stmt)));
     }
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
     if (vars.size() != 1)
@@ -367,7 +364,7 @@ TypecheckVisitor::transformStaticLoopCall(
     for (int64_t i = 0; i < ed; i++) {
       stmt->rhs = N<IntExpr>(i);
       stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
-      block.push_back(wrap(stmt->clone()));
+      block.push_back(wrap(clone(stmt)));
     }
   } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads.0")) {
     if (vars.size() != 1)
@@ -394,7 +391,7 @@ TypecheckVisitor::transformStaticLoopCall(
             }
           }
             stmt->rhs = N<IdExpr>(method);
-            block.push_back(wrap(stmt->clone()));
+            block.push_back(wrap(clone(stmt)));
             // }
         }
       }
@@ -413,9 +410,9 @@ TypecheckVisitor::transformStaticLoopCall(
         auto b = N<SuiteStmt>(
             {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))),
-             N<AssignStmt>(N<IdExpr>(vars[1]),
-                           N<IndexExpr>(iter->getCall()->args[0].value->clone(),
-                                        N<IntExpr>(i)))});
+             N<AssignStmt>(
+                 N<IdExpr>(vars[1]),
+                 N<IndexExpr>(clone(iter->getCall()->args[0].value), N<IntExpr>(i)))});
         block.push_back(wrap(b));
       }
     } else {
@@ -444,7 +441,7 @@ TypecheckVisitor::transformStaticLoopCall(
                           NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("str"))));
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
-                          N<DotExpr>(iter->getCall()->args[0].value->clone(), f.name)));
+                          N<DotExpr>(clone(iter->getCall()->args[0].value), f.name)));
         auto b = N<SuiteStmt>(stmts);
         block.push_back(wrap(b));
         idx++;

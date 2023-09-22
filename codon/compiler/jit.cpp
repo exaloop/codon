@@ -102,7 +102,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
         *e = std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
-            std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
+            std::make_shared<ast::IdExpr>("_jit_display"), clone(ex->expr),
             std::make_shared<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);

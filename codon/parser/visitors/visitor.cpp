@@ -22,7 +22,6 @@ void ASTVisitor::visit(ListExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(SetExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(DictExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(GeneratorExpr *expr) { defaultVisit(expr); }
-void ASTVisitor::visit(DictGeneratorExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(IfExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(UnaryExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(BinaryExpr *expr) { defaultVisit(expr); }

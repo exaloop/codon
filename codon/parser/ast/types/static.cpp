@@ -14,7 +14,7 @@
 namespace codon::ast::types {
 
 StaticType::StaticType(Cache *cache, const std::shared_ptr<Expr> &e)
-    : Type(cache), expr(e->clone()) {
+    : Type(cache), expr(clean_clone(e)) {
   if (!expr->isStatic() || !expr->staticValue.evaluated) {
     std::unordered_set<std::string> seen;
     parseExpr(expr, seen);
@@ -23,7 +23,7 @@ StaticType::StaticType(Cache *cache, const std::shared_ptr<Expr> &e)
 
 StaticType::StaticType(Cache *cache, std::vector<ClassType::Generic> generics,
                        const std::shared_ptr<Expr> &e)
-    : Type(cache), generics(std::move(generics)), expr(e->clone()) {}
+    : Type(cache), generics(std::move(generics)), expr(clean_clone(e)) {}
 
 StaticType::StaticType(Cache *cache, int64_t i)
     : Type(cache), expr(std::make_shared<IntExpr>(i)) {}
@@ -112,7 +112,7 @@ bool StaticType::isInstantiated() const { return expr->staticValue.evaluated; }
 
 std::string StaticType::debugString(char mode) const {
   if (expr->staticValue.evaluated)
-    return expr->staticValue.toString();
+    return expr->staticValue.toString(0);
   if (mode == 2) {
     std::vector<std::string> s;
     for (auto &g : generics)
@@ -131,7 +131,7 @@ std::string StaticType::realizedName() const {
   if (!expr->staticValue.evaluated) // If not already evaluated, evaluate!
     const_cast<StaticType *>(this)->expr->staticValue = evaluate();
   seqassert(expr->staticValue.evaluated, "static value not evaluated");
-  return expr->staticValue.toString();
+  return expr->staticValue.toString(0);
 }
 
 StaticValue StaticType::evaluate() const {
@@ -140,11 +140,12 @@ StaticValue StaticType::evaluate() const {
   auto ctx = std::make_shared<TypeContext>(cache);
   for (auto &g : generics)
     ctx->addType(g.name, g.name, g.type);
-  auto en = TypecheckVisitor(ctx).transform(expr->clone());
+  auto en = TypecheckVisitor(ctx).transform(expr);
   seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated", en);
   return en->staticValue;
 }
 
+/// TODO: visitor?
 void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &seen) {
   e->type = nullptr;
   if (auto ei = e->getId()) {

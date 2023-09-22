@@ -46,6 +46,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         [&]() -> ExprPtr {
           // Check if both subexpressions are static; if so, this if expression is also
           // static and should be marked as such
+          // TODO: short circuiting?
           auto i = transform(clone(expr->ifexpr));
           auto e = transform(clone(expr->elsexpr));
           if (i->isStatic() && e->isStatic()) {
@@ -163,7 +164,7 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
                                            StmtPtr suite) {
   // Convenience function to generate `isinstance(e, typ)` calls
   auto isinstance = [&](const ExprPtr &e, const std::string &typ) -> ExprPtr {
-    return N<CallExpr>(N<IdExpr>("isinstance"), e->clone(), N<IdExpr>(typ));
+    return N<CallExpr>(N<IdExpr>("isinstance"), clone(e), N<IdExpr>(typ));
   };
   // Convenience function to find the index of an ellipsis within a list pattern
   auto findEllipsis = [&](const std::vector<ExprPtr> &items) {
@@ -181,18 +182,17 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
   if (pattern->getInt() || CAST(pattern, BoolExpr)) {
     // Bool and int patterns
     return N<IfStmt>(isinstance(var, CAST(pattern, BoolExpr) ? "bool" : "int"),
-                     N<IfStmt>(N<BinaryExpr>(var->clone(), "==", pattern), suite));
+                     N<IfStmt>(N<BinaryExpr>(clone(var), "==", pattern), suite));
   } else if (auto er = CAST(pattern, RangeExpr)) {
     // Range pattern
     return N<IfStmt>(
         isinstance(var, "int"),
-        N<IfStmt>(
-            N<BinaryExpr>(var->clone(), ">=", clone(er->start)),
-            N<IfStmt>(N<BinaryExpr>(var->clone(), "<=", clone(er->stop)), suite)));
+        N<IfStmt>(N<BinaryExpr>(clone(var), ">=", clone(er->start)),
+                  N<IfStmt>(N<BinaryExpr>(clone(var), "<=", clone(er->stop)), suite)));
   } else if (auto et = pattern->getTuple()) {
     // Tuple pattern
     for (auto it = et->items.size(); it-- > 0;) {
-      suite = transformPattern(N<IndexExpr>(var->clone(), N<IntExpr>(it)),
+      suite = transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)),
                                clone(et->items[it]), suite);
     }
     return N<IfStmt>(
@@ -210,12 +210,12 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
       op = ">=", sz -= 1;
     }
     for (auto it = el->items.size(); it-- > ellipsis + 1;) {
-      suite = transformPattern(
-          N<IndexExpr>(var->clone(), N<IntExpr>(it - el->items.size())),
-          clone(el->items[it]), suite);
+      suite =
+          transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it - el->items.size())),
+                           clone(el->items[it]), suite);
     }
     for (auto it = ellipsis; it-- > 0;) {
-      suite = transformPattern(N<IndexExpr>(var->clone(), N<IntExpr>(it)),
+      suite = transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)),
                                clone(el->items[it]), suite);
     }
     return N<IfStmt>(isinstance(var, "List"),
@@ -246,9 +246,9 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
     pattern = N<CallExpr>(N<IdExpr>("ellipsis"));
   // Fallback (`__match__`) pattern
   return N<IfStmt>(
-      N<CallExpr>(N<IdExpr>("hasattr"), var->clone(), N<StringExpr>("__match__"),
-                  N<CallExpr>(N<IdExpr>("type"), pattern->clone())),
-      N<IfStmt>(N<CallExpr>(N<DotExpr>(var->clone(), "__match__"), pattern), suite));
+      N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>("__match__"),
+                  N<CallExpr>(N<IdExpr>("type"), clone(pattern))),
+      N<IfStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__match__"), pattern), suite));
 }
 
 } // namespace codon::ast

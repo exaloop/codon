@@ -119,24 +119,36 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 
 /// AST utilities
 
-/// Clones a pointer even if it is a nullptr.
-template <typename T> auto clone(const std::shared_ptr<T> &t) {
-  return t ? t->clone() : nullptr;
+template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
+
+template <typename T>
+std::shared_ptr<typename std::remove_const<T>::type> clone(const std::shared_ptr<T> &t,
+                                                           bool clean = false) {
+  return t ? std::static_pointer_cast<typename std::remove_const<T>::type>(
+                 t->clone(clean))
+           : nullptr;
+}
+
+template <typename T>
+std::shared_ptr<typename std::remove_const<T>::type>
+clean_clone(const std::shared_ptr<T> &t) {
+  return clone(t, true);
+}
+
+template <typename T>
+std::shared_ptr<typename std::remove_const<T>::type> clone(T *t, bool clean = false) {
+  return t ? std::static_pointer_cast<typename std::remove_const<T>::type>(
+                 t->clone(clean))
+           : nullptr;
 }
 
 /// Clones a vector of cloneable pointer objects.
-template <typename T> std::vector<T> clone(const std::vector<T> &t) {
-  std::vector<T> v;
+template <typename T>
+std::vector<typename std::remove_const<T>::type> clone(const std::vector<T> &t,
+                                                       bool clean = false) {
+  std::vector<typename std::remove_const<T>::type> v;
   for (auto &i : t)
-    v.push_back(clone(i));
-  return v;
-}
-
-/// Clones a vector of cloneable objects.
-template <typename T> std::vector<T> clone_nop(const std::vector<T> &t) {
-  std::vector<T> v;
-  for (auto &i : t)
-    v.push_back(i.clone());
+    v.push_back(clone(i, clean));
   return v;
 }
 

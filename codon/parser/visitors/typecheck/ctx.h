@@ -100,6 +100,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     Attr *attributes = nullptr;
 
+    StmtPtr suite = nullptr;
+
     struct {
       /// Set if the base is class base and if class is marked with @deduce.
       /// Stores the list of class fields in the order of traversal.

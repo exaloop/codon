@@ -137,7 +137,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
   if (auto rtv = tv.realize(type)) {
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
-      TranslateVisitor(codegenCtx).transform(functions[fn.first].ast->clone());
+      TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
     f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
   }
   return f;
@@ -252,7 +252,7 @@ void Cache::populatePythonModule() {
 
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
-      TranslateVisitor(codegenCtx).transform(functions[fn.first].ast->clone());
+      TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
     return functions[fn->ast->name].realizations[fnType->realizedName()]->ir;
   };
 
@@ -539,7 +539,7 @@ void Cache::populatePythonModule() {
   // Handle pending realizations!
   auto pr = pendingRealizations; // copy it as it might be modified
   for (auto &fn : pr)
-    TranslateVisitor(codegenCtx).transform(functions[fn.first].ast->clone());
+    TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
 }
 
 } // namespace codon::ast

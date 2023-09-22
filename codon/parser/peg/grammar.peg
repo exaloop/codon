@@ -52,11 +52,15 @@ list(c, e)  <- e (_ c _ e)*
 tlist(c, e) <- e (_ c _ e)* (_ <c>)?
 
 statements <- ((_ EOL)* statement)+ {
-  return ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  auto s = ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  s->getSuite()->shallow_flatten();
+  return s;
 }
 statement <- SAMEDENT compound_stmt / SAMEDENT simple_stmt
 simple_stmt <- tlist(';', small_stmt) _ EOL {
-  return ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  auto s = ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  s->getSuite()->shallow_flatten();
+  return s;
 }
 small_stmt <-
   / assignment
@@ -269,24 +273,25 @@ try_stmt <-
     (SAMEDENT 'finally' _ ':' _ suite)? {
     return ast<TryStmt>(LOC,
       ac_stmt(V0),
-      ac<SemVals>(V1).transform<TryStmt::Catch>(),
+      ac<SemVals>(V1).transform<std::shared_ptr<TryStmt::Catch>>(),
       VS.size() > 2 ? ac_stmt(V2): nullptr
     );
   }
   / ('try' _ ':' _ suite) (SAMEDENT 'finally' _ ':' _ suite)? {
     return ast<TryStmt>(LOC,
-      ac_stmt(V0), vector<TryStmt::Catch>{}, VS.size() > 1 ? ac_stmt(V1): nullptr
+      ac_stmt(V0), vector<std::shared_ptr<TryStmt::Catch>>{},
+      VS.size() > 1 ? ac_stmt(V1): nullptr
     );
   }
 excepts <- (SAMEDENT except_block)+ { return VS; }
 except_block <-
   / 'except' SPACE expression (SPACE 'as' SPACE NAME)? _ ':' _ suite {
     if (VS.size() == 3)
-      return TryStmt::Catch{ac<string>(V1), ac_expr(V0), ac_stmt(V2)};
+      return std::make_shared<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2));
     else
-      return TryStmt::Catch{"", ac_expr(V0), ac_stmt(V1)};
+      return std::make_shared<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1));
   }
-  / 'except' _ ':' _ suite { return TryStmt::Catch{"", nullptr, ac_stmt(V0)}; }
+  / 'except' _ ':' _ suite { return std::make_shared<TryStmt::Catch>("", nullptr, ac_stmt(V0)); }
 function <-
   / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = dynamic_pointer_cast<FunctionStmt>(ac_stmt(V1));
@@ -396,6 +401,7 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
       }
     suite->stmts.push_back(i);
   }
+  suite->shallow_flatten();
   for (auto &p: generics)
     args.push_back(p);
   return ast<ClassStmt>(LOC,
@@ -583,28 +589,27 @@ tuple <-
 yield <- '(' _ 'yield' _ ')' { return ast<YieldExpr>(LOC); }
 named <- '(' _ named_expression _ ')'
 genexp <- '(' _ named_expression SPACE for_if_clauses _ ')' {
-  return ast<GeneratorExpr>(LOC,
-    GeneratorExpr::Generator, ac_expr(V0), ac<SemVals>(V1).transform<GeneratorBody>()
+  return ast<GeneratorExpr>(
+    LOC, GeneratorExpr::Generator, ac_expr(V0),
+    ac<std::vector<StmtPtr>>(V1)
   );
 }
 listexpr <- '[' _ tlist(',', star_named_expression)? _ ']' {
   return ast<ListExpr>(LOC, VS.transform<ExprPtr>());
 }
 listcomp <- '[' _ named_expression SPACE for_if_clauses _ ']' {
-  return ast<GeneratorExpr>(LOC,
-    GeneratorExpr::ListGenerator,
-    ac_expr(V0),
-    ac<SemVals>(V1).transform<GeneratorBody>()
+  return ast<GeneratorExpr>(
+    LOC, GeneratorExpr::ListGenerator, ac_expr(V0),
+    ac<std::vector<StmtPtr>>(V1)
   );
 }
 set <- '{' _ tlist(',', star_named_expression) _ '}' {
   return ast<SetExpr>(LOC, VS.transform<ExprPtr>());
 }
 setcomp <- '{' _ named_expression SPACE for_if_clauses _ '}' {
-  return ast<GeneratorExpr>(LOC,
-    GeneratorExpr::SetGenerator,
-    ac_expr(V0),
-    ac<SemVals>(V1).transform<GeneratorBody>()
+  return ast<GeneratorExpr>(
+    LOC, GeneratorExpr::SetGenerator, ac_expr(V0),
+    ac<std::vector<StmtPtr>>(V1)
   );
 }
 dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
@@ -612,9 +617,9 @@ dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
 }
 dictcomp <- '{' _ kvpair SPACE for_if_clauses _ '}' {
   auto p = ac<ExprPtr>(V0);
-  return ast<DictGeneratorExpr>(LOC,
-    p->getTuple()->items[0], p->getTuple()->items[1],
-    ac<SemVals>(V1).transform<GeneratorBody>()
+  return ast<GeneratorExpr>(
+    LOC, p->getTuple()->items[0], p->getTuple()->items[1],
+    ac<std::vector<StmtPtr>>(V1)
   );
 }
 double_starred_kvpair <-
@@ -625,10 +630,20 @@ double_starred_kvpair <-
 kvpair <- expression _ ':' _ expression {
   return ast<TupleExpr>(LOC, std::vector<ExprPtr>{ac_expr(V0), ac_expr(V1)});
 }
-for_if_clauses <- for_if_clause (SPACE for_if_clause)* { return VS; }
+for_if_clauses <- for_if_clause (SPACE for_if_clause)* {
+  std::vector<StmtPtr> v = ac<std::vector<StmtPtr>>(V0);
+  auto tail = VS.transform<std::vector<StmtPtr>>(1);
+  for (auto &t: tail)
+    v.insert(v.end(), t.begin(), t.end());
+  return v;
+}
 for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction
                  (SPACE 'if' SPACE disjunction)* {
-  return GeneratorBody{ac_expr(V0), ac_expr(V1), VS.transform<ExprPtr>(2)};
+  std::vector<StmtPtr> v{ast<ForStmt>(LOC, ac_expr(V0), ac_expr(V1), nullptr)};
+  auto tail = VS.transform<ExprPtr>(2);
+  for (auto &t: tail)
+    v.push_back(ast<IfStmt>(LOC, t, nullptr));
+  return v;
 }
 
 star_targets <- tlist(',', star_target) { return wrap_tuple(VS, LOC); }

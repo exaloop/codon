@@ -36,7 +36,6 @@ public:
   virtual void visit(SetExpr *);
   virtual void visit(DictExpr *);
   virtual void visit(GeneratorExpr *);
-  virtual void visit(DictGeneratorExpr *);
   virtual void visit(IfExpr *);
   virtual void visit(UnaryExpr *);
   virtual void visit(BinaryExpr *);
@@ -81,7 +80,6 @@ public:
   virtual void visit(CommentStmt *);
 };
 
-template <typename TE, typename TS>
 /**
  * Callback AST visitor.
  * This visitor extends base ASTVisitor and stores node's source location (SrcObject).
@@ -89,6 +87,7 @@ template <typename TE, typename TS>
  * each node type (expression or statement) might return a different type,
  * this visitor is generic for each different return type.
  */
+template <typename TE, typename TS>
 struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
   virtual TE transform(const std::shared_ptr<Expr> &expr) = 0;
   virtual TE transform(std::shared_ptr<Expr> &expr) {
@@ -175,20 +174,7 @@ public:
   void visit(GeneratorExpr *expr) override {
     transform(expr->expr);
     for (auto &l : expr->loops) {
-      transform(l.vars);
-      transform(l.gen);
-      for (auto &c : l.conds)
-        transform(c);
-    }
-  }
-  void visit(DictGeneratorExpr *expr) override {
-    transform(expr->key);
-    transform(expr->expr);
-    for (auto &l : expr->loops) {
-      transform(l.vars);
-      transform(l.gen);
-      for (auto &c : l.conds)
-        transform(c);
+      transform(l);
     }
   }
   void visit(IfExpr *expr) override {
@@ -311,8 +297,8 @@ public:
   void visit(TryStmt *stmt) override {
     transform(stmt->suite);
     for (auto &a : stmt->catches) {
-      transform(a.exc);
-      transform(a.suite);
+      transform(a->exc);
+      transform(a->suite);
     }
     transform(stmt->finally);
   }

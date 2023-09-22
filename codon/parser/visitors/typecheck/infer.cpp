@@ -339,11 +339,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       std::make_shared<TypecheckItem>(key, "", ctx->getModule(), type->getFunc());
   ctx->addAlwaysVisible(val);
 
-  auto ast_suite = clone(ast->suite);
+  ctx->getBase()->suite = clean_clone(ast->suite);
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
-    auto ret = inferTypes(ast_suite);
+    auto ret = inferTypes(ctx->getBase()->suite);
     ctx->blockLevel = oldBlockLevel;
 
     if (!ret) {
@@ -352,8 +352,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.
-        LOG("[error=>] {}", ast_suite->toString(2));
-        // inferTypes(ast->suite, ctx);
+        for (size_t w = ctx->bases.size(); w-- > 0;)
+          if (ctx->bases[w].suite)
+            LOG("[error=> {}] {}", ctx->bases[w].type->debugString(2),
+                ctx->bases[w].suite->toString(2));
+        // inferTypes(ast.suite, ctx);
         error("cannot typecheck the program");
       }
       ctx->bases.pop_back();
@@ -363,7 +366,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       this->ctx = oldCtx;
       return nullptr; // inference must be delayed
     } else {
-      ast_suite = ret;
+      ctx->getBase()->suite = ret;
     }
 
     // Use NoneType as the return type when the return type is not specified and
@@ -383,7 +386,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast = N<FunctionStmt>(ast->getSrcInfo(), r->type->realizedName(), nullptr, args,
-                           ast_suite);
+                           ctx->getBase()->suite);
   r->ast->attributes = ast->attributes;
 
   if (!in(ctx->cache->pendingRealizations,
@@ -604,7 +607,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
             N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
             Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
-        thunkFn.ast = std::static_pointer_cast<FunctionStmt>(thunkAst->clone());
+        thunkFn.ast = clone(thunkAst);
 
         transform(thunkAst);
         prependStmts->push_back(thunkAst);
@@ -924,9 +927,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
       auto args = N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1)));
       auto kwargs = N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)));
       std::vector<CallExpr::Arg> callArgs;
-      ExprPtr check =
-          N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
-                      N<StringExpr>(fnName), args->clone(), kwargs->clone());
+      ExprPtr check = N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
+                                  N<StringExpr>(fnName), clone(args), clone(kwargs));
       suite->stmts.push_back(N<IfStmt>(
           N<BinaryExpr>(
               check, "&&",

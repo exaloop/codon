@@ -13,13 +13,52 @@
 
 namespace codon::ast {
 
+const int INDENT_SIZE = 2;
+
+struct ASTVisitor;
+struct Node : public codon::SrcObject {
+  /// Convert a node to an S-expression.
+  virtual std::string toString(int) const = 0;
+  virtual std::string toString() const { return toString(-1); }
+
+  /// Deep copy a node.
+  virtual std::shared_ptr<Node> clone(bool clean) const = 0;
+  std::shared_ptr<Node> clone() const { return clone(false); }
+
+  /// Accept an AST visitor.
+  virtual void accept(ASTVisitor &visitor) = 0;
+
+  /// Allow pretty-printing to C++ streams.
+  friend std::ostream &operator<<(std::ostream &out, const Node &expr) {
+    return out << expr.toString();
+  }
+};
+using NodePtr = std::shared_ptr<Node>;
+} // namespace codon::ast
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<std::is_base_of<codon::ast::Node, T>::value, char>>
+    : fmt::ostream_formatter {};
+
+template <typename T>
+struct fmt::formatter<
+    T, std::enable_if_t<
+           std::is_convertible<T, std::shared_ptr<codon::ast::Node>>::value, char>>
+    : fmt::formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
+  }
+};
+
+namespace codon::ast {
+
 #define ACCEPT(X)                                                                      \
-  ExprPtr clone() const override;                                                      \
-  ExprPtr full_clone() const override;                                                 \
+  NodePtr clone(bool) const override;                                                  \
   void accept(X &visitor) override
 
 // Forward declarations
-struct ASTVisitor;
 struct BinaryExpr;
 struct CallExpr;
 struct DotExpr;
@@ -28,14 +67,17 @@ struct IdExpr;
 struct IfExpr;
 struct IndexExpr;
 struct IntExpr;
+struct InstantiateExpr;
 struct ListExpr;
 struct NoneExpr;
 struct StarExpr;
+struct KeywordStarExpr;
 struct StmtExpr;
 struct StringExpr;
 struct TupleExpr;
 struct UnaryExpr;
 struct Stmt;
+struct ExprStmt;
 
 struct StaticValue {
   std::variant<int64_t, std::string> value;
@@ -47,7 +89,7 @@ struct StaticValue {
   explicit StaticValue(int64_t);
   explicit StaticValue(std::string);
   bool operator==(const StaticValue &s) const;
-  std::string toString() const;
+  std::string toString(int) const;
   int64_t getInt() const;
   std::string getString() const;
 };
@@ -56,7 +98,7 @@ struct StaticValue {
  * A Seq AST expression.
  * Each AST expression is intended to be instantiated as a shared_ptr.
  */
-struct Expr : public codon::SrcObject, public std::enable_shared_from_this<Expr> {
+struct Expr : public Node, public std::enable_shared_from_this<Expr> {
   using base_type = Expr;
 
   // private:
@@ -88,19 +130,11 @@ struct Expr : public codon::SrcObject, public std::enable_shared_from_this<Expr>
 
 public:
   Expr();
-  Expr(const Expr &expr) = default;
+  Expr(const Expr &) = default;
+  Expr(const Expr &, bool);
 
-  /// Convert a node to an S-expression.
-  virtual std::string toString() const = 0;
   /// Validate a node. Throw ParseASTException if a node is not valid.
   void validate() const;
-  /// Deep copy a node.
-  virtual std::shared_ptr<Expr> clone() const = 0;
-  /// Deep copy a node; preserve types/attributes!
-  virtual std::shared_ptr<Expr> full_clone() const = 0;
-  /// Accept an AST visitor.
-  virtual void accept(ASTVisitor &visitor) = 0;
-
   /// Get a node type.
   /// @return Type pointer or a nullptr if a type is not set.
   types::TypePtr getType() const;
@@ -127,10 +161,12 @@ public:
   virtual IdExpr *getId() { return nullptr; }
   virtual IfExpr *getIf() { return nullptr; }
   virtual IndexExpr *getIndex() { return nullptr; }
+  virtual InstantiateExpr *getInstantiate() { return nullptr; }
   virtual IntExpr *getInt() { return nullptr; }
   virtual ListExpr *getList() { return nullptr; }
   virtual NoneExpr *getNone() { return nullptr; }
   virtual StarExpr *getStar() { return nullptr; }
+  virtual KeywordStarExpr *getKwStar() { return nullptr; }
   virtual StmtExpr *getStmtExpr() { return nullptr; }
   virtual StringExpr *getString() { return nullptr; }
   virtual TupleExpr *getTuple() { return nullptr; }
@@ -168,17 +204,17 @@ struct Param : public codon::SrcObject {
   explicit Param(const SrcInfo &info, std::string name = "", ExprPtr type = nullptr,
                  ExprPtr defaultValue = nullptr, int generic = 0);
 
-  std::string toString() const;
-  Param clone() const;
+  std::string toString(int) const;
+  Param clone(bool) const;
 };
 
 /// None expression.
 /// @li None
 struct NoneExpr : public Expr {
   NoneExpr();
-  NoneExpr(const NoneExpr &expr) = default;
+  NoneExpr(const NoneExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   NoneExpr *getNone() override { return this; }
@@ -190,9 +226,9 @@ struct BoolExpr : public Expr {
   bool value;
 
   explicit BoolExpr(bool value);
-  BoolExpr(const BoolExpr &expr) = default;
+  BoolExpr(const BoolExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -211,9 +247,9 @@ struct IntExpr : public Expr {
 
   explicit IntExpr(int64_t intValue);
   explicit IntExpr(const std::string &value, std::string suffix = "");
-  IntExpr(const IntExpr &expr);
+  IntExpr(const IntExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   IntExpr *getInt() override { return this; }
@@ -234,9 +270,9 @@ struct FloatExpr : public Expr {
 
   explicit FloatExpr(double floatValue);
   explicit FloatExpr(const std::string &value, std::string suffix = "");
-  FloatExpr(const FloatExpr &expr);
+  FloatExpr(const FloatExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -249,9 +285,9 @@ struct StringExpr : public Expr {
 
   explicit StringExpr(std::string value, std::string prefix = "");
   explicit StringExpr(std::vector<std::pair<std::string, std::string>> strings);
-  StringExpr(const StringExpr &expr) = default;
+  StringExpr(const StringExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   StringExpr *getString() override { return this; }
@@ -263,9 +299,9 @@ struct IdExpr : public Expr {
   std::string value;
 
   explicit IdExpr(std::string value);
-  IdExpr(const IdExpr &expr) = default;
+  IdExpr(const IdExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   bool isId(const std::string &val) const override { return this->value == val; }
@@ -278,9 +314,9 @@ struct StarExpr : public Expr {
   ExprPtr what;
 
   explicit StarExpr(ExprPtr what);
-  StarExpr(const StarExpr &expr);
+  StarExpr(const StarExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   StarExpr *getStar() override { return this; }
@@ -292,10 +328,12 @@ struct KeywordStarExpr : public Expr {
   ExprPtr what;
 
   explicit KeywordStarExpr(ExprPtr what);
-  KeywordStarExpr(const KeywordStarExpr &expr);
+  KeywordStarExpr(const KeywordStarExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
+
+  KeywordStarExpr *getKwStar() override { return this; }
 };
 
 /// Tuple expression ((items...)).
@@ -304,9 +342,9 @@ struct TupleExpr : public Expr {
   std::vector<ExprPtr> items;
 
   explicit TupleExpr(std::vector<ExprPtr> items = {});
-  TupleExpr(const TupleExpr &expr);
+  TupleExpr(const TupleExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   TupleExpr *getTuple() override { return this; }
@@ -317,10 +355,10 @@ struct TupleExpr : public Expr {
 struct ListExpr : public Expr {
   std::vector<ExprPtr> items;
 
-  explicit ListExpr(std::vector<ExprPtr> items);
-  ListExpr(const ListExpr &expr);
+  explicit ListExpr(std::vector<ExprPtr> items = {});
+  ListExpr(const ListExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   ListExpr *getList() override { return this; }
@@ -331,10 +369,10 @@ struct ListExpr : public Expr {
 struct SetExpr : public Expr {
   std::vector<ExprPtr> items;
 
-  explicit SetExpr(std::vector<ExprPtr> items);
-  SetExpr(const SetExpr &expr);
+  explicit SetExpr(std::vector<ExprPtr> items = {});
+  SetExpr(const SetExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -344,21 +382,11 @@ struct SetExpr : public Expr {
 struct DictExpr : public Expr {
   std::vector<ExprPtr> items;
 
-  explicit DictExpr(std::vector<ExprPtr> items);
-  DictExpr(const DictExpr &expr);
+  explicit DictExpr(std::vector<ExprPtr> items = {});
+  DictExpr(const DictExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
-};
-
-/// Generator body node helper [for vars in gen (if conds)...].
-/// @li for i in lst if a if b
-struct GeneratorBody {
-  ExprPtr vars;
-  ExprPtr gen;
-  std::vector<ExprPtr> conds;
-
-  GeneratorBody clone() const;
 };
 
 /// Generator or comprehension expression [(expr (loops...))].
@@ -366,30 +394,28 @@ struct GeneratorBody {
 /// @li (f + 1 for j in k if j for f in j)
 struct GeneratorExpr : public Expr {
   /// Generator kind: normal generator, list comprehension, set comprehension.
-  enum GeneratorKind { Generator, ListGenerator, SetGenerator, TupleGenerator };
+  enum GeneratorKind {
+    Generator,
+    ListGenerator,
+    SetGenerator,
+    TupleGenerator,
+    DictGenerator
+  };
 
   GeneratorKind kind;
-  ExprPtr expr;
-  std::vector<GeneratorBody> loops;
+  std::shared_ptr<ExprStmt> expr; // wrap in ExprStmt
+  std::vector<std::shared_ptr<Stmt>> loops;
 
-  GeneratorExpr(GeneratorKind kind, ExprPtr expr, std::vector<GeneratorBody> loops);
-  GeneratorExpr(const GeneratorExpr &expr);
+  GeneratorExpr(GeneratorKind kind, ExprPtr expr,
+                std::vector<std::shared_ptr<Stmt>> loops);
+  GeneratorExpr(ExprPtr key, ExprPtr expr, std::vector<std::shared_ptr<Stmt>> loops);
+  GeneratorExpr(const GeneratorExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
-};
 
-/// Dictionary comprehension expression [{key: expr (loops...)}].
-/// @li {i: j for i, j in z.items()}
-struct DictGeneratorExpr : public Expr {
-  ExprPtr key, expr;
-  std::vector<GeneratorBody> loops;
-
-  DictGeneratorExpr(ExprPtr key, ExprPtr expr, std::vector<GeneratorBody> loops);
-  DictGeneratorExpr(const DictGeneratorExpr &expr);
-
-  std::string toString() const override;
-  ACCEPT(ASTVisitor);
+private:
+  void formCompleteStmt();
 };
 
 /// Conditional expression [cond if ifexpr else elsexpr].
@@ -398,9 +424,9 @@ struct IfExpr : public Expr {
   ExprPtr cond, ifexpr, elsexpr;
 
   IfExpr(ExprPtr cond, ExprPtr ifexpr, ExprPtr elsexpr);
-  IfExpr(const IfExpr &expr);
+  IfExpr(const IfExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   IfExpr *getIf() override { return this; }
@@ -413,9 +439,9 @@ struct UnaryExpr : public Expr {
   ExprPtr expr;
 
   UnaryExpr(std::string op, ExprPtr expr);
-  UnaryExpr(const UnaryExpr &expr);
+  UnaryExpr(const UnaryExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   UnaryExpr *getUnary() override { return this; }
@@ -432,9 +458,9 @@ struct BinaryExpr : public Expr {
   bool inPlace;
 
   BinaryExpr(ExprPtr lexpr, std::string op, ExprPtr rexpr, bool inPlace = false);
-  BinaryExpr(const BinaryExpr &expr);
+  BinaryExpr(const BinaryExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   BinaryExpr *getBinary() override { return this; }
@@ -446,9 +472,9 @@ struct ChainBinaryExpr : public Expr {
   std::vector<std::pair<std::string, ExprPtr>> exprs;
 
   ChainBinaryExpr(std::vector<std::pair<std::string, ExprPtr>> exprs);
-  ChainBinaryExpr(const ChainBinaryExpr &expr);
+  ChainBinaryExpr(const ChainBinaryExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -460,7 +486,7 @@ struct PipeExpr : public Expr {
     std::string op;
     ExprPtr expr;
 
-    Pipe clone() const;
+    Pipe clone(bool) const;
   };
 
   std::vector<Pipe> items;
@@ -469,9 +495,9 @@ struct PipeExpr : public Expr {
   std::vector<types::TypePtr> inTypes;
 
   explicit PipeExpr(std::vector<Pipe> items);
-  PipeExpr(const PipeExpr &expr);
+  PipeExpr(const PipeExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   void validate() const;
   ACCEPT(ASTVisitor);
 };
@@ -482,9 +508,9 @@ struct IndexExpr : public Expr {
   ExprPtr expr, index;
 
   IndexExpr(ExprPtr expr, ExprPtr index);
-  IndexExpr(const IndexExpr &expr);
+  IndexExpr(const IndexExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   IndexExpr *getIndex() override { return this; }
@@ -498,7 +524,7 @@ struct CallExpr : public Expr {
     std::string name;
     ExprPtr value;
 
-    Arg clone() const;
+    Arg clone(bool) const;
 
     Arg(const SrcInfo &info, const std::string &name, ExprPtr value);
     Arg(const std::string &name, ExprPtr value);
@@ -516,10 +542,10 @@ struct CallExpr : public Expr {
   template <typename... Ts>
   CallExpr(ExprPtr expr, ExprPtr arg, Ts... args)
       : CallExpr(expr, std::vector<ExprPtr>{arg, args...}) {}
-  CallExpr(const CallExpr &expr);
+  CallExpr(const CallExpr &, bool);
 
   void validate() const;
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   CallExpr *getCall() override { return this; }
@@ -534,9 +560,9 @@ struct DotExpr : public Expr {
   DotExpr(ExprPtr expr, std::string member);
   /// Convenience constructor.
   DotExpr(const std::string &left, std::string member);
-  DotExpr(const DotExpr &expr);
+  DotExpr(const DotExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   DotExpr *getDot() override { return this; }
@@ -551,9 +577,9 @@ struct SliceExpr : public Expr {
   ExprPtr start, stop, step;
 
   SliceExpr(ExprPtr start, ExprPtr stop, ExprPtr step);
-  SliceExpr(const SliceExpr &expr);
+  SliceExpr(const SliceExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -565,9 +591,9 @@ struct EllipsisExpr : public Expr {
   enum EllipsisType { PIPE, PARTIAL, STANDALONE } mode;
 
   explicit EllipsisExpr(EllipsisType mode = STANDALONE);
-  EllipsisExpr(const EllipsisExpr &expr) = default;
+  EllipsisExpr(const EllipsisExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   EllipsisExpr *getEllipsis() override { return this; }
@@ -580,9 +606,9 @@ struct LambdaExpr : public Expr {
   ExprPtr expr;
 
   LambdaExpr(std::vector<std::string> vars, ExprPtr expr);
-  LambdaExpr(const LambdaExpr &);
+  LambdaExpr(const LambdaExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -590,9 +616,9 @@ struct LambdaExpr : public Expr {
 /// @li (yield)
 struct YieldExpr : public Expr {
   YieldExpr();
-  YieldExpr(const YieldExpr &expr) = default;
+  YieldExpr(const YieldExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -602,9 +628,9 @@ struct AssignExpr : public Expr {
   ExprPtr var, expr;
 
   AssignExpr(ExprPtr var, ExprPtr expr);
-  AssignExpr(const AssignExpr &);
+  AssignExpr(const AssignExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -615,9 +641,9 @@ struct RangeExpr : public Expr {
   ExprPtr start, stop;
 
   RangeExpr(ExprPtr start, ExprPtr stop);
-  RangeExpr(const RangeExpr &);
+  RangeExpr(const RangeExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 };
 
@@ -634,9 +660,9 @@ struct StmtExpr : public Expr {
   StmtExpr(std::vector<std::shared_ptr<Stmt>> stmts, ExprPtr expr);
   StmtExpr(std::shared_ptr<Stmt> stmt, ExprPtr expr);
   StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2, ExprPtr expr);
-  StmtExpr(const StmtExpr &expr);
+  StmtExpr(const StmtExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
 
   StmtExpr *getStmtExpr() override { return this; }
@@ -651,10 +677,12 @@ struct InstantiateExpr : Expr {
   InstantiateExpr(ExprPtr typeExpr, std::vector<ExprPtr> typeParams);
   /// Convenience constructor for a single type parameter.
   InstantiateExpr(ExprPtr typeExpr, ExprPtr typeParam);
-  InstantiateExpr(const InstantiateExpr &expr);
+  InstantiateExpr(const InstantiateExpr &, bool);
 
-  std::string toString() const override;
+  std::string toString(int) const override;
   ACCEPT(ASTVisitor);
+
+  InstantiateExpr *getInstantiate() override { return this; }
 };
 
 #undef ACCEPT
@@ -678,11 +706,6 @@ StaticValue::Type getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
 
-template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<std::is_base_of<codon::ast::Expr, T>::value, char>>
-    : fmt::ostream_formatter {};
-
 template <>
 struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
@@ -698,17 +721,6 @@ struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
   auto format(const codon::ast::Param &p, FormatContext &ctx) const
       -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", p.toString());
-  }
-};
-
-template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<
-           std::is_convertible<T, std::shared_ptr<codon::ast::Expr>>::value, char>>
-    : fmt::formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
-    return fmt::format_to(ctx.out(), "{}", p ? p->toString() : "<nullptr>");
+    return fmt::format_to(ctx.out(), "{}", p.toString(0));
   }
 };

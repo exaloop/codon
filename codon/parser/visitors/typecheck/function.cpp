@@ -28,17 +28,6 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
     expr->setDone();
 }
 
-/// Transform lambdas. Capture outer expressions.
-/// @example
-///   `lambda a, b: a+b+c` -> ```def fn(a, b, c):
-///                                return a+b+c
-///                              fn(c=c, ...)```
-/// See @c makeAnonFn
-void TypecheckVisitor::visit(LambdaExpr *expr) {
-  resultExpr =
-      makeAnonFn(std::vector<StmtPtr>{N<ReturnStmt>(clone(expr->expr))}, expr->vars);
-}
-
 /// Typecheck return statements. Empty return is transformed to `return NoneType()`.
 /// Also partialize functions if they are being returned.
 /// See @c wrapExpr for more details.
@@ -190,7 +179,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
   std::map<std::string, TypeContext::Item> captures;
-  for (auto &c : stmt->attributes.captures) {
+  for (auto &[c, _] : stmt->attributes.captures) {
    if (auto v = ctx->find(c)) {
       if (!v->isGlobal() && !v->isGeneric()) {
         captures[c] = v;
@@ -401,8 +390,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
   ctx->cache->functions[canonicalName].module = ctx->getModule();
   ctx->cache->functions[canonicalName].ast = f;
-  ctx->cache->functions[canonicalName].origAst =
-      std::static_pointer_cast<FunctionStmt>(stmt->clone());
+  ctx->cache->functions[canonicalName].origAst = clone(stmt);
   ctx->cache->functions[canonicalName].isToplevel =
       ctx->getModule().empty() && ctx->isGlobal();
   ctx->cache->functions[canonicalName].rootName = rootName;
@@ -418,9 +406,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   ctx->cache->functions[canonicalName].type = funcTyp;
-  ctx->addFunc(stmt->name, canonicalName, funcTyp);
-  if (isClassMember)
+  auto val = ctx->addFunc(stmt->name, canonicalName, funcTyp);
+  if (stmt->attributes.has(Attr::Overload)) {
+    ctx->remove(stmt->name); // first overload will handle it!
+  } else if (isClassMember) {
     ctx->remove(stmt->name);
+  }
 
   // Special method handling
   if (isClassMember) {
@@ -489,42 +480,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 }
 
-/// Make a capturing anonymous function with the provided suite and argument names.
-/// The resulting function will be added before the current statement.
-/// Return an expression that can call this function (an @c IdExpr or a partial call).
-ExprPtr TypecheckVisitor::makeAnonFn(std::vector<StmtPtr> suite,
-                                     const std::vector<std::string> &argNames) {
-  std::vector<Param> params;
-  std::string name = ctx->cache->getTemporaryVar("lambda");
-  params.reserve(argNames.size());
-  for (auto &s : argNames)
-    params.emplace_back(s);
-  auto f = transform(N<FunctionStmt>(
-      name, nullptr, params, N<SuiteStmt>(std::move(suite)), Attr({Attr::Capture})));
-  if (auto fs = f->getSuite()) {
-    seqassert(fs->stmts.size() == 2 && fs->stmts[0]->getFunction(),
-              "invalid function transform");
-    prependStmts->push_back(fs->stmts[0]);
-    for (StmtPtr s = fs->stmts[1]; s;) {
-      if (auto suite = s->getSuite()) {
-        // Suites can only occur when captures are inserted for a partial call
-        // argument.
-        seqassert(suite->stmts.size() == 2, "invalid function transform");
-        prependStmts->push_back(suite->stmts[0]);
-        s = suite->stmts[1];
-      } else if (auto assign = s->getAssign()) {
-        return assign->rhs;
-      } else {
-        seqassert(false, "invalid function transform");
-      }
-    }
-    return nullptr; // should fail an assert before
-  } else {
-    prependStmts->push_back(f);
-    return transform(N<IdExpr>(name));
-  }
-}
-
 /// Transform Python code blocks.
 /// @example
 ///   ```@python
@@ -548,8 +503,8 @@ StmtPtr TypecheckVisitor::transformPythonDefinition(const std::string &name,
   code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
   return transform(N<SuiteStmt>(
       N<ExprStmt>(N<CallExpr>(N<DotExpr>("pyobj", "_exec"), N<StringExpr>(code))),
-      N<ImportStmt>(N<IdExpr>("python"), N<DotExpr>("__main__", name), clone_nop(args),
-                    ret ? ret->clone() : N<IdExpr>("pyobj"))));
+      N<ImportStmt>(N<IdExpr>("python"), N<DotExpr>("__main__", name), clone(args),
+                    ret ? clone(ret) : N<IdExpr>("pyobj"))));
 }
 
 /// Transform LLVM functions.
