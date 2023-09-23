@@ -89,29 +89,29 @@ void TypecheckVisitor::visit(YieldFromStmt *stmt) {
 
 /// Process `global` statements. Remove them upon completion.
 void TypecheckVisitor::visit(GlobalStmt *stmt) {
-  if (!ctx->inFunction())
-    E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
+  // if (!ctx->inFunction())
+  //   E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
 
-  // Dominate the binding
-  auto val = ctx->find(stmt->var);
-  if (!val || !val->isVar())
-    E(Error::ID_NOT_FOUND, stmt, stmt->var);
-  if (val->getBaseName() == ctx->getBaseName())
-    E(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->var);
+  // // Dominate the binding
+  // auto val = ctx->find(stmt->var);
+  // if (!val || !val->isVar())
+  //   E(Error::ID_NOT_FOUND, stmt, stmt->var);
+  // if (val->getBaseName() == ctx->getBaseName())
+  //   E(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->var);
 
-  // Check global/nonlocal distinction
-  if (!stmt->nonLocal && !val->getBaseName().empty())
-    E(Error::FN_GLOBAL_NOT_FOUND, stmt, "global", stmt->var);
-  else if (stmt->nonLocal && val->getBaseName().empty())
-    E(Error::FN_GLOBAL_NOT_FOUND, stmt, "nonlocal", stmt->var);
-  seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
-            stmt->var);
+  // // Check global/nonlocal distinction
+  // if (!stmt->nonLocal && !val->getBaseName().empty())
+  //   E(Error::FN_GLOBAL_NOT_FOUND, stmt, "global", stmt->var);
+  // else if (stmt->nonLocal && val->getBaseName().empty())
+  //   E(Error::FN_GLOBAL_NOT_FOUND, stmt, "nonlocal", stmt->var);
+  // seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
+  //           stmt->var);
 
-  // Register as global if needed
-  ctx->cache->addGlobal(val->canonicalName);
+  // // Register as global if needed
+  // ctx->cache->addGlobal(val->canonicalName);
 
-  val = ctx->addVar(stmt->var, val->canonicalName, val->type);
-  val->baseName = ctx->getBaseName();
+  // val = ctx->addVar(stmt->var, val->canonicalName, val->type);
+  // val->baseName = ctx->getBaseName();
   // Erase the statement
   resultStmt = N<SuiteStmt>();
 }
@@ -179,9 +179,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
   std::map<std::string, TypeContext::Item> captures;
-  for (auto &[c, _] : stmt->attributes.captures) {
+  for (auto &[c, t] : stmt->attributes.captures) {
    if (auto v = ctx->find(c)) {
-      if (!v->isGlobal() && !v->isGeneric()) {
+      if (t != Attr::CaptureType::Global && !v->isGlobal() && !v->isGeneric()) {
         captures[c] = v;
       }
    }

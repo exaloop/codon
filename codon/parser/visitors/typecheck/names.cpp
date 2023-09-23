@@ -67,25 +67,78 @@ StmtPtr ScopingVisitor::transform(std::shared_ptr<Stmt> &stmt) {
   return stmt;
 }
 
+void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
+                                    const std::string &name, bool gotUsedVar) {
+  // These bindings (and their canonical identifiers) will be replaced by the
+  // dominating binding during the type checking pass.
+  auto used = format("{}.__used__", name);
+  if (auto s = std::dynamic_pointer_cast<SuiteStmt>(binding)) {
+    seqassert(!s->stmts.empty() && s->stmts[0]->getAssign(), "bad suite");
+    auto a = s->stmts[0]->getAssign();
+    if (a->rhs) {
+      a->setUpdate();
+      if (gotUsedVar && s->stmts.size() < 2) {
+        s->stmts.push_back(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr,
+                                         AssignStmt::UpdateMode::Update));
+      }
+    } else {
+      s->stmts.clear();
+    }
+  } else if (auto f = std::dynamic_pointer_cast<ForStmt>(binding)) {
+    f->var->setAttr(ExprAttr::Dominated);
+    if (gotUsedVar) {
+      bool skip = false;
+      if (auto s = f->suite->firstInBlock())
+        skip = s->getAssign() && s->getAssign()->lhs->isId(used);
+      if (!skip) {
+        f->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true),
+                                              nullptr, AssignStmt::UpdateMode::Update),
+                                f->suite);
+      }
+    }
+  } else if (auto f = std::dynamic_pointer_cast<TryStmt::Catch>(binding)) {
+    f->exc->setAttr(ExprAttr::Dominated);
+    if (gotUsedVar) {
+      bool skip = false;
+      if (auto s = f->suite->firstInBlock())
+        skip = s->getAssign() && s->getAssign()->lhs->isId(used);
+      if (!skip) {
+        f->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true),
+                                              nullptr, AssignStmt::UpdateMode::Update),
+                                f->suite);
+      }
+    }
+  } else if (binding) {
+    // class; function; func-arg; comprehension-arg; catch-name; import-name[anything
+    // really]
+    // todo)) generators?!
+    E(error::Error::ID_INVALID_BIND, binding, name);
+  }
+}
+
 void ScopingVisitor::visitName(const std::string &name, bool adding,
                                const std::shared_ptr<SrcObject> &root,
                                const SrcInfo &src) {
   if (adding && ctx->inClass)
     return;
   if (adding) {
-    if (auto p = in(ctx->captures, name))
+    if (auto p = in(ctx->captures, name)) {
       if (*p == Attr::CaptureType::Read)
         E(error::Error::ASSIGN_LOCAL_REFERENCE, ctx->firstSeen[name], name, src);
-    if (in(ctx->childCaptures, name) && ctx->functionScope) {
-      auto newScope = std::vector<int>{ctx->scope[0].id};
-      auto b = N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr);
-      auto newItem = ScopingVisitor::Context::Item(src, newScope, b);
-      ctx->scope.front().stmts.emplace_back(b);
-      ctx->map[name].push_back(newItem);
+      else if (root) // global, nonlocal
+        switchToUpdate(root, name, false);
+    } else {
+      if (in(ctx->childCaptures, name) && ctx->functionScope) {
+        auto newScope = std::vector<int>{ctx->scope[0].id};
+        auto b = N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr);
+        auto newItem = ScopingVisitor::Context::Item(src, newScope, b);
+        ctx->scope.front().stmts.emplace_back(b);
+        ctx->map[name].push_back(newItem);
+      }
+      ctx->map[name].emplace_front(src, ctx->getScope(), root);
+      if (!root)
+        ctx->temps.back().insert(name);
     }
-    ctx->map[name].emplace_front(src, ctx->getScope(), root);
-    if (!root)
-      ctx->temps.back().insert(name);
   } else {
     if (!in(ctx->firstSeen, name))
       ctx->firstSeen[name] = src;
@@ -220,56 +273,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   for (auto i = it->begin(); i != it->end(); i++) {
     if (i == lastGood)
       break;
-    // if (!(*i)->canDominate())
-    //   continue;
-
-    // These bindings (and their canonical identifiers) will be replaced by the
-    // dominating binding during the type checking pass.
-    auto used = format("{}.__used__", name);
-    if (auto s = std::dynamic_pointer_cast<SuiteStmt>(i->binding)) {
-      seqassert(!s->stmts.empty() && s->stmts[0]->getAssign(), "bad suite");
-      auto a = s->stmts[0]->getAssign();
-      if (a->rhs) {
-        a->setUpdate();
-        if (gotUsedVar && s->stmts.size() < 2) {
-          s->stmts.push_back(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr,
-                                           AssignStmt::UpdateMode::Update));
-        }
-      } else {
-        s->stmts.clear();
-      }
-    } else if (auto f = std::dynamic_pointer_cast<ForStmt>(i->binding)) {
-      f->var->setAttr(ExprAttr::Dominated);
-      if (gotUsedVar) {
-        bool skip = false;
-        if (auto s = f->suite->firstInBlock())
-          skip = s->getAssign() && s->getAssign()->lhs->isId(used);
-        if (!skip) {
-          f->suite =
-              N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr,
-                                         AssignStmt::UpdateMode::Update),
-                           f->suite);
-        }
-      }
-    } else if (auto f = std::dynamic_pointer_cast<TryStmt::Catch>(i->binding)) {
-      f->exc->setAttr(ExprAttr::Dominated);
-      if (gotUsedVar) {
-        bool skip = false;
-        if (auto s = f->suite->firstInBlock())
-          skip = s->getAssign() && s->getAssign()->lhs->isId(used);
-        if (!skip) {
-          f->suite =
-              N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr,
-                                         AssignStmt::UpdateMode::Update),
-                           f->suite);
-        }
-      }
-    } else if (i->binding) {
-      // class; function; func-arg; comprehension-arg; catch-name; import-name[anything
-      // really]
-      // todo)) generators?!
-      E(error::Error::ID_INVALID_BIND, i->binding, name);
-    }
+    switchToUpdate(i->binding, name, gotUsedVar);
   }
   it->erase(it->begin(), lastGood);
   return &(*lastGood);

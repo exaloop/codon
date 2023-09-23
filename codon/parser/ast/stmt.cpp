@@ -646,6 +646,7 @@ void ClassStmt::parseDecorators() {
       attributes.customAttr.insert("deduce");
     } else if (d->isId("__notuple__")) {
       attributes.customAttr.insert("__notuple__");
+    } else if (d->isId("dataclass")) {
     } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple)) {
         attributes.set(Attr::Tuple);

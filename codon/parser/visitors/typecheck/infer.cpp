@@ -50,9 +50,10 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
 
   for (ctx->getBase()->iteration = 1;; ctx->getBase()->iteration++) {
     LOG_TYPECHECK("[iter] {} :: {}", ctx->getBase()->name, ctx->getBase()->iteration);
-    if (ctx->getBase()->iteration >= MAX_TYPECHECK_ITER)
-      error(result, "cannot typecheck '{}' in reasonable time",
-            ctx->cache->rev(ctx->getBase()->name));
+    if (ctx->getBase()->iteration >= MAX_TYPECHECK_ITER) {
+      LOG("[error=>] {}", result->toString(2));
+      error(result, "cannot typecheck '{}' in reasonable time", ctx->getBase()->name);
+    }
 
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or

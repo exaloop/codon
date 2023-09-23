@@ -57,6 +57,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     if (ctx->getScope() != val->scope)
       E(Error::DEL_NOT_ALLOWED, ei, ei->value);
     ctx->remove(ei->value);
+    ctx->remove(ctx->cache->rev(ei->value));
   } else {
     E(Error::DEL_INVALID, stmt);
   }
@@ -99,13 +100,15 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
-    if (val && val->isVar() && !ctx->isOuter(val)) {
+    if (val && val->isVar() /*&& !ctx->isOuter(val)*/) {
+      // commented out: should be handled by namevisitor
       auto s = N<AssignStmt>(stmt->lhs, stmt->rhs);
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
         s->setAtomicUpdate();
       else
         s->setUpdate();
-      transformUpdate(s.get());
+      if (auto u = transformUpdate(s.get()))
+        return u;
       return s;
     } else {
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value, e->getSrcInfo());
@@ -172,7 +175,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
 /// Transform binding updates. Special handling is done for atomic or in-place
 /// statements (e.g., `a += b`).
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
-void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
+StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->lhs);
   if (stmt->lhs->isStatic())
     E(Error::ASSIGN_UNEXPECTED_STATIC, stmt->lhs);
@@ -189,11 +192,12 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
   if (inPlace) {
     if (inPlaceExpr) {
-      resultStmt = N<ExprStmt>(inPlaceExpr);
+      auto s = N<ExprStmt>(inPlaceExpr);
       if (inPlaceExpr->isDone())
-        resultStmt->setDone();
+        s->setDone();
+      return s;
     }
-    return;
+    return nullptr;
   }
 
   transform(stmt->rhs);
@@ -202,6 +206,7 @@ void TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
     unify(stmt->rhs->type, stmt->lhs->type);
   if (stmt->rhs->done && realize(stmt->lhs->type))
     stmt->setDone();
+  return nullptr;
 }
 
 /// Typecheck instance member assignments (e.g., `a.b = c`) and handle optional
@@ -282,19 +287,22 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
   auto lhsClass = stmt->lhs->getType()->getClass();
   auto call = stmt->rhs->getCall();
   if (stmt->isAtomicUpdate() && call && stmt->lhs->getId() &&
-      (call->expr->isId("min") || call->expr->isId("max")) && call->args.size() == 2 &&
-      call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
-    // `type(a).__atomic_min__(__ptr__(a), b)`
-    auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
-                                          ctx->forceFind("Ptr")->type, {lhsClass});
-    call->args[1].value = transform(call->args[1].value);
-    auto rhsTyp = call->args[1].value->getType()->getClass();
-    if (auto method = findBestMethod(
-            lhsClass, format("__atomic_{}__", call->expr->getId()->value),
-            {ptrTyp, rhsTyp})) {
-      return {true, transform(N<CallExpr>(N<IdExpr>(method->ast->name),
-                                          N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),
-                                          call->args[1].value))};
+      (call->expr->isId("min") || call->expr->isId("max")) && call->args.size() == 2) {
+    transform(call->args[0].value);
+    if (call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
+      // `type(a).__atomic_min__(__ptr__(a), b)`
+      auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
+                                            ctx->forceFind("Ptr")->type, {lhsClass});
+      call->args[1].value = transform(call->args[1].value);
+      auto rhsTyp = call->args[1].value->getType()->getClass();
+      if (auto method = findBestMethod(
+              lhsClass, format("__atomic_{}__", call->expr->getId()->value),
+              {ptrTyp, rhsTyp})) {
+        return {true,
+                transform(N<CallExpr>(N<IdExpr>(method->ast->name),
+                                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),
+                                      call->args[1].value))};
+      }
     }
   }
 

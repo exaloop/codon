@@ -146,6 +146,9 @@ class str:
     def __repr__(self) -> str:
         return f"'{self}'"
 
+set = Set
+dict = Dict
+
 from internal.builtin import *
 
 # from openmp import Ident as __OMPIdent, for_par

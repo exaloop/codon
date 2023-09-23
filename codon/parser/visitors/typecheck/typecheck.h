@@ -182,7 +182,7 @@ private: // Node typechecking rules
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
-  void transformUpdate(AssignStmt *);
+  StmtPtr transformUpdate(AssignStmt *);
   StmtPtr transformAssignment(AssignStmt *, bool = false);
   void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
   void visit(DelStmt *) override;
@@ -425,6 +425,7 @@ public:
 
   void transformBlock(StmtPtr &s);
   ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
+  void switchToUpdate(std::shared_ptr<SrcObject> binding, const std::string &, bool);
 };
 
 } // namespace codon::ast
