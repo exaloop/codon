@@ -61,8 +61,9 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
     }
     seqassert(expr->type, "type not set for {}", expr);
     unify(typ, expr->type);
-    if (expr->done)
+    if (expr->done) {
       ctx->changedNodes++;
+    }
   }
   realize(typ);
   LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), expr, expr->isDone() ? "[done]" : "");
@@ -182,7 +183,7 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
     callArgs.push_back({"", std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -195,7 +196,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
   std::vector<CallExpr::Arg> callArgs;
   for (auto &a : args)
     callArgs.push_back({"", a});
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -210,7 +211,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
     callArgs.push_back({n, std::make_shared<NoneExpr>()}); // dummy expression
     callArgs.back().value->setType(a);
   }
-  auto methods = ctx->findMethod(typ->name, member, false);
+  auto methods = ctx->findMethod(typ.get(), member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -451,8 +452,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
 ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
                                            bool isVirtual) {
   ClassTypePtr typ = expr->type->getClass();
-  for (auto &field : ctx->cache->classes[typ->name].fields) {
-    for (auto &parentField : ctx->cache->classes[superTyp->name].fields)
+  for (auto &field : getClassFields(typ.get())) {
+    for (auto &parentField : getClassFields(superTyp.get()))
       if (field.name == parentField.name) {
         unify(ctx->instantiate(field.type, typ),
               ctx->instantiate(parentField.type, superTyp));
@@ -491,6 +492,18 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
     return nullptr;
   }
   return ret;
+}
+
+std::vector<Cache::Class::ClassField> &
+TypecheckVisitor::getClassFields(types::ClassType *t) {
+  seqassert(t && in(ctx->cache->classes, t->name), "cannot find '{}'",
+            t ? t->name : "<null>");
+  if (t->is(TYPE_TUPLE) && !t->getRecord()->args.empty()) {
+    auto key = ctx->generateTuple(t->getRecord()->args.size());
+    return ctx->cache->classes[key].fields;
+  } else {
+    return ctx->cache->classes[t->name].fields;
+  }
 }
 
 } // namespace codon::ast

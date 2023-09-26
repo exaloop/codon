@@ -60,8 +60,8 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if ((resultStmt = transformStaticForLoop(stmt)))
     return;
 
-  bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE) ||
-                           startswith(iterType->name, TYPE_KWTUPLE);
+  bool maybeHeterogenous =
+      iterType->name == TYPE_TUPLE || startswith(iterType->name, TYPE_KWTUPLE);
   if (maybeHeterogenous && !iterType->canRealize()) {
     return; // wait until the tuple is fully realizable
   } else if (maybeHeterogenous && iterType->getHeterogenousTuple()) {
@@ -336,7 +336,7 @@ TypecheckVisitor::transformStaticLoopCall(
         error("expected three items");
       auto typ = args[0]->getClass();
       size_t idx = 0;
-      for (auto &f : ctx->cache->classes[typ->name].fields) {
+      for (auto &f : getClassFields(typ.get())) {
         std::vector<StmtPtr> stmts;
         if (withIdx) {
           stmts.push_back(
@@ -370,7 +370,7 @@ TypecheckVisitor::transformStaticLoopCall(
       seqassert(typ, "vars_types expects a realizable type, got '{}' instead",
                 generics[0]);
       size_t idx = 0;
-      for (auto &f : ctx->cache->classes[typ->getClass()->name].fields) {
+      for (auto &f : getClassFields(typ->getClass().get())) {
         auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
         seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
         std::vector<StmtPtr> stmts;

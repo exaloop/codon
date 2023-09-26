@@ -117,7 +117,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     LOG_REALIZE("       - member: {}: {}", m.name, m.type);
 }
 
-/// Generate a tuple class `Tuple.N[T1,...,TN]`.
+/// Generate a tuple class `Tuple[T1,...,TN]`.
 /// @param len       Tuple length (`N`)
 /// @param name      Tuple name. `Tuple` by default.
 ///                  Can be something else (e.g., `KwTuple`)

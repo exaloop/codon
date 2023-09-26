@@ -99,6 +99,10 @@ bool FuncType::canRealize() const {
   return generics;
 }
 
+std::string FuncType::realizedTypeName() const {
+  return this->ClassType::realizedName();
+}
+
 bool FuncType::isInstantiated() const {
   TypePtr removed = nullptr;
   auto retType = getRetType();

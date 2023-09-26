@@ -1745,7 +1745,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   }
 
   else if (internalFuncMatchesIgnoreArgs<RecordType>("__new__", x)) {
-    auto *recordType = cast<RecordType>(parentType);
+    auto *recordType = cast<RecordType>(cast<FuncType>(x->getType())->getReturnType());
     seqassertn(args.size() == std::distance(recordType->begin(), recordType->end()),
                "args size does not match");
     result = llvm::UndefValue::get(getLLVMType(recordType));

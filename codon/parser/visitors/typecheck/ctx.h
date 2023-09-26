@@ -132,14 +132,22 @@ public:
     return instantiateGeneric(getSrcInfo(), std::move(root), generics);
   }
 
+  std::shared_ptr<types::RecordType>
+  instantiateTuple(const SrcInfo &info, const std::vector<types::TypePtr> &generics);
+  std::shared_ptr<types::RecordType>
+  instantiateTuple(const std::vector<types::TypePtr> &generics) {
+    return instantiateTuple(getSrcInfo(), generics);
+  }
+  std::shared_ptr<types::RecordType> instantiateTuple(size_t n);
+  std::string generateTuple(size_t n);
+
   /// Returns the list of generic methods that correspond to typeName.method.
-  std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
+  std::vector<types::FuncTypePtr> findMethod(types::ClassType *type,
                                              const std::string &method,
-                                             bool hideShadowed = true) const;
+                                             bool hideShadowed = true);
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
-  types::TypePtr findMember(const std::string &typeName,
-                            const std::string &member) const;
+  types::TypePtr findMember(const types::ClassTypePtr &, const std::string &) const;
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;

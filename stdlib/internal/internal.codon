@@ -6,14 +6,18 @@ from internal.gc import (
 )
 from internal.static import vars_types, tuple_type, vars as _vars
 
-
 def vars(obj, with_index: Static[int] = 0):
     return _vars(obj, with_index)
-
 
 __vtables__ = Ptr[Ptr[cobj]]()
 __vtable_size__ = 0
 
+@extend
+class ellipsis:
+    def __new__() -> ellipsis:
+        return ()
+
+Ellipsis = ellipsis()
 
 @extend
 class __internal__:
@@ -441,7 +445,6 @@ class __internal__:
         else:
             return default
 
-
 @extend
 class __magic__:
     # always present
@@ -635,7 +638,6 @@ class __magic__:
     def str(slf) -> str:
         return slf.__repr__()
 
-
 @dataclass(init=True)
 @tuple
 class Import:
@@ -670,18 +672,15 @@ class Function:
     def __call__(self, *args) -> TR:
         return Function.__call_internal__(self, args)
 
-
 @tuple
 class PyObject:
     refcnt: int
     pytype: Ptr[byte]
 
-
 @tuple
 class PyWrapper[T]:
     head: PyObject
     data: T
-
 
 @extend
 class RTTI:

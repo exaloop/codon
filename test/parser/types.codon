@@ -1971,3 +1971,30 @@ foo(5)  #! generic 'b' not provided
 def f(a, b, T: type):
     print(a, b)
 f(1, 2)  #! generic 'T' not provided
+
+#%% variardic_tuples,barebones
+
+class Foo[N: Static[int]]:
+    x: Tuple[N, str]
+
+    def __init__(self):
+        self.x = ("hi", ) * N
+
+f = Foo[5]()
+print(f.__class__.__name__)
+#: Foo[5]
+print(f.x.__class__.__name__)
+#: Tuple[str,str,str,str,str]
+print(f.x)
+#: ('hi', 'hi', 'hi', 'hi', 'hi')
+
+print(Tuple[int, int].__class__.__name__)
+#: Tuple[int,int]
+print(Tuple[3, int].__class__.__name__)
+#: Tuple[int,int,int]
+print(Tuple[0].__class__.__name__)
+#: Tuple
+print(Tuple[-5, int].__class__.__name__)
+#: Tuple
+print(Tuple[5, int, str].__class__.__name__)
+#: Tuple[int,str,int,str,int,str,int,str,int,str]
