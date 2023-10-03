@@ -1998,3 +1998,35 @@ print(Tuple[-5, int].__class__.__name__)
 #: Tuple
 print(Tuple[5, int, str].__class__.__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
+
+
+#%% domination_nested,barebones
+def correlate(a, b, mode = 'valid'):
+    if mode == 'valid':
+        if isinstance(a, List):
+            xret = '1'
+        else:
+            xret = '2'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    elif mode == 'same':
+        if isinstance(a, List):
+            xret = '3'
+        else:
+            xret = '4'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    elif mode == 'full':
+        if isinstance(a, List):
+            xret = '5'
+        else:
+            xret = '6'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    else:
+        raise ValueError(f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})")
+    return xret
+print(correlate([1], [2], 'full'))  # 5z

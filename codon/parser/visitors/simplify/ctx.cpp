@@ -126,11 +126,16 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
     // We went outside the function scope. Break.
     if (!isOutside && (*i)->getBaseName() != getBaseName())
       break;
+    bool completeDomination =
+        (*i)->scope.size() <= scope.blocks.size() &&
+        (*i)->scope.back() == scope.blocks[(*i)->scope.size() - 1];
+    if (!completeDomination && prefix < int(scope.blocks.size()) && prefix != p) {
+      break;
+    }
     prefix = p;
     lastGood = i;
     // The binding completely dominates the current scope. Break.
-    if ((*i)->scope.size() <= scope.blocks.size() &&
-        (*i)->scope.back() == scope.blocks[(*i)->scope.size() - 1])
+    if (completeDomination)
       break;
   }
   seqassert(lastGood != it->second.end(), "corrupted scoping ({})", name);
