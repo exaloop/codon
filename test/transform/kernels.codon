@@ -34,9 +34,19 @@ def test_conversions():
     def kernel(x, v):
         v[0] = x
 
+    def empty_tuple(x):
+        if staticlen(x) == 0:
+            return ()
+        else:
+            T = type(x[0])
+            return (T(),) + empty_tuple(x[1:])
+
     def check(x):
-        T = type(x)
-        v = [T()]
+        if isinstance(x, Tuple):
+            e = empty_tuple(x)
+        else:
+            e = type(x)()
+        v = [e]
         kernel(x, v, grid=1, block=1)
         return v == [x]
 
