@@ -500,6 +500,12 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   linkLibdevice(M, libdevice);
   remapFunctions(M);
 
+  // Strip debug info and remove noinline from functions (added in debug mode).
+  for (auto &F : *M) {
+    F.removeFnAttr(llvm::Attribute::AttrKind::NoInline);
+  }
+  llvm::StripDebugInfo(*M);
+
   // Run NVPTX passes and general opt pipeline.
   {
     llvm::LoopAnalysisManager lam;
