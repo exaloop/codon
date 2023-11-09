@@ -618,7 +618,7 @@ class __magic__:
 
     # @dataclass parameter: gpu=True
     def from_gpu_new(other: T, T: type) -> T:
-        __internal__.class_from_gpu_new(other)
+        return __internal__.class_from_gpu_new(other)
 
     # @dataclass parameter: repr=True
     def repr(slf) -> str:
