@@ -709,6 +709,7 @@ ExprPtr TypecheckVisitor::transformArray(CallExpr *expr) {
 ///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
 ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   expr->setType(unify(expr->type, ctx->getType("bool")));
+  expr->staticValue.type = StaticValue::INT; // prevent branching until this is resolved
   transform(expr->args[0].value);
   auto typ = expr->args[0].value->type->getClass();
   if (!typ || !typ->canRealize())
@@ -947,10 +948,11 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   auto &args = expr->args[0].value->getCall()->args;
   for (size_t i = 0; i < args.size(); i++) {
     realize(args[i].value->type);
-    fmt::print(stderr, "[static_print] {}: {} := {}{}\n", getSrcInfo(),
+    fmt::print(stderr, "[static_print] {}: {} := {}{} (iter: {})\n", getSrcInfo(),
                FormatVisitor::apply(args[i].value),
                args[i].value->type ? args[i].value->type->debugString(1) : "-",
-               args[i].value->isStatic() ? " [static]" : "");
+               args[i].value->isStatic() ? " [static]" : "",
+               ctx->getRealizationBase()->iteration);
   }
   return nullptr;
 }
