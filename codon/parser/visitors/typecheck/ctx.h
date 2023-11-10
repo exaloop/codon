@@ -50,12 +50,12 @@ struct TypeContext : public Context<TypecheckItem> {
     types::TypePtr returnType = nullptr;
     /// Typechecking iteration
     int iteration = 0;
+    std::set<types::TypePtr> pendingDefaults;
   };
   std::vector<RealizationBase> realizationBases;
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel;
-  std::set<types::TypePtr> pendingDefaults;
   int changedNodes;
 
   /// The age of the currently parsed statement.

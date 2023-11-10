@@ -100,13 +100,13 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
       if (l->defaultType) {
-        pendingDefaults.insert(i.second);
+        getRealizationBase()->pendingDefaults.insert(i.second);
       }
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {
     t->setSrcInfo(srcInfo);
-    pendingDefaults.insert(t);
+    getRealizationBase()->pendingDefaults.insert(t);
   }
   if (auto r = t->getRecord())
     if (r->repeats && r->repeats->canRealize())
