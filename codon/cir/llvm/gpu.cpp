@@ -501,8 +501,10 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   remapFunctions(M);
 
   // Strip debug info and remove noinline from functions (added in debug mode).
+  // Also, tell LLVM that all functions will return.
   for (auto &F : *M) {
     F.removeFnAttr(llvm::Attribute::AttrKind::NoInline);
+    F.setWillReturn();
   }
   llvm::StripDebugInfo(*M);
 
