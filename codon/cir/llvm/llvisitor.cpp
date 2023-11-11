@@ -2086,6 +2086,18 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getFloatTy();
   }
 
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return B->getHalfTy();
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return B->getBFloatTy();
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return llvm::Type::getFP128Ty(*context);
+  }
+
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
   }
@@ -2201,6 +2213,22 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_HP_float128);
   }
 
   if (auto *x = cast<types::BoolType>(t)) {
