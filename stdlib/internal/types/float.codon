@@ -92,7 +92,7 @@ class float:
         mod = self % other
         div = (self - mod) / other
         if mod:
-            if (other < 0) != (mod < 0):
+            if (other < 0.0) != (mod < 0.0):
                 mod += other
                 div -= 1.0
         else:
@@ -494,19 +494,19 @@ class float32:
         mod = self % other
         div = (self - mod) / other
         if mod:
-            if (other < 0) != (mod < 0):
+            if (other < float32(0.0)) != (mod < float32(0.0)):
                 mod += other
-                div -= 1.0
+                div -= float32(1.0)
         else:
-            mod = (0.0).copysign(other)
+            mod = float32(0.0).copysign(other)
 
-        floordiv = 0.0
+        floordiv = float32(0.0)
         if div:
             floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
+            if div - floordiv > float32(0.5):
+                floordiv += float32(1.0)
         else:
-            floordiv = (0.0).copysign(self / other)
+            floordiv = float32(0.0).copysign(self / other)
 
         return (floordiv, mod)
 
@@ -845,19 +845,19 @@ class float16:
         mod = self % other
         div = (self - mod) / other
         if mod:
-            if (other < 0) != (mod < 0):
+            if (other < float16(0.0)) != (mod < float16(0.0)):
                 mod += other
-                div -= 1.0
+                div -= float16(1.0)
         else:
-            mod = (0.0).copysign(other)
+            mod = float16(0.0).copysign(other)
 
-        floordiv = 0.0
+        floordiv = float16(0.0)
         if div:
             floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
+            if div - floordiv > float16(0.5):
+                floordiv += float16(1.0)
         else:
-            floordiv = (0.0).copysign(self / other)
+            floordiv = float16(0.0).copysign(self / other)
 
         return (floordiv, mod)
 
@@ -1142,19 +1142,19 @@ class bfloat16:
         mod = self % other
         div = (self - mod) / other
         if mod:
-            if (other < 0) != (mod < 0):
+            if (other < bfloat16(0.0)) != (mod < bfloat16(0.0)):
                 mod += other
-                div -= 1.0
+                div -= bfloat16(1.0)
         else:
-            mod = (0.0).copysign(other)
+            mod = bfloat16(0.0).copysign(other)
 
-        floordiv = 0.0
+        floordiv = bfloat16(0.0)
         if div:
             floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
+            if div - floordiv > bfloat16(0.5):
+                floordiv += bfloat16(1.0)
         else:
-            floordiv = (0.0).copysign(self / other)
+            floordiv = bfloat16(0.0).copysign(self / other)
 
         return (floordiv, mod)
 
@@ -1199,6 +1199,146 @@ class bfloat16:
         %tmp = fcmp oge bfloat %a, %b
         %res = zext i1 %tmp to i8
         ret i8 %res
+
+    @pure
+    @llvm
+    def sqrt(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.sqrt.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.sqrt.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def sin(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.sin.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.sin.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def cos(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.cos.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.cos.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def exp(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.exp.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.exp.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def exp2(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.exp2.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.exp2.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def log(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.log.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.log.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def log10(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.log10.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.log10.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def log2(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.log2.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.log2.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __abs__(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.fabs.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.fabs.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __floor__(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.floor.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.floor.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __ceil__(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.ceil.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.ceil.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __trunc__(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.trunc.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.trunc.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def rint(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.rint.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.rint.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def nearbyint(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.nearbyint.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.nearbyint.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __round__(a: bfloat16) -> bfloat16:
+        declare bfloat @llvm.round.bf16(bfloat %a)
+        %tmp = call bfloat @llvm.round.bf16(bfloat %a)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def __pow__(a: bfloat16, b: bfloat16) -> bfloat16:
+        declare bfloat @llvm.pow.bf16(bfloat %a, bfloat %b)
+        %tmp = call bfloat @llvm.pow.bf16(bfloat %a, bfloat %b)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def min(a: bfloat16, b: bfloat16) -> bfloat16:
+        declare bfloat @llvm.minnum.bf16(bfloat %a, bfloat %b)
+        %tmp = call bfloat @llvm.minnum.bf16(bfloat %a, bfloat %b)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def max(a: bfloat16, b: bfloat16) -> bfloat16:
+        declare bfloat @llvm.maxnum.bf16(bfloat %a, bfloat %b)
+        %tmp = call bfloat @llvm.maxnum.bf16(bfloat %a, bfloat %b)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def copysign(a: bfloat16, b: bfloat16) -> bfloat16:
+        declare bfloat @llvm.copysign.bf16(bfloat %a, bfloat %b)
+        %tmp = call bfloat @llvm.copysign.bf16(bfloat %a, bfloat %b)
+        ret bfloat %tmp
+
+    @pure
+    @llvm
+    def fma(a: bfloat16, b: bfloat16, c: bfloat16) -> bfloat16:
+        declare bfloat @llvm.fma.bf16(bfloat %a, bfloat %b, bfloat %c)
+        %tmp = call bfloat @llvm.fma.bf16(bfloat %a, bfloat %b, bfloat %c)
+        ret bfloat %tmp
 
     def __hash__(self) -> int:
         return self.__float__().__hash__()
@@ -1247,7 +1387,7 @@ class float128:
     @pure
     @llvm
     def __bool__(self) -> bool:
-        %0 = fcmp une fp128 %self, 0.000000e+00
+        %0 = fcmp une fp128 %self, 0xL00000000000000000000000000000000
         %1 = zext i1 %0 to i8
         ret i8 %1
 
@@ -1299,19 +1439,19 @@ class float128:
         mod = self % other
         div = (self - mod) / other
         if mod:
-            if (other < 0) != (mod < 0):
+            if (other < float128(0.0)) != (mod < float128(0)):
                 mod += other
-                div -= 1.0
+                div -= float128(1.0)
         else:
-            mod = (0.0).copysign(other)
+            mod = float128(0.0).copysign(other)
 
-        floordiv = 0.0
+        floordiv = float128(0.0)
         if div:
             floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
+            if div - floordiv > float128(0.5):
+                floordiv += float128(1.0)
         else:
-            floordiv = (0.0).copysign(self / other)
+            floordiv = float128(0.0).copysign(self / other)
 
         return (floordiv, mod)
 
