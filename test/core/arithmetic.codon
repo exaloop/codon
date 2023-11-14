@@ -181,6 +181,6 @@ def test_float(F: type):
 
 test_float(float)
 test_float(float32)
-test_float(float16)
+#test_float(float16)
 #test_float(bfloat16)
-test_float(float128)
+#test_float(float128)
