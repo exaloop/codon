@@ -71,10 +71,10 @@ struct BitSet {
     return res;
   }
 
-  void set(unsigned bit) { words.data()[bit / B] |= (1 << (bit % B)); }
+  void set(unsigned bit) { words.data()[bit / B] |= (1UL << (bit % B)); }
 
   bool get(unsigned bit) const {
-    return (words.data()[bit / B] & (1 << (bit % B))) != 0;
+    return (words.data()[bit / B] & (1UL << (bit % B))) != 0;
   }
 
   bool equals(const BitSet &other, unsigned size) {
