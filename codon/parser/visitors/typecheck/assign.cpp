@@ -161,7 +161,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   transform(stmt->lhs);
 
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
-    auto member = ctx->findMember(lhsClass->name, stmt->member);
+    auto member = ctx->findMember(lhsClass, stmt->member);
 
     if (!member && stmt->lhs->isType()) {
       // Case: class variables

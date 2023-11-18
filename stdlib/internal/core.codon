@@ -47,6 +47,27 @@ class float32:
 
 @tuple
 @__internal__
+@__notuple__
+class float16:
+    MIN_10_EXP = -4
+    pass
+
+@tuple
+@__internal__
+@__notuple__
+class bfloat16:
+    MIN_10_EXP = -37
+    pass
+
+@tuple
+@__internal__
+@__notuple__
+class float128:
+    MIN_10_EXP = -4931
+    pass
+
+@tuple
+@__internal__
 class type:
     pass
 
@@ -102,6 +123,59 @@ class str:
     ptr: Ptr[byte]
     len: int
 
+
+@tuple
+@__internal__
+class Tuple:
+    @__internal__
+    def __new__() -> Tuple:
+        pass
+    def __add__(self, obj):
+        return __magic__.add(self, obj)
+    def __mul__(self, n: Static[int]):
+        return __magic__.mul(self, n)
+    def __contains__(self, obj) -> bool:
+        return __magic__.contains(self, obj)
+    def __getitem__(self, idx: int):
+        return __magic__.getitem(self, idx)
+    def __iter__(self):
+        yield from __magic__.iter(self)
+    def __hash__(self) -> int:
+        return __magic__.hash(self)
+    def __repr__(self) -> str:
+        return __magic__.repr(self)
+    def __len__(self) -> int:
+        return __magic__.len(self)
+    def __eq__(self, obj: Tuple) -> bool:
+        return __magic__.eq(self, obj)
+    def __ne__(self, obj: Tuple) -> bool:
+        return __magic__.ne(self, obj)
+    def __gt__(self, obj: Tuple) -> bool:
+        return __magic__.gt(self, obj)
+    def __ge__(self, obj: Tuple) -> bool:
+        return __magic__.ge(self, obj)
+    def __lt__(self, obj: Tuple) -> bool:
+        return __magic__.lt(self, obj)
+    def __le__(self, obj: Tuple) -> bool:
+        return __magic__.le(self, obj)
+    def __pickle__(self, dest: Ptr[byte]):
+        return __magic__.pickle(self, dest)
+    def __unpickle__(src: Ptr[byte]) -> Tuple:
+        return __magic__.unpickle(src)
+    def __to_py__(self) -> Ptr[byte]:
+        return __magic__.to_py(self)
+    def __from_py__(src: Ptr[byte]) -> Tuple:
+        return __magic__.from_py(src)
+    def __to_gpu__(self, cache) -> Tuple:
+        return __magic__.to_gpu(self, cache)
+    def __from_gpu__(self, other: Tuple):
+        return __magic__.from_gpu(self, other)
+    def __from_gpu_new__(other: Tuple) -> Tuple:
+        return __magic__.from_gpu_new(other)
+    def __tuplesize__(self) -> int:
+        return __magic__.tuplesize(self)
+
+
 @tuple
 @__internal__
 class Array:
@@ -134,8 +208,6 @@ class TypeVar[T]: pass
 class ByVal: pass
 @__internal__
 class ByRef: pass
-@__internal__
-class Tuple: pass
 
 @__internal__
 class ClassVar[T]:
@@ -147,10 +219,7 @@ class RTTI:
 
 @__internal__
 @tuple
-class ellipsis:
-    def __new__() -> ellipsis:
-        return ()
-Ellipsis = ellipsis()
+class ellipsis: pass
 
 @tuple
 @__internal__

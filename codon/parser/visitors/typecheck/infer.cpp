@@ -53,9 +53,12 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
        ctx->getRealizationBase()->iteration++) {
     LOG_TYPECHECK("[iter] {} :: {}", ctx->getRealizationBase()->name,
                   ctx->getRealizationBase()->iteration);
-    if (ctx->getRealizationBase()->iteration >= MAX_TYPECHECK_ITER)
+    if (ctx->getRealizationBase()->iteration >= MAX_TYPECHECK_ITER) {
       error(result, "cannot typecheck '{}' in reasonable time",
-            ctx->cache->rev(ctx->getRealizationBase()->name));
+            ctx->getRealizationBase()->name.empty()
+                ? "toplevel"
+                : ctx->cache->rev(ctx->getRealizationBase()->name));
+    }
 
     // Keep iterating until:
     //   (1) success: the statement is marked as done; or
@@ -96,8 +99,9 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       bool anotherRound = false;
       // Special case: return type might have default as well (e.g., Union)
       if (ctx->getRealizationBase()->returnType)
-        ctx->pendingDefaults.insert(ctx->getRealizationBase()->returnType);
-      for (auto &unbound : ctx->pendingDefaults) {
+        ctx->getRealizationBase()->pendingDefaults.insert(
+            ctx->getRealizationBase()->returnType);
+      for (auto &unbound : ctx->getRealizationBase()->pendingDefaults) {
         if (auto tu = unbound->getUnion()) {
           // Seal all dynamic unions after the iteration is over
           if (!tu->isSealed()) {
@@ -110,7 +114,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
             anotherRound = true;
         }
       }
-      ctx->pendingDefaults.clear();
+      ctx->getRealizationBase()->pendingDefaults.clear();
       if (anotherRound)
         continue;
 
@@ -183,7 +187,6 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         }
         e.trackRealize(fmt::format("{}{}", name, name_args), getSrcInfo());
       }
-
     } else {
       e.trackRealize(typ->prettyString(), getSrcInfo());
     }
@@ -198,9 +201,12 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   if (!type || !type->canRealize())
     return nullptr;
 
+  if (auto tr = type->getRecord())
+    tr->flatten();
+
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
-  for (auto &field : ctx->cache->classes[type->name].fields) {
+  for (auto field : getClassFields(type)) {
     if (!field.type)
       return nullptr;
   }
@@ -247,16 +253,24 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<ir::types::Type *> typeArgs;   // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
-  for (auto &field : ctx->cache->classes[realized->name].fields) {
+  if (realized->is(TYPE_TUPLE))
+    realized->getRecord()->flatten();
+  int i = 0;
+  for (auto &field : getClassFields(realized.get())) {
     auto ftyp = ctx->instantiate(field.type, realized);
+    // HACK: repeated tuples have no generics so this is needed to fix the instantiation
+    // above
+    if (realized->is(TYPE_TUPLE))
+      unify(ftyp, realized->getRecord()->args[i]);
+
     if (!realize(ftyp))
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
         ftyp->prettyString());
-    LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
     realization->fields.emplace_back(field.name, ftyp);
     names.emplace_back(field.name);
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
     memberInfo[field.name] = field.type->getSrcInfo();
+    i++;
   }
 
   // Set IR attributes
@@ -431,9 +445,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
                         NT<InstantiateExpr>(
                             NT<IdExpr>("Function"),
                             std::vector<ExprPtr>{
-                                NT<InstantiateExpr>(
-                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
-                                    ids),
+                                NT<InstantiateExpr>(NT<IdExpr>(TYPE_TUPLE), ids),
                                 NT<IdExpr>(fn->getRetType()->realizedName())}),
                         N<IdExpr>(fn->realizedName())),
                     "__raw__")),
@@ -459,7 +471,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
     auto baseTyp = t->funcGenerics[0].type->getClass();
     auto derivedTyp = t->funcGenerics[1].type->getClass();
 
-    const auto &fields = ctx->cache->classes[derivedTyp->name].fields;
+    const auto &fields = getClassFields(derivedTyp.get());
     auto types = std::vector<ExprPtr>{};
     auto found = false;
     for (auto &f : fields) {
@@ -471,13 +483,11 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         types.push_back(NT<IdExpr>(ft->realizedName()));
       }
     }
-    seqassert(found || ctx->cache->classes[baseTyp->name].fields.empty(),
+    seqassert(found || getClassFields(baseTyp.get()).empty(),
               "cannot find distance between {} and {}", derivedTyp->name,
               baseTyp->name);
     StmtPtr suite = N<ReturnStmt>(
-        N<DotExpr>(NT<InstantiateExpr>(
-                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
-                   "__elemsize__"));
+        N<DotExpr>(NT<InstantiateExpr>(NT<IdExpr>(TYPE_TUPLE), types), "__elemsize__"));
     LOG_REALIZE("[poly] {} : {}", t, *suite);
     initDist.ast->suite = suite;
     t->ast = initDist.ast.get();
@@ -518,7 +528,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                  ->vtables[cp->realizedName()];
 
   // Add or extract thunk ID
-  size_t vid;
+  size_t vid = 0;
   if (auto i = in(vt.table, key)) {
     vid = i->second;
   } else {
@@ -644,6 +654,12 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getFloatType();
   } else if (t->name == "float32") {
     handle = module->getFloat32Type();
+  } else if (t->name == "float16") {
+    handle = module->getFloat16Type();
+  } else if (t->name == "bfloat16") {
+    handle = module->getBFloat16Type();
+  } else if (t->name == "float128") {
+    handle = module->getFloat128Type();
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
@@ -681,14 +697,19 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
     handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
   } else if (auto tr = t->getRecord()) {
+    seqassert(tr->getRepeats() >= 0, "repeats not resolved: '{}'", tr->debugString(2));
+    tr->flatten();
     std::vector<ir::types::Type *> typeArgs;
     std::vector<std::string> names;
     std::map<std::string, SrcInfo> memberInfo;
     for (int ai = 0; ai < tr->args.size(); ai++) {
-      names.emplace_back(ctx->cache->classes[t->name].fields[ai].name);
+      auto n = t->name == TYPE_TUPLE ? format("item{}", ai + 1)
+                                     : ctx->cache->classes[t->name].fields[ai].name;
+      names.emplace_back(n);
       typeArgs.emplace_back(forceFindIRType(tr->args[ai]));
-      memberInfo[ctx->cache->classes[t->name].fields[ai].name] =
-          ctx->cache->classes[t->name].fields[ai].type->getSrcInfo();
+      memberInfo[n] = t->name == TYPE_TUPLE
+                          ? tr->getSrcInfo()
+                          : ctx->cache->classes[t->name].fields[ai].type->getSrcInfo();
     }
     auto record =
         ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
@@ -922,7 +943,9 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
     // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
-    unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
+
+    auto ret = ctx->instantiate(ctx->getType("Union"));
+    unify(type->getRetType(), ret);
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
     // def __internal__.get_union_first(union: Union[T0]):

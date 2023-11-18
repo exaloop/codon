@@ -32,6 +32,7 @@ def test_isfinite():
 
 @test
 def test_ceil():
+    assert isinstance(math.ceil(1.0), int)
     assert math.ceil(3.3) == 4
     assert math.ceil(0.5) == 1
     assert math.ceil(1.0) == 1
@@ -43,6 +44,7 @@ def test_ceil():
 
 @test
 def test_floor():
+    assert isinstance(math.floor(1.0), int)
     assert math.floor(3.3) == 3
     assert math.floor(0.5) == 0
     assert math.floor(1.0) == 1
@@ -344,6 +346,7 @@ def test_log1p():
 
 @test
 def test_trunc():
+    assert isinstance(math.trunc(1.0), int)
     assert math.trunc(1.0) == 1
     assert math.trunc(-1.0) == -1
     assert math.trunc(1.5) == 1
@@ -813,24 +816,26 @@ def test_float32_isfinite():
 
 @test
 def test_float32_ceil():
-    assert math.ceil(3.3f32) == 4.0f32
-    assert math.ceil(0.5f32) == 1.0f32
-    assert math.ceil(1.0f32) == 1.0f32
-    assert math.ceil(1.5f32) == 2.0f32
-    assert math.ceil(-0.5f32) == 0.0f32
-    assert math.ceil(-1.0f32) == -1.0f32
-    assert math.ceil(-1.5f32) == -1.0f32
+    assert isinstance(math.ceil(1.0f32), int)
+    assert math.ceil(3.3f32) == 4
+    assert math.ceil(0.5f32) == 1
+    assert math.ceil(1.0f32) == 1
+    assert math.ceil(1.5f32) == 2
+    assert math.ceil(-0.5f32) == 0
+    assert math.ceil(-1.0f32) == -1
+    assert math.ceil(-1.5f32) == -1
 
 
 @test
 def test_float32_floor():
-    assert math.floor(3.3f32) == 3.0f32
-    assert math.floor(0.5f32) == 0.0f32
-    assert math.floor(1.0f32) == 1.0f32
-    assert math.floor(1.5f32) == 1.0f32
-    assert math.floor(-0.5f32) == -1.0f32
-    assert math.floor(-1.0f32) == -1.0f32
-    assert math.floor(-1.5f32) == -2.0f32
+    assert isinstance(math.floor(1.0f32), int)
+    assert math.floor(3.3f32) == 3
+    assert math.floor(0.5f32) == 0
+    assert math.floor(1.0f32) == 1
+    assert math.floor(1.5f32) == 1
+    assert math.floor(-0.5f32) == -1
+    assert math.floor(-1.0f32) == -1
+    assert math.floor(-1.5f32) == -2
 
 
 @test
@@ -1124,14 +1129,15 @@ def test_float32_log1p():
 
 @test
 def test_float32_trunc():
-    assert math.trunc(1.0f32) == 1.0f32
-    assert math.trunc(-1.0f32) == -1.0f32
-    assert math.trunc(1.5f32) == 1.0f32
-    assert math.trunc(-1.5f32) == -1.0f32
-    assert math.trunc(1.99999f32) == 1.0f32
-    assert math.trunc(-1.99999f32) == -1.0f32
-    assert math.trunc(0.99999f32) == 0.0f32
-    assert math.trunc(-100.999f32) == -100.0f32
+    assert isinstance(math.trunc(1.0f32), int)
+    assert math.trunc(1.0f32) == 1
+    assert math.trunc(-1.0f32) == -1
+    assert math.trunc(1.5f32) == 1
+    assert math.trunc(-1.5f32) == -1
+    assert math.trunc(1.99999f32) == 1
+    assert math.trunc(-1.99999f32) == -1
+    assert math.trunc(0.99999f32) == 0
+    assert math.trunc(-100.999f32) == -100
 
 
 @test

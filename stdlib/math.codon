@@ -111,9 +111,9 @@ def _check2(x: float, y: float, r: float, can_overflow: bool = False):
 
     return r
 
-def ceil(x: float) -> float:
+def ceil(x: float) -> int:
     """
-    ceil(float) -> float
+    ceil(float) -> int
 
     Return the ceiling of x as an Integral.
     This is the smallest integer >= x.
@@ -125,11 +125,11 @@ def ceil(x: float) -> float:
         %y = call double @llvm.ceil.f64(double %x)
         ret double %y
 
-    return f(x)
+    return int(f(x))
 
-def floor(x: float) -> float:
+def floor(x: float) -> int:
     """
-    floor(float) -> float
+    floor(float) -> int
 
     Return the floor of x as an Integral.
     This is the largest integer <= x.
@@ -141,7 +141,7 @@ def floor(x: float) -> float:
         %y = call double @llvm.floor.f64(double %x)
         ret double %y
 
-    return f(x)
+    return int(f(x))
 
 def fabs(x: float) -> float:
     """
@@ -454,9 +454,9 @@ def log1p(x: float) -> float:
     """
     return _check1(x, _C.log1p(x))
 
-def trunc(x: float) -> float:
+def trunc(x: float) -> int:
     """
-    trunc(float) -> float
+    trunc(float) -> int
 
     Return the Real value x truncated to an Integral
     (usually an integer).
@@ -468,7 +468,7 @@ def trunc(x: float) -> float:
         %y = call double @llvm.trunc.f64(double %x)
         ret double %y
 
-    return _check1(x, f(x))
+    return int(_check1(x, f(x)))
 
 def erf(x: float) -> float:
     """
@@ -797,9 +797,9 @@ def isfinite(x: float32) -> bool:
     return not (isnan(x) or isinf(x))
 
 @overload
-def ceil(x: float32) -> float32:
+def ceil(x: float32) -> int:
     """
-    ceil(float32) -> float32
+    ceil(float32) -> int
 
     Return the ceiling of x as an Integral.
     This is the smallest integer >= x.
@@ -811,12 +811,12 @@ def ceil(x: float32) -> float32:
         %y = call float @llvm.ceil.f32(float %x)
         ret float %y
 
-    return f(x)
+    return int(f(x))
 
 @overload
-def floor(x: float32) -> float32:
+def floor(x: float32) -> int:
     """
-    floor(float32) -> float32
+    floor(float32) -> int
 
     Return the floor of x as an Integral.
     This is the largest integer <= x.
@@ -828,7 +828,7 @@ def floor(x: float32) -> float32:
         %y = call float @llvm.floor.f32(float %x)
         ret float %y
 
-    return f(x)
+    return int(f(x))
 
 @overload
 def fabs(x: float32) -> float32:
@@ -1170,9 +1170,9 @@ def log1p(x: float32) -> float32:
     return _C.log1pf(x)
 
 @overload
-def trunc(x: float32) -> float32:
+def trunc(x: float32) -> int:
     """
-    trunc(float32) -> float32
+    trunc(float32) -> int
 
     Return the Real value x truncated to an Integral
     (usually an integer).
@@ -1184,7 +1184,7 @@ def trunc(x: float32) -> float32:
         %y = call float @llvm.trunc.f32(float %x)
         ret float %y
 
-    return f(x)
+    return int(f(x))
 
 @overload
 def erf(x: float32) -> float32:

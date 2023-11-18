@@ -1742,7 +1742,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   }
 
   else if (internalFuncMatchesIgnoreArgs<RecordType>("__new__", x)) {
-    auto *recordType = cast<RecordType>(parentType);
+    auto *recordType = cast<RecordType>(cast<FuncType>(x->getType())->getReturnType());
     seqassertn(args.size() == std::distance(recordType->begin(), recordType->end()),
                "args size does not match");
     result = llvm::UndefValue::get(getLLVMType(recordType));
@@ -2083,6 +2083,18 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getFloatTy();
   }
 
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return B->getHalfTy();
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return B->getBFloatTy();
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return llvm::Type::getFP128Ty(*context);
+  }
+
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
   }
@@ -2198,6 +2210,22 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_HP_float128);
   }
 
   if (auto *x = cast<types::BoolType>(t)) {

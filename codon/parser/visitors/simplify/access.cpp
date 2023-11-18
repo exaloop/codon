@@ -14,10 +14,6 @@ using namespace codon::error;
 namespace codon::ast {
 
 void SimplifyVisitor::visit(IdExpr *expr) {
-  if (startswith(expr->value, TYPE_TUPLE)) {
-    expr->markType();
-    return;
-  }
   auto val = ctx->findDominatingBinding(expr->value);
 
   if (!val && ctx->getBase()->pyCaptures) {

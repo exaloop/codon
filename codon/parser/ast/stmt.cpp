@@ -672,8 +672,6 @@ void ClassStmt::parseDecorators() {
       E(Error::CLASS_BAD_DECORATOR, d);
     }
   }
-  if (startswith(name, TYPE_TUPLE))
-    tupleMagics["contains"] = true;
   if (attributes.has("deduce"))
     tupleMagics["new"] = false;
   if (!attributes.has(Attr::Tuple)) {
@@ -681,12 +679,7 @@ void ClassStmt::parseDecorators() {
     tupleMagics["new"] = tupleMagics["raw"] = true;
     tupleMagics["len"] = false;
   }
-  if (startswith(name, TYPE_TUPLE)) {
-    tupleMagics["add"] = true;
-    tupleMagics["mul"] = true;
-  } else {
-    tupleMagics["dict"] = true;
-  }
+  tupleMagics["dict"] = true;
   // Internal classes do not get any auto-generated members.
   attributes.magics.clear();
   if (!attributes.has(Attr::Internal)) {

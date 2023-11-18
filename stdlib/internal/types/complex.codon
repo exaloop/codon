@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
-@tuple
+@tuple(python=False)
 class complex64:
     real: float32
     imag: float32

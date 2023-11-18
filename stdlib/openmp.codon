@@ -538,7 +538,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
         task = Ptr[TaskWithPrivates[P]](data)[0]
         priv = task.data
         gtid64 = int(gtid)
-        if staticlen(S()) != 0:
+        if staticlen(S) != 0:
             shared = Ptr[S](task.task.shareds)[0]
             _task_loop_body_stub(gtid64, priv, shared)
         else:

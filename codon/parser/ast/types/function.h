@@ -48,6 +48,7 @@ public:
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
+  std::string realizedTypeName() const override;
 
   std::shared_ptr<FuncType> getFunc() override {
     return std::static_pointer_cast<FuncType>(shared_from_this());

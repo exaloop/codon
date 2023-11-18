@@ -54,13 +54,12 @@ void SimplifyVisitor::visit(ChainBinaryExpr *expr) {
 }
 
 /// Transform index into an instantiation @c InstantiateExpr if possible.
-/// Generate tuple class `Tuple.N` for `Tuple[T1, ... TN]` (and `tuple[...]`).
+/// Generate tuple class `Tuple` for `Tuple[T1, ... TN]` (and `tuple[...]`).
 /// The rest is handled during the type checking.
 void SimplifyVisitor::visit(IndexExpr *expr) {
-  if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
-    // Special case: tuples. Change to Tuple.N
+  if (expr->expr->isId("tuple") || expr->expr->isId(TYPE_TUPLE)) {
     auto t = expr->index->getTuple();
-    expr->expr = NT<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
+    expr->expr = NT<IdExpr>(TYPE_TUPLE);
   } else if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
@@ -84,7 +83,7 @@ void SimplifyVisitor::visit(IndexExpr *expr) {
     if (i->getList() && expr->expr->isType()) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
       // `Function[...]`)
-      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
+      i = N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(i->getList()->items));
     }
     transform(i, true);
   }

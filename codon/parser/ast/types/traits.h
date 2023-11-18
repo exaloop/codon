@@ -46,4 +46,16 @@ public:
   std::string debugString(char mode) const override;
 };
 
+struct VariableTupleTrait : public Trait {
+  TypePtr size;
+
+public:
+  explicit VariableTupleTrait(TypePtr size);
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) override;
+  std::string debugString(char mode) const override;
+};
+
 } // namespace codon::ast::types
