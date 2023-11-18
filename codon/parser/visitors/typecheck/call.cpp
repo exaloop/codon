@@ -636,14 +636,18 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
 ///                                                 b: int```
 ExprPtr TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   // Ensure that namedtuple call is valid
-  if (expr->args.size() != 2 || !expr->args[0].value->getString() ||
-      !expr->args[1].value->origExpr->getList())
+  if (expr->args.size() != 1 || !expr->args[0].value->origExpr->getList())
     E(Error::CALL_NAMEDTUPLE, getSrcInfo());
 
+  auto name = expr->expr->type->getFunc()
+                  ->funcGenerics[0]
+                  .type->getStatic()
+                  ->evaluate()
+                  .getString();
   // Construct the class statement
   std::vector<Param> generics, params;
   int ti = 1;
-  for (auto &i : expr->args[1].value->origExpr->getList()->items) {
+  for (auto &i : expr->args[0].value->origExpr->getList()->items) {
     if (auto s = i->getString()) {
       generics.emplace_back(format("T{}", ti), N<IdExpr>("type"), nullptr, true);
       params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
@@ -657,7 +661,6 @@ ExprPtr TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   }
   for (auto &g : generics)
     params.push_back(g);
-  auto name = expr->args[0].value->getString()->getValue();
   prependStmts->push_back(transform(
       N<ClassStmt>(name, params, nullptr, std::vector<ExprPtr>{N<IdExpr>("tuple")})));
   return transformType(N<IdExpr>(name));

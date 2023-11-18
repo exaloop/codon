@@ -319,19 +319,21 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
-  ScopingVisitor::apply(ctx->cache, n);
   auto tv = TypecheckVisitor(ictx, preamble);
-  n = tv.transform(n);
+  ScopingVisitor::apply(ctx->cache, n);
+  // n = tv.transform(n);
 
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();
   // Add comment to the top of import for easier dump inspection
   auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
+  auto suite = N<SuiteStmt>(comment, n);
+
   if (ctx->isStdlibLoading) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all
     // statements are executed before the user-provided code.
-    return N<SuiteStmt>(comment, n);
+    return tv.transform(suite);
   } else {
     // Generate import identifier
     std::string importVar = import->second.importVar =
@@ -339,41 +341,29 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
-    preamble->push_back(N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
-                                      N<BoolExpr>(false)));
+    preamble->push_back(transform(N<AssignStmt>(
+        N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false))));
     ctx->cache->addGlobal(importDoneVar);
 
     // Wrap all imported top-level statements into a function.
-    // Make sure to register the global variables and set their assignments as updates.
-    // Note: signatures/classes/functions are not wrapped
-    std::vector<StmtPtr> stmts;
-    auto processToplevelStmt = [&](const StmtPtr &s) {
-      // Process toplevel statement
-      if (auto a = s->getAssign()) {
-        if (!a->isUpdate() && a->lhs->getId()) {
-          // Global `a = ...`
-          auto val = ictx->forceFind(a->lhs->getId()->value);
-          if (val->isVar() && val->isGlobal())
-            ctx->cache->addGlobal(val->canonicalName);
-        }
-      }
-      stmts.push_back(s);
-    };
-    processToplevelStmt(comment);
-    if (auto st = n->getSuite()) {
-      for (auto &ss : st->stmts)
-        if (ss)
-          processToplevelStmt(ss);
-    } else {
-      processToplevelStmt(n);
-    }
-
-    // Create import function manually with ForceRealize
-    ctx->cache->functions[importVar].ast =
-        N<FunctionStmt>(importVar, nullptr, std::vector<Param>{}, N<SuiteStmt>(stmts),
-                        Attr({Attr::ForceRealize}));
-    preamble->push_back(clone(ctx->cache->functions[importVar].ast));
-    ctx->cache->overloads[importVar].push_back(importVar);
+    // TODO: Make sure to register the global variables and set their assignments as
+    // updates. Note: signatures/classes/functions are not wrapped Create import
+    // function manually with ForceRealize
+    auto fn =
+        N<FunctionStmt>(importVar, N<IdExpr>("NoneType"), std::vector<Param>{}, suite);
+    tv.transform(fn);
+    tv.realize(ictx->forceFind(importVar)->type);
+    preamble->push_back(fn);
+    // return fn;
+    // LOG("--- {}", importVar);
+    // ictx->dump();
+    // auto baseType = getFuncTypeBase(0);
+    // auto funcTyp = std::make_shared<types::FuncType>(
+    //     baseType, ctx->cache->functions[importVar].ast.get());
+    // funcTyp->setSrcInfo(getSrcInfo());
+    // ctx->cache->functions[importVar].type = funcTyp;
+    // ctx->addFunc(importVar, importVar, funcTyp, getSrcInfo());
+    // ctx->cache->overloads[importVar].push_back(importVar);
   }
   return nullptr;
 }

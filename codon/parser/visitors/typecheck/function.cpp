@@ -125,6 +125,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                                            stmt->suite->firstInBlock());
     return;
   }
+  auto stmt_clone = clone(stmt, true); // clean clone
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
@@ -178,6 +179,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
+  if (stmt->name == "fromkeys")
+    LOG("--");
   std::map<std::string, TypeContext::Item> captures;
   for (auto &[c, t] : stmt->attributes.captures) {
    if (auto v = ctx->find(c)) {
@@ -390,7 +393,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
   ctx->cache->functions[canonicalName].module = ctx->getModule();
   ctx->cache->functions[canonicalName].ast = f;
-  ctx->cache->functions[canonicalName].origAst = clone(stmt);
+  ctx->cache->functions[canonicalName].origAst = stmt_clone;
   ctx->cache->functions[canonicalName].isToplevel =
       ctx->getModule().empty() && ctx->isGlobal();
   ctx->cache->functions[canonicalName].rootName = rootName;
@@ -403,6 +406,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (isClassMember && stmt->attributes.has(Attr::Method)) {
     funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
   }
+  if (startswith(funcTyp->toString(), "std.collections.defaultdict.0.__init__:5"))
+    LOG("-> realizing ... {:D}", funcTyp);
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   ctx->cache->functions[canonicalName].type = funcTyp;

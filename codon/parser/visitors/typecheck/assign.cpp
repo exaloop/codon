@@ -153,13 +153,17 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
     auto type = assign->lhs->getType();
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
-    if (!val->isVar())
+    if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
+      assign->lhs->type = val->type;
+    }
 
     // todo)) if (in(ctx->cache->globals, lhs)) {
   }
 
   if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->type)) {
+    assign->setDone();
+  } else if (assign->rhs && !val->isVar() && val->type->getUnbounds().empty()) {
     assign->setDone();
   }
 

@@ -34,9 +34,9 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   // if (ctx->isOuter(val) && !ctx->isCanonicalName(expr->value))
   //   ctx->getBase()->captures.insert(expr->value);
   if (!val) {
-    ctx->dump();
-    LOG("=================================================================");
-    ctx->cache->typeCtx->dump();
+    // ctx->dump();
+    // LOG("=================================================================");
+    // ctx->cache->typeCtx->dump();
     E(Error::ID_NOT_FOUND, expr, expr->value);
   }
   if (expr->type->getUnbound() && in(ctx->cache->overloads, val->canonicalName))

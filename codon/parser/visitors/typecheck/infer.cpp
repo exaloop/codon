@@ -299,15 +299,19 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
-  getLogger().level++;
-  ctx->addBlock();
-  ctx->typecheckLevel++;
+  if (!startswith(type->ast->name, "%_import_")) {
+    getLogger().level++;
+    ctx->addBlock();
+    ctx->typecheckLevel++;
+  }
 
   // Find function parents
-  ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
-  LOG_TYPECHECK("[realize] fn {} -> {} : base {} ; depth = {} ; ctx-base: {}",
-                type->ast->name, type->realizedName(), ctx->getRealizationStackName(),
-                ctx->getRealizationDepth(), ctx->getBaseName());
+  if (!startswith(type->ast->name, "%_import_")) {
+    ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
+    LOG_TYPECHECK("[realize] fn {} -> {} : base {} ; depth = {} ; ctx-base: {}",
+                  type->ast->name, type->realizedName(), ctx->getRealizationStackName(),
+                  ctx->getRealizationDepth(), ctx->getBaseName());
+  }
 
   // Clone the generic AST that is to be realized
   auto ast = generateSpecialAst(type);
@@ -360,10 +364,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // inferTypes(ast.suite, ctx);
         error("cannot typecheck the program");
       }
-      ctx->bases.pop_back();
-      ctx->popBlock();
-      ctx->typecheckLevel--;
-      getLogger().level--;
+      if (!startswith(type->ast->name, "%_import_")) {
+        ctx->bases.pop_back();
+        ctx->popBlock();
+        ctx->typecheckLevel--;
+        getLogger().level--;
+      }
       this->ctx = oldCtx;
       return nullptr; // inference must be delayed
     } else {
@@ -403,10 +409,12 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   val = std::make_shared<TypecheckItem>(type->realizedName(), "", ctx->getModule(),
                                         type->getFunc());
   ctx->addAlwaysVisible(val);
-  ctx->bases.pop_back();
-  ctx->popBlock();
-  ctx->typecheckLevel--;
-  getLogger().level--;
+  if (!startswith(type->ast->name, "%_import_")) {
+    ctx->bases.pop_back();
+    ctx->popBlock();
+    ctx->typecheckLevel--;
+    getLogger().level--;
+  }
   this->ctx = oldCtx;
 
   return type->getFunc();
