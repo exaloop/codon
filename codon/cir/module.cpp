@@ -62,6 +62,9 @@ const std::string Module::BYTE_NAME = "byte";
 const std::string Module::INT_NAME = "int";
 const std::string Module::FLOAT_NAME = "float";
 const std::string Module::FLOAT32_NAME = "float32";
+const std::string Module::FLOAT16_NAME = "float16";
+const std::string Module::BFLOAT16_NAME = "bfloat16";
+const std::string Module::FLOAT128_NAME = "float128";
 const std::string Module::STRING_NAME = "str";
 
 const std::string Module::EQ_MAGIC_NAME = "__eq__";
@@ -237,6 +240,24 @@ types::Type *Module::getFloat32Type() {
   if (auto *rVal = getType(FLOAT32_NAME))
     return rVal;
   return Nr<types::Float32Type>();
+}
+
+types::Type *Module::getFloat16Type() {
+  if (auto *rVal = getType(FLOAT16_NAME))
+    return rVal;
+  return Nr<types::Float16Type>();
+}
+
+types::Type *Module::getBFloat16Type() {
+  if (auto *rVal = getType(BFLOAT16_NAME))
+    return rVal;
+  return Nr<types::BFloat16Type>();
+}
+
+types::Type *Module::getFloat128Type() {
+  if (auto *rVal = getType(FLOAT128_NAME))
+    return rVal;
+  return Nr<types::Float128Type>();
 }
 
 types::Type *Module::getStringType() {

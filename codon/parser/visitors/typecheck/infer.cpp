@@ -99,8 +99,9 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       bool anotherRound = false;
       // Special case: return type might have default as well (e.g., Union)
       if (ctx->getRealizationBase()->returnType)
-        ctx->pendingDefaults.insert(ctx->getRealizationBase()->returnType);
-      for (auto &unbound : ctx->pendingDefaults) {
+        ctx->getRealizationBase()->pendingDefaults.insert(
+            ctx->getRealizationBase()->returnType);
+      for (auto &unbound : ctx->getRealizationBase()->pendingDefaults) {
         if (auto tu = unbound->getUnion()) {
           // Seal all dynamic unions after the iteration is over
           if (!tu->isSealed()) {
@@ -113,7 +114,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
             anotherRound = true;
         }
       }
-      ctx->pendingDefaults.clear();
+      ctx->getRealizationBase()->pendingDefaults.clear();
       if (anotherRound)
         continue;
 
@@ -653,6 +654,12 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getFloatType();
   } else if (t->name == "float32") {
     handle = module->getFloat32Type();
+  } else if (t->name == "float16") {
+    handle = module->getFloat16Type();
+  } else if (t->name == "bfloat16") {
+    handle = module->getBFloat16Type();
+  } else if (t->name == "float128") {
+    handle = module->getFloat128Type();
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
@@ -936,7 +943,9 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
                                  N<StringExpr>("invalid union call"))));
     // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
-    unify(type->getRetType(), ctx->instantiate(ctx->getType("Union")));
+
+    auto ret = ctx->instantiate(ctx->getType("Union"));
+    unify(type->getRetType(), ret);
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
     // def __internal__.get_union_first(union: Union[T0]):

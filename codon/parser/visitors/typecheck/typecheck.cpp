@@ -49,6 +49,7 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
 
   auto typ = expr->type;
   if (!expr->done) {
+    bool isIntStatic = expr->staticValue.type == StaticValue::INT;
     TypecheckVisitor v(ctx, prependStmts);
     v.setSrcInfo(expr->getSrcInfo());
     ctx->pushSrcInfo(expr->getSrcInfo());
@@ -60,7 +61,8 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr) {
       expr = v.resultExpr;
     }
     seqassert(expr->type, "type not set for {}", expr);
-    unify(typ, expr->type);
+    if (!(isIntStatic && expr->type->is("bool")))
+      unify(typ, expr->type);
     if (expr->done) {
       ctx->changedNodes++;
     }
