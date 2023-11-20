@@ -113,6 +113,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
+    if (!stmt->decorators[i])
+      continue;
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       stmt->attributes.set(attrName);
