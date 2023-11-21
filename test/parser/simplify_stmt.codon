@@ -1276,3 +1276,30 @@ def f(x: int) -> int:
             return g(y - 1) * z
     return g(4)
 print(f(3))  #: 1296
+
+#%% class_setter,barebones
+class Foo:
+    _x: int
+
+    @property
+    def x(self):
+        print('getter')
+        return self._x
+
+    @x.setter
+    def x(self, v):
+        print('setter')
+        self._x = v
+
+f = Foo(1)
+print(f.x)
+#: getter
+#: 1
+
+f.x = 99
+print(f.x)
+print(f._x)
+#: setter
+#: getter
+#: 99
+#: 99

@@ -163,7 +163,14 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass, stmt->member);
 
-    if (!member && stmt->lhs->isType()) {
+    if (!member) {
+      // Case: setters
+      auto setters = ctx->findMethod(lhsClass.get(), format(".set_{}", stmt->member));
+      if (!setters.empty()) {
+        resultStmt = transform(N<ExprStmt>(
+            N<CallExpr>(N<IdExpr>(setters[0]->ast->name), stmt->lhs, stmt->rhs)));
+        return;
+      }
       // Case: class variables
       if (auto cls = in(ctx->cache->classes, lhsClass->name))
         if (auto var = in(cls->classVars, stmt->member)) {
