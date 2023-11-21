@@ -238,6 +238,15 @@ class NamedTuple:
     def __getitem__(self, key: Static[str]):
         return getattr(self, key)
 
+    def __keys__(self):
+        return __internal__.namedkeys(N)
+
+    def __repr__(self):
+        keys = self.__keys__()
+        values = [v.__repr__() for v in self.args]
+        s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
+        return f"({s})"
+
 
 @__internal__
 @tuple

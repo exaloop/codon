@@ -187,6 +187,9 @@ class __internal__:
 
     # Tuples
 
+    def namedkeys(N: Static[int]):
+        pass
+
     @pure
     @derives
     @llvm

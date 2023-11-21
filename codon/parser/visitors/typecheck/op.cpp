@@ -216,6 +216,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     // make sure to extract these layers and move them to the pipeline.
     // Example: `foo(...)` that is transformed to `foo(unwrap(...))` will become
     // `unwrap(...) |> foo(...)`
+    LOG("--> {}", (*ec));
     transform(*ec);
     auto layers = findEllipsis(*ec);
     seqassert(!layers.empty(), "can't find the ellipsis");

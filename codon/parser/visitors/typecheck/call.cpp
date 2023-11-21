@@ -201,7 +201,8 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       args.erase(args.begin() + ai);
     } else {
       if (auto el = args[ai].value->getEllipsis()) {
-        if (ai + 1 == args.size() && args[ai].name.empty())
+        if (ai + 1 == args.size() && args[ai].name.empty() &&
+            el->mode != EllipsisExpr::PIPE)
           el->mode = EllipsisExpr::PARTIAL;
       }
       // Case: normal argument (no expansion)
@@ -358,8 +359,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         std::vector<std::string> names;
         std::vector<ExprPtr> values;
         if (!part.known.empty()) {
-          auto e =
-              transform(N<DotExpr>(N<DotExpr>(N<IdExpr>(part.var), "kwargs"), "args"));
+          auto e = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"), "args");
           for (auto &[n, ne] : extractNamedTuple(e)) {
             names.emplace_back(n);
             values.emplace_back(transform(ne));
@@ -623,7 +623,7 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
   auto g = CAST(expr->args[0].value->origExpr, GeneratorExpr);
   if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
-    E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
+    E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value);
   g->kind = GeneratorExpr::TupleGenerator;
   return transform(g->shared_from_this());
 }

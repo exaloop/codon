@@ -964,6 +964,15 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<CallExpr>(N<IdExpr>("__internal__.union_get_data"), N<IdExpr>(selfVar),
                     NT<IdExpr>(unionTypes[0]->realizedName()))));
     ast->suite = suite;
+  } else if (startswith(ast->name, "__internal__.namedkeys")) {
+    auto n = type->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    if (n < 0 || n >= ctx->cache->generatedTupleNames.size())
+      error("bad namedkeys index");
+    std::vector<ExprPtr> s;
+    for (auto &k : ctx->cache->generatedTupleNames[n])
+      s.push_back(N<StringExpr>(k));
+    auto suite = N<SuiteStmt>(N<ReturnStmt>(N<TupleExpr>(s)));
+    ast->suite = suite;
   }
   return ast;
 }

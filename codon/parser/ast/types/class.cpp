@@ -213,12 +213,11 @@ bool RecordType::isInstantiated() const {
 }
 
 std::string RecordType::debugString(char mode) const {
-  if (name == "Partial" && generics[0].type->canRealize() && false) {
+  if (name == "Partial" && generics[0].type->canRealize()) {
     auto func = getPartialFunc();
     std::vector<std::string> gs;
-    for (auto &a : func->generics)
-      if (!a.name.empty())
-        gs.push_back(a.type->debugString(mode));
+    for (auto &a : generics[2].type->getRecord()->args)
+      gs.push_back(a->debugString(mode));
     std::vector<std::string> as;
     int i = 0, gi = 0;
     auto known = getPartialMask();
@@ -238,7 +237,8 @@ std::string RecordType::debugString(char mode) const {
       fnname = func->debugString(mode);
     }
     return fmt::format("{}[{}{}]", fnname, join(as, ","),
-                       mode == 2 ? fmt::format(";{}", join(gs, ",")) : "");
+                       //  mode == 2 ? fmt::format(";{}", join(gs, ",")) :
+                       "");
   }
   return fmt::format("{}", this->ClassType::debugString(mode));
 }
