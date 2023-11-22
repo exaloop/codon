@@ -227,7 +227,6 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             if (auto d = dc->getDot()) {
               if (d->member == "setter" and d->expr->isId(sp->getFunction()->name) &&
                   sp->getFunction()->args.size() == 2) {
-                LOG("-> setter: {}", sp);
                 sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
                 dc = nullptr;
                 break;
