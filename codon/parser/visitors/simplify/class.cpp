@@ -221,8 +221,20 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
     // Add class methods
     for (const auto &sp : getClassMethods(stmt->suite))
       if (sp && sp->getFunction()) {
-        if (sp.get() != autoDeducedInit.second)
+        if (sp.get() != autoDeducedInit.second) {
+          auto &ds = sp->getFunction()->decorators;
+          for (auto &dc : ds) {
+            if (auto d = dc->getDot()) {
+              if (d->member == "setter" and d->expr->isId(sp->getFunction()->name) &&
+                  sp->getFunction()->args.size() == 2) {
+                sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
+                dc = nullptr;
+                break;
+              }
+            }
+          }
           fnStmts.push_back(transform(sp));
+        }
       }
 
     // After popping context block, record types and nested classes will disappear.
