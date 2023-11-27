@@ -844,6 +844,25 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     }
   }
 
+  if (typ->getUnion()) {
+    ExprPtr cond = nullptr;
+    auto unionTypes = typ->getUnion()->getRealizationTypes();
+    int tag = -1;
+    for (size_t ui = 0; ui < unionTypes.size(); ui++) {
+      auto tu = realize(unionTypes[ui]);
+      if (!tu)
+        return nullptr;
+      auto te = N<IdExpr>(tu->getClass()->realizedTypeName());
+      auto e = N<BinaryExpr>(
+          N<CallExpr>(N<IdExpr>("isinstance"), expr->args[0].value, te), "&&",
+          N<CallExpr>(N<IdExpr>("hasattr"), te, N<StringExpr>(member)));
+      cond = !cond ? e : N<BinaryExpr>(cond, "||", e);
+    }
+    if (!cond)
+      return transform(N<BoolExpr>(false));
+    return transform(cond);
+  }
+
   bool exists = !ctx->findMethod(typ->getClass().get(), member).empty() ||
                 ctx->findMember(typ->getClass(), member);
   if (exists && args.size() > 1)
