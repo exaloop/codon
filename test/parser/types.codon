@@ -2030,3 +2030,30 @@ def correlate(a, b, mode = 'valid'):
         raise ValueError(f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})")
     return xret
 print(correlate([1], [2], 'full'))  # 5z
+
+#%% union_hasattr,barebones
+class A:
+    def foo(self):
+        print('foo')
+    def bar(self):
+        print('bar')
+class B:
+    def foo(self):
+        print('foo')
+    def baz(self):
+        print('baz')
+
+a = A()
+print(hasattr(a, 'foo'), hasattr(a, 'bar'), hasattr(a, 'baz'))
+#: True True False
+b = B()
+print(hasattr(b, 'foo'), hasattr(b, 'bar'), hasattr(b, 'baz'))
+#: True False True
+
+c: Union[A, B] = A()
+print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+#: True True False
+
+c = B()
+print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+#: True False True
