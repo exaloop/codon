@@ -238,7 +238,6 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     if (!bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
-    LOG("-> {}", e);
     unify(expr->type, e->type);
     return e;
   }

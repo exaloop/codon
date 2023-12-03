@@ -96,8 +96,8 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
             if (tu->pendingTypes[0]->getLink() &&
                 tu->pendingTypes[0]->getLink()->kind == LinkType::Unbound) {
               tu->addType(ctx->forceFind("NoneType")->type);
+              tu->seal();
             }
-            tu->seal();
           }
         }
       }
@@ -365,6 +365,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
     if (!ret) {
       realizations.erase(key);
+      ctx->realizationBases.pop_back();
+      ctx->popBlock();
+      ctx->typecheckLevel--;
+      getLogger().level--;
       if (!startswith(ast->name, "._lambda")) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
@@ -372,10 +376,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // LOG("{}", ast->suite->toString(2));
         error("cannot typecheck the program");
       }
-      ctx->realizationBases.pop_back();
-      ctx->popBlock();
-      ctx->typecheckLevel--;
-      getLogger().level--;
       return nullptr; // inference must be delayed
     }
 

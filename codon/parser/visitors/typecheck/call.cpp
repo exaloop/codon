@@ -738,6 +738,8 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("ByRef")) {
     return transform(N<BoolExpr>(typ->getRecord() == nullptr));
+  } else if (typExpr->isId("Union")) {
+    return transform(N<BoolExpr>(typ->getUnion() != nullptr));
   } else if (!typExpr->type->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     int tag = -1;
@@ -1015,6 +1017,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     if (!fn) {
       bool canCompile = true;
       // Special case: not a function, just try compiling it!
+      auto ocache = *(ctx->cache);
+      auto octx = *ctx;
       try {
         transform(N<CallExpr>(clone(expr->args[0].value),
                               N<StarExpr>(clone(expr->args[1].value)),
@@ -1022,6 +1026,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       } catch (const exc::ParserException &e) {
         // LOG("{}", e.what());
         canCompile = false;
+        *ctx = octx;
+        *(ctx->cache) = ocache;
       }
       return {true, transform(N<BoolExpr>(canCompile))};
     }
