@@ -238,6 +238,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     if (!bestMethod->ast->attributes.has(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
+    LOG("-> {}", e);
     unify(expr->type, e->type);
     return e;
   }
@@ -326,11 +327,15 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
+    if (!typ->canRealize())
+      return nullptr; // delay!
+    // bool isMember = false;
+    // for (auto &t: typ->getUnion()->getRealizationTypes())
+    //   if (ctx->findMethod(t.get(), expr->member).empty())
     return transform(N<CallExpr>(
-        N<IdExpr>("__internal__.get_union_method:0"),
+        N<IdExpr>("__internal__.union_member:0"),
         std::vector<CallExpr::Arg>{{"union", expr->expr},
-                                   {"method", N<StringExpr>(expr->member)},
-                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
+                                   {"member", N<StringExpr>(expr->member)}}));
   }
 
   // For debugging purposes:

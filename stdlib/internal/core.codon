@@ -200,6 +200,8 @@ class Union[TU]:
     # compiler-generated
     def __new__(val):
         TU
+    def __call__(self, *args, **kwargs):
+        return __internal__.union_call(self, args, kwargs)
 
 # dummy
 @__internal__
