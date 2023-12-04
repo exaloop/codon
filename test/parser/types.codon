@@ -1443,10 +1443,10 @@ print(a, b, a.__class__.__name__, b.__class__.__name__)  #: 11 70 Union[int,str]
 if True:
     a = 'hello'
     foo_str(a)  #: hello str
-    foo(a)  #: 'hello' 1 Union[int,str]
-    # b = a[1:3]
-    # print(b)
-print(a)  #: 'hello'
+    foo(a)  #: hello 1 Union[int,str]
+    b = a[1:3]
+    print(b)  #: el
+print(a)  #: hello
 
 a: Union[Union[Union[str], int], Union[int, int, str]] = 9
 foo(a)  #: 9 0 Union[int,str]
@@ -1460,7 +1460,7 @@ def ret(x):
 r = ret(2)
 print(r, r.__class__.__name__)  #: False Union[bool,int,str]
 r = ret(33.3)
-print(r, r.__class__.__name__)  #: 'oops' Union[bool,float,int,str]
+print(r, r.__class__.__name__)  #: oops Union[bool,float,int,str]
 
 def ret2(x) -> Union:
     if x < 1: return 1
@@ -1477,11 +1477,17 @@ class B:
     y: str
     def foo(self):
         return f"B: {self.y}"
-x : Union[A,B] = A(5)  # TODO: just Union does not work :/
+x : Union[A,B] = A(5)  # TODO: just Union does not work in test mode :/
 print(x.foo())  #: A: 5
+print(x.x)  #: 5
 if True:
     x = B("bee")
 print(x.foo())  #: B: bee
+print(x.y)  #: bee
+try:
+    print(x.x)
+except TypeError as e:
+    print(e.message)  #: invalid union call 'x'
 
 def do(x: A):
     print('do', x.x)
@@ -1527,7 +1533,7 @@ try:
     a = "foo"
     print(a == 123)
 except TypeError:
-    print("oops", a)  #: oops 'foo'
+    print("oops", a)  #: oops foo
 
 
 #%% generator_capture_nonglobal,barebones

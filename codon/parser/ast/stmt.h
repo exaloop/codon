@@ -265,6 +265,8 @@ struct ForStmt : public Stmt {
 
   /// Indicates if iter was wrapped with __iter__() call.
   bool wrapped;
+  /// True if there are no break/continue within the loop
+  bool flat;
 
   ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite = nullptr,
           ExprPtr decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});

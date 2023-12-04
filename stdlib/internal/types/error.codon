@@ -167,3 +167,7 @@ class SystemExit(Static[BaseException]):
     @property
     def status(self):
         return self._status
+
+class StaticCompileError(Static[Exception]):
+    def __init__(self, message: str = ""):
+        super().__init__("StaticCompileError", message)

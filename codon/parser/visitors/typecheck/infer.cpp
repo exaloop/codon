@@ -89,6 +89,18 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
     }
 
     if (result->isDone()) {
+      // Special union case: if union cannot be inferred return type is Union[NoneType]
+      if (auto tr = ctx->getRealizationBase()->returnType) {
+        if (auto tu = tr->getUnion()) {
+          if (!tu->isSealed()) {
+            if (tu->pendingTypes[0]->getLink() &&
+                tu->pendingTypes[0]->getLink()->kind == LinkType::Unbound) {
+              tu->addType(ctx->forceFind("NoneType")->type);
+              tu->seal();
+            }
+          }
+        }
+      }
       break;
     } else if (changedNodes) {
       continue;
@@ -353,6 +365,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
     if (!ret) {
       realizations.erase(key);
+      ctx->realizationBases.pop_back();
+      ctx->popBlock();
+      ctx->typecheckLevel--;
+      getLogger().level--;
       if (!startswith(ast->name, "._lambda")) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
@@ -360,10 +376,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // LOG("{}", ast->suite->toString(2));
         error("cannot typecheck the program");
       }
-      ctx->realizationBases.pop_back();
-      ctx->popBlock();
-      ctx->typecheckLevel--;
-      getLogger().level--;
       return nullptr; // inference must be delayed
     }
 
@@ -836,127 +848,19 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
         N<IdExpr>("__internal__.new_union:0"), N<IdExpr>(type->ast->args[0].name),
         N<IdExpr>(unionType->realizedTypeName())));
     ast->suite = suite;
-  } else if (startswith(ast->name, "__internal__.new_union:0")) {
-    // Special case: __internal__.new_union
-    // def __internal__.new_union(value, U[T0, ..., TN]):
-    //   if isinstance(value, T0):
-    //     return __internal__.union_make(0, value, U[T0, ..., TN])
-    //   if isinstance(value, Union[T0]):
-    //     return __internal__.union_make(
-    //       0, __internal__.get_union(value, T0), U[T0, ..., TN])
-    //   ... <for all T0...TN> ...
-    //   compile_error("invalid union constructor")
-    auto unionType = type->funcGenerics[0].type->getUnion();
-    auto unionTypes = unionType->getRealizationTypes();
-
-    auto objVar = ast->args[0].name;
-    auto suite = N<SuiteStmt>();
-    int tag = 0;
-    for (auto &t : unionTypes) {
-      suite->stmts.push_back(N<IfStmt>(
-          N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>(objVar),
-                      NT<IdExpr>(t->realizedName())),
-          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_make:0"),
-                                    N<IntExpr>(tag), N<IdExpr>(objVar),
-                                    N<IdExpr>(unionType->realizedTypeName())))));
-      // Check for Union[T]
-      suite->stmts.push_back(N<IfStmt>(
-          N<CallExpr>(
-              N<IdExpr>("isinstance"), N<IdExpr>(objVar),
-              NT<InstantiateExpr>(NT<IdExpr>("Union"),
-                                  std::vector<ExprPtr>{NT<IdExpr>(t->realizedName())})),
-          N<ReturnStmt>(
-              N<CallExpr>(N<IdExpr>("__internal__.union_make:0"), N<IntExpr>(tag),
-                          N<CallExpr>(N<IdExpr>("__internal__.get_union:0"),
-                                      N<IdExpr>(objVar), NT<IdExpr>(t->realizedName())),
-                          N<IdExpr>(unionType->realizedTypeName())))));
-      tag++;
-    }
-    suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-        N<IdExpr>("compile_error"), N<StringExpr>("invalid union constructor"))));
-    ast->suite = suite;
-  } else if (startswith(ast->name, "__internal__.get_union:0")) {
-    // Special case: __internal__.get_union
-    // def __internal__.new_union(union: Union[T0,...,TN], T):
-    //   if __internal__.union_get_tag(union) == 0:
-    //     return __internal__.union_get_data(union, T0)
-    //   ... <for all T0...TN>
-    //   raise TypeError("getter")
-    auto unionType = type->getArgTypes()[0]->getUnion();
-    auto unionTypes = unionType->getRealizationTypes();
-
-    auto targetType = type->funcGenerics[0].type;
-    auto selfVar = ast->args[0].name;
-    auto suite = N<SuiteStmt>();
-    int tag = 0;
-    for (auto t : unionTypes) {
-      if (t->realizedName() == targetType->realizedName()) {
-        suite->stmts.push_back(N<IfStmt>(
-            N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
-                                      N<IdExpr>(selfVar)),
-                          "==", N<IntExpr>(tag)),
-            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
-                                      N<IdExpr>(selfVar),
-                                      NT<IdExpr>(t->realizedName())))));
-      }
-      tag++;
-    }
-    suite->stmts.push_back(
-        N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
-                                 N<StringExpr>("invalid union getter"))));
-    ast->suite = suite;
-  } else if (startswith(ast->name, "__internal__._get_union_method:0")) {
-    // def __internal__._get_union_method(union: Union[T0,...,TN], method, *args, **kw):
-    //   if __internal__.union_get_tag(union) == 0:
-    //     return __internal__.union_get_data(union, T0).method(*args, **kw)
-    //   ... <for all T0...TN>
-    //   raise TypeError("call")
-    auto szt = type->funcGenerics[0].type->getStatic();
-    auto fnName = szt->evaluate().getString();
-    auto unionType = type->getArgTypes()[0]->getUnion();
-    auto unionTypes = unionType->getRealizationTypes();
-
-    auto selfVar = ast->args[0].name;
-    auto suite = N<SuiteStmt>();
-    int tag = 0;
-    for (auto &t : unionTypes) {
-      auto callee =
-          N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"),
-                                 N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
-                     fnName);
-      auto args = N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1)));
-      auto kwargs = N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)));
-      std::vector<CallExpr::Arg> callArgs;
-      ExprPtr check =
-          N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
-                      N<StringExpr>(fnName), args->clone(), kwargs->clone());
-      suite->stmts.push_back(N<IfStmt>(
-          N<BinaryExpr>(
-              check, "&&",
-              N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag:0"),
-                                        N<IdExpr>(selfVar)),
-                            "==", N<IntExpr>(tag))),
-          N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(callee, args, kwargs)))));
-      tag++;
-    }
-    suite->stmts.push_back(
-        N<ThrowStmt>(N<CallExpr>(N<IdExpr>("std.internal.types.error.TypeError"),
-                                 N<StringExpr>("invalid union call"))));
-    // suite->stmts.push_back(N<ReturnStmt>(N<NoneExpr>()));
-
-    auto ret = ctx->instantiate(ctx->getType("Union"));
-    unify(type->getRetType(), ret);
-    ast->suite = suite;
-  } else if (startswith(ast->name, "__internal__.get_union_first:0")) {
-    // def __internal__.get_union_first(union: Union[T0]):
+  } else if (startswith(ast->name, "__internal__.get_union_tag:0")) {
+    // def __internal__.get_union_tag(union: Union, tag: Static[int]):
     //   return __internal__.union_get_data(union, T0)
+    auto szt = type->funcGenerics[0].type->getStatic();
+    auto tag = szt->evaluate().getInt();
     auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
-
+    if (tag < 0 || tag >= unionTypes.size())
+      E(Error::CUSTOM, getSrcInfo(), "bad union tag");
     auto selfVar = ast->args[0].name;
     auto suite = N<SuiteStmt>(N<ReturnStmt>(
         N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"), N<IdExpr>(selfVar),
-                    NT<IdExpr>(unionTypes[0]->realizedName()))));
+                    NT<IdExpr>(unionTypes[tag]->realizedName()))));
     ast->suite = suite;
   }
   return ast;
