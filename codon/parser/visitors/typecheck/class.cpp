@@ -178,14 +178,20 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
     if (startswith(typeName, TYPE_KWTUPLE))
       stmt->getClass()->suite = N<SuiteStmt>(getItem, contains, getDef);
 
-    // Add repr for KwArgs:
+    // Add repr and call for partials:
     //   `def __repr__(self): return __magic__.repr_partial(self)`
     auto repr = N<FunctionStmt>(
         "__repr__", nullptr, std::vector<Param>{Param{"self"}},
         N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
             N<DotExpr>(N<IdExpr>("__magic__"), "repr_partial"), N<IdExpr>("self")))));
+    auto pcall = N<FunctionStmt>(
+        "__call__", nullptr,
+        std::vector<Param>{Param{"self"}, Param{"*args"}, Param{"**kwargs"}},
+        N<SuiteStmt>(
+            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("self"), N<StarExpr>(N<IdExpr>("args")),
+                                      N<KeywordStarExpr>(N<IdExpr>("kwargs"))))));
     if (startswith(typeName, TYPE_PARTIAL))
-      stmt->getClass()->suite = repr;
+      stmt->getClass()->suite = N<SuiteStmt>(repr, pcall);
 
     // Simplify in the standard library context and type check
     stmt = SimplifyVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,

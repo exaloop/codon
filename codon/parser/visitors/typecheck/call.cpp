@@ -738,6 +738,8 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("ByRef")) {
     return transform(N<BoolExpr>(typ->getRecord() == nullptr));
+  } else if (typExpr->isId("Union")) {
+    return transform(N<BoolExpr>(typ->getUnion() != nullptr));
   } else if (!typExpr->type->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     int tag = -1;
@@ -997,10 +999,6 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     if (!typ)
       return {true, nullptr};
 
-    auto fn = expr->args[0].value->type->getFunc();
-    if (!fn)
-      error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
-
     auto inargs = unpackTupleTypes(expr->args[1].value);
     auto kwargs = unpackTupleTypes(expr->args[2].value);
     seqassert(inargs && kwargs, "bad call to fn_can_call");
@@ -1013,6 +1011,25 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     for (auto &a : *kwargs) {
       callArgs.push_back({a.first, std::make_shared<NoneExpr>()}); // dummy expression
       callArgs.back().value->setType(a.second);
+    }
+
+    auto fn = expr->args[0].value->type->getFunc();
+    if (!fn) {
+      bool canCompile = true;
+      // Special case: not a function, just try compiling it!
+      auto ocache = *(ctx->cache);
+      auto octx = *ctx;
+      try {
+        transform(N<CallExpr>(clone(expr->args[0].value),
+                              N<StarExpr>(clone(expr->args[1].value)),
+                              N<KeywordStarExpr>(clone(expr->args[2].value))));
+      } catch (const exc::ParserException &e) {
+        // LOG("{}", e.what());
+        canCompile = false;
+        *ctx = octx;
+        *(ctx->cache) = ocache;
+      }
+      return {true, transform(N<BoolExpr>(canCompile))};
     }
     return {true, transform(N<BoolExpr>(canCall(fn, callArgs) >= 0))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_has_type")) {

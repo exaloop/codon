@@ -423,8 +423,9 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     }
   } else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Make union types via __internal__.new_union
-    if (!expectedClass->getUnion()->isSealed())
+    if (!expectedClass->getUnion()->isSealed()) {
       expectedClass->getUnion()->addType(exprClass);
+    }
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass.get(), nullptr) == -1)
         expr = transform(N<CallExpr>(N<IdExpr>("__internal__.new_union:0"), expr,

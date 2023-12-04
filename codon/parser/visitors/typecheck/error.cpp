@@ -27,6 +27,22 @@ using namespace types;
 ///          f = exc; ...; break                       # PyExc
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
+  // TODO: static can-compile check
+  // if (stmt->catches.size() == 1 && stmt->catches[0].var.empty() &&
+  //     stmt->catches[0].exc->isId("std.internal.types.error.StaticCompileError")) {
+  //   /// TODO: this is right now _very_ dangerous; inferred types here will remain!
+  //   bool compiled = true;
+  //   try {
+  //     auto nctx = std::make_shared<TypeContext>(*ctx);
+  //     TypecheckVisitor(nctx).transform(clone(stmt->suite));
+  //   } catch (const exc::ParserException &exc) {
+  //     compiled = false;
+  //   }
+  //   resultStmt = compiled ? transform(stmt->suite) :
+  //   transform(stmt->catches[0].suite); LOG("testing!! {} {}", getSrcInfo(),
+  //   compiled); return;
+  // }
+
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;

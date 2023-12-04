@@ -18,7 +18,9 @@ class str:
         return str(Ptr[byte](), 0)
 
     def __new__(what) -> str:
-        if hasattr(what, "__str__"):
+        if isinstance(what, Union):
+            return __internal__.union_str(what)
+        elif hasattr(what, "__str__"):
             return what.__str__()
         else:
             return what.__repr__()
