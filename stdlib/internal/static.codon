@@ -39,4 +39,3 @@ def vars_types(T: type, with_index: Static[int] = 0):
 
 def tuple_type(T: type, N: Static[int]):
     pass
-

@@ -18,6 +18,7 @@ namespace codon::ast {
 void SimplifyVisitor::visit(ContinueStmt *stmt) {
   if (!ctx->getBase()->getLoop())
     E(Error::EXPECTED_LOOP, stmt, "continue");
+  ctx->getBase()->getLoop()->flat = false;
 }
 
 /// Ensure that `break` is in a loop.
@@ -28,6 +29,7 @@ void SimplifyVisitor::visit(ContinueStmt *stmt) {
 void SimplifyVisitor::visit(BreakStmt *stmt) {
   if (!ctx->getBase()->getLoop())
     E(Error::EXPECTED_LOOP, stmt, "break");
+  ctx->getBase()->getLoop()->flat = false;
   if (!ctx->getBase()->getLoop()->breakVar.empty()) {
     resultStmt = N<SuiteStmt>(
         transform(N<AssignStmt>(N<IdExpr>(ctx->getBase()->getLoop()->breakVar),
@@ -116,6 +118,8 @@ void SimplifyVisitor::visit(ForStmt *stmt) {
     stmt->suite = transform(N<SuiteStmt>(stmts));
   }
 
+  if (ctx->getBase()->getLoop()->flat)
+    stmt->flat = true;
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     resultStmt = N<SuiteStmt>(assign, N<ForStmt>(*stmt),

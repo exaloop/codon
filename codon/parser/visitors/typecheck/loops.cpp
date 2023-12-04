@@ -164,6 +164,7 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 ///        while loop:
 ///          i = x; <suite>; break
 ///        loop = False   # also set to False on break
+/// If a loop is flat, while wrappers are removed.
 /// A separate suite is generated for each static iteration.
 StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto var = stmt->var->getId()->value;
@@ -188,13 +189,19 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   if (vars.size() > 1)
     vars.erase(vars.begin());
   auto [ok, items] = transformStaticLoopCall(vars, stmt->iter, [&](StmtPtr assigns) {
-    auto brk = N<BreakStmt>();
-    brk->setDone(); // Avoid transforming this one to continue
-    // var [: Static] := expr; suite...
-    auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
-                             N<SuiteStmt>(assigns, clone(stmt->suite), brk));
-    loop->gotoVar = loopVar;
-    return loop;
+    StmtPtr ret = nullptr;
+    if (!stmt->flat) {
+      auto brk = N<BreakStmt>();
+      brk->setDone(); // Avoid transforming this one to continue
+      // var [: Static] := expr; suite...
+      auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
+                               N<SuiteStmt>(assigns, clone(stmt->suite), brk));
+      loop->gotoVar = loopVar;
+      ret = loop;
+    } else {
+      ret = N<SuiteStmt>(assigns, clone(stmt->suite));
+    }
+    return ret;
   });
   if (!ok) {
     if (oldSuite)
@@ -203,17 +210,21 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   }
 
   // Close the loop
-  ctx->blockLevel++;
-  auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
-  a->setUpdate();
   auto block = N<SuiteStmt>();
   for (auto &i : items)
     block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
-  block->stmts.push_back(a);
-  auto loop =
-      transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
-                             N<WhileStmt>(N<IdExpr>(loopVar), block)));
-  ctx->blockLevel--;
+  StmtPtr loop = nullptr;
+  if (!stmt->flat) {
+    ctx->blockLevel++;
+    auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+    a->setUpdate();
+    block->stmts.push_back(a);
+    loop = transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                                  N<WhileStmt>(N<IdExpr>(loopVar), block)));
+    ctx->blockLevel--;
+  } else {
+    loop = transform(block);
+  }
   return loop;
 }
 
@@ -310,17 +321,18 @@ TypecheckVisitor::transformStaticLoopCall(
       error("expected two items");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
-      auto typ = args[0]->getRecord();
-      if (!typ)
+      if (auto typ = args[0]->getRecord()) {
+        for (size_t i = 0; i < typ->args.size(); i++) {
+          auto b = N<SuiteStmt>(
+              {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                             NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))),
+               N<AssignStmt>(N<IdExpr>(vars[1]),
+                             N<IndexExpr>(iter->getCall()->args[0].value->clone(),
+                                          N<IntExpr>(i)))});
+          block.push_back(wrap(b));
+        }
+      } else {
         error("staticenumerate needs a tuple");
-      for (size_t i = 0; i < typ->args.size(); i++) {
-        auto b = N<SuiteStmt>(
-            {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                           NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))),
-             N<AssignStmt>(N<IdExpr>(vars[1]),
-                           N<IndexExpr>(iter->getCall()->args[0].value->clone(),
-                                        N<IntExpr>(i)))});
-        block.push_back(wrap(b));
       }
     } else {
       error("bad call to staticenumerate");
@@ -369,21 +381,38 @@ TypecheckVisitor::transformStaticLoopCall(
 
       seqassert(typ, "vars_types expects a realizable type, got '{}' instead",
                 generics[0]);
-      size_t idx = 0;
-      for (auto &f : getClassFields(typ->getClass().get())) {
-        auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
-        seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
-        std::vector<StmtPtr> stmts;
-        if (withIdx) {
+
+      if (auto utyp = typ->getUnion()) {
+        for (size_t i = 0; i < utyp->getRealizationTypes().size(); i++) {
+          std::vector<StmtPtr> stmts;
+          if (withIdx) {
+            stmts.push_back(
+                N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                              NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+          }
           stmts.push_back(
-              N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+              N<AssignStmt>(N<IdExpr>(vars[1]),
+                            N<IdExpr>(utyp->getRealizationTypes()[i]->realizedName())));
+          auto b = N<SuiteStmt>(stmts);
+          block.push_back(wrap(b));
         }
-        stmts.push_back(
-            N<AssignStmt>(N<IdExpr>(vars[withIdx]), NT<IdExpr>(ta->realizedName())));
-        auto b = N<SuiteStmt>(stmts);
-        block.push_back(wrap(b));
-        idx++;
+      } else {
+        size_t idx = 0;
+        for (auto &f : getClassFields(typ->getClass().get())) {
+          auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
+          seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
+          std::vector<StmtPtr> stmts;
+          if (withIdx) {
+            stmts.push_back(
+                N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                              NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+          }
+          stmts.push_back(
+              N<AssignStmt>(N<IdExpr>(vars[withIdx]), NT<IdExpr>(ta->realizedName())));
+          auto b = N<SuiteStmt>(stmts);
+          block.push_back(wrap(b));
+          idx++;
+        }
       }
     } else {
       error("bad call to vars");

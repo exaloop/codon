@@ -160,6 +160,10 @@ types::FuncTypePtr TypecheckVisitor::makeFunctionType(FunctionStmt *stmt) {
   ctx->typecheckLevel++;
   if (stmt->ret) {
     unify(baseType->generics[1].type, transformType(stmt->ret)->getType());
+    if (stmt->ret->isId("Union")) {
+      baseType->generics[1].type->getUnion()->generics[0].type->getUnbound()->kind =
+          LinkType::Generic;
+    }
   } else {
     generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
   }
