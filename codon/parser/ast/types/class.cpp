@@ -213,7 +213,7 @@ bool RecordType::isInstantiated() const {
 }
 
 std::string RecordType::debugString(char mode) const {
-  if (name == "Partial" && generics[0].type->canRealize()) {
+  if (name == "Partial" && generics[0].type->canRealize() && mode != 2) {
     auto func = getPartialFunc();
     std::vector<std::string> gs;
     for (auto &a : generics[2].type->getRecord()->args)

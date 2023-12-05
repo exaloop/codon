@@ -187,18 +187,28 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       }
       if (!typ)
         return false;
-      if (!typ->is("NamedTuple"))
+      if (typ->is("NamedTuple")) {
+        auto id = typ->generics[0].type->getStatic()->evaluate().getInt();
+        seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
+                  id);
+        auto names = ctx->cache->generatedTupleNames[id];
+        for (size_t i = 0; i < names.size(); i++, ai++) {
+          args.insert(args.begin() + ai,
+                      {names[i], transform(N<DotExpr>(N<DotExpr>(kwstar->what, "args"),
+                                                      format("item{}", i + 1)))});
+        }
+        args.erase(args.begin() + ai);
+      } else if (typ->getRecord()) {
+        const auto &fields = ctx->cache->classes[typ->name].fields;
+        for (size_t i = 0; i < fields.size(); i++, ai++) {
+          args.insert(
+              args.begin() + ai,
+              {fields[i].name, transform(N<DotExpr>(kwstar->what, fields[i].name))});
+        }
+        args.erase(args.begin() + ai);
+      } else {
         E(Error::CALL_BAD_KWUNPACK, args[ai], typ->prettyString());
-      auto id = typ->generics[0].type->getStatic()->evaluate().getInt();
-      seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
-                id);
-      auto names = ctx->cache->generatedTupleNames[id];
-      for (size_t i = 0; i < names.size(); i++, ai++) {
-        args.insert(
-            args.begin() + ai,
-            {names[i], transform(N<DotExpr>(kwstar->what, format("item{}", i + 1)))});
       }
-      args.erase(args.begin() + ai);
     } else {
       if (auto el = args[ai].value->getEllipsis()) {
         if (ai + 1 == args.size() && args[ai].name.empty() &&
@@ -500,16 +510,31 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
         args[si].value->getCall()) {
       // Special case: `*args: type` and `**kwargs: type`
       auto typ = transform(clone(calleeFn->ast->args[si].type))->type;
-      for (auto &ca : args[si].value->getCall()->args) {
+      auto callExpr = args[si].value;
+      if (startswith(calleeFn->ast->args[si].name, "**"))
+        callExpr = args[si].value->getCall()->args[0].value;
+      for (auto &ca : callExpr->getCall()->args) {
         if (wrapExpr(ca.value, typ, calleeFn)) {
           unify(ca.value->type, typ);
         } else {
           wrappingDone = false;
         }
       }
-      auto name = args[si].value->type->getClass()->name;
-      args[si].value =
-          transform(N<CallExpr>(N<IdExpr>(name), args[si].value->getCall()->args));
+      auto name = callExpr->type->getClass()->name;
+      auto tup = transform(N<CallExpr>(N<IdExpr>(name), callExpr->getCall()->args));
+
+      if (startswith(calleeFn->ast->args[si].name, "**")) {
+        args[si].value =
+            transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("NamedTuple"), "__new__"), tup,
+                                  N<IntExpr>(args[si]
+                                                 .value->type->getClass()
+                                                 ->generics[0]
+                                                 .type->getStatic()
+                                                 ->evaluate()
+                                                 .getInt())));
+      } else {
+        args[si].value = tup;
+      }
       replacements.push_back(args[si].value->type);
     } else {
       if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
@@ -1057,7 +1082,7 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
     realize(a.value->type);
     fmt::print(stderr, "[static_print] {}: {} := {}{}\n", getSrcInfo(),
                FormatVisitor::apply(a.value),
-               a.value->type ? a.value->type->debugString(1) : "-",
+               a.value->type ? a.value->type->debugString(2) : "-",
                a.value->isStatic() ? " [static]" : "");
   }
   return nullptr;

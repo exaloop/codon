@@ -37,8 +37,20 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (auto pt = tr->getPartial()) {
       int ic = 0;
       std::unordered_map<int, TypePtr> c;
-      trFun = pt->getPartialFunc()->instantiate(0, &ic, &c)->getRecord();
+      auto func = pt->getPartialFunc()->instantiate(0, &ic, &c)->getFunc();
+      trFun = func->getRecord();
       known = pt->getPartialMask();
+
+      auto knownArgTypes = pt->generics[2].type->getRecord();
+      for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
+        if (func->ast->args[i].status == Param::Generic) {
+          j++;
+        } else if (known[i]) {
+          if (func->getArgTypes()[i - j]->unify(knownArgTypes->generics[k].type.get(),
+                                                us) == -1)
+            return -1;
+          k++;
+        }
     } else {
       known = std::vector<char>(tr->generics[0].type->getRecord()->args.size(), 0);
     }

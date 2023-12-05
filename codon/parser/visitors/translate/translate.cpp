@@ -215,8 +215,7 @@ public:
 };
 
 void TranslateVisitor::visit(GeneratorExpr *expr) {
-  auto name =
-      ctx->cache->imports[MAIN_IMPORT].ctx->generateCanonicalName("%_generator");
+  auto name = ctx->cache->imports[MAIN_IMPORT].ctx->generateCanonicalName("_generator");
   ir::Func *fn = ctx->cache->module->Nr<ir::BodiedFunc>(name);
   fn->setGlobal();
   fn->setGenerator();
@@ -246,7 +245,8 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
   ctx->addSeries(body);
 
   expr->setFinalStmt(N<YieldStmt>(expr->getFinalExpr()));
-  transform(expr->getFinalSuite());
+  auto e = expr->getFinalSuite();
+  transform(e);
   ctx->popSeries();
   ctx->bases.pop_back();
   cast<ir::BodiedFunc>(fn)->setBody(body);

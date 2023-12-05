@@ -541,7 +541,16 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   } else if (callee && exprClass && expr->type->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
-    expr = partializeFunction(expr->type->getFunc());
+    // Special case: Seq functions are embedded (via lambda!)
+    seqassert(expr->getId() ||
+                  (expr->getStmtExpr() && expr->getStmtExpr()->expr->getId()),
+              "bad partial function: {}", expr);
+    auto p = partializeFunction(expr->type->getFunc());
+    if (auto se = expr->getStmtExpr()) {
+      expr = transform(N<StmtExpr>(se->stmts, p));
+    } else {
+      expr = p;
+    }
   } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
              !expectedClass->getUnion()) {
     // Extract union types via __internal__.get_union
