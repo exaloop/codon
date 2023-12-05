@@ -13,8 +13,12 @@ class complex:
     def __new__() -> complex:
         return (0.0, 0.0)
 
-    def __new__(other):
-        return other.__complex__()
+    def __new__(what):
+        # do not overload! (needed to avoid pyobj conversion)
+        if isinstance(what, str) or isinstance(what, Optional[str]):
+            return complex._from_str(what)
+        else:
+            return what.__complex__()
 
     def __new__(real, imag) -> complex:
         return (float(real), float(imag))
