@@ -434,6 +434,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
+    if (stmt->rhs && stmt->rhs->type->getFunc())
+      return;
+    if (stmt->rhs && stmt->rhs->type->getPartial() &&
+        !ctx->find(stmt->rhs->type->getClass()->realizedTypeName())) {
+      // Partial generic; ignore [TODO]
+      return;
+    }
+
     auto isGlobal = in(ctx->cache->globals, var);
     ir::Var *v = nullptr;
 

@@ -150,6 +150,8 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
       unify(assign->lhs->type, assign->rhs->type);
     if (stmt->rhs->isType())
       val->type = val->type->getClass();
+    else if (stmt->rhs->type->getFunc())
+      val->type = val->type->getFunc();
     auto type = assign->lhs->getType();
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
