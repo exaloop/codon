@@ -865,3 +865,236 @@ def test_complex64():
 
 
 test_complex64()
+
+
+def test_complex_from_string():
+    # for tests when string is not zero-terminated
+    def f(s):
+        return complex(s[1:-1])
+
+    def g(s):
+        return complex(' ' * 50 + s[1:-1] + ' ' * 50)
+
+    assert complex("1") == 1+0j
+    assert complex("1j") == 1j
+    assert complex("-1") == -1
+    assert complex("+1") == +1
+    assert complex("(1+2j)") == 1+2j
+    assert complex("(1.3+2.2j)") == 1.3+2.2j
+    assert complex("3.14+1J") == 3.14+1j
+    assert complex(" ( +3.14-6J )") == 3.14-6j
+    assert complex(" ( +3.14-J )") == 3.14-1j
+    assert complex(" ( +3.14+j )") == 3.14+1j
+    assert complex("J") == 1j
+    assert complex("( j )") == 1j
+    assert complex("+J") == 1j
+    assert complex("( -j)") == -1j
+    assert complex('1e-500') == 0.0 + 0.0j
+    assert complex('-1e-500j') == 0.0 - 0.0j
+    assert complex('-1e-500+1e-500j') == -0.0 + 0.0j
+    assert complex('1-1j') == 1.0 - 1j
+    assert complex('1J') == 1j
+
+    assert f("x1x") == 1+0j
+    assert f("x1jx") == 1j
+    assert f("x-1x") == -1
+    assert f("x+1x") == +1
+    assert f("x(1+2j)x") == 1+2j
+    assert f("x(1.3+2.2j)x") == 1.3+2.2j
+    assert f("x3.14+1Jx") == 3.14+1j
+    assert f("x ( +3.14-6J )x") == 3.14-6j
+    assert f("x ( +3.14-J )x") == 3.14-1j
+    assert f("x ( +3.14+j )x") == 3.14+1j
+    assert f("xJx") == 1j
+    assert f("x( j )x") == 1j
+    assert f("x+Jx") == 1j
+    assert f("x( -j)x") == -1j
+    assert f('x1e-500x') == 0.0 + 0.0j
+    assert f('x-1e-500jx') == 0.0 - 0.0j
+    assert f('x-1e-500+1e-500jx') == -0.0 + 0.0j
+    assert f('x1-1jx') == 1.0 - 1j
+    assert f('x1Jx') == 1j
+
+    assert g("x1x") == 1+0j
+    assert g("x1jx") == 1j
+    assert g("x-1x") == -1
+    assert g("x+1x") == +1
+    assert g("x(1+2j)x") == 1+2j
+    assert g("x(1.3+2.2j)x") == 1.3+2.2j
+    assert g("x3.14+1Jx") == 3.14+1j
+    assert g("x ( +3.14-6J )x") == 3.14-6j
+    assert g("x ( +3.14-J )x") == 3.14-1j
+    assert g("x ( +3.14+j )x") == 3.14+1j
+    assert g("xJx") == 1j
+    assert g("x( j )x") == 1j
+    assert g("x+Jx") == 1j
+    assert g("x( -j)x") == -1j
+    assert g('x1e-500x') == 0.0 + 0.0j
+    assert g('x-1e-500jx') == 0.0 - 0.0j
+    assert g('x-1e-500+1e-500jx') == -0.0 + 0.0j
+    assert g('x1-1jx') == 1.0 - 1j
+    assert g('x1Jx') == 1j
+
+    try:
+        complex("\0")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("3\09")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1+")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1+1j+1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("--")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("(1+2j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1+2j)")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1+(2j)")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("(1+2j)123")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("x")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1j+2")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1e1ej")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("1e++1ej")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex(")1+2j(")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        complex("")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f(" 1+2j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f("1..1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f("1.11.1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f("1e1.1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f("   ")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f("   J")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g(" 1+2j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g("1..1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g("1.11.1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g("1e1.1j")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g("   ")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        g("   J")
+        assert False
+    except ValueError:
+        pass
+
+test_complex_from_string()
