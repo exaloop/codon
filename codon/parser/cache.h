@@ -25,7 +25,7 @@
 #define TYPE_CALLABLE "Callable"
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
-#define FN_UNWRAP "std.internal.types.optional.unwrap.0"
+#define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
 #define VAR_ARGV "__argv__"
 
 #define MAX_INT_WIDTH 10000

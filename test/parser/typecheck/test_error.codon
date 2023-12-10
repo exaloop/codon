@@ -5,12 +5,12 @@ assert True, "blah"
 try:
     assert False
 except AssertionError as e:
-    print e.message[:15], e.message[-24:] #: Assert failed ( simplify_stmt.codon:164)
+    print e.message[:15], e.message[-19:] #: Assert failed ( test_error.codon:6)
 
 try:
     assert False, f"hehe {1}"
 except AssertionError as e:
-    print e.message[:23], e.message[-24:] #: Assert failed: hehe 1 ( simplify_stmt.codon:169)
+    print e.message[:23], e.message[-20:] #: Assert failed: hehe 1 ( test_error.codon:11)
 
 #%% try_throw,barebones
 class MyError(Static[Exception]):
@@ -27,8 +27,8 @@ try:
 except MyError:
     print "my"
 except OSError as o:
-    print "os", o.typename, len(o.message), o.file[-20:], o.line
-    #: os OSError 9 typecheck_stmt.codon 249
+    print "os", o.typename, len(o.message), o.file[-16:], o.line
+    #: os OSError 9 test_error.codon 24
 finally:
     print "whoa"  #: whoa
 

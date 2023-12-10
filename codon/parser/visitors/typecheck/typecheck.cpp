@@ -504,7 +504,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
         expr = transform(N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
       else
         expr = transform(N<CallExpr>(
-            N<IdExpr>("__internal__.class_ctr"),
+            N<DotExpr>(N<IdExpr>("__internal__"), "class_ctr"),
             std::vector<CallExpr::Arg>{{"T", expr},
                                        {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
     }
@@ -555,8 +555,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !expectedClass->getUnion()) {
     // Extract union types via __internal__.get_union
     if (auto t = realize(expectedClass)) {
-      expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union"), expr,
-                                   N<IdExpr>(t->realizedName())));
+      expr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "get_union"),
+                                   expr, N<IdExpr>(t->realizedName())));
     } else {
       return false;
     }
@@ -566,8 +566,8 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       expectedClass->getUnion()->addType(exprClass);
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass.get(), nullptr) == -1)
-        expr = transform(N<CallExpr>(N<IdExpr>("__internal__.new_union"), expr,
-                                     NT<IdExpr>(t->realizedName())));
+        expr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
+                                     expr, NT<IdExpr>(t->realizedName())));
     } else {
       return false;
     }

@@ -235,10 +235,9 @@ private: // Node typechecking rules
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<ClassStmt *> parseBaseClasses(std::vector<ExprPtr> &,
-                                            std::vector<Param> &, const Attr &,
-                                            const std::string &, const ExprPtr &,
-                                            types::ClassTypePtr &);
+  std::vector<types::ClassTypePtr>
+  parseBaseClasses(std::vector<ExprPtr> &, std::vector<Param> &, const Attr &,
+                   const std::string &, const ExprPtr &, types::ClassTypePtr &);
   std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                        std::vector<Param> &);
   std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
@@ -248,6 +247,7 @@ private: // Node typechecking rules
                        bool);
   std::string generateTuple(size_t);
   int generateKwId(const std::vector<std::string> & = {});
+  void addClassGenerics(const types::ClassTypePtr &);
 
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;

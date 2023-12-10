@@ -424,7 +424,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 /// Intended to be called once the typechecking is done.
 /// TODO: add JIT compatibility.
 StmtPtr TypecheckVisitor::prepareVTables() {
-  auto rep = "__internal__.class_populate_vtables"; // see internal.codon
+  auto rep = "__internal__.class_populate_vtables:0"; // see internal.codon
   if (!in(ctx->cache->functions, rep))
     return nullptr;
   auto &initFn = ctx->cache->functions[rep];
@@ -440,7 +440,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
         continue;
       // __internal__.class_set_rtti_vtable(real.ID, size, real.type)
       suite->stmts.push_back(N<ExprStmt>(
-          N<CallExpr>(N<IdExpr>("__internal__.class_set_rtti_vtable"),
+          N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable"),
                       N<IntExpr>(real->id), N<IntExpr>(vtSz + 2), NT<IdExpr>(r))));
       // LOG("[poly] {} -> {}", r, real->id);
       vtSz = 0;
@@ -454,18 +454,16 @@ StmtPtr TypecheckVisitor::prepareVTables() {
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
             LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, fn);
             suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
-                N<IdExpr>("__internal__.class_set_rtti_vtable_fn"),
+                N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable_fn"),
                 N<IntExpr>(real->id), N<IntExpr>(vtSz + id),
                 N<CallExpr>(N<DotExpr>(
-                    N<CallExpr>(
-                        NT<InstantiateExpr>(
-                            NT<IdExpr>("Function"),
-                            std::vector<ExprPtr>{
-                                NT<InstantiateExpr>(
-                                    NT<IdExpr>(format("{}{}", TYPE_TUPLE, ids.size())),
-                                    ids),
-                                NT<IdExpr>(fn->getRetType()->realizedName())}),
-                        N<IdExpr>(fn->realizedName())),
+                    N<CallExpr>(NT<InstantiateExpr>(
+                                    NT<IdExpr>("Function"),
+                                    std::vector<ExprPtr>{
+                                        NT<InstantiateExpr>(
+                                            NT<IdExpr>(generateTuple(ids.size())), ids),
+                                        NT<IdExpr>(fn->getRetType()->realizedName())}),
+                                N<IdExpr>(fn->realizedName())),
                     "__raw__")),
                 NT<IdExpr>(r))));
           }
@@ -480,7 +478,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
   typ->ast = initFn.ast.get();
   realizeFunc(typ.get(), true);
 
-  auto &initDist = ctx->cache->functions["__internal__.class_base_derived_dist"];
+  auto &initDist = ctx->cache->functions["__internal__.class_base_derived_dist:0"];
   // def class_base_derived_dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
   auto oldAst = initDist.ast;
@@ -505,8 +503,7 @@ StmtPtr TypecheckVisitor::prepareVTables() {
               "cannot find distance between {} and {}", derivedTyp->name,
               baseTyp->name);
     StmtPtr suite = N<ReturnStmt>(
-        N<DotExpr>(NT<InstantiateExpr>(
-                       NT<IdExpr>(format("{}{}", TYPE_TUPLE, types.size())), types),
+        N<DotExpr>(NT<InstantiateExpr>(NT<IdExpr>(generateTuple(types.size())), types),
                    "__elemsize__"));
     LOG_REALIZE("[poly] {} : {}", t, *suite);
     initDist.ast->suite = suite;
@@ -606,7 +603,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                               nullptr);
         std::vector<ExprPtr> callArgs;
         callArgs.emplace_back(
-            N<CallExpr>(N<IdExpr>("__internal__.class_base_to_derived"),
+            N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_base_to_derived"),
                         N<IdExpr>(fp->ast->args[0].name), N<IdExpr>(cp->realizedName()),
                         N<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
@@ -842,8 +839,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     seqassert(unionType, "expected union, got {}", type->funcParent);
 
     StmtPtr suite = N<ReturnStmt>(N<CallExpr>(
-        N<IdExpr>("__internal__.new_union"), N<IdExpr>(type->ast->args[0].name),
-        N<IdExpr>(unionType->realizedTypeName())));
+        N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
+        N<IdExpr>(type->ast->args[0].name), N<IdExpr>(unionType->realizedTypeName())));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.new_union")) {
     // Special case: __internal__.new_union
@@ -865,7 +862,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
       suite->stmts.push_back(N<IfStmt>(
           N<CallExpr>(N<IdExpr>("isinstance"), N<IdExpr>(objVar),
                       NT<IdExpr>(t->realizedName())),
-          N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_make"),
+          N<ReturnStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_make"),
                                     N<IntExpr>(tag), N<IdExpr>(objVar),
                                     N<IdExpr>(unionType->realizedTypeName())))));
       // Check for Union[T]
@@ -874,11 +871,11 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
               N<IdExpr>("isinstance"), N<IdExpr>(objVar),
               NT<InstantiateExpr>(NT<IdExpr>("Union"),
                                   std::vector<ExprPtr>{NT<IdExpr>(t->realizedName())})),
-          N<ReturnStmt>(
-              N<CallExpr>(N<IdExpr>("__internal__.union_make"), N<IntExpr>(tag),
-                          N<CallExpr>(N<IdExpr>("__internal__.get_union"),
-                                      N<IdExpr>(objVar), NT<IdExpr>(t->realizedName())),
-                          N<IdExpr>(unionType->realizedTypeName())))));
+          N<ReturnStmt>(N<CallExpr>(
+              N<DotExpr>(N<IdExpr>("__internal__"), "union_make"), N<IntExpr>(tag),
+              N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "get_union"),
+                          N<IdExpr>(objVar), NT<IdExpr>(t->realizedName())),
+              N<IdExpr>(unionType->realizedTypeName())))));
       tag++;
     }
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
@@ -901,12 +898,13 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     for (const auto &t : unionTypes) {
       if (t->realizedName() == targetType->realizedName()) {
         suite->stmts.push_back(N<IfStmt>(
-            N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag"),
-                                      N<IdExpr>(selfVar)),
-                          "==", N<IntExpr>(tag)),
-            N<ReturnStmt>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data"),
-                                      N<IdExpr>(selfVar),
-                                      NT<IdExpr>(t->realizedName())))));
+            N<BinaryExpr>(
+                N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_tag"),
+                            N<IdExpr>(selfVar)),
+                "==", N<IntExpr>(tag)),
+            N<ReturnStmt>(
+                N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_data"),
+                            N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())))));
       }
       tag++;
     }
@@ -929,21 +927,21 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     auto suite = N<SuiteStmt>();
     int tag = 0;
     for (auto &t : unionTypes) {
-      auto callee =
-          N<DotExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_data"),
-                                 N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
-                     fnName);
+      auto callee = N<DotExpr>(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_data"),
+                      N<IdExpr>(selfVar), NT<IdExpr>(t->realizedName())),
+          fnName);
       auto args = N<StarExpr>(N<IdExpr>(ast->args[2].name.substr(1)));
       auto kwargs = N<KeywordStarExpr>(N<IdExpr>(ast->args[3].name.substr(2)));
       std::vector<CallExpr::Arg> callArgs;
       ExprPtr check = N<CallExpr>(N<IdExpr>("hasattr"), NT<IdExpr>(t->realizedName()),
                                   N<StringExpr>(fnName), clone(args), clone(kwargs));
       suite->stmts.push_back(N<IfStmt>(
-          N<BinaryExpr>(
-              check, "&&",
-              N<BinaryExpr>(N<CallExpr>(N<IdExpr>("__internal__.union_get_tag"),
-                                        N<IdExpr>(selfVar)),
-                            "==", N<IntExpr>(tag))),
+          N<BinaryExpr>(check, "&&",
+                        N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
+                                                             "union_get_tag"),
+                                                  N<IdExpr>(selfVar)),
+                                      "==", N<IntExpr>(tag))),
           N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(callee, args, kwargs)))));
       tag++;
     }
@@ -961,8 +959,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
 
     auto selfVar = ast->args[0].name;
     auto suite = N<SuiteStmt>(N<ReturnStmt>(
-        N<CallExpr>(N<IdExpr>("__internal__.union_get_data"), N<IdExpr>(selfVar),
-                    NT<IdExpr>(unionTypes[0]->realizedName()))));
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_data"),
+                    N<IdExpr>(selfVar), NT<IdExpr>(unionTypes[0]->realizedName()))));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.namedkeys")) {
     auto n = type->funcGenerics[0].type->getStatic()->evaluate().getInt();

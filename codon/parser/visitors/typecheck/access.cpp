@@ -22,8 +22,8 @@ using namespace types;
 /// For tuple identifiers, generate appropriate class. See @c generateTuple for
 /// details.
 void TypecheckVisitor::visit(IdExpr *expr) {
-  if (isTuple(expr->value))
-    generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
+  // if (isTuple(expr->value))
+  // generateTuple(std::stoi(expr->value.substr(sizeof(TYPE_TUPLE) - 1)));
 
   auto val = ctx->find(expr->value);
   // if (!val && ctx->getBase()->pyCaptures) {
@@ -39,8 +39,11 @@ void TypecheckVisitor::visit(IdExpr *expr) {
     // ctx->cache->typeCtx->dump();
     E(Error::ID_NOT_FOUND, expr, expr->value);
   }
-  if (expr->type->getUnbound() && in(ctx->cache->overloads, val->canonicalName))
+  auto o = in(ctx->cache->overloads, val->canonicalName);
+  if (expr->type->getUnbound() && o && o->size() > 1) {
+    // LOG("dispatch: {}", val->canonicalName);
     val = ctx->forceFind(getDispatch(val->canonicalName)->ast->name);
+  }
 
   // If we are accessing an outside variable, capture it or raise an error
   auto captured = checkCapture(val);
@@ -414,10 +417,10 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
         // )
         auto e = N<CallExpr>(
-            fnType,
-            N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.class_get_rtti_vtable"),
-                                     expr->expr),
-                         N<IntExpr>(vid)));
+            fnType, N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
+                                                        "class_get_rtti_vtable"),
+                                             expr->expr),
+                                 N<IntExpr>(vid)));
         return transform(e);
       }
     }
@@ -529,7 +532,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
     return transform(N<CallExpr>(
-        N<IdExpr>("__internal__.get_union_method"),
+        N<DotExpr>(N<IdExpr>("__internal__"), "get_union_method"),
         std::vector<CallExpr::Arg>{{"union", expr->expr},
                                    {"method", N<StringExpr>(expr->member)},
                                    {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));

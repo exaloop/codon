@@ -171,7 +171,7 @@ def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
 l = [1, 2, 3]
 doo(b=l, d=Optional(5), c=l[0], a=lambda x: x+1)
 #: int int
-#: ._lambda Generator[int]
+#: %_lambda Generator[int]
 #: 2
 #: 3
 #: 4

@@ -2,8 +2,9 @@
 
 # Core library
 
-from internal.core import *
 from internal.attributes import *
+from internal.static import static_print as __static_print__
+
 from internal.types.ptr import *
 from internal.types.str import *
 from internal.types.int import *
@@ -15,9 +16,13 @@ from internal.types.float import *
 from internal.types.byte import *
 from internal.types.generator import *
 from internal.types.optional import *
+from internal.internal import *
 from internal.types.slice import *
 from internal.types.range import *
-from internal.internal import *
+from internal.types.complex import *
+
+__argv__ = Array[str](0)
+
 from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
@@ -142,6 +147,21 @@ class str:
             return ""
 
         return str(self.ptr + i, j - i)
+
+    def join(self, l: Generator[str]) -> str:
+        buf = _strbuf()
+        if len(self) == 0:
+            for a in l:
+                buf.append(a)
+        else:
+            first = True
+            for a in l:
+                if first:
+                    first = False
+                else:
+                    buf.append(self)
+                buf.append(a)
+        return buf.__str__()
 
     def __repr__(self) -> str:
         return f"'{self}'"

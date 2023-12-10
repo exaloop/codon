@@ -272,7 +272,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
     // Special case: tuples. Change to Tuple.N
     auto t = expr->index->getTuple();
-    expr->expr = NT<IdExpr>(format(TYPE_TUPLE "{}", t ? t->items.size() : 1));
+    expr->expr = NT<IdExpr>(generateTuple(t ? t->items.size() : 1));
   } else {
     transform(expr->expr, true);
   }
@@ -828,9 +828,9 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
         E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
       te.push_back(N<DotExpr>(clone(var), classItem->fields[i].name));
     }
-    ExprPtr e = transform(N<StmtExpr>(
-        std::vector<StmtPtr>{ass},
-        N<CallExpr>(N<DotExpr>(format(TYPE_TUPLE "{}", te.size()), "__new__"), te)));
+    ExprPtr e = transform(
+        N<StmtExpr>(std::vector<StmtPtr>{ass},
+                    N<CallExpr>(N<DotExpr>(generateTuple(te.size()), "__new__"), te)));
     return {true, e};
   }
 

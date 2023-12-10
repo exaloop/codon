@@ -60,6 +60,18 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
+  // Special case!
+  if (expr->type->getUnbound()) {
+    auto callExpr = transform(clean_clone(expr->expr));
+    if (callExpr->isId("std.collections.namedtuple.0")) {
+      resultExpr = transformNamedTuple(expr);
+      return;
+    } else if (callExpr->isId("std.functools.partial.0:0")) {
+      resultExpr = transformFunctoolsPartial(expr);
+      return;
+    }
+  }
+
   // Transform and expand arguments. Return early if it cannot be done yet
   if (!transformCallArgs(expr->args))
     return;
@@ -423,7 +435,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
 
   // Reorder arguments if needed
   part.args = part.kwArgs = nullptr; // Stores partial *args/**kwargs expression
-  if (expr->hasAttr(ExprAttr::OrderedCall) || expr->expr->isId("superf")) {
+  if (expr->hasAttr(ExprAttr::OrderedCall)) {
     args = expr->args;
   } else {
     ctx->reorderNamedArgs(
@@ -598,26 +610,23 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
   if (!expr->expr->getId())
     return {false, nullptr};
   auto val = expr->expr->getId()->value;
+  // LOG(".. {}", val);
   if (val == "tuple" && expr->args.size() == 1 &&
       CAST(expr->args.front().value, GeneratorExpr)) {
     return {true, transformTupleGenerator(expr)};
-  } else if (val == "std.collections.namedtuple.0") {
-    return {true, transformNamedTuple(expr)};
-  } else if (val == "std.functools.partial.0") {
-    return {true, transformFunctoolsPartial(expr)};
   } else if (val == "superf") {
     return {true, transformSuperF(expr)};
-  } else if (val == "super") {
+  } else if (val == "super:0") {
     return {true, transformSuper()};
   } else if (val == "__ptr__") {
     return {true, transformPtr(expr)};
-  } else if (val == "__array__.__new__") {
+  } else if (val == "__array__.__new__:0") {
     return {true, transformArray(expr)};
   } else if (val == "isinstance") {
     return {true, transformIsInstance(expr)};
   } else if (val == "staticlen") {
     return {true, transformStaticLen(expr)};
-  } else if (val == "hasattr" || val == "hasattr:1") {
+  } else if (startswith(val, "hasattr:")) {
     return {true, transformHasAttr(expr)};
   } else if (val == "getattr") {
     return {true, transformGetAttr(expr)};
@@ -661,18 +670,15 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
 ///                                                 b: int```
 ExprPtr TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   // Ensure that namedtuple call is valid
-  if (expr->args.size() != 1 || !expr->args[0].value->origExpr->getList())
+  if (expr->args.size() != 2 || !(expr->args[0].value->getString()) ||
+      !(expr->args[1].value->getList()))
     E(Error::CALL_NAMEDTUPLE, getSrcInfo());
 
-  auto name = expr->expr->type->getFunc()
-                  ->funcGenerics[0]
-                  .type->getStatic()
-                  ->evaluate()
-                  .getString();
+  auto name = expr->args[0].value->getString()->getValue();
   // Construct the class statement
   std::vector<Param> generics, params;
   int ti = 1;
-  for (auto &i : expr->args[0].value->origExpr->getList()->items) {
+  for (auto &i : expr->args[1].value->getList()->items) {
     if (auto s = i->getString()) {
       generics.emplace_back(format("T{}", ti), N<IdExpr>("type"), nullptr, true);
       params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
@@ -737,11 +743,18 @@ ExprPtr TypecheckVisitor::transformSuperF(CallExpr *expr) {
   }
   if (supers.empty())
     E(Error::CALL_SUPERF, expr);
+
+  seqassert(expr->args.size() == 1 && expr->args[0].value->getCall(),
+            "bad superf call");
+  std::vector<CallExpr::Arg> newArgs;
+  for (auto &a : expr->args[0].value->getCall()->args)
+    newArgs.push_back({"", a.value});
   auto m = findMatchingMethods(
-      func->funcParent ? func->funcParent->getClass() : nullptr, supers, expr->args);
+      func->funcParent ? func->funcParent->getClass() : nullptr, supers, newArgs);
   if (m.empty())
     E(Error::CALL_SUPERF, expr);
-  return transform(N<CallExpr>(N<IdExpr>(m[0]->ast->name), expr->args));
+  auto c = transform(N<CallExpr>(N<IdExpr>(m[0]->ast->name), newArgs));
+  return c;
 }
 
 /// Typecheck and transform super method. Replace it with the current self object cast
@@ -782,8 +795,8 @@ ExprPtr TypecheckVisitor::transformSuper() {
     std::vector<ExprPtr> members;
     for (auto &field : ctx->cache->classes[name].fields)
       members.push_back(N<DotExpr>(N<IdExpr>(funcTyp->ast->args[0].name), field.name));
-    ExprPtr e = transform(
-        N<CallExpr>(N<IdExpr>(format(TYPE_TUPLE "{}", members.size())), members));
+    ExprPtr e =
+        transform(N<CallExpr>(N<IdExpr>(generateTuple(members.size())), members));
     e->type = unify(superTyp, e->type); // see super_tuple test for this line
     return e;
   } else {
@@ -867,7 +880,8 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     if (tag == -1)
       return transform(N<BoolExpr>(false));
     return transform(N<BinaryExpr>(
-        N<CallExpr>(N<IdExpr>("__internal__.union_get_tag"), expr->args[0].value),
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_tag"),
+                    expr->args[0].value),
         "==", N<IntExpr>(tag)));
   } else if (typExpr->type->is("pyobj") && !typExpr->isType()) {
     if (typ->is("pyobj")) {
@@ -931,15 +945,14 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
                     ->evaluate()
                     .getString();
   std::vector<std::pair<std::string, TypePtr>> args{{"", typ}};
-  if (expr->expr->isId("hasattr")) {
+  if (expr->expr->isId("hasattr:0")) {
     // Case: the first hasattr overload allows passing argument types via *args
-    auto tup = expr->args[1].value->getTuple();
-    seqassert(tup, "not a tuple");
-    for (auto &a : tup->items) {
-      transform(a);
-      if (!a->getType()->getClass())
+    auto tup = expr->args[1].value->getCall();
+    seqassert(tup, "not a tuple call");
+    for (auto &a : tup->args) {
+      if (!a.value->getType()->getClass())
         return nullptr;
-      args.emplace_back("", a->getType());
+      args.emplace_back("", a.value->getType());
     }
     seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
               "expected call: {}", expr->args[2].value->origExpr);
@@ -1038,9 +1051,9 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
   for (auto &field : ctx->cache->classes[cls->name].fields)
     args.emplace_back(N<DotExpr>(N<IdExpr>(var), field.name));
 
-  return transform(N<StmtExpr>(
-      N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
-      N<CallExpr>(N<IdExpr>(format("{}{}", TYPE_TUPLE, args.size())), args)));
+  return transform(
+      N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var), expr->args.front().value),
+                  N<CallExpr>(N<IdExpr>(generateTuple(args.size())), args)));
 }
 
 /// Transform type function to a type IdExpr identifier.

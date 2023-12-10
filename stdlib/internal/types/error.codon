@@ -31,7 +31,7 @@ class Exception(Static[BaseException]):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, msg: str = ""):
         super().__init__(typename, msg)
-        if (hasattr(self.__class__, "_pytype")):
+        if hasattr(self.__class__, "_pytype"):
             self.python_type = self.__class__._pytype
 
 class NameError(Static[Exception]):

@@ -148,7 +148,7 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  auto f = expr->type->realizedName() + ":Optional.__new__";
+  auto f = expr->type->realizedName() + ":Optional.__new__:0";
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
@@ -263,7 +263,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
               expr->args[0].value->getId()->value);
     result = make<ir::PointerValue>(expr, val->getVar());
     return;
-  } else if (expr->expr->isId("__array__.__new__")) {
+  } else if (expr->expr->isId("__array__.__new__:0")) {
     auto fnt = expr->expr->type->getFunc();
     auto szt = fnt->funcGenerics[0].type->getStatic();
     auto sz = szt->evaluate().getInt();

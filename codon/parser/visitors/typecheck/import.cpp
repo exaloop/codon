@@ -349,9 +349,9 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // TODO: Make sure to register the global variables and set their assignments as
     // updates. Note: signatures/classes/functions are not wrapped Create import
     // function manually with ForceRealize
-    auto fn =
+    StmtPtr fn =
         N<FunctionStmt>(importVar, N<IdExpr>("NoneType"), std::vector<Param>{}, suite);
-    tv.transform(fn);
+    fn = tv.transform(fn);
     tv.realize(ictx->forceFind(importVar)->type);
     preamble->push_back(fn);
     // return fn;

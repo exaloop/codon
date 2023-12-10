@@ -357,7 +357,7 @@ const std::string Attr::HasSelf = ".__hasself__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
 const std::string Attr::Test = "std.internal.attributes.test";
-const std::string Attr::Overload = "overload";
+const std::string Attr::Overload = "overload:0";
 const std::string Attr::Export = "std.internal.attributes.export";
 
 FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args,

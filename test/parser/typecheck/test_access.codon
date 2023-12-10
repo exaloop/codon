@@ -227,7 +227,7 @@ class Foo:
         print('foo')
     def method(self, a):
         print(a)
-Foo().clsmethod() #! 'Foo' object has no method 'clsmethod' with arguments (Foo)
+Foo().clsmethod() #! clsmethod() takes 0 arguments (1 given)
 
 #%% nested_class_error,barebones
 class X:

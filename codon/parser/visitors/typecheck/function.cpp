@@ -152,16 +152,17 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Case 2: function overload
     if (auto c = ctx->find(stmt->name)) {
       if (c->isFunc() && c->getModule() == ctx->getModule() &&
-          c->getBaseName() == ctx->getBaseName())
-        rootName = ctx->cache->functions[c->canonicalName].rootName;
+          c->getBaseName() == ctx->getBaseName()) {
+        rootName = c->canonicalName;
+      }
     }
   }
   if (rootName.empty())
     rootName = ctx->generateCanonicalName(stmt->name, true, isClassMember);
   // Append overload number to the name
   auto canonicalName = rootName;
-  if (!ctx->cache->overloads[rootName].empty())
-    canonicalName += format(":{}", ctx->cache->overloads[rootName].size());
+  // if (!ctx->cache->overloads[rootName].empty())
+  canonicalName += format(":{}", ctx->cache->overloads[rootName].size());
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
 
   if (isClassMember) {
@@ -179,8 +180,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
-  if (stmt->name == "fromkeys")
-    LOG("--");
   std::map<std::string, TypeContext::Item> captures;
   for (auto &[c, t] : stmt->attributes.captures) {
    if (auto v = ctx->find(c)) {
@@ -406,12 +405,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (isClassMember && stmt->attributes.has(Attr::Method)) {
     funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
   }
-  if (startswith(funcTyp->toString(), "std.collections.defaultdict.0.__init__:5"))
-    LOG("-> realizing ... {:D}", funcTyp);
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   ctx->cache->functions[canonicalName].type = funcTyp;
-  auto val = ctx->addFunc(stmt->name, canonicalName, funcTyp);
+
+  ctx->addFunc(stmt->name, rootName, funcTyp);
+  ctx->addFunc(canonicalName, canonicalName, funcTyp);
   if (stmt->attributes.has(Attr::Overload)) {
     ctx->remove(stmt->name); // first overload will handle it!
   } else if (isClassMember) {
@@ -435,6 +434,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Hack so that we can later use same helpers for class overloads
     ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
   }
+  // LOG("-> {} {} {} {}", getSrcInfo(), stmt->name, rootName, canonicalName);
 
   // Ensure that functions with @C, @force_realize, and @export attributes can be
   // realized
@@ -461,9 +461,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         a.value = clone(a.value);
     }
     // todo)) right now this adds a capture hook for recursive calls
-    f->suite = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>(rootName), N<CallExpr>(N<IdExpr>(rootName), pa)),
-        suite);
+    f->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(canonicalName),
+                                          N<CallExpr>(N<IdExpr>(canonicalName), pa)),
+                            suite);
   }
 
   // Parse remaining decorators
@@ -577,8 +577,14 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(const ExprPtr &e) {
   if (id && id->getId()) {
     auto ci = ctx->find(id->getId()->value);
     if (ci && ci->isFunc()) {
-      return {ctx->cache->functions[ci->canonicalName].ast->attributes.isAttribute,
-              ci->canonicalName};
+      if (auto f = in(ctx->cache->functions, ci->canonicalName)) {
+        return {ctx->cache->functions[ci->canonicalName].ast->attributes.isAttribute,
+                ci->canonicalName};
+      } else if (ctx->cache->overloads[ci->canonicalName].size() == 1) {
+        return {ctx->cache->functions[ctx->cache->overloads[ci->canonicalName][0]]
+                    .ast->attributes.isAttribute,
+                ci->canonicalName};
+      }
     }
   }
   return {false, ""};
