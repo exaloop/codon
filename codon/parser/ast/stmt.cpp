@@ -722,8 +722,12 @@ void ClassStmt::parseDecorators() {
   attributes.magics.clear();
   if (!attributes.has(Attr::Internal)) {
     for (auto &m : tupleMagics)
-      if (m.second)
-        attributes.magics.insert(m.first);
+      if (m.second) {
+        if (m.first == "new")
+          attributes.magics.insert(attributes.magics.begin(), m.first);
+        else
+          attributes.magics.push_back(m.first);
+      }
   }
 
   validate();

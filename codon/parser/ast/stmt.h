@@ -444,7 +444,7 @@ struct Attr {
   // True if a function is decorated with __attribute__
   bool isAttribute;
 
-  std::set<std::string> magics;
+  std::vector<std::string> magics;
 
   enum CaptureType { Read, Global, Nonlocal };
   std::unordered_map<std::string, CaptureType> captures;

@@ -2,6 +2,7 @@
 
 from internal.types.optional import unwrap
 
+@dataclass(init=False)
 class deque:
     _arr: Array[T]
     _head: int

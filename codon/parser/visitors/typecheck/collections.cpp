@@ -152,53 +152,28 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     auto tupleVar = ctx->cache->getTemporaryVar("tuple");
     block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-    seqassert(expr->getFinalSuite()->getFor()->var->getId(), "tuple() not simplified");
-    std::vector<std::string> vars{expr->getFinalSuite()->getFor()->var->getId()->value};
+    auto forStmt = clone(expr->getFinalSuite()->getFor());
+    seqassert(forStmt->var->getId(), "tuple() not simplified");
     auto finalExpr = expr->getFinalExpr();
-    auto suiteVec = finalExpr->getStmtExpr()
-                        ? finalExpr->getStmtExpr()->stmts[0]->getSuite()
-                        : nullptr;
+    auto suiteVec =
+        finalExpr->getStmtExpr() ? finalExpr->getStmtExpr()->stmts[0] : nullptr;
     auto oldSuite = suiteVec ? clone(suiteVec) : nullptr;
-    for (int validI = 0; suiteVec && validI < suiteVec->stmts.size(); validI++) {
-      if (auto a = suiteVec->stmts[validI]->getAssign())
-        if (a->rhs && a->rhs->getIndex())
-          if (a->rhs->getIndex()->expr->isId(vars[0])) {
-            vars.push_back(a->lhs->getId()->value);
-            suiteVec->stmts[validI] = nullptr;
-            continue;
-          }
-      break;
-    }
-    if (vars.size() > 1)
-      vars.erase(vars.begin());
-    auto [ok, staticItems] = transformStaticLoopCall(
-        vars, expr->getFinalSuite()->getFor()->iter,
-        [&](const StmtPtr &wrap) { return N<StmtExpr>(wrap, clone(finalExpr)); });
-    if (ok) {
-      std::vector<ExprPtr> tupleItems;
-      for (auto &i : staticItems)
-        tupleItems.push_back(std::dynamic_pointer_cast<Expr>(i));
-      resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
-      return;
-    } else if (oldSuite) {
-      expr->getFinalExpr()->getStmtExpr()->stmts[0] = oldSuite;
-    }
-
-    auto tuple = gen->type->getRecord();
-    if (!tuple || !startswith(tuple->name, TYPE_TUPLE))
+    auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
+        expr->getFinalSuite()->getFor()->var, forStmt->suite,
+        expr->getFinalSuite()->getFor()->iter,
+        [&](const StmtPtr &wrap) { return N<StmtExpr>(clone(wrap), clone(finalExpr)); },
+        true);
+    if (!ok)
       E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
+    if (delay)
+      return;
 
-    // `a := tuple[i]; expr...` for each i
-    std::vector<ExprPtr> items;
-    items.reserve(tuple->args.size());
-    for (int ai = 0; ai < tuple->args.size(); ai++) {
-      items.emplace_back(
-          N<StmtExpr>(N<AssignStmt>(clone(expr->getFinalSuite()->getFor()->var),
-                                    N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))),
-                      clone(expr->getFinalExpr())));
-    }
-    // `((a := tuple[0]; expr), (a := tuple[1]; expr), ...)`
-    resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(items)));
+    std::vector<ExprPtr> tupleItems;
+    for (auto &i : staticItems)
+      tupleItems.push_back(std::dynamic_pointer_cast<Expr>(i));
+    if (preamble)
+      block->stmts.push_back(preamble);
+    resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
   } else {
     transform(
         expr->getFinalSuite()); // we assume that the internal data will be changed

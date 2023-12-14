@@ -17,14 +17,16 @@ def foo():
     @extend
     class Foo:
         pass
+foo()
 #! class extension must be a top-level statement
+#! during the realization of foo()
 
 #%% class_nested,barebones
 class Foo:
     foo: int
     class Bar:
         bar: int
-        b: Optional[Foo.Bar]
+        b: Optional[Foo.Bar]  # TODO: allow this ONLY in type annotations
         c: Optional[int]
         class Moo:
             # TODO: allow nested class reference to the upclass
@@ -101,7 +103,9 @@ def foo(x):
     class A:
         def bar():
             print x
+foo(1)
 #! name 'x' cannot be captured
+#! during the realization
 
 #%% class_err_12,barebones
 def foo(x):

@@ -28,6 +28,11 @@ auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
   }
 }
 
+/// Only allowed in @c MatchStmt
+void TypecheckVisitor::visit(RangeExpr *expr) {
+  E(Error::UNEXPECTED_TYPE, expr, "range");
+}
+
 /// Typecheck if expressions. Evaluate static if blocks if possible.
 /// Also wrap the condition with `__bool__()` if needed and wrap both conditional
 /// expressions. See @c wrapExpr for more details.
@@ -130,7 +135,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 void TypecheckVisitor::visit(MatchStmt *stmt) {
   auto var = ctx->cache->getTemporaryVar("match");
   auto result = N<SuiteStmt>();
-  result->stmts.push_back(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what)));
+  result->stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what))));
   for (auto &c : stmt->cases) {
     StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
     if (c.guard)
@@ -154,7 +159,7 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 ///                                 if match(var[0], 1): if match(var[-1], pat)```
 ///   `case 1 or pat`      -> `if match(var, 1): if match(var, pat)`
 ///                           (note: pattern suite is cloned for each `or`)
-///   `case (x := pat)`    -> `(x = var; if match(var, pat))`
+///   `case (x := pat)`    -> `(x := var; if match(var, pat))`
 ///   `case x`             -> `(x := var)`
 ///                           (only when `x` is not '_')
 ///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if
@@ -228,11 +233,6 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
       return N<SuiteStmt>(transformPattern(clone(var), clone(eb->lexpr), clone(suite)),
                           transformPattern(clone(var), clone(eb->rexpr), suite));
     }
-  } else if (auto ea = CAST(pattern, AssignExpr)) {
-    // Bound pattern
-    seqassert(ea->var->getId(), "only simple assignment expressions are supported");
-    return N<SuiteStmt>(N<AssignStmt>(clone(ea->var), clone(var)),
-                        transformPattern(clone(var), clone(ea->expr), clone(suite)));
   } else if (auto ei = pattern->getId()) {
     // Wildcard pattern
     if (ei->value != "_") {
@@ -240,15 +240,29 @@ StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
     } else {
       return suite;
     }
+  } else {
+    auto se = pattern->getStmtExpr();
+    if (se && se->stmts.size() == 1) {
+      AssignStmt *a = nullptr;
+      if (se->stmts[0]->getSuite() && se->stmts[0]->getSuite()->stmts.size() >= 1 &&
+          (a = se->stmts[0]->getSuite()->stmts[0]->getAssign())) {
+        seqassert(a->lhs->getId(), "only simple assignment expressions are supported");
+        auto stmts = se->stmts[0]->getSuite()->stmts;
+        stmts.push_back(transformPattern(clone(var), clone(a->rhs), clone(suite)));
+        a->rhs = clone(var);
+        return N<SuiteStmt>(stmts);
+      }
+    }
   }
   pattern = transform(pattern); // transform to check for pattern errors
   if (pattern->getEllipsis())
     pattern = N<CallExpr>(N<IdExpr>("ellipsis"));
   // Fallback (`__match__`) pattern
-  return N<IfStmt>(
+  auto p = N<IfStmt>(
       N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>("__match__"),
-                  N<CallExpr>(N<IdExpr>("type"), clone(pattern))),
+                  clone(pattern)),
       N<IfStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__match__"), pattern), suite));
+  return p;
 }
 
 } // namespace codon::ast

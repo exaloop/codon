@@ -121,10 +121,15 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
-  if (stmt->lhs->type)
+  if (stmt->lhs->type) {
     unify(assign->lhs->type, stmt->lhs->type);
-  else
+  } else {
     unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
+    if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
+      assign->lhs->type->getLink()->defaultType = ctx->forceFind("NoneType")->type;
+      ctx->pendingDefaults.insert(assign->lhs->type);
+    }
+  }
   if (assign->type) {
     unify(assign->lhs->type,
           ctx->instantiate(assign->type->getSrcInfo(), assign->type->getType()));

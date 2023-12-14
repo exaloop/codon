@@ -69,6 +69,10 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     } else if (callExpr->isId("std.functools.partial.0:0")) {
       resultExpr = transformFunctoolsPartial(expr);
       return;
+    } else if (callExpr->isId("tuple") && expr->args.size() == 1 &&
+               CAST(expr->args.front().value, GeneratorExpr)) {
+      resultExpr = transformTupleGenerator(expr);
+      return;
     }
   }
 
@@ -419,8 +423,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
             E(Error::CALL_RECURSIVE_DEFAULT, expr,
               ctx->cache->rev(calleeFn->ast->args[si].name));
           ctx->defaultCallDepth.insert(es);
-          args.emplace_back(realName,
-                            transform(clone(calleeFn->ast->args[si].defaultValue)));
+          args.emplace_back(
+              realName, transform(clean_clone(calleeFn->ast->args[si].defaultValue)));
           ctx->defaultCallDepth.erase(es);
         }
       } else {
@@ -611,10 +615,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {false, nullptr};
   auto val = expr->expr->getId()->value;
   // LOG(".. {}", val);
-  if (val == "tuple" && expr->args.size() == 1 &&
-      CAST(expr->args.front().value, GeneratorExpr)) {
-    return {true, transformTupleGenerator(expr)};
-  } else if (val == "superf") {
+  if (val == "superf") {
     return {true, transformSuperF(expr)};
   } else if (val == "super:0") {
     return {true, transformSuper()};
@@ -655,7 +656,7 @@ ExprPtr TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   // We currently allow only a simple iterations over tuples
   if (expr->args.size() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
-  auto g = CAST(expr->args[0].value->origExpr, GeneratorExpr);
+  auto g = CAST(expr->args[0].value, GeneratorExpr);
   if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value);
   g->kind = GeneratorExpr::TupleGenerator;
@@ -954,19 +955,9 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
         return nullptr;
       args.emplace_back("", a.value->getType());
     }
-    seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
-              "expected call: {}", expr->args[2].value->origExpr);
-    auto kw = expr->args[2].value->origExpr->getCall();
-    auto kwCls =
-        in(ctx->cache->classes, expr->args[2].value->getType()->getClass()->name);
-    seqassert(kwCls, "cannot find {}",
-              expr->args[2].value->getType()->getClass()->name);
-    for (size_t i = 0; i < kw->args.size(); i++) {
-      auto &a = kw->args[i].value;
-      transform(a);
-      if (!a->getType()->getClass())
-        return nullptr;
-      args.emplace_back(kwCls->fields[i].name, a->getType());
+    for (auto &[n, ne] : extractNamedTuple(expr->args[2].value)) {
+      transform(ne);
+      args.emplace_back(n, ne->type);
     }
   }
 

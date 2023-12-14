@@ -173,10 +173,16 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (ClassStmt::isClassVar(a)) {
           // Handle class variables. Transform them later to allow self-references
           auto name = format("{}.{}", canonicalName, a.name);
-          // prependStmts->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
+
+          auto h = transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
+          preamble->push_back(h);
+          auto val = ctx->forceFind(name);
+          val->baseName = "";
+          val->scope = {0};
           // ctx->cache->addGlobal(name);
           auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
                                       a.type ? a.type->getIndex()->index : nullptr);
+          assign->setUpdate();
           varStmts.push_back(assign);
           ctx->cache->classes[canonicalName].classVars[a.name] = name;
         } else if (!stmt->attributes.has(Attr::Extend)) {
@@ -247,6 +253,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
 
       // Codegen default magic methods
+      // __new__ must be the first
       for (auto &m : stmt->attributes.magics) {
         fnStmts.push_back(transform(
             codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
@@ -407,10 +414,23 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     }
 
     // Add hidden generics
-    for (auto &g : clsTyp->generics)
+    auto addGen = [&](auto g) {
+      if (auto st = g.type->getStatic()) {
+        auto val = ctx->addVar(g.name, g.name, st);
+        val->generic = true;
+        val->staticType = st->expr->staticValue.type;
+      } else {
+        ctx->addType(g.name, g.name, g.type)->generic = true;
+      }
+    };
+    for (auto &g : clsTyp->generics) {
+      addGen(g);
       typ->hiddenGenerics.push_back(g);
-    for (auto &g : clsTyp->hiddenGenerics)
+    }
+    for (auto &g : clsTyp->hiddenGenerics) {
+      addGen(g);
       typ->hiddenGenerics.push_back(g);
+    }
   }
   // Add normal fields
   for (auto &clsTyp : asts) {
@@ -596,12 +616,20 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
     ret = I("NoneType");
     fargs.emplace_back("self", clone(typExpr));
     for (auto &a : args) {
-      stmts.push_back(N<AssignStmt>(
-          N<DotExpr>(I("self"), a.name),
-          N<IfExpr>(N<BinaryExpr>(I(a.name), "is", N<NoneExpr>()), // is NoneType
-                    a.defaultValue ? clone(a.defaultValue) : N<CallExpr>(clone(a.type)),
-                    I(a.name))));
-      fargs.emplace_back(a.name, nullptr, N<NoneExpr>());
+      ExprPtr defExpr = nullptr;
+      if (a.defaultValue) {
+        defExpr = a.defaultValue;
+        stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
+      } else {
+        defExpr = N<CallExpr>(N<DotExpr>(clean_clone(a.type), "__new__"));
+        auto assign = N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name));
+        stmts.push_back(N<IfStmt>(
+            N<CallExpr>(I("isinstance"), clean_clone(a.type), I("ByRef")),
+            N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name), "__init__"))),
+                         assign),
+            clone(assign)));
+      }
+      fargs.emplace_back(a.name, clean_clone(a.type), defExpr);
     }
   } else if (op == "raw" || op == "dict") {
     // Classes: def __raw__(self: T)

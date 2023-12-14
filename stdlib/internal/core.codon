@@ -127,6 +127,12 @@ class Union[TU]:
     def __new__(val):
         TU
 
+@extend
+class Function:
+    @llvm
+    def __new__() -> Function[T, TR]:
+        ret ptr null
+
 # dummy
 @__internal__
 class TypeVar[T]: pass

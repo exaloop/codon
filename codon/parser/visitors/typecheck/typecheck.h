@@ -114,6 +114,7 @@ private: // Node typechecking rules
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
+  void visit(RangeExpr *) override;
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
   void visit(MatchStmt *) override;
@@ -210,7 +211,7 @@ private: // Node typechecking rules
   void visit(ForStmt *) override;
   ExprPtr transformForDecorator(const ExprPtr &);
   StmtPtr transformHeterogenousTupleFor(ForStmt *);
-  StmtPtr transformStaticForLoop(ForStmt *);
+  std::pair<bool, StmtPtr> transformStaticForLoop(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
   void visit(AssertStmt *) override;
@@ -314,10 +315,10 @@ public:
 private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
       unpackTupleTypes(ExprPtr);
-  std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
+  std::tuple<bool, bool, StmtPtr, std::vector<std::shared_ptr<codon::SrcObject>>>
   transformStaticLoopCall(
-      const std::vector<std::string> &, const ExprPtr &,
-      const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &);
+      const ExprPtr &, StmtPtr &, const ExprPtr &,
+      const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &, bool = false);
 };
 
 class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {

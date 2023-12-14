@@ -110,15 +110,11 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!iterType)
     return; // wait until the iterator is known
 
-  if ((resultStmt = transformStaticForLoop(stmt)))
+  auto [delay, staticLoop] = transformStaticForLoop(stmt);
+  if (delay)
     return;
-
-  bool maybeHeterogenous = startswith(iterType->name, TYPE_TUPLE);
-  if (maybeHeterogenous && !iterType->canRealize()) {
-    return; // wait until the tuple is fully realizable
-  } else if (maybeHeterogenous && iterType->getHeterogenousTuple()) {
-    // Case: iterating a heterogenous tuple
-    resultStmt = transformHeterogenousTupleFor(stmt);
+  if (staticLoop) {
+    resultStmt = staticLoop;
     return;
   }
 
@@ -193,47 +189,6 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
   return N<CallExpr>(transform(N<IdExpr>("for_par")), args);
 }
 
-/// Handle heterogeneous tuple iteration.
-/// @example
-///   `for i in tuple_expr: <suite>` ->
-///   ```tuple = tuple_expr
-///      for cnt in range(<tuple length>):
-///        if cnt == 0:
-///          i = t[0]; <suite>
-///        if cnt == 1:
-///          i = t[1]; <suite> ...```
-/// A separate suite is generated  for each tuple member.
-StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
-  auto block = N<SuiteStmt>();
-  // `tuple = <tuple expression>`
-  auto tupleVar = ctx->cache->getTemporaryVar("tuple");
-  block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), stmt->iter));
-
-  auto tupleArgs = stmt->iter->getType()->getClass()->getHeterogenousTuple()->args;
-  auto cntVar = ctx->cache->getTemporaryVar("idx");
-  std::vector<StmtPtr> forBlock;
-  for (size_t ai = 0; ai < tupleArgs.size(); ai++) {
-    // `if cnt == ai: (var = tuple[ai]; <suite>)`
-    forBlock.push_back(N<IfStmt>(
-        N<BinaryExpr>(N<IdExpr>(cntVar), "==", N<IntExpr>(ai)),
-        N<SuiteStmt>(N<AssignStmt>(clone(stmt->var),
-                                   N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(ai))),
-                     clone(stmt->suite))));
-  }
-  // `for cnt in range(tuple_size): ...`
-  block->stmts.push_back(
-      N<ForStmt>(N<IdExpr>(cntVar),
-                 N<CallExpr>(N<IdExpr>("std.internal.types.range.range.0"),
-                             N<IntExpr>(tupleArgs.size())),
-                 N<SuiteStmt>(forBlock)));
-
-  ctx->blockLevel++;
-  transform(block);
-  ctx->blockLevel--;
-
-  return block;
-}
-
 /// Handle static for constructs.
 /// @example
 ///   `for i in statictuple(1, x): <suite>` ->
@@ -245,21 +200,61 @@ StmtPtr TypecheckVisitor::transformHeterogenousTupleFor(ForStmt *stmt) {
 ///          i = x; <suite>; break
 ///        loop = False   # also set to False on break
 /// A separate suite is generated for each static iteration.
-StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
-  if (!stmt->iter->getCall() || !stmt->iter->getCall()->expr->getId())
-    return nullptr;
+std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
+  auto suite = clean_clone(stmt->suite);
+  auto [ok, delay, preamble, items] = transformStaticLoopCall(
+      stmt->var, suite, stmt->iter, [&](const StmtPtr &assigns) {
+        auto brk = N<BreakStmt>();
+        brk->setDone(); // Avoid transforming this one to continue
+        // var [: Static] := expr; suite...
+        auto loop =
+            N<WhileStmt>(N<IdExpr>(loopVar), N<SuiteStmt>(assigns, clone(suite), brk));
+        loop->gotoVar = loopVar;
+        return loop;
+      });
+  if (!ok)
+    return {false, nullptr};
+  if (delay)
+    return {true, nullptr};
 
-  std::function<int(StmtPtr &, int, const std::function<void(StmtPtr &)> &)> iter;
-  iter = [&iter](StmtPtr &s, int n, const std::function<void(StmtPtr &)> &fn) -> int {
-    if (n <= 0)
+  // Close the loop
+  auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+  a->setUpdate();
+  auto block = N<SuiteStmt>();
+  for (auto &i : items)
+    block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
+  block->stmts.push_back(a);
+  ctx->blockLevel++;
+  StmtPtr loop =
+      N<SuiteStmt>(preamble, N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                   N<WhileStmt>(N<IdExpr>(loopVar), block));
+  transform(loop);
+  ctx->blockLevel--;
+  return {false, loop};
+}
+
+std::tuple<bool, bool, StmtPtr, std::vector<std::shared_ptr<codon::SrcObject>>>
+TypecheckVisitor::transformStaticLoopCall(
+    const ExprPtr &varExpr, StmtPtr &varSuite, const ExprPtr &iter,
+    const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &wrap,
+    bool allowNonHeterogenous) {
+  if (!iter->type->getClass())
+    return {true, true, nullptr, {}};
+
+  seqassert(varExpr->getId(), "bad varExpr");
+  std::function<int(StmtPtr &, const std::function<void(StmtPtr &)> &)> iterFn;
+  iterFn = [&iterFn](StmtPtr &s, const std::function<void(StmtPtr &)> &fn) -> int {
+    // if (n <= 0)
+    // return 0;
+    if (!s)
       return 0;
     if (auto su = s->getSuite()) {
       int i = 0;
       for (auto &si : su->stmts) {
-        i += iter(si, n - i, fn);
-        if (i >= n)
-          break;
+        i += iterFn(si, fn);
+        // if (i >= n)
+        // break;
       }
       return i;
     } else {
@@ -267,11 +262,8 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
       return 1;
     }
   };
-
-  auto suite = clean_clone(stmt->suite);
-  std::vector<std::string> vars{stmt->var->getId()->value};
-
-  iter(suite, 3, [&](StmtPtr &s) {
+  std::vector<std::string> vars{varExpr->getId()->value};
+  iterFn(varSuite, [&](StmtPtr &s) {
     if (auto a = s->getAssign()) {
       if (a->rhs && a->rhs->getIndex())
         if (a->rhs->getIndex()->expr->isId(vars[0])) {
@@ -282,48 +274,14 @@ StmtPtr TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   });
   if (vars.size() > 1)
     vars.erase(vars.begin());
+  if (vars.empty())
+    return {false, false, nullptr, {}};
 
-  auto [ok, items] =
-      transformStaticLoopCall(vars, stmt->iter, [&](const StmtPtr &assigns) {
-        auto brk = N<BreakStmt>();
-        brk->setDone(); // Avoid transforming this one to continue
-        // var [: Static] := expr; suite...
-        auto loop =
-            N<WhileStmt>(N<IdExpr>(loopVar), N<SuiteStmt>(assigns, clone(suite), brk));
-        loop->gotoVar = loopVar;
-        return loop;
-      });
-  if (!ok)
-    return nullptr;
-
-  // Close the loop
-  auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
-  a->setUpdate();
-  auto block = N<SuiteStmt>();
-  for (auto &i : items)
-    block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
-  block->stmts.push_back(a);
-  ctx->blockLevel++;
-  StmtPtr loop = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
-                              N<WhileStmt>(N<IdExpr>(loopVar), block));
-  transform(loop);
-  ctx->blockLevel--;
-  return loop;
-}
-
-std::pair<bool, std::vector<std::shared_ptr<codon::SrcObject>>>
-TypecheckVisitor::transformStaticLoopCall(
-    const std::vector<std::string> &vars, const ExprPtr &iter,
-    const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &wrap) {
-  if (!iter->getCall())
-    return {false, {}};
-  auto fn = iter->getCall()->expr->getId();
-  if (!fn || vars.empty())
-    return {false, {}};
-
+  StmtPtr preamble = nullptr;
+  auto fn = iter->getCall() ? iter->getCall()->expr->getId() : nullptr;
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
   std::vector<std::shared_ptr<codon::SrcObject>> block;
-  if (startswith(fn->value, "statictuple")) {
+  if (fn && startswith(fn->value, "statictuple")) {
     auto &args = iter->getCall()->args[0].value->getCall()->args;
     if (vars.size() != 1)
       error("expected one item");
@@ -482,9 +440,40 @@ TypecheckVisitor::transformStaticLoopCall(
       error("bad call to vars");
     }
   } else {
-    return {false, {}};
+    bool maybeHeterogenous = startswith(iter->type->getClass()->name, TYPE_TUPLE);
+    if (maybeHeterogenous) {
+      if (!iter->type->canRealize())
+        return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
+      if (!iter->type->getRecord()->getHeterogenousTuple() && !allowNonHeterogenous)
+        return {false, false, nullptr, {}};
+
+      std::string tupleVar;
+      if (!iter->getId()) {
+        tupleVar = ctx->cache->getTemporaryVar("tuple");
+        preamble = N<AssignStmt>(N<IdExpr>(tupleVar), iter);
+      } else {
+        tupleVar = iter->getId()->value;
+      }
+      for (size_t i = 0; i < iter->type->getRecord()->args.size(); i++) {
+        auto s = N<SuiteStmt>();
+        if (vars.size() > 1) {
+          for (size_t j = 0; j < vars.size(); j++) {
+            s->stmts.push_back(N<AssignStmt>(
+                N<IdExpr>(vars[j]),
+                N<IndexExpr>(N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(i)),
+                             N<IntExpr>(j))));
+          }
+        } else {
+          s->stmts.push_back(N<AssignStmt>(
+              N<IdExpr>(vars[0]), N<IndexExpr>(N<IdExpr>(tupleVar), N<IntExpr>(i))));
+        }
+        block.push_back(wrap(s));
+      }
+      return {true, false, preamble, block};
+    }
+    return {false, false, nullptr, {}};
   }
-  return {true, block};
+  return {true, false, preamble, block};
 }
 
 } // namespace codon::ast
