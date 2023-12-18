@@ -108,3 +108,10 @@ def test_generator_in_finally():
         assert e.message == 'not n'
     assert b
 test_generator_in_finally()
+
+
+@test
+def test_imported_in_list_comprehension():
+    import string
+    assert [x for x in string.digits] == list("0123456789")
+test_imported_in_list_comprehension()
