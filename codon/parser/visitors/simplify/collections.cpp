@@ -53,21 +53,6 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
 
   auto loops = clone_nop(expr->loops); // Clone as loops will be modified
 
-  // List comprehension optimization:
-  // Use `iter.__len__()` when creating list if there is a single for loop
-  // without any if conditions in the comprehension
-  bool canOptimize = expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
-                     loops[0].conds.empty();
-  if (canOptimize) {
-    auto iter = transform(loops[0].gen->clone());
-    IdExpr *id;
-    if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
-      // Turn off this optimization for static items
-      canOptimize &= !startswith(id->value, "std.internal.types.range.staticrange");
-      canOptimize &= !startswith(id->value, "statictuple");
-    }
-  }
-
   SuiteStmt *prev = nullptr;
   auto avoidDomination = true;
   std::swap(avoidDomination, ctx->avoidDomination);
@@ -78,8 +63,21 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
     std::vector<ExprPtr> args;
     prev->stmts.push_back(
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "append"), clone(expr->expr))));
+    // List comprehension optimization:
+    // Use `iter.__len__()` when creating list if there is a single for loop
+    // without any if conditions in the comprehension
     auto noOptStmt =
         N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
+    bool canOptimize = loops.size() == 1 && loops[0].conds.empty();
+    if (canOptimize) {
+      auto iter = transform(loops[0].gen->clone());
+      IdExpr *id;
+      if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
+        // Turn off this optimization for static items
+        canOptimize &= !startswith(id->value, "std.internal.types.range.staticrange");
+        canOptimize &= !startswith(id->value, "statictuple");
+      }
+    }
     if (canOptimize) {
       seqassert(suite->getSuite() && !suite->getSuite()->stmts.empty() &&
                     CAST(suite->getSuite()->stmts[0], ForStmt),
