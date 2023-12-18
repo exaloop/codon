@@ -59,7 +59,7 @@ void SimplifyVisitor::visit(GeneratorExpr *expr) {
   bool canOptimize = expr->kind == GeneratorExpr::ListGenerator && loops.size() == 1 &&
                      loops[0].conds.empty();
   if (canOptimize) {
-    auto iter = transform(loops[0].gen);
+    auto iter = transform(loops[0].gen->clone());
     IdExpr *id;
     if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
       // Turn off this optimization for static items
