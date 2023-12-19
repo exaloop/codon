@@ -580,6 +580,12 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
       auto g = expr->lexpr->getType()->getClass();
       for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
         ;
+      if (!g->generics[0].type->getClass()) {
+        if (!expr->isStatic())
+          expr->staticValue.type = StaticValue::INT;
+        unify(expr->type, ctx->getType("bool"));
+        return nullptr;
+      }
       if (g->generics[0].type->is("NoneType"))
         return transform(N<BoolExpr>(true));
 
