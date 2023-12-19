@@ -2063,3 +2063,14 @@ print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
 c = B()
 print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
 #: True False True
+
+
+#%% delayed_dispatch
+import math
+def fox(a, b, key=None): # key=None delays it!
+    return a if a <= b else b
+
+a = 1.0
+b = 2.0
+c = fox(a, b)
+print(math.log(c) / 2) #: 0
