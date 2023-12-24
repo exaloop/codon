@@ -735,19 +735,29 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 std::pair<bool, ExprPtr>
 TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
-  if (!tuple->getRecord())
-    return {false, nullptr};
-  if (tuple->name != TYPE_TUPLE && !startswith(tuple->name, TYPE_KWTUPLE) &&
-      !startswith(tuple->name, TYPE_PARTIAL)) {
-    if (tuple->is(TYPE_OPTIONAL)) {
-      if (auto newTuple = tuple->generics[0].type->getClass()) {
-        return transformStaticTupleIndex(
-            newTuple, transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr)), index);
-      } else {
-        return {true, nullptr};
+  // LOG("-> {} {} {}", getSrcInfo(), expr->isStatic(),
+  //     expr->staticValue.type == StaticValue::STRING);
+
+  bool isStaticString =
+      expr->isStatic() && expr->staticValue.type == StaticValue::STRING;
+
+  if (isStaticString && !expr->staticValue.evaluated)
+    return {true, nullptr};
+  else if (!isStaticString) {
+    if (!tuple->getRecord())
+      return {false, nullptr};
+    if (tuple->name != TYPE_TUPLE && !startswith(tuple->name, TYPE_KWTUPLE) &&
+        !startswith(tuple->name, TYPE_PARTIAL)) {
+      if (tuple->is(TYPE_OPTIONAL)) {
+        if (auto newTuple = tuple->generics[0].type->getClass()) {
+          return transformStaticTupleIndex(
+              newTuple, transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr)), index);
+        } else {
+          return {true, nullptr};
+        }
       }
+      return {false, nullptr};
     }
-    return {false, nullptr};
   }
 
   // Extract the static integer value from expression
@@ -766,15 +776,15 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     return false;
   };
 
-  auto classFields = getClassFields(tuple.get());
-  auto sz = int64_t(tuple->getRecord()->args.size());
-  int64_t start = 0, stop = sz, step = 1;
+  auto sz = int64_t(isStaticString ? expr->staticValue.getString().size()
+                                   : tuple->getRecord()->args.size());
+  int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
-    return {true, transform(N<DotExpr>(expr, classFields[i].name))};
+    start = i;
   } else if (auto slice = CAST(index, SliceExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
@@ -787,22 +797,39 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     if (slice->step && !slice->stop)
       stop = step > 0 ? sz : -(sz + 1);
     sliceAdjustIndices(sz, &start, &stop, step);
-
-    // Generate a sub-tuple
-    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
-    auto ass = N<AssignStmt>(var, expr);
-    std::vector<ExprPtr> te;
-    for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
-      if (i < 0 || i >= sz)
-        E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
-      te.push_back(N<DotExpr>(clone(var), classFields[i].name));
-    }
-    ExprPtr e = transform(
-        N<StmtExpr>(std::vector<StmtPtr>{ass},
-                    N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_TUPLE), "__new__"), te)));
-    return {true, e};
+    multiple = 1;
   }
 
+  if (isStaticString) {
+    auto str = expr->staticValue.getString();
+    if (!multiple) {
+      return {true, transform(N<StringExpr>(str.substr(start, 1)))};
+    } else {
+      std::string newStr;
+      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
+        newStr += str[i];
+      return {true, transform(N<StringExpr>(newStr))};
+    }
+  } else {
+    auto classFields = getClassFields(tuple.get());
+    if (!multiple) {
+      return {true, transform(N<DotExpr>(expr, classFields[start].name))};
+    } else {
+      // Generate a sub-tuple
+      auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
+      auto ass = N<AssignStmt>(var, expr);
+      std::vector<ExprPtr> te;
+      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
+        if (i < 0 || i >= sz)
+          E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
+        te.push_back(N<DotExpr>(clone(var), classFields[i].name));
+      }
+      ExprPtr e = transform(
+          N<StmtExpr>(std::vector<StmtPtr>{ass},
+                      N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_TUPLE), "__new__"), te)));
+      return {true, e};
+    }
+  }
   return {false, nullptr};
 }
 

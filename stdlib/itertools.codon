@@ -53,17 +53,17 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: ty
         total = func(total, element)
         yield total
 
-@inline
-@overload
-def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
-    """
-    Make an iterator that returns accumulated sums, or accumulated results
-    of other binary functions (specified via the optional func argument).
-    """
-    total = None
-    for element in iterable:
-        total = element if total is None else func(unwrap(total), element)
-        yield unwrap(total)
+# @inline
+# @overload
+# def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
+#     """
+#     Make an iterator that returns accumulated sums, or accumulated results
+#     of other binary functions (specified via the optional func argument).
+#     """
+#     total = None
+#     for element in iterable:
+#         total = element if total is None else func(unwrap(total), element)
+#         yield unwrap(total)
 
 @tuple
 class chain:
