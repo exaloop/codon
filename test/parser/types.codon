@@ -463,6 +463,18 @@ foo("he", z)  #: hewoo
 X(s='lolo') #: lolo lolo Int[1]
 X('abc') #: abc abc Int[2]
 
+
+def foo2(x: Static[str]):
+    print(x, x.__is_static__)
+s: Static[str] = "abcdefghijkl"
+foo2(s)  #: abcdefghijkl True
+foo2(s[1])  #: b True
+foo2(s[1:5])  #: bcde True
+foo2(s[10:50])  #: kl True
+foo2(s[1:30:3])  #: behk True
+foo2(s[::-1])  #: lkjihgfedcba True
+
+
 #%% static_getitem
 print Int[staticlen("ee")].__class__.__name__ #: Int[2]
 
