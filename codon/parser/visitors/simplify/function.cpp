@@ -138,8 +138,9 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     // Case 2: function overload
     if (auto c = ctx->find(stmt->name)) {
       if (c->isFunc() && c->getModule() == ctx->getModule() &&
-          c->getBaseName() == ctx->getBaseName())
+          c->getBaseName() == ctx->getBaseName()) {
         rootName = c->canonicalName;
+      }
     }
   }
   if (rootName.empty())

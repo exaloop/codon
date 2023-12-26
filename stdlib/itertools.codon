@@ -60,7 +60,7 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
     Make an iterator that returns accumulated sums, or accumulated results
     of other binary functions (specified via the optional func argument).
     """
-    total = None
+    total: Optional[T] = None
     for element in iterable:
         total = element if total is None else func(unwrap(total), element)
         yield unwrap(total)
