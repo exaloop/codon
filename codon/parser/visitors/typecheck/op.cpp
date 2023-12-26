@@ -735,15 +735,12 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 std::pair<bool, ExprPtr>
 TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
-  // LOG("-> {} {} {}", getSrcInfo(), expr->isStatic(),
-  //     expr->staticValue.type == StaticValue::STRING);
-
   bool isStaticString =
       expr->isStatic() && expr->staticValue.type == StaticValue::STRING;
 
-  if (isStaticString && !expr->staticValue.evaluated)
+  if (isStaticString && !expr->staticValue.evaluated) {
     return {true, nullptr};
-  else if (!isStaticString) {
+  } else if (!isStaticString) {
     if (!tuple->getRecord())
       return {false, nullptr};
     if (tuple->name != TYPE_TUPLE && !startswith(tuple->name, TYPE_KWTUPLE) &&
@@ -798,6 +795,8 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
       stop = step > 0 ? sz : -(sz + 1);
     sliceAdjustIndices(sz, &start, &stop, step);
     multiple = 1;
+  } else {
+    return {false, nullptr};
   }
 
   if (isStaticString) {
@@ -830,7 +829,6 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
       return {true, e};
     }
   }
-  return {false, nullptr};
 }
 
 /// Follow Python indexing rules for static tuple indices.
