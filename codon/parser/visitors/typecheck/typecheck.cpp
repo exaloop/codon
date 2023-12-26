@@ -264,20 +264,20 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
                   !fn->ast->args[si].defaultValue) {
                 return -1;
               }
-              reordered.push_back({nullptr, 0});
+              reordered.emplace_back(nullptr, 0);
             } else {
               seqassert(gi < fn->funcGenerics.size(), "bad fn");
               if (!fn->funcGenerics[gi].type->isStaticType() &&
                   !args[slots[si][0]].value->isType())
                 return -1;
-              reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+              reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
             }
             gi++;
           } else if (si == s || si == k || slots[si].size() != 1) {
             // Ignore *args, *kwargs and default arguments
-            reordered.push_back({nullptr, 0});
+            reordered.emplace_back(nullptr, 0);
           } else {
-            reordered.push_back({args[slots[si][0]].value->type, slots[si][0]});
+            reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
           }
         }
         return 0;
@@ -416,8 +416,20 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
              !expectedClass->getUnion()) {
     // Extract union types via __internal__.get_union
     if (auto t = realize(expectedClass)) {
-      expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
-                                   N<IdExpr>(t->realizedName())));
+      auto e = realize(expr->type);
+      if (!e)
+        return false;
+      bool ok = false;
+      for (auto &ut : e->getUnion()->getRealizationTypes()) {
+        if (ut->unify(t.get(), nullptr) >= 0) {
+          ok = true;
+          break;
+        }
+      }
+      if (ok) {
+        expr = transform(N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
+                                     N<IdExpr>(t->realizedName())));
+      }
     } else {
       return false;
     }

@@ -463,6 +463,18 @@ foo("he", z)  #: hewoo
 X(s='lolo') #: lolo lolo Int[1]
 X('abc') #: abc abc Int[2]
 
+
+def foo2(x: Static[str]):
+    print(x, x.__is_static__)
+s: Static[str] = "abcdefghijkl"
+foo2(s)  #: abcdefghijkl True
+foo2(s[1])  #: b True
+foo2(s[1:5])  #: bcde True
+foo2(s[10:50])  #: kl True
+foo2(s[1:30:3])  #: behk True
+foo2(s[::-1])  #: lkjihgfedcba True
+
+
 #%% static_getitem
 print Int[staticlen("ee")].__class__.__name__ #: Int[2]
 
@@ -2063,3 +2075,14 @@ print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
 c = B()
 print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
 #: True False True
+
+
+#%% delayed_dispatch
+import math
+def fox(a, b, key=None): # key=None delays it!
+    return a if a <= b else b
+
+a = 1.0
+b = 2.0
+c = fox(a, b)
+print(math.log(c) / 2) #: 0
