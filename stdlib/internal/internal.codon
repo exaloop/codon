@@ -427,6 +427,16 @@ class __internal__:
         return str(buf, total)
 
     def tuple_str(strs: Ptr[str], names: Ptr[str], n: int) -> str:
+        # special case of 1-element plain tuple: format as "(x,)"
+        if n == 1 and names[0].len == 0:
+            total = strs[0].len + 3
+            buf = Ptr[byte](total)
+            buf[0] = byte(40)  # '('
+            str.memcpy(buf + 1, strs[0].ptr, strs[0].len)
+            buf[total - 2] = byte(44)  # ','
+            buf[total - 1] = byte(41)  # ')'
+            return str(buf, total)
+
         total = 2  # one for each of '(' and ')'
         i = 0
         while i < n:
