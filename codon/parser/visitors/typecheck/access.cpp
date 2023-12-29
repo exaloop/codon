@@ -29,8 +29,9 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   if (!val) {
     // Handle overloads
-    if (in(ctx->cache->overloads, expr->value))
+    if (in(ctx->cache->overloads, expr->value)) {
       val = ctx->forceFind(getDispatch(expr->value)->ast->name);
+    }
     seqassert(val, "cannot find '{}'", expr->value);
   }
   unify(expr->type, ctx->instantiate(val->type));
@@ -402,15 +403,15 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     }
   }
 
-  if (methodArgs) {
-    FuncTypePtr bestMethod = nullptr;
+  bool goDispatch = methodArgs == nullptr;
+  if (!goDispatch) {
+    std::vector<FuncTypePtr> m;
     // Use the provided arguments to select the best method
     if (auto dot = expr->getDot()) {
       // Case: method overloads (DotExpr)
       auto methods =
           ctx->findMethod(dot->expr->type->getClass().get(), dot->member, false);
-      auto m = findMatchingMethods(dot->expr->type->getClass(), methods, *methodArgs);
-      bestMethod = m.empty() ? nullptr : m[0];
+      m = findMatchingMethods(dot->expr->type->getClass(), methods, *methodArgs);
     } else if (auto id = expr->getId()) {
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
@@ -418,12 +419,23 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
         if (!endswith(m.name, ":dispatch"))
           methods.push_back(ctx->cache->functions[m.name].type);
       std::reverse(methods.begin(), methods.end());
-      auto m = findMatchingMethods(nullptr, methods, *methodArgs);
-      bestMethod = m.empty() ? nullptr : m[0];
+      m = findMatchingMethods(nullptr, methods, *methodArgs);
     }
-    if (bestMethod)
-      return bestMethod;
-  } else {
+
+    if (m.size() == 1) {
+      return m[0];
+    } else if (m.size() > 1) {
+      for (auto &a : *methodArgs) {
+        if (auto u = a.value->type->getUnbound()) {
+          goDispatch = true;
+        }
+      }
+      if (!goDispatch)
+        return m[0];
+    }
+  }
+
+  if (goDispatch) {
     // If overload is ambiguous, route through a dispatch function
     std::string name;
     if (auto dot = expr->getDot()) {

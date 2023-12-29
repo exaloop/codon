@@ -297,6 +297,22 @@ foo((1, 33)) #: list 4 33
 foo((9, ('ACGT', 3))) #: complex ('ACGT', 3)
 foo(range(10)) #: else
 
+for op in 'MI=DXSN':
+    match op:
+        case 'M' | '=' | 'X':
+            print('case 1')
+        case 'I' or 'S':
+            print('case 2')
+        case _:
+            print('case 3')
+#: case 1
+#: case 2
+#: case 1
+#: case 3
+#: case 1
+#: case 2
+#: case 3
+
 #%% match_err_1,barebones
 match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
