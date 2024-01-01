@@ -39,7 +39,7 @@ jobs:
 
       - name: Save Release URL File for Publish
         if: steps.check.outputs.MAKE_RELEASE
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release_url
           path: release_url.txt
@@ -90,7 +90,7 @@ jobs:
           asset_content_type: application/gzip
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: manylinux-x86_64
           path: codon-linux-x86_64.tar.gz
@@ -220,14 +220,14 @@ jobs:
 
       - name: Upload Artifacts
         if: startsWith(matrix.os, 'macos')
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-x86_64
           path: codon-darwin-x86_64.tar.gz
 
       - name: Upload Artifacts
         if: startsWith(matrix.os, 'ubuntu')
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
