@@ -93,6 +93,13 @@ def test_tuple():
     assert a[0:] == 3
     assert a[0:1] == 42
     assert a[:] == -1
+
+    assert str((11, 2, 333)) == '(11, 2, 333)'
+    assert str(()) == '()'
+    assert str((42,)) == '(42,)'
+    assert repr((11, 2, 333)) == '(11, 2, 333)'
+    assert repr(()) == '()'
+    assert repr((42,)) == '(42,)'
 test_tuple()
 
 @test

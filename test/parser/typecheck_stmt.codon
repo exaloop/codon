@@ -235,7 +235,7 @@ print foo(N=1, x=2.0) #: 1.41421
 print foo(N=1, x=(1, 'bar')) #: foo: bar
 print foo(N=1, x=(1, 2)) #: len 2
 print foo(N=3, x=(1, 2)) #: ()
-print foo(N=1, x=(1, 2, 3)) #: (3)
+print foo(N=1, x=(1, 2, 3)) #: (3,)
 
 #%% try_throw,barebones
 class MyError(Static[Exception]):

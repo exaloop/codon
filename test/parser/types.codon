@@ -940,9 +940,9 @@ print zoo(2, 3)
 print zoo('s', 3)
 #: decorating zoo[...,...,...]
 #: decorator (2, 3) ()
-#: zoo: 5, 2, (3)
+#: zoo: 5, 2, (3,)
 #: decorator ('s', 3) ()
-#: zoo: 5, s, (3)
+#: zoo: 5, s, (3,)
 
 def mydecorator(func):
     def inner():
@@ -1154,13 +1154,13 @@ call(foo)
 
 def foo(a:int, *b: float): return f"{a}_{b}", a+b[0]
 call(foo)
-#: ('1_(2)', 3)
+#: ('1_(2,)', 3)
 
 def call(f: Callable[[int,int],str]):
     print(f(1, 2))
 def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
 call(foo(zzz=1.1, ...))
-#: 1_(2)_(zzz: 1.1)
+#: 1_(2,)_(zzz: 1.1)
 
 #%% traits_error,barebones
 def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
