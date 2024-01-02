@@ -206,7 +206,7 @@ print z[:1], z[1:], z[1:3], z[:4:2], z[::-1]  #: [1] [2, 3, 4, 5] [2, 3] [1, 3] 
 a = (1, '2s', 3.3)
 print a[1] #: 2s
 print a[0:2], a[:2], a[1:] #: (1, '2s') (1, '2s') ('2s', 3.3)
-print a[0:3:2], a[-1:] #: (1, 3.3) (3.3)
+print a[0:3:2], a[-1:] #: (1, 3.3) (3.3,)
 
 #%% static_index_side,barebones
 def foo(a):
@@ -470,14 +470,14 @@ p('s', zh=65) #: s () (zh: 65)
 q = p(zh=43, ...)
 q(1) #: 1 () (zh: 43)
 r = q(5, 38, ...)
-r() #: 5 (38) (zh: 43)
+r() #: 5 (38,) (zh: 43)
 r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
 
 #%% call_args_kwargs_type,barebones
 def foo(*args: float, **kwargs: int):
     print(args, kwargs, args.__class__.__name__)
 
-foo(1, f=1)  #: (1) (f: 1) Tuple[float]
+foo(1, f=1)  #: (1,) (f: 1) Tuple[float]
 foo(1, 2.1, 3, z=2)  #: (1, 2.1, 3) (z: 2) Tuple[float,float,float]
 
 def sum(x: Generator[int]):
@@ -517,7 +517,7 @@ foo(1, 2, 3)
 #: a (1, 2, 3)
 #: k (x: 1)
 foo(1, 2, 3, 4)
-#: 1 2 3 (4) ()
+#: 1 2 3 (4,) ()
 #: a (1, 2, 4, 3)
 #: k (x: 1)
 foo(1, 2, zamboni=3)

@@ -255,7 +255,7 @@ t: tuple[int, int] = (1, 2)
 print t #: (1, 2)
 
 tt: Tuple[int] = (1, )
-print tt #: (1)
+print tt #: (1,)
 
 def foo(i: int) -> int:
     return i + 1
