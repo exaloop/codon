@@ -153,10 +153,12 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(assign->rhs, assign->lhs->getType()))
       unify(assign->lhs->type, assign->rhs->type);
-    if (stmt->rhs->isType())
+    if (stmt->rhs->isType()) {
       val->type = val->type->getClass();
-    else if (stmt->rhs->type->getFunc())
-      val->type = val->type->getFunc();
+    } else if (stmt->rhs->type->getFunc()) {
+      unify(val->type, stmt->rhs->type->getFunc());
+      val->type = stmt->rhs->type->getFunc();
+    }
     auto type = assign->lhs->getType();
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`

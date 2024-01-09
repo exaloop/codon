@@ -23,8 +23,9 @@ int FuncType::unify(Type *typ, Unification *us) {
     // Check if names and parents match.
     if (ast->name != t->ast->name || (bool(funcParent) ^ bool(t->funcParent)))
       return -1;
-    if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1)
+    if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1) {
       return -1;
+    }
     s1 += s;
     // Check if function generics match.
     seqassert(funcGenerics.size() == t->funcGenerics.size(),

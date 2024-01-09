@@ -52,8 +52,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
           // Check if both subexpressions are static; if so, this if expression is also
           // static and should be marked as such
           // TODO: short circuiting?
-          auto i = transform(clone(expr->ifexpr));
-          auto e = transform(clone(expr->elsexpr));
+          auto i = transform(expr->ifexpr);
+          auto e = transform(expr->elsexpr);
           if (i->isStatic() && e->isStatic()) {
             expr->staticValue.type = i->staticValue.type;
             unify(expr->type,

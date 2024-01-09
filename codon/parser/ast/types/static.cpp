@@ -151,7 +151,7 @@ void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &se
   if (auto ei = e->getId()) {
     if (!in(seen, ei->value)) {
       auto val = cache->typeCtx->find(ei->value);
-      seqassert(val && val->type->isStaticType(), "invalid static expression");
+      seqassert(val && val->type->isStaticType(), "invalid static expression: {}", e);
       auto genTyp = val->type->follow();
       auto id = genTyp->getLink() ? genTyp->getLink()->id
                 : genTyp->getStatic()->generics.empty()

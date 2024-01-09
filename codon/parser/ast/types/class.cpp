@@ -147,7 +147,13 @@ int RecordType::unify(Type *typ, Unification *us) {
       return generics[0].type->unify(t64.get(), us);
     }
 
+    auto tup2Tup = startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE);
     int s1 = 2, s = 0;
+    if (!tup2Tup) {
+      s1 = this->ClassType::unify(tr.get(), us);
+      if (s1 == -1)
+        return -1;
+    }
     if (args.size() != tr->args.size())
       return -1;
     for (int i = 0; i < args.size(); i++) {
@@ -157,13 +163,13 @@ int RecordType::unify(Type *typ, Unification *us) {
         return -1;
     }
     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
-    if (startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE)) {
+    if (tup2Tup) {
       if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
         return s1 + int(name == tr->name);
       else
         return -1;
     }
-    return this->ClassType::unify(tr.get(), us);
+    return s1;
   } else if (auto t = typ->getLink()) {
     return t->unify(this, us);
   } else {

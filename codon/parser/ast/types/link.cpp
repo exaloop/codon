@@ -166,6 +166,8 @@ std::string LinkType::debugString(char mode) const {
     }
     return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
   }
+  if (mode == 2)
+    return ">" + type->debugString(mode);
   return type->debugString(mode);
 }
 

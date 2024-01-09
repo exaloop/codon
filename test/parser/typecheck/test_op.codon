@@ -72,10 +72,10 @@ f[:,0] #: (slice(None, None, None), 0)
 Ptr[9.99] #! expected type expression
 
 #%% index_error_b,barebones
-Ptr['s'] #! ''s'' does not match expected type 'T'
+Ptr['s'] #! expected type expression
 
 #%% index_error_static,barebones
-Ptr[1] #! '1' does not match expected type 'T'
+Ptr[1] #! expected type expression
 
 #%% index_error_2,barebones
 Ptr[int, 's'] #! Ptr takes 1 generics (2 given)
