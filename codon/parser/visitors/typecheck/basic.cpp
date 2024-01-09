@@ -39,37 +39,9 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 
 /// Set type to `str`
 void TypecheckVisitor::visit(StringExpr *expr) {
-  std::vector<ExprPtr> exprs;
-  std::vector<std::string> concat;
-  for (auto &p : expr->strings) {
-    if (p.second == "f" || p.second == "F") {
-      /// Transform an F-string
-      exprs.push_back(transformFString(p.first));
-    } else if (!p.second.empty()) {
-      /// Custom prefix strings:
-      /// call `str.__prefix_[prefix]__(str, [static length of str])`
-      exprs.push_back(
-          transform(N<CallExpr>(N<DotExpr>("str", format("__prefix_{}__", p.second)),
-                                N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
-    } else {
-      exprs.push_back(N<StringExpr>(p.first));
-      unify(exprs.back()->type, ctx->forceFind("str")->type);
-      exprs.back()->setDone();
-      concat.push_back(p.first);
-    }
-  }
-  if (concat.size() == expr->strings.size()) {
-    /// Simple case: statically concatenate a sequence of strings without any prefix
-    expr->strings = {{combine2(concat, ""), ""}};
-    unify(expr->type, ctx->forceFind("str")->type);
-    expr->setDone();
-  } else if (exprs.size() == 1) {
-    /// Simple case: only one string in a sequence
-    resultExpr = std::move(exprs[0]);
-  } else {
-    /// Complex case: call `str.cat(str1, ...)`
-    resultExpr = transform(N<CallExpr>(N<DotExpr>("str", "cat"), exprs));
-  }
+  seqassert(expr->strings.size() == 1 && expr->strings[0].second.empty(), "bad string");
+  unify(expr->type, ctx->forceFind("str")->type);
+  expr->setDone();
 }
 
 /// Parse various integer representations depending on the integer suffix.
@@ -142,53 +114,6 @@ ExprPtr TypecheckVisitor::transformFloat(FloatExpr *expr) {
         N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", expr->suffix)),
                     N<FloatExpr>(*(expr->floatValue))));
   }
-}
-
-/// Parse a Python-like f-string into a concatenation:
-///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
-/// Supports "{x=}" specifier (that prints the raw expression as well):
-///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
-ExprPtr TypecheckVisitor::transformFString(const std::string &value) {
-  // Strings to be concatenated
-  std::vector<ExprPtr> items;
-  int braceCount = 0, braceStart = 0;
-  for (int i = 0; i < value.size(); i++) {
-    if (value[i] == '{') {
-      if (braceStart < i)
-        items.push_back(N<StringExpr>(value.substr(braceStart, i - braceStart)));
-      if (!braceCount)
-        braceStart = i + 1;
-      braceCount++;
-    } else if (value[i] == '}') {
-      braceCount--;
-      if (!braceCount) {
-        std::string code = value.substr(braceStart, i - braceStart);
-        auto offset = getSrcInfo();
-        offset.col += i;
-        if (!code.empty() && code.back() == '=') {
-          // Special case: f"{x=}"
-          code = code.substr(0, code.size() - 1);
-          items.push_back(N<StringExpr>(fmt::format("{}=", code)));
-        }
-        auto [expr, format] = parseExpr(ctx->cache, code, offset);
-        if (!format.empty()) {
-          items.push_back(
-              N<CallExpr>(N<DotExpr>(expr, "__format__"), N<StringExpr>(format)));
-        } else {
-          // Every expression is wrapped within `str`
-          items.push_back(N<CallExpr>(N<IdExpr>("str"), expr));
-        }
-      }
-      braceStart = i + 1;
-    }
-  }
-  if (braceCount > 0)
-    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
-  if (braceCount < 0)
-    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
-  if (braceStart != value.size())
-    items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
-  return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));
 }
 
 } // namespace codon::ast

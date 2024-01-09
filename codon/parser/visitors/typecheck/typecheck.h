@@ -91,7 +91,6 @@ private: // Node typechecking rules
   void visit(FloatExpr *) override;
   ExprPtr transformFloat(FloatExpr *);
   void visit(StringExpr *) override;
-  ExprPtr transformFString(const std::string &);
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
@@ -371,7 +370,6 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
     std::unordered_map<std::string, Attr::CaptureType> captures;
     std::unordered_map<std::string, Attr::CaptureType> childCaptures; // for functions!
-    std::vector<std::set<std::string>> temps; // for comprehensions
     std::map<std::string, SrcInfo> firstSeen;
 
     bool adding = false;
@@ -379,6 +377,9 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     bool functionScope = false;
     bool inClass = false;
     bool isConditional = false;
+
+    std::vector<std::unordered_map<std::string, std::string>> renames = {{}};
+    bool tempScope = false;
   };
   std::shared_ptr<Context> ctx = nullptr;
   ExprPtr resultExpr = nullptr;
@@ -395,8 +396,10 @@ public:
                  const std::shared_ptr<SrcObject> & = nullptr,
                  const SrcInfo & = SrcInfo());
   void transformAdding(ExprPtr &e, std::shared_ptr<SrcObject>);
+  ExprPtr transformFString(const std::string &);
 
   void visit(IdExpr *) override;
+  void visit(StringExpr *) override; // because of f-strings argh!
   void visit(GeneratorExpr *) override;
   void visit(AssignExpr *) override;
   void visit(LambdaExpr *) override;

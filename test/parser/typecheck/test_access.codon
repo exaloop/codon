@@ -130,17 +130,17 @@ try:
     raise ValueError("hi")
 except ValueError as e:
     ee = e
-print(e) #: hi
 print(ee) #: hi
 
+#%% new_scoping_loops_try_error,barebones
 try:
     pass
 except ValueError as f:
     pass
 try:
-    print(f.message)
+    print(f.message)  #! no module named 'f'
 except NameError:
-    print('error') #: error
+    print('error')
 
 #%% dot_access_error_NOPY,barebones
 class Foo:

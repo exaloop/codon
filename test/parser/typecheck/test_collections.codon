@@ -42,8 +42,10 @@ print s #: {0, 1, 2}
 d = {i: j for i in range(10) if i < 1 for j in range(10)}
 print d  #: {0: 9}
 
+t = 's'
 x = {t: lambda x: x * t for t in range(5)}
 print(x[3](10))  #: 40
+print(t)  #: s
 
 #%% comprehension_opt,barebones
 @extend

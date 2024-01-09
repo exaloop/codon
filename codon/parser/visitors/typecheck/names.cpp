@@ -136,8 +136,6 @@ void ScopingVisitor::visitName(const std::string &name, bool adding,
         ctx->map[name].push_back(newItem);
       }
       ctx->map[name].emplace_front(src, ctx->getScope(), root);
-      if (!root)
-        ctx->temps.back().insert(name);
     }
   } else {
     if (!in(ctx->firstSeen, name))
@@ -209,6 +207,11 @@ void ScopingVisitor::transformAdding(ExprPtr &e, std::shared_ptr<SrcObject> root
 }
 
 void ScopingVisitor::visit(IdExpr *expr) {
+  if (ctx->adding && ctx->tempScope)
+    ctx->renames.back()[expr->value] = ctx->cache->getTemporaryVar(expr->value);
+  if (auto i = in(ctx->renames.back(), expr->value))
+    expr->value = *i;
+
   visitName(expr->value, ctx->adding, ctx->root, expr->getSrcInfo());
 }
 
@@ -217,7 +220,7 @@ void ScopingVisitor::visit(IdExpr *expr) {
 ScopingVisitor::Context::Item *
 ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow) {
   auto it = in(ctx->map, name);
-  if (!it)
+  if (!it || it->empty())
     return nullptr;
 
   auto lastGood = it->begin();
@@ -279,16 +282,13 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   return &(*lastGood);
 }
 
-/// TODO)) dominate assignexprs in comprehensions?!
 void ScopingVisitor::visit(GeneratorExpr *expr) {
-  ctx->temps.emplace_back();
+  bool ts = true;
+  std::swap(ts, ctx->tempScope);
+  ctx->renames.emplace_back();
   transform(expr->loops);
-  for (auto &n : ctx->temps.back()) {
-    while (ctx->map[n].begin()->binding)
-      ctx->map[n].pop_front();
-    ctx->map[n].pop_front();
-  }
-  ctx->temps.pop_back();
+  ctx->renames.pop_back();
+  std::swap(ts, ctx->tempScope);
 }
 
 void ScopingVisitor::visit(IfExpr *expr) {
@@ -312,9 +312,11 @@ void ScopingVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
 
   auto s = N<StmtExpr>(N<AssignStmt>(clone(expr->var), expr->expr), expr->var);
-  // todo)) if (ctx->isConditionalExpr) {
   enterConditionalBlock();
+  auto ts = false;
+  std::swap(ts, ctx->tempScope);
   transform(s);
+  std::swap(ts, ctx->tempScope);
   leaveConditionalBlock();
   resultExpr = s;
 }
@@ -486,11 +488,11 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
   if (ctx->functionScope && stmt->what && stmt->what->isId("*"))
     E(error::Error::IMPORT_STAR, stmt);
 
-  //   transform(stmt->from);
-  if (stmt->as.empty())
+  if (stmt->as.empty()) {
     transformAdding(stmt->what, stmt->shared_from_this());
-  else
+  } else {
     visitName(stmt->as, true, stmt->shared_from_this(), stmt->getSrcInfo());
+  }
   for (auto &a : stmt->args) {
     transform(a.type);
     transform(a.defaultValue);
@@ -504,21 +506,19 @@ void ScopingVisitor::visit(TryStmt *stmt) {
   leaveConditionalBlock(stmt->suite);
 
   for (auto &a : stmt->catches) {
-    ctx->temps.emplace_back();
     transform(a->exc);
-
     enterConditionalBlock();
-    if (!a->var.empty())
+    if (!a->var.empty()) {
+      auto newName = ctx->cache->getTemporaryVar(a->var);
+      ctx->renames.push_back({{a->var, newName}});
+      a->var = newName;
       visitName(a->var, true, a, a->exc->getSrcInfo());
-    transform(a->suite);
-    leaveConditionalBlock(a->suite);
-
-    for (auto &n : ctx->temps.back()) {
-      while (ctx->map[n].begin()->binding)
-        ctx->map[n].pop_front();
-      ctx->map[n].pop_front();
     }
-    ctx->temps.pop_back();
+    transform(a->suite);
+    if (!a->var.empty()) {
+      ctx->renames.pop_back();
+    }
+    leaveConditionalBlock(a->suite);
   }
   transform(stmt->finally);
 }
@@ -548,6 +548,7 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;
   c->functionScope = true;
+  c->renames = ctx->renames;
   ScopingVisitor v;
   c->scope.emplace_back(0);
   v.ctx = c;
@@ -644,6 +645,84 @@ ExprPtr ScopingVisitor::makeAnonFn(std::vector<StmtPtr> suite,
   auto f =
       transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(std::move(suite))));
   return N<StmtExpr>(f, N<IdExpr>(name));
+}
+
+/// Set type to `str`
+void ScopingVisitor::visit(StringExpr *expr) {
+  std::vector<ExprPtr> exprs;
+  std::vector<std::string> concat;
+  for (auto &p : expr->strings) {
+    if (p.second == "f" || p.second == "F") {
+      /// Transform an F-string
+      exprs.push_back(transformFString(p.first));
+    } else if (!p.second.empty()) {
+      /// Custom prefix strings:
+      /// call `str.__prefix_[prefix]__(str, [static length of str])`
+      exprs.push_back(
+          transform(N<CallExpr>(N<DotExpr>("str", format("__prefix_{}__", p.second)),
+                                N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
+    } else {
+      exprs.push_back(N<StringExpr>(p.first));
+      concat.push_back(p.first);
+    }
+  }
+  if (concat.size() == expr->strings.size()) {
+    /// Simple case: statically concatenate a sequence of strings without any prefix
+    expr->strings = {{combine2(concat, ""), ""}};
+  } else if (exprs.size() == 1) {
+    /// Simple case: only one string in a sequence
+    resultExpr = std::move(exprs[0]);
+  } else {
+    /// Complex case: call `str.cat(str1, ...)`
+    resultExpr = transform(N<CallExpr>(N<DotExpr>("str", "cat"), exprs));
+  }
+}
+
+/// Parse a Python-like f-string into a concatenation:
+///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
+/// Supports "{x=}" specifier (that prints the raw expression as well):
+///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
+ExprPtr ScopingVisitor::transformFString(const std::string &value) {
+  // Strings to be concatenated
+  std::vector<ExprPtr> items;
+  int braceCount = 0, braceStart = 0;
+  for (int i = 0; i < value.size(); i++) {
+    if (value[i] == '{') {
+      if (braceStart < i)
+        items.push_back(N<StringExpr>(value.substr(braceStart, i - braceStart)));
+      if (!braceCount)
+        braceStart = i + 1;
+      braceCount++;
+    } else if (value[i] == '}') {
+      braceCount--;
+      if (!braceCount) {
+        std::string code = value.substr(braceStart, i - braceStart);
+        auto offset = getSrcInfo();
+        offset.col += i;
+        if (!code.empty() && code.back() == '=') {
+          // Special case: f"{x=}"
+          code = code.substr(0, code.size() - 1);
+          items.push_back(N<StringExpr>(fmt::format("{}=", code)));
+        }
+        auto [expr, format] = parseExpr(ctx->cache, code, offset);
+        if (!format.empty()) {
+          items.push_back(
+              N<CallExpr>(N<DotExpr>(expr, "__format__"), N<StringExpr>(format)));
+        } else {
+          // Every expression is wrapped within `str`
+          items.push_back(N<CallExpr>(N<IdExpr>("str"), expr));
+        }
+      }
+      braceStart = i + 1;
+    }
+  }
+  if (braceCount > 0)
+    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
+  if (braceCount < 0)
+    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
+  if (braceStart != value.size())
+    items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
+  return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));
 }
 
 } // namespace codon::ast

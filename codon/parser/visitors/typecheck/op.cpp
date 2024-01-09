@@ -363,7 +363,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
       transform(expr->typeParams[i]);
       TypePtr t = nullptr;
-      if (expr->typeParams[i]->isStatic()) {
+      if (expr->typeParams[i]->isStatic() && generics[i].type->isStaticType()) {
         t = Type::makeStatic(ctx->cache, expr->typeParams[i]);
         t = ctx->instantiate(t);
       } else {

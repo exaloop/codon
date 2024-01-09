@@ -24,10 +24,11 @@ void TypecheckVisitor::visit(BreakStmt *stmt) {
   if (!ctx->getBase()->getLoop())
     E(Error::EXPECTED_LOOP, stmt, "break");
   if (!ctx->getBase()->getLoop()->breakVar.empty()) {
-    resultStmt = N<SuiteStmt>(
-        transform(N<AssignStmt>(N<IdExpr>(ctx->getBase()->getLoop()->breakVar),
-                                N<BoolExpr>(false))),
-        N<BreakStmt>());
+    resultStmt =
+        N<SuiteStmt>(transform(N<AssignStmt>(
+                         N<IdExpr>(ctx->getBase()->getLoop()->breakVar),
+                         N<BoolExpr>(false), nullptr, AssignStmt::UpdateMode::Update)),
+                     N<BreakStmt>());
   } else {
     stmt->setDone();
     if (!ctx->staticLoops.back().empty()) {
@@ -78,9 +79,10 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
-    resultStmt =
-        N<SuiteStmt>(N<WhileStmt>(*stmt), N<IfStmt>(transform(N<IdExpr>(breakVar)),
-                                                    transform(stmt->elseSuite)));
+    auto es = stmt->elseSuite;
+    stmt->elseSuite = nullptr;
+    resultStmt = transform(
+        N<SuiteStmt>(stmt->shared_from_this(), N<IfStmt>(N<IdExpr>(breakVar), es)));
   }
   ctx->getBase()->loops.pop_back();
 
@@ -148,9 +150,10 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   // Complete while-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
-    resultStmt = N<SuiteStmt>(
-        assign, N<ForStmt>(*stmt),
-        N<IfStmt>(transform(N<IdExpr>(breakVar)), transform(stmt->elseSuite)));
+    auto es = stmt->elseSuite;
+    stmt->elseSuite = nullptr;
+    resultStmt = transform(N<SuiteStmt>(assign, stmt->shared_from_this(),
+                                        N<IfStmt>(N<IdExpr>(breakVar), es)));
   }
 
   ctx->getBase()->loops.pop_back();

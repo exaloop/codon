@@ -122,24 +122,30 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
       resultExpr = N<IfExpr>(
           N<CallExpr>(N<IdExpr>("hasattr"), clone(origIter), N<StringExpr>("__len__")),
           N<StmtExpr>(optStmt, clone(var)), N<StmtExpr>(noOptStmt, var));
-      resultExpr = transform(resultExpr);
     } else {
-      resultExpr = transform(N<StmtExpr>(noOptStmt, var));
+      resultExpr = N<StmtExpr>(noOptStmt, var);
     }
+    // ctx->addBlock();
+    resultExpr = transform(resultExpr);
+    // ctx->popBlock();
   } else if (expr->kind == GeneratorExpr::SetGenerator) {
     // Set comprehensions
     auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Set")));
     expr->setFinalExpr(
         N<CallExpr>(N<DotExpr>(clone(var), "add"), expr->getFinalExpr()));
     auto suite = expr->getFinalSuite();
+    // ctx->addBlock();
     resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
+    // ctx->popBlock();
   } else if (expr->kind == GeneratorExpr::DictGenerator) {
     // Set comprehensions
     auto head = N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("Dict")));
     expr->setFinalExpr(N<CallExpr>(N<DotExpr>(clone(var), "__setitem__"),
                                    N<StarExpr>(expr->getFinalExpr())));
     auto suite = expr->getFinalSuite();
+    // ctx->addBlock();
     resultExpr = transform(N<StmtExpr>(N<SuiteStmt>(head, suite), var));
+    // ctx->popBlock();
   } else if (expr->kind == GeneratorExpr::TupleGenerator) {
     seqassert(expr->loopCount() == 1, "invalid tuple generator");
     unify(expr->type, ctx->getUnbound());
@@ -173,10 +179,13 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
       tupleItems.push_back(std::dynamic_pointer_cast<Expr>(i));
     if (preamble)
       block->stmts.push_back(preamble);
+    // ctx->addBlock();
     resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
+    // ctx->popBlock();
   } else {
-    transform(
-        expr->getFinalSuite()); // we assume that the internal data will be changed
+    // ctx->addBlock();
+    transform(expr->getFinalSuite()); // assume: internal data will be changed
+    // ctx->popBlock();
     unify(expr->type, ctx->instantiateGeneric(ctx->forceFind("Generator")->type,
                                               {expr->getFinalExpr()->type}));
     if (realize(expr->type))

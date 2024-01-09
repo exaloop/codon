@@ -181,14 +181,16 @@ std::string ForStmt::toString(int indent) const {
     attr += " " + decorator->toString(indent);
   if (!attr.empty())
     attr = " #:attr" + attr;
+  auto vs = var->toString(indent);
+  if (var->hasAttr(ExprAttr::Dominated))
+    vs += "^";
   if (elseSuite && elseSuite->firstInBlock())
-    return format("(for-else {} {}{}{}{}{}{})", var->toString(indent),
-                  iter->toString(indent), attr, pad,
+    return format("(for-else {} {}{}{}{}{}{})", vs, iter->toString(indent), attr, pad,
                   suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
                   elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
   else
-    return format("(for {} {}{}{}{})", var->toString(indent), iter->toString(indent),
-                  attr, pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return format("(for {} {}{}{}{})", vs, iter->toString(indent), attr, pad,
+                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
 }
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 
