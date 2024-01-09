@@ -95,7 +95,6 @@ class range:
         else:
             return f"range({self.start}, {self.stop}, {self.step})"
 
-@overload
 def staticrange(start: Static[int], stop: Static[int], step: Static[int] = 1):
     return range(start, stop, step)
 

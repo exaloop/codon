@@ -299,6 +299,18 @@ TypecheckVisitor::transformStaticLoopCall(
       }
       block.push_back(wrap(clone(stmt)));
     }
+  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
+    if (vars.size() != 1)
+      error("expected one item");
+    auto ed =
+        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    if (ed > MAX_STATIC_ITER)
+      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
+    for (int64_t i = 0; i < ed; i++) {
+      stmt->rhs = N<IntExpr>(i);
+      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+      block.push_back(wrap(clone(stmt)));
+    }
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
       error("expected one item");
@@ -311,18 +323,6 @@ TypecheckVisitor::transformStaticLoopCall(
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
     for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
-      stmt->rhs = N<IntExpr>(i);
-      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
-      block.push_back(wrap(clone(stmt)));
-    }
-  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
-    if (vars.size() != 1)
-      error("expected one item");
-    auto ed =
-        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
-    if (ed > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
-    for (int64_t i = 0; i < ed; i++) {
       stmt->rhs = N<IntExpr>(i);
       stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(clone(stmt)));
