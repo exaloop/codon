@@ -69,7 +69,8 @@ class __internal__:
         """
         global __vtables__
         sz = __vtable_size__ + 1
-        __vtables__ = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
+        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj]))
+        __vtables__ = Ptr[Ptr[cobj]](p)
         __internal__.class_populate_vtables()
 
     def class_populate_vtables() -> None:
@@ -95,7 +96,8 @@ class __internal__:
     def class_set_rtti_vtable(id: int, sz: int, T: type):
         if not __has_rtti__(T):
             compile_error("class is not polymorphic")
-        __vtables__[id] = Ptr[cobj](sz + 1)
+        p = alloc_atomic_uncollectable((sz + 1) * sizeof(cobj))
+        __vtables__[id] = Ptr[cobj](p)
         __internal__.class_set_typeinfo(__vtables__[id], id)
 
     def class_set_rtti_vtable_fn(id: int, fid: int, f: cobj, T: type):
