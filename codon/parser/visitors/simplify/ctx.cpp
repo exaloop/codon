@@ -182,8 +182,6 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
     // These bindings (and their canonical identifiers) will be replaced by the
     // dominating binding during the type checking pass.
     cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
-    // LOG("{}: {} -> {} ({})", getSrcInfo(), (*i)->canonicalName, canonicalName,
-    // hasUsed);
     cache->replacements[format("{}.__used__", (*i)->canonicalName)] = {
         format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
