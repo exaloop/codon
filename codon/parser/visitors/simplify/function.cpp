@@ -20,6 +20,7 @@ namespace codon::ast {
 void SimplifyVisitor::visit(YieldExpr *expr) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, expr, "yield");
+  ctx->getBase()->attributes->set(Attr::IsGenerator);
 }
 
 /// Transform lambdas. Capture outer expressions.
@@ -45,6 +46,7 @@ void SimplifyVisitor::visit(YieldStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
   transform(stmt->expr);
+  ctx->getBase()->attributes->set(Attr::IsGenerator);
 }
 
 /// Transform `yield from` statements.
