@@ -288,7 +288,7 @@ except MyError:
     print "my"
 except OSError as o:
     print "os", o.typename, len(o.message), o.file[-20:], o.line
-    #: os OSError 9 typecheck_stmt.codon 286
+    #: os OSError 9 typecheck_stmt.codon 284
 finally:
     print "whoa"  #: whoa
 
