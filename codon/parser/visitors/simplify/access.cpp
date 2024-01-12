@@ -79,7 +79,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
     if (!checked) {
       // Prepend access with __internal__.undef([var]__used__, "[var name]")
       auto checkStmt = N<ExprStmt>(N<CallExpr>(
-          N<DotExpr>("__internal__", "undef"),
+          N<IdExpr>("__internal__.undef"),
           N<IdExpr>(fmt::format("{}.__used__", val->canonicalName)),
           N<StringExpr>(ctx->cache->reverseIdentifierLookup[val->canonicalName])));
       if (!ctx->isConditionalExpr) {
