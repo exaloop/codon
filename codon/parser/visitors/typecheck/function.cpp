@@ -29,7 +29,14 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
 /// Also partialize functions if they are being returned.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
-  if (transform(stmt->expr)) {
+  if (!stmt->expr && ctx->getRealizationBase()->type &&
+      ctx->getRealizationBase()->type->getFunc()->ast->hasAttr(Attr::IsGenerator)) {
+    stmt->setDone();
+  } else {
+    if (!stmt->expr) {
+      stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
+    }
+    transform(stmt->expr);
     // Wrap expression to match the return type
     if (!ctx->getRealizationBase()->returnType->getUnbound())
       if (!wrapExpr(stmt->expr, ctx->getRealizationBase()->returnType)) {
@@ -44,10 +51,6 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     }
 
     unify(ctx->getRealizationBase()->returnType, stmt->expr->type);
-  } else {
-    // Just set the expr for the translation stage. However, do not unify the return
-    // type! This might be a `return` in a generator.
-    stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType")));
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -55,15 +58,16 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->blockLevel)
     ctx->returnEarly = true;
 
-  if (stmt->expr->isDone())
+  if (!stmt->expr || stmt->expr->isDone())
     stmt->setDone();
 }
 
 /// Typecheck yield statements. Empty yields assume `NoneType`.
 void TypecheckVisitor::visit(YieldStmt *stmt) {
   stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
-  unify(ctx->getRealizationBase()->returnType,
-        ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type}));
+
+  auto t = ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type});
+  unify(ctx->getRealizationBase()->returnType, t);
 
   if (stmt->expr->isDone())
     stmt->setDone();

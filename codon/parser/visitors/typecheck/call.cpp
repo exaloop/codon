@@ -46,6 +46,21 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
+  if (expr->expr->isId("__internal__.undef") && expr->args.size() == 2 &&
+      expr->args[0].value->getId()) {
+    auto val = expr->args[0].value->getId()->value;
+    val = val.substr(0, val.size() - 9);
+    if (auto changed = in(ctx->cache->replacements, val)) {
+      while (auto s = in(ctx->cache->replacements, val))
+        val = changed->first, changed = s;
+      if (!changed->second) {
+        // TODO: add no-op expr
+        resultExpr = transform(N<BoolExpr>(false));
+        return;
+      }
+    }
+  }
+
   // Transform and expand arguments. Return early if it cannot be done yet
   if (!transformCallArgs(expr->args))
     return;
@@ -319,7 +334,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         }
         ExprPtr e = N<TupleExpr>(extra);
         e->setAttr(ExprAttr::StarArgument);
-        if (!expr->expr->isId("hasattr:0"))
+        if (!expr->expr->isId("hasattr"))
           e = transform(e);
         if (partial) {
           part.args = e;
@@ -373,8 +388,16 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
             E(Error::CALL_RECURSIVE_DEFAULT, expr,
               ctx->cache->rev(calleeFn->ast->args[si].name));
           ctx->defaultCallDepth.insert(es);
-          args.push_back(
-              {realName, transform(clone(calleeFn->ast->args[si].defaultValue))});
+
+          if (calleeFn->ast->args[si].defaultValue->getNone() &&
+              !calleeFn->ast->args[si].type) {
+            args.push_back(
+                {realName, transform(N<CallExpr>(N<InstantiateExpr>(
+                               N<IdExpr>("Optional"), N<IdExpr>("NoneType"))))});
+          } else {
+            args.push_back(
+                {realName, transform(clone(calleeFn->ast->args[si].defaultValue))});
+          }
           ctx->defaultCallDepth.erase(es);
         }
       } else {
@@ -562,7 +585,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformSpecialCall(CallExpr *expr) 
     return {true, transformIsInstance(expr)};
   } else if (val == "staticlen") {
     return {true, transformStaticLen(expr)};
-  } else if (startswith(val, "hasattr:")) {
+  } else if (val == "hasattr") {
     return {true, transformHasAttr(expr)};
   } else if (val == "getattr") {
     return {true, transformGetAttr(expr)};
@@ -812,38 +835,35 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   auto typ = expr->args[0].value->getType()->getClass();
   if (!typ)
     return nullptr;
-
   auto member = expr->expr->type->getFunc()
                     ->funcGenerics[0]
                     .type->getStatic()
                     ->evaluate()
                     .getString();
   std::vector<std::pair<std::string, TypePtr>> args{{"", typ}};
-  if (expr->expr->isId("hasattr:0")) {
-    // Case: the first hasattr overload allows passing argument types via *args
-    auto tup = expr->args[1].value->getTuple();
-    seqassert(tup, "not a tuple");
-    for (auto &a : tup->items) {
-      transform(a);
-      if (!a->getType()->getClass())
-        return nullptr;
-      args.push_back({"", a->getType()});
-    }
-    auto kwtup = expr->args[2].value->origExpr->getCall();
-    seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
-              "expected call: {}", expr->args[2].value->origExpr);
-    auto kw = expr->args[2].value->origExpr->getCall();
-    auto kwCls =
-        in(ctx->cache->classes, expr->args[2].value->getType()->getClass()->name);
-    seqassert(kwCls, "cannot find {}",
-              expr->args[2].value->getType()->getClass()->name);
-    for (size_t i = 0; i < kw->args.size(); i++) {
-      auto &a = kw->args[i].value;
-      transform(a);
-      if (!a->getType()->getClass())
-        return nullptr;
-      args.push_back({kwCls->fields[i].name, a->getType()});
-    }
+
+  // Case: passing argument types via *args
+  auto tup = expr->args[1].value->getTuple();
+  seqassert(tup, "not a tuple");
+  for (auto &a : tup->items) {
+    transform(a);
+    if (!a->getType()->getClass())
+      return nullptr;
+    args.emplace_back("", a->getType());
+  }
+  auto kwtup = expr->args[2].value->origExpr->getCall();
+  seqassert(expr->args[2].value->origExpr && expr->args[2].value->origExpr->getCall(),
+            "expected call: {}", expr->args[2].value->origExpr);
+  auto kw = expr->args[2].value->origExpr->getCall();
+  auto kwCls =
+      in(ctx->cache->classes, expr->args[2].value->getType()->getClass()->name);
+  seqassert(kwCls, "cannot find {}", expr->args[2].value->getType()->getClass()->name);
+  for (size_t i = 0; i < kw->args.size(); i++) {
+    auto &a = kw->args[i].value;
+    transform(a);
+    if (!a->getType()->getClass())
+      return nullptr;
+    args.emplace_back(kwCls->fields[i].name, a->getType());
   }
 
   if (typ->getUnion()) {

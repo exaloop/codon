@@ -2047,7 +2047,21 @@ def correlate(a, b, mode = 'valid'):
     else:
         raise ValueError(f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})")
     return xret
-print(correlate([1], [2], 'full'))  # 5z
+print(correlate([1], [2], 'full'))  #: 5z
+
+def foo(x, y):
+    a = 5
+    if isinstance(a, int):
+        if staticlen(y) == 0:
+            a = 0
+        elif staticlen(y) == 1:
+            a = 1
+        else:
+            for i in range(10):
+                a = 40
+            return a
+    return a
+print foo(5, (1, 2, 3))  #: 40
 
 #%% union_hasattr,barebones
 class A:

@@ -173,6 +173,41 @@ def foo():
     yield 2
 print list(foo())  #: [1]
 
+def foo(x=0):
+    yield 1
+    if x:
+        return
+    yield 2
+print list(foo())  #: [1, 2]
+print list(foo(1))  #: [1]
+
+def foo(x=0):
+    if x:
+        return
+    yield 1
+    yield 2
+print list(foo())  #: [1, 2]
+print list(foo(1))  #: []
+
+#%% return_none_err_1,barebones
+def foo(n: int):
+    if n > 0:
+        return
+    else:
+        return 1
+foo(1)
+#! 'NoneType' does not match expected type 'int'
+#! during the realization of foo(n: int)
+
+#%% return_none_err_2,barebones
+def foo(n: int):
+    if n > 0:
+        return 1
+    return
+foo(1)
+#! 'int' does not match expected type 'NoneType'
+#! during the realization of foo(n: int)
+
 #%% while,barebones
 a = 3
 while a:
@@ -253,7 +288,7 @@ except MyError:
     print "my"
 except OSError as o:
     print "os", o.typename, len(o.message), o.file[-20:], o.line
-    #: os OSError 9 typecheck_stmt.codon 249
+    #: os OSError 9 typecheck_stmt.codon 284
 finally:
     print "whoa"  #: whoa
 

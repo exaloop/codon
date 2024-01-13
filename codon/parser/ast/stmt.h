@@ -427,6 +427,7 @@ struct Attr {
   const static std::string Method;
   const static std::string Capture;
   const static std::string HasSelf;
+  const static std::string IsGenerator;
   // Class attributes
   const static std::string Extend;
   const static std::string Tuple;

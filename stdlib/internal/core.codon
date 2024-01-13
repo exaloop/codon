@@ -250,10 +250,6 @@ def hasattr(obj, attr: Static[str], *args, **kwargs):
     """Special handling"""
     pass
 
-@overload
-def hasattr(obj, attr: Static[str]):
-    pass
-
 def getattr(obj, attr: Static[str]):
     pass
 

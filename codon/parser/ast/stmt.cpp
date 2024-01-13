@@ -324,6 +324,7 @@ const std::string Attr::CVarArg = ".__vararg__";
 const std::string Attr::Method = ".__method__";
 const std::string Attr::Capture = ".__capture__";
 const std::string Attr::HasSelf = ".__hasself__";
+const std::string Attr::IsGenerator = ".__generator__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
 const std::string Attr::Test = "std.internal.attributes.test";

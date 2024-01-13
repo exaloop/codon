@@ -823,9 +823,10 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
           E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
         te.push_back(N<DotExpr>(clone(var), classFields[i].name));
       }
-      ExprPtr e = transform(
-          N<StmtExpr>(std::vector<StmtPtr>{ass},
-                      N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_TUPLE), "__new__"), te)));
+      auto s = ctx->generateTuple(te.size());
+      ExprPtr e =
+          transform(N<StmtExpr>(std::vector<StmtPtr>{ass},
+                                N<CallExpr>(N<DotExpr>(N<IdExpr>(s), "__new__"), te)));
       return {true, e};
     }
   }
