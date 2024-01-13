@@ -2,6 +2,8 @@
 
 @test
 def test_min_max():
+    neg = lambda x: -x
+
     assert max(2, 1, 1, 1, 1) == 2
     assert max(1, 2, 1, 1, 1) == 2
     assert max(1, 1, 2, 1, 1) == 2
@@ -16,6 +18,21 @@ def test_min_max():
     assert max(1, 1, 2) == 2
     assert max(2, 1) == 2
     assert max(1, 2) == 2
+
+    assert max(2, 1, 1, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, 1, 1, key=neg) == 1
+    assert max(1, 1, 2, 1, 1, key=neg) == 1
+    assert max(1, 1, 1, 2, 1, key=neg) == 1
+    assert max(1, 1, 1, 1, 2, key=neg) == 1
+    assert max(2, 1, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, 1, key=neg) == 1
+    assert max(1, 1, 2, 1, key=neg) == 1
+    assert max(1, 1, 1, 2, key=neg) == 1
+    assert max(2, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, key=neg) == 1
+    assert max(1, 1, 2, key=neg) == 1
+    assert max(2, 1, key=neg) == 1
+    assert max(1, 2, key=neg) == 1
 
     assert min(2, 1, 1, 1, 1) == 1
     assert min(1, 2, 1, 1, 1) == 1
@@ -32,6 +49,21 @@ def test_min_max():
     assert min(2, 1) == 1
     assert min(1, 2) == 1
 
+    assert min(2, 1, 1, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, 1, 1, key=neg) == 2
+    assert min(1, 1, 2, 1, 1, key=neg) == 2
+    assert min(1, 1, 1, 2, 1, key=neg) == 2
+    assert min(1, 1, 1, 1, 2, key=neg) == 2
+    assert min(2, 1, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, 1, key=neg) == 2
+    assert min(1, 1, 2, 1, key=neg) == 2
+    assert min(1, 1, 1, 2, key=neg) == 2
+    assert min(2, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, key=neg) == 2
+    assert min(1, 1, 2, key=neg) == 2
+    assert min(2, 1, key=neg) == 2
+    assert min(1, 2, key=neg) == 2
+
     assert max(0, 1, 1, 1, 1) == 1
     assert max(1, 0, 1, 1, 1) == 1
     assert max(1, 1, 0, 1, 1) == 1
@@ -46,6 +78,21 @@ def test_min_max():
     assert max(1, 1, 0) == 1
     assert max(0, 1) == 1
     assert max(1, 0) == 1
+
+    assert max(0, 1, 1, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, 1, 1, key=neg) == 0
+    assert max(1, 1, 0, 1, 1, key=neg) == 0
+    assert max(1, 1, 1, 0, 1, key=neg) == 0
+    assert max(1, 1, 1, 1, 0, key=neg) == 0
+    assert max(0, 1, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, 1, key=neg) == 0
+    assert max(1, 1, 0, 1, key=neg) == 0
+    assert max(1, 1, 1, 0, key=neg) == 0
+    assert max(0, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, key=neg) == 0
+    assert max(1, 1, 0, key=neg) == 0
+    assert max(0, 1, key=neg) == 0
+    assert max(1, 0, key=neg) == 0
 
     assert min(0, 1, 1, 1, 1) == 0
     assert min(1, 0, 1, 1, 1) == 0
@@ -62,10 +109,89 @@ def test_min_max():
     assert min(0, 1) == 0
     assert min(1, 0) == 0
 
+    assert min(0, 1, 1, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, 1, 1, key=neg) == 1
+    assert min(1, 1, 0, 1, 1, key=neg) == 1
+    assert min(1, 1, 1, 0, 1, key=neg) == 1
+    assert min(1, 1, 1, 1, 0, key=neg) == 1
+    assert min(0, 1, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, 1, key=neg) == 1
+    assert min(1, 1, 0, 1, key=neg) == 1
+    assert min(1, 1, 1, 0, key=neg) == 1
+    assert min(0, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, key=neg) == 1
+    assert min(1, 1, 0, key=neg) == 1
+    assert min(0, 1, key=neg) == 1
+    assert min(1, 0, key=neg) == 1
+
     assert min(a*a for a in range(3)) == 0
     assert max(a*a for a in range(3)) == 4
     assert min([0, 2, -1]) == -1
     assert max([0, 2, -1]) == 2
+
+    assert min((a*a for a in range(3)), key=neg) == 4
+    assert max((a*a for a in range(3)), key=neg) == 0
+    assert min([0, 2, -1], key=neg) == 2
+    assert max([0, 2, -1], key=neg) == -1
+
+    assert min('abcx') == 'a'
+    assert max('abcx') == 'x'
+    assert min(['a', 'b', 'c', 'x']) == 'a'
+    assert max(['a', 'b', 'c', 'x']) == 'x'
+
+    d = {'a': 4, 'b': 1, 'c': -1, 'x': 9}
+    assert min('abcx', key=d.__getitem__) == 'c'
+    assert max('abcx', key=d.__getitem__) == 'x'
+    assert min(['a', 'b', 'c', 'x'], key=d.__getitem__) == 'c'
+    assert max(['a', 'b', 'c', 'x'], key=d.__getitem__) == 'x'
+
+    try:
+        max('')
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min('')
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max(List[float]())
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min(List[float]())
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max('', key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min('', key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max(List[float](), key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min(List[float](), key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
 
 @test
 def test_map_filter():
