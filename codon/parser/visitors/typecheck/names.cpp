@@ -24,7 +24,7 @@ void ScopingVisitor::apply(Cache *cache, StmtPtr &s) {
   ScopingVisitor v;
   v.ctx = c;
   v.transformBlock(s);
-  // LOG("-> {}", s->toString(2));
+  LOG("-> {}", s->toString(2));
 }
 
 ExprPtr ScopingVisitor::transform(const std::shared_ptr<Expr> &expr) {
