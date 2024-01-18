@@ -28,7 +28,7 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
     done = false;
-    attributes = 0;
+    // attributes = 0;
   }
 }
 void Expr::validate() const {}

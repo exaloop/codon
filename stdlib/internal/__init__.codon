@@ -46,6 +46,7 @@ from internal.file import File, gzFile, open, gzopen
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
 import internal.python
+from internal.python import PyError
 
 # if __py_numerics__:
 #     import internal.pynumerics
