@@ -205,13 +205,14 @@ struct Reduction {
       break;
     case Kind::MIN:
     case Kind::MAX: {
+      // signature is (tuple of args, key, default)
       auto name = (kind == Kind::MIN ? "min" : "max");
       auto *tup = util::makeTuple({lhs, arg});
       auto *none = (*M->getNoneType())();
-      auto *fn = M->getOrRealizeFunc(name, {tup->getType(), none->getType()}, {},
-                                     builtinModule);
+      auto *fn = M->getOrRealizeFunc(
+          name, {tup->getType(), none->getType(), none->getType()}, {}, builtinModule);
       seqassertn(fn, "{} function not found", name);
-      result = util::call(fn, {tup, none});
+      result = util::call(fn, {tup, none, none});
       break;
     }
     default:
@@ -452,8 +453,8 @@ struct ReductionIdentifier : public util::Operator {
         if (!util::isCallOf(item, rf.name, {type, type}, type, /*method=*/true))
           continue;
       } else {
-        if (!util::isCallOf(item, rf.name, {M->getTupleType({type, type}), noneType},
-                            type,
+        if (!util::isCallOf(item, rf.name,
+                            {M->getTupleType({type, type}), noneType, noneType}, type,
                             /*method=*/false))
           continue;
       }

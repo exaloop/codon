@@ -4,6 +4,218 @@
 def test_min_max():
     neg = lambda x: -x
 
+    assert min(42, 24) == 24
+    assert max(42, 24) == 42
+    assert min([42, 24]) == 24
+    assert max([42, 24]) == 42
+    assert min(1, 2, 3, 2, 1, 0, -1, 1, 2) == -1
+    assert max(1, 2, 3, 2, 1, 0, -1, 1, 2) == 3
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2]) == -1
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2]) == 3
+
+    assert min(42, 24, key=neg) == 42
+    assert max(42, 24, key=neg) == 24
+    assert min([42, 24], key=neg) == 42
+    assert max([42, 24], key=neg) == 24
+    assert min(1, 2, 3, 2, 1, 0, -1, 1, 2, key=neg) == 3
+    assert max(1, 2, 3, 2, 1, 0, -1, 1, 2, key=neg) == -1
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], key=neg) == 3
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], key=neg) == -1
+
+    assert min([42, 24], default=100) == 24
+    assert max([42, 24], default=100) == 42
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100) == -1
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100) == 3
+
+    assert min([42, 24], default=100, key=neg) == 42
+    assert max([42, 24], default=100, key=neg) == 24
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100, key=neg) == 3
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100, key=neg) == -1
+
+    assert max([2, 1, 1, 1, 1]) == 2
+    assert max([1, 2, 1, 1, 1]) == 2
+    assert max([1, 1, 2, 1, 1]) == 2
+    assert max([1, 1, 1, 2, 1]) == 2
+    assert max([1, 1, 1, 1, 2]) == 2
+    assert max([2, 1, 1, 1]) == 2
+    assert max([1, 2, 1, 1]) == 2
+    assert max([1, 1, 2, 1]) == 2
+    assert max([1, 1, 1, 2]) == 2
+    assert max([2, 1, 1]) == 2
+    assert max([1, 2, 1]) == 2
+    assert max([1, 1, 2]) == 2
+    assert max([2, 1]) == 2
+    assert max([1, 2]) == 2
+
+    assert max([2, 1, 1, 1, 1], key=neg) == 1
+    assert max([1, 2, 1, 1, 1], key=neg) == 1
+    assert max([1, 1, 2, 1, 1], key=neg) == 1
+    assert max([1, 1, 1, 2, 1], key=neg) == 1
+    assert max([1, 1, 1, 1, 2], key=neg) == 1
+    assert max([2, 1, 1, 1], key=neg) == 1
+    assert max([1, 2, 1, 1], key=neg) == 1
+    assert max([1, 1, 2, 1], key=neg) == 1
+    assert max([1, 1, 1, 2], key=neg) == 1
+    assert max([2, 1, 1], key=neg) == 1
+    assert max([1, 2, 1], key=neg) == 1
+    assert max([1, 1, 2], key=neg) == 1
+    assert max([2, 1], key=neg) == 1
+    assert max([1, 2], key=neg) == 1
+
+    assert min([2, 1, 1, 1, 1]) == 1
+    assert min([1, 2, 1, 1, 1]) == 1
+    assert min([1, 1, 2, 1, 1]) == 1
+    assert min([1, 1, 1, 2, 1]) == 1
+    assert min([1, 1, 1, 1, 2]) == 1
+    assert min([2, 1, 1, 1]) == 1
+    assert min([1, 2, 1, 1]) == 1
+    assert min([1, 1, 2, 1]) == 1
+    assert min([1, 1, 1, 2]) == 1
+    assert min([2, 1, 1]) == 1
+    assert min([1, 2, 1]) == 1
+    assert min([1, 1, 2]) == 1
+    assert min([2, 1]) == 1
+    assert min([1, 2]) == 1
+
+    assert min([2, 1, 1, 1, 1], key=neg) == 2
+    assert min([1, 2, 1, 1, 1], key=neg) == 2
+    assert min([1, 1, 2, 1, 1], key=neg) == 2
+    assert min([1, 1, 1, 2, 1], key=neg) == 2
+    assert min([1, 1, 1, 1, 2], key=neg) == 2
+    assert min([2, 1, 1, 1], key=neg) == 2
+    assert min([1, 2, 1, 1], key=neg) == 2
+    assert min([1, 1, 2, 1], key=neg) == 2
+    assert min([1, 1, 1, 2], key=neg) == 2
+    assert min([2, 1, 1], key=neg) == 2
+    assert min([1, 2, 1], key=neg) == 2
+    assert min([1, 1, 2], key=neg) == 2
+    assert min([2, 1], key=neg) == 2
+    assert min([1, 2], key=neg) == 2
+
+    assert max([0, 1, 1, 1, 1]) == 1
+    assert max([1, 0, 1, 1, 1]) == 1
+    assert max([1, 1, 0, 1, 1]) == 1
+    assert max([1, 1, 1, 0, 1]) == 1
+    assert max([1, 1, 1, 1, 0]) == 1
+    assert max([0, 1, 1, 1]) == 1
+    assert max([1, 0, 1, 1]) == 1
+    assert max([1, 1, 0, 1]) == 1
+    assert max([1, 1, 1, 0]) == 1
+    assert max([0, 1, 1]) == 1
+    assert max([1, 0, 1]) == 1
+    assert max([1, 1, 0]) == 1
+    assert max([0, 1]) == 1
+    assert max([1, 0]) == 1
+
+    assert max([0, 1, 1, 1, 1], key=neg) == 0
+    assert max([1, 0, 1, 1, 1], key=neg) == 0
+    assert max([1, 1, 0, 1, 1], key=neg) == 0
+    assert max([1, 1, 1, 0, 1], key=neg) == 0
+    assert max([1, 1, 1, 1, 0], key=neg) == 0
+    assert max([0, 1, 1, 1], key=neg) == 0
+    assert max([1, 0, 1, 1], key=neg) == 0
+    assert max([1, 1, 0, 1], key=neg) == 0
+    assert max([1, 1, 1, 0], key=neg) == 0
+    assert max([0, 1, 1], key=neg) == 0
+    assert max([1, 0, 1], key=neg) == 0
+    assert max([1, 1, 0], key=neg) == 0
+    assert max([0, 1], key=neg) == 0
+    assert max([1, 0], key=neg) == 0
+
+    assert min([0, 1, 1, 1, 1]) == 0
+    assert min([1, 0, 1, 1, 1]) == 0
+    assert min([1, 1, 0, 1, 1]) == 0
+    assert min([1, 1, 1, 0, 1]) == 0
+    assert min([1, 1, 1, 1, 0]) == 0
+    assert min([0, 1, 1, 1]) == 0
+    assert min([1, 0, 1, 1]) == 0
+    assert min([1, 1, 0, 1]) == 0
+    assert min([1, 1, 1, 0]) == 0
+    assert min([0, 1, 1]) == 0
+    assert min([1, 0, 1]) == 0
+    assert min([1, 1, 0]) == 0
+    assert min([0, 1]) == 0
+    assert min([1, 0]) == 0
+
+    assert min([0, 1, 1, 1, 1], key=neg) == 1
+    assert min([1, 0, 1, 1, 1], key=neg) == 1
+    assert min([1, 1, 0, 1, 1], key=neg) == 1
+    assert min([1, 1, 1, 0, 1], key=neg) == 1
+    assert min([1, 1, 1, 1, 0], key=neg) == 1
+    assert min([0, 1, 1, 1], key=neg) == 1
+    assert min([1, 0, 1, 1], key=neg) == 1
+    assert min([1, 1, 0, 1], key=neg) == 1
+    assert min([1, 1, 1, 0], key=neg) == 1
+    assert min([0, 1, 1], key=neg) == 1
+    assert min([1, 0, 1], key=neg) == 1
+    assert min([1, 1, 0], key=neg) == 1
+    assert min([0, 1], key=neg) == 1
+    assert min([1, 0], key=neg) == 1
+
+    assert min([0, 1, 1, 1, 1], default=99) == 0
+    assert min([1, 0, 1, 1, 1], default=99) == 0
+    assert min([1, 1, 0, 1, 1], default=99) == 0
+    assert min([1, 1, 1, 0, 1], default=99) == 0
+    assert min([1, 1, 1, 1, 0], default=99) == 0
+    assert min([0, 1, 1, 1], default=99) == 0
+    assert min([1, 0, 1, 1], default=99) == 0
+    assert min([1, 1, 0, 1], default=99) == 0
+    assert min([1, 1, 1, 0], default=99) == 0
+    assert min([0, 1, 1], default=99) == 0
+    assert min([1, 0, 1], default=99) == 0
+    assert min([1, 1, 0], default=99) == 0
+    assert min([0, 1], default=99) == 0
+    assert min([1, 0], default=99) == 0
+    assert min(List[int](), default=99) == 99
+
+    assert min([0, 1, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1], key=neg, default=99) == 1
+    assert min([1, 0], key=neg, default=99) == 1
+    assert min(List[int](), key=neg, default=99) == 99
+
+    assert max([0, 1, 1, 1, 1], default=99) == 1
+    assert max([1, 0, 1, 1, 1], default=99) == 1
+    assert max([1, 1, 0, 1, 1], default=99) == 1
+    assert max([1, 1, 1, 0, 1], default=99) == 1
+    assert max([1, 1, 1, 1, 0], default=99) == 1
+    assert max([0, 1, 1, 1], default=99) == 1
+    assert max([1, 0, 1, 1], default=99) == 1
+    assert max([1, 1, 0, 1], default=99) == 1
+    assert max([1, 1, 1, 0], default=99) == 1
+    assert max([0, 1, 1], default=99) == 1
+    assert max([1, 0, 1], default=99) == 1
+    assert max([1, 1, 0], default=99) == 1
+    assert max([0, 1], default=99) == 1
+    assert max([1, 0], default=99) == 1
+    assert max(List[int](), default=99) == 99
+
+    assert max([0, 1, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1], key=neg, default=99) == 0
+    assert max([1, 0], key=neg, default=99) == 0
+    assert max(List[int](), key=neg, default=99) == 99
+
     assert max(2, 1, 1, 1, 1) == 2
     assert max(1, 2, 1, 1, 1) == 2
     assert max(1, 1, 2, 1, 1) == 2
