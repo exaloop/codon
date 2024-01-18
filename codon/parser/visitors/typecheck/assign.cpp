@@ -121,6 +121,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
+  assign->lhs->attributes = stmt->lhs->attributes;
   if (stmt->lhs->type) {
     unify(assign->lhs->type, stmt->lhs->type);
   } else {

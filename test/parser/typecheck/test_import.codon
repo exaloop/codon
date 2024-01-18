@@ -105,9 +105,8 @@ bar()
 #%% import_rec_err,barebones
 from a.b.rec1_err import bar
 #! cannot import name 'bar' from 'a.b.rec1_err'
-#! name 'bar' is not defined
-# TODO: get rid of this!
-#! no module named 'rec2_err'
+#! during the realization of <import a.b.rec2_err>
+#! during the realization of <import a.b.rec1_err>
 
 #%% import_err_1,barebones
 class Foo:

@@ -249,7 +249,7 @@ std::string ImportStmt::toString(int indent) const {
   std::vector<std::string> va;
   for (auto &a : args)
     va.push_back(a.toString(indent));
-  return format("(import {}{}{}{}{}{})", from->toString(indent),
+  return format("(import {}{}{}{}{}{})", from ? from->toString(indent) : "",
                 as.empty() ? "" : format(" #:as '{}", as),
                 what ? format(" #:what {}", what->toString(indent)) : "",
                 dots ? format(" #:dots {}", dots) : "",

@@ -434,10 +434,12 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
         continue;
       }
     }
+    ctx->addBlock();
+    ExprPtr dummy = std::make_shared<IdExpr>("#");
+    dummy->type = argType;
+    dummy->setDone();
+    ctx->addVar("#", "#", std::make_shared<types::LinkType>(dummy->type));
     try {
-      ExprPtr dummy = std::make_shared<IdExpr>("");
-      dummy->type = argType;
-      dummy->setDone();
       wrapExpr(dummy, expectTyp, fn);
       types::Type::Unification undo;
       if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
@@ -449,6 +451,7 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
       // Ignore failed wraps
       score = -1;
     }
+    ctx->popBlock();
   }
   return score;
 }

@@ -45,7 +45,7 @@ from internal.sort import sorted
 from internal.file import File, gzFile, open, gzopen
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
-# import internal.python
+import internal.python
 
 # if __py_numerics__:
 #     import internal.pynumerics

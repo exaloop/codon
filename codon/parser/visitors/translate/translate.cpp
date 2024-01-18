@@ -435,13 +435,13 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   auto var = stmt->lhs->getId()->value;
   if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
     if (stmt->rhs && stmt->rhs->type->getFunc()) {
-      result = transform(stmt->rhs);
+      // result = transform(stmt->rhs);
       return;
     }
     if (stmt->rhs && stmt->rhs->type->getPartial() &&
         !ctx->find(stmt->rhs->type->getClass()->realizedTypeName())) {
       // Partial generic; ignore [TODO]
-      result = transform(stmt->rhs);
+      // result = transform(stmt->rhs);
       return;
     }
 

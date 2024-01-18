@@ -321,6 +321,18 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->suite && !ast->attributes.has(Attr::Internal);
   // Add function arguments
+  for (auto &[c, t] : ast->attributes.captures) {
+    if (t == Attr::CaptureType::Global) {
+      auto cp = ctx->find(c);
+      if (!cp)
+        E(Error::ID_NOT_FOUND, getSrcInfo(), c);
+      if (!cp->isGlobal())
+        E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
+    }
+  }
+  // Add self reference! TODO: maybe remove later when doing contexts?
+  if (ast->attributes.parentClass.empty())
+    ctx->addFunc(ctx->cache->rev(ast->name), ast->name, ctx->find(ast->name)->type);
   for (size_t i = 0, j = 0; hasAst && i < ast->args.size(); i++)
     if (ast->args[i].status == Param::Normal) {
       std::string varName = ast->args[i].name;

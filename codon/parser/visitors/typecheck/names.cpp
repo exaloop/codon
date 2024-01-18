@@ -24,7 +24,7 @@ void ScopingVisitor::apply(Cache *cache, StmtPtr &s) {
   ScopingVisitor v;
   v.ctx = c;
   v.transformBlock(s);
-  LOG("-> {}", s->toString(2));
+  // LOG("-> {}", s->toString(2));
 }
 
 ExprPtr ScopingVisitor::transform(const std::shared_ptr<Expr> &expr) {
@@ -489,7 +489,7 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
     E(error::Error::IMPORT_STAR, stmt);
 
   if (stmt->as.empty()) {
-    transformAdding(stmt->what, stmt->shared_from_this());
+    transformAdding(stmt->what ? stmt->what : stmt->from, stmt->shared_from_this());
   } else {
     visitName(stmt->as, true, stmt->shared_from_this(), stmt->getSrcInfo());
   }
@@ -644,7 +644,7 @@ ExprPtr ScopingVisitor::makeAnonFn(std::vector<StmtPtr> suite,
     params.emplace_back(s);
   auto f =
       transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(std::move(suite))));
-  return N<StmtExpr>(f, N<IdExpr>(name));
+  return N<StmtExpr>(f, N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
 }
 
 /// Set type to `str`

@@ -200,8 +200,15 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       stmt->args.pop_back();
    }
    for (auto &[c, v] : captures) {
-      stmt->args.emplace_back(c);
-      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+     if (v->isType())
+       stmt->args.emplace_back(c, N<IdExpr>("type"));
+     else if (auto si = v->isStatic())
+       stmt->args.emplace_back(
+           c, N<IndexExpr>(N<IdExpr>("Static"),
+                           N<IdExpr>(si == StaticValue::INT ? "int" : "string")));
+     else
+       stmt->args.emplace_back(c);
+     partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
    }
    if (!kw.name.empty())
       stmt->args.push_back(kw);
@@ -461,9 +468,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         a.value = clone(a.value);
     }
     // todo)) right now this adds a capture hook for recursive calls
-    f->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(canonicalName),
-                                          N<CallExpr>(N<IdExpr>(canonicalName), pa)),
-                            suite);
+    f->suite = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>(stmt->name), N<CallExpr>(N<IdExpr>(stmt->name), pa)),
+        suite);
   }
 
   // Parse remaining decorators

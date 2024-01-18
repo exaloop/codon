@@ -91,9 +91,9 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Canonical name of a function or a class that owns this base.
     std::string name;
     /// Function type
-    types::TypePtr type = nullptr;
+    types::TypePtr type;
     /// The return type of currently realized function
-    types::TypePtr returnType = nullptr;
+    types::TypePtr returnType;
     /// Typechecking iteration
     int iteration = 0;
     /// Tracks function attributes (e.g. if it has @atomic or @test attributes).

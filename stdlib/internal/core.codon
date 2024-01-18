@@ -169,10 +169,11 @@ class __array__:
 @tuple
 @__internal__
 class Import:
-    path: Static[str]
-    name: str
-    def __new__(P: Static[str], name: str) -> Import[P]:
-        return (name, )
+    __ipath__: str
+    __iname__: str
+    P: Static[str]
+    def __new__(P: Static[str], name: str, path: str) -> Import[P]:
+        return (name, path, )
 
 def __ptr__(var):
     pass

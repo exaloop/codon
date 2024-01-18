@@ -64,7 +64,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     u->setUpdate();
     resultStmt =
         N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
-                  N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))), u));
+                  N<SuiteStmt>(u, N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar)))));
   }
 
   // Import requested identifiers from the import's scope to the current scope
@@ -75,8 +75,9 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     resultStmt = N<SuiteStmt>(
         resultStmt,
         transform(N<AssignStmt>(
-            N<IdExpr>(name), N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
-                                         N<StringExpr>(file->module)))));
+            N<IdExpr>(name),
+            N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
+                        N<StringExpr>(file->path), N<StringExpr>(file->module)))));
   } else if (stmt->what->isId("*")) {
     // Case: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
@@ -200,9 +201,13 @@ StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Exp
                                               const std::string &altName) {
   auto canonical = ctx->generateCanonicalName(name);
   auto typ = transformType(clone(type));
-  auto val = ctx->addVar(altName.empty() ? name : altName, canonical, typ->type);
+  auto val = ctx->addVar(altName.empty() ? name : altName, canonical,
+                         std::make_shared<types::LinkType>(typ->type->getClass()));
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttr(ExprAttr::ExternVar);
+  s->lhs->setType(val->type);
+  s->lhs->setDone();
+  s->setDone();
   return s;
 }
 
@@ -341,8 +346,16 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
-    preamble->push_back(transform(N<AssignStmt>(
-        N<IdExpr>(importDoneVar = importVar + "_done"), N<BoolExpr>(false))));
+    auto a = N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
+                           N<BoolExpr>(false));
+    a->lhs->type = a->rhs->type =
+        std::make_shared<types::LinkType>(ctx->forceFind("bool")->type);
+    a->setDone();
+    preamble->push_back(a);
+    auto i = ctx->addVar(importDoneVar, importDoneVar, a->lhs->type);
+    i->baseName = "";
+    i->scope = {0};
+    ctx->addAlwaysVisible(i);
     ctx->cache->addGlobal(importDoneVar);
 
     // Wrap all imported top-level statements into a function.

@@ -106,13 +106,21 @@ global a #! 'global' outside function
 
 #%% global_err_2,barebones
 def foo():
-    global b #! name 'b' is not defined
+    global b
+foo()
+#! name 'b' is not defined
+#! during the realization of foo()
 
 #%% global_err_3,barebones
 def foo():
     b = 1
     def bar():
-        global b #! no binding for global 'b' found
+        global b
+    bar()
+foo()
+#! no binding for global 'b' found
+#! during the realization of bar()
+#! during the realization of foo()
 
 #%% global_err_4,barebones
 a = 1
@@ -206,7 +214,10 @@ def foo(a, **c, d):
 #%% function_err_1,barebones
 def foo():
     @__force__
-    def bar(): pass #! builtin function must be a top-level statement
+    def bar(): pass
+foo()
+#! builtin function must be a top-level statement
+#! during the realization of foo()
 
 #%% function_err_2,barebones
 def f[T: Static[float]]():
@@ -294,7 +305,7 @@ def foo():
         print b
 foo()
 #! name 'x' is not defined
-#! name 'b' is not defined
+#! during the realization of foo()
 
 #%% capture_recursive,barebones
 def f(x: int) -> int:

@@ -195,7 +195,9 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       break;
     }
   }
+  auto importVal = val;
 
+  // Special checks for imports
   if (importEnd != chain.size()) { // false when a.b.c points to import itself
     // Find the longest prefix that corresponds to the existing class
     // (e.g., `a.b.c` -> `a.b` if there is `class a: class b:`)
@@ -210,7 +212,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
                                               fctx->getUnbound());
         return {importEnd, val};
       } else {
-        val = fctx->find(join(chain, ".", importEnd, i + 1));
+        auto key = join(chain, ".", importEnd, i + 1);
+        val = fctx->find(key);
         bool isOverload = val && val->isFunc() &&
                           in(ctx->cache->overloads, val->canonicalName) &&
                           ctx->cache->overloads[val->canonicalName].size() > 1;
@@ -219,6 +222,10 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
           itemName = val->canonicalName, itemEnd = i + 1;
           break;
         }
+        if (ctx->findMember("Import", key))
+          return {importEnd, importVal};
+        if (!ctx->findMethod("Import", key).empty())
+          return {importEnd, importVal};
       }
     }
     if (itemName.empty() && importName.empty()) {
