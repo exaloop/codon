@@ -499,7 +499,7 @@ class complex64:
                 phase += other.imag * log(vabs)
             return complex64(len * cos(phase), len * sin(phase))
 
-    def __repr__(self) -> str:
+    def _str(self, include_type: bool) -> str:
         @pure
         @llvm
         def copysign(x: f32, y: f32) -> f32:
@@ -515,14 +515,27 @@ class complex64:
             ret float %y
 
         if self.real == f32(0.0) and copysign(f32(1.0), self.real) == f32(1.0):
-            return f"complex64({self.imag}j)"
+            if include_type:
+                return f"complex64({self.imag}j)"
+            else:
+                return f"{self.imag}j"
         else:
             sign = "+"
             if self.imag < f32(0.0) or (
                 self.imag == f32(0.0) and copysign(f32(1.0), self.imag) == f32(-1.0)
             ):
                 sign = "-"
-            return f"complex64({self.real}{sign}{fabs(self.imag)}j)"
+
+            if include_type:
+                return f"complex64({self.real}{sign}{fabs(self.imag)}j)"
+            else:
+                return f"({self.real}{sign}{fabs(self.imag)}j)"
+
+    def __repr__(self) -> str:
+        return self._str(include_type=True)
+
+    def __str__(self) -> str:
+        return self._str(include_type=False)
 
     def conjugate(self) -> complex64:
         return complex64(self.real, -self.imag)
