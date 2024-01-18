@@ -146,3 +146,7 @@ class str:
                 str.memcpy(p + n, i.ptr, i.len)
                 n += i.len
             return str(p, total)
+
+    def __prefix_b__(s: str, N: Static[int]):
+        # Currently a no-op, as Codon str's are just bytes
+        return s
