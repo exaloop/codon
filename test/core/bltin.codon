@@ -463,7 +463,7 @@ def test_num_from_str():
         assert str(e) == "could not convert string to float: ''"
 
 @test
-def test_files(open_fn):
+def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'
     f = open_fn(path, 'w')
     f.write('hello\nworld\n')
@@ -475,21 +475,24 @@ def test_files(open_fn):
     with open_fn(path) as f:
         assert f.read(3) == 'hel'
         assert f.read() == 'lo\nworld\n'
-        f.seek(0, 0)
-        assert f.tell() == 0
-        assert f.read() == 'hello\nworld\n'
+        if hasattr(f, "seek"):
+            f.seek(0, 0)
+            assert f.tell() == 0
+            assert f.read() == 'hello\nworld\n'
 
-    try:
-        f.tell()
-        assert False
-    except IOError:
-        pass
+    if hasattr(f, "tell"):
+        try:
+            f.tell()
+            assert False
+        except IOError:
+            pass
 
-    try:
-        f.seek(0, 0)
-        assert False
-    except IOError:
-        pass
+    if hasattr(f, "seek"):
+        try:
+            f.seek(0, 0)
+            assert False
+        except IOError:
+            pass
 
     try:
         f.flush()
@@ -497,10 +500,16 @@ def test_files(open_fn):
     except IOError:
         pass
 
-    f = open_fn(path, 'a')
-    f.write('goodbye')
-    f.flush()
-    f.close()
+    if append_allowed:
+        f = open_fn(path, 'a')
+        f.write('goodbye')
+        f.flush()
+        f.close()
+    else:
+        f = open_fn(path, 'w')
+        f.write('hello\nworld\ngoodbye')
+        f.flush()
+        f.close()
 
     with open_fn(path) as f:
         assert [line for line in f] == ['hello\n', 'world\n', 'goodbye']
@@ -520,6 +529,8 @@ test_num_from_str()
 test_files(open)
 import gzip
 test_files(gzip.open)
+import bz2
+test_files(bz2.open, append_allowed=False)
 
 
 # Codon-specific
