@@ -39,9 +39,11 @@ class __internal__:
     def print(*args):
         print(*args, flush=True, file=_C.seq_stdout())
 
-def min(*args, key=None):
+def min(*args, key=None, default=None):
     if staticlen(args) == 0:
-        compile_error("min expected at least 1 argument, got 0")
+        compile_error("min() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("min() 'default' argument only allowed for iterables")
     elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
@@ -58,7 +60,10 @@ def min(*args, key=None):
             return s
         else:
             x.destroy()
-        raise ValueError("min() arg is an empty sequence")
+        if default is None:
+            raise ValueError("min() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
         if key is None:
@@ -76,9 +81,11 @@ def min(*args, key=None):
                     m = i
         return m
 
-def max(*args, key=None):
+def max(*args, key=None, default=None):
     if staticlen(args) == 0:
-        compile_error("max expected at least 1 argument, got 0")
+        compile_error("max() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("max() 'default' argument only allowed for iterables")
     elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
@@ -95,7 +102,10 @@ def max(*args, key=None):
             return s
         else:
             x.destroy()
-        raise ValueError("max() arg is an empty sequence")
+        if default is None:
+            raise ValueError("max() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
         if key is None:

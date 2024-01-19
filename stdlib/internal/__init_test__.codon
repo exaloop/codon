@@ -71,14 +71,14 @@ class Dict:
             yield (self.keys[i], self.values[i])
 
     def __contains__(self, key: K) -> bool:
-        return self.keys.index(key) != -1
+        return self.keys.find(key) != -1
 
     def __getitem__(self, key: K) -> V:
-        i = self.keys.index(key)
+        i = self.keys.find(key)
         return self.values[i]
 
     def __setitem__(self, key: K, val: V):
-        i = self.keys.index(key)
+        i = self.keys.find(key)
         if i != -1:
             self.values[i] = val
         else:
