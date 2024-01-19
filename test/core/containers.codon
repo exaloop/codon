@@ -255,6 +255,11 @@ def test_list():
     l5 *= 2
     assert l5 == [11, 22, 55, 33, 1, 2, 11, 22, 55, 33, 1, 2]
     assert l5.index(33) == 3
+    try:
+        l5.index(0)
+        assert False
+    except ValueError as e:
+        assert str(e) == '0 is not in list'
     l5 *= 0
     assert len(l5) == 0
 

@@ -338,6 +338,14 @@ class List:
             if a == x:
                 return i
             i += 1
+        raise ValueError(f"{x} is not in list")
+
+    def find(self, x: T) -> int:
+        i = 0
+        for a in self:
+            if a == x:
+                return i
+            i += 1
         return -1
 
     def count(self, x: T) -> int:
