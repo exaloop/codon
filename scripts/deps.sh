@@ -9,7 +9,7 @@ export JOBS=1
 if [ -n "${1}" ]; then export JOBS="${1}"; fi
 echo "Using ${JOBS} cores..."
 
-LLVM_BRANCH="codon"
+LLVM_BRANCH="codon-17"
 if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
   git clone --depth 1 -b "${LLVM_BRANCH}" https://github.com/exaloop/llvm-project "${SRCDIR}"
 
