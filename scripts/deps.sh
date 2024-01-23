@@ -33,6 +33,7 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
     cd "${SRCDIR}/clang/build"
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_INCLUDE_TESTS=OFF \
         -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
     make -j "${JOBS}"
     make install

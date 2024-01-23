@@ -3,6 +3,7 @@
 #include "common.h"
 
 #include <cinttypes>
+#include <climits>
 #include <string>
 #include <vector>
 
