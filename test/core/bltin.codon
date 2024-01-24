@@ -617,6 +617,12 @@ def test_complex_format():
     assert repr(complex64(math.nan, -math.inf)) == 'complex64(nan-infj)'
     assert repr(complex64(math.nan, math.nan)) == 'complex64(nan+nanj)'
 
+@test
+def test_alt_types_from_str():
+    assert float32('3.14') == float32(3.14)
+    assert float16('3.14') == float16(3.14)
+    assert complex64('1+2j') == complex64(1+2j)
+
 class A:
     def __len__(self):
         return 42
@@ -811,6 +817,7 @@ test_map_filter()
 test_gen_builtins()
 test_int_format()
 test_complex_format()
+test_alt_types_from_str()
 test_reversed()
 test_divmod()
 test_pow()

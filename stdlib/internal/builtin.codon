@@ -524,6 +524,26 @@ class complex:
             free(s)
         return complex(x, y)
 
+@extend
+class float32:
+    def _from_str(s: str) -> float32:
+        return float32(float._from_str(s))
+
+@extend
+class float16:
+    def _from_str(s: str) -> float16:
+        return float16(float._from_str(s))
+
+@extend
+class bfloat16:
+    def _from_str(s: str) -> bfloat16:
+        return bfloat16(float._from_str(s))
+
+@extend
+class complex64:
+    def _from_str(s: str) -> complex64:
+        return complex64(complex._from_str(s))
+
 def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
     if isinstance(x, None):
         return

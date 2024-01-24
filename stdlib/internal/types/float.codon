@@ -412,6 +412,9 @@ class float32:
     def __new__(what: float32) -> float32:
         return what
 
+    def __new__(what: str) -> float32:
+        return float32._from_str(what)
+
     def __new__() -> float32:
         return float32.__new__(0.0)
 
@@ -763,6 +766,9 @@ class float16:
     def __new__(what: float16) -> float16:
         return what
 
+    def __new__(what: str) -> float16:
+        return float16._from_str(what)
+
     def __new__() -> float16:
         return float16.__new__(0.0)
 
@@ -1059,6 +1065,9 @@ class bfloat16:
 
     def __new__(what: bfloat16) -> bfloat16:
         return what
+
+    def __new__(what: str) -> bfloat16:
+        return bfloat16._from_str(what)
 
     def __new__() -> bfloat16:
         return bfloat16.__new__(0.0)
