@@ -76,21 +76,49 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   }
 }
 
-/// Lowers allocations of known, small size to alloca when possible.
-/// Also removes unused allocations.
-struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
+struct AllocInfo {
   std::vector<std::string> allocators;
   std::string realloc;
   std::string free;
 
-  explicit AllocationRemover(
-      std::vector<std::string> allocators = {"seq_alloc", "seq_alloc_atomic",
-                                             "seq_alloc_uncollectable",
-                                             "seq_alloc_atomic_uncollectable"},
-      const std::string &realloc = "seq_realloc", const std::string &free = "seq_free")
+  AllocInfo(std::vector<std::string> allocators, const std::string &realloc,
+            const std::string &free)
       : allocators(std::move(allocators)), realloc(realloc), free(free) {}
 
-  static bool sizeOkToDemote(uint64_t size) { return 0 < size && size <= 1024; }
+  static bool getFixedArg(llvm::CallBase &cb, uint64_t &size, unsigned idx = 0) {
+    if (cb.arg_empty())
+      return false;
+
+    if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(cb.getArgOperand(idx))) {
+      size = ci->getZExtValue();
+      return true;
+    }
+
+    return false;
+  }
+
+  bool isAlloc(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      return func->arg_size() == 1 && std::find(allocators.begin(), allocators.end(),
+                                                func->getName()) != allocators.end();
+    }
+    return false;
+  }
+
+  bool isRealloc(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      // Note: 3 args are (ptr, new_size, old_size)
+      return func->arg_size() == 3 && func->getName() == realloc;
+    }
+    return false;
+  }
+
+  bool isFree(const llvm::Value *value) {
+    if (auto *func = getCalledFunction(value)) {
+      return func->arg_size() == 1 && func->getName() == free;
+    }
+    return false;
+  }
 
   static const llvm::Function *getCalledFunction(const llvm::Value *value) {
     // Don't care about intrinsics in this case.
@@ -104,40 +132,6 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
     if (const llvm::Function *callee = cb->getCalledFunction())
       return callee;
     return nullptr;
-  }
-
-  bool isAlloc(const llvm::Value *value) {
-    if (auto *func = getCalledFunction(value)) {
-      return func->arg_size() == 1 && std::find(allocators.begin(), allocators.end(),
-                                                func->getName()) != allocators.end();
-    }
-    return false;
-  }
-
-  bool isRealloc(const llvm::Value *value) {
-    if (auto *func = getCalledFunction(value)) {
-      return func->arg_size() == 2 && func->getName() == realloc;
-    }
-    return false;
-  }
-
-  bool isFree(const llvm::Value *value) {
-    if (auto *func = getCalledFunction(value)) {
-      return func->arg_size() == 1 && func->getName() == free;
-    }
-    return false;
-  }
-
-  static bool getFixedArg(llvm::CallBase &cb, uint64_t &size, unsigned idx = 0) {
-    if (cb.arg_empty())
-      return false;
-
-    if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(cb.getArgOperand(idx))) {
-      size = ci->getZExtValue();
-      return true;
-    }
-
-    return false;
   }
 
   bool isNeverEqualToUnescapedAlloc(llvm::Value *value, llvm::Instruction *ai) {
@@ -250,14 +244,15 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
   }
 
   bool isAllocSiteDemotable(llvm::Instruction *ai, uint64_t &size,
-                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &users) {
+                            llvm::SmallVectorImpl<llvm::WeakTrackingVH> &users,
+                            uint64_t maxSize = 1024) {
     using namespace llvm;
 
     // Should never be an invoke, so just check right away.
     if (isa<InvokeInst>(ai))
       return false;
 
-    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && sizeOkToDemote(size)))
+    if (!(getFixedArg(*dyn_cast<CallBase>(&*ai), size) && 0 < size && size <= maxSize))
       return false;
 
     SmallVector<Instruction *, 4> worklist;
@@ -332,7 +327,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
             // max of original alloc's and this realloc's.
             uint64_t newSize = 0;
             if (getFixedArg(*dyn_cast<CallBase>(instr), newSize, 1) &&
-                sizeOkToDemote(newSize)) {
+                (0 < newSize && newSize <= maxSize)) {
               size = std::max(size, newSize);
             } else {
               return false;
@@ -365,6 +360,151 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
     return true;
   }
 
+  bool isAllocSiteHoistable(llvm::Instruction *ai) {
+    using namespace llvm;
+
+    // Should never be an invoke, so just check right away.
+    if (isa<InvokeInst>(ai))
+      return false;
+
+    // Need to track insertvalue/extractvalue to make this effective.
+    // This maps each "insertvalue" of the pointer (or derived value)
+    // to a list of indices at which it is inserted (usually there will
+    // be just one).
+    SmallDenseMap<llvm::Value *, SmallVector<ArrayRef<unsigned>, 1>> insertValueIndices;
+
+    SmallVector<Instruction *, 20> worklist;
+    SmallSet<Instruction *, 20> visited;
+    auto add_to_worklist = [&](Instruction *instr) {
+      if (!visited.contains(instr)) {
+        visited.insert(instr);
+        worklist.push_back(instr);
+      }
+    };
+    add_to_worklist(ai);
+
+    do {
+      Instruction *pi = worklist.pop_back_val();
+      for (User *u : pi->users()) {
+        Instruction *instr = cast<Instruction>(u);
+        switch (instr->getOpcode()) {
+        default:
+          // Give up the moment we see something we can't handle.
+          return false;
+
+        case Instruction::PHI:
+        case Instruction::PtrToInt:
+        case Instruction::IntToPtr:
+        case Instruction::Add:
+        case Instruction::Sub:
+        case Instruction::AddrSpaceCast:
+        case Instruction::BitCast:
+        case Instruction::GetElementPtr:
+          add_to_worklist(instr);
+          continue;
+
+        case Instruction::InsertValue: {
+          if (instr->getOperand(1) == pi) {
+            auto *insertValueInst = cast<InsertValueInst>(instr);
+            insertValueIndices[cast<llvm::Value>(instr)].push_back(
+                insertValueInst->getIndices());
+          }
+          add_to_worklist(instr);
+          continue;
+        }
+
+        case Instruction::ExtractValue: {
+          auto *extractValueInst = cast<ExtractValueInst>(instr);
+          auto it = insertValueIndices.find(instr->getOperand(0));
+          if (it != insertValueIndices.end()) {
+            for (auto &indices : it->second) {
+              if (indices == extractValueInst->getIndices()) {
+                add_to_worklist(instr);
+                break;
+              }
+            }
+          } else {
+            return false;
+          }
+          continue;
+        }
+
+        case Instruction::Freeze: {
+          if (auto *insertValueInst = cast<InsertValueInst>(instr->getOperand(0))) {
+            auto it = insertValueIndices.find(cast<llvm::Value>(insertValueInst));
+            if (it != insertValueIndices.end())
+              insertValueIndices[cast<llvm::Value>(instr)] = it->second;
+          }
+          add_to_worklist(instr);
+          continue;
+        }
+
+        case Instruction::ICmp:
+          continue;
+
+        case Instruction::Call:
+        case Instruction::Invoke:
+          // Ignore no-op and store intrinsics.
+          if (IntrinsicInst *intrinsic = dyn_cast<IntrinsicInst>(instr)) {
+            switch (intrinsic->getIntrinsicID()) {
+            default:
+              return false;
+
+            case Intrinsic::memmove:
+            case Intrinsic::memcpy:
+            case Intrinsic::memset: {
+              MemIntrinsic *MI = cast<MemIntrinsic>(intrinsic);
+              if (MI->isVolatile())
+                return false;
+              LLVM_FALLTHROUGH;
+            }
+            case Intrinsic::assume:
+            case Intrinsic::invariant_start:
+            case Intrinsic::invariant_end:
+            case Intrinsic::lifetime_start:
+            case Intrinsic::lifetime_end:
+              continue;
+            case Intrinsic::launder_invariant_group:
+            case Intrinsic::strip_invariant_group:
+              add_to_worklist(instr);
+              continue;
+            }
+          }
+          return false;
+
+        case Instruction::Store: {
+          StoreInst *si = cast<StoreInst>(instr);
+          if (si->isVolatile() || si->getPointerOperand() != pi)
+            return false;
+          continue;
+        }
+
+        case Instruction::Load: {
+          LoadInst *li = cast<LoadInst>(instr);
+          if (li->isVolatile())
+            return false;
+          continue;
+        }
+        }
+        seqassertn(false, "missing a return?");
+      }
+    } while (!worklist.empty());
+    return true;
+  }
+};
+
+/// Lowers allocations of known, small size to alloca when possible.
+/// Also removes unused allocations.
+struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
+  AllocInfo info;
+
+  explicit AllocationRemover(
+      std::vector<std::string> allocators = {"seq_alloc", "seq_alloc_atomic",
+                                             "seq_alloc_uncollectable",
+                                             "seq_alloc_atomic_uncollectable"},
+      const std::string &realloc = "seq_realloc", const std::string &free = "seq_free")
+      : info(allocators, realloc, free) {}
+
   void getErasesAndReplacementsForAlloc(
       llvm::Instruction &mi, llvm::SmallPtrSetImpl<llvm::Instruction *> &erase,
       llvm::SmallVectorImpl<std::pair<llvm::Instruction *, llvm::Value *>> &replace,
@@ -375,7 +515,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
     uint64_t size = 0;
     SmallVector<WeakTrackingVH, 64> users;
 
-    if (isAllocSiteRemovable(&mi, users)) {
+    if (info.isAllocSiteRemovable(&mi, users)) {
       for (unsigned i = 0, e = users.size(); i != e; ++i) {
         if (!users[i])
           continue;
@@ -397,7 +537,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
       users.clear();
     }
 
-    if (isAllocSiteDemotable(&mi, size, users)) {
+    if (info.isAllocSiteDemotable(&mi, size, users)) {
       auto *replacement = new AllocaInst(
           Type::getInt8Ty(mi.getContext()), 0,
           ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
@@ -410,9 +550,9 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
           continue;
 
         Instruction *instr = cast<Instruction>(&*users[i]);
-        if (isFree(instr)) {
+        if (info.isFree(instr)) {
           erase.insert(instr);
-        } else if (isRealloc(instr)) {
+        } else if (info.isRealloc(instr)) {
           replace.emplace_back(instr, replacement);
           erase.insert(instr);
         } else if (auto *ci = dyn_cast<CallInst>(&*instr)) {
@@ -434,7 +574,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
     for (inst_iterator instr = inst_begin(func), end = inst_end(func); instr != end;
          ++instr) {
       auto *cb = dyn_cast<CallBase>(&*instr);
-      if (!cb || !isAlloc(cb))
+      if (!cb || !info.isAlloc(cb))
         continue;
 
       getErasesAndReplacementsForAlloc(*cb, erase, replace, alloca, untail);
@@ -464,6 +604,41 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
       return PreservedAnalyses::none();
     else
       return PreservedAnalyses::all();
+  }
+};
+
+/// Hoists allocations that are inside a loop out of the loop.
+class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
+public:
+  AllocInfo info;
+
+  explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
+                                                                    "seq_alloc_atomic"},
+                             const std::string &realloc = "seq_realloc",
+                             const std::string &free = "seq_free")
+      : info(allocators, realloc, free) {}
+
+  llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
+                              llvm::LoopStandardAnalysisResults &ar,
+                              llvm::LPMUpdater &u) {
+    llvm::SmallSet<llvm::Instruction *, 32> hoist;
+
+    for (auto *block : loop.blocks()) {
+      for (auto &ins : *block) {
+        if (info.isAlloc(&ins) && loop.hasLoopInvariantOperands(&ins) &&
+            info.isAllocSiteHoistable(&ins)) {
+          hoist.insert(&ins);
+        }
+      }
+    }
+
+    for (auto *ins : hoist) {
+      ins->removeFromParent();
+      ins->insertBefore(loop.getLoopPreheader()->getTerminator());
+    }
+
+    return hoist.empty() ? llvm::PreservedAnalyses::all()
+                         : llvm::PreservedAnalyses::none();
   }
 };
 
@@ -573,6 +748,12 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
       [&](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed())
           pm.addPass(AllocationRemover());
+      });
+
+  pb.registerLateLoopOptimizationsEPCallback(
+      [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
+        if (opt.isOptimizingForSpeed())
+          pm.addPass(AllocationHoister());
       });
 
   if (plugins) {
