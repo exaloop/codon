@@ -360,7 +360,7 @@ struct AllocInfo {
     return true;
   }
 
-  bool isAllocSiteHoistable(llvm::Instruction *ai) {
+  bool isAllocSiteHoistable(llvm::Instruction *ai, llvm::Loop &loop) {
     using namespace llvm;
 
     // Should never be an invoke, so just check right away.
@@ -371,7 +371,8 @@ struct AllocInfo {
     // This maps each "insertvalue" of the pointer (or derived value)
     // to a list of indices at which it is inserted (usually there will
     // be just one).
-    SmallDenseMap<llvm::Value *, SmallVector<ArrayRef<unsigned>, 1>> insertValueIndices;
+    SmallDenseMap<llvm::Instruction *, SmallVector<ArrayRef<unsigned>, 1>>
+        insertValueIndices;
 
     SmallVector<Instruction *, 20> worklist;
     SmallSet<Instruction *, 20> visited;
@@ -387,6 +388,9 @@ struct AllocInfo {
       Instruction *pi = worklist.pop_back_val();
       for (User *u : pi->users()) {
         Instruction *instr = cast<Instruction>(u);
+        if (!loop.contains(instr))
+          return false;
+
         switch (instr->getOpcode()) {
         default:
           // Give up the moment we see something we can't handle.
@@ -404,10 +408,17 @@ struct AllocInfo {
           continue;
 
         case Instruction::InsertValue: {
+          // Add for this insertvalue
           if (instr->getOperand(1) == pi) {
             auto *insertValueInst = cast<InsertValueInst>(instr);
-            insertValueIndices[cast<llvm::Value>(instr)].push_back(
-                insertValueInst->getIndices());
+            insertValueIndices[instr].push_back(insertValueInst->getIndices());
+          }
+          // Add for previous insertvalue
+          if (auto *insertValueInstPrev =
+                  dyn_cast<InsertValueInst>(instr->getOperand(0))) {
+            auto it = insertValueIndices.find(insertValueInstPrev);
+            if (it != insertValueIndices.end())
+              insertValueIndices[instr].append(it->second);
           }
           add_to_worklist(instr);
           continue;
@@ -415,7 +426,9 @@ struct AllocInfo {
 
         case Instruction::ExtractValue: {
           auto *extractValueInst = cast<ExtractValueInst>(instr);
-          auto it = insertValueIndices.find(instr->getOperand(0));
+          auto it = insertValueIndices.end();
+          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0)))
+            it = insertValueIndices.find(instrOp);
           if (it != insertValueIndices.end()) {
             for (auto &indices : it->second) {
               if (indices == extractValueInst->getIndices()) {
@@ -431,9 +444,9 @@ struct AllocInfo {
 
         case Instruction::Freeze: {
           if (auto *insertValueInst = cast<InsertValueInst>(instr->getOperand(0))) {
-            auto it = insertValueIndices.find(cast<llvm::Value>(insertValueInst));
+            auto it = insertValueIndices.find(insertValueInst);
             if (it != insertValueIndices.end())
-              insertValueIndices[cast<llvm::Value>(instr)] = it->second;
+              insertValueIndices[instr] = it->second;
           }
           add_to_worklist(instr);
           continue;
@@ -611,23 +624,32 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 public:
   AllocInfo info;
+  llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
 
   explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
                                                                     "seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
-      : info(allocators, realloc, free) {}
+      : info(allocators, realloc, free), unhoistable() {}
 
   llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
                               llvm::LoopStandardAnalysisResults &ar,
                               llvm::LPMUpdater &u) {
     llvm::SmallSet<llvm::Instruction *, 32> hoist;
+    bool anyChanged = false;
 
     for (auto *block : loop.blocks()) {
       for (auto &ins : *block) {
-        if (info.isAlloc(&ins) && loop.hasLoopInvariantOperands(&ins) &&
-            info.isAllocSiteHoistable(&ins)) {
-          hoist.insert(&ins);
+        if (info.isAlloc(&ins) && !unhoistable.contains(&ins)) {
+          bool changed = false;
+          bool invariant = loop.makeLoopInvariant(ins.getOperand(0), changed);
+          anyChanged |= changed;
+
+          if ((invariant || changed) && info.isAllocSiteHoistable(&ins, loop)) {
+            hoist.insert(&ins);
+          } else {
+            unhoistable.insert(&ins);
+          }
         }
       }
     }
@@ -637,8 +659,8 @@ public:
       ins->insertBefore(loop.getLoopPreheader()->getTerminator());
     }
 
-    return hoist.empty() ? llvm::PreservedAnalyses::all()
-                         : llvm::PreservedAnalyses::none();
+    return (hoist.empty() && !anyChanged) ? llvm::PreservedAnalyses::all()
+                                          : llvm::PreservedAnalyses::none();
   }
 };
 
