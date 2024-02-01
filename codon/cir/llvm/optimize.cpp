@@ -3,6 +3,7 @@
 #include "optimize.h"
 
 #include <algorithm>
+#include <deque>
 
 #include "codon/cir/llvm/gpu.h"
 #include "codon/util/common.h"
@@ -371,21 +372,22 @@ struct AllocInfo {
     // This maps each "insertvalue" of the pointer (or derived value)
     // to a list of indices at which it is inserted (usually there will
     // be just one).
-    SmallDenseMap<llvm::Instruction *, SmallVector<ArrayRef<unsigned>, 1>>
-        insertValueIndices;
+    SmallDenseMap<llvm::Instruction *, SmallVector<ArrayRef<unsigned>, 1>> inserts;
 
-    SmallVector<Instruction *, 20> worklist;
+    std::deque<Instruction *> worklist;
     SmallSet<Instruction *, 20> visited;
     auto add_to_worklist = [&](Instruction *instr) {
       if (!visited.contains(instr)) {
         visited.insert(instr);
-        worklist.push_back(instr);
+        worklist.push_front(instr);
       }
     };
     add_to_worklist(ai);
 
     do {
-      Instruction *pi = worklist.pop_back_val();
+      Instruction *pi = worklist.back();
+      worklist.pop_back();
+
       for (User *u : pi->users()) {
         Instruction *instr = cast<Instruction>(u);
         if (!loop.contains(instr))
@@ -411,14 +413,13 @@ struct AllocInfo {
           // Add for this insertvalue
           if (instr->getOperand(1) == pi) {
             auto *insertValueInst = cast<InsertValueInst>(instr);
-            insertValueIndices[instr].push_back(insertValueInst->getIndices());
+            inserts[instr].push_back(insertValueInst->getIndices());
           }
           // Add for previous insertvalue
-          if (auto *insertValueInstPrev =
-                  dyn_cast<InsertValueInst>(instr->getOperand(0))) {
-            auto it = insertValueIndices.find(insertValueInstPrev);
-            if (it != insertValueIndices.end())
-              insertValueIndices[instr].append(it->second);
+          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0))) {
+            auto it = inserts.find(instrOp);
+            if (it != inserts.end())
+              inserts[instr].append(it->second);
           }
           add_to_worklist(instr);
           continue;
@@ -426,10 +427,10 @@ struct AllocInfo {
 
         case Instruction::ExtractValue: {
           auto *extractValueInst = cast<ExtractValueInst>(instr);
-          auto it = insertValueIndices.end();
+          auto it = inserts.end();
           if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0)))
-            it = insertValueIndices.find(instrOp);
-          if (it != insertValueIndices.end()) {
+            it = inserts.find(instrOp);
+          if (it != inserts.end()) {
             for (auto &indices : it->second) {
               if (indices == extractValueInst->getIndices()) {
                 add_to_worklist(instr);
@@ -443,10 +444,10 @@ struct AllocInfo {
         }
 
         case Instruction::Freeze: {
-          if (auto *insertValueInst = cast<InsertValueInst>(instr->getOperand(0))) {
-            auto it = insertValueIndices.find(insertValueInst);
-            if (it != insertValueIndices.end())
-              insertValueIndices[instr] = it->second;
+          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0))) {
+            auto it = inserts.find(instrOp);
+            if (it != inserts.end())
+              inserts[instr] = it->second;
           }
           add_to_worklist(instr);
           continue;
@@ -625,12 +626,31 @@ class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 public:
   AllocInfo info;
   llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
+  llvm::SmallDenseMap<llvm::Function *, llvm::CycleInfo> cycles;
 
   explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
                                                                     "seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
       : info(allocators, realloc, free), unhoistable() {}
+
+  llvm::CycleInfo *getCycleInfo(llvm::Function *f) {
+    bool seen = (cycles.find(f) != cycles.end());
+    auto &ci = cycles.getOrInsertDefault(f);
+    if (!seen)
+      ci.compute(*f);
+    return &ci;
+  }
+
+  bool inIrreducibleCycle(llvm::Instruction *ins) {
+    auto *cycle = getCycleInfo(ins->getFunction())->getCycle(ins->getParent());
+    while (cycle) {
+      if (!cycle->isReducible())
+        return true;
+      cycle = cycle->getParentCycle();
+    }
+    return false;
+  }
 
   llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
                               llvm::LoopStandardAnalysisResults &ar,
@@ -640,7 +660,8 @@ public:
 
     for (auto *block : loop.blocks()) {
       for (auto &ins : *block) {
-        if (info.isAlloc(&ins) && !unhoistable.contains(&ins)) {
+        if (info.isAlloc(&ins) && !unhoistable.contains(&ins) &&
+            !inIrreducibleCycle(&ins)) {
           bool changed = false;
           bool invariant = loop.makeLoopInvariant(ins.getOperand(0), changed);
           anyChanged |= changed;
