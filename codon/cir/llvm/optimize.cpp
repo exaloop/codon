@@ -410,16 +410,21 @@ struct AllocInfo {
           continue;
 
         case Instruction::InsertValue: {
-          // Add for this insertvalue
-          if (instr->getOperand(1) == pi) {
-            auto *insertValueInst = cast<InsertValueInst>(instr);
-            inserts[instr].push_back(insertValueInst->getIndices());
-          }
-          // Add for previous insertvalue
-          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0))) {
-            auto it = inserts.find(instrOp);
-            if (it != inserts.end())
-              inserts[instr].append(it->second);
+          auto *op0 = instr->getOperand(0);
+          auto *op1 = instr->getOperand(1);
+          if (isa<InsertValueInst>(op0) || isa<FreezeInst>(op0) ||
+              isa<UndefValue>(op0)) {
+            // Add for this insertvalue
+            if (op1 == pi) {
+              auto *insertValueInst = cast<InsertValueInst>(instr);
+              inserts[instr].push_back(insertValueInst->getIndices());
+            }
+            // Add for previous insertvalue
+            if (auto *instrOp = dyn_cast<Instruction>(op0)) {
+              auto it = inserts.find(instrOp);
+              if (it != inserts.end())
+                inserts[instr].append(it->second);
+            }
           }
           add_to_worklist(instr);
           continue;
@@ -438,7 +443,7 @@ struct AllocInfo {
               }
             }
           } else {
-            return false;
+            add_to_worklist(instr);
           }
           continue;
         }
