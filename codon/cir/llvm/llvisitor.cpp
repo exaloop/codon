@@ -726,14 +726,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
                                               /*Initializer=*/nullptr, "PyType_Type");
 
   auto allocUncollectable = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("seq_alloc_uncollectable", ptr, i64).getCallee());
-  allocUncollectable->setDoesNotThrow();
-  allocUncollectable->setReturnDoesNotAlias();
-  allocUncollectable->setOnlyAccessesInaccessibleMemory();
-
-  auto free = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("seq_free", B->getVoidTy(), ptr).getCallee());
-  free->setDoesNotThrow();
+      makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true).getCallee());
+  auto free = llvm::cast<llvm::Function>(makeFreeFunc().getCallee());
 
   // Helpers
   auto pyFuncWrap = [&](Func *func, bool wrap) -> llvm::Constant * {
@@ -1282,15 +1276,56 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   }
 }
 
-llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
-  auto f = M->getOrInsertFunction(atomic ? "seq_alloc_atomic" : "seq_alloc",
-                                  B->getInt8PtrTy(), B->getInt64Ty());
+#define ALLOC_FAMILY "seq_alloc"
+
+llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic, bool uncollectable) {
+  const std::string name =
+      atomic ? (uncollectable ? "seq_alloc_atomic_uncollectable" : "seq_alloc_atomic")
+             : (uncollectable ? "seq_alloc_uncollectable" : "seq_alloc");
+  auto f = M->getOrInsertFunction(name, B->getInt8PtrTy(), B->getInt64Ty());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   g->setReturnDoesNotAlias();
   g->setOnlyAccessesInaccessibleMemory();
+  g->addRetAttr(llvm::Attribute::AttrKind::NoUndef);
+  g->addRetAttr(llvm::Attribute::AttrKind::NonNull);
+  g->addFnAttrs(
+      llvm::AttrBuilder(*context)
+          .addAllocKindAttr(llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Uninitialized)
+          .addAllocSizeAttr(0, {})
+          .addAttribute("alloc-family", ALLOC_FAMILY));
   return f;
 }
+
+llvm::FunctionCallee LLVMVisitor::makeReallocFunc() {
+  // note that seq_realloc takes arguments (ptr, new_size, old_size)
+  auto f = M->getOrInsertFunction("seq_realloc", B->getInt8PtrTy(), B->getInt8PtrTy(),
+                                  B->getInt64Ty(), B->getInt64Ty());
+  auto *g = cast<llvm::Function>(f.getCallee());
+  g->setDoesNotThrow();
+  g->addRetAttr(llvm::Attribute::AttrKind::NoUndef);
+  g->addRetAttr(llvm::Attribute::AttrKind::NonNull);
+  g->addParamAttr(0, llvm::Attribute::AttrKind::AllocatedPointer);
+  g->addFnAttrs(llvm::AttrBuilder(*context)
+                    .addAllocKindAttr(llvm::AllocFnKind::Realloc |
+                                      llvm::AllocFnKind::Uninitialized)
+                    .addAllocSizeAttr(1, {})
+                    .addAttribute("alloc-family", ALLOC_FAMILY));
+  return f;
+}
+
+llvm::FunctionCallee LLVMVisitor::makeFreeFunc() {
+  auto f = M->getOrInsertFunction("seq_free", B->getVoidTy(), B->getInt8PtrTy());
+  auto *g = cast<llvm::Function>(f.getCallee());
+  g->setDoesNotThrow();
+  g->addParamAttr(0, llvm::Attribute::AttrKind::AllocatedPointer);
+  g->addFnAttrs(llvm::AttrBuilder(*context)
+                    .addAllocKindAttr(llvm::AllocFnKind::Free)
+                    .addAttribute("alloc-family", ALLOC_FAMILY));
+  return f;
+}
+
+#undef ALLOC_FAMILY
 
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
   return M->getOrInsertFunction("seq_personality", B->getInt32Ty(), B->getInt32Ty(),
@@ -1573,6 +1608,20 @@ void LLVMVisitor::visit(const Module *x) {
 
   B->SetInsertPoint(exitBlock);
   B->CreateRet(B->getInt32(0));
+
+  // make sure allocation functions have the correct attributes
+  if (M->getFunction("seq_alloc"))
+    makeAllocFunc(/*atomic=*/false, /*uncollectable=*/false);
+  if (M->getFunction("seq_alloc_atomic"))
+    makeAllocFunc(/*atomic=*/true, /*uncollectable=*/false);
+  if (M->getFunction("seq_alloc_uncollectable"))
+    makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true);
+  if (M->getFunction("seq_alloc_atomic_uncollectable"))
+    makeAllocFunc(/*atomic=*/true, /*uncollectable=*/true);
+  if (M->getFunction("seq_realloc"))
+    makeReallocFunc();
+  if (M->getFunction("seq_free"))
+    makeFreeFunc();
 }
 
 llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
