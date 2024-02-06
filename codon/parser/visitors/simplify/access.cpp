@@ -230,10 +230,11 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
 
   // Find the longest prefix that corresponds to the existing import
   // (e.g., `a.b.c.d` -> `a.b.c` if there is `import a.b.c`)
-  SimplifyContext::Item val = nullptr;
+  SimplifyContext::Item val = nullptr, importVal = nullptr;
   for (auto i = chain.size(); i-- > 0;) {
     val = ctx->find(join(chain, "/", 0, i + 1));
     if (val && val->isImport()) {
+      importVal = val;
       importName = val->importPath, importEnd = i + 1;
       break;
     }
@@ -254,6 +255,14 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
         return {importEnd, val};
       } else {
         val = fctx->find(join(chain, ".", importEnd, i + 1));
+        if (val && i + 1 != chain.size() && val->isImport()) {
+          importVal = val;
+          importName = val->importPath;
+          importEnd = i + 1;
+          fctx = ctx->cache->imports[importName].ctx;
+          i = chain.size();
+          continue;
+        }
         if (val && (importName.empty() || val->isType() || !val->isConditional())) {
           itemName = val->canonicalName, itemEnd = i + 1;
           break;
@@ -264,10 +273,23 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
       if (ctx->getBase()->pyCaptures)
         return {1, nullptr};
       E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
-    }
-    if (itemName.empty())
+    } else if (itemName.empty()) {
+      if (!ctx->isStdlibLoading && endswith(importName, "__init__.codon")) {
+        auto import = ctx->cache->imports[importName];
+        auto file =
+            getImportFile(ctx->cache->argv0, chain[importEnd], importName, false,
+                          ctx->cache->module0, ctx->cache->pluginImportPaths);
+        if (file) {
+          auto s = SimplifyVisitor(import.ctx, preamble)
+                       .transform(N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr));
+          prependStmts->push_back(s);
+          return getImport(chain);
+        }
+      }
+
       E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
         ctx->cache->imports[importName].moduleName);
+    }
     importEnd = itemEnd;
   }
   return {importEnd, val};

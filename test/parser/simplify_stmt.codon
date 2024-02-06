@@ -474,6 +474,13 @@ a.ha()  #: B
 
 print par  #: x
 
+#%% import_subimport,barebones
+import a as xa  #: a
+
+xa.foo()  #: a.foo
+#: a.sub
+xa.sub.foo()  #: a.sub.foo
+
 #%% import_order,barebones
 def foo():
     import a
