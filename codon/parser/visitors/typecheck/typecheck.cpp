@@ -23,7 +23,8 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   if (!cache->typeCtx)
     cache->typeCtx = std::make_shared<TypeContext>(cache);
   TypecheckVisitor v(cache->typeCtx);
-  auto s = v.inferTypes(clone(stmts), true);
+  auto so = clone(stmts);
+  auto s = v.inferTypes(so, true);
   if (!s) {
     v.error("cannot typecheck the program");
   }
@@ -283,13 +284,15 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
         return 0;
       },
       [](error::Error, const SrcInfo &, const std::string &) { return -1; });
-  for (int ai = 0, mai = 0, gi = 0; score != -1 && ai < reordered.size(); ai++) {
+  int ai = 0, mai = 0, gi = 0, real_gi = 0;
+  for (; score != -1 && ai < reordered.size(); ai++) {
     auto expectTyp = fn->ast->args[ai].status == Param::Normal
                          ? fn->getArgTypes()[mai++]
                          : fn->funcGenerics[gi++].type;
     auto [argType, argTypeIdx] = reordered[ai];
     if (!argType)
       continue;
+    real_gi += fn->ast->args[ai].status != Param::Normal;
     if (fn->ast->args[ai].status != Param::Normal) {
       // Check if this is a good generic!
       if (expectTyp && expectTyp->isStaticType()) {
@@ -320,6 +323,8 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
       score = -1;
     }
   }
+  if (score >= 0)
+    score += (real_gi == fn->funcGenerics.size());
   return score;
 }
 
