@@ -104,6 +104,12 @@ def test_conversions():
     assert bool(UInt[80](0)) == False
     assert bool(Int[80](42)) == True
     assert str(Int[80](42)) == '42'
+
+    # float -> intN
+    assert i32(3.14) == i32(3)
+
+    # float -> uintN
+    assert u32(3.14) == u32(3)
 test_conversions()
 
 @test
