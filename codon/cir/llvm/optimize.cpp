@@ -633,8 +633,7 @@ public:
   llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
   llvm::SmallDenseMap<llvm::Function *, llvm::CycleInfo> cycles;
 
-  explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
-                                                                    "seq_alloc_atomic"},
+  explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
       : info(allocators, realloc, free), unhoistable() {}
