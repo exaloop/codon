@@ -659,19 +659,13 @@ public:
   llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
                               llvm::LoopStandardAnalysisResults &ar,
                               llvm::LPMUpdater &u) {
-    llvm::SmallSet<llvm::Instruction *, 32> hoist;
-    bool anyChanged = false;
-
+    llvm::SmallSet<llvm::CallBase *, 32> hoist;
     for (auto *block : loop.blocks()) {
       for (auto &ins : *block) {
-        if (info.isAlloc(&ins) && !unhoistable.contains(&ins) &&
-            !inIrreducibleCycle(&ins)) {
-          bool changed = false;
-          bool invariant = loop.makeLoopInvariant(ins.getOperand(0), changed);
-          anyChanged |= changed;
-
-          if ((invariant || changed) && info.isAllocSiteHoistable(&ins, loop)) {
-            hoist.insert(&ins);
+        if (info.isAlloc(&ins) && !unhoistable.contains(&ins)) {
+          if (loop.hasLoopInvariantOperands(&ins) &&
+              info.isAllocSiteHoistable(&ins, loop) && !inIrreducibleCycle(&ins)) {
+            hoist.insert(llvm::cast<llvm::CallBase>(&ins));
           } else {
             unhoistable.insert(&ins);
           }
@@ -679,13 +673,50 @@ public:
       }
     }
 
+    if (hoist.empty())
+      return llvm::PreservedAnalyses::all();
+
+    auto *preheader = loop.getLoopPreheader();
+    auto *terminator = preheader->getTerminator();
+    auto *parent = preheader->getParent();
+    auto *M = preheader->getModule();
+
+    llvm::IRBuilder<> B(preheader->getContext());
+    llvm::DomTreeUpdater dtu(ar.DT, llvm::DomTreeUpdater::UpdateStrategy::Lazy);
+
     for (auto *ins : hoist) {
+      B.SetInsertPointPastAllocas(parent);
+      auto *cache = B.CreateAlloca(B.getPtrTy());
+      B.CreateStore(llvm::ConstantPointerNull::get(B.getPtrTy()), cache);
+      B.SetInsertPoint(ins);
+
+      // Split the block at the call site
+      llvm::BasicBlock *allocYes = nullptr;
+      llvm::BasicBlock *allocNo = nullptr;
+      llvm::SplitBlockAndInsertIfThenElse(
+          B.CreateIsNull(B.CreateLoad(B.getPtrTy(), cache)), ins, &allocYes, &allocNo,
+          /*UnreachableThen=*/false,
+          /*UnreachableElse=*/false,
+          /*BranchWeights=*/nullptr, &dtu, &ar.LI);
+
+      B.SetInsertPoint(&allocYes->getSingleSuccessor()->front());
+      llvm::PHINode *phi = B.CreatePHI(B.getPtrTy(), 2);
+      ins->replaceAllUsesWith(phi);
+
       ins->removeFromParent();
-      ins->insertBefore(loop.getLoopPreheader()->getTerminator());
+      ins->insertBefore(allocYes->getTerminator());
+      B.SetInsertPoint(allocYes->getTerminator());
+      B.CreateStore(ins, cache);
+
+      B.SetInsertPoint(allocNo->getTerminator());
+      auto *cachedAlloc = B.CreateLoad(B.getPtrTy(), cache);
+
+      phi->addIncoming(ins, allocYes);
+      phi->addIncoming(cachedAlloc, allocNo);
     }
 
-    return (hoist.empty() && !anyChanged) ? llvm::PreservedAnalyses::all()
-                                          : llvm::PreservedAnalyses::none();
+    dtu.flush();
+    return llvm::PreservedAnalyses::none();
   }
 };
 
