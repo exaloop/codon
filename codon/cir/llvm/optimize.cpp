@@ -630,41 +630,32 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 public:
   AllocInfo info;
-  llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
-  llvm::SmallDenseMap<llvm::Function *, llvm::CycleInfo> cycles;
 
   explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
-      : info(allocators, realloc, free), unhoistable() {}
+      : info(allocators, realloc, free) {}
 
-  llvm::CycleInfo *getCycleInfo(llvm::Function *f) {
-    bool seen = (cycles.find(f) != cycles.end());
-    auto &ci = cycles.getOrInsertDefault(f);
-    if (!seen)
-      ci.compute(*f);
-    return &ci;
-  }
+  bool processLoop(llvm::Loop &loop, llvm::LoopInfo &loops, llvm::CycleInfo &cycles,
+                   llvm::PostDominatorTree &postdom,
+                   llvm::SmallPtrSetImpl<llvm::Instruction *> &unhoistable) {
+    auto inIrreducibleCycle = [&](llvm::Instruction *ins) {
+      auto *cycle = cycles.getCycle(ins->getParent());
+      while (cycle) {
+        if (!cycle->isReducible())
+          return true;
+        cycle = cycle->getParentCycle();
+      }
+      return false;
+    };
 
-  bool inIrreducibleCycle(llvm::Instruction *ins) {
-    auto *cycle = getCycleInfo(ins->getFunction())->getCycle(ins->getParent());
-    while (cycle) {
-      if (!cycle->isReducible())
-        return true;
-      cycle = cycle->getParentCycle();
-    }
-    return false;
-  }
-
-  llvm::PreservedAnalyses run(llvm::Loop &loop, llvm::LoopAnalysisManager &am,
-                              llvm::LoopStandardAnalysisResults &ar,
-                              llvm::LPMUpdater &u) {
     llvm::SmallSet<llvm::CallBase *, 32> hoist;
     for (auto *block : loop.blocks()) {
       for (auto &ins : *block) {
         if (info.isAlloc(&ins) && !unhoistable.contains(&ins)) {
           if (loop.hasLoopInvariantOperands(&ins) &&
-              info.isAllocSiteHoistable(&ins, loop) && !inIrreducibleCycle(&ins)) {
+              info.isAllocSiteHoistable(&ins, loop) && !inIrreducibleCycle(&ins) &&
+              !llvm::isa<llvm::UnreachableInst>(ins.getParent()->getTerminator())) {
             hoist.insert(llvm::cast<llvm::CallBase>(&ins));
           } else {
             unhoistable.insert(&ins);
@@ -674,7 +665,7 @@ public:
     }
 
     if (hoist.empty())
-      return llvm::PreservedAnalyses::all();
+      return false;
 
     auto *preheader = loop.getLoopPreheader();
     auto *terminator = preheader->getTerminator();
@@ -682,39 +673,72 @@ public:
     auto *M = preheader->getModule();
 
     llvm::IRBuilder<> B(preheader->getContext());
-    llvm::DomTreeUpdater dtu(ar.DT, llvm::DomTreeUpdater::UpdateStrategy::Lazy);
+    auto *ptr = B.getPtrTy();
+    llvm::DomTreeUpdater dtu(postdom, llvm::DomTreeUpdater::UpdateStrategy::Lazy);
 
     for (auto *ins : hoist) {
-      B.SetInsertPointPastAllocas(parent);
-      auto *cache = B.CreateAlloca(B.getPtrTy());
-      B.CreateStore(llvm::ConstantPointerNull::get(B.getPtrTy()), cache);
-      B.SetInsertPoint(ins);
-      auto *cachedAlloc = B.CreateLoad(B.getPtrTy(), cache);
+      if (postdom.dominates(ins, preheader->getTerminator())) {
+        // Simple case - loop must execute allocation, so
+        // just hoist it directly.
+        ins->removeFromParent();
+        ins->insertBefore(preheader->getTerminator());
+      } else {
+        // Complex case - loop might not execute allocation,
+        // so have to keep it where it is but cache it.
+        // Transformation is as follows:
+        //   Before:
+        //     p = alloc(n)
+        //   After:
+        //     if cache is null:
+        //       p = alloc(n)
+        //       cache = p
+        //     else:
+        //       p = cache
+        B.SetInsertPointPastAllocas(parent);
+        auto *cache = B.CreateAlloca(ptr);
+        cache->setName("alloc_hoist.cache");
+        B.CreateStore(llvm::ConstantPointerNull::get(ptr), cache);
+        B.SetInsertPoint(ins);
+        auto *cachedAlloc = B.CreateLoad(ptr, cache);
 
-      // Split the block at the call site
-      llvm::BasicBlock *allocYes = nullptr;
-      llvm::BasicBlock *allocNo = nullptr;
-      llvm::SplitBlockAndInsertIfThenElse(B.CreateIsNull(cachedAlloc), ins, &allocYes,
-                                          &allocNo,
-                                          /*UnreachableThen=*/false,
-                                          /*UnreachableElse=*/false,
-                                          /*BranchWeights=*/nullptr, &dtu, &ar.LI);
+        // Split the block at the call site
+        llvm::BasicBlock *allocYes = nullptr;
+        llvm::BasicBlock *allocNo = nullptr;
+        llvm::SplitBlockAndInsertIfThenElse(B.CreateIsNull(cachedAlloc), ins, &allocYes,
+                                            &allocNo,
+                                            /*UnreachableThen=*/false,
+                                            /*UnreachableElse=*/false,
+                                            /*BranchWeights=*/nullptr, &dtu, &loops);
 
-      B.SetInsertPoint(&allocYes->getSingleSuccessor()->front());
-      llvm::PHINode *phi = B.CreatePHI(B.getPtrTy(), 2);
-      ins->replaceAllUsesWith(phi);
+        B.SetInsertPoint(&allocYes->getSingleSuccessor()->front());
+        llvm::PHINode *phi = B.CreatePHI(ptr, 2);
+        ins->replaceAllUsesWith(phi);
 
-      ins->removeFromParent();
-      ins->insertBefore(allocYes->getTerminator());
-      B.SetInsertPoint(allocYes->getTerminator());
-      B.CreateStore(ins, cache);
+        ins->removeFromParent();
+        ins->insertBefore(allocYes->getTerminator());
+        B.SetInsertPoint(allocYes->getTerminator());
+        B.CreateStore(ins, cache);
 
-      phi->addIncoming(ins, allocYes);
-      phi->addIncoming(cachedAlloc, allocNo);
+        phi->addIncoming(ins, allocYes);
+        phi->addIncoming(cachedAlloc, allocNo);
+      }
     }
 
     dtu.flush();
-    return llvm::PreservedAnalyses::none();
+    return true;
+  }
+
+  llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &am) {
+    auto &loops = am.getResult<llvm::LoopAnalysis>(F);
+    auto &cycles = am.getResult<llvm::CycleAnalysis>(F);
+    auto &postdom = am.getResult<llvm::PostDominatorTreeAnalysis>(F);
+    bool changed = false;
+    llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
+
+    for (auto *loop : loops)
+      changed |= processLoop(*loop, loops, cycles, postdom, unhoistable);
+
+    return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
   }
 };
 
@@ -822,14 +846,12 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
 
   pb.registerPeepholeEPCallback(
       [&](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
-        if (opt.isOptimizingForSpeed())
+        if (opt.isOptimizingForSpeed()) {
           pm.addPass(AllocationRemover());
-      });
-
-  pb.registerLateLoopOptimizationsEPCallback(
-      [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
-        if (opt.isOptimizingForSpeed())
+          pm.addPass(llvm::LoopSimplifyPass());
+          pm.addPass(llvm::LCSSAPass());
           pm.addPass(AllocationHoister());
+        }
       });
 
   if (plugins) {
