@@ -631,7 +631,8 @@ class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 public:
   AllocInfo info;
 
-  explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc_atomic"},
+  explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
+                                                                    "seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
       : info(allocators, realloc, free) {}
@@ -728,6 +729,18 @@ public:
     return true;
   }
 
+  bool processLoopNest(llvm::Loop &loop, llvm::LoopInfo &loops, llvm::CycleInfo &cycles,
+                       llvm::PostDominatorTree &postdom,
+                       llvm::SmallPtrSetImpl<llvm::Instruction *> &unhoistable) {
+    // Make sure we visit loops in post-order so we don't hoist an allocation out
+    // of an outer loop without first checking the inner loop.
+    bool changed = false;
+    for (auto *subLoop : loop.getSubLoops())
+      changed |= processLoopNest(*subLoop, loops, cycles, postdom, unhoistable);
+    changed |= processLoop(loop, loops, cycles, postdom, unhoistable);
+    return changed;
+  }
+
   llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &am) {
     auto &loops = am.getResult<llvm::LoopAnalysis>(F);
     auto &cycles = am.getResult<llvm::CycleAnalysis>(F);
@@ -736,7 +749,7 @@ public:
     llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
 
     for (auto *loop : loops)
-      changed |= processLoop(*loop, loops, cycles, postdom, unhoistable);
+      changed |= processLoopNest(*loop, loops, cycles, postdom, unhoistable);
 
     return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
   }
