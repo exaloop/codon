@@ -689,15 +689,16 @@ public:
       auto *cache = B.CreateAlloca(B.getPtrTy());
       B.CreateStore(llvm::ConstantPointerNull::get(B.getPtrTy()), cache);
       B.SetInsertPoint(ins);
+      auto *cachedAlloc = B.CreateLoad(B.getPtrTy(), cache);
 
       // Split the block at the call site
       llvm::BasicBlock *allocYes = nullptr;
       llvm::BasicBlock *allocNo = nullptr;
-      llvm::SplitBlockAndInsertIfThenElse(
-          B.CreateIsNull(B.CreateLoad(B.getPtrTy(), cache)), ins, &allocYes, &allocNo,
-          /*UnreachableThen=*/false,
-          /*UnreachableElse=*/false,
-          /*BranchWeights=*/nullptr, &dtu, &ar.LI);
+      llvm::SplitBlockAndInsertIfThenElse(B.CreateIsNull(cachedAlloc), ins, &allocYes,
+                                          &allocNo,
+                                          /*UnreachableThen=*/false,
+                                          /*UnreachableElse=*/false,
+                                          /*BranchWeights=*/nullptr, &dtu, &ar.LI);
 
       B.SetInsertPoint(&allocYes->getSingleSuccessor()->front());
       llvm::PHINode *phi = B.CreatePHI(B.getPtrTy(), 2);
@@ -707,9 +708,6 @@ public:
       ins->insertBefore(allocYes->getTerminator());
       B.SetInsertPoint(allocYes->getTerminator());
       B.CreateStore(ins, cache);
-
-      B.SetInsertPoint(allocNo->getTerminator());
-      auto *cachedAlloc = B.CreateLoad(B.getPtrTy(), cache);
 
       phi->addIncoming(ins, allocYes);
       phi->addIncoming(cachedAlloc, allocNo);
