@@ -627,8 +627,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 };
 
 /// Hoists allocations that are inside a loop out of the loop.
-class AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
-public:
+struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
   AllocInfo info;
 
   explicit AllocationHoister(std::vector<std::string> allocators = {"seq_alloc",
