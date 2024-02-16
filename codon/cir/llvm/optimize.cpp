@@ -361,18 +361,42 @@ struct AllocInfo {
     return true;
   }
 
-  bool isAllocSiteHoistable(llvm::Instruction *ai, llvm::Loop &loop) {
+  bool isAllocSiteHoistable(llvm::Instruction *ai, llvm::Loop &loop,
+                            llvm::CycleInfo &cycles) {
     using namespace llvm;
 
-    // Should never be an invoke, so just check right away.
-    if (isa<InvokeInst>(ai))
+    auto inIrreducibleCycle = [&](Instruction *ins) {
+      auto *cycle = cycles.getCycle(ins->getParent());
+      while (cycle) {
+        if (!cycle->isReducible())
+          return true;
+        cycle = cycle->getParentCycle();
+      }
+      return false;
+    };
+
+    auto anySubLoopContains = [&](Instruction *ins) {
+      for (auto *sub : loop.getSubLoops()) {
+        if (sub->contains(ins))
+          return true;
+      }
+      return false;
+    };
+
+    // Some preliminary checks
+    auto *parent = ai->getParent();
+    if (isa<InvokeInst>(ai) || !loop.hasLoopInvariantOperands(ai) ||
+        ai->getMetadata("codon.alloc.hoisted") || anySubLoopContains(ai) ||
+        inIrreducibleCycle(ai) || parent->getTerminator()->getNumSuccessors() == 0 ||
+        (loop.isLoopExiting(parent) &&
+         parent->getTerminator()->getNumSuccessors() == 1))
       return false;
 
     // Need to track insertvalue/extractvalue to make this effective.
     // This maps each "insertvalue" of the pointer (or derived value)
     // to a list of indices at which it is inserted (usually there will
     // be just one).
-    SmallDenseMap<llvm::Instruction *, SmallVector<ArrayRef<unsigned>, 1>> inserts;
+    SmallDenseMap<Instruction *, SmallVector<ArrayRef<unsigned>, 1>> inserts;
 
     std::deque<Instruction *> worklist;
     SmallSet<Instruction *, 20> visited;
@@ -399,6 +423,10 @@ struct AllocInfo {
           return false;
 
         case Instruction::PHI:
+          if (instr->getParent() == loop.getHeader())
+            return false;
+          LLVM_FALLTHROUGH;
+
         case Instruction::PtrToInt:
         case Instruction::IntToPtr:
         case Instruction::Add:
@@ -637,30 +665,12 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
       : info(allocators, realloc, free) {}
 
   bool processLoop(llvm::Loop &loop, llvm::LoopInfo &loops, llvm::CycleInfo &cycles,
-                   llvm::PostDominatorTree &postdom,
-                   llvm::SmallPtrSetImpl<llvm::Instruction *> &unhoistable) {
-    auto inIrreducibleCycle = [&](llvm::Instruction *ins) {
-      auto *cycle = cycles.getCycle(ins->getParent());
-      while (cycle) {
-        if (!cycle->isReducible())
-          return true;
-        cycle = cycle->getParentCycle();
-      }
-      return false;
-    };
-
+                   llvm::PostDominatorTree &postdom) {
     llvm::SmallSet<llvm::CallBase *, 32> hoist;
     for (auto *block : loop.blocks()) {
       for (auto &ins : *block) {
-        if (info.isAlloc(&ins) && !unhoistable.contains(&ins)) {
-          if (loop.hasLoopInvariantOperands(&ins) &&
-              info.isAllocSiteHoistable(&ins, loop) && !inIrreducibleCycle(&ins) &&
-              !llvm::isa<llvm::UnreachableInst>(ins.getParent()->getTerminator())) {
-            hoist.insert(llvm::cast<llvm::CallBase>(&ins));
-          } else {
-            unhoistable.insert(&ins);
-          }
-        }
+        if (info.isAlloc(&ins) && info.isAllocSiteHoistable(&ins, loop, cycles))
+          hoist.insert(llvm::cast<llvm::CallBase>(&ins));
       }
     }
 
@@ -671,8 +681,9 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
     auto *terminator = preheader->getTerminator();
     auto *parent = preheader->getParent();
     auto *M = preheader->getModule();
+    auto &C = preheader->getContext();
 
-    llvm::IRBuilder<> B(preheader->getContext());
+    llvm::IRBuilder<> B(C);
     auto *ptr = B.getPtrTy();
     llvm::DomTreeUpdater dtu(postdom, llvm::DomTreeUpdater::UpdateStrategy::Lazy);
 
@@ -721,6 +732,9 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 
         phi->addIncoming(ins, allocYes);
         phi->addIncoming(cachedAlloc, allocNo);
+
+        // Make sure we don't try to hoist this instruction again.
+        ins->setMetadata("codon.alloc.hoisted", llvm::MDNode::get(C, {}));
       }
     }
 
@@ -728,27 +742,16 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
     return true;
   }
 
-  bool processLoopNest(llvm::Loop &loop, llvm::LoopInfo &loops, llvm::CycleInfo &cycles,
-                       llvm::PostDominatorTree &postdom,
-                       llvm::SmallPtrSetImpl<llvm::Instruction *> &unhoistable) {
-    // Make sure we visit loops in post-order so we don't hoist an allocation out
-    // of an outer loop without first checking the inner loop.
-    bool changed = false;
-    for (auto *subLoop : loop.getSubLoops())
-      changed |= processLoopNest(*subLoop, loops, cycles, postdom, unhoistable);
-    changed |= processLoop(loop, loops, cycles, postdom, unhoistable);
-    return changed;
-  }
-
   llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &am) {
     auto &loops = am.getResult<llvm::LoopAnalysis>(F);
     auto &cycles = am.getResult<llvm::CycleAnalysis>(F);
     auto &postdom = am.getResult<llvm::PostDominatorTreeAnalysis>(F);
     bool changed = false;
-    llvm::SmallSet<llvm::Instruction *, 16> unhoistable;
+    llvm::SmallPriorityWorklist<llvm::Loop *, 4> worklist;
+    llvm::appendLoopsToWorklist(loops, worklist);
 
-    for (auto *loop : loops)
-      changed |= processLoopNest(*loop, loops, cycles, postdom, unhoistable);
+    while (!worklist.empty())
+      changed |= processLoop(*worklist.pop_back_val(), loops, cycles, postdom);
 
     return changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
   }
