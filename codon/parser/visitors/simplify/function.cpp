@@ -156,7 +156,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
   // Function bindings cannot be dominated either
   if (!isClassMember) {
     auto funcVal = ctx->find(stmt->name);
-    if (funcVal && funcVal->noShadow)
+    if (funcVal && funcVal->moduleName == ctx->getModule() && funcVal->noShadow)
       E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
     funcVal = ctx->addFunc(stmt->name, rootName, stmt->getSrcInfo());
     ctx->addAlwaysVisible(funcVal);
