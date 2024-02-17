@@ -387,9 +387,7 @@ struct AllocInfo {
     auto *parent = ai->getParent();
     if (isa<InvokeInst>(ai) || !loop.hasLoopInvariantOperands(ai) ||
         ai->getMetadata("codon.alloc.hoisted") || anySubLoopContains(ai) ||
-        inIrreducibleCycle(ai) || parent->getTerminator()->getNumSuccessors() == 0 ||
-        (loop.isLoopExiting(parent) &&
-         parent->getTerminator()->getNumSuccessors() == 1))
+        inIrreducibleCycle(ai))
       return false;
 
     // Need to track insertvalue/extractvalue to make this effective.
