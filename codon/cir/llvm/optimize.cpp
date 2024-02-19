@@ -386,8 +386,7 @@ struct AllocInfo {
     // Some preliminary checks
     auto *parent = ai->getParent();
     if (isa<InvokeInst>(ai) || !loop.hasLoopInvariantOperands(ai) ||
-        ai->getMetadata("codon.alloc.hoisted") || anySubLoopContains(ai) ||
-        inIrreducibleCycle(ai))
+        anySubLoopContains(ai) || inIrreducibleCycle(ai))
       return false;
 
     // Need to track insertvalue/extractvalue to make this effective.
@@ -548,7 +547,7 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
                                              "seq_alloc_uncollectable",
                                              "seq_alloc_atomic_uncollectable"},
       const std::string &realloc = "seq_realloc", const std::string &free = "seq_free")
-      : info(allocators, realloc, free) {}
+      : info(std::move(allocators), realloc, free) {}
 
   void getErasesAndReplacementsForAlloc(
       llvm::Instruction &mi, llvm::SmallPtrSetImpl<llvm::Instruction *> &erase,
@@ -660,7 +659,7 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
                                                                     "seq_alloc_atomic"},
                              const std::string &realloc = "seq_realloc",
                              const std::string &free = "seq_free")
-      : info(allocators, realloc, free) {}
+      : info(std::move(allocators), realloc, free) {}
 
   bool processLoop(llvm::Loop &loop, llvm::LoopInfo &loops, llvm::CycleInfo &cycles,
                    llvm::PostDominatorTree &postdom) {
@@ -730,9 +729,6 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
 
         phi->addIncoming(ins, allocYes);
         phi->addIncoming(cachedAlloc, allocNo);
-
-        // Make sure we don't try to hoist this instruction again.
-        ins->setMetadata("codon.alloc.hoisted", llvm::MDNode::get(C, {}));
       }
     }
 
