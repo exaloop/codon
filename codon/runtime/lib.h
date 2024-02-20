@@ -56,6 +56,8 @@ SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);
 
 SEQ_FUNC void *seq_alloc(size_t n);
 SEQ_FUNC void *seq_alloc_atomic(size_t n);
+SEQ_FUNC void *seq_alloc_uncollectable(size_t n);
+SEQ_FUNC void *seq_alloc_atomic_uncollectable(size_t n);
 SEQ_FUNC void *seq_calloc(size_t m, size_t n);
 SEQ_FUNC void *seq_calloc_atomic(size_t m, size_t n);
 SEQ_FUNC void *seq_realloc(void *p, size_t newsize, size_t oldsize);

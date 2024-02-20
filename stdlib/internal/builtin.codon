@@ -39,57 +39,88 @@ class __internal__:
     def print(*args):
         print(*args, flush=True, file=_C.seq_stdout())
 
-
-def min(*args):
+def min(*args, key=None, default=None):
     if staticlen(args) == 0:
-        raise ValueError("empty sequence")
-    elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+        compile_error("min() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("min() 'default' argument only allowed for iterables")
+    elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i < s:
-                    s = i
+                if key is None:
+                    if i < s:
+                        s = i
+                else:
+                    if key(i) < key(s):
+                        s = i
             x.destroy()
             return s
         else:
             x.destroy()
-        raise ValueError("empty sequence")
+        if default is None:
+            raise ValueError("min() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
-        return a if a <= b else b
+        if key is None:
+            return a if a <= b else b
+        else:
+            return a if key(a) <= key(b) else b
     else:
         m = args[0]
-        for i in args:
-            if i < m:
-                m = i
+        for i in args[1:]:
+            if key is None:
+                if i < m:
+                    m = i
+            else:
+                if key(i) < key(m):
+                    m = i
         return m
 
-def max(*args):
+def max(*args, key=None, default=None):
     if staticlen(args) == 0:
-        raise ValueError("empty sequence")
-    elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+        compile_error("max() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("max() 'default' argument only allowed for iterables")
+    elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i > s:
-                    s = i
+                if key is None:
+                    if i > s:
+                        s = i
+                else:
+                    if key(i) > key(s):
+                        s = i
             x.destroy()
             return s
         else:
             x.destroy()
-        raise ValueError("empty sequence")
+        if default is None:
+            raise ValueError("max() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
-        return a if a >= b else b
+        if key is None:
+            return a if a >= b else b
+        else:
+            return a if key(a) >= key(b) else b
     else:
         m = args[0]
-        for i in args:
-            if i > m:
-                m = i
+        for i in args[1:]:
+            if key is None:
+                if i > m:
+                    m = i
+            else:
+                if key(i) > key(m):
+                    m = i
         return m
 
 def len(x) -> int:
@@ -492,6 +523,26 @@ class complex:
         if need_dyn_alloc:
             free(s)
         return complex(x, y)
+
+@extend
+class float32:
+    def _from_str(s: str) -> float32:
+        return float32(float._from_str(s))
+
+@extend
+class float16:
+    def _from_str(s: str) -> float16:
+        return float16(float._from_str(s))
+
+@extend
+class bfloat16:
+    def _from_str(s: str) -> bfloat16:
+        return bfloat16(float._from_str(s))
+
+@extend
+class complex64:
+    def _from_str(s: str) -> complex64:
+        return complex64(complex._from_str(s))
 
 def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
     if isinstance(x, None):

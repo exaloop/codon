@@ -34,19 +34,27 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   if (auto changed = in(ctx->cache->replacements, lhs)) {
     while (auto s = in(ctx->cache->replacements, lhs))
       lhs = changed->first, changed = s;
-    if (stmt->rhs && changed->second) {
-      // Mark the dominating binding as used: `var.__used__ = True`
-      auto u =
-          N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)), N<BoolExpr>(true));
-      u->setUpdate();
-      prependStmts->push_back(transform(u));
-    } else if (changed->second && !stmt->rhs) {
-      // This assignment was a declaration only. Just mark the dominating binding as
-      // used: `var.__used__ = True`
-      stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
-      stmt->rhs = N<BoolExpr>(true);
+    if (changed->second) { // has __used__ binding
+      if (stmt->rhs) {
+        // Mark the dominating binding as used: `var.__used__ = True`
+        auto u = N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", lhs)),
+                               N<BoolExpr>(true));
+        u->setUpdate();
+        prependStmts->push_back(transform(u));
+      } else {
+        // This assignment was a declaration only. Just mark the dominating binding as
+        // used: `var.__used__ = True`
+        stmt->lhs = N<IdExpr>(fmt::format("{}.__used__", lhs));
+        stmt->rhs = N<BoolExpr>(true);
+      }
     }
-    seqassert(stmt->rhs, "bad domination statement: '{}'", stmt->toString());
+
+    if (endswith(lhs, ".__used__") || !stmt->rhs) {
+      // unneeded declaration (unnecessary used or binding)
+      resultStmt = transform(N<SuiteStmt>());
+      return;
+    }
+
     // Change this to the update and follow the update logic
     stmt->setUpdate();
     transformUpdate(stmt);
