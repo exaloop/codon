@@ -11,9 +11,9 @@ class Slice[T, U, V]:
 
     def _ensure_int_or_none(self, method_name: str):
         if not (
-                (T is int or T is NoneType) and
-                (U is int or U is NoneType) and
-                (V is int or V is NoneType)
+                (T is int or (T is NoneType or T is Optional[NoneType])) and
+                (U is int or (U is NoneType or U is Optional[NoneType])) and
+                (V is int or (V is NoneType or V is Optional[NoneType]))
         ):
             raise TypeError(f"{method_name} requires all fields to be ints. Fields types are: "
                             f"start: {T.__name__}, stop: {U.__name__}, step: {V.__name__}")
