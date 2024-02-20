@@ -1,26 +1,36 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 @tuple
-class Slice:
-    start: Optional[int]
-    stop: Optional[int]
-    step: Optional[int]
+class Slice[T, U, V]:
+    start: T
+    stop: U
+    step: V
 
-    def __new__(stop: Optional[int]):
+    def __new__(stop: U):
         return Slice(None, stop, None)
 
+    def _ensure_int_or_none(self, method_name: str):
+        if not (
+                (T is int or T is NoneType) and
+                (U is int or U is NoneType) and
+                (V is int or V is NoneType)
+        ):
+            raise TypeError(f"{method_name} requires all fields to be ints. Fields types are: "
+                            f"start: {T.__name__}, stop: {U.__name__}, step: {V.__name__}")
+
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
+        self._ensure_int_or_none("slice.adjust_indices")
         step: int = self.step if self.step is not None else 1
         start: int = 0
         stop: int = 0
         if step == 0:
             raise ValueError("slice step cannot be zero")
         if step > 0:
-            start = self.start if self.start is not None else 0
-            stop = self.stop if self.stop is not None else length
+            start = self.start if isinstance(self.start, int) else 0
+            stop = self.stop if isinstance(self.stop, int) else length
         else:
-            start = self.start if self.start is not None else length - 1
-            stop = self.stop if self.stop is not None else -(length + 1)
+            start = self.start if isinstance(self.start, int) else length - 1
+            stop = self.stop if isinstance(self.stop, int) else -(length + 1)
 
         return Slice.adjust_indices_helper(length, start, stop, step)
 
