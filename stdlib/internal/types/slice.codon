@@ -6,14 +6,23 @@ class Slice[T, U, V]:
     stop: U
     step: V
 
-    def __new__(stop: U):
-        return Slice(None, stop, None)
+    def __new__(stop: U, U: type):
+        start: Optional[int] = None
+        step: Optional[int] = None
+        return Slice(start, stop, step)
+
+    def __new__(start: T, stop: U, T: type, U: type):
+        step: Optional[int] = None
+        return Slice(start, stop, step)
+
+    def __new__(start: T, stop: U, step: V) -> Slice[T, U, V]:
+        return (start, stop, step)
 
     def _ensure_int_or_none(self, method_name: str):
         if not (
-                (T is int or (T is NoneType or T is Optional[NoneType])) and
-                (U is int or (U is NoneType or U is Optional[NoneType])) and
-                (V is int or (V is NoneType or V is Optional[NoneType]))
+                (T is int or T is Optional[int] or T is Optional[NoneType]) and
+                (U is int or U is Optional[int] or U is Optional[NoneType]) and
+                (V is int or V is Optional[int] or V is Optional[NoneType])
         ):
             raise TypeError(f"{method_name} requires all fields to be ints. Fields types are: "
                             f"start: {T.__name__}, stop: {U.__name__}, step: {V.__name__}")
@@ -67,5 +76,11 @@ class Slice[T, U, V]:
 
     def __repr__(self):
         return f"slice({self.start}, {self.stop}, {self.step})"
+
+    def __eq__(self, other):
+        return self.start == other.start and self.step == other.step and self.stop == other.stop
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 slice = Slice
