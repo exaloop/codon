@@ -1,21 +1,31 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
 @tuple
-class Slice[T, U, V]:
-    start: T
-    stop: U
-    step: V
+class Slice:
+    start: Optional[T]
+    stop: Optional[U]
+    step: Optional[V]
+    T: type
+    U: type
+    V: type
 
-    def __new__(stop: U, U: type):
-        start: Optional[int] = None
-        step: Optional[int] = None
-        return Slice(start, stop, step)
+    def __new__(stop: Optional[U], U: type = int):
+        return Slice(None, stop, None)
 
-    def __new__(start: T, stop: U, T: type, U: type):
-        step: Optional[int] = None
-        return Slice(start, stop, step)
+    def __new__(
+            start: Optional[T],
+            stop: Optional[U],
+            T: type = int,
+            U: type = int):
+        return Slice(start, stop, None)
 
-    def __new__(start: T, stop: U, step: V) -> Slice[T, U, V]:
+    def __new__(
+            start: Optional[T],
+            stop: Optional[U],
+            step: Optional[V],
+            T: type = int,
+            U: type = int,
+            V: type = int) -> Slice[T, U, V]:
         return (start, stop, step)
 
     def _ensure_int_or_none(self, method_name: str):
@@ -29,17 +39,19 @@ class Slice[T, U, V]:
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
         self._ensure_int_or_none("slice.adjust_indices")
-        step: int = self.step if self.step is not None else 1
+        def has_int_value(v):
+            return isinstance(v, int) or (isinstance(v, Optional[int]) and v is not None)
+        step: int = self.step if has_int_value(self.step) else 1
         start: int = 0
         stop: int = 0
         if step == 0:
             raise ValueError("slice step cannot be zero")
         if step > 0:
-            start = self.start if isinstance(self.start, int) else 0
-            stop = self.stop if isinstance(self.stop, int) else length
+            start = self.start if has_int_value(self.start) else 0
+            stop = self.stop if has_int_value(self.stop) else length
         else:
-            start = self.start if isinstance(self.start, int) else length - 1
-            stop = self.stop if isinstance(self.stop, int) else -(length + 1)
+            start = self.start if has_int_value(self.start) else length - 1
+            stop = self.stop if has_int_value(self.stop) else -(length + 1)
 
         return Slice.adjust_indices_helper(length, start, stop, step)
 
