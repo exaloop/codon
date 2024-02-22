@@ -252,13 +252,21 @@ public:
 /// Check if a function can be called with the given arguments.
 /// See @c reorderNamedArgs for details.
 int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
-                              const std::vector<CallExpr::Arg> &args) {
+                              const std::vector<CallExpr::Arg> &args,
+                              std::shared_ptr<types::PartialType> part) {
+  auto getPartialArg = [&](size_t pi) -> types::TypePtr {
+    if (pi < part->args.size())
+      return part->args[pi];
+    else
+      return nullptr;
+  };
+
   std::vector<std::pair<types::TypePtr, size_t>> reordered;
   auto niGenerics = fn->ast->getNonInferrableGenerics();
   auto score = ctx->reorderNamedArgs(
       fn.get(), args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
-        for (int si = 0, gi = 0; si < slots.size(); si++) {
+        for (int si = 0, gi = 0, pi = 0; si < slots.size(); si++) {
           if (fn->ast->args[si].status == Param::Generic) {
             if (slots[si].empty()) {
               // is this "real" type?
@@ -276,15 +284,21 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
             }
             gi++;
           } else if (si == s || si == k || slots[si].size() != 1) {
-            // Ignore *args, *kwargs and default arguments
-            reordered.emplace_back(nullptr, 0);
+            // Partials
+            if (slots[si].empty() && part && part->known[si]) {
+              reordered.emplace_back(getPartialArg(pi++), 0);
+            } else {
+              // Ignore *args, *kwargs and default arguments
+              reordered.emplace_back(nullptr, 0);
+            }
           } else {
             reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
           }
         }
         return 0;
       },
-      [](error::Error, const SrcInfo &, const std::string &) { return -1; });
+      [](error::Error, const SrcInfo &, const std::string &) { return -1; },
+      part ? part->known : std::vector<char>{});
   int ai = 0, mai = 0, gi = 0, real_gi = 0;
   for (; score != -1 && ai < reordered.size(); ai++) {
     auto expectTyp = fn->ast->args[ai].status == Param::Normal

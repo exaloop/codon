@@ -1033,25 +1033,15 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       callArgs.back().value->setType(a.second);
     }
 
-    auto fn = expr->args[0].value->type->getFunc();
-    if (!fn) {
-      bool canCompile = true;
-      // Special case: not a function, just try compiling it!
-      auto ocache = *(ctx->cache);
-      auto octx = *ctx;
-      try {
-        transform(N<CallExpr>(clone(expr->args[0].value),
-                              N<StarExpr>(clone(expr->args[1].value)),
-                              N<KeywordStarExpr>(clone(expr->args[2].value))));
-      } catch (const exc::ParserException &e) {
-        // LOG("{}", e.what());
-        canCompile = false;
-        *ctx = octx;
-        *(ctx->cache) = ocache;
-      }
-      return {true, transform(N<BoolExpr>(canCompile))};
+    if (auto fn = expr->args[0].value->type->getFunc()) {
+      return {true, transform(N<BoolExpr>(canCall(fn, callArgs) >= 0))};
+    } else if (auto pt = expr->args[0].value->type->getPartial()) {
+      return {true, transform(N<BoolExpr>(canCall(pt->func, callArgs, pt) >= 0))};
+    } else {
+      compilationWarning("cannot use fn_can_call on non-functions", getSrcInfo().file,
+                         getSrcInfo().line, getSrcInfo().col);
+      return {true, transform(N<BoolExpr>(false))};
     }
-    return {true, transform(N<BoolExpr>(canCall(fn, callArgs) >= 0))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_has_type")) {
     expr->staticValue.type = StaticValue::INT;
     auto fn = ctx->extractFunction(expr->args[0].value->type);
