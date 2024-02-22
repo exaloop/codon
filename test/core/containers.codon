@@ -1,5 +1,4 @@
 from copy import copy, deepcopy
-
 @tuple
 class A:
     a: int
@@ -601,14 +600,14 @@ def test_dict():
     assert repr(Dict[int,int]()) == '{}'
 test_dict()
 
-def slice_indices(slice, length):
+def slice_indices(slc, length):
     """
     Reference implementation for the slice.indices method.
 
     """
     # Compute step and length as integers.
     #length = operator.index(length)
-    step: int = 1 if slice.step is None else slice.step
+    step: int = slc.step if (isinstance(slc.step, int) or (isinstance(slc.step, Optional[int]) and slc.step is not None)) else 1
 
     # Raise ValueError for negative length or zero step.
     if length < 0:
@@ -621,17 +620,17 @@ def slice_indices(slice, length):
     upper = length - 1 if step < 0 else length
 
     # Compute start.
-    if slice.start is None:
+    if not isinstance(slc.start, int):
         start = upper if step < 0 else lower
     else:
-        start = slice.start
+        start = slc.start
         start = max(start + length, lower) if start < 0 else min(start, upper)
 
     # Compute stop.
-    if slice.stop is None:
+    if not isinstance(slc.stop, int):
         stop = lower if step < 0 else upper
     else:
-        stop = slice.stop
+        stop = slc.stop
         stop = max(stop + length, lower) if stop < 0 else min(stop, upper)
 
     return start, stop, step
