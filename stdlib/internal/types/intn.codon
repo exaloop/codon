@@ -17,6 +17,12 @@ class Int:
         check_N(N)
         return what
 
+    @pure
+    @llvm
+    def __new__(what: float) -> Int[N]:
+        %n = fptosi double %what to i{=N}
+        ret i{=N} %n
+
     def __new__(what: int) -> Int[N]:
         check_N(N)
         if N < 64:
@@ -280,6 +286,12 @@ class UInt:
     def __new__(what: UInt[N]) -> UInt[N]:
         check_N(N)
         return what
+
+    @pure
+    @llvm
+    def __new__(what: float) -> UInt[N]:
+        %n = fptoui double %what to i{=N}
+        ret i{=N} %n
 
     def __new__(what: int) -> UInt[N]:
         check_N(N)

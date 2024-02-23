@@ -181,28 +181,6 @@ SEQ_FUNC void *seq_alloc_atomic_uncollectable(size_t n) {
 #endif
 }
 
-SEQ_FUNC void *seq_calloc(size_t m, size_t n) {
-#if USE_STANDARD_MALLOC
-  return calloc(m, n);
-#else
-  size_t s = m * n;
-  void *p = GC_MALLOC(s);
-  memset(p, 0, s);
-  return p;
-#endif
-}
-
-SEQ_FUNC void *seq_calloc_atomic(size_t m, size_t n) {
-#if USE_STANDARD_MALLOC
-  return calloc(m, n);
-#else
-  size_t s = m * n;
-  void *p = GC_MALLOC_ATOMIC(s);
-  memset(p, 0, s);
-  return p;
-#endif
-}
-
 SEQ_FUNC void *seq_realloc(void *p, size_t newsize, size_t oldsize) {
 #if USE_STANDARD_MALLOC
   return realloc(p, newsize);
