@@ -14,7 +14,7 @@ namespace pythonic {
 namespace {
 
 static const std::string LIST = "std.internal.types.ptr.List";
-static const std::string SLICE = "std.internal.types.slice.Slice";
+static const std::string SLICE = "std.internal.types.slice.Slice[int,int,int]";
 
 bool isList(Value *v) { return v->getType()->getName().rfind(LIST + "[", 0) == 0; }
 bool isSlice(Value *v) { return v->getType()->getName() == SLICE; }

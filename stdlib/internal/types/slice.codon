@@ -28,30 +28,21 @@ class Slice:
             V: type = int) -> Slice[T, U, V]:
         return (start, stop, step)
 
-    def _ensure_int_or_none(self, method_name: str):
-        if not (
-                (T is int or T is Optional[int] or T is Optional[NoneType]) and
-                (U is int or U is Optional[int] or U is Optional[NoneType]) and
-                (V is int or V is Optional[int] or V is Optional[NoneType])
-        ):
-            raise TypeError(f"{method_name} requires all fields to be ints. Fields types are: "
-                            f"start: {T.__name__}, stop: {U.__name__}, step: {V.__name__}")
-
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
-        self._ensure_int_or_none("slice.adjust_indices")
-        def has_int_value(v):
-            return isinstance(v, int) or (isinstance(v, Optional[int]) and v is not None)
-        step: int = self.step if has_int_value(self.step) else 1
+        if not (T is int and U is int and V is int):
+            compile_error("slice indices must be integers or None")
+
+        step: int = self.step if self.step is not None else 1
         start: int = 0
         stop: int = 0
         if step == 0:
             raise ValueError("slice step cannot be zero")
         if step > 0:
-            start = self.start if has_int_value(self.start) else 0
-            stop = self.stop if has_int_value(self.stop) else length
+            start = self.start if self.start is not None else 0
+            stop = self.stop if self.stop is not None else length
         else:
-            start = self.start if has_int_value(self.start) else length - 1
-            stop = self.stop if has_int_value(self.stop) else -(length + 1)
+            start = self.start if self.start is not None else length - 1
+            stop = self.stop if self.stop is not None else -(length + 1)
 
         return Slice.adjust_indices_helper(length, start, stop, step)
 
@@ -89,10 +80,10 @@ class Slice:
     def __repr__(self):
         return f"slice({self.start}, {self.stop}, {self.step})"
 
-    def __eq__(self, other):
+    def __eq__(self, other: Slice):
         return self.start == other.start and self.step == other.step and self.stop == other.stop
 
-    def __ne__(self, other):
+    def __ne__(self, other: Slice):
         return not self.__eq__(other)
 
 slice = Slice
