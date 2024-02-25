@@ -764,6 +764,40 @@ def test_slice():
     x = X(tmp)
     x[1:2] = 42
     assert tmp == [(slice(1, 2), 42)]
+
+    # Non-int elements
+    def check_types(s, T: type, U: type, V: type):
+        return (type(s.start) is Optional[T] and
+                type(s.stop) is Optional[U] and
+                type(s.step) is Optional[V])
+    assert check_types(slice(1j, 'x', 3.14), complex, str, float)
+    assert check_types(slice(None, 'x', 3.14), int, str, float)
+    assert check_types(slice(1j, None, 3.14), complex, int, float)
+    assert check_types(slice(1j, 'x', None), complex, str, int)
+    assert check_types(slice(1j, None, None), complex, int, int)
+    assert check_types(slice(None, 'x', None), int, str, int)
+    assert check_types(slice(None, None, 3.14), int, int, float)
+    assert check_types(slice(None, None, None), int, int, int)
+    assert check_types(slice(1j, 'x'), complex, str, int)
+    assert check_types(slice(None, 'x'), int, str, int)
+    assert check_types(slice(1j, None), complex, int, int)
+    assert check_types(slice(None, None), int, int, int)
+    assert check_types(slice(1j), int, complex, int)
+    assert check_types(slice(None), int, int, int)
+
+    # eq / ne
+    assert slice(1, 2, 3) == slice(1, 2, 3)
+    assert slice(0, 2, 3) != slice(1, 2, 3)
+    assert slice(1, 0, 3) != slice(1, 2, 3)
+    assert slice(1, 2, 0) != slice(1, 2, 3)
+    assert slice(None, None, None) == slice(None, None, None)
+    assert slice(None, 42, None) == slice(None, 42, None)
+    assert slice(None, 42, None) != slice(None, 43, None)
+    assert slice(1, None, 3) == slice(1, None, 3)
+    assert slice(1, None, 3) != slice(1, None, 0)
+    assert slice(1, None, 3) != slice(0, None, 3)
+    assert slice(1) == slice(1)
+    assert slice(1) != slice(2)
 test_slice()
 
 @test
