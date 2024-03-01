@@ -182,12 +182,13 @@ void Cache::parseCode(const std::string &code) {
   ast::TranslateVisitor(codegenCtx).transform(node);
 }
 
-std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
+std::vector<types::ClassTypePtr>
+Cache::mergeC3(std::vector<std::vector<types::ClassTypePtr>> &seqs) {
   // Reference: https://www.python.org/download/releases/2.3/mro/
-  std::vector<ExprPtr> result;
+  std::vector<types::ClassTypePtr> result;
   for (size_t i = 0;; i++) {
     bool found = false;
-    ExprPtr cand = nullptr;
+    types::ClassTypePtr cand = nullptr;
     for (auto &seq : seqs) {
       if (seq.empty())
         continue;
@@ -197,7 +198,7 @@ std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
         if (!s.empty()) {
           bool in = false;
           for (size_t j = 1; j < s.size(); j++) {
-            if ((in |= (seq[0]->getTypeName() == s[j]->getTypeName())))
+            if ((in |= (seq[0]->is(s[j]->name))))
               break;
           }
           if (in) {
@@ -214,9 +215,9 @@ std::vector<ExprPtr> Cache::mergeC3(std::vector<std::vector<ExprPtr>> &seqs) {
       return result;
     if (!cand)
       return {};
-    result.push_back(clone(cand));
+    result.push_back(cand);
     for (auto &s : seqs)
-      if (!s.empty() && cand->getTypeName() == s[0]->getTypeName()) {
+      if (!s.empty() && cand->is(s[0]->name)) {
         s.erase(s.begin());
       }
   }

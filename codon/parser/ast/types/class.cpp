@@ -78,6 +78,10 @@ std::vector<TypePtr> ClassType::getUnbounds() const {
 }
 
 bool ClassType::canRealize() const {
+  if (name == "type") {
+    if (getUnbounds().empty())
+      return true; // always true!
+  }
   return std::all_of(generics.begin(), generics.end(),
                      [](auto &t) { return !t.type || t.type->canRealize(); }) &&
          std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
@@ -281,7 +285,7 @@ std::shared_ptr<RecordType> RecordType::getPartial() {
 
 std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
-  auto n = generics[0].type->getStatic()->evaluate().getString();
+  auto n = generics[0].type->getStatic()->getString();
   auto f = in(cache->functions, n);
   seqassert(f, "cannot locate '{}'", n);
   return f->type;
@@ -289,7 +293,7 @@ std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
 
 std::vector<char> RecordType::getPartialMask() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
-  auto n = generics[1].type->getStatic()->evaluate().getString();
+  auto n = generics[1].type->getStatic()->getString();
   std::vector<char> r(n.size(), 0);
   for (size_t i = 0; i < n.size(); i++)
     if (n[i] == '1')

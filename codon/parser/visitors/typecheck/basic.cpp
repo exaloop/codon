@@ -15,7 +15,7 @@ using namespace types;
 
 /// Set type to `Optional[?]`
 void TypecheckVisitor::visit(NoneExpr *expr) {
-  unify(expr->type, ctx->instantiate(ctx->forceFind(TYPE_OPTIONAL)->type));
+  unify(expr->type, ctx->instantiate(ctx->getType(TYPE_OPTIONAL)));
   if (realize(expr->type)) {
     // Realize the appropriate `Optional.__new__` for the translation stage
     auto cls = expr->type->getClass();
@@ -27,7 +27,7 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
 
 /// Set type to `bool`
 void TypecheckVisitor::visit(BoolExpr *expr) {
-  unify(expr->type, ctx->forceFind("bool")->type);
+  unify(expr->type, ctx->getType("bool"));
   expr->setDone();
 }
 
@@ -40,7 +40,7 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 /// Set type to `str`
 void TypecheckVisitor::visit(StringExpr *expr) {
   seqassert(expr->strings.size() == 1 && expr->strings[0].second.empty(), "bad string");
-  unify(expr->type, ctx->forceFind("str")->type);
+  unify(expr->type, std::make_shared<types::StaticType>(ctx->cache, expr->getValue()));
   expr->setDone();
 }
 
@@ -71,7 +71,8 @@ ExprPtr TypecheckVisitor::transformInt(IntExpr *expr) {
 
   if (expr->suffix.empty()) {
     // A normal integer (int64_t)
-    unify(expr->type, ctx->forceFind("int")->type);
+    unify(expr->type,
+          std::make_shared<types::StaticType>(ctx->cache, *(expr->intValue)));
     expr->setDone();
     return nullptr;
   } else if (expr->suffix == "u") {
@@ -105,7 +106,7 @@ ExprPtr TypecheckVisitor::transformFloat(FloatExpr *expr) {
 
   if (expr->suffix.empty()) {
     /// A normal float (double)
-    unify(expr->type, ctx->forceFind("float")->type);
+    unify(expr->type, ctx->getType("float"));
     expr->setDone();
     return nullptr;
   } else {

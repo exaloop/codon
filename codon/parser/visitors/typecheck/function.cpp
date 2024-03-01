@@ -23,7 +23,7 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
 
   unify(expr->type, ctx->getUnbound());
   unify(ctx->getBase()->returnType,
-        ctx->instantiateGeneric(ctx->forceFind("Generator")->type, {expr->type}));
+        ctx->instantiateGeneric(ctx->getType("Generator"), {expr->type}));
   if (realize(expr->type))
     expr->setDone();
 }
@@ -72,7 +72,7 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
 
   stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
   unify(ctx->getBase()->returnType,
-        ctx->instantiateGeneric(ctx->forceFind("Generator")->type, {stmt->expr->type}));
+        ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type}));
 
   if (stmt->expr->isDone())
     stmt->setDone();
@@ -191,8 +191,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   std::vector<CallExpr::Arg> partialArgs;
   if (!captures.empty()) {
    std::vector<std::string> itemKeys;
+   itemKeys.reserve(captures.size());
    for (const auto &[key, _] : captures)
-      itemKeys.push_back(key);
+     itemKeys.emplace_back(key);
 
    Param kw;
    if (!stmt->args.empty() && startswith(stmt->args.back().name, "**")) {
@@ -205,7 +206,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
      else if (auto si = v->isStatic())
        stmt->args.emplace_back(
            c, N<IndexExpr>(N<IdExpr>("Static"),
-                           N<IdExpr>(si == StaticValue::INT ? "int" : "string")));
+                           N<IdExpr>(si == StaticType::Int ? "int" : "string")));
      else
        stmt->args.emplace_back(c);
      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
@@ -266,7 +267,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         if (auto st = getStaticGeneric(a.type.get())) {
           auto val = ctx->addVar(varName, name, generic);
           val->generic = true;
-          val->staticType = st;
           generic->isStatic = st;
           if (a.defaultValue) {
             auto defType = transform(clone(a.defaultValue));
@@ -277,11 +277,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           val->generic = true;
           if (a.defaultValue) {
             auto defType = transformType(clone(a.defaultValue));
-            generic->defaultType = defType->type;
+            generic->defaultType = getType(defType);
           }
         }
-        explicits.emplace_back(name, varName, generic->generalize(ctx->typecheckLevel),
-                               typId);
+        auto g = generic->generalize(ctx->typecheckLevel);
+        explicits.emplace_back(name, varName, g, typId);
       }
     }
 
@@ -291,7 +291,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Get class generics (e.g., T for `class Cls[T]: def foo:`)
       // auto parentClassAST =
       // ctx->cache->classes[stmt->attributes.parentClass].ast.get();
-      parentClass = ctx->forceFind(stmt->attributes.parentClass)->type->getClass();
+      parentClass = ctx->getType(stmt->attributes.parentClass)->getClass();
       // parentClass = parentClass->instantiate(ctx->typecheckLevel - 1, nullptr,
       // nullptr)
       // ->getClass();
@@ -309,8 +309,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
     // Add function generics
     std::vector<TypePtr> generics;
+    generics.reserve(explicits.size());
     for (const auto &i : explicits)
-      generics.push_back(ctx->find(i.name)->type);
+      generics.emplace_back(ctx->getType(i.name));
 
     // Handle function arguments
     // Base type: `Function[[args,...], ret]`
@@ -347,7 +348,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         unify(argType->args[aj], ctx->getUnbound());
         generics.push_back(argType->args[aj]);
       } else {
-        unify(argType->args[aj], transformType(stmt->args[ai].type)->getType());
+        unify(argType->args[aj], getType(transformType(stmt->args[ai].type)));
         // generics.push_back(argType->args[aj++]);
       }
       aj++;
@@ -357,7 +358,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Parse the return type
     ret = transformType(stmt->ret, false);
     if (ret) {
-      unify(baseType->generics[1].type, ret->getType());
+      unify(baseType->generics[1].type, getType(ret));
     } else {
       generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
     }
@@ -406,11 +407,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   f->setDone();
 
   // Construct the type
+  // g = ctx->instantiateGeneric(ctx->getType("type"), {g});
   auto funcTyp = std::make_shared<types::FuncType>(
       baseType, ctx->cache->functions[canonicalName].ast.get(), explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->attributes.has(Attr::Method)) {
-    funcTyp->funcParent = ctx->find(stmt->attributes.parentClass)->type;
+    funcTyp->funcParent = ctx->getType(stmt->attributes.parentClass);
   }
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
@@ -418,16 +420,14 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   ctx->addFunc(stmt->name, rootName, funcTyp);
   ctx->addFunc(canonicalName, canonicalName, funcTyp);
-  if (stmt->attributes.has(Attr::Overload)) {
+  if (stmt->attributes.has(Attr::Overload) || isClassMember) {
     ctx->remove(stmt->name); // first overload will handle it!
-  } else if (isClassMember) {
-    ctx->remove(stmt->name);
   }
 
   // Special method handling
   if (isClassMember) {
     auto m =
-        ctx->cache->getMethod(ctx->find(stmt->attributes.parentClass)->type->getClass(),
+        ctx->cache->getMethod(ctx->getType(stmt->attributes.parentClass)->getClass(),
                               ctx->cache->rev(canonicalName));
     bool found = false;
     for (auto &i : ctx->cache->overloads[m])
@@ -452,7 +452,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   // Debug information
-  // LOG("[stmt] added func {}: {}", canonicalName, funcTyp->debugString(2));
+  // LOG("[func] added func {}: {}", canonicalName, funcTyp->debugString(2));
 
   // Expression to be used if function binding is modified by captures or decorators
   ExprPtr finalExpr = nullptr;
@@ -617,9 +617,9 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
 
 /// Generate and return `Function[Tuple.N[args...], ret]` type
 std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
-  auto baseType = ctx->instantiate(ctx->forceFind("Function")->type)->getRecord();
+  auto baseType = ctx->instantiate(ctx->getType("Function"))->getRecord();
   unify(baseType->generics[0].type,
-        ctx->instantiate(ctx->forceFind(generateTuple(nargs))->type)->getRecord());
+        ctx->instantiate(ctx->getType(generateTuple(nargs)))->getRecord());
   return baseType;
 }
 

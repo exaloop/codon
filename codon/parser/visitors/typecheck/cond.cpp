@@ -15,13 +15,10 @@ using namespace types;
 /// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
-  seqassertn(cond->isStatic(), "not a static condition");
-  if (cond->staticValue.evaluated) {
-    bool isTrue = false;
-    if (cond->staticValue.type == StaticValue::STRING)
-      isTrue = !cond->staticValue.getString().empty();
-    else
-      isTrue = cond->staticValue.getInt();
+  seqassertn(cond->type->isStaticType(), "not a static condition");
+  if (cond->type->canRealize()) {
+    auto st = cond->type->getStatic();
+    bool isTrue = st->isString() ? !st->getString().empty() : st->getInt();
     return ready(isTrue);
   } else {
     return notReady();
@@ -41,49 +38,40 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   transform(expr->cond);
 
   // Static if evaluation
-  if (expr->cond->isStatic()) {
+  if (expr->cond->type->isStaticType()) {
     resultExpr = evaluateStaticCondition(
         expr->cond,
         [&](bool isTrue) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
           return transform(isTrue ? expr->ifexpr : expr->elsexpr);
         },
-        [&]() -> ExprPtr {
-          // Check if both subexpressions are static; if so, this if expression is also
-          // static and should be marked as such
-          // TODO: short circuiting?
-          auto i = transform(expr->ifexpr);
-          auto e = transform(expr->elsexpr);
-          if (i->isStatic() && e->isStatic()) {
-            expr->staticValue.type = i->staticValue.type;
-            unify(expr->type,
-                  ctx->forceFind(expr->staticValue.type == StaticValue::INT ? "int"
-                                                                            : "str")
-                      ->type);
-          }
-          return nullptr;
-        });
-    if (resultExpr) {
+        [&]() -> ExprPtr { return nullptr; });
+    if (resultExpr)
       unify(expr->type, resultExpr->getType());
-    } else {
-      unify(expr->type, ctx->getUnbound());
-    }
-  } else {
-    transform(expr->ifexpr);
-    transform(expr->elsexpr);
+    return;
+  }
 
-    // Add __bool__ wrapper
-    while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
-      expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
-    // Add wrappers and unify both sides
-    wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
-    wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
+  transform(expr->ifexpr);
+  transform(expr->elsexpr);
+
+  // Add __bool__ wrapper
+  while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
+    expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
+  // Add wrappers and unify both sides
+  wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
+  wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
+
+  if (auto u = expr->ifexpr->type->isStaticType())
+    unify(expr->type, ctx->getType(StaticType::getTypeName(u)));
+  else
     unify(expr->type, expr->ifexpr->getType());
+  if (auto u = expr->elsexpr->type->isStaticType())
+    unify(expr->type, ctx->getType(StaticType::getTypeName(u)));
+  else
     unify(expr->type, expr->elsexpr->getType());
 
-    if (expr->cond->isDone() && expr->ifexpr->isDone() && expr->elsexpr->isDone())
-      expr->setDone();
-  }
+  if (expr->cond->isDone() && expr->ifexpr->isDone() && expr->elsexpr->isDone())
+    expr->setDone();
 }
 
 /// Typecheck if statements. Evaluate static if blocks if possible.
@@ -93,7 +81,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   transform(stmt->cond);
 
   // Static if evaluation
-  if (stmt->cond->isStatic()) {
+  if (stmt->cond->type->isStaticType()) {
     resultStmt = evaluateStaticCondition(
         stmt->cond,
         [&](bool isTrue) {
@@ -102,6 +90,8 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
           return t ? t : transform(N<SuiteStmt>());
         },
         [&]() -> StmtPtr { return nullptr; });
+    return;
+  } else if (stmt->cond->type->getUnbound()) {
     return;
   }
 

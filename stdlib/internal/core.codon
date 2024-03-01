@@ -1,5 +1,10 @@
 # Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
+@tuple
+@__internal__
+class type[T]:
+    pass
+
 @__internal__
 class __internal__:
     pass
@@ -43,11 +48,6 @@ class float32:
 @tuple
 @__internal__
 class NoneType:
-    pass
-
-@tuple
-@__internal__
-class type:
     pass
 
 @tuple

@@ -338,7 +338,9 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all
     // statements are executed before the user-provided code.
-    return tv.transform(suite);
+    tv.transform(suite);
+    // LOG_USER("[import] done importing {}", file.module);
+    return suite;
   } else {
     // Generate import identifier
     std::string importVar = import->second.importVar =
@@ -348,8 +350,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // `import_[I]_done = False` (set to True upon successful import)
     auto a = N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
                            N<BoolExpr>(false));
-    a->lhs->type = a->rhs->type =
-        std::make_shared<types::LinkType>(ctx->forceFind("bool")->type);
+    a->lhs->type = a->rhs->type = ctx->getType("bool");
     a->setDone();
     preamble->push_back(a);
     auto i = ctx->addVar(importDoneVar, importDoneVar, a->lhs->type);
@@ -367,6 +368,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(importVar)->type);
     preamble->push_back(fn);
+    // LOG_USER("[import] done importing {}", file.module);
     // return fn;
     // LOG("--- {}", importVar);
     // ictx->dump();

@@ -9,10 +9,6 @@
 
 #include "codon/parser/ast/types/class.h"
 
-namespace codon::ast {
-struct StaticValue;
-}
-
 namespace codon::ast::types {
 
 /**
@@ -20,20 +16,17 @@ namespace codon::ast::types {
  * to a static expression.
  */
 struct StaticType : public Type {
-  /// List of static variables that a type depends on
-  /// (e.g. for A+B+2, generics are {A, B}).
-  std::vector<ClassType::Generic> generics;
-  /// A static expression that needs to be evaluated.
-  /// Can be nullptr if there is no expression.
-  std::shared_ptr<Expr> expr;
+  enum Kind { Int = 1, String = 2, Bool = 3 };
 
-  StaticType(Cache *cache, std::vector<ClassType::Generic> generics,
-             const std::shared_ptr<Expr> &expr);
-  /// Convenience function that parses expr and populates static type generics.
-  StaticType(Cache *cache, const std::shared_ptr<Expr> &expr);
+private:
+  Kind kind;
+  void *value;
+
+public:
   /// Convenience function for static types whose evaluation is already known.
   explicit StaticType(Cache *cache, int64_t i);
   explicit StaticType(Cache *cache, const std::string &s);
+  ~StaticType() override;
 
 public:
   int unify(Type *typ, Unification *undo) override;
@@ -44,17 +37,24 @@ public:
 public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
-  bool isInstantiated() const override;
+  bool isInstantiated() const override { return true; }
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
-  StaticValue evaluate() const;
   std::shared_ptr<StaticType> getStatic() override {
     return std::static_pointer_cast<StaticType>(shared_from_this());
   }
 
-private:
-  void parseExpr(const std::shared_ptr<Expr> &e, std::unordered_set<std::string> &seen);
+  bool isString() const;
+  std::string getString() const;
+  bool isInt() const;
+  int64_t getInt() const;
+  std::string getTypeName() const;
+  std::shared_ptr<Expr> getStaticExpr() const;
+
+  static std::string getTypeName(StaticType::Kind);
+  static std::string getTypeName(char);
 };
+using StaticTypePtr = std::shared_ptr<StaticType>;
 
 } // namespace codon::ast::types

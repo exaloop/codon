@@ -13,164 +13,89 @@
 
 namespace codon::ast::types {
 
-StaticType::StaticType(Cache *cache, const std::shared_ptr<Expr> &e)
-    : Type(cache), expr(clean_clone(e)) {
-  if (!expr->isStatic() || !expr->staticValue.evaluated) {
-    std::unordered_set<std::string> seen;
-    parseExpr(expr, seen);
-  }
-}
-
-StaticType::StaticType(Cache *cache, std::vector<ClassType::Generic> generics,
-                       const std::shared_ptr<Expr> &e)
-    : Type(cache), generics(std::move(generics)), expr(clean_clone(e)) {}
-
 StaticType::StaticType(Cache *cache, int64_t i)
-    : Type(cache), expr(std::make_shared<IntExpr>(i)) {}
+    : Type(cache), kind(StaticType::Int), value((void *)(new int64_t(i))) {}
 
 StaticType::StaticType(Cache *cache, const std::string &s)
-    : Type(cache), expr(std::make_shared<StringExpr>(s)) {}
+    : Type(cache), kind(StaticType::String), value((void *)(new std::string(s))) {}
+
+StaticType::~StaticType() {
+  if (kind == Int)
+    delete (int64_t *)value;
+  if (kind == String)
+    delete (std::string *)value;
+}
 
 int StaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getStatic()) {
-    if (canRealize())
-      expr->staticValue = evaluate();
-    if (t->canRealize())
-      t->expr->staticValue = t->evaluate();
-    // Check if both types are already evaluated.
-    if (expr->staticValue.type != t->expr->staticValue.type)
+    if (kind != t->kind)
       return -1;
-    if (expr->staticValue.evaluated && t->expr->staticValue.evaluated)
-      return expr->staticValue == t->expr->staticValue ? 2 : -1;
-    else if (expr->staticValue.evaluated && !t->expr->staticValue.evaluated)
-      return typ->unify(this, us);
-
-    // Right now, *this is not evaluated
-    // Let us see can we unify it with other _if_ it is a simple IdExpr?
-    if (expr->getId() && t->expr->staticValue.evaluated) {
-      return generics[0].type->unify(typ, us);
-    }
-
-    // At this point, *this is a complex expression (e.g. A+1).
-    seqassert(!generics.empty(), "unevaluated simple expression");
-    if (generics.size() != t->generics.size())
-      return -1;
-
-    int s1 = 2, s = 0;
-    if (!(expr->getId() && t->expr->getId()) && expr->toString() != t->expr->toString())
-      return -1;
-    for (int i = 0; i < generics.size(); i++) {
-      if ((s = generics[i].type->unify(t->generics[i].type.get(), us)) == -1)
-        return -1;
-      s1 += s;
-    }
-    return s1;
+    if (isString())
+      return getString() == t->getString() ? 1 : -1;
+    if (isInt())
+      return getInt() == t->getInt() ? 1 : -1;
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
   }
   return -1;
 }
 
-TypePtr StaticType::generalize(int atLevel) {
-  auto e = generics;
-  for (auto &t : e)
-    t.type = t.type ? t.type->generalize(atLevel) : nullptr;
-  auto c = std::make_shared<StaticType>(cache, e, expr);
-  c->setSrcInfo(getSrcInfo());
-  return c;
-}
+TypePtr StaticType::generalize(int atLevel) { return shared_from_this(); }
 
 TypePtr StaticType::instantiate(int atLevel, int *unboundCount,
                                 std::unordered_map<int, TypePtr> *cache) {
-  auto e = generics;
-  for (auto &t : e)
-    t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto c = std::make_shared<StaticType>(this->cache, e, expr);
-  c->setSrcInfo(getSrcInfo());
-  return c;
+  return shared_from_this();
 }
 
-std::vector<TypePtr> StaticType::getUnbounds() const {
-  std::vector<TypePtr> u;
-  for (auto &t : generics)
-    if (t.type) {
-      auto tu = t.type->getUnbounds();
-      u.insert(u.begin(), tu.begin(), tu.end());
-    }
-  return u;
-}
+std::vector<TypePtr> StaticType::getUnbounds() const { return {}; }
 
-bool StaticType::canRealize() const {
-  if (!expr->staticValue.evaluated)
-    for (auto &t : generics)
-      if (t.type && !t.type->canRealize())
-        return false;
-  return true;
-}
-
-bool StaticType::isInstantiated() const { return expr->staticValue.evaluated; }
+bool StaticType::canRealize() const { return true; }
 
 std::string StaticType::debugString(char mode) const {
-  if (expr->staticValue.evaluated)
-    return expr->staticValue.toString(0);
-  if (mode == 2) {
-    std::vector<std::string> s;
-    for (auto &g : generics)
-      s.push_back(g.type->debugString(mode));
-    return fmt::format("Static[{};{}]", join(s, ","), expr->toString());
-  } else {
-    return fmt::format("Static[{}]", FormatVisitor::apply(expr));
-  }
+  if (isString())
+    return fmt::format("Static['{}']", getString());
+  if (isInt())
+    return fmt::format("Static[{}]", getInt());
+  seqassert(false, "cannot happen");
+  return "";
 }
 
 std::string StaticType::realizedName() const {
   seqassert(canRealize(), "cannot realize {}", toString());
-  std::vector<std::string> deps;
-  for (auto &e : generics)
-    deps.push_back(e.type->realizedName());
-  if (!expr->staticValue.evaluated) // If not already evaluated, evaluate!
-    const_cast<StaticType *>(this)->expr->staticValue = evaluate();
-  seqassert(expr->staticValue.evaluated, "static value not evaluated");
-  return expr->staticValue.toString(0);
+  return debugString(0);
 }
 
-StaticValue StaticType::evaluate() const {
-  if (expr->staticValue.evaluated)
-    return expr->staticValue;
-  auto ctx = std::make_shared<TypeContext>(cache);
-  for (auto &g : generics)
-    ctx->addType(g.name, g.name, g.type);
-  auto en = TypecheckVisitor(ctx).transform(expr);
-  seqassert(en->isStatic() && en->staticValue.evaluated, "{} cannot be evaluated", en);
-  return en->staticValue;
+bool StaticType::isString() const { return kind == StaticType::String; }
+
+std::string StaticType::getString() const {
+  seqassert(isString(), "not a string");
+  return *(std::string *)value;
 }
 
-/// TODO: visitor?
-void StaticType::parseExpr(const ExprPtr &e, std::unordered_set<std::string> &seen) {
-  e->type = nullptr;
-  if (auto ei = e->getId()) {
-    if (!in(seen, ei->value)) {
-      auto val = cache->typeCtx->find(ei->value);
-      seqassert(val && val->type->isStaticType(), "invalid static expression: {}", e);
-      auto genTyp = val->type->follow();
-      auto id = genTyp->getLink() ? genTyp->getLink()->id
-                : genTyp->getStatic()->generics.empty()
-                    ? 0
-                    : genTyp->getStatic()->generics[0].id;
-      generics.emplace_back(ei->value, cache->reverseIdentifierLookup[ei->value],
-                            genTyp, id);
-      seen.insert(ei->value);
-    }
-  } else if (auto eu = e->getUnary()) {
-    parseExpr(eu->expr, seen);
-  } else if (auto eb = e->getBinary()) {
-    parseExpr(eb->lexpr, seen);
-    parseExpr(eb->rexpr, seen);
-  } else if (auto ef = e->getIf()) {
-    parseExpr(ef->cond, seen);
-    parseExpr(ef->ifexpr, seen);
-    parseExpr(ef->elsexpr, seen);
-  }
+bool StaticType::isInt() const { return kind == StaticType::Int; }
+
+int64_t StaticType::getInt() const {
+  seqassert(isInt(), "not an int");
+  return *(int64_t *)value;
+}
+
+std::string StaticType::getTypeName() const { return StaticType::getTypeName(kind); }
+
+std::string StaticType::getTypeName(StaticType::Kind kind) {
+  return kind == StaticType::String ? "str" : "int";
+}
+
+std::string StaticType::getTypeName(char kind) {
+  return getTypeName(StaticType::Kind(kind));
+}
+
+std::shared_ptr<Expr> StaticType::getStaticExpr() const {
+  if (isString())
+    return std::make_shared<StringExpr>(getString());
+  if (isInt())
+    return std::make_shared<IntExpr>(getInt());
+  seqassert(false, "cannot happen");
+  return nullptr;
 }
 
 } // namespace codon::ast::types

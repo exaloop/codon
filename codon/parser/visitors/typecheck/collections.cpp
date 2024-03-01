@@ -51,9 +51,8 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
 /// See @c transformComprehension
 void TypecheckVisitor::visit(ListExpr *expr) {
   expr->setType(ctx->getUnbound());
-  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("List");
-  if ((resultExpr =
-           transformComprehension(name->canonicalName, "append", expr->items))) {
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("List")->getClass();
+  if ((resultExpr = transformComprehension(name->name, "append", expr->items))) {
     resultExpr->setAttr(ExprAttr::List);
   }
 }
@@ -62,8 +61,8 @@ void TypecheckVisitor::visit(ListExpr *expr) {
 /// See @c transformComprehension
 void TypecheckVisitor::visit(SetExpr *expr) {
   expr->setType(ctx->getUnbound());
-  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("Set");
-  if ((resultExpr = transformComprehension(name->canonicalName, "add", expr->items))) {
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Set")->getClass();
+  if ((resultExpr = transformComprehension(name->name, "add", expr->items))) {
     resultExpr->setAttr(ExprAttr::Set);
   }
 }
@@ -72,9 +71,8 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 /// expression. See @c transformComprehension
 void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(ctx->getUnbound());
-  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("Dict");
-  if ((resultExpr =
-           transformComprehension(name->canonicalName, "__setitem__", expr->items))) {
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Dict")->getClass();
+  if ((resultExpr = transformComprehension(name->name, "__setitem__", expr->items))) {
     resultExpr->setAttr(ExprAttr::Dict);
   }
 }
@@ -186,7 +184,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     // ctx->addBlock();
     transform(expr->getFinalSuite()); // assume: internal data will be changed
     // ctx->popBlock();
-    unify(expr->type, ctx->instantiateGeneric(ctx->forceFind("Generator")->type,
+    unify(expr->type, ctx->instantiateGeneric(ctx->getType("Generator"),
                                               {expr->getFinalExpr()->type}));
     if (realize(expr->type))
       expr->setDone();
@@ -224,16 +222,16 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       return ti;
     } else if (collectionCls->name != TYPE_OPTIONAL && ti->name == TYPE_OPTIONAL) {
       // Rule: T derives from Optional[T]
-      return ctx->instantiateGeneric(ctx->forceFind("Optional")->type, {collectionCls})
+      return ctx->instantiateGeneric(ctx->getType("Optional"), {collectionCls})
           ->getClass();
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
       // Rule: anything derives from pyobj
       return ti;
     } else if (collectionCls->name != ti->name) {
       // Rule: subclass derives from superclass
-      auto &mros = ctx->cache->classes[collectionCls->name].mro;
+      const auto &mros = ctx->cache->classes[collectionCls->name].mro;
       for (size_t i = 1; i < mros.size(); i++) {
-        auto t = ctx->instantiate(mros[i]->type, collectionCls);
+        auto t = ctx->instantiate(mros[i], collectionCls);
         if (t->unify(ti.get(), nullptr) >= 0) {
           return ti;
           break;
@@ -276,7 +274,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
                     collectionTyp->getRecord()->args.size() == 2,
                 "bad dict");
       auto tname = generateTuple(2);
-      auto tt = unify(typ, ctx->instantiate(ctx->forceFind(tname)->type))->getRecord();
+      auto tt = unify(typ, ctx->instantiate(ctx->getType(tname)))->getRecord();
       auto nt = collectionTyp->getRecord()->args;
       for (int di = 0; di < 2; di++) {
         if (!nt[di]->getClass())
@@ -284,7 +282,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
         else if (auto dt = superTyp(nt[di]->getClass(), tt->args[di]->getClass()))
           nt[di] = dt;
       }
-      collectionTyp = ctx->instantiateGeneric(ctx->forceFind(tname)->type, nt);
+      collectionTyp = ctx->instantiateGeneric(ctx->getType(tname), nt);
     }
   }
   if (!done)
@@ -297,14 +295,14 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
     // Optimization: pre-allocate the list with the exact number of elements
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
-  auto t = NT<IdExpr>(type);
+  auto t = N<IdExpr>(type);
   if (isDict && collectionTyp->getRecord()) {
-    t->setType(ctx->instantiateGeneric(ctx->forceFind(type)->type,
-                                       collectionTyp->getRecord()->args));
+    t->setType(
+        ctx->instantiateGeneric(ctx->getType(type), collectionTyp->getRecord()->args));
   } else if (isDict) {
-    t->setType(ctx->instantiate(ctx->forceFind(type)->type));
+    t->setType(ctx->instantiate(ctx->getType(type)));
   } else {
-    t->setType(ctx->instantiateGeneric(ctx->forceFind(type)->type, {collectionTyp}));
+    t->setType(ctx->instantiateGeneric(ctx->getType(type), {collectionTyp}));
   }
   stmts.push_back(
       transform(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs))));

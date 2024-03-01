@@ -266,7 +266,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
   } else if (expr->expr->isId("__array__.__new__:0")) {
     auto fnt = expr->expr->type->getFunc();
     auto szt = fnt->funcGenerics[0].type->getStatic();
-    auto sz = szt->evaluate().getInt();
+    auto sz = szt->getInt();
     auto typ = fnt->funcParent->getClass()->generics[0].type;
 
     auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
@@ -433,44 +433,38 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
 
   seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
   auto var = stmt->lhs->getId()->value;
-  if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
-    if (stmt->rhs && stmt->rhs->type->getFunc()) {
-      // result = transform(stmt->rhs);
-      return;
-    }
-    if (stmt->rhs && stmt->rhs->type->getPartial() &&
-        !ctx->find(stmt->rhs->type->getClass()->realizedTypeName())) {
-      // Partial generic; ignore [TODO]
-      // result = transform(stmt->rhs);
-      return;
-    }
 
-    auto isGlobal = in(ctx->cache->globals, var);
-    ir::Var *v = nullptr;
+  auto isGlobal = in(ctx->cache->globals, var);
+  ir::Var *v = nullptr;
 
-    if (isGlobal) {
-      seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
-                var);
-      v = ctx->find(var)->getVar();
-      v->setSrcInfo(stmt->getSrcInfo());
-      v->setType(getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()));
-    } else {
-      v = make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
-                        false, false, var);
-      ctx->getBase()->push_back(v);
-      ctx->add(TranslateItem::Var, var, v);
-    }
-    // Check if it is a C variable
-    if (stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
-      v->setExternal();
-      v->setName(ctx->cache->rev(var));
-      v->setGlobal();
-      return;
-    }
 
-    if (stmt->rhs)
-      result = make<ir::AssignInstr>(stmt, v, transform(stmt->rhs));
+  if (!stmt->lhs->type->isInstantiated() || (stmt->lhs->type->is("type"))) {
+    // LOG("{} {}", getSrcInfo(), stmt->toString(0));
+    return; // type aliases/fn aliases etc
   }
+
+  if (isGlobal) {
+    seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
+              var);
+    v = ctx->find(var)->getVar();
+    v->setSrcInfo(stmt->getSrcInfo());
+    v->setType(getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()));
+  } else {
+    v = make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
+                      false, false, var);
+    ctx->getBase()->push_back(v);
+    ctx->add(TranslateItem::Var, var, v);
+  }
+  // Check if it is a C variable
+  if (stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
+    v->setExternal();
+    v->setName(ctx->cache->rev(var));
+    v->setGlobal();
+    return;
+  }
+
+  if (stmt->rhs)
+    result = make<ir::AssignInstr>(stmt, v, transform(stmt->rhs));
 }
 
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
@@ -505,14 +499,12 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto fc = c->expr->getType()->getFunc();
     seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
               "for par is not a function");
-    auto schedule =
-        fc->funcGenerics[0].type->getStatic()->expr->staticValue.getString();
-    bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();
+    auto schedule = fc->funcGenerics[0].type->getStatic()->getString();
+    bool ordered = fc->funcGenerics[1].type->getStatic()->getInt();
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
-    int64_t collapse =
-        fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
-    bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
+    int64_t collapse = fc->funcGenerics[2].type->getStatic()->getInt();
+    bool gpu = fc->funcGenerics[3].type->getStatic()->getInt();
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
@@ -619,6 +611,9 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 /************************************************************************************/
 
 codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
+  if (auto c = t->isStaticType()) {
+    return ctx->find(types::StaticType::getTypeName(c))->getType();
+  }
   seqassert(t && t->getClass(), "{} is not a class", t);
   std::string name = t->getClass()->realizedTypeName();
   auto i = ctx->find(name);
@@ -696,14 +691,17 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::vector<ir::types::Generic> literals;
   auto &ss = ast->suite->getSuite()->stmts;
   for (int i = 1; i < ss.size(); i++) {
-    if (auto *ei = ss[i]->getExpr()->expr->getInt()) { // static integer expression
-      literals.emplace_back(*(ei->intValue));
-    } else if (auto *es = ss[i]->getExpr()->expr->getString()) { // static string
-      literals.emplace_back(es->getValue());
+    if (auto st = ss[i]->getExpr()->expr->getType()->getStatic()) { // static integer expression
+      if (st->isInt())
+        literals.emplace_back(st->getInt());
+      else
+        literals.emplace_back(st->getString());
     } else {
       seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
                 ss[i]->getExpr()->toString());
-      literals.emplace_back(getType(ss[i]->getExpr()->expr->getType()));
+      literals.emplace_back(getType(
+        ctx->cache->typeCtx->getType(
+        ss[i]->getExpr()->expr->getType())));
     }
   }
   bool isDeclare = true;

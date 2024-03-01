@@ -20,11 +20,15 @@ using namespace types;
 void TypecheckVisitor::visit(UnaryExpr *expr) {
   transform(expr->expr);
 
-  static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
-      staticOps = {{StaticValue::INT, {"-", "+", "!"}}, {StaticValue::STRING, {"@"}}};
+  static std::unordered_map<std::string, std::unordered_set<std::string>> staticOps = {
+      {"int", {"-", "+", "!"}}, {"str", {"@"}}};
   // Handle static expressions
-  if (expr->expr->isStatic() && in(staticOps[expr->expr->staticValue.type], expr->op)) {
-    resultExpr = evaluateStaticUnary(expr);
+  if (auto s = expr->expr->type->getStatic()) {
+    if (in(staticOps[s->getTypeName()], expr->op)) {
+      resultExpr = evaluateStaticUnary(expr);
+      return;
+    }
+  } else if (expr->expr->type->getUnbound()) {
     return;
   }
 
@@ -58,14 +62,15 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
     transform(expr->rexpr, true);
 
-  static std::unordered_map<StaticValue::Type, std::unordered_set<std::string>>
-      staticOps = {{StaticValue::INT,
-                    {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//",
-                     "%", "&", "|", "^"}},
-                   {StaticValue::STRING, {"==", "!=", "+"}}};
-  if (expr->lexpr->isStatic() && expr->rexpr->isStatic() &&
-      expr->lexpr->staticValue.type == expr->rexpr->staticValue.type &&
-      in(staticOps[expr->rexpr->staticValue.type], expr->op)) {
+  static std::unordered_map<std::string, std::unordered_set<std::string>> staticOps = {
+      {"int",
+       {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%", "&",
+        "|", "^"}},
+      {"str", {"==", "!=", "+"}}};
+  if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic() &&
+      expr->lexpr->type->getStatic()->getTypeName() ==
+          expr->rexpr->type->getStatic()->getTypeName() &&
+      in(staticOps[expr->rexpr->type->getStatic()->getTypeName()], expr->op)) {
     // Handle static expressions
     resultExpr = evaluateStaticBinary(expr);
   } else if (auto e = transformBinarySimple(expr)) {
@@ -216,7 +221,6 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     // make sure to extract these layers and move them to the pipeline.
     // Example: `foo(...)` that is transformed to `foo(unwrap(...))` will become
     // `unwrap(...) |> foo(...)`
-    LOG("--> {}", (*ec));
     transform(*ec);
     auto layers = findEllipsis(*ec);
     seqassert(!layers.empty(), "can't find the ellipsis");
@@ -245,7 +249,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (pi + 1 < expr->items.size())
       inType = getIterableType(inType);
   }
-  unify(expr->type, (hasGenerator ? ctx->forceFind("NoneType")->type : inType));
+  unify(expr->type, (hasGenerator ? ctx->getType("NoneType") : inType));
   if (done)
     expr->setDone();
 }
@@ -261,7 +265,6 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     // Special case: static types. Ensure that static is supported
     if (!expr->index->isId("int") && !expr->index->isId("str"))
       E(Error::BAD_STATIC_TYPE, expr->index);
-    expr->markType();
     auto typ = ctx->getUnbound();
     typ->isStatic = getStaticGeneric(expr);
     unify(expr->type, typ);
@@ -272,7 +275,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
     // Special case: tuples. Change to Tuple.N
     auto t = expr->index->getTuple();
-    expr->expr = NT<IdExpr>(generateTuple(t ? t->items.size() : 1));
+    expr->expr = transform(N<IdExpr>(generateTuple(t ? t->items.size() : 1)));
   } else {
     transform(expr->expr, true);
   }
@@ -287,15 +290,15 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     items.push_back(expr->index);
   }
   for (auto &i : items) {
-    if (i->getList() && expr->expr->isType()) {
+    if (i->getList() && expr->expr->type->is("type")) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
       // `Function[...]`)
       i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
     }
     transform(i, true);
   }
-  if (expr->expr->isType()) {
-    resultExpr = transform(NT<InstantiateExpr>(expr->expr, items));
+  if (expr->expr->type->is("type")) {
+    resultExpr = transform(N<InstantiateExpr>(expr->expr, items));
     return;
   }
 
@@ -328,8 +331,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
-  TypePtr typ =
-      ctx->instantiate(expr->typeExpr->getSrcInfo(), expr->typeExpr->getType());
+  auto typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), getType(expr->typeExpr));
   seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr);
 
   auto &generics = typ->getClass()->generics;
@@ -347,33 +349,33 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       transformType(typeParam);
       if (typeParam->type->isStaticType())
         E(Error::INST_CALLABLE_STATIC, typeParam);
-      types.push_back(typeParam->type);
+      types.push_back(getType(typeParam));
     }
     auto typ = ctx->getUnbound();
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
-    unify(expr->type, typ);
+    unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {typ}));
   } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
     transformType(expr->typeParams[0]);
     auto typ = ctx->getUnbound();
-    typ->getLink()->trait = std::make_shared<TypeTrait>(expr->typeParams[0]->type);
+    typ->getLink()->trait = std::make_shared<TypeTrait>(getType(expr->typeParams[0]));
     unify(expr->type, typ);
   } else {
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
-      transform(expr->typeParams[i]);
-      TypePtr t = nullptr;
-      if (expr->typeParams[i]->isStatic() && generics[i].type->isStaticType()) {
-        t = Type::makeStatic(ctx->cache, expr->typeParams[i]);
-        t = ctx->instantiate(t);
-      } else {
-        if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
-          transformType(expr->typeParams[i]);
-        if (!expr->typeParams[i]->isType())
-          E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
-        t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
-                             expr->typeParams[i]->getType());
-      }
+      // transform(expr->typeParams[i]);
+      transformType(expr->typeParams[i]);
+      auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
+                                getType(expr->typeParams[i]));
+      // if (expr->typeParams[i]->type->isStaticType() &&
+      //     generics[i].type->isStaticType()) {
+      //   t = ctx->instantiate(expr->typeParams[i]->type);
+      // } else {
+      //   if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
+      //     transformType(expr->typeParams[i]);
+      //   if (!expr->typeParams[i]->type->is("type"))
+      //     E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
+      // }
       if (isUnion)
         typ->getUnion()->addType(t);
       else
@@ -382,18 +384,15 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     if (isUnion) {
       typ->getUnion()->seal();
     }
-    unify(expr->type, typ);
-  }
-  expr->markType();
 
-  // If the type is realizable, use the realized name instead of instantiation
-  // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
-  if (realize(expr->type)) {
-    resultExpr = N<IdExpr>(expr->type->realizedName());
-    resultExpr->setType(expr->type);
-    resultExpr->setDone();
-    if (expr->typeExpr->isType())
-      resultExpr->markType();
+    unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {typ}));
+    // If the type is realizable, use the realized name instead of instantiation
+    // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
+    if (realize(expr->type)) {
+      auto t = getType(expr->shared_from_this());
+      resultExpr = NT<IdExpr>(expr->type, t->realizedName());
+      resultExpr->setDone();
+    }
   }
 }
 
@@ -402,9 +401,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 ///   `start::step` -> `Slice(start, Optional.__new__(), step)`
 void TypecheckVisitor::visit(SliceExpr *expr) {
   ExprPtr none = N<CallExpr>(N<DotExpr>(TYPE_OPTIONAL, "__new__"));
-  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->forceFind("Slice");
+  auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Slice")->getClass();
   resultExpr = transform(N<CallExpr>(
-      N<IdExpr>(name->canonicalName), expr->start ? expr->start : clone(none),
+      N<IdExpr>(name->name), expr->start ? expr->start : clone(none),
       expr->stop ? expr->stop : clone(none), expr->step ? expr->step : clone(none)));
 }
 
@@ -413,17 +412,15 @@ void TypecheckVisitor::visit(SliceExpr *expr) {
 /// Supported operators: (strings) not (ints) not, -, +
 ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static strings
-  if (expr->expr->staticValue.type == StaticValue::STRING) {
+  if (expr->expr->type->isStaticType() == StaticType::String) {
     if (expr->op == "!") {
-      if (expr->expr->staticValue.evaluated) {
-        bool value = expr->expr->staticValue.getString().empty();
+      if (expr->expr->type->canRealize()) {
+        bool value = expr->expr->type->getStatic()->getString().empty();
         LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
-        return transform(N<BoolExpr>(value));
+        return transform(N<IntExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        unify(expr->type, ctx->forceFind("bool")->type);
-        if (!expr->isStatic())
-          expr->staticValue.type = StaticValue::INT;
+        expr->type->getUnbound()->isStatic = StaticType::Int;
       }
     }
     return nullptr;
@@ -431,8 +428,8 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 
   // Case: static integers
   if (expr->op == "-" || expr->op == "+" || expr->op == "!") {
-    if (expr->expr->staticValue.evaluated) {
-      int64_t value = expr->expr->staticValue.getInt();
+    if (expr->expr->type->canRealize()) {
+      int64_t value = expr->expr->type->getStatic()->getInt();
       if (expr->op == "+")
         ;
       else if (expr->op == "-")
@@ -441,14 +438,12 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         value = !bool(value);
       LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
       if (expr->op == "!")
-        return transform(N<BoolExpr>(bool(value)));
+        return transform(N<IntExpr>(bool(value)));
       else
         return transform(N<IntExpr>(value));
     } else {
       // Cannot be evaluated yet: just set the type
-      unify(expr->type, ctx->forceFind("int")->type);
-      if (!expr->isStatic())
-        expr->staticValue.type = StaticValue::INT;
+      expr->type->getUnbound()->isStatic = StaticType::Int;
     }
   }
 
@@ -481,42 +476,38 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
 ///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %, ^, |, &
 ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
   // Case: static strings
-  if (expr->rexpr->staticValue.type == StaticValue::STRING) {
+  if (expr->rexpr->type->isStaticType() == StaticType::String) {
     if (expr->op == "+") {
       // `"a" + "b"` -> `"ab"`
-      if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
-        auto value =
-            expr->lexpr->staticValue.getString() + expr->rexpr->staticValue.getString();
+      if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
+        auto value = expr->lexpr->type->getStatic()->getString() +
+                     expr->rexpr->type->getStatic()->getString();
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
         return transform(N<StringExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        if (!expr->isStatic())
-          expr->staticValue.type = StaticValue::STRING;
-        unify(expr->type, ctx->forceFind("str")->type);
+        expr->type->getUnbound()->isStatic = StaticType::String;
       }
     } else {
       // `"a" == "b"` -> `False` (also handles `!=`)
-      if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
-        bool eq = expr->lexpr->staticValue.getString() ==
-                  expr->rexpr->staticValue.getString();
+      if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
+        bool eq = expr->lexpr->type->getStatic()->getString() ==
+                  expr->rexpr->type->getStatic()->getString();
         bool value = expr->op == "==" ? eq : !eq;
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
-        return transform(N<BoolExpr>(value));
+        return transform(N<IntExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        if (!expr->isStatic())
-          expr->staticValue.type = StaticValue::INT;
-        unify(expr->type, ctx->forceFind("bool")->type);
+        expr->type->getUnbound()->isStatic = StaticType::Int;
       }
     }
     return nullptr;
   }
 
   // Case: static integers
-  if (expr->lexpr->staticValue.evaluated && expr->rexpr->staticValue.evaluated) {
-    int64_t lvalue = expr->lexpr->staticValue.getInt();
-    int64_t rvalue = expr->rexpr->staticValue.getInt();
+  if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
+    int64_t lvalue = expr->lexpr->type->getStatic()->getInt();
+    int64_t rvalue = expr->rexpr->type->getStatic()->getInt();
     if (expr->op == "<")
       lvalue = lvalue < rvalue;
     else if (expr->op == "<=")
@@ -554,14 +545,12 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
     if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
            expr->op))
-      return transform(N<BoolExpr>(bool(lvalue)));
+      return transform(N<IntExpr>(bool(lvalue)));
     else
       return transform(N<IntExpr>(lvalue));
   } else {
     // Cannot be evaluated yet: just set the type
-    if (!expr->isStatic())
-      expr->staticValue.type = StaticValue::INT;
-    unify(expr->type, ctx->forceFind("int")->type);
+    expr->type->getUnbound()->isStatic = StaticType::Int;
   }
 
   return nullptr;
@@ -591,7 +580,7 @@ ExprPtr TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
     return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, "__contains__"), expr->lexpr));
   } else if (expr->op == "is") {
     if (expr->lexpr->getNone() && expr->rexpr->getNone())
-      return transform(N<BoolExpr>(true));
+      return transform(N<IntExpr>(1));
     else if (expr->lexpr->getNone())
       return transform(N<BinaryExpr>(expr->rexpr, "is", expr->lexpr));
   } else if (expr->op == "is not") {
@@ -608,17 +597,17 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   // Case: `is None` expressions
   if (expr->rexpr->getNone()) {
     if (expr->lexpr->getType()->is("NoneType"))
-      return transform(N<BoolExpr>(true));
+      return transform(N<IntExpr>(1));
     if (!expr->lexpr->getType()->is(TYPE_OPTIONAL)) {
       // lhs is not optional: `return False`
-      return transform(N<BoolExpr>(false));
+      return transform(N<IntExpr>(0));
     } else {
       // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
       auto g = expr->lexpr->getType()->getClass();
       for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
         ;
       if (g->generics[0].type->is("NoneType"))
-        return transform(N<BoolExpr>(true));
+        return transform(N<IntExpr>(1));
 
       // lhs is optional: `return lhs.__has__().__invert__()`
       return transform(N<CallExpr>(
@@ -631,11 +620,11 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   auto rc = realize(expr->rexpr->getType());
   if (!lc || !rc) {
     // Types not known: return early
-    unify(expr->type, ctx->forceFind("bool")->type);
+    unify(expr->type, ctx->getType("bool"));
     return nullptr;
   }
-  if (expr->lexpr->isType() && expr->rexpr->isType())
-    return transform(N<BoolExpr>(lc->realizedName() == rc->realizedName()));
+  if (expr->lexpr->type->is("type") && expr->rexpr->type->is("type"))
+    return transform(N<IntExpr>(lc->realizedName() == rc->realizedName()));
   if (!lc->getRecord() && !rc->getRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
     return transform(
@@ -654,7 +643,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   }
   if (lc->realizedName() != rc->realizedName()) {
     // tuple names do not match: `return False`
-    return transform(N<BoolExpr>(false));
+    return transform(N<IntExpr>(0));
   }
   // Same tuple types: `return lhs == rhs`
   return transform(N<BinaryExpr>(expr->lexpr, "==", expr->rexpr));
@@ -687,16 +676,16 @@ std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string
 /// @param isAtomic if set, use atomic magics if available.
 ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAtomic) {
   auto [magic, _] = getMagic(expr->op);
-  auto lt = expr->lexpr->getType()->getClass();
-  auto rt = expr->rexpr->getType()->getClass();
-  seqassert(lt && rt, "lhs and rhs types not known");
+  auto lt = nonStaticType(expr->lexpr->type)->getClass();
+  seqassert(lt, "lhs type not known");
 
   FuncTypePtr method = nullptr;
 
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
-    auto ptr = ctx->instantiateGeneric(ctx->forceFind("Ptr")->type, {lt});
-    if ((method = findBestMethod(lt, format("__atomic_{}__", magic), {ptr, rt}))) {
+    auto ptr = ctx->instantiateGeneric(ctx->getType("Ptr"), {lt});
+    if ((method = findBestMethod(lt, format("__atomic_{}__", magic),
+                                 {ptr, expr->rexpr->type}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->lexpr);
     }
   }
@@ -717,9 +706,8 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 ///   `a op b` -> `a.__opmagic__(b)`
 ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   auto [magic, rightMagic] = getMagic(expr->op);
-  auto lt = expr->lexpr->getType()->getClass();
-  auto rt = expr->rexpr->getType()->getClass();
-  seqassert(lt && rt, "lhs and rhs types not known");
+  auto lt = expr->lexpr->getType();
+  auto rt = expr->rexpr->getType();
 
   if (!lt->is("pyobj") && rt->is("pyobj")) {
     // Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
@@ -739,22 +727,23 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   if (auto method =
-          findBestMethod(lt, format("__{}__", magic), {expr->lexpr, expr->rexpr})) {
+          findBestMethod(nonStaticType(lt)->getClass(), format("__{}__", magic),
+                         {expr->lexpr, expr->rexpr})) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
         N<CallExpr>(N<IdExpr>(method->ast->name), expr->lexpr, expr->rexpr));
   }
 
   // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
-  if (auto method = findBestMethod(rt, format("__{}__", rightMagic),
-                                   {expr->rexpr, expr->lexpr})) {
+  if (auto method =
+          findBestMethod(nonStaticType(rt)->getClass(), format("__{}__", rightMagic),
+                         {expr->rexpr, expr->lexpr})) {
     auto l = ctx->cache->getTemporaryVar("l"), r = ctx->cache->getTemporaryVar("r");
     return transform(N<StmtExpr>(
         N<AssignStmt>(N<IdExpr>(l), expr->lexpr),
         N<AssignStmt>(N<IdExpr>(r), expr->rexpr),
         N<CallExpr>(N<IdExpr>(method->ast->name), N<IdExpr>(r), N<IdExpr>(l))));
   }
-  // 145
 
   return nullptr;
 }
@@ -785,12 +774,8 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     if (!e)
       return true;
     auto f = transform(clone(e));
-    if (f->staticValue.type == StaticValue::INT) {
-      seqassert(f->staticValue.evaluated, "{} not evaluated", e);
-      *o = f->staticValue.getInt();
-      return true;
-    } else if (auto ei = f->getInt()) {
-      *o = *(ei->intValue);
+    if (auto s = f->type->getStatic()) {
+      *o = s->getInt();
       return true;
     }
     return false;

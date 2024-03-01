@@ -42,10 +42,6 @@ int LinkType::unify(Type *typ, Unification *undo) {
       else
         return -1;
     }
-    if (auto ts = typ->getStatic()) {
-      if (ts->expr->getId())
-        return unify(ts->generics[0].type.get(), undo);
-    }
     if (auto t = typ->getLink()) {
       if (t->kind == Link)
         return t->type->unify(this, undo);
@@ -172,8 +168,10 @@ std::string LinkType::debugString(char mode) const {
 }
 
 std::string LinkType::realizedName() const {
-  if (kind == Unbound || kind == Generic)
+  if (kind == Unbound)
     return "?";
+  if (kind == Generic)
+    return fmt::format("#{}", genericName);
   seqassert(kind == Link, "unexpected generic link");
   return type->realizedName();
 }
@@ -232,9 +230,6 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
       return false;
     }
   } else if (auto ts = typ->getStatic()) {
-    for (auto &g : ts->generics)
-      if (g.type && occurs(g.type.get(), undo))
-        return true;
     return false;
   }
   if (auto tc = typ->getClass()) {

@@ -39,7 +39,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
       typ->getRecord()->noTuple = true;
     typ->setSrcInfo(stmt->getSrcInfo());
+
     classItem->type = typ;
+    if (canonicalName != "type")
+      classItem->type = ctx->instantiateGeneric(ctx->getType("type"), {typ});
 
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
@@ -59,7 +62,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (!val || !val->isType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     canonicalName = val->canonicalName;
-    typ = val->type->getClass();
+    typ = ctx->getType(canonicalName)->getClass();
     const auto &astIter = ctx->cache->classes.find(canonicalName);
     if (astIter == ctx->cache->classes.end()) {
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
@@ -120,7 +123,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           generic->isStatic = st;
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
-          val->staticType = st;
         } else {
           ctx->addType(genName, varName, generic)->generic = true;
         }
@@ -131,23 +133,23 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         } else {
           typ->hiddenGenerics.push_back(g);
         }
-        args.emplace_back(varName, transformType(clone(a.type), false),
-                          transformType(clone(a.defaultValue), false), a.status);
+        args.emplace_back(varName, a.type, transformType(clone(a.defaultValue), false),
+                          a.status);
       }
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    ExprPtr typeAst = N<IdExpr>(name), transformedTypeAst = NT<IdExpr>(canonicalName);
+    ExprPtr typeAst = N<IdExpr>(name), transformedTypeAst = N<IdExpr>(canonicalName);
     for (auto &a : args) {
       if (a.status == Param::Generic) {
         if (!typeAst->getIndex()) {
           typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
           transformedTypeAst =
-              NT<InstantiateExpr>(NT<IdExpr>(canonicalName), std::vector<ExprPtr>{});
+              N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<ExprPtr>{});
         }
         typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
-        CAST(transformedTypeAst, InstantiateExpr)
-            ->typeParams.push_back(transform(N<IdExpr>(a.name), true));
+        transformedTypeAst->getInstantiate()->typeParams.push_back(
+            transform(N<IdExpr>(a.name), true));
       }
     }
 
@@ -212,8 +214,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       auto &fields = ctx->cache->classes[canonicalName].fields;
       for (auto ai = 0, aj = 0; ai < args.size(); ai++) {
         if (args[ai].status == Param::Normal && !ClassStmt::isClassVar(args[ai])) {
-          fields[aj].type =
-              args[ai].type->getType()->generalize(ctx->typecheckLevel - 1);
+          fields[aj].type = getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
           fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
           if (stmt->isRecord())
             typ->getRecord()->args.push_back(fields[aj].type);
@@ -246,11 +247,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
       ctx->cache->classes[canonicalName].ast->validate();
       ctx->cache->classes[canonicalName].module = ctx->getModule();
-
-      // Handle MRO
-      for (auto &m : ctx->cache->classes[canonicalName].mro) {
-        m = transformType(m);
-      }
 
       // Codegen default magic methods
       // __new__ must be the first
@@ -299,7 +295,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       auto method = m.first;
       for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
         // ... in the current class
-        auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
+        auto b = ctx->cache->classes[canonicalName].mro[mi]->name;
         if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
           ctx->cache->classes[canonicalName].virtuals.insert(method);
         }
@@ -307,7 +303,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
         for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
           // ... and in parent classes
-          auto b = ctx->cache->classes[canonicalName].mro[mi]->getTypeName();
+          auto b = ctx->cache->classes[canonicalName].mro[mi]->name;
           ctx->cache->classes[b].virtuals.insert(v);
         }
       }
@@ -328,16 +324,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->remove(g.name);
       }
     // Debug information
-    LOG_REALIZE("[class] {} -> {:D} / {}", canonicalName, typ,
-                ctx->cache->classes[canonicalName].fields.size());
-    for (auto &m : ctx->cache->classes[canonicalName].fields)
-      LOG_REALIZE("       - member: {}: {:D}", m.name, m.type);
-    for (auto &m : ctx->cache->classes[canonicalName].methods)
-      LOG_REALIZE("       - method: {}: {} ({:D} // {:D})", m.first, m.second,
-                  ctx->cache->functions[m.second].type,
-                  ctx->cache->functions[m.second].type
-                      ? ctx->cache->functions[m.second].type->funcParent
-                      : nullptr);
+    // LOG("[class] {} -> {:D} / {}", canonicalName, typ,
+    //     ctx->cache->classes[canonicalName].fields.size());
+    // for (auto &m : ctx->cache->classes[canonicalName].fields)
+    //   LOG("       - member: {}: {:D}", m.name, m.type);
+    // for (auto &m : ctx->cache->classes[canonicalName].methods)
+    //   LOG("       - method: {}: {}", m.first, m.second);
+    // LOG("");
+    // ctx->dump();
   } catch (const exc::ParserException &) {
     if (!stmt->attributes.has(Attr::Tuple))
       ctx->remove(name);
@@ -381,8 +375,7 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
   std::vector<types::ClassTypePtr> asts;
 
   // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
-  std::vector<std::vector<ExprPtr>> mro{{typeAst}};
-  std::vector<ExprPtr> parentClasses;
+  std::vector<std::vector<types::ClassTypePtr>> mro{{typ}};
   for (auto &cls : baseClasses) {
     std::string name;
     std::vector<ExprPtr> subs;
@@ -393,10 +386,9 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     if (!cls->type->getClass())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
-    auto clsTyp = cls->type->getClass();
+    auto clsTyp = getType(cls)->getClass();
     name = clsTyp->name;
     asts.push_back(clsTyp);
-    parentClasses.push_back(clone(cls));
     Cache::Class *cachedCls = in(ctx->cache->classes, name);
     mro.push_back(cachedCls->mro);
 
@@ -414,15 +406,7 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     }
 
     // Add hidden generics
-    auto addGen = [&](auto g) {
-      if (auto st = g.type->getStatic()) {
-        auto val = ctx->addVar(g.name, g.name, st);
-        val->generic = true;
-        val->staticType = st->expr->staticValue.type;
-      } else {
-        ctx->addType(g.name, g.name, g.type)->generic = true;
-      }
-    };
+    auto addGen = [&](auto g) { ctx->addVar(g.name, g.name, g.type)->generic = true; };
     for (auto &g : clsTyp->generics) {
       addGen(g);
       typ->hiddenGenerics.push_back(g);
@@ -452,7 +436,7 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
         args.emplace_back(name, transformType(clean_clone(a.type)),
                           transform(clean_clone(a.defaultValue)));
         ctx->cache->classes[canonicalName].fields.push_back(Cache::Class::ClassField{
-            name, args.back().type->getType(),
+            name, getType(args.back().type),
             ctx->cache->classes[ast->name].fields[ai].baseClass});
         ai++;
       }
@@ -460,8 +444,8 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     ctx->popBlock();
   }
   if (typeAst) {
-    if (!parentClasses.empty()) {
-      mro.push_back(parentClasses);
+    if (!asts.empty()) {
+      mro.push_back(asts);
       ctx->cache->classes[canonicalName].rtti = true;
     }
     ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
@@ -768,13 +752,7 @@ int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
 
 void TypecheckVisitor::addClassGenerics(const types::ClassTypePtr &clsTyp) {
   auto addGen = [&](auto g) {
-    if (auto st = g.type->getStatic()) {
-      auto val = ctx->addVar(ctx->cache->rev(g.name), g.name, st);
-      val->generic = true;
-      val->staticType = st->expr->staticValue.type;
-    } else {
-      ctx->addType(ctx->cache->rev(g.name), g.name, g.type)->generic = true;
-    }
+    ctx->addVar(ctx->cache->rev(g.name), g.name, g.type)->generic = true;
   };
   for (auto &g : clsTyp->hiddenGenerics)
     addGen(g);

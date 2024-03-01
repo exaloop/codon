@@ -79,21 +79,6 @@ struct UnaryExpr;
 struct Stmt;
 struct SuiteStmt;
 
-struct StaticValue {
-  std::variant<int64_t, std::string> value;
-  enum Type { NOT_STATIC = 0, STRING = 1, INT = 2, NOT_SUPPORTED = 3 } type;
-  bool evaluated;
-
-  explicit StaticValue(Type);
-  // Static(bool);
-  explicit StaticValue(int64_t);
-  explicit StaticValue(std::string);
-  bool operator==(const StaticValue &s) const;
-  std::string toString(int) const;
-  int64_t getInt() const;
-  std::string getString() const;
-};
-
 /**
  * A Seq AST expression.
  * Each AST expression is intended to be instantiated as a shared_ptr.
@@ -104,20 +89,6 @@ struct Expr : public Node, public std::enable_shared_from_this<Expr> {
   // private:
   /// Type of the expression. nullptr by default.
   types::TypePtr type;
-  /// Flag that indicates if an expression describes a type (e.g. int or list[T]).
-  /// Used by transformation and type-checking stages.
-  bool isTypeExpr;
-  /// Flag that indicates if an expression is a compile-time static expression.
-  /// Such expression is of a form:
-  ///   an integer (IntExpr) without any suffix that is within i64 range
-  ///   a static generic
-  ///   [-,not] a
-  ///   a [+,-,*,//,%,and,or,==,!=,<,<=,>,>=] b
-  ///     (note: and/or will NOT short-circuit)
-  ///   a if cond else b
-  ///     (note: cond is static, and is true if non-zero, false otherwise).
-  ///     (note: both branches will be evaluated).
-  StaticValue staticValue;
   /// Flag that indicates if all types in an expression are inferred (i.e. if a
   /// type-checking procedure was successful).
   bool done;
@@ -140,12 +111,6 @@ public:
   types::TypePtr getType() const;
   /// Set a node type.
   void setType(types::TypePtr type);
-  /// @return true if a node describes a type expression.
-  bool isType() const;
-  /// Marks a node as a type expression.
-  void markType();
-  /// True if a node is static expression.
-  bool isStatic() const;
 
   /// Allow pretty-printing to C++ streams.
   friend std::ostream &operator<<(std::ostream &out, const Expr &expr) {
@@ -708,7 +673,7 @@ enum ExprAttr {
   __LAST__
 };
 
-StaticValue::Type getStaticGeneric(Expr *e);
+char getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
 

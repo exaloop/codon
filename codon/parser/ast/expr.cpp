@@ -21,9 +21,7 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-Expr::Expr()
-    : type(nullptr), isTypeExpr(false), staticValue(StaticValue::NOT_STATIC),
-      done(false), attributes(0), origExpr(nullptr) {}
+Expr::Expr() : type(nullptr), done(false), attributes(0), origExpr(nullptr) {}
 Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
@@ -34,8 +32,6 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
 void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
-bool Expr::isType() const { return isTypeExpr; }
-void Expr::markType() { isTypeExpr = true; }
 std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
@@ -45,7 +41,6 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
   return s;
 }
-bool Expr::isStatic() const { return staticValue.type != StaticValue::NOT_STATIC; }
 bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
 void Expr::setAttr(int attr) { attributes |= (1 << attr); }
 std::string Expr::getTypeName() {
@@ -53,35 +48,9 @@ std::string Expr::getTypeName() {
     return getId()->value;
   } else {
     auto i = dynamic_cast<InstantiateExpr *>(this);
-    seqassertn(i && i->typeExpr->getId(), "bad MRO");
+    seqassertn(i && i->typeExpr->getId(), "bad type expr");
     return i->typeExpr->getId()->value;
   }
-}
-
-StaticValue::StaticValue(StaticValue::Type t) : value(), type(t), evaluated(false) {}
-StaticValue::StaticValue(int64_t i) : value(i), type(INT), evaluated(true) {}
-StaticValue::StaticValue(std::string s)
-    : value(std::move(s)), type(STRING), evaluated(true) {}
-bool StaticValue::operator==(const StaticValue &s) const {
-  if (type != s.type || s.evaluated != evaluated)
-    return false;
-  return !s.evaluated || value == s.value;
-}
-std::string StaticValue::toString(int) const {
-  if (type == StaticValue::NOT_STATIC)
-    return "";
-  if (!evaluated)
-    return type == StaticValue::STRING ? "str" : "int";
-  return type == StaticValue::STRING ? "'" + escape(std::get<std::string>(value)) + "'"
-                                     : std::to_string(std::get<int64_t>(value));
-}
-int64_t StaticValue::getInt() const {
-  seqassertn(type == StaticValue::INT, "not an int");
-  return std::get<int64_t>(value);
-}
-std::string StaticValue::getString() const {
-  seqassertn(type == StaticValue::STRING, "not a string");
-  return std::get<std::string>(value);
 }
 
 Param::Param(std::string name, ExprPtr type, ExprPtr defaultValue, int status)
@@ -114,9 +83,7 @@ NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : Expr(expr, clean) {}
 std::string NoneExpr::toString(int) const { return wrapType("none"); }
 ACCEPT_IMPL(NoneExpr, ASTVisitor);
 
-BoolExpr::BoolExpr(bool value) : Expr(), value(value) {
-  staticValue = StaticValue(value);
-}
+BoolExpr::BoolExpr(bool value) : Expr(), value(value) {}
 BoolExpr::BoolExpr(const BoolExpr &expr, bool clean)
     : Expr(expr, clean), value(expr.value) {}
 std::string BoolExpr::toString(int) const {
@@ -126,7 +93,6 @@ ACCEPT_IMPL(BoolExpr, ASTVisitor);
 
 IntExpr::IntExpr(int64_t intValue) : Expr(), value(std::to_string(intValue)) {
   this->intValue = std::make_unique<int64_t>(intValue);
-  staticValue = StaticValue(intValue);
 }
 IntExpr::IntExpr(const std::string &value, std::string suffix)
     : Expr(), value(), suffix(std::move(suffix)) {
@@ -139,7 +105,6 @@ IntExpr::IntExpr(const std::string &value, std::string suffix)
           std::make_unique<int64_t>(std::stoull(this->value.substr(2), nullptr, 2));
     else
       intValue = std::make_unique<int64_t>(std::stoull(this->value, nullptr, 0));
-    staticValue = StaticValue(*intValue);
   } catch (std::out_of_range &) {
     intValue = nullptr;
   }
@@ -177,10 +142,7 @@ std::string FloatExpr::toString(int) const {
 ACCEPT_IMPL(FloatExpr, ASTVisitor);
 
 StringExpr::StringExpr(std::vector<std::pair<std::string, std::string>> s)
-    : Expr(), strings(std::move(s)) {
-  if (strings.size() == 1 && strings.back().second.empty())
-    staticValue = StaticValue(strings.back().first);
-}
+    : Expr(), strings(std::move(s)) {}
 StringExpr::StringExpr(std::string value, std::string prefix)
     : StringExpr(std::vector<std::pair<std::string, std::string>>{{value, prefix}}) {}
 StringExpr::StringExpr(const StringExpr &expr, bool clean)
@@ -602,15 +564,14 @@ std::string InstantiateExpr::toString(int indent) const {
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
-StaticValue::Type getStaticGeneric(Expr *e) {
+char getStaticGeneric(Expr *e) {
   if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
     if (e->getIndex()->index && e->getIndex()->index->isId("str"))
-      return StaticValue::Type::STRING;
+      return 2;
     if (e->getIndex()->index && e->getIndex()->index->isId("int"))
-      return StaticValue::Type::INT;
-    return StaticValue::Type::NOT_SUPPORTED;
+      return 1;
   }
-  return StaticValue::Type::NOT_STATIC;
+  return 0;
 }
 
 } // namespace codon::ast

@@ -23,17 +23,21 @@ class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
   std::string header, footer, nl;
   std::string typeStart, typeEnd;
   std::string nodeStart, nodeEnd;
+  std::string stmtStart, stmtEnd;
   std::string exprStart, exprEnd;
   std::string commentStart, commentEnd;
   std::string keywordStart, keywordEnd;
+  std::string literalStart, literalEnd;
 
   Cache *cache;
 
 private:
   template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
-    std::string s;
-    return fmt::format("{}{}{}{}{}{}", exprStart, s, nodeStart, fmt::format(args...),
-                       nodeEnd, exprEnd);
+    std::string s = t->type ? fmt::format("{}{}{}", typeStart,
+                                          anchor(t->type->realizedName()), typeEnd)
+                            : "";
+    return fmt::format("{}{}{}{}{}{}", exprStart, nodeStart, fmt::format(args...),
+                       nodeEnd, s, exprEnd);
   }
   template <typename... Ts> std::string renderComment(Ts &&...args) {
     return fmt::format("{}{}{}", commentStart, fmt::format(args...), commentEnd);
@@ -41,6 +45,9 @@ private:
   std::string pad(int indent = 0) const;
   std::string newline() const;
   std::string keyword(const std::string &s) const;
+  std::string literal(const std::string &s) const;
+  std::string anchor_root(const std::string &s) const;
+  std::string anchor(const std::string &s) const;
 
 public:
   FormatVisitor(bool html, Cache *cache = nullptr);
@@ -111,6 +118,7 @@ public:
   void visit(ClassStmt *) override;
   void visit(YieldFromStmt *) override;
   void visit(WithStmt *) override;
+  void visit(CommentStmt *) override;
 
 public:
   friend std::ostream &operator<<(std::ostream &out, const FormatVisitor &c) {

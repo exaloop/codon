@@ -121,10 +121,11 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
     t->setSrcInfo(getSrcInfo());
     return t;
   }
-  template <typename Tn, typename... Ts> auto NT(Ts &&...args) {
+  template <typename Tn, typename Tt, typename... Ts>
+  auto NT(const Tt &tt, Ts &&...args) {
     auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(getSrcInfo());
-    t->markType();
+    t->setType(tt);
     return t;
   }
 

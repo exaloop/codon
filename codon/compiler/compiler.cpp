@@ -93,6 +93,11 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
         for (auto &r : f.second.realizations)
           fmt::print(fo, "{}\n", r.second->ast->toString(0));
       fclose(fo);
+
+      fo = fopen("_dump_typecheck.htm", "w");
+      auto s = ast::FormatVisitor::apply(typechecked, cache.get(), true);
+      fmt::print(fo, "{}\n", s);
+      fclose(fo);
     }
 
     Timer t4("translate");

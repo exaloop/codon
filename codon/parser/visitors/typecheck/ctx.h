@@ -37,8 +37,6 @@ struct TypecheckItem : public SrcObject {
 
   /// Set if an identifier is a class or a function generic
   bool generic = false;
-  /// Set if an identifier is a static variable.
-  char staticType = 0;
 
   TypecheckItem(std::string, std::string, std::string, types::TypePtr,
                 std::vector<int> = {0});
@@ -46,16 +44,16 @@ struct TypecheckItem : public SrcObject {
   /* Convenience getters */
   std::string getBaseName() const { return baseName; }
   std::string getModule() const { return moduleName; }
-  bool isVar() const { return type->getLink() != nullptr && !generic; }
+  bool isVar() const { return !generic && !isFunc() && !isType(); }
   bool isFunc() const { return type->getFunc() != nullptr; }
-  bool isType() const { return !isFunc() && !isVar(); }
+  bool isType() const { return type->is("type"); }
 
   bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
   /// True if an identifier is within a conditional block
   /// (i.e., a block that might not be executed during the runtime)
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
-  char isStatic() const { return staticType; }
+  char isStatic() const { return type->isStaticType(); }
 };
 
 /** Context class that tracks identifiers during the typechecking. **/
@@ -306,6 +304,9 @@ public:
   std::shared_ptr<std::string> getStaticString(const types::TypePtr &);
   std::shared_ptr<int64_t> getStaticInt(const types::TypePtr &);
   types::FuncTypePtr extractFunction(const types::TypePtr &);
+
+  types::TypePtr getType(const std::string &);
+  types::TypePtr getType(types::TypePtr);
 
 protected:
   void removeFromMap(const std::string &name) override;

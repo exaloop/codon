@@ -71,7 +71,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       c->var = val->canonicalName;
     }
     transform(c->exc);
-    if (c->exc && c->exc->type->is("pyobj")) {
+    if (c->exc && getType(c->exc)->is("pyobj")) {
       // Transform python.Error exceptions
       if (!c->var.empty()) {
         c->suite = N<SuiteStmt>(
@@ -82,7 +82,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
                                        N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
                            N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr);
       pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
-    } else if (c->exc && c->exc->type->is("std.internal.python.PyError.0")) {
+    } else if (c->exc && getType(c->exc)->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
       if (!c->var.empty()) {
         c->suite =
@@ -94,7 +94,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       // Handle all other exceptions
       transformType(c->exc);
       if (val)
-        unify(val->type, c->exc->getType());
+        unify(val->type, getType(c->exc));
       ctx->blockLevel++;
       transform(c->suite);
       ctx->blockLevel--;
@@ -104,13 +104,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   }
   if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
     // Process PyError catches
-    auto exc = NT<IdExpr>("std.internal.python.PyError.0");
+    auto exc = N<IdExpr>("std.internal.python.PyError.0");
     pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
     auto c = std::make_shared<TryStmt::Catch>(pyVar, transformType(exc), pyCatchStmt);
 
-    auto val =
-        ctx->addVar(pyVar, pyVar, std::make_shared<types::LinkType>(c->exc->getType()));
-    unify(val->type, c->exc->getType());
+    auto val = ctx->addVar(pyVar, pyVar, getType(c->exc));
     ctx->blockLevel++;
     transform(c->suite);
     ctx->blockLevel--;

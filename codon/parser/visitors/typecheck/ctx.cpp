@@ -33,6 +33,8 @@ TypeContext::TypeContext(Cache *cache, std::string filename)
 
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   seqassert(!var->scope.empty(), "bad scope for '{}'", name);
+  // if (var->type->is("byte"))
+  // LOG("--");
   // LOG("[ctx] {} @ {}: + {}: {} ({:D})", getModule(), getSrcInfo(), name,
   // var->canonicalName, var->type);
   Context<TypecheckItem>::add(name, var);
@@ -287,12 +289,10 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
     }
   };
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pt : cls->mro) {
-      if (auto pc = pt->type->getClass()) {
-        auto mc = in(cache->classes, pc->name);
-        seqassert(mc, "class '{}' not found", pc->name);
-        populate(*mc);
-      }
+    for (auto pc : cls->mro) {
+      auto mc = in(cache->classes, pc->name);
+      seqassert(mc, "class '{}' not found", pc->name);
+      populate(*mc);
     }
   }
   return vv;
@@ -301,14 +301,12 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
 types::TypePtr TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
   if (auto cls = in(cache->classes, typeName)) {
-    for (auto &pt : cls->mro) {
-      if (auto pc = pt->type->getClass()) {
-        auto mc = in(cache->classes, pc->name);
-        seqassert(mc, "class '{}' not found", pc->name);
-        for (auto &mm : mc->fields) {
-          if (mm.name == member)
-            return mm.type;
-        }
+    for (auto pc : cls->mro) {
+      auto mc = in(cache->classes, pc->name);
+      seqassert(mc, "class '{}' not found", pc->name);
+      for (auto &mm : mc->fields) {
+        if (mm.name == member)
+          return mm.type;
       }
     }
   }
@@ -436,7 +434,7 @@ void TypeContext::dump(int pad) {
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
     LOG("   ... scope:     {}", t->scope);
-    LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->staticType));
+    LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->isStatic()));
   }
 }
 
@@ -461,18 +459,16 @@ TypeContext::getFunctionArgs(const types::TypePtr &t) {
 
 std::shared_ptr<std::string> TypeContext::getStaticString(const types::TypePtr &t) {
   if (auto s = t->getStatic()) {
-    auto r = s->evaluate();
-    if (r.type == StaticValue::STRING)
-      return std::make_shared<std::string>(r.getString());
+    if (s->isString())
+      return std::make_shared<std::string>(s->getString());
   }
   return nullptr;
 }
 
 std::shared_ptr<int64_t> TypeContext::getStaticInt(const types::TypePtr &t) {
   if (auto s = t->getStatic()) {
-    auto r = s->evaluate();
-    if (r.type == StaticValue::INT)
-      return std::make_shared<int64_t>(r.getInt());
+    if (s->isInt())
+      return std::make_shared<int64_t>(s->getInt());
   }
   return nullptr;
 }
@@ -483,6 +479,17 @@ types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {
   if (auto p = t->getPartial())
     return p->getPartialFunc();
   return nullptr;
+}
+
+types::TypePtr TypeContext::getType(const std::string &s) {
+  auto val = forceFind(s);
+  return s == "type" ? val->type : getType(val->type);
+}
+
+types::TypePtr TypeContext::getType(types::TypePtr t) {
+  while (t && t->is("type"))
+    t = t->getClass()->generics[0].type;
+  return t;
 }
 
 } // namespace codon::ast

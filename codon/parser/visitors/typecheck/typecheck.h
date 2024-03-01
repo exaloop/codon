@@ -63,9 +63,9 @@ public: // Convenience transformators
     auto e = expr;
     return transform(e);
   }
-  ExprPtr transform(ExprPtr &expr, bool allowTypes);
-  ExprPtr transform(ExprPtr &&expr, bool allowTypes) {
-    return transform(expr, allowTypes);
+  ExprPtr transform(ExprPtr &expr, bool allowTypes, bool allowStatics = true);
+  ExprPtr transform(ExprPtr &&expr, bool allowTypes, bool allowStatics = true) {
+    return transform(expr, allowTypes, allowStatics);
   }
   StmtPtr transform(StmtPtr &s) override;
   StmtPtr transform(const StmtPtr &stmt) override {
@@ -305,6 +305,9 @@ public:
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   ExprPtr generatePartialCall(const std::vector<char> &, types::FuncType *,
                               ExprPtr = nullptr, ExprPtr = nullptr);
+
+  types::TypePtr getType(const ExprPtr &);
+  types::TypePtr nonStaticType(const types::TypePtr &);
 
   friend class Cache;
   friend class TypeContext;

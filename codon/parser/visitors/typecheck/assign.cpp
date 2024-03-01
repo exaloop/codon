@@ -100,7 +100,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
-    if (val && val->isVar() /*&& !ctx->isOuter(val)*/) {
+    if (val) {
       // commented out: should be handled by namevisitor
       auto s = N<AssignStmt>(stmt->lhs, stmt->rhs);
       if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
@@ -122,58 +122,43 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
   assign->lhs->attributes = stmt->lhs->attributes;
-  if (stmt->lhs->type) {
-    unify(assign->lhs->type, stmt->lhs->type);
-  } else {
-    unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
-    if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
-      assign->lhs->type->getLink()->defaultType = ctx->forceFind("NoneType")->type;
-      ctx->pendingDefaults.insert(assign->lhs->type);
-    }
+
+  unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
+  if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
+    // All declarations that are not handled are to be marked with NoneType later on
+    assign->lhs->type->getLink()->defaultType = ctx->getType("NoneType");
+    ctx->pendingDefaults.insert(assign->lhs->type);
   }
-  if (assign->type) {
+  if (stmt->type) {
     unify(assign->lhs->type,
-          ctx->instantiate(assign->type->getSrcInfo(), assign->type->getType()));
+          ctx->instantiate(stmt->type->getSrcInfo(), getType(stmt->type)));
   }
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
                                         assign->lhs->type, ctx->getScope());
   val->setSrcInfo(getSrcInfo());
-  if (auto st = getStaticGeneric(assign->type.get()))
-    val->staticType = st;
   ctx->add(e->value, val);
   ctx->addAlwaysVisible(val);
 
-  if (assign->rhs && assign->type && assign->type->getType()->isStaticType()) {
-    // Static assignments (e.g., `x: Static[int] = 5`)
-    if (!assign->rhs->isStatic())
-      E(Error::EXPECTED_STATIC, assign->rhs);
-    seqassert(assign->rhs->staticValue.evaluated, "static not evaluated");
-    unify(assign->lhs->type,
-          unify(assign->type->type, Type::makeStatic(ctx->cache, assign->rhs)));
-  } else if (assign->rhs) {
+  if (assign->rhs) { // not a declaration!
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(assign->rhs, assign->lhs->getType()))
       unify(assign->lhs->type, assign->rhs->type);
-    if (stmt->rhs->isType()) {
-      val->type = val->type->getClass();
-    } else if (stmt->rhs->type->getFunc()) {
-      unify(val->type, stmt->rhs->type->getFunc());
-      val->type = stmt->rhs->type->getFunc();
-    }
-    auto type = assign->lhs->getType();
+    // auto type = assign->lhs->getType();
+
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
     if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
-      assign->lhs->type = val->type;
+      assign->lhs->type = assign->rhs->type = val->type;
+      // LOG("->gene: {} / {} / {}", val->type, assign->toString(), val->type->canRealize());
+      // realize(assign->lhs->type);
     }
-
-    // todo)) if (in(ctx->cache->globals, lhs)) {
   }
 
   if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->type)) {
     assign->setDone();
   } else if (assign->rhs && !val->isVar() && val->type->getUnbounds().empty()) {
+    // TODO: this is?!
     assign->setDone();
   }
 
@@ -191,16 +176,6 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
 StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   transform(stmt->lhs);
-  if (stmt->lhs->isStatic())
-    E(Error::ASSIGN_UNEXPECTED_STATIC, stmt->lhs);
-
-  // auto lhs = stmt->lhs->getId();
-  // seqassert(lhs, "not an identifier: '{}'", stmt->lhs);
-  // auto val = ctx->forceFind(lhs->value);
-  // unify(lhs->type, ctx->instantiate(val->type));
-  // lhs->value = val->canonicalName;
-  // if (lhs->type->isStaticType())
-  //   E(Error::ASSIGN_UNEXPECTED_STATIC, lhs);
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
@@ -234,7 +209,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   if (auto lhsClass = stmt->lhs->getType()->getClass()) {
     auto member = ctx->findMember(lhsClass->name, stmt->member);
 
-    if (!member && stmt->lhs->isType()) {
+    if (!member && stmt->lhs->type->is("type")) {
       // Case: class variables
       if (auto cls = in(ctx->cache->classes, lhsClass->name))
         if (auto var = in(cls->classVars, stmt->member)) {
@@ -278,10 +253,12 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
   // Case: in-place updates (e.g., `a += b`).
   // They are stored as `Update(a, Binary(a + b, inPlace=true))`
+
   auto bin = stmt->rhs->getBinary();
   if (bin && bin->inPlace) {
-    transform(bin->lexpr);
-    transform(bin->rexpr);
+    transform(bin->lexpr, true, /* allowStatic */ false);
+    transform(bin->rexpr, true, /* allowStatic */ false);
+
     if (bin->lexpr->type->getClass() && bin->rexpr->type->getClass()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
         unify(stmt->rhs->type, transformed->type);
@@ -306,7 +283,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     if (call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
       auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
-                                            ctx->forceFind("Ptr")->type, {lhsClass});
+                                            ctx->getType("Ptr"), {lhsClass});
       call->args[1].value = transform(call->args[1].value);
       auto rhsTyp = call->args[1].value->getType()->getClass();
       if (auto method = findBestMethod(
@@ -326,7 +303,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     transform(stmt->rhs);
     if (auto rhsClass = stmt->rhs->getType()->getClass()) {
       auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
-                                             ctx->forceFind("Ptr")->type, {lhsClass});
+                                             ctx->getType("Ptr"), {lhsClass});
       if (auto m = findBestMethod(lhsClass, "__atomic_xchg__", {ptrType, rhsClass})) {
         return {true,
                 N<CallExpr>(N<IdExpr>(m->ast->name),

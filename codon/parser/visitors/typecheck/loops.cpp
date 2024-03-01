@@ -290,10 +290,8 @@ TypecheckVisitor::transformStaticLoopCall(
       error("expected one item");
     for (auto &a : args) {
       stmt->rhs = a.value;
-      if (stmt->rhs->isStatic()) {
-        stmt->type = NT<IndexExpr>(
-            N<IdExpr>("Static"),
-            N<IdExpr>(stmt->rhs->staticValue.type == StaticValue::INT ? "int" : "str"));
+      if (auto st = stmt->rhs->type->getStatic()) {
+        stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->getTypeName()));
       } else {
         stmt->type = nullptr;
       }
@@ -302,29 +300,25 @@ TypecheckVisitor::transformStaticLoopCall(
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
     if (vars.size() != 1)
       error("expected one item");
-    auto ed =
-        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
+    auto ed = fn->type->getFunc()->funcGenerics[0].type->getStatic()->getInt();
     if (ed > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
     for (int64_t i = 0; i < ed; i++) {
       stmt->rhs = N<IntExpr>(i);
-      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+      stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(clone(stmt)));
     }
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
       error("expected one item");
-    auto st =
-        fn->type->getFunc()->funcGenerics[0].type->getStatic()->evaluate().getInt();
-    auto ed =
-        fn->type->getFunc()->funcGenerics[1].type->getStatic()->evaluate().getInt();
-    auto step =
-        fn->type->getFunc()->funcGenerics[2].type->getStatic()->evaluate().getInt();
+    auto st = fn->type->getFunc()->funcGenerics[0].type->getStatic()->getInt();
+    auto ed = fn->type->getFunc()->funcGenerics[1].type->getStatic()->getInt();
+    auto step = fn->type->getFunc()->funcGenerics[2].type->getStatic()->getInt();
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
     for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
       stmt->rhs = N<IntExpr>(i);
-      stmt->type = NT<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+      stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(clone(stmt)));
     }
   } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads.0")) {
@@ -370,7 +364,7 @@ TypecheckVisitor::transformStaticLoopCall(
       for (size_t i = 0; i < typ->args.size(); i++) {
         auto b = N<SuiteStmt>(
             {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                           NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))),
+                           N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
              N<AssignStmt>(
                  N<IdExpr>(vars[1]),
                  N<IndexExpr>(clone(iter->getCall()->args[0].value), N<IntExpr>(i)))});
@@ -383,7 +377,7 @@ TypecheckVisitor::transformStaticLoopCall(
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
-      auto withIdx = generics[0]->getStatic()->evaluate().getInt() != 0 ? 1 : 0;
+      auto withIdx = generics[0]->getStatic()->getInt() != 0 ? 1 : 0;
       if (!withIdx && vars.size() != 2)
         error("expected two items");
       else if (withIdx && vars.size() != 3)
@@ -395,11 +389,11 @@ TypecheckVisitor::transformStaticLoopCall(
         if (withIdx) {
           stmts.push_back(
               N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+                            N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
         }
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
-                          NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("str"))));
+                          N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("str"))));
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
                           N<DotExpr>(clone(iter->getCall()->args[0].value), f.name)));
@@ -415,7 +409,7 @@ TypecheckVisitor::transformStaticLoopCall(
       auto [generics, args] = *fna;
 
       auto typ = realize(generics[0]->getClass());
-      auto withIdx = generics[1]->getStatic()->evaluate().getInt() != 0 ? 1 : 0;
+      auto withIdx = generics[1]->getStatic()->getInt() != 0 ? 1 : 0;
       if (!withIdx && vars.size() != 1)
         error("expected one item");
       else if (withIdx && vars.size() != 2)
@@ -431,10 +425,10 @@ TypecheckVisitor::transformStaticLoopCall(
         if (withIdx) {
           stmts.push_back(
               N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                            NT<IndexExpr>(NT<IdExpr>("Static"), NT<IdExpr>("int"))));
+                            N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
         }
         stmts.push_back(
-            N<AssignStmt>(N<IdExpr>(vars[withIdx]), NT<IdExpr>(ta->realizedName())));
+            N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<IdExpr>(ta->realizedName())));
         auto b = N<SuiteStmt>(stmts);
         block.push_back(wrap(b));
         idx++;

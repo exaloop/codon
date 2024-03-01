@@ -154,7 +154,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// List of virtual method names
     std::unordered_set<std::string> virtuals;
     /// MRO
-    std::vector<ExprPtr> mro;
+    std::vector<types::ClassTypePtr> mro;
 
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
@@ -294,7 +294,8 @@ public:
 
   void parseCode(const std::string &code);
 
-  static std::vector<ExprPtr> mergeC3(std::vector<std::vector<ExprPtr>> &);
+  static std::vector<types::ClassTypePtr>
+  mergeC3(std::vector<std::vector<types::ClassTypePtr>> &);
 
   std::shared_ptr<ir::PyModule> pyModule = nullptr;
   void populatePythonModule();

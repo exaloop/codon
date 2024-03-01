@@ -44,7 +44,7 @@ bool Type::is(const std::string &s) { return getClass() && getClass()->name == s
 char Type::isStaticType() {
   auto t = follow();
   if (auto s = t->getStatic())
-    return char(s->expr->staticValue.type);
+    return s->isString() ? StaticType::String : StaticType::Int;
   if (auto l = t->getLink())
     return l->isStatic;
   return false;
@@ -60,7 +60,9 @@ TypePtr Type::makeType(Cache *cache, const std::string &name,
 }
 
 std::shared_ptr<StaticType> Type::makeStatic(Cache *cache, const ExprPtr &expr) {
-  return std::make_shared<StaticType>(cache, expr);
+  // return std::make_shared<StaticType>(cache, expr);
+  seqassertn(false, "deprecated");
+  return nullptr;
 }
 
 } // namespace codon::ast::types

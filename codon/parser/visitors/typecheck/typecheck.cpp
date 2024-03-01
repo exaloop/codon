@@ -115,7 +115,7 @@ void TypecheckVisitor::loadStdLibrary(
   auto core = parseCode(stdlib->cache, stdlibPath->path, "from internal.core import *");
   ScopingVisitor::apply(stdlib->cache, core);
   auto tv = TypecheckVisitor(stdlib, preamble);
-  core = tv.transform(core);
+  core = tv.inferTypes(core, true);
   preamble->push_back(core);
 
   // 2. Load early compile-time defines (for standard library)
@@ -132,7 +132,7 @@ void TypecheckVisitor::loadStdLibrary(
   auto std = parseFile(stdlib->cache, stdlibPath->path);
   ScopingVisitor::apply(stdlib->cache, std);
   tv = TypecheckVisitor(stdlib, preamble);
-  std = tv.transform(std);
+  std = tv.inferTypes(std, true);
   preamble->push_back(std);
   stdlib->isStdlibLoading = false;
 }
@@ -173,7 +173,7 @@ TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
 ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr, true); }
 
 /// Transform an expression node.
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowStatics) {
   if (!expr)
     return nullptr;
 
@@ -192,17 +192,20 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
-    if (!allowTypes && expr && expr->isType())
+    if (!allowTypes && expr && expr->type->is("type"))
       E(Error::UNEXPECTED_TYPE, expr, "type");
     if (!expr->type)
       unify(expr->type, ctx->getUnbound());
-    if (auto s = typ->isStaticType()) { // realize replaced T with int/str
-      if (!(s == StaticValue::INT && expr->getInt()) &&
-          !(s == StaticValue::STRING && expr->getString())) {
-        unify(typ, expr->type);
-      }
-    } else {
-      unify(typ, expr->type);
+    // if (auto s = typ->isStaticType()) { // realize replaced T with int/str
+    //   if (!(s == StaticValue::INT && expr->getInt()) &&
+    //       !(s == StaticValue::STRING && expr->getString())) {
+    //     unify(typ, expr->type);
+    //   }
+    // } else {
+    unify(typ, expr->type);
+    if (!allowStatics) {
+      if (auto u = expr->type->isStaticType())
+        expr->type = ctx->getType(StaticType::getTypeName(u));
     }
     if (expr->done)
       ctx->changedNodes++;
@@ -222,17 +225,19 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
   ctx->allowTypeOf = allowTypeOf;
   if (expr && expr->getNone()) {
     expr = N<IdExpr>(expr->getSrcInfo(), "NoneType");
-    expr->markType();
   }
   transform(expr);
   ctx->allowTypeOf = oldTypeOf;
   if (expr) {
-    if (!expr->isType() && expr->isStatic()) {
-      expr->setType(Type::makeStatic(ctx->cache, expr));
-    } else if (!expr->isType()) {
-      E(Error::EXPECTED_TYPE, expr, "type");
-    } else {
+    if (expr->type->isStaticType()) {
+    } else if (expr->type->is("type")) {
       expr->setType(ctx->instantiate(expr->getType()));
+    } else if (expr->type->getUnbound() &&
+               !expr->type->getUnbound()->genericName.empty()) {
+      // generic!
+      expr->setType(ctx->instantiate(expr->getType()));
+    } else {
+      E(Error::EXPECTED_TYPE, expr, "type");
     }
   }
   return expr;
@@ -423,11 +428,11 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
     if (fn->ast->args[ai].status != Param::Normal) {
       // Check if this is a good generic!
       if (expectTyp && expectTyp->isStaticType()) {
-        if (!args[argTypeIdx].value->isStatic()) {
+        if (!args[argTypeIdx].value->type->isStaticType()) {
           score = -1;
           break;
         } else {
-          argType = Type::makeStatic(ctx->cache, args[argTypeIdx].value);
+          argType = args[argTypeIdx].value->type->getStatic();
         }
       } else {
         /// TODO: check if these are real types or if traits are satisfied
@@ -490,15 +495,21 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                 const FuncTypePtr &callee, bool allowUnwrap) {
+  if (expr->type->isStaticType() && !expectedType->isStaticType()) {
+    expr->type = expr->type->isStaticType() == StaticType::Int ? ctx->getType("int")
+                                                               : ctx->getType("str");
+  }
+
   auto expectedClass = expectedType->getClass();
   auto exprClass = expr->getType()->getClass();
+
   auto doArgWrap =
       !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap.0");
   if (!doArgWrap)
     return true;
   auto doTypeWrap =
       !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap.0");
-  if (callee && expr->isType()) {
+  if (callee && expr->type->is("type")) {
     auto c = expr->type->getClass();
     if (!c)
       return false;
@@ -570,15 +581,15 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass.get(), nullptr) == -1)
         expr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
-                                     expr, NT<IdExpr>(t->realizedName())));
+                                     expr, N<IdExpr>(t->realizedName())));
     } else {
       return false;
     }
   } else if (exprClass && expectedClass && exprClass->name != expectedClass->name) {
     // Cast derived classes to base classes
-    auto &mros = ctx->cache->classes[exprClass->name].mro;
+    const auto &mros = ctx->cache->classes[exprClass->name].mro;
     for (size_t i = 1; i < mros.size(); i++) {
-      auto t = ctx->instantiate(mros[i]->type, exprClass);
+      auto t = ctx->instantiate(mros[i], exprClass);
       if (t->unify(expectedClass.get(), nullptr) >= 0) {
         if (!expr->isId("")) {
           expr = castToSuperClass(expr, expectedClass, true);
@@ -605,7 +616,6 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
   }
   realize(superTyp);
   auto typExpr = N<IdExpr>(superTyp->name);
-  typExpr->setType(superTyp);
   return transform(
       N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"), expr, typExpr));
 }
@@ -620,14 +630,14 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
       transform(a);
       if (!a->getType()->getClass())
         return nullptr;
-      ret->push_back({"", a->getType()});
+      ret->emplace_back("", a->getType());
     }
   } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
     auto val = kw->type->getRecord();
     if (!val || val->name != "NamedTuple" || val->args[0]->getRecord() ||
         !val->generics[0].type->canRealize())
       return nullptr;
-    auto id = val->generics[0].type->getStatic()->evaluate().getInt();
+    auto id = val->generics[0].type->getStatic()->getInt();
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
     auto types = val->args[0]->getRecord();
@@ -650,10 +660,9 @@ std::string TypecheckVisitor::getClassStaticStr(const types::ClassTypePtr &cls,
                                                 int idx) {
   int i = 0;
   for (auto &g : cls->generics) {
-    if (g.type->getStatic() &&
-        g.type->getStatic()->expr->staticValue.type == StaticValue::STRING) {
+    if (g.type->getStatic() && g.type->getStatic()->isString()) {
       if (i++ == idx) {
-        return g.type->getStatic()->evaluate().getString();
+        return g.type->getStatic()->getString();
       }
     }
   }
@@ -663,11 +672,9 @@ std::string TypecheckVisitor::getClassStaticStr(const types::ClassTypePtr &cls,
 int64_t TypecheckVisitor::getClassStaticInt(const types::ClassTypePtr &cls, int idx) {
   int i = 0;
   for (auto &g : cls->generics) {
-    if (g.type->getStatic() &&
-        g.type->getStatic()->expr->staticValue.type == StaticValue::INT) {
-      if (i++ == idx) {
-        return g.type->getStatic()->evaluate().getInt();
-      }
+    if (g.type->getStatic() && g.type->getStatic()->isInt()) {
+      if (i++ == idx)
+        return g.type->getStatic()->getInt();
     }
   }
   seqassert(false, "bad int static generic");
@@ -681,13 +688,34 @@ TypecheckVisitor::extractNamedTuple(ExprPtr expr) {
   seqassert(expr->type->is("NamedTuple") &&
                 expr->type->getRecord()->generics[0].type->canRealize(),
             "bad named tuple: {}", expr);
-  auto id = expr->type->getRecord()->generics[0].type->getStatic()->evaluate().getInt();
+  auto id = expr->type->getRecord()->generics[0].type->getStatic()->getInt();
   seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
   auto names = ctx->cache->generatedTupleNames[id];
   for (size_t i = 0; i < names.size(); i++) {
     ret.emplace_back(names[i], N<IndexExpr>(N<DotExpr>(expr, "args"), N<IntExpr>(i)));
   }
   return ret;
+}
+
+types::TypePtr TypecheckVisitor::getType(const ExprPtr &e) {
+  auto t = e->type;
+  if (e->isId("type"))
+    return t;
+  if (auto i = e->getInstantiate())
+    if (i->typeExpr->isId("type"))
+      return t;
+
+  while (t && t->is("type"))
+    t = t->getClass()->generics[0].type;
+  return t;
+}
+
+types::TypePtr TypecheckVisitor::nonStaticType(const types::TypePtr &t) {
+  if (t->isStaticType() == StaticType::Int)
+    return ctx->getType("int");
+  if (t->isStaticType() == StaticType::String)
+    return ctx->getType("str");
+  return t;
 }
 
 } // namespace codon::ast

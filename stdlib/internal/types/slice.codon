@@ -2,9 +2,15 @@
 
 @tuple
 class Slice:
-    start: Optional[int]
-    stop: Optional[int]
-    step: Optional[int]
+    start: Optional[T]
+    stop: Optional[U]
+    step: Optional[V]
+    T: type
+    U: type
+    V: type
+
+    def __new__(start: Optional[int], stop: Optional[int], step: Optional[int]) -> Slice[int, int, int]:
+        return (start, stop, step)
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
         step: int = self.step if self.step is not None else 1
