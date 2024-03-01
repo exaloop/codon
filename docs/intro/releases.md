@@ -17,6 +17,7 @@ Upgraded to LLVM 17 (from 15).
 - New floating-point types `float16`, `bfloat16` and `float128`.
 - Updates to several existing functions, such as adding `key` and
   `default` arguments to `min()` and `max()`.
+- Slice arguments can now be of any type, not just `int`.
 
 ## Other improvements
 
