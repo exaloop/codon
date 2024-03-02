@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 # Parts of this file: (c) 2022 Python Software Foundation. All right reserved.
 # - Currently does not support timezones
 # - Timedeltas use a pure-microseconds representations for efficiency, meaning they

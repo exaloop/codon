@@ -6,6 +6,26 @@ These release notes generally do not include small bug fixes. See the
 [closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
 for more information.
 
+# v0.17
+
+## LLVM upgrade
+
+Upgraded to LLVM 17 (from 15).
+
+## Standard library updates
+
+- New floating-point types `float16`, `bfloat16` and `float128`.
+- Updates to several existing functions, such as adding `key` and
+  `default` arguments to `min()` and `max()`.
+- Slice arguments can now be of any type, not just `int`.
+
+## Other improvements
+
+- Property setters are now supported.
+- Updated import logic to match CPython's more closely.
+- Several improvements to dynamic polymorphism to match CPython more
+  closely.
+
 # v0.16
 
 ## Python extensions
