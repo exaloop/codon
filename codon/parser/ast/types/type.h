@@ -24,6 +24,9 @@ struct ClassType;
 struct LinkType;
 struct RecordType;
 struct StaticType;
+struct IntStaticType;
+struct StrStaticType;
+struct BoolStaticType;
 struct UnionType;
 
 /**
@@ -109,6 +112,9 @@ public:
   virtual std::shared_ptr<LinkType> getLink() { return nullptr; }
   virtual std::shared_ptr<LinkType> getUnbound() { return nullptr; }
   virtual std::shared_ptr<StaticType> getStatic() { return nullptr; }
+  virtual std::shared_ptr<IntStaticType> getIntStatic() { return nullptr; }
+  virtual std::shared_ptr<StrStaticType> getStrStatic() { return nullptr; }
+  virtual std::shared_ptr<BoolStaticType> getBoolStatic() { return nullptr; }
   virtual std::shared_ptr<UnionType> getUnion() { return nullptr; }
   virtual std::shared_ptr<RecordType> getHeterogenousTuple() { return nullptr; }
 
@@ -140,20 +146,20 @@ struct fmt::formatter<
     std::enable_if_t<
         std::is_convertible<T, std::shared_ptr<codon::ast::types::Type>>::value, char>>
     : fmt::formatter<std::string_view> {
-  char presentation = 'd';
+  char presentation = 'b';
 
   constexpr auto parse(format_parse_context &ctx) -> decltype(ctx.begin()) {
     auto it = ctx.begin(), end = ctx.end();
-    if (it != end && (*it == 'p' || *it == 'd' || *it == 'D'))
+    if (it != end && (*it == 'a' || *it == 'b' || *it == 'c'))
       presentation = *it++;
     return it;
   }
 
   template <typename FormatContext>
   auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
-    if (presentation == 'p')
+    if (presentation == 'a')
       return fmt::format_to(ctx.out(), "{}", p ? p->debugString(0) : "<nullptr>");
-    else if (presentation == 'd')
+    else if (presentation == 'b')
       return fmt::format_to(ctx.out(), "{}", p ? p->debugString(1) : "<nullptr>");
     else
       return fmt::format_to(ctx.out(), "{}", p ? p->debugString(2) : "<nullptr>");

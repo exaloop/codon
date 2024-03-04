@@ -77,22 +77,21 @@ LLVMVisitor::LLVMVisitor()
   auto &registry = *llvm::PassRegistry::getPassRegistry();
   llvm::initializeCore(registry);
   llvm::initializeScalarOpts(registry);
-  llvm::initializeObjCARCOpts(registry);
   llvm::initializeVectorization(registry);
   llvm::initializeIPO(registry);
   llvm::initializeAnalysis(registry);
   llvm::initializeTransformUtils(registry);
   llvm::initializeInstCombine(registry);
-  llvm::initializeAggressiveInstCombine(registry);
-  llvm::initializeInstrumentation(registry);
   llvm::initializeTarget(registry);
 
+  llvm::initializeExpandLargeDivRemLegacyPassPass(registry);
+  llvm::initializeExpandLargeFpConvertLegacyPassPass(registry);
   llvm::initializeExpandMemCmpPassPass(registry);
   llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   llvm::initializeSelectOptimizePass(registry);
+  llvm::initializeCallBrPreparePass(registry);
   llvm::initializeCodeGenPreparePass(registry);
   llvm::initializeAtomicExpandPass(registry);
-  llvm::initializeRewriteSymbolsLegacyPassPass(registry);
   llvm::initializeWinEHPreparePass(registry);
   llvm::initializeDwarfEHPrepareLegacyPassPass(registry);
   llvm::initializeSafeStackLegacyPassPass(registry);
@@ -107,8 +106,6 @@ LLVMVisitor::LLVMVisitor()
   llvm::initializeExpandVectorPredicationPass(registry);
   llvm::initializeWasmEHPreparePass(registry);
   llvm::initializeWriteBitcodePassPass(registry);
-  llvm::initializeHardwareLoopsPass(registry);
-  llvm::initializeTypePromotionPass(registry);
   llvm::initializeReplaceWithVeclibLegacyPass(registry);
   llvm::initializeJMCInstrumenterPass(registry);
 }
@@ -1844,7 +1841,7 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   // set up debug info
   // for now we just set all to func's source location
   auto *srcInfo = getSrcInfo(x);
-  for (auto &block : func->getBasicBlockList()) {
+  for (auto &block : *func) {
     for (auto &inst : block) {
       if (!inst.getDebugLoc()) {
         inst.setDebugLoc(llvm::DebugLoc(llvm::DILocation::get(

@@ -76,7 +76,7 @@ template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
   template <typename KV1>
   GCMapAllocator(const GCMapAllocator<KV1>&) noexcept {}
 
-  KV *allocate(std::size_t n) { return (KV *)seq_alloc(n * sizeof(KV)); }
+  KV *allocate(std::size_t n) { return (KV *)seq_alloc_uncollectable(n * sizeof(KV)); }
 
   void deallocate(KV *p, std::size_t n) { seq_free(p); }
 

@@ -52,7 +52,7 @@ public:
   llvm::Error addModule(llvm::orc::ThreadSafeModule module,
                         llvm::orc::ResourceTrackerSP rt = nullptr);
 
-  llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef name);
+  llvm::Expected<llvm::orc::ExecutorSymbolDef> lookup(llvm::StringRef name);
 };
 
 } // namespace jit

@@ -30,10 +30,12 @@ struct ClassType : public Type {
     int id;
     // Pointer to realized type (or generic LinkType).
     TypePtr type;
+    // Set if this is a static generic
+    char isStatic;
 
-    Generic(std::string name, std::string niceName, TypePtr type, int id)
-        : name(std::move(name)), niceName(std::move(niceName)), id(id),
-          type(std::move(type)) {}
+    Generic(std::string name, std::string niceName, TypePtr type, int id, char isStatic)
+        : name(std::move(name)), niceName(std::move(niceName)), type(std::move(type)),
+          id(id), isStatic(isStatic) {}
   };
 
   /// Canonical type name.

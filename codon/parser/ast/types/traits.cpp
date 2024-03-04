@@ -131,7 +131,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         auto id = tv.generateKwId(names);
         auto kt = cache->typeCtx->forceFind("NamedTuple")->type;
         kt = cache->typeCtx
-                 ->instantiateGeneric(kt, {t, std::make_shared<StaticType>(cache, id)})
+                 ->instantiateGeneric(kt,
+                                      {t, std::make_shared<IntStaticType>(cache, id)})
                  ->getClass();
         if (kt->unify(trInArgs[kwStar].get(), us) == -1)
           return -1;

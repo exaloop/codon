@@ -27,8 +27,18 @@ int ClassType::unify(Type *typ, Unification *us) {
     if (generics.size() != tc->generics.size())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
-      if ((s = generics[i].type->unify(tc->generics[i].type.get(), us)) == -1)
+      // if (!generics[i].isStatic && tc->generics[i].type->getStatic()) {
+      //   auto ts = tc->generics[i].type->getStatic()->name;
+      //   if ((s = generics[i].type->unify(ts.get(), us)) == -1)
+      //     return -1;
+      // } else if (!tc->generics[i].isStatic && generics[i].type->getStatic()) {
+      //   auto ts = generics[i].type->getStatic()->getUnderlyingType();
+      //   if ((s = tc->generics[i].type->unify(ts.get(), us)) == -1)
+      //     return -1;
+      // } else
+      if ((s = generics[i].type->unify(tc->generics[i].type.get(), us)) == -1) {
         return -1;
+      }
       s1 += s;
     }
     return s1;
@@ -118,8 +128,13 @@ std::string ClassType::realizedName() const {
 
   std::vector<std::string> gs;
   for (auto &a : generics)
-    if (!a.name.empty())
-      gs.push_back(a.type->realizedName());
+    if (!a.name.empty()) {
+      if (!a.isStatic && a.type->getStatic()) {
+        gs.push_back(a.type->getStatic()->name);
+      } else {
+        gs.push_back(a.type->realizedName());
+      }
+    }
   std::string s = join(gs, ",");
   if (canRealize())
     const_cast<ClassType *>(this)->_rn =
@@ -147,7 +162,7 @@ int RecordType::unify(Type *typ, Unification *us) {
     if (name == "int" && tr->name == "Int")
       return tr->unify(this, us);
     if (tr->name == "int" && name == "Int") {
-      auto t64 = std::make_shared<StaticType>(cache, 64);
+      auto t64 = std::make_shared<IntStaticType>(cache, 64);
       return generics[0].type->unify(t64.get(), us);
     }
 
@@ -285,7 +300,7 @@ std::shared_ptr<RecordType> RecordType::getPartial() {
 
 std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
-  auto n = generics[0].type->getStatic()->getString();
+  auto n = generics[0].type->getStrStatic()->value;
   auto f = in(cache->functions, n);
   seqassert(f, "cannot locate '{}'", n);
   return f->type;
@@ -293,7 +308,7 @@ std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
 
 std::vector<char> RecordType::getPartialMask() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
-  auto n = generics[1].type->getStatic()->getString();
+  auto n = generics[1].type->getStrStatic()->value;
   std::vector<char> r(n.size(), 0);
   for (size_t i = 0; i < n.size(); i++)
     if (n[i] == '1')

@@ -11,50 +11,79 @@
 
 namespace codon::ast::types {
 
-/**
- * A static integer type (e.g. N in def foo[N: int]). Usually an integer, but can point
- * to a static expression.
- */
-struct StaticType : public Type {
-  enum Kind { Int = 1, String = 2, Bool = 3 };
-
-private:
-  Kind kind;
-  void *value;
+struct StaticType : public ClassType {
+  explicit StaticType(Cache *, const std::string &);
 
 public:
-  /// Convenience function for static types whose evaluation is already known.
-  explicit StaticType(Cache *cache, int64_t i);
-  explicit StaticType(Cache *cache, const std::string &s);
-  ~StaticType() override;
-
-public:
-  int unify(Type *typ, Unification *undo) override;
   TypePtr generalize(int atLevel) override;
   TypePtr instantiate(int atLevel, int *unboundCount,
                       std::unordered_map<int, TypePtr> *cache) override;
-
-public:
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
-  bool isInstantiated() const override { return true; }
-  std::string debugString(char mode) const override;
+  bool isInstantiated() const override;
   std::string realizedName() const override;
-
+  virtual std::shared_ptr<Expr> getStaticExpr() const = 0;
   std::shared_ptr<StaticType> getStatic() override {
     return std::static_pointer_cast<StaticType>(shared_from_this());
   }
-
-  bool isString() const;
-  std::string getString() const;
-  bool isInt() const;
-  int64_t getInt() const;
-  std::string getTypeName() const;
-  std::shared_ptr<Expr> getStaticExpr() const;
-
-  static std::string getTypeName(StaticType::Kind);
-  static std::string getTypeName(char);
 };
+
+struct IntStaticType : public StaticType {
+  int64_t value;
+
+public:
+  explicit IntStaticType(Cache *cache, int64_t);
+
+public:
+  int unify(Type *typ, Unification *undo) override;
+
+public:
+  std::string debugString(char mode) const override;
+  std::shared_ptr<Expr> getStaticExpr() const override;
+
+  std::shared_ptr<IntStaticType> getIntStatic() override {
+    return std::static_pointer_cast<IntStaticType>(shared_from_this());
+  }
+};
+
+struct StrStaticType : public StaticType {
+  std::string value;
+
+public:
+  explicit StrStaticType(Cache *cache, std::string);
+
+public:
+  int unify(Type *typ, Unification *undo) override;
+
+public:
+  std::string debugString(char mode) const override;
+  std::shared_ptr<Expr> getStaticExpr() const override;
+
+  std::shared_ptr<StrStaticType> getStrStatic() override {
+    return std::static_pointer_cast<StrStaticType>(shared_from_this());
+  }
+};
+
+struct BoolStaticType : public StaticType {
+  bool value;
+
+public:
+  explicit BoolStaticType(Cache *cache, bool);
+
+public:
+  int unify(Type *typ, Unification *undo) override;
+
+public:
+  std::string debugString(char mode) const override;
+  std::shared_ptr<Expr> getStaticExpr() const override;
+
+  std::shared_ptr<BoolStaticType> getBoolStatic() override {
+    return std::static_pointer_cast<BoolStaticType>(shared_from_this());
+  }
+};
+
 using StaticTypePtr = std::shared_ptr<StaticType>;
+using IntStaticTypePtr = std::shared_ptr<IntStaticType>;
+using StrStaticTypePtr = std::shared_ptr<StrStaticType>;
 
 } // namespace codon::ast::types

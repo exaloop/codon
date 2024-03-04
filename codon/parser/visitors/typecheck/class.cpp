@@ -126,8 +126,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         } else {
           ctx->addType(genName, varName, generic)->generic = true;
         }
-        ClassType::Generic g{varName, genName, generic->generalize(ctx->typecheckLevel),
-                             typId};
+        ClassType::Generic g(varName, genName, generic->generalize(ctx->typecheckLevel),
+                             typId, generic->isStatic);
         if (a.status == Param::Generic) {
           typ->generics.push_back(g);
         } else {

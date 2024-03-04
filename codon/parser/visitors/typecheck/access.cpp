@@ -166,7 +166,7 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
     auto name = join(chain, "/", 0, i + 1);
     val = ctx->find(name);
     if (val && val->type->is("Import") && name != "Import") {
-      importName = getClassStaticStr(val->type->getClass());
+      importName = val->type->getClass()->generics[0].type->getStrStatic()->value;
       importEnd = i + 1;
       break;
     }
@@ -348,7 +348,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: expr.__is_static__
   if (expr->member == "__is_static__") {
     if (expr->expr->isDone())
-      return transform(N<IntExpr>(expr->expr->type->isStaticType()));
+      return transform(N<IntExpr>(bool(expr->expr->type->getStatic())));
     return nullptr;
   }
   // Special case: cls.__id__
@@ -468,23 +468,20 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   }
 
   // Case: object generic access (`obj.T`)
-  TypePtr generic = nullptr;
+  ClassType::Generic *generic = nullptr;
   for (auto &g : typ->generics)
     if (ctx->cache->reverseIdentifierLookup[g.name] == expr->member) {
-      generic = g.type;
+      generic = &g;
       break;
     }
   if (generic) {
-    unify(expr->type, generic);
+    unify(expr->type, generic->type);
     if (realize(expr->type)) {
-      if (!generic->isStaticType()) {
-        return transform(N<IdExpr>(generic->realizedName()));
-      } else if (generic->getStatic()->isString()) {
-        expr->type = nullptr; // to prevent unify(T, Static[T]) error
-        return transform(N<StringExpr>(generic->getStatic()->getString()));
+      if (!generic->isStatic) {
+        return transform(N<IdExpr>(generic->type->realizedName()));
       } else {
         expr->type = nullptr; // to prevent unify(T, Static[T]) error
-        return transform(N<IntExpr>(generic->getStatic()->getInt()));
+        return transform(generic->type->getStatic()->getStaticExpr());
       }
     }
     return nullptr;

@@ -28,6 +28,7 @@ def fn_get_default(F, i: Static[int]):
     pass
 
 @no_type_wrap
+@no_argument_wrap
 def static_print(*args):
     pass
 

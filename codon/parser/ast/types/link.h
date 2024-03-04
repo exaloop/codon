@@ -57,6 +57,9 @@ public:
   std::shared_ptr<ClassType> getClass() override;
   std::shared_ptr<RecordType> getRecord() override;
   std::shared_ptr<StaticType> getStatic() override;
+  std::shared_ptr<IntStaticType> getIntStatic() override;
+  std::shared_ptr<StrStaticType> getStrStatic() override;
+  std::shared_ptr<BoolStaticType> getBoolStatic() override;
   std::shared_ptr<UnionType> getUnion() override;
   std::shared_ptr<LinkType> getUnbound() override;
 

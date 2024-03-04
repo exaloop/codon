@@ -20,11 +20,11 @@ using namespace types;
 void TypecheckVisitor::visit(UnaryExpr *expr) {
   transform(expr->expr);
 
-  static std::unordered_map<std::string, std::unordered_set<std::string>> staticOps = {
-      {"int", {"-", "+", "!"}}, {"str", {"@"}}};
+  static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
+      {1, {"-", "+", "!"}}, {2, {"@"}}};
   // Handle static expressions
-  if (auto s = expr->expr->type->getStatic()) {
-    if (in(staticOps[s->getTypeName()], expr->op)) {
+  if (auto s = expr->expr->type->isStaticType()) {
+    if (in(staticOps[s], expr->op)) {
       resultExpr = evaluateStaticUnary(expr);
       return;
     }
@@ -62,15 +62,14 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
     transform(expr->rexpr, true);
 
-  static std::unordered_map<std::string, std::unordered_set<std::string>> staticOps = {
-      {"int",
+  static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
+      {1,
        {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%", "&",
         "|", "^"}},
-      {"str", {"==", "!=", "+"}}};
-  if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic() &&
-      expr->lexpr->type->getStatic()->getTypeName() ==
-          expr->rexpr->type->getStatic()->getTypeName() &&
-      in(staticOps[expr->rexpr->type->getStatic()->getTypeName()], expr->op)) {
+      {2, {"==", "!=", "+"}}};
+  if (expr->lexpr->type->isStaticType() &&
+      expr->lexpr->type->isStaticType() == expr->rexpr->type->isStaticType() &&
+      in(staticOps[expr->lexpr->type->isStaticType()], expr->op)) {
     // Handle static expressions
     resultExpr = evaluateStaticBinary(expr);
   } else if (auto e = transformBinarySimple(expr)) {
@@ -412,15 +411,15 @@ void TypecheckVisitor::visit(SliceExpr *expr) {
 /// Supported operators: (strings) not (ints) not, -, +
 ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static strings
-  if (expr->expr->type->isStaticType() == StaticType::String) {
+  if (expr->expr->type->isStaticType() == 2) {
     if (expr->op == "!") {
       if (expr->expr->type->canRealize()) {
-        bool value = expr->expr->type->getStatic()->getString().empty();
+        bool value = expr->expr->type->getStrStatic()->value.empty();
         LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
         return transform(N<IntExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        expr->type->getUnbound()->isStatic = StaticType::Int;
+        expr->type->getUnbound()->isStatic = 1;
       }
     }
     return nullptr;
@@ -429,7 +428,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static integers
   if (expr->op == "-" || expr->op == "+" || expr->op == "!") {
     if (expr->expr->type->canRealize()) {
-      int64_t value = expr->expr->type->getStatic()->getInt();
+      int64_t value = expr->expr->type->getIntStatic()->value;
       if (expr->op == "+")
         ;
       else if (expr->op == "-")
@@ -443,7 +442,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         return transform(N<IntExpr>(value));
     } else {
       // Cannot be evaluated yet: just set the type
-      expr->type->getUnbound()->isStatic = StaticType::Int;
+      expr->type->getUnbound()->isStatic = 1;
     }
   }
 
@@ -476,38 +475,38 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
 ///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %, ^, |, &
 ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
   // Case: static strings
-  if (expr->rexpr->type->isStaticType() == StaticType::String) {
+  if (expr->rexpr->type->isStaticType() == 2) {
     if (expr->op == "+") {
       // `"a" + "b"` -> `"ab"`
-      if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
-        auto value = expr->lexpr->type->getStatic()->getString() +
-                     expr->rexpr->type->getStatic()->getString();
+      if (expr->lexpr->type->getStrStatic() && expr->rexpr->type->getStrStatic()) {
+        auto value = expr->lexpr->type->getStrStatic()->value +
+                     expr->rexpr->type->getStrStatic()->value;
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
         return transform(N<StringExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        expr->type->getUnbound()->isStatic = StaticType::String;
+        expr->type->getUnbound()->isStatic = 2;
       }
     } else {
       // `"a" == "b"` -> `False` (also handles `!=`)
-      if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
-        bool eq = expr->lexpr->type->getStatic()->getString() ==
-                  expr->rexpr->type->getStatic()->getString();
+      if (expr->lexpr->type->getStrStatic() && expr->rexpr->type->getStrStatic()) {
+        bool eq = expr->lexpr->type->getStrStatic()->value ==
+                  expr->rexpr->type->getStrStatic()->value;
         bool value = expr->op == "==" ? eq : !eq;
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
         return transform(N<IntExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        expr->type->getUnbound()->isStatic = StaticType::Int;
+        expr->type->getUnbound()->isStatic = 1;
       }
     }
     return nullptr;
   }
 
   // Case: static integers
-  if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
-    int64_t lvalue = expr->lexpr->type->getStatic()->getInt();
-    int64_t rvalue = expr->rexpr->type->getStatic()->getInt();
+  if (expr->lexpr->type->getIntStatic() && expr->rexpr->type->getIntStatic()) {
+    int64_t lvalue = expr->lexpr->type->getIntStatic()->value;
+    int64_t rvalue = expr->rexpr->type->getIntStatic()->value;
     if (expr->op == "<")
       lvalue = lvalue < rvalue;
     else if (expr->op == "<=")
@@ -550,7 +549,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       return transform(N<IntExpr>(lvalue));
   } else {
     // Cannot be evaluated yet: just set the type
-    expr->type->getUnbound()->isStatic = StaticType::Int;
+    expr->type->getUnbound()->isStatic = 1;
   }
 
   return nullptr;
@@ -676,7 +675,7 @@ std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string
 /// @param isAtomic if set, use atomic magics if available.
 ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAtomic) {
   auto [magic, _] = getMagic(expr->op);
-  auto lt = nonStaticType(expr->lexpr->type)->getClass();
+  auto lt = expr->lexpr->type->getClass();
   seqassert(lt, "lhs type not known");
 
   FuncTypePtr method = nullptr;
@@ -726,18 +725,16 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   }
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
-  if (auto method =
-          findBestMethod(nonStaticType(lt)->getClass(), format("__{}__", magic),
-                         {expr->lexpr, expr->rexpr})) {
+  if (auto method = findBestMethod(lt->getClass(), format("__{}__", magic),
+                                   {expr->lexpr, expr->rexpr})) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
         N<CallExpr>(N<IdExpr>(method->ast->name), expr->lexpr, expr->rexpr));
   }
 
   // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
-  if (auto method =
-          findBestMethod(nonStaticType(rt)->getClass(), format("__{}__", rightMagic),
-                         {expr->rexpr, expr->lexpr})) {
+  if (auto method = findBestMethod(rt->getClass(), format("__{}__", rightMagic),
+                                   {expr->rexpr, expr->lexpr})) {
     auto l = ctx->cache->getTemporaryVar("l"), r = ctx->cache->getTemporaryVar("r");
     return transform(N<StmtExpr>(
         N<AssignStmt>(N<IdExpr>(l), expr->lexpr),
@@ -774,8 +771,8 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     if (!e)
       return true;
     auto f = transform(clone(e));
-    if (auto s = f->type->getStatic()) {
-      *o = s->getInt();
+    if (auto s = f->type->getIntStatic()) {
+      *o = s->value;
       return true;
     }
     return false;

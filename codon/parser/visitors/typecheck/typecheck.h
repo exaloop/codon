@@ -275,10 +275,6 @@ private:
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
 
-  types::TypePtr getClassGeneric(const types::ClassTypePtr &, int = 0);
-  std::string getClassStaticStr(const types::ClassTypePtr &, int = 0);
-  int64_t getClassStaticInt(const types::ClassTypePtr &, int = 0);
-
 private:
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
                                     const std::string &member,
@@ -307,7 +303,6 @@ public:
                               ExprPtr = nullptr, ExprPtr = nullptr);
 
   types::TypePtr getType(const ExprPtr &);
-  types::TypePtr nonStaticType(const types::TypePtr &);
 
   friend class Cache;
   friend class TypeContext;

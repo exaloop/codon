@@ -57,7 +57,7 @@ llvm::Error JIT::init() {
   if (auto err = func.takeError())
     return err;
 
-  auto *main = (MainFunc *)func->getAddress();
+  auto *main = func->getAddress().toPtr<MainFunc>();
   (*main)(0, nullptr);
   return llvm::Error::success();
 }
@@ -172,7 +172,7 @@ llvm::Expected<void *> JIT::address(const ir::Func *input) {
   if (auto err = func.takeError())
     return std::move(err);
 
-  return (void *)func->getAddress();
+  return (void *)func->getAddress().getValue();
 }
 
 llvm::Expected<std::string> JIT::run(const ir::Func *input) {
@@ -289,7 +289,7 @@ JITResult JIT::executePython(const std::string &name,
     auto *wrapper = it->second;
     const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
     auto func = llvm::cantFail(engine->lookup(name));
-    wrap = (PyWrapperFunc *)func.getAddress();
+    wrap = func.getAddress().toPtr<PyWrapperFunc>();
   } else {
     static int idx = 0;
     auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);

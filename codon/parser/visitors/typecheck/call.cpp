@@ -73,6 +73,13 @@ void TypecheckVisitor::visit(CallExpr *expr) {
                CAST(expr->args.front().value, GeneratorExpr)) {
       resultExpr = transformTupleGenerator(expr);
       return;
+    } else if (callExpr->isId("std.internal.static.static_print.0")) {
+      transformCallArgs(expr->args);
+      for (auto &a : expr->args) {
+        LOG("[print] {}: {}", a.value->toString(0), a.value->type->debugString(2));
+      }
+      expr->setDone();
+      return;
     }
   }
 
@@ -204,10 +211,10 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       if (!typ)
         return false;
       if (typ->is("NamedTuple")) {
-        auto id = typ->generics[0].type->getStatic()->getInt();
-        seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
-                  id);
-        auto names = ctx->cache->generatedTupleNames[id];
+        auto id = typ->generics[0].type->getIntStatic();
+        seqassert(id->value >= 0 && id->value < ctx->cache->generatedTupleNames.size(),
+                  "bad id: {}", id->value);
+        auto names = ctx->cache->generatedTupleNames[id->value];
         for (size_t i = 0; i < names.size(); i++, ai++) {
           args.insert(args.begin() + ai,
                       {names[i], transform(N<DotExpr>(N<DotExpr>(kwstar->what, "args"),
@@ -482,12 +489,12 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
          si++) {
       if (typeArgs[si]) {
         auto typ = ctx->getType(typeArgs[si]->type);
-        if (calleeFn->funcGenerics[si].type->isStaticType()) {
+        if (calleeFn->funcGenerics[si].isStatic)
           if (!typ->isStaticType())
             E(Error::EXPECTED_STATIC, typeArgs[si]);
-          // typ = typeArgs[si];
-        }
         unify(typ, calleeFn->funcGenerics[si].type);
+        // LOG("-> {}: {} {} => {}", calleeFn, si,
+        //     int(calleeFn->funcGenerics[si].isStatic), typ);
       } else {
         if (calleeFn->funcGenerics[si].type->getUnbound() &&
             !calleeFn->ast->args[si].defaultValue && !partial &&
@@ -549,8 +556,8 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
                                   N<IntExpr>(args[si]
                                                  .value->type->getClass()
                                                  ->generics[0]
-                                                 .type->getStatic()
-                                                 ->getInt())));
+                                                 .type->getIntStatic()
+                                                 ->value)));
       } else {
         args[si].value = tup;
       }
@@ -911,13 +918,9 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
   transform(expr->args[0].value);
   auto typ = expr->args[0].value->getType();
 
-  if (typ->isStaticType()) {
+  if (auto ss = typ->getStrStatic()) {
     // Case: staticlen on static strings
-    if (!typ->canRealize())
-      return nullptr;
-    if (!typ->getStatic()->isString())
-      E(Error::EXPECTED_STATIC_SPECIFIED, expr->args[0].value, "string");
-    return transform(N<IntExpr>(typ->getStatic()->getString().size()));
+    return transform(N<IntExpr>(ss->value.size()));
   }
   if (!typ->getClass())
     return nullptr;
@@ -940,7 +943,7 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     return nullptr;
 
   auto member =
-      expr->expr->type->getFunc()->funcGenerics[0].type->getStatic()->getString();
+      expr->expr->type->getFunc()->funcGenerics[0].type->getStrStatic()->value;
   std::vector<std::pair<std::string, TypePtr>> args{{"", typ}};
   if (expr->expr->isId("hasattr:0")) {
     // Case: the first hasattr overload allows passing argument types via *args
@@ -967,15 +970,12 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
 /// Transform getattr method to a DotExpr.
 ExprPtr TypecheckVisitor::transformGetAttr(CallExpr *expr) {
   auto funcTyp = expr->expr->type->getFunc();
-  auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
-  if (!staticTyp->canRealize())
-    return nullptr;
-  auto name = staticTyp->getString();
+  auto name = funcTyp->funcGenerics[0].type->getStrStatic()->value;
 
   // special handling for NamedTuple
   if (expr->args[0].value->type && expr->args[0].value->type->is("NamedTuple")) {
     auto val = expr->args[0].value->type->getRecord();
-    auto id = val->generics[0].type->getStatic()->getInt();
+    auto id = val->generics[0].type->getIntStatic()->value;
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
     for (size_t i = 0; i < names.size(); i++)
@@ -991,21 +991,17 @@ ExprPtr TypecheckVisitor::transformGetAttr(CallExpr *expr) {
 /// Transform setattr method to a AssignMemberStmt.
 ExprPtr TypecheckVisitor::transformSetAttr(CallExpr *expr) {
   auto funcTyp = expr->expr->type->getFunc();
-  auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
-  if (!staticTyp->canRealize())
-    return nullptr;
+  auto attr = funcTyp->funcGenerics[0].type->getStrStatic()->value;
   return transform(
-      N<StmtExpr>(N<AssignMemberStmt>(expr->args[0].value, staticTyp->getString(),
-                                      expr->args[1].value),
+      N<StmtExpr>(N<AssignMemberStmt>(expr->args[0].value, attr, expr->args[1].value),
                   N<CallExpr>(N<IdExpr>("NoneType"))));
 }
 
 /// Raise a compiler error.
 ExprPtr TypecheckVisitor::transformCompileError(CallExpr *expr) {
   auto funcTyp = expr->expr->type->getFunc();
-  auto staticTyp = funcTyp->funcGenerics[0].type->getStatic();
-  if (staticTyp->canRealize())
-    E(Error::CUSTOM, expr, staticTyp->getString());
+  auto msg = funcTyp->funcGenerics[0].type->getStrStatic()->value;
+  E(Error::CUSTOM, expr, msg);
   return nullptr;
 }
 
@@ -1080,7 +1076,7 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
     fmt::print(stderr, "[static_print] {}: {} := {}{}\n", getSrcInfo(),
                FormatVisitor::apply(a.value),
                a.value->type ? a.value->type->debugString(2) : "-",
-               a.value->type->isStaticType() ? " [static]" : "");
+               a.value->type->getStatic() ? " [static]" : "");
   }
   return nullptr;
 }
@@ -1126,21 +1122,21 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
-    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
     auto &args = fn->getArgTypes();
-    return {true, transform(N<IntExpr>(*idx >= 0 && *idx < args.size() &&
-                                       args[*idx]->canRealize()))};
+    return {true, transform(N<IntExpr>(idx->value >= 0 && idx->value < args.size() &&
+                                       args[idx->value]->canRealize()))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_get_type.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
-    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
     auto &args = fn->getArgTypes();
-    if (*idx < 0 || *idx >= args.size() || !args[*idx]->canRealize())
+    if (idx->value < 0 || idx->value >= args.size() || !args[idx->value]->canRealize())
       error("argument does not have type");
-    return {true, transform(N<IdExpr>(args[*idx]->realizedName()))};
+    return {true, transform(N<IdExpr>(args[idx->value]->realizedName()))};
   } else if (expr->expr->isId("std.internal.static.fn_args.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
@@ -1158,22 +1154,22 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
-    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
     auto &args = fn->ast->args;
-    if (*idx < 0 || *idx >= args.size())
+    if (idx->value < 0 || idx->value >= args.size())
       error("argument out of bounds");
-    return {true, transform(N<IntExpr>(args[*idx].defaultValue != nullptr))};
+    return {true, transform(N<IntExpr>(args[idx->value].defaultValue != nullptr))};
   } else if (expr->expr->isId("std.internal.static.fn_get_default.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
-    auto idx = ctx->getStaticInt(expr->expr->type->getFunc()->funcGenerics[0].type);
+    auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
     auto &args = fn->ast->args;
-    if (*idx < 0 || *idx >= args.size())
+    if (idx->value < 0 || idx->value >= args.size())
       error("argument out of bounds");
-    return {true, transform(args[*idx].defaultValue)};
+    return {true, transform(args[idx->value].defaultValue)};
   } else if (expr->expr->isId("std.internal.static.fn_wrap_call_args.0")) {
     auto typ = expr->args[0].value->getType()->getClass();
     if (!typ)
@@ -1206,10 +1202,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     return {true, transform(N<TupleExpr>(tupArgs))};
   } else if (expr->expr->isId("std.internal.static.vars.0")) {
     auto funcTyp = expr->expr->type->getFunc();
-    auto t = funcTyp->funcGenerics[0].type->getStatic();
-    if (!t)
-      return {true, nullptr};
-    auto withIdx = t->getInt();
+    auto withIdx = funcTyp->funcGenerics[0].type->getIntStatic()->value;
 
     types::ClassTypePtr typ = nullptr;
     std::vector<ExprPtr> tupleItems;
@@ -1235,10 +1228,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto t = funcTyp->funcGenerics[0].type;
     if (!t || !realize(t))
       return {true, nullptr};
-    auto tn = funcTyp->funcGenerics[1].type->getStatic();
-    if (!tn)
-      return {true, nullptr};
-    auto n = tn->getInt();
+    auto n = funcTyp->funcGenerics[1].type->getIntStatic()->value;
     types::TypePtr typ = nullptr;
     if (t->getRecord()) {
       if (n < 0 || n >= t->getRecord()->args.size())
@@ -1284,37 +1274,40 @@ std::vector<ClassTypePtr> TypecheckVisitor::getSuperTypes(const ClassTypePtr &cl
 /// Find all generics on which a function depends on and add them to the current
 /// context.
 void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
-  auto addT = [&](const std::string &name, const types::TypePtr &type) {
+  auto addT = [&](const ClassType::Generic &g) {
     TypeContext::Item v = nullptr;
-    if (auto c = type->getClass()) {
-      if (!c->is("type"))
-        c = ctx->instantiateGeneric(ctx->getType("type"), {c})->getClass();
-      v = ctx->addType(ctx->cache->rev(name), name, c);
-    } else {
-      v = ctx->addType(ctx->cache->rev(name), name, type);
+    if (g.isStatic) {
+      seqassert(g.type->isStaticType(), "{} not a static: {}", g.name, g.type);
+      v = ctx->addType(ctx->cache->rev(g.name), g.name, g.type);
       v->generic = true;
+    } else {
+      auto c = g.type;
+      if (!c->is("type"))
+        c = ctx->instantiateGeneric(ctx->getType("type"), {c});
+      v = ctx->addType(ctx->cache->rev(g.name), g.name, c);
     }
-    ctx->add(name, v);
+    // LOG("=[inst]=> {}: {} {}", t->debugString(2), g.name, v->type);
+    ctx->add(g.name, v);
   };
   for (auto parent = t->funcParent; parent;) {
     if (auto f = parent->getFunc()) {
       // Add parent function generics
       for (auto &g : f->funcGenerics)
-        addT(g.name, g.type);
+        addT(g);
       parent = f->funcParent;
     } else {
       // Add parent class generics
       seqassert(parent->getClass(), "not a class: {}", parent);
       for (auto &g : parent->getClass()->generics)
-        addT(g.name, g.type);
+        addT(g);
       for (auto &g : parent->getClass()->hiddenGenerics)
-        addT(g.name, g.type);
+        addT(g);
       break;
     }
   }
   // Add function generics
   for (auto &g : t->funcGenerics)
-    addT(g.name, g.type);
+    addT(g);
 }
 
 /// Return a partial type call `Partial(args, kwargs, fn, mask)` for a given function

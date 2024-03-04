@@ -39,9 +39,9 @@ std::vector<Generic> Type::doGetGenerics() const {
       ret.emplace_back(
           getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
     else {
-      seqassertn(g.type->getStatic()->isInt(), "IR only supports int statics [{}]",
+      seqassertn(g.type->getIntStatic(), "IR only supports int statics [{}]",
                  g.type->getSrcInfo());
-      ret.emplace_back(g.type->getStatic()->getInt());
+      ret.emplace_back(g.type->getIntStatic()->value);
     }
   }
 
@@ -158,9 +158,9 @@ std::vector<Generic> FuncType::doGetGenerics() const {
       ret.emplace_back(
           getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
     else {
-      seqassertn(g.type->getStatic()->isInt(), "IR only supports int statics [{}]",
+      seqassertn(g.type->getIntStatic(), "IR only supports int statics [{}]",
                  getSrcInfo());
-      ret.emplace_back(g.type->getStatic()->getInt());
+      ret.emplace_back(g.type->getIntStatic()->value);
     }
   }
 

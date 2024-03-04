@@ -265,8 +265,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
     return;
   } else if (expr->expr->isId("__array__.__new__:0")) {
     auto fnt = expr->expr->type->getFunc();
-    auto szt = fnt->funcGenerics[0].type->getStatic();
-    auto sz = szt->getInt();
+    auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].type;
 
     auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
@@ -349,6 +348,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
       simplePipeline &= !isGen(fn);
 
     std::vector<ir::Value *> args;
+    args.reserve(call->args.size());
     for (auto &a : call->args)
       args.emplace_back(a.value->getEllipsis() ? nullptr : transform(a.value));
     stages.emplace_back(fn, args, isGen(fn), false);
@@ -499,12 +499,12 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto fc = c->expr->getType()->getFunc();
     seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
               "for par is not a function");
-    auto schedule = fc->funcGenerics[0].type->getStatic()->getString();
-    bool ordered = fc->funcGenerics[1].type->getStatic()->getInt();
+    auto schedule = fc->funcGenerics[0].type->getStrStatic()->value;
+    bool ordered = fc->funcGenerics[1].type->getIntStatic()->value;
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
-    int64_t collapse = fc->funcGenerics[2].type->getStatic()->getInt();
-    bool gpu = fc->funcGenerics[3].type->getStatic()->getInt();
+    auto collapse = fc->funcGenerics[2].type->getIntStatic()->value;
+    bool gpu = fc->funcGenerics[3].type->getIntStatic()->value;
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
@@ -611,9 +611,6 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 /************************************************************************************/
 
 codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
-  if (auto c = t->isStaticType()) {
-    return ctx->find(types::StaticType::getTypeName(c))->getType();
-  }
   seqassert(t && t->getClass(), "{} is not a class", t);
   std::string name = t->getClass()->realizedTypeName();
   auto i = ctx->find(name);
@@ -691,11 +688,10 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::vector<ir::types::Generic> literals;
   auto &ss = ast->suite->getSuite()->stmts;
   for (int i = 1; i < ss.size(); i++) {
-    if (auto st = ss[i]->getExpr()->expr->getType()->getStatic()) { // static integer expression
-      if (st->isInt())
-        literals.emplace_back(st->getInt());
-      else
-        literals.emplace_back(st->getString());
+    if (auto sti = ss[i]->getExpr()->expr->getType()->getIntStatic()) {
+      literals.emplace_back(sti->value);
+    } else if (auto sts = ss[i]->getExpr()->expr->getType()->getStrStatic()) {
+      literals.emplace_back(sts->value);
     } else {
       seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
                 ss[i]->getExpr()->toString());

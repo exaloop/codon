@@ -301,8 +301,6 @@ private:
 public:
   std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
   getFunctionArgs(const types::TypePtr &);
-  std::shared_ptr<std::string> getStaticString(const types::TypePtr &);
-  std::shared_ptr<int64_t> getStaticInt(const types::TypePtr &);
   types::FuncTypePtr extractFunction(const types::TypePtr &);
 
   types::TypePtr getType(const std::string &);

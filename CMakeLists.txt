@@ -93,7 +93,8 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:gc>
             -Wl,-force_load,$<TARGET_FILE:bz2>
             -Wl,-force_load,$<TARGET_FILE:liblzma>
-            -Wl,-force_load,$<TARGET_FILE:re2>)
+            -Wl,-force_load,$<TARGET_FILE:re2>
+            -Wl,-ld_classic)
 else()
   target_link_libraries(
     codonrt
@@ -314,6 +315,9 @@ set(CODON_CPPFILES
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
+if(APPLE_ARM)
+  target_link_libraries(codonc PRIVATE -Wl,-ld_classic)
+endif()
 if(ASAN)
   target_compile_options(
     codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"

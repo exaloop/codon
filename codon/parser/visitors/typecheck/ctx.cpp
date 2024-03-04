@@ -37,6 +37,7 @@ void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   // LOG("--");
   // LOG("[ctx] {} @ {}: + {}: {} ({:D})", getModule(), getSrcInfo(), name,
   // var->canonicalName, var->type);
+  // LOG("{}: {:c}", name, var->type);
   Context<TypecheckItem>::add(name, var);
 }
 
@@ -255,7 +256,8 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
   }
   for (int i = 0; i < c->generics.size(); i++) {
     seqassert(c->generics[i].type, "generic is null");
-    g->generics.emplace_back("", "", generics[i], c->generics[i].id);
+    g->generics.emplace_back("", "", generics[i], c->generics[i].id,
+                             c->generics[i].isStatic);
   }
   return instantiate(srcInfo, root, g);
 }
@@ -455,22 +457,6 @@ TypeContext::getFunctionArgs(const types::TypePtr &t) {
   for (auto &t : fn->generics[0].type->getRecord()->args)
     ret->second.push_back(t);
   return ret;
-}
-
-std::shared_ptr<std::string> TypeContext::getStaticString(const types::TypePtr &t) {
-  if (auto s = t->getStatic()) {
-    if (s->isString())
-      return std::make_shared<std::string>(s->getString());
-  }
-  return nullptr;
-}
-
-std::shared_ptr<int64_t> TypeContext::getStaticInt(const types::TypePtr &t) {
-  if (auto s = t->getStatic()) {
-    if (s->isInt())
-      return std::make_shared<int64_t>(s->getInt());
-  }
-  return nullptr;
 }
 
 types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {

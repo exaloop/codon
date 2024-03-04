@@ -130,23 +130,21 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     return nullptr;
   }
 
-  if (typ->getStatic()) {
-    // Nothing to realize here
-    return typ;
-  }
-
   try {
     if (auto f = typ->getFunc()) {
       if (auto ret = realizeFunc(f.get())) {
         // Realize Function[..] type as well
         realizeType(ret->getClass().get());
-        return unify(ret, typ); // Needed for return type unification
+        // Needed for return type unification
+        unify(f->getRetType(), ret->getClass()->generics[1].type);
+        // return unify(ret, typ); // Needed for return type unification
+        return ret;
       }
     } else if (auto c = typ->getClass()) {
-      auto t = realizeType(c.get());
-      if (t) {
-        return unify(t, typ);
-      }
+      return realizeType(c.get());
+      // if (t) {
+      //   return unify(t, typ);
+      // }
     }
   } catch (exc::ParserException &e) {
     if (e.errorCode == Error::MAX_REALIZATION)
@@ -208,6 +206,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   }
 
   auto realized = type->getClass();
+  if (auto s = type->getStatic())
+    realized = ctx->getType(s->name)->getClass();
+
   if (type->getFunc()) {
     // Just realize the function stub
     realized = std::make_shared<RecordType>(realized, type->getFunc()->args);
@@ -667,11 +668,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   std::vector<ir::types::Type *> types;
   std::vector<types::StaticTypePtr> statics;
   for (auto &m : t->generics) {
-    if (auto s = m.type->getStatic()) {
+    if (auto s = m.type->getStatic())
       statics.push_back(s);
-    } else {
-      types.push_back(forceFindIRType(m.type));
-    }
+    types.push_back(forceFindIRType(m.type));
   }
 
   // Get the IR type
@@ -691,15 +690,16 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
-    handle = module->Nr<ir::types::IntNType>(statics[0]->getInt(), t->name == "Int");
+    handle = module->Nr<ir::types::IntNType>(statics[0]->getIntStatic()->value,
+                                             t->name == "Int");
   } else if (t->name == "Ptr") {
-    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
+    seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (t->name == "Generator") {
-    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
+    seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (t->name == TYPE_OPTIONAL) {
-    seqassert(types.size() == 1 && statics.empty(), "bad generics/statics");
+    seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetOptionalType(types[0]);
   } else if (t->name == "NoneType") {
     seqassert(types.empty() && statics.empty(), "bad generics/statics");
@@ -708,7 +708,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     record->realize({}, {});
     handle = record;
   } else if (t->name == "Union") {
-    seqassert(!types.empty() && statics.empty(), "bad union");
+    seqassert(!types.empty(), "bad union");
     auto unionTypes = t->getUnion()->getRealizationTypes();
     std::vector<ir::types::Type *> unionVec;
     unionVec.reserve(unionTypes.size());
@@ -722,8 +722,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     auto ret = forceFindIRType(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (t->name == "std.experimental.simd.Vec") {
-    seqassert(types.size() == 1 && statics.size() == 1, "bad generics/statics");
-    handle = module->unsafeGetVectorType(statics[0]->getInt(), types[0]);
+    seqassert(types.size() == 2 && !statics.empty(), "bad generics/statics");
+    handle = module->unsafeGetVectorType(statics[0]->getIntStatic()->value, types[0]);
   } else if (auto tr = t->getRecord()) {
     std::vector<ir::types::Type *> typeArgs;
     std::vector<std::string> names;
@@ -936,8 +936,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     //     return __internal__.union_get_data(union, T0).method(*args, **kw)
     //   ... <for all T0...TN>
     //   raise TypeError("call")
-    auto szt = type->funcGenerics[0].type->getStatic();
-    auto fnName = szt->getString();
+    auto fnName = type->funcGenerics[0].type->getStrStatic()->value;
     auto unionType = type->getArgTypes()[0]->getUnion();
     auto unionTypes = unionType->getRealizationTypes();
 
@@ -981,7 +980,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
                     N<IdExpr>(selfVar), N<IdExpr>(unionTypes[0]->realizedName()))));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.namedkeys")) {
-    auto n = type->funcGenerics[0].type->getStatic()->getInt();
+    auto n = type->funcGenerics[0].type->getIntStatic()->value;
     if (n < 0 || n >= ctx->cache->generatedTupleNames.size())
       error("bad namedkeys index");
     std::vector<ExprPtr> s;

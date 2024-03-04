@@ -291,7 +291,7 @@ TypecheckVisitor::transformStaticLoopCall(
     for (auto &a : args) {
       stmt->rhs = a.value;
       if (auto st = stmt->rhs->type->getStatic()) {
-        stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->getTypeName()));
+        stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->name));
       } else {
         stmt->type = nullptr;
       }
@@ -300,7 +300,7 @@ TypecheckVisitor::transformStaticLoopCall(
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
     if (vars.size() != 1)
       error("expected one item");
-    auto ed = fn->type->getFunc()->funcGenerics[0].type->getStatic()->getInt();
+    auto ed = fn->type->getFunc()->funcGenerics[0].type->getIntStatic()->value;
     if (ed > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
     for (int64_t i = 0; i < ed; i++) {
@@ -311,9 +311,9 @@ TypecheckVisitor::transformStaticLoopCall(
   } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
       error("expected one item");
-    auto st = fn->type->getFunc()->funcGenerics[0].type->getStatic()->getInt();
-    auto ed = fn->type->getFunc()->funcGenerics[1].type->getStatic()->getInt();
-    auto step = fn->type->getFunc()->funcGenerics[2].type->getStatic()->getInt();
+    auto st = fn->type->getFunc()->funcGenerics[0].type->getIntStatic()->value;
+    auto ed = fn->type->getFunc()->funcGenerics[1].type->getIntStatic()->value;
+    auto step = fn->type->getFunc()->funcGenerics[2].type->getIntStatic()->value;
     if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
       E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
     for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
@@ -327,9 +327,9 @@ TypecheckVisitor::transformStaticLoopCall(
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
       auto typ = generics[0]->getClass();
-      auto name = ctx->getStaticString(generics[1]);
-      seqassert(name, "bad static string");
-      if (auto n = in(ctx->cache->classes[typ->name].methods, *name)) {
+      seqassert(generics[1]->getStrStatic(), "bad static string");
+      auto name = generics[1]->getStrStatic()->value;
+      if (auto n = in(ctx->cache->classes[typ->name].methods, name)) {
         auto &mt = ctx->cache->overloads[*n];
         for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
           auto &method = mt[mti];
@@ -377,7 +377,7 @@ TypecheckVisitor::transformStaticLoopCall(
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
-      auto withIdx = generics[0]->getStatic()->getInt() != 0 ? 1 : 0;
+      bool withIdx = generics[0]->getIntStatic()->value;
       if (!withIdx && vars.size() != 2)
         error("expected two items");
       else if (withIdx && vars.size() != 3)
@@ -409,7 +409,7 @@ TypecheckVisitor::transformStaticLoopCall(
       auto [generics, args] = *fna;
 
       auto typ = realize(generics[0]->getClass());
-      auto withIdx = generics[1]->getStatic()->getInt() != 0 ? 1 : 0;
+      bool withIdx = generics[1]->getIntStatic()->value;
       if (!withIdx && vars.size() != 1)
         error("expected one item");
       else if (withIdx && vars.size() != 2)

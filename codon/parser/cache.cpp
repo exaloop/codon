@@ -341,10 +341,11 @@ void Cache::populatePythonModule() {
         auto generics = std::vector<types::TypePtr>{tc};
         if (isProperty) {
           generics.push_back(
-              std::make_shared<types::StaticType>(this, rev(canonicalName)));
+              std::make_shared<types::StrStaticType>(this, rev(canonicalName)));
         } else if (!isMagic) {
-          generics.push_back(std::make_shared<types::StaticType>(this, n));
-          generics.push_back(std::make_shared<types::StaticType>(this, (int)isMethod));
+          generics.push_back(std::make_shared<types::StrStaticType>(this, n));
+          generics.push_back(
+              std::make_shared<types::IntStaticType>(this, (int)isMethod));
         }
         auto f = realizeIR(functions[fnName].type, generics);
         if (!f)
@@ -474,7 +475,7 @@ void Cache::populatePythonModule() {
         /// TODO: handle PyMember for tuples
         // Generate getters & setters
         auto generics = std::vector<types::TypePtr>{
-            tc, std::make_shared<types::StaticType>(this, mn)};
+            tc, std::make_shared<types::StrStaticType>(this, mn)};
         auto gf = realizeIR(functions[pyWrap + ".wrap_get:0"].type, generics);
         ir::Func *sf = nullptr;
         if (!c.ast->hasAttr(Attr::Tuple))
@@ -525,8 +526,8 @@ void Cache::populatePythonModule() {
       seqassertn(in(functions, fnName), "bad name");
       auto generics = std::vector<types::TypePtr>{
           typeCtx->forceFind(".toplevel")->type,
-          std::make_shared<types::StaticType>(this, rev(f.ast->name)),
-          std::make_shared<types::StaticType>(this, 0)};
+          std::make_shared<types::StrStaticType>(this, rev(f.ast->name)),
+          std::make_shared<types::IntStaticType>(this, 0)};
       if (auto ir = realizeIR(functions[fnName].type, generics)) {
         LOG_USER("[py] {}: {}", "toplevel", fn);
         pyModule->functions.push_back(ir::PyFunction{rev(fn), f.ast->getDocstr(), ir,

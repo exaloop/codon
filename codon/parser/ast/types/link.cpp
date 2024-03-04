@@ -37,10 +37,12 @@ int LinkType::unify(Type *typ, Unification *undo) {
   } else {
     // Case 3: Unbound unification
     if (isStaticType() != typ->isStaticType()) {
-      if (!isStaticType())
+      if (!isStaticType()) {
+        // other one is; move this to non-static equivalent
         isStatic = typ->isStaticType();
-      else
+      } else {
         return -1;
+      }
     }
     if (auto t = typ->getLink()) {
       if (t->kind == Link)
@@ -200,6 +202,18 @@ std::shared_ptr<StaticType> LinkType::getStatic() {
   return kind == Link ? type->getStatic() : nullptr;
 }
 
+std::shared_ptr<IntStaticType> LinkType::getIntStatic() {
+  return kind == Link ? type->getIntStatic() : nullptr;
+}
+
+std::shared_ptr<StrStaticType> LinkType::getStrStatic() {
+  return kind == Link ? type->getStrStatic() : nullptr;
+}
+
+std::shared_ptr<BoolStaticType> LinkType::getBoolStatic() {
+  return kind == Link ? type->getBoolStatic() : nullptr;
+}
+
 std::shared_ptr<UnionType> LinkType::getUnion() {
   return kind == Link ? type->getUnion() : nullptr;
 }
@@ -220,7 +234,7 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
       if (tl->trait && occurs(tl->trait.get(), undo))
         return true;
       if (undo && tl->level > level) {
-        undo->leveled.emplace_back(make_pair(tl.get(), tl->level));
+        undo->leveled.emplace_back(tl.get(), tl->level);
         tl->level = level;
       }
       return false;

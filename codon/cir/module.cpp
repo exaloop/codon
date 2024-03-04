@@ -17,12 +17,17 @@ translateGenerics(codon::ast::Cache *cache, std::vector<types::Generic> &generic
   std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : generics) {
     seqassertn(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
-    ret.push_back(std::make_shared<codon::ast::types::LinkType>(
-        g.isStatic()
-            ? std::make_shared<codon::ast::types::StaticType>(cache, g.getStaticValue())
-            : (g.isStaticStr() ? std::make_shared<codon::ast::types::StaticType>(
-                                     cache, g.getStaticStringValue())
-                               : g.getTypeValue()->getAstType())));
+    if (g.isStaticStr())
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          std::make_shared<codon::ast::types::StrStaticType>(
+              cache, g.getStaticStringValue())));
+    else if (g.isStatic())
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          std::make_shared<codon::ast::types::IntStaticType>(cache,
+                                                             g.getStaticValue())));
+    else
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          g.getTypeValue()->getAstType()));
   }
   return ret;
 }

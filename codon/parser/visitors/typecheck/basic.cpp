@@ -40,7 +40,8 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 /// Set type to `str`
 void TypecheckVisitor::visit(StringExpr *expr) {
   seqassert(expr->strings.size() == 1 && expr->strings[0].second.empty(), "bad string");
-  unify(expr->type, std::make_shared<types::StaticType>(ctx->cache, expr->getValue()));
+  unify(expr->type,
+        std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
   expr->setDone();
 }
 
@@ -72,7 +73,7 @@ ExprPtr TypecheckVisitor::transformInt(IntExpr *expr) {
   if (expr->suffix.empty()) {
     // A normal integer (int64_t)
     unify(expr->type,
-          std::make_shared<types::StaticType>(ctx->cache, *(expr->intValue)));
+          std::make_shared<types::IntStaticType>(ctx->cache, *(expr->intValue)));
     expr->setDone();
     return nullptr;
   } else if (expr->suffix == "u") {

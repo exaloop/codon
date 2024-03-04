@@ -15,10 +15,11 @@ using namespace types;
 /// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
-  seqassertn(cond->type->isStaticType(), "not a static condition");
+  seqassertn(cond->type->getStatic(), "not a static condition");
   if (cond->type->canRealize()) {
-    auto st = cond->type->getStatic();
-    bool isTrue = st->isString() ? !st->getString().empty() : st->getInt();
+    bool isTrue = cond->type->getStrStatic()
+                      ? !cond->type->getStrStatic()->value.empty()
+                      : cond->type->getIntStatic()->value;
     return ready(isTrue);
   } else {
     return notReady();
@@ -61,15 +62,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
   wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
 
-  if (auto u = expr->ifexpr->type->isStaticType())
-    unify(expr->type, ctx->getType(StaticType::getTypeName(u)));
-  else
-    unify(expr->type, expr->ifexpr->getType());
-  if (auto u = expr->elsexpr->type->isStaticType())
-    unify(expr->type, ctx->getType(StaticType::getTypeName(u)));
-  else
-    unify(expr->type, expr->elsexpr->getType());
-
+  unify(expr->type, expr->ifexpr->getType());
+  unify(expr->type, expr->elsexpr->getType());
   if (expr->cond->isDone() && expr->ifexpr->isDone() && expr->elsexpr->isDone())
     expr->setDone();
 }

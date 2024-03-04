@@ -205,8 +205,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
        stmt->args.emplace_back(c, N<IdExpr>("type"));
      else if (auto si = v->isStatic())
        stmt->args.emplace_back(
-           c, N<IndexExpr>(N<IdExpr>("Static"),
-                           N<IdExpr>(si == StaticType::Int ? "int" : "string")));
+           c, N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(si == 1 ? "int" : "string")));
      else
        stmt->args.emplace_back(c);
      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
@@ -281,7 +280,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           }
         }
         auto g = generic->generalize(ctx->typecheckLevel);
-        explicits.emplace_back(name, varName, g, typId);
+        explicits.emplace_back(name, varName, g, typId, g->isStaticType());
       }
     }
 

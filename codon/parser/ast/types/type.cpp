@@ -43,11 +43,13 @@ bool Type::is(const std::string &s) { return getClass() && getClass()->name == s
 
 char Type::isStaticType() {
   auto t = follow();
-  if (auto s = t->getStatic())
-    return s->isString() ? StaticType::String : StaticType::Int;
+  if (t->getStrStatic())
+    return 2;
+  if (t->getIntStatic())
+    return 1;
   if (auto l = t->getLink())
     return l->isStatic;
-  return false;
+  return 0;
 }
 
 TypePtr Type::makeType(Cache *cache, const std::string &name,
