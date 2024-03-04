@@ -446,7 +446,14 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   // Case: object member access (`obj.member`)
   if (!expr->expr->type->is("type")) {
     if (auto member = ctx->findMember(typ->name, expr->member)) {
-      unify(expr->type, ctx->instantiate(member, typ));
+      unify(expr->type, ctx->instantiate(member->type, typ));
+      if (!expr->type->canRealize() && member->typeExpr) {
+        ctx->addBlock();
+        addClassGenerics(typ);
+        auto t = ctx->getType(transform(clean_clone(member->typeExpr))->type);
+        ctx->popBlock();
+        unify(expr->type, t);
+      }
       if (expr->expr->isDone() && realize(expr->type))
         expr->setDone();
       return nullptr;

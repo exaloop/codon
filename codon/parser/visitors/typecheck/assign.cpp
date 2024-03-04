@@ -232,10 +232,17 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
 
     transform(stmt->rhs);
-    auto typ = ctx->instantiate(stmt->lhs->getSrcInfo(), member, lhsClass);
-    if (!wrapExpr(stmt->rhs, typ))
+    auto ftyp = ctx->instantiate(stmt->lhs->getSrcInfo(), member->type, lhsClass);
+    if (!ftyp->canRealize() && member->typeExpr) {
+      ctx->addBlock();
+      addClassGenerics(lhsClass);
+      auto t = ctx->getType(transform(clean_clone(member->typeExpr))->type);
+      ctx->popBlock();
+      unify(ftyp, t);
+    }
+    if (!wrapExpr(stmt->rhs, ftyp))
       return;
-    unify(stmt->rhs->type, typ);
+    unify(stmt->rhs->type, ftyp);
     if (stmt->rhs->isDone())
       stmt->setDone();
   }

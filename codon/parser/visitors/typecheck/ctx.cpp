@@ -51,7 +51,7 @@ TypeContext::Item TypeContext::addVar(const std::string &name,
                                       const types::TypePtr &type,
                                       const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
-  seqassert(type->getLink(), "bad var");
+  // seqassert(type->getLink(), "bad var");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
                                            type, getScope());
   t->setSrcInfo(srcInfo);
@@ -300,7 +300,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
   return vv;
 }
 
-types::TypePtr TypeContext::findMember(const std::string &typeName,
+Cache::Class::ClassField *TypeContext::findMember(const std::string &typeName,
                                        const std::string &member) const {
   if (auto cls = in(cache->classes, typeName)) {
     for (auto pc : cls->mro) {
@@ -308,7 +308,7 @@ types::TypePtr TypeContext::findMember(const std::string &typeName,
       seqassert(mc, "class '{}' not found", pc->name);
       for (auto &mm : mc->fields) {
         if (mm.name == member)
-          return mm.type;
+          return &mm;
       }
     }
   }

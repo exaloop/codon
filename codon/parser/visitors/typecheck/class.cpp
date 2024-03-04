@@ -214,6 +214,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       auto &fields = ctx->cache->classes[canonicalName].fields;
       for (auto ai = 0, aj = 0; ai < args.size(); ai++) {
         if (args[ai].status == Param::Normal && !ClassStmt::isClassVar(args[ai])) {
+          fields[aj].typeExpr = clean_clone(args[ai].type);
           fields[aj].type = getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
           fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
           if (stmt->isRecord())

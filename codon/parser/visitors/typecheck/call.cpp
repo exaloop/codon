@@ -532,6 +532,9 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
                                          std::vector<CallExpr::Arg> &args) {
   bool wrappingDone = true;          // tracks whether all arguments are wrapped
   std::vector<TypePtr> replacements; // list of replacement arguments
+
+        ctx->addBlock();
+      addFunctionGenerics(calleeFn.get());
   for (size_t si = 0; si < calleeFn->getArgTypes().size(); si++) {
     if (startswith(calleeFn->ast->args[si].name, "*") && calleeFn->ast->args[si].type &&
         args[si].value->getCall()) {
@@ -563,6 +566,10 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
       }
       replacements.push_back(args[si].value->type);
     } else {
+      if (calleeFn->ast->args[si].type && !calleeFn->getArgTypes()[si]->canRealize()) {
+        auto t = ctx->getType(transform(clean_clone(calleeFn->ast->args[si].type))->type);
+        unify(calleeFn->getArgTypes()[si], t);
+      }
       if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
         unify(args[si].value->type, calleeFn->getArgTypes()[si]);
       } else {
@@ -573,6 +580,7 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
                                  : calleeFn->getArgTypes()[si]);
     }
   }
+  ctx->popBlock();
 
   // Realize arguments
   bool done = true;

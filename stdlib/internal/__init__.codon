@@ -16,64 +16,28 @@ from internal.types.byte import *
 from internal.types.generator import *
 from internal.types.optional import *
 from internal.internal import *
+from internal.types.slice import *
+from internal.types.range import *
+from internal.types.complex import *
 
-class Num[N_: Static[int]]:
-    def __init__(self):
-        pass
-def foo[N: Static[int]]():
-    __static_print__(N)
-    a = Num[N*2]()
-    __static_print__(a)
-    b = N
-    __static_print__(b)
-foo(3)
+__argv__ = Array[str](0)
 
-class XX[N_: Static[int]]:
-    a: Num[N_*2]
-    def __init__(self):
-        self.a = Num()
-y = XX[5]()
-__static_print__(y)
-# y.a, y.__class__.__name__, y.a.__class__.__name__ #: [10] XX[5] Num[10]
+from internal.types.strbuf import strbuf as _strbuf
+from internal.types.collections.list import *
+from internal.types.collections.set import *
+from internal.types.collections.dict import *
+from internal.types.collections.tuple import *
 
-# @tuple
-# class FooBar[N: Static[int]]:
-#     x: Int[N]
-# z = FooBar(i32(5))
-# z, z.__class__.__name__, z.x.__class__.__name__ #: (x: Int[32](5)) FooBar[32] Int[32]
+# Extended core library
 
-# @tuple
-# class Foo[N: Static[int]]:
-#     x: Int[2*N]
-#     def __new__(x: Int[2*N]) -> Foo[N]:
-#         return (x,)
-# foo = Foo[10](Int[20](0))
-# foo.__class__.__name__, foo.x.__class__.__name__ #: Foo[10] Int[20]
+import internal.c_stubs as _C
+from internal.format import *
+from internal.builtin import *
 
+from internal.builtin import _jit_display
+from internal.str import *
 
-#############################################
-# from internal.types.slice import *
-# from internal.types.range import *
-# from internal.types.complex import *
-
-# __argv__ = Array[str](0)
-
-# from internal.types.strbuf import strbuf as _strbuf
-# from internal.types.collections.list import *
-# from internal.types.collections.set import *
-# from internal.types.collections.dict import *
-# from internal.types.collections.tuple import *
-
-# # Extended core library
-
-# import internal.c_stubs as _C
-# from internal.format import *
-# from internal.builtin import *
-
-# from internal.builtin import _jit_display
-# from internal.str import *
-
-# from internal.sort import sorted
+from internal.sort import sorted
 
 # # from openmp import Ident as __OMPIdent, for_par
 # # from gpu import _gpu_loop_outline_template

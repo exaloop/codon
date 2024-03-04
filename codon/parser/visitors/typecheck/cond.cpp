@@ -15,7 +15,7 @@ using namespace types;
 /// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
-  seqassertn(cond->type->getStatic(), "not a static condition");
+  seqassertn(cond->type->isStaticType(), "not a static condition");
   if (cond->type->canRealize()) {
     bool isTrue = cond->type->getStrStatic()
                       ? !cond->type->getStrStatic()->value.empty()
@@ -37,7 +37,6 @@ void TypecheckVisitor::visit(RangeExpr *expr) {
 void TypecheckVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
   transform(expr->cond);
-
   // Static if evaluation
   if (expr->cond->type->isStaticType()) {
     resultExpr = evaluateStaticCondition(
@@ -49,6 +48,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         [&]() -> ExprPtr { return nullptr; });
     if (resultExpr)
       unify(expr->type, resultExpr->getType());
+    else
+      expr->type->getUnbound()->isStatic = 1; // TODO: determine later!
     return;
   }
 

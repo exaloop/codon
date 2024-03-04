@@ -247,8 +247,16 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<ir::types::Type *> typeArgs;   // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
+  ctx->addBlock();
+  addClassGenerics(realized);
   for (auto &field : ctx->cache->classes[realized->name].fields) {
     auto ftyp = ctx->instantiate(field.type, realized);
+    if (!ftyp->canRealize() && field.typeExpr) {
+      auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
+      unify(ftyp, t);
+      LOG("- {} {} {:c}", realized, clean_clone(field.typeExpr),
+      ftyp);
+    }
     if (!realize(ftyp)) {
       realize(ftyp);
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
@@ -260,6 +268,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
     memberInfo[field.name] = field.type->getSrcInfo();
   }
+  ctx->popBlock();
 
   // Set IR attributes
   if (auto *cls = ir::cast<ir::types::RefType>(lt))

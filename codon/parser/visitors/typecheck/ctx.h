@@ -273,7 +273,7 @@ public:
                                              bool hideShadowed = true) const;
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
-  types::TypePtr findMember(const std::string &typeName,
+  Cache::Class::ClassField *findMember(const std::string &typeName,
                             const std::string &member) const;
 
   using ReorderDoneFn =
