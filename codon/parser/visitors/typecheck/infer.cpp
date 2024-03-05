@@ -254,8 +254,6 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     if (!ftyp->canRealize() && field.typeExpr) {
       auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
       unify(ftyp, t);
-      LOG("- {} {} {:c}", realized, clean_clone(field.typeExpr),
-      ftyp);
     }
     if (!realize(ftyp)) {
       realize(ftyp);

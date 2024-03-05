@@ -23,6 +23,7 @@ public:
   bool isInstantiated() const override;
   std::string realizedName() const override;
   virtual std::shared_ptr<Expr> getStaticExpr() const = 0;
+  virtual TypePtr getNonStaticType() const;
   std::shared_ptr<StaticType> getStatic() override {
     return std::static_pointer_cast<StaticType>(shared_from_this());
   }

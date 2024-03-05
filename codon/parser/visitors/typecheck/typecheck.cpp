@@ -529,7 +529,10 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
-  if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
+  if (expr->type->getStatic() && (!expectedType || !expectedType->isStaticType())) {
+    expr->type = expr->type->getStatic()->getNonStaticType();
+    return false;
+  } if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&
              exprClass->name != expectedClass->name && !expr->getEllipsis()) {
