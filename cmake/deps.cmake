@@ -158,14 +158,14 @@ CPMAddPackage(
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
 
-if(APPLE AND APPLE_ARM)
-    enable_language(ASM)
-    CPMAddPackage(
-        NAME unwind
-        GITHUB_REPOSITORY "exaloop/libunwind"
-        GIT_TAG e50988ccea5492b62e014408796002306b36eb9c
-        OPTIONS "CMAKE_BUILD_TYPE Release"
-                "LIBUNWIND_ENABLE_STATIC OFF"
-                "LIBUNWIND_ENABLE_SHARED ON"
-                "LIBUNWIND_INCLUDE_DOCS OFF")
-endif()
+# if(APPLE AND APPLE_ARM)
+#     enable_language(ASM)
+#     CPMAddPackage(
+#         NAME unwind
+#         GITHUB_REPOSITORY "exaloop/libunwind"
+#         GIT_TAG 3fdb2154914a2848b89b50ffe2fd05e184d857b7
+#         OPTIONS "CMAKE_BUILD_TYPE Release"
+#                 "LIBUNWIND_ENABLE_STATIC OFF"
+#                 "LIBUNWIND_ENABLE_SHARED ON"
+#                 "LIBUNWIND_INCLUDE_DOCS OFF")
+# endif()

@@ -297,12 +297,12 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
   }
   auto t = N<IdExpr>(type);
   if (isDict && collectionTyp->getRecord()) {
-    t->setType(
-        ctx->instantiateGeneric(ctx->getType(type), collectionTyp->getRecord()->args));
+    t->setType(ctx->instantiateGeneric(ctx->forceFind(type)->type,
+                                       collectionTyp->getRecord()->args));
   } else if (isDict) {
-    t->setType(ctx->instantiate(ctx->getType(type)));
+    t->setType(ctx->instantiate(ctx->forceFind(type)->type));
   } else {
-    t->setType(ctx->instantiateGeneric(ctx->getType(type), {collectionTyp}));
+    t->setType(ctx->instantiateGeneric(ctx->forceFind(type)->type, {collectionTyp}));
   }
   stmts.push_back(
       transform(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs))));

@@ -32,6 +32,8 @@ SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts) : Stmt(), stmts(std::move(stmts
 SuiteStmt::SuiteStmt(const SuiteStmt &stmt, bool clean)
     : Stmt(stmt, clean), stmts(ast::clone(stmt.stmts, clean)) {}
 std::string SuiteStmt::toString(int indent) const {
+  if (indent == -1)
+    return "";
   std::string pad = indent >= 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string s;
   for (int i = 0; i < stmts.size(); i++)
@@ -152,6 +154,8 @@ WhileStmt::WhileStmt(const WhileStmt &stmt, bool clean)
       suite(ast::clone(stmt.suite, clean)),
       elseSuite(ast::clone(stmt.elseSuite, clean)) {}
 std::string WhileStmt::toString(int indent) const {
+  if (indent == -1)
+    return format("(while {})", cond->toString(indent));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   if (elseSuite && elseSuite->firstInBlock())
     return format("(while-else {}{}{}{}{})", cond->toString(indent), pad,
@@ -175,15 +179,18 @@ ForStmt::ForStmt(const ForStmt &stmt, bool clean)
       decorator(ast::clone(stmt.decorator, clean)),
       ompArgs(ast::clone(stmt.ompArgs, clean)), wrapped(stmt.wrapped) {}
 std::string ForStmt::toString(int indent) const {
+  auto vs = var->toString(indent);
+  if (var->hasAttr(ExprAttr::Dominated))
+    vs += "^";
+  if (indent == -1)
+    return format("(for {} {})", vs, iter->toString(indent));
+
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string attr;
   if (decorator)
     attr += " " + decorator->toString(indent);
   if (!attr.empty())
     attr = " #:attr" + attr;
-  auto vs = var->toString(indent);
-  if (var->hasAttr(ExprAttr::Dominated))
-    vs += "^";
   if (elseSuite && elseSuite->firstInBlock())
     return format("(for-else {} {}{}{}{}{}{})", vs, iter->toString(indent), attr, pad,
                   suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
@@ -202,6 +209,8 @@ IfStmt::IfStmt(const IfStmt &stmt, bool clean)
       ifSuite(ast::clone(stmt.ifSuite, clean)),
       elseSuite(ast::clone(stmt.elseSuite, clean)) {}
 std::string IfStmt::toString(int indent) const {
+  if (indent == -1)
+    return format("(if {})", cond->toString(indent));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   return format("(if {}{}{}{})", cond->toString(indent), pad,
                 ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
@@ -222,6 +231,8 @@ MatchStmt::MatchStmt(const MatchStmt &stmt, bool clean)
     : Stmt(stmt, clean), what(ast::clone(stmt.what, clean)),
       cases(ast::clone(stmt.cases, clean)) {}
 std::string MatchStmt::toString(int indent) const {
+  if (indent == -1)
+    return format("(match {})", what->toString(indent));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
@@ -295,6 +306,8 @@ TryStmt::TryStmt(const TryStmt &stmt, bool clean)
       catches(ast::clone(stmt.catches, clean)),
       finally(ast::clone(stmt.finally, clean)) {}
 std::string TryStmt::toString(int indent) const {
+  if (indent == -1)
+    return format("(try)");
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
@@ -385,6 +398,9 @@ std::string FunctionStmt::toString(int indent) const {
       dec.push_back(format("(dec {})", a->toString(indent)));
   for (auto &a : attributes.customAttr)
     attr.push_back(format("'{}'", a));
+  if (indent == -1)
+    return format("(fn '{} ({}){})", name, join(as, " "),
+                  ret ? " #:ret " + ret->toString(indent) : "");
   return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
                 ret ? " #:ret " + ret->toString(indent) : "",
                 dec.empty() ? "" : format(" (dec {})", join(dec, " ")),
@@ -602,6 +618,8 @@ std::string ClassStmt::toString(int indent) const {
   std::vector<std::string> attr;
   for (auto &a : decorators)
     attr.push_back(format("(dec {})", a->toString(indent)));
+  if (indent == -1)
+    return format("(class '{} ({}))", name, as);
   return format("(class '{}{}{}{}{}{})", name,
                 bases.empty() ? "" : format(" (bases {})", join(bases, " ")),
                 attr.empty() ? "" : format(" (attr {})", join(attr, " ")),
@@ -791,6 +809,8 @@ std::string WithStmt::toString(int indent) const {
                      ? format("({} #:var '{})", items[i]->toString(indent), vars[i])
                      : items[i]->toString(indent));
   }
+  if (indent == -1)
+    return format("(with ({}))", join(as, " "));
   return format("(with ({}){}{})", join(as, " "), pad,
                 suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
 }

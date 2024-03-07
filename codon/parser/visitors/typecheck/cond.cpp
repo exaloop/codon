@@ -17,9 +17,13 @@ template <typename TT, typename TF>
 auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
   seqassertn(cond->type->isStaticType(), "not a static condition");
   if (cond->type->canRealize()) {
-    bool isTrue = cond->type->getStrStatic()
-                      ? !cond->type->getStrStatic()->value.empty()
-                      : cond->type->getIntStatic()->value;
+    bool isTrue = false;
+    if (cond->type->getStrStatic())
+      isTrue = !cond->type->getStrStatic()->value.empty();
+    else if (cond->type->getIntStatic())
+      isTrue = cond->type->getIntStatic()->value;
+    else if (cond->type->getBoolStatic())
+      isTrue = cond->type->getBoolStatic()->value;
     return ready(isTrue);
   } else {
     return notReady();
@@ -60,6 +64,10 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->cond, "__bool__")));
   // Add wrappers and unify both sides
+  if (expr->ifexpr->type->getStatic())
+    expr->ifexpr->type = expr->ifexpr->type->getStatic()->getNonStaticType();
+  if (expr->elsexpr->type->getStatic())
+    expr->elsexpr->type = expr->elsexpr->type->getStatic()->getNonStaticType();
   wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
   wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
 

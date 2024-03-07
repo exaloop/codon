@@ -17,9 +17,10 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
-#define DBG(c, ...)                                                                    \
+#define DBGI(c, ...)                                                                   \
   fmt::print(codon::getLogger().log, "{}" c "\n",                                      \
              std::string(2 * codon::getLogger().level, ' '), ##__VA_ARGS__)
+#define DBG(c, ...) fmt::print(codon::getLogger().log, c "\n", ##__VA_ARGS__)
 #define LOG(c, ...) DBG(c, ##__VA_ARGS__)
 #define LOG_TIME(c, ...)                                                               \
   {                                                                                    \

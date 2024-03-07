@@ -62,7 +62,7 @@ std::string Cache::getContent(const SrcInfo &info) {
 types::ClassTypePtr Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->isType())
-    return f->type->getClass();
+    return typeCtx->getType(f->type)->getClass();
   return nullptr;
 }
 
@@ -146,9 +146,8 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto name = tv.generateTuple(types.size());
-  auto t = typeCtx->find(name);
-  seqassertn(t && t->type, "cannot find {}", name);
-  return realizeType(t->type->getClass(), types);
+  auto t = typeCtx->getType(name);
+  return realizeType(t->getClass(), types);
 }
 
 ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
@@ -169,7 +168,7 @@ ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
 
   auto tup = tv.generateTuple(types.size());
-  auto argType = typeCtx->instantiateGeneric(typeCtx->find(tup)->type, types);
+  auto argType = typeCtx->instantiateGeneric(typeCtx->getType(tup), types);
   auto t = typeCtx->find("Union");
   seqassertn(t && t->type, "cannot find 'Union'");
   return realizeType(t->type->getClass(), {argType});

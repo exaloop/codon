@@ -248,6 +248,7 @@ class Dict:
             self._n_occupied = 0
 
     def _kh_get(self, key: K) -> int:
+        print(self._flags, self._n_buckets)
         if self._n_buckets:
             step = 0
             mask = self._n_buckets - 1
@@ -282,6 +283,7 @@ class Dict:
 
         if new_n_buckets < 4:
             new_n_buckets = 4
+
 
         if self._size >= int(new_n_buckets * HASH_UPPER + 0.5):
             j = 0

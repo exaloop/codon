@@ -56,6 +56,10 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   // Realize a type or a function if possible and replace the identifier with the fully
   // typed identifier (e.g., `foo` -> `foo[int]`)
   if (realize(expr->type)) {
+    if (auto s = expr->type->getStatic()) {
+      resultExpr = transform(s->getStaticExpr());
+      return;
+    }
     if (!val->isVar())
       expr->value = expr->type->realizedName();
     expr->setDone();
@@ -342,7 +346,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: cls.__name__
   if (expr->expr->type->is("type") && expr->member == "__name__") {
     if (realize(expr->expr->type))
-      return transform(N<StringExpr>(expr->expr->type->prettyString()));
+      return transform(N<StringExpr>(ctx->getType(expr->expr->type)->prettyString()));
     return nullptr;
   }
   // Special case: expr.__is_static__

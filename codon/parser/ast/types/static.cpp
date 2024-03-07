@@ -31,9 +31,7 @@ bool StaticType::isInstantiated() const { return true; }
 
 std::string StaticType::realizedName() const { return debugString(0); }
 
-TypePtr StaticType::getNonStaticType() const {
-  return std::make_shared<RecordType>(cache, name, name, generics);
-}
+TypePtr StaticType::getNonStaticType() const { return cache->typeCtx->getType(name); }
 
 /*****************************************************************/
 

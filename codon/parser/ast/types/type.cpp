@@ -43,6 +43,8 @@ bool Type::is(const std::string &s) { return getClass() && getClass()->name == s
 
 char Type::isStaticType() {
   auto t = follow();
+  if (t->getBoolStatic())
+    return 3;
   if (t->getStrStatic())
     return 2;
   if (t->getIntStatic())

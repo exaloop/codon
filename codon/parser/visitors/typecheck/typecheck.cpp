@@ -173,7 +173,7 @@ TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
 ExprPtr TypecheckVisitor::transform(ExprPtr &expr) { return transform(expr, true); }
 
 /// Transform an expression node.
-ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes, bool allowStatics) {
+ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
   if (!expr)
     return nullptr;
 
@@ -255,6 +255,9 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
 
   TypecheckVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
+  if (!stmt->toString(-1).empty())
+    LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
+                  ctx->getBase()->iteration, stmt->toString(-1));
   ctx->pushSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
   ctx->popSrcInfo();
@@ -271,6 +274,9 @@ StmtPtr TypecheckVisitor::transform(StmtPtr &stmt) {
   }
   if (stmt->done)
     ctx->changedNodes++;
+  if (!stmt->toString(-1).empty())
+    LOG_TYPECHECK("< [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
+                  ctx->getBase()->iteration, stmt->toString(-1));
   // LOG("[stmt] {}: {} {}", getSrcInfo(), split(stmt->toString(1), '\n').front(),
   // stmt->isDone() ? "[done]" : "");
   return stmt;
@@ -531,8 +537,10 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
                                            "pyobj"};
   if (expr->type->getStatic() && (!expectedType || !expectedType->isStaticType())) {
     expr->type = expr->type->getStatic()->getNonStaticType();
-    return false;
-  } if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
+    exprClass = expr->getType()->getClass();
+    // return true;
+  }
+  if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&
              exprClass->name != expectedClass->name && !expr->getEllipsis()) {

@@ -123,7 +123,10 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
   assign->lhs->attributes = stmt->lhs->attributes;
 
-  unify(assign->lhs->type, ctx->getUnbound(assign->lhs->getSrcInfo()));
+  if (!stmt->lhs->type)
+    assign->lhs->type = ctx->getUnbound(assign->lhs->getSrcInfo());
+  else
+    assign->lhs->type = stmt->lhs->type;
   if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
     assign->lhs->type->getLink()->defaultType = ctx->getType("NoneType");
@@ -263,8 +266,8 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
 
   auto bin = stmt->rhs->getBinary();
   if (bin && bin->inPlace) {
-    transform(bin->lexpr, true, /* allowStatic */ false);
-    transform(bin->rexpr, true, /* allowStatic */ false);
+    transform(bin->lexpr);
+    transform(bin->rexpr);
 
     if (bin->lexpr->type->getClass() && bin->rexpr->type->getClass()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {

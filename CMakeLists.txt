@@ -78,9 +78,9 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
-if(APPLE AND APPLE_ARM)
-  add_dependencies(codonrt unwind_shared)
-endif()
+# if(APPLE AND APPLE_ARM)
+#   add_dependencies(codonrt unwind_shared)
+# endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include" runtime)
@@ -93,8 +93,7 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:gc>
             -Wl,-force_load,$<TARGET_FILE:bz2>
             -Wl,-force_load,$<TARGET_FILE:liblzma>
-            -Wl,-force_load,$<TARGET_FILE:re2>
-            -Wl,-ld_classic)
+            -Wl,-force_load,$<TARGET_FILE:re2>)
 else()
   target_link_libraries(
     codonrt
@@ -120,13 +119,13 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
           ${CMAKE_BINARY_DIR})
-if(APPLE AND APPLE_ARM)
-  add_custom_command(
-    TARGET codonrt
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:unwind_shared>
-            ${CMAKE_BINARY_DIR})
-endif()
+# if(APPLE AND APPLE_ARM)
+#   add_custom_command(
+#     TARGET codonrt
+#     POST_BUILD
+#     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:unwind_shared>
+#             ${CMAKE_BINARY_DIR})
+# endif()
 
 
 # Codon compiler library
@@ -315,9 +314,6 @@ set(CODON_CPPFILES
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
-if(APPLE_ARM)
-  target_link_libraries(codonc PRIVATE -Wl,-ld_classic)
-endif()
 if(ASAN)
   target_compile_options(
     codonc PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"

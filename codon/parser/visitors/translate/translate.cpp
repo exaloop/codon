@@ -303,7 +303,9 @@ void TranslateVisitor::visit(DotExpr *expr) {
   if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
       expr->member == "__contents_atomic__") {
     seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
-    auto type = ctx->find(expr->expr->getId()->value)->getType();
+    auto t = ctx->cache->typeCtx->getType(expr->expr->getId()->type);
+    auto type = ctx->find(t->realizedName())->getType();
+    LOG("->t: {}", t->realizedName());
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
     result = make<ir::TypePropertyInstr>(
         expr, type,
@@ -562,7 +564,8 @@ void TranslateVisitor::visit(TryStmt *stmt) {
   auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries);
   for (auto &c : stmt->catches) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
-    auto *excType = c->exc ? getType(c->exc->getType()) : nullptr;
+    auto *excType =
+        c->exc ? getType(ctx->cache->typeCtx->getType(c->exc->getType())) : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c->var.empty()) {
       if (!ctx->find(c->var) || !c->exc->hasAttr(ExprAttr::Dominated)) {

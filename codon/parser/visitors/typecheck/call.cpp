@@ -1015,7 +1015,7 @@ ExprPtr TypecheckVisitor::transformCompileError(CallExpr *expr) {
 
 /// Convert a class to a tuple.
 ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
-  auto cls = expr->args.front().value->type->getClass();
+  auto cls = ctx->getType(expr->args.front().value->type)->getClass();
   if (!cls)
     return nullptr;
 

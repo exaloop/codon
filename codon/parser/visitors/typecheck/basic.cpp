@@ -27,7 +27,7 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
 
 /// Set type to `bool`
 void TypecheckVisitor::visit(BoolExpr *expr) {
-  unify(expr->type, ctx->getType("bool"));
+  unify(expr->type, std::make_shared<types::BoolStaticType>(ctx->cache, expr->value));
   expr->setDone();
 }
 

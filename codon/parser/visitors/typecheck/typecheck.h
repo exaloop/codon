@@ -63,9 +63,9 @@ public: // Convenience transformators
     auto e = expr;
     return transform(e);
   }
-  ExprPtr transform(ExprPtr &expr, bool allowTypes, bool allowStatics = true);
-  ExprPtr transform(ExprPtr &&expr, bool allowTypes, bool allowStatics = true) {
-    return transform(expr, allowTypes, allowStatics);
+  ExprPtr transform(ExprPtr &expr, bool allowTypes);
+  ExprPtr transform(ExprPtr &&expr, bool allowTypes) {
+    return transform(expr, allowTypes);
   }
   StmtPtr transform(StmtPtr &s) override;
   StmtPtr transform(const StmtPtr &stmt) override {
