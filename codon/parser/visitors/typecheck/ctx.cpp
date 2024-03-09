@@ -37,6 +37,8 @@ void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   // LOG("--");
   // LOG("[ctx] {} @ {}: + {}: {} ({:D})", getModule(), getSrcInfo(), name,
   // var->canonicalName, var->type);
+  // if (name=="V.0"&&var->type->is("int"))
+  //   LOG("-");
   // LOG("{}: {:c}", name, var->type);
   Context<TypecheckItem>::add(name, var);
 }
@@ -255,8 +257,11 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
       generics.size());
   }
   for (int i = 0; i < c->generics.size(); i++) {
+    auto t = generics[i];
     seqassert(c->generics[i].type, "generic is null");
-    g->generics.emplace_back("", "", generics[i], c->generics[i].id,
+    if (!c->generics[i].isStatic && t->getStatic())
+      t = t->getStatic()->getNonStaticType();
+    g->generics.emplace_back("", "", t, c->generics[i].id,
                              c->generics[i].isStatic);
   }
   return instantiate(srcInfo, root, g);

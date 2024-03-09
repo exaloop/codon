@@ -305,7 +305,6 @@ void TranslateVisitor::visit(DotExpr *expr) {
     seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
     auto t = ctx->cache->typeCtx->getType(expr->expr->getId()->type);
     auto type = ctx->find(t->realizedName())->getType();
-    LOG("->t: {}", t->realizedName());
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
     result = make<ir::TypePropertyInstr>(
         expr, type,

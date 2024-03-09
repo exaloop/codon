@@ -32,10 +32,10 @@ def fn_get_default(F, i: Static[int]):
 def static_print(*args):
     pass
 
-def vars(obj, with_index: Static[int] = 0):
+def vars(obj, with_index: Static[bool] = False):
     pass
 
-def vars_types(T: type, with_index: Static[int] = 0):
+def vars_types(T: type, with_index: Static[bool] = False):
     pass
 
 def tuple_type(T: type, N: Static[int]):

@@ -630,7 +630,9 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (methodArgs) {
     std::vector<std::string> a;
     for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("{}", t.value->type->prettyString()));
+      a.emplace_back(fmt::format("{}",
+      t.value->type->getStatic() ? t.value->type->getClass()->name :
+      t.value->type->prettyString()));
     argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
 

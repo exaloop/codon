@@ -566,10 +566,13 @@ ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
 char getStaticGeneric(Expr *e) {
   if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
+    if (e->getIndex()->index && e->getIndex()->index->isId("bool"))
+      return 3;
     if (e->getIndex()->index && e->getIndex()->index->isId("str"))
       return 2;
     if (e->getIndex()->index && e->getIndex()->index->isId("int"))
       return 1;
+    return 4;
   }
   return 0;
 }

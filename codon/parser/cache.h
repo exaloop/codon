@@ -115,7 +115,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       types::TypePtr type;
       /// Base class name (if available)
       std::string baseClass;
-      ExprPtr typeExpr;
+      ExprPtr typeExpr = nullptr;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.

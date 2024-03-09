@@ -361,7 +361,7 @@ print isinstance({1, 2}, List)
 #: False
 
 print staticlen((1, 2, 3)), staticlen((1, )), staticlen('hehe')
-#: 3 1 2
+#: 3 1 4
 
 print hasattr([1, 2], "__getitem__")
 #: True

@@ -134,9 +134,9 @@ std::string FuncType::debugString(char mode) const {
   auto fnname = ast->name;
   if (mode == 0) {
     fnname = cache->rev(ast->name);
-    // if (funcParent)
-    // fnname = fmt::format("{}.{}", funcParent->debugString(mode), fnname);
   }
+  if (mode == 2 && funcParent)
+    s += fmt::format(";{}", funcParent->debugString(mode));
   return fmt::format("{}{}", fnname, s.empty() ? "" : fmt::format("[{}]", s));
 }
 

@@ -7,7 +7,7 @@ from internal.gc import (
 from internal.static import vars_types, tuple_type, vars as _vars
 
 
-def vars(obj, with_index: Static[int] = 0):
+def vars(obj, with_index: Static[bool] = False):
     return _vars(obj, with_index)
 
 
@@ -580,7 +580,7 @@ class __magic__:
     # @dataclass parameter: python=True
     def to_py(slf) -> Ptr[byte]:
         o = pyobj._tuple_new(staticlen(slf))
-        for i, _, v in vars(slf, with_index=1):
+        for i, _, v in vars(slf, with_index=True):
             pyobj._tuple_set(o, i, v.__to_py__())
         return o
 
@@ -589,7 +589,7 @@ class __magic__:
         if isinstance(T, ByVal):
             return tuple(
                 type(t).__from_py__(pyobj._tuple_get(src, i))
-                for i, t in vars_types(T, with_index=1)
+                for i, t in vars_types(T, with_index=True)
             )
         else:
             obj = T.__new__()

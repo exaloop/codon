@@ -377,7 +377,7 @@ TypecheckVisitor::transformStaticLoopCall(
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
-      bool withIdx = generics[0]->getIntStatic()->value;
+      bool withIdx = generics[0]->getBoolStatic()->value;
       if (!withIdx && vars.size() != 2)
         error("expected two items");
       else if (withIdx && vars.size() != 3)
@@ -409,7 +409,7 @@ TypecheckVisitor::transformStaticLoopCall(
       auto [generics, args] = *fna;
 
       auto typ = realize(generics[0]->getClass());
-      bool withIdx = generics[1]->getIntStatic()->value;
+      bool withIdx = generics[1]->getBoolStatic()->value;
       if (!withIdx && vars.size() != 1)
         error("expected one item");
       else if (withIdx && vars.size() != 2)

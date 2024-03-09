@@ -151,7 +151,8 @@ void FormatVisitor::visit(DictExpr *expr) {
 }
 
 void FormatVisitor::visit(GeneratorExpr *expr) {
-  seqassert(false, "not implemented");
+  // seqassert(false, "not implemented");
+  result = "GENERATOR_IMPL";
   // std::string s;
   // for (auto &i : expr->loops) {
   //   std::string cond;

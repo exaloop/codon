@@ -25,9 +25,9 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
     if (name != t->realizedName()) // type prefix
       t = cache->typeCtx->getType(t);
     auto n = t->getClass()->name;
+    if (!in(cache->classes, n) || !in(cache->classes[n].realizations, name))
+      return nullptr;
     ret = std::make_shared<TranslateItem>(TranslateItem::Type, bases[0]);
-    seqassertn(in(cache->classes, n) && in(cache->classes[n].realizations, name),
-               "cannot find type realization {}", name);
     ret->handle.type = cache->classes[n].realizations[name]->ir;
   } else if (tt && tt->type->getFunc() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Func, bases[0]);

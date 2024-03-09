@@ -120,6 +120,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
             generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
         }
         if (auto st = getStaticGeneric(a.type.get())) {
+          if (st > 3) transform(a.type); // error check
           generic->isStatic = st;
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
@@ -194,8 +195,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           //                           : ctx->generateCanonicalName(a.name);
           args.emplace_back(varName, transformType(clean_clone(a.type)),
                             transform(clone(a.defaultValue), true));
-          ctx->cache->classes[canonicalName].fields.push_back(
-              Cache::Class::ClassField{varName, nullptr, canonicalName});
+          ctx->cache->classes[canonicalName].fields.emplace_back(Cache::Class::ClassField{
+              varName, types::TypePtr(nullptr), canonicalName});
         }
       }
     }
@@ -325,8 +326,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->remove(g.name);
       }
     // Debug information
-    // LOG("[class] {} -> {:D} / {}", canonicalName, typ,
+    // LOG("[class] {} -> {:c} / {}", canonicalName, typ,
     //     ctx->cache->classes[canonicalName].fields.size());
+    // if (auto r = typ->getRecord())
+    //   for (auto &tx: r->args)
+    //       LOG("  ... {:c}", tx);
     // for (auto &m : ctx->cache->classes[canonicalName].fields)
     //   LOG("       - member: {}: {:D}", m.name, m.type);
     // for (auto &m : ctx->cache->classes[canonicalName].methods)
@@ -407,15 +411,11 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
     }
 
     // Add hidden generics
-    auto addGen = [&](auto g) { ctx->addVar(g.name, g.name, g.type)->generic = true; };
-    for (auto &g : clsTyp->generics) {
-      addGen(g);
+    addClassGenerics(clsTyp);
+    for (auto &g : clsTyp->generics)
       typ->hiddenGenerics.push_back(g);
-    }
-    for (auto &g : clsTyp->hiddenGenerics) {
-      addGen(g);
+    for (auto &g : clsTyp->hiddenGenerics)
       typ->hiddenGenerics.push_back(g);
-    }
   }
   // Add normal fields
   for (auto &clsTyp : asts) {
@@ -436,9 +436,11 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
                   ctx->cache->classes[ast->name].fields[ai].name, a.name);
         args.emplace_back(name, transformType(clean_clone(a.type)),
                           transform(clean_clone(a.defaultValue)));
-        ctx->cache->classes[canonicalName].fields.push_back(Cache::Class::ClassField{
+        ctx->cache->classes[canonicalName].fields.emplace_back(Cache::Class::ClassField{
             name, getType(args.back().type),
-            ctx->cache->classes[ast->name].fields[ai].baseClass});
+            ctx->cache->classes[ast->name].fields[ai].baseClass
+        }
+        );
         ai++;
       }
     }
@@ -753,7 +755,10 @@ int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
 
 void TypecheckVisitor::addClassGenerics(const types::ClassTypePtr &clsTyp) {
   auto addGen = [&](auto g) {
-    ctx->addVar(ctx->cache->rev(g.name), g.name, g.type)->generic = true;
+    auto t = g.type;
+    if (t->getClass() && !t->getStatic() && !t->is("type"))
+        t = ctx->instantiateGeneric(ctx->getType("type"), {t});
+    ctx->addVar(ctx->cache->rev(g.name), g.name, t)->generic = true;
   };
   for (auto &g : clsTyp->hiddenGenerics)
     addGen(g);

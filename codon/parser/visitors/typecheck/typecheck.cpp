@@ -629,7 +629,7 @@ ExprPtr TypecheckVisitor::castToSuperClass(ExprPtr expr, ClassTypePtr superTyp,
       }
   }
   realize(superTyp);
-  auto typExpr = N<IdExpr>(superTyp->name);
+  auto typExpr = N<IdExpr>(superTyp->realizedName());
   return transform(
       N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"), expr, typExpr));
 }

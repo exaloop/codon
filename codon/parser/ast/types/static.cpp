@@ -51,7 +51,7 @@ int IntStaticType::unify(Type *typ, Unification *us) {
 }
 
 std::string IntStaticType::debugString(char mode) const {
-  return fmt::format("Static[{}]", value);
+  return mode == 0 ? fmt::format("{}", value) : fmt::format("Static[{}]", value);
 }
 
 std::shared_ptr<Expr> IntStaticType::getStaticExpr() const {
@@ -76,7 +76,7 @@ int StrStaticType::unify(Type *typ, Unification *us) {
 }
 
 std::string StrStaticType::debugString(char mode) const {
-  return fmt::format("Static['{}']", escape(value));
+  return mode == 0 ? fmt::format("'{}'", escape(value)) : fmt::format("Static['{}']", escape(value));
 }
 
 std::shared_ptr<Expr> StrStaticType::getStaticExpr() const {

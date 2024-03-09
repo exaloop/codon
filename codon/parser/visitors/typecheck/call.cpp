@@ -397,7 +397,7 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
         std::vector<ExprPtr> values;
         if (!part.known.empty()) {
           auto e =
-              transform(N<DotExpr>(N<DotExpr>(N<IdExpr>(part.var), "kwargs"), "args"));
+              transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
           for (auto &[n, ne] : extractNamedTuple(e)) {
             names.emplace_back(n);
             values.emplace_back(transform(ne));
@@ -539,7 +539,7 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
     if (startswith(calleeFn->ast->args[si].name, "*") && calleeFn->ast->args[si].type &&
         args[si].value->getCall()) {
       // Special case: `*args: type` and `**kwargs: type`
-      auto typ = transform(clone(calleeFn->ast->args[si].type))->type;
+      auto typ = ctx->getType(transform(clone(calleeFn->ast->args[si].type))->type);
       auto callExpr = args[si].value;
       if (startswith(calleeFn->ast->args[si].name, "**"))
         callExpr = args[si].value->getCall()->args[0].value;
@@ -807,7 +807,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
   }
 
   auto name = cands.front(); // the first inherited type
-  auto superTyp = ctx->instantiate(ctx->getType(name))->getClass();
+  auto superTyp = ctx->instantiate(ctx->getType(name), typ)->getClass();
   if (typ->getRecord()) {
     // Case: tuple types. Return `tuple(obj.args...)`
     std::vector<ExprPtr> members;
@@ -869,7 +869,7 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (auto c = typExpr->getCall()) {
     // Handle `isinstance(obj, (type1, type2, ...))`
     if (typExpr->origExpr && typExpr->origExpr->getTuple()) {
-      ExprPtr result = transform(N<IntExpr>(0));
+      ExprPtr result = transform(N<BoolExpr>(false));
       for (auto &i : typExpr->origExpr->getTuple()->items) {
         result = transform(N<BinaryExpr>(
             result, "||",
@@ -879,12 +879,12 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     }
   }
 
-  if (typExpr->isId("Tuple") || typExpr->isId("tuple")) {
-    return transform(N<IntExpr>(startswith(typ->name, TYPE_TUPLE)));
+  if (typExpr->isId("type[Tuple]")) {
+    return transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)));
   } else if (typExpr->isId("type[ByVal]")) {
-    return transform(N<IntExpr>(typ->getRecord() != nullptr));
+    return transform(N<BoolExpr>(typ->getRecord() != nullptr));
   } else if (typExpr->isId("type[ByRef]")) {
-    return transform(N<IntExpr>(typ->getRecord() == nullptr));
+    return transform(N<BoolExpr>(typ->getRecord() == nullptr));
   } else if (!typExpr->type->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     int tag = -1;
@@ -895,17 +895,17 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
       }
     }
     if (tag == -1)
-      return transform(N<IntExpr>(0));
+      return transform(N<BoolExpr>(false));
     return transform(N<BinaryExpr>(
         N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_tag"),
                     expr->args[0].value),
-        "==", N<IntExpr>(tag)));
+        "==", N<BoolExpr>(tag)));
   } else if (typExpr->type->is("pyobj")) {
     if (typ->is("pyobj")) {
       return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance.0"),
                                    expr->args[0].value, expr->args[1].value));
     } else {
-      return transform(N<IntExpr>(0));
+      return transform(N<BoolExpr>(false));
     }
   }
 
@@ -915,9 +915,9 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   // Check super types (i.e., statically inherited) as well
   for (auto &tx : getSuperTypes(typ->getClass())) {
     if (tx->unify(targetType.get(), nullptr) >= 0)
-      return transform(N<IntExpr>(1));
+      return transform(N<BoolExpr>(true));
   }
-  return transform(N<IntExpr>(0));
+  return transform(N<BoolExpr>(false));
 }
 
 /// Transform staticlen method to a static integer expression. This method supports only
@@ -946,7 +946,7 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 /// This method also supports additional argument types that are used to check
 /// for a matching overload (not available in Python).
 ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
-  auto typ = expr->args[0].value->getType()->getClass();
+  auto typ = ctx->getType(expr->args[0].value->getType())->getClass();
   if (!typ)
     return nullptr;
 
@@ -972,7 +972,7 @@ ExprPtr TypecheckVisitor::transformHasAttr(CallExpr *expr) {
                 ctx->findMember(typ->getClass()->name, member);
   if (exists && args.size() > 1)
     exists &= findBestMethod(typ, member, args) != nullptr;
-  return transform(N<IntExpr>(exists));
+  return transform(N<BoolExpr>(exists));
 }
 
 /// Transform getattr method to a DotExpr.
@@ -1025,13 +1025,20 @@ ExprPtr TypecheckVisitor::transformTupleFn(CallExpr *expr) {
       return expr->shared_from_this();
 
     std::vector<ExprPtr> items;
+    ctx->addBlock();
+    addClassGenerics(cls);
     auto tn = generateTuple(ctx->cache->classes[cls->name].fields.size());
     for (auto &ft : ctx->cache->classes[cls->name].fields) {
       auto t = ctx->instantiate(ft.type, cls);
+      if (!t->canRealize() && ft.typeExpr) {
+        auto tt = ctx->getType(transform(clean_clone(ft.typeExpr))->type);
+        unify(t, tt);
+      }
       auto rt = realize(t);
       seqassert(rt, "cannot realize '{}' in {}", t, ft.name);
       items.push_back(N<IdExpr>(t->realizedName()));
     }
+    ctx->popBlock();
     auto e = transform(N<InstantiateExpr>(N<IdExpr>(tn), items));
     return e;
   }
@@ -1097,7 +1104,7 @@ ExprPtr TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
     return nullptr;
   auto c = in(ctx->cache->classes, t->name);
   seqassert(c, "bad class {}", t->name);
-  return transform(N<IntExpr>(c->hasRTTI()));
+  return transform(N<BoolExpr>(c->hasRTTI()));
 }
 
 // Transform internal.static calls
@@ -1125,7 +1132,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       callArgs.emplace_back(a.first, std::make_shared<NoneExpr>()); // dummy expression
       callArgs.back().value->setType(a.second);
     }
-    return {true, transform(N<IntExpr>(canCall(fn, callArgs) >= 0))};
+    return {true, transform(N<BoolExpr>(canCall(fn, callArgs) >= 0))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_has_type.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
@@ -1133,7 +1140,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
     auto &args = fn->getArgTypes();
-    return {true, transform(N<IntExpr>(idx->value >= 0 && idx->value < args.size() &&
+    return {true, transform(N<BoolExpr>(idx->value >= 0 && idx->value < args.size() &&
                                        args[idx->value]->canRealize()))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_get_type.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
@@ -1167,7 +1174,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     auto &args = fn->ast->args;
     if (idx->value < 0 || idx->value >= args.size())
       error("argument out of bounds");
-    return {true, transform(N<IntExpr>(args[idx->value].defaultValue != nullptr))};
+    return {true, transform(N<BoolExpr>(args[idx->value].defaultValue != nullptr))};
   } else if (expr->expr->isId("std.internal.static.fn_get_default.0")) {
     auto fn = ctx->extractFunction(expr->args[0].value->type);
     if (!fn)
@@ -1210,7 +1217,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     return {true, transform(N<TupleExpr>(tupArgs))};
   } else if (expr->expr->isId("std.internal.static.vars.0")) {
     auto funcTyp = expr->expr->type->getFunc();
-    auto withIdx = funcTyp->funcGenerics[0].type->getIntStatic()->value;
+    auto withIdx = funcTyp->funcGenerics[0].type->getBoolStatic()->value;
 
     types::ClassTypePtr typ = nullptr;
     std::vector<ExprPtr> tupleItems;
