@@ -358,10 +358,10 @@ TypecheckVisitor::transformStaticLoopCall(
       error("expected two items");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
-      auto typ = args[0]->getRecord();
-      if (!typ)
+      auto typ = args[0]->getClass();
+      if (!typ || !typ->isRecord())
         error("staticenumerate needs a tuple");
-      for (size_t i = 0; i < typ->args.size(); i++) {
+      for (size_t i = 0; i < ctx->cache->classes[typ->name].fields.size(); i++) {
         auto b = N<SuiteStmt>(
             {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
                            N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
@@ -441,7 +441,7 @@ TypecheckVisitor::transformStaticLoopCall(
     if (maybeHeterogenous) {
       if (!iter->type->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
-      if (!iter->type->getRecord()->getHeterogenousTuple() && !allowNonHeterogenous)
+      if (!iter->type->getClass()->getHeterogenousTuple() && !allowNonHeterogenous)
         return {false, false, nullptr, {}};
 
       std::string tupleVar;
@@ -451,7 +451,7 @@ TypecheckVisitor::transformStaticLoopCall(
       } else {
         tupleVar = iter->getId()->value;
       }
-      for (size_t i = 0; i < iter->type->getRecord()->args.size(); i++) {
+      for (size_t i = 0; i < iter->type->getClass()->generics.size(); i++) {
         auto s = N<SuiteStmt>();
         if (vars.size() > 1) {
           for (size_t j = 0; j < vars.size(); j++) {

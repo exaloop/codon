@@ -29,10 +29,10 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       }
       if (!typ)
         return; // continue later when the type becomes known
-      if (!typ->getRecord())
+      if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, star, typ->prettyString());
-      auto &ff = ctx->cache->classes[typ->name].fields;
-      for (int i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
+      const auto &ff = ctx->cache->classes[typ->name].fields;
+      for (int i = 0; i < ff.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
                            transform(N<DotExpr>(star->what, ff[i].name)));
       }
@@ -270,16 +270,19 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       if (auto t = superTyp(collectionTyp->getClass(), typ))
         collectionTyp = t;
     } else {
-      seqassert(collectionTyp->getRecord() &&
-                    collectionTyp->getRecord()->args.size() == 2,
-                "bad dict");
       auto tname = generateTuple(2);
-      auto tt = unify(typ, ctx->instantiate(ctx->getType(tname)))->getRecord();
-      auto nt = collectionTyp->getRecord()->args;
+      auto tt = unify(typ, ctx->instantiate(ctx->getType(tname)))->getClass();
+      seqassert(collectionTyp->getClass() &&
+                    collectionTyp->getClass()->generics.size() == 2 &&
+                    tt->generics.size() == 2,
+                "bad dict");
+      std::vector<types::TypePtr> nt;
       for (int di = 0; di < 2; di++) {
+        nt.push_back(collectionTyp->getClass()->generics[di].type);
         if (!nt[di]->getClass())
-          unify(nt[di], tt->args[di]);
-        else if (auto dt = superTyp(nt[di]->getClass(), tt->args[di]->getClass()))
+          unify(nt[di], tt->generics[di].type);
+        else if (auto dt =
+                     superTyp(nt[di]->getClass(), tt->generics[di].type->getClass()))
           nt[di] = dt;
       }
       collectionTyp = ctx->instantiateGeneric(ctx->getType(tname), nt);
@@ -296,19 +299,20 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
   auto t = N<IdExpr>(type);
-  if (isDict && collectionTyp->getRecord()) {
-    t->setType(
-      ctx->instantiateGeneric(ctx->getType("type"), {
-      ctx->instantiateGeneric(ctx->getType(type),
-                                       collectionTyp->getRecord()->args)}));
+  if (isDict && collectionTyp->getClass()) {
+    seqassert(collectionTyp->getClass()->isRecord(), "bad dict");
+    std::vector<types::TypePtr> nt;
+    for (auto &g : collectionTyp->getClass()->generics)
+      nt.push_back(g.type);
+    t->setType(ctx->instantiateGeneric(
+        ctx->getType("type"), {ctx->instantiateGeneric(ctx->getType(type), nt)}));
   } else if (isDict) {
-    t->setType(
-      ctx->instantiateGeneric(ctx->getType("type"), {
-      ctx->instantiate(ctx->getType(type))}));
+    t->setType(ctx->instantiateGeneric(ctx->getType("type"),
+                                       {ctx->instantiate(ctx->getType(type))}));
   } else {
-    t->setType(
-      ctx->instantiateGeneric(ctx->getType("type"), {
-      ctx->instantiateGeneric(ctx->getType(type), {collectionTyp})}));
+    t->setType(ctx->instantiateGeneric(
+        ctx->getType("type"),
+        {ctx->instantiateGeneric(ctx->getType(type), {collectionTyp})}));
   }
   stmts.push_back(
       transform(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs))));

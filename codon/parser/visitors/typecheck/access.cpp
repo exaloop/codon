@@ -359,7 +359,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (expr->expr->type->is("type") && expr->member == "__id__") {
     if (auto c = realize(expr->expr->type))
       return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
-                                      .realizations[c->getClass()->realizedTypeName()]
+                                      .realizations[c->getClass()->realizedName()]
                                       ->id));
     return nullptr;
   }

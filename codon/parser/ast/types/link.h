@@ -53,9 +53,8 @@ public:
 
   std::shared_ptr<LinkType> getLink() override;
   std::shared_ptr<FuncType> getFunc() override;
-  std::shared_ptr<RecordType> getPartial() override;
+  std::shared_ptr<ClassType> getPartial() override;
   std::shared_ptr<ClassType> getClass() override;
-  std::shared_ptr<RecordType> getRecord() override;
   std::shared_ptr<StaticType> getStatic() override;
   std::shared_ptr<IntStaticType> getIntStatic() override;
   std::shared_ptr<StrStaticType> getStrStatic() override;

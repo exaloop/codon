@@ -47,6 +47,7 @@ struct ClassType : public Type {
 
   std::vector<Generic> hiddenGenerics;
 
+  bool isTuple = false;
   std::string _rn;
 
   explicit ClassType(Cache *cache, std::string name, std::string niceName,
@@ -66,52 +67,18 @@ public:
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
-  /// Convenience function to get the name of realized type
-  /// (needed if a subclass realizes something else as well).
-  virtual std::string realizedTypeName() const;
   std::shared_ptr<ClassType> getClass() override {
     return std::static_pointer_cast<ClassType>(shared_from_this());
   }
-};
-using ClassTypePtr = std::shared_ptr<ClassType>;
-
-/**
- * A generic class tuple (record) type. All Seq tuples inherit from this class.
- */
-struct RecordType : public ClassType {
-  /// List of tuple arguments.
-  std::vector<TypePtr> args;
-  bool noTuple;
-
-  explicit RecordType(
-      Cache *cache, std::string name, std::string niceName,
-      std::vector<ClassType::Generic> generics = std::vector<ClassType::Generic>(),
-      std::vector<TypePtr> args = std::vector<TypePtr>(), bool noTuple = false);
-  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args, bool noTuple = false);
+  bool isRecord() const { return isTuple; }
 
 public:
-  int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
-
-public:
-  std::vector<TypePtr> getUnbounds() const override;
-  bool canRealize() const override;
-  bool isInstantiated() const override;
-  std::string debugString(char mode) const override;
-  std::string realizedName() const override;
-
-  std::shared_ptr<RecordType> getRecord() override {
-    return std::static_pointer_cast<RecordType>(shared_from_this());
-  }
-  std::shared_ptr<RecordType> getHeterogenousTuple() override;
-
-public:
-  std::shared_ptr<RecordType> getPartial() override;
+  std::shared_ptr<ClassType> getHeterogenousTuple() override;
+  std::shared_ptr<ClassType> getPartial() override;
   std::shared_ptr<FuncType> getPartialFunc() const;
   std::vector<char> getPartialMask() const;
 };
+using ClassTypePtr = std::shared_ptr<ClassType>;
 
 } // namespace codon::ast::types
 

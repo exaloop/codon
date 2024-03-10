@@ -186,16 +186,12 @@ std::shared_ptr<FuncType> LinkType::getFunc() {
   return kind == Link ? type->getFunc() : nullptr;
 }
 
-std::shared_ptr<RecordType> LinkType::getPartial() {
+std::shared_ptr<ClassType> LinkType::getPartial() {
   return kind == Link ? type->getPartial() : nullptr;
 }
 
 std::shared_ptr<ClassType> LinkType::getClass() {
   return kind == Link ? type->getClass() : nullptr;
-}
-
-std::shared_ptr<RecordType> LinkType::getRecord() {
-  return kind == Link ? type->getRecord() : nullptr;
 }
 
 std::shared_ptr<StaticType> LinkType::getStatic() {
@@ -250,10 +246,6 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
     for (auto &g : tc->generics)
       if (g.type && occurs(g.type.get(), undo))
         return true;
-    if (auto tr = typ->getRecord())
-      for (auto &t : tr->args)
-        if (occurs(t.get(), undo))
-          return true;
     return false;
   } else {
     return false;

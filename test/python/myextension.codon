@@ -323,7 +323,7 @@ class Foo:
     x: Dict[str, int]
 
     def __new__(a: List[str]) -> Foo:
-        return (a, {s: i for i, s in enumerate(a)})
+        return Foo(a, {s: i for i, s in enumerate(a)})
 
     def __iter__(self):
         return iter(self.a)

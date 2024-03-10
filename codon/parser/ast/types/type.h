@@ -22,7 +22,6 @@ namespace codon::ast::types {
 struct FuncType;
 struct ClassType;
 struct LinkType;
-struct RecordType;
 struct StaticType;
 struct IntStaticType;
 struct StrStaticType;
@@ -106,9 +105,8 @@ public:
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
   virtual std::shared_ptr<FuncType> getFunc() { return nullptr; }
-  virtual std::shared_ptr<RecordType> getPartial() { return nullptr; }
+  virtual std::shared_ptr<ClassType> getPartial() { return nullptr; }
   virtual std::shared_ptr<ClassType> getClass() { return nullptr; }
-  virtual std::shared_ptr<RecordType> getRecord() { return nullptr; }
   virtual std::shared_ptr<LinkType> getLink() { return nullptr; }
   virtual std::shared_ptr<LinkType> getUnbound() { return nullptr; }
   virtual std::shared_ptr<StaticType> getStatic() { return nullptr; }
@@ -116,15 +114,10 @@ public:
   virtual std::shared_ptr<StrStaticType> getStrStatic() { return nullptr; }
   virtual std::shared_ptr<BoolStaticType> getBoolStatic() { return nullptr; }
   virtual std::shared_ptr<UnionType> getUnion() { return nullptr; }
-  virtual std::shared_ptr<RecordType> getHeterogenousTuple() { return nullptr; }
+  virtual std::shared_ptr<ClassType> getHeterogenousTuple() { return nullptr; }
 
   virtual bool is(const std::string &s);
   char isStaticType();
-
-public:
-  static std::shared_ptr<Type> makeType(Cache *, const std::string &,
-                                        const std::string &, bool = false);
-  static std::shared_ptr<StaticType> makeStatic(Cache *, const std::shared_ptr<Expr> &);
 
 protected:
   Cache *cache;

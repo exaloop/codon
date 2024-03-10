@@ -327,9 +327,9 @@ print z, z.__class__.__name__, z.x.__class__.__name__ #: (x: Int[32](5)) FooBar[
 @tuple
 class Foo[N: Static[int]]:
     x: Int[2*N]
-    def __new__(x: Int[2*N]) -> Foo[N]:
-        return (x,)
-foo = Foo[10](Int[20](0))
+    def ctr(x: Int[2*N]) -> Foo[N]:
+        return Foo[N](x)
+foo = Foo[10].ctr(Int[20](0))
 print foo.__class__.__name__, foo.x.__class__.__name__ #: Foo[10] Int[20]
 
 #%% static_2,barebones

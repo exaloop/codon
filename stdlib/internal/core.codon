@@ -154,8 +154,9 @@ class RTTI:
 @__internal__
 @tuple
 class ellipsis:
+    @llvm
     def __new__() -> ellipsis:
-        return ()
+        ret {} {}
 Ellipsis = ellipsis()
 
 @tuple
@@ -165,15 +166,18 @@ class __array__:
     def __new__(sz: Static[int]) -> Array[T]:
         pass
 
-@dataclass(init=True)
 @tuple
 @__internal__
 class Import:
     __ipath__: str
     __iname__: str
     P: Static[str]
+
+    @llvm
     def __new__(P: Static[str], name: str, path: str) -> Import[P]:
-        return (name, path, )
+        %0 = insertvalue { {=str}, {=str} } undef, {=str} %path, 0
+        %1 = insertvalue { {=str}, {=str} } %0,    {=str} %name, 1
+        ret { {=str}, {=str} } %1
 
 def __ptr__(var):
     pass
@@ -224,9 +228,6 @@ def statictuple(*args):
 def __has_rtti__(T: type):
     pass
 
-# class Type[T]: ...
-
-
 #(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
 @__internal__
 @tuple
@@ -237,10 +238,12 @@ class NamedTuple:
 
     # todo)) nicer way to express type(())
     def __new__(args: T = (), T: type) -> NamedTuple[0, T]:
-        return ((), )
+        return NamedTuple[0, T](())
 
+    @llvm
     def __new__(args: T, N: Static[int], T: type) -> NamedTuple[N, T]:
-        return (args, )
+        %0 = insertvalue { {=T} } undef, {=T} %args, 0
+        ret { {=T} } %0
 
     def __getitem__(self, key: Static[str]):
         return getattr(self, key)
@@ -258,7 +261,7 @@ class NamedTuple:
 @__internal__
 @tuple
 class Partial:
-    args: T  # format: (agr1, arg2, ..., (star_args...))
+    args: T  # format: (arg1, arg2, ..., (star_args...))
     kwargs: K
 
     F: Static[str] # function
@@ -266,10 +269,11 @@ class Partial:
     T: type # Tuple
     K: type # NamedTuple
 
+    @llvm
     def __new__(args: T, kwargs: K, F: Static[str], M: Static[str], T: type, K: type) -> Partial[F, M, T, K]:
-        # __static_print__(args)
-        # __static_print__(kwargs)
-        return (args, kwargs)
+        %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
+        %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
+        ret { {=T}, {=K} } %1
 
     def __repr__(self):
         return __magic__.repr_partial(self)

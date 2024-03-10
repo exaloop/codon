@@ -94,7 +94,7 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(type)) {
     return classes[rtv->getClass()->name]
-        .realizations[rtv->getClass()->realizedTypeName()]
+        .realizations[rtv->getClass()->realizedName()]
         ->ir;
   }
   return nullptr;

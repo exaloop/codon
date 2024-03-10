@@ -8,16 +8,16 @@ class range:
 
     # Magic methods
 
+    def __new__(start: int, stop: int) -> range:
+        return range(start, stop, 1)
+
+    def __new__(stop: int) -> range:
+        return range(0, stop, 1)
+
     def __new__(start: int, stop: int, step: int) -> range:
         if step == 0:
             raise ValueError("range() step argument must not be zero")
-        return (start, stop, step)
-
-    def __new__(start: int, stop: int) -> range:
-        return (start, stop, 1)
-
-    def __new__(stop: int) -> range:
-        return (0, stop, 1)
+        return superf(start, stop, step)
 
     def _get(self, idx: int) -> int:
         return self.start + (idx * self.step)

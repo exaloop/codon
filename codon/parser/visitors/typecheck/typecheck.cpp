@@ -523,7 +523,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     if (!c)
       return false;
     if (doTypeWrap) {
-      if (c->getRecord())
+      if (c->isRecord())
         expr = transform(N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
       else
         expr = transform(N<CallExpr>(
@@ -647,18 +647,19 @@ TypecheckVisitor::unpackTupleTypes(ExprPtr expr) {
       ret->emplace_back("", a->getType());
     }
   } else if (auto kw = expr->origExpr->getCall()) { // origExpr?
-    auto val = kw->type->getRecord();
-    if (!val || val->name != "NamedTuple" || val->args[0]->getRecord() ||
+    auto val = kw->type->getClass();
+    if (!val || val->name != "NamedTuple" || val->generics[1].type->getClass() ||
         !val->generics[0].type->canRealize())
       return nullptr;
     auto id = val->generics[0].type->getIntStatic()->value;
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
-    auto types = val->args[0]->getRecord();
-    for (size_t i = 0; i < types->args.size(); i++) {
-      if (!types->args[i])
+    auto types = val->generics[1].type->getClass();
+    seqassert(startswith(types->name, "Tuple"), "bad NamedTuple argument");
+    for (size_t i = 0; i < types->generics.size(); i++) {
+      if (!types->generics[i].type)
         return nullptr;
-      ret->push_back({names[i], types->args[i]});
+      ret->push_back({names[i], types->generics[i].type});
     }
   } else {
     return nullptr;
@@ -671,9 +672,9 @@ TypecheckVisitor::extractNamedTuple(ExprPtr expr) {
   std::vector<std::pair<std::string, ExprPtr>> ret;
 
   seqassert(expr->type->is("NamedTuple") &&
-                expr->type->getRecord()->generics[0].type->canRealize(),
+                expr->type->getClass()->generics[0].type->canRealize(),
             "bad named tuple: {}", expr);
-  auto id = expr->type->getRecord()->generics[0].type->getIntStatic()->value;
+  auto id = expr->type->getClass()->generics[0].type->getIntStatic()->value;
   seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
   auto names = ctx->cache->generatedTupleNames[id];
   for (size_t i = 0; i < names.size(); i++) {

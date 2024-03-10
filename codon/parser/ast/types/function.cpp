@@ -10,9 +10,9 @@
 
 namespace codon::ast::types {
 
-FuncType::FuncType(const std::shared_ptr<RecordType> &baseType, FunctionStmt *ast,
+FuncType::FuncType(const std::shared_ptr<ClassType> &baseType, FunctionStmt *ast,
                    std::vector<Generic> funcGenerics, TypePtr funcParent)
-    : RecordType(*baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
+    : ClassType(baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
       funcParent(std::move(funcParent)) {}
 
 int FuncType::unify(Type *typ, Unification *us) {
@@ -36,7 +36,7 @@ int FuncType::unify(Type *typ, Unification *us) {
       s1 += s;
     }
   }
-  s = this->RecordType::unify(typ, us);
+  s = this->ClassType::unify(typ, us);
   return s == -1 ? s : s1 + s;
 }
 
@@ -46,7 +46,7 @@ TypePtr FuncType::generalize(int atLevel) {
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
   return std::make_shared<FuncType>(
-      std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)), ast,
+      std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel)), ast,
       g, p);
 }
 
@@ -61,8 +61,8 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
     }
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
   return std::make_shared<FuncType>(
-      std::static_pointer_cast<RecordType>(
-          this->RecordType::instantiate(atLevel, unboundCount, cache)),
+      std::static_pointer_cast<ClassType>(
+          this->ClassType::instantiate(atLevel, unboundCount, cache)),
       ast, g, p);
 }
 
@@ -110,7 +110,7 @@ bool FuncType::isInstantiated() const {
   auto res = std::all_of(funcGenerics.begin(), funcGenerics.end(),
                          [](auto &a) { return !a.type || a.type->isInstantiated(); }) &&
              (!funcParent || funcParent->isInstantiated()) &&
-             this->RecordType::isInstantiated();
+             this->ClassType::isInstantiated();
   if (removed)
     retType->getFunc()->funcParent = removed;
   return res;
@@ -156,39 +156,16 @@ std::string FuncType::realizedName() const {
                      ast->name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
-// PartialType::PartialType(const std::shared_ptr<RecordType> &baseType,
-//                          std::shared_ptr<FuncType> func, std::vector<char> known)
-//     : RecordType(*baseType), func(std::move(func)), known(std::move(known)) {}
+std::vector<TypePtr> FuncType::getArgTypes() const {
+  auto tup = generics[0].type->getClass();
+  seqassert(startswith(tup->name, TYPE_TUPLE), "bad function def");
+  std::vector<TypePtr> t;
+  t.reserve(tup->generics.size());
+  for (auto &g: tup->generics)
+    t.push_back(g.type);
+  return t;
+}
 
-// int PartialType::unify(Type *typ, Unification *us) {
-//   return this->RecordType::unify(typ, us);
-// }
-
-// TypePtr PartialType::generalize(int atLevel) {
-//   return std::make_shared<PartialType>(
-//       std::static_pointer_cast<RecordType>(this->RecordType::generalize(atLevel)),
-//       func, known);
-// }
-
-// TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
-//                                  std::unordered_map<int, TypePtr> *cache) {
-//   auto rec = std::static_pointer_cast<RecordType>(
-//       this->RecordType::instantiate(atLevel, unboundCount, cache));
-//   return std::make_shared<PartialType>(rec, func, known);
-// }
-
-// std::string PartialType::debugString(char mode) const {
-
-// }
-
-// std::string PartialType::realizedName() const {
-//   std::vector<std::string> gs;
-//   gs.push_back(func->ast->name);
-//   for (auto &a : generics)
-//     if (!a.name.empty())
-//       gs.push_back(a.type->realizedName());
-//   std::string s = join(gs, ",");
-//   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
-// }
+TypePtr FuncType::getRetType() const { return generics[1].type; }
 
 } // namespace codon::ast::types

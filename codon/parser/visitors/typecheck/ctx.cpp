@@ -459,8 +459,8 @@ TypeContext::getFunctionArgs(const types::TypePtr &t) {
       std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>();
   for (auto &t : fn->funcGenerics)
     ret->first.push_back(t.type);
-  for (auto &t : fn->generics[0].type->getRecord()->args)
-    ret->second.push_back(t);
+  for (auto &t : fn->generics[0].type->getClass()->generics)
+    ret->second.push_back(t.type);
   return ret;
 }
 

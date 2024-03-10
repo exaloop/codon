@@ -595,12 +595,14 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
 }
 
 void verify(llvm::Module *module) {
-  // std::string s;
-  // llvm::raw_string_ostream OS(s);
-  // OS << *module;
-  // OS.flush();
-  // LOG("--> {}", s);
   const bool broken = llvm::verifyModule(*module, &llvm::errs());
+  if (broken) {
+    std::string s;
+    llvm::raw_string_ostream OS(s);
+    OS << *module;
+    OS.flush();
+    LOG("--> {}", s);
+  }
   seqassertn(!broken, "module broken");
 }
 

@@ -641,7 +641,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   }
   if (expr->lexpr->type->is("type") && expr->rexpr->type->is("type"))
     return transform(N<IntExpr>(lc->realizedName() == rc->realizedName()));
-  if (!lc->getRecord() && !rc->getRecord()) {
+  if (!lc->getClass()->isRecord() && !rc->getClass()->isRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
     return transform(
         N<BinaryExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "__raw__")),
@@ -769,7 +769,7 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 std::pair<bool, ExprPtr>
 TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
-  if (!tuple->getRecord())
+  if (!tuple->isRecord())
     return {false, nullptr};
   if (!startswith(tuple->name, TYPE_TUPLE)) {
     if (tuple->is(TYPE_OPTIONAL)) {

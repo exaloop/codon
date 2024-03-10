@@ -54,19 +54,4 @@ char Type::isStaticType() {
   return 0;
 }
 
-TypePtr Type::makeType(Cache *cache, const std::string &name,
-                       const std::string &niceName, bool isRecord) {
-  if (name == "Union")
-    return std::make_shared<UnionType>(cache);
-  if (isRecord)
-    return std::make_shared<RecordType>(cache, name, niceName);
-  return std::make_shared<ClassType>(cache, name, niceName);
-}
-
-std::shared_ptr<StaticType> Type::makeStatic(Cache *cache, const ExprPtr &expr) {
-  // return std::make_shared<StaticType>(cache, expr);
-  seqassertn(false, "deprecated");
-  return nullptr;
-}
-
 } // namespace codon::ast::types

@@ -67,7 +67,7 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
 
-  types::RecordType *p = nullptr;
+  types::ClassType *p = nullptr;
   if (expr->attributes) {
     if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
         expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
@@ -614,7 +614,7 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
   seqassert(t && t->getClass(), "{} is not a class", t);
-  std::string name = t->getClass()->realizedTypeName();
+  std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
   seqassert(i, "type {} not realized", t);
   return i->getType();

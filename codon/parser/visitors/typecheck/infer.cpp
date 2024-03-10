@@ -192,6 +192,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
 types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   if (!type || !type->canRealize())
     return nullptr;
+  // type->_rn = type->ClassType::realizedName();
 
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
@@ -201,8 +202,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   }
 
   // Check if the type was already realized
+  auto rn = type->ClassType::realizedName();
   if (auto r =
-          in(ctx->cache->classes[type->name].realizations, type->realizedTypeName())) {
+          in(ctx->cache->classes[type->name].realizations, rn)) {
     return (*r)->type->getClass();
   }
 
@@ -212,7 +214,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   if (type->getFunc()) {
     // Just realize the function stub
-    realized = std::make_shared<RecordType>(realized, type->getFunc()->args);
+    realized = std::make_shared<ClassType>(realized);
   }
 
   // Realize generics
@@ -221,25 +223,19 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
       return nullptr;
   }
 
-  // LOG("[realize] T {} -> {}", realized->debugString(2), realized->realizedTypeName());
+  // LOG("[realize] T {} -> {}", realized->debugString(2), realized->realizedName());
 
   // Realizations should always be visible, so add them to the toplevel
-  auto val = std::make_shared<TypecheckItem>(realized->realizedTypeName(), "",
+  auto val = std::make_shared<TypecheckItem>(realized->realizedName(), "",
                                              ctx->getModule(), realized);
   if (!val->type->is("type"))
     val->type = ctx->instantiateGeneric(ctx->getType("type"), {realized});
   ctx->addAlwaysVisible(val);
   auto realization =
-      ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()] =
+      ctx->cache->classes[realized->name].realizations[realized->realizedName()] =
           std::make_shared<Cache::Class::ClassRealization>();
   realization->type = realized;
   realization->id = ctx->cache->classRealizationCnt++;
-
-  // Realize tuple arguments
-  if (auto tr = realized->getRecord()) {
-    for (auto &a : tr->args)
-      realize(a);
-  }
 
   // Create LLVM stub
   auto lt = makeIRType(realized.get());
@@ -270,13 +266,14 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   ctx->popBlock();
 
   // Set IR attributes
-  if (auto *cls = ir::cast<ir::types::RefType>(lt))
-    if (!names.empty()) {
+  if (!names.empty()) {
+    if (auto *cls = ir::cast<ir::types::RefType>(lt)) {
       cls->getContents()->realize(typeArgs, names);
       cls->setAttribute(std::make_unique<ir::MemberAttribute>(memberInfo));
       cls->getContents()->setAttribute(
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
+  }
 
   // Fix for partial types
   // if (auto p = type->getPartial()) {
@@ -286,7 +283,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   //       pt);
   //   ctx->addAlwaysVisible(val);
   //   ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
-  //       ctx->cache->classes[realized->name].realizations[realized->realizedTypeName()];
+  //       ctx->cache->classes[realized->name].realizations[realized->realizedName()];
   // }
 
   return realized;
@@ -657,7 +654,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
 /// Make IR node for a realized type.
 ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Realize if not, and return cached value if it exists
-  auto realizedName = t->realizedTypeName();
+  auto realizedName = t->ClassType::realizedName();
   if (!in(ctx->cache->classes[t->name].realizations, realizedName))
     realize(t->getClass());
   if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir)
@@ -665,9 +662,10 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
 
   auto forceFindIRType = [&](const TypePtr &tt) {
     auto t = tt->getClass();
-    seqassert(t && in(ctx->cache->classes[t->name].realizations, t->realizedTypeName()),
+    auto rn = t->ClassType::realizedName();
+    seqassert(t && in(ctx->cache->classes[t->name].realizations, rn),
               "{} not realized", tt);
-    auto l = ctx->cache->classes[t->name].realizations[t->realizedTypeName()]->ir;
+    auto l = ctx->cache->classes[t->name].realizations[rn]->ir;
     seqassert(l, "no LLVM type for {}", t);
     return l;
   };
@@ -725,35 +723,49 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->unsafeGetUnionType(unionVec);
   } else if (t->name == "Function") {
     types.clear();
-    for (auto &m : t->generics[0].type->getRecord()->args)
-      types.push_back(forceFindIRType(m));
+    for (auto &m : t->generics[0].type->getClass()->generics)
+      types.push_back(forceFindIRType(m.type));
     auto ret = forceFindIRType(t->generics[1].type);
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (t->name == "std.experimental.simd.Vec") {
     seqassert(types.size() == 2 && !statics.empty(), "bad generics/statics");
     handle = module->unsafeGetVectorType(statics[0]->getIntStatic()->value, types[0]);
-  } else if (auto tr = t->getRecord()) {
-    std::vector<ir::types::Type *> typeArgs;
-    std::vector<std::string> names;
-    std::map<std::string, SrcInfo> memberInfo;
-    for (int ai = 0; ai < tr->args.size(); ai++) {
-      names.emplace_back(ctx->cache->classes[t->name].fields[ai].name);
-      typeArgs.emplace_back(forceFindIRType(tr->args[ai]));
-      memberInfo[ctx->cache->classes[t->name].fields[ai].name] =
-          ctx->cache->classes[t->name].fields[ai].type->getSrcInfo();
-    }
-    auto record =
-        ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
-    record->realize(typeArgs, names);
-    handle = record;
-    handle->setAttribute(std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
   } else {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
-    handle = module->unsafeGetMemberedType(realizedName, true);
-    if (ctx->cache->classes[t->name].rtti) {
-      // LOG("RTTI: {}", t->name);
-      ir::cast<ir::types::RefType>(handle)->setPolymorphic();
+    if (t->isRecord()) {
+      std::vector<ir::types::Type *> typeArgs;   // needed for IR
+      std::vector<std::string> names;            // needed for IR
+      std::map<std::string, SrcInfo> memberInfo; // needed for IR
+      ctx->addBlock();
+      auto pp = t->shared_from_this()->getClass();
+      addClassGenerics(pp);
+      for (auto &field : ctx->cache->classes[t->name].fields) {
+        auto ftyp = ctx->instantiate(field.type, pp);
+        if (!ftyp->canRealize() && field.typeExpr) {
+          auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
+          unify(ftyp, t);
+        }
+        if (!realize(ftyp)) {
+          realize(ftyp);
+          E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
+            t->prettyString());
+        }
+        // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
+        names.emplace_back(field.name);
+        typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
+        memberInfo[field.name] = field.type->getSrcInfo();
+      }
+      ctx->popBlock();
+      auto record =
+          ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
+      record->realize(typeArgs, names);
+      handle = record;
+      handle->setAttribute(std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
+    } else {
+      handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
+      if (ctx->cache->classes[t->name].rtti)
+        ir::cast<ir::types::RefType>(handle)->setPolymorphic();
     }
   }
   handle->setSrcInfo(t->getSrcInfo());
@@ -843,21 +855,22 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     items.push_back(nullptr);
     std::vector<std::string> ll;
     std::vector<std::string> lla;
-    auto &as = type->getArgTypes()[1]->getRecord()->args;
+    seqassert(startswith(type->getArgTypes()[1]->getClass()->name, TYPE_TUPLE), "bad function base");
+    auto as = type->getArgTypes()[1]->getClass()->generics.size();
     auto ag = ast->args[1].name;
     trimStars(ag);
-    for (int i = 0; i < as.size(); i++) {
+    for (int i = 0; i < as; i++) {
       ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
       items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
     }
     items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-    for (int i = 0; i < as.size(); i++) {
+    for (int i = 0; i < as; i++) {
       items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
       lla.push_back(format("{{}} %{}", i));
     }
     items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-    ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
-    ll.push_back(format("ret {{}} %{}", as.size()));
+    ll.push_back(format("%{} = call {{}} %self({})", as, combine2(lla)));
+    ll.push_back(format("ret {{}} %{}", as));
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
   } else if (startswith(ast->name, "Union.__new__")) {
@@ -866,7 +879,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
 
     StmtPtr suite = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
-        N<IdExpr>(type->ast->args[0].name), N<IdExpr>(unionType->realizedTypeName())));
+        N<IdExpr>(type->ast->args[0].name), N<IdExpr>(unionType->realizedName())));
     ast->suite = suite;
   } else if (startswith(ast->name, "__internal__.new_union")) {
     // Special case: __internal__.new_union
@@ -890,7 +903,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
                       N<IdExpr>(t->realizedName())),
           N<ReturnStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_make"),
                                     N<IntExpr>(tag), N<IdExpr>(objVar),
-                                    N<IdExpr>(unionType->realizedTypeName())))));
+                                    N<IdExpr>(unionType->realizedName())))));
       // Check for Union[T]
       suite->stmts.push_back(N<IfStmt>(
           N<CallExpr>(
@@ -901,7 +914,7 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
               N<DotExpr>(N<IdExpr>("__internal__"), "union_make"), N<IntExpr>(tag),
               N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "get_union"),
                           N<IdExpr>(objVar), N<IdExpr>(t->realizedName())),
-              N<IdExpr>(unionType->realizedTypeName())))));
+              N<IdExpr>(unionType->realizedName())))));
       tag++;
     }
     suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(

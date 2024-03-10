@@ -231,7 +231,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 
     if (!member)
       E(Error::DOT_NO_ATTR, stmt->lhs, lhsClass->prettyString(), stmt->member);
-    if (lhsClass->getRecord())
+    if (lhsClass->isRecord())
       E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
 
     transform(stmt->rhs);

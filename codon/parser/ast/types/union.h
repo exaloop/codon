@@ -11,7 +11,9 @@
 
 namespace codon::ast::types {
 
-struct UnionType : public RecordType {
+struct UnionType : public ClassType {
+  static const int MAX_UNION = 256;
+
   std::vector<TypePtr> pendingTypes;
 
   explicit UnionType(Cache *cache);
@@ -28,14 +30,13 @@ public:
   bool canRealize() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
-  std::string realizedTypeName() const override;
   bool isSealed() const;
 
   std::shared_ptr<UnionType> getUnion() override {
     return std::static_pointer_cast<UnionType>(shared_from_this());
   }
 
-  void addType(TypePtr typ);
+  void addType(const TypePtr&);
   void seal();
   std::vector<types::TypePtr> getRealizationTypes();
 };

@@ -231,7 +231,7 @@ private: // Node typechecking rules
   StmtPtr transformLLVMDefinition(Stmt *);
   std::pair<bool, std::string> getDecorator(const ExprPtr &);
   ExprPtr partializeFunction(const types::FuncTypePtr &);
-  std::shared_ptr<types::RecordType> getFuncTypeBase(size_t);
+  std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;

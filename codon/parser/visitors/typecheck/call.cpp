@@ -192,10 +192,10 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
       }
       if (!typ) // Process later
         return false;
-      if (!typ->getRecord())
+      if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, args[ai], typ->prettyString());
-      auto &fields = ctx->cache->classes[typ->name].fields;
-      for (size_t i = 0; i < typ->getRecord()->args.size(); i++, ai++) {
+      const auto &fields = ctx->cache->classes[typ->name].fields;
+      for (size_t i = 0; i < fields.size(); i++, ai++) {
         args.insert(args.begin() + ai,
                     {"", transform(N<DotExpr>(clone(star->what), fields[i].name))});
       }
@@ -221,7 +221,7 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallExpr::Arg> &args) {
                                                       format("item{}", i + 1)))});
         }
         args.erase(args.begin() + ai);
-      } else if (typ->getRecord()) {
+      } else if (typ->isRecord()) {
         const auto &fields = ctx->cache->classes[typ->name].fields;
         for (size_t i = 0; i < fields.size(); i++, ai++) {
           args.insert(
@@ -274,7 +274,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     if (!typ)
       return {nullptr, nullptr};
     auto clsName = typ->name;
-    if (typ->getRecord()) {
+    if (typ->isRecord()) {
       // Case: tuple constructor. Transform to: `T.__new__(args)`
       return {nullptr,
               transform(N<CallExpr>(N<DotExpr>(expr->expr, "__new__"), expr->args))};
@@ -308,7 +308,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     seqassert(calleeFn, "not a function: {}", expr->expr->type);
 
     // Unify partial generics with types known thus far
-    auto knownArgTypes = partType->generics[2].type->getRecord();
+    auto knownArgTypes = partType->generics[2].type->getClass();
     for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
       if (func->ast->args[i].status == Param::Generic) {
         if (mask[i])
@@ -608,8 +608,12 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
 
   // Replace the arguments
   for (size_t si = 0; si < replacements.size(); si++) {
-    if (replacements[si])
-      calleeFn->getArgTypes()[si] = replacements[si];
+    if (replacements[si]) {
+      // calleeFn->getArgTypes()[si] = replacements[si];
+      calleeFn->generics[0].type->getClass()->generics[si].type = replacements[si];
+      calleeFn->generics[0].type->getClass()->_rn = "";
+      calleeFn->getClass()->_rn = ""; // TODO TERRIBLE!
+    }
   }
 
   return done;
@@ -808,7 +812,7 @@ ExprPtr TypecheckVisitor::transformSuper() {
 
   auto name = cands.front(); // the first inherited type
   auto superTyp = ctx->instantiate(ctx->getType(name), typ)->getClass();
-  if (typ->getRecord()) {
+  if (typ->isRecord()) {
     // Case: tuple types. Return `tuple(obj.args...)`
     std::vector<ExprPtr> members;
     for (auto &field : ctx->cache->classes[name].fields)
@@ -882,9 +886,9 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (typExpr->isId("type[Tuple]")) {
     return transform(N<BoolExpr>(startswith(typ->name, TYPE_TUPLE)));
   } else if (typExpr->isId("type[ByVal]")) {
-    return transform(N<BoolExpr>(typ->getRecord() != nullptr));
+    return transform(N<BoolExpr>(typ->isRecord()));
   } else if (typExpr->isId("type[ByRef]")) {
-    return transform(N<BoolExpr>(typ->getRecord() == nullptr));
+    return transform(N<BoolExpr>(!typ->isRecord()));
   } else if (!typExpr->type->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     int tag = -1;
@@ -937,9 +941,11 @@ ExprPtr TypecheckVisitor::transformStaticLen(CallExpr *expr) {
       return transform(N<IntExpr>(typ->getUnion()->getRealizationTypes().size()));
     return nullptr;
   }
-  if (!typ->getRecord())
+  if (!typ->getClass()->isRecord())
     E(Error::EXPECTED_TUPLE, expr->args[0].value);
-  return transform(N<IntExpr>(typ->getRecord()->args.size()));
+  return transform(
+    N<IntExpr>(ctx->cache->classes[typ->getClass()->name].fields.size())
+  );
 }
 
 /// Transform hasattr method to a static boolean expression.
@@ -982,7 +988,7 @@ ExprPtr TypecheckVisitor::transformGetAttr(CallExpr *expr) {
 
   // special handling for NamedTuple
   if (expr->args[0].value->type && expr->args[0].value->type->is("NamedTuple")) {
-    auto val = expr->args[0].value->type->getRecord();
+    auto val = expr->args[0].value->type->getClass();
     auto id = val->generics[0].type->getIntStatic()->value;
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
@@ -1139,7 +1145,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
     auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
-    auto &args = fn->getArgTypes();
+    const auto args = fn->getArgTypes();
     return {true, transform(N<BoolExpr>(idx->value >= 0 && idx->value < args.size() &&
                                        args[idx->value]->canRealize()))};
   } else if (expr->expr->isId("std.internal.static.fn_arg_get_type.0")) {
@@ -1148,7 +1154,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
       error("expected a function, got '{}'", expr->args[0].value->type->prettyString());
     auto idx = expr->expr->type->getFunc()->funcGenerics[0].type->getIntStatic();
     seqassert(idx, "expected a static integer");
-    auto &args = fn->getArgTypes();
+    const auto args = fn->getArgTypes();
     if (idx->value < 0 || idx->value >= args.size() || !args[idx->value]->canRealize())
       error("argument does not have type");
     return {true, transform(N<IdExpr>(args[idx->value]->realizedName()))};
@@ -1240,21 +1246,15 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInternalStaticFn(CallExpr *e
     return {true, transform(N<TupleExpr>(tupleItems))};
   } else if (expr->expr->isId("std.internal.static.tuple_type.0")) {
     auto funcTyp = expr->expr->type->getFunc();
-    auto t = funcTyp->funcGenerics[0].type;
+    auto t = funcTyp->funcGenerics[0].type->getClass();
     if (!t || !realize(t))
       return {true, nullptr};
     auto n = funcTyp->funcGenerics[1].type->getIntStatic()->value;
     types::TypePtr typ = nullptr;
-    if (t->getRecord()) {
-      if (n < 0 || n >= t->getRecord()->args.size())
-        error("invalid index");
-      typ = t->getRecord()->args[n];
-    } else {
-      if (n < 0 || n >= ctx->cache->classes[t->getClass()->name].fields.size())
-        error("invalid index");
-      typ = ctx->instantiate(ctx->cache->classes[t->getClass()->name].fields[n].type,
-                             t->getClass());
-    }
+    if (n < 0 || n >= ctx->cache->classes[t->getClass()->name].fields.size())
+      error("invalid index");
+    typ = ctx->instantiate(ctx->cache->classes[t->getClass()->name].fields[n].type,
+                            t->getClass());
     typ = realize(typ);
     return {true, transform(N<IdExpr>(typ->realizedName()))};
   } else {

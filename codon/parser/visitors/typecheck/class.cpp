@@ -35,9 +35,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->generateCanonicalName(name, !stmt->attributes.has(Attr::Internal),
                                    /* noSuffix*/ stmt->attributes.has(Attr::Internal));
 
-    typ = Type::makeType(ctx->cache, canonicalName, name, stmt->isRecord())->getClass();
-    if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
-      typ->getRecord()->noTuple = true;
+    typ = std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
+    if (stmt->isRecord())
+      typ->isTuple = true;
+    // if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
+    //   typ->noTupleUnify = true;
     typ->setSrcInfo(stmt->getSrcInfo());
 
     classItem->type = typ;
@@ -218,8 +220,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           fields[aj].typeExpr = clean_clone(args[ai].type);
           fields[aj].type = getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
           fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
-          if (stmt->isRecord())
-            typ->getRecord()->args.push_back(fields[aj].type);
           aj++;
         }
       }

@@ -92,7 +92,7 @@ class Moo:
     moo: int
     def __new__(i: int) -> Moo:
         print 'Moo.__new__'
-        return (i,)
+        return superf(i)
 print Moo(1) #: Moo.__new__
 #: (moo: 1)
 
@@ -520,14 +520,14 @@ class A[T]:
     a: T
     x: int
     def __new__(a: T) -> A[T]:
-        return (a, 1)
+        return A[T](a, 1)
     def foo(self):
         return f'A:{self.a}'
 @tuple
 class B(Static[A[str]]):
     b: int
     def __new__() -> B:
-        return (*(A('s')), 6)
+        return B(*(A('s')), 6)
     def baz(self):
         return f'{super().foo()}::{self.b}'
 

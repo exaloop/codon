@@ -24,10 +24,12 @@ CallableTrait::CallableTrait(Cache *cache, std::vector<TypePtr> args)
     : Trait(cache), args(std::move(args)) {}
 
 int CallableTrait::unify(Type *typ, Unification *us) {
-  if (auto tr = typ->getRecord()) {
+  if (auto tr = typ->getClass()) {
     if (tr->name == "NoneType")
       return 1;
     if (tr->name != "Function" && !tr->getPartial())
+      return -1;
+    if (!tr->isRecord())
       return -1;
     if (args.empty())
       return 1;
@@ -38,10 +40,10 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       int ic = 0;
       std::unordered_map<int, TypePtr> c;
       auto func = pt->getPartialFunc()->instantiate(0, &ic, &c)->getFunc();
-      trFun = func->getRecord();
+      trFun = func->getClass();
       known = pt->getPartialMask();
 
-      auto knownArgTypes = pt->generics[2].type->getRecord();
+      auto knownArgTypes = pt->generics[2].type->getClass();
       for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
         if (func->ast->args[i].status == Param::Generic) {
           j++;
@@ -52,18 +54,18 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           k++;
         }
     } else {
-      known = std::vector<char>(tr->generics[0].type->getRecord()->args.size(), 0);
+      known = std::vector<char>(tr->generics[0].type->getClass()->generics.size(), 0);
     }
 
-    auto &inArgs = args[0]->getRecord()->args;
-    auto &trInArgs = trFun->generics[0].type->getRecord()->args;
+    auto inArgs = args[0]->getClass();
+    auto trInArgs = trFun->generics[0].type->getClass();
     auto trAst = trFun->getFunc() ? trFun->getFunc()->ast : nullptr;
-    size_t star = trInArgs.size(), kwStar = trInArgs.size();
+    size_t star = 0, kwStar = trInArgs->generics.size();
     size_t total = 0;
     if (trAst) {
       star = trAst->getStarArgs();
       kwStar = trAst->getKwStarArgs();
-      if (kwStar < trAst->args.size() && star >= trInArgs.size())
+      if (kwStar < trAst->args.size() && star >= trInArgs->generics.size())
         star -= 1;
       size_t preStar = 0;
       for (size_t fi = 0; fi < trAst->args.size(); fi++) {
@@ -74,20 +76,21 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         }
       }
       if (preStar < total) {
-        if (inArgs.size() < preStar)
+        if (inArgs->generics.size() < preStar)
           return -1;
-      } else if (inArgs.size() != total) {
+      } else if (inArgs->generics.size() != total) {
         return -1;
       }
     } else {
-      total = star = trInArgs.size();
-      if (inArgs.size() != total)
+      total = star = trInArgs->generics.size();
+      if (inArgs->generics.size() != total)
         return -1;
     }
     size_t i = 0;
-    for (size_t fi = 0; i < inArgs.size() && fi < star; fi++) {
+    for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
       if (!known[fi] && trAst->args[fi].status == Param::Normal) {
-        if (inArgs[i++]->unify(trInArgs[fi].get(), us) == -1)
+        if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
+            -1)
           return -1;
       }
     }
@@ -96,32 +99,37 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       // Make sure to set types of *args/**kwargs so that the function that
       // is being unified with Callable[] can be realized
 
-      if (star < trInArgs.size() - (kwStar < trInArgs.size())) {
+      if (star < trInArgs->generics.size() - (kwStar < trInArgs->generics.size())) {
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
-          auto ts = tp->args[tp->args.size() - 2]->getRecord();
-          seqassert(ts, "bad partial *args/**kwargs");
-          starArgTypes = ts->args;
+          auto ts = tp->generics[2].type->getClass();
+          seqassert(ts && !ts->generics.empty() &&
+                        ts->generics[ts->generics.size() - 1].type->getClass(),
+                    "bad partial *args/**kwargs");
+          for (auto &tt :
+               ts->generics[ts->generics.size() - 1].type->getClass()->generics)
+            starArgTypes.push_back(tt.type);
         }
-        starArgTypes.insert(starArgTypes.end(), inArgs.begin() + i, inArgs.end());
+        for (; i < inArgs->generics.size(); i++)
+          starArgTypes.push_back(inArgs->generics[i].type);
 
         auto tv = TypecheckVisitor(cache->typeCtx);
         auto name = tv.generateTuple(starArgTypes.size());
         auto t = cache->typeCtx->forceFind(name)->type;
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
-        if (t->unify(trInArgs[star].get(), us) == -1)
+        if (t->unify(trInArgs->generics[star].type.get(), us) == -1)
           return -1;
       }
-      if (kwStar < trInArgs.size()) {
+      if (kwStar < trInArgs->generics.size()) {
         std::vector<std::string> names;
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
-          auto ts = tp->args.back()->getRecord();
+          auto ts = tp->generics[3].type->getClass();
           seqassert(ts, "bad partial *args/**kwargs");
-          auto &ff = cache->classes[ts->name].fields;
-          for (size_t i = 0; i < ts->args.size(); i++) {
+          const auto &ff = cache->classes[ts->name].fields;
+          for (size_t i = 0; i < ff.size(); i++) {
             names.emplace_back(ff[i].name);
-            starArgTypes.emplace_back(ts->args[i]);
+            starArgTypes.emplace_back(ts->generics[i].type);
           }
         }
         auto tv = TypecheckVisitor(cache->typeCtx);
@@ -134,7 +142,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
                  ->instantiateGeneric(kt,
                                       {t, std::make_shared<IntStaticType>(cache, id)})
                  ->getClass();
-        if (kt->unify(trInArgs[kwStar].get(), us) == -1)
+        if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }
 

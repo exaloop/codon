@@ -15,10 +15,16 @@ ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
       generics(std::move(generics)), hiddenGenerics(std::move(hiddenGenerics)) {}
 ClassType::ClassType(const ClassTypePtr &base)
     : Type(base), name(base->name), niceName(base->niceName), generics(base->generics),
-      hiddenGenerics(base->hiddenGenerics) {}
+      hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
+    if (name == "int" && tc->name == "Int")
+      return tc->unify(this, us);
+    if (tc->name == "int" && name == "Int") {
+      auto t64 = std::make_shared<IntStaticType>(cache, 64);
+      return generics[0].type->unify(t64.get(), us);
+    }
     // Check names.
     if (name != tc->name)
       return -1;
@@ -27,15 +33,6 @@ int ClassType::unify(Type *typ, Unification *us) {
     if (generics.size() != tc->generics.size())
       return -1;
     for (int i = 0; i < generics.size(); i++) {
-      // if (!generics[i].isStatic && tc->generics[i].type->getStatic()) {
-      //   auto ts = tc->generics[i].type->getStatic()->name;
-      //   if ((s = generics[i].type->unify(ts.get(), us)) == -1)
-      //     return -1;
-      // } else if (!tc->generics[i].isStatic && generics[i].type->getStatic()) {
-      //   auto ts = generics[i].type->getStatic()->getUnderlyingType();
-      //   if ((s = tc->generics[i].type->unify(ts.get(), us)) == -1)
-      //     return -1;
-      // } else
       if ((s = generics[i].type->unify(tc->generics[i].type.get(), us)) == -1) {
         return -1;
       }
@@ -56,6 +53,7 @@ TypePtr ClassType::generalize(int atLevel) {
   for (auto &t : hg)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
   auto c = std::make_shared<ClassType>(cache, name, niceName, g, hg);
+  c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
 }
@@ -68,6 +66,7 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
   for (auto &t : hg)
     t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
   auto c = std::make_shared<ClassType>(this->cache, name, niceName, g, hg);
+  c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
 }
@@ -105,7 +104,46 @@ bool ClassType::isInstantiated() const {
                      [](auto &t) { return !t.type || t.type->isInstantiated(); });
 }
 
+std::shared_ptr<ClassType> ClassType::getHeterogenousTuple() {
+  seqassert(canRealize(), "{} not realizable", toString());
+  seqassert(startswith(name, TYPE_TUPLE), "{} not a tuple", toString());
+  if (generics.size() > 1) {
+    std::string first = generics[0].type->realizedName();
+    for (int i = 1; i < generics.size(); i++)
+      if (generics[i].type->realizedName() != first)
+        return getClass();
+  }
+  return nullptr;
+}
+
 std::string ClassType::debugString(char mode) const {
+  if (name == "Partial" && generics[0].type->canRealize() && mode != 2) {
+    auto func = getPartialFunc();
+    std::vector<std::string> gs;
+    for (auto &a : generics[2].type->getClass()->generics)
+      gs.push_back(a.type->debugString(mode));
+    std::vector<std::string> as;
+    int i = 0, gi = 0;
+    auto known = getPartialMask();
+    for (; i < known.size(); i++)
+      if (func->ast->args[i].status == Param::Normal) {
+        if (!known[i])
+          as.emplace_back("...");
+        else
+          as.emplace_back(gs[gi++]);
+      }
+    auto fnname = func->ast->name;
+    if (mode == 0) {
+      fnname = cache->rev(func->ast->name);
+      // fnname = fmt::format("{}.{}", func->funcParent->debugString(mode), fnname);
+    } else if (mode == 2) {
+      fnname = func->debugString(mode);
+    }
+    return fmt::format("{}[{}{}]", fnname, join(as, ","),
+                       //  mode == 2 ? fmt::format(";{}", join(gs, ",")) :
+                       "");
+  }
+
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
@@ -126,160 +164,7 @@ std::string ClassType::realizedName() const {
   if (!_rn.empty())
     return _rn;
 
-  std::vector<std::string> gs;
-  for (auto &a : generics)
-    if (!a.name.empty()) {
-      if (!a.isStatic && a.type->getStatic()) {
-        gs.push_back(a.type->getStatic()->name);
-      } else {
-        gs.push_back(a.type->realizedName());
-      }
-    }
-  std::string s = join(gs, ",");
-  if (canRealize())
-    const_cast<ClassType *>(this)->_rn =
-        fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
-  return _rn;
-}
-
-std::string ClassType::realizedTypeName() const {
-  return this->ClassType::realizedName();
-}
-
-RecordType::RecordType(Cache *cache, std::string name, std::string niceName,
-                       std::vector<Generic> generics, std::vector<TypePtr> args,
-                       bool noTuple)
-    : ClassType(cache, std::move(name), std::move(niceName), std::move(generics)),
-      args(std::move(args)), noTuple(false) {}
-
-RecordType::RecordType(const ClassTypePtr &base, std::vector<TypePtr> args,
-                       bool noTuple)
-    : ClassType(base), args(std::move(args)), noTuple(noTuple) {}
-
-int RecordType::unify(Type *typ, Unification *us) {
-  if (auto tr = typ->getRecord()) {
-    // Handle int <-> Int[64]
-    if (name == "int" && tr->name == "Int")
-      return tr->unify(this, us);
-    if (tr->name == "int" && name == "Int") {
-      auto t64 = std::make_shared<IntStaticType>(cache, 64);
-      return generics[0].type->unify(t64.get(), us);
-    }
-
-    auto tup2Tup = startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE);
-    int s1 = 2, s = 0;
-    if (!tup2Tup) {
-      s1 = this->ClassType::unify(tr.get(), us);
-      if (s1 == -1)
-        return -1;
-    }
-    if (args.size() != tr->args.size())
-      return -1;
-    for (int i = 0; i < args.size(); i++) {
-      if ((s = args[i]->unify(tr->args[i].get(), us)) != -1)
-        s1 += s;
-      else
-        return -1;
-    }
-    // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
-    if (tup2Tup) {
-      if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
-        return s1 + int(name == tr->name);
-      else
-        return -1;
-    }
-    return s1;
-  } else if (auto t = typ->getLink()) {
-    return t->unify(this, us);
-  } else {
-    return -1;
-  }
-}
-
-TypePtr RecordType::generalize(int atLevel) {
-  auto c = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
-  auto a = args;
-  for (auto &t : a)
-    t = t->generalize(atLevel);
-  return std::make_shared<RecordType>(c, a, noTuple);
-}
-
-TypePtr RecordType::instantiate(int atLevel, int *unboundCount,
-                                std::unordered_map<int, TypePtr> *cache) {
-  auto c = std::static_pointer_cast<ClassType>(
-      this->ClassType::instantiate(atLevel, unboundCount, cache));
-  auto a = args;
-  for (auto &t : a)
-    t = t->instantiate(atLevel, unboundCount, cache);
-  return std::make_shared<RecordType>(c, a, noTuple);
-}
-
-std::vector<TypePtr> RecordType::getUnbounds() const {
-  std::vector<TypePtr> u;
-  for (auto &a : args) {
-    auto tu = a->getUnbounds();
-    u.insert(u.begin(), tu.begin(), tu.end());
-  }
-  auto tu = this->ClassType::getUnbounds();
-  u.insert(u.begin(), tu.begin(), tu.end());
-  return u;
-}
-
-bool RecordType::canRealize() const {
-  return std::all_of(args.begin(), args.end(),
-                     [](auto &a) { return a->canRealize(); }) &&
-         this->ClassType::canRealize();
-}
-
-bool RecordType::isInstantiated() const {
-  return std::all_of(args.begin(), args.end(),
-                     [](auto &a) { return a->isInstantiated(); }) &&
-         this->ClassType::isInstantiated();
-}
-
-std::string RecordType::debugString(char mode) const {
-  if (name == "Partial" && generics[0].type->canRealize() && mode != 2) {
-    auto func = getPartialFunc();
-    std::vector<std::string> gs;
-    for (auto &a : generics[2].type->getRecord()->args)
-      gs.push_back(a->debugString(mode));
-    std::vector<std::string> as;
-    int i = 0, gi = 0;
-    auto known = getPartialMask();
-    for (; i < known.size(); i++)
-      if (func->ast->args[i].status == Param::Normal) {
-        if (!known[i])
-          as.emplace_back("...");
-        else
-          as.emplace_back(gs[gi++]);
-      }
-    auto fnname = func->ast->name;
-    if (mode == 0) {
-      fnname = cache->rev(func->ast->name);
-      // if (func->funcParent)
-      // fnname = fmt::format("{}.{}", func->funcParent->debugString(mode), fnname);
-    } else if (mode == 2) {
-      fnname = func->debugString(mode);
-    }
-    return fmt::format("{}[{}{}]", fnname, join(as, ","),
-                       //  mode == 2 ? fmt::format(";{}", join(gs, ",")) :
-                       "");
-  }
-  return fmt::format("{}", this->ClassType::debugString(mode));
-}
-
-std::shared_ptr<RecordType> RecordType::getHeterogenousTuple() {
-  seqassert(canRealize(), "{} not realizable", toString());
-  if (args.size() > 1) {
-    std::string first = args[0]->realizedName();
-    for (int i = 1; i < args.size(); i++)
-      if (args[i]->realizedName() != first)
-        return getRecord();
-  }
-  return nullptr;
-}
-
-std::string RecordType::realizedName() const {
+  std::string s;
   if (name == "Partial" && generics[0].type->canRealize() && false) {
     auto func = getPartialFunc();
     std::vector<std::string> gs;
@@ -287,18 +172,30 @@ std::string RecordType::realizedName() const {
     for (auto &a : func->generics)
       if (!a.name.empty())
         gs.push_back(a.type->realizedName());
-    std::string s = join(gs, ",");
-    return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+    s = join(gs, ",");
+    s = fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+  } else {
+    std::vector<std::string> gs;
+    for (auto &a : generics)
+      if (!a.name.empty()) {
+        if (!a.isStatic && a.type->getStatic()) {
+          gs.push_back(a.type->getStatic()->name);
+        } else {
+          gs.push_back(a.type->realizedName());
+        }
+      }
+    s = join(gs, ",");
+    s = fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
   }
-  return ClassType::realizedName();
+  return s;
 }
 
-std::shared_ptr<RecordType> RecordType::getPartial() {
-  return (name == "Partial") ? std::static_pointer_cast<RecordType>(shared_from_this())
+std::shared_ptr<ClassType> ClassType::getPartial() {
+  return (name == "Partial") ? std::static_pointer_cast<ClassType>(shared_from_this())
                              : nullptr;
 }
 
-std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
+std::shared_ptr<FuncType> ClassType::getPartialFunc() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
   auto n = generics[0].type->getStrStatic()->value;
   auto f = in(cache->functions, n);
@@ -306,7 +203,7 @@ std::shared_ptr<FuncType> RecordType::getPartialFunc() const {
   return f->type;
 }
 
-std::vector<char> RecordType::getPartialMask() const {
+std::vector<char> ClassType::getPartialMask() const {
   seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
   auto n = generics[1].type->getStrStatic()->value;
   std::vector<char> r(n.size(), 0);
@@ -315,5 +212,45 @@ std::vector<char> RecordType::getPartialMask() const {
       r[i] = 1;
   return r;
 }
+
+// int RecordType::unify(Type *typ, Unification *us) {
+//   if (auto tr = typ->getRecord()) {
+//     // Handle int <-> Int[64]
+//     if (name == "int" && tr->name == "Int")
+//       return tr->unify(this, us);
+//     if (tr->name == "int" && name == "Int") {
+//       auto t64 = std::make_shared<IntStaticType>(cache, 64);
+//       return generics[0].type->unify(t64.get(), us);
+//     }
+
+//     auto tup2Tup = startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE);
+//     int s1 = 2, s = 0;
+//     if (!tup2Tup) {
+//       s1 = this->ClassType::unify(tr.get(), us);
+//       if (s1 == -1)
+//         return -1;
+//     }
+//     if (args.size() != tr->args.size())
+//       return -1;
+//     for (int i = 0; i < args.size(); i++) {
+//       if ((s = args[i]->unify(tr->args[i].get(), us)) != -1)
+//         s1 += s;
+//       else
+//         return -1;
+//     }
+//     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
+//     if (tup2Tup) {
+//       if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
+//         return s1 + int(name == tr->name);
+//       else
+//         return -1;
+//     }
+//     return s1;
+//   } else if (auto t = typ->getLink()) {
+//     return t->unify(this, us);
+//   } else {
+//     return -1;
+//   }
+// }
 
 } // namespace codon::ast::types

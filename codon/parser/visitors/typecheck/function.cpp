@@ -219,7 +219,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   StmtPtr suite = nullptr;
   ExprPtr ret = nullptr;
   std::vector<ClassType::Generic> explicits;
-  std::shared_ptr<types::RecordType> baseType = nullptr;
+  std::shared_ptr<types::ClassType> baseType = nullptr;
   {
     // Set up the base
     TypeContext::BaseGuard br(ctx.get(), canonicalName);
@@ -326,7 +326,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
     // Unify base type generics with argument types. Add non-generic arguments to the
     // context. Delayed to prevent cases like `def foo(a, b=a)`
-    auto argType = baseType->generics[0].type->getRecord();
+    auto argType = baseType->generics[0].type->getClass();
     for (int ai = 0, aj = 0; ai < stmt->args.size(); ai++) {
       if (stmt->args[ai].status != Param::Normal)
         continue;
@@ -335,19 +335,19 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!stmt->args[ai].type) {
         if (parentClass && ai == 0 && stmt->args[ai].name == "self") {
           // Special case: self in methods
-          unify(argType->args[aj], parentClass);
+          unify(argType->generics[aj].type, parentClass);
         } else {
-          unify(argType->args[aj], ctx->getUnbound());
-          generics.push_back(argType->args[aj]);
+          unify(argType->generics[aj].type, ctx->getUnbound());
+          generics.push_back(argType->generics[aj].type);
         }
       } else if (startswith(stmt->args[ai].name, "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during
         // call typechecking
-        unify(argType->args[aj], ctx->getUnbound());
-        generics.push_back(argType->args[aj]);
+        unify(argType->generics[aj].type, ctx->getUnbound());
+        generics.push_back(argType->generics[aj].type);
       } else {
-        unify(argType->args[aj], getType(transformType(stmt->args[ai].type)));
+        unify(argType->generics[aj].type, getType(transformType(stmt->args[ai].type)));
         // generics.push_back(argType->args[aj++]);
       }
       aj++;
@@ -615,10 +615,10 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
 }
 
 /// Generate and return `Function[Tuple.N[args...], ret]` type
-std::shared_ptr<RecordType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
-  auto baseType = ctx->instantiate(ctx->getType("Function"))->getRecord();
+std::shared_ptr<ClassType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
+  auto baseType = ctx->instantiate(ctx->getType("Function"))->getClass();
   unify(baseType->generics[0].type,
-        ctx->instantiate(ctx->getType(generateTuple(nargs)))->getRecord());
+        ctx->instantiate(ctx->getType(generateTuple(nargs)))->getClass());
   return baseType;
 }
 

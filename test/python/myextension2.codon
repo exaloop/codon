@@ -8,9 +8,6 @@ class Vec:
     n: ClassVar[int] = 0
     d: ClassVar[int] = 0
 
-    def __new__(a: float, b: float, tag: str) -> Vec:
-        return (a, b, tag)
-
     def __new__(a: float = 0.0, b: float = 0.0):
         v = Vec(a, b, 'v' + str(Vec.n))
         Vec.n += 1
