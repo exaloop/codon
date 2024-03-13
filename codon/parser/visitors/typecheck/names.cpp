@@ -654,6 +654,7 @@ void ScopingVisitor::visit(StringExpr *expr) {
   for (auto &p : expr->strings) {
     if (p.second == "f" || p.second == "F") {
       /// Transform an F-string
+      setSrcInfo(expr->getSrcInfo());
       exprs.push_back(transformFString(p.first));
     } else if (!p.second.empty()) {
       /// Custom prefix strings:

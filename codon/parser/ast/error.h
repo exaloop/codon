@@ -23,15 +23,9 @@ struct SrcInfo {
   int len;
   int id; /// used to differentiate different instances
 
-  SrcInfo(std::string file, int line, int col, int len)
-      : file(std::move(file)), line(line), col(col), len(len), id(0) {
-    static int nextId = 0;
-    id = nextId++;
-  };
-
-  SrcInfo() : SrcInfo("", 0, 0, 0) {}
-
-  bool operator==(const SrcInfo &src) const { return id == src.id; }
+  SrcInfo();
+  SrcInfo(std::string file, int line, int col, int len);
+  bool operator==(const SrcInfo &src) const;
 };
 
 } // namespace codon

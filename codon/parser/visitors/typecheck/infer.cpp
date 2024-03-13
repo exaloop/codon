@@ -203,8 +203,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Check if the type was already realized
   auto rn = type->ClassType::realizedName();
-  if (auto r =
-          in(ctx->cache->classes[type->name].realizations, rn)) {
+  if (auto r = in(ctx->cache->classes[type->name].realizations, rn)) {
     return (*r)->type->getClass();
   }
 
@@ -244,26 +243,21 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<ir::types::Type *> typeArgs;   // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
-  ctx->addBlock();
-  addClassGenerics(realized);
-  for (auto &field : ctx->cache->classes[realized->name].fields) {
-    auto ftyp = ctx->instantiate(field.type, realized);
-    if (!ftyp->canRealize() && field.typeExpr) {
-      auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
-      unify(ftyp, t);
-    }
-    if (!realize(ftyp)) {
-      realize(ftyp);
-      E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
+
+  const auto &fields = ctx->cache->classes[realized->name].fields;
+  auto fTypes = getClassFieldTypes(realized);
+  for (size_t i = 0; i < fTypes.size(); i++) {
+    if (!realize(fTypes[i])) {
+      realize(fTypes[i]);
+      E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
         realized->prettyString());
     }
-    // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
-    realization->fields.emplace_back(field.name, ftyp);
-    names.emplace_back(field.name);
-    typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
-    memberInfo[field.name] = field.type->getSrcInfo();
+    // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, fTypes[i]);
+    realization->fields.emplace_back(fields[i].name, fTypes[i]);
+    names.emplace_back(fields[i].name);
+    typeArgs.emplace_back(makeIRType(fTypes[i]->getClass().get()));
+    memberInfo[fields[i].name] = fTypes[i]->getSrcInfo();
   }
-  ctx->popBlock();
 
   // Set IR attributes
   if (!names.empty()) {
@@ -663,8 +657,8 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   auto forceFindIRType = [&](const TypePtr &tt) {
     auto t = tt->getClass();
     auto rn = t->ClassType::realizedName();
-    seqassert(t && in(ctx->cache->classes[t->name].realizations, rn),
-              "{} not realized", tt);
+    seqassert(t && in(ctx->cache->classes[t->name].realizations, rn), "{} not realized",
+              tt);
     auto l = ctx->cache->classes[t->name].realizations[rn]->ir;
     seqassert(l, "no LLVM type for {}", t);
     return l;
@@ -737,31 +731,25 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
       std::vector<ir::types::Type *> typeArgs;   // needed for IR
       std::vector<std::string> names;            // needed for IR
       std::map<std::string, SrcInfo> memberInfo; // needed for IR
-      ctx->addBlock();
-      auto pp = t->shared_from_this()->getClass();
-      addClassGenerics(pp);
-      for (auto &field : ctx->cache->classes[t->name].fields) {
-        auto ftyp = ctx->instantiate(field.type, pp);
-        if (!ftyp->canRealize() && field.typeExpr) {
-          auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
-          unify(ftyp, t);
-        }
-        if (!realize(ftyp)) {
-          realize(ftyp);
-          E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), field.name,
+
+      auto ft = getClassFieldTypes(t->getClass());
+      const auto &fields = ctx->cache->classes[t->getClass()->name].fields;
+      for (size_t i = 0; i < ft.size(); i++) {
+        if (!realize(ft[i])) {
+          realize(ft[i]);
+          E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
             t->prettyString());
         }
-        // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, ftyp);
-        names.emplace_back(field.name);
-        typeArgs.emplace_back(makeIRType(ftyp->getClass().get()));
-        memberInfo[field.name] = field.type->getSrcInfo();
+        names.emplace_back(fields[i].name);
+        typeArgs.emplace_back(makeIRType(ft[i]->getClass().get()));
+        memberInfo[fields[i].name] = ft[i]->getSrcInfo();
       }
-      ctx->popBlock();
       auto record =
           ir::cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
       record->realize(typeArgs, names);
       handle = record;
-      handle->setAttribute(std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
+      handle->setAttribute(
+          std::make_unique<ir::MemberAttribute>(std::move(memberInfo)));
     } else {
       handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
       if (ctx->cache->classes[t->name].rtti)
@@ -855,7 +843,8 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     items.push_back(nullptr);
     std::vector<std::string> ll;
     std::vector<std::string> lla;
-    seqassert(startswith(type->getArgTypes()[1]->getClass()->name, TYPE_TUPLE), "bad function base");
+    seqassert(startswith(type->getArgTypes()[1]->getClass()->name, TYPE_TUPLE),
+              "bad function base");
     auto as = type->getArgTypes()[1]->getClass()->generics.size();
     auto ag = ast->args[1].name;
     trimStars(ag);

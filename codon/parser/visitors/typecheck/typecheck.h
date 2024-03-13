@@ -294,6 +294,8 @@ private:
   StmtPtr prepareVTables();
   std::vector<std::pair<std::string, ExprPtr>> extractNamedTuple(ExprPtr);
 
+  std::vector<types::TypePtr> getClassFieldTypes(const types::ClassTypePtr &);
+
 public:
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);

@@ -3,6 +3,19 @@
 #include "error.h"
 
 namespace codon {
+
+SrcInfo::SrcInfo(std::string file, int line, int col, int len)
+    : file(std::move(file)), line(line), col(col), len(len), id(0) {
+  if (this->file.empty() && line != 0)
+    line++;
+  static int nextId = 0;
+  id = nextId++;
+};
+
+SrcInfo::SrcInfo() : SrcInfo("", 0, 0, 0) {}
+
+bool SrcInfo::operator==(const SrcInfo &src) const { return id == src.id; }
+
 namespace error {
 
 char ParserErrorInfo::ID = 0;

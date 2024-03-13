@@ -696,4 +696,20 @@ types::TypePtr TypecheckVisitor::getType(const ExprPtr &e) {
   return t;
 }
 
+std::vector<types::TypePtr> TypecheckVisitor::getClassFieldTypes(const types::ClassTypePtr &cls) {
+  std::vector<types::TypePtr> result;
+  ctx->addBlock();
+  addClassGenerics(cls);
+  for (auto &field : ctx->cache->classes[cls->name].fields) {
+    auto ftyp = ctx->instantiate(field.type, cls);
+    if (!ftyp->canRealize() && field.typeExpr) {
+      auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
+      unify(ftyp, t);
+    }
+    result.push_back(ftyp);
+  }
+  ctx->popBlock();
+  return result;
+}
+
 } // namespace codon::ast
