@@ -579,6 +579,20 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
     } else {
       expr = p;
     }
+  } else if (expectedClass && expectedClass->name == "Function" && exprClass &&
+             exprClass->getPartial() &&
+             exprClass->generics[2].type->getClass()->generics.size() == 1 &&
+             exprClass->generics[2]
+                 .type->getClass()
+                 ->generics[0]
+                 .type->getClass()
+                 ->generics.empty() &&
+             exprClass->generics[3]
+                 .type->getClass()
+                 ->generics[0]
+                 .type->getClass()
+                 ->generics.empty()) {
+    expr = transform(N<IdExpr>(exprClass->getPartialFunc()->ast->name));
   } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
              !expectedClass->getUnion()) {
     // Extract union types via __internal__.get_union
@@ -696,7 +710,8 @@ types::TypePtr TypecheckVisitor::getType(const ExprPtr &e) {
   return t;
 }
 
-std::vector<types::TypePtr> TypecheckVisitor::getClassFieldTypes(const types::ClassTypePtr &cls) {
+std::vector<types::TypePtr>
+TypecheckVisitor::getClassFieldTypes(const types::ClassTypePtr &cls) {
   std::vector<types::TypePtr> result;
   ctx->addBlock();
   addClassGenerics(cls);

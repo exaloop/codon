@@ -77,7 +77,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         transform(N<AssignStmt>(
             N<IdExpr>(name),
             N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
-                        N<StringExpr>(file->path), N<StringExpr>(file->module)))));
+                        N<StringExpr>(file->module), N<StringExpr>(file->path)))));
   } else if (stmt->what->isId("*")) {
     // Case: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
@@ -202,7 +202,7 @@ StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Exp
   auto canonical = ctx->generateCanonicalName(name);
   auto typ = transformType(clone(type));
   auto val = ctx->addVar(altName.empty() ? name : altName, canonical,
-                         std::make_shared<types::LinkType>(typ->type->getClass()));
+                         std::make_shared<types::LinkType>(getType(typ)->getClass()));
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttr(ExprAttr::ExternVar);
   s->lhs->setType(val->type);

@@ -57,6 +57,10 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     }
 
   TranslateVisitor(cache->codegenCtx).transform(stmts);
+
+  for (auto &[_, f]: cache->functions)
+    TranslateVisitor(cache->codegenCtx).transform(f.ast);
+
   cache->populatePythonModule();
   return main;
 }
@@ -174,7 +178,7 @@ void TranslateVisitor::visit(StringExpr *expr) {
 void TranslateVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   seqassert(val, "cannot find '{}'", expr->value);
-  if (expr->value == "__vtable_size__") {
+  if (expr->value == "__vtable_size__.0") {
     // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
                                 getType(expr->getType()));
@@ -438,7 +442,6 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   auto isGlobal = in(ctx->cache->globals, var);
   ir::Var *v = nullptr;
 
-
   if (!stmt->lhs->type->isInstantiated() || (stmt->lhs->type->is("type"))) {
     // LOG("{} {}", getSrcInfo(), stmt->toString(0));
     return; // type aliases/fn aliases etc
@@ -697,9 +700,8 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     } else {
       seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
                 ss[i]->getExpr()->toString());
-      literals.emplace_back(getType(
-        ctx->cache->typeCtx->getType(
-        ss[i]->getExpr()->expr->getType())));
+      literals.emplace_back(
+          getType(ctx->cache->typeCtx->getType(ss[i]->getExpr()->expr->getType())));
     }
   }
   bool isDeclare = true;

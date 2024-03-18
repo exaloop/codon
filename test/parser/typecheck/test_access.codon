@@ -466,3 +466,15 @@ def test_mandelbrot():
         return (MAX, N, pixels, scale(N, -2, 0.4))
     k(pixels, grid=(N*N)//1024, block=1024)
 test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.4)
+
+#%% id_shadow_overload_call,barebones
+def foo():
+    def bar():
+        return -1
+    def xo():
+        return bar()
+    @overload # w/o this this fails because xo cannot capture bar
+    def bar(a):
+        return a
+    bar(1)
+foo()

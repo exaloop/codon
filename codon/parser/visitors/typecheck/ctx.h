@@ -205,6 +205,8 @@ public:
   std::string getBaseName() const;
   /// Return the current module.
   std::string getModule() const;
+  /// Return the current module path.
+  std::string getModulePath() const;
   /// Pretty-print the current context state.
   void dump() override;
 

@@ -192,8 +192,9 @@ Jar = Ptr[byte]
 
 @extend
 class NoneType:
+    @llvm
     def __new__() -> NoneType:
-        return ()
+        ret {} {}
 
     def __eq__(self, other: NoneType):
         return True

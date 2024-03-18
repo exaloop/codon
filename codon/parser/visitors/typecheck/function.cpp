@@ -49,6 +49,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
       stmt->expr = partializeFunction(stmt->expr->type->getFunc());
     }
 
+    if (!ctx->getBase()->returnType->isStaticType() && stmt->expr->type->getStatic())
+      stmt->expr->type = stmt->expr->type->getStatic()->getNonStaticType();
     unify(ctx->getBase()->returnType, stmt->expr->type);
   } else {
     // Just set the expr for the translation stage. However, do not unify the return
@@ -397,7 +399,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, stmt->attributes);
-  ctx->cache->functions[canonicalName].module = ctx->getModule();
+  ctx->cache->functions[canonicalName].module = ctx->moduleName.path;
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst = stmt_clone;
   ctx->cache->functions[canonicalName].isToplevel =

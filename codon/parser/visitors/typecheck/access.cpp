@@ -357,10 +357,11 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   }
   // Special case: cls.__id__
   if (expr->expr->type->is("type") && expr->member == "__id__") {
-    if (auto c = realize(expr->expr->type))
+    if (auto c = realize(getType(expr->expr))) {
       return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
                                       .realizations[c->getClass()->realizedName()]
                                       ->id));
+    }
     return nullptr;
   }
 
@@ -618,7 +619,9 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     // If overload is ambiguous, route through a dispatch function
     std::string name;
     if (auto dot = expr->getDot()) {
-      name = ctx->cache->getMethod(getType(dot->expr)->getClass(), dot->member);
+      auto methods = ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
+      seqassert(!methods.empty(), "unknown method");
+      name = ctx->cache->functions[methods.back()->ast->name].rootName;
     } else {
       name = expr->getId()->value;
     }

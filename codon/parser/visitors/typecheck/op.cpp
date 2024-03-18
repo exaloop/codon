@@ -56,25 +56,29 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 /// @c transformBinaryInplaceMagic for details.
 /// Also evaluate static expressions. See @c evaluateStaticBinary for details.
 void TypecheckVisitor::visit(BinaryExpr *expr) {
-  // Transform lexpr and rexpr. Ignore Nones for now
-  if (!(startswith(expr->op, "is") && expr->lexpr->getNone()))
-    transform(expr->lexpr, true);
-  if (!(startswith(expr->op, "is") && expr->rexpr->getNone()))
-    transform(expr->rexpr, true);
+  transform(expr->lexpr, true);
+  transform(expr->rexpr, true);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1,
        {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%", "&",
         "|", "^"}},
       {2, {"==", "!=", "+"}},
-      {3,
-       {"<", "<=", ">", ">=", "==", "!=", "&&", "||"}}};
-  if (expr->lexpr->type->isStaticType() &&
-      expr->lexpr->type->isStaticType() == expr->rexpr->type->isStaticType() &&
-      in(staticOps[expr->lexpr->type->isStaticType()], expr->op)) {
-    // Handle static expressions
-    resultExpr = evaluateStaticBinary(expr);
-  } else if (auto e = transformBinarySimple(expr)) {
+      {3, {"<", "<=", ">", ">=", "==", "!=", "&&", "||"}}};
+  if (expr->lexpr->type->isStaticType() && expr->rexpr->type->isStaticType()) {
+    auto l = expr->lexpr->type->isStaticType();
+    auto r = expr->rexpr->type->isStaticType();
+    bool isStatic = l == r && in(staticOps[l], expr->op);
+    if (!isStatic && ((l == 1 && r == 3) || (r == 1 && l == 3)) &&
+        in(staticOps[1], expr->op))
+      isStatic = true;
+    if (isStatic) {
+      resultExpr = evaluateStaticBinary(expr);
+      return;
+    }
+  }
+
+  if (auto e = transformBinarySimple(expr)) {
     // Case: simple binary expressions
     resultExpr = e;
   } else if (expr->lexpr->getType()->getUnbound() ||
@@ -264,7 +268,8 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 void TypecheckVisitor::visit(IndexExpr *expr) {
   if (expr->expr->isId("Static")) {
     // Special case: static types. Ensure that static is supported
-    if (!expr->index->isId("int") && !expr->index->isId("str") && !expr->index->isId("bool"))
+    if (!expr->index->isId("int") && !expr->index->isId("str") &&
+        !expr->index->isId("bool"))
       E(Error::BAD_STATIC_TYPE, expr->index);
     auto typ = ctx->getUnbound();
     typ->isStatic = getStaticGeneric(expr);
@@ -364,19 +369,16 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     unify(expr->type, typ);
   } else {
     for (size_t i = 0; i < expr->typeParams.size(); i++) {
-      // transform(expr->typeParams[i]);
       transformType(expr->typeParams[i]);
       auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                                 getType(expr->typeParams[i]));
-      // if (expr->typeParams[i]->type->isStaticType() &&
-      //     generics[i].type->isStaticType()) {
-      //   t = ctx->instantiate(expr->typeParams[i]->type);
-      // } else {
-      //   if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
-      //     transformType(expr->typeParams[i]);
-      //   if (!expr->typeParams[i]->type->is("type"))
-      //     E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
-      // }
+      if (expr->typeParams[i]->type->isStaticType() !=
+          generics[i].type->isStaticType()) {
+        if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
+          transformType(expr->typeParams[i]);
+        if (!expr->typeParams[i]->type->is("type"))
+          E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
+      }
       if (isUnion)
         typ->getUnion()->addType(t);
       else
@@ -454,7 +456,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         value = !bool(value);
       LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
       if (expr->op == "!")
-        return transform(N<IntExpr>(bool(value)));
+        return transform(N<BoolExpr>(value));
       else
         return transform(N<IntExpr>(value));
     } else {
@@ -469,9 +471,10 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
 /// Division and modulus implementations.
 std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int64_t a,
                                    int64_t b) {
-  if (!b)
+  if (!b) {
     E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
-  if (ctx->cache->pythonCompat) {
+    return {0, 0};
+  } else if (ctx->cache->pythonCompat) {
     // Use Python implementation.
     int64_t d = a / b;
     int64_t m = a - d * b;
@@ -511,7 +514,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
                   expr->rexpr->type->getStrStatic()->value;
         bool value = expr->op == "==" ? eq : !eq;
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
-        return transform(N<IntExpr>(value));
+        return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
         expr->type->getUnbound()->isStatic = 1;
@@ -522,8 +525,12 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
 
   // Case: static integers
   if (expr->lexpr->type->getStatic() && expr->rexpr->type->getStatic()) {
-    int64_t lvalue = expr->lexpr->type->getIntStatic() ? expr->lexpr->type->getIntStatic()->value : expr->lexpr->type->getBoolStatic()->value;
-    int64_t rvalue = expr->rexpr->type->getIntStatic() ? expr->rexpr->type->getIntStatic()->value : expr->rexpr->type->getBoolStatic()->value;
+    int64_t lvalue = expr->lexpr->type->getIntStatic()
+                         ? expr->lexpr->type->getIntStatic()->value
+                         : expr->lexpr->type->getBoolStatic()->value;
+    int64_t rvalue = expr->rexpr->type->getIntStatic()
+                         ? expr->rexpr->type->getIntStatic()->value
+                         : expr->rexpr->type->getBoolStatic()->value;
     if (expr->op == "<")
       lvalue = lvalue < rvalue;
     else if (expr->op == "<=")
@@ -596,7 +603,7 @@ ExprPtr TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
     return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, "__contains__"), expr->lexpr));
   } else if (expr->op == "is") {
     if (expr->lexpr->getNone() && expr->rexpr->getNone())
-      return transform(N<IntExpr>(1));
+      return transform(N<BoolExpr>(true));
     else if (expr->lexpr->getNone())
       return transform(N<BinaryExpr>(expr->rexpr, "is", expr->lexpr));
   } else if (expr->op == "is not") {
@@ -613,17 +620,17 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   // Case: `is None` expressions
   if (expr->rexpr->getNone()) {
     if (expr->lexpr->getType()->is("NoneType"))
-      return transform(N<IntExpr>(1));
+      return transform(N<BoolExpr>(true));
     if (!expr->lexpr->getType()->is(TYPE_OPTIONAL)) {
       // lhs is not optional: `return False`
-      return transform(N<IntExpr>(0));
+      return transform(N<BoolExpr>(false));
     } else {
       // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
       auto g = expr->lexpr->getType()->getClass();
       for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
         ;
       if (g->generics[0].type->is("NoneType"))
-        return transform(N<IntExpr>(1));
+        return transform(N<BoolExpr>(true));
 
       // lhs is optional: `return lhs.__has__().__invert__()`
       return transform(N<CallExpr>(
@@ -640,7 +647,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
     return nullptr;
   }
   if (expr->lexpr->type->is("type") && expr->rexpr->type->is("type"))
-    return transform(N<IntExpr>(lc->realizedName() == rc->realizedName()));
+    return transform(N<BoolExpr>(lc->realizedName() == rc->realizedName()));
   if (!lc->getClass()->isRecord() && !rc->getClass()->isRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
     return transform(
@@ -659,7 +666,7 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   }
   if (lc->realizedName() != rc->realizedName()) {
     // tuple names do not match: `return False`
-    return transform(N<IntExpr>(0));
+    return transform(N<BoolExpr>(false));
   }
   // Same tuple types: `return lhs == rhs`
   return transform(N<BinaryExpr>(expr->lexpr, "==", expr->rexpr));

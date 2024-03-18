@@ -471,9 +471,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
     expr->args.pop_back();
     if (!part.args)
       part.args = transform(N<TupleExpr>()); // use ()
-    if (!part.kwArgs) {
+    if (!part.kwArgs)
       part.kwArgs = transform(N<CallExpr>(N<IdExpr>("NamedTuple"))); // use NamedTuple()
-    }
   }
 
   // Unify function type generics with the provided generics
@@ -805,7 +804,8 @@ ExprPtr TypecheckVisitor::transformSuper() {
     self->type = typ;
 
     auto typExpr = N<IdExpr>(superTyp->name);
-    typExpr->setType(superTyp);
+    typExpr->setType(ctx->instantiateGeneric(ctx->getType("type"), {superTyp}));
+    // LOG("-> {:c} : {:c} {:c}", typ, vCands[1], typExpr->type);
     return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
                                  self, typExpr, N<IntExpr>(1)));
   }
@@ -819,7 +819,6 @@ ExprPtr TypecheckVisitor::transformSuper() {
       members.push_back(N<DotExpr>(N<IdExpr>(funcTyp->ast->args[0].name), field.name));
     ExprPtr e =
         transform(N<CallExpr>(N<IdExpr>(generateTuple(members.size())), members));
-
     auto ft = getClassFieldTypes(superTyp);
     for (size_t i = 0; i < ft.size(); i++)
       unify(

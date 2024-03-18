@@ -209,7 +209,7 @@ StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   transform(stmt->lhs);
 
-  if (auto lhsClass = stmt->lhs->getType()->getClass()) {
+  if (auto lhsClass = getType(stmt->lhs)->getClass()) {
     auto member = ctx->findMember(lhsClass->name, stmt->member);
 
     if (!member && stmt->lhs->type->is("type")) {

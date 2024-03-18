@@ -174,7 +174,7 @@ class Import:
     P: Static[str]
 
     @llvm
-    def __new__(P: Static[str], name: str, path: str) -> Import[P]:
+    def __new__(path: str, name: str, P: Static[str]) -> Import[P]:
         %0 = insertvalue { {=str}, {=str} } undef, {=str} %path, 0
         %1 = insertvalue { {=str}, {=str} } %0,    {=str} %name, 1
         ret { {=str}, {=str} } %1

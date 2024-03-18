@@ -289,7 +289,7 @@ TypecheckVisitor::transformStaticLoopCall(
     if (vars.size() != 1)
       error("expected one item");
     for (auto &a : args) {
-      stmt->rhs = a.value;
+      stmt->rhs = transform(clean_clone(a.value));
       if (auto st = stmt->rhs->type->getStatic()) {
         stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->name));
       } else {

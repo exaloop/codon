@@ -247,7 +247,7 @@ private: // Node typechecking rules
                        bool);
   std::string generateTuple(size_t);
   int generateKwId(const std::vector<std::string> & = {});
-  void addClassGenerics(const types::ClassTypePtr &);
+  void addClassGenerics(const types::ClassTypePtr &, bool instantiate = false);
 
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;

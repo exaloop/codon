@@ -543,7 +543,12 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
 }
 
 void ScopingVisitor::visit(FunctionStmt *stmt) {
-  visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
+  bool isOverload = false;
+  for (auto &d: stmt->decorators)
+    if (d->isId("overload"))
+      isOverload = true;
+  if (!isOverload)
+    visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
 
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;

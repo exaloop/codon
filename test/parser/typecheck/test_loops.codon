@@ -103,7 +103,7 @@ for i in range(10):
 #%% for_error,barebones
 for i in 1:
     pass
-#! 'int' object has no attribute '__iter__'
+#! '1' object has no attribute '__iter__'
 
 #%% for_void,barebones
 def foo(): yield

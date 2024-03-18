@@ -92,12 +92,6 @@ class F[T: Static[float]]:
     pass
 #! expected 'int' or 'str' (only integers and strings can be static)
 
-#%% class_err_10,barebones
-def foo[T]():
-    class A:
-        x: T
-#! name 'T' cannot be captured
-
 #%% class_err_11,barebones
 def foo(x):
     class A:

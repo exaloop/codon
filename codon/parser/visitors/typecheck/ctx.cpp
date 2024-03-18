@@ -138,6 +138,10 @@ std::string TypeContext::getModule() const {
   return base;
 }
 
+std::string TypeContext::getModulePath() const {
+  return moduleName.path;
+}
+
 void TypeContext::dump() { dump(0); }
 
 bool TypeContext::isCanonicalName(const std::string &name) const {

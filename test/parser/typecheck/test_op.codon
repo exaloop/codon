@@ -3,7 +3,7 @@
 a, b = False, 1
 print not a, not b, ~b, +b, -b, -(+(-b)) #: True False -2 1 -1 1
 
-#%% binary,barebones
+#%% binary_simple,barebones
 x, y = 1, 0
 c = [1, 2, 3]
 
@@ -356,16 +356,19 @@ print Foo[int, 3, 4](), Foo[int, 5, 4]()
 #%% static_int,barebones
 def foo(n: Static[int]):
     print n
+@overload
+def foo(n: Static[bool]):
+    print n
 
 a: Static[int] = 5
-foo(a < 1)   #: 0
-foo(a <= 1)  #: 0
-foo(a > 1)   #: 1
-foo(a >= 1)  #: 1
-foo(a == 1)  #: 0
-foo(a != 1)  #: 1
-foo(a and 1) #: 1
-foo(a or 1)  #: 1
+foo(a < 1)   #: False
+foo(a <= 1)  #: False
+foo(a > 1)   #: True
+foo(a >= 1)  #: True
+foo(a == 1)  #: False
+foo(a != 1)  #: True
+foo(a and 1) #: True
+foo(a or 1)  #: True
 foo(a + 1)   #: 6
 foo(a - 1)   #: 4
 foo(a * 1)   #: 5

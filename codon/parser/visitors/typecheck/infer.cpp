@@ -394,8 +394,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
-    if (!ast->ret && type->getRetType()->getUnbound())
+    if (!ast->ret && type->getRetType()->getUnbound()) {
       unify(type->getRetType(), ctx->getType("NoneType"));
+    }
     // LOG("-> {} {}", key, ret->toString(2));
   }
   // Realize the return type
@@ -583,8 +584,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
       for (auto &[_, real] : cls.realizations) {
         auto &vtable = real->vtables[baseCls];
 
-        auto ct =
-            ctx->instantiate(ctx->forceFind(clsName)->type, cp->getClass())->getClass();
+        auto ct = ctx->instantiate(ctx->getType(clsName), cp->getClass())->getClass();
         std::vector<types::TypePtr> args = fp->getArgTypes();
         args[0] = ct;
         auto m = findBestMethod(ct, fnName, args);
@@ -605,7 +605,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         // Thunk name: _thunk.<BASE>.<FN>.<ARGS>
         auto thunkName =
             format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
-        if (in(ctx->cache->functions, thunkName))
+        if (in(ctx->cache->functions, thunkName+":0"))
           continue;
 
         // Thunk contents:
@@ -614,27 +614,24 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         //     __internal__.class_base_to_derived(self, <BASE>, <DERIVED>),
         //     <ARGS...>)
         std::vector<Param> fnArgs;
-        fnArgs.emplace_back(fp->ast->args[0].name, N<IdExpr>(cp->realizedName()),
-                            nullptr);
+        fnArgs.emplace_back("self", N<IdExpr>(cp->realizedName()), nullptr);
         for (size_t i = 1; i < args.size(); i++)
-          fnArgs.emplace_back(fp->ast->args[i].name, N<IdExpr>(args[i]->realizedName()),
-                              nullptr);
+          fnArgs.emplace_back(ctx->cache->rev(fp->ast->args[i].name),
+                              N<IdExpr>(args[i]->realizedName()), nullptr);
         std::vector<ExprPtr> callArgs;
         callArgs.emplace_back(
             N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_base_to_derived"),
-                        N<IdExpr>(fp->ast->args[0].name), N<IdExpr>(cp->realizedName()),
+                        N<IdExpr>("self"), N<IdExpr>(cp->realizedName()),
                         N<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
-          callArgs.emplace_back(N<IdExpr>(fp->ast->args[i].name));
+          callArgs.emplace_back(N<IdExpr>(ctx->cache->rev(fp->ast->args[i].name)));
         auto thunkAst = N<FunctionStmt>(
             thunkName, nullptr, fnArgs,
             N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
-            Attr({"std.internal.attributes.inline", Attr::ForceRealize}));
-        auto &thunkFn = ctx->cache->functions[thunkAst->name];
-        thunkFn.ast = clone(thunkAst);
+            Attr({"std.internal.attributes.inline"}));
+        thunkAst = std::dynamic_pointer_cast<FunctionStmt>(transform(thunkAst));
 
-        transform(thunkAst);
-        prependStmts->push_back(thunkAst);
+        auto &thunkFn = ctx->cache->functions[thunkAst->name];
         auto ti = ctx->instantiate(thunkFn.type)->getFunc();
         auto tm = realizeFunc(ti.get(), true);
         seqassert(tm, "bad thunk {}", thunkFn.type);
@@ -651,8 +648,11 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   auto realizedName = t->ClassType::realizedName();
   if (!in(ctx->cache->classes[t->name].realizations, realizedName))
     realize(t->getClass());
-  if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir)
+  if (auto l = ctx->cache->classes[t->name].realizations[realizedName]->ir) {
+    if (ctx->cache->classes[t->name].rtti)
+      ir::cast<ir::types::RefType>(l)->setPolymorphic();
     return l;
+  }
 
   auto forceFindIRType = [&](const TypePtr &tt) {
     auto t = tt->getClass();
