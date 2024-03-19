@@ -285,15 +285,25 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
 types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto &realizations = ctx->cache->functions[type->ast->name].realizations;
+  const auto &imp = ctx->cache->imports[type->ast->attributes.module];
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
-      return (*r)->type;
+      bool ok = true;
+      // Enable later!
+      // for (auto &c: (*r)->captures) {
+      //   auto h = imp.ctx->find(ctx->cache->rev(c));
+      //   if (h && h->canonicalName != c) {
+      //     ok = false;
+      //     break;
+      //   }
+      // }
+      if (ok)
+        return (*r)->type;
     }
   }
 
   seqassert(in(ctx->cache->imports, type->ast->attributes.module) != nullptr,
             "bad module: '{}'", type->ast->attributes.module);
-  auto &imp = ctx->cache->imports[type->ast->attributes.module];
   auto oldCtx = this->ctx;
   this->ctx = imp.ctx;
   // LOG("=> {}", ctx->moduleName.module, ctx->moduleName.path);
@@ -354,6 +364,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
   r->ir = oldIR;
+  for (auto &[c, _]: ast->attributes.captures) {
+    auto h = ctx->find(c);
+    r->captures.push_back(h ? h->canonicalName : "");
+  }
 
   // Realizations should always be visible, so add them to the toplevel
   auto val =

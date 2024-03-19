@@ -185,6 +185,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       std::shared_ptr<FunctionStmt> ast;
       /// IR function pointer.
       ir::Func *ir;
+      /// Resolved captures
+      std::vector<std::string> captures;
     };
     /// Realization lookup table that maps a realized function name to the corresponding
     /// FunctionRealization instance.
