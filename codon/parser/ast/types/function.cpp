@@ -76,8 +76,7 @@ bool FuncType::hasUnbounds(bool includeGenerics) const {
   for (auto &a : getArgTypes())
     if (a && a->hasUnbounds(includeGenerics))
       return true;
-  return false;
-  //getRetType()->hasUnbounds(includeGenerics);
+  return getRetType()->hasUnbounds(includeGenerics);
 }
 
 std::vector<TypePtr> FuncType::getUnbounds() const {

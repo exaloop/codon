@@ -160,7 +160,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
 
   if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->type)) {
     assign->setDone();
-  } else if (assign->rhs && !val->isVar() && val->type->getUnbounds().empty()) {
+  } else if (assign->rhs && !val->isVar() && !val->type->hasUnbounds()) {
     // TODO: this is?!
     assign->setDone();
   }
