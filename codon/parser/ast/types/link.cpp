@@ -31,9 +31,6 @@ int LinkType::unify(Type *typ, Unification *undo) {
   if (kind == Link) {
     // Case 1: Just follow the link
     return type->unify(typ, undo);
-  } else if (kind == Generic) {
-    // Case 2: Generic types cannot be unified.
-    return -1;
   } else {
     // Case 3: Unbound unification
     if (isStaticType() != typ->isStaticType()) {
@@ -47,26 +44,30 @@ int LinkType::unify(Type *typ, Unification *undo) {
     if (auto t = typ->getLink()) {
       if (t->kind == Link)
         return t->type->unify(this, undo);
-      else if (t->kind == Generic)
+      if (kind != t->kind)
         return -1;
-      else {
-        if (id == t->id) {
-          // Identical unbound types get a score of 1
-          return 1;
-        } else if (id < t->id) {
-          // Always merge a newer type into the older type (e.g. keep the types with
-          // lower IDs around).
-          return t->unify(this, undo);
-        }
-      }
+      // Identical unbound types get a score of 1
+      if (id == t->id)
+        return 1;
+      // Generics must have matching IDs
+      if (kind != Unbound)
+        return -1;
+      // Always merge a newer type into the older type (e.g. keep the types with
+      // lower IDs around).
+      if (id < t->id)
+        return t->unify(this, undo);
+    } else if (kind == Generic) {
+      return -1;
     }
+    // Generics must be handled by now; only unbounds can be unified!
+    seqassertn(kind == Unbound, "not an unbound");
+
     // Ensure that we do not have recursive unification! (e.g. unify ?1 with list[?1])
     if (occurs(typ, undo))
       return -1;
-
+    // Handle traits
     if (trait && trait->unify(typ, undo) == -1)
       return -1;
-
     // ⚠️ Unification: destructive part.
     seqassert(!type, "type has been already unified or is in inconsistent state");
     if (undo) {
