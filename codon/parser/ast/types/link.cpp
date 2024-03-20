@@ -144,6 +144,16 @@ std::vector<TypePtr> LinkType::getUnbounds() const {
   return {};
 }
 
+bool LinkType::hasUnbounds(bool includeGenerics) const {
+  if (kind == Unbound)
+    return true;
+  if (includeGenerics && kind == Generic)
+    return true;
+  if (kind == Link)
+    return type->hasUnbounds(includeGenerics);
+  return false;
+}
+
 bool LinkType::canRealize() const {
   if (kind != Link)
     return false;

@@ -66,6 +66,20 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
       ast, g, p);
 }
 
+bool FuncType::hasUnbounds(bool includeGenerics) const {
+  for (auto &t : funcGenerics)
+    if (t.type && t.type->hasUnbounds(includeGenerics))
+      return true;
+  if (funcParent && funcParent->hasUnbounds(includeGenerics))
+      return true;
+  // Important: return type unbounds are not important, so skip them.
+  for (auto &a : getArgTypes())
+    if (a && a->hasUnbounds(includeGenerics))
+      return true;
+  return false;
+  //getRetType()->hasUnbounds(includeGenerics);
+}
+
 std::vector<TypePtr> FuncType::getUnbounds() const {
   std::vector<TypePtr> u;
   for (auto &t : funcGenerics)

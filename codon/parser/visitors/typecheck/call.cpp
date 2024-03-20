@@ -321,7 +321,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
       }
     part.known = mask;
     return {calleeFn, nullptr};
-  } else if (!callee->getFunc()) {
+  } else if (!calleeFn) {
     // Case: callee is not a function. Try __call__ method instead
     return {nullptr,
             transform(N<CallExpr>(N<DotExpr>(expr->expr, "__call__"), expr->args))};

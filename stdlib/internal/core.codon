@@ -3,6 +3,12 @@
 @tuple
 @__internal__
 class type[T]:
+    #  __new__ / __init__: always done internally
+    # __repr__
+    # __call__
+    # __name__
+    # __module__
+    # __doc__
     pass
 
 @__internal__

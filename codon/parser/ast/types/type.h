@@ -86,6 +86,8 @@ public:
   /// Get the final type (follow through all LinkType links).
   /// For example, for (a->b->c->d) it returns d.
   virtual std::shared_ptr<Type> follow();
+  /// Check if type has unbound/generic types.
+  virtual bool hasUnbounds(bool = false) const;
   /// Obtain the list of internal unbound types.
   virtual std::vector<std::shared_ptr<Type>> getUnbounds() const;
   /// True if a type is realizable.

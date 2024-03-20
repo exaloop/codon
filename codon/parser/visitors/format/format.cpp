@@ -21,7 +21,7 @@ std::string FormatVisitor::anchor(const std::string &s) const {
 FormatVisitor::FormatVisitor(bool html, Cache *cache)
     : renderType(false), renderHTML(html), indent(0), cache(cache) {
   if (renderHTML) {
-    header = "<html><head><link rel=stylesheet href=\"code.css\"/></head>\n<body>";
+    header = "<html><head><link rel=stylesheet href=\"../code.css\"/></head>\n<body>";
     header += "<div class=code>\n";
     footer = "\n</div></body></html>";
     nl = "<br/>";

@@ -33,6 +33,8 @@ Type::Type(Cache *cache, const SrcInfo &info) : cache(cache) { setSrcInfo(info);
 
 TypePtr Type::follow() { return shared_from_this(); }
 
+bool Type::hasUnbounds(bool) const { return false; }
+
 std::vector<std::shared_ptr<Type>> Type::getUnbounds() const { return {}; }
 
 std::string Type::toString() const { return debugString(1); }

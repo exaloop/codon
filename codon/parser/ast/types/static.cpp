@@ -23,8 +23,6 @@ TypePtr StaticType::instantiate(int atLevel, int *unboundCount,
   return shared_from_this();
 }
 
-std::vector<TypePtr> StaticType::getUnbounds() const { return {}; }
-
 bool StaticType::canRealize() const { return true; }
 
 bool StaticType::isInstantiated() const { return true; }

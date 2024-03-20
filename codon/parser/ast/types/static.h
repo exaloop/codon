@@ -18,7 +18,6 @@ public:
   TypePtr generalize(int atLevel) override;
   TypePtr instantiate(int atLevel, int *unboundCount,
                       std::unordered_map<int, TypePtr> *cache) override;
-  std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string realizedName() const override;

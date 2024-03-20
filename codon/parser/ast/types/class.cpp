@@ -71,6 +71,16 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
   return c;
 }
 
+bool ClassType::hasUnbounds(bool includeGenerics) const {
+  for (auto &t : generics)
+    if (t.type && t.type->hasUnbounds(includeGenerics))
+      return true;
+  for (auto &t : hiddenGenerics)
+    if (t.type && t.type->hasUnbounds(includeGenerics))
+      return true;
+  return false;
+}
+
 std::vector<TypePtr> ClassType::getUnbounds() const {
   std::vector<TypePtr> u;
   for (auto &t : generics)
@@ -88,7 +98,7 @@ std::vector<TypePtr> ClassType::getUnbounds() const {
 
 bool ClassType::canRealize() const {
   if (name == "type") {
-    if (getUnbounds().empty())
+    if (!hasUnbounds())
       return true; // always true!
   }
   return std::all_of(generics.begin(), generics.end(),
@@ -204,7 +214,7 @@ std::shared_ptr<FuncType> ClassType::getPartialFunc() const {
 }
 
 std::vector<char> ClassType::getPartialMask() const {
-  seqassert(name == "Partial" && generics[0].type->canRealize(), "not a partial");
+  seqassert(name == "Partial" && generics[1].type->canRealize(), "not a partial");
   auto n = generics[1].type->getStrStatic()->value;
   std::vector<char> r(n.size(), 0);
   for (size_t i = 0; i < n.size(); i++)
@@ -212,45 +222,5 @@ std::vector<char> ClassType::getPartialMask() const {
       r[i] = 1;
   return r;
 }
-
-// int RecordType::unify(Type *typ, Unification *us) {
-//   if (auto tr = typ->getRecord()) {
-//     // Handle int <-> Int[64]
-//     if (name == "int" && tr->name == "Int")
-//       return tr->unify(this, us);
-//     if (tr->name == "int" && name == "Int") {
-//       auto t64 = std::make_shared<IntStaticType>(cache, 64);
-//       return generics[0].type->unify(t64.get(), us);
-//     }
-
-//     auto tup2Tup = startswith(name, TYPE_TUPLE) || startswith(tr->name, TYPE_TUPLE);
-//     int s1 = 2, s = 0;
-//     if (!tup2Tup) {
-//       s1 = this->ClassType::unify(tr.get(), us);
-//       if (s1 == -1)
-//         return -1;
-//     }
-//     if (args.size() != tr->args.size())
-//       return -1;
-//     for (int i = 0; i < args.size(); i++) {
-//       if ((s = args[i]->unify(tr->args[i].get(), us)) != -1)
-//         s1 += s;
-//       else
-//         return -1;
-//     }
-//     // Handle Tuple<->@tuple: when unifying tuples, only record members matter.
-//     if (tup2Tup) {
-//       if (!args.empty() || (!noTuple && !tr->noTuple)) // prevent POD<->() unification
-//         return s1 + int(name == tr->name);
-//       else
-//         return -1;
-//     }
-//     return s1;
-//   } else if (auto t = typ->getLink()) {
-//     return t->unify(this, us);
-//   } else {
-//     return -1;
-//   }
-// }
 
 } // namespace codon::ast::types

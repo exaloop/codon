@@ -62,6 +62,7 @@ public:
                       std::unordered_map<int, TypePtr> *cache) override;
 
 public:
+  bool hasUnbounds(bool = false) const override;
   std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
