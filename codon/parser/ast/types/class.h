@@ -75,9 +75,6 @@ public:
 
 public:
   std::shared_ptr<ClassType> getHeterogenousTuple() override;
-  std::shared_ptr<ClassType> getPartial() override;
-  std::shared_ptr<FuncType> getPartialFunc() const;
-  std::vector<char> getPartialMask() const;
 };
 using ClassTypePtr = std::shared_ptr<ClassType>;
 

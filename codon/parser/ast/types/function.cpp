@@ -46,8 +46,8 @@ TypePtr FuncType::generalize(int atLevel) {
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
   return std::make_shared<FuncType>(
-      std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel)), ast,
-      g, p);
+      std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel)), ast, g,
+      p);
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
@@ -71,7 +71,7 @@ bool FuncType::hasUnbounds(bool includeGenerics) const {
     if (t.type && t.type->hasUnbounds(includeGenerics))
       return true;
   if (funcParent && funcParent->hasUnbounds(includeGenerics))
-      return true;
+    return true;
   // Important: return type unbounds are not important, so skip them.
   for (auto &a : getArgTypes())
     if (a && a->hasUnbounds(includeGenerics))
@@ -174,11 +174,77 @@ std::vector<TypePtr> FuncType::getArgTypes() const {
   seqassert(startswith(tup->name, TYPE_TUPLE), "bad function def");
   std::vector<TypePtr> t;
   t.reserve(tup->generics.size());
-  for (auto &g: tup->generics)
+  for (auto &g : tup->generics)
     t.push_back(g.type);
   return t;
 }
 
 TypePtr FuncType::getRetType() const { return generics[1].type; }
+
+/*****************************************************************/
+
+PartialType::PartialType(ClassType *base, std::shared_ptr<FuncType> func)
+    : ClassType(*base), func(func) {}
+
+TypePtr PartialType::generalize(int atLevel) {
+  auto r = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
+  return std::make_shared<PartialType>(r.get(), func);
+}
+
+TypePtr PartialType::instantiate(int atLevel, int *unboundCount,
+                                 std::unordered_map<int, TypePtr> *cache) {
+  auto r = std::static_pointer_cast<ClassType>(
+      this->ClassType::instantiate(atLevel, unboundCount, cache));
+  return std::make_shared<PartialType>(r.get(), func);
+}
+
+std::shared_ptr<FuncType> PartialType::getPartialFunc() const { return func; }
+
+std::vector<char> PartialType::getPartialMask() const {
+  auto n = generics[0].type->getStrStatic()->value;
+  std::vector<char> r(n.size(), 0);
+  for (size_t i = 0; i < n.size(); i++)
+    if (n[i] == '1')
+      r[i] = 1;
+  return r;
+}
+
+std::string PartialType::debugString(char mode) const {
+  std::vector<std::string> gs;
+  for (auto &a : generics)
+    if (!a.name.empty())
+      gs.push_back(a.type->debugString(mode));
+  std::vector<std::string> as;
+  int i = 0, gi = 0;
+  auto known = generics[0].type->getStrStatic()->value;
+  for (; i < known.size(); i++)
+    if (func->ast->args[i].status == Param::Normal)
+      as.emplace_back(known[i] == '1' ? gs[gi++] : "...");
+  auto fnname = func->ast->name;
+  if (mode == 0) {
+    fnname = cache->rev(func->ast->name);
+  } else if (mode == 2) {
+    fnname = func->debugString(mode);
+  }
+  return fmt::format("{}[{}{}]", fnname, join(as, ","),
+                     mode == 2 ? fmt::format(";{}", join(gs, ",")) : "");
+}
+
+std::string PartialType::realizedName() const {
+  std::vector<std::string> gs;
+  gs.push_back(func->ast->name);
+  for (auto &a : generics)
+    if (!a.name.empty())
+      gs.push_back(a.type->realizedName());
+  std::string s = join(gs, ",");
+  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+}
+
+bool PartialType::isEmptyPartial() const {
+  auto a = generics[1].type->getClass();
+  auto ka = generics[2].type->getClass();
+  return a->generics.size() == 1 && a->generics[0].type->getClass()->generics.empty() &&
+         ka->generics[0].type->getClass()->generics.empty();
+}
 
 } // namespace codon::ast::types

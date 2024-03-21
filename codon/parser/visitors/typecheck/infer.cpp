@@ -141,11 +141,13 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         // return unify(ret, typ); // Needed for return type unification
         return ret;
       }
+    } else if (auto p = typ->getPartial()) {
+      TypePtr t = realizeType(p.get());
+      t = std::make_shared<PartialType>(t->getClass().get(), p->func);
+      return t;
     } else if (auto c = typ->getClass()) {
-      return realizeType(c.get());
-      // if (t) {
-      //   return unify(t, typ);
-      // }
+      auto t = realizeType(c.get());
+      return t;
     }
   } catch (exc::ParserException &e) {
     if (e.errorCode == Error::MAX_REALIZATION)
@@ -206,6 +208,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   if (auto r = in(ctx->cache->classes[type->name].realizations, rn)) {
     return (*r)->type->getClass();
   }
+
+  if (type->getPartial())
+    LOG("");
 
   auto realized = type->getClass();
   if (auto s = type->getStatic())
@@ -271,10 +276,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Fix for partial types
   // if (auto p = type->getPartial()) {
-  //   auto pt = std::make_shared<PartialType>(realized->getRecord(), p->func,
-  //   p->known); auto val =
-  //       std::make_shared<TypecheckItem>(pt->realizedName(), "", ctx->getModule(),
-  //       pt);
+  //   auto pt = std::make_shared<PartialType>(realized.get(), p->func);
+  //   auto val =
+  //       std::make_shared<TypecheckItem>(pt->realizedName(), "", ctx->getModule(), pt);
   //   ctx->addAlwaysVisible(val);
   //   ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
   //       ctx->cache->classes[realized->name].realizations[realized->realizedName()];
@@ -364,7 +368,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
   r->ir = oldIR;
-  for (auto &[c, _]: ast->attributes.captures) {
+  for (auto &[c, _] : ast->attributes.captures) {
     auto h = ctx->find(c);
     r->captures.push_back(h ? h->canonicalName : "");
   }
@@ -619,7 +623,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         // Thunk name: _thunk.<BASE>.<FN>.<ARGS>
         auto thunkName =
             format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
-        if (in(ctx->cache->functions, thunkName+":0"))
+        if (in(ctx->cache->functions, thunkName + ":0"))
           continue;
 
         // Thunk contents:

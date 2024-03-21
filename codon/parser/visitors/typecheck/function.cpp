@@ -442,7 +442,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Hack so that we can later use same helpers for class overloads
     ctx->cache->classes[".toplevel"].methods[stmt->name] = rootName;
   }
-  // LOG("-> {} {} {} {}", getSrcInfo(), stmt->name, rootName, canonicalName);
 
   // Ensure that functions with @C, @force_realize, and @export attributes can be
   // realized
@@ -611,8 +610,6 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
 
   // Generate partial class
   auto call = generatePartialCall(mask, fn.get());
-  transform(call);
-  seqassert(call->type->getPartial(), "expected partial type");
   return call;
 }
 

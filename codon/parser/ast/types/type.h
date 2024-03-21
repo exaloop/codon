@@ -19,8 +19,9 @@ struct TypeContext;
 namespace codon::ast::types {
 
 /// Forward declarations
-struct FuncType;
 struct ClassType;
+struct FuncType;
+struct PartialType;
 struct LinkType;
 struct StaticType;
 struct IntStaticType;
@@ -107,7 +108,7 @@ public:
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
   virtual std::shared_ptr<FuncType> getFunc() { return nullptr; }
-  virtual std::shared_ptr<ClassType> getPartial() { return nullptr; }
+  virtual std::shared_ptr<PartialType> getPartial() { return nullptr; }
   virtual std::shared_ptr<ClassType> getClass() { return nullptr; }
   virtual std::shared_ptr<LinkType> getLink() { return nullptr; }
   virtual std::shared_ptr<LinkType> getUnbound() { return nullptr; }

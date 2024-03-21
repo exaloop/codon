@@ -167,9 +167,10 @@ bool LinkType::isInstantiated() const { return kind == Link && type->isInstantia
 std::string LinkType::debugString(char mode) const {
   if (kind == Unbound || kind == Generic) {
     if (mode == 2) {
-      return fmt::format("{}{}{}{}", genericName.empty() ? "" : genericName + ":",
+      return fmt::format("{}{}{}{}{}", genericName.empty() ? "" : genericName + ":",
                          kind == Unbound ? '?' : '#', id,
-                         trait ? ":" + trait->debugString(mode) : "");
+                         trait ? ":" + trait->debugString(mode) : "",
+                         isStatic ? fmt::format(":S{}", int(isStatic)) : "");
     } else if (trait) {
       return trait->debugString(mode);
     }
@@ -197,7 +198,7 @@ std::shared_ptr<FuncType> LinkType::getFunc() {
   return kind == Link ? type->getFunc() : nullptr;
 }
 
-std::shared_ptr<ClassType> LinkType::getPartial() {
+std::shared_ptr<PartialType> LinkType::getPartial() {
   return kind == Link ? type->getPartial() : nullptr;
 }
 

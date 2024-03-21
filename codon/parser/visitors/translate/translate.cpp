@@ -71,7 +71,7 @@ ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
 
-  types::ClassType *p = nullptr;
+  types::PartialType *p = nullptr;
   if (expr->attributes) {
     if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
         expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {

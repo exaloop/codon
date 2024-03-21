@@ -43,7 +43,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       trFun = func->getClass();
       known = pt->getPartialMask();
 
-      auto knownArgTypes = pt->generics[2].type->getClass();
+      auto knownArgTypes = pt->generics[1].type->getClass();
       for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
         if (func->ast->args[i].status == Param::Generic) {
           j++;
@@ -102,7 +102,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       if (star < trInArgs->generics.size() - (kwStar < trInArgs->generics.size())) {
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
-          auto ts = tp->generics[2].type->getClass();
+          auto ts = tp->generics[1].type->getClass();
           seqassert(ts && !ts->generics.empty() &&
                         ts->generics[ts->generics.size() - 1].type->getClass(),
                     "bad partial *args/**kwargs");
@@ -124,7 +124,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         std::vector<std::string> names;
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
-          auto ts = tp->generics[3].type->getClass();
+          auto ts = tp->generics[2].type->getClass();
           seqassert(ts, "bad partial *args/**kwargs");
           const auto &ff = cache->classes[ts->name].fields;
           for (size_t i = 0; i < ff.size(); i++) {

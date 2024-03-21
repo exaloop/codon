@@ -270,13 +270,13 @@ class Partial:
     args: T  # format: (arg1, arg2, ..., (star_args...))
     kwargs: K
 
-    F: Static[str] # function
+    # Function argument is handled in Codon
     M: Static[str] # mask
     T: type # Tuple
     K: type # NamedTuple
 
     @llvm
-    def __new__(args: T, kwargs: K, F: Static[str], M: Static[str], T: type, K: type) -> Partial[F, M, T, K]:
+    def __new__(args: T, kwargs: K, M: Static[str], T: type, K: type) -> Partial[M, T, K]:
         %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1
