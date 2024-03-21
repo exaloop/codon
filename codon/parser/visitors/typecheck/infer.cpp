@@ -138,13 +138,8 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         realizeType(ret->getClass().get());
         // Needed for return type unification
         unify(f->getRetType(), ret->getClass()->generics[1].type);
-        // return unify(ret, typ); // Needed for return type unification
         return ret;
       }
-    } else if (auto p = typ->getPartial()) {
-      TypePtr t = realizeType(p.get());
-      t = std::make_shared<PartialType>(t->getClass().get(), p->func);
-      return t;
     } else if (auto c = typ->getClass()) {
       auto t = realizeType(c.get());
       return t;
@@ -209,9 +204,6 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
     return (*r)->type->getClass();
   }
 
-  if (type->getPartial())
-    LOG("");
-
   auto realized = type->getClass();
   if (auto s = type->getStatic())
     realized = ctx->getType(s->name)->getClass();
@@ -222,10 +214,13 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   }
 
   // Realize generics
-  for (auto &e : realized->generics) {
-    if (!realize(e.type))
-      return nullptr;
-  }
+  if (type->is("unrealized_type"))
+    type->generics[0].type->generalize(ctx->typecheckLevel);
+  else
+    for (auto &e : realized->generics) {
+      if (!realize(e.type))
+        return nullptr;
+    }
 
   // LOG("[realize] T {} -> {}", realized->debugString(2), realized->realizedName());
 
@@ -273,16 +268,6 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
   }
-
-  // Fix for partial types
-  // if (auto p = type->getPartial()) {
-  //   auto pt = std::make_shared<PartialType>(realized.get(), p->func);
-  //   auto val =
-  //       std::make_shared<TypecheckItem>(pt->realizedName(), "", ctx->getModule(), pt);
-  //   ctx->addAlwaysVisible(val);
-  //   ctx->cache->classes[pt->name].realizations[pt->realizedName()] =
-  //       ctx->cache->classes[realized->name].realizations[realized->realizedName()];
-  // }
 
   return realized;
 }
@@ -685,11 +670,15 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Prepare generics and statics
   std::vector<ir::types::Type *> types;
   std::vector<types::StaticTypePtr> statics;
-  for (auto &m : t->generics) {
-    if (auto s = m.type->getStatic())
-      statics.push_back(s);
-    types.push_back(forceFindIRType(m.type));
-  }
+  if (t->is("unrealized_type"))
+      types.push_back(nullptr);
+  else
+    for (auto &m : t->generics) {
+      if (auto s = m.type->getStatic())
+        statics.push_back(s);
+      else
+        types.push_back(forceFindIRType(m.type));
+    }
 
   // Get the IR type
   auto *module = ctx->cache->module;

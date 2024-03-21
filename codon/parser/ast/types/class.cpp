@@ -101,6 +101,8 @@ bool ClassType::canRealize() const {
     if (!hasUnbounds())
       return true; // always true!
   }
+  if (name == "unrealized_type")
+    return generics[0].type->getClass() != nullptr;
   return std::all_of(generics.begin(), generics.end(),
                      [](auto &t) { return !t.type || t.type->canRealize(); }) &&
          std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),

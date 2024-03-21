@@ -11,6 +11,11 @@ class type[T]:
     # __doc__
     pass
 
+@tuple
+@__internal__
+class unrealized_type[T]:
+    pass
+
 @__internal__
 class __internal__:
     pass
@@ -263,17 +268,17 @@ class NamedTuple:
         s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
         return f"({s})"
 
-
 @__internal__
 @tuple
 class Partial:
     args: T  # format: (arg1, arg2, ..., (star_args...))
     kwargs: K
 
-    # Function argument is handled in Codon
     M: Static[str] # mask
     T: type # Tuple
     K: type # NamedTuple
+    # F: type # generic function; handled specially in Codon
+    # def __new__(args: T, kwargs: K, M: Static[str], T: type, K: type, F: type) -> Partial[M, T, K, F]:
 
     @llvm
     def __new__(args: T, kwargs: K, M: Static[str], T: type, K: type) -> Partial[M, T, K]:
