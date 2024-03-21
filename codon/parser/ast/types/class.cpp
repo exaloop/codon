@@ -110,6 +110,8 @@ bool ClassType::canRealize() const {
 }
 
 bool ClassType::isInstantiated() const {
+  if (name == "unrealized_type")
+    return generics[0].type->getClass() != nullptr;
   return std::all_of(generics.begin(), generics.end(),
                      [](auto &t) { return !t.type || t.type->isInstantiated(); }) &&
          std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
@@ -129,6 +131,29 @@ std::shared_ptr<ClassType> ClassType::getHeterogenousTuple() {
 }
 
 std::string ClassType::debugString(char mode) const {
+  if (name == "Partial" && generics[3].type->getClass()) {
+    std::vector<std::string> as;
+    int i = 0, gi = 0;
+    auto known = getPartialMask();
+    auto func = getPartialFunc();
+    for (; i < known.size(); i++)
+      if (func->ast->args[i].status == Param::Normal)
+        as.emplace_back(
+            known[i]
+                ? generics[1].type->getClass()->generics[gi++].type->debugString(mode)
+                : "...");
+    auto fnname = func->ast->name;
+    if (mode == 0) {
+      fnname = cache->rev(func->ast->name);
+    } else if (mode == 2) {
+      fnname = func->debugString(mode);
+    }
+    return fmt::format("{}[{}{}]", fnname, join(as, ","),
+                       mode == 2
+                           ? fmt::format(";{};{}", generics[1].type->debugString(mode),
+                                         generics[2].type->debugString(mode))
+                           : "");
+  }
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
@@ -151,17 +176,47 @@ std::string ClassType::realizedName() const {
 
   std::string s;
   std::vector<std::string> gs;
-  for (auto &a : generics)
-    if (!a.name.empty()) {
-      if (!a.isStatic && a.type->getStatic()) {
-        gs.push_back(a.type->getStatic()->name);
-      } else {
-        gs.push_back(a.type->realizedName());
+  if (name == "Partial") {
+    gs.push_back(generics[3].type->realizedName());
+    for (size_t i = 0; i < generics.size() - 1; i++)
+      gs.push_back(generics[i].type->realizedName());
+  } else {
+    for (auto &a : generics)
+      if (!a.name.empty()) {
+        if (!a.isStatic && a.type->getStatic()) {
+          gs.push_back(a.type->getStatic()->name);
+        } else {
+          gs.push_back(a.type->realizedName());
+        }
       }
-    }
+  }
   s = join(gs, ",");
   s = fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
   return s;
+}
+
+std::shared_ptr<FuncType> ClassType::getPartialFunc() const {
+  seqassert(name == "Partial", "not a partial");
+  auto n = generics[3].type->getClass()->generics[0].type;
+  seqassert(n->getFunc(), "not a partial func");
+  return n->getFunc();
+}
+
+std::vector<char> ClassType::getPartialMask() const {
+  seqassert(name == "Partial", "not a partial");
+  auto n = generics[0].type->getStrStatic()->value;
+  std::vector<char> r(n.size(), 0);
+  for (size_t i = 0; i < n.size(); i++)
+    if (n[i] == '1')
+      r[i] = 1;
+  return r;
+}
+
+bool ClassType::isPartialEmpty() const {
+  auto a = generics[1].type->getClass();
+  auto ka = generics[2].type->getClass();
+  return a->generics.size() == 1 && a->generics[0].type->getClass()->generics.empty() &&
+         ka->generics[0].type->getClass()->generics.empty();
 }
 
 } // namespace codon::ast::types

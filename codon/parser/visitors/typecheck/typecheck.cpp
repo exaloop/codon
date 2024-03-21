@@ -580,7 +580,7 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
       expr = p;
     }
   } else if (expectedClass && expectedClass->name == "Function" && exprClass &&
-             exprClass->getPartial() && exprClass->getPartial()->isEmptyPartial()) {
+             exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
     expr = transform(N<IdExpr>(exprClass->getPartial()->getPartialFunc()->ast->name));
   } else if (allowUnwrap && exprClass && expr->type->getUnion() && expectedClass &&
              !expectedClass->getUnion()) {

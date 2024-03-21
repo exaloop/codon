@@ -1097,7 +1097,7 @@ ExprPtr TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   for (auto &a : expr->args[0].value->getCall()->args) {
     realize(a.value->type);
     fmt::print(stderr, "[static_print] {}: {} ({}){}\n", getSrcInfo(),
-              //  FormatVisitor::apply(a.value),
+               //  FormatVisitor::apply(a.value),
                a.value->type ? a.value->type->debugString(2) : "-",
                a.value->type ? a.value->type->realizedName() : "-",
                a.value->type->getStatic() ? " [static]" : "");
@@ -1347,11 +1347,17 @@ ExprPtr TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
   if (!kwargs)
     kwargs = N<CallExpr>(N<IdExpr>("NamedTuple"));
 
-  auto gfn = fn->generalize(ctx->typecheckLevel)->getFunc();
-  auto call = N<CallExpr>(N<IdExpr>("Partial"), args, kwargs, N<StringExpr>(strMask));
+  auto efn = N<IdExpr>(fn->ast->name);
+  efn->setType(
+      ctx->instantiateGeneric(ctx->getType("unrealized_type"), {fn->getFunc()}));
+  efn->setDone();
+  auto call = N<CallExpr>(N<IdExpr>("Partial"),
+                          std::vector<CallExpr::Arg>{{"args", args},
+                                                     {"kwargs", kwargs},
+                                                     {"M", N<StringExpr>(strMask)},
+                                                     {"F", efn}});
   transform(call);
   seqassert(call->type->is("Partial"), "expected partial type: {:c}", call->type);
-  call->type = std::make_shared<types::PartialType>(call->type->getClass().get(), gfn);
   return call;
 }
 

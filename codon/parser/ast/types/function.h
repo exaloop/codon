@@ -59,36 +59,4 @@ public:
 };
 using FuncTypePtr = std::shared_ptr<FuncType>;
 
-/**
- * A generic type that represents a partial Seq function instantiation.
- * It is represented by core.Partial[...].
- *
- * Note: partials only work on Seq functions. Function pointer partials
- *       will become a partials of Function.__call__ Seq function.
- */
-struct PartialType : public ClassType {
-  /// Seq function that is being partialized. Always generic (not instantiated).
-  FuncTypePtr func;
-
-public:
-  PartialType(ClassType *base, std::shared_ptr<FuncType> func);
-
-public:
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
-  std::string debugString(char mode) const override;
-  std::string realizedName() const override;
-
-  std::shared_ptr<FuncType> getPartialFunc() const;
-  std::vector<char> getPartialMask() const;
-  bool isEmptyPartial() const;
-
-public:
-  std::shared_ptr<PartialType> getPartial() override {
-    return std::static_pointer_cast<PartialType>(shared_from_this());
-  }
-};
-using PartialTypePtr = std::shared_ptr<PartialType>;
-
 } // namespace codon::ast::types

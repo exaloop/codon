@@ -71,10 +71,16 @@ public:
   std::shared_ptr<ClassType> getClass() override {
     return std::static_pointer_cast<ClassType>(shared_from_this());
   }
+  std::shared_ptr<ClassType> getPartial() override {
+    return name == "Partial" ? getClass() : nullptr;
+  }
   bool isRecord() const { return isTuple; }
 
 public:
   std::shared_ptr<ClassType> getHeterogenousTuple() override;
+  std::shared_ptr<FuncType> getPartialFunc() const;
+  std::vector<char> getPartialMask() const;
+  bool isPartialEmpty() const;
 };
 using ClassTypePtr = std::shared_ptr<ClassType>;
 

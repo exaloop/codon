@@ -277,11 +277,10 @@ class Partial:
     M: Static[str] # mask
     T: type # Tuple
     K: type # NamedTuple
-    # F: type # generic function; handled specially in Codon
-    # def __new__(args: T, kwargs: K, M: Static[str], T: type, K: type, F: type) -> Partial[M, T, K, F]:
+    F: type # must be unrealized_type
 
     @llvm
-    def __new__(args: T, kwargs: K, M: Static[str], T: type, K: type) -> Partial[M, T, K]:
+    def __new__(args: T, kwargs: K, M: Static[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
         %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1

@@ -198,7 +198,7 @@ std::shared_ptr<FuncType> LinkType::getFunc() {
   return kind == Link ? type->getFunc() : nullptr;
 }
 
-std::shared_ptr<PartialType> LinkType::getPartial() {
+std::shared_ptr<ClassType> LinkType::getPartial() {
   return kind == Link ? type->getPartial() : nullptr;
 }
 
