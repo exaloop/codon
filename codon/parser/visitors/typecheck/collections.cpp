@@ -224,6 +224,9 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       // Rule: T derives from Optional[T]
       return ctx->instantiateGeneric(ctx->getType("Optional"), {collectionCls})
           ->getClass();
+    } else if (collectionCls->name == TYPE_OPTIONAL && ti->name != TYPE_OPTIONAL) {
+      return ctx->instantiateGeneric(ctx->getType("Optional"), {ti})
+          ->getClass();
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
       // Rule: anything derives from pyobj
       return ti;

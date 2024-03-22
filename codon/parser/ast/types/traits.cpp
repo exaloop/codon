@@ -98,7 +98,6 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (auto pf = trFun->getFunc()) {
       // Make sure to set types of *args/**kwargs so that the function that
       // is being unified with Callable[] can be realized
-
       if (star < trInArgs->generics.size() - (kwStar < trInArgs->generics.size())) {
         std::vector<TypePtr> starArgTypes;
         if (auto tp = tr->getPartial()) {
@@ -115,33 +114,25 @@ int CallableTrait::unify(Type *typ, Unification *us) {
 
         auto tv = TypecheckVisitor(cache->typeCtx);
         auto name = tv.generateTuple(starArgTypes.size());
-        auto t = cache->typeCtx->forceFind(name)->type;
+        auto t = cache->typeCtx->getType(name);
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
         if (t->unify(trInArgs->generics[star].type.get(), us) == -1)
           return -1;
       }
       if (kwStar < trInArgs->generics.size()) {
-        std::vector<std::string> names;
-        std::vector<TypePtr> starArgTypes;
+        TypePtr tt = cache->typeCtx->getType(TypecheckVisitor(cache->typeCtx).generateTuple(0));
+        size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
-          seqassert(ts, "bad partial *args/**kwargs");
-          const auto &ff = cache->classes[ts->name].fields;
-          for (size_t i = 0; i < ff.size(); i++) {
-            names.emplace_back(ff[i].name);
-            starArgTypes.emplace_back(ts->generics[i].type);
-          }
+          seqassert(ts && ts->is("NamedTuple"), "bad partial *args/**kwargs");
+          id = ts->generics[0].type->getIntStatic()->value;
+          tt = ts->generics[1].type;
         }
-        auto tv = TypecheckVisitor(cache->typeCtx);
-        auto name = tv.generateTuple(starArgTypes.size());
-        auto t = cache->typeCtx->forceFind(name)->type;
-        t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
-        auto id = tv.generateKwId(names);
-        auto kt = cache->typeCtx->forceFind("NamedTuple")->type;
-        kt = cache->typeCtx
-                 ->instantiateGeneric(kt,
-                                      {t, std::make_shared<IntStaticType>(cache, id)})
-                 ->getClass();
+        auto kt =
+            cache->typeCtx
+                ->instantiateGeneric(cache->typeCtx->getType("NamedTuple"),
+                                     {std::make_shared<IntStaticType>(cache, id), tt})
+                ->getClass();
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }

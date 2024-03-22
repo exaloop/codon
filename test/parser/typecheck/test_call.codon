@@ -695,6 +695,13 @@ print(sorted(foo, key=str))
 print(sorted(foo, key=A))
 #: [30, 1, 11, 2]
 
+@tuple
+class AT:
+    s: str
+    def __new__(i: int) -> AT: return AT(str(i))
+print(sorted(foo, key=AT))
+#: [1, 11, 2, 30]
+
 #%% polymorphism,barebones
 class A:
     a: int
