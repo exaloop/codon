@@ -85,7 +85,7 @@ class List:
                 other.append(self._get(i))
             return other
 
-    def __setitem__(self, s: Slice, other):
+    def __setitem__(self, s: Slice, other: List[T]):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
             for a in other:

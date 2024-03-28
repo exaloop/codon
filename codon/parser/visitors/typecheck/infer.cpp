@@ -94,8 +94,11 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
       // their default values and then run another round to see if anything changed.
       bool anotherRound = false;
       // Special case: return type might have default as well (e.g., Union)
-      if (ctx->getBase()->returnType)
-        ctx->pendingDefaults.insert(ctx->getBase()->returnType);
+      if (auto t = ctx->getBase()->returnType) {
+        // if (t->getUnbound() && !t->getUnbound()->defaultType)
+        //   t->getUnbound()->defaultType = ctx->getType("NoneType");
+        ctx->pendingDefaults.insert(t);
+      }
       for (auto &unbound : ctx->pendingDefaults) {
         if (auto tu = unbound->getUnion()) {
           // Seal all dynamic unions after the iteration is over
@@ -164,11 +167,12 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         auto name = f->ast->name;
         std::string name_args;
         if (startswith(name, "%_import_")) {
-          name = name.substr(9);
-          auto p = name.rfind('_');
-          if (p != std::string::npos)
-            name = name.substr(0, p);
-          name = "<import " + name + ">";
+          for (auto &[_, i]: ctx->cache->imports)
+            if (i.importVar + ".0:0" == name) {
+              name = i.name;
+              break;
+            }
+          name = fmt::format("<import {}>", name);
         } else {
           name = ctx->cache->rev(f->ast->name);
           name_args = fmt::format("({})", fmt::join(args, ", "));
@@ -219,6 +223,8 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   else
     for (auto &e : realized->generics) {
       if (!realize(e.type))
+        return nullptr;
+      if (e.type->getFunc() && !e.type->getFunc()->getRetType()->canRealize())
         return nullptr;
     }
 
@@ -286,8 +292,10 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       //     break;
       //   }
       // }
-      if (ok)
-        return (*r)->type;
+      if (ok) {
+        auto ret = (*r)->type;
+        return ret; // make sure that the return is realized (nested recursions)
+      }
     }
   }
 
@@ -301,14 +309,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
-  if (!startswith(type->ast->name, "%_import_")) {
+  bool isImport = startswith(type->ast->name, "%_import_");
+  if (!isImport) {
     getLogger().level++;
     ctx->addBlock();
     ctx->typecheckLevel++;
-  }
-
-  // Find function parents
-  if (!startswith(type->ast->name, "%_import_")) {
     ctx->bases.push_back({type->ast->name, type->getFunc(), type->getRetType()});
     // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}",
     //     type->ast->name, type->realizedName(), ctx->getRealizationStackName(),
@@ -342,7 +347,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
       trimStars(varName);
       auto v = ctx->addVar(ctx->cache->rev(varName), varName,
                            std::make_shared<LinkType>(type->getArgTypes()[j++]));
-      // LOG("[param] {} -> {}", v->canonicalName, v->type);
+      // LOG("[param] {}| {}: {} -> {}", type->debugString(2), ctx->cache->rev(varName), v->canonicalName, v->type);
     }
 
   // Populate realization table in advance to support recursive realizations
@@ -394,19 +399,18 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     } else {
       ctx->getBase()->suite = ret;
     }
-
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->ret && type->getRetType()->getUnbound()) {
       unify(type->getRetType(), ctx->getType("NoneType"));
     }
-    // LOG("-> {} {}", key, ret->toString(2));
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
   seqassert(ret, "cannot realize return type '{}'", type->getRetType());
 
-  // LOG("[realize] F {} -> {}", type->ast->name, type->debugString(2));
+  // LOG("[realize] F {} -> {} => {}", type->ast->name, type->debugString(2),
+  // ctx->getBase()->suite ? ctx->getBase()->suite->toString(2) : "-");
 
   std::vector<Param> args;
   for (auto &i : ast->args) {

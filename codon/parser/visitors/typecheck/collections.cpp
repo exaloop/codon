@@ -104,6 +104,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     auto suite = expr->getFinalSuite();
     auto noOptStmt =
         N<SuiteStmt>(N<AssignStmt>(clone(var), N<CallExpr>(N<IdExpr>("List"))), suite);
+
     if (canOptimize) {
       auto optimizeVar = ctx->cache->getTemporaryVar("i");
       auto origIter = expr->getFinalSuite()->getFor()->iter;

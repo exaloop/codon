@@ -418,7 +418,7 @@ class timedelta:
     _microseconds: int
 
     def _new(microseconds: int) -> timedelta:
-        return (microseconds,)
+        return timedelta(microseconds)
 
     @inline
     def _accum(sofar: int, leftover: float, num: int, factor: int) -> Tuple[int, float]:
@@ -475,7 +475,7 @@ class timedelta:
                 whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
             us += int(whole_us)
 
-        return (us,)
+        return timedelta(us)
 
     @property
     def days(self) -> int:
@@ -772,7 +772,7 @@ class time:
     ) -> time:
         _check_time_args(hour, minute, second, microsecond)
         v = (hour << 40) | (minute << 32) | (second << 24) | microsecond
-        return (v,)
+        return superf(v)
 
     @property
     def hour(self) -> int:

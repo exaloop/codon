@@ -62,9 +62,9 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   if (!ctx->isStdlibLoading && !importVar.empty()) {
     auto u = N<AssignStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true));
     u->setUpdate();
-    resultStmt =
-        N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
-                  N<SuiteStmt>(u, N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar)))));
+    resultStmt = N<IfStmt>(
+        N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
+        N<SuiteStmt>(u, N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar + ".0")))));
   }
 
   // Import requested identifiers from the import's scope to the current scope
@@ -343,8 +343,10 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     return suite;
   } else {
     // Generate import identifier
+    auto moduleID = file.module;
+    std::replace(moduleID.begin(), moduleID.end(), '.', '_');
     std::string importVar = import->second.importVar =
-        ctx->cache->getTemporaryVar(format("import_{}", file.module));
+        ctx->cache->getTemporaryVar(format("import_{}", moduleID));
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
@@ -369,16 +371,6 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     tv.realize(ictx->forceFind(importVar)->type);
     preamble->push_back(fn);
     // LOG_USER("[import] done importing {}", file.module);
-    // return fn;
-    // LOG("--- {}", importVar);
-    // ictx->dump();
-    // auto baseType = getFuncTypeBase(0);
-    // auto funcTyp = std::make_shared<types::FuncType>(
-    //     baseType, ctx->cache->functions[importVar].ast.get());
-    // funcTyp->setSrcInfo(getSrcInfo());
-    // ctx->cache->functions[importVar].type = funcTyp;
-    // ctx->addFunc(importVar, importVar, funcTyp, getSrcInfo());
-    // ctx->cache->overloads[importVar].push_back(importVar);
   }
   return nullptr;
 }

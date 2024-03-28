@@ -595,7 +595,7 @@ def test_sequence_ops():
 test_sequence_ops()
 
 
-class C:
+class C2:
     foo: int
 
     def __init__(self, foo):
@@ -612,7 +612,7 @@ def test_getter_ops():
     operator.methodcaller('append', 'goodbye')(v)
     assert v == ['a', 'hello', 'goodbye']
 
-    c = C(10)
+    c = C2(10)
     assert operator.attrgetter('foo')(c) == 10
     assert operator.methodcaller('bar', 9, n=7, m=3)(c) == 7319
 

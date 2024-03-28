@@ -192,6 +192,11 @@ rec3(1, 's')
 #! during the realization of rec3(x: int, y: str)
 
 #%% optionals,barebones
+y = None
+print y  #: None
+y = 5
+print y  #: 5
+
 def foo(x: optional[int], y: int):
     print 'foo', x, y
 foo(y, 6)  #: foo 5 6
@@ -270,7 +275,7 @@ print h(list(map(lambda i: i-1, map(lambda i: i+2, range(5)))))
 #%% func_unify_error,barebones
 def foo(x:int):
     print x
-z = 1 & foo #! unsupported operand type(s) for &: 'int' and 'foo[int]'
+z = 1 & foo #! unsupported operand type(s) for &: '1' and 'foo[int]'
 
 #%% tuple_type_late,barebones
 coords = []
@@ -299,7 +304,7 @@ test(Int[5](1)) #! 'Int[5]' does not match expected type 'Int[32]'
 zi = Int[32](6)
 def test3[N](i: Int[N]):
     print int(i)
-test3(zi) #! 'N' does not match expected type 'N'
+test3(zi) #! expected type expression
 # TODO: nicer error message!
 
 #%% static_fail_3,barebones

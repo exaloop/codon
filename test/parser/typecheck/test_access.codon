@@ -433,6 +433,10 @@ def foo(x, y):
 foo('hooooooooy!', 1, 2)
 #! no function 'foo' with arguments (str, int, int)
 
+#%% fn_overloads_dispatch
+import math
+print(math.sqrt(4.0))  #: 2
+
 #%% generator_capture_nonglobal,barebones
 # Issue #49
 def foo(iter):

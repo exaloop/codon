@@ -152,7 +152,9 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
                                                bool includeBase, bool noSuffix) const {
   std::string newName = name;
   bool alreadyGenerated = name.find('.') != std::string::npos;
-  alreadyGenerated |= !name.empty() && name[0] == '%';
+  if (alreadyGenerated)
+    return name;
+  includeBase &= !(!name.empty() && name[0] == '%');
   if (includeBase && !alreadyGenerated) {
     std::string base = getBaseName();
     if (base.empty())
@@ -238,8 +240,9 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
-      if (l->defaultType)
+      if (l->defaultType) {
         pendingDefaults.insert(i.second);
+      }
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {

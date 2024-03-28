@@ -247,12 +247,8 @@ class NamedTuple:
     N: Static[int]  # name cache ID
     T: type
 
-    # todo)) nicer way to express type(())
-    def __new__(args: T = (), T: type) -> NamedTuple[0, T]:
-        return NamedTuple[0, T](())
-
     @llvm
-    def __new__(args: T, N: Static[int], T: type) -> NamedTuple[N, T]:
+    def __new__(args: T = (), N: Static[int] = 0, T: type) -> NamedTuple[N, T]:
         %0 = insertvalue { {=T} } undef, {=T} %args, 0
         ret { {=T} } %0
 

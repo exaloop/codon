@@ -207,8 +207,9 @@ ExprPtr TypecheckVisitor::transform(ExprPtr &expr, bool allowTypes) {
     //   if (auto u = expr->type->getStatic())
     //     expr->type = ctx->getType(StaticType::getTypeName(u));
     // }
-    if (expr->done)
+    if (expr->done) {
       ctx->changedNodes++;
+    }
   }
   realize(typ);
   LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), expr, expr->isDone() ? "[done]" : "");

@@ -85,7 +85,13 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   }
 
   // Transform and expand arguments. Return early if it cannot be done yet
-  if (!transformCallArgs(expr->args))
+  ctx->addBlock();
+  if (expr->expr->type)
+    if (auto f = expr->expr->type->getFunc())
+      addFunctionGenerics(f.get());
+  auto a = transformCallArgs(expr->args);
+  ctx->popBlock();
+  if (!a)
     return;
 
   // Check if this call is partial call
@@ -296,7 +302,7 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
   auto calleeFn = callee->getFunc();
   if (auto partType = callee->getPartial()) {
     auto mask = partType->getPartialMask();
-    auto func = partType->getPartialFunc();
+    auto func = ctx->instantiate(partType->getPartialFunc()->generalize(0))->getFunc();
 
     // Case: calling partial object `p`. Transform roughly to
     // `part = callee; partial_fn(*part.args, args...)`
@@ -312,9 +318,8 @@ std::pair<FuncTypePtr, ExprPtr> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     auto knownArgTypes = partType->generics[1].type->getClass();
     for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
       if (func->ast->args[i].status == Param::Generic) {
-        if (mask[i])
-          unify(calleeFn->funcGenerics[j].type,
-                ctx->instantiate(func->funcGenerics[j].type));
+        unify(calleeFn->funcGenerics[j].type,
+              ctx->instantiate(func->funcGenerics[j].type));
         j++;
       } else if (mask[i]) {
         unify(calleeFn->getArgTypes()[i - j], knownArgTypes->generics[k].type);
@@ -435,8 +440,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
             E(Error::CALL_RECURSIVE_DEFAULT, expr,
               ctx->cache->rev(calleeFn->ast->args[si].name));
           ctx->defaultCallDepth.insert(es);
-          args.emplace_back(
-              realName, transform(clean_clone(calleeFn->ast->args[si].defaultValue)));
+          auto def = transform(clean_clone(calleeFn->ast->args[si].defaultValue));
+          args.emplace_back(realName, def);
           ctx->defaultCallDepth.erase(es);
         }
       } else {
@@ -567,8 +572,9 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
       replacements.push_back(args[si].value->type);
     } else {
       if (calleeFn->ast->args[i].type && !calleeFn->getArgTypes()[si]->canRealize()) {
-        auto t =
-            ctx->getType(transform(clean_clone(calleeFn->ast->args[i].type))->type);
+        auto t = ctx->instantiate(ctx->getType(calleeFn->ast->args[i].type->type)->generalize(0));
+        // calleeFn->ast->args[i].type->
+        //     ctx->getType(transform(clean_clone(calleeFn->ast->args[i].type))->type);
         unify(calleeFn->getArgTypes()[si], t);
       }
       if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {
@@ -603,7 +609,7 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
         addFunctionGenerics(calleeFn->getFunc().get());
         auto def = transform(clone(calleeFn->ast->args[i].defaultValue));
         ctx->popBlock();
-        unify(calleeFn->funcGenerics[j].type, def->getType());
+        unify(calleeFn->funcGenerics[j].type, ctx->getType(def->type));
       }
       j++;
     }
@@ -1304,7 +1310,6 @@ void TypecheckVisitor::addFunctionGenerics(const FuncType *t) {
         c = ctx->instantiateGeneric(ctx->getType("type"), {c});
       v = ctx->addType(ctx->cache->rev(g.name), g.name, c);
     }
-    // LOG("=[inst]=> {}: {} {}", t->debugString(2), g.name, v->type);
     ctx->add(g.name, v);
   };
   for (auto parent = t->funcParent; parent;) {

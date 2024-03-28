@@ -197,6 +197,10 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
         bool isOverload = val && val->isFunc() &&
                           in(ctx->cache->overloads, val->canonicalName) &&
                           ctx->cache->overloads[val->canonicalName].size() > 1;
+        if (isOverload && importEnd == i) { // top-level overload
+          itemName = val->canonicalName, itemEnd = i + 1;
+          break;
+        }
         if (val && !isOverload &&
             (importName.empty() || val->isType() || !val->isConditional())) {
           itemName = val->canonicalName, itemEnd = i + 1;
@@ -334,8 +338,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
 
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
-  if (expr->expr->type->getFunc() && expr->member == "__name__") {
-    return transform(N<StringExpr>(expr->expr->type->prettyString()));
+  if (ctx->getType(expr->expr->type)->getFunc() && expr->member == "__name__") {
+    return transform(N<StringExpr>(ctx->getType(expr->expr->type)->prettyString()));
   }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
   if (expr->member == "__llvm_name__") {
@@ -487,14 +491,14 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
       break;
     }
   if (generic) {
-    unify(expr->type, generic->type);
-    if (realize(expr->type)) {
-      if (!generic->isStatic) {
-        return transform(N<IdExpr>(generic->type->realizedName()));
-      } else {
-        expr->type = nullptr; // to prevent unify(T, Static[T]) error
+    if (generic->isStatic) {
+      unify(expr->type, generic->type);
+      if (realize(expr->type))
         return transform(generic->type->getStatic()->getStaticExpr());
-      }
+    } else {
+      unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {generic->type}));
+      if (realize(expr->type))
+        return transform(N<IdExpr>(generic->type->realizedName()));
     }
     return nullptr;
   }
@@ -619,7 +623,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     // If overload is ambiguous, route through a dispatch function
     std::string name;
     if (auto dot = expr->getDot()) {
-      auto methods = ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
+      auto methods =
+          ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
       seqassert(!methods.empty(), "unknown method");
       name = ctx->cache->functions[methods.back()->ast->name].rootName;
     } else {
@@ -633,9 +638,9 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (methodArgs) {
     std::vector<std::string> a;
     for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("{}",
-      t.value->type->getStatic() ? t.value->type->getClass()->name :
-      t.value->type->prettyString()));
+      a.emplace_back(fmt::format("{}", t.value->type->getStatic()
+                                           ? t.value->type->getClass()->name
+                                           : t.value->type->prettyString()));
     argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
 

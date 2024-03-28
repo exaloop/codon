@@ -1,4 +1,5 @@
-FROM quay.io/pypa/manylinux2014_x86_64
+# FROM quay.io/pypa/manylinux2014_x86_64
+FROM quay.io/pypa/manylinux2014_aarch64
 
 RUN yum -y update
 RUN yum -y install devtoolset-7 ninja-build cmake3 bzip2-devel
@@ -8,7 +9,7 @@ RUN python3 -m pip install --upgrade twine setuptools wheel
 RUN mkdir -p /opt/llvm-codon
 RUN git clone --depth 1 -b codon https://github.com/exaloop/llvm-project /github/llvm-src
 RUN scl enable devtoolset-7 -- \
-    cmake3 -S /github/llvm-src/llvm -G Ninja \
+    cmake -S /github/llvm-src/llvm -G Ninja \
            -B /github/llvm-src/llvm/build \
            -DCMAKE_BUILD_TYPE=Release \
            -DLLVM_INCLUDE_TESTS=OFF \

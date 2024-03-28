@@ -168,53 +168,58 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
 
   if (isClassMember) {
-   // Set the enclosing class name
-   stmt->attributes.parentClass = ctx->getBase()->name;
-   // Add the method to the class' method list
-   ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
+    // Set the enclosing class name
+    stmt->attributes.parentClass = ctx->getBase()->name;
+    // Add the method to the class' method list
+    ctx->cache->classes[ctx->getBase()->name].methods[stmt->name] = rootName;
   } else {
-   // Ensure that function binding does not shadow anything.
-   // Function bindings cannot be dominated either
-   auto funcVal = ctx->find(stmt->name);
-   //  if (funcVal && !funcVal->canShadow)
-   // E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
+    // Ensure that function binding does not shadow anything.
+    // Function bindings cannot be dominated either
+    auto funcVal = ctx->find(stmt->name);
+    //  if (funcVal && !funcVal->canShadow)
+    // E(Error::CLASS_INVALID_BIND, stmt, stmt->name);
   }
 
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
   std::map<std::string, TypeContext::Item> captures;
   for (auto &[c, t] : stmt->attributes.captures) {
-   if (auto v = ctx->find(c)) {
-      if (t != Attr::CaptureType::Global && !v->isGlobal() && !v->isGeneric()) {
-        captures[c] = v;
+    if (auto v = ctx->find(c)) {
+      if (t != Attr::CaptureType::Global && !v->isGlobal()) {
+        bool parentClassGeneric =
+            ctx->bases.back().isType() && ctx->bases.back().name == v->getBaseName();
+        if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
+          captures[c] = v;
+        }
       }
-   }
+    }
   }
   std::vector<CallExpr::Arg> partialArgs;
   if (!captures.empty()) {
-   std::vector<std::string> itemKeys;
-   itemKeys.reserve(captures.size());
-   for (const auto &[key, _] : captures)
-     itemKeys.emplace_back(key);
+    std::vector<std::string> itemKeys;
+    itemKeys.reserve(captures.size());
+    for (const auto &[key, _] : captures)
+      itemKeys.emplace_back(key);
 
-   Param kw;
-   if (!stmt->args.empty() && startswith(stmt->args.back().name, "**")) {
+    Param kw;
+    if (!stmt->args.empty() && startswith(stmt->args.back().name, "**")) {
       kw = stmt->args.back();
       stmt->args.pop_back();
-   }
-   for (auto &[c, v] : captures) {
-     if (v->isType())
-       stmt->args.emplace_back(c, N<IdExpr>("type"));
-     else if (auto si = v->isStatic())
-       stmt->args.emplace_back(
-           c, N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(si == 1 ? "int" : "string")));
-     else
-       stmt->args.emplace_back(c);
-     partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
-   }
-   if (!kw.name.empty())
+    }
+    std::array<const char*, 4> op {"", "int", "str", "bool"};
+    for (auto &[c, v] : captures) {
+      if (v->isType())
+        stmt->args.emplace_back(c, N<IdExpr>("type"));
+      else if (auto si = v->isStatic())
+        stmt->args.emplace_back(c, N<IndexExpr>(N<IdExpr>("Static"),
+                                                N<IdExpr>(op[si])));
+      else
+        stmt->args.emplace_back(c);
+      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+    }
+    if (!kw.name.empty())
       stmt->args.push_back(kw);
-   partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+    partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   }
 
   std::vector<Param> args;
@@ -271,7 +276,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           generic->isStatic = st;
           if (a.defaultValue) {
             auto defType = transform(clone(a.defaultValue));
-            generic->defaultType = defType->type;
+            generic->defaultType = getType(defType);
           }
         } else {
           auto val = ctx->addType(varName, name, generic);

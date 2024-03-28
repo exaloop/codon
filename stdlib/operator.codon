@@ -175,7 +175,6 @@ def attrgetter(attr: Static[str]):
         return getattr(obj, attr)
     return getter
 
-@overload
 def itemgetter(*items):
     if staticlen(items) == 1:
         item = items[0]

@@ -401,3 +401,15 @@ iter(range(4)) |> print('x', ..., 1)
 #: x 1 1
 #: x 2 1
 #: x 3 1
+
+#%% partial_static_keep,barebones
+def foo(x: Static[int]):
+    return lambda: str(x)
+f = foo(5)
+print foo(5)() #: 5
+print foo(8)() #: 8
+
+def itemgetter(item: Static[int]):
+    return lambda o: o[item]
+print itemgetter(1)([1, 2, 3])  #: 2
+print itemgetter(2)("abc")  #: c

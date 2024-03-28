@@ -209,8 +209,11 @@ void ScopingVisitor::transformAdding(ExprPtr &e, std::shared_ptr<SrcObject> root
 void ScopingVisitor::visit(IdExpr *expr) {
   if (ctx->adding && ctx->tempScope)
     ctx->renames.back()[expr->value] = ctx->cache->getTemporaryVar(expr->value);
-  if (auto i = in(ctx->renames.back(), expr->value))
-    expr->value = *i;
+  for (size_t i = ctx->renames.size(); i-- > 0; )
+    if (auto v = in(ctx->renames[i], expr->value)) {
+      expr->value = *v;
+      break;
+    }
 
   visitName(expr->value, ctx->adding, ctx->root, expr->getSrcInfo());
 }
@@ -558,8 +561,10 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   c->scope.emplace_back(0);
   v.ctx = c;
   v.visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
-  for (auto &a : stmt->args)
+  for (auto &a : stmt->args) {
     v.visitName(a.name, true, stmt->shared_from_this(), a.getSrcInfo());
+    if (a.defaultValue) transform(a.defaultValue);
+  }
   c->scope.pop_back();
   v.transformBlock(stmt->suite);
 

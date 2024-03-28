@@ -110,7 +110,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         generic->getLink()->genericName = genName;
         if (a.defaultValue) {
           auto defType = transformType(clone(a.defaultValue));
-          generic->defaultType = defType->type;
+          generic->defaultType = getType(defType);
         }
         if (auto ti = CAST(a.type, InstantiateExpr)) {
           // Parse TraitVar
