@@ -372,7 +372,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       transformType(expr->typeParams[i]);
       auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                                 getType(expr->typeParams[i]));
-      if (expr->typeParams[i]->type->isStaticType() !=
+      if (isUnion || expr->typeParams[i]->type->isStaticType() !=
           generics[i].type->isStaticType()) {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);

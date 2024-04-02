@@ -25,6 +25,15 @@ int ClassType::unify(Type *typ, Unification *us) {
       auto t64 = std::make_shared<IntStaticType>(cache, 64);
       return generics[0].type->unify(t64.get(), us);
     }
+    if (name == "unrealized_type" && tc->name == name) {
+      // instantiate + unify!
+      std::unordered_map<int, types::TypePtr> genericCache;
+      auto l = generics[0].type->instantiate(0, &(cache->unboundCount), &genericCache);
+      genericCache.clear();
+      auto r =
+          tc->generics[0].type->instantiate(0, &(cache->unboundCount), &genericCache);
+      return l->unify(r.get(), us);
+    }
     // Check names.
     if (name != tc->name)
       return -1;

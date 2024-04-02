@@ -206,13 +206,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       kw = stmt->args.back();
       stmt->args.pop_back();
     }
-    std::array<const char*, 4> op {"", "int", "str", "bool"};
+    std::array<const char *, 4> op{"", "int", "str", "bool"};
     for (auto &[c, v] : captures) {
       if (v->isType())
         stmt->args.emplace_back(c, N<IdExpr>("type"));
       else if (auto si = v->isStatic())
-        stmt->args.emplace_back(c, N<IndexExpr>(N<IdExpr>("Static"),
-                                                N<IdExpr>(op[si])));
+        stmt->args.emplace_back(c,
+                                N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(op[si])));
       else
         stmt->args.emplace_back(c);
       partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
@@ -279,6 +279,15 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             generic->defaultType = getType(defType);
           }
         } else {
+          if (auto ti = CAST(a.type, InstantiateExpr)) {
+            // Parse TraitVar
+            seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
+            auto l = transformType(ti->typeParams[0])->type;
+            if (l->getLink() && l->getLink()->trait)
+              generic->getLink()->trait = l->getLink()->trait;
+            else
+              generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
+          }
           auto val = ctx->addType(varName, name, generic);
           val->generic = true;
           if (a.defaultValue) {
@@ -327,7 +336,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Parse arguments to the context. Needs to be done after adding generics
     // to support cases like `foo(a: T, T: type)`
     for (auto &a : args) {
+      // if (a.status == Param::Normal || a.type->is ) // todo)) makes typevar work! need to check why...
       a.type = transformType(a.type, false);
+      // if (a.type && a.type->type->getLink() && a.type->type->getLink()->trait)
+      //   LOG("-> {:c}", a.type->type->getLink()->trait);
       a.defaultValue = transform(a.defaultValue, true);
     }
 
@@ -413,7 +425,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   f->setDone();
 
   // Construct the type
-  // g = ctx->instantiateGeneric(ctx->getType("type"), {g});
   auto funcTyp = std::make_shared<types::FuncType>(
       baseType, ctx->cache->functions[canonicalName].ast.get(), explicits);
   funcTyp->setSrcInfo(getSrcInfo());
@@ -423,6 +434,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   ctx->cache->functions[canonicalName].type = funcTyp;
+  // LOG("-> {:c}", funcTyp);
 
   ctx->addFunc(stmt->name, rootName, funcTyp);
   ctx->addFunc(canonicalName, canonicalName, funcTyp);

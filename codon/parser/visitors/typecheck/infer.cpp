@@ -194,13 +194,16 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   if (!type || !type->canRealize())
     return nullptr;
   // type->_rn = type->ClassType::realizedName();
-
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
   for (auto &field : ctx->cache->classes[type->name].fields) {
     if (!field.type)
       return nullptr;
   }
+
+  // generalize generics to ensure that they do not get unified later!
+  if (type->is("unrealized_type"))
+    type->generics[0].type = type->generics[0].type->generalize(0);
 
   // Check if the type was already realized
   auto rn = type->ClassType::realizedName();
@@ -218,9 +221,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   }
 
   // Realize generics
-  if (type->is("unrealized_type"))
-    type->generics[0].type->generalize(ctx->typecheckLevel);
-  else
+  if (!type->is("unrealized_type"))
     for (auto &e : realized->generics) {
       if (!realize(e.type))
         return nullptr;

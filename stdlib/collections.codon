@@ -362,17 +362,17 @@ class defaultdict(Static[Dict[K,V]]):
     V: type
     S: TypeVar[Callable[[], V]]
 
-    # def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V]):
-    #     super().__init__()
-    #     self.default_factory = lambda: VV()
+    def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V]):
+        super().__init__()
+        self.default_factory = lambda: VV()
 
     def __init__(self, f: S):
         super().__init__()
         self.default_factory = f
 
-    # def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V], other: Dict[K, V]):
-    #     super().__init__(other)
-    #     self.default_factory = lambda: VV()
+    def __init__(self: defaultdict[K, VV, Function[[], V]], VV: TypeVar[V], other: Dict[K, V]):
+        super().__init__(other)
+        self.default_factory = lambda: VV()
 
     def __init__(self, f: S, other: Dict[K, V]):
         super().__init__(other)

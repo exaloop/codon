@@ -90,6 +90,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     if (auto f = expr->expr->type->getFunc())
       addFunctionGenerics(f.get());
   auto a = transformCallArgs(expr->args);
+
   ctx->popBlock();
   if (!a)
     return;
@@ -162,7 +163,6 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     newArgs.push_back(part.args);
     auto partialCall = generatePartialCall(part.known, calleeFn->getFunc().get(),
                                            N<TupleExpr>(newArgs), part.kwArgs);
-
     std::string var = ctx->cache->getTemporaryVar("part");
     ExprPtr call = nullptr;
     if (!part.var.empty()) {
@@ -541,40 +541,40 @@ bool TypecheckVisitor::typecheckCallArgs(const FuncTypePtr &calleeFn,
     if (calleeFn->ast->args[i].status == Param::Generic)
       continue;
 
-    if (startswith(calleeFn->ast->args[i].name, "*") && calleeFn->ast->args[i].type &&
-        args[si].value->getCall()) {
+    if (startswith(calleeFn->ast->args[i].name, "*") && calleeFn->ast->args[i].type) {
       // Special case: `*args: type` and `**kwargs: type`
-      auto typ = ctx->getType(transform(clone(calleeFn->ast->args[i].type))->type);
-      auto callExpr = args[si].value;
-      if (startswith(calleeFn->ast->args[i].name, "**"))
-        callExpr = args[si].value->getCall()->args[0].value;
-      for (auto &ca : callExpr->getCall()->args) {
-        if (wrapExpr(ca.value, typ, calleeFn)) {
-          unify(ca.value->type, typ);
+      if (args[si].value->getCall()) {
+        auto typ = ctx->getType(transform(clone(calleeFn->ast->args[i].type))->type);
+        auto callExpr = args[si].value;
+        if (startswith(calleeFn->ast->args[i].name, "**"))
+          callExpr = args[si].value->getCall()->args[0].value;
+        for (auto &ca : callExpr->getCall()->args) {
+          if (wrapExpr(ca.value, typ, calleeFn)) {
+            unify(ca.value->type, typ);
+          } else {
+            wrappingDone = false;
+          }
+        }
+        auto name = callExpr->type->getClass()->name;
+        auto tup = transform(N<CallExpr>(N<IdExpr>(name), callExpr->getCall()->args));
+        if (startswith(calleeFn->ast->args[i].name, "**")) {
+          args[si].value =
+              transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("NamedTuple"), "__new__"), tup,
+                                    N<IntExpr>(args[si]
+                                                   .value->type->getClass()
+                                                   ->generics[0]
+                                                   .type->getIntStatic()
+                                                   ->value)));
         } else {
-          wrappingDone = false;
+          args[si].value = tup;
         }
       }
-      auto name = callExpr->type->getClass()->name;
-      auto tup = transform(N<CallExpr>(N<IdExpr>(name), callExpr->getCall()->args));
-
-      if (startswith(calleeFn->ast->args[i].name, "**")) {
-        args[si].value =
-            transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("NamedTuple"), "__new__"), tup,
-                                  N<IntExpr>(args[si]
-                                                 .value->type->getClass()
-                                                 ->generics[0]
-                                                 .type->getIntStatic()
-                                                 ->value)));
-      } else {
-        args[si].value = tup;
-      }
       replacements.push_back(args[si].value->type);
+      // else this is empty and is a partial call; leave it for later
     } else {
       if (calleeFn->ast->args[i].type && !calleeFn->getArgTypes()[si]->canRealize()) {
-        auto t = ctx->instantiate(ctx->getType(calleeFn->ast->args[i].type->type)->generalize(0));
-        // calleeFn->ast->args[i].type->
-        //     ctx->getType(transform(clean_clone(calleeFn->ast->args[i].type))->type);
+        auto t = ctx->instantiate(
+            ctx->getType(calleeFn->ast->args[i].type->type)->generalize(0));
         unify(calleeFn->getArgTypes()[si], t);
       }
       if (wrapExpr(args[si].value, calleeFn->getArgTypes()[si], calleeFn)) {

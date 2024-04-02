@@ -62,7 +62,7 @@ StmtPtr TypecheckVisitor::apply(
   ScopingVisitor::apply(cache, suite);
   auto n = tv.inferTypes(suite, true);
   if (!n) {
-    LOG("[error=>] {}", suite->toString(2));
+    // LOG("[error=>] {}", suite->toString(2));
     tv.error("cannot typecheck the program");
   }
 
@@ -237,6 +237,10 @@ ExprPtr TypecheckVisitor::transformType(ExprPtr &expr, bool allowTypeOf) {
     } else if (expr->type->getUnbound() &&
                !expr->type->getUnbound()->genericName.empty()) {
       // generic!
+      expr->setType(ctx->instantiate(expr->getType()));
+    } else if (expr->type->getUnbound() &&
+               expr->type->getUnbound()->trait) {
+      // generic (is type)!
       expr->setType(ctx->instantiate(expr->getType()));
     } else {
       E(Error::EXPECTED_TYPE, expr, "type");

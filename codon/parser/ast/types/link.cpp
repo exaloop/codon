@@ -49,9 +49,9 @@ int LinkType::unify(Type *typ, Unification *undo) {
       // Identical unbound types get a score of 1
       if (id == t->id)
         return 1;
-      // Generics must have matching IDs
-      if (kind != Unbound)
-        return -1;
+      // Generics must have matching IDs unless we are doing non-destructive unification
+      if (kind == Generic)
+        return undo ? -1 : 1;
       // Always merge a newer type into the older type (e.g. keep the types with
       // lower IDs around).
       if (id < t->id)
@@ -176,8 +176,8 @@ std::string LinkType::debugString(char mode) const {
     }
     return (genericName.empty() ? (mode ? "?" : "<unknown type>") : genericName);
   }
-  if (mode == 2)
-    return ">" + type->debugString(mode);
+  // if (mode == 2)
+  //   return ">" + type->debugString(mode);
   return type->debugString(mode);
 }
 

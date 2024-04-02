@@ -153,7 +153,7 @@ void UnionType::seal() {
   std::vector<TypePtr> typeSet(pendingTypes.begin(), pendingTypes.begin() + i);
   auto name = tv.generateTuple(typeSet.size());
   auto t = cache->typeCtx->instantiateGeneric(
-      cache->typeCtx->forceFind(name)->type->getClass(), typeSet);
+      cache->typeCtx->getType(name)->getClass(), typeSet);
   Unification us;
   generics[0].type->unify(t.get(), &us);
 }

@@ -120,7 +120,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           return -1;
       }
       if (kwStar < trInArgs->generics.size()) {
-        TypePtr tt = cache->typeCtx->getType(TypecheckVisitor(cache->typeCtx).generateTuple(0));
+        TypePtr tt =
+            cache->typeCtx->getType(TypecheckVisitor(cache->typeCtx).generateTuple(0));
         size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
@@ -145,6 +146,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       if (args[1]->unify(pf->getRetType().get(), us) == -1)
         return -1;
     }
+    // LOG("- {} vs {}: ok", debugString(2), typ->debugString(2));
     return 1;
   } else if (auto tl = typ->getLink()) {
     if (tl->kind == LinkType::Link)
@@ -191,7 +193,10 @@ std::string CallableTrait::debugString(char mode) const {
 
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}
 
-int TypeTrait::unify(Type *typ, Unification *us) { return typ->unify(type.get(), us); }
+int TypeTrait::unify(Type *typ, Unification *us) {
+  if (typ->getClass()) // does not make sense otherwise and results in infinite cycles
+    return typ->unify(type.get(), us);
+}
 
 TypePtr TypeTrait::generalize(int atLevel) {
   auto c = std::make_shared<TypeTrait>(type->generalize(atLevel));

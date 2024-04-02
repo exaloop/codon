@@ -35,7 +35,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->generateCanonicalName(name, !stmt->attributes.has(Attr::Internal),
                                    /* noSuffix*/ stmt->attributes.has(Attr::Internal));
 
-    typ = std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
+    if (canonicalName == "Union")
+      typ = std::make_shared<types::UnionType>(ctx->cache);
+    else
+      typ = std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
     if (stmt->isRecord())
       typ->isTuple = true;
     // if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
@@ -112,15 +115,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto defType = transformType(clone(a.defaultValue));
           generic->defaultType = getType(defType);
         }
-        if (auto ti = CAST(a.type, InstantiateExpr)) {
-          // Parse TraitVar
-          seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
-          auto l = transformType(ti->typeParams[0])->type;
-          if (l->getLink() && l->getLink()->trait)
-            generic->getLink()->trait = l->getLink()->trait;
-          else
-            generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
-        }
         if (auto st = getStaticGeneric(a.type.get())) {
           if (st > 3)
             transform(a.type); // error check
@@ -128,10 +122,22 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
         } else {
+          if (a.type->getIndex()) { // Parse TraitVar
+            transform(a.type);
+            auto ti = a.type->getInstantiate();
+            seqassert(ti && ti->typeExpr->isId(TYPE_TYPEVAR),
+                      "not a TypeVar instantiation: {}", a.type);
+            auto l = getType(ti->typeParams[0]);
+            if (l->getLink() && l->getLink()->trait)
+              generic->getLink()->trait = l->getLink()->trait;
+            else
+              generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
+          }
           ctx->addType(genName, varName, generic)->generic = true;
         }
         ClassType::Generic g(varName, genName, generic->generalize(ctx->typecheckLevel),
                              typId, generic->isStatic);
+
         if (a.status == Param::Generic) {
           typ->generics.push_back(g);
         } else {
@@ -787,6 +793,8 @@ void TypecheckVisitor::addClassGenerics(const types::ClassTypePtr &clsTyp,
     if (t->getClass() && !t->getStatic() && !t->is("type"))
       t = ctx->instantiateGeneric(ctx->getType("type"), {t});
     ctx->addVar(ctx->cache->rev(g.name), g.name, t)->generic = true;
+    // LOG("=[g]=> {}: {} {:c} {}", clsTyp, g.name, t,
+    //     t->getLink() && t->getLink()->trait ? "OK" : "-");
   };
   for (auto &g : clsTyp->hiddenGenerics)
     addGen(g);
