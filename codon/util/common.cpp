@@ -26,10 +26,10 @@ void compilationMessage(const std::string &header, const std::string &msg,
   case MessageGroupPos::HEAD:
     break;
   case MessageGroupPos::MID:
-    fmt::print("├─ ");
+    fmt::print(out, "├─ ");
     break;
   case MessageGroupPos::LAST:
-    fmt::print("╰─ ");
+    fmt::print(out, "╰─ ");
     break;
   }
 
