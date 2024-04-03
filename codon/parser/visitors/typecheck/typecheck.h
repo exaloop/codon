@@ -220,7 +220,8 @@ private:
   types::FuncTypePtr
   findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
-  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &);
+  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &,
+              std::shared_ptr<types::PartialType> = nullptr);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,

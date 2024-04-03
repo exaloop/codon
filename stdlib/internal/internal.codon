@@ -208,11 +208,14 @@ class __internal__:
 
     def _union_call_helper(union, args, kwargs) -> Union:
         for tag, T in vars_types(union, with_index=1):
-            if hasattr(T, '__call__'):
-                if fn_can_call(__internal__.union_get_data(union, T), *args, **kwargs):
+            if fn_can_call(T, *args, **kwargs):
+                if __internal__.union_get_tag(union) == tag:
+                    return __internal__.union_get_data(union, T)(*args, **kwargs)
+            elif hasattr(T, '__call__'):
+                if fn_can_call(T.__call__, *args, **kwargs):
                     if __internal__.union_get_tag(union) == tag:
                         return __internal__.union_get_data(union, T).__call__(*args, **kwargs)
-        raise TypeError("cannot call union")
+        raise TypeError("cannot call union " + union.__class__.__name__)
 
     def union_call(union, args, kwargs):
         t = __internal__._union_call_helper(union, args, kwargs)
