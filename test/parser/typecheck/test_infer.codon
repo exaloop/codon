@@ -7,6 +7,7 @@ print [1]+[1]  #: [1, 1]
 #%% late_unify_2,barebones
 class XX[T]:
     y: T
+    def __init__(self): pass
 a = XX()
 def f(i: int) -> int:
     return i
@@ -371,7 +372,7 @@ f('s')
 
 #%% func_arg_instantiate,barebones
 class A[T]:
-    y: T
+    y: T = T()
     def foo(self, y: T):
         self.y = y
         return y
@@ -395,7 +396,7 @@ print aa.__class__.__name__, aa.y, aa.bar(5.1).__class__.__name__ #: A[str] s fl
 #%% no_func_arg_instantiate_err,barebones
 # TODO: allow unbound self?
 class A[T]:
-    y: T
+    y: T = T()
     def foo(self, y): self.y = y
 a = A()
 a.foo(1) #! cannot typecheck the program

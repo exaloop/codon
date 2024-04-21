@@ -3,7 +3,7 @@
 a = 5
 print (1 <= a <= 10), (1 >= a >= -5) #: True False
 
-#%% if,barebones
+#%% if_expr,barebones
 c = 5
 a = 1 if c < 5 else 2
 b = -(1 if c else 2)
@@ -58,7 +58,7 @@ match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
 #! multiple ellipses in a pattern
 
-#%% if,barebones
+#%% if_expr_2,barebones
 y = 1 if True else 2
 print y.__class__.__name__ #: int
 

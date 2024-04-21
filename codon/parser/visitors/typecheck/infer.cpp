@@ -196,10 +196,6 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   // type->_rn = type->ClassType::realizedName();
   // Check if the type fields are all initialized
   // (sometimes that's not the case: e.g., `class X: x: List[X]`)
-  for (auto &field : ctx->cache->classes[type->name].fields) {
-    if (!field.type)
-      return nullptr;
-  }
 
   // generalize generics to ensure that they do not get unified later!
   if (type->is("unrealized_type"))
@@ -212,6 +208,15 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   }
 
   auto realized = type->getClass();
+  const auto &fields = ctx->cache->classes[realized->name].fields;
+  if (!ctx->cache->classes[type->name].ast)
+    return nullptr; // not yet done!
+  auto fTypes = getClassFieldTypes(realized);
+  for (auto &field : fTypes) {
+    if (!field)
+      return nullptr;
+  }
+
   if (auto s = type->getStatic())
     realized = ctx->getType(s->name)->getClass();
 
@@ -236,7 +241,7 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
                                              ctx->getModule(), realized);
   if (!val->type->is("type"))
     val->type = ctx->instantiateGeneric(ctx->getType("type"), {realized});
-  ctx->addAlwaysVisible(val);
+  ctx->addAlwaysVisible(val, true);
   auto realization =
       ctx->cache->classes[realized->name].realizations[realized->realizedName()] =
           std::make_shared<Cache::Class::ClassRealization>();
@@ -251,8 +256,6 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
 
-  const auto &fields = ctx->cache->classes[realized->name].fields;
-  auto fTypes = getClassFieldTypes(realized);
   for (size_t i = 0; i < fTypes.size(); i++) {
     if (!realize(fTypes[i])) {
       realize(fTypes[i]);
@@ -367,7 +370,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   // Realizations should always be visible, so add them to the toplevel
   auto val =
       std::make_shared<TypecheckItem>(key, "", ctx->getModule(), type->getFunc());
-  ctx->addAlwaysVisible(val);
+  ctx->addAlwaysVisible(val, true);
 
   ctx->getBase()->suite = clean_clone(ast->suite);
   if (hasAst) {
@@ -435,7 +438,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     realizations[type->realizedName()]->ast = r->ast;
   val = std::make_shared<TypecheckItem>(type->realizedName(), "", ctx->getModule(),
                                         type->getFunc());
-  ctx->addAlwaysVisible(val);
+  ctx->addAlwaysVisible(val, true);
   if (!startswith(type->ast->name, "%_import_")) {
     ctx->bases.pop_back();
     ctx->popBlock();
@@ -636,7 +639,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         auto thunkAst = N<FunctionStmt>(
             thunkName, nullptr, fnArgs,
             N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
-            Attr({"std.internal.attributes.inline"}));
+            Attr({"std.internal.attributes.inline.0:0"}));
         thunkAst = std::dynamic_pointer_cast<FunctionStmt>(transform(thunkAst));
 
         auto &thunkFn = ctx->cache->functions[thunkAst->name];

@@ -134,6 +134,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       stmt->attributes.set(attrName);
+      // LOG("-> {} {}", stmt->name, attrName);
       if (isAttr)
         stmt->decorators[i] = nullptr; // remove it from further consideration
     }
@@ -188,6 +189,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (t != Attr::CaptureType::Global && !v->isGlobal()) {
         bool parentClassGeneric =
             ctx->bases.back().isType() && ctx->bases.back().name == v->getBaseName();
+        if (v->isGeneric() && parentClassGeneric) {
+          stmt->attributes.set(Attr::Method);
+        }
         if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
           captures[c] = v;
         }
@@ -475,6 +479,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   ExprPtr finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   if (!captures.empty()) {
+    if (isClassMember)
+       E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), captures.begin()->first);
+
     finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
     // Add updated self reference in case function is recursive!
     auto pa = partialArgs;

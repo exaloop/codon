@@ -517,12 +517,12 @@ bool TypecheckVisitor::wrapExpr(ExprPtr &expr, const TypePtr &expectedType,
   auto exprClass = expr->getType()->getClass();
 
   auto doArgWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap.0");
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap.0:0");
   if (!doArgWrap)
     return true;
 
   auto doTypeWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap.0");
+      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap.0:0");
   if (callee && expr->type->is("type")) {
     auto c = ctx->getType(expr->type)->getClass();
     if (!c)

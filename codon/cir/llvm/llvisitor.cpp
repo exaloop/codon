@@ -22,10 +22,10 @@
 namespace codon {
 namespace ir {
 namespace {
-const std::string EXPORT_ATTR = "std.internal.attributes.export";
-const std::string INLINE_ATTR = "std.internal.attributes.inline";
-const std::string NOINLINE_ATTR = "std.internal.attributes.noinline";
-const std::string GPU_KERNEL_ATTR = "std.gpu.kernel";
+const std::string EXPORT_ATTR = "std.internal.attributes.export.0:0";
+const std::string INLINE_ATTR = "std.internal.attributes.inline.0:0";
+const std::string NOINLINE_ATTR = "std.internal.attributes.noinline.0:0";
+const std::string GPU_KERNEL_ATTR = "std.gpu.kernel.0:0";
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {

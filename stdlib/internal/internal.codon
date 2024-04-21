@@ -217,6 +217,10 @@ class __internal__:
             t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
         )
 
+    @llvm
+    def tuple_cast_unsafe(t, U: type) -> U:
+        ret {=U} %t
+
     @pure
     @derives
     @llvm
@@ -575,7 +579,7 @@ class __magic__:
     # @dataclass parameter: pickle=True
     def unpickle(src: Ptr[byte], T: type) -> T:
         if isinstance(T, ByVal):
-            return tuple(type(t).__unpickle__(src) for t in vars_types(T))
+            return __internal__.tuple_cast_unsafe(tuple(type(t).__unpickle__(src) for t in vars_types(T)), T)
         else:
             obj = T.__new__()
             for k, v in vars(obj):
@@ -592,10 +596,10 @@ class __magic__:
     # @dataclass parameter: python=True
     def from_py(src: Ptr[byte], T: type) -> T:
         if isinstance(T, ByVal):
-            return tuple(
+            return __internal__.tuple_cast_unsafe(tuple(
                 type(t).__from_py__(pyobj._tuple_get(src, i))
                 for i, t in vars_types(T, with_index=True)
-            )
+            ), T)
         else:
             obj = T.__new__()
             for i, k, v in vars(obj, with_index=True):

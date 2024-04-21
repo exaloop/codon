@@ -94,25 +94,14 @@ class List:
 
         start, stop, step, length = s.adjust_indices(self.__len__())
         if s.step is None or step == 1:
-            if isinstance(other, List[T]):
-                if other is self:
-                    other = other.__copy__()
-                self._assign_slice(start, stop, other.arr.ptr, other.__len__())
-            else:
-                items = [a for a in other]
-                self._assign_slice(start, stop, items.arr.ptr, items.__len__())
+            items = [a for a in other]
+            self._assign_slice(start, stop, items.arr.ptr, items.__len__())
         else:
             if (step < 0 and start < stop) or (step > 0 and start > stop):
                 stop = start
 
             seq: Optional[List[T]] = None
-            if isinstance(other, List[T]):
-                if other is self:
-                    seq = other.__copy__()
-                else:
-                    seq = other
-            else:
-                seq = [a for a in other]
+            seq = [a for a in other]
 
             seq_len = seq.__len__()
             if seq_len != length:
@@ -129,6 +118,9 @@ class List:
                 self._set(cur, seq._get(i))
                 cur += step
                 i += 1
+
+    def __setitem__(self, s: Slice, other: Generator[T]):
+        return self.__setitem__(s, [a for a in other])
 
     def __delitem__(self, s: Slice):
         if s.start is None and s.stop is None and s.step is None:

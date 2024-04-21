@@ -263,10 +263,10 @@ public:
     auto x = a;
     return unify(x, b);
   }
+  types::TypePtr realize(types::TypePtr);
 
 private:
   StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
-  types::TypePtr realize(types::TypePtr);
   types::TypePtr realizeFunc(types::FuncType *, bool = false);
   types::TypePtr realizeType(types::ClassType *);
   std::shared_ptr<FunctionStmt> generateSpecialAst(types::FuncType *);

@@ -96,19 +96,7 @@ class Moo:
 print Moo(1) #: Moo.__new__
 #: (moo: 1)
 
-#%% call_err_2,barebones
-class A:
-    a: A
-a = A() #! argument 'a' has recursive default value
-
-#%% call_err_3,barebones
-class G[T]:
-    t: T
-class A:
-    ga: G[A]
-a = A() #! argument 'ga' has recursive default value
-
-#%% call_err_4,barebones
+#%% call_err_6,barebones
 seq_print_full(1, name="56", name=2) #! keyword argument repeated: name
 
 #%% call_partial,barebones

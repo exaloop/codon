@@ -255,7 +255,7 @@ print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
 print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
 print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
 
-x = A.B.C[bool]()
+x = A.B.C[bool](False)
 print(x.__class__.__name__) #: A.B.C[bool]
 
 #%% nested_deep_class_error_NOPY,barebones
@@ -370,10 +370,10 @@ b = B[float]()
 print b.__class__.__name__, b.a.__class__.__name__, b.b.__class__.__name__, b.c.__class__.__name__, b.c.b.c.a.__class__.__name__
 #: B[float] float A[float] B[float] str
 
-n1 = B.Nest1[int]()
+n1 = B.Nest1[int](0)
 print n1.n, n1.__class__.__name__, n1.n.__class__.__name__ #: 0 B.Nest1[int] int
 
-n1: B.Nest2 = B.Nest2[float, int]()
+n1: B.Nest2 = B.Nest2[float, int](0, 0)
 print (n1.m, n1.n), n1.__class__.__name__, n1.m.__class__.__name__, n1.n.__class__.__name__ #: (0, 0) B.Nest2[float,int] float int
 
 #%% class_fn_access_NOPY,barebones

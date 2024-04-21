@@ -52,11 +52,11 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
-
-      ast::TypecheckVisitor tv(cache->typeCtx);
-      auto exprPtr = tv.generatePartialCall(mask, f.get());
-      tv.transform(exprPtr);
-      ret.push_back(exprPtr->type);
+      // ast::TypecheckVisitor tv(cache->typeCtx);
+      // auto exprPtr = tv.generatePartialCall(mask, f.get());
+      // tv.transform(exprPtr);
+      // ret.push_back(exprPtr->type);
+      ret.push_back(t->getAstType());
     } else {
       ret.push_back(t->getAstType());
     }
@@ -182,6 +182,8 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
   auto fqName =
       module.empty() ? funcName : fmt::format(FMT_STRING("{}.{}"), module, funcName);
   auto func = cache->findFunction(fqName);
+  if (!func)
+    func = cache->findFunction(fqName + ".0:0");
   if (!func)
     return nullptr;
   auto arg = translateArgs(cache, args);

@@ -188,13 +188,13 @@ class Counter(Static[Dict[T, int]]):
 
     def most_common(self, n: Optional[int] = None) -> List[Tuple[T, int]]:
         if len(self) == 0:
-            return List[_CounterItem](capacity=0)
+            return []
 
         if n is None:
-            v = List[_CounterItem](capacity=len(self))
+            v = List(capacity=len(self))
             for t in self.items():
                 v.append(t)
-            v.sort(reverse=True)
+            v.sort(reverse=True, key=lambda i: i[1])
             return v
         else:
             from heapq import heapify, heapreplace
@@ -202,27 +202,28 @@ class Counter(Static[Dict[T, int]]):
             n: int = n
 
             if n == 1:
-                top: Optional[_CounterItem] = None
+                top: Optional[Tuple[T, int]] = None
                 for t in self.items():
-                    if top is None or t[1] > top.count:
+                    if top is None or t[1] > top[1]:
                         top = t
                 return [unwrap(top)]
 
             if n <= 0:
-                return List[_CounterItem](capacity=0)
+                return []
 
             result = List[_CounterItem](capacity=n)
             for t in self.items():
+                ct = _CounterItem(*t)
                 if len(result) < n:
-                    result.append(t)
+                    result.append(ct)
                     if len(result) == n:
                         heapify(result)
                 else:
-                    if result[0] < t:
-                        heapreplace(result, t)
+                    if result[0] < ct:
+                        heapreplace(result, ct)
 
             result.sort(reverse=True)
-            return result
+            return [tuple(i) for i in result]
 
     def subtract(self, elements: Generator[T]):
         for a in elements:

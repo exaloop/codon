@@ -48,21 +48,22 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   cache->codegenCtx->bases = {main};
   cache->codegenCtx->series = {block};
 
-  for (auto &g : cache->globals)
-    if (!g.second) {
-      g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
-                                     : cache->codegenCtx->getModule()->N<ir::Var>(
-                                           SrcInfo(), nullptr, true, false, g.first);
-      cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
-    }
-
-  TranslateVisitor(cache->codegenCtx).transform(stmts);
-
-  for (auto &[_, f]: cache->functions)
-    TranslateVisitor(cache->codegenCtx).transform(f.ast);
-
+  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
   cache->populatePythonModule();
   return main;
+}
+
+void TranslateVisitor::translateStmts(StmtPtr stmts) {
+  for (auto &g : ctx->cache->globals)
+    if (!g.second) {
+      g.second = g.first == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
+                                     : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
+                                           SrcInfo(), nullptr, true, false, g.first);
+      ctx->cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
+    }
+  TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
+  for (auto &[_, f]: ctx->cache->functions)
+    TranslateVisitor(ctx->cache->codegenCtx).transform(f.ast);
 }
 
 /************************************************************************************/
@@ -501,14 +502,14 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto c = stmt->decorator->getCall();
     seqassert(c, "for par is not a call: {}", stmt->decorator);
     auto fc = c->expr->getType()->getFunc();
-    seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
+    seqassert(fc && fc->ast->name == "std.openmp.for_par.0:0",
               "for par is not a function");
     auto schedule = fc->funcGenerics[0].type->getStrStatic()->value;
-    bool ordered = fc->funcGenerics[1].type->getIntStatic()->value;
+    bool ordered = fc->funcGenerics[1].type->getBoolStatic()->value;
     auto threads = transform(c->args[0].value);
     auto chunk = transform(c->args[1].value);
     auto collapse = fc->funcGenerics[2].type->getIntStatic()->value;
-    bool gpu = fc->funcGenerics[3].type->getIntStatic()->value;
+    bool gpu = fc->funcGenerics[3].type->getBoolStatic()->value;
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
@@ -619,7 +620,7 @@ codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
   seqassert(t && t->getClass(), "{} is not a class", t);
   std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
-  seqassert(i, "type {} not realized", t);
+  seqassert(i, "type {} not realized: {}", t, name);
   return i->getType();
 }
 

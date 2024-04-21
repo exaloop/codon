@@ -191,8 +191,12 @@ class Dict:
         self._vals[x] = op(dflt if ret != 0 else self._vals[x], other)
 
     def update(self, other):
-        for k, v in other:
-            self[k] = v
+        if isinstance(other, Dict[K, V]):
+            for k, v in other.items():
+                self[k] = v
+        else:
+            for k, v in other:
+                self[k] = v
 
     def update(self, other: Dict[K, V]):
         for k, v in other.items():

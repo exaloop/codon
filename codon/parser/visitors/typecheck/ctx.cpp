@@ -44,7 +44,6 @@ void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
 }
 
 void TypeContext::removeFromMap(const std::string &name) {
-  // LOG("[ctx] {}: - {}", getSrcInfo(), name);
   Context<TypecheckItem>::removeFromMap(name);
 }
 
@@ -90,10 +89,14 @@ TypeContext::Item TypeContext::addFunc(const std::string &name,
   return t;
 }
 
-TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item) {
+TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item, bool pop) {
   add(item->canonicalName, item);
+  if (pop)
+    stack.front().pop_back(); // do not remove it later!
   if (!cache->typeCtx->Context<TypecheckItem>::find(item->canonicalName)) {
     cache->typeCtx->add(item->canonicalName, item);
+    if (pop)
+      cache->typeCtx->stack.front().pop_back(); // do not remove it later!
 
     // Realizations etc.
     if (!in(cache->reverseIdentifierLookup, item->canonicalName))

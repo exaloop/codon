@@ -66,7 +66,7 @@ struct ReductionLocks {
   Var *critLock = nullptr; // lock used in reduction critical sections
 
   Var *createLock(Module *M) {
-    auto *lockType = M->getOrRealizeType("Lock", {}, ompModule);
+    auto *lockType = M->getOrRealizeType("Lock.0", {}, ompModule);
     seqassertn(lockType, "openmp.Lock type not found");
     auto *var = M->Nr<Var>(lockType, /*global=*/true);
     static int counter = 1;

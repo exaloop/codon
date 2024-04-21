@@ -117,7 +117,7 @@ print(a, b, sc, sl) #: 1 2 t his
 
 #%% assign_index_dot,barebones
 class Foo:
-    a: int
+    a: int = 0
     def __setitem__(self, i: int, t: int):
         self.a += i * t
 f = Foo()
@@ -341,7 +341,7 @@ print(i, f) #: 10 5.5
 
 #%% assign_member_NOPY,barebones
 class Foo:
-    x: Optional[int]
+    x: Optional[int] = None
 f = Foo()
 print(f.x) #: None
 f.x = 5
@@ -353,13 +353,13 @@ print(fo.x) #: 6
 
 #%% assign_member_err_1_NOPY,barebones
 class Foo:
-    x: Optional[int]
+    x: Optional[int] = None
 Foo().y = 5 #! 'Foo' object has no attribute 'y'
 
 #%% assign_member_err_2_NOPY,barebones
 @tuple
 class Foo:
-    x: Optional[int]
+    x: Optional[int] = None
 Foo().x = 5 #! cannot modify tuple attributes
 
 #%% assign_wrappers_NOPY,barebones

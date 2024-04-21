@@ -32,7 +32,7 @@ CallInstr *getRangeIter(Value *iter) {
   if (!newRangeFunc || newRangeFunc->getUnmangledName() != Module::NEW_MAGIC_NAME)
     return nullptr;
   auto *parentType = newRangeFunc->getParentType();
-  auto *rangeType = M->getOrRealizeType("range", {}, "std.internal.types.range");
+  auto *rangeType = M->getOrRealizeType("range.0", {}, "std.internal.types.range");
 
   if (!parentType || !rangeType || parentType->getName() != rangeType->getName())
     return nullptr;
@@ -50,7 +50,7 @@ Value *getListIter(Value *iter) {
     return nullptr;
 
   auto *list = iterCall->front();
-  if (list->getType()->getName().rfind("std.internal.types.ptr.List[", 0) != 0)
+  if (list->getType()->getName().rfind("std.internal.types.array.List.0[", 0) != 0)
     return nullptr;
 
   return list;

@@ -615,9 +615,7 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
     if (isRecord) {
       // Tuples: def __new__() -> T (internal)
       for (auto &a : args)
-        fargs.emplace_back(a.name, clone(a.type),
-                           a.defaultValue ? clone(a.defaultValue)
-                                          : N<CallExpr>(clone(a.type)));
+        fargs.emplace_back(a.name, clone(a.type), clone(a.defaultValue));
       attr.set(Attr::Internal);
     } else {
       // Classes: def __new__() -> T
@@ -629,20 +627,20 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
     ret = I("NoneType");
     fargs.emplace_back("self", clone(typExpr));
     for (auto &a : args) {
-      ExprPtr defExpr = nullptr;
-      if (a.defaultValue) {
-        defExpr = a.defaultValue;
-        stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
-      } else {
-        defExpr = N<CallExpr>(N<DotExpr>(clean_clone(a.type), "__new__"));
-        auto assign = N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name));
-        stmts.push_back(N<IfStmt>(
-            N<CallExpr>(I("isinstance"), clean_clone(a.type), I("ByRef")),
-            N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name), "__init__"))),
-                         assign),
-            clone(assign)));
-      }
-      fargs.emplace_back(a.name, clean_clone(a.type), defExpr);
+      // ExprPtr defExpr = nullptr;
+      // if (a.defaultValue) {
+      //   defExpr = a.defaultValue;
+      // } else {
+      //   // defExpr = N<CallExpr>(N<DotExpr>(clean_clone(a.type), "__new__"));
+      //   // auto assign = N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name));
+      //   // stmts.push_back(N<IfStmt>(
+      //   //     N<CallExpr>(I("isinstance"), clean_clone(a.type), I("ByRef")),
+      //   //     N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name), "__init__"))),
+      //   //                  assign),
+      //   //     clone(assign)));
+      // }
+      fargs.emplace_back(a.name, clean_clone(a.type), clone(a.defaultValue));
+      stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
     }
   } else if (op == "raw" || op == "dict") {
     // Classes: def __raw__(self: T)

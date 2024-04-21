@@ -168,9 +168,6 @@ struct TypeContext : public Context<TypecheckItem> {
 
   /// Number of nested realizations. Used to prevent infinite instantiations.
   int realizationDepth = 0;
-  /// Nested default argument calls. Used to prevent infinite CallExpr chains
-  /// (e.g. class A: def __init__(a: A = A())).
-  std::set<std::string> defaultCallDepth;
 
   /// Number of nested blocks (0 for toplevel)
   int blockLevel = 0;
@@ -192,7 +189,7 @@ public:
                const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
   /// Add the item to the standard library module, thus ensuring its visibility from all
   /// modules.
-  Item addAlwaysVisible(const Item &item);
+  Item addAlwaysVisible(const Item &item, bool = false);
 
   /// Get an item from the context. If the item does not exist, nullptr is returned.
   Item find(const std::string &name) const override;

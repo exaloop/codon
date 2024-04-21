@@ -24,7 +24,6 @@ void ScopingVisitor::apply(Cache *cache, StmtPtr &s) {
   ScopingVisitor v;
   v.ctx = c;
   v.transformBlock(s);
-  // LOG("-> {}", s->toString(2));
 }
 
 ExprPtr ScopingVisitor::transform(const std::shared_ptr<Expr> &expr) {
@@ -108,6 +107,14 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
                                 f->suite);
       }
     }
+  } else if (auto f = std::dynamic_pointer_cast<WithStmt>(binding)) {
+    for (auto i = f->items.size(); i-- > 0;)
+      if (f->vars[i] == name)
+        f->items[i]->setAttr(ExprAttr::Dominated);
+  } else if (auto f = std::dynamic_pointer_cast<ImportStmt>(binding)) {
+    // TODO)) Here we will just ignore this for now
+  } else if (auto f = std::dynamic_pointer_cast<GlobalStmt>(binding)) {
+    // TODO)) Here we will just ignore this for now
   } else if (binding) {
     // class; function; func-arg; comprehension-arg; catch-name; import-name[anything
     // really]
@@ -128,12 +135,14 @@ void ScopingVisitor::visitName(const std::string &name, bool adding,
       else if (root) // global, nonlocal
         switchToUpdate(root, name, false);
     } else {
-      if (in(ctx->childCaptures, name) && ctx->functionScope) {
-        auto newScope = std::vector<int>{ctx->scope[0].id};
-        auto b = N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr);
-        auto newItem = ScopingVisitor::Context::Item(src, newScope, b);
-        ctx->scope.front().stmts.emplace_back(b);
-        ctx->map[name].push_back(newItem);
+      if (auto i = in(ctx->childCaptures, name)) {
+        if (*i != Attr::CaptureType::Global && ctx->functionScope) {
+          auto newScope = std::vector<int>{ctx->scope[0].id};
+          auto b = N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr);
+          auto newItem = ScopingVisitor::Context::Item(src, newScope, b);
+          ctx->scope.front().stmts.emplace_back(b);
+          ctx->map[name].push_back(newItem);
+        }
       }
       ctx->map[name].emplace_front(src, ctx->getScope(), root);
     }
@@ -491,6 +500,11 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
   if (ctx->functionScope && stmt->what && stmt->what->isId("*"))
     E(error::Error::IMPORT_STAR, stmt);
 
+  // dylib C imports
+  if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
+    transform(stmt->what->getDot()->expr);
+  }
+
   if (stmt->as.empty()) {
     transformAdding(stmt->what ? stmt->what : stmt->from, stmt->shared_from_this());
   } else {
@@ -573,8 +587,10 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
     ctx->childCaptures.insert(n);
   }
 
+  // if (stmt->name=="test_omp_critical") {
   // LOG("=> {} :: cap {}", stmt->name, c->captures);
   // LOG("{}", stmt->toString(2));
+  // }
 }
 
 void ScopingVisitor::visit(WithStmt *stmt) {
@@ -597,6 +613,15 @@ void ScopingVisitor::transformBlock(StmtPtr &s) {
     ctx->scope.back().stmts.clear();
   }
   for (auto &n : ctx->childCaptures) {
+    // TODO HACK!
+    // if (ctx->functionScope && n.second == Attr::CaptureType::Global) {
+    //   ctx->captures.insert(n); // propagate!
+    //   continue;
+    // }
+    if (auto i = in(ctx->map, n.first)) {
+      if (i->back().binding && std::dynamic_pointer_cast<ClassStmt>(i->back().binding))
+        continue;
+    }
     if (!findDominatingBinding(n.first, false))
       ctx->captures.insert(n); // propagate!
   }

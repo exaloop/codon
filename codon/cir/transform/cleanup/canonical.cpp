@@ -61,15 +61,15 @@ NodeRanker::Rank getRank(Node *node) {
 }
 
 bool isCommutativeOp(Func *fn) {
-  return fn && util::hasAttribute(fn, "std.internal.attributes.commutative");
+  return fn && util::hasAttribute(fn, "std.internal.attributes.commutative.0:0");
 }
 
 bool isAssociativeOp(Func *fn) {
-  return fn && util::hasAttribute(fn, "std.internal.attributes.associative");
+  return fn && util::hasAttribute(fn, "std.internal.attributes.associative.0:0");
 }
 
 bool isDistributiveOp(Func *fn) {
-  return fn && util::hasAttribute(fn, "std.internal.attributes.distributive");
+  return fn && util::hasAttribute(fn, "std.internal.attributes.distributive.0:0");
 }
 
 bool isInequalityOp(Func *fn) {

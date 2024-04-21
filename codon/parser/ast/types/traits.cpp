@@ -196,6 +196,9 @@ TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}
 int TypeTrait::unify(Type *typ, Unification *us) {
   if (typ->getClass()) // does not make sense otherwise and results in infinite cycles
     return typ->unify(type.get(), us);
+  if (typ->getUnbound())
+    return 0;
+  return -1;
 }
 
 TypePtr TypeTrait::generalize(int atLevel) {

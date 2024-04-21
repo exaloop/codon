@@ -396,9 +396,10 @@ auto getTypeTests(const vector<string> &files) {
       }
       line++;
     }
-    if (line && testName != "__ignore__")
+    if (line && testName != "__ignore__") {
       cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
                                     codeLine, barebones, false));
+    }
   }
   return cases;
 }
@@ -475,7 +476,7 @@ INSTANTIATE_TEST_SUITE_P(
     StdlibTests, SeqTest,
     testing::Combine(
       testing::Values(
-        "stdlib/llvm_test.codon"
+        "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",

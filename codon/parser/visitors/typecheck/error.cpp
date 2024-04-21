@@ -169,9 +169,12 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
   for (auto i = stmt->items.size(); i-- > 0;) {
     std::string var =
         stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
+    auto as = N<AssignStmt>(N<IdExpr>(var), stmt->items[i], nullptr,
+                            stmt->items[i]->hasAttr(ExprAttr::Dominated)
+                                ? AssignStmt::UpdateMode::Update
+                                : AssignStmt::UpdateMode::Assign);
     content = std::vector<StmtPtr>{
-        N<AssignStmt>(N<IdExpr>(var), stmt->items[i]),
-        N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__enter__"))),
+        as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__enter__"))),
         N<TryStmt>(
             !content.empty() ? N<SuiteStmt>(content) : clone(stmt->suite),
             std::vector<std::shared_ptr<TryStmt::Catch>>{},

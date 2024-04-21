@@ -362,7 +362,7 @@ const std::string Attr::Attribute = "__attribute__";
 const std::string Attr::Internal = "__internal__";
 const std::string Attr::ForceRealize = "__force__";
 const std::string Attr::RealizeWithoutSelf =
-    "std.internal.attributes.realize_without_self";
+    "std.internal.attributes.realize_without_self.0:0";
 const std::string Attr::HiddenFromUser = "__hidden__";
 const std::string Attr::C = "C";
 const std::string Attr::CVarArg = ".__vararg__";
@@ -371,9 +371,9 @@ const std::string Attr::Capture = ".__capture__";
 const std::string Attr::HasSelf = ".__hasself__";
 const std::string Attr::Extend = "extend";
 const std::string Attr::Tuple = "tuple";
-const std::string Attr::Test = "std.internal.attributes.test";
+const std::string Attr::Test = "std.internal.attributes.test.0:0";
 const std::string Attr::Overload = "overload:0";
-const std::string Attr::Export = "std.internal.attributes.export";
+const std::string Attr::Export = "std.internal.attributes.export.0:0";
 
 FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args,
                            StmtPtr suite, Attr attributes,

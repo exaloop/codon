@@ -1,4 +1,11 @@
+from algorithms.pdqsort import pdq_sort
+from algorithms.insertionsort import insertion_sort
+from algorithms.heapsort import heap_sort
+from algorithms.timsort import tim_sort
+
+
 MANUAL_TEST = False
+
 
 def print_test[T](a: list[T], b: list[T]):
     if not MANUAL_TEST:
@@ -22,17 +29,17 @@ def print_test[T](a: list[T], b: list[T]):
 
 ### Comparison Functions ###
 
-def compare_less(x: int, y: int) -> bool:
-    return x < y
+def compare_less(x: int):
+    return x
 
-def compare_greater(x: int, y: int) -> bool:
-    return x > y
+def compare_greater(x: int):
+    return -x
 
-def compare_string(x: str, y: str) -> bool:
-    return x < y
+def compare_string(x):
+    return x
 
-def compare_dict(x: dict[str,int], y: dict[str,int]) -> bool:
-    return x["key"] < y["key"]
+def compare_dict(x: dict[str,int]):
+    return x["key"]
 
 ### Basic Sort Tests ###
 print_test(insertion_sort(list[int](), compare_less), list[int]()) # EXPECT: []

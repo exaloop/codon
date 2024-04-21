@@ -887,8 +887,8 @@ def for_par(
     num_threads: int = -1,
     chunk_size: int = -1,
     schedule: Static[str] = "static",
-    ordered: Static[int] = False,
+    ordered: Static[bool] = False,
     collapse: Static[int] = 0,
-    gpu: Static[int] = False,
+    gpu: Static[bool] = False,
 ):
     pass

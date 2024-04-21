@@ -107,7 +107,10 @@ def foo(x):
     class A:
         def bar():
             print T()
+    A.bar()
+foo(1)
 #! name 'T' cannot be captured
+#! during the realization of foo
 
 #%% recursive_class,barebones
 class Node[T]:
@@ -129,8 +132,8 @@ print Node2(3).data #: 3
 #%% class_auto_init,barebones
 class X[T]:
     a: int = 4
-    b: int
-    c: T
+    b: int = 0
+    c: T = T()
     d: str = 'oops'
     def __str__(self):
         return f'X({self.a},{self.b},{self.c},{self.d})'
@@ -299,11 +302,11 @@ print z
 #: {'ha': 1, 'he': -1}
 
 class Foo:
-    x: int
+    x: int = 0
     def foo(self):
         return f'foo {self.x}'
 class Bar[T]:
-    y: T
+    y: T = T()
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
 class FooBarBaz[T](Static[Foo], Static[Bar[T]]):

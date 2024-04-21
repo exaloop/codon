@@ -34,7 +34,7 @@ class DynamicTuple:
 
         return DynamicTuple(p, n)
 
-    def __new__():
+    def __new__() -> DynamicTuple[T]:
         return DynamicTuple(Ptr[T](), 0)
 
     def __len__(self):

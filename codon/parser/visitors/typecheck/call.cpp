@@ -435,14 +435,8 @@ ExprPtr TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *e
                             transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
           newMask[si] = 0;
         } else {
-          auto es = calleeFn->ast->args[si].defaultValue->toString();
-          if (in(ctx->defaultCallDepth, es))
-            E(Error::CALL_RECURSIVE_DEFAULT, expr,
-              ctx->cache->rev(calleeFn->ast->args[si].name));
-          ctx->defaultCallDepth.insert(es);
           auto def = transform(clean_clone(calleeFn->ast->args[si].defaultValue));
           args.emplace_back(realName, def);
-          ctx->defaultCallDepth.erase(es);
         }
       } else {
         // Case: argument provided

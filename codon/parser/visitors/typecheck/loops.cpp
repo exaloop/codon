@@ -172,8 +172,10 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
   ExprPtr callee = decorator;
   if (auto c = callee->getCall())
     callee = c->expr;
-  if (!callee || !callee->isId("par"))
+  transform(callee);
+  if (!callee || !(callee->getId() && startswith(callee->getId()->value, "std.openmp.for_par.0"))) {
     E(Error::LOOP_DECORATOR, decorator);
+  }
   std::vector<CallExpr::Arg> args;
   std::string openmp;
   std::vector<CallExpr::Arg> omp;
@@ -189,7 +191,7 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
     }
   for (auto &a : omp)
     args.emplace_back(a.name, transform(a.value));
-  return N<CallExpr>(transform(N<IdExpr>("for_par")), args);
+  return transform(N<CallExpr>(transform(N<IdExpr>("for_par")), args));
 }
 
 /// Handle static for constructs.

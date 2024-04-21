@@ -137,7 +137,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
   if (auto rtv = tv.realize(type)) {
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
-      TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
+      TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
     f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
   }
   return f;
@@ -157,11 +157,12 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tup = tv.generateTuple(types.size() - 1);
   const auto &ret = types[0];
   auto argType = typeCtx->instantiateGeneric(
-      typeCtx->find(tup)->type,
+      typeCtx->getType(tup),
       std::vector<types::TypePtr>(types.begin() + 1, types.end()));
   auto t = typeCtx->find("Function");
   seqassertn(t && t->type, "cannot find 'Function'");
-  return realizeType(t->type->getClass(), {argType, ret});
+  auto ft = realizeType(typeCtx->getType(t->type)->getClass(), {argType, ret});
+  return ft;
 }
 
 ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
@@ -178,7 +179,7 @@ void Cache::parseCode(const std::string &code) {
   auto node = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
   auto sctx = imports[MAIN_IMPORT].ctx;
   node = ast::TypecheckVisitor::apply(sctx, node);
-  ast::TranslateVisitor(codegenCtx).transform(node);
+  ast::TranslateVisitor(codegenCtx).translateStmts(node);
 }
 
 std::vector<types::ClassTypePtr>
@@ -252,7 +253,7 @@ void Cache::populatePythonModule() {
 
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
-      TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
+      TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
     return functions[fn->ast->name].realizations[fnType->realizedName()]->ir;
   };
 
@@ -540,7 +541,7 @@ void Cache::populatePythonModule() {
   // Handle pending realizations!
   auto pr = pendingRealizations; // copy it as it might be modified
   for (auto &fn : pr)
-    TranslateVisitor(codegenCtx).transform(clone(functions[fn.first].ast));
+    TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
 }
 
 } // namespace codon::ast
