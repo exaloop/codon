@@ -59,10 +59,12 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
   if (auto *f = cast<Func>(x))
     return getNameForFunction(f);
 
+  auto name = x->getName();
   if (x->isExternal()) {
-    return x->getName();
+    return name;
   } else {
-    return "." + x->getName();
+    // ".Lxxx" is a linker-local name, so add an underscore if needed
+    return ((!name.empty() && name[0] == 'L') ? "._" : ".") + name;
   }
 }
 
