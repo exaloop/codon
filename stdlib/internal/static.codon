@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 # Methods for static reflection. Implemented within call.cpp and/or loops.cpp.
 # !! Not intended for public use !!
@@ -15,6 +15,8 @@ def fn_arg_has_type(F, i: Static[int]):
 def fn_arg_get_type(F, i: Static[int]):
     pass
 
+@no_type_wrap
+@no_argument_wrap
 def fn_can_call(F, *args, **kwargs):
     pass
 
@@ -40,4 +42,3 @@ def vars_types(T: type, with_index: Static[bool] = False):
 
 def tuple_type(T: type, N: Static[int]):
     pass
-

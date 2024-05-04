@@ -1,6 +1,6 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-@tuple
+@tuple(python=False)
 class complex64:
     real: float32
     imag: float32
@@ -13,8 +13,12 @@ class complex:
     def __new__() -> complex:
         return complex(0.0, 0.0)
 
-    def __new__(other):
-        return other.__complex__()
+    def __new__(what):
+        # do not overload! (needed to avoid pyobj conversion)
+        if isinstance(what, str) or isinstance(what, Optional[str]):
+            return complex._from_str(what)
+        else:
+            return what.__complex__()
 
     def __new__(real, imag) -> complex:
         return superf(float(real), float(imag))
@@ -23,7 +27,7 @@ class complex:
         return self
 
     def __bool__(self) -> bool:
-        return self.real != 0.0 and self.imag != 0.0
+        return self.real != 0.0 or self.imag != 0.0
 
     def __pos__(self) -> complex:
         return self
@@ -301,7 +305,13 @@ class complex64:
         return complex64(f32(0.0), f32(0.0))
 
     def __new__(other):
-        return complex64(other.__complex__())
+        if isinstance(other, str):
+            return complex64._from_str(other)
+        else:
+            return complex64(other.__complex__())
+
+    def __new__(real: f32):
+        return complex64(real, f32(0.0))
 
     def __new__(other: complex) -> complex64:
         return complex64(f32(other.real), f32(other.imag))
@@ -313,7 +323,7 @@ class complex64:
         return complex(float(self.real), float(self.imag))
 
     def __bool__(self) -> bool:
-        return self.real != f32(0.0) and self.imag != f32(0.0)
+        return self.real != f32(0.0) or self.imag != f32(0.0)
 
     def __pos__(self) -> complex64:
         return self
@@ -495,7 +505,7 @@ class complex64:
                 phase += other.imag * log(vabs)
             return complex64(len * cos(phase), len * sin(phase))
 
-    def __repr__(self) -> str:
+    def _str(self, include_type: bool) -> str:
         @pure
         @llvm
         def copysign(x: f32, y: f32) -> f32:
@@ -511,14 +521,27 @@ class complex64:
             ret float %y
 
         if self.real == f32(0.0) and copysign(f32(1.0), self.real) == f32(1.0):
-            return f"complex64({self.imag}j)"
+            if include_type:
+                return f"complex64({self.imag}j)"
+            else:
+                return f"{self.imag}j"
         else:
             sign = "+"
             if self.imag < f32(0.0) or (
                 self.imag == f32(0.0) and copysign(f32(1.0), self.imag) == f32(-1.0)
             ):
                 sign = "-"
-            return f"complex64({self.real}{sign}{fabs(self.imag)}j)"
+
+            if include_type:
+                return f"complex64({self.real}{sign}{fabs(self.imag)}j)"
+            else:
+                return f"({self.real}{sign}{fabs(self.imag)}j)"
+
+    def __repr__(self) -> str:
+        return self._str(include_type=True)
+
+    def __str__(self) -> str:
+        return self._str(include_type=False)
 
     def conjugate(self) -> complex64:
         return complex64(self.real, -self.imag)

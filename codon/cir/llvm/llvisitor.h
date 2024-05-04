@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -159,7 +159,11 @@ private:
                   std::unordered_map<std::string, llvm::DICompositeType *> &cache);
 
   /// GC allocation functions
-  llvm::FunctionCallee makeAllocFunc(bool atomic);
+  llvm::FunctionCallee makeAllocFunc(bool atomic, bool uncollectable = false);
+  // GC reallocation function
+  llvm::FunctionCallee makeReallocFunc();
+  // GC free function
+  llvm::FunctionCallee makeFreeFunc();
   /// Personality function for exception handling
   llvm::FunctionCallee makePersonalityFunc();
   /// Exception allocation function

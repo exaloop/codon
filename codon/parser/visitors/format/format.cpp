@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <vector>
@@ -401,15 +401,19 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
 
 void FormatVisitor::visit(ClassStmt *stmt) {
   if (cache) {
-    if (in(cache->classes, stmt->name)) {
-      if (!cache->classes[stmt->name].realizations.empty()) {
+    if (auto cls = in(cache->classes, stmt->name)) {
+      if (!cls->realizations.empty()) {
         result = fmt::format(
             "<details><summary># {}</summary>",
             fmt::format("{} {} {}", keyword("class"), stmt->name,
                         stmt->attributes.has(Attr::Extend) ? " +@extend" : ""));
-        for (auto &real : cache->classes[stmt->name].realizations) {
+        for (auto &real : cls->realizations) {
           std::vector<std::string> args;
-          for (const auto &[n, t] : real.second->fields) {
+          auto l = real.second->type->is(TYPE_TUPLE)
+                       ? real.second->type->generics.size()
+                       : real.second->fields.size();
+          for (size_t i = 0; i < l; i++) {
+            const auto &[n, t] = real.second->fields[i];
             auto name = fmt::format("{}{}: {}{}", exprStart, n,
                                     anchor(t->realizedName()), exprEnd);
             args.push_back(name);

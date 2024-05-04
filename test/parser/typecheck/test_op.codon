@@ -47,7 +47,7 @@ t: tuple[int, int] = (1, 2)
 print t #: (1, 2)
 
 tt: Tuple[int] = (1, )
-print tt #: (1)
+print tt #: (1,)
 
 def foo(i: int) -> int:
     return i + 1
@@ -89,25 +89,44 @@ def foo(x: Callable[[]]): pass  #! Callable takes 2 generics (1 given)
 #%% binary,barebones
 @extend
 class float:
-    def __add__(self, i: int): print 'add'; return 0
-    def __sub__(self, i: int): print 'sub'; return 0
-    def __mul__(self, i: int): print 'mul'; return 0
-    def __pow__(self, i: int): print 'pow'; return 0
-    def __truediv__(self, i: int): print 'truediv'; return 0
-    def __floordiv__(self, i: int): print 'div'; return 0
-    def __matmul__(self, i: int): print 'matmul'; return 0
-    def __mod__(self, i: int): print 'mod'; return 0
-    def __lt__(self, i: int): print 'lt'; return 0
-    def __le__(self, i: int): print 'le'; return 0
-    def __gt__(self, i: int): print 'gt'; return 0
-    def __ge__(self, i: int): print 'ge'; return 0
-    def __eq__(self, i: int): print 'eq'; return 0
-    def __ne__(self, i: int): print 'ne'; return 0
-    def __lshift__(self, i: int): print 'lshift'; return 0
-    def __rshift__(self, i: int): print 'rshift'; return 0
-    def __and__(self, i: int): print 'and'; return 0
-    def __or__(self, i: int): print 'or'; return 0
-    def __xor__(self, i: int): print 'xor'; return 0
+    def __add__(self, i: int):
+        print 'add'; return 0
+    def __sub__(self, i: int):
+        print 'sub'; return 0
+    def __mul__(self, i: int):
+        print 'mul'; return 0
+    def __pow__(self, i: int):
+        print 'pow'; return 0
+    def __truediv__(self, i: int):
+        print 'truediv'; return 0
+    def __floordiv__(self, i: int):
+        print 'div'; return 0
+    def __matmul__(self, i: int):
+        print 'matmul'; return 0
+    def __mod__(self, i: int):
+        print 'mod'; return 0
+    def __lt__(self, i: int):
+        print 'lt'; return 0
+    def __le__(self, i: int):
+        print 'le'; return 0
+    def __gt__(self, i: int):
+        print 'gt'; return 0
+    def __ge__(self, i: int):
+        print 'ge'; return 0
+    def __eq__(self, i: int):
+        print 'eq'; return 0
+    def __ne__(self, i: int):
+        print 'ne'; return 0
+    def __lshift__(self, i: int):
+        print 'lshift'; return 0
+    def __rshift__(self, i: int):
+        print 'rshift'; return 0
+    def __and__(self, i: int):
+        print 'and'; return 0
+    def __or__(self, i: int):
+        print 'or'; return 0
+    def __xor__(self, i: int):
+        print 'xor'; return 0
 # double assignment to disable propagation
 def f(x): return x
 a = f(1.0)
@@ -249,7 +268,7 @@ print z[:1], z[1:], z[1:3], z[:4:2], z[::-1]  #: [1] [2, 3, 4, 5] [2, 3] [1, 3] 
 a = (1, '2s', 3.3)
 print a[1] #: 2s
 print a[0:2], a[:2], a[1:] #: (1, '2s') (1, '2s') ('2s', 3.3)
-print a[0:3:2], a[-1:] #: (1, 3.3) (3.3)
+print a[0:3:2], a[-1:] #: (1, 3.3) (3.3,)
 
 #%% static_index_side,barebones
 def foo(a):
@@ -391,6 +410,16 @@ z: Static[str] = "woo"
 foo("he", z)  #: hewoo
 X(s='lolo') #: lolo lolo Int[1]
 X('abc') #: abc abc Int[2]
+
+def foo2(x: Static[str]):
+    print(x, x.__is_static__)
+s: Static[str] = "abcdefghijkl"
+foo2(s)  #: abcdefghijkl True
+foo2(s[1])  #: b True
+foo2(s[1:5])  #: bcde True
+foo2(s[10:50])  #: kl True
+foo2(s[1:30:3])  #: behk True
+foo2(s[::-1])  #: lkjihgfedcba True
 
 #%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print

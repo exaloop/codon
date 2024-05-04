@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -20,7 +20,7 @@
 #define STDLIB_IMPORT ":stdlib:"
 #define STDLIB_INTERNAL_MODULE "internal"
 
-#define TYPE_TUPLE "Tuple.N"
+#define TYPE_TUPLE "Tuple"
 #define TYPE_TYPEVAR "TypeVar"
 #define TYPE_CALLABLE "Callable"
 #define TYPE_OPTIONAL "Optional"
@@ -167,6 +167,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   std::unordered_map<std::string, Class> classes;
   size_t classRealizationCnt = 0;
 
+  Class *getClass(const types::ClassTypePtr &t) { return getClass(t.get()); }
+  Class *getClass(types::ClassType *);
+
   struct Function {
     /// Module information
     std::string module;
@@ -264,14 +267,7 @@ public:
   /// Returns an _uninstantiated_ type.
   types::FuncTypePtr findFunction(const std::string &name) const;
   /// Find the canonical name of a class method.
-  std::string getMethod(const types::ClassTypePtr &typ, const std::string &member) {
-    if (auto m = in(classes, typ->name)) {
-      if (auto t = in(m->methods, member))
-        return *t;
-    }
-    seqassertn(false, "cannot find '{}' in '{}'", member, typ->toString());
-    return "";
-  }
+  std::string getMethod(const types::ClassTypePtr &typ, const std::string &member);
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
   types::FuncTypePtr findMethod(types::ClassType *typ, const std::string &member,

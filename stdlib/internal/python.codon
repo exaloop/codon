@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 import os
 
@@ -48,6 +48,8 @@ PyComplex_ImagAsDouble = Function[[cobj], float](cobj())
 PyIter_Next = Function[[cobj], cobj](cobj())
 PySlice_New = Function[[cobj, cobj, cobj], cobj](cobj())
 PySlice_Unpack = Function[[cobj, Ptr[int], Ptr[int], Ptr[int]], int](cobj())
+PyCapsule_New = Function[[cobj, cobj, cobj], cobj](cobj())
+PyCapsule_GetPointer = Function[[cobj, cobj], cobj](cobj())
 
 # number
 PyNumber_Add = Function[[cobj, cobj], cobj](cobj())
@@ -133,6 +135,7 @@ PyDict_Type = cobj()
 PySet_Type = cobj()
 PyTuple_Type = cobj()
 PySlice_Type = cobj()
+PyCapsule_Type = cobj()
 
 # exceptions
 PyExc_BaseException = cobj()
@@ -232,6 +235,8 @@ def init_handles_dlopen(py_handle: cobj):
     global PyIter_Next
     global PySlice_New
     global PySlice_Unpack
+    global PyCapsule_New
+    global PyCapsule_GetPointer
     global PyNumber_Add
     global PyNumber_Subtract
     global PyNumber_Multiply
@@ -301,6 +306,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PySet_Type
     global PyTuple_Type
     global PySlice_Type
+    global PyCapsule_Type
     global PyExc_BaseException
     global PyExc_Exception
     global PyExc_NameError
@@ -361,6 +367,8 @@ def init_handles_dlopen(py_handle: cobj):
     PyIter_Next = dlsym(py_handle, "PyIter_Next")
     PySlice_New = dlsym(py_handle, "PySlice_New")
     PySlice_Unpack = dlsym(py_handle, "PySlice_Unpack")
+    PyCapsule_New = dlsym(py_handle, "PyCapsule_New")
+    PyCapsule_GetPointer = dlsym(py_handle, "PyCapsule_GetPointer")
     PyNumber_Add = dlsym(py_handle, "PyNumber_Add")
     PyNumber_Subtract = dlsym(py_handle, "PyNumber_Subtract")
     PyNumber_Multiply = dlsym(py_handle, "PyNumber_Multiply")
@@ -430,25 +438,26 @@ def init_handles_dlopen(py_handle: cobj):
     PySet_Type = dlsym(py_handle, "PySet_Type")
     PyTuple_Type = dlsym(py_handle, "PyTuple_Type")
     PySlice_Type = dlsym(py_handle, "PySlice_Type")
-    PyExc_BaseException = Ptr[cobj](dlsym(py_handle, "PyExc_BaseException"))[0]
-    PyExc_Exception = Ptr[cobj](dlsym(py_handle, "PyExc_Exception"))[0]
-    PyExc_NameError = Ptr[cobj](dlsym(py_handle, "PyExc_NameError"))[0]
-    PyExc_OSError = Ptr[cobj](dlsym(py_handle, "PyExc_OSError"))[0]
-    PyExc_IOError = Ptr[cobj](dlsym(py_handle, "PyExc_IOError"))[0]
-    PyExc_ValueError = Ptr[cobj](dlsym(py_handle, "PyExc_ValueError"))[0]
-    PyExc_LookupError = Ptr[cobj](dlsym(py_handle, "PyExc_LookupError"))[0]
-    PyExc_IndexError = Ptr[cobj](dlsym(py_handle, "PyExc_IndexError"))[0]
-    PyExc_KeyError = Ptr[cobj](dlsym(py_handle, "PyExc_KeyError"))[0]
-    PyExc_TypeError = Ptr[cobj](dlsym(py_handle, "PyExc_TypeError"))[0]
-    PyExc_ArithmeticError = Ptr[cobj](dlsym(py_handle, "PyExc_ArithmeticError"))[0]
-    PyExc_ZeroDivisionError = Ptr[cobj](dlsym(py_handle, "PyExc_ZeroDivisionError"))[0]
-    PyExc_OverflowError = Ptr[cobj](dlsym(py_handle, "PyExc_OverflowError"))[0]
-    PyExc_AttributeError = Ptr[cobj](dlsym(py_handle, "PyExc_AttributeError"))[0]
-    PyExc_RuntimeError = Ptr[cobj](dlsym(py_handle, "PyExc_RuntimeError"))[0]
-    PyExc_NotImplementedError = Ptr[cobj](dlsym(py_handle, "PyExc_NotImplementedError"))[0]
-    PyExc_StopIteration = Ptr[cobj](dlsym(py_handle, "PyExc_StopIteration"))[0]
-    PyExc_AssertionError = Ptr[cobj](dlsym(py_handle, "PyExc_AssertionError"))[0]
-    PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit"))[0]
+    PyCapsule_Type = dlsym(py_handle, "PyCapsule_Type")
+    PyExc_BaseException = Ptr[cobj](dlsym(py_handle, "PyExc_BaseException", cobj))[0]
+    PyExc_Exception = Ptr[cobj](dlsym(py_handle, "PyExc_Exception", cobj))[0]
+    PyExc_NameError = Ptr[cobj](dlsym(py_handle, "PyExc_NameError", cobj))[0]
+    PyExc_OSError = Ptr[cobj](dlsym(py_handle, "PyExc_OSError", cobj))[0]
+    PyExc_IOError = Ptr[cobj](dlsym(py_handle, "PyExc_IOError", cobj))[0]
+    PyExc_ValueError = Ptr[cobj](dlsym(py_handle, "PyExc_ValueError", cobj))[0]
+    PyExc_LookupError = Ptr[cobj](dlsym(py_handle, "PyExc_LookupError", cobj))[0]
+    PyExc_IndexError = Ptr[cobj](dlsym(py_handle, "PyExc_IndexError", cobj))[0]
+    PyExc_KeyError = Ptr[cobj](dlsym(py_handle, "PyExc_KeyError", cobj))[0]
+    PyExc_TypeError = Ptr[cobj](dlsym(py_handle, "PyExc_TypeError", cobj))[0]
+    PyExc_ArithmeticError = Ptr[cobj](dlsym(py_handle, "PyExc_ArithmeticError", cobj))[0]
+    PyExc_ZeroDivisionError = Ptr[cobj](dlsym(py_handle, "PyExc_ZeroDivisionError", cobj))[0]
+    PyExc_OverflowError = Ptr[cobj](dlsym(py_handle, "PyExc_OverflowError", cobj))[0]
+    PyExc_AttributeError = Ptr[cobj](dlsym(py_handle, "PyExc_AttributeError", cobj))[0]
+    PyExc_RuntimeError = Ptr[cobj](dlsym(py_handle, "PyExc_RuntimeError", cobj))[0]
+    PyExc_NotImplementedError = Ptr[cobj](dlsym(py_handle, "PyExc_NotImplementedError", cobj))[0]
+    PyExc_StopIteration = Ptr[cobj](dlsym(py_handle, "PyExc_StopIteration", cobj))[0]
+    PyExc_AssertionError = Ptr[cobj](dlsym(py_handle, "PyExc_AssertionError", cobj))[0]
+    PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit", cobj))[0]
 
 def init_handles_static():
     from C import Py_DecRef(cobj) as _Py_DecRef
@@ -491,6 +500,8 @@ def init_handles_static():
     from C import PyIter_Next(cobj) -> cobj as _PyIter_Next
     from C import PySlice_New(cobj, cobj, cobj) -> cobj as _PySlice_New
     from C import PySlice_Unpack(cobj, Ptr[int], Ptr[int], Ptr[int]) -> int as _PySlice_Unpack
+    from C import PyCapsule_New(cobj, cobj, cobj) -> cobj as _PyCapsule_New
+    from C import PyCapsule_GetPointer(cobj, cobj) -> cobj as _PyCapsule_GetPointer
     from C import PyNumber_Add(cobj, cobj) -> cobj as _PyNumber_Add
     from C import PyNumber_Subtract(cobj, cobj) -> cobj as _PyNumber_Subtract
     from C import PyNumber_Multiply(cobj, cobj) -> cobj as _PyNumber_Multiply
@@ -560,6 +571,7 @@ def init_handles_static():
     from C import PySet_Type: cobj as _PySet_Type
     from C import PyTuple_Type: cobj as _PyTuple_Type
     from C import PySlice_Type: cobj as _PySlice_Type
+    from C import PyCapsule_Type: cobj as _PyCapsule_Type
     from C import PyExc_BaseException: cobj as _PyExc_BaseException
     from C import PyExc_Exception: cobj as _PyExc_Exception
     from C import PyExc_NameError: cobj as _PyExc_NameError
@@ -620,6 +632,8 @@ def init_handles_static():
     global PyIter_Next
     global PySlice_New
     global PySlice_Unpack
+    global PyCapsule_New
+    global PyCapsule_GetPointer
     global PyNumber_Add
     global PyNumber_Subtract
     global PyNumber_Multiply
@@ -689,6 +703,7 @@ def init_handles_static():
     global PySet_Type
     global PyTuple_Type
     global PySlice_Type
+    global PyCapsule_Type
     global PyExc_BaseException
     global PyExc_Exception
     global PyExc_NameError
@@ -749,6 +764,8 @@ def init_handles_static():
     PyIter_Next = _PyIter_Next
     PySlice_New = _PySlice_New
     PySlice_Unpack = _PySlice_Unpack
+    PyCapsule_New = _PyCapsule_New
+    PyCapsule_GetPointer = _PyCapsule_GetPointer
     PyNumber_Add = _PyNumber_Add
     PyNumber_Subtract = _PyNumber_Subtract
     PyNumber_Multiply = _PyNumber_Multiply
@@ -818,6 +835,7 @@ def init_handles_static():
     PySet_Type = __ptr__(_PySet_Type).as_byte()
     PyTuple_Type = __ptr__(_PyTuple_Type).as_byte()
     PySlice_Type = __ptr__(_PySlice_Type).as_byte()
+    PyCapsule_Type = __ptr__(_PyCapsule_Type).as_byte()
     PyExc_BaseException = _PyExc_BaseException
     PyExc_Exception = _PyExc_Exception
     PyExc_NameError = _PyExc_NameError

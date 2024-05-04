@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 # OpenMP interface
 # Ref: https://github.com/llvm/llvm-project/tree/main/openmp
 
@@ -136,8 +136,8 @@ def _master_end(loc_ref: Ptr[Ident], gtid: int):
     __kmpc_end_master(loc_ref, i32(gtid))
 
 def _ordered_begin(loc_ref: Ptr[Ident], gtid: int):
-    from C import __kmpc_ordered(Ptr[Ident], i32) -> i32
-    return int(__kmpc_ordered(loc_ref, i32(gtid)))
+    from C import __kmpc_ordered(Ptr[Ident], i32)
+    __kmpc_ordered(loc_ref, i32(gtid))
 
 def _ordered_end(loc_ref: Ptr[Ident], gtid: int):
     from C import __kmpc_end_ordered(Ptr[Ident], i32)
@@ -538,7 +538,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
         task = Ptr[TaskWithPrivates[P]](data)[0]
         priv = task.data
         gtid64 = int(gtid)
-        if staticlen(S()) != 0:
+        if staticlen(S) != 0:
             shared = Ptr[S](task.task.shareds)[0]
             _task_loop_body_stub(gtid64, priv, shared)
         else:
@@ -781,11 +781,11 @@ def ordered(func):
     def _wrapper(*args, **kwargs):
         gtid = get_thread_num()
         loc = _default_loc()
-        if _ordered_begin(loc, gtid) != 0:
-            try:
-                func(*args, **kwargs)
-            finally:
-                _ordered_end(loc, gtid)
+        _ordered_begin(loc, gtid)
+        try:
+            func(*args, **kwargs)
+        finally:
+            _ordered_end(loc, gtid)
 
     return _wrapper
 

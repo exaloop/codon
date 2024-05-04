@@ -131,3 +131,9 @@ print a.b.x #! cannot import name 'x' from 'a.b.__init__'
 #%% import_err_6,barebones
 from a.b import whatever #! cannot import name 'whatever' from 'a.b.__init__'
 
+#%% import_subimport,barebones
+import a as xa  #: a
+
+xa.foo()  #: a.foo
+#: a.sub
+xa.sub.foo()  #: a.sub.foo

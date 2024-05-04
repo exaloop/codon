@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -21,7 +21,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
   transform(expr->expr);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
-      {1, {"-", "+", "!"}}, {2, {"@"}}, {3, {"!"}}};
+      {1, {"-", "+", "!", "~"}}, {2, {"@"}}, {3, {"!"}}};
   // Handle static expressions
   if (auto s = expr->expr->type->isStaticType()) {
     if (in(staticOps[s], expr->op)) {
@@ -62,7 +62,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1,
        {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%", "&",
-        "|", "^"}},
+        "|", "^", ">>", "<<"}},
       {2, {"==", "!=", "+"}},
       {3, {"<", "<=", ">", ">=", "==", "!=", "&&", "||"}}};
   if (expr->lexpr->type->isStaticType() && expr->rexpr->type->isStaticType()) {
@@ -277,14 +277,9 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     expr->setDone();
     return;
   }
-
-  if (expr->expr->isId("tuple") || expr->expr->isId("Tuple")) {
-    // Special case: tuples. Change to Tuple.N
-    auto t = expr->index->getTuple();
-    expr->expr = transform(N<IdExpr>(generateTuple(t ? t->items.size() : 1)));
-  } else {
-    transform(expr->expr, true);
-  }
+  if (expr->expr->isId("tuple"))
+    expr->expr->getId()->value = TYPE_TUPLE;
+  transform(expr->expr, true);
 
   // IndexExpr[i1, ..., iN] is internally represented as
   // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
@@ -299,7 +294,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     if (i->getList() && expr->expr->type->is("type")) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
       // `Function[...]`)
-      i = N<IndexExpr>(N<IdExpr>("Tuple"), N<TupleExpr>(i->getList()->items));
+      i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), i->getList()->items);
     }
     transform(i, true);
   }
@@ -337,14 +332,29 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   transformType(expr->typeExpr);
-  auto typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), getType(expr->typeExpr));
+  // std::shared_ptr<types::StaticType> repeats = nullptr;
+  // if (expr->typeExpr->isId(TYPE_TUPLE) && !expr->typeParams.empty()) {
+  //   transform(expr->typeParams[0]);
+  //   if (expr->typeParams[0]->staticValue.type == StaticValue::INT) {
+  //     repeats = Type::makeStatic(ctx->cache, expr->typeParams[0]);
+  //   }
+  // }
+
+  TypePtr typ = nullptr;
+  bool hasRepeats = false;
+  size_t typeParamsSize = expr->typeParams.size() - hasRepeats;
+  if (getType(expr->typeExpr)->is(TYPE_TUPLE)) {
+    typ = ctx->instantiate(generateTuple(typeParamsSize));
+  } else {
+    typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), getType(expr->typeExpr));
+  }
   seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr);
 
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
-  if (!isUnion && expr->typeParams.size() != generics.size())
+  if (!isUnion && typeParamsSize != generics.size())
     E(Error::GENERICS_MISMATCH, expr, ctx->cache->rev(typ->getClass()->name),
-      generics.size(), expr->typeParams.size());
+      generics.size(), typeParamsSize);
 
   if (expr->typeExpr->isId(TYPE_CALLABLE)) {
     // Case: Callable[...] trait instantiation
@@ -368,12 +378,12 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     typ->getLink()->trait = std::make_shared<TypeTrait>(getType(expr->typeParams[0]));
     unify(expr->type, typ);
   } else {
-    for (size_t i = 0; i < expr->typeParams.size(); i++) {
+    for (size_t i = hasRepeats; i < expr->typeParams.size(); i++) {
       transformType(expr->typeParams[i]);
       auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                                 getType(expr->typeParams[i]));
       if (isUnion || expr->typeParams[i]->type->isStaticType() !=
-          generics[i].type->isStaticType()) {
+                         generics[i].type->isStaticType()) {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
           transformType(expr->typeParams[i]);
         if (!expr->typeParams[i]->type->is("type"))
@@ -382,8 +392,10 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       if (isUnion)
         typ->getUnion()->addType(t);
       else
-        unify(t, generics[i].type);
+        unify(t, generics[i - hasRepeats].type);
     }
+    // if (repeats)
+    // typ->getRecord()->repeats = repeats;
     if (isUnion) {
       typ->getUnion()->seal();
     }
@@ -452,6 +464,8 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         ;
       else if (expr->op == "-")
         value = -value;
+      else if (expr->op == "~")
+        value = ~value;
       else
         value = !bool(value);
       LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
@@ -559,6 +573,10 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       lvalue = lvalue & rvalue;
     else if (expr->op == "|")
       lvalue = lvalue | rvalue;
+    else if (expr->op == ">>")
+      lvalue = lvalue >> rvalue;
+    else if (expr->op == "<<")
+      lvalue = lvalue << rvalue;
     else if (expr->op == "//")
       lvalue = divMod(ctx, lvalue, rvalue).first;
     else if (expr->op == "%")
@@ -629,6 +647,12 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
       auto g = expr->lexpr->getType()->getClass();
       for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
         ;
+      if (!g->generics[0].type->getClass()) {
+        auto typ = ctx->getUnbound();
+        typ->isStatic = 1;
+        unify(expr->type, typ);
+        return nullptr;
+      }
       if (g->generics[0].type->is("NoneType"))
         return transform(N<BoolExpr>(true));
 
@@ -776,18 +800,23 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 std::pair<bool, ExprPtr>
 TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
                                             const ExprPtr &expr, const ExprPtr &index) {
-  if (!tuple->isRecord())
-    return {false, nullptr};
-  if (!startswith(tuple->name, TYPE_TUPLE)) {
-    if (tuple->is(TYPE_OPTIONAL)) {
-      if (auto newTuple = tuple->generics[0].type->getClass()) {
-        return transformStaticTupleIndex(
-            newTuple, transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr)), index);
-      } else {
-        return {true, nullptr};
+  bool isStaticString = expr->type->isStaticType() == 2;
+  if (isStaticString && !expr->type->canRealize()) {
+    return {true, nullptr};
+  } else if (!isStaticString) {
+    if (!tuple->isRecord())
+      return {false, nullptr};
+    if (!tuple->is(TYPE_TUPLE)) {
+      if (tuple->is(TYPE_OPTIONAL)) {
+        if (auto newTuple = tuple->generics[0].type->getClass()) {
+          return transformStaticTupleIndex(
+              newTuple, transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr)), index);
+        } else {
+          return {true, nullptr};
+        }
       }
+      return {false, nullptr};
     }
-    return {false, nullptr};
   }
 
   // Extract the static integer value from expression
@@ -802,16 +831,15 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     return false;
   };
 
-  auto classItem = in(ctx->cache->classes, tuple->name);
-  seqassert(classItem, "cannot find class '{}'", tuple->name);
-  auto sz = int64_t(classItem->fields.size());
-  int64_t start = 0, stop = sz, step = 1;
+  std::string str = isStaticString ? expr->type->getStrStatic()->value : "";
+  auto sz = int64_t(isStaticString ? str.size() : getClassFields(tuple.get()).size());
+  int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
     auto i = translateIndex(start, stop);
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
-    return {true, transform(N<DotExpr>(expr, classItem->fields[i].name))};
+    start = i;
   } else if (auto slice = CAST(index->origExpr, SliceExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
@@ -824,23 +852,40 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
     if (slice->step && !slice->stop)
       stop = step > 0 ? sz : -(sz + 1);
     sliceAdjustIndices(sz, &start, &stop, step);
-
-    // Generate a sub-tuple
-    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
-    auto ass = N<AssignStmt>(var, expr);
-    std::vector<ExprPtr> te;
-    for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
-      if (i < 0 || i >= sz)
-        E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
-      te.push_back(N<DotExpr>(clone(var), classItem->fields[i].name));
-    }
-    ExprPtr e = transform(
-        N<StmtExpr>(std::vector<StmtPtr>{ass},
-                    N<CallExpr>(N<DotExpr>(generateTuple(te.size()), "__new__"), te)));
-    return {true, e};
+    multiple = 1;
+  } else {
+    return {false, nullptr};
   }
 
-  return {false, nullptr};
+  if (isStaticString) {
+    if (!multiple) {
+      return {true, transform(N<StringExpr>(str.substr(start, 1)))};
+    } else {
+      std::string newStr;
+      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
+        newStr += str[i];
+      return {true, transform(N<StringExpr>(newStr))};
+    }
+  } else {
+    auto classFields = getClassFields(tuple.get());
+    if (!multiple) {
+      return {true, transform(N<DotExpr>(expr, classFields[start].name))};
+    } else {
+      // Generate a sub-tuple
+      auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
+      auto ass = N<AssignStmt>(var, expr);
+      std::vector<ExprPtr> te;
+      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
+        if (i < 0 || i >= sz)
+          E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
+        te.push_back(N<DotExpr>(clone(var), classFields[i].name));
+      }
+      auto s = generateTuple(te.size());
+      ExprPtr e = transform(N<StmtExpr>(std::vector<StmtPtr>{ass},
+                                        N<CallExpr>(N<IdExpr>(TYPE_TUPLE), te)));
+      return {true, e};
+    }
+  }
 }
 
 /// Follow Python indexing rules for static tuple indices.

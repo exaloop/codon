@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 @pure
 @C
@@ -18,7 +18,9 @@ class str:
         return str(Ptr[byte](), 0)
 
     def __new__(what) -> str:
-        if hasattr(what, "__str__"):
+        if isinstance(what, Union):
+            return __internal__.union_str(what)
+        elif hasattr(what, "__str__"):
             return what.__str__()
         else:
             return what.__repr__()
@@ -144,3 +146,7 @@ class str:
                 str.memcpy(p + n, i.ptr, i.len)
                 n += i.len
             return str(p, total)
+
+    def __prefix_b__(s: str, N: Static[int]):
+        # Currently a no-op, as Codon str's are just bytes
+        return s

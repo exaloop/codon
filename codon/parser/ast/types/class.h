@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -49,6 +49,11 @@ struct ClassType : public Type {
 
   bool isTuple = false;
   std::string _rn;
+
+  /// Indicates whether this class has repeats (e.g., Tuple[int, 5])
+  /// or its arguments are still being deduced
+  /// TODO!
+  types::TypePtr repeats = nullptr;
 
   explicit ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics = {},

@@ -2,6 +2,220 @@
 
 @test
 def test_min_max():
+    neg = lambda x: -x
+
+    assert min(42, 24) == 24
+    assert max(42, 24) == 42
+    assert min([42, 24]) == 24
+    assert max([42, 24]) == 42
+    assert min(1, 2, 3, 2, 1, 0, -1, 1, 2) == -1
+    assert max(1, 2, 3, 2, 1, 0, -1, 1, 2) == 3
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2]) == -1
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2]) == 3
+
+    assert min(42, 24, key=neg) == 42
+    assert max(42, 24, key=neg) == 24
+    assert min([42, 24], key=neg) == 42
+    assert max([42, 24], key=neg) == 24
+    assert min(1, 2, 3, 2, 1, 0, -1, 1, 2, key=neg) == 3
+    assert max(1, 2, 3, 2, 1, 0, -1, 1, 2, key=neg) == -1
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], key=neg) == 3
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], key=neg) == -1
+
+    assert min([42, 24], default=100) == 24
+    assert max([42, 24], default=100) == 42
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100) == -1
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100) == 3
+
+    assert min([42, 24], default=100, key=neg) == 42
+    assert max([42, 24], default=100, key=neg) == 24
+    assert min([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100, key=neg) == 3
+    assert max([1, 2, 3, 2, 1, 0, -1, 1, 2], default=100, key=neg) == -1
+
+    assert max([2, 1, 1, 1, 1]) == 2
+    assert max([1, 2, 1, 1, 1]) == 2
+    assert max([1, 1, 2, 1, 1]) == 2
+    assert max([1, 1, 1, 2, 1]) == 2
+    assert max([1, 1, 1, 1, 2]) == 2
+    assert max([2, 1, 1, 1]) == 2
+    assert max([1, 2, 1, 1]) == 2
+    assert max([1, 1, 2, 1]) == 2
+    assert max([1, 1, 1, 2]) == 2
+    assert max([2, 1, 1]) == 2
+    assert max([1, 2, 1]) == 2
+    assert max([1, 1, 2]) == 2
+    assert max([2, 1]) == 2
+    assert max([1, 2]) == 2
+
+    assert max([2, 1, 1, 1, 1], key=neg) == 1
+    assert max([1, 2, 1, 1, 1], key=neg) == 1
+    assert max([1, 1, 2, 1, 1], key=neg) == 1
+    assert max([1, 1, 1, 2, 1], key=neg) == 1
+    assert max([1, 1, 1, 1, 2], key=neg) == 1
+    assert max([2, 1, 1, 1], key=neg) == 1
+    assert max([1, 2, 1, 1], key=neg) == 1
+    assert max([1, 1, 2, 1], key=neg) == 1
+    assert max([1, 1, 1, 2], key=neg) == 1
+    assert max([2, 1, 1], key=neg) == 1
+    assert max([1, 2, 1], key=neg) == 1
+    assert max([1, 1, 2], key=neg) == 1
+    assert max([2, 1], key=neg) == 1
+    assert max([1, 2], key=neg) == 1
+
+    assert min([2, 1, 1, 1, 1]) == 1
+    assert min([1, 2, 1, 1, 1]) == 1
+    assert min([1, 1, 2, 1, 1]) == 1
+    assert min([1, 1, 1, 2, 1]) == 1
+    assert min([1, 1, 1, 1, 2]) == 1
+    assert min([2, 1, 1, 1]) == 1
+    assert min([1, 2, 1, 1]) == 1
+    assert min([1, 1, 2, 1]) == 1
+    assert min([1, 1, 1, 2]) == 1
+    assert min([2, 1, 1]) == 1
+    assert min([1, 2, 1]) == 1
+    assert min([1, 1, 2]) == 1
+    assert min([2, 1]) == 1
+    assert min([1, 2]) == 1
+
+    assert min([2, 1, 1, 1, 1], key=neg) == 2
+    assert min([1, 2, 1, 1, 1], key=neg) == 2
+    assert min([1, 1, 2, 1, 1], key=neg) == 2
+    assert min([1, 1, 1, 2, 1], key=neg) == 2
+    assert min([1, 1, 1, 1, 2], key=neg) == 2
+    assert min([2, 1, 1, 1], key=neg) == 2
+    assert min([1, 2, 1, 1], key=neg) == 2
+    assert min([1, 1, 2, 1], key=neg) == 2
+    assert min([1, 1, 1, 2], key=neg) == 2
+    assert min([2, 1, 1], key=neg) == 2
+    assert min([1, 2, 1], key=neg) == 2
+    assert min([1, 1, 2], key=neg) == 2
+    assert min([2, 1], key=neg) == 2
+    assert min([1, 2], key=neg) == 2
+
+    assert max([0, 1, 1, 1, 1]) == 1
+    assert max([1, 0, 1, 1, 1]) == 1
+    assert max([1, 1, 0, 1, 1]) == 1
+    assert max([1, 1, 1, 0, 1]) == 1
+    assert max([1, 1, 1, 1, 0]) == 1
+    assert max([0, 1, 1, 1]) == 1
+    assert max([1, 0, 1, 1]) == 1
+    assert max([1, 1, 0, 1]) == 1
+    assert max([1, 1, 1, 0]) == 1
+    assert max([0, 1, 1]) == 1
+    assert max([1, 0, 1]) == 1
+    assert max([1, 1, 0]) == 1
+    assert max([0, 1]) == 1
+    assert max([1, 0]) == 1
+
+    assert max([0, 1, 1, 1, 1], key=neg) == 0
+    assert max([1, 0, 1, 1, 1], key=neg) == 0
+    assert max([1, 1, 0, 1, 1], key=neg) == 0
+    assert max([1, 1, 1, 0, 1], key=neg) == 0
+    assert max([1, 1, 1, 1, 0], key=neg) == 0
+    assert max([0, 1, 1, 1], key=neg) == 0
+    assert max([1, 0, 1, 1], key=neg) == 0
+    assert max([1, 1, 0, 1], key=neg) == 0
+    assert max([1, 1, 1, 0], key=neg) == 0
+    assert max([0, 1, 1], key=neg) == 0
+    assert max([1, 0, 1], key=neg) == 0
+    assert max([1, 1, 0], key=neg) == 0
+    assert max([0, 1], key=neg) == 0
+    assert max([1, 0], key=neg) == 0
+
+    assert min([0, 1, 1, 1, 1]) == 0
+    assert min([1, 0, 1, 1, 1]) == 0
+    assert min([1, 1, 0, 1, 1]) == 0
+    assert min([1, 1, 1, 0, 1]) == 0
+    assert min([1, 1, 1, 1, 0]) == 0
+    assert min([0, 1, 1, 1]) == 0
+    assert min([1, 0, 1, 1]) == 0
+    assert min([1, 1, 0, 1]) == 0
+    assert min([1, 1, 1, 0]) == 0
+    assert min([0, 1, 1]) == 0
+    assert min([1, 0, 1]) == 0
+    assert min([1, 1, 0]) == 0
+    assert min([0, 1]) == 0
+    assert min([1, 0]) == 0
+
+    assert min([0, 1, 1, 1, 1], key=neg) == 1
+    assert min([1, 0, 1, 1, 1], key=neg) == 1
+    assert min([1, 1, 0, 1, 1], key=neg) == 1
+    assert min([1, 1, 1, 0, 1], key=neg) == 1
+    assert min([1, 1, 1, 1, 0], key=neg) == 1
+    assert min([0, 1, 1, 1], key=neg) == 1
+    assert min([1, 0, 1, 1], key=neg) == 1
+    assert min([1, 1, 0, 1], key=neg) == 1
+    assert min([1, 1, 1, 0], key=neg) == 1
+    assert min([0, 1, 1], key=neg) == 1
+    assert min([1, 0, 1], key=neg) == 1
+    assert min([1, 1, 0], key=neg) == 1
+    assert min([0, 1], key=neg) == 1
+    assert min([1, 0], key=neg) == 1
+
+    assert min([0, 1, 1, 1, 1], default=99) == 0
+    assert min([1, 0, 1, 1, 1], default=99) == 0
+    assert min([1, 1, 0, 1, 1], default=99) == 0
+    assert min([1, 1, 1, 0, 1], default=99) == 0
+    assert min([1, 1, 1, 1, 0], default=99) == 0
+    assert min([0, 1, 1, 1], default=99) == 0
+    assert min([1, 0, 1, 1], default=99) == 0
+    assert min([1, 1, 0, 1], default=99) == 0
+    assert min([1, 1, 1, 0], default=99) == 0
+    assert min([0, 1, 1], default=99) == 0
+    assert min([1, 0, 1], default=99) == 0
+    assert min([1, 1, 0], default=99) == 0
+    assert min([0, 1], default=99) == 0
+    assert min([1, 0], default=99) == 0
+    assert min(List[int](), default=99) == 99
+
+    assert min([0, 1, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1, 1], key=neg, default=99) == 1
+    assert min([1, 0, 1], key=neg, default=99) == 1
+    assert min([1, 1, 0], key=neg, default=99) == 1
+    assert min([0, 1], key=neg, default=99) == 1
+    assert min([1, 0], key=neg, default=99) == 1
+    assert min(List[int](), key=neg, default=99) == 99
+
+    assert max([0, 1, 1, 1, 1], default=99) == 1
+    assert max([1, 0, 1, 1, 1], default=99) == 1
+    assert max([1, 1, 0, 1, 1], default=99) == 1
+    assert max([1, 1, 1, 0, 1], default=99) == 1
+    assert max([1, 1, 1, 1, 0], default=99) == 1
+    assert max([0, 1, 1, 1], default=99) == 1
+    assert max([1, 0, 1, 1], default=99) == 1
+    assert max([1, 1, 0, 1], default=99) == 1
+    assert max([1, 1, 1, 0], default=99) == 1
+    assert max([0, 1, 1], default=99) == 1
+    assert max([1, 0, 1], default=99) == 1
+    assert max([1, 1, 0], default=99) == 1
+    assert max([0, 1], default=99) == 1
+    assert max([1, 0], default=99) == 1
+    assert max(List[int](), default=99) == 99
+
+    assert max([0, 1, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1, 1], key=neg, default=99) == 0
+    assert max([1, 0, 1], key=neg, default=99) == 0
+    assert max([1, 1, 0], key=neg, default=99) == 0
+    assert max([0, 1], key=neg, default=99) == 0
+    assert max([1, 0], key=neg, default=99) == 0
+    assert max(List[int](), key=neg, default=99) == 99
+
     assert max(2, 1, 1, 1, 1) == 2
     assert max(1, 2, 1, 1, 1) == 2
     assert max(1, 1, 2, 1, 1) == 2
@@ -16,6 +230,21 @@ def test_min_max():
     assert max(1, 1, 2) == 2
     assert max(2, 1) == 2
     assert max(1, 2) == 2
+
+    assert max(2, 1, 1, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, 1, 1, key=neg) == 1
+    assert max(1, 1, 2, 1, 1, key=neg) == 1
+    assert max(1, 1, 1, 2, 1, key=neg) == 1
+    assert max(1, 1, 1, 1, 2, key=neg) == 1
+    assert max(2, 1, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, 1, key=neg) == 1
+    assert max(1, 1, 2, 1, key=neg) == 1
+    assert max(1, 1, 1, 2, key=neg) == 1
+    assert max(2, 1, 1, key=neg) == 1
+    assert max(1, 2, 1, key=neg) == 1
+    assert max(1, 1, 2, key=neg) == 1
+    assert max(2, 1, key=neg) == 1
+    assert max(1, 2, key=neg) == 1
 
     assert min(2, 1, 1, 1, 1) == 1
     assert min(1, 2, 1, 1, 1) == 1
@@ -32,6 +261,21 @@ def test_min_max():
     assert min(2, 1) == 1
     assert min(1, 2) == 1
 
+    assert min(2, 1, 1, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, 1, 1, key=neg) == 2
+    assert min(1, 1, 2, 1, 1, key=neg) == 2
+    assert min(1, 1, 1, 2, 1, key=neg) == 2
+    assert min(1, 1, 1, 1, 2, key=neg) == 2
+    assert min(2, 1, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, 1, key=neg) == 2
+    assert min(1, 1, 2, 1, key=neg) == 2
+    assert min(1, 1, 1, 2, key=neg) == 2
+    assert min(2, 1, 1, key=neg) == 2
+    assert min(1, 2, 1, key=neg) == 2
+    assert min(1, 1, 2, key=neg) == 2
+    assert min(2, 1, key=neg) == 2
+    assert min(1, 2, key=neg) == 2
+
     assert max(0, 1, 1, 1, 1) == 1
     assert max(1, 0, 1, 1, 1) == 1
     assert max(1, 1, 0, 1, 1) == 1
@@ -46,6 +290,21 @@ def test_min_max():
     assert max(1, 1, 0) == 1
     assert max(0, 1) == 1
     assert max(1, 0) == 1
+
+    assert max(0, 1, 1, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, 1, 1, key=neg) == 0
+    assert max(1, 1, 0, 1, 1, key=neg) == 0
+    assert max(1, 1, 1, 0, 1, key=neg) == 0
+    assert max(1, 1, 1, 1, 0, key=neg) == 0
+    assert max(0, 1, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, 1, key=neg) == 0
+    assert max(1, 1, 0, 1, key=neg) == 0
+    assert max(1, 1, 1, 0, key=neg) == 0
+    assert max(0, 1, 1, key=neg) == 0
+    assert max(1, 0, 1, key=neg) == 0
+    assert max(1, 1, 0, key=neg) == 0
+    assert max(0, 1, key=neg) == 0
+    assert max(1, 0, key=neg) == 0
 
     assert min(0, 1, 1, 1, 1) == 0
     assert min(1, 0, 1, 1, 1) == 0
@@ -62,10 +321,89 @@ def test_min_max():
     assert min(0, 1) == 0
     assert min(1, 0) == 0
 
+    assert min(0, 1, 1, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, 1, 1, key=neg) == 1
+    assert min(1, 1, 0, 1, 1, key=neg) == 1
+    assert min(1, 1, 1, 0, 1, key=neg) == 1
+    assert min(1, 1, 1, 1, 0, key=neg) == 1
+    assert min(0, 1, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, 1, key=neg) == 1
+    assert min(1, 1, 0, 1, key=neg) == 1
+    assert min(1, 1, 1, 0, key=neg) == 1
+    assert min(0, 1, 1, key=neg) == 1
+    assert min(1, 0, 1, key=neg) == 1
+    assert min(1, 1, 0, key=neg) == 1
+    assert min(0, 1, key=neg) == 1
+    assert min(1, 0, key=neg) == 1
+
     assert min(a*a for a in range(3)) == 0
     assert max(a*a for a in range(3)) == 4
     assert min([0, 2, -1]) == -1
     assert max([0, 2, -1]) == 2
+
+    assert min((a*a for a in range(3)), key=neg) == 4
+    assert max((a*a for a in range(3)), key=neg) == 0
+    assert min([0, 2, -1], key=neg) == 2
+    assert max([0, 2, -1], key=neg) == -1
+
+    assert min('abcx') == 'a'
+    assert max('abcx') == 'x'
+    assert min(['a', 'b', 'c', 'x']) == 'a'
+    assert max(['a', 'b', 'c', 'x']) == 'x'
+
+    d = {'a': 4, 'b': 1, 'c': -1, 'x': 9}
+    assert min('abcx', key=d.__getitem__) == 'c'
+    assert max('abcx', key=d.__getitem__) == 'x'
+    assert min(['a', 'b', 'c', 'x'], key=d.__getitem__) == 'c'
+    assert max(['a', 'b', 'c', 'x'], key=d.__getitem__) == 'x'
+
+    try:
+        max('')
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min('')
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max(List[float]())
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min(List[float]())
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max('', key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min('', key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
+
+    try:
+        max(List[float](), key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'max() arg is an empty sequence'
+
+    try:
+        min(List[float](), key=lambda x: x * 2)
+        assert False
+    except ValueError as e:
+        assert str(e) == 'min() arg is an empty sequence'
 
 @test
 def test_map_filter():
@@ -203,6 +541,89 @@ def test_int_format():
     k = Int[128](0x7fffffffffffffff)
     assert (str(k), bin(k), oct(k), hex(k)) == ('9223372036854775807', '0b111111111111111111111111111111111111111111111111111111111111111', '0o777777777777777777777', '0x7fffffffffffffff')
 
+@test
+def test_complex_format():
+    import math
+
+    assert str(complex(1.1, 2.2)) == '(1.1+2.2j)'
+    assert str(complex(11.0, -22.0)) == '(11-22j)'
+    assert str(complex(-111.0, 222.0)) == '(-111+222j)'
+    assert str(complex(-1111.0, -2222.0)) == '(-1111-2222j)'
+    assert str(complex(1.0, 0.0)) == '(1+0j)'
+    assert str(complex(0.0, 1.0)) == '1j'
+    assert str(complex(-0.0, 1.0)) == '(-0+1j)'
+    assert str(complex(0.0, -1.0)) == '-1j'
+    assert str(complex(-0.0, -1.0)) == '(-0-1j)'
+    assert str(complex(0.0, 0.0)) == '0j'
+    assert str(complex(0.0, -0.0)) == '-0j'
+    assert str(complex(-0.0, 0.0)) == '(-0+0j)'
+    assert str(complex(-0.0, -0.0)) == '(-0-0j)'
+    assert str(complex(math.inf, math.inf)) == '(inf+infj)'
+    assert str(complex(-math.inf, math.nan)) == '(-inf+nanj)'
+    assert str(complex(math.nan, -math.inf)) == '(nan-infj)'
+    assert str(complex(math.nan, math.nan)) == '(nan+nanj)'
+
+    assert repr(complex(1.1, 2.2)) == '(1.1+2.2j)'
+    assert repr(complex(11.0, -22.0)) == '(11-22j)'
+    assert repr(complex(-111.0, 222.0)) == '(-111+222j)'
+    assert repr(complex(-1111.0, -2222.0)) == '(-1111-2222j)'
+    assert repr(complex(1.0, 0.0)) == '(1+0j)'
+    assert repr(complex(0.0, 1.0)) == '1j'
+    assert repr(complex(-0.0, 1.0)) == '(-0+1j)'
+    assert repr(complex(0.0, -1.0)) == '-1j'
+    assert repr(complex(-0.0, -1.0)) == '(-0-1j)'
+    assert repr(complex(0.0, 0.0)) == '0j'
+    assert repr(complex(0.0, -0.0)) == '-0j'
+    assert repr(complex(-0.0, 0.0)) == '(-0+0j)'
+    assert repr(complex(-0.0, -0.0)) == '(-0-0j)'
+    assert repr(complex(math.inf, math.inf)) == '(inf+infj)'
+    assert repr(complex(-math.inf, math.nan)) == '(-inf+nanj)'
+    assert repr(complex(math.nan, -math.inf)) == '(nan-infj)'
+    assert repr(complex(math.nan, math.nan)) == '(nan+nanj)'
+
+    assert str(complex64(1.1, 2.2)) == '(1.1+2.2j)'
+    assert str(complex64(11.0, -22.0)) == '(11-22j)'
+    assert str(complex64(-111.0, 222.0)) == '(-111+222j)'
+    assert str(complex64(-1111.0, -2222.0)) == '(-1111-2222j)'
+    assert str(complex64(1.0, 0.0)) == '(1+0j)'
+    assert str(complex64(0.0, 1.0)) == '1j'
+    assert str(complex64(-0.0, 1.0)) == '(-0+1j)'
+    assert str(complex64(0.0, -1.0)) == '-1j'
+    assert str(complex64(-0.0, -1.0)) == '(-0-1j)'
+    assert str(complex64(0.0, 0.0)) == '0j'
+    assert str(complex64(0.0, -0.0)) == '-0j'
+    assert str(complex64(-0.0, 0.0)) == '(-0+0j)'
+    assert str(complex64(-0.0, -0.0)) == '(-0-0j)'
+    assert str(complex64(math.inf, math.inf)) == '(inf+infj)'
+    assert str(complex64(-math.inf, math.nan)) == '(-inf+nanj)'
+    assert str(complex64(math.nan, -math.inf)) == '(nan-infj)'
+    assert str(complex64(math.nan, math.nan)) == '(nan+nanj)'
+
+    assert repr(complex64(1.1, 2.2)) == 'complex64(1.1+2.2j)'
+    assert repr(complex64(11.0, -22.0)) == 'complex64(11-22j)'
+    assert repr(complex64(-111.0, 222.0)) == 'complex64(-111+222j)'
+    assert repr(complex64(-1111.0, -2222.0)) == 'complex64(-1111-2222j)'
+    assert repr(complex64(1.0, 0.0)) == 'complex64(1+0j)'
+    assert repr(complex64(0.0, 1.0)) == 'complex64(1j)'
+    assert repr(complex64(-0.0, 1.0)) == 'complex64(-0+1j)'
+    assert repr(complex64(0.0, -1.0)) == 'complex64(-1j)'
+    assert repr(complex64(-0.0, -1.0)) == 'complex64(-0-1j)'
+    assert repr(complex64(0.0, 0.0)) == 'complex64(0j)'
+    assert repr(complex64(0.0, -0.0)) == 'complex64(-0j)'
+    assert repr(complex64(-0.0, 0.0)) == 'complex64(-0+0j)'
+    assert repr(complex64(-0.0, -0.0)) == 'complex64(-0-0j)'
+    assert repr(complex64(math.inf, math.inf)) == 'complex64(inf+infj)'
+    assert repr(complex64(-math.inf, math.nan)) == 'complex64(-inf+nanj)'
+    assert repr(complex64(math.nan, -math.inf)) == 'complex64(nan-infj)'
+    assert repr(complex64(math.nan, math.nan)) == 'complex64(nan+nanj)'
+
+@test
+def test_alt_types_from_str():
+    assert float32('3.14') == float32(3.14)
+    # TODO: fails on manylinux w/ "Symbols not found: [ __truncdfhf2, __extendhfsf2 ]"
+    # assert float16('3.14') == float16(3.14)
+    assert complex64('1+2j') == complex64(1+2j)
+
 class A:
     def __len__(self):
         return 42
@@ -337,7 +758,7 @@ def test_num_from_str():
         assert str(e) == "could not convert string to float: ''"
 
 @test
-def test_files(open_fn):
+def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'
     f = open_fn(path, 'w')
     f.write('hello\nworld\n')
@@ -349,21 +770,24 @@ def test_files(open_fn):
     with open_fn(path) as f:
         assert f.read(3) == 'hel'
         assert f.read() == 'lo\nworld\n'
-        f.seek(0, 0)
-        assert f.tell() == 0
-        assert f.read() == 'hello\nworld\n'
+        if hasattr(f, "seek"):
+            f.seek(0, 0)
+            assert f.tell() == 0
+            assert f.read() == 'hello\nworld\n'
 
-    try:
-        f.tell()
-        assert False
-    except IOError:
-        pass
+    if hasattr(f, "tell"):
+        try:
+            f.tell()
+            assert False
+        except IOError:
+            pass
 
-    try:
-        f.seek(0, 0)
-        assert False
-    except IOError:
-        pass
+    if hasattr(f, "seek"):
+        try:
+            f.seek(0, 0)
+            assert False
+        except IOError:
+            pass
 
     try:
         f.flush()
@@ -371,10 +795,16 @@ def test_files(open_fn):
     except IOError:
         pass
 
-    f = open_fn(path, 'a')
-    f.write('goodbye')
-    f.flush()
-    f.close()
+    if append_allowed:
+        f = open_fn(path, 'a')
+        f.write('goodbye')
+        f.flush()
+        f.close()
+    else:
+        f = open_fn(path, 'w')
+        f.write('hello\nworld\ngoodbye')
+        f.flush()
+        f.close()
 
     with open_fn(path) as f:
         assert [line for line in f] == ['hello\n', 'world\n', 'goodbye']
@@ -387,6 +817,8 @@ test_min_max()
 test_map_filter()
 test_gen_builtins()
 test_int_format()
+test_complex_format()
+test_alt_types_from_str()
 test_reversed()
 test_divmod()
 test_pow()
@@ -394,6 +826,8 @@ test_num_from_str()
 test_files(open)
 import gzip
 test_files(gzip.open)
+import bz2
+test_files(bz2.open, append_allowed=False)
 
 
 # Codon-specific

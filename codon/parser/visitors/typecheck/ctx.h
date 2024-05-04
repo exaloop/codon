@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -128,9 +128,14 @@ struct TypeContext : public Context<TypecheckItem> {
     /// block, the corresponding loop variable is empty.
     struct Loop {
       std::string breakVar;
+      /// False if a loop has continue/break statement. Used for flattening static
+      /// loops.
+      bool flat = true;
       Loop(const std::string &breakVar) : breakVar(breakVar) {}
     };
     std::vector<Loop> loops;
+
+    std::set<types::TypePtr> pendingDefaults;
 
   public:
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
@@ -163,7 +168,6 @@ struct TypeContext : public Context<TypecheckItem> {
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel = 0;
-  std::set<types::TypePtr> pendingDefaults;
   int changedNodes = 0;
 
   /// Number of nested realizations. Used to prevent infinite instantiations.
@@ -267,13 +271,13 @@ public:
   }
 
   /// Returns the list of generic methods that correspond to typeName.method.
-  std::vector<types::FuncTypePtr> findMethod(const std::string &typeName,
+  std::vector<types::FuncTypePtr> findMethod(types::ClassType *type,
                                              const std::string &method,
-                                             bool hideShadowed = true) const;
+                                             bool hideShadowed = true);
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
-  Cache::Class::ClassField *findMember(const std::string &typeName,
-                            const std::string &member) const;
+  Cache::Class::ClassField *findMember(const types::ClassTypePtr &,
+                                       const std::string &) const;
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;

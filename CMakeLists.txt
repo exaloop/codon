@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.16.1"
+  VERSION "0.17.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.1.5")
+set(CODON_JIT_PYTHON_VERSION "0.2.0")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
-               "${PROJECT_SOURCE_DIR}/extra/python/codon/version.py")
+               "${PROJECT_SOURCE_DIR}/jit/codon/version.py")
 
 option(CODON_GPU "build Codon GPU backend" OFF)
 
@@ -452,5 +452,5 @@ install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATI
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/extra/python/ DESTINATION python)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)

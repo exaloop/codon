@@ -415,6 +415,20 @@ def foo(x):
 print foo('hi') #: (3, 2)
 print foo('hi', 1) #: (2, 'hi_1')
 
+def fox(a: int, b: int, c: int, dtype: type = int):
+    print('fox 1:', a, b, c)
+
+@overload
+def fox(a: int, b: int, dtype: type = int):
+    print('fox 2:', a, b, dtype.__class__.__name__)
+
+fox(1, 2, float)
+#: fox 2: 1 2 float
+fox(1, 2)
+#: fox 2: 1 2 int
+fox(1, 2, 3)
+#: fox 1: 1 2 3
+
 #%% fn_shadow,barebones
 def foo(x):
     return 1, x
@@ -482,3 +496,48 @@ def foo():
         return a
     bar(1)
 foo()
+
+#%% domination_nested,barebones
+def correlate(a, b, mode = 'valid'):
+    if mode == 'valid':
+        if isinstance(a, List):
+            xret = '1'
+        else:
+            xret = '2'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    elif mode == 'same':
+        if isinstance(a, List):
+            xret = '3'
+        else:
+            xret = '4'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    elif mode == 'full':
+        if isinstance(a, List):
+            xret = '5'
+        else:
+            xret = '6'
+        for i in a:
+            for j in b:
+                xret += 'z'
+    else:
+        raise ValueError(f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})")
+    return xret
+print(correlate([1], [2], 'full'))  #: 5z
+
+def foo(x, y):
+    a = 5
+    if isinstance(a, int):
+        if staticlen(y) == 0:
+            a = 0
+        elif staticlen(y) == 1:
+            a = 1
+        else:
+            for i in range(10):
+                a = 40
+            return a
+    return a
+print foo(5, (1, 2, 3))  #: 40

@@ -309,8 +309,8 @@ When subclassing nodes other than types (e.g. instructions, flows, etc.), be sur
 
 # Utilities
 
-The `codon/ir/util/` directory has a number of utility and generally helpful functions, for things like
-cloning IR, inlining/outlining, matching and more. `codon/ir/util/irtools.h` in particular has many helpful
+The `codon/cir/util/` directory has a number of utility and generally helpful functions, for things like
+cloning IR, inlining/outlining, matching and more. `codon/cir/util/irtools.h` in particular has many helpful
 functions for performing various common tasks. If you're working with CIR, be sure to take a look at these
 functions to make your life easier!
 

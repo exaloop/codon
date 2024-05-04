@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "generator.h"
 
@@ -60,7 +60,11 @@ struct GeneratorSumTransformer : public util::Operator {
     auto *M = v->getModule();
     auto *newReturn = M->Nr<ReturnInstr>(M->Nr<VarValue>(accumulator));
     see(newReturn);
-    v->replaceAll(util::series(v->getValue(), newReturn));
+    if (v->getValue()) {
+      v->replaceAll(util::series(v->getValue(), newReturn));
+    } else {
+      v->replaceAll(newReturn);
+    }
   }
 
   void handle(YieldInInstr *v) override { valid = false; }
@@ -97,7 +101,11 @@ struct GeneratorAnyAllTransformer : public util::Operator {
     auto *M = v->getModule();
     auto *newReturn = M->Nr<ReturnInstr>(M->getBool(!any));
     see(newReturn);
-    v->replaceAll(util::series(v->getValue(), newReturn));
+    if (v->getValue()) {
+      v->replaceAll(util::series(v->getValue(), newReturn));
+    } else {
+      v->replaceAll(newReturn);
+    }
   }
 
   void handle(YieldInInstr *v) override { valid = false; }

@@ -84,7 +84,7 @@ class Foo:
 
 #%% class_err_8,barebones
 class Foo:
-    while True: pass
+    while 0: pass
 #! unexpected expression in class definition
 
 #%% class_err_9,barebones
@@ -438,3 +438,30 @@ class Foo:
 Foo.sm(1)  #: sm 1
 Foo().sm(2)  #: sm 2
 Foo().m()  #: m Foo
+
+#%% class_setter,barebones
+class Foo:
+    _x: int
+
+    @property
+    def x(self):
+        print('getter')
+        return self._x
+
+    @x.setter
+    def x(self, v):
+        print('setter')
+        self._x = v
+
+f = Foo(1)
+print(f.x)
+#: getter
+#: 1
+
+f.x = 99
+print(f.x)
+print(f._x)
+#: setter
+#: getter
+#: 99
+#: 99

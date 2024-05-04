@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "openmp.h"
 
@@ -203,18 +203,16 @@ struct Reduction {
     case Kind::XOR:
       result = *lhs ^ *arg;
       break;
-    case Kind::MIN: {
-      auto *tup = util::makeTuple({lhs, arg});
-      auto *fn = M->getOrRealizeFunc("min", {tup->getType()}, {}, builtinModule);
-      seqassertn(fn, "min function not found");
-      result = util::call(fn, {tup});
-      break;
-    }
+    case Kind::MIN:
     case Kind::MAX: {
+      // signature is (tuple of args, key, default)
+      auto name = (kind == Kind::MIN ? "min" : "max");
       auto *tup = util::makeTuple({lhs, arg});
-      auto *fn = M->getOrRealizeFunc("max", {tup->getType()}, {}, builtinModule);
-      seqassertn(fn, "max function not found");
-      result = util::call(fn, {tup});
+      auto *none = (*M->getNoneType())();
+      auto *fn = M->getOrRealizeFunc(
+          name, {tup->getType(), none->getType(), none->getType()}, {}, builtinModule);
+      seqassertn(fn, "{} function not found", name);
+      result = util::call(fn, {tup, none, none});
       break;
     }
     default:
@@ -432,6 +430,7 @@ struct ReductionIdentifier : public util::Operator {
     auto *ptrType = cast<types::PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
+    auto *noneType = M->getOptionalType(M->getNoneType());
 
     // double-check the call
     if (!util::isCallOf(v, Module::SETITEM_MAGIC_NAME,
@@ -454,7 +453,8 @@ struct ReductionIdentifier : public util::Operator {
         if (!util::isCallOf(item, rf.name, {type, type}, type, /*method=*/true))
           continue;
       } else {
-        if (!util::isCallOf(item, rf.name, {M->getTupleType({type, type})}, type,
+        if (!util::isCallOf(item, rf.name,
+                            {M->getTupleType({type, type}), noneType, noneType}, type,
                             /*method=*/false))
           continue;
       }
@@ -1183,9 +1183,7 @@ struct GPULoopBodyStubReplacer : public util::Operator {
 
       std::vector<Value *> newArgs;
       for (auto *arg : *replacement) {
-        // std::cout << "A: " << *arg << std::endl;
         if (getVarFromOutlinedArg(arg)->getId() == loopVar->getId()) {
-          // std::cout << "(loop var)" << std::endl;
           newArgs.push_back(idx);
         } else {
           newArgs.push_back(util::tupleGet(args, next++));

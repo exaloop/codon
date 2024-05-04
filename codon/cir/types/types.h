@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -167,6 +167,33 @@ public:
 
   /// Constructs a float32 type.
   Float32Type() : AcceptorExtend("float32") {}
+};
+
+/// Float16 type (16-bit float)
+class Float16Type : public AcceptorExtend<Float16Type, PrimitiveType> {
+public:
+  static const char NodeId;
+
+  /// Constructs a float16 type.
+  Float16Type() : AcceptorExtend("float16") {}
+};
+
+/// BFloat16 type (16-bit brain float)
+class BFloat16Type : public AcceptorExtend<BFloat16Type, PrimitiveType> {
+public:
+  static const char NodeId;
+
+  /// Constructs a bfloat16 type.
+  BFloat16Type() : AcceptorExtend("bfloat16") {}
+};
+
+/// Float128 type (128-bit float)
+class Float128Type : public AcceptorExtend<Float128Type, PrimitiveType> {
+public:
+  static const char NodeId;
+
+  /// Constructs a float128 type.
+  Float128Type() : AcceptorExtend("float128") {}
 };
 
 /// Bool type (8-bit unsigned integer; either 0 or 1)

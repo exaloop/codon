@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "cache.h"
 
@@ -57,6 +57,21 @@ std::string Cache::getContent(const SrcInfo &info) {
     return "";
   int len = info.len;
   return s.substr(col, len);
+}
+
+Cache::Class *Cache::getClass(types::ClassType *type) {
+  auto name = type->name;
+  return in(classes, name);
+}
+
+std::string Cache::getMethod(const types::ClassTypePtr &typ,
+                             const std::string &member) {
+  if (auto cls = getClass(typ)) {
+    if (auto t = in(cls->methods, member))
+      return *t;
+  }
+  seqassertn(false, "cannot find '{}' in '{}'", member, typ->toString());
+  return "";
 }
 
 types::ClassTypePtr Cache::findClass(const std::string &name) const {
@@ -145,8 +160,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  auto name = tv.generateTuple(types.size());
-  auto t = typeCtx->getType(name);
+  auto t = typeCtx->instantiateGeneric(tv.generateTuple(types.size()), types);
   return realizeType(t->getClass(), types);
 }
 
@@ -154,10 +168,9 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
-  auto tup = tv.generateTuple(types.size() - 1);
   const auto &ret = types[0];
   auto argType = typeCtx->instantiateGeneric(
-      typeCtx->getType(tup),
+      tv.generateTuple(types.size() - 1),
       std::vector<types::TypePtr>(types.begin() + 1, types.end()));
   auto t = typeCtx->find("Function");
   seqassertn(t && t->type, "cannot find 'Function'");
@@ -168,8 +181,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
 ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
 
-  auto tup = tv.generateTuple(types.size());
-  auto argType = typeCtx->instantiateGeneric(typeCtx->getType(tup), types);
+  auto argType = typeCtx->instantiateGeneric(tv.generateTuple(types.size()), types);
   auto t = typeCtx->find("Union");
   seqassertn(t && t->type, "cannot find 'Union'");
   return realizeType(t->type->getClass(), {argType});
@@ -471,6 +483,7 @@ void Cache::populatePythonModule() {
         compilationError(fmt::format("cannot pythonize generic class '{}'", cn));
       auto &r = c.realizations.begin()->second;
       py.type = realizeType(r->type);
+      seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
       for (auto &[mn, mt] : r->fields) {
         /// TODO: handle PyMember for tuples
         // Generate getters & setters

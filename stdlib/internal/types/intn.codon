@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative, associative, distributive
 
@@ -16,6 +16,12 @@ class Int:
     def __new__(what: Int[N]) -> Int[N]:
         check_N(N)
         return what
+
+    @pure
+    @llvm
+    def __new__(what: float) -> Int[N]:
+        %n = fptosi double %what to i{=N}
+        ret i{=N} %n
 
     def __new__(what: int) -> Int[N]:
         check_N(N)
@@ -281,6 +287,12 @@ class UInt:
         check_N(N)
         return what
 
+    @pure
+    @llvm
+    def __new__(what: float) -> UInt[N]:
+        %n = fptoui double %what to i{=N}
+        ret i{=N} %n
+
     def __new__(what: int) -> UInt[N]:
         check_N(N)
         if N < 64:
@@ -507,11 +519,16 @@ class UInt:
     def len() -> int:
         return N
 
+i1 = Int[1]
 i8 = Int[8]
 i16 = Int[16]
 i32 = Int[32]
 i64 = Int[64]
+i128 = Int[128]
+
+u1 = UInt[1]
 u8 = UInt[8]
 u16 = UInt[16]
 u32 = UInt[32]
 u64 = UInt[64]
+u128 = UInt[128]

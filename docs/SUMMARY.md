@@ -8,6 +8,7 @@
 * [Frequently asked questions](intro/faq.md)
 * [Differences with Python](intro/differences.md)
 * [Release notes](intro/releases.md)
+* [Roadmap](intro/roadmap.md)
 
 ## Language
 

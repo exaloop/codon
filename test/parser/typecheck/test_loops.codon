@@ -1,9 +1,3 @@
-#%% continue_error,barebones
-continue #! 'continue' outside loop
-
-#%% break_error,barebones
-break #! 'break' outside loop
-
 #%% while_else,barebones
 a = 1
 while a:
@@ -205,3 +199,9 @@ print tuple((Int[i+1](i), j) for i, j in staticenumerate(tt)).__class__.__name__
 for i in staticrange(1000, -2000, -2):
     pass
 #! staticrange too large (expected 0..1024, got instead 1500)
+
+#%% continue_error,barebones
+continue #! 'continue' outside loop
+
+#%% break_error,barebones
+break #! 'break' outside loop

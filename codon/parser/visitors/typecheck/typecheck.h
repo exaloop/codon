@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -233,6 +233,7 @@ private: // Node typechecking rules
   ExprPtr partializeFunction(const types::FuncTypePtr &);
   std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
+private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
   std::vector<types::ClassTypePtr>
@@ -245,7 +246,7 @@ private: // Node typechecking rules
                               std::vector<StmtPtr> &, std::vector<StmtPtr> &);
   StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
                        bool);
-  std::string generateTuple(size_t);
+  types::ClassTypePtr generateTuple(size_t n, bool = true);
   int generateKwId(const std::vector<std::string> & = {});
   void addClassGenerics(const types::ClassTypePtr &, bool instantiate = false);
 
@@ -285,7 +286,8 @@ private:
   types::FuncTypePtr
   findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
-  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &);
+  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &,
+              const types::ClassTypePtr & = nullptr);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
@@ -299,7 +301,7 @@ private:
 public:
   bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
-  bool isTuple(const std::string &s) const { return startswith(s, TYPE_TUPLE); }
+  std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *);
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   ExprPtr generatePartialCall(const std::vector<char> &, types::FuncType *,
                               ExprPtr = nullptr, ExprPtr = nullptr);
@@ -374,7 +376,7 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
     bool adding = false;
     std::shared_ptr<SrcObject> root = nullptr;
-    bool functionScope = false;
+    FunctionStmt *functionScope = nullptr;
     bool inClass = false;
     bool isConditional = false;
 
@@ -405,6 +407,7 @@ public:
   void visit(LambdaExpr *) override;
   void visit(IfExpr *) override;
   void visit(BinaryExpr *) override;
+  void visit(YieldExpr *) override;
   void visit(AssignStmt *) override;
   void visit(IfStmt *) override;
   void visit(MatchStmt *) override;
@@ -414,6 +417,7 @@ public:
   void visit(DelStmt *) override;
   void visit(TryStmt *) override;
   void visit(GlobalStmt *) override;
+  void visit(YieldStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(WithStmt *) override;

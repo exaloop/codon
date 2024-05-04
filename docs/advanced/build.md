@@ -3,7 +3,7 @@ recommend using pre-built binaries if possible.
 
 # Dependencies
 
-Codon uses an LLVM fork based on LLVM 15. To build it, you can do:
+Codon uses an LLVM fork based on LLVM 17. To build it, you can do:
 
 ``` bash
 git clone --depth 1 -b codon https://github.com/exaloop/llvm-project

@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <memory>
 #include <string>
@@ -171,7 +171,7 @@ std::string FuncType::realizedName() const {
 
 std::vector<TypePtr> FuncType::getArgTypes() const {
   auto tup = generics[0].type->getClass();
-  seqassert(startswith(tup->name, TYPE_TUPLE), "bad function def");
+  seqassert(tup->is(TYPE_TUPLE), "bad function def");
   std::vector<TypePtr> t;
   t.reserve(tup->generics.size());
   for (auto &g : tup->generics)

@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import realloc, free
 
@@ -245,11 +245,161 @@ class gzFile:
         self.buf = cobj()
         self.sz = 0
 
+def _bz_errcheck(stream: cobj):
+    errnum = i32(0)
+    msg = _C.BZ2_bzerror(stream, __ptr__(errnum))
+    if errnum < i32(0):
+        raise IOError(f"bzip2 error: {str(msg, _C.strlen(msg))}")
+
+class bzFile:
+    sz: int
+    buf: Ptr[byte]
+    fp: cobj
+
+    def __init__(self, fp: cobj):
+        self.fp = fp
+        self._reset()
+
+    def __init__(self, path: str, mode: str):
+        self.fp = _C.BZ2_bzopen(path.c_str(), mode.c_str())
+        if not self.fp:
+            raise IOError(f"file {path} could not be opened")
+        self._reset()
+
+    def _getline(self) -> int:
+        if not self.buf:
+            self.sz = 128
+            self.buf = Ptr[byte](self.sz)
+
+        offset = 0
+        while True:
+            m = self._gets(self.buf + offset, self.sz - offset)
+            if m == 0:
+                if offset == 0:
+                    return -1
+                break
+            elif m < 0:
+                _bz_errcheck(self.fp)
+                if offset == 0:
+                    return -1
+                break
+
+            offset += m
+
+            if self.buf[offset - 1] == byte(10):  # '\n'
+                break
+
+            oldsz = self.sz
+            self.sz *= 2
+            self.buf = realloc(self.buf, self.sz, oldsz)
+
+        return offset
+
+    def __iter__(self) -> Generator[str]:
+        for a in self._iter():
+            yield a.__ptrcopy__()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        self.close()
+
+    def close(self):
+        if self.fp:
+            _C.BZ2_bzclose(self.fp)
+            self.fp = cobj()
+        if self.buf:
+            free(self.buf)
+            self._reset()
+
+    def readlines(self) -> List[str]:
+        return [l for l in self]
+
+    def write(self, s: str):
+        self._ensure_open()
+        _C.BZ2_bzwrite(self.fp, s.ptr, i32(len(s)))
+        _bz_errcheck(self.fp)
+
+    def __file_write_gen__(self, g: Generator[T], T: type):
+        for s in g:
+            self.write(str(s))
+
+    def read(self, sz: int = -1) -> str:
+        self._ensure_open()
+        if sz < 0:
+            buf = _strbuf()
+            for a in self._iter():
+                buf.append(a)
+            return buf.__str__()
+        buf = Ptr[byte](sz)
+        ret = _C.BZ2_bzread(self.fp, buf, i32(sz))
+        _bz_errcheck(self.fp)
+        return str(buf, int(ret))
+
+    def flush(self):
+        self._ensure_open()
+        _C.BZ2_bzflush(self.fp)
+        _bz_errcheck(self.fp)
+
+    def _iter(self) -> Generator[str]:
+        self._ensure_open()
+        while True:
+            rd = self._getline()
+            if rd != -1:
+                yield str(self.buf, rd)
+            else:
+                break
+
+    def _iter_trim_newline(self) -> Generator[str]:
+        self._ensure_open()
+        while True:
+            rd = self._getline()
+            if rd != -1:
+                if self.buf[rd - 1] == byte(10):
+                    rd -= 1
+                yield str(self.buf, rd)
+            else:
+                break
+
+    def _ensure_open(self):
+        if not self.fp:
+            raise IOError("I/O operation on closed file")
+
+    def _reset(self):
+        self.buf = cobj()
+        self.sz = 0
+
+    def _gets(self, buf: cobj, sz: int):
+        if sz <= 0:
+            return 0
+
+        fp = self.fp
+        b = byte(0)
+        i = 0
+
+        while i < sz - 1:
+            status = _C.BZ2_bzread(fp, __ptr__(b), i32(1))
+            if status == i32(0):
+                break
+            elif status < i32(0):
+                return -1
+
+            buf[i] = b
+            i += 1
+            if b == byte(10):
+                break
+
+        return i
+
 def open(path: str, mode: str = "r") -> File:
     return File(path, mode)
 
 def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
+
+def bzopen(path: str, mode: str = "r") -> gzFile:
+    return bzFile(path, mode)
 
 def is_binary(path: str) -> bool:
     # https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python/7392391#7392391

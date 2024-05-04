@@ -20,7 +20,7 @@ namespace codon::ast {
 void ScopingVisitor::apply(Cache *cache, StmtPtr &s) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = cache;
-  c->functionScope = false;
+  c->functionScope = nullptr;
   ScopingVisitor v;
   v.ctx = c;
   v.transformBlock(s);
@@ -247,12 +247,17 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
     // We reached the toplevel. Break.
     if (p < 0)
       break;
+
+    bool completeDomination =
+     i->scope.size() <= ctx->scope.size() &&
+      i->scope.back() == ctx->scope[i->scope.size() - 1].id;
+    if (!completeDomination && prefix < int(ctx->scope.size()) && prefix != p)
+      break;
+
     prefix = p;
     lastGood = i;
-
     // The binding completely dominates the current scope. Break.
-    if (i->scope.size() <= ctx->scope.size() &&
-        i->scope.back() == ctx->scope[i->scope.size() - 1].id)
+    if (completeDomination)
       break;
   }
   seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
@@ -559,6 +564,16 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
   resultStmt = N<SuiteStmt>();
 }
 
+void ScopingVisitor::visit(YieldStmt *) {
+  if (ctx->functionScope)
+    ctx->functionScope->attributes.set(Attr::IsGenerator);
+}
+
+void ScopingVisitor::visit(YieldExpr *) {
+  if (ctx->functionScope)
+    ctx->functionScope->attributes.set(Attr::IsGenerator);
+}
+
 void ScopingVisitor::visit(FunctionStmt *stmt) {
   bool isOverload = false;
   for (auto &d: stmt->decorators)
@@ -569,7 +584,7 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
 
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;
-  c->functionScope = true;
+  c->functionScope = stmt;
   c->renames = ctx->renames;
   ScopingVisitor v;
   c->scope.emplace_back(0);
@@ -583,9 +598,8 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   v.transformBlock(stmt->suite);
 
   stmt->attributes.captures = c->captures;
-  for (const auto &n : c->captures) {
+  for (const auto &n : c->captures)
     ctx->childCaptures.insert(n);
-  }
 
   // if (stmt->name=="test_omp_critical") {
   // LOG("=> {} :: cap {}", stmt->name, c->captures);
@@ -637,14 +651,21 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     visitName(stmt->name);
   else
     visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
+
+  auto c = std::make_shared<ScopingVisitor::Context>();
+  c->cache = ctx->cache;
+  c->renames = ctx->renames;
+  ScopingVisitor v;
+  c->scope.emplace_back(0);
+  c->inClass = true;
+  v.ctx = c;
   for (auto &a : stmt->args) {
-    transform(a.type);
-    transform(a.defaultValue);
+    v.transform(a.type);
+    v.transform(a.defaultValue);
   }
-  auto inClass = true;
-  std::swap(inClass, ctx->inClass);
-  transform(stmt->suite);
-  std::swap(inClass, ctx->inClass);
+  v.transform(stmt->suite);
+  c->scope.pop_back();
+
   //   for (auto &d : stmt->decorators)
   //     transform(d);
   for (auto &d : stmt->baseClasses)

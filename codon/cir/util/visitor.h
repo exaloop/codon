@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -19,6 +19,9 @@ class PrimitiveType;
 class IntType;
 class FloatType;
 class Float32Type;
+class Float16Type;
+class BFloat16Type;
+class Float128Type;
 class BoolType;
 class ByteType;
 class VoidType;
@@ -152,6 +155,9 @@ public:
   VISIT(types::IntType);
   VISIT(types::FloatType);
   VISIT(types::Float32Type);
+  VISIT(types::Float16Type);
+  VISIT(types::BFloat16Type);
+  VISIT(types::Float128Type);
   VISIT(types::BoolType);
   VISIT(types::ByteType);
   VISIT(types::VoidType);
@@ -229,6 +235,9 @@ public:
   CONST_VISIT(types::IntType);
   CONST_VISIT(types::FloatType);
   CONST_VISIT(types::Float32Type);
+  CONST_VISIT(types::Float16Type);
+  CONST_VISIT(types::BFloat16Type);
+  CONST_VISIT(types::Float128Type);
   CONST_VISIT(types::BoolType);
   CONST_VISIT(types::ByteType);
   CONST_VISIT(types::VoidType);

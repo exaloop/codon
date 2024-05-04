@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "llvisitor.h"
 
@@ -26,6 +26,9 @@ const std::string EXPORT_ATTR = "std.internal.attributes.export.0:0";
 const std::string INLINE_ATTR = "std.internal.attributes.inline.0:0";
 const std::string NOINLINE_ATTR = "std.internal.attributes.noinline.0:0";
 const std::string GPU_KERNEL_ATTR = "std.gpu.kernel.0:0";
+
+const std::string MAIN_UNCLASH = ".main.unclash";
+const std::string MAIN_CTOR = ".main.ctor";
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -423,18 +426,24 @@ void executeCommand(const std::vector<std::string> &args) {
 
 void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   const std::string llvmCtor = "llvm.global_ctors";
-  auto *main = M->getFunction("main");
-  if (M->getNamedValue(llvmCtor) || !main)
+  if (M->getNamedValue(llvmCtor))
     return;
-  main->setName(".main"); // avoid clash with other main
+
+  auto *main = M->getFunction(MAIN_UNCLASH);
+  if (!main) {
+    main = M->getFunction("main");
+    if (!main)
+      return;
+    main->setName(MAIN_UNCLASH); // avoid clash with other main
+  }
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
   auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
                                             B->getInt8PtrTy());
   auto *ctorArrayTy = llvm::ArrayType::get(ctorEntryTy, 1);
 
-  auto *ctor = cast<llvm::Function>(
-      M->getOrInsertFunction(".main.ctor", ctorFuncTy).getCallee());
+  auto *ctor =
+      cast<llvm::Function>(M->getOrInsertFunction(MAIN_CTOR, ctorFuncTy).getCallee());
   ctor->setLinkage(llvm::GlobalValue::InternalLinkage);
   auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
   B->SetInsertPoint(entry);
@@ -717,14 +726,8 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
                                               /*Initializer=*/nullptr, "PyType_Type");
 
   auto allocUncollectable = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("seq_alloc_uncollectable", ptr, i64).getCallee());
-  allocUncollectable->setDoesNotThrow();
-  allocUncollectable->setReturnDoesNotAlias();
-  allocUncollectable->setOnlyAccessesInaccessibleMemory();
-
-  auto free = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("seq_free", B->getVoidTy(), ptr).getCallee());
-  free->setDoesNotThrow();
+      makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true).getCallee());
+  auto free = llvm::cast<llvm::Function>(makeFreeFunc().getCallee());
 
   // Helpers
   auto pyFuncWrap = [&](Func *func, bool wrap) -> llvm::Constant * {
@@ -1119,7 +1122,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   B->SetInsertPoint(block);
 
   if (auto *main = M->getFunction("main")) {
-    main->setName(".main");
+    main->setName(MAIN_UNCLASH);
     B->CreateCall({main->getFunctionType(), main}, {zero32, null});
   }
 
@@ -1273,15 +1276,56 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   }
 }
 
-llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic) {
-  auto f = M->getOrInsertFunction(atomic ? "seq_alloc_atomic" : "seq_alloc",
-                                  B->getInt8PtrTy(), B->getInt64Ty());
+#define ALLOC_FAMILY "seq_alloc"
+
+llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic, bool uncollectable) {
+  const std::string name =
+      atomic ? (uncollectable ? "seq_alloc_atomic_uncollectable" : "seq_alloc_atomic")
+             : (uncollectable ? "seq_alloc_uncollectable" : "seq_alloc");
+  auto f = M->getOrInsertFunction(name, B->getInt8PtrTy(), B->getInt64Ty());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   g->setReturnDoesNotAlias();
   g->setOnlyAccessesInaccessibleMemory();
+  g->addRetAttr(llvm::Attribute::AttrKind::NoUndef);
+  g->addRetAttr(llvm::Attribute::AttrKind::NonNull);
+  g->addFnAttrs(
+      llvm::AttrBuilder(*context)
+          .addAllocKindAttr(llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Uninitialized)
+          .addAllocSizeAttr(0, {})
+          .addAttribute("alloc-family", ALLOC_FAMILY));
   return f;
 }
+
+llvm::FunctionCallee LLVMVisitor::makeReallocFunc() {
+  // note that seq_realloc takes arguments (ptr, new_size, old_size)
+  auto f = M->getOrInsertFunction("seq_realloc", B->getInt8PtrTy(), B->getInt8PtrTy(),
+                                  B->getInt64Ty(), B->getInt64Ty());
+  auto *g = cast<llvm::Function>(f.getCallee());
+  g->setDoesNotThrow();
+  g->addRetAttr(llvm::Attribute::AttrKind::NoUndef);
+  g->addRetAttr(llvm::Attribute::AttrKind::NonNull);
+  g->addParamAttr(0, llvm::Attribute::AttrKind::AllocatedPointer);
+  g->addFnAttrs(llvm::AttrBuilder(*context)
+                    .addAllocKindAttr(llvm::AllocFnKind::Realloc |
+                                      llvm::AllocFnKind::Uninitialized)
+                    .addAllocSizeAttr(1, {})
+                    .addAttribute("alloc-family", ALLOC_FAMILY));
+  return f;
+}
+
+llvm::FunctionCallee LLVMVisitor::makeFreeFunc() {
+  auto f = M->getOrInsertFunction("seq_free", B->getVoidTy(), B->getInt8PtrTy());
+  auto *g = cast<llvm::Function>(f.getCallee());
+  g->setDoesNotThrow();
+  g->addParamAttr(0, llvm::Attribute::AttrKind::AllocatedPointer);
+  g->addFnAttrs(llvm::AttrBuilder(*context)
+                    .addAllocKindAttr(llvm::AllocFnKind::Free)
+                    .addAttribute("alloc-family", ALLOC_FAMILY));
+  return f;
+}
+
+#undef ALLOC_FAMILY
 
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
   return M->getOrInsertFunction("seq_personality", B->getInt32Ty(), B->getInt32Ty(),
@@ -1458,8 +1502,10 @@ void LLVMVisitor::visit(const Module *x) {
   auto *strlenFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("strlen", B->getInt64Ty(), B->getInt8PtrTy()).getCallee());
 
+  // check if main exists already as an exported function
+  const std::string mainName = M->getFunction("main") ? MAIN_UNCLASH : "main";
   auto *canonicalMainFunc = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("main", B->getInt32Ty(), B->getInt32Ty(),
+      M->getOrInsertFunction(mainName, B->getInt32Ty(), B->getInt32Ty(),
                              B->getInt8PtrTy()->getPointerTo())
           .getCallee());
 
@@ -1562,6 +1608,20 @@ void LLVMVisitor::visit(const Module *x) {
 
   B->SetInsertPoint(exitBlock);
   B->CreateRet(B->getInt32(0));
+
+  // make sure allocation functions have the correct attributes
+  if (M->getFunction("seq_alloc"))
+    makeAllocFunc(/*atomic=*/false, /*uncollectable=*/false);
+  if (M->getFunction("seq_alloc_atomic"))
+    makeAllocFunc(/*atomic=*/true, /*uncollectable=*/false);
+  if (M->getFunction("seq_alloc_uncollectable"))
+    makeAllocFunc(/*atomic=*/false, /*uncollectable=*/true);
+  if (M->getFunction("seq_alloc_atomic_uncollectable"))
+    makeAllocFunc(/*atomic=*/true, /*uncollectable=*/true);
+  if (M->getFunction("seq_realloc"))
+    makeReallocFunc();
+  if (M->getFunction("seq_free"))
+    makeFreeFunc();
 }
 
 llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
@@ -1731,7 +1791,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   }
 
   else if (internalFuncMatchesIgnoreArgs<RecordType>("__new__", x)) {
-    auto *recordType = cast<RecordType>(parentType);
+    auto *recordType = cast<RecordType>(cast<FuncType>(x->getType())->getReturnType());
     seqassertn(args.size() == std::distance(recordType->begin(), recordType->end()),
                "args size does not match: {} vs {}",args.size() , std::distance(recordType->begin(), recordType->end()) );
     result = llvm::UndefValue::get(getLLVMType(recordType));
@@ -2072,6 +2132,18 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getFloatTy();
   }
 
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return B->getHalfTy();
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return B->getBFloatTy();
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return llvm::Type::getFP128Ty(*context);
+  }
+
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
   }
@@ -2187,6 +2259,22 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::BFloat16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<types::Float128Type>(t)) {
+    return db.builder->createBasicType(x->getName(),
+                                       layout.getTypeAllocSizeInBits(type),
+                                       llvm::dwarf::DW_ATE_HP_float128);
   }
 
   if (auto *x = cast<types::BoolType>(t)) {

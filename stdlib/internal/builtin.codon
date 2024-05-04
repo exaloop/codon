@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 class object:
     def __init__(self):
@@ -39,57 +39,88 @@ class __internal__:
     def print(*args):
         print(*args, flush=True, file=_C.seq_stdout())
 
-
-def min(*args):
+def min(*args, key=None, default=None):
     if staticlen(args) == 0:
-        raise ValueError("empty sequence")
-    elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+        compile_error("min() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("min() 'default' argument only allowed for iterables")
+    elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i < s:
-                    s = i
+                if key is None:
+                    if i < s:
+                        s = i
+                else:
+                    if key(i) < key(s):
+                        s = i
             x.destroy()
             return s
         else:
             x.destroy()
-        raise ValueError("empty sequence")
+        if default is None:
+            raise ValueError("min() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
-        return a if a <= b else b
+        if key is None:
+            return a if a <= b else b
+        else:
+            return a if key(a) <= key(b) else b
     else:
         m = args[0]
-        for i in args:
-            if i < m:
-                m = i
+        for i in args[1:]:
+            if key is None:
+                if i < m:
+                    m = i
+            else:
+                if key(i) < key(m):
+                    m = i
         return m
 
-def max(*args):
+def max(*args, key=None, default=None):
     if staticlen(args) == 0:
-        raise ValueError("empty sequence")
-    elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+        compile_error("max() expected at least 1 argument, got 0")
+    elif staticlen(args) > 1 and default is not None:
+        compile_error("max() 'default' argument only allowed for iterables")
+    elif staticlen(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
             while not x.done():
                 i = x.next()
-                if i > s:
-                    s = i
+                if key is None:
+                    if i > s:
+                        s = i
+                else:
+                    if key(i) > key(s):
+                        s = i
             x.destroy()
             return s
         else:
             x.destroy()
-        raise ValueError("empty sequence")
+        if default is None:
+            raise ValueError("max() arg is an empty sequence")
+        else:
+            return default
     elif staticlen(args) == 2:
         a, b = args
-        return a if a >= b else b
+        if key is None:
+            return a if a >= b else b
+        else:
+            return a if key(a) >= key(b) else b
     else:
         m = args[0]
-        for i in args:
-            if i > m:
-                m = i
+        for i in args[1:]:
+            if key is None:
+                if i > m:
+                    m = i
+            else:
+                if key(i) > key(m):
+                    m = i
         return m
 
 def len(x) -> int:
@@ -401,6 +432,117 @@ class float:
             raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
+
+@extend
+class complex:
+    def _from_str(v: str) -> complex:
+        def parse_error():
+            raise ValueError("complex() arg is a malformed string")
+
+        buf = __array__[byte](32)
+        n = len(v)
+        need_dyn_alloc = n >= len(buf)
+
+        s = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
+        str.memcpy(s, v.ptr, n)
+        s[n] = byte(0)
+
+        x = 0.0
+        y = 0.0
+        z = 0.0
+        got_bracket = False
+        start = s
+        end = cobj()
+
+        while str._isspace(s[0]):
+            s += 1
+
+        if s[0] == byte(40):  # '('
+            got_bracket = True
+            s += 1
+            while str._isspace(s[0]):
+                s += 1
+
+        z = _C.strtod(s, __ptr__(end))
+
+        if end != s:
+            s = end
+
+            if s[0] == byte(43) or s[0] == byte(45):  # '+' '-'
+                x = z
+                y = _C.strtod(s, __ptr__(end))
+
+                if end != s:
+                    s = end
+                else:
+                    y = 1.0 if s[0] == byte(43) else -1.0
+                    s += 1
+
+                if not (s[0] == byte(106) or s[0] == byte(74)):  # 'j' 'J'
+                    if need_dyn_alloc:
+                        free(s)
+                    parse_error()
+
+                s += 1
+            elif s[0] == byte(106) or s[0] == byte(74):  # 'j' 'J'
+                s += 1
+                y = z
+            else:
+                x = z
+        else:
+            if s[0] == byte(43) or s[0] == byte(45):  # '+' '-'
+                y = 1.0 if s[0] == byte(43) else -1.0
+                s += 1
+            else:
+                y = 1.0
+
+            if not (s[0] == byte(106) or s[0] == byte(74)):  # 'j' 'J'
+                if need_dyn_alloc:
+                    free(s)
+                parse_error()
+
+            s += 1
+
+        while str._isspace(s[0]):
+            s += 1
+
+        if got_bracket:
+            if s[0] != byte(41):  # ')'
+                if need_dyn_alloc:
+                    free(s)
+                parse_error()
+            s += 1
+            while str._isspace(s[0]):
+                s += 1
+
+        if s - start != n:
+            if need_dyn_alloc:
+                free(s)
+            parse_error()
+
+        if need_dyn_alloc:
+            free(s)
+        return complex(x, y)
+
+@extend
+class float32:
+    def _from_str(s: str) -> float32:
+        return float32(float._from_str(s))
+
+@extend
+class float16:
+    def _from_str(s: str) -> float16:
+        return float16(float._from_str(s))
+
+@extend
+class bfloat16:
+    def _from_str(s: str) -> bfloat16:
+        return bfloat16(float._from_str(s))
+
+@extend
+class complex64:
+    def _from_str(s: str) -> complex64:
+        return complex64(complex._from_str(s))
 
 def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
     if isinstance(x, None):

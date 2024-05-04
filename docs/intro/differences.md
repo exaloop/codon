@@ -4,6 +4,9 @@ worth mentioning. Most of these design decisions were made
 with the trade-off between performance and Python compatibility
 in mind.
 
+Please see our [roadmap](roadmap.md) for more information about
+how we plan to close some of these gaps in the future.
+
 # Data types
 
 - **Integers:** Codon's `int` is a 64-bit signed integer,
@@ -17,8 +20,9 @@ in mind.
 - **Dictionaries:** Codon's dictionary type does not preserve
   insertion order, unlike Python's as of 3.6.
 
-- **Tuples**: Codon's tuples are _by-value_ objects (i.e., they
-  are not references) and their size must be known at compile-time.
+- **Tuples**: Since tuples compile down to structs, tuple lengths
+  must be known at compile time, meaning you can't convert an
+  arbitrarily-sized list to a tuple, for instance.
 
 # Type checking
 

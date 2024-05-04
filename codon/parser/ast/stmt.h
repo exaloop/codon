@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -261,6 +261,8 @@ struct ForStmt : public Stmt {
 
   /// Indicates if iter was wrapped with __iter__() call.
   bool wrapped;
+  /// True if there are no break/continue within the loop
+  bool flat;
 
   ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite = nullptr,
           ExprPtr decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
@@ -430,6 +432,7 @@ struct Attr {
   const static std::string Method;
   const static std::string Capture;
   const static std::string HasSelf;
+  const static std::string IsGenerator;
   // Class attributes
   const static std::string Extend;
   const static std::string Tuple;

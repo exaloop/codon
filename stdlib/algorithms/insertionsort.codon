@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 def _insertion_sort(
     arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type

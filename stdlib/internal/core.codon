@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 @tuple
 @__internal__
@@ -58,7 +58,23 @@ class float32:
 
 @tuple
 @__internal__
-class NoneType:
+@__notuple__
+class float16:
+    MIN_10_EXP = -4
+    pass
+
+@tuple
+@__internal__
+@__notuple__
+class bfloat16:
+    MIN_10_EXP = -37
+    pass
+
+@tuple
+@__internal__
+@__notuple__
+class float128:
+    MIN_10_EXP = -4931
     pass
 
 @tuple
@@ -70,6 +86,11 @@ class Function[T, TR]:
 @tuple
 @__internal__
 class Callable[T, TR]:
+    pass
+
+@tuple
+@__internal__
+class NoneType:
     pass
 
 @tuple
@@ -115,6 +136,61 @@ class str:
 
 @tuple
 @__internal__
+class Tuple:
+    def __add__(self: __SELF__, obj, __SELF__: type):
+        return __magic__.add(self, obj)
+    def __mul__(self: __SELF__, n: Static[int], __SELF__: type):
+        return __magic__.mul(self, n)
+    def __contains__(self: __SELF__, obj, __SELF__: type) -> bool:
+        return __magic__.contains(self, obj)
+    def __getitem__(self: __SELF__, idx: int, __SELF__: type):
+        return __magic__.getitem(self, idx)
+    def __iter__(self: __SELF__, __SELF__: type):
+        yield from __magic__.iter(self)
+    def __hash__(self: __SELF__, __SELF__: type) -> int:
+        return __magic__.hash(self)
+    def __repr__(self: __SELF__, __SELF__: type) -> str:
+        return __magic__.repr(self)
+    def __len__(self: __SELF__, __SELF__: type) -> int:
+        return __magic__.len(self)
+    def __eq__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.eq(self, obj)
+    def __ne__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.ne(self, obj)
+    def __gt__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.gt(self, obj)
+    def __ge__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.ge(self, obj)
+    def __lt__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.lt(self, obj)
+    def __le__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
+        return __magic__.le(self, obj)
+    def __pickle__(self: __SELF__, dest: Ptr[byte], __SELF__: type):
+        return __magic__.pickle(self, dest)
+    def __unpickle__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+        return __magic__.unpickle(src)
+    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[byte]:
+        return __magic__.to_py(self)
+    def __from_py__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+        return __magic__.from_py(src)
+    def __to_gpu__(self: __SELF__, cache, __SELF__: type) -> __SELF__:
+        return __magic__.to_gpu(self, cache)
+    def __from_gpu__(self: __SELF__, other: __SELF__, __SELF__: type):
+        return __magic__.from_gpu(self, other)
+    def __from_gpu_new__(other: __SELF__, __SELF__: type) -> __SELF__:
+        return __magic__.from_gpu_new(other)
+    def __tuplesize__(self: __SELF__, __SELF__: type) -> int:
+        return __magic__.tuplesize(self)
+tuple = Tuple
+
+@extend
+class NoneType:
+    @llvm
+    def __new__() -> NoneType:
+        ret {} {}
+
+@tuple
+@__internal__
 class Array:
     len: int
     ptr: Ptr[T]
@@ -137,6 +213,8 @@ class Union[TU]:
     # compiler-generated
     def __new__(val):
         TU
+    def __call__(self, *args, **kwargs):
+        return __internal__.union_call(self, args, kwargs)
 
 @extend
 class Function:
@@ -151,8 +229,6 @@ class TypeVar[T]: pass
 class ByVal: pass
 @__internal__
 class ByRef: pass
-@__internal__
-class Tuple: pass
 
 @__internal__
 class ClassVar[T]:
@@ -210,10 +286,6 @@ def hasattr(obj, attr: Static[str], *args, **kwargs):
     """Special handling"""
     pass
 
-@overload
-def hasattr(obj, attr: Static[str]):
-    pass
-
 def getattr(obj, attr: Static[str]):
     pass
 
@@ -255,6 +327,12 @@ class NamedTuple:
     def __getitem__(self, key: Static[str]):
         return getattr(self, key)
 
+    def __contains__(self, key: Static[str]):
+        return hasattr(self, key)
+
+    def get(self, key: Static[str], default = NoneType()):
+        return __internal__.kwargs_get(self, key, default)
+
     def __keys__(self):
         return __internal__.namedkeys(N)
 
@@ -283,3 +361,6 @@ class Partial:
 
     def __repr__(self):
         return __magic__.repr_partial(self)
+
+    def __call__(self, *args, **kwargs):
+        return self(*args, **kwargs)

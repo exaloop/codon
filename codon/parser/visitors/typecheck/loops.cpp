@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -23,6 +23,7 @@ using namespace types;
 void TypecheckVisitor::visit(BreakStmt *stmt) {
   if (!ctx->getBase()->getLoop())
     E(Error::EXPECTED_LOOP, stmt, "break");
+  ctx->getBase()->getLoop()->flat = false;
   if (!ctx->getBase()->getLoop()->breakVar.empty()) {
     resultStmt =
         N<SuiteStmt>(transform(N<AssignStmt>(
@@ -43,6 +44,7 @@ void TypecheckVisitor::visit(BreakStmt *stmt) {
 void TypecheckVisitor::visit(ContinueStmt *stmt) {
   if (!ctx->getBase()->getLoop())
     E(Error::EXPECTED_LOOP, stmt, "continue");
+  ctx->getBase()->getLoop()->flat = false;
 
   stmt->setDone();
   if (!ctx->staticLoops.back().empty()) {
@@ -70,7 +72,9 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
-  stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
+  transform(stmt->cond);
+  if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
+    stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
 
   ctx->blockLevel++;
   transform(stmt->suite);
@@ -142,13 +146,16 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (iterType)
     unify(stmt->var->type, iterType->generics[0].type);
 
-  ctx->staticLoops.emplace_back("");
+  ctx->staticLoops.emplace_back();
   ctx->blockLevel++;
   transform(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
 
-  // Complete while-else clause
+  if (ctx->getBase()->getLoop()->flat)
+    stmt->flat = true;
+
+  // Complete for-else clause
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     auto es = stmt->elseSuite;
     stmt->elseSuite = nullptr;
@@ -173,7 +180,8 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
   if (auto c = callee->getCall())
     callee = c->expr;
   transform(callee);
-  if (!callee || !(callee->getId() && startswith(callee->getId()->value, "std.openmp.for_par.0"))) {
+  if (!callee || !(callee->getId() &&
+                   startswith(callee->getId()->value, "std.openmp.for_par.0"))) {
     E(Error::LOOP_DECORATOR, decorator);
   }
   std::vector<CallExpr::Arg> args;
@@ -204,19 +212,26 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
 ///        while loop:
 ///          i = x; <suite>; break
 ///        loop = False   # also set to False on break
+/// If a loop is flat, while wrappers are removed.
 /// A separate suite is generated for each static iteration.
 std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
   auto suite = clean_clone(stmt->suite);
   auto [ok, delay, preamble, items] = transformStaticLoopCall(
       stmt->var, suite, stmt->iter, [&](const StmtPtr &assigns) {
-        auto brk = N<BreakStmt>();
-        brk->setDone(); // Avoid transforming this one to continue
-        // var [: Static] := expr; suite...
-        auto loop =
-            N<WhileStmt>(N<IdExpr>(loopVar), N<SuiteStmt>(assigns, clone(suite), brk));
-        loop->gotoVar = loopVar;
-        return loop;
+        StmtPtr ret = nullptr;
+        if (!stmt->flat) {
+          auto brk = N<BreakStmt>();
+          brk->setDone(); // Avoid transforming this one to continue
+          // var [: Static] := expr; suite...
+          auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
+                                   N<SuiteStmt>(assigns, clone(suite), brk));
+          loop->gotoVar = loopVar;
+          ret = loop;
+        } else {
+          ret = N<SuiteStmt>(assigns, clone(stmt->suite));
+        }
+        return ret;
       });
   if (!ok)
     return {false, nullptr};
@@ -224,18 +239,21 @@ std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt)
     return {true, nullptr};
 
   // Close the loop
-  auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
-  a->setUpdate();
   auto block = N<SuiteStmt>();
   for (auto &i : items)
     block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
-  block->stmts.push_back(a);
-  ctx->blockLevel++;
-  StmtPtr loop =
-      N<SuiteStmt>(preamble, N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
-                   N<WhileStmt>(N<IdExpr>(loopVar), block));
-  transform(loop);
-  ctx->blockLevel--;
+  StmtPtr loop = nullptr;
+  if (!stmt->flat) {
+    ctx->blockLevel++;
+    auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
+    a->setUpdate();
+    block->stmts.push_back(a);
+    loop = transform(N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(true)),
+                                  N<WhileStmt>(N<IdExpr>(loopVar), block)));
+    ctx->blockLevel--;
+  } else {
+    loop = transform(block);
+  }
   return {false, loop};
 }
 
@@ -331,7 +349,7 @@ TypecheckVisitor::transformStaticLoopCall(
       auto typ = generics[0]->getClass();
       seqassert(generics[1]->getStrStatic(), "bad static string");
       auto name = generics[1]->getStrStatic()->value;
-      if (auto n = in(ctx->cache->classes[typ->name].methods, name)) {
+      if (auto n = in(ctx->cache->getClass(typ)->methods, name)) {
         auto &mt = ctx->cache->overloads[*n];
         for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
           auto &method = mt[mti];
@@ -347,9 +365,9 @@ TypecheckVisitor::transformStaticLoopCall(
               continue;
             }
           }
-            stmt->rhs = N<IdExpr>(method);
-            block.push_back(wrap(clone(stmt)));
-            // }
+          stmt->rhs = N<IdExpr>(method);
+          block.push_back(wrap(clone(stmt)));
+          // }
         }
       }
     } else {
@@ -361,16 +379,18 @@ TypecheckVisitor::transformStaticLoopCall(
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
       auto typ = args[0]->getClass();
-      if (!typ || !typ->isRecord())
+      if (typ && typ->isRecord()) {
+        for (size_t i = 0; i < getClassFields(typ.get()).size(); i++) {
+          auto b = N<SuiteStmt>(
+              {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                             N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
+               N<AssignStmt>(N<IdExpr>(vars[1]),
+                             N<IndexExpr>(clone(iter->getCall()->args[0].value),
+                                          N<IntExpr>(i)))});
+          block.push_back(wrap(b));
+        }
+      } else {
         error("staticenumerate needs a tuple");
-      for (size_t i = 0; i < ctx->cache->classes[typ->name].fields.size(); i++) {
-        auto b = N<SuiteStmt>(
-            {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                           N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
-             N<AssignStmt>(
-                 N<IdExpr>(vars[1]),
-                 N<IndexExpr>(clone(iter->getCall()->args[0].value), N<IntExpr>(i)))});
-        block.push_back(wrap(b));
       }
     } else {
       error("bad call to staticenumerate");
@@ -386,7 +406,7 @@ TypecheckVisitor::transformStaticLoopCall(
         error("expected three items");
       auto typ = args[0]->getClass();
       size_t idx = 0;
-      for (auto &f : ctx->cache->classes[typ->name].fields) {
+      for (auto &f : getClassFields(typ.get())) {
         std::vector<StmtPtr> stmts;
         if (withIdx) {
           stmts.push_back(
@@ -419,27 +439,44 @@ TypecheckVisitor::transformStaticLoopCall(
 
       seqassert(typ, "vars_types expects a realizable type, got '{}' instead",
                 generics[0]);
-      size_t idx = 0;
-      for (auto &f : ctx->cache->classes[typ->getClass()->name].fields) {
-        auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
-        seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
-        std::vector<StmtPtr> stmts;
-        if (withIdx) {
+
+      if (auto utyp = typ->getUnion()) {
+        for (size_t i = 0; i < utyp->getRealizationTypes().size(); i++) {
+          std::vector<StmtPtr> stmts;
+          if (withIdx) {
+            stmts.push_back(
+                N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                              N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+          }
           stmts.push_back(
-              N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                            N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+              N<AssignStmt>(N<IdExpr>(vars[1]),
+                            N<IdExpr>(utyp->getRealizationTypes()[i]->realizedName())));
+          auto b = N<SuiteStmt>(stmts);
+          block.push_back(wrap(b));
         }
-        stmts.push_back(
-            N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<IdExpr>(ta->realizedName())));
-        auto b = N<SuiteStmt>(stmts);
-        block.push_back(wrap(b));
-        idx++;
+      } else {
+        size_t idx = 0;
+        for (auto &f : getClassFields(typ->getClass().get())) {
+          auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
+          seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
+          std::vector<StmtPtr> stmts;
+          if (withIdx) {
+            stmts.push_back(
+                N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                              N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+          }
+          stmts.push_back(
+              N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<IdExpr>(ta->realizedName())));
+          auto b = N<SuiteStmt>(stmts);
+          block.push_back(wrap(b));
+          idx++;
+        }
       }
     } else {
       error("bad call to vars");
     }
   } else {
-    bool maybeHeterogenous = startswith(iter->type->getClass()->name, TYPE_TUPLE);
+    bool maybeHeterogenous = iter->type->is(TYPE_TUPLE);
     if (maybeHeterogenous) {
       if (!iter->type->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable

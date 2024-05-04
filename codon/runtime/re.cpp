@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/runtime/lib.h"
 #include <cstring>
@@ -73,8 +73,7 @@ template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
   GCMapAllocator() = default;
   GCMapAllocator(GCMapAllocator<KV> const &) = default;
 
-  template <typename KV1>
-  GCMapAllocator(const GCMapAllocator<KV1>&) noexcept {}
+  template <typename KV1> GCMapAllocator(const GCMapAllocator<KV1> &) noexcept {}
 
   KV *allocate(std::size_t n) { return (KV *)seq_alloc_uncollectable(n * sizeof(KV)); }
 

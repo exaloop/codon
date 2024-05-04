@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "list.h"
 
@@ -14,7 +14,7 @@ namespace pythonic {
 namespace {
 
 static const std::string LIST = "std.internal.types.array.List.0";
-static const std::string SLICE = "std.internal.types.slice.Slice.0";
+static const std::string SLICE = "std.internal.types.slice.Slice.0[int,int,int]";
 
 bool isList(Value *v) { return v->getType()->getName().rfind(LIST + "[", 0) == 0; }
 bool isSlice(Value *v) { return v->getType()->getName() == SLICE; }

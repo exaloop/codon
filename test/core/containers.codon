@@ -93,6 +93,13 @@ def test_tuple():
     assert a[0:] == 3
     assert a[0:1] == 42
     assert a[:] == -1
+
+    assert str((11, 2, 333)) == '(11, 2, 333)'
+    assert str(()) == '()'
+    assert str((42,)) == '(42,)'
+    assert repr((11, 2, 333)) == '(11, 2, 333)'
+    assert repr(()) == '()'
+    assert repr((42,)) == '(42,)'
 test_tuple()
 
 @test
@@ -248,6 +255,11 @@ def test_list():
     l5 *= 2
     assert l5 == [11, 22, 55, 33, 1, 2, 11, 22, 55, 33, 1, 2]
     assert l5.index(33) == 3
+    try:
+        l5.index(0)
+        assert False
+    except ValueError as e:
+        assert str(e) == '0 is not in list'
     l5 *= 0
     assert len(l5) == 0
 
@@ -299,6 +311,24 @@ def test_list():
     assert list(reversed(list('abc'))) == ['c', 'b', 'a']
     assert list(list('abc')[::-1]) == ['c', 'b', 'a']
     assert list(reversed(List[str]())) == List[str]()
+
+    # https://github.com/exaloop/codon/issues/402
+    b1 = [1 for _ in range(0)]
+    b2 = [str(x) for x in b1]
+    b3 = List[float](capacity=0)
+    b4 = List[float](capacity=-1)
+    assert len(b1) == 0
+    assert len(b2) == 0
+    assert len(b3) == 0
+    assert len(b4) == 0
+    b1.append(42)
+    b2.append('a')
+    b3.append(4.2)
+    b4.append(2.4)
+    assert b1 == [42]
+    assert b2 == ['a']
+    assert b3 == [4.2]
+    assert b4 == [2.4]
 test_list()
 
 @test
@@ -570,6 +600,205 @@ def test_dict():
     assert repr({1: ['x']}) == "{1: ['x']}"
     assert repr(Dict[int,int]()) == '{}'
 test_dict()
+
+def slice_indices(slice, length):
+    """
+    Reference implementation for the slice.indices method.
+
+    """
+    # Compute step and length as integers.
+    #length = operator.index(length)
+    step: int = 1 if slice.step is None else slice.step
+
+    # Raise ValueError for negative length or zero step.
+    if length < 0:
+        raise ValueError("length should not be negative")
+    if step == 0:
+        raise ValueError("slice step cannot be zero")
+
+    # Find lower and upper bounds for start and stop.
+    lower = -1 if step < 0 else 0
+    upper = length - 1 if step < 0 else length
+
+    # Compute start.
+    if slice.start is None:
+        start = upper if step < 0 else lower
+    else:
+        start = slice.start
+        start = max(start + length, lower) if start < 0 else min(start, upper)
+
+    # Compute stop.
+    if slice.stop is None:
+        stop = lower if step < 0 else upper
+    else:
+        stop = slice.stop
+        stop = max(stop + length, lower) if stop < 0 else min(stop, upper)
+
+    return start, stop, step
+
+def check_indices(slice, length):
+    err1 = False
+    err2 = False
+
+    try:
+        actual = slice.indices(length)
+    except ValueError:
+        err1 = True
+
+    try:
+        expected = slice_indices(slice, length)
+    except ValueError:
+        err2 = True
+
+    if err1 or err2:
+        return err1 and err2
+
+    if actual != expected:
+        return False
+
+    if length >= 0 and slice.step != 0:
+        actual = range(*slice.indices(length))
+        expected = range(length)[slice]
+        if actual != expected:
+            return False
+
+    return True
+
+@test
+def test_slice():
+    assert repr(slice(1, 2, 3)) == 'slice(1, 2, 3)'
+
+    s1 = slice(1, 2, 3)
+    s2 = slice(1, 2, 3)
+    s3 = slice(1, 2, 4)
+
+    assert s1 == s2
+    assert s1 != s3
+
+    s = slice(1)
+    assert s.start == None
+    assert s.stop == 1
+    assert s.step == None
+
+    s = slice(1, 2)
+    assert s.start == 1
+    assert s.stop == 2
+    assert s.step == None
+
+    s = slice(1, 2, 3)
+    assert s.start == 1
+    assert s.stop == 2
+    assert s.step == 3
+
+    # TODO
+    assert slice(None           ).indices(10) == (0, 10,  1)
+    assert slice(None,  None,  2).indices(10) == (0, 10,  2)
+    assert slice(1,     None,  2).indices(10) == (1, 10,  2)
+    assert slice(None,  None, -1).indices(10) == (9, -1, -1)
+    assert slice(None,  None, -2).indices(10) == (9, -1, -2)
+    assert slice(3,     None, -2).indices(10) == (3, -1, -2)
+    # issue 3004 tests
+    assert slice(None, -9).indices(10) == (0, 1, 1)
+    assert slice(None, -10).indices(10) == (0, 0, 1)
+    assert slice(None, -11).indices(10) == (0, 0, 1)
+    assert slice(None, -10, -1).indices(10) == (9, 0, -1)
+    assert slice(None, -11, -1).indices(10) == (9, -1, -1)
+    assert slice(None, -12, -1).indices(10) == (9, -1, -1)
+    assert slice(None, 9).indices(10) == (0, 9, 1)
+    assert slice(None, 10).indices(10) == (0, 10, 1)
+    assert slice(None, 11).indices(10) == (0, 10, 1)
+    assert slice(None, 8, -1).indices(10) == (9, 8, -1)
+    assert slice(None, 9, -1).indices(10) == (9, 9, -1)
+    assert slice(None, 10, -1).indices(10) == (9, 9, -1)
+
+    assert slice(-100,  100     ).indices(10) == slice(None).indices(10)
+
+    assert slice(100,  -100,  -1).indices(10) == slice(None, None, -1).indices(10)
+
+    assert slice(-100, 100, 2).indices(10) == (0, 10,  2)
+
+    import sys
+    assert list(range(10))[::sys.maxsize - 1] == [0]
+
+    # Check a variety of start, stop, step and length values, including
+    # values exceeding sys.maxsize (see issue #14794).
+    vals = [None, -2**100, -2**30, -53, -7, -1, 0, 1, 7, 53, 2**30, 2**100]
+    lengths = [0, 1, 7, 53, 2**30, 2**100]
+    #for slice_args in itertools.product(vals, repeat=3):
+    for a in vals:
+        for b in vals:
+            for c in vals:
+                slice_args = (a, b, c)
+                s = slice(*slice_args)
+                for length in lengths:
+                    assert check_indices(s, length)
+    assert check_indices(slice(0, 10, 1), -3)
+
+    # Negative length should raise ValueError
+    try:
+        slice(None).indices(-1)
+        assert False
+    except ValueError:
+        pass
+
+    # Zero step should raise ValueError
+    try:
+        slice(0, 10, 0).indices(5)
+    except ValueError:
+        pass
+
+    # ... but it should be fine to use a custom class that provides index.
+    assert slice(0, 10, 1).indices(5) == (0, 5, 1)
+    '''  # not yet supported in Codon
+    assert slice(MyIndexable(0), 10, 1).indices(5) == (0, 5, 1)
+    assert slice(0, MyIndexable(10), 1).indices(5) == (0, 5, 1)
+    assert slice(0, 10, MyIndexable(1)).indices(5) == (0, 5, 1)
+    assert slice(0, 10, 1).indices(MyIndexable(5)) == (0, 5, 1)
+    '''
+    tmp = []
+    class X[T](object):
+        tmp: T
+        def __setitem__(self, i, k):
+            self.tmp.append((i, k))
+
+    x = X(tmp)
+    x[1:2] = 42
+    assert tmp == [(slice(1, 2), 42)]
+
+    # Non-int elements
+    def check_types(s, T: type, U: type, V: type):
+        return (type(s.start) is Optional[T] and
+                type(s.stop) is Optional[U] and
+                type(s.step) is Optional[V])
+    assert check_types(slice(1j, 'x', 3.14), complex, str, float)
+    assert check_types(slice(None, 'x', 3.14), int, str, float)
+    assert check_types(slice(1j, None, 3.14), complex, int, float)
+    assert check_types(slice(1j, 'x', None), complex, str, int)
+    assert check_types(slice(1j, None, None), complex, int, int)
+    assert check_types(slice(None, 'x', None), int, str, int)
+    assert check_types(slice(None, None, 3.14), int, int, float)
+    assert check_types(slice(None, None, None), int, int, int)
+    assert check_types(slice(1j, 'x'), complex, str, int)
+    assert check_types(slice(None, 'x'), int, str, int)
+    assert check_types(slice(1j, None), complex, int, int)
+    assert check_types(slice(None, None), int, int, int)
+    assert check_types(slice(1j), int, complex, int)
+    assert check_types(slice(None), int, int, int)
+
+    # eq / ne
+    assert slice(1, 2, 3) == slice(1, 2, 3)
+    assert slice(0, 2, 3) != slice(1, 2, 3)
+    assert slice(1, 0, 3) != slice(1, 2, 3)
+    assert slice(1, 2, 0) != slice(1, 2, 3)
+    assert slice(None, None, None) == slice(None, None, None)
+    assert slice(None, 42, None) == slice(None, 42, None)
+    assert slice(None, 42, None) != slice(None, 43, None)
+    assert slice(1, None, 3) == slice(1, None, 3)
+    assert slice(1, None, 3) != slice(1, None, 0)
+    assert slice(1, None, 3) != slice(0, None, 3)
+    assert slice(1) == slice(1)
+    assert slice(1) != slice(2)
+test_slice()
 
 @test
 def test_deque():

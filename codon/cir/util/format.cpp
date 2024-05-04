@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <algorithm>
 #include <fmt/format.h>
@@ -294,6 +294,15 @@ public:
   }
   void visit(const types::Float32Type *v) override {
     fmt::print(os, FMT_STRING("(float32 '\"{}\")"), v->referenceString());
+  }
+  void visit(const types::Float16Type *v) override {
+    fmt::print(os, FMT_STRING("(float16 '\"{}\")"), v->referenceString());
+  }
+  void visit(const types::BFloat16Type *v) override {
+    fmt::print(os, FMT_STRING("(bfloat16 '\"{}\")"), v->referenceString());
+  }
+  void visit(const types::Float128Type *v) override {
+    fmt::print(os, FMT_STRING("(float128 '\"{}\")"), v->referenceString());
   }
   void visit(const types::BoolType *v) override {
     fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());

@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "translate.h"
 
@@ -62,7 +62,7 @@ void TranslateVisitor::translateStmts(StmtPtr stmts) {
       ctx->cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
     }
   TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
-  for (auto &[_, f]: ctx->cache->functions)
+  for (auto &[_, f] : ctx->cache->functions)
     TranslateVisitor(ctx->cache->codegenCtx).transform(f.ast);
 }
 
@@ -292,9 +292,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
     seqassert(!expr->args[i].value->getEllipsis(), "ellipsis not elided");
     if (i + 1 == expr->args.size() && isVariadic) {
       auto call = expr->args[i].value->getCall();
-      seqassert(call && call->expr->getId() &&
-                    startswith(call->expr->getId()->value, TYPE_TUPLE),
-                "expected *args tuple");
+      seqassert(call, "expected *args tuple: '{}'", call->toString(0));
       for (auto &arg : call->args)
         items.emplace_back(transform(arg.value));
     } else {
@@ -593,20 +591,7 @@ void TranslateVisitor::visit(ThrowStmt *stmt) {
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {
   // Process all realizations.
-  for (auto &real : ctx->cache->functions[stmt->name].realizations) {
-    if (!in(ctx->cache->pendingRealizations, make_pair(stmt->name, real.first)))
-      continue;
-    ctx->cache->pendingRealizations.erase(make_pair(stmt->name, real.first));
-
-    LOG_TYPECHECK("[translate] generating fn {}", real.first);
-    real.second->ir->setSrcInfo(getSrcInfo());
-    const auto &ast = real.second->ast;
-    seqassert(ast, "AST not set for {}", real.first);
-    if (!stmt->attributes.has(Attr::LLVM))
-      transformFunction(real.second->type.get(), ast.get(), real.second->ir);
-    else
-      transformLLVMFunction(real.second->type.get(), ast.get(), real.second->ir);
-  }
+  transformFunctionRealizations(stmt->name, stmt->attributes.has(Attr::LLVM));
 }
 
 void TranslateVisitor::visit(ClassStmt *stmt) {
@@ -622,6 +607,24 @@ codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
   auto i = ctx->find(name);
   seqassert(i, "type {} not realized: {}", t, name);
   return i->getType();
+}
+
+void TranslateVisitor::transformFunctionRealizations(const std::string &name,
+                                                     bool isLLVM) {
+  for (auto &real : ctx->cache->functions[name].realizations) {
+    if (!in(ctx->cache->pendingRealizations, make_pair(name, real.first)))
+      continue;
+    ctx->cache->pendingRealizations.erase(make_pair(name, real.first));
+
+    LOG_TYPECHECK("[translate] generating fn {}", real.first);
+    real.second->ir->setSrcInfo(getSrcInfo());
+    const auto &ast = real.second->ast;
+    seqassert(ast, "AST not set for {}", real.first);
+    if (!isLLVM)
+      transformFunction(real.second->type.get(), ast.get(), real.second->ir);
+    else
+      transformLLVMFunction(real.second->type.get(), ast.get(), real.second->ir);
+  }
 }
 
 void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *ast,
@@ -713,7 +716,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     ltrim(lp);
     rtrim(lp);
     // Extract declares and constants.
-    if (isDeclare && !startswith(lp, "declare ")) {
+    if (isDeclare && !startswith(lp, "declare ") && !startswith(lp, "@")) {
       bool isConst = lp.find("private constant") != std::string::npos;
       if (!isConst) {
         isDeclare = false;

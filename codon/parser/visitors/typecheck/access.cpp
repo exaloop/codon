@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -19,8 +19,6 @@ using namespace types;
 /// replace it with its value (e.g., a @c IntExpr ). Also ensure that the identifier of
 /// a generic function or a type is fully qualified (e.g., replace `Ptr` with
 /// `Ptr[byte]`).
-/// For tuple identifiers, generate appropriate class. See @c generateTuple for
-/// details.
 void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
   // if (!val && ctx->getBase()->pyCaptures) {
@@ -165,17 +163,17 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
 
   // Find the longest prefix that corresponds to the existing import
   // (e.g., `a.b.c.d` -> `a.b.c` if there is `import a.b.c`)
-  TypeContext::Item val = nullptr;
+  TypeContext::Item val = nullptr, importVal = nullptr;
   for (auto i = chain.size(); i-- > 0;) {
     auto name = join(chain, "/", 0, i + 1);
     val = ctx->find(name);
     if (val && val->type->is("Import") && name != "Import") {
       importName = val->type->getClass()->generics[0].type->getStrStatic()->value;
       importEnd = i + 1;
+      importVal = val;
       break;
     }
   }
-  auto importVal = val;
 
   // Special checks for imports
   if (importEnd != chain.size()) { // false when a.b.c points to import itself
@@ -194,6 +192,15 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       } else {
         auto key = join(chain, ".", importEnd, i + 1);
         val = fctx->find(key);
+        if (val && i + 1 != chain.size() && val->type->is("Import") &&
+            key != "Import") {
+          importVal = val;
+          importName = val->type->getClass()->generics[0].type->getStrStatic()->value;
+          importEnd = i + 1;
+          fctx = ctx->cache->imports[importName].ctx;
+          i = chain.size();
+          continue;
+        }
         bool isOverload = val && val->isFunc() &&
                           in(ctx->cache->overloads, val->canonicalName) &&
                           ctx->cache->overloads[val->canonicalName].size() > 1;
@@ -206,18 +213,33 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
           itemName = val->canonicalName, itemEnd = i + 1;
           break;
         }
-        if (ctx->findMember("Import", key))
-          return {importEnd, importVal};
-        if (!ctx->findMethod("Import", key).empty())
-          return {importEnd, importVal};
+        if (auto i = ctx->find("Import")) {
+          auto t = ctx->getType(i->type)->getClass();
+          if (ctx->findMember(t, key))
+            return {importEnd, importVal};
+          if (!ctx->findMethod(t.get(), key).empty())
+            return {importEnd, importVal};
+        }
       }
     }
     if (itemName.empty() && importName.empty()) {
       if (ctx->getBase()->pyCaptures)
         return {1, nullptr};
       E(Error::IMPORT_NO_MODULE, getSrcInfo(), chain[importEnd]);
-    }
-    if (itemName.empty()) {
+    } else if (itemName.empty()) {
+      if (!ctx->isStdlibLoading && endswith(importName, "__init__.codon")) {
+        auto import = ctx->cache->imports[importName];
+        auto file =
+            getImportFile(ctx->cache->argv0, chain[importEnd], importName, false,
+                          ctx->cache->module0, ctx->cache->pluginImportPaths);
+        if (file) { // auto-load support
+          StmtPtr s = N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr);
+          ScopingVisitor::apply(ctx->cache, s);
+          s = TypecheckVisitor(import.ctx, preamble).transform(s);
+          prependStmts->push_back(s);
+          return getImport(chain);
+        }
+      }
       E(Error::IMPORT_NO_NAME, getSrcInfo(), chain[importEnd],
         ctx->cache->imports[importName].name);
     }
@@ -356,14 +378,14 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Special case: expr.__is_static__
   if (expr->member == "__is_static__") {
     if (expr->expr->isDone())
-      return transform(N<IntExpr>(bool(expr->expr->type->getStatic())));
+      return transform(N<BoolExpr>(bool(expr->expr->type->getStatic())));
     return nullptr;
   }
   // Special case: cls.__id__
   if (expr->expr->type->is("type") && expr->member == "__id__") {
     if (auto c = realize(getType(expr->expr))) {
-      return transform(N<IntExpr>(ctx->cache->classes[c->getClass()->name]
-                                      .realizations[c->getClass()->realizedName()]
+      return transform(N<IntExpr>(ctx->cache->getClass(c->getClass())
+                                      ->realizations[c->getClass()->realizedName()]
                                       ->id));
     }
     return nullptr;
@@ -377,7 +399,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     return nullptr;
 
   // Check if this is a method or member access
-  if (ctx->findMethod(typ->name, expr->member).empty())
+  if (ctx->findMethod(typ.get(), expr->member).empty())
     return getClassMember(expr, args);
   auto bestMethod = getBestOverload(expr, args);
 
@@ -386,8 +408,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
 
     // A function is deemed virtual if it is marked as such and
     // if a base class has a RTTI
-    bool isVirtual = in(ctx->cache->classes[typ->name].virtuals, expr->member);
-    isVirtual &= ctx->cache->classes[typ->name].rtti;
+    auto cls = ctx->cache->getClass(typ);
+    bool isVirtual = in(cls->virtuals, expr->member);
+    isVirtual &= cls->rtti;
     isVirtual &= !expr->expr->type->is("type");
     if (isVirtual && !bestMethod->ast->attributes.has(Attr::StaticMethod) &&
         !bestMethod->ast->attributes.has(Attr::Property)) {
@@ -400,10 +423,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         std::vector<ExprPtr> ids;
         for (auto &t : fn->getArgTypes())
           ids.push_back(N<IdExpr>(t->realizedName()));
-        auto name = generateTuple(ids.size());
         auto fnType = N<InstantiateExpr>(
             N<IdExpr>("Function"),
-            std::vector<ExprPtr>{N<InstantiateExpr>(N<IdExpr>(name), ids),
+            std::vector<ExprPtr>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
                                  N<IdExpr>(fn->getRetType()->realizedName())});
         // Function[Tuple[TArg1, TArg2, ...],TRet](
         //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
@@ -454,7 +476,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: object member access (`obj.member`)
   if (!expr->expr->type->is("type")) {
-    if (auto member = ctx->findMember(typ->name, expr->member)) {
+    if (auto member = ctx->findMember(typ, expr->member)) {
       unify(expr->type, ctx->instantiate(member->type, typ));
       if (!expr->type->canRealize() && member->typeExpr) {
         ctx->addBlock();
@@ -470,7 +492,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
   }
 
   // Case: class variable (`Cls.var`)
-  if (auto cls = in(ctx->cache->classes, typ->name))
+  if (auto cls = ctx->cache->getClass(typ))
     if (auto var = in(cls->classVars, expr->member)) {
       return transform(N<IdExpr>(*var));
     }
@@ -521,15 +543,16 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
   if (typ->getUnion()) {
+    if (!typ->canRealize())
+      return nullptr; // delay!
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("__internal__"), "get_union_method"),
+        N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
         std::vector<CallExpr::Arg>{{"union", expr->expr},
-                                   {"method", N<StringExpr>(expr->member)},
-                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
+                                   {"member", N<StringExpr>(expr->member)}}));
   }
 
-  // For debugging purposes: ctx->findMethod(typ->name, expr->member);
-  ctx->findMethod(typ->name, expr->member);
+  // For debugging purposes:
+  // ctx->findMethod(typ.get(), expr->member);
   E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->member);
   return nullptr;
 }
@@ -560,8 +583,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     // Case: method overloads (DotExpr)
     bool addSelf = true;
     if (auto dot = expr->getDot()) {
-      auto methods =
-          ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
+      auto cls = getType(dot->expr)->getClass();
+      auto methods = ctx->findMethod(cls.get(), dot->member, false);
       if (!methods.empty() && methods.front()->ast->attributes.has(Attr::StaticMethod))
         addSelf = false;
     }
@@ -594,16 +617,15 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     }
   }
 
-  if (methodArgs) {
-    FuncTypePtr bestMethod = nullptr;
+  bool goDispatch = methodArgs == nullptr;
+  if (!goDispatch) {
+    std::vector<FuncTypePtr> m;
     // Use the provided arguments to select the best method
     if (auto dot = expr->getDot()) {
       // Case: method overloads (DotExpr)
       auto methods =
-          ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
-      auto m =
-          findMatchingMethods(getType(dot->expr)->getClass(), methods, *methodArgs);
-      bestMethod = m.empty() ? nullptr : m[0];
+          ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
+      m = findMatchingMethods(getType(dot->expr)->getClass(), methods, *methodArgs);
     } else if (auto id = expr->getId()) {
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
@@ -614,17 +636,28 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
         if (!endswith(m, ":dispatch"))
           methods.push_back(ctx->cache->functions[m].type);
       std::reverse(methods.begin(), methods.end());
-      auto m = findMatchingMethods(nullptr, methods, *methodArgs);
-      bestMethod = m.empty() ? nullptr : m[0];
+      m = findMatchingMethods(nullptr, methods, *methodArgs);
     }
-    if (bestMethod)
-      return bestMethod;
-  } else {
+
+    if (m.size() == 1) {
+      return m[0];
+    } else if (m.size() > 1) {
+      for (auto &a : *methodArgs) {
+        if (auto u = a.value->type->getUnbound()) {
+          goDispatch = true;
+        }
+      }
+      if (!goDispatch)
+        return m[0];
+    }
+  }
+
+  if (goDispatch) {
     // If overload is ambiguous, route through a dispatch function
     std::string name;
     if (auto dot = expr->getDot()) {
       auto methods =
-          ctx->findMethod(getType(dot->expr)->getClass()->name, dot->member, false);
+          ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
       seqassert(!methods.empty(), "unknown method");
       name = ctx->cache->functions[methods.back()->ast->name].rootName;
     } else {
@@ -645,6 +678,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   }
 
   if (auto dot = expr->getDot()) {
+    // Debug:
+    // *args = std::vector<CallExpr::Arg>(args->begin()+1, args->end());
     // getBestOverload(expr, args);
     E(Error::DOT_NO_ATTR_ARGS, expr, getType(dot->expr)->prettyString(), dot->member,
       argsNice);

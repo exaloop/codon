@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 def __ac_isempty(flag: Ptr[u32], i: int) -> int:
     return int(flag[i >> 4] >> u32((i & 0xF) << 1)) & 2

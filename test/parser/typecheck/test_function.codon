@@ -23,15 +23,6 @@ def foo():
     print list(a*a for a in range(3))
 foo()  #: [0, 1, 4]
 
-#%% return_fail,barebones
-return #! 'return' outside function
-
-#%% yield_fail,barebones
-yield 5 #! 'yield' outside function
-
-#%% yield_fail_2,barebones
-(yield) #! 'yield' outside function
-
 #%% yieldexpr,barebones
 def mysum(start):
     m = start
@@ -90,6 +81,22 @@ def foo():
     return
     yield 2
 print list(foo())  #: [1]
+
+def foo(x=0):
+    yield 1
+    if x:
+        return
+    yield 2
+print list(foo())  #: [1, 2]
+print list(foo(1))  #: [1]
+
+def foo(x=0):
+    if x:
+        return
+    yield 1
+    yield 2
+print list(foo())  #: [1, 2]
+print list(foo(1))  #: []
 
 #%% global,barebones
 a = 1
@@ -482,9 +489,9 @@ print zoo(2, 3)
 print zoo('s', 3)
 #: decorating zoo[...,...,...]
 #: decorator (2, 3) ()
-#: zoo: 5, 2, (3)
+#: zoo: 5, 2, (3,)
 #: decorator ('s', 3) ()
-#: zoo: 5, s, (3)
+#: zoo: 5, s, (3,)
 
 def mydecorator(func):
     def inner():
@@ -553,3 +560,31 @@ print(num2(10, 20)) #: 3600
 from C import seq_print(str)
 x = seq_print("not ")
 print x  #: not None
+
+#%% return_none_err_1,barebones
+def foo(n: int):
+    if n > 0:
+        return
+    else:
+        return 1
+foo(1)
+#! 'NoneType' does not match expected type 'int'
+#! during the realization of foo(n: int)
+
+#%% return_none_err_2,barebones
+def foo(n: int):
+    if n > 0:
+        return 1
+    return
+foo(1)
+#! 'int' does not match expected type 'NoneType'
+#! during the realization of foo(n: int)
+
+#%% return_fail,barebones
+return #! 'return' outside function
+
+#%% yield_fail,barebones
+yield 5 #! 'yield' outside function
+
+#%% yield_fail_2,barebones
+(yield) #! 'yield' outside function

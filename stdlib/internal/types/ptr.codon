@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 @extend
 class Ptr:
@@ -192,10 +192,6 @@ Jar = Ptr[byte]
 
 @extend
 class NoneType:
-    @llvm
-    def __new__() -> NoneType:
-        ret {} {}
-
     def __eq__(self, other: NoneType):
         return True
 

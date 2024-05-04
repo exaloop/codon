@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -46,8 +46,20 @@ int trimStars(std::string &str);
 /// True if a string only contains digits.
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.
+/// Combine items separated by a delimiter into a string.
 template <typename T>
-std::string join(const T &items, const std::string &delim = " ", size_t start = 0,
+std::string join(const T &items, const std::string &delim = " ") {
+  std::string s;
+  bool first = true;
+  for (const auto &i: items) {
+    if (!first) s += delim;
+    s += i;
+    first = false;
+  }
+  return s;
+}
+template <typename T>
+std::string join(const T &items, const std::string &delim, size_t start,
                  size_t end = (1ull << 31)) {
   std::string s;
   if (end > items.size())

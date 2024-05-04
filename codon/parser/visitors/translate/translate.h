@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -68,6 +68,7 @@ public:
 private:
   ir::types::Type *getType(const types::TypePtr &t);
 
+  void transformFunctionRealizations(const std::string &name, bool isLLVM);
   void transformFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
   void transformLLVMFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
 

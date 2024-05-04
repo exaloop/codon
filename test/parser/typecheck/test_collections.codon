@@ -167,3 +167,7 @@ d = {1: None, 2.2: 's'}
 print(d, d.__class__.__name__)
 #: {1: None, 2.2: 's'} Dict[float,Optional[str]]
 
+#%% comprehension_opt_clone
+import sys
+z = [i for i in sys.argv]
+

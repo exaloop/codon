@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -405,7 +405,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   /// Typechecking
   case Error::UNION_TOO_BIG:
     return fmt::format(
-        "union exceeded its maximum capacity (contains more than {} types)");
+        "union exceeded its maximum capacity (contains more than {} types)", args...);
   case Error::DOT_NO_ATTR:
     return fmt::format("'{}' object has no attribute '{}'", args...);
   case Error::DOT_NO_ATTR_ARGS:

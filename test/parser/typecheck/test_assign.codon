@@ -128,6 +128,15 @@ print(f.a) #: 20
 f[1] = -8
 print(f.a) #: 12
 
+def foo():
+    print('foo')
+    return 0
+v = [0]
+v[foo()] += 1
+#: foo
+print(v)
+#: [1]
+
 #%% assign_err_1,barebones
 a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
 

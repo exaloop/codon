@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "compiler.h"
 
@@ -90,8 +90,9 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
       auto fo = fopen("_dump_typecheck.sexp", "w");
       fmt::print(fo, "{}\n", typechecked->toString(0));
       for (auto &f : cache->functions)
-        for (auto &r : f.second.realizations)
+        for (auto &r : f.second.realizations) {
           fmt::print(fo, "{}\n", r.second->ast->toString(0));
+        }
       fclose(fo);
 
       fo = fopen("_dump_typecheck.htm", "w");

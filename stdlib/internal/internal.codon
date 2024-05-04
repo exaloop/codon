@@ -1,19 +1,16 @@
-# Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import (
     alloc, alloc_atomic, alloc_atomic_uncollectable,
     free, sizeof, register_finalizer
 )
-from internal.static import vars_types, tuple_type, vars as _vars
-
+from internal.static import vars_types, tuple_type, vars as _vars, fn_overloads, fn_can_call
 
 def vars(obj, with_index: Static[bool] = False):
     return _vars(obj, with_index)
 
-
 __vtables__ = Ptr[Ptr[cobj]]()
 __vtable_size__ = 0
-
 
 @extend
 class __internal__:
@@ -65,7 +62,8 @@ class __internal__:
         """
         global __vtables__
         sz = __vtable_size__ + 1
-        __vtables__ = Ptr[Ptr[cobj]](alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj])))
+        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[cobj]))
+        __vtables__ = Ptr[Ptr[cobj]](p)
         __internal__.class_populate_vtables()
 
     # def print(a):
@@ -149,6 +147,9 @@ class __internal__:
 
     # Unions
 
+    def get_union_tag(u, tag: Static[int]):  # compiler-generated
+        pass
+
     @llvm
     def union_set_tag(tag: byte, U: type) -> U:
         %0 = insertvalue {=U} undef, i8 %tag, 0
@@ -173,22 +174,62 @@ class __internal__:
         return u
 
     def new_union(value, U: type) -> U:
-        pass
+        for tag, T in vars_types(U, with_index=True):
+            if isinstance(value, T):
+                return __internal__.union_make(tag, value, U)
+            if isinstance(value, Union[T]):
+                return __internal__.union_make(tag, __internal__.get_union(value, T), U)
+        # TODO: make this static!
+        raise TypeError("invalid union constructor")
 
     def get_union(union, T: type) -> T:
-        pass
+        for tag, TU in vars_types(union, with_index=True):
+            if isinstance(TU, T):
+                if __internal__.union_get_tag(union) == tag:
+                    return __internal__.union_get_data(union, TU)
+        raise TypeError(f"invalid union getter for type '{T.__class__.__name__}'")
 
-    def get_union_first(union):
-        pass
+    def _union_member_helper(union, member: Static[str]) -> Union:
+        for tag, T in vars_types(union, with_index=True):
+            if hasattr(T, member):
+                if __internal__.union_get_tag(union) == tag:
+                    return getattr(__internal__.union_get_data(union, T), member)
+        raise TypeError(f"invalid union call '{member}'")
 
-    def _get_union_method(union, method: Static[str], *args, **kwargs):
-        pass
-
-    def get_union_method(union, method: Static[str], *args, **kwargs):
-        t = __internal__._get_union_method(union, method, *args, **kwargs)
+    def union_member(union, member: Static[str]):
+        t = __internal__._union_member_helper(union, member)
         if staticlen(t) == 1:
-            return __internal__.get_union_first(t)
-        return t
+            return __internal__.get_union_tag(t, 0)
+        else:
+            return t
+
+    def _union_call_helper(union, args, kwargs) -> Union:
+        for tag, T in vars_types(union, with_index=True):
+            if fn_can_call(T, *args, **kwargs):
+                if __internal__.union_get_tag(union) == tag:
+                    return __internal__.union_get_data(union, T)(*args, **kwargs)
+            elif hasattr(T, '__call__'):
+                if fn_can_call(T.__call__, *args, **kwargs):
+                    if __internal__.union_get_tag(union) == tag:
+                        return __internal__.union_get_data(union, T).__call__(*args, **kwargs)
+        raise TypeError("cannot call union " + union.__class__.__name__)
+
+    def union_call(union, args, kwargs):
+        t = __internal__._union_call_helper(union, args, kwargs)
+        if staticlen(t) == 1:
+            return __internal__.get_union_tag(t, 0)
+        else:
+            return t
+
+    def union_str(union):
+        for tag, T in vars_types(union, with_index=True):
+            if hasattr(T, '__str__'):
+                if __internal__.union_get_tag(union) == tag:
+                    return __internal__.union_get_data(union, T).__str__()
+            elif hasattr(T, '__repr__'):
+                if __internal__.union_get_tag(union) == tag:
+                    return __internal__.union_get_data(union, T).__repr__()
+        return ''
 
     # Tuples
 
@@ -209,7 +250,7 @@ class __internal__:
         if idx < 0:
             idx += len
         if idx < 0 or idx >= len:
-            raise IndexError(f"tuple index {idx} out of range 0..{len}")
+            raise IndexError("tuple index out of range")
         return idx
 
     def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
@@ -390,6 +431,16 @@ class __internal__:
         return str(buf, total)
 
     def tuple_str(strs: Ptr[str], names: Ptr[str], n: int) -> str:
+        # special case of 1-element plain tuple: format as "(x,)"
+        if n == 1 and names[0].len == 0:
+            total = strs[0].len + 3
+            buf = Ptr[byte](total)
+            buf[0] = byte(40)  # '('
+            str.memcpy(buf + 1, strs[0].ptr, strs[0].len)
+            buf[total - 2] = byte(44)  # ','
+            buf[total - 1] = byte(41)  # ')'
+            return str(buf, total)
+
         total = 2  # one for each of '(' and ')'
         i = 0
         while i < n:
@@ -442,6 +493,11 @@ class __internal__:
         e.col = col
         return e
 
+    def kwargs_get(kw, key: Static[str], default):
+        if hasattr(kw, key):
+            return getattr(kw, key)
+        else:
+            return default
 
 @extend
 class __magic__:
@@ -502,7 +558,7 @@ class __magic__:
     # @dataclass parameter: container=True
     def getitem(slf, index: int):
         if staticlen(slf) == 0:
-            raise IndexError(f"tuple index {index} out of range 0..0")
+            __internal__.tuple_fix_index(index, 0)  # raise exception
         else:
             return __internal__.tuple_getitem(slf, index, type(slf), tuple_type(slf, 0))
 
@@ -616,7 +672,7 @@ class __magic__:
 
     # @dataclass parameter: gpu=True
     def from_gpu_new(other: T, T: type) -> T:
-        __internal__.class_from_gpu_new(other)
+        return __internal__.class_from_gpu_new(other)
 
     # @dataclass parameter: repr=True
     def repr(slf) -> str:
@@ -667,18 +723,15 @@ class Function:
     def __call__(self, *args) -> TR:
         return Function.__call_internal__(self, args)
 
-
 @tuple
 class PyObject:
     refcnt: int
     pytype: Ptr[byte]
 
-
 @tuple
 class PyWrapper[T]:
     head: PyObject
     data: T
-
 
 @extend
 class RTTI:

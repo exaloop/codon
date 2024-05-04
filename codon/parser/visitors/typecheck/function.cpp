@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -35,7 +35,13 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
 
-  if (transform(stmt->expr)) {
+  if (!stmt->expr && ctx->getBase()->attributes->has(Attr::IsGenerator)) {
+    stmt->setDone();
+  } else {
+    if (!stmt->expr)
+      stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
+    transform(stmt->expr);
+
     // Wrap expression to match the return type
     if (!ctx->getBase()->returnType->getUnbound())
       if (!wrapExpr(stmt->expr, ctx->getBase()->returnType)) {
@@ -52,10 +58,6 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (!ctx->getBase()->returnType->isStaticType() && stmt->expr->type->getStatic())
       stmt->expr->type = stmt->expr->type->getStatic()->getNonStaticType();
     unify(ctx->getBase()->returnType, stmt->expr->type);
-  } else {
-    // Just set the expr for the translation stage. However, do not unify the return
-    // type! This might be a `return` in a generator.
-    stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType")));
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -63,7 +65,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!ctx->blockLevel)
     ctx->returnEarly = true;
 
-  if (stmt->expr->isDone())
+  if (!stmt->expr || stmt->expr->isDone())
     stmt->setDone();
 }
 
@@ -73,8 +75,8 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
     E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
 
   stmt->expr = transform(stmt->expr ? stmt->expr : N<CallExpr>(N<IdExpr>("NoneType")));
-  unify(ctx->getBase()->returnType,
-        ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type}));
+  auto t = ctx->instantiateGeneric(ctx->getType("Generator"), {stmt->expr->type});
+  unify(ctx->getBase()->returnType, t);
 
   if (stmt->expr->isDone())
     stmt->setDone();
@@ -90,33 +92,7 @@ void TypecheckVisitor::visit(YieldFromStmt *stmt) {
 }
 
 /// Process `global` statements. Remove them upon completion.
-void TypecheckVisitor::visit(GlobalStmt *stmt) {
-  // if (!ctx->inFunction())
-  //   E(Error::FN_OUTSIDE_ERROR, stmt, stmt->nonLocal ? "nonlocal" : "global");
-
-  // // Dominate the binding
-  // auto val = ctx->find(stmt->var);
-  // if (!val || !val->isVar())
-  //   E(Error::ID_NOT_FOUND, stmt, stmt->var);
-  // if (val->getBaseName() == ctx->getBaseName())
-  //   E(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->var);
-
-  // // Check global/nonlocal distinction
-  // if (!stmt->nonLocal && !val->getBaseName().empty())
-  //   E(Error::FN_GLOBAL_NOT_FOUND, stmt, "global", stmt->var);
-  // else if (stmt->nonLocal && val->getBaseName().empty())
-  //   E(Error::FN_GLOBAL_NOT_FOUND, stmt, "nonlocal", stmt->var);
-  // seqassert(!val->canonicalName.empty(), "'{}' does not have a canonical name",
-  //           stmt->var);
-
-  // // Register as global if needed
-  // ctx->cache->addGlobal(val->canonicalName);
-
-  // val = ctx->addVar(stmt->var, val->canonicalName, val->type);
-  // val->baseName = ctx->getBaseName();
-  // Erase the statement
-  resultStmt = N<SuiteStmt>();
-}
+void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
 
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
@@ -131,6 +107,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   for (auto i = stmt->decorators.size(); i-- > 0;) {
+    if (!stmt->decorators[i])
+      continue;
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       stmt->attributes.set(attrName);
@@ -340,7 +318,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Parse arguments to the context. Needs to be done after adding generics
     // to support cases like `foo(a: T, T: type)`
     for (auto &a : args) {
-      // if (a.status == Param::Normal || a.type->is ) // todo)) makes typevar work! need to check why...
+      // if (a.status == Param::Normal || a.type->is ) // todo)) makes typevar work!
+      // need to check why...
       a.type = transformType(a.type, false);
       // if (a.type && a.type->type->getLink() && a.type->type->getLink()->trait)
       //   LOG("-> {:c}", a.type->type->getLink()->trait);
@@ -381,6 +360,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     ret = transformType(stmt->ret, false);
     if (ret) {
       unify(baseType->generics[1].type, getType(ret));
+      if (ret->isId("Union")) {
+        baseType->generics[1].type->getUnion()->generics[0].type->getUnbound()->kind =
+            LinkType::Generic;
+      }
     } else {
       generics.push_back(unify(baseType->generics[1].type, ctx->getUnbound()));
     }
@@ -480,7 +463,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   if (!captures.empty()) {
     if (isClassMember)
-       E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), captures.begin()->first);
+      E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), captures.begin()->first);
 
     finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
     // Add updated self reference in case function is recursive!
@@ -637,11 +620,11 @@ ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
   return call;
 }
 
-/// Generate and return `Function[Tuple.N[args...], ret]` type
+/// Generate and return `Function[Tuple[args...], ret]` type
 std::shared_ptr<ClassType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
   auto baseType = ctx->instantiate(ctx->getType("Function"))->getClass();
   unify(baseType->generics[0].type,
-        ctx->instantiate(ctx->getType(generateTuple(nargs)))->getClass());
+        ctx->instantiate(generateTuple(nargs, false))->getClass());
   return baseType;
 }
 

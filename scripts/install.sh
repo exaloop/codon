@@ -50,6 +50,10 @@ if [[ "$SHELL" == *zsh ]]; then
 elif [[ "$SHELL" == *bash ]]; then
   if [ -e ~/.bash_profile ]; then
     update_profile ~/.bash_profile
+  elif [ -e ~/.bash_login ]; then
+    update_profile ~/.bash_login
+  elif [ -e ~/.profile ]; then
+    update_profile ~/.profile
   else
     echo "Could not find bash configuration file to update PATH"
   fi

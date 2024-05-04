@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -58,8 +58,6 @@ SEQ_FUNC void *seq_alloc(size_t n);
 SEQ_FUNC void *seq_alloc_atomic(size_t n);
 SEQ_FUNC void *seq_alloc_uncollectable(size_t n);
 SEQ_FUNC void *seq_alloc_atomic_uncollectable(size_t n);
-SEQ_FUNC void *seq_calloc(size_t m, size_t n);
-SEQ_FUNC void *seq_calloc_atomic(size_t m, size_t n);
 SEQ_FUNC void *seq_realloc(void *p, size_t newsize, size_t oldsize);
 SEQ_FUNC void seq_free(void *p);
 SEQ_FUNC void seq_register_finalizer(void *p, void (*f)(void *obj, void *data));

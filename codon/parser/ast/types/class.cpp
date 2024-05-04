@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <memory>
 #include <string>
@@ -129,7 +129,7 @@ bool ClassType::isInstantiated() const {
 
 std::shared_ptr<ClassType> ClassType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
-  seqassert(startswith(name, TYPE_TUPLE), "{} not a tuple", toString());
+  seqassert(name == TYPE_TUPLE, "{} not a tuple", toString());
   if (generics.size() > 1) {
     std::string first = generics[0].type->realizedName();
     for (int i = 1; i < generics.size(); i++)
@@ -174,8 +174,6 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? niceName : name;
-  if (startswith(n, TYPE_TUPLE))
-    n = "Tuple";
   return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
 }
 
@@ -189,6 +187,11 @@ std::string ClassType::realizedName() const {
     gs.push_back(generics[3].type->realizedName());
     for (size_t i = 0; i < generics.size() - 1; i++)
       gs.push_back(generics[i].type->realizedName());
+  } else if (name == "Union" && generics[0].type->getClass()) {
+    std::set<std::string> gss;
+    for (auto &a : generics[0].type->getClass()->generics)
+      gss.insert(a.type->realizedName());
+    gs = {join(gss, " | ")};
   } else {
     for (auto &a : generics)
       if (!a.name.empty()) {

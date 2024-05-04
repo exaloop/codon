@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "ctx.h"
 
@@ -89,7 +89,8 @@ TypeContext::Item TypeContext::addFunc(const std::string &name,
   return t;
 }
 
-TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item, bool pop) {
+TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item,
+                                                bool pop) {
   add(item->canonicalName, item);
   if (pop)
     stack.front().pop_back(); // do not remove it later!
@@ -141,9 +142,7 @@ std::string TypeContext::getModule() const {
   return base;
 }
 
-std::string TypeContext::getModulePath() const {
-  return moduleName.path;
-}
+std::string TypeContext::getModulePath() const { return moduleName.path; }
 
 void TypeContext::dump() { dump(0); }
 
@@ -238,19 +237,24 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
         genericCache[g.id] = g.type;
       }
+    // special case: __SELF__
+    if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
+        type->getFunc()->funcGenerics[0].niceName == "__SELF__") {
+      genericCache[type->getFunc()->funcGenerics[0].id] = generics;
+    }
   }
   auto t = type->instantiate(typecheckLevel, &(cache->unboundCount), &genericCache);
   for (auto &i : genericCache) {
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
       if (l->defaultType) {
-        pendingDefaults.insert(i.second);
+        getBase()->pendingDefaults.insert(i.second);
       }
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {
     t->setSrcInfo(srcInfo);
-    pendingDefaults.insert(t);
+    getBase()->pendingDefaults.insert(t);
   }
   return t;
 }
@@ -271,15 +275,14 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
     seqassert(c->generics[i].type, "generic is null");
     if (!c->generics[i].isStatic && t->getStatic())
       t = t->getStatic()->getNonStaticType();
-    g->generics.emplace_back("", "", t, c->generics[i].id,
-                             c->generics[i].isStatic);
+    g->generics.emplace_back("", "", t, c->generics[i].id, c->generics[i].isStatic);
   }
   return instantiate(srcInfo, root, g);
 }
 
-std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeName,
+std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
                                                         const std::string &method,
-                                                        bool hideShadowed) const {
+                                                        bool hideShadowed) {
   std::vector<types::FuncTypePtr> vv;
   std::unordered_set<std::string> signatureLoci;
 
@@ -287,12 +290,12 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
     auto t = in(cls.methods, method);
     if (!t)
       return;
+
     auto mt = cache->overloads[*t];
     for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
       auto &method = mt[mti];
       if (endswith(method, ":dispatch") || !cache->functions[method].type)
         continue;
-      // if (method.age <= age) {
       if (hideShadowed) {
         auto sig = cache->functions[method].ast->signature();
         if (!in(signatureLoci, sig)) {
@@ -302,12 +305,11 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
       } else {
         vv.emplace_back(cache->functions[method].type);
       }
-      // }
     }
   };
-  if (auto cls = in(cache->classes, typeName)) {
-    for (auto pc : cls->mro) {
-      auto mc = in(cache->classes, pc->name);
+  if (auto cls = cache->getClass(type)) {
+    for (const auto &pc : cls->mro) {
+      auto mc = cache->getClass(pc);
       seqassert(mc, "class '{}' not found", pc->name);
       populate(*mc);
     }
@@ -315,13 +317,15 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(const std::string &typeN
   return vv;
 }
 
-Cache::Class::ClassField *TypeContext::findMember(const std::string &typeName,
-                                       const std::string &member) const {
-  if (auto cls = in(cache->classes, typeName)) {
-    for (auto pc : cls->mro) {
-      auto mc = in(cache->classes, pc->name);
+Cache::Class::ClassField *TypeContext::findMember(const types::ClassTypePtr &type,
+                                                  const std::string &member) const {
+  if (auto cls = cache->getClass(type)) {
+    for (const auto &pc : cls->mro) {
+      auto mc = cache->getClass(pc);
       seqassert(mc, "class '{}' not found", pc->name);
       for (auto &mm : mc->fields) {
+        if (pc->is(TYPE_TUPLE) && (&mm - &(mc->fields[0])) >= type->generics.size())
+          break;
         if (mm.name == member)
           return &mm;
       }
@@ -433,7 +437,8 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
                        Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->name),
                             cache->reverseIdentifierLookup[func->ast->args[i].name]));
     }
-  return score + onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  return s != -1 ? score + s : -1;
 }
 
 void TypeContext::dump(int pad) {

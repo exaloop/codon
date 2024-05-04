@@ -104,6 +104,12 @@ def test_conversions():
     assert bool(UInt[80](0)) == False
     assert bool(Int[80](42)) == True
     assert str(Int[80](42)) == '42'
+
+    # float -> intN
+    assert i32(3.14) == i32(3)
+
+    # float -> uintN
+    assert u32(3.14) == u32(3)
 test_conversions()
 
 @test
@@ -142,3 +148,45 @@ def test_int_pow():
     assert f(T2(0)) ** f(T2(0)) == T2(1)
     assert str(f(T2(31)) ** f(T2(31))) == '17069174130723235958610643029059314756044734431'
 test_int_pow()
+
+@test
+def test_float(F: type):
+    x = F(5.5)
+    assert str(x) == '5.5'
+    assert F(x) == x
+    assert F() == F(0.0)
+    assert x.__copy__() == x
+    assert x.__deepcopy__() == x
+    assert int(x) == 5
+    assert float(x) == 5.5
+    assert bool(x)
+    assert not bool(F())
+    assert +x == x
+    assert -x == F(-5.5)
+    assert x + x == F(11.0)
+    assert x - F(1.0) == F(4.5)
+    assert x * F(3.0) == F(16.5)
+    assert x / F(2.0) == F(2.75)
+    if F is not float128:  # LLVM ops give wrong results for fp128
+        assert x // F(2.0) == F(2.0)
+        assert x % F(0.75) == F(0.25)
+        assert divmod(x, F(0.75)) == (F(7.0), F(0.25))
+    assert x == x
+    assert x != F()
+    assert x < F(6.5)
+    assert x > F(4.5)
+    assert x <= F(6.5)
+    assert x >= F(4.5)
+    assert x >= x
+    assert x <= x
+    assert abs(x) == x
+    assert abs(-x) == x
+    assert x.__match__(x)
+    assert not x.__match__(F())
+    assert hash(x) == hash(5.5)
+
+test_float(float)
+test_float(float32)
+#test_float(float16)
+#test_float(bfloat16)
+#test_float(float128)

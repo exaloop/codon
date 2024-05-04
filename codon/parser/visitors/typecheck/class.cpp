@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -223,12 +223,28 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (!stmt->attributes.has(Attr::Extend)) {
       ctx->typecheckLevel++; // to avoid unifying generics early
       auto &fields = ctx->cache->classes[canonicalName].fields;
-      for (auto ai = 0, aj = 0; ai < args.size(); ai++) {
-        if (args[ai].status == Param::Normal && !ClassStmt::isClassVar(args[ai])) {
-          fields[aj].typeExpr = clean_clone(args[ai].type);
-          fields[aj].type = getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
-          fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
-          aj++;
+      if (canonicalName == TYPE_TUPLE) {
+        // Special tuple handling!
+        const int MAX_TUPLE = 2048;
+        for (auto aj = 0; aj < MAX_TUPLE; aj++) {
+          auto genName = fmt::format("T{}", aj + 1);
+          auto genCanName = ctx->generateCanonicalName(genName);
+          auto generic = ctx->getUnbound();
+          generic->getLink()->genericName = genName;
+          ExprPtr te = N<IdExpr>(genCanName);
+          fields.emplace_back(Cache::Class::ClassField{
+              fmt::format("item{}", aj + 1), generic->generalize(ctx->typecheckLevel),
+              "", te});
+        }
+      } else {
+        for (auto ai = 0, aj = 0; ai < args.size(); ai++) {
+          if (args[ai].status == Param::Normal && !ClassStmt::isClassVar(args[ai])) {
+            fields[aj].typeExpr = clean_clone(args[ai].type);
+            fields[aj].type =
+                getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
+            fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
+            aj++;
+          }
         }
       }
       ctx->typecheckLevel--;
@@ -303,6 +319,17 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     for (const auto &sp : getClassMethods(stmt->suite))
       if (sp && sp->getFunction()) {
         if (sp.get() != autoDeducedInit.second) {
+          auto &ds = sp->getFunction()->decorators;
+          for (auto &dc : ds) {
+            if (auto d = dc->getDot()) {
+              if (d->member == "setter" and d->expr->isId(sp->getFunction()->name) &&
+                  sp->getFunction()->args.size() == 2) {
+                sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
+                dc = nullptr;
+                break;
+              }
+            }
+          }
           fnStmts.push_back(transform(sp));
         }
       }
@@ -352,7 +379,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     // Debug information
     // LOG("[class] {} -> {:c} / {}", canonicalName, typ,
-    //     ctx->cache->classes[canonicalName].fields.size());
+        // ctx->cache->classes[canonicalName].fields.size());
     // for (auto &m : ctx->cache->classes[canonicalName].fields)
     //   LOG("       - member: {}: {:c}", m.name, m.type);
     // for (auto &m : ctx->cache->classes[canonicalName].methods)
@@ -406,7 +433,6 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
   // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
   std::vector<std::vector<types::ClassTypePtr>> mro{{typ}};
   for (auto &cls : baseClasses) {
-    std::string name;
     std::vector<ExprPtr> subs;
 
     // Get the base class and generic replacements (e.g., if there is Bar[T],
@@ -416,9 +442,8 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
     auto clsTyp = getType(cls)->getClass();
-    name = clsTyp->name;
     asts.push_back(clsTyp);
-    Cache::Class *cachedCls = in(ctx->cache->classes, name);
+    Cache::Class *cachedCls = ctx->cache->getClass(clsTyp);
     auto rootMro = cachedCls->mro;
     for (auto &t : rootMro)
       t = ctx->instantiate(t, clsTyp)->getClass();
@@ -447,7 +472,7 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
   // Add normal fields
   for (auto &clsTyp : asts) {
     int ai = 0;
-    auto ast = ctx->cache->classes[clsTyp->name].ast;
+    auto ast = ctx->cache->getClass(clsTyp)->ast;
     ctx->addBlock();
     addClassGenerics(clsTyp);
     for (auto &a : ast->args) {
@@ -635,7 +660,8 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
       //   // auto assign = N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name));
       //   // stmts.push_back(N<IfStmt>(
       //   //     N<CallExpr>(I("isinstance"), clean_clone(a.type), I("ByRef")),
-      //   //     N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name), "__init__"))),
+      //   //     N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name),
+      //   "__init__"))),
       //   //                  assign),
       //   //     clone(assign)));
       // }
@@ -734,32 +760,6 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
   return t;
 }
 
-/// Generate a tuple class `Tuple.N[T1,...,TN]`.
-/// @param len       Tuple length (`N`)
-std::string TypecheckVisitor::generateTuple(size_t len) {
-  std::vector<std::string> names;
-  for (size_t i = 1; i <= len; i++)
-    names.push_back(format("item{}", i));
-
-  auto typeName = format("{}{}", TYPE_TUPLE, len);
-  if (!ctx->find(typeName)) {
-    // Generate the appropriate ClassStmt
-    std::vector<Param> args;
-    for (size_t i = 0; i < len; i++)
-      args.emplace_back(names[i], N<IdExpr>(format("T{}", i + 1)), nullptr);
-    for (size_t i = 0; i < len; i++)
-      args.emplace_back(format("T{}", i + 1), N<IdExpr>("type"), nullptr, true);
-    StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
-                                std::vector<ExprPtr>{N<IdExpr>("tuple")});
-
-    // Simplify in the standard library context and type check
-    stmt = TypecheckVisitor::apply(ctx->cache->imports[STDLIB_IMPORT].ctx, stmt,
-                                   FILE_GENERATED);
-    prependStmts->push_back(stmt);
-  }
-  return typeName;
-}
-
 int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
   auto key = join(names, ";");
   std::string suffix;
@@ -798,6 +798,48 @@ void TypecheckVisitor::addClassGenerics(const types::ClassTypePtr &clsTyp,
     addGen(g);
   for (auto &g : clsTyp->generics)
     addGen(g);
+}
+
+types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
+  static std::unordered_set<size_t> funcArgTypes;
+
+  auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE, TYPE_TUPLE);
+  t->isTuple = true;
+  auto cls = ctx->cache->getClass(t);
+  seqassert(n <= cls->fields.size(), "tuple too large");
+  for (size_t i = 0; i < n; i++) {
+    auto gt = cls->fields[i].type->getLink();
+    t->generics.emplace_back(cls->fields[i].typeExpr->getId()->value, gt->genericName,
+                             cls->fields[i].type, gt->id, 0);
+  }
+  if (generateNew && !in(funcArgTypes, n)) {
+    funcArgTypes.insert(n);
+    std::vector<Param> newFnArgs;
+    std::vector<ExprPtr> typeArgs;
+    for (size_t i = 0; i < n; i++) {
+      newFnArgs.emplace_back(format("item{}", i + 1), N<IdExpr>(format("T{}", i + 1)));
+      typeArgs.emplace_back(N<IdExpr>(format("T{}", i + 1)));
+    }
+    for (size_t i = 0; i < n; i++) {
+      newFnArgs.emplace_back(format("T{}", i + 1), N<IdExpr>("type"));
+    }
+    StmtPtr fn = N<FunctionStmt>(
+        "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),
+        newFnArgs, nullptr, Attr({Attr::Internal}));
+    StmtPtr ext =
+        N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn, Attr({Attr::Extend}));
+    // TODO: do clean toplevel transform
+    ScopingVisitor::apply(ctx->cache, ext);
+
+    auto rctx = ctx->cache->imports[STDLIB_IMPORT].ctx;
+    auto oldBases = rctx->bases;
+    rctx->bases.clear();
+    rctx->bases.push_back(oldBases[0]);
+    ext = TypecheckVisitor::apply(rctx, ext);
+    rctx->bases = oldBases;
+    preamble->push_back(ext);
+  }
+  return t;
 }
 
 } // namespace codon::ast

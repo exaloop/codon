@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
@@ -31,7 +31,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
         return; // continue later when the type becomes known
       if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, star, typ->prettyString());
-      const auto &ff = ctx->cache->classes[typ->name].fields;
+      auto ff = getClassFields(typ.get());
       for (int i = 0; i < ff.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
                            transform(N<DotExpr>(star->what, ff[i].name)));
@@ -42,8 +42,8 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     } else {
       expr->items[ai] = transform(expr->items[ai]);
     }
-  auto tupleName = generateTuple(expr->items.size());
-  resultExpr = transform(N<CallExpr>(N<DotExpr>(tupleName, "__new__"), expr->items));
+  generateTuple(expr->items.size());
+  resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), clone(expr->items)));
   unify(expr->type, resultExpr->type);
 }
 
@@ -87,7 +87,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   bool canOptimize =
       expr->kind == GeneratorExpr::ListGenerator && expr->loopCount() == 1;
   if (canOptimize) {
-    auto iter = transform(expr->getFinalSuite()->getFor()->iter);
+    auto iter = transform(clone(expr->getFinalSuite()->getFor()->iter));
     IdExpr *id = nullptr;
     if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
       // Turn off this optimization for static items
@@ -233,7 +233,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       return ti;
     } else if (collectionCls->name != ti->name) {
       // Rule: subclass derives from superclass
-      const auto &mros = ctx->cache->classes[collectionCls->name].mro;
+      const auto &mros = ctx->cache->getClass(collectionCls)->mro;
       for (size_t i = 1; i < mros.size(); i++) {
         auto t = ctx->instantiate(mros[i], collectionCls);
         if (t->unify(ti.get(), nullptr) >= 0) {
@@ -274,8 +274,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       if (auto t = superTyp(collectionTyp->getClass(), typ))
         collectionTyp = t;
     } else {
-      auto tname = generateTuple(2);
-      auto tt = unify(typ, ctx->instantiate(ctx->getType(tname)))->getClass();
+      auto tt = unify(typ, ctx->instantiate(generateTuple(2)))->getClass();
       seqassert(collectionTyp->getClass() &&
                     collectionTyp->getClass()->generics.size() == 2 &&
                     tt->generics.size() == 2,
@@ -289,7 +288,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
                      superTyp(nt[di]->getClass(), tt->generics[di].type->getClass()))
           nt[di] = dt;
       }
-      collectionTyp = ctx->instantiateGeneric(ctx->getType(tname), nt);
+      collectionTyp = ctx->instantiateGeneric(generateTuple(nt.size()), nt);
     }
   }
   if (!done)

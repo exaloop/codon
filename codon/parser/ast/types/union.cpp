@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <memory>
 #include <string>
@@ -90,23 +90,15 @@ std::string UnionType::debugString(char mode) const {
   std::set<std::string> gss;
   for (auto &a : generics[0].type->getClass()->generics)
     gss.insert(a.type->debugString(mode));
-  std::string s;
-  for (auto &i : gss)
-    s += "," + i;
-  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s.substr(1)));
+  std::string s = join(gss, " | ");
+  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }
 
 bool UnionType::canRealize() const { return isSealed() && ClassType::canRealize(); }
 
 std::string UnionType::realizedName() const {
   seqassert(canRealize(), "cannot realize {}", toString());
-  std::set<std::string> gss;
-  for (auto &a : generics[0].type->getClass()->generics)
-    gss.insert(a.type->realizedName());
-  std::string s;
-  for (auto &i : gss)
-    s += "," + i;
-  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s.substr(1)));
+  return ClassType::realizedName();
 }
 
 void UnionType::addType(const TypePtr &typ) {
@@ -135,7 +127,7 @@ void UnionType::addType(const TypePtr &typ) {
           return;
         }
       }
-    E(error::Error::UNION_TOO_BIG, this);
+    E(error::Error::UNION_TOO_BIG, this, pendingTypes.size());
   }
 }
 
@@ -151,9 +143,8 @@ void UnionType::seal() {
         pendingTypes[i]->getLink()->kind == LinkType::Unbound)
       break;
   std::vector<TypePtr> typeSet(pendingTypes.begin(), pendingTypes.begin() + i);
-  auto name = tv.generateTuple(typeSet.size());
-  auto t = cache->typeCtx->instantiateGeneric(
-      cache->typeCtx->getType(name)->getClass(), typeSet);
+  auto t =
+      cache->typeCtx->instantiateGeneric(tv.generateTuple(typeSet.size()), typeSet);
   Unification us;
   generics[0].type->unify(t.get(), &us);
 }

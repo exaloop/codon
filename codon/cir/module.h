@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -34,6 +34,9 @@ public:
   static const std::string INT_NAME;
   static const std::string FLOAT_NAME;
   static const std::string FLOAT32_NAME;
+  static const std::string FLOAT16_NAME;
+  static const std::string BFLOAT16_NAME;
+  static const std::string FLOAT128_NAME;
   static const std::string STRING_NAME;
 
   static const std::string EQ_MAGIC_NAME;
@@ -338,6 +341,12 @@ public:
   types::Type *getFloatType();
   /// @return the float32 type
   types::Type *getFloat32Type();
+  /// @return the float16 type
+  types::Type *getFloat16Type();
+  /// @return the bfloat16 type
+  types::Type *getBFloat16Type();
+  /// @return the float128 type
+  types::Type *getFloat128Type();
   /// @return the string type
   types::Type *getStringType();
   /// Gets a pointer type.

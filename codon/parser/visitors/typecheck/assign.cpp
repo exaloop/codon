@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -73,6 +73,18 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   if (auto idx = stmt->lhs->getIndex()) {
     // Case: a[x] = b
     seqassert(!stmt->type, "unexpected type annotation");
+    if (auto b = stmt->rhs->getBinary()) {
+      if (mustExist && b->inPlace && !b->rexpr->getId()) {
+        auto var = ctx->cache->getTemporaryVar("assign");
+        seqassert(stmt->rhs->getBinary(), "not a bin");
+        return transform(N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(var), idx->index),
+            N<ExprStmt>(N<CallExpr>(
+                N<DotExpr>(idx->expr, "__setitem__"), N<IdExpr>(var),
+                N<BinaryExpr>(N<IndexExpr>(clone(idx->expr), N<IdExpr>(var)), b->op,
+                              b->rexpr, true)))));
+      }
+    }
     return transform(N<ExprStmt>(
         N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, stmt->rhs)));
   }
@@ -130,7 +142,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
     assign->lhs->type->getLink()->defaultType = ctx->getType("NoneType");
-    ctx->pendingDefaults.insert(assign->lhs->type);
+    ctx->getBase()->pendingDefaults.insert(assign->lhs->type);
   }
   if (stmt->type) {
     unify(assign->lhs->type,
@@ -210,11 +222,17 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   transform(stmt->lhs);
 
   if (auto lhsClass = getType(stmt->lhs)->getClass()) {
-    auto member = ctx->findMember(lhsClass->name, stmt->member);
-
-    if (!member && stmt->lhs->type->is("type")) {
+    auto member = ctx->findMember(lhsClass, stmt->member);
+    if (!member) {
+      // Case: setters
+      auto setters = ctx->findMethod(lhsClass.get(), format(".set_{}", stmt->member));
+      if (!setters.empty()) {
+        resultStmt = transform(N<ExprStmt>(
+            N<CallExpr>(N<IdExpr>(setters[0]->ast->name), stmt->lhs, stmt->rhs)));
+        return;
+      }
       // Case: class variables
-      if (auto cls = in(ctx->cache->classes, lhsClass->name))
+      if (auto cls = ctx->cache->getClass(lhsClass))
         if (auto var = in(cls->classVars, stmt->member)) {
           auto a = N<AssignStmt>(N<IdExpr>(*var), transform(stmt->rhs));
           a->setUpdate();

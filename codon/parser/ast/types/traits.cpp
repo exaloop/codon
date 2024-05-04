@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #include <memory>
 #include <string>
@@ -113,15 +113,13 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           starArgTypes.push_back(inArgs->generics[i].type);
 
         auto tv = TypecheckVisitor(cache->typeCtx);
-        auto name = tv.generateTuple(starArgTypes.size());
-        auto t = cache->typeCtx->getType(name);
+        auto t = tv.generateTuple(starArgTypes.size());
         t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
         if (t->unify(trInArgs->generics[star].type.get(), us) == -1)
           return -1;
       }
       if (kwStar < trInArgs->generics.size()) {
-        TypePtr tt =
-            cache->typeCtx->getType(TypecheckVisitor(cache->typeCtx).generateTuple(0));
+        TypePtr tt = TypecheckVisitor(cache->typeCtx).generateTuple(0);
         size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
