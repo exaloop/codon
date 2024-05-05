@@ -5,6 +5,8 @@ from internal.gc import sizeof
 @extend
 class Array:
     @llvm
+    @pure
+    @derives
     def __new__(ptr: Ptr[T], sz: int) -> Array[T]:
         %0 = insertvalue { i64, ptr } undef, i64 %sz, 0
         %1 = insertvalue { i64, ptr } %0, ptr %ptr, 1

@@ -418,7 +418,7 @@ class timedelta:
     _microseconds: int
 
     def _new(microseconds: int) -> timedelta:
-        return timedelta(microseconds)
+        return __internal__.tuple_cast_unsafe((microseconds,), timedelta)
 
     @inline
     def _accum(sofar: int, leftover: float, num: int, factor: int) -> Tuple[int, float]:
@@ -441,10 +441,6 @@ class timedelta:
         fracpart, intpart = modf(dnum)
         y = s + int(intpart)
         return y, leftover + fracpart
-
-    # override default constructor
-    def __new__(days: int) -> timedelta:
-        return timedelta(days, 0)
 
     def __new__(
         days: float = 0,
@@ -475,7 +471,11 @@ class timedelta:
                 whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
             us += int(whole_us)
 
-        return timedelta(us)
+        return timedelta._new(us)
+
+    # override default constructor
+    def __new__(days: int) -> timedelta:
+        return timedelta(days, 0)
 
     @property
     def days(self) -> int:

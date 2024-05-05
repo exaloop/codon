@@ -191,7 +191,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto val = ctx->forceFind(name);
           val->baseName = "";
           val->scope = {0};
-          // ctx->cache->addGlobal(name);
+          ctx->cache->addGlobal(val->canonicalName);
           auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
                                       a.type ? a.type->getIndex()->index : nullptr);
           assign->setUpdate();

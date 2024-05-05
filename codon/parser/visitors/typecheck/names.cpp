@@ -601,6 +601,9 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   for (const auto &n : c->captures)
     ctx->childCaptures.insert(n);
 
+  for (auto &[u, v]: c->map)
+    stmt->attributes.bindings[u] = v.size();
+
   // if (stmt->name=="test_omp_critical") {
   // LOG("=> {} :: cap {}", stmt->name, c->captures);
   // LOG("{}", stmt->toString(2));

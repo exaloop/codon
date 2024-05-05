@@ -87,6 +87,9 @@ class List:
                 other.append(self._get(i))
             return other
 
+    def __setitem__(self, s: Slice, other: Generator[T]):
+        return self.__setitem__(s, [a for a in other])
+
     def __setitem__(self, s: Slice, other: List[T]):
         if s.start is None and s.stop is None and s.step is None:
             self.clear()
@@ -120,9 +123,6 @@ class List:
                 self._set(cur, seq._get(i))
                 cur += step
                 i += 1
-
-    def __setitem__(self, s: Slice, other: Generator[T]):
-        return self.__setitem__(s, [a for a in other])
 
     def __delitem__(self, s: Slice):
         if s.start is None and s.stop is None and s.step is None:

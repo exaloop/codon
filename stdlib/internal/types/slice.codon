@@ -20,9 +20,12 @@ class Slice:
         return Slice(start, stop, None)
 
     def __new__(
-            start: Optional[int],
-            stop: Optional[int],
-            step: Optional[int]) -> Slice[int, int, int]:
+            start: Optional[T],
+            stop: Optional[U],
+            step: Optional[V],
+            T: type = int,
+            U: type = int,
+            V: type = int) -> Slice[T, U, V]:
         return superf(start, stop, step)
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:

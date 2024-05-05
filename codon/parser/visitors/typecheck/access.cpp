@@ -345,7 +345,19 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
       nexpr = N<DotExpr>(nexpr, chain[pos++]);
   }
   if (!nexpr->getDot()) {
-    return transform(nexpr);
+    if (args) {
+      nexpr = transform(nexpr);
+      if (auto id = nexpr->getId())
+        if (endswith(id->value, ":dispatch"))
+          if (auto bestMethod = getBestOverload(id, args)) {
+            auto t = id->type;
+            nexpr = N<IdExpr>(bestMethod->ast->name);
+            nexpr->setType(ctx->instantiate(bestMethod));
+          }
+      return nexpr;
+    } else {
+      return transform(nexpr);
+    }
   } else {
     expr->expr = nexpr->getDot()->expr;
     expr->member = nexpr->getDot()->member;

@@ -94,8 +94,6 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
         },
         [&]() -> StmtPtr { return nullptr; });
     return;
-  } else if (stmt->cond->type->getUnbound()) {
-    return;
   }
 
   while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))

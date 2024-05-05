@@ -450,7 +450,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         return transform(N<BoolExpr>(!value));
       } else {
         // Cannot be evaluated yet: just set the type
-        expr->type->getUnbound()->isStatic = 1;
+        expr->type->getUnbound()->isStatic = 3;
       }
     }
     return nullptr;
@@ -475,7 +475,7 @@ ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
         return transform(N<IntExpr>(value));
     } else {
       // Cannot be evaluated yet: just set the type
-      expr->type->getUnbound()->isStatic = 1;
+      expr->type->getUnbound()->isStatic = expr->op == "!" ? 3 : 1;
     }
   }
 
@@ -531,7 +531,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
         return transform(N<BoolExpr>(value));
       } else {
         // Cannot be evaluated yet: just set the type
-        expr->type->getUnbound()->isStatic = 1;
+        expr->type->getUnbound()->isStatic = 3;
       }
     }
     return nullptr;
@@ -591,7 +591,11 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       return transform(N<IntExpr>(lvalue));
   } else {
     // Cannot be evaluated yet: just set the type
-    expr->type->getUnbound()->isStatic = 1;
+    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
+           expr->op))
+      expr->type->getUnbound()->isStatic = 3;
+    else
+      expr->type->getUnbound()->isStatic = 1;
   }
 
   return nullptr;
@@ -637,19 +641,19 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
 
   // Case: `is None` expressions
   if (expr->rexpr->getNone()) {
-    if (expr->lexpr->getType()->is("NoneType"))
+    if (getType(expr->lexpr)->is("NoneType"))
       return transform(N<BoolExpr>(true));
-    if (!expr->lexpr->getType()->is(TYPE_OPTIONAL)) {
+    if (!getType(expr->lexpr)->is(TYPE_OPTIONAL)) {
       // lhs is not optional: `return False`
       return transform(N<BoolExpr>(false));
     } else {
       // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
-      auto g = expr->lexpr->getType()->getClass();
+      auto g = getType(expr->lexpr)->getClass();
       for (; g->generics[0].type->is("Optional"); g = g->generics[0].type->getClass())
         ;
       if (!g->generics[0].type->getClass()) {
         auto typ = ctx->getUnbound();
-        typ->isStatic = 1;
+        typ->isStatic = 3;
         unify(expr->type, typ);
         return nullptr;
       }
@@ -657,6 +661,8 @@ ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
         return transform(N<BoolExpr>(true));
 
       // lhs is optional: `return lhs.__has__().__invert__()`
+      if (expr->type->getUnbound() && expr->type->isStaticType())
+        expr->type->getUnbound()->isStatic = 0;
       return transform(N<CallExpr>(
           N<DotExpr>(N<CallExpr>(N<DotExpr>(expr->lexpr, "__has__")), "__invert__")));
     }

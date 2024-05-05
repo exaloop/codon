@@ -451,6 +451,7 @@ struct Attr {
 
   enum CaptureType { Read, Global, Nonlocal };
   std::unordered_map<std::string, CaptureType> captures;
+  std::unordered_map<std::string, size_t> bindings;
 
   // Set of attributes
   std::set<std::string> customAttr;

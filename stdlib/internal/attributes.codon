@@ -17,10 +17,6 @@ def noinline():
     pass
 
 @__attribute__
-def pure():
-    pass
-
-@__attribute__
 def nonpure():
     pass
 
@@ -36,9 +32,6 @@ def nocapture():
 def pycapture():
     pass
 
-@__attribute__
-def derives():
-    pass
 
 @__attribute__
 def self_captures():

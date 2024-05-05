@@ -183,8 +183,18 @@ class Tuple:
         return __magic__.tuplesize(self)
 tuple = Tuple
 
+@__attribute__
+def pure():
+    pass
+
+@__attribute__
+def derives():
+    pass
+
 @extend
 class NoneType:
+    @pure
+    @derives
     @llvm
     def __new__() -> NoneType:
         ret {} {}
@@ -218,6 +228,8 @@ class Union[TU]:
 
 @extend
 class Function:
+    @pure
+    @derives
     @llvm
     def __new__() -> Function[T, TR]:
         ret ptr null
@@ -241,6 +253,8 @@ class RTTI:
 @__internal__
 @tuple
 class ellipsis:
+    @pure
+    @derives
     @llvm
     def __new__() -> ellipsis:
         ret {} {}
@@ -260,6 +274,8 @@ class Import:
     __iname__: str
     P: Static[str]
 
+    @pure
+    @derives
     @llvm
     def __new__(path: str, name: str, P: Static[str]) -> Import[P]:
         %0 = insertvalue { {=str}, {=str} } undef, {=str} %path, 0
@@ -319,6 +335,8 @@ class NamedTuple:
     N: Static[int]  # name cache ID
     T: type
 
+    @pure
+    @derives
     @llvm
     def __new__(args: T = (), N: Static[int] = 0, T: type) -> NamedTuple[N, T]:
         %0 = insertvalue { {=T} } undef, {=T} %args, 0
@@ -353,6 +371,8 @@ class Partial:
     K: type # NamedTuple
     F: type # must be unrealized_type
 
+    @pure
+    @derives
     @llvm
     def __new__(args: T, kwargs: K, M: Static[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
         %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0

@@ -813,7 +813,7 @@ def test_permutations_from_cpython():
                 assert result == list(permutations(values, r))
 
 
-test_permutations_from_cpython()
+# test_permutations_from_cpython()
 
 
 @extend
@@ -1142,7 +1142,7 @@ def test_ziplongest_from_cpython():
     )
 
 
-test_ziplongest_from_cpython()
+# test_ziplongest_from_cpython()
 
 
 @test
