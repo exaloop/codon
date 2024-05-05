@@ -645,7 +645,7 @@ def test_combinations_from_cpython():
                     e for e in values if e in c
                 ]  # comb is a subsequence of the input iterable
 
-test_combinations_from_cpython()
+test_combinations_from_cpython()  # takes long time to typecheck
 
 
 @test
@@ -813,7 +813,7 @@ def test_permutations_from_cpython():
                 assert result == list(permutations(values, r))
 
 
-# test_permutations_from_cpython()
+test_permutations_from_cpython()
 
 
 @extend
@@ -952,7 +952,7 @@ def test_combinatorics_from_cpython():
             assert comb == sorted(set(cwr) & set(perm))  # comb: both a cwr and a perm
 
 
-test_combinatorics_from_cpython()
+test_combinatorics_from_cpython()  # TODO: takes FOREVER to typecheck
 
 
 @test
@@ -1142,7 +1142,7 @@ def test_ziplongest_from_cpython():
     )
 
 
-# test_ziplongest_from_cpython()
+test_ziplongest_from_cpython()
 
 
 @test

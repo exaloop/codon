@@ -921,7 +921,7 @@ ExprPtr TypecheckVisitor::transformIsInstance(CallExpr *expr) {
         N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_get_tag"),
                     expr->args[0].value),
         "==", N<IntExpr>(tag)));
-  } else if (getType(typExpr)->is("pyobj")) {
+  } else if (typExpr->type->is("pyobj")) {
     if (typ->is("pyobj")) {
       return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance.0"),
                                    expr->args[0].value, expr->args[1].value));

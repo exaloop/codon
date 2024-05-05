@@ -10,6 +10,7 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 
 namespace codon {
 namespace jit {

@@ -240,6 +240,7 @@ std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt)
 
   // Close the loop
   auto block = N<SuiteStmt>();
+  block->stmts.push_back(preamble);
   for (auto &i : items)
     block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
   StmtPtr loop = nullptr;

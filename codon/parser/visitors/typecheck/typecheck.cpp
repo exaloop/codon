@@ -5,12 +5,13 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <fmt/format.h>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
-#include <fmt/format.h>
+#include "codon/parser/visitors/scoping/scoping.h"
 
 using fmt::format;
 using namespace codon::error;

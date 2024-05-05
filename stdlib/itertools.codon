@@ -747,12 +747,12 @@ def _permutations_static(pool, r: Static[int]):
         if i < 0:
             break
 
-def permutations(pool, r = None):
+def permutations(pool, r = None) -> Generator:
     if isinstance(pool, Tuple) and r is None:
         return _permutations_static(pool, staticlen(pool))
     else:
         return _permutations_non_static(pool, r)
 
 @overload
-def permutations(pool, r: Static[int]):
+def permutations(pool, r: Static[int]) -> Generator:
     return _permutations_static(pool, r)

@@ -32,7 +32,6 @@ def nocapture():
 def pycapture():
     pass
 
-
 @__attribute__
 def self_captures():
     pass

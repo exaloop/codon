@@ -158,6 +158,7 @@ set(CODON_HPPFILES
   codon/parser/peg/rules.h
   codon/parser/visitors/doc/doc.h
   codon/parser/visitors/format/format.h
+  codon/parser/visitors/scoping/scoping.h
   codon/parser/visitors/translate/translate.h
   codon/parser/visitors/translate/translate_ctx.h
   codon/parser/visitors/typecheck/typecheck.h
@@ -244,6 +245,7 @@ set(CODON_CPPFILES
   codon/parser/peg/peg.cpp
   codon/parser/visitors/doc/doc.cpp
   codon/parser/visitors/format/format.cpp
+  codon/parser/visitors/scoping/scoping.cpp
   codon/parser/visitors/translate/translate.cpp
   codon/parser/visitors/translate/translate_ctx.cpp
   codon/parser/visitors/typecheck/typecheck.cpp
@@ -261,7 +263,6 @@ set(CODON_CPPFILES
   codon/parser/visitors/typecheck/loops.cpp
   codon/parser/visitors/typecheck/op.cpp
   codon/parser/visitors/typecheck/error.cpp
-  codon/parser/visitors/typecheck/names.cpp
   codon/parser/visitors/visitor.cpp
   codon/cir/attribute.cpp
   codon/cir/analyze/analysis.cpp

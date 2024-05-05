@@ -1,7 +1,5 @@
 // Copyright (C) 2022-2023 Exaloop Inc. <https://exaloop.io>
 
-#include "typecheck.h"
-
 #include <memory>
 #include <utility>
 #include <vector>
@@ -9,7 +7,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
-#include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include <fmt/format.h>
 
 using fmt::format;
@@ -81,7 +79,8 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
                                          AssignStmt::UpdateMode::Update));
       }
     } else {
-      s->stmts.clear();
+      seqassert(s->stmts.size() == 2 && s->stmts[1]->getAssign(), "bad assign block");
+      s->stmts = {N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr)};
     }
   } else if (auto f = std::dynamic_pointer_cast<ForStmt>(binding)) {
     f->var->setAttr(ExprAttr::Dominated);
@@ -564,12 +563,13 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
   resultStmt = N<SuiteStmt>();
 }
 
-void ScopingVisitor::visit(YieldStmt *) {
+void ScopingVisitor::visit(YieldStmt *stmt) {
   if (ctx->functionScope)
     ctx->functionScope->attributes.set(Attr::IsGenerator);
+  transform(stmt->expr);
 }
 
-void ScopingVisitor::visit(YieldExpr *) {
+void ScopingVisitor::visit(YieldExpr *expr) {
   if (ctx->functionScope)
     ctx->functionScope->attributes.set(Attr::IsGenerator);
 }

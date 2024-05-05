@@ -8,6 +8,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 
 using fmt::format;
 using namespace codon::error;
