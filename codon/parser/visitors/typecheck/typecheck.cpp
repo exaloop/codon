@@ -26,7 +26,6 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   auto so = clone(stmts);
   auto s = v.inferTypes(so, true);
   if (!s) {
-    // LOG("{}", so->toString(2));
     v.error("cannot typecheck the program");
   }
   if (s->getSuite())
@@ -356,8 +355,6 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
       continue; // avoid overloads that have not been seen yet
     auto method = ctx->instantiate(mi, typ)->getFunc();
     int score = canCall(method, args);
-    // LOG("{}: {} {} :: {} :: {}", getSrcInfo(), method->debugString(2), args, score,
-    //     method->ast->getSrcInfo());
     if (score != -1) {
       results.push_back(mi);
     }

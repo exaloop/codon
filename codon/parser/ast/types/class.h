@@ -117,8 +117,8 @@ template <>
 struct fmt::formatter<codon::ast::types::ClassType::Generic>
     : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::types::ClassType::Generic &p, FormatContext &ctx) const
-      -> decltype(ctx.out()) {
+  auto format(const codon::ast::types::ClassType::Generic &p,
+              FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "({}{})",
                           p.name.empty() ? "" : fmt::format("{} = ", p.name), p.type);
   }

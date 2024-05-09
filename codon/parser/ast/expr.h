@@ -683,8 +683,8 @@ struct fmt::formatter<
 template <>
 struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::CallExpr::Arg &p, FormatContext &ctx) const
-      -> decltype(ctx.out()) {
+  auto format(const codon::ast::CallExpr::Arg &p,
+              FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "({}{})",
                           p.name.empty() ? "" : fmt::format("{} = ", p.name), p.value);
   }
@@ -693,8 +693,8 @@ struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_vi
 template <>
 struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::Param &p, FormatContext &ctx) const
-      -> decltype(ctx.out()) {
+  auto format(const codon::ast::Param &p,
+              FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "{}", p.toString());
   }
 };
