@@ -51,9 +51,8 @@ private:
 
 public:
   FormatVisitor(bool html, Cache *cache = nullptr);
-  std::string transform(const ExprPtr &e) override;
-  std::string transform(const Expr *expr);
-  std::string transform(const StmtPtr &stmt) override;
+  std::string transform(Expr *e) override;
+  std::string transform(Stmt *stmt) override;
   std::string transform(Stmt *stmt, int indent);
 
   template <typename T>

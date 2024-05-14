@@ -46,20 +46,14 @@ FormatVisitor::FormatVisitor(bool html, Cache *cache)
   }
 }
 
-std::string FormatVisitor::transform(const ExprPtr &expr) {
-  return transform(expr.get());
-}
-
-std::string FormatVisitor::transform(const Expr *expr) {
+std::string FormatVisitor::transform(Expr *expr) {
   FormatVisitor v(renderHTML, cache);
   if (expr)
-    const_cast<Expr *>(expr)->accept(v);
+    expr->accept(v);
   return v.result;
 }
 
-std::string FormatVisitor::transform(const StmtPtr &stmt) {
-  return transform(stmt.get(), 0);
-}
+std::string FormatVisitor::transform(Stmt *stmt) { return transform(stmt, 0); }
 
 std::string FormatVisitor::transform(Stmt *stmt, int indent) {
   FormatVisitor v(renderHTML, cache);
@@ -239,7 +233,7 @@ void FormatVisitor::visit(YieldExpr *expr) {
 void FormatVisitor::visit(StmtExpr *expr) {
   std::string s;
   for (int i = 0; i < expr->stmts.size(); i++)
-    s += format("{}{}", pad(2), transform(expr->stmts[i].get(), 2));
+    s += format("{}{}", pad(2), transform(expr->stmts[i], 2));
   result = renderExpr(expr, "《{}{}{}{}{}》", newline(), s, newline(), pad(2),
                       transform(expr->expr));
 }
@@ -297,20 +291,20 @@ void FormatVisitor::visit(AssertStmt *stmt) {
 
 void FormatVisitor::visit(WhileStmt *stmt) {
   result = fmt::format("{} {}:{}{}", keyword("while"), transform(stmt->cond), newline(),
-                       transform(stmt->suite.get(), 1));
+                       transform(stmt->suite, 1));
 }
 
 void FormatVisitor::visit(ForStmt *stmt) {
   result = fmt::format("{} {} {} {}:{}{}", keyword("for"), transform(stmt->var),
                        keyword("in"), transform(stmt->iter), newline(),
-                       transform(stmt->suite.get(), 1));
+                       transform(stmt->suite, 1));
 }
 
 void FormatVisitor::visit(IfStmt *stmt) {
   result = fmt::format("{} {}:{}{}{}", keyword("if"), transform(stmt->cond), newline(),
-                       transform(stmt->ifSuite.get(), 1),
+                       transform(stmt->ifSuite, 1),
                        stmt->elseSuite ? format("{}:{}{}", keyword("else"), newline(),
-                                                transform(stmt->elseSuite.get(), 1))
+                                                transform(stmt->elseSuite, 1))
                                        : "");
 }
 
@@ -319,7 +313,7 @@ void FormatVisitor::visit(MatchStmt *stmt) {
   for (auto &c : stmt->cases)
     s += fmt::format("{}{}{}{}:{}{}", pad(1), keyword("case"), transform(c.pattern),
                      c.guard ? " " + (keyword("case") + " " + transform(c.guard)) : "",
-                     newline(), transform(c.suite.get(), 2));
+                     newline(), transform(c.suite, 2));
   result =
       fmt::format("{} {}:{}{}", keyword("match"), transform(stmt->what), newline(), s);
 }
@@ -339,13 +333,13 @@ void FormatVisitor::visit(TryStmt *stmt) {
     catches.push_back(
         fmt::format("{} {}{}:{}{}", keyword("catch"), transform(c->exc),
                     c->var == "" ? "" : fmt::format("{} {}", keyword("as"), c->var),
-                    newline(), transform(c->suite.get(), 1)));
+                    newline(), transform(c->suite, 1)));
   }
   result =
-      fmt::format("{}:{}{}{}{}", keyword("try"), newline(),
-                  transform(stmt->suite.get(), 1), fmt::join(catches, ""),
+      fmt::format("{}:{}{}{}{}", keyword("try"), newline(), transform(stmt->suite, 1),
+                  fmt::join(catches, ""),
                   stmt->finally ? fmt::format("{}:{}{}", keyword("finally"), newline(),
-                                              transform(stmt->finally.get(), 1))
+                                              transform(stmt->finally, 1))
                                 : "");
 }
 
@@ -383,7 +377,7 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
                       ? fmt::format("={}", transform(fa->args[i].defaultValue))
                       : ""));
             }
-          auto body = transform(fa->suite.get(), 1);
+          auto body = transform(fa->suite, 1);
           auto name = fmt::format("{}", anchor_root(fa->name));
           result += fmt::format(
               "{}{}{}{} {}({}){}:{}{}", newline(), pad(),

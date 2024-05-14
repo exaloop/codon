@@ -23,7 +23,7 @@ namespace codon::ast {
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
+ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
   if (cache->isJit) {
     auto fnName = format("_jit_{}", cache->jitCell);
@@ -53,7 +53,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   return main;
 }
 
-void TranslateVisitor::translateStmts(StmtPtr stmts) {
+void TranslateVisitor::translateStmts(Stmt *stmts) {
   for (auto &g : ctx->cache->globals)
     if (!g.second) {
       g.second = g.first == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
@@ -68,7 +68,7 @@ void TranslateVisitor::translateStmts(StmtPtr stmts) {
 
 /************************************************************************************/
 
-ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
+ir::Value *TranslateVisitor::transform(Expr *expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
 
@@ -202,14 +202,14 @@ class IdVisitor : public CallbackASTVisitor<bool, bool> {
 public:
   std::unordered_set<std::string> ids;
 
-  bool transform(const std::shared_ptr<Expr> &expr) override {
+  bool transform(Expr *expr) override {
     IdVisitor v;
     if (expr)
       expr->accept(v);
     ids.insert(v.ids.begin(), v.ids.end());
     return true;
   }
-  bool transform(const std::shared_ptr<Stmt> &stmt) override {
+  bool transform(Stmt *stmt) override {
     IdVisitor v;
     if (stmt)
       stmt->accept(v);
@@ -249,7 +249,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
   ctx->bases.push_back(cast<ir::BodiedFunc>(fn));
   ctx->addSeries(body);
 
-  expr->setFinalStmt(N<YieldStmt>(expr->getFinalExpr()));
+  expr->setFinalStmt(ctx->cache->N<YieldStmt>(expr->getFinalExpr()));
   auto e = expr->getFinalSuite();
   transform(e);
   ctx->popSeries();
@@ -262,7 +262,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 void TranslateVisitor::visit(CallExpr *expr) {
   if (expr->expr->isId("__ptr__")) {
     seqassert(expr->args[0].value->getId(), "expected IdExpr, got {}",
-              expr->args[0].value);
+              *(expr->args[0].value));
     auto val = ctx->find(expr->args[0].value->getId()->value);
     seqassert(val && val->getVar(), "{} is not a variable",
               expr->args[0].value->getId()->value);
@@ -305,7 +305,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
 void TranslateVisitor::visit(DotExpr *expr) {
   if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
       expr->member == "__contents_atomic__") {
-    seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
+    seqassert(expr->expr->getId(), "expected IdExpr, got {}", *(expr->expr));
     auto t = ctx->cache->typeCtx->getType(expr->expr->getId()->type);
     auto type = ctx->find(t->realizedName())->getType();
     seqassert(type, "{} is not a type", expr->expr->getId()->value);
@@ -345,7 +345,7 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   auto simplePipeline = !firstIsGen;
   for (auto i = 1; i < expr->items.size(); i++) {
     auto call = expr->items[i].expr->getCall();
-    seqassert(call, "{} is not a call", expr->items[i].expr);
+    seqassert(call, "{} is not a call", *(expr->items[i].expr));
 
     auto fn = transform(call->expr);
     if (i + 1 != expr->items.size())
@@ -388,7 +388,7 @@ void TranslateVisitor::visit(StmtExpr *expr) {
 
 /************************************************************************************/
 
-ir::Value *TranslateVisitor::transform(const StmtPtr &stmt) {
+ir::Value *TranslateVisitor::transform(Stmt *stmt) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
@@ -428,14 +428,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
 
   if (stmt->isUpdate()) {
-    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
+    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", *(stmt->lhs));
     auto val = ctx->find(stmt->lhs->getId()->value);
     seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
     result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
+  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", *(stmt->lhs));
   auto var = stmt->lhs->getId()->value;
 
   auto isGlobal = in(ctx->cache->globals, var);
@@ -498,7 +498,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   if (stmt->decorator) {
     os = std::make_unique<OMPSched>();
     auto c = stmt->decorator->getCall();
-    seqassert(c, "for par is not a call: {}", stmt->decorator);
+    seqassert(c, "for par is not a call: {}", *(stmt->decorator));
     auto fc = c->expr->getType()->getFunc();
     seqassert(fc && fc->ast->name == "std.openmp.for_par.0:0",
               "for par is not a function");
@@ -511,7 +511,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
-  seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var);
+  seqassert(stmt->var->getId(), "expected IdExpr, got {}", *(stmt->var));
   auto varName = stmt->var->getId()->value;
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->var->hasAttr(ExprAttr::Dominated)) {
@@ -621,9 +621,9 @@ void TranslateVisitor::transformFunctionRealizations(const std::string &name,
     const auto &ast = real.second->ast;
     seqassert(ast, "AST not set for {}", real.first);
     if (!isLLVM)
-      transformFunction(real.second->type.get(), ast.get(), real.second->ir);
+      transformFunction(real.second->type.get(), ast, real.second->ir);
     else
-      transformLLVMFunction(real.second->type.get(), ast.get(), real.second->ir);
+      transformLLVMFunction(real.second->type.get(), ast, real.second->ir);
   }
 }
 

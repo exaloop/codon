@@ -130,7 +130,7 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
   // if (captures && !in(*captures, val->canonicalName)) {
   //   // Captures are transformed to function arguments; generate new name for that
   //   // argument
-  //   ExprPtr typ = nullptr;
+  //   Expr * typ = nullptr;
   //   if (val->isType())
   //     typ = N<IdExpr>("type");
   //   if (auto st = val->isStatic())
@@ -234,8 +234,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
             getImportFile(ctx->cache->argv0, chain[importEnd], importName, false,
                           ctx->cache->module0, ctx->cache->pluginImportPaths);
         if (file) { // auto-load support
-          StmtPtr s = N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr);
-          ScopingVisitor::apply(ctx->cache, s);
+          Stmt *s = N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr);
+          s = ScopingVisitor::apply(ctx->cache, s);
           s = TypecheckVisitor(import.ctx, preamble).transform(s);
           prependStmts->push_back(s);
           return getImport(chain);
@@ -271,7 +271,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 
   // Dispatch does not exist. Generate it
   auto name = fn + ":dispatch";
-  ExprPtr root; // Root function name used for calling
+  Expr *root; // Root function name used for calling
   auto a = ctx->cache->functions[overloads[0]].ast;
   if (!a->attributes.parentClass.empty())
     root = N<DotExpr>(N<IdExpr>(a->attributes.parentClass),
@@ -288,7 +288,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   ctx->cache->reverseIdentifierLookup[name] = ctx->cache->reverseIdentifierLookup[fn];
 
   auto baseType = getFuncTypeBase(2);
-  auto typ = std::make_shared<FuncType>(baseType, ast.get());
+  auto typ = std::make_shared<FuncType>(baseType, ast);
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
   ctx->addFunc(name, name, typ);
 
@@ -314,16 +314,15 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
 /// @return nullptr if no transformation was made
 /// See @c getClassMember and @c getBestOverload
-ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
-                                       std::vector<CallExpr::Arg> *args) {
+Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args) {
   // First flatten the imports:
   // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
   std::vector<std::string> chain;
   Expr *root = expr;
-  for (; root->getDot(); root = root->getDot()->expr.get())
+  for (; root->getDot(); root = root->getDot()->expr)
     chain.push_back(root->getDot()->member);
 
-  ExprPtr nexpr = expr->shared_from_this();
+  Expr *nexpr = expr;
   if (auto id = root->getId()) {
     // Case: a.bar.baz
     chain.push_back(id->value);
@@ -369,7 +368,7 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
     /// TODO: prevent cls.__class__ and type(cls)
     return N<CallExpr>(N<IdExpr>("type"), expr->expr);
   }
-  transform(expr->expr);
+  expr->expr = transform(expr->expr);
 
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
@@ -433,13 +432,13 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
         auto vid = getRealizationID(typ.get(), fn.get());
 
         // Function[Tuple[TArg1, TArg2, ...], TRet]
-        std::vector<ExprPtr> ids;
+        std::vector<Expr *> ids;
         for (auto &t : fn->getArgTypes())
           ids.push_back(N<IdExpr>(t->realizedName()));
         auto fnType = N<InstantiateExpr>(
             N<IdExpr>("Function"),
-            std::vector<ExprPtr>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-                                 N<IdExpr>(fn->getRetType()->realizedName())});
+            std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
+                                N<IdExpr>(fn->getRetType()->realizedName())});
         // Function[Tuple[TArg1, TArg2, ...],TRet](
         //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
         // )
@@ -456,13 +455,13 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   // Check if a method is a static or an instance method and transform accordingly
   if (expr->expr->type->is("type") || args) {
     // Static access: `cls.method`
-    ExprPtr e = N<IdExpr>(bestMethod->ast->name);
+    Expr *e = N<IdExpr>(bestMethod->ast->name);
     unify(e->type, unify(expr->type, ctx->instantiate(bestMethod, typ)));
     return transform(e); // Realize if needed
   } else {
     // Instance access: `obj.method`
     // Transform y.method to a partial call `type(obj).method(args, ...)`
-    std::vector<ExprPtr> methodArgs;
+    std::vector<Expr *> methodArgs;
     // Do not add self if a method is marked with @staticmethod
     if (!bestMethod->ast->attributes.has(Attr::StaticMethod))
       methodArgs.push_back(expr->expr);
@@ -482,8 +481,8 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
 ///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
-ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
-                                         std::vector<CallExpr::Arg> *args) {
+Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
+                                       std::vector<CallExpr::Arg> *args) {
   auto typ = getType(expr->expr)->getClass();
   seqassert(typ, "not a class");
 
@@ -543,7 +542,7 @@ ExprPtr TypecheckVisitor::getClassMember(DotExpr *expr,
     auto dot = N<DotExpr>(transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr)),
                           expr->member);
     dot->setType(ctx->getUnbound()); // as dot is not transformed
-    if (auto d = transformDot(dot.get(), args))
+    if (auto d = transformDot(dot, args))
       return d;
     return dot;
   }
@@ -612,8 +611,7 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
       methodArgs->push_back(a);
   } else {
     // Partially deduced type thus far
-    auto typeSoFar =
-        expr->type ? getType(expr->shared_from_this())->getClass() : nullptr;
+    auto typeSoFar = expr->type ? getType(expr)->getClass() : nullptr;
     if (typeSoFar && typeSoFar->getFunc()) {
       // Case: arguments available from the previous type checking round
       methodArgs = std::make_unique<std::vector<CallExpr::Arg>>();

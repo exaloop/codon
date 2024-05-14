@@ -11,9 +11,7 @@
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
-  std::shared_ptr<Node> T::clone(bool clean) const {                                   \
-    return std::make_shared<T>(*this, clean);                                          \
-  }                                                                                    \
+  Node *T::clone(bool clean) const { return cache->N<T>(*this, clean); }               \
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
@@ -28,7 +26,7 @@ Stmt::Stmt(const Stmt &expr, bool clean) : Stmt(expr) {
     done = false;
 }
 
-SuiteStmt::SuiteStmt(std::vector<StmtPtr> stmts) : Stmt(), stmts(std::move(stmts)) {}
+SuiteStmt::SuiteStmt(std::vector<Stmt *> stmts) : Stmt(), stmts(std::move(stmts)) {}
 SuiteStmt::SuiteStmt(const SuiteStmt &stmt, bool clean)
     : Stmt(stmt, clean), stmts(ast::clone(stmt.stmts, clean)) {}
 std::string SuiteStmt::toString(int indent) const {
@@ -47,7 +45,7 @@ std::string SuiteStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(SuiteStmt, ASTVisitor);
 void SuiteStmt::shallow_flatten() {
-  std::vector<StmtPtr> ns;
+  std::vector<Stmt *> ns;
   for (auto &s : stmts) {
     if (!s)
       continue;
@@ -60,7 +58,7 @@ void SuiteStmt::shallow_flatten() {
   }
   stmts = ns;
 }
-StmtPtr *SuiteStmt::lastInBlock() {
+Stmt **SuiteStmt::lastInBlock() {
   if (stmts.empty())
     return nullptr;
   if (auto s = stmts.back()->getSuite()) {
@@ -79,7 +77,7 @@ ContinueStmt::ContinueStmt(const ContinueStmt &stmt, bool clean) : Stmt(stmt, cl
 std::string ContinueStmt::toString(int indent) const { return "(continue)"; }
 ACCEPT_IMPL(ContinueStmt, ASTVisitor);
 
-ExprStmt::ExprStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
+ExprStmt::ExprStmt(Expr *expr) : Stmt(), expr(expr) {}
 ExprStmt::ExprStmt(const ExprStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string ExprStmt::toString(int indent) const {
@@ -87,9 +85,8 @@ std::string ExprStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(ExprStmt, ASTVisitor);
 
-AssignStmt::AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type, UpdateMode update)
-    : Stmt(), lhs(std::move(lhs)), rhs(std::move(rhs)), type(std::move(type)),
-      update(update) {}
+AssignStmt::AssignStmt(Expr *lhs, Expr *rhs, Expr *type, UpdateMode update)
+    : Stmt(), lhs(lhs), rhs(rhs), type(type), update(update) {}
 AssignStmt::AssignStmt(const AssignStmt &stmt, bool clean)
     : Stmt(stmt, clean), lhs(ast::clone(stmt.lhs, clean)),
       rhs(ast::clone(stmt.rhs, clean)), type(ast::clone(stmt.type, clean)),
@@ -101,7 +98,7 @@ std::string AssignStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(AssignStmt, ASTVisitor);
 
-DelStmt::DelStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
+DelStmt::DelStmt(Expr *expr) : Stmt(), expr(expr) {}
 DelStmt::DelStmt(const DelStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string DelStmt::toString(int indent) const {
@@ -109,7 +106,7 @@ std::string DelStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(DelStmt, ASTVisitor);
 
-PrintStmt::PrintStmt(std::vector<ExprPtr> items, bool isInline)
+PrintStmt::PrintStmt(std::vector<Expr *> items, bool isInline)
     : Stmt(), items(std::move(items)), isInline(isInline) {}
 PrintStmt::PrintStmt(const PrintStmt &stmt, bool clean)
     : Stmt(stmt, clean), items(ast::clone(stmt.items, clean)), isInline(stmt.isInline) {
@@ -119,7 +116,7 @@ std::string PrintStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(PrintStmt, ASTVisitor);
 
-ReturnStmt::ReturnStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
+ReturnStmt::ReturnStmt(Expr *expr) : Stmt(), expr(expr) {}
 ReturnStmt::ReturnStmt(const ReturnStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string ReturnStmt::toString(int indent) const {
@@ -127,7 +124,7 @@ std::string ReturnStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(ReturnStmt, ASTVisitor);
 
-YieldStmt::YieldStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
+YieldStmt::YieldStmt(Expr *expr) : Stmt(), expr(expr) {}
 YieldStmt::YieldStmt(const YieldStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldStmt::toString(int indent) const {
@@ -135,8 +132,8 @@ std::string YieldStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(YieldStmt, ASTVisitor);
 
-AssertStmt::AssertStmt(ExprPtr expr, ExprPtr message)
-    : Stmt(), expr(std::move(expr)), message(std::move(message)) {}
+AssertStmt::AssertStmt(Expr *expr, Expr *message)
+    : Stmt(), expr(expr), message(message) {}
 AssertStmt::AssertStmt(const AssertStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)),
       message(ast::clone(stmt.message, clean)) {}
@@ -146,9 +143,8 @@ std::string AssertStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
 
-WhileStmt::WhileStmt(ExprPtr cond, StmtPtr suite, StmtPtr elseSuite)
-    : Stmt(), cond(std::move(cond)), suite(std::move(suite)),
-      elseSuite(std::move(elseSuite)) {}
+WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
+    : Stmt(), cond(cond), suite(suite), elseSuite(elseSuite) {}
 WhileStmt::WhileStmt(const WhileStmt &stmt, bool clean)
     : Stmt(stmt, clean), cond(ast::clone(stmt.cond, clean)),
       suite(ast::clone(stmt.suite, clean)),
@@ -167,17 +163,17 @@ std::string WhileStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 
-ForStmt::ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite,
-                 ExprPtr decorator, std::vector<CallExpr::Arg> ompArgs)
-    : Stmt(), var(std::move(var)), iter(std::move(iter)), suite(std::move(suite)),
-      elseSuite(std::move(elseSuite)), decorator(std::move(decorator)),
-      ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
+ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
+                 std::vector<CallExpr::Arg> ompArgs)
+    : Stmt(), var(var), iter(iter), suite(suite), elseSuite(elseSuite),
+      decorator(decorator), ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
 ForStmt::ForStmt(const ForStmt &stmt, bool clean)
     : Stmt(stmt, clean), var(ast::clone(stmt.var, clean)),
       iter(ast::clone(stmt.iter, clean)), suite(ast::clone(stmt.suite, clean)),
       elseSuite(ast::clone(stmt.elseSuite, clean)),
       decorator(ast::clone(stmt.decorator, clean)),
-      ompArgs(ast::clone(stmt.ompArgs, clean)), wrapped(stmt.wrapped), flat(stmt.flat) {}
+      ompArgs(ast::clone(stmt.ompArgs, clean)), wrapped(stmt.wrapped), flat(stmt.flat) {
+}
 std::string ForStmt::toString(int indent) const {
   auto vs = var->toString(indent);
   if (var->hasAttr(ExprAttr::Dominated))
@@ -201,9 +197,8 @@ std::string ForStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 
-IfStmt::IfStmt(ExprPtr cond, StmtPtr ifSuite, StmtPtr elseSuite)
-    : Stmt(), cond(std::move(cond)), ifSuite(std::move(ifSuite)),
-      elseSuite(std::move(elseSuite)) {}
+IfStmt::IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite)
+    : Stmt(), cond(cond), ifSuite(ifSuite), elseSuite(elseSuite) {}
 IfStmt::IfStmt(const IfStmt &stmt, bool clean)
     : Stmt(stmt, clean), cond(ast::clone(stmt.cond, clean)),
       ifSuite(ast::clone(stmt.ifSuite, clean)),
@@ -225,8 +220,8 @@ MatchStmt::MatchCase MatchStmt::MatchCase::clone(bool clean) const {
           ast::clone(suite, clean)};
 }
 
-MatchStmt::MatchStmt(ExprPtr what, std::vector<MatchStmt::MatchCase> cases)
-    : Stmt(), what(std::move(what)), cases(std::move(cases)) {}
+MatchStmt::MatchStmt(Expr *what, std::vector<MatchStmt::MatchCase> cases)
+    : Stmt(), what(what), cases(std::move(cases)) {}
 MatchStmt::MatchStmt(const MatchStmt &stmt, bool clean)
     : Stmt(stmt, clean), what(ast::clone(stmt.what, clean)),
       cases(ast::clone(stmt.cases, clean)) {}
@@ -245,10 +240,10 @@ std::string MatchStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(MatchStmt, ASTVisitor);
 
-ImportStmt::ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args, ExprPtr ret,
+ImportStmt::ImportStmt(Expr *from, Expr *what, std::vector<Param> args, Expr *ret,
                        std::string as, size_t dots, bool isFunction)
-    : Stmt(), from(std::move(from)), what(std::move(what)), as(std::move(as)),
-      dots(dots), args(std::move(args)), ret(std::move(ret)), isFunction(isFunction) {
+    : Stmt(), from(from), what(what), as(std::move(as)), dots(dots),
+      args(std::move(args)), ret(ret), isFunction(isFunction) {
   validate();
 }
 ImportStmt::ImportStmt(const ImportStmt &stmt, bool clean)
@@ -269,9 +264,9 @@ std::string ImportStmt::toString(int indent) const {
 }
 void ImportStmt::validate() const {
   if (from) {
-    Expr *e = from.get();
+    Expr *e = from;
     while (auto d = e->getDot())
-      e = d->expr.get();
+      e = d->expr;
     if (!from->isId("C") && !from->isId("python")) {
       if (!e->getId())
         E(Error::IMPORT_IDENTIFIER, e);
@@ -288,19 +283,22 @@ void ImportStmt::validate() const {
 }
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
 
-TryStmt::Catch::Catch(const std::string &var, ExprPtr exc, StmtPtr suite)
-    : var(var), exc(std::move(exc)), suite(std::move(suite)) {}
+TryStmt::Catch::Catch(const std::string &var, Expr *exc, Stmt *suite)
+    : var(var), exc(exc), suite(suite) {}
 TryStmt::Catch::Catch(const TryStmt::Catch &stmt, bool clean)
-    : SrcObject(stmt), var(stmt.var), exc(ast::clone(stmt.exc, clean)),
+    : Stmt(stmt), var(stmt.var), exc(ast::clone(stmt.exc, clean)),
       suite(ast::clone(stmt.suite, clean)) {}
-std::shared_ptr<TryStmt::Catch> TryStmt::Catch::clone(bool clean) const {
-  return std::make_shared<TryStmt::Catch>(*this, clean);
+std::string TryStmt::Catch::toString(int indent) const {
+  std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
+  std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
+  return format("(catch {}{}{}{})", !var.empty() ? format("#:var '{}", var) : "",
+                exc ? format(" #:exc {}", exc->toString(indent)) : "", pad + padExtra,
+                suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2));
 }
+ACCEPT_IMPL(TryStmt::Catch, ASTVisitor);
 
-TryStmt::TryStmt(StmtPtr suite, std::vector<std::shared_ptr<Catch>> catches,
-                 StmtPtr finally)
-    : Stmt(), suite(std::move(suite)), catches(std::move(catches)),
-      finally(std::move(finally)) {}
+TryStmt::TryStmt(Stmt *suite, std::vector<TryStmt::Catch *> catches, Stmt *finally)
+    : Stmt(), suite(suite), catches(std::move(catches)), finally(finally) {}
 TryStmt::TryStmt(const TryStmt &stmt, bool clean)
     : Stmt(stmt, clean), suite(ast::clone(stmt.suite, clean)),
       catches(ast::clone(stmt.catches, clean)),
@@ -309,13 +307,9 @@ std::string TryStmt::toString(int indent) const {
   if (indent == -1)
     return format("(try)");
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
   for (auto &i : catches)
-    s.push_back(format(
-        "(catch {}{}{}{})", !i->var.empty() ? format("#:var '{}", i->var) : "",
-        i->exc ? format(" #:exc {}", i->exc->toString(indent)) : "", pad + padExtra,
-        i->suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
+    s.push_back(i->toString(indent));
   return format(
       "(try{}{}{}{}{})", pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
       pad, join(s, pad),
@@ -325,8 +319,8 @@ std::string TryStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(TryStmt, ASTVisitor);
 
-ThrowStmt::ThrowStmt(ExprPtr expr, bool transformed)
-    : Stmt(), expr(std::move(expr)), transformed(transformed) {}
+ThrowStmt::ThrowStmt(Expr *expr, bool transformed)
+    : Stmt(), expr(expr), transformed(transformed) {}
 ThrowStmt::ThrowStmt(const ThrowStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)),
       transformed(stmt.transformed) {}
@@ -376,12 +370,10 @@ const std::string Attr::Test = "std.internal.attributes.test.0:0";
 const std::string Attr::Overload = "overload:0";
 const std::string Attr::Export = "std.internal.attributes.export.0:0";
 
-FunctionStmt::FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args,
-                           StmtPtr suite, Attr attributes,
-                           std::vector<ExprPtr> decorators)
-    : Stmt(), name(std::move(name)), ret(std::move(ret)), args(std::move(args)),
-      suite(std::move(suite)), attributes(std::move(attributes)),
-      decorators(std::move(decorators)) {
+FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
+                           Stmt *suite, Attr attributes, std::vector<Expr *> decorators)
+    : Stmt(), name(std::move(name)), ret(ret), args(std::move(args)), suite(suite),
+      attributes(std::move(attributes)), decorators(std::move(decorators)) {
   parseDecorators();
 }
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
@@ -459,7 +451,7 @@ bool FunctionStmt::hasAttr(const std::string &attr) const {
   return attributes.has(attr);
 }
 void FunctionStmt::parseDecorators() {
-  std::vector<ExprPtr> newDecorators;
+  std::vector<Expr *> newDecorators;
   for (auto &d : decorators) {
     if (d->isId(Attr::Attribute)) {
       if (decorators.size() != 1)
@@ -536,7 +528,7 @@ class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {
 
 public:
   IdSearchVisitor(std::string what) : what(std::move(what)), result(false) {}
-  bool transform(const std::shared_ptr<Expr> &expr) override {
+  bool transform(Expr *expr) override {
     if (result)
       return result;
     IdSearchVisitor v(what);
@@ -544,7 +536,7 @@ public:
       expr->accept(v);
     return result = v.result;
   }
-  bool transform(const std::shared_ptr<Stmt> &stmt) override {
+  bool transform(Stmt *stmt) override {
     if (result)
       return result;
     IdSearchVisitor v(what);
@@ -579,10 +571,10 @@ std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() {
   return nonInferrableGenerics;
 }
 
-ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-                     std::vector<ExprPtr> decorators, std::vector<ExprPtr> baseClasses,
-                     std::vector<ExprPtr> staticBaseClasses)
-    : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
+ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
+                     std::vector<Expr *> decorators, std::vector<Expr *> baseClasses,
+                     std::vector<Expr *> staticBaseClasses)
+    : Stmt(), name(std::move(name)), args(std::move(args)), suite(suite),
       decorators(std::move(decorators)),
       staticBaseClasses(std::move(staticBaseClasses)) {
   for (auto &b : baseClasses) {
@@ -594,9 +586,8 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
   }
   parseDecorators();
 }
-ClassStmt::ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-                     Attr attr)
-    : Stmt(), name(std::move(name)), args(std::move(args)), suite(std::move(suite)),
+ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite, Attr attr)
+    : Stmt(), name(std::move(name)), args(std::move(args)), suite(suite),
       attributes(std::move(attr)) {
   validate();
 }
@@ -765,7 +756,7 @@ std::string ClassStmt::getDocstr() {
   return "";
 }
 
-YieldFromStmt::YieldFromStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
+YieldFromStmt::YieldFromStmt(Expr *expr) : Stmt(), expr(std::move(expr)) {}
 YieldFromStmt::YieldFromStmt(const YieldFromStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldFromStmt::toString(int indent) const {
@@ -773,19 +764,19 @@ std::string YieldFromStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 
-WithStmt::WithStmt(std::vector<ExprPtr> items, std::vector<std::string> vars,
-                   StmtPtr suite)
-    : Stmt(), items(std::move(items)), vars(std::move(vars)), suite(std::move(suite)) {
+WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
+                   Stmt *suite)
+    : Stmt(), items(std::move(items)), vars(std::move(vars)), suite(suite) {
   seqassert(this->items.size() == this->vars.size(), "vector size mismatch");
 }
-WithStmt::WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> itemVarPairs, StmtPtr suite)
-    : Stmt(), suite(std::move(suite)) {
-  for (auto &i : itemVarPairs) {
-    items.push_back(std::move(i.first));
-    if (i.second) {
-      if (!i.second->getId())
+WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite)
+    : Stmt(), suite(suite) {
+  for (auto [i, j] : itemVarPairs) {
+    items.push_back(i);
+    if (j) {
+      if (!j->getId())
         throw;
-      vars.push_back(i.second->getId()->value);
+      vars.push_back(j->getId()->value);
     } else {
       vars.emplace_back();
     }
@@ -810,9 +801,8 @@ std::string WithStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(WithStmt, ASTVisitor);
 
-CustomStmt::CustomStmt(std::string keyword, ExprPtr expr, StmtPtr suite)
-    : Stmt(), keyword(std::move(keyword)), expr(std::move(expr)),
-      suite(std::move(suite)) {}
+CustomStmt::CustomStmt(std::string keyword, Expr *expr, Stmt *suite)
+    : Stmt(), keyword(std::move(keyword)), expr(expr), suite(suite) {}
 CustomStmt::CustomStmt(const CustomStmt &stmt, bool clean)
     : Stmt(stmt, clean), keyword(stmt.keyword), expr(ast::clone(stmt.expr, clean)),
       suite(ast::clone(stmt.suite, clean)) {}
@@ -824,8 +814,8 @@ std::string CustomStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(CustomStmt, ASTVisitor);
 
-AssignMemberStmt::AssignMemberStmt(ExprPtr lhs, std::string member, ExprPtr rhs)
-    : Stmt(), lhs(std::move(lhs)), member(std::move(member)), rhs(std::move(rhs)) {}
+AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs)
+    : Stmt(), lhs(lhs), member(std::move(member)), rhs(rhs) {}
 AssignMemberStmt::AssignMemberStmt(const AssignMemberStmt &stmt, bool clean)
     : Stmt(stmt, clean), lhs(ast::clone(stmt.lhs, clean)), member(stmt.member),
       rhs(ast::clone(stmt.rhs, clean)) {}

@@ -10,6 +10,8 @@ PREAMBLE {
   #define V0 VS[0]
   #define V1 VS[1]
   #define ac std::any_cast
+
+  #define ast(T, s, ...) (Expr*)(CTX.cache->N<T ## Expr>(__VA_ARGS__)->setSrcInfo(s))
 }
 
 pragma <- "omp"? _ "parallel"? _ (clause _)* {
@@ -22,22 +24,23 @@ pragma <- "omp"? _ "parallel"? _ (clause _)* {
 }
 clause <-
   / "schedule" _ "(" _ schedule_kind (_ "," _ int)? _ ")" {
-    vector<CallExpr::Arg> v{{"schedule", make_shared<StringExpr>(ac<string>(V0))}};
+    // CTX;
+    vector<CallExpr::Arg> v{{"schedule", ast(String, LOC, ac<string>(V0))}};
     if (VS.size() > 1)
-      v.push_back({"chunk_size", make_shared<IntExpr>(ac<int>(V1))});
+      v.push_back({"chunk_size", ast(Int, LOC, ac<int>(V1))});
     return v;
   }
   / "num_threads" _ "(" _ int _ ")" {
-    return vector<CallExpr::Arg>{{"num_threads", make_shared<IntExpr>(ac<int>(V0))}};
+    return vector<CallExpr::Arg>{{"num_threads", ast(Int, LOC, ac<int>(V0))}};
   }
   / "ordered" {
-    return vector<CallExpr::Arg>{{"ordered", make_shared<BoolExpr>(true)}};
+    return vector<CallExpr::Arg>{{"ordered", ast(Bool, LOC, true)}};
   }
   / "collapse" {
-    return vector<CallExpr::Arg>{{"collapse", make_shared<IntExpr>(ac<int>(V0))}};
+    return vector<CallExpr::Arg>{{"collapse", ast(Int, LOC, ac<int>(V0))}};
   }
   / "gpu" {
-    return vector<CallExpr::Arg>{{"gpu", make_shared<BoolExpr>(true)}};
+    return vector<CallExpr::Arg>{{"gpu", ast(Bool, LOC, true)}};
   }
 schedule_kind <- ("static" / "dynamic" / "guided" / "auto" / "runtime") {
   return VS.token_to_string();
@@ -46,7 +49,7 @@ int <- [1-9] [0-9]* {
   return stoi(VS.token_to_string());
 }
 # ident <- [a-zA-Z_] [a-zA-Z_0-9]* {
-#   return make_shared<ast::IdExpr>(VS.token_to_string());
+#   return ast<ast::IdExpr>(VS.token_to_string());
 # }
 ~SPACE <- [ \t]+
 ~_ <- SPACE*

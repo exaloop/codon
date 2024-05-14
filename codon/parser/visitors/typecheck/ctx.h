@@ -70,7 +70,7 @@ struct TypeContext : public Context<TypecheckItem> {
     std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
     /// List of statements that are to be prepended to a block
     /// after its transformation.
-    std::vector<StmtPtr> stmts;
+    std::vector<Stmt *> stmts;
     ScopeBlock(int id) : id(id) {}
   };
   /// Current hierarchy of conditional blocks.
@@ -98,7 +98,7 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     Attr *attributes = nullptr;
 
-    StmtPtr suite = nullptr;
+    Stmt *suite = nullptr;
 
     struct {
       /// Set if the base is class base and if class is marked with @deduce.

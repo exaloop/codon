@@ -133,15 +133,15 @@ std::shared_ptr<int> DocContext::find(const std::string &s) const {
   return i;
 }
 
-std::string getDocstr(const StmtPtr &s) {
+std::string getDocstr(Stmt *s) {
   if (auto se = s->getExpr())
     if (auto e = se->expr->getString())
       return e->getValue();
   return "";
 }
 
-std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool deep) {
-  std::vector<StmtPtr> stmts;
+std::vector<Stmt *> DocVisitor::flatten(Stmt *stmt, std::string *docstr, bool deep) {
+  std::vector<Stmt *> stmts;
   if (auto s = stmt->getSuite()) {
     for (int i = 0; i < (deep ? s->stmts.size() : 1); i++) {
       for (auto &x : flatten(std::move(s->stmts[i]), i ? nullptr : docstr, deep))
@@ -155,7 +155,7 @@ std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool
   return stmts;
 }
 
-std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
+std::shared_ptr<json> DocVisitor::transform(Expr *expr) {
   DocVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
   v.resultExpr = std::make_shared<json>();
@@ -163,14 +163,14 @@ std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
   return v.resultExpr;
 }
 
-std::string DocVisitor::transform(const StmtPtr &stmt) {
+std::string DocVisitor::transform(Stmt *stmt) {
   DocVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
   return v.resultStmt;
 }
 
-void DocVisitor::transformModule(StmtPtr stmt) {
+void DocVisitor::transformModule(Stmt *stmt) {
   std::vector<std::string> children;
   std::string docstr;
 
@@ -380,10 +380,10 @@ void DocVisitor::visit(ImportStmt *stmt) {
   }
 
   std::vector<std::string> dirs; // Path components
-  Expr *e = stmt->from.get();
+  Expr *e = stmt->from;
   while (auto d = e->getDot()) {
     dirs.push_back(d->member);
-    e = d->expr.get();
+    e = d->expr;
   }
   if (!e->getId() || !stmt->args.empty() || stmt->ret ||
       (stmt->what && !stmt->what->getId()))

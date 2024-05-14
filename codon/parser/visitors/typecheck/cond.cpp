@@ -14,7 +14,7 @@ using namespace types;
 /// Call `ready` and `notReady` depending whether the provided static expression can be
 /// evaluated or not.
 template <typename TT, typename TF>
-auto evaluateStaticCondition(const ExprPtr &cond, TT ready, TF notReady) {
+auto evaluateStaticCondition(Expr *cond, TT ready, TF notReady) {
   seqassertn(cond->type->isStaticType(), "not a static condition");
   if (cond->type->canRealize()) {
     bool isTrue = false;
@@ -40,7 +40,7 @@ void TypecheckVisitor::visit(RangeExpr *expr) {
 /// expressions. See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
-  transform(expr->cond);
+  expr->cond = transform(expr->cond);
   // Static if evaluation
   if (expr->cond->type->isStaticType()) {
     resultExpr = evaluateStaticCondition(
@@ -49,7 +49,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
           return transform(isTrue ? expr->ifexpr : expr->elsexpr);
         },
-        [&]() -> ExprPtr { return nullptr; });
+        [&]() -> Expr * { return nullptr; });
     if (resultExpr)
       unify(expr->type, resultExpr->getType());
     else
@@ -57,8 +57,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     return;
   }
 
-  transform(expr->ifexpr);
-  transform(expr->elsexpr);
+  expr->ifexpr = transform(expr->ifexpr);
+  expr->elsexpr = transform(expr->elsexpr);
 
   // Add __bool__ wrapper
   while (expr->cond->type->getClass() && !expr->cond->type->is("bool"))
@@ -68,8 +68,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     expr->ifexpr->type = expr->ifexpr->type->getStatic()->getNonStaticType();
   if (expr->elsexpr->type->getStatic())
     expr->elsexpr->type = expr->elsexpr->type->getStatic()->getNonStaticType();
-  wrapExpr(expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
-  wrapExpr(expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
+  wrapExpr(&expr->elsexpr, expr->ifexpr->getType(), nullptr, /*allowUnwrap*/ false);
+  wrapExpr(&expr->ifexpr, expr->elsexpr->getType(), nullptr, /*allowUnwrap*/ false);
 
   unify(expr->type, expr->ifexpr->getType());
   unify(expr->type, expr->elsexpr->getType());
@@ -81,7 +81,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 /// Also wrap the condition with `__bool__()` if needed.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
-  transform(stmt->cond);
+  stmt->cond = transform(stmt->cond);
 
   // Static if evaluation
   if (stmt->cond->type->isStaticType()) {
@@ -92,15 +92,15 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
           auto t = transform(isTrue ? stmt->ifSuite : stmt->elseSuite);
           return t ? t : transform(N<SuiteStmt>());
         },
-        [&]() -> StmtPtr { return nullptr; });
+        [&]() -> Stmt * { return nullptr; });
     return;
   }
 
   while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   ctx->blockLevel++;
-  transform(stmt->ifSuite);
-  transform(stmt->elseSuite);
+  stmt->ifSuite = transform(stmt->ifSuite);
+  stmt->elseSuite = transform(stmt->elseSuite);
   ctx->blockLevel--;
 
   if (stmt->cond->isDone() && (!stmt->ifSuite || stmt->ifSuite->isDone()) &&
@@ -128,7 +128,7 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
   auto result = N<SuiteStmt>();
   result->stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what))));
   for (auto &c : stmt->cases) {
-    StmtPtr suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
+    Stmt *suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
     if (c.guard)
       suite = N<IfStmt>(clone(c.guard), suite);
     result->stmts.push_back(transformPattern(N<IdExpr>(var), clone(c.pattern), suite));
@@ -156,14 +156,13 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 ///   `case expr`          -> `if hasattr(typeof(var), "__match__"): if
 ///   var.__match__(foo())`
 ///                           (any expression that does not fit above patterns)
-StmtPtr TypecheckVisitor::transformPattern(const ExprPtr &var, ExprPtr pattern,
-                                           StmtPtr suite) {
+Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) {
   // Convenience function to generate `isinstance(e, typ)` calls
-  auto isinstance = [&](const ExprPtr &e, const std::string &typ) -> ExprPtr {
+  auto isinstance = [&](Expr *e, const std::string &typ) -> Expr * {
     return N<CallExpr>(N<IdExpr>("isinstance"), clone(e), N<IdExpr>(typ));
   };
   // Convenience function to find the index of an ellipsis within a list pattern
-  auto findEllipsis = [&](const std::vector<ExprPtr> &items) {
+  auto findEllipsis = [&](const std::vector<Expr *> &items) {
     size_t i = items.size();
     for (auto it = 0; it < items.size(); it++)
       if (items[it]->getEllipsis()) {

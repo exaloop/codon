@@ -22,61 +22,46 @@ namespace codon::ast {
  * -> Note: this stage *modifies* the provided AST. Clone it before simplification
  *    if you need it intact.
  */
-class TypecheckVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+class TypecheckVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
   /// Shared simplification context.
   std::shared_ptr<TypeContext> ctx;
   /// Statements to prepend before the current statement.
-  std::shared_ptr<std::vector<StmtPtr>> prependStmts = nullptr;
-  std::shared_ptr<std::vector<StmtPtr>> preamble = nullptr;
+  std::shared_ptr<std::vector<Stmt *>> prependStmts = nullptr;
+  std::shared_ptr<std::vector<Stmt *>> preamble = nullptr;
 
   /// Each new expression is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
-  ExprPtr resultExpr;
+  Expr *resultExpr;
   /// Each new statement is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
-  StmtPtr resultStmt;
+  Stmt *resultStmt;
 
 public:
-  // static StmtPtr apply(Cache *cache, const StmtPtr &stmts);
-  static StmtPtr
-  apply(Cache *cache, const StmtPtr &node, const std::string &file,
+  // static Stmt * apply(Cache *cache, const Stmt * &stmts);
+  static Stmt *
+  apply(Cache *cache, Stmt *node, const std::string &file,
         const std::unordered_map<std::string, std::string> &defines = {},
         const std::unordered_map<std::string, std::string> &earlyDefines = {},
         bool barebones = false);
-  static StmtPtr apply(const std::shared_ptr<TypeContext> &cache, const StmtPtr &node,
-                       const std::string &file = "<internal>");
+  static Stmt *apply(const std::shared_ptr<TypeContext> &cache, Stmt *node,
+                     const std::string &file = "<internal>");
 
 private:
-  static void loadStdLibrary(Cache *, const std::shared_ptr<std::vector<StmtPtr>> &,
+  static void loadStdLibrary(Cache *, const std::shared_ptr<std::vector<Stmt *>> &,
                              const std::unordered_map<std::string, std::string> &,
                              bool);
 
 public:
   explicit TypecheckVisitor(
       std::shared_ptr<TypeContext> ctx,
-      const std::shared_ptr<std::vector<StmtPtr>> &preamble = nullptr,
-      const std::shared_ptr<std::vector<StmtPtr>> &stmts = nullptr);
+      const std::shared_ptr<std::vector<Stmt *>> &preamble = nullptr,
+      const std::shared_ptr<std::vector<Stmt *>> &stmts = nullptr);
 
 public: // Convenience transformators
-  ExprPtr transform(ExprPtr &e) override;
-  ExprPtr transform(const ExprPtr &expr) override {
-    auto e = expr;
-    return transform(e);
-  }
-  ExprPtr transform(ExprPtr &expr, bool allowTypes);
-  ExprPtr transform(ExprPtr &&expr, bool allowTypes) {
-    return transform(expr, allowTypes);
-  }
-  StmtPtr transform(StmtPtr &s) override;
-  StmtPtr transform(const StmtPtr &stmt) override {
-    auto s = stmt;
-    return transform(s);
-  }
-  ExprPtr transformType(ExprPtr &expr, bool allowTypeOf = true);
-  ExprPtr transformType(const ExprPtr &expr, bool allowTypeOf = true) {
-    auto e = expr;
-    return transformType(e, allowTypeOf);
-  }
+  Expr *transform(Expr *e) override;
+  Expr *transform(Expr *expr, bool allowTypes);
+  Stmt *transform(Stmt *s) override;
+  Expr *transformType(Expr *expr, bool allowTypeOf = true);
 
 private:
   void defaultVisit(Expr *e) override;
@@ -87,9 +72,9 @@ private: // Node typechecking rules
   void visit(NoneExpr *) override;
   void visit(BoolExpr *) override;
   void visit(IntExpr *) override;
-  ExprPtr transformInt(IntExpr *);
+  Expr *transformInt(IntExpr *);
   void visit(FloatExpr *) override;
-  ExprPtr transformFloat(FloatExpr *);
+  Expr *transformFloat(FloatExpr *);
   void visit(StringExpr *) override;
 
   /* Identifier access expressions (access.cpp) */
@@ -97,8 +82,8 @@ private: // Node typechecking rules
   bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
-  ExprPtr transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
-  ExprPtr getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
+  Expr *transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
+  Expr *getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
   types::TypePtr findSpecialMember(const std::string &);
   types::FuncTypePtr getBestOverload(Expr *, std::vector<CallExpr::Arg> *);
   types::FuncTypePtr getDispatch(const std::string &);
@@ -108,8 +93,8 @@ private: // Node typechecking rules
   void visit(ListExpr *) override;
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
-  ExprPtr transformComprehension(const std::string &, const std::string &,
-                                 std::vector<ExprPtr> &);
+  Expr *transformComprehension(const std::string &, const std::string &,
+                               std::vector<Expr *> &);
   void visit(GeneratorExpr *) override;
 
   /* Conditional expression and statements (cond.cpp) */
@@ -117,23 +102,23 @@ private: // Node typechecking rules
   void visit(IfExpr *) override;
   void visit(IfStmt *) override;
   void visit(MatchStmt *) override;
-  StmtPtr transformPattern(const ExprPtr &, ExprPtr, StmtPtr);
+  Stmt *transformPattern(Expr *, Expr *, Stmt *);
 
   /* Operators (op.cpp) */
   void visit(UnaryExpr *) override;
-  ExprPtr evaluateStaticUnary(UnaryExpr *);
+  Expr *evaluateStaticUnary(UnaryExpr *);
   void visit(BinaryExpr *) override;
-  ExprPtr evaluateStaticBinary(BinaryExpr *);
-  ExprPtr transformBinarySimple(BinaryExpr *);
-  ExprPtr transformBinaryIs(BinaryExpr *);
+  Expr *evaluateStaticBinary(BinaryExpr *);
+  Expr *transformBinarySimple(BinaryExpr *);
+  Expr *transformBinaryIs(BinaryExpr *);
   std::pair<std::string, std::string> getMagic(const std::string &);
-  ExprPtr transformBinaryInplaceMagic(BinaryExpr *, bool);
-  ExprPtr transformBinaryMagic(BinaryExpr *);
+  Expr *transformBinaryInplaceMagic(BinaryExpr *, bool);
+  Expr *transformBinaryMagic(BinaryExpr *);
   void visit(ChainBinaryExpr *) override;
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
-  std::pair<bool, ExprPtr> transformStaticTupleIndex(const types::ClassTypePtr &,
-                                                     const ExprPtr &, const ExprPtr &);
+  std::pair<bool, Expr *> transformStaticTupleIndex(const types::ClassTypePtr &, Expr *,
+                                                    Expr *);
   int64_t translateIndex(int64_t, int64_t, bool = false);
   int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
   void visit(InstantiateExpr *) override;
@@ -143,74 +128,73 @@ private: // Node typechecking rules
   void visit(PrintStmt *) override;
   /// Holds partial call information for a CallExpr.
   struct PartialCallData {
-    bool isPartial = false;                   // true if the call is partial
-    std::string var;                          // set if calling a partial type itself
-    std::vector<char> known = {};             // mask of known arguments
-    ExprPtr args = nullptr, kwArgs = nullptr; // partial *args/**kwargs expressions
+    bool isPartial = false;                  // true if the call is partial
+    std::string var;                         // set if calling a partial type itself
+    std::vector<char> known = {};            // mask of known arguments
+    Expr *args = nullptr, *kwArgs = nullptr; // partial *args/**kwargs expressions
   };
   void visit(StarExpr *) override;
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   bool transformCallArgs(std::vector<CallExpr::Arg> &);
-  std::pair<types::FuncTypePtr, ExprPtr> getCalleeFn(CallExpr *, PartialCallData &);
-  ExprPtr callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
+  std::pair<types::FuncTypePtr, Expr *> getCalleeFn(CallExpr *, PartialCallData &);
+  Expr *callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
   bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
-  std::pair<bool, ExprPtr> transformSpecialCall(CallExpr *);
-  ExprPtr transformTupleGenerator(CallExpr *);
-  ExprPtr transformNamedTuple(CallExpr *);
-  ExprPtr transformFunctoolsPartial(CallExpr *);
-  ExprPtr transformSuperF(CallExpr *);
-  ExprPtr transformSuper();
-  ExprPtr transformPtr(CallExpr *);
-  ExprPtr transformArray(CallExpr *);
-  ExprPtr transformIsInstance(CallExpr *);
-  ExprPtr transformStaticLen(CallExpr *);
-  ExprPtr transformHasAttr(CallExpr *);
-  ExprPtr transformGetAttr(CallExpr *);
-  ExprPtr transformSetAttr(CallExpr *);
-  ExprPtr transformCompileError(CallExpr *);
-  ExprPtr transformTupleFn(CallExpr *);
-  ExprPtr transformTypeFn(CallExpr *);
-  ExprPtr transformRealizedFn(CallExpr *);
-  ExprPtr transformStaticPrintFn(CallExpr *);
-  ExprPtr transformHasRttiFn(CallExpr *);
-  std::pair<bool, ExprPtr> transformInternalStaticFn(CallExpr *);
+  std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
+  Expr *transformTupleGenerator(CallExpr *);
+  Expr *transformNamedTuple(CallExpr *);
+  Expr *transformFunctoolsPartial(CallExpr *);
+  Expr *transformSuperF(CallExpr *);
+  Expr *transformSuper();
+  Expr *transformPtr(CallExpr *);
+  Expr *transformArray(CallExpr *);
+  Expr *transformIsInstance(CallExpr *);
+  Expr *transformStaticLen(CallExpr *);
+  Expr *transformHasAttr(CallExpr *);
+  Expr *transformGetAttr(CallExpr *);
+  Expr *transformSetAttr(CallExpr *);
+  Expr *transformCompileError(CallExpr *);
+  Expr *transformTupleFn(CallExpr *);
+  Expr *transformTypeFn(CallExpr *);
+  Expr *transformRealizedFn(CallExpr *);
+  Expr *transformStaticPrintFn(CallExpr *);
+  Expr *transformHasRttiFn(CallExpr *);
+  std::pair<bool, Expr *> transformInternalStaticFn(CallExpr *);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &);
   void addFunctionGenerics(const types::FuncType *t);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
-  StmtPtr transformUpdate(AssignStmt *);
-  StmtPtr transformAssignment(AssignStmt *, bool = false);
-  void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
+  Stmt *transformUpdate(AssignStmt *);
+  Stmt *transformAssignment(AssignStmt *, bool = false);
+  void unpackAssignments(Expr *, Expr *, std::vector<Stmt *> &);
   void visit(DelStmt *) override;
   void visit(AssignMemberStmt *) override;
-  std::pair<bool, ExprPtr> transformInplaceUpdate(AssignStmt *);
+  std::pair<bool, Expr *> transformInplaceUpdate(AssignStmt *);
 
   /* Imports (import.cpp) */
   void visit(ImportStmt *) override;
-  StmtPtr transformSpecialImport(ImportStmt *);
+  Stmt *transformSpecialImport(ImportStmt *);
   std::vector<std::string> getImportPath(Expr *, size_t = 0);
-  StmtPtr transformCImport(const std::string &, const std::vector<Param> &,
-                           const Expr *, const std::string &);
-  StmtPtr transformCVarImport(const std::string &, const Expr *, const std::string &);
-  StmtPtr transformCDLLImport(const Expr *, const std::string &,
-                              const std::vector<Param> &, const Expr *,
-                              const std::string &, bool);
-  StmtPtr transformPythonImport(Expr *, const std::vector<Param> &, Expr *,
-                                const std::string &);
-  StmtPtr transformNewImport(const ImportFile &);
+  Stmt *transformCImport(const std::string &, const std::vector<Param> &, Expr *,
+                         const std::string &);
+  Stmt *transformCVarImport(const std::string &, Expr *, const std::string &);
+  Stmt *transformCDLLImport(Expr *, const std::string &, const std::vector<Param> &,
+                            Expr *, const std::string &, bool);
+  Stmt *transformPythonImport(Expr *, const std::vector<Param> &, Expr *,
+                              const std::string &);
+  Stmt *transformNewImport(const ImportFile &);
 
   /* Loops (loops.cpp) */
   void visit(BreakStmt *) override;
   void visit(ContinueStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
-  ExprPtr transformForDecorator(const ExprPtr &);
-  StmtPtr transformHeterogenousTupleFor(ForStmt *);
-  std::pair<bool, StmtPtr> transformStaticForLoop(ForStmt *);
+  Expr *transformForDecorator(Expr *);
+  Stmt *transformHeterogenousTupleFor(ForStmt *);
+  std::pair<bool, Stmt *> transformStaticForLoop(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
   void visit(AssertStmt *) override;
@@ -226,26 +210,26 @@ private: // Node typechecking rules
   // void visit(LambdaExpr *) override;
   void visit(GlobalStmt *) override;
   void visit(FunctionStmt *) override;
-  StmtPtr transformPythonDefinition(const std::string &, const std::vector<Param> &,
-                                    const Expr *, Stmt *);
-  StmtPtr transformLLVMDefinition(Stmt *);
-  std::pair<bool, std::string> getDecorator(const ExprPtr &);
-  ExprPtr partializeFunction(const types::FuncTypePtr &);
+  Stmt *transformPythonDefinition(const std::string &, const std::vector<Param> &,
+                                  Expr *, Stmt *);
+  Stmt *transformLLVMDefinition(Stmt *);
+  std::pair<bool, std::string> getDecorator(Expr *);
+  Expr *partializeFunction(const types::FuncTypePtr &);
   std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
 private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<types::ClassTypePtr>
-  parseBaseClasses(std::vector<ExprPtr> &, std::vector<Param> &, const Attr &,
-                   const std::string &, const ExprPtr &, types::ClassTypePtr &);
-  std::pair<StmtPtr, FunctionStmt *> autoDeduceMembers(ClassStmt *,
-                                                       std::vector<Param> &);
-  std::vector<StmtPtr> getClassMethods(const StmtPtr &s);
-  void transformNestedClasses(ClassStmt *, std::vector<StmtPtr> &,
-                              std::vector<StmtPtr> &, std::vector<StmtPtr> &);
-  StmtPtr codegenMagic(const std::string &, const ExprPtr &, const std::vector<Param> &,
-                       bool);
+  std::vector<types::ClassTypePtr> parseBaseClasses(std::vector<Expr *> &,
+                                                    std::vector<Param> &, const Attr &,
+                                                    const std::string &, Expr *,
+                                                    types::ClassTypePtr &);
+  std::pair<Stmt *, FunctionStmt *> autoDeduceMembers(ClassStmt *,
+                                                      std::vector<Param> &);
+  std::vector<Stmt *> getClassMethods(Stmt *s);
+  void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
+                              std::vector<Stmt *> &);
+  Stmt *codegenMagic(const std::string &, Expr *, const std::vector<Param> &, bool);
   types::ClassTypePtr generateTuple(size_t n, bool = true);
   int generateKwId(const std::vector<std::string> & = {});
   void addClassGenerics(const types::ClassTypePtr &, bool instantiate = false);
@@ -267,10 +251,10 @@ public:
   types::TypePtr realize(types::TypePtr);
 
 private:
-  StmtPtr inferTypes(StmtPtr, bool isToplevel = false);
+  Stmt *inferTypes(Stmt *, bool isToplevel = false);
   types::TypePtr realizeFunc(types::FuncType *, bool = false);
   types::TypePtr realizeType(types::ClassType *);
-  std::shared_ptr<FunctionStmt> generateSpecialAst(types::FuncType *);
+  FunctionStmt *generateSpecialAst(types::FuncType *);
   size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
@@ -282,7 +266,7 @@ private:
                                     const std::vector<types::TypePtr> &args);
   types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
                                     const std::string &member,
-                                    const std::vector<ExprPtr> &args);
+                                    const std::vector<Expr *> &args);
   types::FuncTypePtr
   findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
@@ -292,21 +276,21 @@ private:
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
                       const std::vector<CallExpr::Arg> &args);
-  ExprPtr castToSuperClass(ExprPtr expr, types::ClassTypePtr superTyp, bool = false);
-  StmtPtr prepareVTables();
-  std::vector<std::pair<std::string, ExprPtr>> extractNamedTuple(ExprPtr);
+  Expr *castToSuperClass(Expr *expr, types::ClassTypePtr superTyp, bool = false);
+  Stmt *prepareVTables();
+  std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
 
   std::vector<types::TypePtr> getClassFieldTypes(const types::ClassTypePtr &);
 
 public:
-  bool wrapExpr(ExprPtr &expr, const types::TypePtr &expectedType,
+  bool wrapExpr(Expr **expr, const types::TypePtr &expectedType,
                 const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *);
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
-  ExprPtr generatePartialCall(const std::vector<char> &, types::FuncType *,
-                              ExprPtr = nullptr, ExprPtr = nullptr);
+  Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
+                            Expr * = nullptr, Expr * = nullptr);
 
-  types::TypePtr getType(const ExprPtr &);
+  types::TypePtr getType(Expr *);
 
   friend class Cache;
   friend class TypeContext;
@@ -315,11 +299,21 @@ public:
 
 private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
-      unpackTupleTypes(ExprPtr);
-  std::tuple<bool, bool, StmtPtr, std::vector<std::shared_ptr<codon::SrcObject>>>
-  transformStaticLoopCall(
-      const ExprPtr &, StmtPtr &, const ExprPtr &,
-      const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &, bool = false);
+  unpackTupleTypes(Expr *);
+  std::tuple<bool, bool, Stmt *, std::vector<Node *>>
+  transformStaticLoopCall(Expr *, Stmt **, Expr *,
+                          const std::function<Node *(Stmt *)> &, bool = false);
+
+public:
+  template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
+    Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
+    t->setSrcInfo(getSrcInfo());
+    return t;
+  }
+  template <typename Tn, typename... Ts> Tn *NC(Ts &&...args) {
+    Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
+    return t;
+  }
 };
 
 } // namespace codon::ast

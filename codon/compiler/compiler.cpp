@@ -73,9 +73,8 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
   input = file;
   std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
-    ast::StmtPtr codeStmt = isCode
-                                ? ast::parseCode(cache.get(), abspath, code, startLine)
-                                : ast::parseFile(cache.get(), abspath);
+    ast::Stmt *codeStmt = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
+                                 : ast::parseFile(cache.get(), abspath);
 
     cache->module0 = file;
 

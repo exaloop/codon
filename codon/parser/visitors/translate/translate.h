@@ -23,11 +23,11 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 
 public:
   explicit TranslateVisitor(std::shared_ptr<TranslateContext> ctx);
-  static codon::ir::Func *apply(Cache *cache, const StmtPtr &stmts);
-  void translateStmts(StmtPtr stmts);
+  static codon::ir::Func *apply(Cache *cache, Stmt *stmts);
+  void translateStmts(Stmt *stmts);
 
-  ir::Value *transform(const ExprPtr &expr) override;
-  ir::Value *transform(const StmtPtr &stmt) override;
+  ir::Value *transform(Expr *expr) override;
+  ir::Value *transform(Stmt *stmt) override;
 
 private:
   void defaultVisit(Expr *expr) override;

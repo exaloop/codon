@@ -39,7 +39,7 @@ public:
   };
 
   using KeywordCallback =
-      std::function<ast::StmtPtr(ast::TypecheckVisitor *, ast::CustomStmt *)>;
+      std::function<ast::Stmt *(ast::TypecheckVisitor *, ast::CustomStmt *)>;
 
   struct ExprKeyword {
     std::string keyword;

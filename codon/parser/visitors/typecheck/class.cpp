@@ -77,9 +77,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
   }
 
-  std::vector<StmtPtr> clsStmts; // Will be filled later!
-  std::vector<StmtPtr> varStmts; // Will be filled later!
-  std::vector<StmtPtr> fnStmts;  // Will be filled later!
+  std::vector<Stmt *> clsStmts; // Will be filled later!
+  std::vector<Stmt *> varStmts; // Will be filled later!
+  std::vector<Stmt *> fnStmts;  // Will be filled later!
   std::vector<TypeContext::Item> addLater;
   try {
     // Add the class base
@@ -88,7 +88,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Parse and add class generics
     std::vector<Param> args;
-    std::pair<StmtPtr, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
+    std::pair<Stmt *, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
     if (stmt->attributes.has("deduce") && args.empty()) {
       // todo)) do this
       // Auto-detect generics and fields
@@ -116,18 +116,18 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto defType = transformType(clone(a.defaultValue));
           generic->defaultType = getType(defType);
         }
-        if (auto st = getStaticGeneric(a.type.get())) {
+        if (auto st = getStaticGeneric(a.type)) {
           if (st > 3)
-            transform(a.type); // error check
+            a.type = transform(a.type); // error check
           generic->isStatic = st;
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
         } else {
           if (a.type->getIndex()) { // Parse TraitVar
-            transform(a.type);
+            a.type = transform(a.type);
             auto ti = a.type->getInstantiate();
             seqassert(ti && ti->typeExpr->isId(TYPE_TYPEVAR),
-                      "not a TypeVar instantiation: {}", a.type);
+                      "not a TypeVar instantiation: {}", *(a.type));
             auto l = getType(ti->typeParams[0]);
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;
@@ -150,13 +150,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    ExprPtr typeAst = N<IdExpr>(name), transformedTypeAst = N<IdExpr>(canonicalName);
+    Expr *typeAst = N<IdExpr>(name);
+    Expr *transformedTypeAst = N<IdExpr>(canonicalName);
     for (auto &a : args) {
       if (a.status == Param::Generic) {
         if (!typeAst->getIndex()) {
           typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
           transformedTypeAst =
-              N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<ExprPtr>{});
+              N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<Expr *>{});
         }
         typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
         transformedTypeAst->getInstantiate()->typeParams.push_back(
@@ -232,7 +233,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto genCanName = ctx->generateCanonicalName(genName);
           auto generic = ctx->getUnbound();
           generic->getLink()->genericName = genName;
-          ExprPtr te = N<IdExpr>(genCanName);
+          Expr *te = N<IdExpr>(genCanName);
           fields.emplace_back(Cache::Class::ClassField{
               fmt::format("item{}", aj + 1), generic->generalize(ctx->typecheckLevel),
               "", te});
@@ -301,10 +302,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                 ictx->addBlock();
                 auto tv = TypecheckVisitor(ictx);
                 tv.addClassGenerics(typ, true);
-                cf = std::dynamic_pointer_cast<FunctionStmt>(tv.transform(cf));
+                cf = CAST(tv.transform(cf), FunctionStmt);
                 ictx->popBlock();
               } else {
-                cf = std::dynamic_pointer_cast<FunctionStmt>(transform(cf));
+                cf = CAST(transform(cf), FunctionStmt);
               }
               fnStmts.push_back(cf);
               ctx->popBlock();
@@ -319,7 +320,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Add class methods
     for (const auto &sp : getClassMethods(stmt->suite))
       if (sp && sp->getFunction()) {
-        if (sp.get() != autoDeducedInit.second) {
+        if (sp != autoDeducedInit.second) {
           auto &ds = sp->getFunction()->decorators;
           for (auto &dc : ds) {
             if (auto d = dc->getDot()) {
@@ -409,7 +410,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
   for (auto &a : varStmts) {
     // Transform class variables here to allow self-references
-    transform(a);
+    a = transform(a);
     // if (auto assign = a->getAssign()) {
     //   transform(assign->rhs);
     //   transformType(assign->type);
@@ -424,17 +425,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 /// @param args Class fields that are to be updated with base classes' fields.
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
-std::vector<types::ClassTypePtr>
-TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
-                                   std::vector<Param> &args, const Attr &attr,
-                                   const std::string &canonicalName,
-                                   const ExprPtr &typeAst, types::ClassTypePtr &typ) {
+std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
+    std::vector<Expr *> &baseClasses, std::vector<Param> &args, const Attr &attr,
+    const std::string &canonicalName, Expr *typeAst, types::ClassTypePtr &typ) {
   std::vector<types::ClassTypePtr> asts;
 
   // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
   std::vector<std::vector<types::ClassTypePtr>> mro{{typ}};
   for (auto &cls : baseClasses) {
-    std::vector<ExprPtr> subs;
+    std::vector<Expr *> subs;
 
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
@@ -525,9 +524,9 @@ TypecheckVisitor::parseBaseClasses(std::vector<ExprPtr> &baseClasses,
 ///        x: T1
 ///        y: T2```
 /// @return the transformed init and the pointer to the original function.
-std::pair<StmtPtr, FunctionStmt *>
+std::pair<Stmt *, FunctionStmt *>
 TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
-  std::pair<StmtPtr, FunctionStmt *> init{nullptr, nullptr};
+  std::pair<Stmt *, FunctionStmt *> init{nullptr, nullptr};
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getFunction()) {
       auto f = sp->getFunction();
@@ -561,8 +560,8 @@ TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
 /// Return a list of all statements within a given class suite.
 /// Checks each suite recursively, and assumes that each statement is either
 /// a function, a class or a docstring.
-std::vector<StmtPtr> TypecheckVisitor::getClassMethods(const StmtPtr &s) {
-  std::vector<StmtPtr> v;
+std::vector<Stmt *> TypecheckVisitor::getClassMethods(Stmt *s) {
+  std::vector<Stmt *> v;
   if (!s)
     return v;
   if (auto sp = s->getSuite()) {
@@ -581,9 +580,9 @@ std::vector<StmtPtr> TypecheckVisitor::getClassMethods(const StmtPtr &s) {
 
 /// Extract nested classes and transform them before the main class.
 void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
-                                              std::vector<StmtPtr> &clsStmts,
-                                              std::vector<StmtPtr> &varStmts,
-                                              std::vector<StmtPtr> &fnStmts) {
+                                              std::vector<Stmt *> &clsStmts,
+                                              std::vector<Stmt *> &varStmts,
+                                              std::vector<Stmt *> &fnStmts) {
   for (const auto &sp : getClassMethods(stmt->suite))
     if (sp && sp->getClass()) {
       auto origName = sp->getClass()->name;
@@ -619,15 +618,14 @@ void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
 /// @li Python: __to_py__, __from_py__
 /// @li GPU: __to_gpu__, __from_gpu__, __from_gpu_new__
 /// TODO: move to Codon as much as possible
-StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typExpr,
-                                       const std::vector<Param> &allArgs,
-                                       bool isRecord) {
+Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
+                                     const std::vector<Param> &allArgs, bool isRecord) {
 #define I(s) N<IdExpr>(s)
 #define NS(x) N<DotExpr>(N<IdExpr>("__magic__"), (x))
   seqassert(typExpr, "typExpr is null");
-  ExprPtr ret;
+  Expr *ret;
   std::vector<Param> fargs;
-  std::vector<StmtPtr> stmts;
+  std::vector<Stmt *> stmts;
   Attr attr;
   attr.set("autogenerated");
 
@@ -653,7 +651,7 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
     ret = I("NoneType");
     fargs.emplace_back("self", clone(typExpr));
     for (auto &a : args) {
-      // ExprPtr defExpr = nullptr;
+      // Expr * defExpr = nullptr;
       // if (a.defaultValue) {
       //   defExpr = a.defaultValue;
       // } else {
@@ -755,8 +753,8 @@ StmtPtr TypecheckVisitor::codegenMagic(const std::string &op, const ExprPtr &typ
   }
 #undef I
 #undef NS
-  auto t = std::make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
-                                          N<SuiteStmt>(stmts), attr);
+  auto t =
+      NC<FunctionStmt>(format("__{}__", op), ret, fargs, NC<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
 }
@@ -816,7 +814,7 @@ types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) 
   if (generateNew && !in(funcArgTypes, n)) {
     funcArgTypes.insert(n);
     std::vector<Param> newFnArgs;
-    std::vector<ExprPtr> typeArgs;
+    std::vector<Expr *> typeArgs;
     for (size_t i = 0; i < n; i++) {
       newFnArgs.emplace_back(format("item{}", i + 1), N<IdExpr>(format("T{}", i + 1)));
       typeArgs.emplace_back(N<IdExpr>(format("T{}", i + 1)));
@@ -824,13 +822,13 @@ types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) 
     for (size_t i = 0; i < n; i++) {
       newFnArgs.emplace_back(format("T{}", i + 1), N<IdExpr>("type"));
     }
-    StmtPtr fn = N<FunctionStmt>(
+    Stmt *fn = N<FunctionStmt>(
         "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),
         newFnArgs, nullptr, Attr({Attr::Internal}));
-    StmtPtr ext =
+    Stmt *ext =
         N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn, Attr({Attr::Extend}));
     // TODO: do clean toplevel transform
-    ScopingVisitor::apply(ctx->cache, ext);
+    ext = ScopingVisitor::apply(ctx->cache, ext);
 
     auto rctx = ctx->cache->imports[STDLIB_IMPORT].ctx;
     auto oldBases = rctx->bases;

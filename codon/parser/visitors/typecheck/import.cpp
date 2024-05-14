@@ -30,7 +30,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     return;
 
   // Fetch the import
-  auto components = getImportPath(stmt->from.get(), stmt->dots);
+  auto components = getImportPath(stmt->from, stmt->dots);
   auto path = combine2(components, "/");
   auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
                             ctx->cache->module0, ctx->cache->pluginImportPaths);
@@ -64,7 +64,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     auto u = N<AssignStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true));
     u->setUpdate();
     resultStmt = N<IfStmt>(
-        N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(importDoneVar), "__invert__")),
         N<SuiteStmt>(u, N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar + ".0")))));
   }
 
@@ -114,24 +114,22 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
 /// Transform special `from C` and `from python` imports.
 /// See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
-StmtPtr TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
+Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
   if (stmt->from && stmt->from->isId("C") && stmt->what->getId() && stmt->isFunction) {
     // C function imports
-    return transformCImport(stmt->what->getId()->value, stmt->args, stmt->ret.get(),
+    return transformCImport(stmt->what->getId()->value, stmt->args, stmt->ret,
                             stmt->as);
   }
   if (stmt->from && stmt->from->isId("C") && stmt->what->getId()) {
     // C variable imports
-    return transformCVarImport(stmt->what->getId()->value, stmt->ret.get(), stmt->as);
+    return transformCVarImport(stmt->what->getId()->value, stmt->ret, stmt->as);
   } else if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
     // dylib C imports
-    return transformCDLLImport(stmt->what->getDot()->expr.get(),
-                               stmt->what->getDot()->member, stmt->args,
-                               stmt->ret.get(), stmt->as, stmt->isFunction);
+    return transformCDLLImport(stmt->what->getDot()->expr, stmt->what->getDot()->member,
+                               stmt->args, stmt->ret, stmt->as, stmt->isFunction);
   } else if (stmt->from && stmt->from->isId("python") && stmt->what) {
     // Python imports
-    return transformPythonImport(stmt->what.get(), stmt->args, stmt->ret.get(),
-                                 stmt->as);
+    return transformPythonImport(stmt->what, stmt->args, stmt->ret, stmt->as);
   }
   return nullptr;
 }
@@ -141,7 +139,7 @@ StmtPtr TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
 std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots) {
   std::vector<std::string> components; // Path components
   if (from) {
-    for (; from->getDot(); from = from->getDot()->expr.get())
+    for (; from->getDot(); from = from->getDot()->expr)
       components.push_back(from->getDot()->member);
     seqassert(from->getId(), "invalid import statement");
     components.push_back(from->getId()->value);
@@ -162,10 +160,9 @@ std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots
 ///        pass
 ///      f = foo # if altName is provided```
 /// No return type implies void return type. *args is treated as C VAR_ARGS.
-StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
-                                           const std::vector<Param> &args,
-                                           const Expr *ret,
-                                           const std::string &altName) {
+Stmt *TypecheckVisitor::transformCImport(const std::string &name,
+                                         const std::vector<Param> &args, Expr *ret,
+                                         const std::string &altName) {
   std::vector<Param> fnArgs;
   auto attr = Attr({Attr::C});
   for (size_t ai = 0; ai < args.size(); ai++) {
@@ -182,8 +179,8 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
     }
   }
   ctx->generateCanonicalName(name); // avoid canonicalName == name
-  StmtPtr f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs,
-                              nullptr, attr);
+  Stmt *f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs,
+                            nullptr, attr);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
     auto v = ctx->find(altName);
@@ -198,8 +195,8 @@ StmtPtr TypecheckVisitor::transformCImport(const std::string &name,
 /// @example
 ///   `from C import foo: int as f` ->
 ///   ```f: int = "foo"```
-StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Expr *type,
-                                              const std::string &altName) {
+Stmt *TypecheckVisitor::transformCVarImport(const std::string &name, Expr *type,
+                                            const std::string &altName) {
   auto canonical = ctx->generateCanonicalName(name);
   auto typ = transformType(clone(type));
   auto val = ctx->addVar(altName.empty() ? name : altName, canonical,
@@ -217,14 +214,13 @@ StmtPtr TypecheckVisitor::transformCVarImport(const std::string &name, const Exp
 ///   `from C import lib.foo(int) -> float as f` ->
 ///   `f = _dlsym(lib, "foo", Fn=Function[[int], float]); f`
 /// No return type implies void return type.
-StmtPtr
-TypecheckVisitor::transformCDLLImport(const Expr *dylib, const std::string &name,
-                                      const std::vector<Param> &args, const Expr *ret,
-                                      const std::string &altName, bool isFunction) {
-  ExprPtr type = nullptr;
+Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name,
+                                            const std::vector<Param> &args, Expr *ret,
+                                            const std::string &altName,
+                                            bool isFunction) {
+  Expr *type = nullptr;
   if (isFunction) {
-    std::vector<ExprPtr> fnArgs{N<ListExpr>(),
-                                ret ? clone(ret) : N<IdExpr>("NoneType")};
+    std::vector<Expr *> fnArgs{N<ListExpr>(), ret ? clone(ret) : N<IdExpr>("NoneType")};
     for (const auto &a : args) {
       seqassert(a.name.empty(), "unexpected argument name");
       seqassert(!a.defaultValue, "unexpected default argument");
@@ -237,7 +233,7 @@ TypecheckVisitor::transformCDLLImport(const Expr *dylib, const std::string &name
     type = clone(ret);
   }
 
-  ExprPtr c = clone(dylib);
+  Expr *c = clone(dylib);
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
@@ -254,9 +250,9 @@ TypecheckVisitor::transformCDLLImport(const Expr *dylib, const std::string &name
 ///        f = pyobj._import("lib")._getattr("foo")
 ///        return float.__from_py__(f(a0))```
 /// If a return type is nullptr, the function just returns f (raw pyobj).
-StmtPtr TypecheckVisitor::transformPythonImport(Expr *what,
-                                                const std::vector<Param> &args,
-                                                Expr *ret, const std::string &altName) {
+Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
+                                              const std::vector<Param> &args, Expr *ret,
+                                              const std::string &altName) {
   // Get a module name (e.g., os.path)
   auto components = getImportPath(what);
 
@@ -264,7 +260,7 @@ StmtPtr TypecheckVisitor::transformPythonImport(Expr *what,
     // Simple import: `from python import foo.bar` -> `bar = pyobj._import("foo.bar")`
     return transform(
         N<AssignStmt>(N<IdExpr>(altName.empty() ? components.back() : altName),
-                      N<CallExpr>(N<DotExpr>("pyobj", "_import"),
+                      N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_import"),
                                   N<StringExpr>(combine2(components, ".")))));
   }
 
@@ -278,14 +274,14 @@ StmtPtr TypecheckVisitor::transformPythonImport(Expr *what,
   auto call = N<AssignStmt>(
       N<IdExpr>("f"),
       N<CallExpr>(
-          N<DotExpr>(N<CallExpr>(N<DotExpr>("pyobj", "_import"),
+          N<DotExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_import"),
                                  N<StringExpr>(combine2(components, ".", 0,
                                                         int(components.size()) - 1))),
                      "_getattr"),
           N<StringExpr>(components.back())));
   // f(a1, ...)
   std::vector<Param> params;
-  std::vector<ExprPtr> callArgs;
+  std::vector<Expr *> callArgs;
   for (int i = 0; i < args.size(); i++) {
     params.emplace_back(format("a{}", i), clone(args[i].type), nullptr);
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
@@ -308,7 +304,7 @@ StmtPtr TypecheckVisitor::transformPythonImport(Expr *what,
 ///        global [imported global variables]...
 ///        __name__ = [I]
 ///        [imported top-level statements]```
-StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
+Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file
   // if (ctx->cache->age)
   // ctx->cache->age++;
@@ -319,14 +315,14 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
       ctx->cache->imports.insert({file.path, {file.module, file.path, ictx}}).first;
 
   // __name__ = [import name]
-  StmtPtr n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(file.module));
+  Stmt *n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(file.module));
   if (file.module == "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
     n = nullptr;
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
   auto tv = TypecheckVisitor(ictx, preamble);
-  ScopingVisitor::apply(ctx->cache, n);
+  n = ScopingVisitor::apply(ctx->cache, n);
   // n = tv.transform(n);
 
   if (!ctx->cache->errors.empty())
@@ -339,9 +335,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all
     // statements are executed before the user-provided code.
-    tv.transform(suite);
-    // LOG_USER("[import] done importing {}", file.module);
-    return suite;
+    return tv.transform(suite);
   } else {
     // Generate import identifier
     auto moduleID = file.module;
@@ -366,7 +360,7 @@ StmtPtr TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // TODO: Make sure to register the global variables and set their assignments as
     // updates. Note: signatures/classes/functions are not wrapped Create import
     // function manually with ForceRealize
-    StmtPtr fn =
+    Stmt *fn =
         N<FunctionStmt>(importVar, N<IdExpr>("NoneType"), std::vector<Param>{}, suite);
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(importVar)->type);

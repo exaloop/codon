@@ -40,11 +40,11 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   } else {
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
-    transform(stmt->expr);
+    stmt->expr = transform(stmt->expr);
 
     // Wrap expression to match the return type
     if (!ctx->getBase()->returnType->getUnbound())
-      if (!wrapExpr(stmt->expr, ctx->getBase()->returnType)) {
+      if (!wrapExpr(&stmt->expr, ctx->getBase()->returnType)) {
         return;
       }
 
@@ -99,7 +99,7 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
   if (stmt->attributes.has(Attr::Python)) {
     // Handle Python block
-    resultStmt = transformPythonDefinition(stmt->name, stmt->args, stmt->ret.get(),
+    resultStmt = transformPythonDefinition(stmt->name, stmt->args, stmt->ret,
                                            stmt->suite->firstInBlock());
     return;
   }
@@ -205,8 +205,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   }
 
   std::vector<Param> args;
-  StmtPtr suite = nullptr;
-  ExprPtr ret = nullptr;
+  Stmt *suite = nullptr;
+  Expr *ret = nullptr;
   std::vector<ClassType::Generic> explicits;
   std::shared_ptr<types::ClassType> baseType = nullptr;
   {
@@ -252,7 +252,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         auto generic = ctx->getUnbound();
         auto typId = generic->getLink()->id;
         generic->genericName = varName;
-        if (auto st = getStaticGeneric(a.type.get())) {
+        if (auto st = getStaticGeneric(a.type)) {
           auto val = ctx->addVar(varName, name, generic);
           val->generic = true;
           generic->isStatic = st;
@@ -413,7 +413,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Construct the type
   auto funcTyp = std::make_shared<types::FuncType>(
-      baseType, ctx->cache->functions[canonicalName].ast.get(), explicits);
+      baseType, ctx->cache->functions[canonicalName].ast, explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->attributes.has(Attr::Method)) {
     funcTyp->funcParent = ctx->getType(stmt->attributes.parentClass);
@@ -459,7 +459,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // LOG("[func] added func {}: {}", canonicalName, funcTyp->debugString(2));
 
   // Expression to be used if function binding is modified by captures or decorators
-  ExprPtr finalExpr = nullptr;
+  Expr *finalExpr = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   if (!captures.empty()) {
     if (isClassMember)
@@ -508,9 +508,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 ///      pyobj._exec("def foo(x, y): [code]")
 ///      from python import __main__.foo(int, _) -> int
 ///   ```
-StmtPtr TypecheckVisitor::transformPythonDefinition(const std::string &name,
-                                                    const std::vector<Param> &args,
-                                                    const Expr *ret, Stmt *codeStmt) {
+Stmt *TypecheckVisitor::transformPythonDefinition(const std::string &name,
+                                                  const std::vector<Param> &args,
+                                                  Expr *ret, Stmt *codeStmt) {
   seqassert(codeStmt && codeStmt->getExpr() && codeStmt->getExpr()->expr->getString(),
             "invalid Python definition");
 
@@ -521,9 +521,10 @@ StmtPtr TypecheckVisitor::transformPythonDefinition(const std::string &name,
     pyargs.emplace_back(a.name);
   code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
   return transform(N<SuiteStmt>(
-      N<ExprStmt>(N<CallExpr>(N<DotExpr>("pyobj", "_exec"), N<StringExpr>(code))),
-      N<ImportStmt>(N<IdExpr>("python"), N<DotExpr>("__main__", name), clone(args),
-                    ret ? clone(ret) : N<IdExpr>("pyobj"))));
+      N<ExprStmt>(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_exec"), N<StringExpr>(code))),
+      N<ImportStmt>(N<IdExpr>("python"), N<DotExpr>(N<IdExpr>("__main__"), name),
+                    clone(args), ret ? clone(ret) : N<IdExpr>("pyobj"))));
 }
 
 /// Transform LLVM functions.
@@ -542,12 +543,12 @@ StmtPtr TypecheckVisitor::transformPythonDefinition(const std::string &name,
 /// be replaced with `{}` so that @c fmt::format can fill the gaps.
 /// Note that any brace (`{` or `}`) that is not part of a block is
 /// escaped (e.g. `{` -> `{{` and `}` -> `}}`) so that @c fmt::format can process them.
-StmtPtr TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
+Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   seqassert(codeStmt && codeStmt->getExpr() && codeStmt->getExpr()->expr->getString(),
             "invalid LLVM definition");
 
   auto code = codeStmt->getExpr()->expr->getString()->getValue();
-  std::vector<StmtPtr> items;
+  std::vector<Stmt *> items;
   auto se = N<StringExpr>("");
   std::string finalCode = se->getValue();
   items.push_back(N<ExprStmt>(se));
@@ -585,7 +586,7 @@ StmtPtr TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 
 /// Fetch a decorator canonical name. The first pair member indicates if a decorator is
 /// actually an attribute (a function with `@__attribute__`).
-std::pair<bool, std::string> TypecheckVisitor::getDecorator(const ExprPtr &e) {
+std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
   auto id = dt->getCall() ? dt->getCall()->expr : dt;
   if (id && id->getId()) {
@@ -605,7 +606,7 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(const ExprPtr &e) {
 }
 
 /// Make an empty partial call `fn(...)` for a given function.
-ExprPtr TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
+Expr *TypecheckVisitor::partializeFunction(const types::FuncTypePtr &fn) {
   // Create function mask
   std::vector<char> mask(fn->ast->args.size(), 0);
   for (int i = 0, j = 0; i < fn->ast->args.size(); i++)

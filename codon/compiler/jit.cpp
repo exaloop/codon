@@ -40,9 +40,8 @@ llvm::Error JIT::init() {
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
-  auto typechecked =
-      ast::TypecheckVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(),
-                                   JIT_FILENAME, {}, compiler->getEarlyDefines());
+  auto typechecked = ast::TypecheckVisitor::apply(
+      cache, cache->N<ast::SuiteStmt>(), JIT_FILENAME, {}, compiler->getEarlyDefines());
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
   cache->isJit = true; // we still need main(), so set isJit after it has been set
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
@@ -88,7 +87,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                         const std::string &file, int line) {
   auto *cache = compiler->getCache();
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
-  auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
+  auto preamble = std::make_shared<std::vector<ast::Stmt *>>();
 
   ast::Cache bCache = *cache;
   auto bTypecheck = *sctx;
@@ -96,37 +95,36 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
-    ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
-                                       /*startLine=*/line);
+    ast::Stmt *node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
+                                     /*startLine=*/line);
     auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
     if (e)
       if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
-        *e = std::make_shared<ast::ExprStmt>(std::make_shared<ast::CallExpr>(
-            std::make_shared<ast::IdExpr>("_jit_display"), clone(ex->expr),
-            std::make_shared<ast::StringExpr>(mode)));
+        *e = cache->N<ast::ExprStmt>(
+            cache->N<ast::CallExpr>(cache->N<ast::IdExpr>("_jit_display"),
+                                    clone(ex->expr), cache->N<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
-    ast::ScopingVisitor::apply(sctx->cache, node);
-    tv.transform(node);
+    node = ast::ScopingVisitor::apply(sctx->cache, node);
+    node = tv.transform(node);
 
     if (!cache->errors.empty())
       throw exc::ParserException();
-    auto typechecked = std::make_shared<ast::SuiteStmt>();
+    auto typechecked = cache->N<ast::SuiteStmt>();
     for (auto &s : *preamble)
       typechecked->stmts.push_back(s);
     typechecked->stmts.push_back(node);
     // TODO: unroll on errors...
 
     // add newly realized functions
-    std::vector<ast::StmtPtr> v;
+    std::vector<ast::Stmt *> v;
     std::vector<ir::Func **> frs;
     v.push_back(typechecked);
     for (auto &p : cache->pendingRealizations) {
       v.push_back(cache->functions[p.first].ast);
       frs.push_back(&cache->functions[p.first].realizations[p.second]->ir);
     }
-    auto func =
-        ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
+    auto func = ast::TranslateVisitor::apply(cache, cache->N<ast::SuiteStmt>(v));
     cache->jitCell++;
 
     return func;

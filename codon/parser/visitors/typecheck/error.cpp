@@ -19,13 +19,13 @@ using namespace types;
 /// Use `seq_assert_test` instead of `seq_assert` and do not raise anything during unit
 /// testing (i.e., when the enclosing function is marked with `@test`).
 void TypecheckVisitor::visit(AssertStmt *stmt) {
-  ExprPtr msg = N<StringExpr>("");
+  Expr *msg = N<StringExpr>("");
   if (stmt->message)
     msg = N<CallExpr>(N<IdExpr>("str"), stmt->message);
   auto test = ctx->inFunction() && (ctx->getBase()->attributes &&
                                     ctx->getBase()->attributes->has(Attr::Test));
   auto ex = N<CallExpr>(
-      N<DotExpr>("__internal__", test ? "seq_assert_test" : "seq_assert"),
+      N<DotExpr>(N<IdExpr>("__internal__"), test ? "seq_assert_test" : "seq_assert"),
       N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line), msg);
   auto cond = N<UnaryExpr>("!", stmt->expr);
   if (test) {
@@ -52,10 +52,10 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
-  transform(stmt->suite);
+  stmt->suite = transform(stmt->suite);
   ctx->blockLevel--;
 
-  std::vector<std::shared_ptr<TryStmt::Catch>> catches;
+  std::vector<TryStmt::Catch *> catches;
   auto pyVar = ctx->cache->getTemporaryVar("pyexc");
   auto pyCatchStmt = N<WhileStmt>(N<BoolExpr>(true), N<SuiteStmt>());
 
@@ -70,7 +70,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         val = ctx->forceFind(c->var);
       c->var = val->canonicalName;
     }
-    transform(c->exc);
+    c->exc = transform(c->exc);
     if (c->exc && getType(c->exc)->is("pyobj")) {
       // Transform python.Error exceptions
       if (!c->var.empty()) {
@@ -96,7 +96,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (val)
         unify(val->type, getType(c->exc));
       ctx->blockLevel++;
-      transform(c->suite);
+      c->suite = transform(c->suite);
       ctx->blockLevel--;
       done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
       catches.push_back(c);
@@ -106,11 +106,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     // Process PyError catches
     auto exc = N<IdExpr>("std.internal.python.PyError.0");
     pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
-    auto c = std::make_shared<TryStmt::Catch>(pyVar, transformType(exc), pyCatchStmt);
+    auto c = N<TryStmt::Catch>(pyVar, transformType(exc), pyCatchStmt);
 
     auto val = ctx->addVar(pyVar, pyVar, getType(c->exc));
     ctx->blockLevel++;
-    transform(c->suite);
+    c->suite = transform(c->suite);
     ctx->blockLevel--;
     done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
     catches.push_back(c);
@@ -118,7 +118,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   stmt->catches = catches;
   if (stmt->finally) {
     ctx->blockLevel++;
-    transform(stmt->finally);
+    stmt->finally = transform(stmt->finally);
     ctx->blockLevel--;
     done &= stmt->finally->isDone();
   }
@@ -136,7 +136,7 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
     return;
   }
 
-  transform(stmt->expr);
+  stmt->expr = transform(stmt->expr);
 
   if (!(stmt->expr->getCall() &&
         stmt->expr->getCall()->expr->isId("__internal__.set_header"))) {
@@ -165,7 +165,7 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 ///        tmp.__exit__()```
 void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->items.empty(), "stmt->items is empty");
-  std::vector<StmtPtr> content;
+  std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
     std::string var =
         stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
@@ -173,12 +173,12 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
                             stmt->items[i]->hasAttr(ExprAttr::Dominated)
                                 ? AssignStmt::UpdateMode::Update
                                 : AssignStmt::UpdateMode::Assign);
-    content = std::vector<StmtPtr>{
-        as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__enter__"))),
-        N<TryStmt>(
-            !content.empty() ? N<SuiteStmt>(content) : clone(stmt->suite),
-            std::vector<std::shared_ptr<TryStmt::Catch>>{},
-            N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(var, "__exit__")))))};
+    content = std::vector<Stmt *>{
+        as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
+        N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->suite),
+                   std::vector<TryStmt::Catch *>{},
+                   N<SuiteStmt>(N<ExprStmt>(
+                       N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};
   }
   resultStmt = transform(N<SuiteStmt>(content));
 }

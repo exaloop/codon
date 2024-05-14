@@ -14,33 +14,32 @@ PREAMBLE {
   #define V1 VS[1]
   #define V2 VS[2]
   #define ac std::any_cast
-  #define ac_expr std::any_cast<ExprPtr>
-  #define ac_stmt std::any_cast<StmtPtr>
+  #define ac_expr std::any_cast<Expr*>
+  #define ac_stmt std::any_cast<Stmt*>
   #define SemVals peg::SemanticValues
+
+  #define aste(T, s, ...) (Expr*)(CTX.cache->N<T ## Expr>(__VA_ARGS__)->setSrcInfo(s))
+  #define asts(T, s, ...) (Stmt*)(CTX.cache->N<T ## Stmt>(__VA_ARGS__)->setSrcInfo(s))
 
   template<typename F> auto vmap(const peg::SemanticValues &c, F &&f) {
     return vmap(static_cast<const vector<any>&>(c), f);
   }
-  template <typename Tn, typename Tsv, typename... Ts> auto ast(Tsv &s, Ts &&...args) {
-    auto t = make_shared<Tn>(std::forward<Ts>(args)...);
-    t->setSrcInfo(s);
-    return std::static_pointer_cast<typename Tn::base_type>(t);
-  }
-  auto chain(peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
-    auto b = ac_expr(V0);
+  Expr *chain(const codon::ast::ParseContext &CTX, peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
+    Expr *b = ac_expr(V0);
     for (int i = 1; i < VS.size(); i++)
-      b = ast<BinaryExpr>(LOC, b, VS.token_to_string(i - 1), ac_expr(VS[i]));
+      b = aste(Binary, LOC, b, VS.token_to_string(i - 1), ac_expr(VS[i]));
     return b;
   }
-  auto wrap_tuple(peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
+  Expr *wrap_tuple(const codon::ast::ParseContext &CTX, peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
     if (VS.size() == 1 && VS.tokens.empty())
       return ac_expr(V0);
-    return ast<TupleExpr>(LOC, VS.transform<ExprPtr>());
+    return aste(Tuple, LOC, VS.transform<Expr*>());
   }
 }
+
 program <- (statements (_ EOL)* / (_ EOL)*) !. {
   if (VS.empty())
-    return ast<SuiteStmt>(LOC);
+    return asts(Suite, LOC);
   return ac_stmt(V0);
 }
 fstring <- star_expressions _ (':' format_spec)? _ !. {
@@ -52,21 +51,21 @@ list(c, e)  <- e (_ c _ e)*
 tlist(c, e) <- e (_ c _ e)* (_ <c>)?
 
 statements <- ((_ EOL)* statement)+ {
-  auto s = ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  auto s = asts(Suite, LOC, VS.transform<Stmt*>());
   s->getSuite()->shallow_flatten();
   return s;
 }
 statement <- SAMEDENT compound_stmt / SAMEDENT simple_stmt
 simple_stmt <- tlist(';', small_stmt) _ EOL {
-  auto s = ast<SuiteStmt>(LOC, VS.transform<StmtPtr>());
+  auto s = asts(Suite, LOC, VS.transform<Stmt*>());
   s->getSuite()->shallow_flatten();
   return s;
 }
 small_stmt <-
   / assignment
-  / 'pass' &(SPACE / ';' / EOL) { return any(ast<SuiteStmt>(LOC)); }
-  / 'break' &(SPACE / ';' / EOL) { return any(ast<BreakStmt>(LOC)); }
-  / 'continue' &(SPACE / ';' / EOL) { return any(ast<ContinueStmt>(LOC)); }
+  / 'pass' &(SPACE / ';' / EOL) { return any(asts(Suite, LOC)); }
+  / 'break' &(SPACE / ';' / EOL) { return any(asts(Break, LOC)); }
+  / 'continue' &(SPACE / ';' / EOL) { return any(asts(Continue, LOC)); }
   / global_stmt
   / nonlocal_stmt
   / yield_stmt &(SPACE / ';' / EOL)
@@ -76,24 +75,24 @@ small_stmt <-
   / raise_stmt &(SPACE / ';' / EOL)
   / print_stmt
   / import_stmt
-  / expressions &(_ ';' / _ EOL)  { return any(ast<ExprStmt>(LOC, ac_expr(V0))); }
+  / expressions &(_ ';' / _ EOL)  { return any(asts(Expr, LOC, ac_expr(V0))); }
   / custom_small_stmt
 
 assignment <-
   / id _ ':' _ expression (_ '=' _ star_expressions)? {
-    return ast<AssignStmt>(LOC,
+    return asts(Assign, LOC,
       ac_expr(V0), VS.size() > 2 ? ac_expr(V2) : nullptr, ac_expr(V1)
     );
   }
   / (star_targets _ (!'==' '=') _)+ star_expressions !(_ '=') {
-    vector<StmtPtr> stmts;
+    vector<Stmt*> stmts;
     for (int i = int(VS.size()) - 2; i >= 0; i--)
-      stmts.push_back(ast<AssignStmt>(LOC, ac_expr(VS[i]), ac_expr(VS[i + 1])));
-    return ast<SuiteStmt>(LOC, std::move(stmts));
+      stmts.push_back(asts(Assign, LOC, ac_expr(VS[i]), ac_expr(VS[i + 1])));
+    return asts(Suite, LOC, std::move(stmts));
   }
   / star_expression _ augassign '=' ^ _ star_expressions {
-    return ast<AssignStmt>(LOC,
-      ac_expr(V0), ast<BinaryExpr>(LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true)
+    return asts(Assign, LOC,
+      ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true)
     );
   }
 augassign <- <
@@ -102,46 +101,46 @@ augassign <- <
   return VS.token_to_string();
 }
 global_stmt <- 'global' SPACE tlist(',', NAME) {
-  return ast<SuiteStmt>(LOC,
-    vmap(VS, [&](const any &i) { return ast<GlobalStmt>(LOC, ac<string>(i), false); })
+  return asts(Suite, LOC,
+    vmap(VS, [&](const any &i) { return asts(Global, LOC, ac<string>(i), false); })
   );
 }
 nonlocal_stmt <- 'nonlocal' SPACE tlist(',', NAME) {
-  return ast<SuiteStmt>(LOC,
-    vmap(VS, [&](const any &i) { return ast<GlobalStmt>(LOC, ac<string>(i), true); })
+  return asts(Suite, LOC,
+    vmap(VS, [&](const any &i) { return asts(Global, LOC, ac<string>(i), true); })
   );
 }
 yield_stmt <-
-  / 'yield' SPACE 'from' SPACE expression { return ast<YieldFromStmt>(LOC, ac_expr(V0)); }
+  / 'yield' SPACE 'from' SPACE expression { return asts(YieldFrom, LOC, ac_expr(V0)); }
   / 'yield' (SPACE expressions)? {
-    return ast<YieldStmt>(LOC, !VS.empty() ? ac_expr(V0) : nullptr);
+    return asts(Yield, LOC, !VS.empty() ? ac_expr(V0) : nullptr);
   }
 assert_stmt <- 'assert' SPACE expression (_ ',' _ expression)? {
-  return ast<AssertStmt>(LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
+  return asts(Assert, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
 }
 # TODO: do targets as in Python
 del_stmt <- 'del' SPACE tlist(',', expression) {
-  return ast<SuiteStmt>(LOC,
-    vmap(VS, [&](const any &i) { return ast<DelStmt>(LOC, ac_expr(i)); })
+  return asts(Suite, LOC,
+    vmap(VS, [&](const any &i) { return asts(Del, LOC, ac_expr(i)); })
   );
 }
 return_stmt <- 'return' (SPACE expressions)? {
-  return ast<ReturnStmt>(LOC, !VS.empty() ? ac_expr(V0) : nullptr);
+  return asts(Return, LOC, !VS.empty() ? ac_expr(V0) : nullptr);
 }
 # TODO: raise expression 'from' expression
 raise_stmt <- 'raise' (SPACE expression)? {
-  return ast<ThrowStmt>(LOC, !VS.empty() ? ac_expr(V0) : nullptr);
+  return asts(Throw, LOC, !VS.empty() ? ac_expr(V0) : nullptr);
 }
 print_stmt <-
   / 'print' SPACE star_expression (_ ',' _ star_expression)* (_ <','>)? {
-    return ast<PrintStmt>(LOC, VS.transform<ExprPtr>(), !VS.tokens.empty());
+    return asts(Print, LOC, VS.transform<Expr*>(), !VS.tokens.empty());
   }
-  / 'print' _ &EOL { return ast<PrintStmt>(LOC, vector<ExprPtr>{}, false); }
+  / 'print' _ &EOL { return asts(Print, LOC, vector<Expr*>{}, false); }
 import_stmt <- import_name / import_from
 import_name <- 'import' SPACE list(',', as_name) {
-  return ast<SuiteStmt>(LOC,
-    vmap(VS.transform<pair<ExprPtr, string>>(), [&](const pair<ExprPtr, string> &i) {
-      return ast<ImportStmt>(LOC, i.first, nullptr, vector<Param>{}, nullptr, i.second);
+  return asts(Suite, LOC,
+    vmap(VS.transform<pair<Expr*, string>>(), [&](const pair<Expr*, string> &i) {
+      return asts(Import, LOC, i.first, nullptr, vector<Param>{}, nullptr, i.second);
     })
   );
 }
@@ -150,21 +149,21 @@ as_name <- dot_name (SPACE 'as' SPACE NAME)? {
 }
 import_from <-
   / 'from' SPACE (_ <'.'>)* (_ dot_name)? SPACE 'import' SPACE '*' {
-    return ast<ImportStmt>(LOC,
-      VS.size() == 1 ? ac_expr(V0) : nullptr, ast<IdExpr>(LOC, "*"), vector<Param>{},
+    return asts(Import, LOC,
+      VS.size() == 1 ? ac_expr(V0) : nullptr, aste(Id, LOC, "*"), vector<Param>{},
       nullptr, "", int(VS.tokens.size())
     );
   }
   / 'from' SPACE (_ <'.'>)* (_ dot_name)? SPACE 'import' SPACE
     (from_as_parens / from_as_items) {
     auto f = VS.size() == 2 ? ac_expr(V0) : nullptr;
-    return ast<SuiteStmt>(LOC,
+    return asts(Suite, LOC,
       vmap(
         ac<SemVals>(VS.size() == 2 ? V1 : V0),
         [&](const any &i) {
           auto p = ac<pair<any, string>>(i);
-          auto t = ac<tuple<ExprPtr, vector<Param>, ExprPtr, bool>>(p.first);
-          return ast<ImportStmt>(LOC,
+          auto t = ac<tuple<Expr*, vector<Param>, Expr*, bool>>(p.first);
+          return asts(Import, LOC,
             f, get<0>(t), std::move(get<1>(t)), get<2>(t), p.second, int(VS.tokens.size()), get<3>(t)
           );
         }
@@ -184,17 +183,17 @@ from_id <-
     return tuple(
       ac_expr(V0),
       ac<SemVals>(V1).transform<Param>(),
-      VS.size() > 2 ? ac_expr(V2) : ast<IdExpr>(LOC, "NoneType"),
+      VS.size() > 2 ? ac_expr(V2) : aste(Id, LOC, "NoneType"),
       true
     );
   }
-  / dot_name { return tuple(ac_expr(V0), vector<Param>{}, (ExprPtr)nullptr, true); }
+  / dot_name { return tuple(ac_expr(V0), vector<Param>{}, (Expr*)nullptr, true); }
 dot_name <- id (_ '.' _ NAME)* {
   if (VS.size() == 1)
     return ac_expr(V0);
-  auto dot = ast<DotExpr>(LOC, ac_expr(V0), ac<string>(V1));
+  auto dot = aste(Dot, LOC, ac_expr(V0), ac<string>(V1));
   for (int i = 2; i < VS.size(); i++)
-    dot = ast<DotExpr>(LOC, dot, ac<string>(VS[i]));
+    dot = aste(Dot, LOC, dot, ac<string>(VS[i]));
   return dot;
 }
 from_params <- '(' _ tlist(',', from_param)? _ ')' { return VS; }
@@ -217,15 +216,15 @@ compound_stmt <-
 if_stmt <- ('if' SPACE named_expression _ ':' _ suite)
            (SAMEDENT 'elif' SPACE named_expression _ ':' _ suite)*
            (SAMEDENT 'else' _ ':' _ suite)? {
-  shared_ptr<Stmt> stmt = ast<IfStmt>(LOC, nullptr, nullptr);
-  IfStmt *p = (IfStmt*)stmt.get();
+  Stmt *stmt = asts(If, LOC, nullptr, nullptr);
+  IfStmt *p = (IfStmt*)stmt;
   for (int i = 0; i < VS.size(); i += 2) {
     if (i == VS.size() - 1) {
       p->elseSuite = ac_stmt(VS[i]);
     } else {
       if (i) {
-        p->elseSuite = ast<IfStmt>(LOC, nullptr, nullptr);
-        p = (IfStmt*)(p->elseSuite.get());
+        p->elseSuite = asts(If, LOC, nullptr, nullptr);
+        p = (IfStmt*)(p->elseSuite);
       }
       p->cond = ac_expr(VS[i]);
       p->ifSuite = ac_stmt(VS[i + 1]);
@@ -235,28 +234,28 @@ if_stmt <- ('if' SPACE named_expression _ ':' _ suite)
 }
 while_stmt <- ('while' SPACE named_expression _ ':' _ suite)
               (SAMEDENT 'else' (SPACE 'not' SPACE 'break')*  _ ':' _ suite)?  {
-  return ast<WhileStmt>(LOC,
+  return asts(While, LOC,
     ac_expr(V0), ac_stmt(V1), VS.size() > 2 ? ac_stmt(V2) : nullptr
   );
 }
 for <- decorator? for_stmt {
   if (VS.size() > 1) {
-    auto s = dynamic_pointer_cast<ForStmt>(ac_stmt(V1));
+    auto s = (ForStmt*)(ac_stmt(V1));
     s->decorator = ac_expr(V0);
-    return static_pointer_cast<Stmt>(s);
+    return (Stmt*)s;
   }
   return ac_stmt(V0);
 }
 for_stmt <- ('for' SPACE star_targets)
             (SPACE 'in' SPACE star_expressions _ ':' _ suite)
             (SAMEDENT 'else' (SPACE 'not' SPACE 'break')* _ ':' _ suite)? {
-  return ast<ForStmt>(LOC,
+  return asts(For, LOC,
     ac_expr(V0), ac_expr(V1), ac_stmt(V2), VS.size() > 3 ? ac_stmt(VS[3]) : nullptr
   );
 }
 with_stmt <- 'with' SPACE (with_parens_item / with_item) _ ':' _ suite {
-  return ast<WithStmt>(LOC,
-    ac<SemVals>(V0).transform<pair<ExprPtr, ExprPtr>>(), ac_stmt(V1)
+  return asts(With, LOC,
+    ac<SemVals>(V0).transform<pair<Expr*, Expr*>>(), ac_stmt(V1)
   );
 }
 with_parens_item <- '(' _ tlist(',', as_item) _ ')' { return VS; }
@@ -265,21 +264,21 @@ as_item <-
   / expression SPACE 'as' SPACE id &(_ (',' / ')' / ':'))  {
     return pair(ac_expr(V0), ac_expr(V1));
   }
-  / expression { return pair(ac_expr(V0), (ExprPtr)nullptr); }
+  / expression { return pair(ac_expr(V0), (Expr*)nullptr); }
 # TODO: else block?
 try_stmt <-
   / ('try' _ ':' _ suite)
     excepts
     (SAMEDENT 'finally' _ ':' _ suite)? {
-    return ast<TryStmt>(LOC,
+    return asts(Try, LOC,
       ac_stmt(V0),
-      ac<SemVals>(V1).transform<std::shared_ptr<TryStmt::Catch>>(),
+      ac<SemVals>(V1).transform<TryStmt::Catch*>(),
       VS.size() > 2 ? ac_stmt(V2): nullptr
     );
   }
   / ('try' _ ':' _ suite) (SAMEDENT 'finally' _ ':' _ suite)? {
-    return ast<TryStmt>(LOC,
-      ac_stmt(V0), vector<std::shared_ptr<TryStmt::Catch>>{},
+    return asts(Try, LOC,
+      ac_stmt(V0), vector<TryStmt::Catch*>{},
       VS.size() > 1 ? ac_stmt(V1): nullptr
     );
   }
@@ -287,26 +286,26 @@ excepts <- (SAMEDENT except_block)+ { return VS; }
 except_block <-
   / 'except' SPACE expression (SPACE 'as' SPACE NAME)? _ ':' _ suite {
     if (VS.size() == 3)
-      return std::make_shared<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2));
+      return CTX.cache->N<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2))->setSrcInfo(LOC);
     else
-      return std::make_shared<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1));
+      return CTX.cache->N<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1))->setSrcInfo(LOC);
   }
-  / 'except' _ ':' _ suite { return std::make_shared<TryStmt::Catch>("", nullptr, ac_stmt(V0)); }
+  / 'except' _ ':' _ suite { return CTX.cache->N<TryStmt::Catch>("", nullptr, ac_stmt(V0))->setSrcInfo(LOC); }
 function <-
   / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
-    auto fn = dynamic_pointer_cast<FunctionStmt>(ac_stmt(V1));
-    fn->decorators = ac<vector<ExprPtr>>(V0);
-    fn->suite = ast<ExprStmt>(LOC, ast<StringExpr>(LOC, ac<string>(V2)));
+    auto fn = (FunctionStmt*)(ac_stmt(V1));
+    fn->decorators = ac<vector<Expr*>>(V0);
+    fn->suite = asts(Expr, LOC, aste(String, LOC, ac<string>(V2)));
     fn->parseDecorators();
-    return static_pointer_cast<Stmt>(fn);
+    return (Stmt*)fn;
   }
   / decorators? function_def _ suite {
-    auto fn = dynamic_pointer_cast<FunctionStmt>(ac_stmt(VS.size() > 2 ? V1 : V0));
+    auto fn = (FunctionStmt*)(ac_stmt(VS.size() > 2 ? V1 : V0));
     if (VS.size() > 2)
-      fn->decorators = ac<vector<ExprPtr>>(V0);
+      fn->decorators = ac<vector<Expr*>>(V0);
     fn->suite = ac_stmt(VS.size() > 2 ? V2 : V1);
     fn->parseDecorators();
-    return static_pointer_cast<Stmt>(fn);
+    return (Stmt*)fn;
   }
 extern <- (empty_line* EXTERNDENT (!EOL .)* EOL empty_line*)+ {
   return string(VS.sv());
@@ -317,7 +316,7 @@ function_def <-
     auto params = ac<SemVals>(V2).transform<Param>();
     for (auto &p: ac<vector<Param>>(V1))
       params.push_back(p);
-    return ast<FunctionStmt>(LOC,
+    return asts(Function, LOC,
       ac<string>(V0),
       VS.size() == 4 ? ac_expr(VS[3]) : nullptr,
       params,
@@ -325,7 +324,7 @@ function_def <-
     );
   }
   / 'def' SPACE NAME _ params (_ '->' _ expression)? _ ':' {
-    return ast<FunctionStmt>(LOC,
+    return asts(Function, LOC,
       ac<string>(V0),
       VS.size() == 3 ? ac_expr(VS[2]) : nullptr,
       ac<SemVals>(V1).transform<Param>(),
@@ -348,22 +347,22 @@ generics <- '[' _ tlist(',', param) _ ']' {
   for (auto &p: VS) {
     auto v = ac<Param>(p);
     v.status = Param::Generic;
-    if (!v.type) v.type = ast<IdExpr>(LOC, "type");
+    if (!v.type) v.type = aste(Id, LOC, "type");
     params.push_back(v);
   }
   return params;
 }
 decorators <- decorator+ {
-  return VS.transform<ExprPtr>();
+  return VS.transform<Expr*>();
 }
 decorator <- ('@' _ !(('llvm' / 'python') _ EOL) named_expression _ EOL SAMEDENT) {
   return ac_expr(V0);
 }
 extern_decorators <-
   / decorators? ('@' _ <'llvm'/'python'> _ EOL SAMEDENT) decorators? {
-    vector<ExprPtr> vs{ast<IdExpr>(LOC, VS.token_to_string())};
+    vector<Expr*> vs{aste(Id, LOC, VS.token_to_string())};
     for (auto &v: VS) {
-      auto nv = ac<vector<ExprPtr>>(v);
+      auto nv = ac<vector<Expr*>>(v);
       vs.insert(vs.end(), nv.begin(), nv.end());
     }
     return vs;
@@ -371,26 +370,26 @@ extern_decorators <-
 class <- decorators? class_def {
   if (VS.size() == 2) {
     auto fn = ac_stmt(V1);
-    dynamic_pointer_cast<ClassStmt>(fn)->decorators = ac<vector<ExprPtr>>(V0);
-    dynamic_pointer_cast<ClassStmt>(fn)->parseDecorators();
+    ((ClassStmt*)fn)->decorators = ac<vector<Expr*>>(V0);
+    ((ClassStmt*)fn)->parseDecorators();
     return fn;
   }
   return ac_stmt(V0);
 }
 base_class_args <- '(' _ tlist(',', expression)? _ ')' {
-  return VS.transform<ExprPtr>();
+  return VS.transform<Expr*>();
 }
 class_args <-
-  / generics _ base_class_args { return make_pair(ac<vector<Param>>(V0), ac<vector<ExprPtr>>(V1)); }
-  / generics { return make_pair(ac<vector<Param>>(V0), vector<ExprPtr>{}); }
-  / base_class_args { return make_pair(vector<Param>{}, ac<vector<ExprPtr>>(V0)); }
+  / generics _ base_class_args { return make_pair(ac<vector<Param>>(V0), ac<vector<Expr*>>(V1)); }
+  / generics { return make_pair(ac<vector<Param>>(V0), vector<Expr*>{}); }
+  / base_class_args { return make_pair(vector<Param>{}, ac<vector<Expr*>>(V0)); }
 class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   vector<Param> generics;
-  vector<ExprPtr> baseClasses;
+  vector<Expr*> baseClasses;
   if (VS.size() == 3)
-    std::tie(generics, baseClasses) = ac<pair<vector<Param>, vector<ExprPtr>>>(V1);
+    std::tie(generics, baseClasses) = ac<pair<vector<Param>, vector<Expr*>>>(V1);
   vector<Param> args;
-  auto suite = make_shared<SuiteStmt>();
+  auto suite = (SuiteStmt*)(asts(Suite, LOC));
   auto s = const_cast<SuiteStmt*>(ac_stmt(VS.size() == 3 ? V2 : V1)->getSuite());
   seqassertn(s, "not a suite");
   for (auto &i: s->stmts) {
@@ -404,13 +403,13 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   suite->shallow_flatten();
   for (auto &p: generics)
     args.push_back(p);
-  return ast<ClassStmt>(LOC,
-    ac<string>(V0), std::move(args), suite, vector<ExprPtr>{}, baseClasses
+  return asts(Class, LOC,
+    ac<string>(V0), std::move(args), suite, vector<Expr*>{}, baseClasses
   );
 }
 match_stmt <- 'match' SPACE expression _ ':' (_ EOL)+
               &INDENT (SAMEDENT case)+ (_ EOL)* &DEDENT {
-  return ast<MatchStmt>(LOC, ac_expr(V0), VS.transform<MatchStmt::MatchCase>(1));
+  return asts(Match, LOC, ac_expr(V0), VS.transform<MatchStmt::MatchCase>(1));
 }
 case <-
   / 'case' SPACE expression SPACE 'if' SPACE pipe _ ':' _ suite {
@@ -421,10 +420,10 @@ case <-
   }
 custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {
-    return ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), ac_stmt(V2));
+    return asts(Custom, LOC, ac<string>(V0), ac_expr(V1), ac_stmt(V2));
   }
   / NAME _ ':' _ suite {
-    return ast<CustomStmt>(LOC, ac<string>(V0), nullptr, ac_stmt(V2));
+    return asts(Custom, LOC, ac<string>(V0), nullptr, ac_stmt(V2));
   }
 custom_stmt__PREDICATE {
   auto kwd = ac<string>(V0);
@@ -432,7 +431,7 @@ custom_stmt__PREDICATE {
 }
 
 custom_small_stmt <- NAME SPACE expressions {
-  return any(ast<CustomStmt>(LOC, ac<string>(V0), ac_expr(V1), nullptr));
+  return any(asts(Custom, LOC, ac<string>(V0), ac_expr(V1), nullptr));
 }
 custom_small_stmt__PREDICATE {
   auto kwd = ac<string>(V0);
@@ -444,61 +443,61 @@ custom_small_stmt__PREDICATE {
 # (2) Expressions
 ########################################################################################
 
-expressions <- tlist(',', expression) { return wrap_tuple(VS, LOC); }
+expressions <- tlist(',', expression) { return wrap_tuple(CTX, VS, LOC); }
 expression <-
   / lambdef { return ac_expr(V0); }
   / disjunction SPACE 'if' SPACE disjunction SPACE 'else' SPACE expression {
-    return ast<IfExpr>(LOC, ac_expr(V1), ac_expr(V0), ac_expr(V2));
+    return aste(If, LOC, ac_expr(V1), ac_expr(V0), ac_expr(V2));
   }
   / pipe { return ac_expr(V0); }
 # TODO: make it more pythonic
 lambdef <-
   / 'lambda' SPACE list(',', NAME) _ ':' _ expression {
-    return ast<LambdaExpr>(LOC,
+    return aste(Lambda, LOC,
       VS.transform<string>(0, VS.size() - 1), ac_expr(VS.back())
     );
   }
   / 'lambda' _ ':' _ expression {
-    return ast<LambdaExpr>(LOC, vector<string>{}, ac_expr(VS.back()));
+    return aste(Lambda, LOC, vector<string>{}, ac_expr(VS.back()));
   }
 pipe <-
   / disjunction (_ <'|>' / '||>'> _ disjunction)+ {
     vector<PipeExpr::Pipe> v;
     for (int i = 0; i < VS.size(); i++)
       v.push_back(PipeExpr::Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
-    return ast<PipeExpr>(LOC, std::move(v));
+    return aste(Pipe, LOC, std::move(v));
   }
   / disjunction { return ac_expr(V0); }
 disjunction <-
   / conjunction (SPACE 'or' SPACE conjunction)+ {
-    auto b = ast<BinaryExpr>(LOC, ac_expr(V0), "||", ac_expr(V1));
+    auto b = aste(Binary, LOC, ac_expr(V0), "||", ac_expr(V1));
     for (int i = 2; i < VS.size(); i++)
-      b = ast<BinaryExpr>(LOC, b, "||", ac_expr(VS[i]));
+      b = aste(Binary, LOC, b, "||", ac_expr(VS[i]));
     return b;
   }
   / conjunction { return ac_expr(V0); }
 conjunction <-
   / inversion (SPACE 'and' SPACE inversion)+ {
-    auto b = ast<BinaryExpr>(LOC, ac_expr(V0), "&&", ac_expr(V1));
+    auto b = aste(Binary, LOC, ac_expr(V0), "&&", ac_expr(V1));
     for (int i = 2; i < VS.size(); i++)
-      b = ast<BinaryExpr>(LOC, b, "&&", ac_expr(VS[i]));
+      b = aste(Binary, LOC, b, "&&", ac_expr(VS[i]));
     return b;
   }
   / inversion { return ac_expr(V0); }
 inversion <-
-  / 'not' SPACE inversion { return ast<UnaryExpr>(LOC, "!", ac_expr(V0)); }
+  / 'not' SPACE inversion { return aste(Unary, LOC, "!", ac_expr(V0)); }
   / comparison { return ac_expr(V0); }
 comparison <- bitwise_or compare_op_bitwise_or* {
   if (VS.size() == 1) {
     return ac_expr(V0);
   } else if (VS.size() == 2) {
-    auto p = ac<pair<string, ExprPtr>>(V1);
-    return ast<BinaryExpr>(LOC, ac_expr(V0), p.first, p.second);
+    auto p = ac<pair<string, Expr*>>(V1);
+    return aste(Binary, LOC, ac_expr(V0), p.first, p.second);
   } else {
-    vector<pair<string, ExprPtr>> v{pair(string(), ac_expr(V0))};
-    auto vp = VS.transform<pair<string, ExprPtr>>(1);
+    vector<pair<string, Expr*>> v{pair(string(), ac_expr(V0))};
+    auto vp = VS.transform<pair<string, Expr*>>(1);
     v.insert(v.end(), vp.begin(), vp.end());
-    return ast<ChainBinaryExpr>(LOC, std::move(v));
+    return aste(ChainBinary, LOC, std::move(v));
   }
 }
 compare_op_bitwise_or <-
@@ -514,34 +513,34 @@ compare_op_bitwise_or <-
   / _ <'==' / '!=' / '<=' / '<' / '>=' / '>'> _ bitwise_or {
     return pair(VS.token_to_string(), ac_expr(V0));
   }
-bitwise_or  <- bitwise_xor (_ <'|'> _ bitwise_xor)* { return chain(VS, LOC); }
-bitwise_xor <- bitwise_and (_ <'^'> _ bitwise_and)* { return chain(VS, LOC); }
-bitwise_and <- shift_expr  (_ <'&'> _ shift_expr )* { return chain(VS, LOC); }
-shift_expr <- sum  (_ <'<<' / '>>'> _ sum )* { return chain(VS, LOC); }
-sum        <- term (_ <'+' / '-'>   _ term)* { return chain(VS, LOC); }
-term <- factor (_ <'*' / '//' / '/' / '%' / '@'> _ factor)* { return chain(VS, LOC); }
+bitwise_or  <- bitwise_xor (_ <'|'> _ bitwise_xor)* { return chain(CTX, VS, LOC); }
+bitwise_xor <- bitwise_and (_ <'^'> _ bitwise_and)* { return chain(CTX, VS, LOC); }
+bitwise_and <- shift_expr  (_ <'&'> _ shift_expr )* { return chain(CTX, VS, LOC); }
+shift_expr <- sum  (_ <'<<' / '>>'> _ sum )* { return chain(CTX, VS, LOC); }
+sum        <- term (_ <'+' / '-'>   _ term)* { return chain(CTX, VS, LOC); }
+term <- factor (_ <'*' / '//' / '/' / '%' / '@'> _ factor)* { return chain(CTX, VS, LOC); }
 factor <-
   / <'+' / '-' / '~'> _ factor {
-    return ast<UnaryExpr>(LOC, VS.token_to_string(), ac_expr(V0));
+    return aste(Unary, LOC, VS.token_to_string(), ac_expr(V0));
   }
   / power { return ac_expr(V0); }
 power <-
   / primary _ <'**'> _ factor {
-    return ast<BinaryExpr>(LOC, ac_expr(V0), "**", ac_expr(V1));
+    return aste(Binary, LOC, ac_expr(V0), "**", ac_expr(V1));
   }
   / primary { return ac_expr(V0); }
 primary <- atom (_ primary_tail)* {
-  auto e = ac<ExprPtr>(V0);
+  auto e = ac<Expr*>(V0);
   for (int i = 1; i < VS.size(); i++) {
     auto p = ac<pair<int, any>>(VS[i]);
     if (p.first == 0)
-      e = ast<DotExpr>(LOC, e, ac<string>(p.second));
+      e = aste(Dot, LOC, e, ac<string>(p.second));
     else if (p.first == 1)
-      e = ast<CallExpr>(LOC, e, ac_expr(p.second));
+      e = aste(Call, LOC, e, ac_expr(p.second));
     else if (p.first == 2)
-      e = ast<CallExpr>(LOC, e, ac<vector<CallExpr::Arg>>(p.second));
+      e = aste(Call, LOC, e, ac<vector<CallExpr::Arg>>(p.second));
     else
-      e = ast<IndexExpr>(LOC, e, ac_expr(p.second));
+      e = aste(Index, LOC, e, ac_expr(p.second));
   }
   return e;
 }
@@ -550,121 +549,117 @@ primary_tail <-
   / genexp { return pair(1, V0); }
   / arguments { return pair(2, VS.size() ? V0 : any(vector<CallExpr::Arg>{})); }
   / slices { return pair(3, V0); }
-slices <- '[' _ tlist(',', slice) _ ']' { return wrap_tuple(VS, LOC); }
+slices <- '[' _ tlist(',', slice) _ ']' { return wrap_tuple(CTX, VS, LOC); }
 slice <-
   / slice_part _ ':' _ slice_part (_ ':' _ slice_part)? {
-    return ast<SliceExpr>(LOC,
+    return aste(Slice, LOC,
       ac_expr(V0), ac_expr(V1), VS.size() > 2 ? ac_expr(V2) : nullptr
     );
   }
   / expression { return ac_expr(V0); }
-slice_part <- expression? { return VS.size() ? V0 : make_any<ExprPtr>(nullptr); }
+slice_part <- expression? { return VS.size() ? V0 : make_any<Expr*>(nullptr); }
 atom <-
   / STRING (SPACE STRING)* {
-    return ast<StringExpr>(LOC, VS.transform<pair<string, string>>());
+    return aste(String, LOC, VS.transform<pair<string, string>>());
   }
   / id { return ac_expr(V0); }
-  / 'True' { return ast<BoolExpr>(LOC, true); }
-  / 'False' { return ast<BoolExpr>(LOC, false);}
-  / 'None' { return ast<NoneExpr>(LOC); }
+  / 'True' { return aste(Bool, LOC, true); }
+  / 'False' { return aste(Bool, LOC, false);}
+  / 'None' { return aste(None, LOC); }
   / INT _ '...' _ INT {
-    return ast<RangeExpr>(LOC,
-      ast<IntExpr>(LOC, ac<string>(V0)), ast<IntExpr>(LOC, ac<string>(V1))
+    return aste(Range, LOC,
+      aste(Int, LOC, ac<string>(V0)), aste(Int, LOC, ac<string>(V1))
     );
   }
   / FLOAT NAME? {
-    return ast<FloatExpr>(LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
+    return aste(Float, LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
   }
   / INT NAME? {
-    return ast<IntExpr>(LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
+    return aste(Int, LOC, ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
   }
   / parentheses { return ac_expr(V0); }
-  / '...' { return ast<EllipsisExpr>(LOC); }
+  / '...' { return aste(Ellipsis, LOC); }
 parentheses <- (
   tuple / yield / named / genexp / listexpr / listcomp / dict / set / dictcomp / setcomp
 )
 tuple <-
-  / '(' _ ')' { return ast<TupleExpr>(LOC, VS.transform<ExprPtr>()); }
-  / '(' _ tlist(',', star_named_expression) _ ')' { return wrap_tuple(VS, LOC); }
-yield <- '(' _ 'yield' _ ')' { return ast<YieldExpr>(LOC); }
+  / '(' _ ')' { return aste(Tuple, LOC, VS.transform<Expr*>()); }
+  / '(' _ tlist(',', star_named_expression) _ ')' { return wrap_tuple(CTX, VS, LOC); }
+yield <- '(' _ 'yield' _ ')' { return aste(Yield, LOC); }
 named <- '(' _ named_expression _ ')'
 genexp <- '(' _ named_expression SPACE for_if_clauses _ ')' {
-  return ast<GeneratorExpr>(
-    LOC, GeneratorExpr::Generator, ac_expr(V0),
-    ac<std::vector<StmtPtr>>(V1)
+  return aste(Generator,
+    LOC, CTX.cache, GeneratorExpr::Generator, ac_expr(V0), ac<std::vector<Stmt*>>(V1)
   );
 }
 listexpr <- '[' _ tlist(',', star_named_expression)? _ ']' {
-  return ast<ListExpr>(LOC, VS.transform<ExprPtr>());
+  return aste(List, LOC, VS.transform<Expr*>());
 }
 listcomp <- '[' _ named_expression SPACE for_if_clauses _ ']' {
-  return ast<GeneratorExpr>(
-    LOC, GeneratorExpr::ListGenerator, ac_expr(V0),
-    ac<std::vector<StmtPtr>>(V1)
+  return aste(Generator,
+    LOC, CTX.cache, GeneratorExpr::ListGenerator, ac_expr(V0), ac<std::vector<Stmt*>>(V1)
   );
 }
 set <- '{' _ tlist(',', star_named_expression) _ '}' {
-  return ast<SetExpr>(LOC, VS.transform<ExprPtr>());
+  return aste(Set, LOC, VS.transform<Expr*>());
 }
 setcomp <- '{' _ named_expression SPACE for_if_clauses _ '}' {
-  return ast<GeneratorExpr>(
-    LOC, GeneratorExpr::SetGenerator, ac_expr(V0),
-    ac<std::vector<StmtPtr>>(V1)
+  return aste(Generator,
+    LOC, CTX.cache, GeneratorExpr::SetGenerator, ac_expr(V0), ac<std::vector<Stmt*>>(V1)
   );
 }
 dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
-  return ast<DictExpr>(LOC, VS.transform<ExprPtr>());
+  return aste(Dict, LOC, VS.transform<Expr*>());
 }
 dictcomp <- '{' _ kvpair SPACE for_if_clauses _ '}' {
-  auto p = ac<ExprPtr>(V0);
-  return ast<GeneratorExpr>(
-    LOC, p->getTuple()->items[0], p->getTuple()->items[1],
-    ac<std::vector<StmtPtr>>(V1)
+  auto p = ac<Expr*>(V0);
+  return aste(Generator,
+    LOC, CTX.cache, p->getTuple()->items[0], p->getTuple()->items[1], ac<std::vector<Stmt*>>(V1)
   );
 }
 double_starred_kvpair <-
   / '**' _ bitwise_or {
-    return ast<KeywordStarExpr>(LOC, ac_expr(V0));
+    return aste(KeywordStar, LOC, ac_expr(V0));
   }
-  / kvpair { return ac<ExprPtr>(V0); }
+  / kvpair { return ac<Expr*>(V0); }
 kvpair <- expression _ ':' _ expression {
-  return ast<TupleExpr>(LOC, std::vector<ExprPtr>{ac_expr(V0), ac_expr(V1)});
+  return aste(Tuple, LOC, std::vector<Expr*>{ac_expr(V0), ac_expr(V1)});
 }
 for_if_clauses <- for_if_clause (SPACE for_if_clause)* {
-  std::vector<StmtPtr> v = ac<std::vector<StmtPtr>>(V0);
-  auto tail = VS.transform<std::vector<StmtPtr>>(1);
+  std::vector<Stmt*> v = ac<std::vector<Stmt*>>(V0);
+  auto tail = VS.transform<std::vector<Stmt*>>(1);
   for (auto &t: tail)
     v.insert(v.end(), t.begin(), t.end());
   return v;
 }
 for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction
                  (SPACE 'if' SPACE disjunction)* {
-  std::vector<StmtPtr> v{ast<ForStmt>(LOC, ac_expr(V0), ac_expr(V1), nullptr)};
-  auto tail = VS.transform<ExprPtr>(2);
+  std::vector<Stmt*> v{asts(For, LOC, ac_expr(V0), ac_expr(V1), nullptr)};
+  auto tail = VS.transform<Expr*>(2);
   for (auto &t: tail)
-    v.push_back(ast<IfStmt>(LOC, t, nullptr));
+    v.push_back(asts(If, LOC, t, nullptr));
   return v;
 }
 
-star_targets <- tlist(',', star_target) { return wrap_tuple(VS, LOC); }
+star_targets <- tlist(',', star_target) { return wrap_tuple(CTX, VS, LOC); }
 star_target <-
-  / '*' _ !'*' star_target { return ast<StarExpr>(LOC, ac_expr(V0)); }
+  / '*' _ !'*' star_target { return aste(Star, LOC, ac_expr(V0)); }
   / star_parens { return ac_expr(V0); }
   / primary { return ac_expr(V0); }
 star_parens <-
-  / '(' _ tlist(',', star_target) _ ')' { return wrap_tuple(VS, LOC); }
-  / '[' _ tlist(',', star_target) _ ']' { return wrap_tuple(VS, LOC); }
+  / '(' _ tlist(',', star_target) _ ')' { return wrap_tuple(CTX, VS, LOC); }
+  / '[' _ tlist(',', star_target) _ ']' { return wrap_tuple(CTX, VS, LOC); }
 
-star_expressions <- tlist(',', star_expression) { return wrap_tuple(VS, LOC); }
+star_expressions <- tlist(',', star_expression) { return wrap_tuple(CTX, VS, LOC); }
 star_expression <-
-  / '*' _ bitwise_or { return ast<StarExpr>(LOC, ac_expr(V0)); }
+  / '*' _ bitwise_or { return aste(Star, LOC, ac_expr(V0)); }
   / expression { return ac_expr(V0); }
 star_named_expression <-
-  / '*' _ bitwise_or { return ast<StarExpr>(LOC, ac_expr(V0)); }
+  / '*' _ bitwise_or { return aste(Star, LOC, ac_expr(V0)); }
   / named_expression { return ac_expr(V0); }
 named_expression <-
   / NAME _ ':=' _ ^ expression {
-    return ast<AssignExpr>(LOC, ast<IdExpr>(LOC, ac<string>(V0)), ac_expr(V1));
+    return aste(Assign, LOC, aste(Id, LOC, ac<string>(V0)), ac_expr(V1));
   }
   / expression !(_ ':=') { return ac_expr(V0); }
 arguments <- '(' _ tlist(',', args)? _ ')' {
@@ -685,7 +680,7 @@ args <- (simple_args (_ ',' _ kwargs)? / kwargs) {
 simple_args <- list(',', (starred_expression / named_expression !(_ '='))) {
   return vmap(VS, [](auto &i) { return CallExpr::Arg(ac_expr(i)); });
 }
-starred_expression <- '*' _ expression { return ast<StarExpr>(LOC, ac_expr(V0)); }
+starred_expression <- '*' _ expression { return aste(Star, LOC, ac_expr(V0)); }
 kwargs <-
   / list(',', kwarg_or_starred) _ ',' _ list(',', kwarg_or_double_starred) {
     return VS.transform<CallExpr::Arg>();
@@ -698,9 +693,9 @@ kwarg_or_starred <-
 kwarg_or_double_starred <-
   / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
   / '**' _ expression {
-    return CallExpr::Arg(ast<KeywordStarExpr>(LOC, ac_expr(V0)));
+    return CallExpr::Arg(aste(KeywordStar, LOC, ac_expr(V0)));
   }
-id <- NAME { return ast<IdExpr>(LOC, ac<string>(V0)); }
+id <- NAME { return aste(Id, LOC, ac<string>(V0)); }
 INT <- (BININT / HEXINT / DECINT) { return string(VS.sv()); }
 BININT <- <'0' [bB] [0-1] ('_'* [0-1])*>
 HEXINT <- <'0' [xX] [0-9a-fA-F] ('_'? [0-9a-fA-F])*>

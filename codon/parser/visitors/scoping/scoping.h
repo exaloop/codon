@@ -16,7 +16,7 @@
 
 namespace codon::ast {
 
-class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
+class ScopingVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
   struct Context {
     /// A pointer to the shared cache.
     Cache *cache;
@@ -29,7 +29,7 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
       int id;
       /// List of statements that are to be prepended to a block
       /// after its transformation.
-      std::vector<StmtPtr> stmts;
+      std::vector<Stmt *> stmts;
 
       /// List of variables "seen" before their assignment within a loop.
       /// Used to dominate variables that are updated within a loop.
@@ -48,14 +48,13 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
 
     struct Item : public codon::SrcObject {
       std::vector<int> scope;
-      std::shared_ptr<SrcObject> binding = nullptr;
+      Node *binding = nullptr;
 
       /// List of scopes where the identifier is accessible
       /// without __used__ check
       std::vector<std::vector<int>> accessChecked;
 
-      Item(const codon::SrcInfo &src, std::vector<int> scope,
-           std::shared_ptr<SrcObject> binding = nullptr,
+      Item(const codon::SrcInfo &src, std::vector<int> scope, Node *binding = nullptr,
            std::vector<std::vector<int>> accessChecked = {})
           : scope(std::move(scope)), binding(std::move(binding)),
             accessChecked(std::move(accessChecked)) {
@@ -69,7 +68,7 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     std::map<std::string, SrcInfo> firstSeen;
 
     bool adding = false;
-    std::shared_ptr<SrcObject> root = nullptr;
+    Node *root = nullptr;
     FunctionStmt *functionScope = nullptr;
     bool inClass = false;
     bool isConditional = false;
@@ -78,21 +77,18 @@ class ScopingVisitor : public CallbackASTVisitor<ExprPtr, StmtPtr> {
     bool tempScope = false;
   };
   std::shared_ptr<Context> ctx = nullptr;
-  ExprPtr resultExpr = nullptr;
-  StmtPtr resultStmt = nullptr;
+  Expr *resultExpr = nullptr;
+  Stmt *resultStmt = nullptr;
 
 public:
-  static void apply(Cache *, StmtPtr &s);
-  ExprPtr transform(const std::shared_ptr<Expr> &expr) override;
-  StmtPtr transform(const std::shared_ptr<Stmt> &stmt) override;
-  ExprPtr transform(std::shared_ptr<Expr> &expr) override;
-  StmtPtr transform(std::shared_ptr<Stmt> &stmt) override;
+  static Stmt *apply(Cache *, Stmt *s);
+  Expr *transform(Expr *expr) override;
+  Stmt *transform(Stmt *stmt) override;
 
-  void visitName(const std::string &name, bool = false,
-                 const std::shared_ptr<SrcObject> & = nullptr,
+  void visitName(const std::string &name, bool = false, Node * = nullptr,
                  const SrcInfo & = SrcInfo());
-  void transformAdding(ExprPtr &e, std::shared_ptr<SrcObject>);
-  ExprPtr transformFString(const std::string &);
+  Expr *transformAdding(Expr *e, Node *);
+  Expr *transformFString(const std::string &);
 
   void visit(IdExpr *) override;
   void visit(StringExpr *) override; // because of f-strings argh!
@@ -117,17 +113,23 @@ public:
   void visit(WithStmt *) override;
 
   Context::Item *findDominatingBinding(const std::string &, bool = true);
-  void unpackAssignments(const ExprPtr &, ExprPtr, std::vector<StmtPtr> &);
+  void unpackAssignments(Expr *, Expr *, std::vector<Stmt *> &);
   /// Enter a conditional block.
   void enterConditionalBlock();
   /// Leave a conditional block. Populate stmts (if set) with the declarations of
   /// newly added identifiers that dominate the children blocks.
   void leaveConditionalBlock();
-  void leaveConditionalBlock(StmtPtr &);
+  void leaveConditionalBlock(Stmt **);
 
-  void transformBlock(StmtPtr &s);
-  ExprPtr makeAnonFn(std::vector<StmtPtr>, const std::vector<std::string> & = {});
-  void switchToUpdate(std::shared_ptr<SrcObject> binding, const std::string &, bool);
+  Stmt *transformBlock(Stmt *);
+  Expr *makeAnonFn(std::vector<Stmt *>, const std::vector<std::string> & = {});
+  void switchToUpdate(Node *binding, const std::string &, bool);
+
+  template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
+    Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
+    t->setSrcInfo(getSrcInfo());
+    return t;
+  }
 };
 
 } // namespace codon::ast

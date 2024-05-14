@@ -52,9 +52,7 @@ std::string IntStaticType::debugString(char mode) const {
   return mode == 0 ? fmt::format("{}", value) : fmt::format("Static[{}]", value);
 }
 
-std::shared_ptr<Expr> IntStaticType::getStaticExpr() const {
-  return std::make_shared<IntExpr>(value);
-}
+Expr *IntStaticType::getStaticExpr() const { return cache->N<IntExpr>(value); }
 
 /*****************************************************************/
 
@@ -77,9 +75,7 @@ std::string StrStaticType::debugString(char mode) const {
   return mode == 0 ? fmt::format("'{}'", escape(value)) : fmt::format("Static['{}']", escape(value));
 }
 
-std::shared_ptr<Expr> StrStaticType::getStaticExpr() const {
-  return std::make_shared<StringExpr>(value);
-}
+Expr *StrStaticType::getStaticExpr() const { return cache->N<StringExpr>(value); }
 
 /*****************************************************************/
 
@@ -102,8 +98,6 @@ std::string BoolStaticType::debugString(char mode) const {
   return fmt::format("Static[{}]", value ? "True" : "False");
 }
 
-std::shared_ptr<Expr> BoolStaticType::getStaticExpr() const {
-  return std::make_shared<BoolExpr>(value);
-}
+Expr *BoolStaticType::getStaticExpr() const { return cache->N<BoolExpr>(value); }
 
 } // namespace codon::ast::types

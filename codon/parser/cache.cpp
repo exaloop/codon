@@ -17,6 +17,7 @@
 namespace codon::ast {
 
 Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {
+  this->_nodes = new std::vector<std::unique_ptr<ast::Node>>();
   typeCtx = std::make_shared<TypeContext>(this, ".root");
 }
 
@@ -93,7 +94,7 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
 
 types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &member,
                                      const std::vector<types::TypePtr> &args) {
-  auto e = std::make_shared<IdExpr>(typ->name);
+  auto e = N<IdExpr>(typ->name);
   e->type = typ->getClass();
   seqassertn(e->type, "not a class");
 
@@ -103,7 +104,7 @@ types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &m
 
 ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
                                     const std::vector<types::TypePtr> &generics) {
-  auto e = std::make_shared<IdExpr>(type->name);
+  auto e = N<IdExpr>(type->name);
   e->type = type;
   type = typeCtx->instantiateGeneric(type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
@@ -119,7 +120,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
                                  const std::vector<types::TypePtr> &args,
                                  const std::vector<types::TypePtr> &generics,
                                  const types::ClassTypePtr &parentClass) {
-  auto e = std::make_shared<IdExpr>(type->ast->name);
+  auto e = N<IdExpr>(type->ast->name);
   e->type = type;
   type = typeCtx->instantiate(type, parentClass)->getFunc();
   if (args.size() != type->getArgTypes().size() + 1)
@@ -246,8 +247,6 @@ void Cache::populatePythonModule() {
     return;
 
   LOG_USER("[py] ====== module generation =======");
-
-#define N std::make_shared
 
   if (!pyModule)
     pyModule = std::make_shared<ir::PyModule>();

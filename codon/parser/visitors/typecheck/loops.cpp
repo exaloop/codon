@@ -35,7 +35,7 @@ void TypecheckVisitor::visit(BreakStmt *stmt) {
     if (!ctx->staticLoops.back().empty()) {
       auto a = N<AssignStmt>(N<IdExpr>(ctx->staticLoops.back()), N<BoolExpr>(false));
       a->setUpdate();
-      resultStmt = transform(N<SuiteStmt>(a, stmt->shared_from_this()));
+      resultStmt = transform(N<SuiteStmt>(a, stmt));
     }
   }
 }
@@ -72,12 +72,12 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
-  transform(stmt->cond);
+  stmt->cond = transform(stmt->cond);
   if (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
 
   ctx->blockLevel++;
-  transform(stmt->suite);
+  stmt->suite = transform(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
 
@@ -85,8 +85,7 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     auto es = stmt->elseSuite;
     stmt->elseSuite = nullptr;
-    resultStmt = transform(
-        N<SuiteStmt>(stmt->shared_from_this(), N<IfStmt>(N<IdExpr>(breakVar), es)));
+    resultStmt = transform(N<SuiteStmt>(stmt, N<IfStmt>(N<IdExpr>(breakVar), es)));
   }
   ctx->getBase()->loops.pop_back();
 
@@ -105,7 +104,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   stmt->iter = transform(stmt->iter);
 
   // Check for for-else clause
-  StmtPtr assign = nullptr;
+  Stmt *assign = nullptr;
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     breakVar = ctx->cache->getTemporaryVar("no_break");
     assign = transform(N<AssignStmt>(N<IdExpr>(breakVar), N<BoolExpr>(true)));
@@ -133,12 +132,12 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   ctx->getBase()->loops.emplace_back(breakVar);
   auto var = stmt->var->getId();
-  seqassert(var, "corrupt for variable: {}", stmt->var);
+  seqassert(var, "corrupt for variable: {}", *(stmt->var));
 
   if (!stmt->var->hasAttr(ExprAttr::Dominated)) {
     ctx->addVar(var->value, ctx->generateCanonicalName(var->value), ctx->getUnbound());
   }
-  transform(stmt->var);
+  stmt->var = transform(stmt->var);
 
   // Unify iterator variable and the iterator type
   if (iterType && iterType->name != "Generator")
@@ -148,7 +147,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   ctx->staticLoops.emplace_back();
   ctx->blockLevel++;
-  transform(stmt->suite);
+  stmt->suite = transform(stmt->suite);
   ctx->blockLevel--;
   ctx->staticLoops.pop_back();
 
@@ -159,8 +158,8 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (stmt->elseSuite && stmt->elseSuite->firstInBlock()) {
     auto es = stmt->elseSuite;
     stmt->elseSuite = nullptr;
-    resultStmt = transform(N<SuiteStmt>(assign, stmt->shared_from_this(),
-                                        N<IfStmt>(N<IdExpr>(breakVar), es)));
+    resultStmt =
+        transform(N<SuiteStmt>(assign, stmt, N<IfStmt>(N<IdExpr>(breakVar), es)));
   }
 
   ctx->getBase()->loops.pop_back();
@@ -173,13 +172,13 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 /// @example
 ///   `@par(num_threads=2, openmp="schedule(static)")` ->
 ///   `for_par(num_threads=2, schedule="static")`
-ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
+Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
   if (!decorator)
     return nullptr;
-  ExprPtr callee = decorator;
+  Expr *callee = decorator;
   if (auto c = callee->getCall())
     callee = c->expr;
-  transform(callee);
+  callee = transform(callee);
   if (!callee || !(callee->getId() &&
                    startswith(callee->getId()->value, "std.openmp.for_par.0"))) {
     E(Error::LOOP_DECORATOR, decorator);
@@ -214,12 +213,12 @@ ExprPtr TypecheckVisitor::transformForDecorator(const ExprPtr &decorator) {
 ///        loop = False   # also set to False on break
 /// If a loop is flat, while wrappers are removed.
 /// A separate suite is generated for each static iteration.
-std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
+std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
   auto loopVar = ctx->cache->getTemporaryVar("loop");
   auto suite = clean_clone(stmt->suite);
-  auto [ok, delay, preamble, items] = transformStaticLoopCall(
-      stmt->var, suite, stmt->iter, [&](const StmtPtr &assigns) {
-        StmtPtr ret = nullptr;
+  auto [ok, delay, preamble, items] =
+      transformStaticLoopCall(stmt->var, &suite, stmt->iter, [&](Stmt *assigns) {
+        Stmt *ret = nullptr;
         if (!stmt->flat) {
           auto brk = N<BreakStmt>();
           brk->setDone(); // Avoid transforming this one to continue
@@ -242,8 +241,8 @@ std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt)
   auto block = N<SuiteStmt>();
   block->stmts.push_back(preamble);
   for (auto &i : items)
-    block->stmts.push_back(std::dynamic_pointer_cast<Stmt>(i));
-  StmtPtr loop = nullptr;
+    block->stmts.push_back(CAST(i, Stmt));
+  Stmt *loop = nullptr;
   if (!stmt->flat) {
     ctx->blockLevel++;
     auto a = N<AssignStmt>(N<IdExpr>(loopVar), N<BoolExpr>(false));
@@ -258,27 +257,24 @@ std::pair<bool, StmtPtr> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt)
   return {false, loop};
 }
 
-std::tuple<bool, bool, StmtPtr, std::vector<std::shared_ptr<codon::SrcObject>>>
-TypecheckVisitor::transformStaticLoopCall(
-    const ExprPtr &varExpr, StmtPtr &varSuite, const ExprPtr &iter,
-    const std::function<std::shared_ptr<codon::SrcObject>(StmtPtr)> &wrap,
-    bool allowNonHeterogenous) {
+std::tuple<bool, bool, Stmt *, std::vector<Node *>>
+TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, Stmt **varSuite, Expr *iter,
+                                          const std::function<Node *(Stmt *)> &wrap,
+                                          bool allowNonHeterogenous) {
   if (!iter->type->getClass())
     return {true, true, nullptr, {}};
 
   seqassert(varExpr->getId(), "bad varExpr");
-  std::function<int(StmtPtr &, const std::function<void(StmtPtr &)> &)> iterFn;
-  iterFn = [&iterFn](StmtPtr &s, const std::function<void(StmtPtr &)> &fn) -> int {
+  std::function<int(Stmt **, const std::function<void(Stmt **)> &)> iterFn;
+  iterFn = [&iterFn](Stmt **s, const std::function<void(Stmt **)> &fn) -> int {
     // if (n <= 0)
     // return 0;
     if (!s)
       return 0;
-    if (auto su = s->getSuite()) {
+    if (auto su = (*s)->getSuite()) {
       int i = 0;
       for (auto &si : su->stmts) {
-        i += iterFn(si, fn);
-        // if (i >= n)
-        // break;
+        i += iterFn(&si, fn);
       }
       return i;
     } else {
@@ -287,12 +283,12 @@ TypecheckVisitor::transformStaticLoopCall(
     }
   };
   std::vector<std::string> vars{varExpr->getId()->value};
-  iterFn(varSuite, [&](StmtPtr &s) {
-    if (auto a = s->getAssign()) {
+  iterFn(varSuite, [&](Stmt **s) {
+    if (auto a = (*s)->getAssign()) {
       if (a->rhs && a->rhs->getIndex())
         if (a->rhs->getIndex()->expr->isId(vars[0])) {
           vars.push_back(a->lhs->getId()->value);
-          s = nullptr;
+          *s = nullptr;
         }
     }
   });
@@ -301,10 +297,10 @@ TypecheckVisitor::transformStaticLoopCall(
   if (vars.empty())
     return {false, false, nullptr, {}};
 
-  StmtPtr preamble = nullptr;
+  Stmt *preamble = nullptr;
   auto fn = iter->getCall() ? iter->getCall()->expr->getId() : nullptr;
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
-  std::vector<std::shared_ptr<codon::SrcObject>> block;
+  std::vector<Node *> block;
   if (fn && startswith(fn->value, "statictuple")) {
     auto &args = iter->getCall()->args[0].value->getCall()->args;
     if (vars.size() != 1)
@@ -335,8 +331,9 @@ TypecheckVisitor::transformStaticLoopCall(
     auto st = fn->type->getFunc()->funcGenerics[0].type->getIntStatic()->value;
     auto ed = fn->type->getFunc()->funcGenerics[1].type->getIntStatic()->value;
     auto step = fn->type->getFunc()->funcGenerics[2].type->getIntStatic()->value;
-    if (abs(st - ed) / abs(step) > MAX_STATIC_ITER)
-      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, abs(st - ed) / abs(step));
+    if (std::abs(st - ed) / std::abs(step) > MAX_STATIC_ITER)
+      E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER,
+        std::abs(st - ed) / std::abs(step));
     for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
       stmt->rhs = N<IntExpr>(i);
       stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
@@ -382,12 +379,12 @@ TypecheckVisitor::transformStaticLoopCall(
       auto typ = args[0]->getClass();
       if (typ && typ->isRecord()) {
         for (size_t i = 0; i < getClassFields(typ.get()).size(); i++) {
-          auto b = N<SuiteStmt>(
-              {N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                             N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
-               N<AssignStmt>(N<IdExpr>(vars[1]),
-                             N<IndexExpr>(clone(iter->getCall()->args[0].value),
-                                          N<IntExpr>(i)))});
+          auto b = N<SuiteStmt>(std::vector<Stmt *>{
+              N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
+                            N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
+              N<AssignStmt>(
+                  N<IdExpr>(vars[1]),
+                  N<IndexExpr>(clone(iter->getCall()->args[0].value), N<IntExpr>(i)))});
           block.push_back(wrap(b));
         }
       } else {
@@ -408,7 +405,7 @@ TypecheckVisitor::transformStaticLoopCall(
       auto typ = args[0]->getClass();
       size_t idx = 0;
       for (auto &f : getClassFields(typ.get())) {
-        std::vector<StmtPtr> stmts;
+        std::vector<Stmt *> stmts;
         if (withIdx) {
           stmts.push_back(
               N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
@@ -443,7 +440,7 @@ TypecheckVisitor::transformStaticLoopCall(
 
       if (auto utyp = typ->getUnion()) {
         for (size_t i = 0; i < utyp->getRealizationTypes().size(); i++) {
-          std::vector<StmtPtr> stmts;
+          std::vector<Stmt *> stmts;
           if (withIdx) {
             stmts.push_back(
                 N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
@@ -460,7 +457,7 @@ TypecheckVisitor::transformStaticLoopCall(
         for (auto &f : getClassFields(typ->getClass().get())) {
           auto ta = realize(ctx->instantiate(f.type, typ->getClass()));
           seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
-          std::vector<StmtPtr> stmts;
+          std::vector<Stmt *> stmts;
           if (withIdx) {
             stmts.push_back(
                 N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),

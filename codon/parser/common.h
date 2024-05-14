@@ -16,7 +16,7 @@
 
 #include "codon/util/common.h"
 
-#define CAST(s, T) dynamic_cast<T *>(s.get())
+#define CAST(s, T) dynamic_cast<T *>(s)
 
 namespace codon {
 
@@ -47,12 +47,12 @@ int trimStars(std::string &str);
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.
 /// Combine items separated by a delimiter into a string.
-template <typename T>
-std::string join(const T &items, const std::string &delim = " ") {
+template <typename T> std::string join(const T &items, const std::string &delim = " ") {
   std::string s;
   bool first = true;
-  for (const auto &i: items) {
-    if (!first) s += delim;
+  for (const auto &i : items) {
+    if (!first)
+      s += delim;
     s += i;
     first = false;
   }
@@ -135,24 +135,13 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
 template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
 
 template <typename T>
-std::shared_ptr<typename std::remove_const<T>::type> clone(const std::shared_ptr<T> &t,
-                                                           bool clean = false) {
-  return t ? std::static_pointer_cast<typename std::remove_const<T>::type>(
-                 t->clone(clean))
+typename std::remove_const<T>::type *clone(T *t, bool clean = false) {
+  return t ? static_cast<typename std::remove_const<T>::type *>(t->clone(clean))
            : nullptr;
 }
 
-template <typename T>
-std::shared_ptr<typename std::remove_const<T>::type>
-clean_clone(const std::shared_ptr<T> &t) {
+template <typename T> typename std::remove_const<T>::type *clean_clone(T *t) {
   return clone(t, true);
-}
-
-template <typename T>
-std::shared_ptr<typename std::remove_const<T>::type> clone(T *t, bool clean = false) {
-  return t ? std::static_pointer_cast<typename std::remove_const<T>::type>(
-                 t->clone(clean))
-           : nullptr;
 }
 
 /// Clones a vector of cloneable pointer objects.

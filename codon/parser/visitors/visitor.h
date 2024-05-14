@@ -70,6 +70,7 @@ public:
   virtual void visit(MatchStmt *);
   virtual void visit(ImportStmt *);
   virtual void visit(TryStmt *);
+  virtual void visit(TryStmt::Catch *);
   virtual void visit(GlobalStmt *);
   virtual void visit(ThrowStmt *);
   virtual void visit(FunctionStmt *);
@@ -89,14 +90,8 @@ public:
  */
 template <typename TE, typename TS>
 struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
-  virtual TE transform(const std::shared_ptr<Expr> &expr) = 0;
-  virtual TE transform(std::shared_ptr<Expr> &expr) {
-    return transform(static_cast<const std::shared_ptr<Expr> &>(expr));
-  }
-  virtual TS transform(const std::shared_ptr<Stmt> &stmt) = 0;
-  virtual TS transform(std::shared_ptr<Stmt> &stmt) {
-    return transform(static_cast<const std::shared_ptr<Stmt> &>(stmt));
-  }
+  virtual TE transform(Expr *expr) = 0;
+  virtual TS transform(Stmt *stmt) = 0;
 
   /// Convenience method that transforms a vector of nodes.
   template <typename T> auto transform(const std::vector<T> &ts) {
@@ -106,28 +101,28 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
     return r;
   }
 
-  /// Convenience method that constructs a clone of a node.
-  template <typename Tn> auto N(const Tn &ptr) { return std::make_shared<Tn>(ptr); }
-  /// Convenience method that constructs a node.
-  /// @param s source location.
-  template <typename Tn, typename... Ts> auto N(codon::SrcInfo s, Ts &&...args) {
-    auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-    t->setSrcInfo(s);
-    return t;
-  }
-  /// Convenience method that constructs a node with the visitor's source location.
-  template <typename Tn, typename... Ts> auto N(Ts &&...args) {
-    auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-    t->setSrcInfo(getSrcInfo());
-    return t;
-  }
-  template <typename Tn, typename Tt, typename... Ts>
-  auto NT(const Tt &tt, Ts &&...args) {
-    auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-    t->setSrcInfo(getSrcInfo());
-    t->setType(tt);
-    return t;
-  }
+  // /// Convenience method that constructs a clone of a node.
+  // template <typename Tn> auto N(const Tn &ptr) { return std::make_shared<Tn>(ptr); }
+  // /// Convenience method that constructs a node.
+  // /// @param s source location.
+  // template <typename Tn, typename... Ts> auto N(codon::SrcInfo s, Ts &&...args) {
+  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
+  //   t->setSrcInfo(s);
+  //   return t;
+  // }
+  // /// Convenience method that constructs a node with the visitor's source location.
+  // template <typename Tn, typename... Ts> auto N(Ts &&...args) {
+  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
+  //   t->setSrcInfo(getSrcInfo());
+  //   return t;
+  // }
+  // template <typename Tn, typename Tt, typename... Ts>
+  // auto NT(const Tt &tt, Ts &&...args) {
+  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
+  //   t->setSrcInfo(getSrcInfo());
+  //   t->setType(tt);
+  //   return t;
+  // }
 
   /// Convenience method that raises an error at the current source location.
   template <typename... TArgs> void error(const char *format, TArgs &&...args) {
@@ -292,11 +287,13 @@ public:
   }
   void visit(TryStmt *stmt) override {
     transform(stmt->suite);
-    for (auto &a : stmt->catches) {
-      transform(a->exc);
-      transform(a->suite);
-    }
+    for (auto &a : stmt->catches)
+      transform(a);
     transform(stmt->finally);
+  }
+  void visit(TryStmt::Catch *stmt) override {
+    transform(stmt->exc);
+    transform(stmt->suite);
   }
   void visit(GlobalStmt *stmt) override {}
   void visit(ThrowStmt *stmt) override { transform(stmt->expr); }

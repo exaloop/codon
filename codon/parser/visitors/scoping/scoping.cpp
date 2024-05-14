@@ -15,16 +15,16 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-void ScopingVisitor::apply(Cache *cache, StmtPtr &s) {
+Stmt *ScopingVisitor::apply(Cache *cache, Stmt *s) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = cache;
   c->functionScope = nullptr;
   ScopingVisitor v;
   v.ctx = c;
-  v.transformBlock(s);
+  return v.transformBlock(s);
 }
 
-ExprPtr ScopingVisitor::transform(const std::shared_ptr<Expr> &expr) {
+Expr *ScopingVisitor::transform(Expr *expr) {
   ScopingVisitor v(*this);
   if (expr) {
     setSrcInfo(expr->getSrcInfo());
@@ -33,18 +33,7 @@ ExprPtr ScopingVisitor::transform(const std::shared_ptr<Expr> &expr) {
   return v.resultExpr ? v.resultExpr : expr;
 }
 
-ExprPtr ScopingVisitor::transform(std::shared_ptr<Expr> &expr) {
-  ScopingVisitor v(*this);
-  if (expr) {
-    setSrcInfo(expr->getSrcInfo());
-    expr->accept(v);
-  }
-  if (v.resultExpr)
-    expr = v.resultExpr;
-  return expr;
-}
-
-StmtPtr ScopingVisitor::transform(const std::shared_ptr<Stmt> &stmt) {
+Stmt *ScopingVisitor::transform(Stmt *stmt) {
   ScopingVisitor v(*this);
   if (stmt) {
     setSrcInfo(stmt->getSrcInfo());
@@ -53,23 +42,12 @@ StmtPtr ScopingVisitor::transform(const std::shared_ptr<Stmt> &stmt) {
   return v.resultStmt ? v.resultStmt : stmt;
 }
 
-StmtPtr ScopingVisitor::transform(std::shared_ptr<Stmt> &stmt) {
-  ScopingVisitor v(*this);
-  if (stmt) {
-    setSrcInfo(stmt->getSrcInfo());
-    stmt->accept(v);
-  }
-  if (v.resultStmt)
-    stmt = v.resultStmt;
-  return stmt;
-}
-
-void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
-                                    const std::string &name, bool gotUsedVar) {
+void ScopingVisitor::switchToUpdate(Node *binding, const std::string &name,
+                                    bool gotUsedVar) {
   // These bindings (and their canonical identifiers) will be replaced by the
   // dominating binding during the type checking pass.
   auto used = format("{}.__used__", name);
-  if (auto s = std::dynamic_pointer_cast<SuiteStmt>(binding)) {
+  if (auto s = CAST(binding, SuiteStmt)) {
     seqassert(!s->stmts.empty() && s->stmts[0]->getAssign(), "bad suite");
     auto a = s->stmts[0]->getAssign();
     if (a->rhs) {
@@ -82,7 +60,7 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
       seqassert(s->stmts.size() == 2 && s->stmts[1]->getAssign(), "bad assign block");
       s->stmts = {N<AssignStmt>(N<IdExpr>(used), N<BoolExpr>(true), nullptr)};
     }
-  } else if (auto f = std::dynamic_pointer_cast<ForStmt>(binding)) {
+  } else if (auto f = CAST(binding, ForStmt)) {
     f->var->setAttr(ExprAttr::Dominated);
     if (gotUsedVar) {
       bool skip = false;
@@ -94,7 +72,7 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
                                 f->suite);
       }
     }
-  } else if (auto f = std::dynamic_pointer_cast<TryStmt::Catch>(binding)) {
+  } else if (auto f = CAST(binding, TryStmt::Catch)) {
     f->exc->setAttr(ExprAttr::Dominated);
     if (gotUsedVar) {
       bool skip = false;
@@ -106,13 +84,13 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
                                 f->suite);
       }
     }
-  } else if (auto f = std::dynamic_pointer_cast<WithStmt>(binding)) {
+  } else if (auto f = CAST(binding, WithStmt)) {
     for (auto i = f->items.size(); i-- > 0;)
       if (f->vars[i] == name)
         f->items[i]->setAttr(ExprAttr::Dominated);
-  } else if (auto f = std::dynamic_pointer_cast<ImportStmt>(binding)) {
+  } else if (auto f = CAST(binding, ImportStmt)) {
     // TODO)) Here we will just ignore this for now
-  } else if (auto f = std::dynamic_pointer_cast<GlobalStmt>(binding)) {
+  } else if (auto f = CAST(binding, GlobalStmt)) {
     // TODO)) Here we will just ignore this for now
   } else if (binding) {
     // class; function; func-arg; comprehension-arg; catch-name; import-name[anything
@@ -122,8 +100,7 @@ void ScopingVisitor::switchToUpdate(std::shared_ptr<SrcObject> binding,
   }
 }
 
-void ScopingVisitor::visitName(const std::string &name, bool adding,
-                               const std::shared_ptr<SrcObject> &root,
+void ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
                                const SrcInfo &src) {
   if (adding && ctx->inClass)
     return;
@@ -186,7 +163,7 @@ void ScopingVisitor::visitName(const std::string &name, bool adding,
       if (!checked) {
         // Prepend access with __internal__.undef([var]__used__, "[var name]")
         auto checkStmt = N<ExprStmt>(N<CallExpr>(
-            N<DotExpr>("__internal__", "undef"),
+            N<DotExpr>(N<IdExpr>("__internal__"), "undef"),
             N<IdExpr>(fmt::format("{}.__used__", name)), N<StringExpr>(name)));
 
         resultExpr = N<StmtExpr>(checkStmt, N<IdExpr>(name));
@@ -199,25 +176,28 @@ void ScopingVisitor::visitName(const std::string &name, bool adding,
   }
 }
 
-void ScopingVisitor::transformAdding(ExprPtr &e, std::shared_ptr<SrcObject> root) {
+Expr *ScopingVisitor::transformAdding(Expr *e, Node *root) {
+  seqassert(e, "bad call to transformAdding");
   if (e->getIndex() || e->getDot()) {
-    transform(e);
+    return transform(e);
   } else if (e->getList() || e->getTuple() || e->getId()) {
     auto adding = true;
     std::swap(adding, ctx->adding);
     std::swap(root, ctx->root);
-    transform(e);
+    e = transform(e);
     std::swap(root, ctx->root);
     std::swap(adding, ctx->adding);
+    return e;
   } else {
     E(Error::ASSIGN_INVALID, e);
+    return nullptr;
   }
 }
 
 void ScopingVisitor::visit(IdExpr *expr) {
   if (ctx->adding && ctx->tempScope)
     ctx->renames.back()[expr->value] = ctx->cache->getTemporaryVar(expr->value);
-  for (size_t i = ctx->renames.size(); i-- > 0; )
+  for (size_t i = ctx->renames.size(); i-- > 0;)
     if (auto v = in(ctx->renames[i], expr->value)) {
       expr->value = *v;
       break;
@@ -247,9 +227,8 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
     if (p < 0)
       break;
 
-    bool completeDomination =
-     i->scope.size() <= ctx->scope.size() &&
-      i->scope.back() == ctx->scope[i->scope.size() - 1].id;
+    bool completeDomination = i->scope.size() <= ctx->scope.size() &&
+                              i->scope.back() == ctx->scope[i->scope.size() - 1].id;
     if (!completeDomination && prefix < int(ctx->scope.size()) && prefix != p)
       break;
 
@@ -302,43 +281,43 @@ void ScopingVisitor::visit(GeneratorExpr *expr) {
   bool ts = true;
   std::swap(ts, ctx->tempScope);
   ctx->renames.emplace_back();
-  transform(expr->loops);
+  expr->loops = transform(expr->loops);
   ctx->renames.pop_back();
   std::swap(ts, ctx->tempScope);
 }
 
 void ScopingVisitor::visit(IfExpr *expr) {
-  transform(expr->cond);
+  expr->cond = transform(expr->cond);
   auto isConditional = true;
   std::swap(isConditional, ctx->isConditional);
-  transform(expr->ifexpr);
-  transform(expr->elsexpr);
+  expr->ifexpr = transform(expr->ifexpr);
+  expr->elsexpr = transform(expr->elsexpr);
   std::swap(isConditional, ctx->isConditional);
 }
 
 void ScopingVisitor::visit(BinaryExpr *expr) {
-  transform(expr->lexpr);
+  expr->lexpr = transform(expr->lexpr);
   auto isConditional = expr->op == "&&" || expr->op == "||";
   std::swap(isConditional, ctx->isConditional);
-  transform(expr->rexpr);
+  expr->rexpr = transform(expr->rexpr);
   std::swap(isConditional, ctx->isConditional);
 }
 
 void ScopingVisitor::visit(AssignExpr *expr) {
   seqassert(expr->var->getId(), "only simple assignment expression are supported");
 
-  auto s = N<StmtExpr>(N<AssignStmt>(clone(expr->var), expr->expr), expr->var);
+  Expr *s = N<StmtExpr>(N<AssignStmt>(clone(expr->var), expr->expr), expr->var);
   enterConditionalBlock();
   auto ts = false;
   std::swap(ts, ctx->tempScope);
-  transform(s);
+  s = transform(s);
   std::swap(ts, ctx->tempScope);
   leaveConditionalBlock();
   resultExpr = s;
 }
 
 void ScopingVisitor::visit(LambdaExpr *expr) {
-  resultExpr = makeAnonFn(std::vector<StmtPtr>{N<ReturnStmt>(expr->expr)}, expr->vars);
+  resultExpr = makeAnonFn(std::vector<Stmt *>{N<ReturnStmt>(expr->expr)}, expr->vars);
 }
 
 // todo)) Globals/nonlocals cannot be shadowed in children scopes (as in Python)
@@ -346,16 +325,16 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
 
 void ScopingVisitor::visit(AssignStmt *stmt) {
   if (stmt->lhs->getTuple() || stmt->lhs->getList()) {
-    std::vector<StmtPtr> s;
+    std::vector<Stmt *> s;
     unpackAssignments(stmt->lhs, stmt->rhs, s);
     resultStmt = transform(N<SuiteStmt>(s));
   } else {
-    transform(stmt->rhs);
-    transform(stmt->type);
+    stmt->rhs = transform(stmt->rhs);
+    stmt->type = transform(stmt->type);
     auto a = N<AssignStmt>(stmt->lhs, stmt->rhs, stmt->type);
     a->setSrcInfo(stmt->getSrcInfo());
     resultStmt = N<SuiteStmt>(a);
-    transformAdding(stmt->lhs, resultStmt);
+    stmt->lhs = transformAdding(stmt->lhs, resultStmt);
   }
 }
 
@@ -370,9 +349,9 @@ void ScopingVisitor::visit(AssignStmt *stmt) {
 /// @example
 ///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-void ScopingVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
-                                       std::vector<StmtPtr> &stmts) {
-  std::vector<ExprPtr> leftSide;
+void ScopingVisitor::unpackAssignments(Expr *lhs, Expr *rhs,
+                                       std::vector<Stmt *> &stmts) {
+  std::vector<Expr *> leftSide;
   if (auto et = lhs->getTuple()) {
     // Case: (a, b) = ...
     for (auto &i : et->items)
@@ -392,7 +371,8 @@ void ScopingVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
   if (!rhs->getId()) {
     // Store any non-trivial right-side expression into a variable
     auto var = ctx->cache->getTemporaryVar("assign");
-    ExprPtr newRhs = N<IdExpr>(srcPos, var);
+    Expr *newRhs = N<IdExpr>(var);
+    newRhs->setSrcInfo(srcPos);
     stmts.push_back(N<AssignStmt>(newRhs, clone(rhs)));
     rhs = newRhs;
   }
@@ -403,7 +383,9 @@ void ScopingVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
     if (leftSide[st]->getStar())
       break;
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide = N<IndexExpr>(srcPos, clone(rhs), N<IntExpr>(srcPos, st));
+    auto rightSide = N<IndexExpr>(clone(rhs), N<IntExpr>(st));
+    rightSide->setSrcInfo(srcPos);
+    rightSide->index->setSrcInfo(srcPos);
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
     unpackAssignments(leftSide[st], rightSide, stmts);
   }
@@ -411,13 +393,14 @@ void ScopingVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
   if (st < leftSide.size() && leftSide[st]->getStar()) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
     auto rightSide = N<IndexExpr>(
-        srcPos, clone(rhs),
-        N<SliceExpr>(srcPos, N<IntExpr>(srcPos, st),
+        clone(rhs),
+        N<SliceExpr>(N<IntExpr>(st),
                      // this slice is either [st:] or [st:-lhs_len + st + 1]
-                     leftSide.size() == st + 1
-                         ? nullptr
-                         : N<IntExpr>(srcPos, -leftSide.size() + st + 1),
+                     leftSide.size() == st + 1 ? nullptr
+                                               : N<IntExpr>(-leftSide.size() + st + 1),
                      nullptr));
+    rightSide->setSrcInfo(srcPos);
+    rightSide->index->setSrcInfo(srcPos);
     unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
@@ -425,58 +408,59 @@ void ScopingVisitor::unpackAssignments(const ExprPtr &lhs, ExprPtr rhs,
     for (; st < leftSide.size(); st++) {
       if (leftSide[st]->getStar())
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
-      rightSide = N<IndexExpr>(srcPos, clone(rhs),
-                               N<IntExpr>(srcPos, -int(leftSide.size() - st)));
+      rightSide = N<IndexExpr>(clone(rhs), N<IntExpr>(-int(leftSide.size() - st)));
+      rightSide->setSrcInfo(srcPos);
+      rightSide->index->setSrcInfo(srcPos);
       unpackAssignments(leftSide[st], rightSide, stmts);
     }
   }
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
-  transform(stmt->cond);
+  stmt->cond = transform(stmt->cond);
 
   enterConditionalBlock();
-  transform(stmt->ifSuite);
-  leaveConditionalBlock(stmt->ifSuite);
+  stmt->ifSuite = transform(stmt->ifSuite);
+  leaveConditionalBlock(&stmt->ifSuite);
 
   enterConditionalBlock();
-  transform(stmt->elseSuite);
-  leaveConditionalBlock(stmt->elseSuite);
+  stmt->elseSuite = transform(stmt->elseSuite);
+  leaveConditionalBlock(&stmt->elseSuite);
 }
 
 void ScopingVisitor::visit(MatchStmt *stmt) {
-  transform(stmt->what);
+  stmt->what = transform(stmt->what);
   for (auto &m : stmt->cases) {
-    transform(m.pattern);
-    transform(m.guard);
+    m.pattern = transform(m.pattern);
+    m.guard = transform(m.guard);
 
     enterConditionalBlock();
-    transform(m.suite);
-    leaveConditionalBlock(m.suite);
+    m.suite = transform(m.suite);
+    leaveConditionalBlock(&m.suite);
   }
 }
 
 void ScopingVisitor::visit(WhileStmt *stmt) {
-  transform(stmt->cond);
+  stmt->cond = transform(stmt->cond);
 
   enterConditionalBlock();
   ctx->scope.back().seenVars = std::make_shared<std::unordered_set<std::string>>();
-  transform(stmt->suite);
+  stmt->suite = transform(stmt->suite);
   auto seen = *(ctx->scope.back().seenVars);
-  leaveConditionalBlock(stmt->suite);
+  leaveConditionalBlock(&stmt->suite);
   for (auto &var : seen)
     findDominatingBinding(var);
 
   enterConditionalBlock();
-  transform(stmt->elseSuite);
-  leaveConditionalBlock(stmt->elseSuite);
+  stmt->elseSuite = transform(stmt->elseSuite);
+  leaveConditionalBlock(&stmt->elseSuite);
 }
 
 void ScopingVisitor::visit(ForStmt *stmt) {
-  transform(stmt->iter);
-  transform(stmt->decorator);
+  stmt->iter = transform(stmt->iter);
+  stmt->decorator = transform(stmt->decorator);
   for (auto &a : stmt->ompArgs)
-    transform(a.value);
+    a.value = transform(a.value);
 
   enterConditionalBlock();
   if (!stmt->var->getId()) {
@@ -485,19 +469,19 @@ void ScopingVisitor::visit(ForStmt *stmt) {
         N<SuiteStmt>(N<AssignStmt>(clone(stmt->var), clone(var)), stmt->suite);
     stmt->var = var;
   }
-  transformAdding(stmt->var, stmt->shared_from_this());
+  stmt->var = transformAdding(stmt->var, stmt);
 
   ctx->scope.back().seenVars = std::make_shared<std::unordered_set<std::string>>();
-  transform(stmt->suite);
+  stmt->suite = transform(stmt->suite);
   auto seen = *(ctx->scope.back().seenVars);
-  leaveConditionalBlock(stmt->suite);
+  leaveConditionalBlock(&stmt->suite);
   for (auto &var : seen)
     if (var != stmt->var->getId()->value)
       findDominatingBinding(var);
 
   enterConditionalBlock();
-  transform(stmt->elseSuite);
-  leaveConditionalBlock(stmt->elseSuite);
+  stmt->elseSuite = transform(stmt->elseSuite);
+  leaveConditionalBlock(&stmt->elseSuite);
 }
 
 void ScopingVisitor::visit(ImportStmt *stmt) {
@@ -506,28 +490,31 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
 
   // dylib C imports
   if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
-    transform(stmt->what->getDot()->expr);
+    stmt->what->getDot()->expr = transform(stmt->what->getDot()->expr);
   }
 
   if (stmt->as.empty()) {
-    transformAdding(stmt->what ? stmt->what : stmt->from, stmt->shared_from_this());
+    if (stmt->what)
+      stmt->what = transformAdding(stmt->what, stmt);
+    else
+      stmt->from = transformAdding(stmt->from, stmt);
   } else {
-    visitName(stmt->as, true, stmt->shared_from_this(), stmt->getSrcInfo());
+    visitName(stmt->as, true, stmt, stmt->getSrcInfo());
   }
   for (auto &a : stmt->args) {
-    transform(a.type);
-    transform(a.defaultValue);
+    a.type = transform(a.type);
+    a.defaultValue = transform(a.defaultValue);
   }
-  transform(stmt->ret);
+  stmt->ret = transform(stmt->ret);
 }
 
 void ScopingVisitor::visit(TryStmt *stmt) {
   enterConditionalBlock();
-  transform(stmt->suite);
-  leaveConditionalBlock(stmt->suite);
+  stmt->suite = transform(stmt->suite);
+  leaveConditionalBlock(&stmt->suite);
 
   for (auto &a : stmt->catches) {
-    transform(a->exc);
+    a->exc = transform(a->exc);
     enterConditionalBlock();
     if (!a->var.empty()) {
       auto newName = ctx->cache->getTemporaryVar(a->var);
@@ -535,18 +522,18 @@ void ScopingVisitor::visit(TryStmt *stmt) {
       a->var = newName;
       visitName(a->var, true, a, a->exc->getSrcInfo());
     }
-    transform(a->suite);
+    a->suite = transform(a->suite);
     if (!a->var.empty()) {
       ctx->renames.pop_back();
     }
-    leaveConditionalBlock(a->suite);
+    leaveConditionalBlock(&a->suite);
   }
-  transform(stmt->finally);
+  stmt->finally = transform(stmt->finally);
 }
 
 void ScopingVisitor::visit(DelStmt *stmt) {
   /// TODO
-  transform(stmt->expr);
+  stmt->expr = transform(stmt->expr);
 }
 
 /// Process `global` statements. Remove them upon completion.
@@ -556,7 +543,7 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
   if (in(ctx->map, stmt->var) || in(ctx->captures, stmt->var))
     E(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->var);
 
-  visitName(stmt->var, true, stmt->shared_from_this(), stmt->getSrcInfo());
+  visitName(stmt->var, true, stmt, stmt->getSrcInfo());
   ctx->captures[stmt->var] =
       stmt->nonLocal ? Attr::CaptureType::Nonlocal : Attr::CaptureType::Global;
 
@@ -566,7 +553,7 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
 void ScopingVisitor::visit(YieldStmt *stmt) {
   if (ctx->functionScope)
     ctx->functionScope->attributes.set(Attr::IsGenerator);
-  transform(stmt->expr);
+  stmt->expr = transform(stmt->expr);
 }
 
 void ScopingVisitor::visit(YieldExpr *expr) {
@@ -576,11 +563,11 @@ void ScopingVisitor::visit(YieldExpr *expr) {
 
 void ScopingVisitor::visit(FunctionStmt *stmt) {
   bool isOverload = false;
-  for (auto &d: stmt->decorators)
+  for (auto &d : stmt->decorators)
     if (d->isId("overload"))
       isOverload = true;
   if (!isOverload)
-    visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
+    visitName(stmt->name, true, stmt, stmt->getSrcInfo());
 
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;
@@ -589,19 +576,20 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   ScopingVisitor v;
   c->scope.emplace_back(0);
   v.ctx = c;
-  v.visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
+  v.visitName(stmt->name, true, stmt, stmt->getSrcInfo());
   for (auto &a : stmt->args) {
-    v.visitName(a.name, true, stmt->shared_from_this(), a.getSrcInfo());
-    if (a.defaultValue) transform(a.defaultValue);
+    v.visitName(a.name, true, stmt, a.getSrcInfo());
+    if (a.defaultValue)
+      a.defaultValue = transform(a.defaultValue);
   }
   c->scope.pop_back();
-  v.transformBlock(stmt->suite);
+  stmt->suite = v.transformBlock(stmt->suite);
 
   stmt->attributes.captures = c->captures;
   for (const auto &n : c->captures)
     ctx->childCaptures.insert(n);
 
-  for (auto &[u, v]: c->map)
+  for (auto &[u, v] : c->map)
     stmt->attributes.bindings[u] = v.size();
 
   // if (stmt->name=="test_omp_critical") {
@@ -613,17 +601,17 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
 void ScopingVisitor::visit(WithStmt *stmt) {
   enterConditionalBlock();
   for (size_t i = 0; i < stmt->items.size(); i++) {
-    transform(stmt->items[i]);
+    stmt->items[i] = transform(stmt->items[i]);
     if (!stmt->vars[i].empty())
-      visitName(stmt->vars[i], true, stmt->shared_from_this(), stmt->getSrcInfo());
+      visitName(stmt->vars[i], true, stmt, stmt->getSrcInfo());
   }
-  transform(stmt->suite);
-  leaveConditionalBlock(stmt->suite);
+  stmt->suite = transform(stmt->suite);
+  leaveConditionalBlock(&stmt->suite);
 }
 
-void ScopingVisitor::transformBlock(StmtPtr &s) {
+Stmt *ScopingVisitor::transformBlock(Stmt *s) {
   ctx->scope.emplace_back(0);
-  transform(s);
+  s = transform(s);
   if (!ctx->scope.back().stmts.empty()) {
     ctx->scope.back().stmts.push_back(s);
     s = N<SuiteStmt>(ctx->scope.back().stmts);
@@ -636,7 +624,7 @@ void ScopingVisitor::transformBlock(StmtPtr &s) {
     //   continue;
     // }
     if (auto i = in(ctx->map, n.first)) {
-      if (i->back().binding && std::dynamic_pointer_cast<ClassStmt>(i->back().binding))
+      if (i->back().binding && CAST(i->back().binding, ClassStmt))
         continue;
     }
     if (!findDominatingBinding(n.first, false))
@@ -647,13 +635,14 @@ void ScopingVisitor::transformBlock(StmtPtr &s) {
     s = N<SuiteStmt>(ctx->scope.back().stmts);
   }
   ctx->scope.pop_back();
+  return s;
 }
 
 void ScopingVisitor::visit(ClassStmt *stmt) {
   if (stmt->hasAttr(Attr::Extend))
     visitName(stmt->name);
   else
-    visitName(stmt->name, true, stmt->shared_from_this(), stmt->getSrcInfo());
+    visitName(stmt->name, true, stmt, stmt->getSrcInfo());
 
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;
@@ -663,18 +652,18 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
   c->inClass = true;
   v.ctx = c;
   for (auto &a : stmt->args) {
-    v.transform(a.type);
-    v.transform(a.defaultValue);
+    a.type = v.transform(a.type);
+    a.defaultValue = v.transform(a.defaultValue);
   }
-  v.transform(stmt->suite);
+  stmt->suite = v.transform(stmt->suite);
   c->scope.pop_back();
 
   //   for (auto &d : stmt->decorators)
   //     transform(d);
   for (auto &d : stmt->baseClasses)
-    transform(d);
+    d = transform(d);
   for (auto &d : stmt->staticBaseClasses)
-    transform(d);
+    d = transform(d);
 }
 
 void ScopingVisitor::enterConditionalBlock() {
@@ -686,16 +675,16 @@ void ScopingVisitor::leaveConditionalBlock() {
   seqassert(!ctx->scope.empty(), "empty scope");
 }
 
-void ScopingVisitor::leaveConditionalBlock(StmtPtr &stmts) {
+void ScopingVisitor::leaveConditionalBlock(Stmt **stmts) {
   if (!ctx->scope.back().stmts.empty()) {
-    ctx->scope.back().stmts.push_back(stmts);
-    stmts = N<SuiteStmt>(ctx->scope.back().stmts);
+    ctx->scope.back().stmts.push_back(*stmts);
+    *stmts = N<SuiteStmt>(ctx->scope.back().stmts);
   }
   leaveConditionalBlock();
 }
 
-ExprPtr ScopingVisitor::makeAnonFn(std::vector<StmtPtr> suite,
-                                   const std::vector<std::string> &argNames) {
+Expr *ScopingVisitor::makeAnonFn(std::vector<Stmt *> suite,
+                                 const std::vector<std::string> &argNames) {
   std::vector<Param> params;
   std::string name = ctx->cache->getTemporaryVar("lambda");
   params.reserve(argNames.size());
@@ -708,7 +697,7 @@ ExprPtr ScopingVisitor::makeAnonFn(std::vector<StmtPtr> suite,
 
 /// Set type to `str`
 void ScopingVisitor::visit(StringExpr *expr) {
-  std::vector<ExprPtr> exprs;
+  std::vector<Expr *> exprs;
   std::vector<std::string> concat;
   for (auto &p : expr->strings) {
     if (p.second == "f" || p.second == "F") {
@@ -718,9 +707,9 @@ void ScopingVisitor::visit(StringExpr *expr) {
     } else if (!p.second.empty()) {
       /// Custom prefix strings:
       /// call `str.__prefix_[prefix]__(str, [static length of str])`
-      exprs.push_back(
-          transform(N<CallExpr>(N<DotExpr>("str", format("__prefix_{}__", p.second)),
-                                N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
+      exprs.push_back(transform(
+          N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), format("__prefix_{}__", p.second)),
+                      N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
     } else {
       exprs.push_back(N<StringExpr>(p.first));
       concat.push_back(p.first);
@@ -731,10 +720,10 @@ void ScopingVisitor::visit(StringExpr *expr) {
     expr->strings = {{combine2(concat, ""), ""}};
   } else if (exprs.size() == 1) {
     /// Simple case: only one string in a sequence
-    resultExpr = std::move(exprs[0]);
+    resultExpr = exprs[0];
   } else {
     /// Complex case: call `str.cat(str1, ...)`
-    resultExpr = transform(N<CallExpr>(N<DotExpr>("str", "cat"), exprs));
+    resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), exprs));
   }
 }
 
@@ -742,9 +731,9 @@ void ScopingVisitor::visit(StringExpr *expr) {
 ///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
 /// Supports "{x=}" specifier (that prints the raw expression as well):
 ///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
-ExprPtr ScopingVisitor::transformFString(const std::string &value) {
+Expr *ScopingVisitor::transformFString(const std::string &value) {
   // Strings to be concatenated
-  std::vector<ExprPtr> items;
+  std::vector<Expr *> items;
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {
     if (value[i] == '{') {
@@ -782,7 +771,7 @@ ExprPtr ScopingVisitor::transformFString(const std::string &value) {
     E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
   if (braceStart != value.size())
     items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
-  return transform(N<CallExpr>(N<DotExpr>("str", "cat"), items));
+  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
 }
 
 } // namespace codon::ast

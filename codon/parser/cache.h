@@ -44,7 +44,7 @@ struct TranslateContext;
  * checking) assumes that previous stages populated this structure correctly.
  * Implemented to avoid bunch of global objects.
  */
-struct Cache : public std::enable_shared_from_this<Cache> {
+struct Cache {
   /// Stores a count for each identifier (name) seen in the code.
   /// Used to generate unique identifier for each name in the code (e.g. Foo -> Foo.2).
   std::unordered_map<std::string, int> identifierCount;
@@ -99,9 +99,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::string module;
 
     /// Generic (unrealized) class template AST.
-    std::shared_ptr<ClassStmt> ast = nullptr;
+    ClassStmt *ast = nullptr;
     /// Non-simplified AST. Used for base class instantiation.
-    std::shared_ptr<ClassStmt> originalAst = nullptr;
+    ClassStmt *originalAst = nullptr;
 
     /// Class method lookup table. Each non-canonical name points
     /// to a root function name of a corresponding method.
@@ -115,7 +115,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       types::TypePtr type;
       /// Base class name (if available)
       std::string baseClass;
-      ExprPtr typeExpr = nullptr;
+      Expr *typeExpr = nullptr;
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.
@@ -174,9 +174,9 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     /// Module information
     std::string module;
     /// Generic (unrealized) function template AST.
-    std::shared_ptr<FunctionStmt> ast = nullptr;
+    FunctionStmt *ast = nullptr;
     /// Non-simplified AST.
-    std::shared_ptr<FunctionStmt> origAst = nullptr;
+    FunctionStmt *origAst = nullptr;
     std::set<std::string> captures;
 
     /// A function realization.
@@ -185,7 +185,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
       types::FuncTypePtr type;
       /// Realized function AST (stored here for later realization in code generations
       /// stage).
-      std::shared_ptr<FunctionStmt> ast;
+      FunctionStmt *ast;
       /// IR function pointer.
       ir::Func *ir;
       /// Resolved captures
@@ -217,11 +217,11 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Custom operators
   std::unordered_map<std::string,
-                     std::pair<bool, std::function<StmtPtr(ast::TypecheckVisitor *,
-                                                           ast::CustomStmt *)>>>
+                     std::pair<bool, std::function<Stmt *(ast::TypecheckVisitor *,
+                                                          ast::CustomStmt *)>>>
       customBlockStmts;
   std::unordered_map<std::string,
-                     std::function<StmtPtr(ast::TypecheckVisitor *, ast::CustomStmt *)>>
+                     std::function<Stmt *(ast::TypecheckVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
   /// Plugin-added import paths
@@ -298,6 +298,18 @@ public:
 
   std::shared_ptr<ir::PyModule> pyModule = nullptr;
   void populatePythonModule();
+
+private:
+  std::vector<std::unique_ptr<ast::Node>> *_nodes;
+
+public:
+  /// Convenience method that constructs a node with the visitor's source location.
+  template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
+    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
+    Tn *t = (Tn *)(_nodes->back().get());
+    t->cache = this;
+    return t;
+  }
 };
 
 } // namespace codon::ast

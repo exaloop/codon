@@ -50,7 +50,7 @@ void TypecheckVisitor::visit(StringExpr *expr) {
 ///   `123u`   -> `UInt[64](123)`
 ///   `123i56` -> `Int[56](123)`
 ///   `123pf`  -> `int.__suffix_pf__(123)`
-ExprPtr TypecheckVisitor::transformInt(IntExpr *expr) {
+Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
   if (!expr->intValue) {
     /// TODO: currently assumes that ints are always 64-bit.
     /// Should use str constructors if available for ints with a suffix instead.
@@ -90,7 +90,7 @@ ExprPtr TypecheckVisitor::transformInt(IntExpr *expr) {
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(
-        N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", expr->suffix)),
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("int"), format("__suffix_{}__", expr->suffix)),
                     N<IntExpr>(*(expr->intValue))));
   }
 }
@@ -98,7 +98,7 @@ ExprPtr TypecheckVisitor::transformInt(IntExpr *expr) {
 /// Parse various float representations depending on the suffix.
 /// @example
 ///   `123.4pf` -> `float.__suffix_pf__(123.4)`
-ExprPtr TypecheckVisitor::transformFloat(FloatExpr *expr) {
+Expr *TypecheckVisitor::transformFloat(FloatExpr *expr) {
   if (!expr->floatValue) {
     /// TODO: currently assumes that floats are always 64-bit.
     /// Should use str constructors if available for floats with suffix instead.
@@ -112,9 +112,9 @@ ExprPtr TypecheckVisitor::transformFloat(FloatExpr *expr) {
     return nullptr;
   } else {
     // Custom suffix: call `float.__suffix_[suffix]__(value)`
-    return transform(
-        N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", expr->suffix)),
-                    N<FloatExpr>(*(expr->floatValue))));
+    return transform(N<CallExpr>(
+        N<DotExpr>(N<IdExpr>("float"), format("__suffix_{}__", expr->suffix)),
+        N<FloatExpr>(*(expr->floatValue))));
   }
 }
 

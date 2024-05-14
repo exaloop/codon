@@ -136,7 +136,10 @@ public:
 
   SrcInfo getSrcInfo() const { return info; }
 
-  void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
+  SrcObject *setSrcInfo(SrcInfo info) {
+    this->info = std::move(info);
+    return this;
+  }
 };
 template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);

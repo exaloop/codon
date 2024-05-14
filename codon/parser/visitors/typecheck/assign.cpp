@@ -69,7 +69,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 ///   `a.x = b`     -> @c AssignMemberStmt
 ///   `a: type` = b -> @c AssignStmt
 ///   `a = b`       -> @c AssignStmt or @c UpdateStmt (see below)
-StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
+Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   if (auto idx = stmt->lhs->getIndex()) {
     // Case: a[x] = b
     seqassert(!stmt->type, "unexpected type annotation");
@@ -92,7 +92,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
   if (auto dot = stmt->lhs->getDot()) {
     // Case: a.x = b
     seqassert(!stmt->type, "unexpected type annotation");
-    transform(dot->expr, true);
+    dot->expr = transform(dot->expr, true);
     // If we are deducing class members, check if we can deduce a member from this
     // assignment
     // todo)) deduction!
@@ -119,7 +119,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
         s->setAtomicUpdate();
       else
         s->setUpdate();
-      if (auto u = transformUpdate(s.get()))
+      if (auto u = transformUpdate(s))
         return u;
       return s;
     } else {
@@ -127,8 +127,8 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
     }
   }
 
-  transform(stmt->rhs, true);
-  transformType(stmt->type, false);
+  stmt->rhs = transform(stmt->rhs, true);
+  stmt->type = transformType(stmt->type, false);
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
@@ -156,7 +156,7 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
 
   if (assign->rhs) { // not a declaration!
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-    if (wrapExpr(assign->rhs, assign->lhs->getType()))
+    if (wrapExpr(&assign->rhs, assign->lhs->getType()))
       unify(assign->lhs->type, assign->rhs->type);
     // auto type = assign->lhs->getType();
 
@@ -189,8 +189,8 @@ StmtPtr TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) 
 /// Transform binding updates. Special handling is done for atomic or in-place
 /// statements (e.g., `a += b`).
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
-StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
-  transform(stmt->lhs);
+Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
+  stmt->lhs = transform(stmt->lhs);
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
@@ -204,9 +204,9 @@ StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
     return nullptr;
   }
 
-  transform(stmt->rhs);
+  stmt->rhs = transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
-  if (wrapExpr(stmt->rhs, stmt->lhs->getType()))
+  if (wrapExpr(&stmt->rhs, stmt->lhs->getType()))
     unify(stmt->rhs->type, stmt->lhs->type);
   if (stmt->rhs->done && realize(stmt->lhs->type))
     stmt->setDone();
@@ -219,7 +219,7 @@ StmtPtr TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  transform(stmt->lhs);
+  stmt->rhs = transform(stmt->rhs);
 
   if (auto lhsClass = getType(stmt->lhs)->getClass()) {
     auto member = ctx->findMember(lhsClass, stmt->member);
@@ -252,7 +252,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     if (lhsClass->isRecord())
       E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
 
-    transform(stmt->rhs);
+    stmt->rhs = transform(stmt->rhs);
     auto ftyp = ctx->instantiate(stmt->lhs->getSrcInfo(), member->type, lhsClass);
     if (!ftyp->canRealize() && member->typeExpr) {
       ctx->addBlock();
@@ -261,7 +261,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       ctx->popBlock();
       unify(ftyp, t);
     }
-    if (!wrapExpr(stmt->rhs, ftyp))
+    if (!wrapExpr(&stmt->rhs, ftyp))
       return;
     unify(stmt->rhs->type, ftyp);
     if (stmt->rhs->isDone())
@@ -278,14 +278,14 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 ///   `a = min(a, b)` -> `type(a).__atomic_min__(__ptr__(a), b)` (same for `max`)
 /// @return a tuple indicating whether (1) the update statement can be replaced with an
 ///         expression, and (2) the replacement expression.
-std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
+std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
   // Case: in-place updates (e.g., `a += b`).
   // They are stored as `Update(a, Binary(a + b, inPlace=true))`
 
   auto bin = stmt->rhs->getBinary();
   if (bin && bin->inPlace) {
-    transform(bin->lexpr);
-    transform(bin->rexpr);
+    bin->lexpr = transform(bin->lexpr);
+    bin->rexpr = transform(bin->rexpr);
 
     if (bin->lexpr->type->getClass() && bin->rexpr->type->getClass()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
@@ -307,7 +307,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
   auto call = stmt->rhs->getCall();
   if (stmt->isAtomicUpdate() && call && stmt->lhs->getId() &&
       (call->expr->isId("min") || call->expr->isId("max")) && call->args.size() == 2) {
-    transform(call->args[0].value);
+    call->args[0].value = transform(call->args[0].value);
     if (call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
       auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
@@ -328,7 +328,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
   // Case: atomic assignments
   if (stmt->isAtomicUpdate() && lhsClass) {
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
-    transform(stmt->rhs);
+    stmt->rhs = transform(stmt->rhs);
     if (auto rhsClass = stmt->rhs->getType()->getClass()) {
       auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
                                              ctx->getType("Ptr"), {lhsClass});

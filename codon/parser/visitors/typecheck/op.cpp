@@ -18,7 +18,7 @@ using namespace types;
 /// Replace unary operators with the appropriate magic calls.
 /// Also evaluate static expressions. See @c evaluateStaticUnary for details.
 void TypecheckVisitor::visit(UnaryExpr *expr) {
-  transform(expr->expr);
+  expr->expr = transform(expr->expr);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1, {"-", "+", "!", "~"}}, {2, {"@"}}, {3, {"!"}}};
@@ -56,8 +56,8 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 /// @c transformBinaryInplaceMagic for details.
 /// Also evaluate static expressions. See @c evaluateStaticBinary for details.
 void TypecheckVisitor::visit(BinaryExpr *expr) {
-  transform(expr->lexpr, true);
-  transform(expr->rexpr, true);
+  expr->lexpr = transform(expr->lexpr, true);
+  expr->rexpr = transform(expr->rexpr, true);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1,
@@ -116,7 +116,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
 /// The assignment above ensures that all expressions are executed only once.
 void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   seqassert(expr->exprs.size() >= 2, "not enough expressions in ChainBinaryExpr");
-  std::vector<ExprPtr> items;
+  std::vector<Expr *> items;
   std::string prev;
   for (int i = 1; i < expr->exprs.size(); i++) {
     auto l = prev.empty() ? clone(expr->exprs[i - 1].second) : N<IdExpr>(prev);
@@ -129,7 +129,7 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
     items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
   }
 
-  ExprPtr final = items.back();
+  Expr *final = items.back();
   for (auto i = items.size() - 1; i-- > 0;)
     final = N<BinaryExpr>(items[i], "&&", final);
   resultExpr = transform(final);
@@ -140,7 +140,7 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
 /// @return  List of CallExprs and their locations within the parent CallExpr
 ///          needed to access the ellipsis.
 /// @example `foo(bar(1, baz(...)))` returns `[{0, baz}, {1, bar}, {0, foo}]`
-std::vector<std::pair<size_t, ExprPtr>> findEllipsis(ExprPtr expr) {
+std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *expr) {
   auto call = expr->getCall();
   if (!call)
     return {};
@@ -190,7 +190,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
   auto done = expr->items[0].expr->isDone();
   for (size_t pi = 1; pi < expr->items.size(); pi++) {
     int inTypePos = -1;                    // ellipsis position
-    ExprPtr *ec = &(expr->items[pi].expr); // a pointer so that we can replace it
+    Expr **ec = &(expr->items[pi].expr);   // a pointer so that we can replace it
     while (auto se = (*ec)->getStmtExpr()) // handle StmtExpr (e.g., in partial calls)
       ec = &(se->expr);
 
@@ -226,7 +226,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     // make sure to extract these layers and move them to the pipeline.
     // Example: `foo(...)` that is transformed to `foo(unwrap(...))` will become
     // `unwrap(...) |> foo(...)`
-    transform(*ec);
+    *ec = transform(*ec);
     auto layers = findEllipsis(*ec);
     seqassert(!layers.empty(), "can't find the ellipsis");
     if (layers.size() > 1) {
@@ -279,11 +279,11 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
   if (expr->expr->isId("tuple"))
     expr->expr->getId()->value = TYPE_TUPLE;
-  transform(expr->expr, true);
+  expr->expr = transform(expr->expr, true);
 
   // IndexExpr[i1, ..., iN] is internally represented as
   // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
-  std::vector<ExprPtr> items;
+  std::vector<Expr *> items;
   bool isTuple = expr->index->getTuple();
   if (auto t = expr->index->getTuple()) {
     items = t->items;
@@ -296,7 +296,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
       // `Function[...]`)
       i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), i->getList()->items);
     }
-    transform(i, true);
+    i = transform(i, true);
   }
   if (expr->expr->type->is("type")) {
     resultExpr = transform(N<InstantiateExpr>(expr->expr, items));
@@ -348,7 +348,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   } else {
     typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), getType(expr->typeExpr));
   }
-  seqassert(typ->getClass(), "unknown type: {}", expr->typeExpr);
+  seqassert(typ->getClass(), "unknown type: {}", *(expr->typeExpr));
 
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
@@ -404,8 +404,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     // If the type is realizable, use the realized name instead of instantiation
     // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
     if (realize(expr->type)) {
-      auto t = getType(expr->shared_from_this());
-      resultExpr = NT<IdExpr>(expr->type, t->realizedName());
+      auto t = getType(expr);
+      resultExpr = N<IdExpr>(t->realizedName());
+      resultExpr->setType(expr->type);
       resultExpr->setDone();
     }
   }
@@ -415,7 +416,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 /// @example
 ///   `start::step` -> `Slice(start, Optional.__new__(), step)`
 void TypecheckVisitor::visit(SliceExpr *expr) {
-  ExprPtr none = N<CallExpr>(N<DotExpr>(TYPE_OPTIONAL, "__new__"));
+  Expr *none = N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_OPTIONAL), "__new__"));
   auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Slice")->getClass();
   resultExpr = transform(N<CallExpr>(
       N<IdExpr>(name->name), expr->start ? expr->start : clone(none),
@@ -425,7 +426,7 @@ void TypecheckVisitor::visit(SliceExpr *expr) {
 /// Evaluate a static unary expression and return the resulting static expression.
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) not (ints) not, -, +
-ExprPtr TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
+Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static strings
   if (expr->expr->type->isStaticType() == 2) {
     if (expr->op == "!") {
@@ -507,7 +508,7 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) +, ==, !=
 ///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %, ^, |, &
-ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
+Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
   // Case: static strings
   if (expr->rexpr->type->isStaticType() == 2) {
     if (expr->op == "+") {
@@ -608,7 +609,7 @@ ExprPtr TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
 ///   `a in b`     -> `a.__contains__(b)`
 ///   `a not in b` -> `not (a in b)`
 ///   `a is not b` -> `not (a is b)`
-ExprPtr TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
   // Case: simple transformations
   if (expr->op == "&&") {
     return transform(N<IfExpr>(expr->lexpr,
@@ -636,7 +637,7 @@ ExprPtr TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
 
 /// Transform a binary `is` expression by checking for type equality. Handle special `is
 /// None` cаses as well. See inside for details.
-ExprPtr TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   seqassert(expr->op == "is", "not an is binary expression");
 
   // Case: `is None` expressions
@@ -727,7 +728,7 @@ std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string
 /// @example
 ///   `a op= b` -> `a.__iopmagic__(b)`
 /// @param isAtomic if set, use atomic magics if available.
-ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAtomic) {
+Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAtomic) {
   auto [magic, _] = getMagic(expr->op);
   auto lt = expr->lexpr->type->getClass();
   seqassert(lt, "lhs type not known");
@@ -745,7 +746,8 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 
   // In-place operations: check if `lhs.__iop__(lhs, rhs)` exists
   if (!method && expr->inPlace) {
-    method = findBestMethod(lt, format("__i{}__", magic), {expr->lexpr, expr->rexpr});
+    method = findBestMethod(lt, format("__i{}__", magic),
+                            std::vector<Expr *>{expr->lexpr, expr->rexpr});
   }
 
   if (method)
@@ -757,7 +759,7 @@ ExprPtr TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isA
 /// Transform a magic binary expression.
 /// @example
 ///   `a op b` -> `a.__opmagic__(b)`
-ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
   auto [magic, rightMagic] = getMagic(expr->op);
   auto lt = expr->lexpr->getType();
   auto rt = expr->rexpr->getType();
@@ -780,7 +782,7 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   if (auto method = findBestMethod(lt->getClass(), format("__{}__", magic),
-                                   {expr->lexpr, expr->rexpr})) {
+                                   std::vector<Expr *>{expr->lexpr, expr->rexpr})) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
         N<CallExpr>(N<IdExpr>(method->ast->name), expr->lexpr, expr->rexpr));
@@ -788,7 +790,7 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 
   // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
   if (auto method = findBestMethod(rt->getClass(), format("__{}__", rightMagic),
-                                   {expr->rexpr, expr->lexpr})) {
+                                   std::vector<Expr *>{expr->rexpr, expr->lexpr})) {
     auto l = ctx->cache->getTemporaryVar("l"), r = ctx->cache->getTemporaryVar("r");
     return transform(N<StmtExpr>(
         N<AssignStmt>(N<IdExpr>(l), expr->lexpr),
@@ -803,9 +805,9 @@ ExprPtr TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 /// (integer or slice). If so, statically extract the specified tuple item or a
 /// sub-tuple (if the index is a slice).
 /// Works only on normal tuples and partial functions.
-std::pair<bool, ExprPtr>
-TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
-                                            const ExprPtr &expr, const ExprPtr &index) {
+std::pair<bool, Expr *>
+TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple, Expr *expr,
+                                            Expr *index) {
   bool isStaticString = expr->type->isStaticType() == 2;
   if (isStaticString && !expr->type->canRealize()) {
     return {true, nullptr};
@@ -826,7 +828,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
   }
 
   // Extract the static integer value from expression
-  auto getInt = [&](int64_t *o, const ExprPtr &e) {
+  auto getInt = [&](int64_t *o, Expr *e) {
     if (!e)
       return true;
     auto f = transform(clean_clone(e));
@@ -880,15 +882,15 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple,
       // Generate a sub-tuple
       auto var = N<IdExpr>(ctx->cache->getTemporaryVar("tup"));
       auto ass = N<AssignStmt>(var, expr);
-      std::vector<ExprPtr> te;
+      std::vector<Expr *> te;
       for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step) {
         if (i < 0 || i >= sz)
           E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
         te.push_back(N<DotExpr>(clone(var), classFields[i].name));
       }
       auto s = generateTuple(te.size());
-      ExprPtr e = transform(N<StmtExpr>(std::vector<StmtPtr>{ass},
-                                        N<CallExpr>(N<IdExpr>(TYPE_TUPLE), te)));
+      Expr *e = transform(N<StmtExpr>(std::vector<Stmt *>{ass},
+                                      N<CallExpr>(N<IdExpr>(TYPE_TUPLE), te)));
       return {true, e};
     }
   }

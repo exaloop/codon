@@ -15,7 +15,7 @@ namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   using Stmt::toString;                                                                \
-  NodePtr clone(bool) const override;                                                  \
+  Node *clone(bool) const override;                                                    \
   void accept(X &visitor) override
 
 // Forward declarations
@@ -33,7 +33,7 @@ struct TryStmt;
  * A Seq AST statement.
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
-struct Stmt : public Node, public std::enable_shared_from_this<Stmt> {
+struct Stmt : public Node {
   using base_type = Stmt;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
@@ -66,19 +66,18 @@ public:
   bool isDone() const { return done; }
   void setDone() { done = true; }
 };
-using StmtPtr = std::shared_ptr<Stmt>;
 
 /// Suite (block of statements) statement (stmt...).
 /// @li a = 5; foo(1)
 struct SuiteStmt : public Stmt {
   using Stmt::Stmt;
 
-  std::vector<StmtPtr> stmts;
+  std::vector<Stmt *> stmts;
 
-  explicit SuiteStmt(std::vector<StmtPtr> stmts = {});
+  explicit SuiteStmt(std::vector<Stmt *> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
-  SuiteStmt(StmtPtr stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
+  SuiteStmt(Stmt *stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
   SuiteStmt(const SuiteStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -88,7 +87,7 @@ struct SuiteStmt : public Stmt {
   Stmt *firstInBlock() override {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
-  StmtPtr *lastInBlock();
+  Stmt **lastInBlock();
 
   /// Flatten all nested SuiteStmt objects that do not own a block in the statement
   /// vector. This is shallow flattening.
@@ -118,9 +117,9 @@ struct ContinueStmt : public Stmt {
 /// Expression statement (expr).
 /// @li 3 + foo()
 struct ExprStmt : public Stmt {
-  ExprPtr expr;
+  Expr *expr;
 
-  explicit ExprStmt(ExprPtr expr);
+  explicit ExprStmt(Expr *expr);
   ExprStmt(const ExprStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -136,10 +135,10 @@ struct ExprStmt : public Stmt {
 struct AssignStmt : public Stmt {
   enum UpdateMode { Assign, Update, UpdateAtomic };
 
-  ExprPtr lhs, rhs, type;
-  StmtPtr preamble = nullptr;
+  Expr *lhs, *rhs, *type;
+  Stmt *preamble = nullptr;
 
-  AssignStmt(ExprPtr lhs, ExprPtr rhs, ExprPtr type = nullptr,
+  AssignStmt(Expr *lhs, Expr *rhs, Expr *type = nullptr,
              UpdateMode update = UpdateMode::Assign);
   AssignStmt(const AssignStmt &, bool);
 
@@ -161,9 +160,9 @@ private:
 /// @li del a
 /// @li del a[5]
 struct DelStmt : public Stmt {
-  ExprPtr expr;
+  Expr *expr;
 
-  explicit DelStmt(ExprPtr expr);
+  explicit DelStmt(Expr *expr);
   DelStmt(const DelStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -173,11 +172,11 @@ struct DelStmt : public Stmt {
 /// Print statement (print expr).
 /// @li print a, b
 struct PrintStmt : public Stmt {
-  std::vector<ExprPtr> items;
+  std::vector<Expr *> items;
   /// True if there is a dangling comma after print: print a,
   bool isInline;
 
-  explicit PrintStmt(std::vector<ExprPtr> items, bool isInline);
+  explicit PrintStmt(std::vector<Expr *> items, bool isInline);
   PrintStmt(const PrintStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -189,9 +188,9 @@ struct PrintStmt : public Stmt {
 /// @li return a
 struct ReturnStmt : public Stmt {
   /// nullptr if this is an empty return/yield statements.
-  ExprPtr expr;
+  Expr *expr;
 
-  explicit ReturnStmt(ExprPtr expr = nullptr);
+  explicit ReturnStmt(Expr *expr = nullptr);
   ReturnStmt(const ReturnStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -203,9 +202,9 @@ struct ReturnStmt : public Stmt {
 /// @li yield a
 struct YieldStmt : public Stmt {
   /// nullptr if this is an empty return/yield statements.
-  ExprPtr expr;
+  Expr *expr;
 
-  explicit YieldStmt(ExprPtr expr = nullptr);
+  explicit YieldStmt(Expr *expr = nullptr);
   YieldStmt(const YieldStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -216,11 +215,11 @@ struct YieldStmt : public Stmt {
 /// @li assert a
 /// @li assert a, "Message"
 struct AssertStmt : public Stmt {
-  ExprPtr expr;
+  Expr *expr;
   /// nullptr if there is no message.
-  ExprPtr message;
+  Expr *message;
 
-  explicit AssertStmt(ExprPtr expr, ExprPtr message = nullptr);
+  explicit AssertStmt(Expr *expr, Expr *message = nullptr);
   AssertStmt(const AssertStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -232,15 +231,15 @@ struct AssertStmt : public Stmt {
 /// @li while True: break
 ///          else: print
 struct WhileStmt : public Stmt {
-  ExprPtr cond;
-  StmtPtr suite;
+  Expr *cond;
+  Stmt *suite;
   /// nullptr if there is no else suite.
-  StmtPtr elseSuite;
+  Stmt *elseSuite;
   /// Set if a while loop is used to emulate goto statement
   /// (as `while gotoVar: ...`).
   std::string gotoVar = "";
 
-  WhileStmt(ExprPtr cond, StmtPtr suite, StmtPtr elseSuite = nullptr);
+  WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite = nullptr);
   WhileStmt(const WhileStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -252,11 +251,11 @@ struct WhileStmt : public Stmt {
 /// @li for i in j: break
 ///          else: print
 struct ForStmt : public Stmt {
-  ExprPtr var;
-  ExprPtr iter;
-  StmtPtr suite;
-  StmtPtr elseSuite;
-  ExprPtr decorator;
+  Expr *var;
+  Expr *iter;
+  Stmt *suite;
+  Stmt *elseSuite;
+  Expr *decorator;
   std::vector<CallExpr::Arg> ompArgs;
 
   /// Indicates if iter was wrapped with __iter__() call.
@@ -264,8 +263,8 @@ struct ForStmt : public Stmt {
   /// True if there are no break/continue within the loop
   bool flat;
 
-  ForStmt(ExprPtr var, ExprPtr iter, StmtPtr suite, StmtPtr elseSuite = nullptr,
-          ExprPtr decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
+  ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite = nullptr,
+          Expr *decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
   ForStmt(const ForStmt &, bool);
 
   ForStmt *getFor() override { return this; }
@@ -282,11 +281,11 @@ struct ForStmt : public Stmt {
 ///          elif b: bar()
 ///          else: baz()
 struct IfStmt : public Stmt {
-  ExprPtr cond;
+  Expr *cond;
   /// elseSuite can be nullptr (if no else is found).
-  StmtPtr ifSuite, elseSuite;
+  Stmt *ifSuite, *elseSuite;
 
-  IfStmt(ExprPtr cond, StmtPtr ifSuite, StmtPtr elseSuite = nullptr);
+  IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite = nullptr);
   IfStmt(const IfStmt &, bool);
 
   IfStmt *getIf() override { return this; }
@@ -301,16 +300,16 @@ struct IfStmt : public Stmt {
 ///          case _: pass
 struct MatchStmt : public Stmt {
   struct MatchCase {
-    ExprPtr pattern;
-    ExprPtr guard;
-    StmtPtr suite;
+    Expr *pattern;
+    Expr *guard;
+    Stmt *suite;
 
     MatchCase clone(bool) const;
   };
-  ExprPtr what;
+  Expr *what;
   std::vector<MatchCase> cases;
 
-  MatchStmt(ExprPtr what, std::vector<MatchCase> cases);
+  MatchStmt(Expr *what, std::vector<MatchCase> cases);
   MatchStmt(const MatchStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -330,20 +329,19 @@ struct MatchStmt : public Stmt {
 /// @li from python.numpy import array
 /// @li from python import numpy.array(int) -> int as na
 struct ImportStmt : public Stmt {
-  ExprPtr from, what;
+  Expr *from, *what;
   std::string as;
   /// Number of dots in a relative import (e.g. dots is 3 for "from ...foo").
   size_t dots;
   /// Function argument types for C imports.
   std::vector<Param> args;
   /// Function return type for C imports.
-  ExprPtr ret;
+  Expr *ret;
   /// Set if this is a function C import (not variable import)
   bool isFunction;
 
-  ImportStmt(ExprPtr from, ExprPtr what, std::vector<Param> args = {},
-             ExprPtr ret = nullptr, std::string as = "", size_t dots = 0,
-             bool isFunction = true);
+  ImportStmt(Expr *from, Expr *what, std::vector<Param> args = {}, Expr *ret = nullptr,
+             std::string as = "", size_t dots = 0, bool isFunction = true);
   ImportStmt(const ImportStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -358,25 +356,26 @@ struct ImportStmt : public Stmt {
 ///           catch: pass
 ///           finally: print
 struct TryStmt : public Stmt {
-  struct Catch : public codon::SrcObject {
+  struct Catch : public Stmt {
     /// empty string if a catch is unnamed.
     std::string var;
     /// nullptr if there is no explicit exception type.
-    ExprPtr exc;
-    StmtPtr suite;
+    Expr *exc;
+    Stmt *suite;
 
-    Catch(const std::string&, ExprPtr, StmtPtr);
+    Catch(const std::string &, Expr *, Stmt *);
     Catch(const Catch &, bool);
-    std::shared_ptr<Catch> clone(bool) const;
+
+    std::string toString(int indent) const override;
+    ACCEPT(ASTVisitor);
   };
 
-  StmtPtr suite;
-  std::vector<std::shared_ptr<Catch>> catches;
+  Stmt *suite;
+  std::vector<Catch *> catches;
   /// nullptr if there is no finally block.
-  StmtPtr finally;
+  Stmt *finally;
 
-  TryStmt(StmtPtr suite, std::vector<std::shared_ptr<Catch>> catches,
-          StmtPtr finally = nullptr);
+  TryStmt(Stmt *suite, std::vector<Catch *> catches, Stmt *finally = nullptr);
   TryStmt(const TryStmt &, bool);
 
   TryStmt *getTry() override { return this; }
@@ -388,12 +387,12 @@ struct TryStmt : public Stmt {
 /// Throw statement (raise expr).
 /// @li: raise a
 struct ThrowStmt : public Stmt {
-  ExprPtr expr;
+  Expr *expr;
   // True if a statement was transformed during type-checking stage
   // (to avoid setting up ExcHeader multiple times).
   bool transformed;
 
-  explicit ThrowStmt(ExprPtr expr, bool transformed = false);
+  explicit ThrowStmt(Expr *expr, bool transformed = false);
   ThrowStmt(const ThrowStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -468,14 +467,14 @@ struct Attr {
 struct FunctionStmt : public Stmt {
   std::string name;
   /// nullptr if return type is not specified.
-  ExprPtr ret;
+  Expr *ret;
   std::vector<Param> args;
-  StmtPtr suite;
+  Stmt *suite;
   Attr attributes;
-  std::vector<ExprPtr> decorators;
+  std::vector<Expr *> decorators;
 
-  FunctionStmt(std::string name, ExprPtr ret, std::vector<Param> args, StmtPtr suite,
-               Attr attributes = Attr(), std::vector<ExprPtr> decorators = {});
+  FunctionStmt(std::string name, Expr *ret, std::vector<Param> args, Stmt *suite,
+               Attr attributes = Attr(), std::vector<Expr *> decorators = {});
   FunctionStmt(const FunctionStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -505,16 +504,16 @@ struct FunctionStmt : public Stmt {
 struct ClassStmt : public Stmt {
   std::string name;
   std::vector<Param> args;
-  StmtPtr suite;
+  Stmt *suite;
   Attr attributes;
-  std::vector<ExprPtr> decorators;
-  std::vector<ExprPtr> baseClasses;
-  std::vector<ExprPtr> staticBaseClasses;
+  std::vector<Expr *> decorators;
+  std::vector<Expr *> baseClasses;
+  std::vector<Expr *> staticBaseClasses;
 
-  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite,
-            std::vector<ExprPtr> decorators = {}, std::vector<ExprPtr> baseClasses = {},
-            std::vector<ExprPtr> staticBaseClasses = {});
-  ClassStmt(std::string name, std::vector<Param> args, StmtPtr suite, Attr attr);
+  ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
+            std::vector<Expr *> decorators = {}, std::vector<Expr *> baseClasses = {},
+            std::vector<Expr *> staticBaseClasses = {});
+  ClassStmt(std::string name, std::vector<Param> args, Stmt *suite, Attr attr);
   ClassStmt(const ClassStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -535,9 +534,9 @@ struct ClassStmt : public Stmt {
 /// Yield-from statement (yield from expr).
 /// @li: yield from it
 struct YieldFromStmt : public Stmt {
-  ExprPtr expr;
+  Expr *expr;
 
-  explicit YieldFromStmt(ExprPtr expr);
+  explicit YieldFromStmt(Expr *expr);
   YieldFromStmt(const YieldFromStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -547,13 +546,13 @@ struct YieldFromStmt : public Stmt {
 /// With statement (with (item as var)...: suite).
 /// @li: with foo(), bar() as b: pass
 struct WithStmt : public Stmt {
-  std::vector<ExprPtr> items;
+  std::vector<Expr *> items;
   /// empty string if a corresponding item is unnamed
   std::vector<std::string> vars;
-  StmtPtr suite;
+  Stmt *suite;
 
-  WithStmt(std::vector<ExprPtr> items, std::vector<std::string> vars, StmtPtr suite);
-  WithStmt(std::vector<std::pair<ExprPtr, ExprPtr>> items, StmtPtr suite);
+  WithStmt(std::vector<Expr *> items, std::vector<std::string> vars, Stmt *suite);
+  WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite);
   WithStmt(const WithStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -564,10 +563,10 @@ struct WithStmt : public Stmt {
 /// @li: pt_tree: pass
 struct CustomStmt : public Stmt {
   std::string keyword;
-  ExprPtr expr;
-  StmtPtr suite;
+  Expr *expr;
+  Stmt *suite;
 
-  CustomStmt(std::string keyword, ExprPtr expr, StmtPtr suite);
+  CustomStmt(std::string keyword, Expr *expr, Stmt *suite);
   CustomStmt(const CustomStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -579,11 +578,11 @@ struct CustomStmt : public Stmt {
 /// Member assignment statement (lhs.member = rhs).
 /// @li: a.x = b
 struct AssignMemberStmt : public Stmt {
-  ExprPtr lhs;
+  Expr *lhs;
   std::string member;
-  ExprPtr rhs;
+  Expr *rhs;
 
-  AssignMemberStmt(ExprPtr lhs, std::string member, ExprPtr rhs);
+  AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs);
   AssignMemberStmt(const AssignMemberStmt &, bool);
 
   std::string toString(int indent) const override;

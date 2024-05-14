@@ -90,22 +90,22 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
   return result;
 }
 
-StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code,
-                  int line_offset) {
-  return parseCode<StmtPtr>(cache, file, code + "\n", line_offset, 0, "program");
+Stmt *parseCode(Cache *cache, const std::string &file, const std::string &code,
+                int line_offset) {
+  return parseCode<Stmt *>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-std::pair<ExprPtr, std::string> parseExpr(Cache *cache, const std::string &code,
-                                          const codon::SrcInfo &offset) {
+std::pair<Expr *, std::string> parseExpr(Cache *cache, const std::string &code,
+                                         const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
   rtrim(newCode);
-  auto e = parseCode<std::pair<ExprPtr, std::string>>(
+  auto e = parseCode<std::pair<Expr *, std::string>>(
       cache, offset.file, newCode, offset.line, offset.col, "fstring");
   return e;
 }
 
-StmtPtr parseFile(Cache *cache, const std::string &file) {
+Stmt *parseFile(Cache *cache, const std::string &file) {
   std::vector<std::string> lines;
   std::string code;
   if (file == "-") {

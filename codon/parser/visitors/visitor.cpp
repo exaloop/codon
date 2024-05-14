@@ -56,6 +56,7 @@ void ASTVisitor::visit(IfStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(MatchStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ImportStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(TryStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(TryStmt::Catch *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(GlobalStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ThrowStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(FunctionStmt *stmt) { defaultVisit(stmt); }

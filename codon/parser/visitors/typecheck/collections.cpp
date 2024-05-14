@@ -21,7 +21,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
   for (int ai = 0; ai < expr->items.size(); ai++)
     if (auto star = expr->items[ai]->getStar()) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
-      transform(star->what);
+      star->what = transform(star->what);
       auto typ = star->what->type->getClass();
       while (typ && typ->is(TYPE_OPTIONAL)) {
         star->what = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->what));
@@ -96,7 +96,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     }
   }
 
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
+  Expr *var = N<IdExpr>(ctx->cache->getTemporaryVar("gen"));
   if (expr->kind == GeneratorExpr::ListGenerator) {
     // List comprehensions
     expr->setFinalExpr(
@@ -164,18 +164,17 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
         finalExpr->getStmtExpr() ? finalExpr->getStmtExpr()->stmts[0] : nullptr;
     auto oldSuite = suiteVec ? clone(suiteVec) : nullptr;
     auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
-        expr->getFinalSuite()->getFor()->var, forStmt->suite,
+        expr->getFinalSuite()->getFor()->var, &forStmt->suite,
         expr->getFinalSuite()->getFor()->iter,
-        [&](const StmtPtr &wrap) { return N<StmtExpr>(clone(wrap), clone(finalExpr)); },
-        true);
+        [&](Stmt *wrap) { return N<StmtExpr>(clone(wrap), clone(finalExpr)); }, true);
     if (!ok)
       E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
     if (delay)
       return;
 
-    std::vector<ExprPtr> tupleItems;
+    std::vector<Expr *> tupleItems;
     for (auto &i : staticItems)
-      tupleItems.push_back(std::dynamic_pointer_cast<Expr>(i));
+      tupleItems.push_back(CAST(i, Expr));
     if (preamble)
       block->stmts.push_back(preamble);
     // ctx->addBlock();
@@ -183,7 +182,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     // ctx->popBlock();
   } else {
     // ctx->addBlock();
-    transform(expr->getFinalSuite()); // assume: internal data will be changed
+    expr->loops =
+        transform(expr->getFinalSuite()); // assume: internal data will be changed
     // ctx->popBlock();
     unify(expr->type, ctx->instantiateGeneric(ctx->getType("Generator"),
                                               {expr->getFinalExpr()->type}));
@@ -208,9 +208,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 ///   `{a: 1, **d}` -> ```cont = Dict()
 ///                       cont.__setitem__((a, 1))
 ///                       for i in b.items(): cont.__setitem__((i[0], i[i]))```
-ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
-                                                 const std::string &fn,
-                                                 std::vector<ExprPtr> &items) {
+Expr *TypecheckVisitor::transformComprehension(const std::string &type,
+                                               const std::string &fn,
+                                               std::vector<Expr *> &items) {
   // Deduce the super type of the collection--- in other words, the least common
   // ancestor of all types in the collection. For example, `type([1, 1.2]) == type([1.2,
   // 1]) == float` because float is an "ancestor" of int.
@@ -293,10 +293,10 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
   }
   if (!done)
     return nullptr;
-  std::vector<StmtPtr> stmts;
-  ExprPtr var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
+  std::vector<Stmt *> stmts;
+  Expr *var = N<IdExpr>(ctx->cache->getTemporaryVar("cont"));
 
-  std::vector<ExprPtr> constructorArgs{};
+  std::vector<Expr *> constructorArgs{};
   if (endswith(type, "List") && !items.empty()) {
     // Optimization: pre-allocate the list with the exact number of elements
     constructorArgs.push_back(N<IntExpr>(items.size()));
@@ -324,7 +324,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
       // Unpack star-expression by iterating over it
       // `*star` -> `for i in star: cont.[fn](i)`
       auto star = it->getStar();
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
+      Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
       star->what->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), star->what,
@@ -332,7 +332,7 @@ ExprPtr TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (isDict && CAST(it, KeywordStarExpr)) {
       // Expand kwstar-expression by iterating over it: see the example above
       auto star = CAST(it, KeywordStarExpr);
-      ExprPtr forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
+      Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
       star->what->setAttr(ExprAttr::StarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), star->what,
