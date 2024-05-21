@@ -77,13 +77,14 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
+add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2 fast_float)
 if(APPLE AND APPLE_ARM)
   add_dependencies(codonrt unwind_shared)
 endif()
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
-                                           "${gc_SOURCE_DIR}/include" runtime)
+                                           "${gc_SOURCE_DIR}/include"
+                                           "${fast_float_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
