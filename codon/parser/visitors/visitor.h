@@ -332,4 +332,194 @@ public:
   }
 };
 
+/**
+ * Callback AST visitor.
+ * This visitor extends base ASTVisitor and stores node's source location (SrcObject).
+ * Function transform() will visit a node and return the appropriate transformation. As
+ * each node type (expression or statement) might return a different type,
+ * this visitor is generic for each different return type.
+ */
+struct ReplacingCallbackASTVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
+public:
+  void visit(StarExpr *expr) override { expr->what = transform(expr->what); }
+  void visit(KeywordStarExpr *expr) override { expr->what = transform(expr->what); }
+  void visit(TupleExpr *expr) override {
+    for (auto &i : expr->items)
+      i = transform(i);
+  }
+  void visit(ListExpr *expr) override {
+    for (auto &i : expr->items)
+      i = transform(i);
+  }
+  void visit(SetExpr *expr) override {
+    for (auto &i : expr->items)
+      i = transform(i);
+  }
+  void visit(DictExpr *expr) override {
+    for (auto &i : expr->items)
+      i = transform(i);
+  }
+  void visit(GeneratorExpr *expr) override { expr->loops = transform(expr->loops); }
+  void visit(IfExpr *expr) override {
+    expr->cond = transform(expr->cond);
+    expr->ifexpr = transform(expr->ifexpr);
+    expr->elsexpr = transform(expr->elsexpr);
+  }
+  void visit(UnaryExpr *expr) override { expr->expr = transform(expr->expr); }
+  void visit(BinaryExpr *expr) override {
+    expr->lexpr = transform(expr->lexpr);
+    expr->rexpr = transform(expr->rexpr);
+  }
+  void visit(ChainBinaryExpr *expr) override {
+    for (auto &e : expr->exprs)
+      e.second = transform(e.second);
+  }
+  void visit(PipeExpr *expr) override {
+    for (auto &e : expr->items)
+      e.expr = transform(e.expr);
+  }
+  void visit(IndexExpr *expr) override {
+    expr->expr = transform(expr->expr);
+    expr->index = transform(expr->index);
+  }
+  void visit(CallExpr *expr) override {
+    expr->expr = transform(expr->expr);
+    for (auto &a : expr->args)
+      a.value = transform(a.value);
+  }
+  void visit(DotExpr *expr) override { expr->expr = transform(expr->expr); }
+  void visit(SliceExpr *expr) override {
+    expr->start = transform(expr->start);
+    expr->stop = transform(expr->stop);
+    expr->step = transform(expr->step);
+  }
+  void visit(EllipsisExpr *expr) override {}
+  void visit(LambdaExpr *expr) override { expr->expr = transform(expr->expr); }
+  void visit(YieldExpr *expr) override {}
+  void visit(AssignExpr *expr) override {
+    expr->var = transform(expr->var);
+    expr->expr = transform(expr->expr);
+  }
+  void visit(RangeExpr *expr) override {
+    expr->start = transform(expr->start);
+    expr->stop = transform(expr->stop);
+  }
+  void visit(InstantiateExpr *expr) override {
+    expr->typeExpr = transform(expr->typeExpr);
+    for (auto &e : expr->typeParams)
+      e = transform(e);
+  }
+  void visit(StmtExpr *expr) override {
+    for (auto &s : expr->stmts)
+      s = transform(s);
+    expr->expr = transform(expr->expr);
+  }
+  void visit(SuiteStmt *stmt) override {
+    for (auto &s : stmt->stmts)
+      s = transform(s);
+  }
+  void visit(ExprStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(AssignStmt *stmt) override {
+    stmt->lhs = transform(stmt->lhs);
+    stmt->rhs = transform(stmt->rhs);
+    stmt->type = transform(stmt->type);
+  }
+  void visit(AssignMemberStmt *stmt) override {
+    stmt->lhs = transform(stmt->lhs);
+    stmt->rhs = transform(stmt->rhs);
+  }
+  void visit(DelStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(PrintStmt *stmt) override {
+    for (auto &e : stmt->items)
+      e = transform(e);
+  }
+  void visit(ReturnStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(YieldStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(AssertStmt *stmt) override {
+    stmt->expr = transform(stmt->expr);
+    stmt->message = transform(stmt->message);
+  }
+  void visit(WhileStmt *stmt) override {
+    stmt->cond = transform(stmt->cond);
+    stmt->suite = transform(stmt->suite);
+    stmt->elseSuite = transform(stmt->elseSuite);
+  }
+  void visit(ForStmt *stmt) override {
+    stmt->var = transform(stmt->var);
+    stmt->iter = transform(stmt->iter);
+    stmt->suite = transform(stmt->suite);
+    stmt->elseSuite = transform(stmt->elseSuite);
+    stmt->decorator = transform(stmt->decorator);
+    for (auto &a : stmt->ompArgs)
+      a.value = transform(a.value);
+  }
+  void visit(IfStmt *stmt) override {
+    stmt->cond = transform(stmt->cond);
+    stmt->ifSuite = transform(stmt->ifSuite);
+    stmt->elseSuite = transform(stmt->elseSuite);
+  }
+  void visit(MatchStmt *stmt) override {
+    stmt->what = transform(stmt->what);
+    for (auto &m : stmt->cases) {
+      m.pattern = transform(m.pattern);
+      m.guard = transform(m.guard);
+      m.suite = transform(m.suite);
+    }
+  }
+  void visit(ImportStmt *stmt) override {
+    stmt->from = transform(stmt->from);
+    stmt->what = transform(stmt->what);
+    for (auto &a : stmt->args) {
+      a.type = transform(a.type);
+      a.defaultValue = transform(a.defaultValue);
+    }
+    stmt->ret = transform(stmt->ret);
+  }
+  void visit(TryStmt *stmt) override {
+    stmt->suite = transform(stmt->suite);
+    for (auto &a : stmt->catches)
+      a = (TryStmt::Catch *)transform(a);
+    stmt->finally = transform(stmt->finally);
+  }
+  void visit(TryStmt::Catch *stmt) override {
+    stmt->exc = transform(stmt->exc);
+    stmt->suite = transform(stmt->suite);
+  }
+  void visit(GlobalStmt *stmt) override {}
+  void visit(ThrowStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(FunctionStmt *stmt) override {
+    stmt->ret = transform(stmt->ret);
+    for (auto &a : stmt->args) {
+      a.type = transform(a.type);
+      a.defaultValue = transform(a.defaultValue);
+    }
+    stmt->suite = transform(stmt->suite);
+    for (auto &d : stmt->decorators)
+      d = transform(d);
+  }
+  void visit(ClassStmt *stmt) override {
+    for (auto &a : stmt->args) {
+      a.type = transform(a.type);
+      a.defaultValue = transform(a.defaultValue);
+    }
+    stmt->suite = transform(stmt->suite);
+    for (auto &d : stmt->decorators)
+      d = transform(d);
+    for (auto &d : stmt->baseClasses)
+      d = transform(d);
+    for (auto &d : stmt->staticBaseClasses)
+      d = transform(d);
+  }
+  void visit(YieldFromStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(WithStmt *stmt) override {
+    for (auto &a : stmt->items)
+      a = transform(a);
+    stmt->suite = transform(stmt->suite);
+  }
+  void visit(CustomStmt *stmt) override {
+    stmt->expr = transform(stmt->expr);
+    stmt->suite = transform(stmt->suite);
+  }
+};
+
 } // namespace codon::ast

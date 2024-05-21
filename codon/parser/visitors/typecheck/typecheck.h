@@ -22,7 +22,7 @@ namespace codon::ast {
  * -> Note: this stage *modifies* the provided AST. Clone it before simplification
  *    if you need it intact.
  */
-class TypecheckVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
+class TypecheckVisitor : public ReplacingCallbackASTVisitor {
   /// Shared simplification context.
   std::shared_ptr<TypeContext> ctx;
   /// Statements to prepend before the current statement.
@@ -31,10 +31,10 @@ class TypecheckVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
 
   /// Each new expression is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
-  Expr *resultExpr;
+  Expr *resultExpr = nullptr;
   /// Each new statement is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
-  Stmt *resultStmt;
+  Stmt *resultStmt = nullptr;
 
 public:
   // static Stmt * apply(Cache *cache, const Stmt * &stmts);

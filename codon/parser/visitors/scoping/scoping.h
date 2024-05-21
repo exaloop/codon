@@ -16,7 +16,7 @@
 
 namespace codon::ast {
 
-class ScopingVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
+class ScopingVisitor : public ReplacingCallbackASTVisitor {
   struct Context {
     /// A pointer to the shared cache.
     Cache *cache;
