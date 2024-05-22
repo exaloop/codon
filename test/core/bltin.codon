@@ -711,6 +711,8 @@ def test_pow():
 
 @test
 def test_num_from_str():
+    import math
+
     assert int('0') == 0
     assert int('010') == 10
     assert int('3\n') == 3
@@ -740,10 +742,148 @@ def test_num_from_str():
     except ValueError as e:
         assert str(e) == "invalid literal for int() with base 10: ''"
 
+    # new tests for PR #561
+    assert int("123") == 123
+    assert int("-123") == -123
+    assert int("+123") == 123
+    assert int("0") == 0
+    assert int("-0") == 0
+    assert int("0000123") == 123
+    assert int("-0000123") == -123
+    assert int("+0000123") == 123
+    assert int("123 ") == 123
+    assert int(" 123") == 123
+    assert int(" 123 ") == 123
+
+    assert int("1101", 2) == 13
+    assert int("-1101", 2) == -13
+    assert int("+1101", 2) == 13
+    assert int("0b1101", 2) == 13
+    assert int("-0b1101", 2) == -13
+    assert int("+0b1101", 2) == 13
+    assert int("00001101", 2) == 13
+    assert int("-00001101", 2) == -13
+    assert int("0", 2) == 0
+
+    assert int("123", 8) == 83
+    assert int("-123", 8) == -83
+    assert int("+123", 8) == 83
+    assert int("0o123", 8) == 83
+    assert int("-0o123", 8) == -83
+    assert int("+0o123", 8) == 83
+    assert int("0000123", 8) == 83
+    assert int("-0000123", 8) == -83
+    assert int("0", 8) == 0
+
+    assert int("1A", 16) == 26
+    assert int("-1A", 16) == -26
+    assert int("+1A", 16) == 26
+    assert int("0x1A", 16) == 26
+    assert int("-0x1A", 16) == -26
+    assert int("+0x1A", 16) == 26
+    assert int("00001A", 16) == 26
+    assert int("-00001A", 16) == -26
+    assert int("0", 16) == 0
+
+    assert int("Z", 36) == 35
+    assert int("-Z", 36) == -35
+    assert int("+Z", 36) == 35
+    assert int("0", 36) == 0
+    assert int("10", 36) == 36
+    assert int("000Z", 36) == 35
+    assert int("-000Z", 36) == -35
+    assert int("+000Z", 36) == 35
+
+    assert int("123", 0) == 123
+    assert int("-123", 0) == -123
+    assert int("+123", 0) == 123
+    assert int("0b1101", 0) == 13
+    assert int("-0b1101", 0) == -13
+    assert int("+0b1101", 0) == 13
+    assert int("0o123", 0) == 83
+    assert int("-0o123", 0) == -83
+    assert int("+0o123", 0) == 83
+    assert int("0x1A", 0) == 26
+    assert int("-0x1A", 0) == -26
+    assert int(" +0x1a\n", 0) == 26
+
+    try:
+        int("1A", 10)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0b1101", 10)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0o123", 10)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0x1A", 10)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("Z", 10)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123", 1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123", 37)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123", -10)
+        assert False
+    except ValueError:
+        pass
+
+    assert int("\n123\n") == 123
+    assert int("\t123\t") == 123
+    assert int("   123   ") == 123
+    assert int("+0x7FFFFFFF", 0) == 0x7FFFFFFF
+    assert int("-0x80000000", 0) == -0x80000000
+    assert int("+0o37777777777", 0) == 4294967295  # 0o37777777777
+    assert int("-0o40000000000", 0) == -4294967296  # -0o40000000000
+    assert int("+0b1111111111111111111111111111111", 0) == 0b1111111111111111111111111111111
+    assert int("-0b10000000000000000000000000000000", 0) == -0b10000000000000000000000000000000
+
     assert float('0') == 0
     assert float('3.14') == 3.14
     assert float('3\n') == 3
     assert float('\r\t\n -4.2\r\t\n ') == -4.2
+    assert math.isnan(float(' nan '))
+    assert math.isnan(float(' +nan '))
+    assert math.isnan(float(' -nan '))
+    assert math.isinf(float(' inf '))
+    assert math.isinf(float(' +inf '))
+    assert math.isinf(float(' -inf '))
+    assert math.isinf(float(' infinity '))
+    assert math.isinf(float(' +infinity '))
+    assert math.isinf(float(' -infinity '))
+    assert float(' inf ') > 0.0
+    assert float(' +inf ') > 0.0
+    assert float(' -inf ') < 0.0
+    assert float(' infinity ') > 0.0
+    assert float(' +infinity ') > 0.0
+    assert float(' -infinity ') < 0.0
 
     try:
         float('  3.14  a')
