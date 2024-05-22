@@ -381,31 +381,88 @@ def pow(base: int, exp: int, mod: Optional[int] = None):
 @extend
 class int:
     def _from_str(s: str, base: int):
-        from internal.gc import alloc_atomic, free
+        def parse_error(s: str, base: int):
+            raise ValueError(
+                f"invalid literal for int() with base {base}: {s.__repr__()}"
+            )
 
         if base < 0 or base > 36 or base == 1:
             raise ValueError("int() base must be >= 2 and <= 36, or 0")
 
         s0 = s
+        base0 = base
         s = s.strip()
-        buf = __array__[byte](32)
         n = len(s)
-        need_dyn_alloc = n >= len(buf)
+        negate = False
 
-        p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
-        str.memcpy(p, s.ptr, n)
-        p[n] = byte(0)
+        if base == 0:
+            # skip leading sign
+            o = 0
+            if n >= 1 and (s.ptr[0] == byte(43) or s.ptr[0] == byte(45)):
+                o = 1
+
+            # detect base from prefix
+            if n >= o + 1 and s.ptr[o] == byte(48):  # '0'
+                if n < o + 2:
+                    parse_error(s0, base)
+
+                if s.ptr[o + 1] == byte(98) or s.ptr[o + 1] == byte(66):  # 'b'/'B'
+                    base = 2
+                elif s.ptr[o + 1] == byte(111) or s.ptr[o + 1] == byte(79):  # 'o'/'O'
+                    base = 8
+                elif s.ptr[o + 1] == byte(120) or s.ptr[o + 1] == byte(88):  # 'x'/'X'
+                    base = 16
+                else:
+                    parse_error(s0, base)
+            else:
+                base = 10
+
+        if base == 2 or base == 8 or base == 16:
+            if base == 2:
+                C_LOWER = byte(98)  # 'b'
+                C_UPPER = byte(66)  # 'B'
+            elif base == 8:
+                C_LOWER = byte(111)  # 'o'
+                C_UPPER = byte(79)   # 'O'
+            else:
+                C_LOWER = byte(120)  # 'x'
+                C_UPPER = byte(88)   # 'X'
+
+            def check_digit(d: byte, base: int):
+                if base == 2:
+                    return d == byte(48) or d == byte(49)
+                elif base == 8:
+                    return byte(48) <= d <= byte(55)
+                elif base == 16:
+                    return ((byte(48) <= d <= byte(57)) or
+                            (byte(97) <= d <= byte(102)) or
+                            (byte(65) <= d <= byte(70)))
+                return False
+
+            if (n >= 4 and
+                (s.ptr[0] == byte(43) or s.ptr[0] == byte(45)) and
+                s.ptr[1] == byte(48) and
+                (s.ptr[2] == C_LOWER or s.ptr[2] == C_UPPER)):  # '+0b' etc.
+                if not check_digit(s.ptr[3], base):
+                    parse_error(s0, base0)
+                negate = (s.ptr[0] == byte(45))
+                s = str(s.ptr + 3, n - 3)
+            elif (n >= 3 and
+                  s.ptr[0] == byte(48) and
+                  (s.ptr[1] == C_LOWER or s.ptr[1] == C_UPPER)):  # '0b' etc.
+                if not check_digit(s.ptr[3], base):
+                    parse_error(s0, base0)
+                s = str(s.ptr + 2, n - 2)
 
         end = cobj()
-        result = _C.strtoll(p, __ptr__(end), i32(base))
+        result = _C.seq_int_from_str(s, __ptr__(end), i32(base))
+        n = len(s)
 
-        if need_dyn_alloc:
-            free(p)
+        if n == 0 or end != s.ptr + n:
+            parse_error(s0, base0)
 
-        if n == 0 or end != p + n:
-            raise ValueError(
-                f"invalid literal for int() with base {base}: {s0.__repr__()}"
-            )
+        if negate:
+            result = -result
 
         return result
 
@@ -413,22 +470,12 @@ class int:
 class float:
     def _from_str(s: str) -> float:
         s0 = s
-        s = s.strip()
-        buf = __array__[byte](32)
+        s = s.rstrip()
         n = len(s)
-        need_dyn_alloc = n >= len(buf)
-
-        p = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
-        str.memcpy(p, s.ptr, n)
-        p[n] = byte(0)
-
         end = cobj()
-        result = _C.strtod(p, __ptr__(end))
+        result = _C.seq_float_from_str(s, __ptr__(end))
 
-        if need_dyn_alloc:
-            free(p)
-
-        if n == 0 or end != p + n:
+        if n == 0 or end != s.ptr + n:
             raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
@@ -439,89 +486,73 @@ class complex:
         def parse_error():
             raise ValueError("complex() arg is a malformed string")
 
-        buf = __array__[byte](32)
         n = len(v)
-        need_dyn_alloc = n >= len(buf)
-
-        s = alloc_atomic(n + 1) if need_dyn_alloc else buf.ptr
-        str.memcpy(s, v.ptr, n)
-        s[n] = byte(0)
-
+        s = v.ptr
         x = 0.0
         y = 0.0
         z = 0.0
         got_bracket = False
-        start = s
         end = cobj()
+        i = 0
 
-        while str._isspace(s[0]):
-            s += 1
+        while i < n and str._isspace(s[i]):
+            i += 1
 
-        if s[0] == byte(40):  # '('
+        if i < n and s[i] == byte(40):  # '('
             got_bracket = True
-            s += 1
-            while str._isspace(s[0]):
-                s += 1
+            i += 1
+            while i < n and str._isspace(s[i]):
+                i += 1
 
-        z = _C.strtod(s, __ptr__(end))
+        z = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
 
-        if end != s:
-            s = end
+        if end != s + i:
+            i = end - s
 
-            if s[0] == byte(43) or s[0] == byte(45):  # '+' '-'
+            if i < n and (s[i] == byte(43) or s[i] == byte(45)):  # '+' '-'
                 x = z
-                y = _C.strtod(s, __ptr__(end))
+                y = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
 
-                if end != s:
-                    s = end
+                if end != s + i:
+                    i = end - s
                 else:
-                    y = 1.0 if s[0] == byte(43) else -1.0
-                    s += 1
+                    y = 1.0 if s[i] == byte(43) else -1.0
+                    i += 1
 
-                if not (s[0] == byte(106) or s[0] == byte(74)):  # 'j' 'J'
-                    if need_dyn_alloc:
-                        free(s)
+                if not (i < n and (s[i] == byte(106) or s[i] == byte(74))):  # 'j' 'J'
                     parse_error()
 
-                s += 1
-            elif s[0] == byte(106) or s[0] == byte(74):  # 'j' 'J'
-                s += 1
+                i += 1
+            elif i < n and (s[i] == byte(106) or s[i] == byte(74)):  # 'j' 'J'
+                i += 1
                 y = z
             else:
                 x = z
         else:
-            if s[0] == byte(43) or s[0] == byte(45):  # '+' '-'
-                y = 1.0 if s[0] == byte(43) else -1.0
-                s += 1
+            if i < n and (s[i] == byte(43) or s[i] == byte(45)):  # '+' '-'
+                y = 1.0 if s[i] == byte(43) else -1.0
+                i += 1
             else:
                 y = 1.0
 
-            if not (s[0] == byte(106) or s[0] == byte(74)):  # 'j' 'J'
-                if need_dyn_alloc:
-                    free(s)
+            if not (i < n and (s[i] == byte(106) or s[i] == byte(74))):  # 'j' 'J'
                 parse_error()
 
-            s += 1
+            i += 1
 
-        while str._isspace(s[0]):
-            s += 1
+        while i < n and str._isspace(s[i]):
+            i += 1
 
         if got_bracket:
-            if s[0] != byte(41):  # ')'
-                if need_dyn_alloc:
-                    free(s)
+            if i < n and s[i] != byte(41):  # ')'
                 parse_error()
-            s += 1
-            while str._isspace(s[0]):
-                s += 1
+            i += 1
+            while i < n and str._isspace(s[i]):
+                i += 1
 
-        if s - start != n:
-            if need_dyn_alloc:
-                free(s)
+        if i != n:
             parse_error()
 
-        if need_dyn_alloc:
-            free(s)
         return complex(x, y)
 
 @extend
