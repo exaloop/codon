@@ -164,7 +164,7 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
 TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
                                    const std::shared_ptr<std::vector<Stmt *>> &pre,
                                    const std::shared_ptr<std::vector<Stmt *>> &stmts)
-    : ctx(std::move(ctx)) {
+    : resultExpr(nullptr), resultStmt(nullptr), ctx(std::move(ctx)) {
   preamble = pre ? pre : std::make_shared<std::vector<Stmt *>>();
   prependStmts = stmts ? stmts : std::make_shared<std::vector<Stmt *>>();
 }
@@ -319,7 +319,7 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
       // If returnEarly is set (e.g., in the function) ignore the rest
       break;
     }
-    if (transform(s)) {
+    if (s = transform(s)) {
       if (!s->getSuite()) {
         done &= s->isDone();
         stmts.push_back(s);

@@ -184,7 +184,8 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
   expr->inTypes.clear();
 
   // Process the pipeline head
-  auto inType = transform(expr->items[0].expr)->type; // input type to the next stage
+  expr->items[0].expr = transform(expr->items[0].expr);
+  auto inType = expr->items[0].expr->type; // input type to the next stage
   expr->inTypes.push_back(inType);
   inType = getIterableType(inType);
   auto done = expr->items[0].expr->isDone();
@@ -331,7 +332,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 /// @example
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
-  transformType(expr->typeExpr);
+  expr->typeExpr = transformType(expr->typeExpr);
   // std::shared_ptr<types::StaticType> repeats = nullptr;
   // if (expr->typeExpr->isId(TYPE_TUPLE) && !expr->typeParams.empty()) {
   //   transform(expr->typeParams[0]);
@@ -362,7 +363,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 
     // Callable error checking.
     for (auto &typeParam : expr->typeParams) {
-      transformType(typeParam);
+      typeParam = transformType(typeParam);
       if (typeParam->type->isStaticType())
         E(Error::INST_CALLABLE_STATIC, typeParam);
       types.push_back(getType(typeParam));
@@ -373,19 +374,19 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {typ}));
   } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
-    transformType(expr->typeParams[0]);
+    expr->typeParams[0] = transformType(expr->typeParams[0]);
     auto typ = ctx->getUnbound();
     typ->getLink()->trait = std::make_shared<TypeTrait>(getType(expr->typeParams[0]));
     unify(expr->type, typ);
   } else {
     for (size_t i = hasRepeats; i < expr->typeParams.size(); i++) {
-      transformType(expr->typeParams[i]);
+      expr->typeParams[i] = transformType(expr->typeParams[i]);
       auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
                                 getType(expr->typeParams[i]));
       if (isUnion || expr->typeParams[i]->type->isStaticType() !=
                          generics[i].type->isStaticType()) {
         if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
-          transformType(expr->typeParams[i]);
+          expr->typeParams[i] = transformType(expr->typeParams[i]);
         if (!expr->typeParams[i]->type->is("type"))
           E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
       }

@@ -92,7 +92,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
     } else {
       // Handle all other exceptions
-      transformType(c->exc);
+      c->exc = transformType(c->exc);
       if (val)
         unify(val->type, getType(c->exc));
       ctx->blockLevel++;

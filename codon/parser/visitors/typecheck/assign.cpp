@@ -219,7 +219,7 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  stmt->rhs = transform(stmt->rhs);
+  stmt->lhs = transform(stmt->lhs);
 
   if (auto lhsClass = getType(stmt->lhs)->getClass()) {
     auto member = ctx->findMember(lhsClass, stmt->member);

@@ -437,7 +437,7 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
-    transformType(cls);
+    cls = transformType(cls);
     if (!cls->type->getClass())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
@@ -623,7 +623,7 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
 #define I(s) N<IdExpr>(s)
 #define NS(x) N<DotExpr>(N<IdExpr>("__magic__"), (x))
   seqassert(typExpr, "typExpr is null");
-  Expr *ret;
+  Expr *ret = nullptr;
   std::vector<Param> fargs;
   std::vector<Stmt *> stmts;
   Attr attr;

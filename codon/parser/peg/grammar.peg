@@ -286,11 +286,11 @@ excepts <- (SAMEDENT except_block)+ { return VS; }
 except_block <-
   / 'except' SPACE expression (SPACE 'as' SPACE NAME)? _ ':' _ suite {
     if (VS.size() == 3)
-      return CTX.cache->N<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2))->setSrcInfo(LOC);
+      return (TryStmt::Catch*)(CTX.cache->N<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2))->setSrcInfo(LOC));
     else
-      return CTX.cache->N<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1))->setSrcInfo(LOC);
+      return (TryStmt::Catch*)(CTX.cache->N<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1))->setSrcInfo(LOC));
   }
-  / 'except' _ ':' _ suite { return CTX.cache->N<TryStmt::Catch>("", nullptr, ac_stmt(V0))->setSrcInfo(LOC); }
+  / 'except' _ ':' _ suite { return (TryStmt::Catch*)(CTX.cache->N<TryStmt::Catch>("", nullptr, ac_stmt(V0))->setSrcInfo(LOC)); }
 function <-
   / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = (FunctionStmt*)(ac_stmt(V1));

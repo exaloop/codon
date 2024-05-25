@@ -931,7 +931,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     }
   }
 
-  transformType(typExpr);
+  typExpr = transformType(typExpr);
   auto targetType = getType(typExpr);
 
   // Check super types (i.e., statically inherited) as well
