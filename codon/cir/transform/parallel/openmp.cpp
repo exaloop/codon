@@ -978,7 +978,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 
-    auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
+    auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
     seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
     auto *result = taskRedInputType->construct({shar, orig, size, init, comb});
     seqassertn(result, "bad construction of 'TaskReductionInput' type");
@@ -1044,9 +1044,9 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
       // add task reduction inputs
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
-      auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
+      auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray", {}, ompModule);
+      auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray.0", {}, ompModule);
       seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
