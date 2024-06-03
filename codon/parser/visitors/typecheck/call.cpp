@@ -59,6 +59,50 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
+  // Check if this call is partial call
+  // PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis() &&
+  //                      expr->args.back().value->getEllipsis()->mode ==
+  //                          EllipsisExpr::PARTIAL};
+  // expr->expr = transform(expr->expr);
+  // auto [calleeFn, newExpr] = getCalleeFn(expr, part);
+  // if ((resultExpr = newExpr))
+  //   return;
+  // if (!calleeFn)
+  //   return;
+
+  // if (expr->expr->isId("std.collections.namedtuple.0")) {
+  //   resultExpr = transformNamedTuple(expr);
+  //   return;
+  // } else if (expr->expr->isId("std.functools.partial.0:0")) {
+  //   resultExpr = transformFunctoolsPartial(expr);
+  //   return;
+  // } else if (expr->expr->isId("tuple") && expr->args.size() == 1 &&
+  //            CAST(expr->args.front().value, GeneratorExpr)) {
+  //   resultExpr = transformTupleGenerator(expr);
+  //   return;
+  // }
+
+  // // Transform and expand arguments. Return early if it cannot be done yet
+  // ctx->addBlock();
+  // if (expr->expr->type)
+  //   if (auto f = expr->expr->type->getFunc())
+  //     addFunctionGenerics(f.get());
+  // auto a = transformCallArgs(expr->args);
+  // ctx->popBlock();
+  // if (!a)
+  //   return;
+
+  // // Resolve dispatches
+  // if (auto id = expr->expr->getId())
+  //   if (!part.isPartial && endswith(id->value, ":dispatch")) {
+  //     if (auto bestMethod = getBestOverload(id, &expr->args)) {
+  //       LOG("-> [x] {}: {} / {}", getSrcInfo(), *(expr->expr), bestMethod);
+  //       expr->expr = N<IdExpr>(bestMethod->ast->name);
+  //       expr->expr->setType(ctx->instantiate(bestMethod));
+  //       expr->expr = transform(expr->expr);
+  //       calleeFn = expr->expr->type->getFunc();
+  //     }
+  //   }
   // Special case!
   if (expr->type->getUnbound() && expr->expr->getId()) {
     auto callExpr = transform(clean_clone(expr->expr));
@@ -299,8 +343,37 @@ std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     return {nullptr, transform(e)};
   }
 
+  // auto getPartElems = [&](Expr *expr)
+  //     -> std::shared_ptr<std::pair<FuncTypePtr, std::vector<CallExpr::Arg>>> {
+  //   if (!expr->type->getPartial())
+  //     return nullptr;
+  //   auto fn = expr->type->getPartial()->getPartialFunc();
+  //   auto se = expr->getStmtExpr();
+  //   if (!se || se->stmts.size() != 1 || !se->expr->getId())
+  //     return nullptr;
+  //   auto a = se->stmts[0]->getAssign();
+  //   if (!a || !a->lhs->getId())
+  //     return nullptr;
+  //   auto c = a->rhs->getCall();
+  //   if (!c || !c->expr->getId() ||
+  //       !startswith(c->expr->getId()->value, "Partial.__new__:0") ||
+  //       !c->args[0].value->getCall())
+  //     return nullptr;
+  //   auto ae = c->args[0].value->getCall()->args;
+  //   return std::make_shared<std::pair<FuncTypePtr, std::vector<CallExpr::Arg>>>(
+  //       fn, std::vector<CallExpr::Arg>(ae.begin(), ae.begin() + ae.size() - 1));
+  // };
+
   auto calleeFn = callee->getFunc();
   if (auto partType = callee->getPartial()) {
+    // can we extract the exact partial call somehow?
+    // if (auto e = getPartElems(expr->expr)) {
+    //   e->second.insert(e->second.end(), expr->args.begin(), expr->args.end());
+    //   auto ne = N<CallExpr>(N<IdExpr>(e->first->ast->name), e->second);
+    //   LOG("-> [x] {}: {}", getSrcInfo(), *ne);
+    //   return {nullptr, transform(ne)};
+    // }
+
     auto mask = partType->getPartialMask();
     auto func = ctx->instantiate(partType->getPartialFunc()->generalize(0))->getFunc();
 

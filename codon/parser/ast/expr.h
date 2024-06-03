@@ -505,6 +505,8 @@ struct CallExpr : public Expr {
   std::vector<Arg> args;
   /// True if type-checker has processed and re-ordered args.
   bool ordered;
+  /// True if the call is partial
+  bool partial = false;
 
   CallExpr(Expr *expr, std::vector<Arg> args = {});
   /// Convenience constructors
@@ -677,18 +679,19 @@ char getStaticGeneric(Expr *e);
 template <>
 struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::CallExpr::Arg &p, FormatContext &ctx) const
-      -> decltype(ctx.out()) {
+  auto format(const codon::ast::CallExpr::Arg &p,
+              FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "({}{})",
-                          p.name.empty() ? "" : fmt::format("{} = ", p.name), p.value);
+                          p.name.empty() ? "" : fmt::format("{} = ", p.name),
+                          p.value ? p.value->toString(0) : "-");
   }
 };
 
 template <>
 struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::Param &p, FormatContext &ctx) const
-      -> decltype(ctx.out()) {
+  auto format(const codon::ast::Param &p,
+              FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "{}", p.toString(0));
   }
 };

@@ -411,12 +411,14 @@ CallExpr::Arg::Arg(Expr *value) : CallExpr::Arg("", value) {}
 
 CallExpr::CallExpr(const CallExpr &expr, bool clean)
     : Expr(expr, clean), expr(ast::clone(expr.expr, clean)),
-      args(ast::clone(expr.args, clean)), ordered(expr.ordered) {}
+      args(ast::clone(expr.args, clean)), ordered(expr.ordered), partial(expr.partial) {
+}
 CallExpr::CallExpr(Expr *expr, std::vector<CallExpr::Arg> args)
-    : Expr(), expr(expr), args(std::move(args)), ordered(false) {
+    : Expr(), expr(expr), args(std::move(args)), ordered(false), partial(false) {
   validate();
 }
-CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args) : expr(expr), ordered(false) {
+CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args)
+    : expr(expr), ordered(false), partial(false) {
   for (auto a : args)
     if (a)
       this->args.emplace_back("", a);
@@ -445,7 +447,8 @@ std::string CallExpr::toString(int indent) const {
     s.emplace_back(pad +
                    i.value->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1));
   }
-  return wrapType(format("call {}{}", expr->toString(indent), fmt::join(s, "")));
+  return wrapType(format("call{} {}{}", partial ? "-partial" : "",
+                         expr->toString(indent), fmt::join(s, "")));
 }
 ACCEPT_IMPL(CallExpr, ASTVisitor);
 

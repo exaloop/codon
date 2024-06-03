@@ -395,6 +395,15 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
     if (!ret) {
       realizations.erase(key);
+      if (!startswith(ast->name, "%_lambda")) {
+        // Lambda typecheck failures are "ignored" as they are treated as statements,
+        // not functions.
+        // TODO: generalize this further.
+        for (size_t w = ctx->bases.size(); w-- > 0;)
+          if (ctx->bases[w].suite)
+            LOG("[error=> {}] {}", ctx->bases[w].type->debugString(2),
+                ctx->bases[w].suite->toString(2));
+      }
       if (!startswith(type->ast->name, "%_import_")) {
         ctx->bases.pop_back();
         ctx->popBlock();
@@ -405,12 +414,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.
-        for (size_t w = ctx->bases.size(); w-- > 0;)
-          if (ctx->bases[w].suite)
-            LOG("[error=> {}] {}", ctx->bases[w].type->debugString(2),
-                ctx->bases[w].suite->toString(2));
-        // inferTypes(ast.suite, ctx);
-        error("cannot typecheck the program");
+        error("cannot typecheck the program [1]");
       }
       this->ctx = oldCtx;
       return nullptr; // inference must be delayed

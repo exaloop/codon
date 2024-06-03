@@ -178,6 +178,9 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   if (!expr)
     return nullptr;
 
+  auto k = typeid(*expr).name();
+  Cache::CTimer t(ctx->cache, k);
+
   if (!expr->type)
     unify(expr->type, ctx->getUnbound());
 
@@ -261,6 +264,9 @@ void TypecheckVisitor::defaultVisit(Expr *e) {
 Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   if (!stmt || stmt->done)
     return stmt;
+
+  auto k = typeid(*stmt).name();
+  Cache::CTimer t(ctx->cache, k);
 
   TypecheckVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());

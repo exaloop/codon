@@ -85,6 +85,10 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                                      getEarlyDefines(), (testFlags > 1));
     LOG_TIME("[T] parse = {:.1f}", totalPeg);
     LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
+
+    for (auto &[k, v]: cache->_timings)
+      LOG_TIME("  [->] {} = {:.1f}", k, v);
+
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
       fmt::print(fo, "{}\n", typechecked->toString(0));
