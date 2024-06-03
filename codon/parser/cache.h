@@ -310,6 +310,11 @@ public:
     t->cache = this;
     return t;
   }
+  template <typename Tn, typename... Ts> Tn *NS(const Node *srcInfo, Ts &&...args) {
+    auto n = N(std::forward<Ts>(args)...));
+    n->setSrcInfo(srcInfo->getSrcInfo());
+    return t;
+  }
 
 public:
   std::unordered_map<std::string, double> _timings;

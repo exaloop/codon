@@ -88,10 +88,6 @@ struct SuiteStmt : public Stmt {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
   Stmt **lastInBlock();
-
-  /// Flatten all nested SuiteStmt objects that do not own a block in the statement
-  /// vector. This is shallow flattening.
-  void shallow_flatten();
 };
 
 /// Break statement.
@@ -151,6 +147,8 @@ struct AssignStmt : public Stmt {
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
+
+  Stmt* unpack() const;
 
 private:
   UpdateMode update;

@@ -202,7 +202,6 @@ void ScopingVisitor::visit(IdExpr *expr) {
       expr->value = *v;
       break;
     }
-
   visitName(expr->value, ctx->adding, ctx->root, expr->getSrcInfo());
 }
 
@@ -278,29 +277,25 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
 }
 
 void ScopingVisitor::visit(GeneratorExpr *expr) {
-  bool ts = true;
-  std::swap(ts, ctx->tempScope);
+  SetInScope(ctx->tempScope, true);
   ctx->renames.emplace_back();
   expr->loops = transform(expr->loops);
   ctx->renames.pop_back();
-  std::swap(ts, ctx->tempScope);
 }
 
 void ScopingVisitor::visit(IfExpr *expr) {
   expr->cond = transform(expr->cond);
-  auto isConditional = true;
-  std::swap(isConditional, ctx->isConditional);
+
+  SetInScope(ctx->isConditional, true);
   expr->ifexpr = transform(expr->ifexpr);
   expr->elsexpr = transform(expr->elsexpr);
-  std::swap(isConditional, ctx->isConditional);
 }
 
 void ScopingVisitor::visit(BinaryExpr *expr) {
   expr->lexpr = transform(expr->lexpr);
-  auto isConditional = expr->op == "&&" || expr->op == "||";
-  std::swap(isConditional, ctx->isConditional);
+
+  SetInScope(ctx->isConditional, expr->op == "&&" || expr->op == "||");
   expr->rexpr = transform(expr->rexpr);
-  std::swap(isConditional, ctx->isConditional);
 }
 
 void ScopingVisitor::visit(AssignExpr *expr) {
@@ -308,10 +303,10 @@ void ScopingVisitor::visit(AssignExpr *expr) {
 
   Expr *s = N<StmtExpr>(N<AssignStmt>(clone(expr->var), expr->expr), expr->var);
   enterConditionalBlock();
-  auto ts = false;
-  std::swap(ts, ctx->tempScope);
-  s = transform(s);
-  std::swap(ts, ctx->tempScope);
+  {
+    SetInScope(ctx->tempScope, false);
+    s = transform(s);
+  }
   leaveConditionalBlock();
   resultExpr = s;
 }
@@ -324,96 +319,10 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
 // val->canShadow = false;
 
 void ScopingVisitor::visit(AssignStmt *stmt) {
-  if (stmt->lhs->getTuple() || stmt->lhs->getList()) {
-    std::vector<Stmt *> s;
-    unpackAssignments(stmt->lhs, stmt->rhs, s);
-    resultStmt = transform(N<SuiteStmt>(s));
-  } else {
-    stmt->rhs = transform(stmt->rhs);
-    stmt->type = transform(stmt->type);
-    auto a = N<AssignStmt>(stmt->lhs, stmt->rhs, stmt->type);
-    a->setSrcInfo(stmt->getSrcInfo());
-    resultStmt = N<SuiteStmt>(a);
-    stmt->lhs = transformAdding(stmt->lhs, resultStmt);
-  }
-}
-
-/// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
-/// expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
-/// Handle Python unpacking rules.
-/// @example
-///   `(a, b) = c`     -> `a = c[0]; b = c[1]`
-///   `a, b = c`       -> `a = c[0]; b = c[1]`
-///   `[a, *x, b] = c` -> `a = c[0]; x = c[1:-1]; b = c[-1]`.
-/// Non-trivial right-hand expressions are first stored in a temporary variable.
-/// @example
-///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
-/// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-void ScopingVisitor::unpackAssignments(Expr *lhs, Expr *rhs,
-                                       std::vector<Stmt *> &stmts) {
-  std::vector<Expr *> leftSide;
-  if (auto et = lhs->getTuple()) {
-    // Case: (a, b) = ...
-    for (auto &i : et->items)
-      leftSide.push_back(i);
-  } else if (auto el = lhs->getList()) {
-    // Case: [a, b] = ...
-    for (auto &i : el->items)
-      leftSide.push_back(i);
-  } else {
-    // Case: simple assignment (a = b, a.x = b, or a[x] = b)
-    stmts.push_back(N<AssignStmt>(clone(lhs), clone(rhs)));
-    return;
-  }
-
-  // Prepare the right-side expression
-  auto srcPos = rhs->getSrcInfo();
-  if (!rhs->getId()) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = ctx->cache->getTemporaryVar("assign");
-    Expr *newRhs = N<IdExpr>(var);
-    newRhs->setSrcInfo(srcPos);
-    stmts.push_back(N<AssignStmt>(newRhs, clone(rhs)));
-    rhs = newRhs;
-  }
-
-  // Process assignments until the fist StarExpr (if any)
-  size_t st = 0;
-  for (; st < leftSide.size(); st++) {
-    if (leftSide[st]->getStar())
-      break;
-    // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide = N<IndexExpr>(clone(rhs), N<IntExpr>(st));
-    rightSide->setSrcInfo(srcPos);
-    rightSide->index->setSrcInfo(srcPos);
-    // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    unpackAssignments(leftSide[st], rightSide, stmts);
-  }
-  // Process StarExpr (if any) and the assignments that follow it
-  if (st < leftSide.size() && leftSide[st]->getStar()) {
-    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    auto rightSide = N<IndexExpr>(
-        clone(rhs),
-        N<SliceExpr>(N<IntExpr>(st),
-                     // this slice is either [st:] or [st:-lhs_len + st + 1]
-                     leftSide.size() == st + 1 ? nullptr
-                                               : N<IntExpr>(-leftSide.size() + st + 1),
-                     nullptr));
-    rightSide->setSrcInfo(srcPos);
-    rightSide->index->setSrcInfo(srcPos);
-    unpackAssignments(leftSide[st]->getStar()->what, rightSide, stmts);
-    st += 1;
-    // Process remaining assignments. They will use negative indices (-1, -2 etc.)
-    // because we do not know how big is StarExpr
-    for (; st < leftSide.size(); st++) {
-      if (leftSide[st]->getStar())
-        E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
-      rightSide = N<IndexExpr>(clone(rhs), N<IntExpr>(-int(leftSide.size() - st)));
-      rightSide->setSrcInfo(srcPos);
-      rightSide->index->setSrcInfo(srcPos);
-      unpackAssignments(leftSide[st], rightSide, stmts);
-    }
-  }
+  seqassert(stmt->lhs->getId(), "assignment not unpacked");
+  stmt->rhs = transform(stmt->rhs);
+  stmt->type = transform(stmt->type);
+  stmt->lhs = transformAdding(stmt->lhs, resultStmt);
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
@@ -693,85 +602,6 @@ Expr *ScopingVisitor::makeAnonFn(std::vector<Stmt *> suite,
   auto f =
       transform(N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(std::move(suite))));
   return N<StmtExpr>(f, N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
-}
-
-/// Set type to `str`
-void ScopingVisitor::visit(StringExpr *expr) {
-  std::vector<Expr *> exprs;
-  std::vector<std::string> concat;
-  for (auto &p : expr->strings) {
-    if (p.second == "f" || p.second == "F") {
-      /// Transform an F-string
-      setSrcInfo(expr->getSrcInfo());
-      exprs.push_back(transformFString(p.first));
-    } else if (!p.second.empty()) {
-      /// Custom prefix strings:
-      /// call `str.__prefix_[prefix]__(str, [static length of str])`
-      exprs.push_back(transform(
-          N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), format("__prefix_{}__", p.second)),
-                      N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
-    } else {
-      exprs.push_back(N<StringExpr>(p.first));
-      concat.push_back(p.first);
-    }
-  }
-  if (concat.size() == expr->strings.size()) {
-    /// Simple case: statically concatenate a sequence of strings without any prefix
-    expr->strings = {{combine2(concat, ""), ""}};
-  } else if (exprs.size() == 1) {
-    /// Simple case: only one string in a sequence
-    resultExpr = exprs[0];
-  } else {
-    /// Complex case: call `str.cat(str1, ...)`
-    resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), exprs));
-  }
-}
-
-/// Parse a Python-like f-string into a concatenation:
-///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
-/// Supports "{x=}" specifier (that prints the raw expression as well):
-///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
-Expr *ScopingVisitor::transformFString(const std::string &value) {
-  // Strings to be concatenated
-  std::vector<Expr *> items;
-  int braceCount = 0, braceStart = 0;
-  for (int i = 0; i < value.size(); i++) {
-    if (value[i] == '{') {
-      if (braceStart < i)
-        items.push_back(N<StringExpr>(value.substr(braceStart, i - braceStart)));
-      if (!braceCount)
-        braceStart = i + 1;
-      braceCount++;
-    } else if (value[i] == '}') {
-      braceCount--;
-      if (!braceCount) {
-        std::string code = value.substr(braceStart, i - braceStart);
-        auto offset = getSrcInfo();
-        offset.col += i;
-        if (!code.empty() && code.back() == '=') {
-          // Special case: f"{x=}"
-          code = code.substr(0, code.size() - 1);
-          items.push_back(N<StringExpr>(fmt::format("{}=", code)));
-        }
-        auto [expr, format] = parseExpr(ctx->cache, code, offset);
-        if (!format.empty()) {
-          items.push_back(
-              N<CallExpr>(N<DotExpr>(expr, "__format__"), N<StringExpr>(format)));
-        } else {
-          // Every expression is wrapped within `str`
-          items.push_back(N<CallExpr>(N<IdExpr>("str"), expr));
-        }
-      }
-      braceStart = i + 1;
-    }
-  }
-  if (braceCount > 0)
-    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
-  if (braceCount < 0)
-    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
-  if (braceStart != value.size())
-    items.push_back(N<StringExpr>(value.substr(braceStart, value.size() - braceStart)));
-  return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
 }
 
 } // namespace codon::ast

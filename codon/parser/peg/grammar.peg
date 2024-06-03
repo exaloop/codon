@@ -86,14 +86,17 @@ assignment <-
   }
   / (star_targets _ (!'==' '=') _)+ star_expressions !(_ '=') {
     vector<Stmt*> stmts;
-    for (int i = int(VS.size()) - 2; i >= 0; i--)
-      stmts.push_back(asts(Assign, LOC, ac_expr(VS[i]), ac_expr(VS[i + 1])));
+    for (int i = int(VS.size()) - 2; i >= 0; i--) {
+      auto a = AssignStmt(ac_expr(VS[i]), ac_expr(VS[i + 1]));
+      a.setSrcInfo(LOC);
+      stmts.push_back(a.unpack());
+    }
     return asts(Suite, LOC, std::move(stmts));
   }
   / star_expression _ augassign '=' ^ _ star_expressions {
-    return asts(Assign, LOC,
-      ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true)
-    );
+    auto a = AssignStmt(ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true));
+    a.setSrcInfo(LOC);
+    return a.unpack();
   }
 augassign <- <
   '+' / '-' / '**' / '*' / '@' / '//' / '/' / '%' / '&' / '|' / '^' / '<<' / '>>'
@@ -560,7 +563,9 @@ slice <-
 slice_part <- expression? { return VS.size() ? V0 : make_any<Expr*>(nullptr); }
 atom <-
   / STRING (SPACE STRING)* {
-    return aste(String, LOC, VS.transform<pair<string, string>>());
+    auto e = StringExpr(VS.transform<pair<string, string>>());
+    e.setSrcInfo(LOC);
+    return e.unpack();
   }
   / id { return ac_expr(V0); }
   / 'True' { return aste(Bool, LOC, true); }

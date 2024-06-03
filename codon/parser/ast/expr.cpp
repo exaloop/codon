@@ -8,6 +8,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -156,6 +157,90 @@ std::string StringExpr::getValue() const {
   return strings[0].first;
 }
 ACCEPT_IMPL(StringExpr, ASTVisitor);
+/// Parse a Python-like f-string into a concatenation:
+///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
+/// Supports "{x=}" specifier (that prints the raw expression as well):
+///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
+Expr *StringExpr::unpack() const {
+  std::vector<Expr *> exprs;
+  std::vector<std::string> concat;
+  for (auto &p : strings) {
+    if (p.second == "f" || p.second == "F") {
+      /// Transform an F-string
+      exprs.push_back(unpackFString(p.first));
+    } else if (!p.second.empty()) {
+      /// Custom prefix strings:
+      /// call `str.__prefix_[prefix]__(str, [static length of str])`
+      exprs.push_back(
+          cache->NS<CallExpr>(this,
+                              cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"),
+                                                 format("__prefix_{}__", p.second)),
+                              cache->NS<StringExpr>(this, p.first),
+                              cache->NS<IntExpr>(this, p.first.size())));
+    } else {
+      exprs.push_back(cache->NS<StringExpr>(this, p.first));
+      concat.push_back(p.first);
+    }
+  }
+  if (concat.size() == strings.size()) {
+    /// Simple case: statically concatenate a sequence of strings without any prefix
+    return cache->NS<StringExpr>(this, combine2(concat, ""));
+  } else if (exprs.size() == 1) {
+    /// Simple case: only one string in a sequence
+    return exprs[0];
+  } else {
+    /// Complex case: call `str.cat(str1, ...)`
+    return cache->NS<CallExpr>(
+        this, cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"), "cat"), exprs);
+  }
+}
+Expr *StringExpr::unpackFString(const std::string &value) const {
+  // Strings to be concatenated
+  std::vector<Expr *> items;
+  int braceCount = 0, braceStart = 0;
+  for (int i = 0; i < value.size(); i++) {
+    if (value[i] == '{') {
+      if (braceStart < i)
+        items.push_back(
+            cache->NS<StringExpr>(this, value.substr(braceStart, i - braceStart)));
+      if (!braceCount)
+        braceStart = i + 1;
+      braceCount++;
+    } else if (value[i] == '}') {
+      braceCount--;
+      if (!braceCount) {
+        std::string code = value.substr(braceStart, i - braceStart);
+        auto offset = getSrcInfo();
+        offset.col += i;
+        if (!code.empty() && code.back() == '=') {
+          // Special case: f"{x=}"
+          code = code.substr(0, code.size() - 1);
+          items.push_back(cache->NS<StringExpr>(this, fmt::format("{}=", code)));
+        }
+        auto [expr, format] = parseExpr(cache, code, offset);
+        if (!format.empty()) {
+          items.push_back(
+              cache->NS<CallExpr>(this, cache->NS<DotExpr>(this, expr, "__format__"),
+                                  cache->NS<StringExpr>(this, format)));
+        } else {
+          // Every expression is wrapped within `str`
+          items.push_back(
+              cache->NS<CallExpr>(this, cache->NS<IdExpr>(this, "str"), expr));
+        }
+      }
+      braceStart = i + 1;
+    }
+  }
+  if (braceCount > 0)
+    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
+  if (braceCount < 0)
+    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
+  if (braceStart != value.size())
+    items.push_back(
+        cache->NS<StringExpr>(this, value.substr(braceStart, value.size() - braceStart)));
+  return cache->NS<CallExpr>(
+      this, cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"), "cat"), items);
+}
 
 IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
 IdExpr::IdExpr(const IdExpr &expr, bool clean) : Expr(expr, clean), value(expr.value) {}

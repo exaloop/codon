@@ -256,6 +256,9 @@ struct StringExpr : public Expr {
 
   StringExpr *getString() override { return this; }
   std::string getValue() const;
+
+  Expr *unpack() const;
+  Expr *unpackFString(const std::string &) const;
 };
 
 /// Identifier expression (value).

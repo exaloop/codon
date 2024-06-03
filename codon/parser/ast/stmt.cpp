@@ -98,6 +98,82 @@ std::string AssignStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(AssignStmt, ASTVisitor);
 
+/// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
+/// expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
+/// Handle Python unpacking rules.
+/// @example
+///   `(a, b) = c`     -> `a = c[0]; b = c[1]`
+///   `a, b = c`       -> `a = c[0]; b = c[1]`
+///   `[a, *x, b] = c` -> `a = c[0]; x = c[1:-1]; b = c[-1]`.
+/// Non-trivial right-hand expressions are first stored in a temporary variable.
+/// @example
+///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
+/// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
+Stmt *AssignStmt::unpack() const {
+  std::vector<Expr *> leftSide;
+  if (auto et = lhs->getTuple()) {
+    // Case: (a, b) = ...
+    for (auto &i : et->items)
+      leftSide.push_back(i);
+  } else if (auto el = lhs->getList()) {
+    // Case: [a, b] = ...
+    for (auto &i : el->items)
+      leftSide.push_back(i);
+  } else {
+    // Case: simple assignment (a = b, a.x = b, or a[x] = b)
+    return cache->NS<AssignStmt>(this, lhs, rhs, type);
+  }
+
+  // Prepare the right-side expression
+  auto srcPos = rhs;
+  SuiteStmt *block = cache->NS<SuiteStmt>(this);
+  auto rhs = this->rhs;
+  if (!rhs->getId()) {
+    // Store any non-trivial right-side expression into a variable
+    auto var = cache->getTemporaryVar("assign");
+    rhs = cache->NS<IdExpr>(this->rhs, var);
+    block->stmts.push_back(cache->NS<AssignStmt>(this, rhs, clone(this->rhs)));
+  }
+
+  // Process assignments until the fist StarExpr (if any)
+  size_t st = 0;
+  for (; st < leftSide.size(); st++) {
+    if (leftSide[st]->getStar())
+      break;
+    // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
+    auto rightSide = cache->NS<IndexExpr>(rhs, clone(rhs), cache->NS<IntExpr>(rhs, st));
+    // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
+    auto ns = AssignStmt(leftSide[st], rightSide).unpack();
+    block->stmts.push_back(ns);
+  }
+  // Process StarExpr (if any) and the assignments that follow it
+  if (st < leftSide.size() && leftSide[st]->getStar()) {
+    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
+    auto rightSide = cache->NS<IndexExpr>(
+        rhs, clone(rhs),
+        cache->NS<SliceExpr>(rhs, cache->NS<IntExpr>(rhs, st),
+                             // this slice is either [st:] or [st:-lhs_len + st + 1]
+                             leftSide.size() == st + 1
+                                 ? nullptr
+                                 : cache->NS<IntExpr>(rhs, -leftSide.size() + st + 1),
+                             nullptr));
+    auto ns = AssignStmt(leftSide[st]->getStar()->what, rightSide).unpack();
+    block->stmts.push_back(ns);
+    st += 1;
+    // Process remaining assignments. They will use negative indices (-1, -2 etc.)
+    // because we do not know how big is StarExpr
+    for (; st < leftSide.size(); st++) {
+      if (leftSide[st]->getStar())
+        E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
+      rightSide = cache->NS<IndexExpr>(
+          rhs, clone(rhs), cache->NS<IntExpr>(rhs, -int(leftSide.size() - st)));
+      auto ns = AssignStmt(leftSide[st], rightSide).unpack();
+      block->stmts.push_back(ns);
+    }
+  }
+  return block;
+}
+
 DelStmt::DelStmt(Expr *expr) : Stmt(), expr(expr) {}
 DelStmt::DelStmt(const DelStmt &stmt, bool clean)
     : Stmt(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
