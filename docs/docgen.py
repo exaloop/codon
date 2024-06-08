@@ -8,33 +8,19 @@ import subprocess as sp
 import collections
 from pprint import pprint
 
-from sphinxcontrib.napoleon.docstring import GoogleDocstring
-from sphinxcontrib.napoleon import Config
+from sphinx.ext.napoleon.docstring import GoogleDocstring
+from sphinx.ext.napoleon import Config
 
 napoleon_config=Config(napoleon_use_param=True,napoleon_use_rtype=True)
 
-root=os.path.abspath(sys.argv[1])
-print(f"Generating documentation for {root}...")
-
-
-# 1. Call codon -docstr and get a documentation in JSON format
-def load_json(directory):
-    # Get all codon files in the directory
-    files=[]
-    for root,_,items in os.walk(directory):
-        for f in items:
-            if f.endswith('.codon') and "__init_test__.codon" not in f:
-                files.append(os.path.abspath(os.path.join(root,f)))
-    files='\n'.join(files)
-    s=sp.run(['../../build/codon','doc'],stdout=sp.PIPE,input=files.encode('utf-8'))
-    if s.returncode!=0:
-        raise ValueError('codon failed')
-    return json.loads(s.stdout.decode('utf-8'))
-
-
-j=load_json(root)
-print(f" - Done with codon")
-sys.exit(0)
+json_path=os.path.abspath(sys.argv[1])
+out_path=os.path.abspath(sys.argv[2])
+roots=sys.argv[3:]
+print(f"Generating documentation for {json_path}...")
+with open(json_path) as f:
+    j=json.load(f)
+print(f"Load done!")
+# sys.exit(0)
 # with open('x.json','w') as f:
 #     json.dump(j,f,indent=2)
 
@@ -42,21 +28,24 @@ sys.exit(0)
 modules={k:v["path"] for k,v in j.items() if v["kind"]=="module"}
 prefix=os.path.commonprefix(list(modules.values()))
 parsed_modules=collections.defaultdict(set)
-os.system("rm -rf stdlib/*")
+# os.system("rm -rf stdlib/*")
+root=""
 for mid,module in modules.items():
-    while module!=root:
+    while module not in roots:
         directory,name=os.path.split(module)
-        print(root,mid,module)
         directory=os.path.relpath(directory,root)  # remove the prefix
-        os.makedirs(f"stdlib/{directory}",exist_ok=True)
+        os.makedirs(f"{out_path}/{directory}",exist_ok=True)
         if name.endswith('.codon'):
             name=name[:-6] # drop suffix
         if name!='__init__':
             parsed_modules[directory].add((name,mid))
+        print(root,mid,module, '->',name)
         module=os.path.split(module)[0]
+print(f"Module read done!")
+
 for directory,modules in parsed_modules.items():
     module=directory.replace('/','.')
-    with open(f'stdlib/{directory}/index.rst','w') as f:
+    with open(f'{out_path}/{directory}/index.rst','w') as f:
         if module!='.':
             print(f".. codon:module:: {module}\n",file=f)
             print(f"{module}",file=f)
@@ -92,11 +81,15 @@ def parse_docstr(s,level=1):
 
 def parse_type(a):
     """Parse type signature"""
+    if not a:
+        return ''
     s=''
     if isinstance(a,list):
         head,tail=a[0],a[1:]
     else:
         head,tail=a,[]
+    if head not in j:
+        return '?'
     s+=j[head]["name"] if head[0].isdigit() else head
     if tail:
         for ti,t in enumerate(tail):
@@ -121,6 +114,7 @@ def parse_fn(v,skip_self=False,skip_braces=False):
         cnt+=1
         s+=f'{a["name"]}'
         if "type" in a:
+            print(a)
             s+=" : "+parse_type(a["type"])
         if "default" in a:
             s+=" = "+a["default"]+""
@@ -138,11 +132,11 @@ def parse_fn(v,skip_self=False,skip_braces=False):
 for directory,(name,mid) in {(d,m) for d,mm in parsed_modules.items() for m in mm}:
     module=directory.replace('/','.')+f".{name}"
 
-    file,mode=f'stdlib/{directory}/{name}.rst','w'
+    file,mode=f'{out_path}/{directory}/{name}.rst','w'
     if os.path.isdir(f'{root}/{directory}/{name}'):
         continue
     if name=='__init__':
-        file,mode=f'stdlib/{directory}/index.rst','a'
+        file,mode=f'{out_path}/{directory}/index.rst','a'
     with open(file,mode) as f:
         print(f".. codon:module:: {module}\n",file=f)
         print(f":codon:mod:`{module}`",file=f)
