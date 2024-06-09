@@ -404,8 +404,6 @@ void ScopingVisitor::switchToUpdate(Node *binding, const std::string &name,
 
 bool ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
                                const SrcInfo &src) {
-  if (name=="yzzzo")
-    LOG("-");
   if (adding && ctx->inClass)
     return false;
   if (adding) {
@@ -462,7 +460,7 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
     }
 
     // Variable binding check for variables that are defined within conditional blocks
-    LOG("{} : var {}: {} vs {}", getSrcInfo(), name, val->accessChecked, ctx->getScope());
+    // LOG("{} : var {}: {} vs {}", getSrcInfo(), name, val->accessChecked, ctx->getScope());
     if (!val->accessChecked.empty()) {
       bool checked = false;
       for (size_t ai = val->accessChecked.size(); ai-- > 0;) {
@@ -553,8 +551,8 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
       auto newItem = ScopingVisitor::Context::Item(
           getSrcInfo(), newScope, ctx->scope[si].suite, {lastGood->scope});
       lastGood = it->insert(++lastGood, newItem);
-      LOG("-> promote {} / T from {} to {} | {}", name, ctx->getScope(),
-          lastGood->scope, lastGood->accessChecked);
+      // LOG("-> promote {} / T from {} to {} | {}", name, ctx->getScope(),
+      //     lastGood->scope, lastGood->accessChecked);
       gotUsedVar = true;
       break;
     }
