@@ -22,8 +22,7 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
   Expr *msg = N<StringExpr>("");
   if (stmt->message)
     msg = N<CallExpr>(N<IdExpr>("str"), stmt->message);
-  auto test = ctx->inFunction() && (ctx->getBase()->attributes &&
-                                    ctx->getBase()->attributes->has(Attr::Test));
+  auto test = ctx->inFunction() && ctx->getBase()->func->hasAttribute(Attr::Test);
   auto ex = N<CallExpr>(
       N<DotExpr>(N<IdExpr>("__internal__"), test ? "seq_assert_test" : "seq_assert"),
       N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line), msg);
@@ -52,7 +51,7 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
-  stmt->suite = transform(stmt->suite);
+  stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
   ctx->blockLevel--;
 
   std::vector<TryStmt::Catch *> catches;
@@ -63,11 +62,21 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   for (auto &c : stmt->catches) {
     TypeContext::Item val = nullptr;
     if (!c->var.empty()) {
-      if (!c->exc->hasAttr(ExprAttr::Dominated))
+      if (!c->hasAttribute(Attr::ExprDominated) &&
+          !c->hasAttribute(Attr::ExprDominatedUsed)) {
         val =
             ctx->addVar(c->var, ctx->generateCanonicalName(c->var), ctx->getUnbound());
-      else
+      } else if (c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->forceFind(c->var);
+        c->attributes.erase(Attr::ExprDominatedUsed);
+        c->setAttribute(Attr::ExprDominated);
+        c->suite = N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(format("{}.__used__", ctx->cache->rev(c->var))),
+                          N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
+            c->suite);
+      } else {
+        val = ctx->forceFind(c->var);
+      }
       c->var = val->canonicalName;
     }
     c->exc = transform(c->exc);
@@ -78,9 +87,9 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<AssignStmt>(N<IdExpr>(c->var), N<DotExpr>(N<IdExpr>(pyVar), "pytype")),
             c->suite);
       }
-      c->suite = N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
+      c->suite = SuiteStmt::wrap(N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
                                        N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
-                           N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr);
+                           N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr));
       pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
     } else if (c->exc && getType(c->exc)->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
@@ -96,7 +105,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (val)
         unify(val->type, getType(c->exc));
       ctx->blockLevel++;
-      c->suite = transform(c->suite);
+      c->suite = SuiteStmt::wrap( transform(c->suite));
       ctx->blockLevel--;
       done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
       catches.push_back(c);
@@ -110,7 +119,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
     auto val = ctx->addVar(pyVar, pyVar, getType(c->exc));
     ctx->blockLevel++;
-    c->suite = transform(c->suite);
+    c->suite = SuiteStmt::wrap(transform(c->suite));
     ctx->blockLevel--;
     done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
     catches.push_back(c);
@@ -118,7 +127,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   stmt->catches = catches;
   if (stmt->finally) {
     ctx->blockLevel++;
-    stmt->finally = transform(stmt->finally);
+    stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
     ctx->blockLevel--;
     done &= stmt->finally->isDone();
   }
@@ -170,7 +179,7 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
     std::string var =
         stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
     auto as = N<AssignStmt>(N<IdExpr>(var), stmt->items[i], nullptr,
-                            stmt->items[i]->hasAttr(ExprAttr::Dominated)
+                            stmt->items[i]->hasAttribute(Attr::ExprDominated)
                                 ? AssignStmt::UpdateMode::Update
                                 : AssignStmt::UpdateMode::Assign);
     content = std::vector<Stmt *>{

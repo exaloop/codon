@@ -164,14 +164,14 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
                                          const std::vector<Param> &args, Expr *ret,
                                          const std::string &altName) {
   std::vector<Param> fnArgs;
-  auto attr = Attr({Attr::C});
+  bool hasVarArgs = false;
   for (size_t ai = 0; ai < args.size(); ai++) {
     seqassert(args[ai].name.empty(), "unexpected argument name");
     seqassert(!args[ai].defaultValue, "unexpected default argument");
     seqassert(args[ai].type, "missing type");
     if (args[ai].type->getEllipsis() && ai + 1 == args.size()) {
       // C VAR_ARGS support
-      attr.set(Attr::CVarArg);
+      hasVarArgs = true;
       fnArgs.emplace_back("*args", nullptr, nullptr);
     } else {
       fnArgs.emplace_back(args[ai].name.empty() ? format("a{}", ai) : args[ai].name,
@@ -179,8 +179,11 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
     }
   }
   ctx->generateCanonicalName(name); // avoid canonicalName == name
-  Stmt *f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs,
-                            nullptr, attr);
+  Stmt *f =
+      N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs, nullptr);
+  f->setAttribute(Attr::C);
+  if (hasVarArgs)
+    f->setAttribute(Attr::CVarArg);
   f = transform(f); // Already in the preamble
   if (!altName.empty()) {
     auto v = ctx->find(altName);
@@ -202,7 +205,7 @@ Stmt *TypecheckVisitor::transformCVarImport(const std::string &name, Expr *type,
   auto val = ctx->addVar(altName.empty() ? name : altName, canonical,
                          std::make_shared<types::LinkType>(getType(typ)->getClass()));
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
-  s->lhs->setAttr(ExprAttr::ExternVar);
+  s->lhs->setAttribute(Attr::ExprExternVar);
   s->lhs->setType(val->type);
   s->lhs->setDone();
   s->setDone();
@@ -322,7 +325,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
   auto tv = TypecheckVisitor(ictx, preamble);
-  n = ScopingVisitor::apply(ctx->cache, n);
+  ScopingVisitor::apply(ctx->cache, n);
   // n = tv.transform(n);
 
   if (!ctx->cache->errors.empty())

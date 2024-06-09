@@ -33,7 +33,14 @@ struct Attribute {
   }
 
   /// @return a clone of the attribute
-  virtual std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const = 0;
+  virtual std::unique_ptr<Attribute> clone() const {
+    return std::make_unique<Attribute>();
+  }
+
+  /// @return a clone of the attribute
+  virtual std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const {
+    return clone();
+  }
 
   /// @return a clone of the attribute
   virtual std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const {
@@ -41,7 +48,7 @@ struct Attribute {
   }
 
 private:
-  virtual std::ostream &doFormat(std::ostream &os) const = 0;
+  virtual std::ostream &doFormat(std::ostream &os) const { return os; }
 };
 
 /// Attribute containing SrcInfo
@@ -56,12 +63,30 @@ struct SrcInfoAttribute : public Attribute {
   /// @param info the source info
   explicit SrcInfoAttribute(codon::SrcInfo info) : info(std::move(info)) {}
 
-  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override {
+  std::unique_ptr<Attribute> clone() const override {
     return std::make_unique<SrcInfoAttribute>(*this);
   }
 
 private:
   std::ostream &doFormat(std::ostream &os) const override { return os << info; }
+};
+
+/// Attribute containing docstring from source
+struct StringValueAttribute : public Attribute {
+  static const std::string AttributeName;
+
+  std::string value;
+
+  StringValueAttribute() = default;
+  /// Constructs a StringValueAttribute.
+  explicit StringValueAttribute(const std::string &value) : value(value) {}
+
+  std::unique_ptr<Attribute> clone() const override {
+    return std::make_unique<StringValueAttribute>(*this);
+  }
+
+private:
+  std::ostream &doFormat(std::ostream &os) const override { return os << value; }
 };
 
 /// Attribute containing docstring from source
@@ -76,7 +101,7 @@ struct DocstringAttribute : public Attribute {
   /// @param docstring the docstring
   explicit DocstringAttribute(const std::string &docstring) : docstring(docstring) {}
 
-  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override {
+  std::unique_ptr<Attribute> clone() const override {
     return std::make_unique<DocstringAttribute>(*this);
   }
 
@@ -106,8 +131,29 @@ struct KeyValueAttribute : public Attribute {
   ///         string if none
   std::string get(const std::string &key) const;
 
-  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override {
+  std::unique_ptr<Attribute> clone() const override {
     return std::make_unique<KeyValueAttribute>(*this);
+  }
+
+private:
+  std::ostream &doFormat(std::ostream &os) const override;
+};
+
+/// Attribute containing function information
+struct StringListAttribute : public Attribute {
+  static const std::string AttributeName;
+
+  /// attributes map
+  std::vector<std::string> values;
+
+  StringListAttribute() = default;
+  /// Constructs a StringListAttribute.
+  /// @param attributes the map of attributes
+  explicit StringListAttribute(std::vector<std::string> values)
+      : values(std::move(values)) {}
+
+  std::unique_ptr<Attribute> clone() const override {
+    return std::make_unique<StringListAttribute>(*this);
   }
 
 private:
@@ -127,7 +173,7 @@ struct MemberAttribute : public Attribute {
   explicit MemberAttribute(std::map<std::string, SrcInfo> memberSrcInfo)
       : memberSrcInfo(std::move(memberSrcInfo)) {}
 
-  std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override {
+  std::unique_ptr<Attribute> clone() const override {
     return std::make_unique<MemberAttribute>(*this);
   }
 
@@ -148,6 +194,10 @@ struct PythonWrapperAttribute : public Attribute {
 
   bool needsClone() const override { return false; }
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -165,6 +215,10 @@ struct TupleLiteralAttribute : public Attribute {
   explicit TupleLiteralAttribute(std::vector<Value *> elements)
       : elements(std::move(elements)) {}
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -190,6 +244,10 @@ struct ListLiteralAttribute : public Attribute {
   explicit ListLiteralAttribute(std::vector<LiteralElement> elements)
       : elements(std::move(elements)) {}
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -207,6 +265,10 @@ struct SetLiteralAttribute : public Attribute {
   explicit SetLiteralAttribute(std::vector<LiteralElement> elements)
       : elements(std::move(elements)) {}
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -231,6 +293,10 @@ struct DictLiteralAttribute : public Attribute {
   explicit DictLiteralAttribute(std::vector<KeyValuePair> elements)
       : elements(std::move(elements)) {}
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -252,6 +318,10 @@ struct PartialFunctionAttribute : public Attribute {
   PartialFunctionAttribute(const std::string &name, std::vector<Value *> args)
       : name(name), args(std::move(args)) {}
 
+  std::unique_ptr<Attribute> clone() const override {
+    seqassertn(false, "cannot operate without CloneVisitor");
+    return nullptr;
+  }
   std::unique_ptr<Attribute> clone(util::CloneVisitor &cv) const override;
   std::unique_ptr<Attribute> forceClone(util::CloneVisitor &cv) const override;
 
@@ -260,6 +330,10 @@ private:
 };
 
 } // namespace ir
+
+std::unordered_map<std::string, std::unique_ptr<ir::Attribute>>
+clone(const std::unordered_map<std::string, std::unique_ptr<ir::Attribute>> &t);
+
 } // namespace codon
 
 template <> struct fmt::formatter<codon::ir::Attribute> : fmt::ostream_formatter {};

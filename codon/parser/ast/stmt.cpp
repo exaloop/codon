@@ -19,8 +19,9 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-Stmt::Stmt() : done(false) {}
-Stmt::Stmt(const codon::SrcInfo &s) : done(false) { setSrcInfo(s); }
+Stmt::Stmt() : Node(), done(false) {}
+Stmt::Stmt(const Stmt &stmt) : Node(stmt), done(stmt.done) {}
+Stmt::Stmt(const codon::SrcInfo &s) : Stmt() { setSrcInfo(s); }
 Stmt::Stmt(const Stmt &expr, bool clean) : Stmt(expr) {
   if (clean)
     done = false;
@@ -67,6 +68,11 @@ Stmt **SuiteStmt::lastInBlock() {
       return l;
   }
   return &(stmts.back());
+}
+SuiteStmt *SuiteStmt::wrap(Stmt *s) {
+  if (s && !s->getSuite())
+    return s->cache->NS<SuiteStmt>(s, s);
+  return (SuiteStmt *)s;
 }
 
 BreakStmt::BreakStmt(const BreakStmt &stmt, bool clean) : Stmt(stmt, clean) {}
@@ -132,7 +138,7 @@ Stmt *AssignStmt::unpack() const {
     // Store any non-trivial right-side expression into a variable
     auto var = cache->getTemporaryVar("assign");
     rhs = cache->NS<IdExpr>(this->rhs, var);
-    block->stmts.push_back(cache->NS<AssignStmt>(this, rhs, clone(this->rhs)));
+    block->stmts.push_back(cache->NS<AssignStmt>(this, rhs, ast::clone(this->rhs)));
   }
 
   // Process assignments until the fist StarExpr (if any)
@@ -141,23 +147,28 @@ Stmt *AssignStmt::unpack() const {
     if (leftSide[st]->getStar())
       break;
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide = cache->NS<IndexExpr>(rhs, clone(rhs), cache->NS<IntExpr>(rhs, st));
+    auto rightSide =
+        cache->NS<IndexExpr>(rhs, ast::clone(rhs), cache->NS<IntExpr>(rhs, st));
     // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    auto ns = AssignStmt(leftSide[st], rightSide).unpack();
+    auto aa = AssignStmt(leftSide[st], rightSide);
+    aa.cache = cache;
+    auto ns = aa.unpack();
     block->stmts.push_back(ns);
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && leftSide[st]->getStar()) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
     auto rightSide = cache->NS<IndexExpr>(
-        rhs, clone(rhs),
+        rhs, ast::clone(rhs),
         cache->NS<SliceExpr>(rhs, cache->NS<IntExpr>(rhs, st),
                              // this slice is either [st:] or [st:-lhs_len + st + 1]
                              leftSide.size() == st + 1
                                  ? nullptr
                                  : cache->NS<IntExpr>(rhs, -leftSide.size() + st + 1),
                              nullptr));
-    auto ns = AssignStmt(leftSide[st]->getStar()->what, rightSide).unpack();
+    auto aa = AssignStmt(leftSide[st]->getStar()->what, rightSide);
+    aa.cache = cache;
+    auto ns = aa.unpack();
     block->stmts.push_back(ns);
     st += 1;
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
@@ -166,8 +177,10 @@ Stmt *AssignStmt::unpack() const {
       if (leftSide[st]->getStar())
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
       rightSide = cache->NS<IndexExpr>(
-          rhs, clone(rhs), cache->NS<IntExpr>(rhs, -int(leftSide.size() - st)));
-      auto ns = AssignStmt(leftSide[st], rightSide).unpack();
+          rhs, ast::clone(rhs), cache->NS<IntExpr>(rhs, -int(leftSide.size() - st)));
+      auto aa = AssignStmt(leftSide[st], rightSide);
+      aa.cache = cache;
+      auto ns = aa.unpack();
       block->stmts.push_back(ns);
     }
   }
@@ -220,7 +233,8 @@ std::string AssertStmt::toString(int indent) const {
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
 
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
-    : Stmt(), cond(cond), suite(suite), elseSuite(elseSuite) {}
+    : Stmt(), cond(cond), suite(SuiteStmt::wrap(suite)),
+      elseSuite(SuiteStmt::wrap(elseSuite)) {}
 WhileStmt::WhileStmt(const WhileStmt &stmt, bool clean)
     : Stmt(stmt, clean), cond(ast::clone(stmt.cond, clean)),
       suite(ast::clone(stmt.suite, clean)),
@@ -241,8 +255,9 @@ ACCEPT_IMPL(WhileStmt, ASTVisitor);
 
 ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
                  std::vector<CallExpr::Arg> ompArgs)
-    : Stmt(), var(var), iter(iter), suite(suite), elseSuite(elseSuite),
-      decorator(decorator), ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
+    : Stmt(), var(var), iter(iter), suite(SuiteStmt::wrap(suite)),
+      elseSuite(SuiteStmt::wrap(elseSuite)), decorator(decorator),
+      ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
 ForStmt::ForStmt(const ForStmt &stmt, bool clean)
     : Stmt(stmt, clean), var(ast::clone(stmt.var, clean)),
       iter(ast::clone(stmt.iter, clean)), suite(ast::clone(stmt.suite, clean)),
@@ -252,8 +267,6 @@ ForStmt::ForStmt(const ForStmt &stmt, bool clean)
 }
 std::string ForStmt::toString(int indent) const {
   auto vs = var->toString(indent);
-  if (var->hasAttr(ExprAttr::Dominated))
-    vs += "^";
   if (indent == -1)
     return format("(for {} {})", vs, iter->toString(indent));
 
@@ -274,7 +287,8 @@ std::string ForStmt::toString(int indent) const {
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 
 IfStmt::IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite)
-    : Stmt(), cond(cond), ifSuite(ifSuite), elseSuite(elseSuite) {}
+    : Stmt(), cond(cond), ifSuite(SuiteStmt::wrap(ifSuite)),
+      elseSuite(SuiteStmt::wrap(elseSuite)) {}
 IfStmt::IfStmt(const IfStmt &stmt, bool clean)
     : Stmt(stmt, clean), cond(ast::clone(stmt.cond, clean)),
       ifSuite(ast::clone(stmt.ifSuite, clean)),
@@ -295,6 +309,9 @@ MatchStmt::MatchCase MatchStmt::MatchCase::clone(bool clean) const {
   return {ast::clone(pattern, clean), ast::clone(guard, clean),
           ast::clone(suite, clean)};
 }
+
+MatchStmt::MatchCase::MatchCase(Expr *pattern, Expr *guard, Stmt *suite)
+    : pattern(pattern), guard(guard), suite(SuiteStmt::wrap(suite)) {}
 
 MatchStmt::MatchStmt(Expr *what, std::vector<MatchStmt::MatchCase> cases)
     : Stmt(), what(what), cases(std::move(cases)) {}
@@ -360,7 +377,7 @@ void ImportStmt::validate() const {
 ACCEPT_IMPL(ImportStmt, ASTVisitor);
 
 TryStmt::Catch::Catch(const std::string &var, Expr *exc, Stmt *suite)
-    : var(var), exc(exc), suite(suite) {}
+    : var(var), exc(exc), suite(SuiteStmt::wrap(suite)) {}
 TryStmt::Catch::Catch(const TryStmt::Catch &stmt, bool clean)
     : Stmt(stmt), var(stmt.var), exc(ast::clone(stmt.exc, clean)),
       suite(ast::clone(stmt.suite, clean)) {}
@@ -374,7 +391,8 @@ std::string TryStmt::Catch::toString(int indent) const {
 ACCEPT_IMPL(TryStmt::Catch, ASTVisitor);
 
 TryStmt::TryStmt(Stmt *suite, std::vector<TryStmt::Catch *> catches, Stmt *finally)
-    : Stmt(), suite(suite), catches(std::move(catches)), finally(finally) {}
+    : Stmt(), suite(SuiteStmt::wrap(suite)), catches(std::move(catches)),
+      finally(SuiteStmt::wrap(finally)) {}
 TryStmt::TryStmt(const TryStmt &stmt, bool clean)
     : Stmt(stmt, clean), suite(ast::clone(stmt.suite, clean)),
       catches(ast::clone(stmt.catches, clean)),
@@ -414,71 +432,36 @@ std::string GlobalStmt::toString(int indent) const {
 }
 ACCEPT_IMPL(GlobalStmt, ASTVisitor);
 
-Attr::Attr(const std::vector<std::string> &attrs)
-    : module(), parentClass(), isAttribute(false) {
-  for (auto &a : attrs)
-    set(a);
-}
-void Attr::set(const std::string &attr) { customAttr.insert(attr); }
-void Attr::unset(const std::string &attr) { customAttr.erase(attr); }
-bool Attr::has(const std::string &attr) const { return in(customAttr, attr); }
-
-const std::string Attr::LLVM = "llvm";
-const std::string Attr::Python = "python";
-const std::string Attr::Atomic = "atomic";
-const std::string Attr::Property = "property";
-const std::string Attr::StaticMethod = "staticmethod";
-const std::string Attr::Attribute = "__attribute__";
-const std::string Attr::Internal = "__internal__";
-const std::string Attr::ForceRealize = "__force__";
-const std::string Attr::RealizeWithoutSelf =
-    "std.internal.attributes.realize_without_self.0:0";
-const std::string Attr::HiddenFromUser = "__hidden__";
-const std::string Attr::C = "C";
-const std::string Attr::CVarArg = ".__vararg__";
-const std::string Attr::Method = ".__method__";
-const std::string Attr::Capture = ".__capture__";
-const std::string Attr::HasSelf = ".__hasself__";
-const std::string Attr::IsGenerator = ".__generator__";
-const std::string Attr::Extend = "extend";
-const std::string Attr::Tuple = "tuple";
-const std::string Attr::Test = "std.internal.attributes.test.0:0";
-const std::string Attr::Overload = "overload:0";
-const std::string Attr::Export = "std.internal.attributes.export.0:0";
-
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
-                           Stmt *suite, Attr attributes, std::vector<Expr *> decorators)
-    : Stmt(), name(std::move(name)), ret(ret), args(std::move(args)), suite(suite),
-      attributes(std::move(attributes)), decorators(std::move(decorators)) {
+                           Stmt *suite, std::vector<Expr *> decorators)
+    : Stmt(), name(std::move(name)), ret(ret), args(std::move(args)),
+      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)) {
   parseDecorators();
 }
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : Stmt(stmt, clean), name(stmt.name), ret(ast::clone(stmt.ret, clean)),
       args(ast::clone(stmt.args, clean)), suite(ast::clone(stmt.suite, clean)),
-      attributes(stmt.attributes), decorators(ast::clone(stmt.decorators, clean)) {}
+      decorators(ast::clone(stmt.decorators, clean)) {}
 std::string FunctionStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;
   for (auto &a : args)
     as.push_back(a.toString(indent));
-  std::vector<std::string> dec, attr;
+  std::vector<std::string> dec;
   for (auto &a : decorators)
     if (a)
       dec.push_back(format("(dec {})", a->toString(indent)));
-  for (auto &a : attributes.customAttr)
-    attr.push_back(format("'{}'", a));
   if (indent == -1)
     return format("(fn '{} ({}){})", name, join(as, " "),
                   ret ? " #:ret " + ret->toString(indent) : "");
-  return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
+  return format("(fn '{} ({}){}{}{}{})", name, join(as, " "),
                 ret ? " #:ret " + ret->toString(indent) : "",
-                dec.empty() ? "" : format(" (dec {})", join(dec, " ")),
-                attr.empty() ? "" : format(" (attr {})", join(attr, " ")), pad,
+                dec.empty() ? "" : format(" (dec {})", join(dec, " ")), pad,
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
 void FunctionStmt::validate() const {
-  if (!ret && (attributes.has(Attr::LLVM) || attributes.has(Attr::C)))
+  if (!ret && (hasAttribute(Attr::LLVM) || hasAttribute(Attr::C)))
     E(Error::FN_LLVM, getSrcInfo());
 
   std::unordered_set<std::string> seenArgs;
@@ -508,7 +491,7 @@ void FunctionStmt::validate() const {
     if (!a.defaultValue && defaultsStarted && !stars && a.status == Param::Normal)
       E(Error::FN_DEFAULT, a, n);
     defaultsStarted |= bool(a.defaultValue);
-    if (attributes.has(Attr::C)) {
+    if (hasAttribute(Attr::C)) {
       if (a.defaultValue)
         E(Error::FN_C_DEFAULT, a.defaultValue, n);
       if (stars != 1 && !a.type)
@@ -523,48 +506,45 @@ std::string FunctionStmt::signature() const {
     s.push_back(a.type ? a.type->toString() : "-");
   return format("{}", join(s, ":"));
 }
-bool FunctionStmt::hasAttr(const std::string &attr) const {
-  return attributes.has(attr);
-}
 void FunctionStmt::parseDecorators() {
   std::vector<Expr *> newDecorators;
   for (auto &d : decorators) {
     if (d->isId(Attr::Attribute)) {
       if (decorators.size() != 1)
         E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Attribute);
-      attributes.isAttribute = true;
+      setAttribute(Attr::Attribute);
     } else if (d->isId(Attr::LLVM)) {
-      attributes.set(Attr::LLVM);
+      setAttribute(Attr::LLVM);
     } else if (d->isId(Attr::Python)) {
       if (decorators.size() != 1)
         E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Python);
-      attributes.set(Attr::Python);
+      setAttribute(Attr::Python);
     } else if (d->isId(Attr::Internal)) {
-      attributes.set(Attr::Internal);
+      setAttribute(Attr::Internal);
     } else if (d->isId(Attr::HiddenFromUser)) {
-      attributes.set(Attr::HiddenFromUser);
+      setAttribute(Attr::HiddenFromUser);
     } else if (d->isId(Attr::Atomic)) {
-      attributes.set(Attr::Atomic);
+      setAttribute(Attr::Atomic);
     } else if (d->isId(Attr::Property)) {
-      attributes.set(Attr::Property);
+      setAttribute(Attr::Property);
     } else if (d->isId(Attr::StaticMethod)) {
-      attributes.set(Attr::StaticMethod);
+      setAttribute(Attr::StaticMethod);
     } else if (d->isId(Attr::ForceRealize)) {
-      attributes.set(Attr::ForceRealize);
+      setAttribute(Attr::ForceRealize);
     } else if (d->isId(Attr::C)) {
-      attributes.set(Attr::C);
+      setAttribute(Attr::C);
     } else {
       newDecorators.emplace_back(d);
     }
   }
-  if (attributes.has(Attr::C)) {
+  if (hasAttribute(Attr::C)) {
     for (auto &a : args) {
       if (a.name.size() > 1 && a.name[0] == '*' && a.name[1] != '*')
-        attributes.set(Attr::CVarArg);
+        setAttribute(Attr::CVarArg);
     }
   }
   if (!args.empty() && !args[0].type && args[0].name == "self") {
-    attributes.set(Attr::HasSelf);
+    setAttribute(Attr::HasSelf);
   }
   decorators = newDecorators;
   validate();
@@ -650,8 +630,8 @@ std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() {
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
                      std::vector<Expr *> decorators, std::vector<Expr *> baseClasses,
                      std::vector<Expr *> staticBaseClasses)
-    : Stmt(), name(std::move(name)), args(std::move(args)), suite(suite),
-      decorators(std::move(decorators)),
+    : Stmt(), name(std::move(name)), args(std::move(args)),
+      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
       staticBaseClasses(std::move(staticBaseClasses)) {
   for (auto &b : baseClasses) {
     if (b->getIndex() && b->getIndex()->expr->isId("Static")) {
@@ -662,14 +642,9 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
   }
   parseDecorators();
 }
-ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite, Attr attr)
-    : Stmt(), name(std::move(name)), args(std::move(args)), suite(suite),
-      attributes(std::move(attr)) {
-  validate();
-}
 ClassStmt::ClassStmt(const ClassStmt &stmt, bool clean)
     : Stmt(stmt, clean), name(stmt.name), args(ast::clone(stmt.args, clean)),
-      suite(ast::clone(stmt.suite, clean)), attributes(stmt.attributes),
+      suite(ast::clone(stmt.suite, clean)),
       decorators(ast::clone(stmt.decorators, clean)),
       baseClasses(ast::clone(stmt.baseClasses, clean)),
       staticBaseClasses(ast::clone(stmt.staticBaseClasses, clean)) {}
@@ -697,10 +672,9 @@ std::string ClassStmt::toString(int indent) const {
 }
 void ClassStmt::validate() const {
   std::unordered_set<std::string> seen;
-  if (attributes.has(Attr::Extend) && !args.empty())
+  if (hasAttribute(Attr::Extend) && !args.empty())
     E(Error::CLASS_EXTENSION, args[0]);
-  if (attributes.has(Attr::Extend) &&
-      !(baseClasses.empty() && staticBaseClasses.empty()))
+  if (hasAttribute(Attr::Extend) && !(baseClasses.empty() && staticBaseClasses.empty()))
     E(Error::CLASS_EXTENSION,
       baseClasses.empty() ? staticBaseClasses[0] : baseClasses[0]);
   for (auto &a : args) {
@@ -712,8 +686,7 @@ void ClassStmt::validate() const {
   }
 }
 ACCEPT_IMPL(ClassStmt, ASTVisitor);
-bool ClassStmt::isRecord() const { return hasAttr(Attr::Tuple); }
-bool ClassStmt::hasAttr(const std::string &attr) const { return attributes.has(attr); }
+bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
 void ClassStmt::parseDecorators() {
   // @tuple(init=, repr=, eq=, order=, hash=, pickle=, container=, python=, add=,
   // internal=...)
@@ -731,18 +704,18 @@ void ClassStmt::parseDecorators() {
 
   for (auto &d : decorators) {
     if (d->isId("deduce")) {
-      attributes.customAttr.insert("deduce");
+      setAttribute(Attr::ClassDeduce);
     } else if (d->isId("__notuple__")) {
-      attributes.customAttr.insert("__notuple__");
+      setAttribute(Attr::ClassNoTuple);
     } else if (d->isId("dataclass")) {
     } else if (auto c = d->getCall()) {
       if (c->expr->isId(Attr::Tuple)) {
-        attributes.set(Attr::Tuple);
+        setAttribute(Attr::Tuple);
         for (auto &m : tupleMagics)
           m.second = true;
       } else if (!c->expr->isId("dataclass")) {
         E(Error::CLASS_BAD_DECORATOR, c->expr);
-      } else if (attributes.has(Attr::Tuple)) {
+      } else if (hasAttribute(Attr::Tuple)) {
         E(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", Attr::Tuple);
       }
       for (auto &a : c->args) {
@@ -775,41 +748,42 @@ void ClassStmt::parseDecorators() {
         }
       }
     } else if (d->isId(Attr::Tuple)) {
-      if (attributes.has(Attr::Tuple))
+      if (hasAttribute(Attr::Tuple))
         E(Error::CLASS_MULTIPLE_DECORATORS, d, Attr::Tuple);
-      attributes.set(Attr::Tuple);
+      setAttribute(Attr::Tuple);
       for (auto &m : tupleMagics) {
         m.second = true;
       }
     } else if (d->isId(Attr::Extend)) {
-      attributes.set(Attr::Extend);
+      setAttribute(Attr::Extend);
       if (decorators.size() != 1)
         E(Error::CLASS_SINGLE_DECORATOR, decorators[decorators[0] == d], Attr::Extend);
     } else if (d->isId(Attr::Internal)) {
-      attributes.set(Attr::Internal);
+      setAttribute(Attr::Internal);
     } else {
       E(Error::CLASS_BAD_DECORATOR, d);
     }
   }
-  if (attributes.has("deduce"))
+  if (hasAttribute(Attr::ClassDeduce))
     tupleMagics["new"] = false;
-  if (!attributes.has(Attr::Tuple)) {
+  if (!hasAttribute(Attr::Tuple)) {
     tupleMagics["init"] = tupleMagics["new"];
     tupleMagics["new"] = tupleMagics["raw"] = true;
     tupleMagics["len"] = false;
   }
   tupleMagics["dict"] = true;
   // Internal classes do not get any auto-generated members.
-  attributes.magics.clear();
-  if (!attributes.has(Attr::Internal)) {
+  std::vector<std::string> magics;
+  if (!hasAttribute(Attr::Internal)) {
     for (auto &m : tupleMagics)
       if (m.second) {
         if (m.first == "new")
-          attributes.magics.insert(attributes.magics.begin(), m.first);
+          magics.insert(magics.begin(), m.first);
         else
-          attributes.magics.push_back(m.first);
+          magics.push_back(m.first);
       }
   }
+  setAttribute(Attr::ClassMagic, std::make_unique<ir::StringListAttribute>(magics));
 
   validate();
 }
@@ -842,11 +816,12 @@ ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 
 WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
                    Stmt *suite)
-    : Stmt(), items(std::move(items)), vars(std::move(vars)), suite(suite) {
+    : Stmt(), items(std::move(items)), vars(std::move(vars)),
+      suite(SuiteStmt::wrap(suite)) {
   seqassert(this->items.size() == this->vars.size(), "vector size mismatch");
 }
 WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite)
-    : Stmt(), suite(suite) {
+    : Stmt(), suite(SuiteStmt::wrap(suite)) {
   for (auto [i, j] : itemVarPairs) {
     items.push_back(i);
     if (j) {
@@ -878,7 +853,7 @@ std::string WithStmt::toString(int indent) const {
 ACCEPT_IMPL(WithStmt, ASTVisitor);
 
 CustomStmt::CustomStmt(std::string keyword, Expr *expr, Stmt *suite)
-    : Stmt(), keyword(std::move(keyword)), expr(expr), suite(suite) {}
+    : Stmt(), keyword(std::move(keyword)), expr(expr), suite(SuiteStmt::wrap(suite)) {}
 CustomStmt::CustomStmt(const CustomStmt &stmt, bool clean)
     : Stmt(stmt, clean), keyword(stmt.keyword), expr(ast::clone(stmt.expr, clean)),
       suite(ast::clone(stmt.suite, clean)) {}

@@ -7,9 +7,11 @@
 #include <tuple>
 #include <vector>
 
+#include "codon/cir/attribute.h"
 #include "codon/cir/types/types.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -75,10 +77,10 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     if (ctx->getBase()->iteration == 1 && isToplevel) {
       // Realize all @force_realize functions
       for (auto &f : ctx->cache->functions) {
-        auto &attr = f.second.ast->attributes;
+        auto ast = f.second.ast;
         if (f.second.type && f.second.realizations.empty() &&
-            (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
-             (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
+            (ast->hasAttribute(Attr::ForceRealize) || ast->hasAttribute(Attr::Export) ||
+             (ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           realize(ctx->instantiate(f.second.type)->getFunc());
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
@@ -165,7 +167,7 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
     if (e.errorCode == Error::MAX_REALIZATION)
       throw;
     if (auto f = typ->getFunc()) {
-      if (f->ast->attributes.has(Attr::HiddenFromUser)) {
+      if (f->ast->hasAttribute(Attr::HiddenFromUser)) {
         e.locations.back() = getSrcInfo();
       } else {
         std::vector<std::string> args;
@@ -250,14 +252,12 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Realizations should always be visible, so add them to the toplevel
   rn = type->ClassType::realizedName();
-  auto val = std::make_shared<TypecheckItem>(rn, "",
-                                             ctx->getModule(), realized);
+  auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), realized);
   if (!val->type->is("type"))
     val->type = ctx->instantiateGeneric(ctx->getType("type"), {realized});
   ctx->addAlwaysVisible(val, true);
-  auto realization =
-      ctx->cache->getClass(realized)->realizations[rn] =
-          std::make_shared<Cache::Class::ClassRealization>();
+  auto realization = ctx->cache->getClass(realized)->realizations[rn] =
+      std::make_shared<Cache::Class::ClassRealization>();
   realization->type = realized;
   realization->id = ctx->cache->classRealizationCnt++;
 
@@ -295,8 +295,9 @@ types::TypePtr TypecheckVisitor::realizeType(types::ClassType *type) {
 }
 
 types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
+  auto module = type->ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
   auto &realizations = ctx->cache->functions[type->ast->name].realizations;
-  const auto &imp = ctx->cache->imports[type->ast->attributes.module];
+  const auto &imp = ctx->cache->imports[module];
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
       bool ok = true;
@@ -315,8 +316,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     }
   }
 
-  seqassert(in(ctx->cache->imports, type->ast->attributes.module) != nullptr,
-            "bad module: '{}'", type->ast->attributes.module);
+  seqassert(in(ctx->cache->imports, module) != nullptr, "bad module: '{}'", module);
   auto oldCtx = this->ctx;
   this->ctx = imp.ctx;
   // LOG("=> {}", ctx->moduleName.module, ctx->moduleName.path);
@@ -341,22 +341,24 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto ast = generateSpecialAst(type);
   addFunctionGenerics(type);
   if (!isImport)
-    ctx->getBase()->attributes = &(ast->attributes);
+    ctx->getBase()->func = ast;
 
   // Internal functions have no AST that can be realized
-  bool hasAst = ast->suite && !ast->attributes.has(Attr::Internal);
+  bool hasAst = ast->suite && !ast->hasAttribute(Attr::Internal);
   // Add function arguments
-  for (auto &[c, t] : ast->attributes.captures) {
-    if (t == Attr::CaptureType::Global) {
-      auto cp = ctx->find(c);
-      if (!cp)
-        E(Error::ID_NOT_FOUND, getSrcInfo(), c);
-      if (!cp->isGlobal())
-        E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
+  if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
+    for (auto &[c, t] : b->captures) {
+      if (t == BindingsAttribute::CaptureType::Global) {
+        auto cp = ctx->find(c);
+        if (!cp)
+          E(Error::ID_NOT_FOUND, getSrcInfo(), c);
+        if (!cp->isGlobal())
+          E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
+      }
     }
-  }
   // Add self reference! TODO: maybe remove later when doing contexts?
-  if (ast->attributes.parentClass.empty())
+  auto pc = ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
+  if (!pc || pc->value.empty())
     ctx->addFunc(ctx->cache->rev(ast->name), ast->name, ctx->find(ast->name)->type);
   for (size_t i = 0, j = 0; hasAst && i < ast->args.size(); i++)
     if (ast->args[i].status == Param::Normal) {
@@ -376,10 +378,11 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto r = realizations[key] = std::make_shared<Cache::Function::FunctionRealization>();
   r->type = type->getFunc();
   r->ir = oldIR;
-  for (auto &[c, _] : ast->attributes.captures) {
-    auto h = ctx->find(c);
-    r->captures.push_back(h ? h->canonicalName : "");
-  }
+  if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
+    for (auto &[c, _] : b->captures) {
+      auto h = ctx->find(c);
+      r->captures.push_back(h ? h->canonicalName : "");
+    }
 
   // Realizations should always be visible, so add them to the toplevel
   auto val =
@@ -443,7 +446,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   r->ast =
       N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite);
   r->ast->setSrcInfo(ast->getSrcInfo());
-  r->ast->attributes = ast->attributes;
+  r->ast->attributes = codon::clone(ast->attributes);
 
   if (!in(ctx->cache->pendingRealizations,
           make_pair(type->ast->name, type->realizedName()))) {
@@ -553,7 +556,7 @@ Stmt *TypecheckVisitor::prepareVTables() {
     Stmt *suite = N<ReturnStmt>(
         N<DotExpr>(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), types), "__elemsize__"));
     LOG_REALIZE("[poly] {} : {}", t, *suite);
-    initDist.ast->suite = suite;
+    initDist.ast->suite = SuiteStmt::wrap(suite);
     t->ast = initDist.ast;
     realizeFunc(t.get(), true);
   }
@@ -653,10 +656,10 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                         N<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
           callArgs.emplace_back(N<IdExpr>(ctx->cache->rev(fp->ast->args[i].name)));
-        auto thunkAst = N<FunctionStmt>(
-            thunkName, nullptr, fnArgs,
-            N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))),
-            Attr({"std.internal.attributes.inline.0:0"}));
+        auto thunkAst = N<FunctionStmt>(thunkName, nullptr, fnArgs,
+                                        N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
+                                            N<IdExpr>(m->ast->name), callArgs))));
+        thunkAst->setAttribute("std.internal.attributes.inline.0:0");
         thunkAst = CAST(transform(thunkAst), FunctionStmt);
 
         auto &thunkFn = ctx->cache->functions[thunkAst->name];
@@ -806,22 +809,23 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     const std::shared_ptr<Cache::Function::FunctionRealization> &r) {
   ir::Func *fn = nullptr;
   // Create and store a function IR node and a realized AST for IR passes
-  if (r->ast->attributes.has(Attr::Internal)) {
+  if (r->ast->hasAttribute(Attr::Internal)) {
     // e.g., __new__, Ptr.__new__, etc.
     fn = ctx->cache->module->Nr<ir::InternalFunc>(r->type->ast->name);
-  } else if (r->ast->attributes.has(Attr::LLVM)) {
+  } else if (r->ast->hasAttribute(Attr::LLVM)) {
     fn = ctx->cache->module->Nr<ir::LLVMFunc>(r->type->realizedName());
-  } else if (r->ast->attributes.has(Attr::C)) {
+  } else if (r->ast->hasAttribute(Attr::C)) {
     fn = ctx->cache->module->Nr<ir::ExternalFunc>(r->type->realizedName());
   } else {
     fn = ctx->cache->module->Nr<ir::BodiedFunc>(r->type->realizedName());
   }
   fn->setUnmangledName(ctx->cache->reverseIdentifierLookup[r->type->ast->name]);
   auto parent = r->type->funcParent;
-  if (!r->ast->attributes.parentClass.empty() &&
-      !r->ast->attributes.has(Attr::Method)) {
-    // Hack for non-generic methods
-    parent = ctx->find(r->ast->attributes.parentClass)->type;
+  if (auto aa = r->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass)) {
+    if (!aa->value.empty() && !r->ast->hasAttribute(Attr::Method)) {
+      // Hack for non-generic methods
+      parent = ctx->find(aa->value)->type;
+    }
   }
   if (parent && parent->isInstantiated() && parent->canRealize()) {
     parent = ctx->getType(parent);
@@ -848,13 +852,13 @@ ir::Func *TypecheckVisitor::makeIRFunction(
       j++;
     }
   }
-  if (r->ast->hasAttr(Attr::CVarArg)) {
+  if (r->ast->hasAttribute(Attr::CVarArg)) {
     types.pop_back();
     names.pop_back();
   }
   auto irType = ctx->cache->module->unsafeGetFuncType(
       r->type->realizedName(), makeIRType(r->type->getRetType()->getClass().get()),
-      types, r->ast->hasAttr(Attr::CVarArg));
+      types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->getFunc());
   fn->realize(irType, names);
   return fn;
@@ -865,11 +869,12 @@ FunctionStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
   // Clone the generic AST that is to be realized
   auto ast = CAST(clone(ctx->cache->functions[type->ast->name].ast), FunctionStmt);
 
-  if (ast->hasAttr("autogenerated") && endswith(ast->name, ".__iter__") &&
+  if (ast->hasAttribute("autogenerated") && endswith(ast->name, ".__iter__") &&
       type->getArgTypes()[0]->getHeterogenousTuple()) {
     // Special case: do not realize auto-generated heterogenous __iter__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
-  } else if (ast->hasAttr("autogenerated") && endswith(ast->name, ".__getitem__") &&
+  } else if (ast->hasAttribute("autogenerated") &&
+             endswith(ast->name, ".__getitem__") &&
              type->getArgTypes()[0]->getHeterogenousTuple()) {
     // Special case: do not realize auto-generated heterogenous __getitem__
     E(Error::EXPECTED_TYPE, getSrcInfo(), "iterable");
@@ -906,7 +911,7 @@ FunctionStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     Stmt *suite = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
         N<IdExpr>(type->ast->args[0].name), N<IdExpr>(unionType->realizedName())));
-    ast->suite = suite;
+    ast->suite = SuiteStmt::wrap(suite);
   } else if (startswith(ast->name, "__internal__.get_union_tag:0")) {
     //   return __internal__.union_get_data(union, T0)
     auto tag = type->funcGenerics[0].type->getIntStatic()->value;

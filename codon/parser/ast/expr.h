@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "codon/cir/attribute.h"
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 
@@ -16,8 +17,64 @@ namespace codon::ast {
 const int INDENT_SIZE = 2;
 
 struct ASTVisitor;
+
+struct Attr {
+  // Function attributes
+  const static std::string Module;
+  const static std::string ParentClass;
+  const static std::string Attributes;
+  const static std::string Bindings;
+  // Toplevel attributes
+  const static std::string LLVM;
+  const static std::string Python;
+  const static std::string Atomic;
+  const static std::string Property;
+  const static std::string StaticMethod;
+  const static std::string Attribute;
+  const static std::string C;
+  // Internal attributes
+  const static std::string Internal;
+  const static std::string HiddenFromUser;
+  const static std::string ForceRealize;
+  const static std::string RealizeWithoutSelf; // not internal
+  // Compiler-generated attributes
+  const static std::string CVarArg;
+  const static std::string Method;
+  const static std::string Capture;
+  const static std::string HasSelf;
+  const static std::string IsGenerator;
+  // Class attributes
+  const static std::string Extend;
+  const static std::string Tuple;
+  const static std::string ClassDeduce;
+  const static std::string ClassNoTuple;
+  // Standard library attributes
+  const static std::string Test;
+  const static std::string Overload;
+  const static std::string Export;
+  // Expression-related attributes
+  const static std::string ClassMagic;
+  const static std::string ExprSequenceItem;
+  const static std::string ExprStarSequenceItem;
+  const static std::string ExprList;
+  const static std::string ExprSet;
+  const static std::string ExprDict;
+  const static std::string ExprPartial;
+  const static std::string ExprDominated;
+  const static std::string ExprStarArgument;
+  const static std::string ExprKwStarArgument;
+  const static std::string ExprOrderedCall;
+  const static std::string ExprExternVar;
+  const static std::string ExprDominatedUndefCheck;
+  const static std::string ExprDominatedUsed;
+};
+
 struct Node : public codon::SrcObject {
   Cache *cache;
+  std::unordered_map<std::string, std::unique_ptr<ir::Attribute>> attributes;
+
+  Node() = default;
+  Node(const Node &);
 
   /// Convert a node to an S-expression.
   virtual std::string toString(int) const = 0;
@@ -34,6 +91,27 @@ struct Node : public codon::SrcObject {
   friend std::ostream &operator<<(std::ostream &out, const Node &expr) {
     return out << expr.toString();
   }
+
+  void setAttribute(const std::string &key, std::unique_ptr<ir::Attribute> value) {
+    attributes[key] = std::move(value);
+  }
+  void setAttribute(const std::string &key, const std::string &value) {
+    attributes[key] = std::make_unique<ir::StringValueAttribute>(value);
+  }
+  void setAttribute(const std::string &key) {
+    attributes[key] = std::make_unique<ir::Attribute>();
+  }
+  bool hasAttribute(const std::string &n) const {
+    return attributes.find(n) != attributes.end();
+  }
+  ir::Attribute *getAttribute(const std::string &key) {
+    auto it = attributes.find(key);
+    return it != attributes.end() ? it->second.get() : nullptr;
+  }
+  template <typename AttributeType>
+  AttributeType *getAttribute(const std::string &key) {
+    return static_cast<AttributeType *>(getAttribute(key));
+  }
 };
 } // namespace codon::ast
 
@@ -41,16 +119,6 @@ template <typename T>
 struct fmt::formatter<
     T, std::enable_if_t<std::is_base_of<codon::ast::Node, T>::value, char>>
     : fmt::ostream_formatter {};
-
-// template <typename T>
-// struct fmt::formatter<
-//     T, std::enable_if_t<std::is_convertible<T, codon::ast::Node *>::value, char>>
-//     : fmt::formatter<std::string_view> {
-//   template <typename FormatContext>
-//   auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
-//     return fmt::format_to(ctx.out(), "{}", p ? p->toString(0) : "<nullptr>");
-//   }
-// };
 
 namespace codon::ast {
 
@@ -93,15 +161,12 @@ struct Expr : public Node {
   /// type-checking procedure was successful).
   bool done;
 
-  /// Set of attributes.
-  int attributes;
-
   /// Original (pre-transformation) expression
   Expr *origExpr;
 
 public:
   Expr();
-  Expr(const Expr &) = default;
+  Expr(const Expr &);
   Expr(const Expr &, bool);
 
   /// Validate a node. Throw ParseASTException if a node is not valid.
@@ -136,10 +201,6 @@ public:
   virtual StringExpr *getString() { return nullptr; }
   virtual TupleExpr *getTuple() { return nullptr; }
   virtual UnaryExpr *getUnary() { return nullptr; }
-
-  /// Attribute helpers
-  bool hasAttr(int attr) const;
-  void setAttr(int attr);
 
   bool isDone() const { return done; }
   void setDone() { done = true; }
@@ -245,10 +306,18 @@ struct FloatExpr : public Expr {
 /// @li "fff"
 struct StringExpr : public Expr {
   // Vector of {value, prefix} strings.
-  std::vector<std::pair<std::string, std::string>> strings;
+  struct String : public SrcObject {
+    std::string value;
+    std::string prefix;
+    Expr *expr;
+
+    String(std::string v, std::string p = "", Expr *e = nullptr)
+        : value(std::move(v)), prefix(std::move(p)), expr(e) {}
+  };
+  std::vector<String> strings;
 
   explicit StringExpr(std::string value, std::string prefix = "");
-  explicit StringExpr(std::vector<std::pair<std::string, std::string>> strings);
+  explicit StringExpr(std::vector<String> strings);
   StringExpr(const StringExpr &, bool);
 
   std::string toString(int) const override;
@@ -257,8 +326,8 @@ struct StringExpr : public Expr {
   StringExpr *getString() override { return this; }
   std::string getValue() const;
 
-  Expr *unpack() const;
-  Expr *unpackFString(const std::string &) const;
+  void unpack();
+  std::vector<String> unpackFString(const std::string &) const;
 };
 
 /// Identifier expression (value).
@@ -659,21 +728,6 @@ struct InstantiateExpr : Expr {
 };
 
 #undef ACCEPT
-
-enum ExprAttr {
-  SequenceItem,
-  StarSequenceItem,
-  List,
-  Set,
-  Dict,
-  Partial,
-  Dominated,
-  StarArgument,
-  KwStarArgument,
-  OrderedCall,
-  ExternVar,
-  __LAST__
-};
 
 char getStaticGeneric(Expr *e);
 

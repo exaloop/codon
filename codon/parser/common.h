@@ -19,6 +19,9 @@
 #define CAST(s, T) dynamic_cast<T *>(s)
 
 namespace codon {
+namespace ir {
+class Attribute;
+}
 
 namespace ast {
 
@@ -183,6 +186,15 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           bool forceStdlib = false,
                                           const std::string &module0 = "",
                                           const std::vector<std::string> &plugins = {});
+
+template <typename T> class SetInScope {
+  T *t;
+  T origVal;
+
+public:
+  SetInScope(T *t, const T &val) : t(t), origVal(*t) { *t = val; }
+  ~SetInScope() { *t = origVal; }
+};
 
 } // namespace ast
 } // namespace codon

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
@@ -20,12 +21,65 @@ using namespace codon::error;
 
 namespace codon::ast {
 
-Expr::Expr() : type(nullptr), done(false), attributes(0), origExpr(nullptr) {}
+const std::string Attr::Module = "module";
+const std::string Attr::ParentClass = "parentClass";
+const std::string Attr::Attributes = "attributes";
+const std::string Attr::Bindings = "bindings";
+
+const std::string Attr::LLVM = "llvm";
+const std::string Attr::Python = "python";
+const std::string Attr::Atomic = "atomic";
+const std::string Attr::Property = "property";
+const std::string Attr::StaticMethod = "staticmethod";
+const std::string Attr::Attribute = "__attribute__";
+const std::string Attr::C = "C";
+
+const std::string Attr::Internal = "__internal__";
+const std::string Attr::HiddenFromUser = "__hidden__";
+const std::string Attr::ForceRealize = "__force__";
+const std::string Attr::RealizeWithoutSelf =
+    "std.internal.attributes.realize_without_self.0:0";
+
+const std::string Attr::CVarArg = ".__vararg__";
+const std::string Attr::Method = ".__method__";
+const std::string Attr::Capture = ".__capture__";
+const std::string Attr::HasSelf = ".__hasself__";
+const std::string Attr::IsGenerator = ".__generator__";
+
+const std::string Attr::Extend = "extend";
+const std::string Attr::Tuple = "tuple";
+const std::string Attr::ClassDeduce = "deduce";
+const std::string Attr::ClassNoTuple = "__notuple__";
+
+const std::string Attr::Test = "std.internal.attributes.test.0:0";
+const std::string Attr::Overload = "overload:0";
+const std::string Attr::Export = "std.internal.attributes.export.0:0";
+
+const std::string Attr::ClassMagic = "classMagic";
+const std::string Attr::ExprSequenceItem = "exprSequenceItem";
+const std::string Attr::ExprStarSequenceItem = "exprStarSequenceItem";
+const std::string Attr::ExprList = "exprList";
+const std::string Attr::ExprSet = "exprSet";
+const std::string Attr::ExprDict = "exprDict";
+const std::string Attr::ExprPartial = "exprPartial";
+const std::string Attr::ExprDominated = "exprDominated";
+const std::string Attr::ExprStarArgument = "exprStarArgument";
+const std::string Attr::ExprKwStarArgument = "exprKwStarArgument";
+const std::string Attr::ExprOrderedCall = "exprOrderedCall";
+const std::string Attr::ExprExternVar = "exprExternVar";
+const std::string Attr::ExprDominatedUndefCheck = "exprDominatedUndefCheck";
+const std::string Attr::ExprDominatedUsed = "exprDominatedUsed";
+
+Node::Node(const Node &node)
+    : cache(node.cache), attributes(codon::clone(node.attributes)) {}
+
+Expr::Expr() : Node(), type(nullptr), done(false), origExpr(nullptr) {}
+Expr::Expr(const Expr &expr)
+    : Node(expr), type(expr.type), done(expr.done), origExpr(expr.origExpr) {}
 Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
     done = false;
-    // attributes = 0;
   }
 }
 void Expr::validate() const {}
@@ -37,11 +91,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
     is.insert(findStar(is), "*");
   auto s = format("({}{})", is,
                   type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "");
-  // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
   return s;
 }
-bool Expr::hasAttr(int attr) const { return (attributes & (1 << attr)); }
-void Expr::setAttr(int attr) { attributes |= (1 << attr); }
 std::string Expr::getTypeName() {
   if (getId()) {
     return getId()->value;
@@ -139,70 +190,60 @@ std::string FloatExpr::toString(int) const {
 }
 ACCEPT_IMPL(FloatExpr, ASTVisitor);
 
-StringExpr::StringExpr(std::vector<std::pair<std::string, std::string>> s)
+StringExpr::StringExpr(std::vector<StringExpr::String> s)
     : Expr(), strings(std::move(s)) {}
 StringExpr::StringExpr(std::string value, std::string prefix)
-    : StringExpr(std::vector<std::pair<std::string, std::string>>{{value, prefix}}) {}
+    : StringExpr(std::vector<StringExpr::String>{{value, prefix}}) {
+  unpack();
+}
 StringExpr::StringExpr(const StringExpr &expr, bool clean)
-    : Expr(expr, clean), strings(expr.strings) {}
+    : Expr(expr, clean), strings(expr.strings) {
+  for (auto &s : strings)
+    s.expr = ast::clone(s.expr);
+}
 std::string StringExpr::toString(int) const {
   std::vector<std::string> s;
   for (auto &vp : strings)
-    s.push_back(format("\"{}\"{}", escape(vp.first),
-                       vp.second.empty() ? "" : format(" #:prefix \"{}\"", vp.second)));
+    s.push_back(format("\"{}\"{}", escape(vp.value),
+                       vp.prefix.empty() ? "" : format(" #:prefix \"{}\"", vp.prefix)));
   return wrapType(format("string ({})", join(s)));
 }
 std::string StringExpr::getValue() const {
   seqassert(!strings.empty(), "invalid StringExpr");
-  return strings[0].first;
+  return strings[0].value;
 }
 ACCEPT_IMPL(StringExpr, ASTVisitor);
-/// Parse a Python-like f-string into a concatenation:
-///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
-/// Supports "{x=}" specifier (that prints the raw expression as well):
-///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
-Expr *StringExpr::unpack() const {
-  std::vector<Expr *> exprs;
-  std::vector<std::string> concat;
+void StringExpr::unpack() {
+  std::vector<String> exprs;
   for (auto &p : strings) {
-    if (p.second == "f" || p.second == "F") {
+    if (p.prefix == "f" || p.prefix == "F") {
       /// Transform an F-string
-      exprs.push_back(unpackFString(p.first));
-    } else if (!p.second.empty()) {
-      /// Custom prefix strings:
-      /// call `str.__prefix_[prefix]__(str, [static length of str])`
-      exprs.push_back(
-          cache->NS<CallExpr>(this,
-                              cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"),
-                                                 format("__prefix_{}__", p.second)),
-                              cache->NS<StringExpr>(this, p.first),
-                              cache->NS<IntExpr>(this, p.first.size())));
+      for (auto pf : unpackFString(p.value)) {
+        if (pf.prefix.empty() && !exprs.empty() && exprs.back().prefix.empty()) {
+          exprs.back().prefix += pf.prefix;
+        } else {
+          exprs.emplace_back(pf);
+        }
+      }
+    } else if (!p.prefix.empty()) {
+      exprs.emplace_back(p);
+    } else if (!exprs.empty() && exprs.back().prefix.empty()) {
+      exprs.back().prefix += p.prefix;
     } else {
-      exprs.push_back(cache->NS<StringExpr>(this, p.first));
-      concat.push_back(p.first);
+      exprs.emplace_back(p);
     }
   }
-  if (concat.size() == strings.size()) {
-    /// Simple case: statically concatenate a sequence of strings without any prefix
-    return cache->NS<StringExpr>(this, combine2(concat, ""));
-  } else if (exprs.size() == 1) {
-    /// Simple case: only one string in a sequence
-    return exprs[0];
-  } else {
-    /// Complex case: call `str.cat(str1, ...)`
-    return cache->NS<CallExpr>(
-        this, cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"), "cat"), exprs);
-  }
+  strings = exprs;
 }
-Expr *StringExpr::unpackFString(const std::string &value) const {
+std::vector<StringExpr::String>
+StringExpr::unpackFString(const std::string &value) const {
   // Strings to be concatenated
-  std::vector<Expr *> items;
+  std::vector<StringExpr::String> items;
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {
     if (value[i] == '{') {
       if (braceStart < i)
-        items.push_back(
-            cache->NS<StringExpr>(this, value.substr(braceStart, i - braceStart)));
+        items.emplace_back(value.substr(braceStart, i - braceStart));
       if (!braceCount)
         braceStart = i + 1;
       braceCount++;
@@ -215,18 +256,10 @@ Expr *StringExpr::unpackFString(const std::string &value) const {
         if (!code.empty() && code.back() == '=') {
           // Special case: f"{x=}"
           code = code.substr(0, code.size() - 1);
-          items.push_back(cache->NS<StringExpr>(this, fmt::format("{}=", code)));
+          items.emplace_back(fmt::format("{}=", code));
         }
-        auto [expr, format] = parseExpr(cache, code, offset);
-        if (!format.empty()) {
-          items.push_back(
-              cache->NS<CallExpr>(this, cache->NS<DotExpr>(this, expr, "__format__"),
-                                  cache->NS<StringExpr>(this, format)));
-        } else {
-          // Every expression is wrapped within `str`
-          items.push_back(
-              cache->NS<CallExpr>(this, cache->NS<IdExpr>(this, "str"), expr));
-        }
+        items.emplace_back(code, "#f");
+        items.back().setSrcInfo(offset);
       }
       braceStart = i + 1;
     }
@@ -236,10 +269,8 @@ Expr *StringExpr::unpackFString(const std::string &value) const {
   if (braceCount < 0)
     E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
   if (braceStart != value.size())
-    items.push_back(
-        cache->NS<StringExpr>(this, value.substr(braceStart, value.size() - braceStart)));
-  return cache->NS<CallExpr>(
-      this, cache->NS<DotExpr>(this, cache->NS<IdExpr>(this, "str"), "cat"), items);
+    items.emplace_back(value.substr(braceStart, value.size() - braceStart));
+  return items;
 }
 
 IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
@@ -366,9 +397,9 @@ Stmt *GeneratorExpr::getFinalSuite() const { return loops; }
 Stmt **GeneratorExpr::getFinalStmt() {
   for (Stmt **i = &loops;;) {
     if (auto sf = (*i)->getFor())
-      i = &(sf->suite);
+      i = (Stmt **)&sf->suite;
     else if (auto si = (*i)->getIf())
-      i = &(si->ifSuite);
+      i = (Stmt **)&si->ifSuite;
     else if (auto ss = (*i)->getSuite()) {
       if (ss->stmts.empty())
         return i;
@@ -383,9 +414,9 @@ void GeneratorExpr::formCompleteStmt(const std::vector<Stmt *> &loops) {
   Stmt *final = nullptr;
   for (size_t i = loops.size(); i-- > 0;) {
     if (auto si = loops[i]->getIf())
-      si->ifSuite = final;
+      si->ifSuite = SuiteStmt::wrap(final);
     else if (auto sf = loops[i]->getFor())
-      sf->suite = final;
+      sf->suite = SuiteStmt::wrap(final);
     final = loops[i];
   }
   this->loops = loops[0];

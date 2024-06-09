@@ -60,7 +60,7 @@ Stmt *TypecheckVisitor::apply(
       tv.N<AssignStmt>(tv.N<IdExpr>("__name__"), tv.N<StringExpr>(MODULE_MAIN)));
   stmts.push_back(node);
 
-  suite = ScopingVisitor::apply(cache, suite);
+  ScopingVisitor::apply(cache, suite);
   auto n = tv.inferTypes(suite, true);
   if (!n) {
     // LOG("[error=>] {}", suite->toString(2));
@@ -114,7 +114,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 1. Core definitions
   auto core = parseCode(stdlib->cache, stdlibPath->path, "from internal.core import *");
-  core = ScopingVisitor::apply(stdlib->cache, core);
+  ScopingVisitor::apply(stdlib->cache, core);
   auto tv = TypecheckVisitor(stdlib, preamble);
   core = tv.inferTypes(core, true);
   preamble->push_back(core);
@@ -131,7 +131,7 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 3. Load stdlib
   auto std = parseFile(stdlib->cache, stdlibPath->path);
-  std = ScopingVisitor::apply(stdlib->cache, std);
+  ScopingVisitor::apply(stdlib->cache, std);
   tv = TypecheckVisitor(stdlib, preamble);
   std = tv.inferTypes(std, true);
   preamble->push_back(std);
@@ -178,8 +178,8 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   if (!expr)
     return nullptr;
 
-  auto k = typeid(*expr).name();
-  Cache::CTimer t(ctx->cache, k);
+  // auto k = typeid(*expr).name();
+  // Cache::CTimer t(ctx->cache, k);
 
   if (!expr->type)
     unify(expr->type, ctx->getUnbound());
@@ -192,7 +192,9 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
     expr->accept(v);
     ctx->popSrcInfo();
     if (v.resultExpr) {
-      v.resultExpr->attributes |= expr->attributes;
+      for (auto &[k, a] : expr->attributes)
+        if (!v.resultExpr->hasAttribute(k))
+          v.resultExpr->setAttribute(k, a->clone());
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
@@ -265,8 +267,8 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   if (!stmt || stmt->done)
     return stmt;
 
-  auto k = typeid(*stmt).name();
-  Cache::CTimer t(ctx->cache, k);
+  // auto k = typeid(*stmt).name();
+  // Cache::CTimer t(ctx->cache, k);
 
   TypecheckVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
@@ -320,12 +322,25 @@ void TypecheckVisitor::visit(StmtExpr *expr) {
 void TypecheckVisitor::visit(SuiteStmt *stmt) {
   std::vector<Stmt *> stmts; // for filtering out nullptr statements
   auto done = true;
+
+  std::vector<Stmt *> prepend;
+  if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
+    for (auto &[n, hasUsed] : b->bindings) {
+      prepend.push_back(N<AssignStmt>(N<IdExpr>(n), nullptr));
+      if (hasUsed)
+        prepend.push_back(N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", n)),
+                                        N<BoolExpr>(false)));
+    }
+    stmt->attributes.erase(Attr::Bindings);
+  }
+  if (!prepend.empty())
+    stmt->stmts.insert(stmt->stmts.begin(), prepend.begin(), prepend.end());
   for (auto &s : stmt->stmts) {
     if (ctx->returnEarly) {
       // If returnEarly is set (e.g., in the function) ignore the rest
       break;
     }
-    if (s = transform(s)) {
+    if ((s = transform(s))) {
       if (!s->getSuite()) {
         done &= s->isDone();
         stmts.push_back(s);
@@ -555,13 +570,13 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
   auto expectedClass = expectedType->getClass();
   auto exprClass = (*expr)->getType()->getClass();
 
-  auto doArgWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_argument_wrap.0:0");
+  auto doArgWrap = !callee || !callee->ast->hasAttribute(
+                                  "std.internal.attributes.no_argument_wrap.0:0");
   if (!doArgWrap)
     return true;
 
   auto doTypeWrap =
-      !callee || !callee->ast->hasAttr("std.internal.attributes.no_type_wrap.0:0");
+      !callee || !callee->ast->hasAttribute("std.internal.attributes.no_type_wrap.0:0");
   if (callee && (*expr)->type->is("type")) {
     auto c = ctx->getType((*expr)->type)->getClass();
     if (!c)

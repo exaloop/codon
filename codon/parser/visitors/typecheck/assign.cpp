@@ -6,6 +6,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
+#include "codon/cir/attribute.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -19,7 +20,9 @@ using namespace types;
 /// @example
 ///   `(expr := var)` -> `var = expr; var`
 void TypecheckVisitor::visit(AssignExpr *expr) {
-  seqassert(false, "AssignExpr should be inlined by a previous pass: '{}'", *expr);
+  auto a = N<AssignStmt>(clone(expr->var), expr->expr);
+  a->attributes = codon::clone(expr->attributes);
+  resultExpr = transform(N<StmtExpr>(a, expr->var));
 }
 
 /// Transform assignments. Handle dominated assignments, forward declarations, static
@@ -28,12 +31,23 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
   bool mustUpdate = stmt->isUpdate();
+  mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
+  mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
   if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
     // Update case: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
     mustUpdate = true;
   }
   resultStmt = transformAssignment(stmt, mustUpdate);
+  if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
+    stmt->attributes.erase(Attr::ExprDominatedUsed);
+    seqassert(stmt->lhs->getId(), "dominated bad assignment");
+    resultStmt = transform(N<SuiteStmt>(
+        resultStmt,
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__",
+                                       ctx->cache->rev(stmt->lhs->getId()->value))),
+                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+  }
 }
 
 /// Transform deletions.
@@ -115,7 +129,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     if (val) {
       // commented out: should be handled by namevisitor
       auto s = N<AssignStmt>(stmt->lhs, stmt->rhs);
-      if (ctx->getBase()->attributes && ctx->getBase()->attributes->has(Attr::Atomic))
+      if (!ctx->getBase()->isType() && ctx->getBase()->func->hasAttribute(Attr::Atomic))
         s->setAtomicUpdate();
       else
         s->setUpdate();
@@ -133,7 +147,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
-  assign->lhs->attributes = stmt->lhs->attributes;
+  assign->lhs->attributes = codon::clone(stmt->lhs->attributes);
 
   if (!stmt->lhs->type)
     assign->lhs->type = ctx->getUnbound(assign->lhs->getSrcInfo());
@@ -165,8 +179,8 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
       assign->lhs->type = assign->rhs->type = val->type;
-      // LOG("->gene: {} / {} / {}", val->type, assign->toString(), val->type->canRealize());
-      // realize(assign->lhs->type);
+      // LOG("->gene: {} / {} / {}", val->type, assign->toString(),
+      // val->type->canRealize()); realize(assign->lhs->type);
     }
   }
 

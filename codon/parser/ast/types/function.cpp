@@ -100,7 +100,7 @@ std::vector<TypePtr> FuncType::getUnbounds() const {
 
 bool FuncType::canRealize() const {
   // Important: return type does not have to be realized.
-  bool skipSelf = ast->hasAttr(Attr::RealizeWithoutSelf);
+  bool skipSelf = ast->hasAttribute(Attr::RealizeWithoutSelf);
 
   auto args = getArgTypes();
   for (int ai = skipSelf; ai < args.size(); ai++)

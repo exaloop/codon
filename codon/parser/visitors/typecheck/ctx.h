@@ -94,10 +94,8 @@ struct TypeContext : public Context<TypecheckItem> {
     types::TypePtr returnType;
     /// Typechecking iteration
     int iteration = 0;
-    /// Tracks function attributes (e.g. if it has @atomic or @test attributes).
     /// Only set for functions.
-    Attr *attributes = nullptr;
-
+    FunctionStmt *func = nullptr;
     Stmt *suite = nullptr;
 
     struct {
@@ -139,7 +137,7 @@ struct TypeContext : public Context<TypecheckItem> {
 
   public:
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
-    bool isType() const { return attributes == nullptr; }
+    bool isType() const { return func == nullptr; }
   };
   /// Current base stack (the last enclosing base is the last base in the stack).
   std::vector<Base> bases;

@@ -99,8 +99,8 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   ctx->blockLevel++;
-  stmt->ifSuite = transform(stmt->ifSuite);
-  stmt->elseSuite = transform(stmt->elseSuite);
+  stmt->ifSuite = SuiteStmt::wrap(transform(stmt->ifSuite));
+  stmt->elseSuite = SuiteStmt::wrap(transform(stmt->elseSuite));
   ctx->blockLevel--;
 
   if (stmt->cond->isDone() && (!stmt->ifSuite || stmt->ifSuite->isDone()) &&

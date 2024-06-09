@@ -10,6 +10,15 @@
 namespace codon {
 namespace ir {
 
+const std::string StringValueAttribute::AttributeName = "svAttribute";
+
+const std::string StringListAttribute::AttributeName = "slAttribute";
+
+std::ostream &StringListAttribute::doFormat(std::ostream &os) const {
+  fmt::print(os, FMT_STRING("{}"), fmt::join(values.begin(), values.end(), ","));
+  return os;
+}
+
 const std::string KeyValueAttribute::AttributeName = "kvAttribute";
 
 bool KeyValueAttribute::has(const std::string &key) const {
@@ -196,4 +205,14 @@ std::ostream &PartialFunctionAttribute::doFormat(std::ostream &os) const {
 }
 
 } // namespace ir
+
+
+std::unordered_map<std::string, std::unique_ptr<ir::Attribute>>
+clone(const std::unordered_map<std::string, std::unique_ptr<ir::Attribute>> &t) {
+  std::unordered_map<std::string, std::unique_ptr<ir::Attribute>> r;
+  for (auto &[k, v] : t)
+    r[k] = v->clone();
+  return r;
+}
+
 } // namespace codon

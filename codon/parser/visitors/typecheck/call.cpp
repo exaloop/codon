@@ -60,7 +60,8 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
   // Check if this call is partial call
-  // PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis() &&
+  // PartialCallData part{!expr->args.empty() && expr->args.back().value->getEllipsis()
+  // &&
   //                      expr->args.back().value->getEllipsis()->mode ==
   //                          EllipsisExpr::PARTIAL};
   // expr->expr = transform(expr->expr);
@@ -201,7 +202,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     for (auto &r : expr->args)
       if (!r.value->getEllipsis()) {
         newArgs.push_back(r.value);
-        newArgs.back()->setAttr(ExprAttr::SequenceItem);
+        newArgs.back()->setAttribute(Attr::ExprSequenceItem);
       }
     newArgs.push_back(part.args);
     auto partialCall = generatePartialCall(part.known, calleeFn->getFunc().get(),
@@ -217,7 +218,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       // New partial call: `(part = Partial(stored_args...); part)`
       call = N<StmtExpr>(N<AssignStmt>(N<IdExpr>(var), partialCall), N<IdExpr>(var));
     }
-    call->setAttr(ExprAttr::Partial);
+    call->setAttribute(Attr::ExprPartial);
     resultExpr = transform(call);
   } else {
     // Case: normal function call
@@ -446,9 +447,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
         typeArgs.push_back(slots[si].empty() ? nullptr
                                              : expr->args[slots[si][0]].value);
         newMask[si] = slots[si].empty() ? 0 : 1;
-      } else if (si == starArgIndex &&
-                 !(slots[si].size() == 1 &&
-                   expr->args[slots[si][0]].value->hasAttr(ExprAttr::StarArgument))) {
+      } else if (si == starArgIndex && !(slots[si].size() == 1 &&
+                                         expr->args[slots[si][0]].value->hasAttribute(
+                                             Attr::ExprStarArgument))) {
         // Case: *args. Build the tuple that holds them all
         std::vector<Expr *> extra;
         if (!part.known.empty())
@@ -457,7 +458,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
           extra.push_back(expr->args[e].value);
         }
         Expr *e = N<TupleExpr>(extra);
-        e->setAttr(ExprAttr::StarArgument);
+        e->setAttribute(Attr::ExprStarArgument);
         if (!expr->expr->isId("hasattr"))
           e = transform(e);
         if (partial) {
@@ -468,9 +469,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
         } else {
           args.emplace_back(realName, e);
         }
-      } else if (si == kwstarArgIndex &&
-                 !(slots[si].size() == 1 &&
-                   expr->args[slots[si][0]].value->hasAttr(ExprAttr::KwStarArgument))) {
+      } else if (si == kwstarArgIndex && !(slots[si].size() == 1 &&
+                                           expr->args[slots[si][0]].value->hasAttribute(
+                                               Attr::ExprKwStarArgument))) {
         // Case: **kwargs. Build the named tuple that holds them all
         std::vector<std::string> names;
         std::vector<Expr *> values;
@@ -489,7 +490,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
         auto kwid = generateKwId(names);
         auto e = transform(N<CallExpr>(N<IdExpr>("NamedTuple"), N<TupleExpr>(values),
                                        N<IntExpr>(kwid)));
-        e->setAttr(ExprAttr::KwStarArgument);
+        e->setAttribute(Attr::ExprKwStarArgument);
         if (partial) {
           part.kwArgs = e;
           args.emplace_back(realName,
@@ -530,7 +531,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
 
   // Reorder arguments if needed
   part.args = part.kwArgs = nullptr; // Stores partial *args/**kwargs expression
-  if (expr->hasAttr(ExprAttr::OrderedCall)) {
+  if (expr->hasAttribute(Attr::ExprOrderedCall)) {
     args = expr->args;
   } else {
     ctx->reorderNamedArgs(
@@ -544,9 +545,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
 
   // Populate partial data
   if (part.args != nullptr)
-    part.args->setAttr(ExprAttr::SequenceItem);
+    part.args->setAttribute(Attr::ExprSequenceItem);
   if (part.kwArgs != nullptr)
-    part.kwArgs->setAttr(ExprAttr::SequenceItem);
+    part.kwArgs->setAttribute(Attr::ExprSequenceItem);
   if (part.isPartial) {
     expr->args.pop_back();
     if (!part.args)
@@ -556,14 +557,14 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
   }
 
   // Unify function type generics with the provided generics
-  seqassert((expr->hasAttr(ExprAttr::OrderedCall) && typeArgs.empty()) ||
-                (!expr->hasAttr(ExprAttr::OrderedCall) &&
+  seqassert((expr->hasAttribute(Attr::ExprOrderedCall) && typeArgs.empty()) ||
+                (!expr->hasAttribute(Attr::ExprOrderedCall) &&
                  typeArgs.size() == calleeFn->funcGenerics.size()),
             "bad vector sizes");
   if (!calleeFn->funcGenerics.empty()) {
     auto niGenerics = calleeFn->ast->getNonInferrableGenerics();
-    for (size_t si = 0;
-         !expr->hasAttr(ExprAttr::OrderedCall) && si < calleeFn->funcGenerics.size();
+    for (size_t si = 0; !expr->hasAttribute(Attr::ExprOrderedCall) &&
+                        si < calleeFn->funcGenerics.size();
          si++) {
       if (typeArgs[si]) {
         auto typ = ctx->getType(typeArgs[si]->type);
@@ -595,7 +596,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
   }
 
   expr->args = args;
-  expr->setAttr(ExprAttr::OrderedCall);
+  expr->setAttribute(Attr::ExprOrderedCall);
   part.known = newMask;
   return nullptr;
 }
@@ -828,22 +829,24 @@ Expr *TypecheckVisitor::transformSuperF(CallExpr *expr) {
 
   // Find list of matching superf methods
   std::vector<types::FuncTypePtr> supers;
-  if (!func->ast->attributes.parentClass.empty() &&
-      !endswith(func->ast->name, ":dispatch")) {
-    auto p = ctx->getType(func->ast->attributes.parentClass);
-    if (auto pc = p->getClass()) {
-      if (auto c = ctx->cache->getClass(pc)) {
-        if (auto m = in(c->methods, ctx->cache->rev(func->ast->name))) {
-          for (auto &overload : ctx->cache->overloads[*m]) {
-            if (endswith(overload, ":dispatch"))
-              continue;
-            if (overload == func->ast->name)
-              break;
-            supers.emplace_back(ctx->cache->functions[overload].type);
+  if (!endswith(func->ast->name, ":dispatch")) {
+    if (auto aa =
+            func->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass)) {
+      auto p = ctx->getType(aa->value);
+      if (auto pc = p->getClass()) {
+        if (auto c = ctx->cache->getClass(pc)) {
+          if (auto m = in(c->methods, ctx->cache->rev(func->ast->name))) {
+            for (auto &overload : ctx->cache->overloads[*m]) {
+              if (endswith(overload, ":dispatch"))
+                continue;
+              if (overload == func->ast->name)
+                break;
+              supers.emplace_back(ctx->cache->functions[overload].type);
+            }
           }
         }
+        std::reverse(supers.begin(), supers.end());
       }
-      std::reverse(supers.begin(), supers.end());
     }
   }
   if (supers.empty())
@@ -869,7 +872,7 @@ Expr *TypecheckVisitor::transformSuper() {
   if (!ctx->getBase()->type)
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
   auto funcTyp = ctx->getBase()->type->getFunc();
-  if (!funcTyp || !funcTyp->ast->hasAttr(Attr::Method))
+  if (!funcTyp || !funcTyp->ast->hasAttribute(Attr::Method))
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
   if (funcTyp->getArgTypes().empty())
     E(Error::CALL_SUPER_PARENT, getSrcInfo());

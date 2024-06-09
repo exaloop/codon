@@ -105,7 +105,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                     clone(ex->expr), cache->N<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
-    node = ast::ScopingVisitor::apply(sctx->cache, node);
+    ast::ScopingVisitor::apply(sctx->cache, node);
     node = tv.transform(node);
 
     if (!cache->errors.empty())

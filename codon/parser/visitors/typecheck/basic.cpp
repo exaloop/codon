@@ -38,11 +38,32 @@ void TypecheckVisitor::visit(IntExpr *expr) { resultExpr = transformInt(expr); }
 void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr); }
 
 /// Set type to `str`
+/// Parse a Python-like f-string into a concatenation:
+///   `f"foo {x+1} bar"` -> `str.cat("foo ", str(x+1), " bar")`
+/// Supports "{x=}" specifier (that prints the raw expression as well):
+///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
+
 void TypecheckVisitor::visit(StringExpr *expr) {
-  seqassert(expr->strings.size() == 1 && expr->strings[0].second.empty(), "bad string");
-  unify(expr->type,
-        std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
-  expr->setDone();
+  if (expr->strings.size() == 1) {
+    unify(expr->type,
+          std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
+    expr->setDone();
+  } else {
+    std::vector<Expr *> items;
+    for (auto &p : expr->strings)
+      if (p.expr) {
+        items.emplace_back(p.expr);
+      } else if (!p.prefix.empty()) {
+        /// Custom prefix strings:
+        /// call `str.__prefsix_[prefix]__(str, [static length of str])`
+        items.emplace_back(
+            N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), format("__prefix_{}__", p.prefix)),
+                        N<StringExpr>(p.value), N<IntExpr>(p.value.size())));
+      } else {
+        items.emplace_back(N<StringExpr>(p.value));
+      }
+    resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
+  }
 }
 
 /// Parse various integer representations depending on the integer suffix.

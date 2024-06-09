@@ -89,6 +89,7 @@ assignment <-
     for (int i = int(VS.size()) - 2; i >= 0; i--) {
       auto a = AssignStmt(ac_expr(VS[i]), ac_expr(VS[i + 1]));
       a.setSrcInfo(LOC);
+      a.cache = CTX.cache;
       stmts.push_back(a.unpack());
     }
     return asts(Suite, LOC, std::move(stmts));
@@ -96,6 +97,7 @@ assignment <-
   / star_expression _ augassign '=' ^ _ star_expressions {
     auto a = AssignStmt(ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true));
     a.setSrcInfo(LOC);
+    a.cache = CTX.cache;
     return a.unpack();
   }
 augassign <- <
@@ -223,14 +225,15 @@ if_stmt <- ('if' SPACE named_expression _ ':' _ suite)
   IfStmt *p = (IfStmt*)stmt;
   for (int i = 0; i < VS.size(); i += 2) {
     if (i == VS.size() - 1) {
-      p->elseSuite = ac_stmt(VS[i]);
+      p->elseSuite = SuiteStmt::wrap(ac_stmt(VS[i]));
     } else {
       if (i) {
-        p->elseSuite = asts(If, LOC, nullptr, nullptr);
-        p = (IfStmt*)(p->elseSuite);
+        auto els = asts(If, LOC, nullptr, nullptr);
+        p->elseSuite = SuiteStmt::wrap(els);
+        p = (IfStmt*)els;
       }
       p->cond = ac_expr(VS[i]);
-      p->ifSuite = ac_stmt(VS[i + 1]);
+      p->ifSuite = SuiteStmt::wrap(ac_stmt(VS[i + 1]));
     }
   }
   return stmt;
@@ -298,7 +301,7 @@ function <-
   / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = (FunctionStmt*)(ac_stmt(V1));
     fn->decorators = ac<vector<Expr*>>(V0);
-    fn->suite = asts(Expr, LOC, aste(String, LOC, ac<string>(V2)));
+    fn->suite = SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2))));
     fn->parseDecorators();
     return (Stmt*)fn;
   }
@@ -306,7 +309,7 @@ function <-
     auto fn = (FunctionStmt*)(ac_stmt(VS.size() > 2 ? V1 : V0));
     if (VS.size() > 2)
       fn->decorators = ac<vector<Expr*>>(V0);
-    fn->suite = ac_stmt(VS.size() > 2 ? V2 : V1);
+    fn->suite = SuiteStmt::wrap(ac_stmt(VS.size() > 2 ? V2 : V1));
     fn->parseDecorators();
     return (Stmt*)fn;
   }
@@ -563,9 +566,9 @@ slice <-
 slice_part <- expression? { return VS.size() ? V0 : make_any<Expr*>(nullptr); }
 atom <-
   / STRING (SPACE STRING)* {
-    auto e = StringExpr(VS.transform<pair<string, string>>());
-    e.setSrcInfo(LOC);
-    return e.unpack();
+    auto e = aste(String, LOC, VS.transform<StringExpr::String>());
+    ((StringExpr*)e)->unpack();
+    return e;
   }
   / id { return ac_expr(V0); }
   / 'True' { return aste(Bool, LOC, true); }
@@ -712,25 +715,25 @@ NAME <-
   / keyword [a-zA-Z_0-9]+ { return string(VS.sv()); }
   / !keyword <[a-zA-Z_] [a-zA-Z_0-9]*> { return VS.token_to_string(); }
 STRING <- <NAME? STR> {
-  auto p = pair(
+  auto p = StringExpr::String(
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
-  if (p.second != "r" && p.second != "R") {
-    p.first = unescape(p.first);
+  if (p.prefix != "r" && p.prefix != "R") {
+    p.value = unescape(p.value);
   } else {
-    p.second = "";
+    p.prefix = "";
   }
   return p;
 }
 STRING__PREDICATE {
-  auto p = pair(
+  auto p = StringExpr::String(
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
-  if (p.second != "r" && p.second != "R")
+  if (p.prefix != "r" && p.prefix != "R")
     try {
-      p.first = unescape(p.first);
+      p.value = unescape(p.value);
     } catch (std::invalid_argument &e) {
       MSG = "invalid code in a string";
       return false;

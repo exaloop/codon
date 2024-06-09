@@ -363,10 +363,12 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
           std::vector<std::string> attrs;
           for (auto &a : fa->decorators)
             attrs.push_back(fmt::format("@{}", transform(a)));
-          if (!fa->attributes.module.empty())
-            attrs.push_back(fmt::format("@module:{}", fa->attributes.parentClass));
-          if (!fa->attributes.parentClass.empty())
-            attrs.push_back(fmt::format("@parent:{}", fa->attributes.parentClass));
+          if (auto a = fa->getAttribute<ir::StringValueAttribute>(Attr::Module))
+            if (!a->value.empty())
+              attrs.push_back(fmt::format("@module:{}", a->value));
+          if (auto a = fa->getAttribute<ir::StringValueAttribute>(Attr::ParentClass))
+            if (!a->value.empty())
+              attrs.push_back(fmt::format("@parent:{}", a->value));
           std::vector<std::string> args;
           for (size_t i = 0, j = 0; i < fa->args.size(); i++)
             if (fa->args[i].status == Param::Normal) {
@@ -400,7 +402,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
         result = fmt::format(
             "<details><summary># {}</summary>",
             fmt::format("{} {} {}", keyword("class"), stmt->name,
-                        stmt->attributes.has(Attr::Extend) ? " +@extend" : ""));
+                        stmt->hasAttribute(Attr::Extend) ? " +@extend" : ""));
         for (auto &real : cls->realizations) {
           std::vector<std::string> args;
           auto l = real.second->type->is(TYPE_TUPLE)
@@ -413,7 +415,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
             args.push_back(name);
           }
           result += fmt::format("{}{}{}{} {}", newline(), pad(),
-                                (stmt->attributes.has(Attr::Tuple)
+                                (stmt->hasAttribute(Attr::Tuple)
                                      ? format("@tuple{}{}", newline(), pad())
                                      : ""),
                                 keyword("class"), anchor_root(real.first));

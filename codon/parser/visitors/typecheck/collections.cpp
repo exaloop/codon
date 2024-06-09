@@ -53,7 +53,7 @@ void TypecheckVisitor::visit(ListExpr *expr) {
   expr->setType(ctx->getUnbound());
   auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("List")->getClass();
   if ((resultExpr = transformComprehension(name->name, "append", expr->items))) {
-    resultExpr->setAttr(ExprAttr::List);
+    resultExpr->setAttribute(Attr::ExprList);
   }
 }
 
@@ -63,7 +63,7 @@ void TypecheckVisitor::visit(SetExpr *expr) {
   expr->setType(ctx->getUnbound());
   auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Set")->getClass();
   if ((resultExpr = transformComprehension(name->name, "add", expr->items))) {
-    resultExpr->setAttr(ExprAttr::Set);
+    resultExpr->setAttribute(Attr::ExprSet);
   }
 }
 
@@ -73,7 +73,7 @@ void TypecheckVisitor::visit(DictExpr *expr) {
   expr->setType(ctx->getUnbound());
   auto name = ctx->cache->imports[STDLIB_IMPORT].ctx->getType("Dict")->getClass();
   if ((resultExpr = transformComprehension(name->name, "__setitem__", expr->items))) {
-    resultExpr->setAttr(ExprAttr::Dict);
+    resultExpr->setAttribute(Attr::ExprDict);
   }
 }
 
@@ -325,7 +325,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       // `*star` -> `for i in star: cont.[fn](i)`
       auto star = it->getStar();
       Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
-      star->what->setAttr(ExprAttr::StarSequenceItem);
+      star->what->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), star->what,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
@@ -333,14 +333,14 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       // Expand kwstar-expression by iterating over it: see the example above
       auto star = CAST(it, KeywordStarExpr);
       Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
-      star->what->setAttr(ExprAttr::StarSequenceItem);
+      star->what->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), star->what,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(0)),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(1)))))));
     } else {
-      it->setAttr(ExprAttr::SequenceItem);
+      it->setAttribute(Attr::ExprSequenceItem);
       if (isDict) {
         stmts.push_back(transform(N<ExprStmt>(
             N<CallExpr>(N<DotExpr>(clone(var), fn), N<IndexExpr>(it, N<IntExpr>(0)),

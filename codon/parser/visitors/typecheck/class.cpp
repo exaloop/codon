@@ -3,12 +3,13 @@
 #include <string>
 #include <tuple>
 
+#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/typecheck/typecheck.h"
 #include "codon/parser/visitors/scoping/scoping.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
 using namespace codon::error;
@@ -31,10 +32,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                                                    ctx->getScope());
   classItem->setSrcInfo(stmt->getSrcInfo());
   types::ClassTypePtr typ = nullptr;
-  if (!stmt->attributes.has(Attr::Extend)) {
+  if (!stmt->hasAttribute(Attr::Extend)) {
     classItem->canonicalName = canonicalName =
-        ctx->generateCanonicalName(name, !stmt->attributes.has(Attr::Internal),
-                                   /* noSuffix*/ stmt->attributes.has(Attr::Internal));
+        ctx->generateCanonicalName(name, !stmt->hasAttribute(Attr::Internal),
+                                   /* noSuffix*/ stmt->hasAttribute(Attr::Internal));
 
     if (canonicalName == "Union")
       typ = std::make_shared<types::UnionType>(ctx->cache);
@@ -42,7 +43,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       typ = std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
     if (stmt->isRecord())
       typ->isTuple = true;
-    // if (stmt->isRecord() && stmt->hasAttr("__notuple__"))
+    // if (stmt->isRecord() && stmt->hasAttribute("__notuple__"))
     //   typ->noTupleUnify = true;
     typ->setSrcInfo(stmt->getSrcInfo());
 
@@ -53,7 +54,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
     // recursive record types (note: these are allowed for reference types)
-    if (!stmt->attributes.has(Attr::Tuple)) {
+    if (!stmt->hasAttribute(Attr::Tuple)) {
       // auto v = ctx->find(name);
       // if (v && !v->canShadow)
       //   E(Error::ID_INVALID_BIND, getSrcInfo(), name);
@@ -89,11 +90,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Parse and add class generics
     std::vector<Param> args;
     std::pair<Stmt *, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
-    if (stmt->attributes.has("deduce") && args.empty()) {
+    if (stmt->hasAttribute("deduce") && args.empty()) {
       // todo)) do this
       // Auto-detect generics and fields
       // autoDeducedInit = autoDeduceMembers(stmt, args);
-    } else if (stmt->attributes.has(Attr::Extend)) {
+    } else if (stmt->hasAttribute(Attr::Extend)) {
       for (auto &a : argsToParse) {
         if (a.status != Param::Generic)
           continue;
@@ -167,14 +168,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Collect classes (and their fields) that are to be statically inherited
     std::vector<types::ClassTypePtr> staticBaseASTs;
-    if (!stmt->attributes.has(Attr::Extend)) {
-      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt->attributes,
+    if (!stmt->hasAttribute(Attr::Extend)) {
+      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
                                         canonicalName, nullptr, typ);
       if (ctx->cache->isJit && !stmt->baseClasses.empty())
         E(Error::CUSTOM, stmt->baseClasses[0],
           "inheritance is not yet supported in JIT mode");
-      parseBaseClasses(stmt->baseClasses, args, stmt->attributes, canonicalName,
-                       transformedTypeAst, typ);
+      parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
+                       typ);
     }
 
     // A ClassStmt will be separated into class variable assignments, method-free
@@ -199,9 +200,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           assign->setUpdate();
           varStmts.push_back(assign);
           ctx->cache->classes[canonicalName].classVars[a.name] = name;
-        } else if (!stmt->attributes.has(Attr::Extend)) {
+        } else if (!stmt->hasAttribute(Attr::Extend)) {
           std::string varName = a.name;
-          // stmt->attributes.has(Attr::Extend)
+          // stmt->hasAttribute(Attr::Extend)
           //                           ? a.name
           //                           : ctx->generateCanonicalName(a.name);
           args.emplace_back(varName, transformType(clean_clone(a.type)),
@@ -222,7 +223,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
     // Handle class members
-    if (!stmt->attributes.has(Attr::Extend)) {
+    if (!stmt->hasAttribute(Attr::Extend)) {
       ctx->typecheckLevel++; // to avoid unifying generics early
       auto &fields = ctx->cache->classes[canonicalName].fields;
       if (canonicalName == TYPE_TUPLE) {
@@ -253,9 +254,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
     // Parse class members (arguments) and methods
-    if (!stmt->attributes.has(Attr::Extend)) {
+    if (!stmt->hasAttribute(Attr::Extend)) {
       // Now that we are done with arguments, add record type to the context
-      if (stmt->attributes.has(Attr::Tuple)) {
+      if (stmt->hasAttribute(Attr::Tuple)) {
         // Ensure that class binding does not shadow anything.
         // Class bindings cannot be dominated either
         // auto v = ctx->find(name);
@@ -265,11 +266,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         ctx->addAlwaysVisible(classItem);
       }
       // Create a cached AST.
-      stmt->attributes.module = ctx->moduleName.status == ImportFile::STDLIB
-                                    ? STDLIB_IMPORT
-                                    : ctx->moduleName.path;
+      stmt->setAttribute(Attr::Module, ctx->moduleName.status == ImportFile::STDLIB
+                                           ? STDLIB_IMPORT
+                                           : ctx->moduleName.path);
       ctx->cache->classes[canonicalName].ast =
-          N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
+          N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
+      ctx->cache->classes[canonicalName].ast->attributes =
+          codon::clone(stmt->attributes);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
@@ -278,17 +281,18 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
       // Codegen default magic methods
       // __new__ must be the first
-      for (auto &m : stmt->attributes.magics) {
-        fnStmts.push_back(transform(
-            codegenMagic(m, typeAst, memberArgs, stmt->attributes.has(Attr::Tuple))));
-      }
+      if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
+        for (auto &m : aa->values) {
+          fnStmts.push_back(transform(
+              codegenMagic(m, typeAst, memberArgs, stmt->hasAttribute(Attr::Tuple))));
+        }
       // Add inherited methods
       for (auto &base : staticBaseASTs) {
         for (auto &mm : ctx->cache->classes[base->name].methods)
           for (auto &mf : ctx->cache->overloads[mm.second]) {
             const auto &fp = ctx->cache->functions[mf];
             auto f = fp.origAst;
-            if (f && !f->attributes.has("autogenerated")) {
+            if (f && !f->hasAttribute("autogenerated")) {
               ctx->addBlock();
               addClassGenerics(base);
               // since functions can come from other modules
@@ -341,7 +345,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     addLater.reserve(clsStmts.size() + 1);
     for (auto &c : clsStmts)
       addLater.push_back(ctx->find(c->getClass()->name));
-    if (stmt->attributes.has(Attr::Tuple))
+    if (stmt->hasAttribute(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
 
     // Mark functions as virtual:
@@ -381,7 +385,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     // Debug information
     // LOG("[class] {} -> {:c} / {}", canonicalName, typ,
-        // ctx->cache->classes[canonicalName].fields.size());
+    // ctx->cache->classes[canonicalName].fields.size());
     // for (auto &m : ctx->cache->classes[canonicalName].fields)
     //   LOG("       - member: {}: {:c}", m.name, m.type);
     // for (auto &m : ctx->cache->classes[canonicalName].methods)
@@ -391,7 +395,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // LOG("");
     // ctx->dump();
   } catch (const exc::ParserException &) {
-    if (!stmt->attributes.has(Attr::Tuple))
+    if (!stmt->hasAttribute(Attr::Tuple))
       ctx->remove(name);
     ctx->cache->classes.erase(name);
     throw;
@@ -400,7 +404,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     ctx->add(ctx->cache->rev(i->canonicalName), i);
 
   // Extensions are not needed as the cache is already populated
-  if (!stmt->attributes.has(Attr::Extend)) {
+  if (!stmt->hasAttribute(Attr::Extend)) {
     auto c = ctx->cache->classes[canonicalName].ast;
     seqassert(c, "not a class AST for {}", canonicalName);
     c->setDone();
@@ -426,7 +430,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
 std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
-    std::vector<Expr *> &baseClasses, std::vector<Param> &args, const Attr &attr,
+    std::vector<Expr *> &baseClasses, std::vector<Param> &args, Stmt *attr,
     const std::string &canonicalName, Expr *typeAst, types::ClassTypePtr &typ) {
   std::vector<types::ClassTypePtr> asts;
 
@@ -450,11 +454,11 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
     mro.push_back(rootMro);
 
     // Sanity checks
-    if (attr.has(Attr::Tuple) && typeAst)
+    if (attr->hasAttribute(Attr::Tuple) && typeAst)
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple");
-    if (!attr.has(Attr::Tuple) && cachedCls->ast->attributes.has(Attr::Tuple))
+    if (!attr->hasAttribute(Attr::Tuple) && cachedCls->ast->hasAttribute(Attr::Tuple))
       E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
-    if (cachedCls->ast->attributes.has(Attr::Internal))
+    if (cachedCls->ast->hasAttribute(Attr::Internal))
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
 
     // Mark parent classes as polymorphic as well.
@@ -626,8 +630,7 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   Expr *ret = nullptr;
   std::vector<Param> fargs;
   std::vector<Stmt *> stmts;
-  Attr attr;
-  attr.set("autogenerated");
+  std::vector<std::string> attrs{"autogenerated"};
 
   std::vector<Param> args;
   args.reserve(allArgs.size());
@@ -640,7 +643,7 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
       // Tuples: def __new__() -> T (internal)
       for (auto &a : args)
         fargs.emplace_back(a.name, clone(a.type), clone(a.defaultValue));
-      attr.set(Attr::Internal);
+      attrs.push_back(Attr::Internal);
     } else {
       // Classes: def __new__() -> T
       stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), clone(typExpr))));
@@ -753,8 +756,9 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   }
 #undef I
 #undef NS
-  auto t =
-      NC<FunctionStmt>(format("__{}__", op), ret, fargs, NC<SuiteStmt>(stmts), attr);
+  auto t = NC<FunctionStmt>(format("__{}__", op), ret, fargs, NC<SuiteStmt>(stmts));
+  for (auto &a : attrs)
+    t->setAttribute(a);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;
 }
@@ -824,11 +828,13 @@ types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) 
     }
     Stmt *fn = N<FunctionStmt>(
         "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),
-        newFnArgs, nullptr, Attr({Attr::Internal}));
-    Stmt *ext =
-        N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn, Attr({Attr::Extend}));
+        newFnArgs, nullptr);
+    fn->setAttribute(Attr::Internal);
+    Stmt *ext = N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn);
+    ext->setAttribute(Attr::Extend);
+    ext = N<SuiteStmt>(ext);
     // TODO: do clean toplevel transform
-    ext = ScopingVisitor::apply(ctx->cache, ext);
+    ScopingVisitor::apply(ctx->cache, ext);
 
     auto rctx = ctx->cache->imports[STDLIB_IMPORT].ctx;
     auto oldBases = rctx->bases;

@@ -42,7 +42,7 @@ struct Stmt : public Node {
 
 public:
   Stmt();
-  Stmt(const Stmt &s) = default;
+  Stmt(const Stmt &s);
   Stmt(const Stmt &, bool);
   explicit Stmt(const codon::SrcInfo &s);
 
@@ -87,7 +87,9 @@ struct SuiteStmt : public Stmt {
   Stmt *firstInBlock() override {
     return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
   }
+  void shallow_flatten();
   Stmt **lastInBlock();
+  static SuiteStmt *wrap(Stmt *);
 };
 
 /// Break statement.
@@ -230,9 +232,9 @@ struct AssertStmt : public Stmt {
 ///          else: print
 struct WhileStmt : public Stmt {
   Expr *cond;
-  Stmt *suite;
+  SuiteStmt *suite;
   /// nullptr if there is no else suite.
-  Stmt *elseSuite;
+  SuiteStmt *elseSuite;
   /// Set if a while loop is used to emulate goto statement
   /// (as `while gotoVar: ...`).
   std::string gotoVar = "";
@@ -251,8 +253,8 @@ struct WhileStmt : public Stmt {
 struct ForStmt : public Stmt {
   Expr *var;
   Expr *iter;
-  Stmt *suite;
-  Stmt *elseSuite;
+  SuiteStmt *suite;
+  SuiteStmt *elseSuite;
   Expr *decorator;
   std::vector<CallExpr::Arg> ompArgs;
 
@@ -281,7 +283,7 @@ struct ForStmt : public Stmt {
 struct IfStmt : public Stmt {
   Expr *cond;
   /// elseSuite can be nullptr (if no else is found).
-  Stmt *ifSuite, *elseSuite;
+  SuiteStmt *ifSuite, *elseSuite;
 
   IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite = nullptr);
   IfStmt(const IfStmt &, bool);
@@ -300,8 +302,9 @@ struct MatchStmt : public Stmt {
   struct MatchCase {
     Expr *pattern;
     Expr *guard;
-    Stmt *suite;
+    SuiteStmt *suite;
 
+    MatchCase(Expr*, Expr*, Stmt*);
     MatchCase clone(bool) const;
   };
   Expr *what;
@@ -359,7 +362,7 @@ struct TryStmt : public Stmt {
     std::string var;
     /// nullptr if there is no explicit exception type.
     Expr *exc;
-    Stmt *suite;
+    SuiteStmt *suite;
 
     Catch(const std::string &, Expr *, Stmt *);
     Catch(const Catch &, bool);
@@ -368,10 +371,10 @@ struct TryStmt : public Stmt {
     ACCEPT(ASTVisitor);
   };
 
-  Stmt *suite;
+  SuiteStmt *suite;
   std::vector<Catch *> catches;
   /// nullptr if there is no finally block.
-  Stmt *finally;
+  SuiteStmt *finally;
 
   TryStmt(Stmt *suite, std::vector<Catch *> catches, Stmt *finally = nullptr);
   TryStmt(const TryStmt &, bool);
@@ -410,55 +413,6 @@ struct GlobalStmt : public Stmt {
   ACCEPT(ASTVisitor);
 };
 
-struct Attr {
-  // Toplevel attributes
-  const static std::string LLVM;
-  const static std::string Python;
-  const static std::string Atomic;
-  const static std::string Property;
-  const static std::string StaticMethod;
-  const static std::string Attribute;
-  const static std::string C;
-  // Internal attributes
-  const static std::string Internal;
-  const static std::string HiddenFromUser;
-  const static std::string ForceRealize;
-  const static std::string RealizeWithoutSelf; // not internal
-  // Compiler-generated attributes
-  const static std::string CVarArg;
-  const static std::string Method;
-  const static std::string Capture;
-  const static std::string HasSelf;
-  const static std::string IsGenerator;
-  // Class attributes
-  const static std::string Extend;
-  const static std::string Tuple;
-  // Standard library attributes
-  const static std::string Test;
-  const static std::string Overload;
-  const static std::string Export;
-  // Function module
-  std::string module;
-  // Parent class (set for methods only)
-  std::string parentClass;
-  // True if a function is decorated with __attribute__
-  bool isAttribute;
-
-  std::vector<std::string> magics;
-
-  enum CaptureType { Read, Global, Nonlocal };
-  std::unordered_map<std::string, CaptureType> captures;
-  std::unordered_map<std::string, size_t> bindings;
-
-  // Set of attributes
-  std::set<std::string> customAttr;
-
-  explicit Attr(const std::vector<std::string> &attrs = std::vector<std::string>());
-  void set(const std::string &attr);
-  void unset(const std::string &attr);
-  bool has(const std::string &attr) const;
-};
-
 /// Function statement (@(attributes...) def name[funcs...](args...) -> ret: suite).
 /// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
@@ -467,12 +421,11 @@ struct FunctionStmt : public Stmt {
   /// nullptr if return type is not specified.
   Expr *ret;
   std::vector<Param> args;
-  Stmt *suite;
-  Attr attributes;
+  SuiteStmt *suite;
   std::vector<Expr *> decorators;
 
   FunctionStmt(std::string name, Expr *ret, std::vector<Param> args, Stmt *suite,
-               Attr attributes = Attr(), std::vector<Expr *> decorators = {});
+               std::vector<Expr *> decorators = {});
   FunctionStmt(const FunctionStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -483,7 +436,6 @@ struct FunctionStmt : public Stmt {
   /// S-expression form.
   /// @li (T U (int 0))
   std::string signature() const;
-  bool hasAttr(const std::string &attr) const;
   void parseDecorators();
 
   size_t getStarArgs() const;
@@ -502,8 +454,7 @@ struct FunctionStmt : public Stmt {
 struct ClassStmt : public Stmt {
   std::string name;
   std::vector<Param> args;
-  Stmt *suite;
-  Attr attributes;
+  SuiteStmt *suite;
   std::vector<Expr *> decorators;
   std::vector<Expr *> baseClasses;
   std::vector<Expr *> staticBaseClasses;
@@ -511,7 +462,6 @@ struct ClassStmt : public Stmt {
   ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
             std::vector<Expr *> decorators = {}, std::vector<Expr *> baseClasses = {},
             std::vector<Expr *> staticBaseClasses = {});
-  ClassStmt(std::string name, std::vector<Param> args, Stmt *suite, Attr attr);
   ClassStmt(const ClassStmt &, bool);
 
   std::string toString(int indent) const override;
@@ -520,7 +470,6 @@ struct ClassStmt : public Stmt {
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
-  bool hasAttr(const std::string &attr) const;
 
   ClassStmt *getClass() override { return this; }
 
@@ -547,7 +496,7 @@ struct WithStmt : public Stmt {
   std::vector<Expr *> items;
   /// empty string if a corresponding item is unnamed
   std::vector<std::string> vars;
-  Stmt *suite;
+  SuiteStmt *suite;
 
   WithStmt(std::vector<Expr *> items, std::vector<std::string> vars, Stmt *suite);
   WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite);
@@ -562,7 +511,7 @@ struct WithStmt : public Stmt {
 struct CustomStmt : public Stmt {
   std::string keyword;
   Expr *expr;
-  Stmt *suite;
+  SuiteStmt *suite;
 
   CustomStmt(std::string keyword, Expr *expr, Stmt *suite);
   CustomStmt(const CustomStmt &, bool);

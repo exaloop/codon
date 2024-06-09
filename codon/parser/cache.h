@@ -311,8 +311,10 @@ public:
     return t;
   }
   template <typename Tn, typename... Ts> Tn *NS(const Node *srcInfo, Ts &&...args) {
-    auto n = N(std::forward<Ts>(args)...));
-    n->setSrcInfo(srcInfo->getSrcInfo());
+    _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
+    Tn *t = (Tn *)(_nodes->back().get());
+    t->cache = this;
+    t->setSrcInfo(srcInfo->getSrcInfo());
     return t;
   }
 
