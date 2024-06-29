@@ -300,8 +300,9 @@ void ScopingVisitor::visit(YieldExpr *expr) {
 void ScopingVisitor::visit(FunctionStmt *stmt) {
   bool isOverload = false;
   for (auto &d : stmt->decorators)
-    if (d->isId("overload"))
+    if (d->isId("overload")) {
       isOverload = true;
+    }
   if (!isOverload)
     visitName(stmt->name, true, stmt, stmt->getSrcInfo());
 
@@ -431,7 +432,7 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
       }
       ctx->map[name].emplace_front(src, ctx->getScope(), root);
       // LOG("add: {} | {} := {} {}", src, name, ctx->getScope(),
-      //     root ? root->toString(-1) : "-");
+          // root ? root->toString(-1) : "-");
     }
   } else {
     if (!in(ctx->firstSeen, name))
@@ -494,52 +495,54 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   auto lastGood = it->begin();
   while (lastGood != it->end() && lastGood->ignore)
     lastGood++;
-  int prefix = int(ctx->scope.size());
+  int commonScope = int(ctx->scope.size());
   // Iterate through all bindings with the given name and find the closest binding that
   // dominates the current scope.
   for (auto i = it->begin(); i != it->end(); i++) {
     if (i->ignore)
       continue;
-    // Find the longest block prefix between the binding and the current scope.
-    int p = std::min(prefix, int(i->scope.size()));
-    while (p >= 0 && i->scope[p - 1] != ctx->scope[p - 1].id)
-      p--;
-    // We reached the toplevel. Break.
-    if (p < 0)
-      break;
 
     bool completeDomination = i->scope.size() <= ctx->scope.size() &&
                               i->scope.back() == ctx->scope[i->scope.size() - 1].id;
-    if (!completeDomination && prefix <= int(ctx->scope.size()) && prefix != p)
+    if (completeDomination) {
+      commonScope = i->scope.size();
+      lastGood = i;
       break;
-
-    prefix = p;
-    lastGood = i;
-    // The binding completely dominates the current scope. Break.
-    if (completeDomination)
-      break;
+    } else {
+      seqassert(i->scope[0] == 0, "bad scoping");
+      seqassert(ctx->scope[0].id == 0, "bad scoping");
+      // Find the longest block prefix between the binding and the current common scope.
+      commonScope = std::min(commonScope, int(i->scope.size()));
+      while (commonScope > 0 && i->scope[commonScope - 1] != ctx->scope[commonScope - 1].id)
+        commonScope--;
+      // if (commonScope < int(ctx->scope.size()) && commonScope != p)
+      //   break;
+      lastGood = i;
+    }
   }
+  // if (commonScope != ctx->scope.size())
+  //   LOG("==> {}: {} / {} vs {}", getSrcInfo(), name, ctx->getScope(), commonScope);
   seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
   if (!allowShadow) { // go to the end
     lastGood = it->end();
     --lastGood;
-    int p = std::min(prefix, int(lastGood->scope.size()));
+    int p = std::min(commonScope, int(lastGood->scope.size()));
     while (p >= 0 && lastGood->scope[p - 1] != ctx->scope[p - 1].id)
       p--;
-    prefix = p;
+    commonScope = p;
   }
 
   bool gotUsedVar = false;
-  if (lastGood->scope.size() != prefix) {
+  if (lastGood->scope.size() != commonScope) {
     // The current scope is potentially reachable by multiple bindings that are
     // not dominated by a common binding. Create such binding in the scope that
     // dominates (covers) all of them.
     auto scope = ctx->getScope();
-    auto newScope = std::vector<int>(scope.begin(), scope.begin() + prefix);
+    auto newScope = std::vector<int>(scope.begin(), scope.begin() + commonScope);
 
     // Make sure to prepend a binding declaration: `var` and `var__used__ = False`
     // to the dominating scope.
-    for (size_t si = prefix; si-- > 0; si--) {
+    for (size_t si = commonScope; si-- > 0; si--) {
       if (!ctx->scope[si].suite)
         continue;
       if (!ctx->scope[si].suite->hasAttribute(Attr::Bindings))
@@ -551,7 +554,9 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
       auto newItem = ScopingVisitor::Context::Item(
           getSrcInfo(), newScope, ctx->scope[si].suite, {lastGood->scope});
       lastGood = it->insert(++lastGood, newItem);
-      // LOG("-> promote {} / T from {} to {} | {}", name, ctx->getScope(),
+      // LOG("-> {}: promote {} / T from {} to {} | {}",
+      // getSrcInfo(),
+      // name, ctx->getScope(),
       //     lastGood->scope, lastGood->accessChecked);
       gotUsedVar = true;
       break;

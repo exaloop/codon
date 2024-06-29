@@ -19,6 +19,22 @@ using namespace types;
 
 /// Unify the function return type with `Generator[?]`.
 /// The unbound type will be deduced from return/yield statements.
+void TypecheckVisitor::visit(LambdaExpr *expr) {
+  std::vector<Param> params;
+  std::string name = ctx->cache->getTemporaryVar("lambda");
+  params.reserve(expr->vars.size());
+  for (auto &s : expr->vars)
+    params.emplace_back(s);
+  auto f =
+      N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(N<ReturnStmt>(expr->expr)));
+  if (auto a = expr->getAttribute(Attr::Bindings))
+    f->setAttribute(Attr::Bindings, a->clone());
+  resultExpr =
+      transform(N<StmtExpr>(f, N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>())));
+}
+
+/// Unify the function return type with `Generator[?]`.
+/// The unbound type will be deduced from return/yield statements.
 void TypecheckVisitor::visit(YieldExpr *expr) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, expr, "yield");
@@ -117,13 +133,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // LOG("-> {} {}", stmt->name, attrName);
       if (isAttr) {
         attributes.push_back(attrName);
+        stmt->setAttribute(attrName);
         stmt->decorators[i] = nullptr; // remove it from further consideration
       }
     }
   }
-  if (!attributes.empty())
-    stmt->setAttribute(Attr::Attributes,
-                       std::make_unique<ir::StringListAttribute>(attributes));
 
   bool isClassMember = ctx->inClass();
   if (stmt->hasAttribute(Attr::ForceRealize) && (!ctx->isGlobal() || isClassMember))

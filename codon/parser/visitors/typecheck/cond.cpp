@@ -230,19 +230,11 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
     } else {
       return suite;
     }
-  } else {
-    auto se = pattern->getStmtExpr();
-    if (se && se->stmts.size() == 1) {
-      AssignStmt *a = nullptr;
-      if (se->stmts[0]->getSuite() && se->stmts[0]->getSuite()->stmts.size() >= 1 &&
-          (a = se->stmts[0]->getSuite()->stmts[0]->getAssign())) {
-        seqassert(a->lhs->getId(), "only simple assignment expressions are supported");
-        auto stmts = se->stmts[0]->getSuite()->stmts;
-        stmts.push_back(transformPattern(clone(var), clone(a->rhs), clone(suite)));
-        a->rhs = clone(var);
-        return N<SuiteStmt>(stmts);
-      }
-    }
+  } else if (auto ea = CAST(pattern, AssignExpr)) {
+    // Bound pattern
+    seqassert(ea->var->getId(), "only simple assignment expressions are supported");
+    return N<SuiteStmt>(N<AssignStmt>(clone(ea->var), clone(var)),
+                        transformPattern(clone(var), clone(ea->expr), clone(suite)));
   }
   pattern = transform(pattern); // transform to check for pattern errors
   if (pattern->getEllipsis())

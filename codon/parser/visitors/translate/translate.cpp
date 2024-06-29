@@ -647,9 +647,8 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   // TODO: refactor IR attribute API
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  if (auto aa = ast->getAttribute<ir::StringListAttribute>(Attr::Attributes))
-    for (auto &a : aa->values)
-      attr[a] = "";
+  for (auto &[a, _]: ast->attributes)
+    attr[a] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
@@ -684,9 +683,8 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   // TODO: refactor IR attribute API
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  if (auto aa = ast->getAttribute<ir::StringListAttribute>(Attr::Attributes))
-    for (auto &a : aa->values)
-      attr[a] = "";
+  for (auto &[a, _]: ast->attributes)
+    attr[a] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());

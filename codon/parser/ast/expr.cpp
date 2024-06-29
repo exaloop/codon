@@ -23,7 +23,6 @@ namespace codon::ast {
 
 const std::string Attr::Module = "module";
 const std::string Attr::ParentClass = "parentClass";
-const std::string Attr::Attributes = "attributes";
 const std::string Attr::Bindings = "bindings";
 
 const std::string Attr::LLVM = "llvm";
@@ -220,7 +219,7 @@ void StringExpr::unpack() {
       /// Transform an F-string
       for (auto pf : unpackFString(p.value)) {
         if (pf.prefix.empty() && !exprs.empty() && exprs.back().prefix.empty()) {
-          exprs.back().prefix += pf.prefix;
+          exprs.back().value += pf.value;
         } else {
           exprs.emplace_back(pf);
         }
@@ -228,7 +227,7 @@ void StringExpr::unpack() {
     } else if (!p.prefix.empty()) {
       exprs.emplace_back(p);
     } else if (!exprs.empty() && exprs.back().prefix.empty()) {
-      exprs.back().prefix += p.prefix;
+      exprs.back().value += p.value;
     } else {
       exprs.emplace_back(p);
     }

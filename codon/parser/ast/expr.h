@@ -22,7 +22,6 @@ struct Attr {
   // Function attributes
   const static std::string Module;
   const static std::string ParentClass;
-  const static std::string Attributes;
   const static std::string Bindings;
   // Toplevel attributes
   const static std::string LLVM;

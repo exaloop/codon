@@ -207,7 +207,7 @@ private: // Node typechecking rules
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(YieldFromStmt *) override;
-  // void visit(LambdaExpr *) override;
+  void visit(LambdaExpr *) override;
   void visit(GlobalStmt *) override;
   void visit(FunctionStmt *) override;
   Stmt *transformPythonDefinition(const std::string &, const std::vector<Param> &,
