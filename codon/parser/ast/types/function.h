@@ -25,6 +25,8 @@ namespace codon::ast::types {
 struct FuncType : public ClassType {
   /// Canonical AST node.
   FunctionStmt *ast;
+  /// Function capture index.
+  size_t index;
   /// Function generics (e.g. T in def foo[T](...)).
   std::vector<ClassType::Generic> funcGenerics;
   /// Enclosing class or a function.
@@ -32,7 +34,7 @@ struct FuncType : public ClassType {
 
 public:
   FuncType(
-      const std::shared_ptr<ClassType> &baseType, FunctionStmt *ast,
+      const std::shared_ptr<ClassType> &baseType, FunctionStmt *ast, size_t index = 0,
       std::vector<ClassType::Generic> funcGenerics = std::vector<ClassType::Generic>(),
       TypePtr funcParent = nullptr);
 

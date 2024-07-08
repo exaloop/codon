@@ -7,9 +7,11 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -250,6 +252,29 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
       if (l->defaultType) {
         getBase()->pendingDefaults.insert(i.second);
       }
+    }
+  }
+  if (auto ft = t->getFunc()) {
+    if (auto b = ft->ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
+      auto module =
+          ft->ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
+      const auto &imp = cache->imports[module];
+      std::unordered_map<std::string, std::string> key;
+      for (const auto &[c, _] : b->captures) {
+        auto h = imp.ctx->find(c);
+        // seqassert(h, "bad function {}: cannot locate {}", ft->name, c);
+        key[c] = h ? h->canonicalName : "";
+      }
+      auto &cm = cache->functions[ft->ast->name].captureMappings;
+      size_t idx = 0;
+      for (; idx < cm.size(); idx++)
+        if (cm[idx] == key)
+          break;
+      if (idx == cm.size())
+        cm.push_back(key);
+      // if (idx)
+      //   LOG("--> {}: realize {}: {} / {}", getSrcInfo(), ft->debugString(2), idx, key);
+      ft->index = idx;
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {

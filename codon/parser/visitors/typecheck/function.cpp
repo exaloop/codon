@@ -439,7 +439,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Construct the type
   auto funcTyp = std::make_shared<types::FuncType>(
-      baseType, ctx->cache->functions[canonicalName].ast, explicits);
+      baseType, ctx->cache->functions[canonicalName].ast, 0, explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->hasAttribute(Attr::Method)) {
     funcTyp->funcParent = parentClass;

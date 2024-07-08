@@ -300,7 +300,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   ctx->cache->reverseIdentifierLookup[name] = ctx->cache->reverseIdentifierLookup[fn];
 
   auto baseType = getFuncTypeBase(2);
-  auto typ = std::make_shared<FuncType>(baseType, ast);
+  auto typ = std::make_shared<FuncType>(baseType, ast, 0);
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
   ctx->addFunc(name, name, typ);
 

@@ -379,7 +379,7 @@ void ScopingVisitor::processChildCaptures() {
       if (i->back().binding && CAST(i->back().binding, ClassStmt))
         continue;
     }
-    if (!findDominatingBinding(n.first, false)) {
+    if (!findDominatingBinding(n.first)) {
       // LOG("-> add: {} / {}", ctx->functionScope ? ctx->functionScope->name : "-", n);
       ctx->captures.insert(n); // propagate!
     }
@@ -411,8 +411,9 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
     if (auto p = in(ctx->captures, name)) {
       if (*p == BindingsAttribute::CaptureType::Read)
         E(error::Error::ASSIGN_LOCAL_REFERENCE, ctx->firstSeen[name], name, src);
-      else if (root) // global, nonlocal
+      else if (root) {// global, nonlocal
         switchToUpdate(root, name, false);
+      }
     } else {
       if (auto i = in(ctx->childCaptures, name)) {
         if (*i != BindingsAttribute::CaptureType::Global && ctx->functionScope) {

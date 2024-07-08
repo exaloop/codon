@@ -11,9 +11,9 @@
 namespace codon::ast::types {
 
 FuncType::FuncType(const std::shared_ptr<ClassType> &baseType, FunctionStmt *ast,
-                   std::vector<Generic> funcGenerics, TypePtr funcParent)
-    : ClassType(baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
-      funcParent(std::move(funcParent)) {}
+                   size_t index, std::vector<Generic> funcGenerics, TypePtr funcParent)
+    : ClassType(baseType), ast(ast), index(index),
+      funcGenerics(std::move(funcGenerics)), funcParent(std::move(funcParent)) {}
 
 int FuncType::unify(Type *typ, Unification *us) {
   if (this == typ)
@@ -21,7 +21,8 @@ int FuncType::unify(Type *typ, Unification *us) {
   int s1 = 2, s = 0;
   if (auto t = typ->getFunc()) {
     // Check if names and parents match.
-    if (ast->name != t->ast->name || (bool(funcParent) ^ bool(t->funcParent)))
+    if (ast->name != t->ast->name || index != t->index ||
+        (bool(funcParent) ^ bool(t->funcParent)))
       return -1;
     if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1) {
       return -1;
@@ -45,9 +46,10 @@ TypePtr FuncType::generalize(int atLevel) {
   for (auto &t : g)
     t.type = t.type ? t.type->generalize(atLevel) : nullptr;
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
-  return std::make_shared<FuncType>(
-      std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel)), ast, g,
-      p);
+  auto t = std::make_shared<FuncType>(
+      std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel)), ast,
+      index, g, p);
+  return t;
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
@@ -60,10 +62,11 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
         (*cache)[t.id] = t.type;
     }
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
-  return std::make_shared<FuncType>(
+  auto t = std::make_shared<FuncType>(
       std::static_pointer_cast<ClassType>(
           this->ClassType::instantiate(atLevel, unboundCount, cache)),
-      ast, g, p);
+      ast, index, g, p);
+  return t;
 }
 
 bool FuncType::hasUnbounds(bool includeGenerics) const {
@@ -148,6 +151,8 @@ std::string FuncType::debugString(char mode) const {
   if (mode == 0) {
     fnname = cache->rev(ast->name);
   }
+  if (mode && index)
+    fnname += fmt::format("/{}", index);
   if (mode == 2 && funcParent)
     s += fmt::format(";{}", funcParent->debugString(mode));
   return fmt::format("{}{}", fnname, s.empty() ? "" : fmt::format("[{}]", s));
@@ -165,8 +170,9 @@ std::string FuncType::realizedName() const {
     as.push_back(a->getFunc() ? a->getFunc()->realizedName() : a->realizedName());
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
-  return fmt::format("{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
-                     ast->name, s.empty() ? "" : fmt::format("[{}]", s));
+  return fmt::format("{}{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
+                     ast->name, index ? fmt::format("/{}", index) : "",
+                     s.empty() ? "" : fmt::format("[{}]", s));
 }
 
 std::vector<TypePtr> FuncType::getArgTypes() const {

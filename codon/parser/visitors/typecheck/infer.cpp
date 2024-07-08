@@ -300,21 +300,32 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   const auto &imp = ctx->cache->imports[module];
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
-      bool ok = true;
-      // Enable later!
-      // for (auto &c: (*r)->captures) {
-      //   auto h = imp.ctx->find(ctx->cache->rev(c));
-      //   if (h && h->canonicalName != c) {
-      //     ok = false;
-      //     break;
-      //   }
-      // }
-      if (ok) {
         auto ret = (*r)->type;
         return ret; // make sure that the return is realized (nested recursions)
       }
-    }
   }
+
+  // auto matchNames = [&](const std::vector<std::string> &caps) -> bool {
+  //   for (auto &c : caps) {
+  //     auto h = imp.ctx->find(ctx->cache->rev(c));
+  //     if (h && h->canonicalName != c) {
+  //       return false;
+  //     }
+  //   }
+  //   return true;
+  // };
+
+  // auto &realizations = ctx->cache->functions[type->ast->name].realizations;
+  // if (auto r = in(realizations, type->realizedName())) {
+  //   if (!force) {
+  //     for (size_t ri = r->size(); ri-- > 0;) {
+  //       if (matchNames((*r)[ri]->captures)) {
+  //         auto ret = (*r)[ri]->type;
+  //         return ret; // make sure that the return is realized (nested recursions)
+  //       }
+  //     }
+  //   }
+  // }
 
   seqassert(in(ctx->cache->imports, module) != nullptr, "bad module: '{}'", module);
   auto oldCtx = this->ctx;
@@ -448,18 +459,20 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->attributes = codon::clone(ast->attributes);
 
-  if (!in(ctx->cache->pendingRealizations,
-          make_pair(type->ast->name, type->realizedName()))) {
+  auto newKey = type->realizedName();
+  if (newKey != key) {
+    LOG("!! oldKey={}, newKey={}", key, newKey);
+  }
+  if (!in(ctx->cache->pendingRealizations, make_pair(type->ast->name, newKey))) {
     if (!r->ir)
       r->ir = makeIRFunction(r);
-    realizations[type->realizedName()] = r;
+    realizations[newKey] = r;
   } else {
-    realizations[key] = realizations[type->realizedName()];
+    realizations[key] = realizations[newKey];
   }
   if (force)
-    realizations[type->realizedName()]->ast = r->ast;
-  val = std::make_shared<TypecheckItem>(type->realizedName(), "", ctx->getModule(),
-                                        type->getFunc());
+    realizations[newKey]->ast = r->ast;
+  val = std::make_shared<TypecheckItem>(newKey, "", ctx->getModule(), type->getFunc());
   ctx->addAlwaysVisible(val, true);
   if (!startswith(type->ast->name, "%_import_")) {
     ctx->bases.pop_back();
