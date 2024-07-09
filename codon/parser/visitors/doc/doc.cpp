@@ -107,22 +107,6 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   DocVisitor(shared->modules[""]).transformModule(std::move(core));
   DocVisitor(shared->modules[""]).transformModule(std::move(ast));
 
-  // for (auto &s : std::vector<std::string>{"byte", "float", "bool", "int", "str",
-  //                                         "pyobj", "Ptr", "Function", "Generator",
-  //                                         "Tuple", "Int", "UInt", TYPE_OPTIONAL,
-  //                                         "Callable", "NoneType", "__internal__"}) {
-  //   shared->j->set(std::to_string(shared->itemID),
-  //                  std::make_shared<json>(std::unordered_map<std::string,
-  //                  std::string>{
-  //                      {"kind", "class"}, {"name", s}, {"type", "type"}}));
-  //   if (s == "Ptr" || s == "Generator" || s == TYPE_OPTIONAL)
-  //     shared->generics[shared->itemID] = {"T"};
-  //   if (s == "Int" || s == "UInt")
-  //     shared->generics[shared->itemID] = {"N"};
-  //   shared->modules[""]->add(s, std::make_shared<int>(shared->itemID++));
-  // }
-  // DocVisitor(shared->modules[""]).transformModule(std::move(ast));
-
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
     auto path = getAbsolutePath(f);
@@ -176,7 +160,6 @@ std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
 }
 
 std::string DocVisitor::transform(const StmtPtr &stmt) {
-  // LOG("-> {} / {}", stmt->getSrcInfo(), stmt);
   if (!stmt)
     return "";
   DocVisitor v(ctx);
