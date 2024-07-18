@@ -92,33 +92,27 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->argv0 = argv0;
   auto cache = std::make_unique<ast::Cache>(argv0);
   shared->cache = cache.get();
-
-  auto stdlib = getImportFile(argv0, "internal", "", true, "");
-  auto ast = ast::parseFile(shared->cache, stdlib->path);
   shared->modules[""] = std::make_shared<DocContext>(shared);
-  shared->modules[""]->setFilename(stdlib->path);
   shared->j = std::make_shared<json>();
-  for (auto &s : std::vector<std::string>{"byte", "float", "bool", "int", "str",
-                                          "pyobj", "Ptr", "Function", "Generator",
-                                          "Tuple", "Int", "UInt", TYPE_OPTIONAL,
-                                          "Callable", "NoneType", "__internal__"}) {
-    shared->j->set(std::to_string(shared->itemID),
-                   std::make_shared<json>(std::unordered_map<std::string, std::string>{
-                       {"kind", "class"}, {"name", s}, {"type", "type"}}));
-    if (s == "Ptr" || s == "Generator" || s == TYPE_OPTIONAL)
-      shared->generics[shared->itemID] = {"T"};
-    if (s == "Int" || s == "UInt")
-      shared->generics[shared->itemID] = {"N"};
-    shared->modules[""]->add(s, std::make_shared<int>(shared->itemID++));
-  }
 
+  auto stdlib = getImportFile(argv0, STDLIB_INTERNAL_MODULE, "", true, "");
+  auto ast = ast::parseFile(shared->cache, stdlib->path);
+  auto core =
+      ast::parseCode(shared->cache, stdlib->path, "from internal.core import *");
+  shared->modules[""]->setFilename(stdlib->path);
+  shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+  DocVisitor(shared->modules[""]).transformModule(std::move(core));
   DocVisitor(shared->modules[""]).transformModule(std::move(ast));
-  auto ctx = std::make_shared<DocContext>(shared);
 
+  auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
     auto path = getAbsolutePath(f);
     ctx->setFilename(path);
-    ast = ast::parseFile(shared->cache, path);
+    LOG("-> parsing {}", path);
+    auto ast = ast::parseFile(shared->cache, path);
     DocVisitor(ctx).transformModule(std::move(ast));
   }
 
@@ -156,6 +150,8 @@ std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool
 }
 
 std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
+  if (!expr)
+    return std::make_shared<json>();
   DocVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
   v.resultExpr = std::make_shared<json>();
@@ -164,6 +160,8 @@ std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
 }
 
 std::string DocVisitor::transform(const StmtPtr &stmt) {
+  if (!stmt)
+    return "";
   DocVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
@@ -249,7 +247,7 @@ void DocVisitor::visit(FunctionStmt *stmt) {
       a.status = Param::Generic;
     }
   for (auto &a : stmt->args)
-    if (a.status != Param::Normal) {
+    if (a.status == Param::Normal) {
       auto j = std::make_shared<json>();
       j->set("name", a.name);
       if (a.type)
@@ -311,7 +309,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
   for (auto &a : stmt->args)
-    if (a.status != Param::Normal) {
+    if (a.status == Param::Normal) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       if (a.type)
@@ -348,7 +346,7 @@ std::shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
 }
 
 void DocVisitor::visit(ImportStmt *stmt) {
-  if (stmt->from->isId("C") || stmt->from->isId("python")) {
+  if (stmt->from && (stmt->from->isId("C") || stmt->from->isId("python"))) {
     int id = ctx->shared->itemID++;
     std::string name, lib;
     if (auto i = stmt->what->getId())
@@ -381,19 +379,21 @@ void DocVisitor::visit(ImportStmt *stmt) {
 
   std::vector<std::string> dirs; // Path components
   Expr *e = stmt->from.get();
-  while (auto d = e->getDot()) {
-    dirs.push_back(d->member);
-    e = d->expr.get();
+  if (e) {
+    while (auto d = e->getDot()) {
+      dirs.push_back(d->member);
+      e = d->expr.get();
+    }
+    if (!e->getId() || !stmt->args.empty() || stmt->ret ||
+        (stmt->what && !stmt->what->getId()))
+      error("invalid import statement");
+    // We have an empty stmt->from in "from .. import".
+    if (!e->getId()->value.empty())
+      dirs.push_back(e->getId()->value);
   }
-  if (!e->getId() || !stmt->args.empty() || stmt->ret ||
-      (stmt->what && !stmt->what->getId()))
-    error("invalid import statement");
-  // We have an empty stmt->from in "from .. import".
-  if (!e->getId()->value.empty())
-    dirs.push_back(e->getId()->value);
   // Handle dots (e.g. .. in from ..m import x).
   seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
-  for (int i = 0; i < stmt->dots - 1; i++)
+  for (size_t i = 1; i < stmt->dots; i++)
     dirs.emplace_back("..");
   std::string path;
   for (int i = int(dirs.size()) - 1; i >= 0; i--)
@@ -406,8 +406,9 @@ void DocVisitor::visit(ImportStmt *stmt) {
   auto ictx = ctx;
   auto it = ctx->shared->modules.find(file->path);
   if (it == ctx->shared->modules.end()) {
-    ictx = std::make_shared<DocContext>(ctx->shared);
+    ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
+    LOG("=> parsing {}", file->path);
     auto tmp = parseFile(ctx->shared->cache, file->path);
     DocVisitor(ictx).transformModule(std::move(tmp));
   } else {
@@ -416,6 +417,9 @@ void DocVisitor::visit(ImportStmt *stmt) {
 
   if (!stmt->what) {
     // TODO: implement this corner case
+    for (auto &i : dirs)
+      if (!ctx->find(i))
+        ctx->add(i, std::make_shared<int>(ctx->shared->itemID++));
   } else if (stmt->what->isId("*")) {
     for (auto &i : *ictx)
       ctx->add(i.first, i.second.front());

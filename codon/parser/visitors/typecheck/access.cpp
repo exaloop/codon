@@ -149,6 +149,9 @@ ExprPtr TypecheckVisitor::transformDot(DotExpr *expr,
   if (expr->expr->type->getFunc() && expr->member == "__name__") {
     return transform(N<StringExpr>(expr->expr->type->prettyString()));
   }
+  if (expr->expr->type->getPartial() && expr->member == "__name__") {
+    return transform(N<StringExpr>(expr->expr->type->getPartial()->prettyString()));
+  }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
   if (expr->member == "__llvm_name__") {
     if (realize(expr->expr->type))
