@@ -15,10 +15,11 @@ using namespace types;
 
 /// Set type to `Optional[?]`
 void TypecheckVisitor::visit(NoneExpr *expr) {
-  unify(expr->type, ctx->instantiate(ctx->getType(TYPE_OPTIONAL)));
-  if (realize(expr->type)) {
+  unify(expr->getType(), ctx->instantiate(ctx->getType(TYPE_OPTIONAL)));
+  if (realize(expr->getType())) {
+    auto cls = expr->getClassType();
+
     // Realize the appropriate `Optional.__new__` for the translation stage
-    auto cls = expr->type->getClass();
     auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__:0")->type;
     auto t = realize(ctx->instantiate(f, cls)->getFunc());
     expr->setDone();
@@ -27,7 +28,8 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
 
 /// Set type to `bool`
 void TypecheckVisitor::visit(BoolExpr *expr) {
-  unify(expr->type, std::make_shared<types::BoolStaticType>(ctx->cache, expr->value));
+  unify(expr->getType(),
+        std::make_shared<types::BoolStaticType>(ctx->cache, expr->getValue()));
   expr->setDone();
 }
 
@@ -73,47 +75,49 @@ void TypecheckVisitor::visit(StringExpr *expr) {
 ///   `123i56` -> `Int[56](123)`
 ///   `123pf`  -> `int.__suffix_pf__(123)`
 Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
-  if (!expr->intValue) {
+  auto [value, suffix] = expr->getRawData();
+
+  if (!expr->hasStoredValue()) {
     /// TODO: currently assumes that ints are always 64-bit.
     /// Should use str constructors if available for ints with a suffix instead.
-    E(Error::INT_RANGE, expr, expr->value);
+    E(Error::INT_RANGE, expr, value);
   }
 
   /// Handle fixed-width integers: suffixValue is a pointer to NN if the suffix
   /// is `uNNN` or `iNNN`.
   std::unique_ptr<int16_t> suffixValue = nullptr;
-  if (expr->suffix.size() > 1 && (expr->suffix[0] == 'u' || expr->suffix[0] == 'i') &&
-      isdigit(expr->suffix.substr(1))) {
+  if (suffix.size() > 1 && (suffix[0] == 'u' || suffix[0] == 'i') &&
+      isdigit(suffix.substr(1))) {
     try {
-      suffixValue = std::make_unique<int16_t>(std::stoi(expr->suffix.substr(1)));
+      suffixValue = std::make_unique<int16_t>(std::stoi(suffix.substr(1)));
     } catch (...) {
     }
     if (suffixValue && *suffixValue > MAX_INT_WIDTH)
       suffixValue = nullptr;
   }
 
-  if (expr->suffix.empty()) {
+  if (suffix.empty()) {
     // A normal integer (int64_t)
-    unify(expr->type,
-          std::make_shared<types::IntStaticType>(ctx->cache, *(expr->intValue)));
+    unify(expr->getType(),
+          std::make_shared<types::IntStaticType>(ctx->cache, expr->getValue()));
     expr->setDone();
     return nullptr;
-  } else if (expr->suffix == "u") {
+  } else if (suffix == "u") {
     // Unsigned integer: call `UInt[64](value)`
     return transform(N<CallExpr>(N<IndexExpr>(N<IdExpr>("UInt"), N<IntExpr>(64)),
-                                 N<IntExpr>(*(expr->intValue))));
+                                 N<IntExpr>(expr->getValue())));
   } else if (suffixValue) {
     // Fixed-width numbers (with `uNNN` and `iNNN` suffixes):
     // call `UInt[NNN](value)` or `Int[NNN](value)`
     return transform(
-        N<CallExpr>(N<IndexExpr>(N<IdExpr>(expr->suffix[0] == 'u' ? "UInt" : "Int"),
+        N<CallExpr>(N<IndexExpr>(N<IdExpr>(suffix[0] == 'u' ? "UInt" : "Int"),
                                  N<IntExpr>(*suffixValue)),
-                    N<IntExpr>(*(expr->intValue))));
+                    N<IntExpr>(expr->getValue())));
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(
-        N<CallExpr>(N<DotExpr>(N<IdExpr>("int"), format("__suffix_{}__", expr->suffix)),
-                    N<IntExpr>(*(expr->intValue))));
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("int"), format("__suffix_{}__", suffix)),
+                    N<IntExpr>(expr->getValue())));
   }
 }
 
@@ -121,22 +125,24 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
 /// @example
 ///   `123.4pf` -> `float.__suffix_pf__(123.4)`
 Expr *TypecheckVisitor::transformFloat(FloatExpr *expr) {
-  if (!expr->floatValue) {
+  auto [value, suffix] = expr->getRawData();
+
+  if (!expr->hasStoredValue()) {
     /// TODO: currently assumes that floats are always 64-bit.
     /// Should use str constructors if available for floats with suffix instead.
-    E(Error::FLOAT_RANGE, expr, expr->value);
+    E(Error::FLOAT_RANGE, expr, value);
   }
 
-  if (expr->suffix.empty()) {
+  if (suffix.empty()) {
     /// A normal float (double)
-    unify(expr->type, ctx->getType("float"));
+    unify(expr->getType(), ctx->getType("float"));
     expr->setDone();
     return nullptr;
   } else {
     // Custom suffix: call `float.__suffix_[suffix]__(value)`
-    return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("float"), format("__suffix_{}__", expr->suffix)),
-        N<FloatExpr>(*(expr->floatValue))));
+    return transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("float"), format("__suffix_{}__", suffix)),
+                    N<FloatExpr>(expr->getValue())));
   }
 }
 

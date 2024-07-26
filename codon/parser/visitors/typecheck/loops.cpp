@@ -138,7 +138,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
       !stmt->hasAttribute(Attr::ExprDominatedUsed)) {
     ctx->addVar(var->value, ctx->generateCanonicalName(var->value), ctx->getUnbound());
   } else if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
-    stmt->attributes.erase(Attr::ExprDominatedUsed);
+    stmt->eraseAttribute(Attr::ExprDominatedUsed);
     stmt->setAttribute(Attr::ExprDominated);
     stmt->suite = N<SuiteStmt>(
         N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)),
@@ -249,7 +249,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) 
   auto block = N<SuiteStmt>();
   block->stmts.push_back(preamble);
   for (auto &i : items)
-    block->stmts.push_back(CAST(i, Stmt));
+    block->stmts.push_back(ir::cast<Stmt>(i));
   Stmt *loop = nullptr;
   if (!stmt->flat) {
     ctx->blockLevel++;
@@ -265,10 +265,10 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) 
   return {false, loop};
 }
 
-std::tuple<bool, bool, Stmt *, std::vector<Node *>>
+std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>
 TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
                                           Expr *iter,
-                                          const std::function<Node *(Stmt *)> &wrap,
+                                          const std::function<ASTNode *(Stmt *)> &wrap,
                                           bool allowNonHeterogenous) {
   if (!iter->type->getClass())
     return {true, true, nullptr, {}};
@@ -307,7 +307,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   Stmt *preamble = nullptr;
   auto fn = iter->getCall() ? iter->getCall()->expr->getId() : nullptr;
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
-  std::vector<Node *> block;
+  std::vector<ASTNode *> block;
   if (fn && startswith(fn->value, "statictuple")) {
     auto &args = iter->getCall()->args[0].value->getCall()->args;
     if (vars.size() != 1)

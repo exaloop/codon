@@ -48,12 +48,14 @@ class Node {
 private:
   /// the node's name
   std::string name;
-  /// key-value attribute store
-  std::map<std::string, std::unique_ptr<Attribute>> attributes;
   /// the module
   Module *module = nullptr;
   /// a replacement, if set
   Node *replacement = nullptr;
+
+protected:
+  /// key-value attribute store
+  std::map<std::string, std::unique_ptr<Attribute>> attributes;
 
 public:
   // RTTI is implemented using a port of LLVM's Extensible RTTI
@@ -64,9 +66,14 @@ public:
   /// Constructs a node.
   /// @param name the node's name
   explicit Node(std::string name = "") : name(std::move(name)) {}
+  /// Constructs a node.
+  /// @param name the node's name
+  explicit Node(const Node &n);
 
   /// See LLVM documentation.
   static const void *nodeId() { return &NodeId; }
+  /// See LLVM documentation.
+  virtual const void *dynamicNodeId() const = 0;
   /// See LLVM documentation.
   virtual bool isConvertible(const void *other) const {
     if (hasReplacement())
@@ -94,10 +101,10 @@ public:
 
   /// Accepts visitors.
   /// @param v the visitor
-  virtual void accept(util::Visitor &v) = 0;
+  virtual void accept(util::Visitor &v) {}
   /// Accepts visitors.
   /// @param v the visitor
-  virtual void accept(util::ConstVisitor &v) const = 0;
+  virtual void accept(util::ConstVisitor &v) const {}
 
   /// Sets an attribute
   /// @param the attribute key
@@ -150,6 +157,17 @@ public:
     return static_cast<const AttributeType *>(
         getAttribute(AttributeType::AttributeName));
   }
+  template <typename AttributeType>
+  AttributeType *getAttribute(const std::string &key) {
+    return static_cast<AttributeType *>(getAttribute(key));
+  }
+  void eraseAttribute(const std::string &key) {
+    attributes.erase(key);
+  }
+  void cloneAttributesFrom(Node *n) {
+    attributes = codon::clone(n->attributes);
+  }
+
 
   /// @return iterator to the first attribute
   auto attributes_begin() {
@@ -258,21 +276,23 @@ public:
   /// See LLVM documentation.
   static const void *nodeId() { return &Derived::NodeId; }
   /// See LLVM documentation.
-  virtual bool isConvertible(const void *other) const {
+  const void *dynamicNodeId() const override { return &Derived::NodeId; }
+  /// See LLVM documentation.
+  virtual bool isConvertible(const void *other) const override {
     if (Node::hasReplacement())
       return Node::getActual()->isConvertible(other);
 
     return other == nodeId() || Parent::isConvertible(other);
   }
 
-  void accept(util::Visitor &v) {
+  void accept(util::Visitor &v) override {
     if (Node::hasReplacement())
       Node::getActual()->accept(v);
     else
       v.visit(static_cast<Derived *>(this));
   }
 
-  void accept(util::ConstVisitor &v) const {
+  void accept(util::ConstVisitor &v) const override {
     if (Node::hasReplacement())
       Node::getActual()->accept(v);
     else

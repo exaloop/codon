@@ -57,7 +57,7 @@ void ScopingVisitor::transformScope(Stmt *s) {
   }
 }
 
-void ScopingVisitor::transformAdding(Expr *e, Node *root) {
+void ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
   seqassert(e, "bad call to transformAdding");
   if (e->getIndex() || e->getDot()) {
     transform(e);
@@ -376,7 +376,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
 void ScopingVisitor::processChildCaptures() {
   for (auto &n : ctx->childCaptures) {
     if (auto i = in(ctx->map, n.first)) {
-      if (i->back().binding && CAST(i->back().binding, ClassStmt))
+      if (i->back().binding && ir::cast<ClassStmt>(i->back().binding))
         continue;
     }
     if (!findDominatingBinding(n.first)) {
@@ -386,7 +386,7 @@ void ScopingVisitor::processChildCaptures() {
   }
 }
 
-void ScopingVisitor::switchToUpdate(Node *binding, const std::string &name,
+void ScopingVisitor::switchToUpdate(ASTNode *binding, const std::string &name,
                                     bool gotUsedVar) {
   // LOG("switch: {} {} : {}", name, gotUsedVar, binding ? binding->toString(0) : "-");
   if (binding && binding->hasAttribute(Attr::Bindings)) {
@@ -394,16 +394,16 @@ void ScopingVisitor::switchToUpdate(Node *binding, const std::string &name,
   }
   if (binding) {
     if (!gotUsedVar && binding->hasAttribute(Attr::ExprDominatedUsed))
-      binding->attributes.erase(Attr::ExprDominatedUsed);
+      binding->eraseAttribute(Attr::ExprDominatedUsed);
     binding->setAttribute(gotUsedVar ? Attr::ExprDominatedUsed : Attr::ExprDominated);
   }
-  if (CAST(binding, FunctionStmt))
+  if (ir::cast<FunctionStmt>(binding))
     E(error::Error::ID_INVALID_BIND, binding, name);
-  if (CAST(binding, ClassStmt))
+  if (ir::cast<ClassStmt>(binding))
     E(error::Error::ID_INVALID_BIND, binding, name);
 }
 
-bool ScopingVisitor::visitName(const std::string &name, bool adding, Node *root,
+bool ScopingVisitor::visitName(const std::string &name, bool adding, ASTNode *root,
                                const SrcInfo &src) {
   if (adding && ctx->inClass)
     return false;

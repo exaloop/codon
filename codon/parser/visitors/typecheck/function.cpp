@@ -283,7 +283,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             generic->defaultType = getType(defType);
           }
         } else {
-          if (auto ti = CAST(a.type, InstantiateExpr)) {
+          if (auto ti = ir::cast<InstantiateExpr>(a.type)) {
             // Parse TraitVar
             seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
             auto l = transformType(ti->typeParams[0])->type;
@@ -426,7 +426,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite);
-  f->attributes = codon::clone(stmt->attributes);
+  f->cloneAttributesFrom(stmt);
   ctx->cache->functions[canonicalName].module = ctx->moduleName.path;
   ctx->cache->functions[canonicalName].ast = f;
   ctx->cache->functions[canonicalName].origAst = stmt_clone;

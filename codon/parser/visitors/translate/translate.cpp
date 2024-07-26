@@ -162,15 +162,15 @@ void TranslateVisitor::visit(NoneExpr *expr) {
 }
 
 void TranslateVisitor::visit(BoolExpr *expr) {
-  result = make<ir::BoolConst>(expr, expr->value, getType(expr->getType()));
+  result = make<ir::BoolConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(IntExpr *expr) {
-  result = make<ir::IntConst>(expr, *(expr->intValue), getType(expr->getType()));
+  result = make<ir::IntConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(FloatExpr *expr) {
-  result = make<ir::FloatConst>(expr, *(expr->floatValue), getType(expr->getType()));
+  result = make<ir::FloatConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(StringExpr *expr) {
@@ -647,8 +647,8 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   // TODO: refactor IR attribute API
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  for (auto &[a, _]: ast->attributes)
-    attr[a] = "";
+  for (auto it = ast->attributes_begin(); it != ast->attributes_end(); ++it)
+    attr[*it] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
@@ -683,8 +683,8 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   // TODO: refactor IR attribute API
   std::map<std::string, std::string> attr;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  for (auto &[a, _]: ast->attributes)
-    attr[a] = "";
+  for (auto it = ast->attributes_begin(); it != ast->attributes_end(); ++it)
+    attr[*it] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());

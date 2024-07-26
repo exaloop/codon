@@ -180,7 +180,7 @@ void DocVisitor::transformModule(Stmt *stmt) {
     auto id = transform(s);
     if (id.empty())
       continue;
-    if (i < (flat.size() - 1) && CAST(s, AssignStmt)) {
+    if (i < (flat.size() - 1) && ir::cast<AssignStmt>(s)) {
       auto ds = getDocstr(flat[i + 1]);
       if (!ds.empty())
         ctx->shared->j->get(id)->set("doc", ds);
@@ -198,7 +198,8 @@ void DocVisitor::transformModule(Stmt *stmt) {
 }
 
 void DocVisitor::visit(IntExpr *expr) {
-  resultExpr = std::make_shared<json>(expr->value);
+  auto [value, _] = expr->getRawData();
+  resultExpr = std::make_shared<json>(value);
 }
 
 void DocVisitor::visit(IdExpr *expr) {
@@ -211,7 +212,7 @@ void DocVisitor::visit(IdExpr *expr) {
 void DocVisitor::visit(IndexExpr *expr) {
   std::vector<std::shared_ptr<json>> v;
   v.push_back(transform(expr->expr));
-  if (auto tp = CAST(expr->index, TupleExpr)) {
+  if (auto tp = ir::cast<TupleExpr>(expr->index)) {
     if (auto l = tp->items[0]->getList()) {
       for (auto &e : l->items)
         v.push_back(transform(e));
@@ -325,7 +326,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   std::string docstr;
   std::vector<std::string> members;
   for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
-    if (auto ff = CAST(f, FunctionStmt)) {
+    if (auto ff = ir::cast<FunctionStmt>(f)) {
       auto i = transform(f);
       if (i != "")
         members.push_back(i);
@@ -429,7 +430,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
 }
 
 void DocVisitor::visit(AssignStmt *stmt) {
-  auto e = CAST(stmt->lhs, IdExpr);
+  auto e = ir::cast<IdExpr>(stmt->lhs);
   if (!e)
     return;
   int id = ctx->shared->itemID++;

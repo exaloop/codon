@@ -89,15 +89,17 @@ std::string FormatVisitor::literal(const std::string &s) const {
 void FormatVisitor::visit(NoneExpr *expr) { result = renderExpr(expr, "None"); }
 
 void FormatVisitor::visit(BoolExpr *expr) {
-  result = renderExpr(expr, "{}", literal(expr->value ? "True" : "False"));
+  result = renderExpr(expr, "{}", literal(expr->getValue() ? "True" : "False"));
 }
 
 void FormatVisitor::visit(IntExpr *expr) {
-  result = renderExpr(expr, "{}{}", literal(expr->value), expr->suffix);
+  auto [value, suffix] = expr->getRawData();
+  result = renderExpr(expr, "{}{}", literal(value), suffix);
 }
 
 void FormatVisitor::visit(FloatExpr *expr) {
-  result = renderExpr(expr, "{}{}", literal(expr->value), expr->suffix);
+  auto [value, suffix] = expr->getRawData();
+  result = renderExpr(expr, "{}{}", literal(value), suffix);
 }
 
 void FormatVisitor::visit(StringExpr *expr) {

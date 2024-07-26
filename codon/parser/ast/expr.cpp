@@ -13,7 +13,7 @@
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
-  Node *T::clone(bool c) const { return cache->N<T>(*this, c); }                       \
+  ASTNode *T::clone(bool c) const { return cache->N<T>(*this, c); }                    \
   void T::accept(X &visitor) { visitor.visit(this); }
 
 using fmt::format;
@@ -69,13 +69,12 @@ const std::string Attr::ExprExternVar = "exprExternVar";
 const std::string Attr::ExprDominatedUndefCheck = "exprDominatedUndefCheck";
 const std::string Attr::ExprDominatedUsed = "exprDominatedUsed";
 
-Node::Node(const Node &node)
-    : cache(node.cache), attributes(codon::clone(node.attributes)) {}
+ASTNode::ASTNode(const ASTNode &node) : Node(node), cache(node.cache) {}
 
-Expr::Expr() : Node(), type(nullptr), done(false), origExpr(nullptr) {}
+Expr::Expr() : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr) {}
 Expr::Expr(const Expr &expr)
-    : Node(expr), type(expr.type), done(expr.done), origExpr(expr.origExpr) {}
-Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
+    : AcceptorExtend(expr), type(expr.type), done(expr.done), origExpr(expr.origExpr) {}
+Expr::Expr(const Expr &expr, bool clean) : AcceptorExtend(expr) {
   if (clean) {
     type = nullptr;
     done = false;
@@ -83,6 +82,7 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
 }
 void Expr::validate() const {}
 types::TypePtr Expr::getType() const { return type; }
+types::ClassTypePtr Expr::getClassType() const { return type ? type->getClass() : nullptr; }
 void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
@@ -96,7 +96,7 @@ std::string Expr::getTypeName() {
   if (getId()) {
     return getId()->value;
   } else {
-    auto i = CAST(this, InstantiateExpr);
+    auto i = ir::cast<InstantiateExpr>(this);
     seqassertn(i && i->typeExpr->getId(), "bad type expr");
     return i->typeExpr->getId()->value;
   }
@@ -126,24 +126,23 @@ Param Param::clone(bool clean) const {
   return Param(name, ast::clone(type, clean), ast::clone(defaultValue, clean), status);
 }
 
-NoneExpr::NoneExpr() : Expr() {}
-NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : Expr(expr, clean) {}
+NoneExpr::NoneExpr() : AcceptorExtend() {}
+NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string NoneExpr::toString(int) const { return wrapType("none"); }
-ACCEPT_IMPL(NoneExpr, ASTVisitor);
 
-BoolExpr::BoolExpr(bool value) : Expr(), value(value) {}
+BoolExpr::BoolExpr(bool value) : AcceptorExtend(), value(value) {}
 BoolExpr::BoolExpr(const BoolExpr &expr, bool clean)
-    : Expr(expr, clean), value(expr.value) {}
+    : AcceptorExtend(expr, clean), value(expr.value) {}
+bool BoolExpr::getValue() const { return value; }
 std::string BoolExpr::toString(int) const {
   return wrapType(format("bool {}", int(value)));
 }
-ACCEPT_IMPL(BoolExpr, ASTVisitor);
 
-IntExpr::IntExpr(int64_t intValue) : Expr(), value(std::to_string(intValue)) {
+IntExpr::IntExpr(int64_t intValue) : AcceptorExtend(), value(std::to_string(intValue)) {
   this->intValue = std::make_unique<int64_t>(intValue);
 }
 IntExpr::IntExpr(const std::string &value, std::string suffix)
-    : Expr(), value(), suffix(std::move(suffix)) {
+    : AcceptorExtend(), value(), suffix(std::move(suffix)) {
   for (auto c : value)
     if (c != '_')
       this->value += c;
@@ -158,21 +157,28 @@ IntExpr::IntExpr(const std::string &value, std::string suffix)
   }
 }
 IntExpr::IntExpr(const IntExpr &expr, bool clean)
-    : Expr(expr, clean), value(expr.value), suffix(expr.suffix) {
+    : AcceptorExtend(expr, clean), value(expr.value), suffix(expr.suffix) {
   intValue = expr.intValue ? std::make_unique<int64_t>(*(expr.intValue)) : nullptr;
+}
+std::pair<std::string, std::string> IntExpr::getRawData() const {
+  return {value, suffix};
+}
+bool IntExpr::hasStoredValue() const { return intValue != nullptr; }
+int64_t IntExpr::getValue() const {
+  seqassertn(hasStoredValue(), "value not set");
+  return *intValue;
 }
 std::string IntExpr::toString(int) const {
   return wrapType(format("int {}{}", value,
                          suffix.empty() ? "" : format(" #:suffix \"{}\"", suffix)));
 }
-ACCEPT_IMPL(IntExpr, ASTVisitor);
 
 FloatExpr::FloatExpr(double floatValue)
-    : Expr(), value(fmt::format("{:g}", floatValue)) {
+    : AcceptorExtend(), value(fmt::format("{:g}", floatValue)) {
   this->floatValue = std::make_unique<double>(floatValue);
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
-    : Expr(), value(value), suffix(std::move(suffix)) {
+    : AcceptorExtend(), value(value), suffix(std::move(suffix)) {
   try {
     floatValue = std::make_unique<double>(std::stod(value));
   } catch (std::out_of_range &) {
@@ -180,23 +186,30 @@ FloatExpr::FloatExpr(const std::string &value, std::string suffix)
   }
 }
 FloatExpr::FloatExpr(const FloatExpr &expr, bool clean)
-    : Expr(expr, clean), value(expr.value), suffix(expr.suffix) {
+    : AcceptorExtend(expr, clean), value(expr.value), suffix(expr.suffix) {
   floatValue = expr.floatValue ? std::make_unique<double>(*(expr.floatValue)) : nullptr;
+}
+std::pair<std::string, std::string> FloatExpr::getRawData() const {
+  return {value, suffix};
+}
+bool FloatExpr::hasStoredValue() const { return floatValue != nullptr; }
+double FloatExpr::getValue() const {
+  seqassertn(hasStoredValue(), "value not set");
+  return *floatValue;
 }
 std::string FloatExpr::toString(int) const {
   return wrapType(format("float {}{}", value,
                          suffix.empty() ? "" : format(" #:suffix \"{}\"", suffix)));
 }
-ACCEPT_IMPL(FloatExpr, ASTVisitor);
 
 StringExpr::StringExpr(std::vector<StringExpr::String> s)
-    : Expr(), strings(std::move(s)) {}
+    : AcceptorExtend(), strings(std::move(s)) {}
 StringExpr::StringExpr(std::string value, std::string prefix)
     : StringExpr(std::vector<StringExpr::String>{{value, prefix}}) {
   unpack();
 }
 StringExpr::StringExpr(const StringExpr &expr, bool clean)
-    : Expr(expr, clean), strings(expr.strings) {
+    : AcceptorExtend(expr, clean), strings(expr.strings) {
   for (auto &s : strings)
     s.expr = ast::clone(s.expr);
 }
@@ -211,7 +224,6 @@ std::string StringExpr::getValue() const {
   seqassert(!strings.empty(), "invalid StringExpr");
   return strings[0].value;
 }
-ACCEPT_IMPL(StringExpr, ASTVisitor);
 void StringExpr::unpack() {
   std::vector<String> exprs;
   for (auto &p : strings) {
@@ -272,69 +284,67 @@ StringExpr::unpackFString(const std::string &value) const {
   return items;
 }
 
-IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
-IdExpr::IdExpr(const IdExpr &expr, bool clean) : Expr(expr, clean), value(expr.value) {}
+IdExpr::IdExpr(std::string value) : AcceptorExtend(), value(std::move(value)) {}
+IdExpr::IdExpr(const IdExpr &expr, bool clean)
+    : AcceptorExtend(expr, clean), value(expr.value) {}
 std::string IdExpr::toString(int) const {
   return !type ? format("'{}", value) : wrapType(format("'{}", value));
 }
-ACCEPT_IMPL(IdExpr, ASTVisitor);
 
-StarExpr::StarExpr(Expr *what) : Expr(), what(what) {}
+StarExpr::StarExpr(Expr *what) : AcceptorExtend(), what(what) {}
 StarExpr::StarExpr(const StarExpr &expr, bool clean)
-    : Expr(expr, clean), what(ast::clone(expr.what, clean)) {}
+    : AcceptorExtend(expr, clean), what(ast::clone(expr.what, clean)) {}
 std::string StarExpr::toString(int indent) const {
   return wrapType(format("star {}", what->toString(indent)));
 }
-ACCEPT_IMPL(StarExpr, ASTVisitor);
 
-KeywordStarExpr::KeywordStarExpr(Expr *what) : Expr(), what(what) {}
+KeywordStarExpr::KeywordStarExpr(Expr *what) : AcceptorExtend(), what(what) {}
 KeywordStarExpr::KeywordStarExpr(const KeywordStarExpr &expr, bool clean)
-    : Expr(expr, clean), what(ast::clone(expr.what, clean)) {}
+    : AcceptorExtend(expr, clean), what(ast::clone(expr.what, clean)) {}
 std::string KeywordStarExpr::toString(int indent) const {
   return wrapType(format("kwstar {}", what->toString(indent)));
 }
-ACCEPT_IMPL(KeywordStarExpr, ASTVisitor);
 
-TupleExpr::TupleExpr(std::vector<Expr *> items) : Expr(), items(std::move(items)) {}
+TupleExpr::TupleExpr(std::vector<Expr *> items)
+    : AcceptorExtend(), items(std::move(items)) {}
 TupleExpr::TupleExpr(const TupleExpr &expr, bool clean)
-    : Expr(expr, clean), items(ast::clone(expr.items, clean)) {}
+    : AcceptorExtend(expr, clean), items(ast::clone(expr.items, clean)) {}
 std::string TupleExpr::toString(int) const {
   return wrapType(format("tuple {}", combine(items)));
 }
-ACCEPT_IMPL(TupleExpr, ASTVisitor);
 
-ListExpr::ListExpr(std::vector<Expr *> items) : Expr(), items(std::move(items)) {}
+ListExpr::ListExpr(std::vector<Expr *> items)
+    : AcceptorExtend(), items(std::move(items)) {}
 ListExpr::ListExpr(const ListExpr &expr, bool clean)
-    : Expr(expr, clean), items(ast::clone(expr.items, clean)) {}
+    : AcceptorExtend(expr, clean), items(ast::clone(expr.items, clean)) {}
 std::string ListExpr::toString(int) const {
   return wrapType(!items.empty() ? format("list {}", combine(items)) : "list");
 }
-ACCEPT_IMPL(ListExpr, ASTVisitor);
 
-SetExpr::SetExpr(std::vector<Expr *> items) : Expr(), items(std::move(items)) {}
+SetExpr::SetExpr(std::vector<Expr *> items)
+    : AcceptorExtend(), items(std::move(items)) {}
 SetExpr::SetExpr(const SetExpr &expr, bool clean)
-    : Expr(expr, clean), items(ast::clone(expr.items, clean)) {}
+    : AcceptorExtend(expr, clean), items(ast::clone(expr.items, clean)) {}
 std::string SetExpr::toString(int) const {
   return wrapType(!items.empty() ? format("set {}", combine(items)) : "set");
 }
-ACCEPT_IMPL(SetExpr, ASTVisitor);
 
-DictExpr::DictExpr(std::vector<Expr *> items) : Expr(), items(std::move(items)) {
+DictExpr::DictExpr(std::vector<Expr *> items)
+    : AcceptorExtend(), items(std::move(items)) {
   for (const auto &i : this->items) {
     auto t = i->getTuple();
     seqassertn(t && t->items.size() == 2, "dictionary items are invalid");
   }
 }
 DictExpr::DictExpr(const DictExpr &expr, bool clean)
-    : Expr(expr, clean), items(ast::clone(expr.items, clean)) {}
+    : AcceptorExtend(expr, clean), items(ast::clone(expr.items, clean)) {}
 std::string DictExpr::toString(int) const {
   return wrapType(!items.empty() ? format("dict {}", combine(items)) : "set");
 }
-ACCEPT_IMPL(DictExpr, ASTVisitor);
 
 GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
                              Expr *expr, std::vector<Stmt *> loops)
-    : Expr(), kind(kind) {
+    : AcceptorExtend(), kind(kind) {
   this->cache = cache;
   seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
   loops.push_back(cache->N<SuiteStmt>(cache->N<ExprStmt>(expr)));
@@ -342,7 +352,7 @@ GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
 }
 GeneratorExpr::GeneratorExpr(Cache *cache, Expr *key, Expr *expr,
                              std::vector<Stmt *> loops)
-    : Expr(), kind(GeneratorExpr::DictGenerator) {
+    : AcceptorExtend(), kind(GeneratorExpr::DictGenerator) {
   this->cache = cache;
   seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
   Expr *t = cache->N<TupleExpr>(std::vector<Expr *>{key, expr});
@@ -350,7 +360,8 @@ GeneratorExpr::GeneratorExpr(Cache *cache, Expr *key, Expr *expr,
   formCompleteStmt(loops);
 }
 GeneratorExpr::GeneratorExpr(const GeneratorExpr &expr, bool clean)
-    : Expr(expr, clean), kind(expr.kind), loops(ast::clone(expr.loops, clean)) {}
+    : AcceptorExtend(expr, clean), kind(expr.kind),
+      loops(ast::clone(expr.loops, clean)) {}
 std::string GeneratorExpr::toString(int indent) const {
   auto pad = indent >= 0 ? ("\n" + std::string(indent + 2 * INDENT_SIZE, ' ')) : " ";
   std::string prefix;
@@ -363,7 +374,6 @@ std::string GeneratorExpr::toString(int indent) const {
   auto l = loops->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1);
   return wrapType(format("{}gen {}", prefix, l));
 }
-ACCEPT_IMPL(GeneratorExpr, ASTVisitor);
 Expr *GeneratorExpr::getFinalExpr() {
   auto s = *(getFinalStmt());
   if (s->getExpr())
@@ -430,41 +440,39 @@ void GeneratorExpr::formCompleteStmt(const std::vector<Stmt *> &loops) {
 // Stmt * &GeneratorExpr::getFinalStmt() { return getFinalStmt(loops); }
 
 IfExpr::IfExpr(Expr *cond, Expr *ifexpr, Expr *elsexpr)
-    : Expr(), cond(cond), ifexpr(ifexpr), elsexpr(elsexpr) {}
+    : AcceptorExtend(), cond(cond), ifexpr(ifexpr), elsexpr(elsexpr) {}
 IfExpr::IfExpr(const IfExpr &expr, bool clean)
-    : Expr(expr, clean), cond(ast::clone(expr.cond, clean)),
+    : AcceptorExtend(expr, clean), cond(ast::clone(expr.cond, clean)),
       ifexpr(ast::clone(expr.ifexpr, clean)), elsexpr(ast::clone(expr.elsexpr, clean)) {
 }
 std::string IfExpr::toString(int indent) const {
   return wrapType(format("if-expr {} {} {}", cond->toString(indent),
                          ifexpr->toString(indent), elsexpr->toString(indent)));
 }
-ACCEPT_IMPL(IfExpr, ASTVisitor);
 
 UnaryExpr::UnaryExpr(std::string op, Expr *expr)
-    : Expr(), op(std::move(op)), expr(expr) {}
+    : AcceptorExtend(), op(std::move(op)), expr(expr) {}
 UnaryExpr::UnaryExpr(const UnaryExpr &expr, bool clean)
-    : Expr(expr, clean), op(expr.op), expr(ast::clone(expr.expr, clean)) {}
+    : AcceptorExtend(expr, clean), op(expr.op), expr(ast::clone(expr.expr, clean)) {}
 std::string UnaryExpr::toString(int indent) const {
   return wrapType(format("unary \"{}\" {}", op, expr->toString(indent)));
 }
-ACCEPT_IMPL(UnaryExpr, ASTVisitor);
 
 BinaryExpr::BinaryExpr(Expr *lexpr, std::string op, Expr *rexpr, bool inPlace)
-    : Expr(), op(std::move(op)), lexpr(lexpr), rexpr(rexpr), inPlace(inPlace) {}
+    : AcceptorExtend(), op(std::move(op)), lexpr(lexpr), rexpr(rexpr),
+      inPlace(inPlace) {}
 BinaryExpr::BinaryExpr(const BinaryExpr &expr, bool clean)
-    : Expr(expr, clean), op(expr.op), lexpr(ast::clone(expr.lexpr, clean)),
+    : AcceptorExtend(expr, clean), op(expr.op), lexpr(ast::clone(expr.lexpr, clean)),
       rexpr(ast::clone(expr.rexpr, clean)), inPlace(expr.inPlace) {}
 std::string BinaryExpr::toString(int indent) const {
   return wrapType(format("binary \"{}\" {} {}{}", op, lexpr->toString(indent),
                          rexpr->toString(indent), inPlace ? " #:in-place" : ""));
 }
-ACCEPT_IMPL(BinaryExpr, ASTVisitor);
 
 ChainBinaryExpr::ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs)
-    : Expr(), exprs(std::move(exprs)) {}
+    : AcceptorExtend(), exprs(std::move(exprs)) {}
 ChainBinaryExpr::ChainBinaryExpr(const ChainBinaryExpr &expr, bool clean)
-    : Expr(expr, clean) {
+    : AcceptorExtend(expr, clean) {
   for (auto &e : expr.exprs)
     exprs.emplace_back(make_pair(e.first, ast::clone(e.second, clean)));
 }
@@ -474,14 +482,13 @@ std::string ChainBinaryExpr::toString(int indent) const {
     s.push_back(format("({} \"{}\")", i.first, i.second->toString(indent)));
   return wrapType(format("chain {}", join(s, " ")));
 }
-ACCEPT_IMPL(ChainBinaryExpr, ASTVisitor);
 
 PipeExpr::Pipe PipeExpr::Pipe::clone(bool clean) const {
   return {op, ast::clone(expr, clean)};
 }
 
 PipeExpr::PipeExpr(std::vector<PipeExpr::Pipe> items)
-    : Expr(), items(std::move(items)) {
+    : AcceptorExtend(), items(std::move(items)) {
   for (auto &i : this->items) {
     if (auto call = i.expr->getCall()) {
       for (auto &a : call->args)
@@ -491,7 +498,8 @@ PipeExpr::PipeExpr(std::vector<PipeExpr::Pipe> items)
   }
 }
 PipeExpr::PipeExpr(const PipeExpr &expr, bool clean)
-    : Expr(expr, clean), items(ast::clone(expr.items, clean)), inTypes(expr.inTypes) {}
+    : AcceptorExtend(expr, clean), items(ast::clone(expr.items, clean)),
+      inTypes(expr.inTypes) {}
 void PipeExpr::validate() const {}
 std::string PipeExpr::toString(int indent) const {
   std::vector<std::string> s;
@@ -499,17 +507,16 @@ std::string PipeExpr::toString(int indent) const {
     s.push_back(format("({} \"{}\")", i.expr->toString(indent), i.op));
   return wrapType(format("pipe {}", join(s, " ")));
 }
-ACCEPT_IMPL(PipeExpr, ASTVisitor);
 
-IndexExpr::IndexExpr(Expr *expr, Expr *index) : Expr(), expr(expr), index(index) {}
+IndexExpr::IndexExpr(Expr *expr, Expr *index)
+    : AcceptorExtend(), expr(expr), index(index) {}
 IndexExpr::IndexExpr(const IndexExpr &expr, bool clean)
-    : Expr(expr, clean), expr(ast::clone(expr.expr, clean)),
+    : AcceptorExtend(expr, clean), expr(ast::clone(expr.expr, clean)),
       index(ast::clone(expr.index, clean)) {}
 std::string IndexExpr::toString(int indent) const {
   return wrapType(
       format("index {} {}", expr->toString(indent), index->toString(indent)));
 }
-ACCEPT_IMPL(IndexExpr, ASTVisitor);
 
 CallExpr::Arg CallExpr::Arg::clone(bool clean) const {
   return {name, ast::clone(value, clean)};
@@ -525,15 +532,16 @@ CallExpr::Arg::Arg(const std::string &name, Expr *value) : name(name), value(val
 CallExpr::Arg::Arg(Expr *value) : CallExpr::Arg("", value) {}
 
 CallExpr::CallExpr(const CallExpr &expr, bool clean)
-    : Expr(expr, clean), expr(ast::clone(expr.expr, clean)),
+    : AcceptorExtend(expr, clean), expr(ast::clone(expr.expr, clean)),
       args(ast::clone(expr.args, clean)), ordered(expr.ordered), partial(expr.partial) {
 }
 CallExpr::CallExpr(Expr *expr, std::vector<CallExpr::Arg> args)
-    : Expr(), expr(expr), args(std::move(args)), ordered(false), partial(false) {
+    : AcceptorExtend(), expr(expr), args(std::move(args)), ordered(false),
+      partial(false) {
   validate();
 }
 CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args)
-    : expr(expr), ordered(false), partial(false) {
+    : AcceptorExtend(), expr(expr), ordered(false), partial(false) {
   for (auto a : args)
     if (a)
       this->args.emplace_back("", a);
@@ -543,9 +551,9 @@ void CallExpr::validate() const {
   bool namesStarted = false, foundEllipsis = false;
   for (auto &a : args) {
     if (a.name.empty() && namesStarted &&
-        !(CAST(a.value, KeywordStarExpr) || a.value->getEllipsis()))
+        !(ir::cast<KeywordStarExpr>(a.value) || a.value->getEllipsis()))
       E(Error::CALL_NAME_ORDER, a.value);
-    if (!a.name.empty() && (a.value->getStar() || CAST(a.value, KeywordStarExpr)))
+    if (!a.name.empty() && (a.value->getStar() || ir::cast<KeywordStarExpr>(a.value)))
       E(Error::CALL_NAME_STAR, a.value);
     if (a.value->getEllipsis() && foundEllipsis)
       E(Error::CALL_ELLIPSIS, a.value);
@@ -565,21 +573,20 @@ std::string CallExpr::toString(int indent) const {
   return wrapType(format("call{} {}{}", partial ? "-partial" : "",
                          expr->toString(indent), fmt::join(s, "")));
 }
-ACCEPT_IMPL(CallExpr, ASTVisitor);
 
 DotExpr::DotExpr(Expr *expr, std::string member)
-    : Expr(), expr(expr), member(std::move(member)) {}
+    : AcceptorExtend(), expr(expr), member(std::move(member)) {}
 DotExpr::DotExpr(const DotExpr &expr, bool clean)
-    : Expr(expr, clean), expr(ast::clone(expr.expr, clean)), member(expr.member) {}
+    : AcceptorExtend(expr, clean), expr(ast::clone(expr.expr, clean)),
+      member(expr.member) {}
 std::string DotExpr::toString(int indent) const {
   return wrapType(format("dot {} '{}", expr->toString(indent), member));
 }
-ACCEPT_IMPL(DotExpr, ASTVisitor);
 
 SliceExpr::SliceExpr(Expr *start, Expr *stop, Expr *step)
-    : Expr(), start(start), stop(stop), step(step) {}
+    : AcceptorExtend(), start(start), stop(stop), step(step) {}
 SliceExpr::SliceExpr(const SliceExpr &expr, bool clean)
-    : Expr(expr, clean), start(ast::clone(expr.start, clean)),
+    : AcceptorExtend(expr, clean), start(ast::clone(expr.start, clean)),
       stop(ast::clone(expr.stop, clean)), step(ast::clone(expr.step, clean)) {}
 std::string SliceExpr::toString(int indent) const {
   return wrapType(format("slice{}{}{}",
@@ -587,62 +594,59 @@ std::string SliceExpr::toString(int indent) const {
                          stop ? format(" #:end {}", stop->toString(indent)) : "",
                          step ? format(" #:step {}", step->toString(indent)) : ""));
 }
-ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
-EllipsisExpr::EllipsisExpr(EllipsisType mode) : Expr(), mode(mode) {}
+EllipsisExpr::EllipsisExpr(EllipsisType mode) : AcceptorExtend(), mode(mode) {}
 EllipsisExpr::EllipsisExpr(const EllipsisExpr &expr, bool clean)
-    : Expr(expr, clean), mode(expr.mode) {}
+    : AcceptorExtend(expr, clean), mode(expr.mode) {}
 std::string EllipsisExpr::toString(int) const {
   return wrapType(format(
       "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? "#:partial" : "")));
 }
-ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, Expr *expr)
-    : Expr(), vars(std::move(vars)), expr(expr) {}
+    : AcceptorExtend(), vars(std::move(vars)), expr(expr) {}
 LambdaExpr::LambdaExpr(const LambdaExpr &expr, bool clean)
-    : Expr(expr, clean), vars(expr.vars), expr(ast::clone(expr.expr, clean)) {}
+    : AcceptorExtend(expr, clean), vars(expr.vars), expr(ast::clone(expr.expr, clean)) {
+}
 std::string LambdaExpr::toString(int indent) const {
   return wrapType(format("lambda ({}) {}", join(vars, " "), expr->toString(indent)));
 }
-ACCEPT_IMPL(LambdaExpr, ASTVisitor);
 
-YieldExpr::YieldExpr() : Expr() {}
-YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : Expr(expr, clean) {}
+YieldExpr::YieldExpr() : AcceptorExtend() {}
+YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string YieldExpr::toString(int) const { return "yield-expr"; }
-ACCEPT_IMPL(YieldExpr, ASTVisitor);
 
-AssignExpr::AssignExpr(Expr *var, Expr *expr) : Expr(), var(var), expr(expr) {}
+AssignExpr::AssignExpr(Expr *var, Expr *expr)
+    : AcceptorExtend(), var(var), expr(expr) {}
 AssignExpr::AssignExpr(const AssignExpr &expr, bool clean)
-    : Expr(expr, clean), var(ast::clone(expr.var, clean)),
+    : AcceptorExtend(expr, clean), var(ast::clone(expr.var, clean)),
       expr(ast::clone(expr.expr, clean)) {}
 std::string AssignExpr::toString(int indent) const {
   return wrapType(
       format("assign-expr '{} {}", var->toString(indent), expr->toString(indent)));
 }
-ACCEPT_IMPL(AssignExpr, ASTVisitor);
 
-RangeExpr::RangeExpr(Expr *start, Expr *stop) : Expr(), start(start), stop(stop) {}
+RangeExpr::RangeExpr(Expr *start, Expr *stop)
+    : AcceptorExtend(), start(start), stop(stop) {}
 RangeExpr::RangeExpr(const RangeExpr &expr, bool clean)
-    : Expr(expr, clean), start(ast::clone(expr.start, clean)),
+    : AcceptorExtend(expr, clean), start(ast::clone(expr.start, clean)),
       stop(ast::clone(expr.stop, clean)) {}
 std::string RangeExpr::toString(int indent) const {
   return wrapType(
       format("range {} {}", start->toString(indent), stop->toString(indent)));
 }
-ACCEPT_IMPL(RangeExpr, ASTVisitor);
 
 StmtExpr::StmtExpr(std::vector<Stmt *> stmts, Expr *expr)
-    : Expr(), stmts(std::move(stmts)), expr(expr) {}
-StmtExpr::StmtExpr(Stmt *stmt, Expr *expr) : Expr(), expr(expr) {
+    : AcceptorExtend(), stmts(std::move(stmts)), expr(expr) {}
+StmtExpr::StmtExpr(Stmt *stmt, Expr *expr) : AcceptorExtend(), expr(expr) {
   stmts.push_back(stmt);
 }
-StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr) : Expr(), expr(expr) {
+StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr) : AcceptorExtend(), expr(expr) {
   stmts.push_back(stmt);
   stmts.push_back(stmt2);
 }
 StmtExpr::StmtExpr(const StmtExpr &expr, bool clean)
-    : Expr(expr, clean), stmts(ast::clone(expr.stmts, clean)),
+    : AcceptorExtend(expr, clean), stmts(ast::clone(expr.stmts, clean)),
       expr(ast::clone(expr.expr, clean)) {}
 std::string StmtExpr::toString(int indent) const {
   auto pad = indent >= 0 ? ("\n" + std::string(indent + 2 * INDENT_SIZE, ' ')) : " ";
@@ -653,22 +657,20 @@ std::string StmtExpr::toString(int indent) const {
   return wrapType(
       format("stmt-expr {} ({})", expr->toString(indent), fmt::join(s, "")));
 }
-ACCEPT_IMPL(StmtExpr, ASTVisitor);
 
 InstantiateExpr::InstantiateExpr(Expr *typeExpr, std::vector<Expr *> typeParams)
-    : Expr(), typeExpr(typeExpr), typeParams(std::move(typeParams)) {}
+    : AcceptorExtend(), typeExpr(typeExpr), typeParams(std::move(typeParams)) {}
 InstantiateExpr::InstantiateExpr(Expr *typeExpr, Expr *typeParam)
-    : Expr(), typeExpr(typeExpr) {
+    : AcceptorExtend(), typeExpr(typeExpr) {
   typeParams.push_back(std::move(typeParam));
 }
 InstantiateExpr::InstantiateExpr(const InstantiateExpr &expr, bool clean)
-    : Expr(expr, clean), typeExpr(ast::clone(expr.typeExpr, clean)),
+    : AcceptorExtend(expr, clean), typeExpr(ast::clone(expr.typeExpr, clean)),
       typeParams(ast::clone(expr.typeParams, clean)) {}
 std::string InstantiateExpr::toString(int indent) const {
   return wrapType(
       format("instantiate {} {}", typeExpr->toString(indent), combine(typeParams)));
 }
-ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
 char getStaticGeneric(Expr *e) {
   if (e && e->getIndex() && e->getIndex()->expr->isId("Static")) {
@@ -682,5 +684,66 @@ char getStaticGeneric(Expr *e) {
   }
   return 0;
 }
+
+const char ASTNode::NodeId = 0;
+const char Expr::NodeId = 0;
+const char NoneExpr::NodeId = 0;
+const char BoolExpr::NodeId = 0;
+const char IntExpr::NodeId = 0;
+const char FloatExpr::NodeId = 0;
+const char StringExpr::NodeId = 0;
+const char IdExpr::NodeId = 0;
+const char StarExpr::NodeId = 0;
+const char KeywordStarExpr::NodeId = 0;
+const char TupleExpr::NodeId = 0;
+const char ListExpr::NodeId = 0;
+const char SetExpr::NodeId = 0;
+const char DictExpr::NodeId = 0;
+const char GeneratorExpr::NodeId = 0;
+const char IfExpr::NodeId = 0;
+const char UnaryExpr::NodeId = 0;
+const char BinaryExpr::NodeId = 0;
+const char ChainBinaryExpr::NodeId = 0;
+const char PipeExpr::NodeId = 0;
+const char IndexExpr::NodeId = 0;
+const char CallExpr::NodeId = 0;
+const char DotExpr::NodeId = 0;
+const char SliceExpr::NodeId = 0;
+const char EllipsisExpr::NodeId = 0;
+const char LambdaExpr::NodeId = 0;
+const char YieldExpr::NodeId = 0;
+const char AssignExpr::NodeId = 0;
+const char RangeExpr::NodeId = 0;
+const char StmtExpr::NodeId = 0;
+const char InstantiateExpr::NodeId = 0;
+ACCEPT_IMPL(NoneExpr, ASTVisitor);
+ACCEPT_IMPL(BoolExpr, ASTVisitor);
+ACCEPT_IMPL(IntExpr, ASTVisitor);
+ACCEPT_IMPL(FloatExpr, ASTVisitor);
+ACCEPT_IMPL(StringExpr, ASTVisitor);
+ACCEPT_IMPL(IdExpr, ASTVisitor);
+ACCEPT_IMPL(StarExpr, ASTVisitor);
+ACCEPT_IMPL(KeywordStarExpr, ASTVisitor);
+ACCEPT_IMPL(TupleExpr, ASTVisitor);
+ACCEPT_IMPL(ListExpr, ASTVisitor);
+ACCEPT_IMPL(SetExpr, ASTVisitor);
+ACCEPT_IMPL(DictExpr, ASTVisitor);
+ACCEPT_IMPL(GeneratorExpr, ASTVisitor);
+ACCEPT_IMPL(IfExpr, ASTVisitor);
+ACCEPT_IMPL(UnaryExpr, ASTVisitor);
+ACCEPT_IMPL(BinaryExpr, ASTVisitor);
+ACCEPT_IMPL(ChainBinaryExpr, ASTVisitor);
+ACCEPT_IMPL(PipeExpr, ASTVisitor);
+ACCEPT_IMPL(IndexExpr, ASTVisitor);
+ACCEPT_IMPL(CallExpr, ASTVisitor);
+ACCEPT_IMPL(DotExpr, ASTVisitor);
+ACCEPT_IMPL(SliceExpr, ASTVisitor);
+ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
+ACCEPT_IMPL(LambdaExpr, ASTVisitor);
+ACCEPT_IMPL(YieldExpr, ASTVisitor);
+ACCEPT_IMPL(AssignExpr, ASTVisitor);
+ACCEPT_IMPL(RangeExpr, ASTVisitor);
+ACCEPT_IMPL(StmtExpr, ASTVisitor);
+ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
 } // namespace codon::ast

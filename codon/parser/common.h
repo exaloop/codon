@@ -16,8 +16,6 @@
 
 #include "codon/util/common.h"
 
-#define CAST(s, T) dynamic_cast<T *>(s)
-
 namespace codon {
 namespace ir {
 class Attribute;

@@ -174,11 +174,11 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
   };
 
   // See the above examples for transformation details
-  if (pattern->getInt() || CAST(pattern, BoolExpr)) {
+  if (pattern->getInt() || ir::cast<BoolExpr>(pattern)) {
     // Bool and int patterns
-    return N<IfStmt>(isinstance(var, CAST(pattern, BoolExpr) ? "bool" : "int"),
+    return N<IfStmt>(isinstance(var, ir::cast<BoolExpr>(pattern) ? "bool" : "int"),
                      N<IfStmt>(N<BinaryExpr>(clone(var), "==", pattern), suite));
-  } else if (auto er = CAST(pattern, RangeExpr)) {
+  } else if (auto er = ir::cast<RangeExpr>(pattern)) {
     // Range pattern
     return N<IfStmt>(
         isinstance(var, "int"),
@@ -230,7 +230,7 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
     } else {
       return suite;
     }
-  } else if (auto ea = CAST(pattern, AssignExpr)) {
+  } else if (auto ea = ir::cast<AssignExpr>(pattern)) {
     // Bound pattern
     seqassert(ea->var->getId(), "only simple assignment expressions are supported");
     return N<SuiteStmt>(N<AssignStmt>(clone(ea->var), clone(var)),

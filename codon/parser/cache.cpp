@@ -17,7 +17,7 @@
 namespace codon::ast {
 
 Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {
-  this->_nodes = new std::vector<std::unique_ptr<ast::Node>>();
+  this->_nodes = new std::vector<std::unique_ptr<ast::ASTNode>>();
   typeCtx = std::make_shared<TypeContext>(this, ".root");
 }
 

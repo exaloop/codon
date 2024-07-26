@@ -849,7 +849,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple, Expr *exp
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
     start = i;
-  } else if (auto slice = CAST(index->origExpr, SliceExpr)) {
+  } else if (auto slice = ir::cast<SliceExpr>(index->origExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
         !getInt(&step, slice->step))

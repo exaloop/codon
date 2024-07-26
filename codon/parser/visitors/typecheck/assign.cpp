@@ -3,10 +3,10 @@
 #include <string>
 #include <tuple>
 
+#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/cir/attribute.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -21,7 +21,7 @@ using namespace types;
 ///   `(expr := var)` -> `var = expr; var`
 void TypecheckVisitor::visit(AssignExpr *expr) {
   auto a = N<AssignStmt>(clone(expr->var), expr->expr);
-  a->attributes = codon::clone(expr->attributes);
+  a->cloneAttributesFrom(expr);
   resultExpr = transform(N<StmtExpr>(a, expr->var));
 }
 
@@ -40,7 +40,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   }
   resultStmt = transformAssignment(stmt, mustUpdate);
   if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
-    stmt->attributes.erase(Attr::ExprDominatedUsed);
+    stmt->eraseAttribute(Attr::ExprDominatedUsed);
     seqassert(stmt->lhs->getId(), "dominated bad assignment");
     resultStmt = transform(N<SuiteStmt>(
         resultStmt,
@@ -147,7 +147,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->value);
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
-  assign->lhs->attributes = codon::clone(stmt->lhs->attributes);
+  assign->lhs->cloneAttributesFrom(stmt->lhs);
 
   if (!stmt->lhs->type)
     assign->lhs->type = ctx->getUnbound(assign->lhs->getSrcInfo());

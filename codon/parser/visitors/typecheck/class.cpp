@@ -271,8 +271,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                                            : ctx->moduleName.path);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
-      ctx->cache->classes[canonicalName].ast->attributes =
-          codon::clone(stmt->attributes);
+      ctx->cache->classes[canonicalName].ast->cloneAttributesFrom(stmt);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
         ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
@@ -306,10 +305,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                 ictx->addBlock();
                 auto tv = TypecheckVisitor(ictx);
                 tv.addClassGenerics(typ, true);
-                cf = CAST(tv.transform(cf), FunctionStmt);
+                cf = ir::cast<FunctionStmt>(tv.transform(cf));
                 ictx->popBlock();
               } else {
-                cf = CAST(transform(cf), FunctionStmt);
+                cf = ir::cast<FunctionStmt>(transform(cf));
               }
               fnStmts.push_back(cf);
               ctx->popBlock();

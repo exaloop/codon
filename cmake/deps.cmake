@@ -13,6 +13,11 @@ CPMAddPackage(
     OPTIONS "BUILD_TESTS OFF")
 
 CPMAddPackage(
+    NAME tser
+    GITHUB_REPOSITORY "KonanM/tser"
+    GIT_TAG v1.2)
+
+CPMAddPackage(
     NAME fmt
     GITHUB_REPOSITORY "fmtlib/fmt"
     GIT_TAG 9.1.0

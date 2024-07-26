@@ -192,9 +192,11 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
     expr->accept(v);
     ctx->popSrcInfo();
     if (v.resultExpr) {
-      for (auto &[k, a] : expr->attributes)
-        if (!v.resultExpr->hasAttribute(k))
-          v.resultExpr->setAttribute(k, a->clone());
+      for (auto it = expr->attributes_begin(); it != expr->attributes_end(); ++it) {
+        const auto *attr = expr->getAttribute(*it);
+        if (!v.resultExpr->hasAttribute(*it))
+          v.resultExpr->setAttribute(*it, attr->clone());
+      }
       v.resultExpr->origExpr = expr;
       expr = v.resultExpr;
     }
@@ -331,7 +333,7 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
         prepend.push_back(N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", n)),
                                         N<BoolExpr>(false)));
     }
-    stmt->attributes.erase(Attr::Bindings);
+    stmt->eraseAttribute(Attr::Bindings);
   }
   if (!prepend.empty())
     stmt->stmts.insert(stmt->stmts.begin(), prepend.begin(), prepend.end());

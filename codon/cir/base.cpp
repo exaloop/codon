@@ -20,6 +20,10 @@ std::ostream &operator<<(std::ostream &os, const Node &other) {
   return util::format(os, &other);
 }
 
+Node::Node(const Node &n)
+    : name(n.name), module(n.module), replacement(n.replacement),
+      attributes(codon::clone(n.attributes)) {}
+
 int Node::replaceUsedValue(Value *old, Value *newValue) {
   return replaceUsedValue(old->getId(), newValue);
 }

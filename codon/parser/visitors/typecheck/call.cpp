@@ -114,7 +114,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       resultExpr = transformFunctoolsPartial(expr);
       return;
     } else if (callExpr->isId("tuple") && expr->args.size() == 1 &&
-               CAST(expr->args.front().value, GeneratorExpr)) {
+               ir::cast<GeneratorExpr>(expr->args.front().value)) {
       resultExpr = transformTupleGenerator(expr);
       return;
     }
@@ -761,7 +761,7 @@ Expr *TypecheckVisitor::transformTupleGenerator(CallExpr *expr) {
   // We currently allow only a simple iterations over tuples
   if (expr->args.size() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value->origExpr);
-  auto g = CAST(expr->args[0].value, GeneratorExpr);
+  auto g = ir::cast<GeneratorExpr>(expr->args[0].value);
   if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
     E(Error::CALL_TUPLE_COMPREHENSION, expr->args[0].value);
   g->kind = GeneratorExpr::TupleGenerator;

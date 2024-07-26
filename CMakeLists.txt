@@ -222,6 +222,7 @@ set(CODON_HPPFILES
   codon/cir/value.h
   codon/cir/var.h
   codon/util/common.h
+  codon/util/serialize.h
   codon/compiler/jit_extern.h)
 set(CODON_CPPFILES
   codon/compiler/compiler.cpp
@@ -313,7 +314,8 @@ set(CODON_CPPFILES
   codon/cir/var.cpp
   codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
-target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
+target_include_directories(codonc PRIVATE
+  ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(ASAN)
   target_compile_options(
@@ -357,9 +359,9 @@ llvm_map_components_to_libnames(
   Vectorize
   Passes)
 if(APPLE)
-  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt)
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt)
 else()
-  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt dl codonrt)
+  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt tser dl codonrt)
 endif()
 
 # Gather headers
@@ -412,7 +414,7 @@ endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt codonc codon_jupyter Threads::Threads)
+target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt tser codonc codon_jupyter Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -442,9 +444,8 @@ set(CODON_TEST_CPPFILES
     test/cir/var.cpp
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
-target_include_directories(codon_test PRIVATE test/cir
-                                              "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
+target_link_libraries(codon_test fmt tser codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 

@@ -331,8 +331,8 @@ private:
 
 } // namespace ir
 
-std::unordered_map<std::string, std::unique_ptr<ir::Attribute>>
-clone(const std::unordered_map<std::string, std::unique_ptr<ir::Attribute>> &t);
+std::map<std::string, std::unique_ptr<ir::Attribute>>
+clone(const std::map<std::string, std::unique_ptr<ir::Attribute>> &t);
 
 } // namespace codon
 

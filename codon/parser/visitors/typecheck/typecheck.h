@@ -300,9 +300,9 @@ public:
 private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
   unpackTupleTypes(Expr *);
-  std::tuple<bool, bool, Stmt *, std::vector<Node *>>
+  std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>
   transformStaticLoopCall(Expr *, SuiteStmt **, Expr *,
-                          const std::function<Node *(Stmt *)> &, bool = false);
+                          const std::function<ASTNode *(Stmt *)> &, bool = false);
 
 public:
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {

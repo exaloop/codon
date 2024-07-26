@@ -174,7 +174,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
     std::vector<Expr *> tupleItems;
     for (auto &i : staticItems)
-      tupleItems.push_back(CAST(i, Expr));
+      tupleItems.push_back(ir::cast<Expr>(i));
     if (preamble)
       block->stmts.push_back(preamble);
     // ctx->addBlock();
@@ -226,8 +226,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       return ctx->instantiateGeneric(ctx->getType("Optional"), {collectionCls})
           ->getClass();
     } else if (collectionCls->name == TYPE_OPTIONAL && ti->name != TYPE_OPTIONAL) {
-      return ctx->instantiateGeneric(ctx->getType("Optional"), {ti})
-          ->getClass();
+      return ctx->instantiateGeneric(ctx->getType("Optional"), {ti})->getClass();
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
       // Rule: anything derives from pyobj
       return ti;
@@ -255,8 +254,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       star->what = transform(N<CallExpr>(N<DotExpr>(star->what, "__iter__")));
       if (star->what->type->is("Generator"))
         typ = star->what->type->getClass()->generics[0].type->getClass();
-    } else if (isDict && CAST(i, KeywordStarExpr)) {
-      auto star = CAST(i, KeywordStarExpr);
+    } else if (isDict && ir::cast<KeywordStarExpr>(i)) {
+      auto star = ir::cast<KeywordStarExpr>(i);
       star->what = transform(N<CallExpr>(N<DotExpr>(star->what, "items")));
       if (star->what->type->is("Generator"))
         typ = star->what->type->getClass()->generics[0].type->getClass();
@@ -329,9 +328,9 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       stmts.push_back(transform(N<ForStmt>(
           clone(forVar), star->what,
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
-    } else if (isDict && CAST(it, KeywordStarExpr)) {
+    } else if (isDict && ir::cast<KeywordStarExpr>(it)) {
       // Expand kwstar-expression by iterating over it: see the example above
-      auto star = CAST(it, KeywordStarExpr);
+      auto star = ir::cast<KeywordStarExpr>(it);
       Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
       star->what->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(

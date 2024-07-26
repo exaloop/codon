@@ -68,7 +68,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             ctx->addVar(c->var, ctx->generateCanonicalName(c->var), ctx->getUnbound());
       } else if (c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->forceFind(c->var);
-        c->attributes.erase(Attr::ExprDominatedUsed);
+        c->eraseAttribute(Attr::ExprDominatedUsed);
         c->setAttribute(Attr::ExprDominated);
         c->suite = N<SuiteStmt>(
             N<AssignStmt>(N<IdExpr>(format("{}.__used__", ctx->cache->rev(c->var))),

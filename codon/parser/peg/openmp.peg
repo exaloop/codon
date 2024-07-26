@@ -11,7 +11,12 @@ PREAMBLE {
   #define V1 VS[1]
   #define ac std::any_cast
 
-  #define ast(T, s, ...) (Expr*)(CTX.cache->N<T ## Expr>(__VA_ARGS__)->setSrcInfo(s))
+  template<typename T>
+  T *setSI(ASTNode *n, const codon::SrcInfo &s) {
+    n->setSrcInfo(s);
+    return (T*)n;
+  }
+  #define ast(T, s, ...) setSI<Expr>(CTX.cache->N<T ## Expr>(__VA_ARGS__), s)
 }
 
 pragma <- "omp"? _ "parallel"? _ (clause _)* {

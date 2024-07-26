@@ -10,12 +10,15 @@
 #include "codon/parser/ast/expr.h"
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
+#include "codon/util/serialize.h"
 
 namespace codon::ast {
 
 #define ACCEPT(X)                                                                      \
   using Stmt::toString;                                                                \
-  Node *clone(bool) const override;                                                    \
+  using AcceptorExtend::clone;                                                         \
+  using AcceptorExtend::accept;                                                        \
+  ASTNode *clone(bool) const override;                                                 \
   void accept(X &visitor) override
 
 // Forward declarations
@@ -33,8 +36,9 @@ struct TryStmt;
  * A Seq AST statement.
  * Each AST statement is intended to be instantiated as a shared_ptr.
  */
-struct Stmt : public Node {
+struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   using base_type = Stmt;
+  static const char NodeId;
 
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).
@@ -65,13 +69,14 @@ public:
 
   bool isDone() const { return done; }
   void setDone() { done = true; }
+
+  SERIALIZE(Stmt, BASE(ASTNode));
 };
 
 /// Suite (block of statements) statement (stmt...).
 /// @li a = 5; foo(1)
-struct SuiteStmt : public Stmt {
-  using Stmt::Stmt;
-
+struct SuiteStmt : public AcceptorExtend<SuiteStmt, Stmt> {
+  static const char NodeId;
   std::vector<Stmt *> stmts;
 
   explicit SuiteStmt(std::vector<Stmt *> stmts = {});
@@ -94,7 +99,9 @@ struct SuiteStmt : public Stmt {
 
 /// Break statement.
 /// @li break
-struct BreakStmt : public Stmt {
+struct BreakStmt : public AcceptorExtend<BreakStmt, Stmt> {
+  static const char NodeId;
+
   BreakStmt() = default;
   BreakStmt(const BreakStmt &, bool);
 
@@ -104,7 +111,9 @@ struct BreakStmt : public Stmt {
 
 /// Continue statement.
 /// @li continue
-struct ContinueStmt : public Stmt {
+struct ContinueStmt : public AcceptorExtend<ContinueStmt, Stmt> {
+  static const char NodeId;
+
   ContinueStmt() = default;
   ContinueStmt(const ContinueStmt &, bool);
 
@@ -114,7 +123,9 @@ struct ContinueStmt : public Stmt {
 
 /// Expression statement (expr).
 /// @li 3 + foo()
-struct ExprStmt : public Stmt {
+struct ExprStmt : public AcceptorExtend<ExprStmt, Stmt> {
+  static const char NodeId;
+
   Expr *expr;
 
   explicit ExprStmt(Expr *expr);
@@ -130,7 +141,9 @@ struct ExprStmt : public Stmt {
 /// @li a = 5
 /// @li a: Optional[int] = 5
 /// @li a, b, c = 5, *z
-struct AssignStmt : public Stmt {
+struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
+  static const char NodeId;
+
   enum UpdateMode { Assign, Update, UpdateAtomic };
 
   Expr *lhs, *rhs, *type;
@@ -150,7 +163,7 @@ struct AssignStmt : public Stmt {
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
 
-  Stmt* unpack() const;
+  Stmt *unpack() const;
 
 private:
   UpdateMode update;
@@ -159,7 +172,9 @@ private:
 /// Deletion statement (del expr).
 /// @li del a
 /// @li del a[5]
-struct DelStmt : public Stmt {
+struct DelStmt : public AcceptorExtend<DelStmt, Stmt> {
+  static const char NodeId;
+
   Expr *expr;
 
   explicit DelStmt(Expr *expr);
@@ -171,7 +186,9 @@ struct DelStmt : public Stmt {
 
 /// Print statement (print expr).
 /// @li print a, b
-struct PrintStmt : public Stmt {
+struct PrintStmt : public AcceptorExtend<PrintStmt, Stmt> {
+  static const char NodeId;
+
   std::vector<Expr *> items;
   /// True if there is a dangling comma after print: print a,
   bool isInline;
@@ -186,7 +203,9 @@ struct PrintStmt : public Stmt {
 /// Return statement (return expr).
 /// @li return
 /// @li return a
-struct ReturnStmt : public Stmt {
+struct ReturnStmt : public AcceptorExtend<ReturnStmt, Stmt> {
+  static const char NodeId;
+
   /// nullptr if this is an empty return/yield statements.
   Expr *expr;
 
@@ -200,7 +219,9 @@ struct ReturnStmt : public Stmt {
 /// Yield statement (yield expr).
 /// @li yield
 /// @li yield a
-struct YieldStmt : public Stmt {
+struct YieldStmt : public AcceptorExtend<YieldStmt, Stmt> {
+  static const char NodeId;
+
   /// nullptr if this is an empty return/yield statements.
   Expr *expr;
 
@@ -214,7 +235,9 @@ struct YieldStmt : public Stmt {
 /// Assert statement (assert expr).
 /// @li assert a
 /// @li assert a, "Message"
-struct AssertStmt : public Stmt {
+struct AssertStmt : public AcceptorExtend<AssertStmt, Stmt> {
+  static const char NodeId;
+
   Expr *expr;
   /// nullptr if there is no message.
   Expr *message;
@@ -230,7 +253,9 @@ struct AssertStmt : public Stmt {
 /// @li while True: print
 /// @li while True: break
 ///          else: print
-struct WhileStmt : public Stmt {
+struct WhileStmt : public AcceptorExtend<WhileStmt, Stmt> {
+  static const char NodeId;
+
   Expr *cond;
   SuiteStmt *suite;
   /// nullptr if there is no else suite.
@@ -250,7 +275,9 @@ struct WhileStmt : public Stmt {
 /// @li for a, b in c: print
 /// @li for i in j: break
 ///          else: print
-struct ForStmt : public Stmt {
+struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
+  static const char NodeId;
+
   Expr *var;
   Expr *iter;
   SuiteStmt *suite;
@@ -280,7 +307,9 @@ struct ForStmt : public Stmt {
 /// @li if a: foo()
 ///          elif b: bar()
 ///          else: baz()
-struct IfStmt : public Stmt {
+struct IfStmt : public AcceptorExtend<IfStmt, Stmt> {
+  static const char NodeId;
+
   Expr *cond;
   /// elseSuite can be nullptr (if no else is found).
   SuiteStmt *ifSuite, *elseSuite;
@@ -298,13 +327,15 @@ struct IfStmt : public Stmt {
 /// @li match a:
 ///          case 1: print
 ///          case _: pass
-struct MatchStmt : public Stmt {
+struct MatchStmt : public AcceptorExtend<MatchStmt, Stmt> {
+  static const char NodeId;
+
   struct MatchCase {
     Expr *pattern;
     Expr *guard;
     SuiteStmt *suite;
 
-    MatchCase(Expr*, Expr*, Stmt*);
+    MatchCase(Expr *, Expr *, Stmt *);
     MatchCase clone(bool) const;
   };
   Expr *what;
@@ -329,7 +360,9 @@ struct MatchStmt : public Stmt {
 /// @li from c import foo(int) -> int as bar
 /// @li from python.numpy import array
 /// @li from python import numpy.array(int) -> int as na
-struct ImportStmt : public Stmt {
+struct ImportStmt : public AcceptorExtend<ImportStmt, Stmt> {
+  static const char NodeId;
+
   Expr *from, *what;
   std::string as;
   /// Number of dots in a relative import (e.g. dots is 3 for "from ...foo").
@@ -356,8 +389,12 @@ struct ImportStmt : public Stmt {
 ///           catch e as Exc: pass
 ///           catch: pass
 ///           finally: print
-struct TryStmt : public Stmt {
-  struct Catch : public Stmt {
+struct TryStmt : public AcceptorExtend<TryStmt, Stmt> {
+  static const char NodeId;
+
+  struct Catch : public AcceptorExtend<Catch, Stmt> {
+    static const char NodeId;
+
     /// empty string if a catch is unnamed.
     std::string var;
     /// nullptr if there is no explicit exception type.
@@ -387,7 +424,9 @@ struct TryStmt : public Stmt {
 
 /// Throw statement (raise expr).
 /// @li: raise a
-struct ThrowStmt : public Stmt {
+struct ThrowStmt : public AcceptorExtend<ThrowStmt, Stmt> {
+  static const char NodeId;
+
   Expr *expr;
   // True if a statement was transformed during type-checking stage
   // (to avoid setting up ExcHeader multiple times).
@@ -402,7 +441,9 @@ struct ThrowStmt : public Stmt {
 
 /// Global variable statement (global var).
 /// @li: global a
-struct GlobalStmt : public Stmt {
+struct GlobalStmt : public AcceptorExtend<GlobalStmt, Stmt> {
+  static const char NodeId;
+
   std::string var;
   bool nonLocal;
 
@@ -416,7 +457,9 @@ struct GlobalStmt : public Stmt {
 /// Function statement (@(attributes...) def name[funcs...](args...) -> ret: suite).
 /// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
-struct FunctionStmt : public Stmt {
+struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt> {
+  static const char NodeId;
+
   std::string name;
   /// nullptr if return type is not specified.
   Expr *ret;
@@ -451,7 +494,9 @@ struct FunctionStmt : public Stmt {
 ///           class F[T]:
 ///              m: T
 ///              def __new__() -> F[T]: ...
-struct ClassStmt : public Stmt {
+struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt> {
+  static const char NodeId;
+
   std::string name;
   std::vector<Param> args;
   SuiteStmt *suite;
@@ -480,7 +525,9 @@ struct ClassStmt : public Stmt {
 
 /// Yield-from statement (yield from expr).
 /// @li: yield from it
-struct YieldFromStmt : public Stmt {
+struct YieldFromStmt : public AcceptorExtend<YieldFromStmt, Stmt> {
+  static const char NodeId;
+
   Expr *expr;
 
   explicit YieldFromStmt(Expr *expr);
@@ -492,7 +539,9 @@ struct YieldFromStmt : public Stmt {
 
 /// With statement (with (item as var)...: suite).
 /// @li: with foo(), bar() as b: pass
-struct WithStmt : public Stmt {
+struct WithStmt : public AcceptorExtend<WithStmt, Stmt> {
+  static const char NodeId;
+
   std::vector<Expr *> items;
   /// empty string if a corresponding item is unnamed
   std::vector<std::string> vars;
@@ -508,7 +557,9 @@ struct WithStmt : public Stmt {
 
 /// Custom block statement (foo: ...).
 /// @li: pt_tree: pass
-struct CustomStmt : public Stmt {
+struct CustomStmt : public AcceptorExtend<CustomStmt, Stmt> {
+  static const char NodeId;
+
   std::string keyword;
   Expr *expr;
   SuiteStmt *suite;
@@ -524,7 +575,9 @@ struct CustomStmt : public Stmt {
 
 /// Member assignment statement (lhs.member = rhs).
 /// @li: a.x = b
-struct AssignMemberStmt : public Stmt {
+struct AssignMemberStmt : public AcceptorExtend<AssignMemberStmt, Stmt> {
+  static const char NodeId;
+
   Expr *lhs;
   std::string member;
   Expr *rhs;
@@ -538,7 +591,9 @@ struct AssignMemberStmt : public Stmt {
 
 /// Comment statement (# comment).
 /// Currently used only for pretty-printing.
-struct CommentStmt : public Stmt {
+struct CommentStmt : public AcceptorExtend<CommentStmt, Stmt> {
+  static const char NodeId;
+
   std::string comment;
 
   explicit CommentStmt(std::string comment);

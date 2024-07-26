@@ -70,7 +70,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
       auto checkStmt = N<ExprStmt>(
           N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "undef"), N<IdExpr>(controlVar),
                       N<StringExpr>(ctx->cache->rev(val->canonicalName))));
-      expr->attributes.erase(Attr::ExprDominatedUndefCheck);
+      expr->eraseAttribute(Attr::ExprDominatedUndefCheck);
       resultExpr = transform(N<StmtExpr>(checkStmt, expr));
     }
   }

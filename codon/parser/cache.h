@@ -302,7 +302,7 @@ public:
   void populatePythonModule();
 
 private:
-  std::vector<std::unique_ptr<ast::Node>> *_nodes;
+  std::vector<std::unique_ptr<ast::ASTNode>> *_nodes;
 
 public:
   /// Convenience method that constructs a node with the visitor's source location.
@@ -312,7 +312,7 @@ public:
     t->cache = this;
     return t;
   }
-  template <typename Tn, typename... Ts> Tn *NS(const Node *srcInfo, Ts &&...args) {
+  template <typename Tn, typename... Ts> Tn *NS(const ASTNode *srcInfo, Ts &&...args) {
     _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
     Tn *t = (Tn *)(_nodes->back().get());
     t->cache = this;

@@ -64,14 +64,14 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
 
     struct Item : public codon::SrcObject {
       std::vector<int> scope;
-      Node *binding = nullptr;
+      ASTNode *binding = nullptr;
       bool ignore = false;
 
 
       /// List of scopes where the identifier is accessible
       /// without __used__ check
       std::vector<std::vector<int>> accessChecked;
-      Item(const codon::SrcInfo &src, std::vector<int> scope, Node *binding = nullptr,
+      Item(const codon::SrcInfo &src, std::vector<int> scope, ASTNode *binding = nullptr,
            std::vector<std::vector<int>> accessChecked = {})
           : scope(std::move(scope)), binding(std::move(binding)), ignore(false),
             accessChecked(std::move(accessChecked)) {
@@ -86,7 +86,7 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
     std::map<std::string, SrcInfo> firstSeen;
 
     bool adding = false;
-    Node *root = nullptr;
+    ASTNode *root = nullptr;
     FunctionStmt *functionScope = nullptr;
     bool inClass = false;
     // bool isConditional = false;
@@ -100,7 +100,7 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
     Context *ctx;
     ConditionalBlock(Context *ctx, Stmt *s, int id = -1) : ctx(ctx) {
       if (s)
-        seqassertn(CAST(s, SuiteStmt), "not a suite");
+        seqassertn(ir::cast<SuiteStmt>(s), "not a suite");
       ctx->scope.emplace_back(id == -1 ? ctx->cache->blockCount++ : id, s);
     }
     ~ConditionalBlock() {
@@ -116,9 +116,9 @@ public:
   void transform(Expr *expr) override;
   void transform(Stmt *stmt) override;
 
-  bool visitName(const std::string &name, bool = false, Node * = nullptr,
+  bool visitName(const std::string &name, bool = false, ASTNode * = nullptr,
                  const SrcInfo & = SrcInfo());
-  void transformAdding(Expr *e, Node *);
+  void transformAdding(Expr *e, ASTNode *);
   void transformScope(Expr *);
   void transformScope(Stmt *);
 
@@ -146,7 +146,7 @@ public:
 
   Context::Item *findDominatingBinding(const std::string &, bool = true);
   void processChildCaptures();
-  void switchToUpdate(Node *binding, const std::string &, bool);
+  void switchToUpdate(ASTNode *binding, const std::string &, bool);
 
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
     Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
