@@ -130,5 +130,6 @@ std::string makeBacktraceFrameString(uintptr_t pc, const std::string &func = "",
 std::string getCapturedOutput();
 
 void setJITErrorCallback(std::function<void(const JITError &)> callback);
+
 } // namespace runtime
 } // namespace codon

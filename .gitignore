@@ -15,8 +15,6 @@
 *.dylib
 *.pyc
 build/
-build_*/
-build-*/
 install/
 install_*/
 install-*/
@@ -70,4 +68,3 @@ jit/codon/version.py
 temp/
 playground/
 scratch*.*
-_*

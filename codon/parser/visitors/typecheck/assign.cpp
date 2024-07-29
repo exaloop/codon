@@ -72,6 +72,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
             ctx->instantiate(stmt->type->getSrcInfo(), stmt->type->getType()));
     }
     ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
+    if (in(ctx->cache->globals, lhs))
+      ctx->cache->globals[lhs].first = true;
     if (realize(stmt->lhs->type) || !stmt->type)
       stmt->setDone();
   } else if (stmt->type && stmt->type->getType()->isStaticType()) {
@@ -84,6 +86,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     auto val = ctx->add(TypecheckItem::Var, lhs, stmt->lhs->type);
     if (in(ctx->cache->globals, lhs)) {
       // Make globals always visible!
+      ctx->cache->globals[lhs].first = true;
       ctx->addToplevel(lhs, val);
     }
     if (realize(stmt->lhs->type))
@@ -112,6 +115,7 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 
     if (in(ctx->cache->globals, lhs)) {
       // Make globals always visible!
+      ctx->cache->globals[lhs].first = true;
       ctx->addToplevel(lhs, val);
       if (kind != TypecheckItem::Var)
         ctx->cache->globals.erase(lhs);

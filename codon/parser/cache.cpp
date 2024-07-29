@@ -38,7 +38,7 @@ std::string Cache::rev(const std::string &s) {
 void Cache::addGlobal(const std::string &name, ir::Var *var) {
   if (!in(globals, name)) {
     // LOG("[global] {}", name);
-    globals[name] = var;
+    globals[name] = {false, var};
   }
 }
 
