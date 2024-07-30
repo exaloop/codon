@@ -47,12 +47,12 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   cache->codegenCtx->bases = {main};
   cache->codegenCtx->series = {block};
 
-  for (auto &g : cache->globals)
-    if (!g.second) {
-      g.second = g.first == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
-                                     : cache->codegenCtx->getModule()->N<ir::Var>(
-                                           SrcInfo(), nullptr, true, false, g.first);
-      cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
+  for (auto &[name, p] : cache->globals)
+    if (p.first && !p.second) {
+      p.second = name == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
+                                  : cache->codegenCtx->getModule()->N<ir::Var>(
+                                        SrcInfo(), nullptr, true, false, name);
+      cache->codegenCtx->add(TranslateItem::Var, name, p.second);
     }
 
   auto tv = TranslateVisitor(cache->codegenCtx);

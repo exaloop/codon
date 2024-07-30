@@ -95,7 +95,7 @@ struct Cache : public std::enable_shared_from_this<Cache> {
 
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step and in JIT.
-  std::map<std::string, ir::Var *> globals;
+  std::map<std::string, std::pair<bool, ir::Var *>> globals;
 
   /// Stores class data for each class (type) in the source code.
   struct Class {

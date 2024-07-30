@@ -29,6 +29,10 @@ const std::string GPU_KERNEL_ATTR = "std.gpu.kernel";
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
+
+llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
+                                      llvm::cl::desc("Disable exception handling"),
+                                      llvm::cl::init(false));
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -1696,6 +1700,7 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   coro = {};
   seqassertn(func, "{} not inserted", *x);
   func->setDoesNotThrow();
+  func->setWillReturn();
 }
 
 namespace {
@@ -1939,7 +1944,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
-  func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
+  if (!DisableExceptions)
+    func->setPersonalityFn(
+        llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
   auto *funcType = cast<types::FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
@@ -3362,6 +3369,13 @@ void LLVMVisitor::visit(const YieldInstr *x) {
 }
 
 void LLVMVisitor::visit(const ThrowInstr *x) {
+  if (DisableExceptions) {
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
+    block = llvm::BasicBlock::Create(*context, "throw_unreachable.new", func);
+    return;
+  }
+
   // note: exception header should be set in the frontend
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();

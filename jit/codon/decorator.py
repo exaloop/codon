@@ -8,6 +8,7 @@ import os
 import functools
 import itertools
 import ast
+import textwrap
 import astunparse
 from pathlib import Path
 
@@ -125,10 +126,13 @@ def _obj_to_str(obj, **kwargs) -> str:
         lines = inspect.getsourcelines(obj)[0]
         extra_spaces = lines[0].find("class")
         obj_str = "".join(l[extra_spaces:] for l in lines)
-    elif callable(obj):
-        lines = inspect.getsourcelines(obj)[0]
-        extra_spaces = lines[0].find("@")
-        obj_str = "".join(l[extra_spaces:] for l in lines[1:])
+        obj_name = obj.__name__
+    elif callable(obj) or isinstance(obj, str):
+        is_str = isinstance(obj, str)
+        lines = [i + '\n' for i in obj.split('\n')] if is_str else inspect.getsourcelines(obj)[0]
+        if not is_str: lines = lines[1:]
+        obj_str = textwrap.dedent(''.join(lines))
+
         pyvars = kwargs.get("pyvars", None)
         if pyvars:
             for i in pyvars:
@@ -138,20 +142,20 @@ def _obj_to_str(obj, **kwargs) -> str:
                 RewriteFunctionArgs(pyvars).visit(ast.parse(obj_str))
             )
             obj_str = astunparse.unparse(node)
+        if is_str:
+            try:
+                obj_name = ast.parse(obj_str).body[0].name
+            except:
+                raise ValueError("cannot infer function name!")
+        else:
+            obj_name = obj.__name__
     else:
         raise TypeError("Function or class expected, got " + type(obj).__name__)
-    return obj_str.replace("_@par", "@par")
-
-
-def _obj_name(obj) -> str:
-    if inspect.isclass(obj) or callable(obj):
-        return obj.__name__
-    else:
-        raise TypeError("Function or class expected, got " + type(obj).__name__)
+    return obj_name, obj_str.replace("_@par", "@par")
 
 
 def _parse_decorated(obj, **kwargs):
-    return _obj_name(obj), _obj_to_str(obj, **kwargs)
+    return  _obj_to_str(obj, **kwargs)
 
 
 def convert(t):
@@ -186,44 +190,59 @@ def convert(t):
     return t
 
 
+def _jit_register_fn(f, pyvars, debug):
+    try:
+        obj_name, obj_str = _parse_decorated(f, pyvars=pyvars)
+        fn, fl = "<internal>", 1
+        if hasattr(f, "__code__"):
+            fn, fl = f.__code__.co_filename, f.__code__.co_firstlineno
+        _jit.execute(obj_str, fn, fl, 1 if debug else 0)
+        return obj_name
+    except JITError:
+        _reset_jit()
+        raise
+
+def _jit_callback_fn(obj_name, module, debug=None, sample_size=5, pyvars=None, *args, **kwargs):
+    try:
+        args = (*args, *kwargs.values())
+        types = _codon_types(args, debug=debug, sample_size=sample_size)
+        if debug:
+            print("[python] {}({})".format(obj_name, list(types)), file=sys.stderr)
+        return _jit.run_wrapper(
+            obj_name, list(types), module, list(pyvars), args, 1 if debug else 0
+        )
+    except JITError:
+        _reset_jit()
+        raise
+
+def _jit_str_fn(fstr, debug=None, sample_size=5, pyvars=None):
+    obj_name = _jit_register_fn(fstr, pyvars, debug)
+    def wrapped(*args, **kwargs):
+        return _jit_callback_fn(obj_name, "__main__", debug, sample_size, pyvars, *args, **kwargs)
+    return wrapped
+
+
 def jit(fn=None, debug=None, sample_size=5, pyvars=None):
     if not pyvars:
         pyvars = []
     if not isinstance(pyvars, list):
         raise ArgumentError("pyvars must be a list")
 
-    def _decorate(f):
-        try:
-            obj_name, obj_str = _parse_decorated(f, pyvars=pyvars)
-            _jit.execute(
-                obj_str,
-                f.__code__.co_filename,
-                f.__code__.co_firstlineno,
-                1 if debug else 0,
-            )
-        except JITError:
-            _reset_jit()
-            raise
+    if fn and isinstance(fn, str):
+        return _jit_str_fn(fn, debug, sample_size, pyvars)
 
+    def _decorate(f):
+        obj_name = _jit_register_fn(f, pyvars, debug)
         @functools.wraps(f)
         def wrapped(*args, **kwargs):
-            try:
-                args = (*args, *kwargs.values())
-                types = _codon_types(args, debug=debug, sample_size=sample_size)
-                if debug:
-                    print(
-                        "[python] {}({})".format(f.__name__, list(types)),
-                        file=sys.stderr,
-                    )
-                return _jit.run_wrapper(
-                    obj_name, list(types), f.__module__, list(pyvars), args, 1 if debug else 0
-                )
-            except JITError:
-                _reset_jit()
-                raise
-
+            return _jit_callback_fn(obj_name, f.__module__, debug, sample_size, pyvars, *args, **kwargs)
         return wrapped
+    return _decorate(fn) if fn else _decorate
 
-    if fn:
-        return _decorate(fn)
-    return _decorate
+
+def execute(code, debug=False):
+    try:
+        _jit.execute(code, "<internal>", 0, int(debug))
+    except JITError:
+        _reset_jit()
+        raise
