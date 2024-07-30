@@ -74,7 +74,7 @@ ASTNode::ASTNode(const ASTNode &node) : Node(node), cache(node.cache) {}
 Expr::Expr() : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr) {}
 Expr::Expr(const Expr &expr)
     : AcceptorExtend(expr), type(expr.type), done(expr.done), origExpr(expr.origExpr) {}
-Expr::Expr(const Expr &expr, bool clean) : AcceptorExtend(expr) {
+Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
     done = false;

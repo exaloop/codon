@@ -183,7 +183,8 @@ std::string LinkType::debugString(char mode) const {
 
 std::string LinkType::realizedName() const {
   if (kind == Unbound)
-    return "?";
+    // return "?";
+    return fmt::format("#{}", genericName);
   if (kind == Generic)
     return fmt::format("#{}", genericName);
   seqassert(kind == Link, "unexpected generic link");

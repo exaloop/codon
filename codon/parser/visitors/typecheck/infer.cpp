@@ -371,15 +371,16 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto pc = ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
   if (!pc || pc->value.empty())
     ctx->addFunc(ctx->cache->rev(ast->name), ast->name, ctx->find(ast->name)->type);
-  for (size_t i = 0, j = 0; hasAst && i < ast->args.size(); i++)
+  for (size_t i = 0, j = 0; hasAst && i < ast->args.size(); i++) {
     if (ast->args[i].status == Param::Normal) {
       std::string varName = ast->args[i].name;
       trimStars(varName);
       auto v = ctx->addVar(ctx->cache->rev(varName), varName,
                            std::make_shared<LinkType>(type->getArgTypes()[j++]));
       // LOG("[param] {}| {}: {} -> {}", type->debugString(2), ctx->cache->rev(varName),
-      // v->canonicalName, v->type);
+      //     v->canonicalName, v->type);
     }
+  }
 
   // Populate realization table in advance to support recursive realizations
   auto key = type->realizedName(); // note: the key might change later
