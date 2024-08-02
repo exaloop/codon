@@ -19,13 +19,13 @@ using namespace types;
 void TypecheckVisitor::visit(TupleExpr *expr) {
   expr->setType(ctx->getUnbound());
   for (int ai = 0; ai < expr->items.size(); ai++)
-    if (auto star = expr->items[ai]->getStar()) {
+    if (auto star = cast<StarExpr>(expr->items[ai])) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
-      star->what = transform(star->what);
-      auto typ = star->what->type->getClass();
+      star->expr = transform(star->getExpr());
+      auto typ = star->getExpr()->type->getClass();
       while (typ && typ->is(TYPE_OPTIONAL)) {
-        star->what = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->what));
-        typ = star->what->type->getClass();
+        star->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->getExpr()));
+        typ = star->getExpr()->type->getClass();
       }
       if (!typ)
         return; // continue later when the type becomes known
@@ -34,7 +34,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       auto ff = getClassFields(typ.get());
       for (int i = 0; i < ff.size(); i++, ai++) {
         expr->items.insert(expr->items.begin() + ai,
-                           transform(N<DotExpr>(star->what, ff[i].name)));
+                           transform(N<DotExpr>(star->getExpr(), ff[i].name)));
       }
       // Remove the star
       expr->items.erase(expr->items.begin() + ai);
@@ -88,8 +88,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
       expr->kind == GeneratorExpr::ListGenerator && expr->loopCount() == 1;
   if (canOptimize) {
     auto iter = transform(clone(expr->getFinalSuite()->getFor()->iter));
+    auto ce = cast<CallExpr>(iter);
     IdExpr *id = nullptr;
-    if (iter->getCall() && (id = iter->getCall()->expr->getId())) {
+    if (ce && (id = cast<IdExpr>(ce->getExpr()))) {
       // Turn off this optimization for static items
       canOptimize &= !startswith(id->value, "std.internal.types.range.staticrange");
       canOptimize &= !startswith(id->value, "statictuple");
@@ -158,10 +159,10 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
     auto forStmt = clone(expr->getFinalSuite()->getFor());
-    seqassert(forStmt->var->getId(), "tuple() not simplified");
+    seqassert(cast<IdExpr>(forStmt->var), "tuple() not simplified");
     auto finalExpr = expr->getFinalExpr();
     auto suiteVec =
-        finalExpr->getStmtExpr() ? finalExpr->getStmtExpr()->stmts[0] : nullptr;
+        cast<StmtExpr>(finalExpr) ? cast<StmtExpr>(finalExpr)->stmts[0] : nullptr;
     auto oldSuite = suiteVec ? clone(suiteVec) : nullptr;
     auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
         expr->getFinalSuite()->getFor()->var, &forStmt->suite,
@@ -174,7 +175,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
     std::vector<Expr *> tupleItems;
     for (auto &i : staticItems)
-      tupleItems.push_back(ir::cast<Expr>(i));
+      tupleItems.push_back(cast<Expr>(i));
     if (preamble)
       block->stmts.push_back(preamble);
     // ctx->addBlock();
@@ -249,16 +250,16 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   bool isDict = endswith(type, "Dict.0");
   for (auto &i : items) {
     ClassTypePtr typ = nullptr;
-    if (!isDict && i->getStar()) {
-      auto star = i->getStar();
-      star->what = transform(N<CallExpr>(N<DotExpr>(star->what, "__iter__")));
-      if (star->what->type->is("Generator"))
-        typ = star->what->type->getClass()->generics[0].type->getClass();
-    } else if (isDict && ir::cast<KeywordStarExpr>(i)) {
-      auto star = ir::cast<KeywordStarExpr>(i);
-      star->what = transform(N<CallExpr>(N<DotExpr>(star->what, "items")));
-      if (star->what->type->is("Generator"))
-        typ = star->what->type->getClass()->generics[0].type->getClass();
+    if (!isDict && cast<StarExpr>(i)) {
+      auto star = cast<StarExpr>(i);
+      star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
+      if (star->getExpr()->type->is("Generator"))
+        typ = star->getExpr()->type->getClass()->generics[0].type->getClass();
+    } else if (isDict && cast<KeywordStarExpr>(i)) {
+      auto star = cast<KeywordStarExpr>(i);
+      star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "items")));
+      if (star->getExpr()->type->is("Generator"))
+        typ = star->getExpr()->type->getClass()->generics[0].type->getClass();
     } else {
       i = transform(i);
       typ = i->type->getClass();
@@ -319,22 +320,22 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   stmts.push_back(
       transform(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs))));
   for (const auto &it : items) {
-    if (!isDict && it->getStar()) {
+    if (!isDict && cast<StarExpr>(it)) {
       // Unpack star-expression by iterating over it
       // `*star` -> `for i in star: cont.[fn](i)`
-      auto star = it->getStar();
+      auto star = cast<StarExpr>(it);
       Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("i"));
-      star->what->setAttribute(Attr::ExprStarSequenceItem);
+      star->getExpr()->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), star->what,
+          clone(forVar), star->getExpr(),
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), clone(forVar))))));
-    } else if (isDict && ir::cast<KeywordStarExpr>(it)) {
+    } else if (isDict && cast<KeywordStarExpr>(it)) {
       // Expand kwstar-expression by iterating over it: see the example above
-      auto star = ir::cast<KeywordStarExpr>(it);
+      auto star = cast<KeywordStarExpr>(it);
       Expr *forVar = N<IdExpr>(ctx->cache->getTemporaryVar("it"));
-      star->what->setAttribute(Attr::ExprStarSequenceItem);
+      star->getExpr()->setAttribute(Attr::ExprStarSequenceItem);
       stmts.push_back(transform(N<ForStmt>(
-          clone(forVar), star->what,
+          clone(forVar), star->getExpr(),
           N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(0)),
                                   N<IndexExpr>(clone(forVar), N<IntExpr>(1)))))));

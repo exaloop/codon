@@ -100,7 +100,7 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
     Context *ctx;
     ConditionalBlock(Context *ctx, Stmt *s, int id = -1) : ctx(ctx) {
       if (s)
-        seqassertn(ir::cast<SuiteStmt>(s), "not a suite");
+        seqassertn(cast<SuiteStmt>(s), "not a suite");
       ctx->scope.emplace_back(id == -1 ? ctx->cache->blockCount++ : id, s);
     }
     ~ConditionalBlock() {

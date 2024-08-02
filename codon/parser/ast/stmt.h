@@ -60,7 +60,6 @@ public:
   virtual SuiteStmt *getSuite() { return nullptr; }
   virtual FunctionStmt *getFunction() { return nullptr; }
   virtual TryStmt *getTry() { return nullptr; }
-  virtual IfStmt *getIf() { return nullptr; }
   virtual ForStmt *getFor() { return nullptr; }
 
   /// @return the first statement in a suite; if a statement is not a suite, returns the
@@ -283,7 +282,7 @@ struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
   SuiteStmt *suite;
   SuiteStmt *elseSuite;
   Expr *decorator;
-  std::vector<CallExpr::Arg> ompArgs;
+  std::vector<CallArg> ompArgs;
 
   /// Indicates if iter was wrapped with __iter__() call.
   bool wrapped;
@@ -291,7 +290,7 @@ struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
   bool flat;
 
   ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite = nullptr,
-          Expr *decorator = nullptr, std::vector<CallExpr::Arg> ompArgs = {});
+          Expr *decorator = nullptr, std::vector<CallArg> ompArgs = {});
   ForStmt(const ForStmt &, bool);
 
   ForStmt *getFor() override { return this; }
@@ -316,8 +315,6 @@ struct IfStmt : public AcceptorExtend<IfStmt, Stmt> {
 
   IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite = nullptr);
   IfStmt(const IfStmt &, bool);
-
-  IfStmt *getIf() override { return this; }
 
   std::string toString(int indent) const override;
   ACCEPT(ASTVisitor);

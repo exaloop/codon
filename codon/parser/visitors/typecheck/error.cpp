@@ -87,9 +87,10 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<AssignStmt>(N<IdExpr>(c->var), N<DotExpr>(N<IdExpr>(pyVar), "pytype")),
             c->suite);
       }
-      c->suite = SuiteStmt::wrap(N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
-                                       N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
-                           N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr));
+      c->suite = SuiteStmt::wrap(
+          N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
+                                N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
+                    N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr));
       pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
     } else if (c->exc && getType(c->exc)->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
@@ -105,7 +106,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (val)
         unify(val->type, getType(c->exc));
       ctx->blockLevel++;
-      c->suite = SuiteStmt::wrap( transform(c->suite));
+      c->suite = SuiteStmt::wrap(transform(c->suite));
       ctx->blockLevel--;
       done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
       catches.push_back(c);
@@ -147,8 +148,9 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 
   stmt->expr = transform(stmt->expr);
 
-  if (!(stmt->expr->getCall() &&
-        stmt->expr->getCall()->expr->isId("__internal__.set_header"))) {
+  auto se = cast<CallExpr>(stmt->expr);
+  if (!(se && cast<IdExpr>(se->expr) &&
+        cast<IdExpr>(se->expr)->getValue() == "__internal__.set_header")) {
     stmt->expr = transform(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "set_header"), stmt->expr,
         N<StringExpr>(ctx->getBase()->name), N<StringExpr>(stmt->getSrcInfo().file),

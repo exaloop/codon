@@ -92,8 +92,7 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
       seqassert(p.first == Attr::ExprSequenceItem ||
                     p.first == Attr::ExprStarSequenceItem,
                 "invalid list/set element");
-      v.push_back(
-          ir::LiteralElement{p.second, p.first == Attr::ExprStarSequenceItem});
+      v.push_back(ir::LiteralElement{p.second, p.first == Attr::ExprStarSequenceItem});
     }
     if (expr->hasAttribute(Attr::ExprList))
       ir->setAttribute(std::make_unique<ir::ListLiteralAttribute>(v));
@@ -178,9 +177,9 @@ void TranslateVisitor::visit(StringExpr *expr) {
 }
 
 void TranslateVisitor::visit(IdExpr *expr) {
-  auto val = ctx->find(expr->value);
-  seqassert(val, "cannot find '{}'", expr->value);
-  if (expr->value == "__vtable_size__.0") {
+  auto val = ctx->find(expr->getValue());
+  seqassert(val, "cannot find '{}'", expr->getValue());
+  if (expr->getValue() == "__vtable_size__.0") {
     // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
                                 getType(expr->getType()));
@@ -192,9 +191,9 @@ void TranslateVisitor::visit(IdExpr *expr) {
 }
 
 void TranslateVisitor::visit(IfExpr *expr) {
-  auto cond = transform(expr->cond);
-  auto ifexpr = transform(expr->ifexpr);
-  auto elsexpr = transform(expr->elsexpr);
+  auto cond = transform(expr->getCond());
+  auto ifexpr = transform(expr->getIf());
+  auto elsexpr = transform(expr->getElse());
   result = make<ir::TernaryInstr>(expr, cond, ifexpr, elsexpr);
 }
 
@@ -217,7 +216,7 @@ public:
     ids.insert(v.ids.begin(), v.ids.end());
     return true;
   }
-  void visit(IdExpr *expr) override { ids.insert(expr->value); }
+  void visit(IdExpr *expr) override { ids.insert(expr->getValue()); }
 };
 
 void TranslateVisitor::visit(GeneratorExpr *expr) {
@@ -261,16 +260,17 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 }
 
 void TranslateVisitor::visit(CallExpr *expr) {
-  if (expr->expr->isId("__ptr__")) {
-    seqassert(expr->args[0].value->getId(), "expected IdExpr, got {}",
-              *(expr->args[0].value));
-    auto val = ctx->find(expr->args[0].value->getId()->value);
-    seqassert(val && val->getVar(), "{} is not a variable",
-              expr->args[0].value->getId()->value);
+  auto ei = cast<IdExpr>(expr->getExpr());
+  if (ei && ei->getValue() == "__ptr__") {
+    seqassert(cast<IdExpr>((*expr)[0].value), "expected IdExpr, got {}",
+              *((*expr)[0].value));
+    auto key = cast<IdExpr>((*expr)[0].value)->getValue();
+    auto val = ctx->find(key);
+    seqassert(val && val->getVar(), "{} is not a variable", key);
     result = make<ir::PointerValue>(expr, val->getVar());
     return;
-  } else if (expr->expr->isId("__array__.__new__:0")) {
-    auto fnt = expr->expr->type->getFunc();
+  } else if (ei && ei->getValue() == "__array__.__new__:0") {
+    auto fnt = expr->getExpr()->type->getFunc();
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].type;
 
@@ -278,47 +278,49 @@ void TranslateVisitor::visit(CallExpr *expr) {
     arrayType->setAstType(expr->getType());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
-  } else if (expr->expr->getId() && startswith(expr->expr->getId()->value,
-                                               "__internal__.yield_in_no_suspend")) {
+  } else if (ei && startswith(ei->getValue(), "__internal__.yield_in_no_suspend")) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
 
-  auto ft = expr->expr->type->getFunc();
+  auto ft = expr->getExpr()->type->getFunc();
   seqassert(ft, "not calling function: {}", ft);
-  auto callee = transform(expr->expr);
+  auto callee = transform(expr->getExpr());
   bool isVariadic = ft->ast->hasAttribute(Attr::CVarArg);
   std::vector<ir::Value *> items;
-  for (int i = 0; i < expr->args.size(); i++) {
-    seqassert(!expr->args[i].value->getEllipsis(), "ellipsis not elided");
-    if (i + 1 == expr->args.size() && isVariadic) {
-      auto call = expr->args[i].value->getCall();
+  size_t i = 0;
+  for (auto &a: *expr) {
+    seqassert(!cast<EllipsisExpr>(a.value), "ellipsis not elided");
+    if (i + 1 == expr->size() && isVariadic) {
+      auto call = cast<CallExpr>(a.value);
       seqassert(call, "expected *args tuple: '{}'", call->toString(0));
-      for (auto &arg : call->args)
+      for (auto &arg : *call)
         items.emplace_back(transform(arg.value));
     } else {
-      items.emplace_back(transform(expr->args[i].value));
+      items.emplace_back(transform(a.value));
     }
+    i++;
   }
   result = make<ir::CallInstr>(expr, callee, std::move(items));
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
-  if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
-      expr->member == "__contents_atomic__") {
-    seqassert(expr->expr->getId(), "expected IdExpr, got {}", *(expr->expr));
-    auto t = ctx->cache->typeCtx->getType(expr->expr->getId()->type);
+  if (expr->getMember() == "__atomic__" || expr->getMember() == "__elemsize__" ||
+      expr->getMember() == "__contents_atomic__") {
+    auto ei = cast<IdExpr>(expr->getExpr());
+    seqassert(ei, "expected IdExpr, got {}", *(expr->getExpr()));
+    auto t = ctx->cache->typeCtx->getType(ei->type);
     auto type = ctx->find(t->realizedName())->getType();
-    seqassert(type, "{} is not a type", expr->expr->getId()->value);
+    seqassert(type, "{} is not a type", ei->getValue());
     result = make<ir::TypePropertyInstr>(
         expr, type,
-        expr->member == "__atomic__"
+        expr->getMember() == "__atomic__"
             ? ir::TypePropertyInstr::Property::IS_ATOMIC
-            : (expr->member == "__contents_atomic__"
+            : (expr->getMember() == "__contents_atomic__"
                    ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
                    : ir::TypePropertyInstr::Property::SIZEOF));
   } else {
-    result = make<ir::ExtractInstr>(expr, transform(expr->expr), expr->member);
+    result = make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember());
   }
 }
 
@@ -338,24 +340,24 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   };
 
   std::vector<ir::PipelineFlow::Stage> stages;
-  auto *firstStage = transform(expr->items[0].expr);
+  auto *firstStage = transform((*expr)[0].expr);
   auto firstIsGen = isGen(firstStage);
   stages.emplace_back(firstStage, std::vector<ir::Value *>(), firstIsGen, false);
 
   // Pipeline without generators (just function call sugar)
   auto simplePipeline = !firstIsGen;
-  for (auto i = 1; i < expr->items.size(); i++) {
-    auto call = expr->items[i].expr->getCall();
-    seqassert(call, "{} is not a call", *(expr->items[i].expr));
+  for (auto i = 1; i < expr->size(); i++) {
+    auto call = cast<CallExpr>((*expr)[i].expr);
+    seqassert(call, "{} is not a call", *((*expr)[i].expr));
 
-    auto fn = transform(call->expr);
-    if (i + 1 != expr->items.size())
+    auto fn = transform(call->getExpr());
+    if (i + 1 != expr->size())
       simplePipeline &= !isGen(fn);
 
     std::vector<ir::Value *> args;
-    args.reserve(call->args.size());
-    for (auto &a : call->args)
-      args.emplace_back(a.value->getEllipsis() ? nullptr : transform(a.value));
+    args.reserve(call->size());
+    for (auto &a : *call)
+      args.emplace_back(cast<EllipsisExpr>(a.value) ? nullptr : transform(a.value));
     stages.emplace_back(fn, args, isGen(fn), false);
   }
 
@@ -370,8 +372,8 @@ void TranslateVisitor::visit(PipeExpr *expr) {
       result = make<ir::CallInstr>(expr, cv.clone(stages[i].getCallee()), newArgs);
     }
   } else {
-    for (int i = 0; i < expr->items.size(); i++)
-      if (expr->items[i].op == "||>")
+    for (int i = 0; i < expr->size(); i++)
+      if ((*expr)[i].op == "||>")
         stages[i].setParallel();
     // This is a statement in IR.
     ctx->getSeries()->push_back(make<ir::PipelineFlow>(expr, stages));
@@ -381,10 +383,10 @@ void TranslateVisitor::visit(PipeExpr *expr) {
 void TranslateVisitor::visit(StmtExpr *expr) {
   auto *bodySeries = make<ir::SeriesFlow>(expr, "body");
   ctx->addSeries(bodySeries);
-  for (auto &s : expr->stmts)
+  for (auto &s : *expr)
     transform(s);
   ctx->popSeries();
-  result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->expr));
+  result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->getExpr()));
 }
 
 /************************************************************************************/
@@ -414,9 +416,11 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ExprStmt *stmt) {
-  if (stmt->expr->getCall() &&
-      stmt->expr->getCall()->expr->isId("__internal__.yield_final:0")) {
-    result = make<ir::YieldInstr>(stmt, transform(stmt->expr->getCall()->args[0].value),
+  IdExpr *ei = nullptr;
+  auto ce = cast<CallExpr>(stmt->expr);
+  if (ce && (ei = cast<IdExpr>(ce->getExpr())) &&
+      ei->getValue() == "__internal__.yield_final:0") {
+    result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value),
                                   true);
     ctx->getBase()->setGenerator();
   } else {
@@ -425,19 +429,21 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
 }
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
-  if (stmt->lhs && stmt->lhs->isId(VAR_ARGV))
+  if (stmt->lhs && cast<IdExpr>(stmt->lhs) &&
+      cast<IdExpr>(stmt->lhs)->getValue() == VAR_ARGV)
     return;
 
+  auto lei = cast<IdExpr>(stmt->lhs);
   if (stmt->isUpdate()) {
-    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", *(stmt->lhs));
-    auto val = ctx->find(stmt->lhs->getId()->value);
-    seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
+    seqassert(lei, "expected IdExpr, got {}", *(stmt->lhs));
+    auto val = ctx->find(lei->getValue());
+    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
     result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", *(stmt->lhs));
-  auto var = stmt->lhs->getId()->value;
+  seqassert(lei, "expected IdExpr, got {}", *(stmt->lhs));
+  auto var = lei->getValue();
 
   auto isGlobal = in(ctx->cache->globals, var);
   ir::Var *v = nullptr;
@@ -498,22 +504,22 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   std::unique_ptr<OMPSched> os = nullptr;
   if (stmt->decorator) {
     os = std::make_unique<OMPSched>();
-    auto c = stmt->decorator->getCall();
+    auto c = cast<CallExpr>(stmt->decorator);
     seqassert(c, "for par is not a call: {}", *(stmt->decorator));
-    auto fc = c->expr->getType()->getFunc();
+    auto fc = c->getExpr()->getType()->getFunc();
     seqassert(fc && fc->ast->name == "std.openmp.for_par.0:0",
               "for par is not a function");
     auto schedule = fc->funcGenerics[0].type->getStrStatic()->value;
     bool ordered = fc->funcGenerics[1].type->getBoolStatic()->value;
-    auto threads = transform(c->args[0].value);
-    auto chunk = transform(c->args[1].value);
+    auto threads = transform((*c)[0].value);
+    auto chunk = transform((*c)[1].value);
     auto collapse = fc->funcGenerics[2].type->getIntStatic()->value;
     bool gpu = fc->funcGenerics[3].type->getBoolStatic()->value;
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
-  seqassert(stmt->var->getId(), "expected IdExpr, got {}", *(stmt->var));
-  auto varName = stmt->var->getId()->value;
+  seqassert(cast<IdExpr>(stmt->var), "expected IdExpr, got {}", *(stmt->var));
+  auto varName = cast<IdExpr>(stmt->var)->getValue();
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->hasAttribute(Attr::ExprDominated)) {
     var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, false, varName);
@@ -690,10 +696,10 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
 
   seqassert(ast->suite->firstInBlock() && ast->suite->firstInBlock()->getExpr() &&
-                ast->suite->firstInBlock()->getExpr()->expr->getString(),
+                cast<StringExpr>(ast->suite->firstInBlock()->getExpr()->expr),
             "LLVM function does not begin with a string");
   std::istringstream sin(
-      ast->suite->firstInBlock()->getExpr()->expr->getString()->getValue());
+      cast<StringExpr>(ast->suite->firstInBlock()->getExpr()->expr)->getValue());
   std::vector<ir::types::Generic> literals;
   auto &ss = ast->suite->getSuite()->stmts;
   for (int i = 1; i < ss.size(); i++) {

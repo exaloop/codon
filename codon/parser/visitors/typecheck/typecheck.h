@@ -82,10 +82,10 @@ private: // Node typechecking rules
   bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
-  Expr *transformDot(DotExpr *, std::vector<CallExpr::Arg> * = nullptr);
-  Expr *getClassMember(DotExpr *, std::vector<CallExpr::Arg> *);
+  Expr *transformDot(DotExpr *, std::vector<CallArg> * = nullptr);
+  Expr *getClassMember(DotExpr *, std::vector<CallArg> *);
   types::TypePtr findSpecialMember(const std::string &);
-  types::FuncTypePtr getBestOverload(Expr *, std::vector<CallExpr::Arg> *);
+  types::FuncTypePtr getBestOverload(Expr *, std::vector<CallArg> *);
   types::FuncTypePtr getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */
@@ -137,10 +137,10 @@ private: // Node typechecking rules
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
-  bool transformCallArgs(std::vector<CallExpr::Arg> &);
+  bool transformCallArgs(std::vector<CallArg> &);
   std::pair<types::FuncTypePtr, Expr *> getCalleeFn(CallExpr *, PartialCallData &);
   Expr *callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
-  bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallExpr::Arg> &);
+  bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallArg> &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
   Expr *transformTupleGenerator(CallExpr *);
   Expr *transformNamedTuple(CallExpr *);
@@ -270,17 +270,17 @@ private:
   types::FuncTypePtr
   findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
-  int canCall(const types::FuncTypePtr &, const std::vector<CallExpr::Arg> &,
+  int canCall(const types::FuncTypePtr &, const std::vector<CallArg> &,
               const types::ClassTypePtr & = nullptr);
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
-                      const std::vector<CallExpr::Arg> &args);
+                      const std::vector<CallArg> &args);
   Expr *castToSuperClass(Expr *expr, types::ClassTypePtr superTyp, bool = false);
   Stmt *prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
-
   std::vector<types::TypePtr> getClassFieldTypes(const types::ClassTypePtr &);
+  std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 
 public:
   bool wrapExpr(Expr **expr, const types::TypePtr &expectedType,

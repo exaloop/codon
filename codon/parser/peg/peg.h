@@ -24,7 +24,7 @@ std::pair<Expr *, std::string> parseExpr(Cache *cache, const std::string &code,
 Stmt *parseFile(Cache *cache, const std::string &file);
 
 /// Parse a OpenMP clause.
-std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
+std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
                                        const codon::SrcInfo &loc);
 
 } // namespace codon::ast

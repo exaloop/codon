@@ -125,7 +125,7 @@ public:
   }
 
   using CallbackASTVisitor<std::string, std::string>::transform;
-  template <typename T> std::string transform(const std::vector<T> &ts) {
+  template <typename T> std::string transformItems(const T &ts) {
     std::vector<std::string> r;
     for (auto &e : ts)
       r.push_back(transform(e));

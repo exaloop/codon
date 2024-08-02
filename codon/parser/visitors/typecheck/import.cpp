@@ -79,7 +79,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
             N<IdExpr>(name),
             N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
                         N<StringExpr>(file->module), N<StringExpr>(file->path)))));
-  } else if (stmt->what->isId("*")) {
+  } else if (cast<IdExpr>(stmt->what) && cast<IdExpr>(stmt->what)->getValue() == "*") {
     // Case: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
     // Just copy all symbols from import's context here.
@@ -98,16 +98,16 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     }
   } else {
     // Case 3: from foo import bar
-    auto i = stmt->what->getId();
+    auto i = cast<IdExpr>(stmt->what);
     seqassert(i, "not a valid import what expression");
-    auto c = import.ctx->find(i->value);
+    auto c = import.ctx->find(i->getValue());
     // Make sure that we are importing an existing global symbol
     if (!c)
-      E(Error::IMPORT_NO_NAME, i, i->value, file->module);
+      E(Error::IMPORT_NO_NAME, i, i->getValue(), file->module);
     if (c->isConditional())
-      c = import.ctx->find(i->value);
+      c = import.ctx->find(i->getValue());
     // Imports should ignore noShadow property
-    ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
+    ctx->add(stmt->as.empty() ? i->getValue() : stmt->as, c);
   }
   resultStmt = transform(!resultStmt ? N<SuiteStmt>() : resultStmt); // erase it
 }
@@ -115,21 +115,24 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 /// Transform special `from C` and `from python` imports.
 /// See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
 Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
-  if (stmt->from && stmt->from->isId("C") && stmt->what->getId() && stmt->isFunction) {
-    // C function imports
-    return transformCImport(stmt->what->getId()->value, stmt->args, stmt->ret,
-                            stmt->as);
-  }
-  if (stmt->from && stmt->from->isId("C") && stmt->what->getId()) {
-    // C variable imports
-    return transformCVarImport(stmt->what->getId()->value, stmt->ret, stmt->as);
-  } else if (stmt->from && stmt->from->isId("C") && stmt->what->getDot()) {
-    // dylib C imports
-    return transformCDLLImport(stmt->what->getDot()->expr, stmt->what->getDot()->member,
-                               stmt->args, stmt->ret, stmt->as, stmt->isFunction);
-  } else if (stmt->from && stmt->from->isId("python") && stmt->what) {
-    // Python imports
-    return transformPythonImport(stmt->what, stmt->args, stmt->ret, stmt->as);
+  if (auto fi = cast<IdExpr>(stmt->from)) {
+    if (fi->getValue() == "C") {
+      auto wi = cast<IdExpr>(stmt->what);
+      if (wi && stmt->isFunction) {
+        // C function imports
+        return transformCImport(wi->getValue(), stmt->args, stmt->ret, stmt->as);
+      } else if (wi) {
+        // C variable imports
+        return transformCVarImport(wi->getValue(), stmt->ret, stmt->as);
+      } else if (auto de = cast<DotExpr>(stmt->what)) {
+        // dylib C imports
+        return transformCDLLImport(de->expr, de->member, stmt->args, stmt->ret,
+                                   stmt->as, stmt->isFunction);
+      }
+    } else if (fi->getValue() == "python" && stmt->what) {
+      // Python imports
+      return transformPythonImport(stmt->what, stmt->args, stmt->ret, stmt->as);
+    }
   }
   return nullptr;
 }
@@ -139,10 +142,10 @@ Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
 std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots) {
   std::vector<std::string> components; // Path components
   if (from) {
-    for (; from->getDot(); from = from->getDot()->expr)
-      components.push_back(from->getDot()->member);
-    seqassert(from->getId(), "invalid import statement");
-    components.push_back(from->getId()->value);
+    for (; cast<DotExpr>(from); from = cast<DotExpr>(from)->expr)
+      components.push_back(cast<DotExpr>(from)->member);
+    seqassert(cast<IdExpr>(from), "invalid import statement");
+    components.push_back(cast<IdExpr>(from)->value);
   }
 
   // Handle dots (i.e., `..` in `from ..m import x`)
@@ -169,7 +172,7 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
     seqassert(args[ai].name.empty(), "unexpected argument name");
     seqassert(!args[ai].defaultValue, "unexpected default argument");
     seqassert(args[ai].type, "missing type");
-    if (args[ai].type->getEllipsis() && ai + 1 == args.size()) {
+    if (cast<EllipsisExpr>(args[ai].type) && ai + 1 == args.size()) {
       // C VAR_ARGS support
       hasVarArgs = true;
       fnArgs.emplace_back("*args", nullptr, nullptr);
@@ -228,7 +231,7 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
       seqassert(a.name.empty(), "unexpected argument name");
       seqassert(!a.defaultValue, "unexpected default argument");
       seqassert(a.type, "missing type");
-      fnArgs[0]->getList()->items.emplace_back(clone(a.type));
+      cast<ListExpr>(fnArgs[0])->items.emplace_back(clone(a.type));
     }
 
     type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
@@ -240,8 +243,8 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallExpr::Arg>{CallExpr::Arg(c),
-                                             CallExpr::Arg(N<StringExpr>(name)),
+                  std::vector<CallArg>{CallArg(c),
+                                             CallArg(N<StringExpr>(name)),
                                              {"Fn", type}})));
 }
 
@@ -290,7 +293,7 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
-  auto retType = (ret && !ret->getNone()) ? clone(ret) : N<IdExpr>("NoneType");
+  auto retType = (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>("NoneType");
   auto retExpr = N<CallExpr>(N<DotExpr>(clone(retType), "__from_py__"),
                              N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
   auto retStmt = N<ReturnStmt>(retExpr);

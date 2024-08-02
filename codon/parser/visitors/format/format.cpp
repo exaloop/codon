@@ -109,78 +109,67 @@ void FormatVisitor::visit(StringExpr *expr) {
 
 void FormatVisitor::visit(IdExpr *expr) {
   result = renderExpr(expr, "{}",
-                      expr->type && expr->type->getFunc() ? anchor(expr->value)
-                                                          : expr->value);
+                      expr->type && expr->type->getFunc() ? anchor(expr->getValue())
+                                                          : expr->getValue());
 }
 
 void FormatVisitor::visit(StarExpr *expr) {
-  result = renderExpr(expr, "*{}", transform(expr->what));
+  result = renderExpr(expr, "*{}", transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(KeywordStarExpr *expr) {
-  result = renderExpr(expr, "**{}", transform(expr->what));
+  result = renderExpr(expr, "**{}", transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(TupleExpr *expr) {
-  result = renderExpr(expr, "({})", transform(expr->items));
+  result = renderExpr(expr, "({})", transformItems(*expr));
 }
 
 void FormatVisitor::visit(ListExpr *expr) {
-  result = renderExpr(expr, "[{}]", transform(expr->items));
+  result = renderExpr(expr, "[{}]", transformItems(*expr));
 }
 
 void FormatVisitor::visit(InstantiateExpr *expr) {
-  result = renderExpr(expr, "{}⟦{}⟧", transform(expr->typeExpr),
-                      transform(expr->typeParams));
+  result =
+      renderExpr(expr, "{}⟦{}⟧", transform(expr->getExpr()), transformItems(*expr));
 }
 
 void FormatVisitor::visit(SetExpr *expr) {
-  result = renderExpr(expr, "{{{}}}", transform(expr->items));
+  result = renderExpr(expr, "{{{}}}", transformItems(*expr));
 }
 
 void FormatVisitor::visit(DictExpr *expr) {
   std::vector<std::string> s;
-  for (auto &i : expr->items)
-    s.push_back(fmt::format("{}: {}", transform(i->getTuple()->items[0]),
-                            transform(i->getTuple()->items[1])));
+  for (auto *i : *expr) {
+    auto t = cast<TupleExpr>(i);
+    s.push_back(fmt::format("{}: {}", transform((*t)[0]), transform((*t)[1])));
+  }
   result = renderExpr(expr, "{{{}}}", join(s, ", "));
 }
 
 void FormatVisitor::visit(GeneratorExpr *expr) {
   // seqassert(false, "not implemented");
   result = "GENERATOR_IMPL";
-  // std::string s;
-  // for (auto &i : expr->loops) {
-  //   std::string cond;
-  //   for (auto &k : i.conds)
-  //     cond += fmt::format(" if {}", transform(k));
-  //   s += fmt::format("for {} in {}{}", i.vars->toString(), i.gen->toString(), cond);
-  // }
-  // if (expr->kind == GeneratorExpr::ListGenerator)
-  //   result = renderExpr(expr, "[{} {}]", transform(expr->expr), s);
-  // else if (expr->kind == GeneratorExpr::SetGenerator)
-  //   result = renderExpr(expr, "{{{} {}}}", transform(expr->expr), s);
-  // else
-  //   result = renderExpr(expr, "({} {})", transform(expr->expr), s);
 }
 
 void FormatVisitor::visit(IfExpr *expr) {
-  result = renderExpr(expr, "({} {} {} {} {})", transform(expr->ifexpr), keyword("if"),
-                      transform(expr->cond), keyword("else"), transform(expr->elsexpr));
+  result = renderExpr(expr, "({} {} {} {} {})", transform(expr->getIf()), keyword("if"),
+                      transform(expr->getCond()), keyword("else"),
+                      transform(expr->getElse()));
 }
 
 void FormatVisitor::visit(UnaryExpr *expr) {
-  result = renderExpr(expr, "{}{}", expr->op, transform(expr->expr));
+  result = renderExpr(expr, "{}{}", expr->getOp(), transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(BinaryExpr *expr) {
-  result = renderExpr(expr, "({} {} {})", transform(expr->lexpr), expr->op,
-                      transform(expr->rexpr));
+  result = renderExpr(expr, "({} {} {})", transform(expr->getLhs()), expr->getOp(),
+                      transform(expr->getRhs()));
 }
 
 void FormatVisitor::visit(PipeExpr *expr) {
   std::vector<std::string> items;
-  for (auto &l : expr->items) {
+  for (const auto &l : *expr) {
     if (!items.size())
       items.push_back(transform(l.expr));
     else
@@ -190,42 +179,46 @@ void FormatVisitor::visit(PipeExpr *expr) {
 }
 
 void FormatVisitor::visit(IndexExpr *expr) {
-  result = renderExpr(expr, "{}[{}]", transform(expr->expr), transform(expr->index));
+  result = renderExpr(expr, "{}[{}]", transform(expr->getExpr()),
+                      transform(expr->getIndex()));
 }
 
 void FormatVisitor::visit(CallExpr *expr) {
   std::vector<std::string> args;
-  for (auto &i : expr->args) {
+  for (auto &i : *expr) {
     if (i.name == "")
       args.push_back(transform(i.value));
     else
       args.push_back(fmt::format("{}={}", i.name, transform(i.value)));
   }
-  result = renderExpr(expr, "{}({})", transform(expr->expr), join(args, ", "));
+  result = renderExpr(expr, "{}({})", transform(expr->getExpr()), join(args, ", "));
 }
 
 void FormatVisitor::visit(DotExpr *expr) {
-  result = renderExpr(expr, "{}○{}", transform(expr->expr), expr->member);
+  result = renderExpr(expr, "{}○{}", transform(expr->getExpr()), expr->getMember());
 }
 
 void FormatVisitor::visit(SliceExpr *expr) {
   std::string s;
-  if (expr->start)
-    s += transform(expr->start);
+  if (expr->getStart())
+    s += transform(expr->getStart());
   s += ":";
-  if (expr->stop)
-    s += transform(expr->stop);
+  if (expr->getStop())
+    s += transform(expr->getStop());
   s += ":";
-  if (expr->step)
-    s += transform(expr->step);
+  if (expr->getStep())
+    s += transform(expr->getStep());
   result = renderExpr(expr, "{}", s);
 }
 
 void FormatVisitor::visit(EllipsisExpr *expr) { result = renderExpr(expr, "..."); }
 
 void FormatVisitor::visit(LambdaExpr *expr) {
-  result = renderExpr(expr, "{} {}: {}", keyword("lambda"), join(expr->vars, ", "),
-                      transform(expr->expr));
+  std::vector<std::string> s;
+  for (const auto &v : *expr)
+    s.emplace_back(v);
+  result = renderExpr(expr, "{} {}: {}", keyword("lambda"), join(s, ", "),
+                      transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(YieldExpr *expr) {
@@ -234,14 +227,15 @@ void FormatVisitor::visit(YieldExpr *expr) {
 
 void FormatVisitor::visit(StmtExpr *expr) {
   std::string s;
-  for (int i = 0; i < expr->stmts.size(); i++)
-    s += format("{}{}", pad(2), transform(expr->stmts[i], 2));
+  for (auto *i : *expr)
+    s += format("{}{}", pad(2), transform(i, 2));
   result = renderExpr(expr, "《{}{}{}{}{}》", newline(), s, newline(), pad(2),
-                      transform(expr->expr));
+                      transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(AssignExpr *expr) {
-  result = renderExpr(expr, "({} := {})", transform(expr->var), transform(expr->expr));
+  result = renderExpr(expr, "({} := {})", transform(expr->getVar()),
+                      transform(expr->getExpr()));
 }
 
 void FormatVisitor::visit(SuiteStmt *stmt) {
@@ -274,7 +268,7 @@ void FormatVisitor::visit(DelStmt *stmt) {
 }
 
 void FormatVisitor::visit(PrintStmt *stmt) {
-  result = fmt::format("{} {}", keyword("print"), transform(stmt->items));
+  result = fmt::format("{} {}", keyword("print"), transformItems(stmt->items));
 }
 
 void FormatVisitor::visit(ReturnStmt *stmt) {

@@ -131,17 +131,18 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);
-  auto var = stmt->var->getId();
+  auto var = cast<IdExpr>(stmt->var);
   seqassert(var, "corrupt for variable: {}", *(stmt->var));
 
   if (!stmt->hasAttribute(Attr::ExprDominated) &&
       !stmt->hasAttribute(Attr::ExprDominatedUsed)) {
-    ctx->addVar(var->value, ctx->generateCanonicalName(var->value), ctx->getUnbound());
+    ctx->addVar(var->getValue(), ctx->generateCanonicalName(var->getValue()),
+                ctx->getUnbound());
   } else if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
     stmt->eraseAttribute(Attr::ExprDominatedUsed);
     stmt->setAttribute(Attr::ExprDominated);
     stmt->suite = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->value)),
+        N<AssignStmt>(N<IdExpr>(format("{}.__used__", var->getValue())),
                       N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
         stmt->suite);
   }
@@ -184,21 +185,20 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
   if (!decorator)
     return nullptr;
   Expr *callee = decorator;
-  if (auto c = callee->getCall())
+  if (auto c = cast<CallExpr>(callee))
     callee = c->expr;
-  callee = transform(callee);
-  if (!callee || !(callee->getId() &&
-                   startswith(callee->getId()->value, "std.openmp.for_par.0"))) {
+  auto ci = cast<IdExpr>(transform(callee));
+  if (!ci || !startswith(ci->getValue(), "std.openmp.for_par.0")) {
     E(Error::LOOP_DECORATOR, decorator);
   }
-  std::vector<CallExpr::Arg> args;
+  std::vector<CallArg> args;
   std::string openmp;
-  std::vector<CallExpr::Arg> omp;
-  if (auto c = decorator->getCall())
-    for (auto &a : c->args) {
+  std::vector<CallArg> omp;
+  if (auto c = cast<CallExpr>(decorator))
+    for (auto &a : *c) {
       if (a.name == "openmp" ||
-          (a.name.empty() && openmp.empty() && a.value->getString())) {
-        omp = parseOpenMP(ctx->cache, a.value->getString()->getValue(),
+          (a.name.empty() && openmp.empty() && cast<StringExpr>(a.value))) {
+        omp = parseOpenMP(ctx->cache, cast<StringExpr>(a.value)->getValue(),
                           a.value->getSrcInfo());
       } else {
         args.emplace_back(a.name, transform(a.value));
@@ -249,7 +249,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) 
   auto block = N<SuiteStmt>();
   block->stmts.push_back(preamble);
   for (auto &i : items)
-    block->stmts.push_back(ir::cast<Stmt>(i));
+    block->stmts.push_back(cast<Stmt>(i));
   Stmt *loop = nullptr;
   if (!stmt->flat) {
     ctx->blockLevel++;
@@ -273,7 +273,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   if (!iter->type->getClass())
     return {true, true, nullptr, {}};
 
-  seqassert(varExpr->getId(), "bad varExpr");
+  seqassert(cast<IdExpr>(varExpr), "bad varExpr");
   std::function<int(Stmt **, const std::function<void(Stmt **)> &)> iterFn;
   iterFn = [&iterFn](Stmt **s, const std::function<void(Stmt **)> &fn) -> int {
     if (!s)
@@ -289,14 +289,16 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       return 1;
     }
   };
-  std::vector<std::string> vars{varExpr->getId()->value};
+  std::vector<std::string> vars{cast<IdExpr>(varExpr)->getValue()};
   iterFn((Stmt **)varSuite, [&](Stmt **s) {
     if (auto a = (*s)->getAssign()) {
-      if (a->rhs && a->rhs->getIndex())
-        if (a->rhs->getIndex()->expr->isId(vars[0])) {
-          vars.push_back(a->lhs->getId()->value);
+      if (a->rhs && cast<IndexExpr>(a->rhs)) {
+        auto ari = cast<IdExpr>(cast<IndexExpr>(a->rhs)->getExpr());
+        if (ari && ari->getValue() == vars[0]) {
+          vars.push_back(cast<IdExpr>(a->lhs)->getValue());
           *s = nullptr;
         }
+      }
     }
   });
   if (vars.size() > 1)
@@ -305,14 +307,14 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
     return {false, false, nullptr, {}};
 
   Stmt *preamble = nullptr;
-  auto fn = iter->getCall() ? iter->getCall()->expr->getId() : nullptr;
+  auto fn = cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->expr) : nullptr;
   auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
   std::vector<ASTNode *> block;
-  if (fn && startswith(fn->value, "statictuple")) {
-    auto &args = iter->getCall()->args[0].value->getCall()->args;
+  if (fn && startswith(fn->getValue(), "statictuple")) {
+    auto call = cast<CallExpr>((*cast<CallExpr>(iter))[0].value);
     if (vars.size() != 1)
       error("expected one item");
-    for (auto &a : args) {
+    for (auto &a : *call) {
       stmt->rhs = transform(clean_clone(a.value));
       if (auto st = stmt->rhs->type->getStatic()) {
         stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->name));
@@ -321,7 +323,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       }
       block.push_back(wrap(clone(stmt)));
     }
-  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0:1")) {
+  } else if (fn &&
+             startswith(fn->getValue(), "std.internal.types.range.staticrange.0:1")) {
     if (vars.size() != 1)
       error("expected one item");
     auto ed = fn->type->getFunc()->funcGenerics[0].type->getIntStatic()->value;
@@ -332,7 +335,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(clone(stmt)));
     }
-  } else if (fn && startswith(fn->value, "std.internal.types.range.staticrange.0")) {
+  } else if (fn &&
+             startswith(fn->getValue(), "std.internal.types.range.staticrange.0")) {
     if (vars.size() != 1)
       error("expected one item");
     auto st = fn->type->getFunc()->funcGenerics[0].type->getIntStatic()->value;
@@ -346,7 +350,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
       block.push_back(wrap(clone(stmt)));
     }
-  } else if (fn && startswith(fn->value, "std.internal.static.fn_overloads.0")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.fn_overloads.0")) {
     if (vars.size() != 1)
       error("expected one item");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
@@ -378,7 +382,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
     } else {
       error("bad call to fn_overloads");
     }
-  } else if (fn && startswith(fn->value, "std.internal.builtin.staticenumerate.0")) {
+  } else if (fn &&
+             startswith(fn->getValue(), "std.internal.builtin.staticenumerate.0")) {
     if (vars.size() != 2)
       error("expected two items");
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
@@ -389,9 +394,9 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
           auto b = N<SuiteStmt>(std::vector<Stmt *>{
               N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
                             N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
-              N<AssignStmt>(
-                  N<IdExpr>(vars[1]),
-                  N<IndexExpr>(clone(iter->getCall()->args[0].value), N<IntExpr>(i)))});
+              N<AssignStmt>(N<IdExpr>(vars[1]),
+                            N<IndexExpr>(clone((*cast<CallExpr>(iter))[0].value),
+                                         N<IntExpr>(i)))});
           block.push_back(wrap(b));
         }
       } else {
@@ -400,7 +405,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
     } else {
       error("bad call to staticenumerate");
     }
-  } else if (fn && startswith(fn->value, "std.internal.internal.vars.0")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.internal.vars.0")) {
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
@@ -421,9 +426,9 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
                           N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("str"))));
-        stmts.push_back(
-            N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
-                          N<DotExpr>(clone(iter->getCall()->args[0].value), f.name)));
+        stmts.push_back(N<AssignStmt>(
+            N<IdExpr>(vars[withIdx + 1]),
+            N<DotExpr>(clone((*cast<CallExpr>(iter))[0].value), f.name)));
         auto b = N<SuiteStmt>(stmts);
         block.push_back(wrap(b));
         idx++;
@@ -431,7 +436,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
     } else {
       error("bad call to vars");
     }
-  } else if (fn && startswith(fn->value, "std.internal.static.vars_types.0")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.vars_types.0")) {
     if (auto fna = ctx->getFunctionArgs(fn->type)) {
       auto [generics, args] = *fna;
 
@@ -489,11 +494,11 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
         return {false, false, nullptr, {}};
 
       std::string tupleVar;
-      if (!iter->getId()) {
+      if (!cast<IdExpr>(iter)) {
         tupleVar = ctx->cache->getTemporaryVar("tuple");
         preamble = N<AssignStmt>(N<IdExpr>(tupleVar), iter);
       } else {
-        tupleVar = iter->getId()->value;
+        tupleVar = cast<IdExpr>(iter)->getValue();
       }
       for (size_t i = 0; i < iter->type->getClass()->generics.size(); i++) {
         auto s = N<SuiteStmt>();

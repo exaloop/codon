@@ -287,7 +287,7 @@ public:
   /// Score is -1 if the given arguments cannot be reordered.
   /// @param known Bitmask that indicated if an argument is already provided
   ///              (partial function) or not.
-  int reorderNamedArgs(types::FuncType *func, const std::vector<CallExpr::Arg> &args,
+  int reorderNamedArgs(types::FuncType *func, const std::vector<CallArg> &args,
                        const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
                        const std::vector<char> &known = std::vector<char>());
 

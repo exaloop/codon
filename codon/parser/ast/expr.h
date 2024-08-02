@@ -124,6 +124,7 @@ template <class... TA> void E(error::Error e, ASTNode *o, const TA &...args) {
 template <class... TA> void E(error::Error e, const ASTNode &o, const TA &...args) {
   E(e, o.getSrcInfo(), args...);
 }
+using ir::cast;
 
 template <typename Derived, typename Parent> class AcceptorExtend : public Parent {
 public:
@@ -150,28 +151,14 @@ namespace codon::ast {
   using AcceptorExtend::clone;                                                         \
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
-  void accept(X &visitor) override
+  void accept(X &visitor) override;                                                    \
+  std::string toString(int) const override;                                            \
+  friend class TypecheckVisitor;                                                       \
+  template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
+  friend struct ReplacingCallbackASTVisitor
 
 // Forward declarations
-struct BinaryExpr;
-struct CallExpr;
-struct DotExpr;
-struct EllipsisExpr;
-struct IdExpr;
-struct IfExpr;
-struct IndexExpr;
-struct IntExpr;
-struct InstantiateExpr;
-struct ListExpr;
-struct NoneExpr;
-struct StarExpr;
-struct KeywordStarExpr;
-struct StmtExpr;
-struct StringExpr;
-struct TupleExpr;
-struct UnaryExpr;
 struct Stmt;
-struct SuiteStmt;
 
 /**
  * A Seq AST expression.
@@ -210,37 +197,29 @@ public:
     return out << expr.toString();
   }
 
-  /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual bool isId(const std::string &val) const { return false; }
-  virtual BinaryExpr *getBinary() { return nullptr; }
-  virtual CallExpr *getCall() { return nullptr; }
-  virtual DotExpr *getDot() { return nullptr; }
-  virtual EllipsisExpr *getEllipsis() { return nullptr; }
-  virtual IdExpr *getId() { return nullptr; }
-  virtual IfExpr *getIf() { return nullptr; }
-  virtual IndexExpr *getIndex() { return nullptr; }
-  virtual InstantiateExpr *getInstantiate() { return nullptr; }
-  virtual IntExpr *getInt() { return nullptr; }
-  virtual ListExpr *getList() { return nullptr; }
-  virtual NoneExpr *getNone() { return nullptr; }
-  virtual StarExpr *getStar() { return nullptr; }
-  virtual KeywordStarExpr *getKwStar() { return nullptr; }
-  virtual StmtExpr *getStmtExpr() { return nullptr; }
-  virtual StringExpr *getString() { return nullptr; }
-  virtual TupleExpr *getTuple() { return nullptr; }
-  virtual UnaryExpr *getUnary() { return nullptr; }
-
   bool isDone() const { return done; }
   void setDone() { done = true; }
-
-  /// @return Type name for IdExprs or instantiations.
-  std::string getTypeName();
 
   SERIALIZE(Expr, BASE(ASTNode), done);
 
 protected:
   /// Add a type to S-expression string.
   std::string wrapType(const std::string &sexpr) const;
+};
+
+template <class T> struct Items {
+  Items(std::vector<T> items) : items(std::move(items)) {}
+  const T &operator[](int i) const { return items[i]; }
+  T &operator[](int i) { return items[i]; }
+  auto begin() { return items.begin(); }
+  auto end() { return items.end(); }
+  auto begin() const { return items.begin(); }
+  auto end() const { return items.end(); }
+  auto size() const { return items.size(); }
+  bool empty() const { return items.empty(); }
+
+protected:
+  std::vector<T> items;
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).
@@ -259,25 +238,24 @@ struct Param : public codon::SrcObject {
   explicit Param(const SrcInfo &info, std::string name = "", Expr *type = nullptr,
                  Expr *defaultValue = nullptr, int generic = 0);
 
-  std::string toString(int) const;
-  Param clone(bool) const;
+  std::string getName() const { return name; }
+  Expr *getType() const { return type; }
+  Expr *getDefault() const { return defaultValue; }
+  bool isGeneric() const { return status == Generic; }
+  bool isHiddenGeneric() const { return status == HiddenGeneric; }
 
   SERIALIZE(Param, name, type, defaultValue);
+  Param clone(bool) const;
+  std::string toString(int) const;
 };
 
 /// None expression.
 /// @li None
 struct NoneExpr : public AcceptorExtend<NoneExpr, Expr> {
-  static const char NodeId;
-
   NoneExpr();
   NoneExpr(const NoneExpr &, bool);
 
-  std::string toString(int) const override;
-
-  using AcceptorExtend::getNone;
-  NoneExpr *getNone() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(NoneExpr, BASE(Expr));
   ACCEPT(ASTVisitor);
 };
@@ -285,17 +263,14 @@ struct NoneExpr : public AcceptorExtend<NoneExpr, Expr> {
 /// Bool expression (value).
 /// @li True
 struct BoolExpr : public AcceptorExtend<BoolExpr, Expr> {
-  static const char NodeId;
-
   explicit BoolExpr(bool value = false);
   BoolExpr(const BoolExpr &, bool);
 
-  std::string toString(int) const override;
+  bool getValue() const;
 
+  static const char NodeId;
   SERIALIZE(BoolExpr, BASE(Expr), value);
   ACCEPT(ASTVisitor);
-
-  bool getValue() const;
 
 private:
   bool value;
@@ -306,31 +281,25 @@ private:
 /// @li 13u
 /// @li 000_010b
 struct IntExpr : public AcceptorExtend<IntExpr, Expr> {
-  static const char NodeId;
-
   explicit IntExpr(int64_t intValue = 0);
   explicit IntExpr(const std::string &value, std::string suffix = "");
   IntExpr(const IntExpr &, bool);
 
-  std::string toString(int) const override;
-
-  IntExpr *getInt() override { return this; }
-
-  SERIALIZE(IntExpr, BASE(Expr), value, suffix, intValue);
-  ACCEPT(ASTVisitor);
-
-  std::pair<std::string, std::string> getRawData() const;
   bool hasStoredValue() const;
   int64_t getValue() const;
+  std::pair<std::string, std::string> getRawData() const;
+
+  static const char NodeId;
+  SERIALIZE(IntExpr, BASE(Expr), value, suffix, intValue);
+  ACCEPT(ASTVisitor);
 
 private:
   /// Expression value is stored as a string that is parsed during typechecking.
   std::string value;
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
-
   /// Parsed value and sign for "normal" 64-bit integers.
-  std::unique_ptr<int64_t> intValue;
+  std::optional<int64_t> intValue;
 };
 
 /// Float expression (value.suffix).
@@ -338,20 +307,17 @@ private:
 /// @li 13.15z
 /// @li e-12
 struct FloatExpr : public AcceptorExtend<FloatExpr, Expr> {
-  static const char NodeId;
-
   explicit FloatExpr(double floatValue = 0.0);
   explicit FloatExpr(const std::string &value, std::string suffix = "");
   FloatExpr(const FloatExpr &, bool);
 
-  std::string toString(int) const override;
-
-  SERIALIZE(FloatExpr, BASE(Expr), value, suffix, floatValue);
-  ACCEPT(ASTVisitor);
-
-  std::pair<std::string, std::string> getRawData() const;
   bool hasStoredValue() const;
   double getValue() const;
+  std::pair<std::string, std::string> getRawData() const;
+
+  static const char NodeId;
+  SERIALIZE(FloatExpr, BASE(Expr), value, suffix, floatValue);
+  ACCEPT(ASTVisitor);
 
 private:
   /// Expression value is stored as a string that is parsed during typechecking.
@@ -359,15 +325,13 @@ private:
   /// Number suffix (e.g. "u" for "123u").
   std::string suffix;
   /// Parsed value for 64-bit floats.
-  std::unique_ptr<double> floatValue;
+  std::optional<double> floatValue;
 };
 
 /// String expression (prefix"value").
 /// @li s'ACGT'
 /// @li "fff"
 struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
-  static const char NodeId;
-
   // Vector of {value, prefix} strings.
   struct String : public SrcObject {
     std::string value;
@@ -379,126 +343,109 @@ struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
 
     SERIALIZE(String, value, prefix, expr);
   };
-  std::vector<String> strings;
 
   explicit StringExpr(std::string value = "", std::string prefix = "");
   explicit StringExpr(std::vector<String> strings);
   StringExpr(const StringExpr &, bool);
 
-  std::string toString(int) const override;
-
-  StringExpr *getString() override { return this; }
   std::string getValue() const;
+  bool isSimple() const;
+
+  static const char NodeId;
+  SERIALIZE(StringExpr, BASE(Expr), strings);
+  ACCEPT(ASTVisitor);
+
+private:
+  std::vector<String> strings;
 
   void unpack();
   std::vector<String> unpackFString(const std::string &) const;
+  auto begin() { return strings.begin(); }
+  auto end() { return strings.end(); }
 
-  SERIALIZE(StringExpr, BASE(Expr), strings);
-  ACCEPT(ASTVisitor);
+  friend class ScopingVisitor;
 };
 
 /// Identifier expression (value).
 struct IdExpr : public AcceptorExtend<IdExpr, Expr> {
-  static const char NodeId;
-
-  std::string value;
-
-  explicit IdExpr(std::string value);
+  explicit IdExpr(std::string value = "");
   IdExpr(const IdExpr &, bool);
 
-  std::string toString(int) const override;
+  std::string getValue() const { return value; }
 
-  bool isId(const std::string &val) const override { return this->value == val; }
-  IdExpr *getId() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(IdExpr, BASE(Expr), value);
   ACCEPT(ASTVisitor);
+
+private:
+  std::string value;
+
+  void setValue(const std::string &s) { value = s; }
+
+  friend class ScopingVisitor;
 };
 
 /// Star (unpacking) expression (*what).
 /// @li *args
 struct StarExpr : public AcceptorExtend<StarExpr, Expr> {
-  static const char NodeId;
-
-  Expr *what;
-
-  explicit StarExpr(Expr *what);
+  explicit StarExpr(Expr *what = nullptr);
   StarExpr(const StarExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
 
-  StarExpr *getStar() override { return this; }
-
-  SERIALIZE(StarExpr, BASE(Expr), what);
+  static const char NodeId;
+  SERIALIZE(StarExpr, BASE(Expr), expr);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr;
 };
 
 /// KeywordStar (unpacking) expression (**what).
 /// @li **kwargs
 struct KeywordStarExpr : public AcceptorExtend<KeywordStarExpr, Expr> {
-  static const char NodeId;
-
-  Expr *what;
-
-  explicit KeywordStarExpr(Expr *what);
+  explicit KeywordStarExpr(Expr *what = nullptr);
   KeywordStarExpr(const KeywordStarExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
 
-  KeywordStarExpr *getKwStar() override { return this; }
-
-  SERIALIZE(KeywordStarExpr, BASE(Expr), what);
+  static const char NodeId;
+  SERIALIZE(KeywordStarExpr, BASE(Expr), expr);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr;
 };
 
 /// Tuple expression ((items...)).
 /// @li (1, a)
-struct TupleExpr : public AcceptorExtend<TupleExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-
+struct TupleExpr : public AcceptorExtend<TupleExpr, Expr>, Items<Expr *> {
   explicit TupleExpr(std::vector<Expr *> items = {});
   TupleExpr(const TupleExpr &, bool);
 
-  std::string toString(int) const override;
-
-  TupleExpr *getTuple() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(TupleExpr, BASE(Expr), items);
   ACCEPT(ASTVisitor);
 };
 
 /// List expression ([items...]).
 /// @li [1, 2]
-struct ListExpr : public AcceptorExtend<ListExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-
+struct ListExpr : public AcceptorExtend<ListExpr, Expr>, Items<Expr *> {
   explicit ListExpr(std::vector<Expr *> items = {});
   ListExpr(const ListExpr &, bool);
 
-  std::string toString(int) const override;
-
-  ListExpr *getList() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(ListExpr, BASE(Expr), items);
   ACCEPT(ASTVisitor);
 };
 
 /// Set expression ({items...}).
 /// @li {1, 2}
-struct SetExpr : public AcceptorExtend<SetExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-
+struct SetExpr : public AcceptorExtend<SetExpr, Expr>, Items<Expr *> {
   explicit SetExpr(std::vector<Expr *> items = {});
   SetExpr(const SetExpr &, bool);
 
-  std::string toString(int) const override;
-
+  static const char NodeId;
   SERIALIZE(SetExpr, BASE(Expr), items);
   ACCEPT(ASTVisitor);
 };
@@ -506,16 +453,11 @@ struct SetExpr : public AcceptorExtend<SetExpr, Expr> {
 /// Dictionary expression ({(key: value)...}).
 /// Each (key, value) pair is stored as a TupleExpr.
 /// @li {'s': 1, 't': 2}
-struct DictExpr : public AcceptorExtend<DictExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-
+struct DictExpr : public AcceptorExtend<DictExpr, Expr>, Items<Expr *> {
   explicit DictExpr(std::vector<Expr *> items = {});
   DictExpr(const DictExpr &, bool);
 
-  std::string toString(int) const override;
-
+  static const char NodeId;
   SERIALIZE(DictExpr, BASE(Expr), items);
   ACCEPT(ASTVisitor);
 };
@@ -524,8 +466,6 @@ struct DictExpr : public AcceptorExtend<DictExpr, Expr> {
 /// @li [i for i in j]
 /// @li (f + 1 for j in k if j for f in j)
 struct GeneratorExpr : public AcceptorExtend<GeneratorExpr, Expr> {
-  static const char NodeId;
-
   /// Generator kind: normal generator, list comprehension, set comprehension.
   enum GeneratorKind {
     Generator,
@@ -535,180 +475,172 @@ struct GeneratorExpr : public AcceptorExtend<GeneratorExpr, Expr> {
     DictGenerator
   };
 
-  GeneratorKind kind;
-  Stmt *loops;
-
+  GeneratorExpr() : kind(Generator), loops(nullptr) {}
   GeneratorExpr(Cache *cache, GeneratorKind kind, Expr *expr,
                 std::vector<Stmt *> loops);
   GeneratorExpr(Cache *cache, Expr *key, Expr *expr, std::vector<Stmt *> loops);
   GeneratorExpr(const GeneratorExpr &, bool);
 
-  std::string toString(int) const override;
-
   int loopCount() const;
   Stmt *getFinalSuite() const;
   Expr *getFinalExpr();
-  void setFinalExpr(Expr *);
-  void setFinalStmt(Stmt *);
 
+  static const char NodeId;
   SERIALIZE(GeneratorExpr, BASE(Expr), kind, loops);
   ACCEPT(ASTVisitor);
 
 private:
+  GeneratorKind kind;
+  Stmt *loops;
+
   Stmt **getFinalStmt();
+  void setFinalExpr(Expr *);
+  void setFinalStmt(Stmt *);
   void formCompleteStmt(const std::vector<Stmt *> &);
+
+  friend class TranslateVisitor;
 };
 
 /// Conditional expression [cond if ifexpr else elsexpr].
 /// @li 1 if a else 2
 struct IfExpr : public AcceptorExtend<IfExpr, Expr> {
-  static const char NodeId;
-
-  Expr *cond, *ifexpr, *elsexpr;
-
-  IfExpr(Expr *cond, Expr *ifexpr, Expr *elsexpr);
+  IfExpr(Expr *cond = nullptr, Expr *ifexpr = nullptr, Expr *elsexpr = nullptr);
   IfExpr(const IfExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getCond() const { return cond; }
+  Expr *getIf() const { return ifexpr; }
+  Expr *getElse() const { return elsexpr; }
 
-  IfExpr *getIf() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(IfExpr, BASE(Expr), cond, ifexpr, elsexpr);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *cond, *ifexpr, *elsexpr;
 };
 
 /// Unary expression [op expr].
 /// @li -56
 struct UnaryExpr : public AcceptorExtend<UnaryExpr, Expr> {
-  static const char NodeId;
-
-  std::string op;
-  Expr *expr;
-
-  UnaryExpr(std::string op, Expr *expr);
+  UnaryExpr(std::string op = "", Expr *expr = nullptr);
   UnaryExpr(const UnaryExpr &, bool);
 
-  std::string toString(int) const override;
+  std::string getOp() const { return op; }
+  Expr *getExpr() const { return expr; }
 
-  UnaryExpr *getUnary() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(UnaryExpr, BASE(Expr), op, expr);
   ACCEPT(ASTVisitor);
+
+private:
+  std::string op;
+  Expr *expr;
 };
 
 /// Binary expression [lexpr op rexpr].
 /// @li 1 + 2
 /// @li 3 or 4
 struct BinaryExpr : public AcceptorExtend<BinaryExpr, Expr> {
-  static const char NodeId;
+  BinaryExpr(Expr *lexpr = nullptr, std::string op = "", Expr *rexpr = nullptr,
+             bool inPlace = false);
+  BinaryExpr(const BinaryExpr &, bool);
 
+  std::string getOp() const { return op; }
+  Expr *getLhs() const { return lexpr; }
+  Expr *getRhs() const { return rexpr; }
+  bool isInPlace() const { return inPlace; }
+
+  static const char NodeId;
+  SERIALIZE(BinaryExpr, BASE(Expr), op, lexpr, rexpr);
+  ACCEPT(ASTVisitor);
+
+private:
   std::string op;
   Expr *lexpr, *rexpr;
 
   /// True if an expression modifies lhs in-place (e.g. a += b).
   bool inPlace;
-
-  BinaryExpr(Expr *lexpr, std::string op, Expr *rexpr, bool inPlace = false);
-  BinaryExpr(const BinaryExpr &, bool);
-
-  std::string toString(int) const override;
-
-  BinaryExpr *getBinary() override { return this; }
-
-  SERIALIZE(BinaryExpr, BASE(Expr), op, lexpr, rexpr);
-  ACCEPT(ASTVisitor);
 };
 
 /// Chained binary expression.
 /// @li 1 <= x <= 2
 struct ChainBinaryExpr : public AcceptorExtend<ChainBinaryExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<std::pair<std::string, Expr *>> exprs;
-
-  ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs);
+  ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs = {});
   ChainBinaryExpr(const ChainBinaryExpr &, bool);
 
-  std::string toString(int) const override;
-
+  static const char NodeId;
   SERIALIZE(ChainBinaryExpr, BASE(Expr), exprs);
   ACCEPT(ASTVisitor);
+
+private:
+  std::vector<std::pair<std::string, Expr *>> exprs;
+};
+
+struct Pipe {
+  std::string op;
+  Expr *expr;
+
+  SERIALIZE(Pipe, op, expr);
+  Pipe clone(bool) const;
 };
 
 /// Pipe expression [(op expr)...].
 /// op is either "" (only the first item), "|>" or "||>".
 /// @li a |> b ||> c
-struct PipeExpr : public AcceptorExtend<PipeExpr, Expr> {
+struct PipeExpr : public AcceptorExtend<PipeExpr, Expr>, Items<Pipe> {
+  explicit PipeExpr(std::vector<Pipe> items = {});
+  PipeExpr(const PipeExpr &, bool);
+
   static const char NodeId;
+  SERIALIZE(PipeExpr, BASE(Expr), items);
+  ACCEPT(ASTVisitor);
 
-  struct Pipe {
-    std::string op;
-    Expr *expr;
-
-    SERIALIZE(Pipe, op, expr);
-    Pipe clone(bool) const;
-  };
-
-  std::vector<Pipe> items;
+private:
   /// Output type of a "prefix" pipe ending at the index position.
   /// Example: for a |> b |> c, inTypes[1] is typeof(a |> b).
   std::vector<types::TypePtr> inTypes;
 
-  explicit PipeExpr(std::vector<Pipe> items);
-  PipeExpr(const PipeExpr &, bool);
-
-  std::string toString(int) const override;
   void validate() const;
-
-  SERIALIZE(PipeExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
 };
 
 /// Index expression (expr[index]).
 /// @li a[5]
 struct IndexExpr : public AcceptorExtend<IndexExpr, Expr> {
-  static const char NodeId;
-
-  Expr *expr, *index;
-
-  IndexExpr(Expr *expr, Expr *index);
+  IndexExpr(Expr *expr = nullptr, Expr *index = nullptr);
   IndexExpr(const IndexExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
+  Expr *getIndex() const { return index; }
 
-  IndexExpr *getIndex() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(IndexExpr, BASE(Expr), expr, index);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr, *index;
+};
+
+struct CallArg : public codon::SrcObject {
+  std::string name;
+  Expr *value;
+
+  CallArg(const std::string &name = "", Expr *value = nullptr);
+  CallArg(const SrcInfo &info, const std::string &name, Expr *value);
+  CallArg(Expr *value);
+
+  std::string getName() const { return name; }
+  Expr *getExpr() const { return value; }
+  operator Expr *() const { return value; }
+
+  SERIALIZE(CallArg, name, value);
+  CallArg clone(bool) const;
 };
 
 /// Call expression (expr((name=value)...)).
 /// @li a(1, b=2)
-struct CallExpr : public AcceptorExtend<CallExpr, Expr> {
-  static const char NodeId;
-
+struct CallExpr : public AcceptorExtend<CallExpr, Expr>, Items<CallArg> {
   /// Each argument can have a name (e.g. foo(1, b=5))
-  struct Arg : public codon::SrcObject {
-    std::string name;
-    Expr *value;
-
-
-    Arg(const SrcInfo &info, const std::string &name, Expr *value);
-    Arg(const std::string &name, Expr *value);
-    Arg(Expr *value);
-
-    SERIALIZE(Arg, name, value);
-    Arg clone(bool) const;
-  };
-
-  Expr *expr;
-  std::vector<Arg> args;
-  /// True if type-checker has processed and re-ordered args.
-  bool ordered;
-  /// True if the call is partial
-  bool partial = false;
-
-  CallExpr(Expr *expr, std::vector<Arg> args = {});
+  CallExpr(Expr *expr = nullptr, std::vector<CallArg> args = {});
   /// Convenience constructors
   CallExpr(Expr *expr, std::vector<Expr *> args);
   template <typename... Ts>
@@ -716,32 +648,41 @@ struct CallExpr : public AcceptorExtend<CallExpr, Expr> {
       : CallExpr(expr, std::vector<Expr *>{arg, args...}) {}
   CallExpr(const CallExpr &, bool);
 
-  void validate() const;
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
+  bool isOrdered() const { return ordered; }
+  bool isPartial() const { return partial; }
 
-  CallExpr *getCall() override { return this; }
-
-  SERIALIZE(CallExpr, BASE(Expr), expr, args, ordered, partial);
+  static const char NodeId;
+  SERIALIZE(CallExpr, BASE(Expr), expr, items, ordered, partial);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr;
+  /// True if type-checker has processed and re-ordered args.
+  bool ordered;
+  /// True if the call is partial
+  bool partial = false;
+
+  void validate() const;
 };
 
 /// Dot (access) expression (expr.member).
 /// @li a.b
 struct DotExpr : public AcceptorExtend<DotExpr, Expr> {
-  static const char NodeId;
-
-  Expr *expr;
-  std::string member;
-
+  DotExpr() : expr(nullptr), member() {}
   DotExpr(Expr *expr, std::string member);
   DotExpr(const DotExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
+  std::string getMember() const { return member; }
 
-  DotExpr *getDot() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(DotExpr, BASE(Expr), expr, member);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr;
+  std::string member;
 };
 
 /// Slice expression (st:stop:step).
@@ -749,67 +690,71 @@ struct DotExpr : public AcceptorExtend<DotExpr, Expr> {
 /// @li s::-1
 /// @li :::
 struct SliceExpr : public AcceptorExtend<SliceExpr, Expr> {
-  static const char NodeId;
-
-  /// Any of these can be nullptr to account for partial slices.
-  Expr *start, *stop, *step;
-
-  SliceExpr(Expr *start, Expr *stop, Expr *step);
+  SliceExpr(Expr *start = nullptr, Expr *stop = nullptr, Expr *step = nullptr);
   SliceExpr(const SliceExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getStart() const { return start; }
+  Expr *getStop() const { return stop; }
+  Expr *getStep() const { return step; }
 
+  static const char NodeId;
   SERIALIZE(SliceExpr, BASE(Expr), start, stop, step);
   ACCEPT(ASTVisitor);
+
+private:
+  /// Any of these can be nullptr to account for partial slices.
+  Expr *start, *stop, *step;
 };
 
 /// Ellipsis expression.
 /// @li ...
 struct EllipsisExpr : public AcceptorExtend<EllipsisExpr, Expr> {
-  static const char NodeId;
-
   /// True if this is a target partial argument within a PipeExpr.
   /// If true, this node will be handled differently during the type-checking stage.
-  enum EllipsisType { PIPE, PARTIAL, STANDALONE } mode;
+  enum EllipsisType { PIPE, PARTIAL, STANDALONE };
 
   explicit EllipsisExpr(EllipsisType mode = STANDALONE);
   EllipsisExpr(const EllipsisExpr &, bool);
 
-  std::string toString(int) const override;
+  EllipsisType getMode() const { return mode; }
 
-  EllipsisExpr *getEllipsis() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(EllipsisExpr, BASE(Expr), mode);
   ACCEPT(ASTVisitor);
+
+private:
+  EllipsisType mode;
+
+  friend class PipeExpr;
 };
 
 /// Lambda expression (lambda (vars)...: expr).
 /// @li lambda a, b: a + b
 struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<std::string> vars;
-  Expr *expr;
-
-  LambdaExpr(std::vector<std::string> vars, Expr *expr);
+  LambdaExpr(std::vector<std::string> vars = {}, Expr *expr = nullptr);
   LambdaExpr(const LambdaExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
+  auto begin() { return vars.begin(); }
+  auto end() { return vars.end(); }
+  auto size() const { return vars.size(); }
 
+  static const char NodeId;
   SERIALIZE(LambdaExpr, BASE(Expr), vars, expr);
   ACCEPT(ASTVisitor);
+
+private:
+  std::vector<std::string> vars;
+  Expr *expr;
 };
 
 /// Yield (send to generator) expression.
 /// @li (yield)
 struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
-  static const char NodeId;
-
   YieldExpr();
   YieldExpr(const YieldExpr &, bool);
 
-  std::string toString(int) const override;
-
+  static const char NodeId;
   SERIALIZE(YieldExpr, BASE(Expr));
   ACCEPT(ASTVisitor);
 };
@@ -817,34 +762,36 @@ struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
 /// Assignment (walrus) expression (var := expr).
 /// @li a := 5 + 3
 struct AssignExpr : public AcceptorExtend<AssignExpr, Expr> {
-  static const char NodeId;
-
-  Expr *var, *expr;
-
-  AssignExpr(Expr *var, Expr *expr);
+  AssignExpr(Expr *var = nullptr, Expr *expr = nullptr);
   AssignExpr(const AssignExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getVar() const { return var; }
+  Expr *getExpr() const { return expr; }
 
+  static const char NodeId;
   SERIALIZE(AssignExpr, BASE(Expr), var, expr);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *var, *expr;
 };
 
 /// Range expression (start ... end).
 /// Used only in match-case statements.
 /// @li 1 ... 2
 struct RangeExpr : public AcceptorExtend<RangeExpr, Expr> {
-  static const char NodeId;
-
-  Expr *start, *stop;
-
-  RangeExpr(Expr *start, Expr *stop);
+  RangeExpr(Expr *start = nullptr, Expr *stop = nullptr);
   RangeExpr(const RangeExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getStart() const { return start; }
+  Expr *getStop() const { return stop; }
 
+  static const char NodeId;
   SERIALIZE(RangeExpr, BASE(Expr), start, stop);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *start, *stop;
 };
 
 /// The following nodes are created during typechecking.
@@ -854,55 +801,54 @@ struct RangeExpr : public AcceptorExtend<RangeExpr, Expr> {
 /// (to support short-circuiting).
 /// @li (a = 1; b = 2; a + b)
 struct StmtExpr : public AcceptorExtend<StmtExpr, Expr> {
-  static const char NodeId;
-
-  std::vector<Stmt *> stmts;
-  Expr *expr;
-
+  StmtExpr(Stmt *stmt = nullptr, Expr *expr = nullptr);
   StmtExpr(std::vector<Stmt *> stmts, Expr *expr);
-  StmtExpr(Stmt *stmt, Expr *expr);
   StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr);
   StmtExpr(const StmtExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
+  auto begin() { return stmts.begin(); }
+  auto end() { return stmts.end(); }
+  auto size() const { return stmts.size(); }
 
-  StmtExpr *getStmtExpr() override { return this; }
-
+  static const char NodeId;
   SERIALIZE(StmtExpr, BASE(Expr), expr);
   ACCEPT(ASTVisitor);
+
+private:
+  std::vector<Stmt *> stmts;
+  Expr *expr;
 };
 
 /// Static tuple indexing expression (expr[index]).
 /// @li (1, 2, 3)[2]
-struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr> {
-  static const char NodeId;
-
-  Expr *typeExpr;
-  std::vector<Expr *> typeParams;
-
-  InstantiateExpr(Expr *typeExpr, std::vector<Expr *> typeParams);
+struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr>, Items<Expr*> {
+  InstantiateExpr(Expr *expr = nullptr, std::vector<Expr *> typeParams = {});
   /// Convenience constructor for a single type parameter.
-  InstantiateExpr(Expr *typeExpr, Expr *typeParam);
+  InstantiateExpr(Expr *expr, Expr *typeParam);
   InstantiateExpr(const InstantiateExpr &, bool);
 
-  std::string toString(int) const override;
+  Expr *getExpr() const { return expr; }
 
-  InstantiateExpr *getInstantiate() override { return this; }
-
-  SERIALIZE(InstantiateExpr, BASE(Expr), typeExpr, typeParams);
+  static const char NodeId;
+  SERIALIZE(InstantiateExpr, BASE(Expr), expr, items);
   ACCEPT(ASTVisitor);
+
+private:
+  Expr *expr;
 };
 
 #undef ACCEPT
 
+bool isId(Expr *e, const std::string &s);
 char getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
 
 template <>
-struct fmt::formatter<codon::ast::CallExpr::Arg> : fmt::formatter<std::string_view> {
+struct fmt::formatter<codon::ast::CallArg> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::CallExpr::Arg &p,
+  auto format(const codon::ast::CallArg &p,
               FormatContext &ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "({}{})",
                           p.name.empty() ? "" : fmt::format("{} = ", p.name),

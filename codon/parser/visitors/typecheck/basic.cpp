@@ -46,13 +46,13 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 ///   `f"{x+1=}"` -> `str.cat("x+1=", str(x+1))`
 
 void TypecheckVisitor::visit(StringExpr *expr) {
-  if (expr->strings.size() == 1 && expr->strings[0].prefix.empty()) {
+  if (expr->isSimple()) {
     unify(expr->type,
           std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
     expr->setDone();
   } else {
     std::vector<Expr *> items;
-    for (auto &p : expr->strings) {
+    for (auto &p : *expr) {
       if (p.expr) {
         items.emplace_back(p.expr);
       } else if (!p.prefix.empty()) {

@@ -234,7 +234,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 Expr *TypecheckVisitor::transformType(Expr *expr, bool allowTypeOf) {
   auto oldTypeOf = ctx->allowTypeOf;
   ctx->allowTypeOf = allowTypeOf;
-  if (expr && expr->getNone()) {
+  if (cast<NoneExpr>(expr)) {
     auto ne = N<IdExpr>("NoneType");
     ne->setSrcInfo(expr->getSrcInfo());
     expr = ne;
@@ -389,7 +389,7 @@ void TypecheckVisitor::visit(CommentStmt *stmt) { stmt->setDone(); }
 types::FuncTypePtr
 TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &member,
                                  const std::vector<types::TypePtr> &args) {
-  std::vector<CallExpr::Arg> callArgs;
+  std::vector<CallArg> callArgs;
   for (auto &a : args) {
     callArgs.emplace_back("", N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a);
@@ -404,7 +404,7 @@ TypecheckVisitor::findBestMethod(const ClassTypePtr &typ, const std::string &mem
 types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
                                                     const std::string &member,
                                                     const std::vector<Expr *> &args) {
-  std::vector<CallExpr::Arg> callArgs;
+  std::vector<CallArg> callArgs;
   for (auto &a : args)
     callArgs.emplace_back("", a);
   auto methods = ctx->findMethod(typ.get(), member, false);
@@ -417,7 +417,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(const ClassTypePtr &typ,
 types::FuncTypePtr TypecheckVisitor::findBestMethod(
     const ClassTypePtr &typ, const std::string &member,
     const std::vector<std::pair<std::string, types::TypePtr>> &args) {
-  std::vector<CallExpr::Arg> callArgs;
+  std::vector<CallArg> callArgs;
   for (auto &[n, a] : args) {
     callArgs.emplace_back(n, N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a);
@@ -430,7 +430,7 @@ types::FuncTypePtr TypecheckVisitor::findBestMethod(
 /// Check if a function can be called with the given arguments.
 /// See @c reorderNamedArgs for details.
 int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
-                              const std::vector<CallExpr::Arg> &args,
+                              const std::vector<CallArg> &args,
                               const types::ClassTypePtr &part) {
   std::vector<types::TypePtr> partialArgs;
   if (part && part->getPartial()) {
@@ -539,7 +539,7 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
 std::vector<types::FuncTypePtr>
 TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<types::FuncTypePtr> &methods,
-                                      const std::vector<CallExpr::Arg> &args) {
+                                      const std::vector<CallArg> &args) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
   for (const auto &mi : methods) {
@@ -589,8 +589,8 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
       else
         *expr = transform(N<CallExpr>(
             N<DotExpr>(N<IdExpr>("__internal__"), "class_ctr"),
-            std::vector<CallExpr::Arg>{{"T", (*expr)},
-                                       {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
+            std::vector<CallArg>{{"T", (*expr)},
+                                 {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
     }
   }
 
@@ -604,7 +604,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
   if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return false; // argument type not yet known.
   } else if (expectedClass && expectedClass->name == "Generator" &&
-             exprClass->name != expectedClass->name && !(*expr)->getEllipsis()) {
+             exprClass->name != expectedClass->name && !cast<EllipsisExpr>(*expr)) {
     // Note: do not do this in pipelines (TODO: why?)
     *expr = transform(N<CallExpr>(N<DotExpr>((*expr), "__iter__")));
   } else if (expectedClass && expectedClass->name == "float" &&
@@ -631,11 +631,11 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
              !(expectedClass && expectedClass->name == "Function")) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
-    seqassert((*expr)->getId() ||
-                  ((*expr)->getStmtExpr() && (*expr)->getStmtExpr()->expr->getId()),
+    seqassert(cast<IdExpr>(*expr) || (cast<StmtExpr>(*expr) &&
+                                      cast<IdExpr>(cast<StmtExpr>(*expr)->getExpr())),
               "bad partial function: {}", *(*expr));
     auto p = partializeFunction((*expr)->type->getFunc());
-    if (auto se = (*expr)->getStmtExpr()) {
+    if (auto se = cast<StmtExpr>(*expr)) {
       *expr = transform(N<StmtExpr>(se->stmts, p));
     } else {
       *expr = p;
@@ -683,7 +683,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
     for (size_t i = 1; i < mros.size(); i++) {
       auto t = ctx->instantiate(mros[i], exprClass);
       if (t->unify(expectedClass.get(), nullptr) >= 0) {
-        if (!(*expr)->isId("")) {
+        if (!isId(*expr, "")) {
           *expr = castToSuperClass((*expr), expectedClass, true);
         } else { // Just checking can this be done
           (*expr)->type = expectedClass;
@@ -717,14 +717,14 @@ Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassTypePtr superTyp,
 std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
 TypecheckVisitor::unpackTupleTypes(Expr *expr) {
   auto ret = std::make_shared<std::vector<std::pair<std::string, types::TypePtr>>>();
-  if (auto tup = expr->origExpr->getTuple()) {
-    for (auto &a : tup->items) {
+  if (auto tup = cast<TupleExpr>(expr->origExpr)) {
+    for (auto &a : *tup) {
       a = transform(a);
       if (!a->getType()->getClass())
         return nullptr;
       ret->emplace_back("", a->getType());
     }
-  } else if (auto kw = expr->origExpr->getCall()) {
+  } else if (auto kw = cast<CallExpr>(expr->origExpr)) {
     auto val = ctx->getType(kw->type)->getClass();
     if (!val || val->name != "NamedTuple" || !val->generics[1].type->getClass() ||
         !val->generics[0].type->canRealize())
@@ -763,10 +763,10 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 
 types::TypePtr TypecheckVisitor::getType(Expr *e) {
   auto t = e->type;
-  if (e->isId("type"))
+  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == "type")
     return t;
-  if (auto i = e->getInstantiate())
-    if (i->typeExpr->isId("type"))
+  if (auto i = cast<InstantiateExpr>(e))
+    if (cast<IdExpr>(i->getExpr()) && cast<IdExpr>(i->getExpr())->getValue() == "type")
       return t;
 
   while (t && t->is("type"))

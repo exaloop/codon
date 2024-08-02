@@ -58,13 +58,13 @@ tlist(c, e) <- e (_ c _ e)* (_ <c>)?
 
 statements <- ((_ EOL)* statement)+ {
   auto s = asts(Suite, LOC, VS.transform<Stmt*>());
-  s->getSuite()->shallow_flatten();
+  cast<SuiteStmt>(s)->shallow_flatten();
   return s;
 }
 statement <- SAMEDENT compound_stmt / SAMEDENT simple_stmt
 simple_stmt <- tlist(';', small_stmt) _ EOL {
   auto s = asts(Suite, LOC, VS.transform<Stmt*>());
-  s->getSuite()->shallow_flatten();
+  cast<SuiteStmt>(s)->shallow_flatten();
   return s;
 }
 small_stmt <-
@@ -402,12 +402,12 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
     std::tie(generics, baseClasses) = ac<pair<vector<Param>, vector<Expr*>>>(V1);
   vector<Param> args;
   auto suite = (SuiteStmt*)(asts(Suite, LOC));
-  auto s = const_cast<SuiteStmt*>(ac_stmt(VS.size() == 3 ? V2 : V1)->getSuite());
+  auto s = cast<SuiteStmt>(ac_stmt(VS.size() == 3 ? V2 : V1));
   seqassertn(s, "not a suite");
   for (auto &i: s->stmts) {
-    if (auto a = const_cast<AssignStmt*>(i->getAssign()))
-      if (a->lhs->getId()) {
-        args.push_back(Param(a->getSrcInfo(), a->lhs->getId()->value, std::move(a->type), std::move(a->rhs)));
+    if (auto a = cast<AssignStmt>(i))
+      if (auto ei = cast<IdExpr>(a->lhs)) {
+        args.push_back(Param(a->getSrcInfo(), ei->getValue(), a->type, a->rhs));
         continue;
       }
     suite->stmts.push_back(i);
@@ -474,9 +474,9 @@ lambdef <-
   }
 pipe <-
   / disjunction (_ <'|>' / '||>'> _ disjunction)+ {
-    vector<PipeExpr::Pipe> v;
+    vector<Pipe> v;
     for (int i = 0; i < VS.size(); i++)
-      v.push_back(PipeExpr::Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
+      v.push_back(Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
     return aste(Pipe, LOC, std::move(v));
   }
   / disjunction { return ac_expr(V0); }
@@ -550,7 +550,7 @@ primary <- atom (_ primary_tail)* {
     else if (p.first == 1)
       e = aste(Call, LOC, e, ac_expr(p.second));
     else if (p.first == 2)
-      e = aste(Call, LOC, e, ac<vector<CallExpr::Arg>>(p.second));
+      e = aste(Call, LOC, e, ac<vector<CallArg>>(p.second));
     else
       e = aste(Index, LOC, e, ac_expr(p.second));
   }
@@ -559,7 +559,7 @@ primary <- atom (_ primary_tail)* {
 primary_tail <-
   / '.' _ NAME { return pair(0, V0); }
   / genexp { return pair(1, V0); }
-  / arguments { return pair(2, VS.size() ? V0 : any(vector<CallExpr::Arg>{})); }
+  / arguments { return pair(2, VS.size() ? V0 : any(vector<CallArg>{})); }
   / slices { return pair(3, V0); }
 slices <- '[' _ tlist(',', slice) _ ']' { return wrap_tuple(CTX, VS, LOC); }
 slice <-
@@ -573,7 +573,6 @@ slice_part <- expression? { return VS.size() ? V0 : make_any<Expr*>(nullptr); }
 atom <-
   / STRING (SPACE STRING)* {
     auto e = aste(String, LOC, VS.transform<StringExpr::String>());
-    ((StringExpr*)e)->unpack();
     return e;
   }
   / id { return ac_expr(V0); }
@@ -628,7 +627,7 @@ dict <- '{' _ tlist(',', double_starred_kvpair)? _ '}' {
 dictcomp <- '{' _ kvpair SPACE for_if_clauses _ '}' {
   auto p = ac<Expr*>(V0);
   return aste(Generator,
-    LOC, CTX.cache, p->getTuple()->items[0], p->getTuple()->items[1], ac<std::vector<Stmt*>>(V1)
+    LOC, CTX.cache, (*cast<TupleExpr>(p))[0], (*cast<TupleExpr>(p))[1], ac<std::vector<Stmt*>>(V1)
   );
 }
 double_starred_kvpair <-
@@ -677,37 +676,37 @@ named_expression <-
   }
   / expression !(_ ':=') { return ac_expr(V0); }
 arguments <- '(' _ tlist(',', args)? _ ')' {
-  vector<CallExpr::Arg> result;
+  vector<CallArg> result;
   for (auto &v: VS)
-    for (auto &i: ac<vector<CallExpr::Arg>>(v))
+    for (auto &i: ac<vector<CallArg>>(v))
       result.push_back(i);
   return result;
 }
 args <- (simple_args (_ ',' _ kwargs)? / kwargs) {
-  auto args = ac<vector<CallExpr::Arg>>(V0);
+  auto args = ac<vector<CallArg>>(V0);
   if (VS.size() > 1) {
-    auto v = ac<vector<CallExpr::Arg>>(V1);
+    auto v = ac<vector<CallArg>>(V1);
     args.insert(args.end(), v.begin(), v.end());
   }
   return args;
 }
 simple_args <- list(',', (starred_expression / named_expression !(_ '='))) {
-  return vmap(VS, [](auto &i) { return CallExpr::Arg(ac_expr(i)); });
+  return vmap(VS, [](auto &i) { return CallArg(ac_expr(i)); });
 }
 starred_expression <- '*' _ expression { return aste(Star, LOC, ac_expr(V0)); }
 kwargs <-
   / list(',', kwarg_or_starred) _ ',' _ list(',', kwarg_or_double_starred) {
-    return VS.transform<CallExpr::Arg>();
+    return VS.transform<CallArg>();
   }
-  / list(',', kwarg_or_starred) { return VS.transform<CallExpr::Arg>(); }
-  / list(',', kwarg_or_double_starred) { return VS.transform<CallExpr::Arg>(); }
+  / list(',', kwarg_or_starred) { return VS.transform<CallArg>(); }
+  / list(',', kwarg_or_double_starred) { return VS.transform<CallArg>(); }
 kwarg_or_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
-  / starred_expression { return CallExpr::Arg(ac_expr(V0)); }
+  / NAME _ '=' _ expression { return CallArg(LOC, ac<string>(V0), ac_expr(V1)); }
+  / starred_expression { return CallArg(ac_expr(V0)); }
 kwarg_or_double_starred <-
-  / NAME _ '=' _ expression { return CallExpr::Arg(LOC, ac<string>(V0), ac_expr(V1)); }
+  / NAME _ '=' _ expression { return CallArg(LOC, ac<string>(V0), ac_expr(V1)); }
   / '**' _ expression {
-    return CallExpr::Arg(aste(KeywordStar, LOC, ac_expr(V0)));
+    return CallArg(aste(KeywordStar, LOC, ac_expr(V0)));
   }
 id <- NAME { return aste(Id, LOC, ac<string>(V0)); }
 INT <- (BININT / HEXINT / DECINT) { return string(VS.sv()); }

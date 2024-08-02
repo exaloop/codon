@@ -33,7 +33,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   bool mustUpdate = stmt->isUpdate();
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
-  if (stmt->rhs && stmt->rhs->getBinary() && stmt->rhs->getBinary()->inPlace) {
+  if (stmt->rhs && cast<BinaryExpr>(stmt->rhs) &&
+      cast<BinaryExpr>(stmt->rhs)->isInPlace()) {
     // Update case: a += b
     seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
     mustUpdate = true;
@@ -41,12 +42,13 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   resultStmt = transformAssignment(stmt, mustUpdate);
   if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
     stmt->eraseAttribute(Attr::ExprDominatedUsed);
-    seqassert(stmt->lhs->getId(), "dominated bad assignment");
+    auto lei = cast<IdExpr>(stmt->lhs);
+    seqassert(lei, "dominated bad assignment");
     resultStmt = transform(N<SuiteStmt>(
         resultStmt,
-        N<AssignStmt>(N<IdExpr>(format("{}.__used__",
-                                       ctx->cache->rev(stmt->lhs->getId()->value))),
-                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+        N<AssignStmt>(
+            N<IdExpr>(format("{}.__used__", ctx->cache->rev(lei->getValue()))),
+            N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
 
@@ -55,23 +57,23 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 ///   `del a`    -> `a = type(a)()` and remove `a` from the context
 ///   `del a[x]` -> `a.__delitem__(x)`
 void TypecheckVisitor::visit(DelStmt *stmt) {
-  if (auto idx = stmt->expr->getIndex()) {
+  if (auto idx = cast<IndexExpr>(stmt->expr)) {
     resultStmt = N<ExprStmt>(
         transform(N<CallExpr>(N<DotExpr>(idx->expr, "__delitem__"), idx->index)));
-  } else if (auto ei = stmt->expr->getId()) {
+  } else if (auto ei = cast<IdExpr>(stmt->expr)) {
     // Assign `a` to `type(a)()` to mark it for deletion
     auto tA = N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)));
     resultStmt = N<AssignStmt>(transform(stmt->expr), transform(tA));
     resultStmt->getAssign()->setUpdate();
 
     // Allow deletion *only* if the binding is dominated
-    auto val = ctx->find(ei->value);
+    auto val = ctx->find(ei->getValue());
     if (!val)
-      E(Error::ID_NOT_FOUND, ei, ei->value);
+      E(Error::ID_NOT_FOUND, ei, ei->getValue());
     if (ctx->getScope() != val->scope)
-      E(Error::DEL_NOT_ALLOWED, ei, ei->value);
-    ctx->remove(ei->value);
-    ctx->remove(ctx->cache->rev(ei->value));
+      E(Error::DEL_NOT_ALLOWED, ei, ei->getValue());
+    ctx->remove(ei->getValue());
+    ctx->remove(ctx->cache->rev(ei->getValue()));
   } else {
     E(Error::DEL_INVALID, stmt);
   }
@@ -84,26 +86,25 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 ///   `a: type` = b -> @c AssignStmt
 ///   `a = b`       -> @c AssignStmt or @c UpdateStmt (see below)
 Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
-  if (auto idx = stmt->lhs->getIndex()) {
+  if (auto idx = cast<IndexExpr>(stmt->lhs)) {
     // Case: a[x] = b
     seqassert(!stmt->type, "unexpected type annotation");
-    if (auto b = stmt->rhs->getBinary()) {
-      if (mustExist && b->inPlace && !b->rexpr->getId()) {
+    if (auto b = cast<BinaryExpr>(stmt->rhs)) {
+      if (mustExist && b->isInPlace() && !cast<IdExpr>(b->getRhs())) {
         auto var = ctx->cache->getTemporaryVar("assign");
-        seqassert(stmt->rhs->getBinary(), "not a bin");
         return transform(N<SuiteStmt>(
             N<AssignStmt>(N<IdExpr>(var), idx->index),
             N<ExprStmt>(N<CallExpr>(
                 N<DotExpr>(idx->expr, "__setitem__"), N<IdExpr>(var),
-                N<BinaryExpr>(N<IndexExpr>(clone(idx->expr), N<IdExpr>(var)), b->op,
-                              b->rexpr, true)))));
+                N<BinaryExpr>(N<IndexExpr>(clone(idx->expr), N<IdExpr>(var)),
+                              b->getOp(), b->getRhs(), true)))));
       }
     }
     return transform(N<ExprStmt>(
         N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, stmt->rhs)));
   }
 
-  if (auto dot = stmt->lhs->getDot()) {
+  if (auto dot = cast<DotExpr>(stmt->lhs)) {
     // Case: a.x = b
     seqassert(!stmt->type, "unexpected type annotation");
     dot->expr = transform(dot->expr, true);
@@ -118,11 +119,11 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
 
   // Case: a (: t) = b
-  auto e = stmt->lhs->getId();
+  auto e = cast<IdExpr>(stmt->lhs);
   if (!e)
     E(Error::ASSIGN_INVALID, stmt->lhs);
 
-  auto val = ctx->find(e->value);
+  auto val = ctx->find(e->getValue());
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
@@ -137,7 +138,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
         return u;
       return s;
     } else {
-      E(Error::ASSIGN_LOCAL_REFERENCE, e, e->value, e->getSrcInfo());
+      E(Error::ASSIGN_LOCAL_REFERENCE, e, e->getValue(), e->getSrcInfo());
     }
   }
 
@@ -145,7 +146,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   stmt->type = transformType(stmt->type, false);
 
   // Generate new canonical variable name for this assignment and add it to the context
-  auto canonical = ctx->generateCanonicalName(e->value);
+  auto canonical = ctx->generateCanonicalName(e->getValue());
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
   assign->lhs->cloneAttributesFrom(stmt->lhs);
 
@@ -165,7 +166,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
                                         assign->lhs->type, ctx->getScope());
   val->setSrcInfo(getSrcInfo());
-  ctx->add(e->value, val);
+  ctx->add(e->getValue(), val);
   ctx->addAlwaysVisible(val);
 
   if (assign->rhs) { // not a declaration!
@@ -296,12 +297,12 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
   // Case: in-place updates (e.g., `a += b`).
   // They are stored as `Update(a, Binary(a + b, inPlace=true))`
 
-  auto bin = stmt->rhs->getBinary();
-  if (bin && bin->inPlace) {
-    bin->lexpr = transform(bin->lexpr);
-    bin->rexpr = transform(bin->rexpr);
+  auto bin = cast<BinaryExpr>(stmt->rhs);
+  if (bin && bin->isInPlace()) {
+    bin->lexpr = transform(bin->getLhs());
+    bin->rexpr = transform(bin->getRhs());
 
-    if (bin->lexpr->type->getClass() && bin->rexpr->type->getClass()) {
+    if (bin->getLhs()->type->getClass() && bin->getRhs()->type->getClass()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
         unify(stmt->rhs->type, transformed->type);
         return {true, transformed};
@@ -317,24 +318,26 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
 
   // Case: atomic min/max operations.
   // Note: check only `a = min(a, b)`; does NOT check `a = min(b, a)`
-  auto lhsClass = stmt->lhs->getType()->getClass();
-  auto call = stmt->rhs->getCall();
-  if (stmt->isAtomicUpdate() && call && stmt->lhs->getId() &&
-      (call->expr->isId("min") || call->expr->isId("max")) && call->args.size() == 2) {
-    call->args[0].value = transform(call->args[0].value);
-    if (call->args[0].value->isId(std::string(stmt->lhs->getId()->value))) {
+  auto lhsClass = stmt->lhs->getClassType();
+  auto call = cast<CallExpr>(stmt->rhs);
+  auto lei = cast<IdExpr>(stmt->lhs);
+  auto cei = call ? cast<IdExpr>(call->expr) : nullptr;
+  if (stmt->isAtomicUpdate() && call && lei && cei &&
+      (cei->getValue() == "min" || cei->getValue() == "max") && call->size() == 2) {
+    (*call)[0].value = transform((*call)[0].value);
+    if (cast<IdExpr>((*call)[0].value) &&
+        cast<IdExpr>((*call)[0].value)->getValue() == lei->getValue()) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
       auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
                                             ctx->getType("Ptr"), {lhsClass});
-      call->args[1].value = transform(call->args[1].value);
-      auto rhsTyp = call->args[1].value->getType()->getClass();
+      (*call)[1].value = transform((*call)[1].value);
+      auto rhsTyp = (*call)[1].value->getType()->getClass();
       if (auto method = findBestMethod(
-              lhsClass, format("__atomic_{}__", call->expr->getId()->value),
-              {ptrTyp, rhsTyp})) {
+              lhsClass, format("__atomic_{}__", cei->getValue()), {ptrTyp, rhsTyp})) {
         return {true,
                 transform(N<CallExpr>(N<IdExpr>(method->ast->name),
                                       N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),
-                                      call->args[1].value))};
+                                      (*call)[1].value))};
       }
     }
   }

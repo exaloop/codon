@@ -273,7 +273,8 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
       if (idx == cm.size())
         cm.push_back(key);
       // if (idx)
-      //   LOG("--> {}: realize {}: {} / {}", getSrcInfo(), ft->debugString(2), idx, key);
+      //   LOG("--> {}: realize {}: {} / {}", getSrcInfo(), ft->debugString(2), idx,
+      //   key);
       ft->index = idx;
     }
   }
@@ -360,7 +361,7 @@ Cache::Class::ClassField *TypeContext::findMember(const types::ClassTypePtr &typ
 }
 
 int TypeContext::reorderNamedArgs(types::FuncType *func,
-                                  const std::vector<CallExpr::Arg> &args,
+                                  const std::vector<CallArg> &args,
                                   const ReorderDoneFn &onDone,
                                   const ReorderErrorFn &onError,
                                   const std::vector<char> &known) {
@@ -373,8 +374,8 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   // 0. Find *args and **kwargs
   // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
-  bool partial = !args.empty() && args.back().value->getEllipsis() &&
-                 args.back().value->getEllipsis()->mode != EllipsisExpr::PIPE &&
+  bool partial = !args.empty() && cast<EllipsisExpr>(args.back().value) &&
+                 cast<EllipsisExpr>(args.back().value)->getMode() != EllipsisExpr::PIPE &&
                  args.back().name.empty();
 
   int starArgIndex = -1, kwstarArgIndex = -1;

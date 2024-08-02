@@ -59,9 +59,9 @@ void ScopingVisitor::transformScope(Stmt *s) {
 
 void ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
   seqassert(e, "bad call to transformAdding");
-  if (e->getIndex() || e->getDot()) {
+  if (cast<IndexExpr>(e) || cast<DotExpr>(e)) {
     transform(e);
-  } else if (e->getList() || e->getTuple() || e->getId()) {
+  } else if (cast<ListExpr>(e) || cast<TupleExpr>(e) || cast<IdExpr>(e)) {
     SetInScope s1(&(ctx->adding), true);
     SetInScope s2(&(ctx->root), root);
     transform(e);
@@ -73,19 +73,20 @@ void ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
 void ScopingVisitor::visit(IdExpr *expr) {
   // LOG("-------> {} {} {}", expr->getSrcInfo(), *expr, ctx->getScope());
   if (ctx->adding && ctx->tempScope)
-    ctx->renames.back()[expr->value] = ctx->cache->getTemporaryVar(expr->value);
+    ctx->renames.back()[expr->getValue()] =
+        ctx->cache->getTemporaryVar(expr->getValue());
   for (size_t i = ctx->renames.size(); i-- > 0;)
-    if (auto v = in(ctx->renames[i], expr->value)) {
-      expr->value = *v;
+    if (auto v = in(ctx->renames[i], expr->getValue())) {
+      expr->setValue(*v);
       break;
     }
-  if (visitName(expr->value, ctx->adding, ctx->root, expr->getSrcInfo())) {
+  if (visitName(expr->getValue(), ctx->adding, ctx->root, expr->getSrcInfo())) {
     expr->setAttribute(Attr::ExprDominatedUndefCheck);
   }
 }
 
 void ScopingVisitor::visit(StringExpr *expr) {
-  for (auto &s : expr->strings)
+  for (auto &s : *expr)
     if (s.prefix == "#f") {
       auto [expr, format] = parseExpr(ctx->cache, s.value, s.getSrcInfo());
       if (!format.empty()) {
@@ -103,32 +104,32 @@ void ScopingVisitor::visit(StringExpr *expr) {
 void ScopingVisitor::visit(GeneratorExpr *expr) {
   SetInScope s(&(ctx->tempScope), true);
   ctx->renames.emplace_back();
-  transform(expr->loops);
+  transform(expr->getFinalSuite());
   ctx->renames.pop_back();
 }
 
 void ScopingVisitor::visit(IfExpr *expr) {
-  transform(expr->cond);
-
-  transformScope(expr->ifexpr);
-  transformScope(expr->elsexpr);
+  transform(expr->getCond());
+  transformScope(expr->getIf());
+  transformScope(expr->getElse());
 }
 
 void ScopingVisitor::visit(BinaryExpr *expr) {
-  transform(expr->lexpr);
+  transform(expr->getLhs());
 
-  if (expr->op == "&&" || expr->op == "||")
-    transformScope(expr->rexpr);
+  if (expr->getOp() == "&&" || expr->getOp() == "||")
+    transformScope(expr->getRhs());
   else
-    transform(expr->rexpr);
+    transform(expr->getRhs());
 }
 
 void ScopingVisitor::visit(AssignExpr *expr) {
-  seqassert(expr->var->getId(), "only simple assignment expression are supported");
+  seqassert(cast<IdExpr>(expr->getVar()),
+            "only simple assignment expression are supported");
 
   SetInScope s(&(ctx->tempScope), false);
-  transform(expr->expr);
-  transformAdding(expr->var, expr);
+  transform(expr->getExpr());
+  transformAdding(expr->getVar(), expr);
 }
 
 void ScopingVisitor::visit(LambdaExpr *expr) {
@@ -140,13 +141,13 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
   ScopingVisitor v;
   c->scope.emplace_back(0, nullptr);
   v.ctx = c;
-  for (auto &a : expr->vars)
+  for (const auto &a : *expr)
     v.visitName(a, true, expr, expr->getSrcInfo());
   c->scope.pop_back();
 
   SuiteStmt s;
   c->scope.emplace_back(0, &s);
-  v.transform(expr->expr);
+  v.transform(expr->getExpr());
   v.processChildCaptures();
   c->scope.pop_back();
 
@@ -209,7 +210,7 @@ void ScopingVisitor::visit(ForStmt *stmt) {
   std::unordered_set<std::string> seen;
   {
     ConditionalBlock c(ctx.get(), stmt->suite);
-    if (!stmt->var->getId()) {
+    if (!cast<IdExpr>(stmt->var)) {
       auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
       auto e = N<AssignStmt>(clone(stmt->var), clone(var));
       stmt->suite = N<SuiteStmt>(e->unpack(), stmt->suite);
@@ -222,19 +223,19 @@ void ScopingVisitor::visit(ForStmt *stmt) {
     seen = *(ctx->scope.back().seenVars);
   }
   for (auto &var : seen)
-    if (var != stmt->var->getId()->value)
+    if (var != cast<IdExpr>(stmt->var)->getValue())
       findDominatingBinding(var);
 
   transformScope(stmt->elseSuite);
 }
 
 void ScopingVisitor::visit(ImportStmt *stmt) {
-  if (ctx->functionScope && stmt->what && stmt->what->isId("*"))
+  if (ctx->functionScope && stmt->what && isId(stmt->what, "*"))
     E(error::Error::IMPORT_STAR, stmt);
 
   // dylib C imports
-  if (stmt->from && stmt->from->isId("C") && stmt->what->getDot())
-    transform(stmt->what->getDot()->expr);
+  if (stmt->from && isId(stmt->from, "C") && cast<DotExpr>(stmt->what))
+    transform(cast<DotExpr>(stmt->what)->getExpr());
 
   if (stmt->as.empty()) {
     if (stmt->what)
@@ -300,7 +301,7 @@ void ScopingVisitor::visit(YieldExpr *expr) {
 void ScopingVisitor::visit(FunctionStmt *stmt) {
   bool isOverload = false;
   for (auto &d : stmt->decorators)
-    if (d->isId("overload")) {
+    if (isId(d, "overload")) {
       isOverload = true;
     }
   if (!isOverload)
@@ -376,7 +377,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
 void ScopingVisitor::processChildCaptures() {
   for (auto &n : ctx->childCaptures) {
     if (auto i = in(ctx->map, n.first)) {
-      if (i->back().binding && ir::cast<ClassStmt>(i->back().binding))
+      if (i->back().binding && cast<ClassStmt>(i->back().binding))
         continue;
     }
     if (!findDominatingBinding(n.first)) {
@@ -397,9 +398,9 @@ void ScopingVisitor::switchToUpdate(ASTNode *binding, const std::string &name,
       binding->eraseAttribute(Attr::ExprDominatedUsed);
     binding->setAttribute(gotUsedVar ? Attr::ExprDominatedUsed : Attr::ExprDominated);
   }
-  if (ir::cast<FunctionStmt>(binding))
+  if (cast<FunctionStmt>(binding))
     E(error::Error::ID_INVALID_BIND, binding, name);
-  if (ir::cast<ClassStmt>(binding))
+  if (cast<ClassStmt>(binding))
     E(error::Error::ID_INVALID_BIND, binding, name);
 }
 
@@ -411,7 +412,7 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, ASTNode *ro
     if (auto p = in(ctx->captures, name)) {
       if (*p == BindingsAttribute::CaptureType::Read)
         E(error::Error::ASSIGN_LOCAL_REFERENCE, ctx->firstSeen[name], name, src);
-      else if (root) {// global, nonlocal
+      else if (root) { // global, nonlocal
         switchToUpdate(root, name, false);
       }
     } else {
@@ -433,7 +434,7 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, ASTNode *ro
       }
       ctx->map[name].emplace_front(src, ctx->getScope(), root);
       // LOG("add: {} | {} := {} {}", src, name, ctx->getScope(),
-          // root ? root->toString(-1) : "-");
+      // root ? root->toString(-1) : "-");
     }
   } else {
     if (!in(ctx->firstSeen, name))
@@ -462,7 +463,8 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, ASTNode *ro
     }
 
     // Variable binding check for variables that are defined within conditional blocks
-    // LOG("{} : var {}: {} vs {}", getSrcInfo(), name, val->accessChecked, ctx->getScope());
+    // LOG("{} : var {}: {} vs {}", getSrcInfo(), name, val->accessChecked,
+    // ctx->getScope());
     if (!val->accessChecked.empty()) {
       bool checked = false;
       for (size_t ai = val->accessChecked.size(); ai-- > 0;) {
@@ -514,7 +516,8 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
       seqassert(ctx->scope[0].id == 0, "bad scoping");
       // Find the longest block prefix between the binding and the current common scope.
       commonScope = std::min(commonScope, int(i->scope.size()));
-      while (commonScope > 0 && i->scope[commonScope - 1] != ctx->scope[commonScope - 1].id)
+      while (commonScope > 0 &&
+             i->scope[commonScope - 1] != ctx->scope[commonScope - 1].id)
         commonScope--;
       // if (commonScope < int(ctx->scope.size()) && commonScope != p)
       //   break;

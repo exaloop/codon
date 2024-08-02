@@ -149,8 +149,8 @@ public:
   void visit(FloatExpr *expr) override {}
   void visit(StringExpr *expr) override {}
   void visit(IdExpr *expr) override {}
-  void visit(StarExpr *expr) override { transform(expr->what); }
-  void visit(KeywordStarExpr *expr) override { transform(expr->what); }
+  void visit(StarExpr *expr) override { transform(expr->expr); }
+  void visit(KeywordStarExpr *expr) override { transform(expr->expr); }
   void visit(TupleExpr *expr) override {
     for (auto &i : expr->items)
       transform(i);
@@ -192,7 +192,7 @@ public:
   }
   void visit(CallExpr *expr) override {
     transform(expr->expr);
-    for (auto &a : expr->args)
+    for (auto &a : expr->items)
       transform(a.value);
   }
   void visit(DotExpr *expr) override { transform(expr->expr); }
@@ -213,8 +213,8 @@ public:
     transform(expr->stop);
   }
   void visit(InstantiateExpr *expr) override {
-    transform(expr->typeExpr);
-    for (auto &e : expr->typeParams)
+    transform(expr->expr);
+    for (auto &e : expr->items)
       transform(e);
   }
   void visit(StmtExpr *expr) override {
@@ -341,8 +341,8 @@ public:
  */
 struct ReplacingCallbackASTVisitor : public CallbackASTVisitor<Expr *, Stmt *> {
 public:
-  void visit(StarExpr *expr) override { expr->what = transform(expr->what); }
-  void visit(KeywordStarExpr *expr) override { expr->what = transform(expr->what); }
+  void visit(StarExpr *expr) override { expr->expr = transform(expr->expr); }
+  void visit(KeywordStarExpr *expr) override { expr->expr = transform(expr->expr); }
   void visit(TupleExpr *expr) override {
     for (auto &i : expr->items)
       i = transform(i);
@@ -384,7 +384,7 @@ public:
   }
   void visit(CallExpr *expr) override {
     expr->expr = transform(expr->expr);
-    for (auto &a : expr->args)
+    for (auto &a : expr->items)
       a.value = transform(a.value);
   }
   void visit(DotExpr *expr) override { expr->expr = transform(expr->expr); }
@@ -405,8 +405,8 @@ public:
     expr->stop = transform(expr->stop);
   }
   void visit(InstantiateExpr *expr) override {
-    expr->typeExpr = transform(expr->typeExpr);
-    for (auto &e : expr->typeParams)
+    expr->expr = transform(expr->expr);
+    for (auto &e : expr->items)
       e = transform(e);
   }
   void visit(StmtExpr *expr) override {

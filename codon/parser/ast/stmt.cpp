@@ -119,13 +119,13 @@ ACCEPT_IMPL(AssignStmt, ASTVisitor);
 /// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
 Stmt *AssignStmt::unpack() const {
   std::vector<Expr *> leftSide;
-  if (auto et = lhs->getTuple()) {
+  if (auto et = cast<TupleExpr>(lhs)) {
     // Case: (a, b) = ...
-    for (auto &i : et->items)
+    for (auto *i : *et)
       leftSide.push_back(i);
-  } else if (auto el = lhs->getList()) {
+  } else if (auto el = cast<ListExpr>(lhs)) {
     // Case: [a, b] = ...
-    for (auto &i : el->items)
+    for (auto *i : *el)
       leftSide.push_back(i);
   } else {
     // Case: simple assignment (a = b, a.x = b, or a[x] = b)
@@ -136,7 +136,7 @@ Stmt *AssignStmt::unpack() const {
   auto srcPos = rhs;
   SuiteStmt *block = cache->NS<SuiteStmt>(this);
   auto rhs = this->rhs;
-  if (!rhs->getId()) {
+  if (!cast<IdExpr>(rhs)) {
     // Store any non-trivial right-side expression into a variable
     auto var = cache->getTemporaryVar("assign");
     rhs = cache->NS<IdExpr>(this->rhs, var);
@@ -146,7 +146,7 @@ Stmt *AssignStmt::unpack() const {
   // Process assignments until the fist StarExpr (if any)
   size_t st = 0;
   for (; st < leftSide.size(); st++) {
-    if (leftSide[st]->getStar())
+    if (cast<StarExpr>(leftSide[st]))
       break;
     // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
     auto rightSide =
@@ -158,7 +158,7 @@ Stmt *AssignStmt::unpack() const {
     block->stmts.push_back(ns);
   }
   // Process StarExpr (if any) and the assignments that follow it
-  if (st < leftSide.size() && leftSide[st]->getStar()) {
+  if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
     auto rightSide = cache->NS<IndexExpr>(
         rhs, ast::clone(rhs),
@@ -168,7 +168,7 @@ Stmt *AssignStmt::unpack() const {
                                  ? nullptr
                                  : cache->NS<IntExpr>(rhs, -leftSide.size() + st + 1),
                              nullptr));
-    auto aa = AssignStmt(leftSide[st]->getStar()->what, rightSide);
+    auto aa = AssignStmt(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
     aa.cache = cache;
     auto ns = aa.unpack();
     block->stmts.push_back(ns);
@@ -176,7 +176,7 @@ Stmt *AssignStmt::unpack() const {
     // Process remaining assignments. They will use negative indices (-1, -2 etc.)
     // because we do not know how big is StarExpr
     for (; st < leftSide.size(); st++) {
-      if (leftSide[st]->getStar())
+      if (cast<StarExpr>(leftSide[st]))
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
       rightSide = cache->NS<IndexExpr>(
           rhs, ast::clone(rhs), cache->NS<IntExpr>(rhs, -int(leftSide.size() - st)));
@@ -256,7 +256,7 @@ std::string WhileStmt::toString(int indent) const {
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 
 ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
-                 std::vector<CallExpr::Arg> ompArgs)
+                 std::vector<CallArg> ompArgs)
     : AcceptorExtend(), var(var), iter(iter), suite(SuiteStmt::wrap(suite)),
       elseSuite(SuiteStmt::wrap(elseSuite)), decorator(decorator),
       ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
@@ -360,16 +360,16 @@ std::string ImportStmt::toString(int indent) const {
 void ImportStmt::validate() const {
   if (from) {
     Expr *e = from;
-    while (auto d = e->getDot())
-      e = d->expr;
-    if (!from->isId("C") && !from->isId("python")) {
-      if (!e->getId())
+    while (auto d = cast<DotExpr>(e))
+      e = d->getExpr();
+    if (!isId(from, "C") && !isId(from, "python")) {
+      if (!cast<IdExpr>(e))
         E(Error::IMPORT_IDENTIFIER, e);
       if (!args.empty())
         E(Error::IMPORT_FN, args[0]);
       if (ret)
         E(Error::IMPORT_FN, ret);
-      if (what && !what->getId())
+      if (what && !cast<IdExpr>(what))
         E(Error::IMPORT_IDENTIFIER, what);
     }
     if (!isFunction && !args.empty())
@@ -511,29 +511,29 @@ std::string FunctionStmt::signature() const {
 void FunctionStmt::parseDecorators() {
   std::vector<Expr *> newDecorators;
   for (auto &d : decorators) {
-    if (d->isId(Attr::Attribute)) {
+    if (isId(d, Attr::Attribute)) {
       if (decorators.size() != 1)
         E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Attribute);
       setAttribute(Attr::Attribute);
-    } else if (d->isId(Attr::LLVM)) {
+    } else if (isId(d, Attr::LLVM)) {
       setAttribute(Attr::LLVM);
-    } else if (d->isId(Attr::Python)) {
+    } else if (isId(d, Attr::Python)) {
       if (decorators.size() != 1)
         E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Python);
       setAttribute(Attr::Python);
-    } else if (d->isId(Attr::Internal)) {
+    } else if (isId(d, Attr::Internal)) {
       setAttribute(Attr::Internal);
-    } else if (d->isId(Attr::HiddenFromUser)) {
+    } else if (isId(d, Attr::HiddenFromUser)) {
       setAttribute(Attr::HiddenFromUser);
-    } else if (d->isId(Attr::Atomic)) {
+    } else if (isId(d, Attr::Atomic)) {
       setAttribute(Attr::Atomic);
-    } else if (d->isId(Attr::Property)) {
+    } else if (isId(d, Attr::Property)) {
       setAttribute(Attr::Property);
-    } else if (d->isId(Attr::StaticMethod)) {
+    } else if (isId(d, Attr::StaticMethod)) {
       setAttribute(Attr::StaticMethod);
-    } else if (d->isId(Attr::ForceRealize)) {
+    } else if (isId(d, Attr::ForceRealize)) {
       setAttribute(Attr::ForceRealize);
-    } else if (d->isId(Attr::C)) {
+    } else if (isId(d, Attr::C)) {
       setAttribute(Attr::C);
     } else {
       newDecorators.emplace_back(d);
@@ -572,7 +572,7 @@ size_t FunctionStmt::getKwStarArgs() const {
 std::string FunctionStmt::getDocstr() {
   if (auto s = suite->firstInBlock()) {
     if (auto e = s->getExpr()) {
-      if (auto ss = e->expr->getString())
+      if (auto ss = cast<StringExpr>(e->expr))
         return ss->getValue();
     }
   }
@@ -603,7 +603,7 @@ public:
     return result = v.result;
   }
   void visit(IdExpr *expr) override {
-    if (expr->value == what)
+    if (expr->getValue() == what)
       result = true;
   }
 };
@@ -636,8 +636,8 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
       staticBaseClasses(std::move(staticBaseClasses)) {
   for (auto &b : baseClasses) {
-    if (b->getIndex() && b->getIndex()->expr->isId("Static")) {
-      this->staticBaseClasses.push_back(b->getIndex()->index);
+    if (cast<IndexExpr>(b) && isId(cast<IndexExpr>(b)->getExpr(), "Static")) {
+      this->staticBaseClasses.push_back(cast<IndexExpr>(b)->getIndex());
     } else {
       this->baseClasses.push_back(b);
     }
@@ -705,62 +705,62 @@ void ClassStmt::parseDecorators() {
       {"from_gpu_new", false}, {"tuplesize", true}};
 
   for (auto &d : decorators) {
-    if (d->isId("deduce")) {
+    if (isId(d, "deduce")) {
       setAttribute(Attr::ClassDeduce);
-    } else if (d->isId("__notuple__")) {
+    } else if (isId(d, "__notuple__")) {
       setAttribute(Attr::ClassNoTuple);
-    } else if (d->isId("dataclass")) {
-    } else if (auto c = d->getCall()) {
-      if (c->expr->isId(Attr::Tuple)) {
+    } else if (isId(d, "dataclass")) {
+    } else if (auto c = cast<CallExpr>(d)) {
+      if (isId(c->getExpr(), Attr::Tuple)) {
         setAttribute(Attr::Tuple);
         for (auto &m : tupleMagics)
           m.second = true;
-      } else if (!c->expr->isId("dataclass")) {
-        E(Error::CLASS_BAD_DECORATOR, c->expr);
+      } else if (!isId(c->getExpr(), "dataclass")) {
+        E(Error::CLASS_BAD_DECORATOR, c->getExpr());
       } else if (hasAttribute(Attr::Tuple)) {
         E(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", Attr::Tuple);
       }
-      for (auto &a : c->args) {
-        auto b = ir::cast<BoolExpr>(a.value);
+      for (const auto &a : *c) {
+        auto b = cast<BoolExpr>(a);
         if (!b)
           E(Error::CLASS_NONSTATIC_DECORATOR, a);
         char val = char(b->getValue());
-        if (a.name == "init") {
+        if (a.getName() == "init") {
           tupleMagics["new"] = val;
-        } else if (a.name == "repr") {
+        } else if (a.getName() == "repr") {
           tupleMagics["repr"] = val;
-        } else if (a.name == "eq") {
+        } else if (a.getName() == "eq") {
           tupleMagics["eq"] = tupleMagics["ne"] = val;
-        } else if (a.name == "order") {
+        } else if (a.getName() == "order") {
           tupleMagics["lt"] = tupleMagics["le"] = tupleMagics["gt"] =
               tupleMagics["ge"] = val;
-        } else if (a.name == "hash") {
+        } else if (a.getName() == "hash") {
           tupleMagics["hash"] = val;
-        } else if (a.name == "pickle") {
+        } else if (a.getName() == "pickle") {
           tupleMagics["pickle"] = tupleMagics["unpickle"] = val;
-        } else if (a.name == "python") {
+        } else if (a.getName() == "python") {
           tupleMagics["to_py"] = tupleMagics["from_py"] = val;
-        } else if (a.name == "gpu") {
+        } else if (a.getName() == "gpu") {
           tupleMagics["to_gpu"] = tupleMagics["from_gpu"] =
               tupleMagics["from_gpu_new"] = val;
-        } else if (a.name == "container") {
+        } else if (a.getName() == "container") {
           tupleMagics["iter"] = tupleMagics["getitem"] = val;
         } else {
           E(Error::CLASS_BAD_DECORATOR_ARG, a);
         }
       }
-    } else if (d->isId(Attr::Tuple)) {
+    } else if (isId(d, Attr::Tuple)) {
       if (hasAttribute(Attr::Tuple))
         E(Error::CLASS_MULTIPLE_DECORATORS, d, Attr::Tuple);
       setAttribute(Attr::Tuple);
       for (auto &m : tupleMagics) {
         m.second = true;
       }
-    } else if (d->isId(Attr::Extend)) {
+    } else if (isId(d, Attr::Extend)) {
       setAttribute(Attr::Extend);
       if (decorators.size() != 1)
         E(Error::CLASS_SINGLE_DECORATOR, decorators[decorators[0] == d], Attr::Extend);
-    } else if (d->isId(Attr::Internal)) {
+    } else if (isId(d, Attr::Internal)) {
       setAttribute(Attr::Internal);
     } else {
       E(Error::CLASS_BAD_DECORATOR, d);
@@ -794,14 +794,14 @@ bool ClassStmt::isClassVar(const Param &p) {
     return false;
   if (!p.type)
     return true;
-  if (auto i = p.type->getIndex())
-    return i->expr->isId("ClassVar");
+  if (auto i = cast<IndexExpr>(p.type))
+    return isId(i->getExpr(), "ClassVar");
   return false;
 }
 std::string ClassStmt::getDocstr() {
   if (auto s = suite->firstInBlock()) {
     if (auto e = s->getExpr()) {
-      if (auto ss = e->expr->getString())
+      if (auto ss = cast<StringExpr>(e->expr))
         return ss->getValue();
     }
   }
@@ -826,10 +826,8 @@ WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *su
     : AcceptorExtend(), suite(SuiteStmt::wrap(suite)) {
   for (auto [i, j] : itemVarPairs) {
     items.push_back(i);
-    if (j) {
-      if (!j->getId())
-        throw;
-      vars.push_back(j->getId()->value);
+    if (auto je = cast<IdExpr>(j)) {
+      vars.push_back(je->getValue());
     } else {
       vars.emplace_back();
     }

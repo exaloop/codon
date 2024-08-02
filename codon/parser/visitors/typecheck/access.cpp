@@ -67,9 +67,9 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (expr->hasAttribute(Attr::ExprDominatedUndefCheck)) {
     auto controlVar = fmt::format("{}.__used__", ctx->cache->rev(val->canonicalName));
     if (ctx->find(controlVar)) {
-      auto checkStmt = N<ExprStmt>(
-          N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "undef"), N<IdExpr>(controlVar),
-                      N<StringExpr>(ctx->cache->rev(val->canonicalName))));
+      auto checkStmt = N<ExprStmt>(N<CallExpr>(
+          N<DotExpr>(N<IdExpr>("__internal__"), "undef"), N<IdExpr>(controlVar),
+          N<StringExpr>(ctx->cache->rev(val->canonicalName))));
       expr->eraseAttribute(Attr::ExprDominatedUndefCheck);
       resultExpr = transform(N<StmtExpr>(checkStmt, expr));
     }
@@ -326,18 +326,18 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
 /// @return nullptr if no transformation was made
 /// See @c getClassMember and @c getBestOverload
-Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *args) {
+Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) {
   // First flatten the imports:
   // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
   std::vector<std::string> chain;
   Expr *root = expr;
-  for (; root->getDot(); root = root->getDot()->expr)
-    chain.push_back(root->getDot()->member);
+  for (; cast<DotExpr>(root); root = cast<DotExpr>(root)->expr)
+    chain.push_back(cast<DotExpr>(root)->member);
 
   Expr *nexpr = expr;
-  if (auto id = root->getId()) {
+  if (auto id = cast<IdExpr>(root)) {
     // Case: a.bar.baz
-    chain.push_back(id->value);
+    chain.push_back(id->getValue());
     std::reverse(chain.begin(), chain.end());
     auto [pos, val] = getImport(chain);
     if (!val) {
@@ -356,11 +356,11 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *
     while (pos < chain.size())
       nexpr = N<DotExpr>(nexpr, chain[pos++]);
   }
-  if (!nexpr->getDot()) {
+  if (!cast<DotExpr>(nexpr)) {
     if (args) {
       nexpr = transform(nexpr);
-      if (auto id = nexpr->getId())
-        if (endswith(id->value, ":dispatch"))
+      if (auto id = cast<IdExpr>(nexpr))
+        if (endswith(id->getValue(), ":dispatch"))
           if (auto bestMethod = getBestOverload(id, args)) {
             auto t = id->type;
             nexpr = N<IdExpr>(bestMethod->ast->name);
@@ -371,8 +371,8 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *
       return transform(nexpr);
     }
   } else {
-    expr->expr = nexpr->getDot()->expr;
-    expr->member = nexpr->getDot()->member;
+    expr->expr = cast<DotExpr>(nexpr)->expr;
+    expr->member = cast<DotExpr>(nexpr)->member;
   }
 
   // Special case: obj.__class__
@@ -494,7 +494,7 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallExpr::Arg> *
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
 Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
-                                       std::vector<CallExpr::Arg> *args) {
+                                       std::vector<CallArg> *args) {
   auto typ = getType(expr->expr)->getClass();
   seqassert(typ, "not a class");
 
@@ -571,7 +571,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
       return nullptr; // delay!
     return transform(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
-        std::vector<CallExpr::Arg>{{"union", expr->expr},
+        std::vector<CallArg>{{"union", expr->expr},
                                    {"member", N<StringExpr>(expr->member)}}));
   }
 
@@ -599,14 +599,14 @@ TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
 /// @param args    (optional) list of class method arguments used to select the best
 ///                overload if the member is optional. nullptr if not available.
 FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
-                                              std::vector<CallExpr::Arg> *args) {
+                                              std::vector<CallArg> *args) {
   // Prepare the list of method arguments if possible
-  std::unique_ptr<std::vector<CallExpr::Arg>> methodArgs;
+  std::unique_ptr<std::vector<CallArg>> methodArgs;
 
   if (args) {
     // Case: method overloads (DotExpr)
     bool addSelf = true;
-    if (auto dot = expr->getDot()) {
+    if (auto dot = cast<DotExpr>(expr)) {
       auto cls = getType(dot->expr)->getClass();
       auto methods = ctx->findMethod(cls.get(), dot->member, false);
       if (!methods.empty() && methods.front()->ast->hasAttribute(Attr::StaticMethod))
@@ -614,11 +614,11 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     }
 
     // Case: arguments explicitly provided (by CallExpr)
-    if (addSelf && expr->getDot() && !expr->getDot()->expr->type->is("type")) {
+    if (addSelf && cast<DotExpr>(expr) && !cast<DotExpr>(expr)->expr->type->is("type")) {
       // Add `self` as the first argument
-      args->insert(args->begin(), {"", expr->getDot()->expr});
+      args->insert(args->begin(), {"", cast<DotExpr>(expr)->expr});
     }
-    methodArgs = std::make_unique<std::vector<CallExpr::Arg>>();
+    methodArgs = std::make_unique<std::vector<CallArg>>();
     for (auto &a : *args)
       methodArgs->push_back(a);
   } else {
@@ -626,10 +626,10 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     auto typeSoFar = expr->type ? getType(expr)->getClass() : nullptr;
     if (typeSoFar && typeSoFar->getFunc()) {
       // Case: arguments available from the previous type checking round
-      methodArgs = std::make_unique<std::vector<CallExpr::Arg>>();
-      if (expr->getDot() && !expr->getDot()->expr->type->is("type")) { // Add `self`
+      methodArgs = std::make_unique<std::vector<CallArg>>();
+      if (cast<DotExpr>(expr) && !cast<DotExpr>(expr)->expr->type->is("type")) { // Add `self`
         auto n = N<NoneExpr>();
-        n->setType(expr->getDot()->expr->type);
+        n->setType(cast<DotExpr>(expr)->expr->type);
         methodArgs->push_back({"", n});
       }
       for (auto &a : typeSoFar->getFunc()->getArgTypes()) {
@@ -644,15 +644,15 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (!goDispatch) {
     std::vector<FuncTypePtr> m;
     // Use the provided arguments to select the best method
-    if (auto dot = expr->getDot()) {
+    if (auto dot = cast<DotExpr>(expr)) {
       // Case: method overloads (DotExpr)
       auto methods =
           ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
       m = findMatchingMethods(getType(dot->expr)->getClass(), methods, *methodArgs);
-    } else if (auto id = expr->getId()) {
+    } else if (auto id = cast<IdExpr>(expr)) {
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
-      auto key = id->value;
+      auto key = id->getValue();
       if (endswith(key, ":dispatch"))
         key = key.substr(0, key.size() - 9);
       for (auto &m : ctx->cache->overloads[key])
@@ -678,13 +678,13 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (goDispatch) {
     // If overload is ambiguous, route through a dispatch function
     std::string name;
-    if (auto dot = expr->getDot()) {
+    if (auto dot = cast<DotExpr>(expr)) {
       auto methods =
           ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
       seqassert(!methods.empty(), "unknown method");
       name = ctx->cache->functions[methods.back()->ast->name].rootName;
     } else {
-      name = expr->getId()->value;
+      name = cast<IdExpr>(expr)->getValue();
     }
     return getDispatch(name);
   }
@@ -700,14 +700,15 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
 
-  if (auto dot = expr->getDot()) {
+  if (auto dot = cast<DotExpr>(expr)) {
     // Debug:
-    // *args = std::vector<CallExpr::Arg>(args->begin()+1, args->end());
+    // *args = std::vector<CallArg>(args->begin()+1, args->end());
     // getBestOverload(expr, args);
     E(Error::DOT_NO_ATTR_ARGS, expr, getType(dot->expr)->prettyString(), dot->member,
       argsNice);
   } else {
-    E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(expr->getId()->value), argsNice);
+    E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(cast<IdExpr>(expr)->getValue()),
+      argsNice);
   }
 
   return nullptr;

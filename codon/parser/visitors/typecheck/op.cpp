@@ -140,21 +140,23 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
 /// @return  List of CallExprs and their locations within the parent CallExpr
 ///          needed to access the ellipsis.
 /// @example `foo(bar(1, baz(...)))` returns `[{0, baz}, {1, bar}, {0, foo}]`
-std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *expr) {
-  auto call = expr->getCall();
+std::vector<std::pair<size_t, Expr *>> TypecheckVisitor::findEllipsis(Expr *expr) {
+  auto call = cast<CallExpr>(expr);
   if (!call)
     return {};
-  for (size_t ai = 0; ai < call->args.size(); ai++) {
-    if (auto el = call->args[ai].value->getEllipsis()) {
+  size_t ai = 0;
+  for (auto &a : *call) {
+    if (auto el = cast<EllipsisExpr>(a.value)) {
       if (el->mode == EllipsisExpr::PIPE)
         return {{ai, expr}};
-    } else if (call->args[ai].value->getCall()) {
-      auto v = findEllipsis(call->args[ai].value);
+    } else if (cast<CallExpr>(a.value)) {
+      auto v = findEllipsis(a.value);
       if (!v.empty()) {
         v.emplace_back(ai, expr);
         return v;
       }
     }
+    ai++;
   }
   return {};
 }
@@ -190,21 +192,21 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
   inType = getIterableType(inType);
   auto done = expr->items[0].expr->isDone();
   for (size_t pi = 1; pi < expr->items.size(); pi++) {
-    int inTypePos = -1;                    // ellipsis position
-    Expr **ec = &(expr->items[pi].expr);   // a pointer so that we can replace it
-    while (auto se = (*ec)->getStmtExpr()) // handle StmtExpr (e.g., in partial calls)
+    int inTypePos = -1;                   // ellipsis position
+    Expr **ec = &(expr->items[pi].expr);  // a pointer so that we can replace it
+    while (auto se = cast<StmtExpr>(*ec)) // handle StmtExpr (e.g., in partial calls)
       ec = &(se->expr);
 
-    if (auto call = (*ec)->getCall()) {
+    if (auto call = cast<CallExpr>(*ec)) {
       // Case: a call. Find the position of the pipe ellipsis within it
-      for (size_t ia = 0; inTypePos == -1 && ia < call->args.size(); ia++)
-        if (call->args[ia].value->getEllipsis()) {
+      for (size_t ia = 0; inTypePos == -1 && ia < call->size(); ia++)
+        if (cast<EllipsisExpr>((*call)[ia].value)) {
           inTypePos = int(ia);
         }
       // No ellipses found? Prepend it as the first argument
       if (inTypePos == -1) {
-        call->args.insert(call->args.begin(),
-                          {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)});
+        call->items.insert(call->items.begin(),
+                           {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)});
         inTypePos = 0;
       }
     } else {
@@ -216,7 +218,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     }
 
     // Set the ellipsis type
-    auto el = (*ec)->getCall()->args[inTypePos].value->getEllipsis();
+    auto el = cast<EllipsisExpr>((*cast<CallExpr>(*ec))[inTypePos].value);
     el->mode = EllipsisExpr::PIPE;
     // Don't unify unbound inType yet (it might become a generator that needs to be
     // extracted)
@@ -233,7 +235,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (layers.size() > 1) {
       // Prepend layers
       for (auto &[pos, prepend] : layers) {
-        prepend->getCall()->args[pos].value = N<EllipsisExpr>(EllipsisExpr::PIPE);
+        (*cast<CallExpr>(prepend))[pos].value = N<EllipsisExpr>(EllipsisExpr::PIPE);
         expr->items.insert(expr->items.begin() + pi++, {"|>", prepend});
       }
       // Rewind the loop (yes, the current expression will get transformed again)
@@ -267,10 +269,12 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   `foo[idx]` -> `foo.__getitem__(idx)`
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
-  if (expr->expr->isId("Static")) {
+  auto ei = cast<IdExpr>(expr->expr);
+  if (ei && ei->getValue() == "Static") {
     // Special case: static types. Ensure that static is supported
-    if (!expr->index->isId("int") && !expr->index->isId("str") &&
-        !expr->index->isId("bool"))
+    auto eii = cast<IdExpr>(expr->index);
+    if (!eii || (eii->getValue() != "int" && eii->getValue() != "str" &&
+                 eii->getValue() != "bool"))
       E(Error::BAD_STATIC_TYPE, expr->index);
     auto typ = ctx->getUnbound();
     typ->isStatic = getStaticGeneric(expr);
@@ -278,24 +282,25 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     expr->setDone();
     return;
   }
-  if (expr->expr->isId("tuple"))
-    expr->expr->getId()->value = TYPE_TUPLE;
+  if (ei && ei->getValue() == "tuple")
+    ei->setValue(TYPE_TUPLE);
   expr->expr = transform(expr->expr, true);
 
   // IndexExpr[i1, ..., iN] is internally represented as
   // IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
   std::vector<Expr *> items;
-  bool isTuple = expr->index->getTuple();
-  if (auto t = expr->index->getTuple()) {
+  bool isTuple = false;
+  if (auto t = cast<TupleExpr>(expr->index)) {
     items = t->items;
+    isTuple = true;
   } else {
     items.push_back(expr->index);
   }
   for (auto &i : items) {
-    if (i->getList() && expr->expr->type->is("type")) {
+    if (cast<ListExpr>(i) && expr->expr->type->is("type")) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
       // `Function[...]`)
-      i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), i->getList()->items);
+      i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), cast<ListExpr>(i)->items);
     }
     i = transform(i, true);
   }
@@ -332,7 +337,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 /// @example
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
-  expr->typeExpr = transformType(expr->typeExpr);
+  expr->expr = transformType(expr->expr);
   // std::shared_ptr<types::StaticType> repeats = nullptr;
   // if (expr->typeExpr->isId(TYPE_TUPLE) && !expr->typeParams.empty()) {
   //   transform(expr->typeParams[0]);
@@ -343,13 +348,13 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 
   TypePtr typ = nullptr;
   bool hasRepeats = false;
-  size_t typeParamsSize = expr->typeParams.size() - hasRepeats;
-  if (getType(expr->typeExpr)->is(TYPE_TUPLE)) {
+  size_t typeParamsSize = expr->size() - hasRepeats;
+  if (getType(expr->expr)->is(TYPE_TUPLE)) {
     typ = ctx->instantiate(generateTuple(typeParamsSize));
   } else {
-    typ = ctx->instantiate(expr->typeExpr->getSrcInfo(), getType(expr->typeExpr));
+    typ = ctx->instantiate(expr->expr->getSrcInfo(), getType(expr->expr));
   }
-  seqassert(typ->getClass(), "unknown type: {}", *(expr->typeExpr));
+  seqassert(typ->getClass(), "unknown type: {}", *(expr->expr));
 
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
@@ -357,12 +362,12 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     E(Error::GENERICS_MISMATCH, expr, ctx->cache->rev(typ->getClass()->name),
       generics.size(), typeParamsSize);
 
-  if (expr->typeExpr->isId(TYPE_CALLABLE)) {
+  if (isId(expr->expr, TYPE_CALLABLE)) {
     // Case: Callable[...] trait instantiation
     std::vector<TypePtr> types;
 
     // Callable error checking.
-    for (auto &typeParam : expr->typeParams) {
+    for (auto &typeParam : *expr) {
       typeParam = transformType(typeParam);
       if (typeParam->type->isStaticType())
         E(Error::INST_CALLABLE_STATIC, typeParam);
@@ -372,23 +377,22 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
     unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {typ}));
-  } else if (expr->typeExpr->isId(TYPE_TYPEVAR)) {
+  } else if (isId(expr->expr, TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
-    expr->typeParams[0] = transformType(expr->typeParams[0]);
+    (*expr)[0] = transformType((*expr)[0]);
     auto typ = ctx->getUnbound();
-    typ->getLink()->trait = std::make_shared<TypeTrait>(getType(expr->typeParams[0]));
+    typ->getLink()->trait = std::make_shared<TypeTrait>(getType((*expr)[0]));
     unify(expr->type, typ);
   } else {
-    for (size_t i = hasRepeats; i < expr->typeParams.size(); i++) {
-      expr->typeParams[i] = transformType(expr->typeParams[i]);
-      auto t = ctx->instantiate(expr->typeParams[i]->getSrcInfo(),
-                                getType(expr->typeParams[i]));
-      if (isUnion || expr->typeParams[i]->type->isStaticType() !=
-                         generics[i].type->isStaticType()) {
-        if (expr->typeParams[i]->getNone()) // `None` -> `NoneType`
-          expr->typeParams[i] = transformType(expr->typeParams[i]);
-        if (!expr->typeParams[i]->type->is("type"))
-          E(Error::EXPECTED_TYPE, expr->typeParams[i], "type");
+    for (size_t i = hasRepeats; i < expr->size(); i++) {
+      (*expr)[i] = transformType((*expr)[i]);
+      auto t = ctx->instantiate((*expr)[i]->getSrcInfo(), getType((*expr)[i]));
+      if (isUnion ||
+          (*expr)[i]->type->isStaticType() != generics[i].type->isStaticType()) {
+        if (cast<NoneExpr>((*expr)[i])) // `None` -> `NoneType`
+          (*expr)[i] = transformType((*expr)[i]);
+        if (!(*expr)[i]->type->is("type"))
+          E(Error::EXPECTED_TYPE, (*expr)[i], "type");
       }
       if (isUnion)
         typ->getUnion()->addType(t);
@@ -626,9 +630,9 @@ Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
   } else if (expr->op == "in") {
     return transform(N<CallExpr>(N<DotExpr>(expr->rexpr, "__contains__"), expr->lexpr));
   } else if (expr->op == "is") {
-    if (expr->lexpr->getNone() && expr->rexpr->getNone())
+    if (cast<NoneExpr>(expr->lexpr) && cast<NoneExpr>(expr->rexpr))
       return transform(N<BoolExpr>(true));
-    else if (expr->lexpr->getNone())
+    else if (cast<NoneExpr>(expr->lexpr))
       return transform(N<BinaryExpr>(expr->rexpr, "is", expr->lexpr));
   } else if (expr->op == "is not") {
     return transform(N<UnaryExpr>("!", N<BinaryExpr>(expr->lexpr, "is", expr->rexpr)));
@@ -642,7 +646,7 @@ Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   seqassert(expr->op == "is", "not an is binary expression");
 
   // Case: `is None` expressions
-  if (expr->rexpr->getNone()) {
+  if (cast<NoneExpr>(expr->rexpr)) {
     if (getType(expr->lexpr)->is("NoneType"))
       return transform(N<BoolExpr>(true));
     if (!getType(expr->lexpr)->is(TYPE_OPTIONAL)) {
@@ -849,7 +853,7 @@ TypecheckVisitor::transformStaticTupleIndex(const ClassTypePtr &tuple, Expr *exp
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
     start = i;
-  } else if (auto slice = ir::cast<SliceExpr>(index->origExpr)) {
+  } else if (auto slice = cast<SliceExpr>(index->origExpr)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->start) || !getInt(&stop, slice->stop) ||
         !getInt(&step, slice->step))

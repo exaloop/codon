@@ -198,7 +198,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         }
       }
     }
-  std::vector<CallExpr::Arg> partialArgs;
+  std::vector<CallArg> partialArgs;
   if (!captures.empty()) {
     std::vector<std::string> itemKeys;
     itemKeys.reserve(captures.size());
@@ -250,12 +250,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Handle default values
       auto defaultValue = a.defaultValue;
-      if (a.type && defaultValue && defaultValue->getNone()) {
+      if (a.type && defaultValue && cast<NoneExpr>(defaultValue)) {
         // Special case: `arg: Callable = None` -> `arg: Callable = NoneType()`
-        if (a.type->getIndex() && a.type->getIndex()->expr->isId(TYPE_CALLABLE))
+        if (cast<IndexExpr>(a.type) &&
+            isId(cast<IndexExpr>(a.type)->getExpr(), TYPE_CALLABLE))
           defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
         // Special case: `arg: type = None` -> `arg: type = NoneType`
-        if (a.type->isId("type") || a.type->isId(TYPE_TYPEVAR))
+        if (isId(a.type, "type") || isId(a.type, TYPE_TYPEVAR))
           defaultValue = N<IdExpr>("NoneType");
       }
       /// TODO: Uncomment for Python-style defaults
@@ -283,10 +284,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             generic->defaultType = getType(defType);
           }
         } else {
-          if (auto ti = ir::cast<InstantiateExpr>(a.type)) {
+          if (auto ti = cast<InstantiateExpr>(a.type)) {
             // Parse TraitVar
-            seqassert(ti->typeExpr->isId(TYPE_TYPEVAR), "not a TypeVar instantiation");
-            auto l = transformType(ti->typeParams[0])->type;
+            seqassert(isId(ti->getExpr(), TYPE_TYPEVAR), "not a TypeVar instantiation");
+            auto l = transformType((*ti)[0])->type;
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;
             else
@@ -383,7 +384,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     ret = transformType(stmt->ret, false);
     if (ret) {
       unify(baseType->generics[1].type, getType(ret));
-      if (ret->isId("Union")) {
+      if (isId(ret, "Union")) {
         baseType->generics[1].type->getUnion()->generics[0].type->getUnbound()->kind =
             LinkType::Generic;
       }
@@ -536,10 +537,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 Stmt *TypecheckVisitor::transformPythonDefinition(const std::string &name,
                                                   const std::vector<Param> &args,
                                                   Expr *ret, Stmt *codeStmt) {
-  seqassert(codeStmt && codeStmt->getExpr() && codeStmt->getExpr()->expr->getString(),
+  seqassert(codeStmt && codeStmt->getExpr() &&
+                cast<StringExpr>(codeStmt->getExpr()->expr),
             "invalid Python definition");
 
-  auto code = codeStmt->getExpr()->expr->getString()->getValue();
+  auto code = cast<StringExpr>(codeStmt->getExpr()->expr)->getValue();
   std::vector<std::string> pyargs;
   pyargs.reserve(args.size());
   for (const auto &a : args)
@@ -569,14 +571,14 @@ Stmt *TypecheckVisitor::transformPythonDefinition(const std::string &name,
 /// Note that any brace (`{` or `}`) that is not part of a block is
 /// escaped (e.g. `{` -> `{{` and `}` -> `}}`) so that @c fmt::format can process them.
 Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
-  seqassert(codeStmt && codeStmt->getExpr() && codeStmt->getExpr()->expr->getString(),
+  seqassert(codeStmt && codeStmt->getExpr() &&
+                cast<StringExpr>(codeStmt->getExpr()->expr),
             "invalid LLVM definition");
 
-  auto code = codeStmt->getExpr()->expr->getString()->getValue();
+  auto code = cast<StringExpr>(codeStmt->getExpr()->expr)->getValue();
   std::vector<Stmt *> items;
-  auto se = N<StringExpr>("");
-  std::string finalCode = se->getValue();
-  items.push_back(N<ExprStmt>(se));
+  std::string finalCode;
+  items.push_back(nullptr);
 
   // Parse LLVM code and look for expression blocks that start with `{=`
   int braceCount = 0, braceStart = 0;
@@ -605,7 +607,7 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
     E(Error::FN_BAD_LLVM, getSrcInfo());
   if (braceStart != code.size())
     finalCode += escapeFStringBraces(code, braceStart, int(code.size()) - braceStart);
-  se->strings[0].value = finalCode;
+  items[0] = N<ExprStmt>(N<StringExpr>(finalCode));
   return N<SuiteStmt>(items);
 }
 
@@ -613,9 +615,9 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 /// actually an attribute (a function with `@__attribute__`).
 std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
-  auto id = dt->getCall() ? dt->getCall()->expr : dt;
-  if (id && id->getId()) {
-    auto ci = ctx->find(id->getId()->value);
+  auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt);
+  if (id) {
+    auto ci = ctx->find(id->getValue());
     if (ci && ci->isFunc()) {
       if (auto f = in(ctx->cache->functions, ci->canonicalName)) {
         return {

@@ -135,7 +135,7 @@ std::shared_ptr<int> DocContext::find(const std::string &s) const {
 
 std::string getDocstr(Stmt *s) {
   if (auto se = s->getExpr())
-    if (auto e = se->expr->getString())
+    if (auto e = cast<StringExpr>(se->expr))
       return e->getValue();
   return "";
 }
@@ -180,7 +180,7 @@ void DocVisitor::transformModule(Stmt *stmt) {
     auto id = transform(s);
     if (id.empty())
       continue;
-    if (i < (flat.size() - 1) && ir::cast<AssignStmt>(s)) {
+    if (i < (flat.size() - 1) && cast<AssignStmt>(s)) {
       auto ds = getDocstr(flat[i + 1]);
       if (!ds.empty())
         ctx->shared->j->get(id)->set("doc", ds);
@@ -203,25 +203,25 @@ void DocVisitor::visit(IntExpr *expr) {
 }
 
 void DocVisitor::visit(IdExpr *expr) {
-  auto i = ctx->find(expr->value);
+  auto i = ctx->find(expr->getValue());
   if (!i)
-    error("unknown identifier {}", expr->value);
-  resultExpr = std::make_shared<json>(*i ? std::to_string(*i) : expr->value);
+    error("unknown identifier {}", expr->getValue());
+  resultExpr = std::make_shared<json>(*i ? std::to_string(*i) : expr->getValue());
 }
 
 void DocVisitor::visit(IndexExpr *expr) {
   std::vector<std::shared_ptr<json>> v;
-  v.push_back(transform(expr->expr));
-  if (auto tp = ir::cast<TupleExpr>(expr->index)) {
-    if (auto l = tp->items[0]->getList()) {
-      for (auto &e : l->items)
+  v.push_back(transform(expr->getExpr()));
+  if (auto tp = cast<TupleExpr>(expr->getIndex())) {
+    if (auto l = cast<ListExpr>((*tp)[0])) {
+      for (auto *e : *l)
         v.push_back(transform(e));
-      v.push_back(transform(tp->items[1]));
+      v.push_back(transform((*tp)[1]));
     } else
-      for (auto &e : tp->items)
+      for (auto *e : *tp)
         v.push_back(transform(e));
   } else {
-    v.push_back(transform(expr->index));
+    v.push_back(transform(expr->getIndex()));
   }
   resultExpr = std::make_shared<json>(v);
 }
@@ -263,9 +263,9 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
   for (auto &d : stmt->decorators)
-    if (auto e = d->getId()) {
-      j->set("attrs", std::make_shared<json>(e->value, ""));
-      isLLVM |= (e->value == "llvm");
+    if (auto e = cast<IdExpr>(d)) {
+      j->set("attrs", std::make_shared<json>(e->getValue(), ""));
+      isLLVM |= (e->getValue() == "llvm");
     }
   if (stmt->ret)
     j->set("return", transform(stmt->ret));
@@ -290,8 +290,8 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   bool isExtend = false;
   for (auto &d : stmt->decorators)
-    if (auto e = d->getId())
-      isExtend |= (e->value == "extend");
+    if (auto e = cast<IdExpr>(d))
+      isExtend |= (e->getValue() == "extend");
 
   if (isExtend) {
     j->set("type", "extension");
@@ -326,7 +326,7 @@ void DocVisitor::visit(ClassStmt *stmt) {
   std::string docstr;
   std::vector<std::string> members;
   for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
-    if (auto ff = ir::cast<FunctionStmt>(f)) {
+    if (auto ff = cast<FunctionStmt>(f)) {
       auto i = transform(f);
       if (i != "")
         members.push_back(i);
@@ -349,20 +349,22 @@ std::shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
 }
 
 void DocVisitor::visit(ImportStmt *stmt) {
-  if (stmt->from->isId("C") || stmt->from->isId("python")) {
+  if (isId(stmt->from, "C") || isId(stmt->from, "python")) {
     int id = ctx->shared->itemID++;
     std::string name, lib;
-    if (auto i = stmt->what->getId())
-      name = i->value;
-    else if (auto d = stmt->what->getDot())
-      name = d->member, lib = FormatVisitor::apply(d->expr);
+    if (auto i = cast<IdExpr>(stmt->what))
+      name = i->getValue();
+    else if (auto d = cast<DotExpr>(stmt->what))
+      name = d->getMember(), lib = FormatVisitor::apply(d->getExpr());
     else
       seqassert(false, "invalid C import statement");
     ctx->add(name, std::make_shared<int>(id));
     name = stmt->as.empty() ? name : stmt->as;
 
     auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-        {"name", name}, {"kind", "function"}, {"extern", stmt->from->getId()->value}});
+        {"name", name},
+        {"kind", "function"},
+        {"extern", cast<IdExpr>(stmt->from)->getValue()}});
     j->set("pos", jsonify(stmt->getSrcInfo()));
     std::vector<std::shared_ptr<json>> args;
     if (stmt->ret)
@@ -382,16 +384,17 @@ void DocVisitor::visit(ImportStmt *stmt) {
 
   std::vector<std::string> dirs; // Path components
   Expr *e = stmt->from;
-  while (auto d = e->getDot()) {
-    dirs.push_back(d->member);
-    e = d->expr;
+  while (auto d = cast<DotExpr>(e)) {
+    dirs.push_back(d->getMember());
+    e = d->getExpr();
   }
-  if (!e->getId() || !stmt->args.empty() || stmt->ret ||
-      (stmt->what && !stmt->what->getId()))
+  auto ee = cast<IdExpr>(e);
+  if (!ee || !stmt->args.empty() || stmt->ret ||
+      (stmt->what && !cast<IdExpr>(stmt->what)))
     error("invalid import statement");
   // We have an empty stmt->from in "from .. import".
-  if (!e->getId()->value.empty())
-    dirs.push_back(e->getId()->value);
+  if (!ee->getValue().empty())
+    dirs.push_back(ee->getValue());
   // Handle dots (e.g. .. in from ..m import x).
   seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
   for (int i = 0; i < stmt->dots - 1; i++)
@@ -417,26 +420,26 @@ void DocVisitor::visit(ImportStmt *stmt) {
 
   if (!stmt->what) {
     // TODO: implement this corner case
-  } else if (stmt->what->isId("*")) {
+  } else if (isId(stmt->what, "*")) {
     for (auto &i : *ictx)
       ctx->add(i.first, i.second.front());
   } else {
-    auto i = stmt->what->getId();
-    if (auto c = ictx->find(i->value))
-      ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
+    auto i = cast<IdExpr>(stmt->what);
+    if (auto c = ictx->find(i->getValue()))
+      ctx->add(stmt->as.empty() ? i->getValue() : stmt->as, c);
     else
-      error(stmt, "symbol '{}' not found in {}", i->value, file->path);
+      error(stmt, "symbol '{}' not found in {}", i->getValue(), file->path);
   }
 }
 
 void DocVisitor::visit(AssignStmt *stmt) {
-  auto e = ir::cast<IdExpr>(stmt->lhs);
+  auto e = cast<IdExpr>(stmt->lhs);
   if (!e)
     return;
   int id = ctx->shared->itemID++;
-  ctx->add(e->value, std::make_shared<int>(id));
+  ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"name", e->value}, {"kind", "variable"}});
+      {"name", e->getValue()}, {"kind", "variable"}});
   j->set("pos", jsonify(stmt->getSrcInfo()));
   ctx->shared->j->set(std::to_string(id), j);
   resultStmt = std::to_string(id);

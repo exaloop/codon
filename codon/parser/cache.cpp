@@ -311,7 +311,7 @@ void Cache::populatePythonModule() {
           for (auto it = oldIR->arg_begin(); it != oldIR->arg_end(); ++it) {
             args.push_back(module->Nr<ir::VarValue>(*it));
           }
-          ir::cast<ir::BodiedFunc>(oldIR)->setBody(ir::util::series(
+          cast<ir::BodiedFunc>(oldIR)->setBody(ir::util::series(
               ir::util::call(functions[fnn].realizations.begin()->second->ir, args)));
         }
       }

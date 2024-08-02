@@ -143,7 +143,7 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
   return g;
 }
 
-std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
+std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
                                        const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
@@ -152,7 +152,7 @@ std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
     errors.emplace_back(line, col, msg);
   };
-  std::vector<CallExpr::Arg> result;
+  std::vector<CallArg> result;
   auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
   auto r = (*ompGrammar)["pragma"].parse_and_get_value(code.c_str(), code.size(), ctx,
                                                        result, "", log);

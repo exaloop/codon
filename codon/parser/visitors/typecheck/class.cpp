@@ -124,12 +124,12 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
         } else {
-          if (a.type->getIndex()) { // Parse TraitVar
+          if (cast<IndexExpr>(a.type)) { // Parse TraitVar
             a.type = transform(a.type);
-            auto ti = a.type->getInstantiate();
-            seqassert(ti && ti->typeExpr->isId(TYPE_TYPEVAR),
+            auto ti = cast<InstantiateExpr>(a.type);
+            seqassert(ti && isId(ti->getExpr(), TYPE_TYPEVAR),
                       "not a TypeVar instantiation: {}", *(a.type));
-            auto l = getType(ti->typeParams[0]);
+            auto l = getType((*ti)[0]);
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;
             else
@@ -155,14 +155,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     Expr *transformedTypeAst = N<IdExpr>(canonicalName);
     for (auto &a : args) {
       if (a.status == Param::Generic) {
-        if (!typeAst->getIndex()) {
+        if (!cast<IndexExpr>(typeAst)) {
           typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
           transformedTypeAst =
               N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<Expr *>{});
         }
-        typeAst->getIndex()->index->getTuple()->items.push_back(N<IdExpr>(a.name));
-        transformedTypeAst->getInstantiate()->typeParams.push_back(
-            transform(N<IdExpr>(a.name), true));
+        cast<TupleExpr>(cast<IndexExpr>(typeAst)->index)
+            ->items.push_back(N<IdExpr>(a.name));
+        cast<InstantiateExpr>(transformedTypeAst)
+            ->items.push_back(transform(N<IdExpr>(a.name), true));
       }
     }
 
@@ -195,8 +196,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           val->baseName = "";
           val->scope = {0};
           ctx->cache->addGlobal(val->canonicalName);
-          auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
-                                      a.type ? a.type->getIndex()->index : nullptr);
+          auto assign =
+              N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
+                            a.type ? cast<IndexExpr>(a.type)->getIndex() : nullptr);
           assign->setUpdate();
           varStmts.push_back(assign);
           ctx->cache->classes[canonicalName].classVars[a.name] = name;
@@ -305,10 +307,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
                 ictx->addBlock();
                 auto tv = TypecheckVisitor(ictx);
                 tv.addClassGenerics(typ, true);
-                cf = ir::cast<FunctionStmt>(tv.transform(cf));
+                cf = cast<FunctionStmt>(tv.transform(cf));
                 ictx->popBlock();
               } else {
-                cf = ir::cast<FunctionStmt>(transform(cf));
+                cf = cast<FunctionStmt>(transform(cf));
               }
               fnStmts.push_back(cf);
               ctx->popBlock();
@@ -326,8 +328,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (sp != autoDeducedInit.second) {
           auto &ds = sp->getFunction()->decorators;
           for (auto &dc : ds) {
-            if (auto d = dc->getDot()) {
-              if (d->member == "setter" and d->expr->isId(sp->getFunction()->name) &&
+            if (auto d = cast<DotExpr>(dc)) {
+              if (d->member == "setter" and isId(d->expr, sp->getFunction()->name) &&
                   sp->getFunction()->args.size() == 2) {
                 sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
                 dc = nullptr;
@@ -571,7 +573,7 @@ std::vector<Stmt *> TypecheckVisitor::getClassMethods(Stmt *s) {
     for (const auto &ss : sp->stmts)
       for (const auto &u : getClassMethods(ss))
         v.push_back(u);
-  } else if (s->getExpr() && s->getExpr()->expr->getString()) {
+  } else if (s->getExpr() && cast<StringExpr>(s->getExpr()->expr)) {
     /// Those are doc-strings, ignore them.
   } else if (!s->getFunction() && !s->getClass()) {
     E(Error::CLASS_BAD_ATTR, s);
@@ -811,8 +813,8 @@ types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) 
   seqassert(n <= cls->fields.size(), "tuple too large");
   for (size_t i = 0; i < n; i++) {
     auto gt = cls->fields[i].type->getLink();
-    t->generics.emplace_back(cls->fields[i].typeExpr->getId()->value, gt->genericName,
-                             cls->fields[i].type, gt->id, 0);
+    t->generics.emplace_back(cast<IdExpr>(cls->fields[i].typeExpr)->getValue(),
+                             gt->genericName, cls->fields[i].type, gt->id, 0);
   }
   if (generateNew && !in(funcArgTypes, n)) {
     funcArgTypes.insert(n);
