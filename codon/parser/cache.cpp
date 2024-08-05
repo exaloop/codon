@@ -22,8 +22,9 @@ Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {
 }
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
-  return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
-                     ++varCount);
+  auto n = fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,
+                       ++varCount);
+  return n;
 }
 
 std::string Cache::rev(const std::string &s) {
@@ -95,17 +96,17 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
 types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &member,
                                      const std::vector<types::TypePtr> &args) {
   auto e = N<IdExpr>(typ->name);
-  e->type = typ->getClass();
-  seqassertn(e->type, "not a class");
+  e->setType(typ->getClass());
+  seqassertn(e->getType(), "not a class");
 
-  auto f = TypecheckVisitor(typeCtx).findBestMethod(e->type->getClass(), member, args);
+  auto f = TypecheckVisitor(typeCtx).findBestMethod(e->getClassType(), member, args);
   return f;
 }
 
 ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
                                     const std::vector<types::TypePtr> &generics) {
   auto e = N<IdExpr>(type->name);
-  e->type = type;
+  e->setType(type);
   type = typeCtx->instantiateGeneric(type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(type)) {
@@ -120,8 +121,8 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
                                  const std::vector<types::TypePtr> &args,
                                  const std::vector<types::TypePtr> &generics,
                                  const types::ClassTypePtr &parentClass) {
-  auto e = N<IdExpr>(type->ast->name);
-  e->type = type;
+  auto e = N<IdExpr>(type->ast->getName());
+  e->setType(type);
   type = typeCtx->instantiate(type, parentClass)->getFunc();
   if (args.size() != type->getArgTypes().size() + 1)
     return nullptr;
@@ -154,7 +155,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
       TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
-    f = functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
+    f = functions[rtv->getFunc()->ast->getName()].realizations[rtv->realizedName()]->ir;
   }
   return f;
 }
@@ -265,7 +266,7 @@ void Cache::populatePythonModule() {
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
       TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
-    return functions[fn->ast->name].realizations[fnType->realizedName()]->ir;
+    return functions[fn->ast->getName()].realizations[fnType->realizedName()]->ir;
   };
 
   const std::string pyWrap = "std.internal.python._PyWrap";
@@ -288,15 +289,15 @@ void Cache::populatePythonModule() {
       if (auto ofnn = in(c.methods, "__to_py__")) {
         auto fnn = overloads[*ofnn].front(); // default first overload!
         auto &fna = functions[fnn].ast;
-        fna->getFunction()->suite = SuiteStmt::wrap(N<ReturnStmt>(N<CallExpr>(
-            N<IdExpr>(pyWrap + ".wrap_to_py:0"), N<IdExpr>(fna->args[0].name))));
+        cast<FunctionStmt>(fna)->suite = SuiteStmt::wrap(N<ReturnStmt>(N<CallExpr>(
+            N<IdExpr>(pyWrap + ".wrap_to_py:0"), N<IdExpr>(fna->begin()->name))));
       }
       if (auto ofnn = in(c.methods, "__from_py__")) {
         auto fnn = overloads[*ofnn].front(); // default first overload!
         auto &fna = functions[fnn].ast;
-        fna->getFunction()->suite = SuiteStmt::wrap(
+        cast<FunctionStmt>(fna)->suite = SuiteStmt::wrap(
             N<ReturnStmt>(N<CallExpr>(N<IdExpr>(pyWrap + ".wrap_from_py:0"),
-                                      N<IdExpr>(fna->args[0].name), N<IdExpr>(cn))));
+                                      N<IdExpr>(fna->begin()->name), N<IdExpr>(cn))));
       }
       for (auto &n : std::vector<std::string>{"__from_py__", "__to_py__"}) {
         auto fnn = overloads[*in(c.methods, n)].front();
@@ -519,8 +520,9 @@ void Cache::populatePythonModule() {
       auto &fna = functions[fnn];
       auto ft = typeCtx->instantiate(fna.type, tc->getClass());
       auto rtv = TypecheckVisitor(typeCtx).realize(ft);
-      auto f =
-          functions[rtv->getFunc()->ast->name].realizations[rtv->realizedName()]->ir;
+      auto f = functions[rtv->getFunc()->ast->getName()]
+                   .realizations[rtv->realizedName()]
+                   ->ir;
       if (n == "_iter")
         py.iter = f;
       else
@@ -539,13 +541,13 @@ void Cache::populatePythonModule() {
       seqassertn(in(functions, fnName), "bad name");
       auto generics = std::vector<types::TypePtr>{
           typeCtx->forceFind(".toplevel")->type,
-          std::make_shared<types::StrStaticType>(this, rev(f.ast->name)),
+          std::make_shared<types::StrStaticType>(this, rev(f.ast->getName())),
           std::make_shared<types::IntStaticType>(this, 0)};
       if (auto ir = realizeIR(functions[fnName].type, generics)) {
         LOG_USER("[py] {}: {}", "toplevel", fn);
         pyModule->functions.push_back(ir::PyFunction{rev(fn), f.ast->getDocstr(), ir,
                                                      ir::PyFunction::Type::TOPLEVEL,
-                                                     int(f.ast->args.size())});
+                                                     int(f.ast->size())});
         pyModule->functions.back().keywords = true;
       }
     }

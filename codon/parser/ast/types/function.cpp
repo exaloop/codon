@@ -21,7 +21,7 @@ int FuncType::unify(Type *typ, Unification *us) {
   int s1 = 2, s = 0;
   if (auto t = typ->getFunc()) {
     // Check if names and parents match.
-    if (ast->name != t->ast->name || index != t->index ||
+    if (ast->getName() != t->ast->getName() || index != t->index ||
         (bool(funcParent) ^ bool(t->funcParent)))
       return -1;
     if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1) {
@@ -30,7 +30,7 @@ int FuncType::unify(Type *typ, Unification *us) {
     s1 += s;
     // Check if function generics match.
     seqassert(funcGenerics.size() == t->funcGenerics.size(),
-              "generic size mismatch for {}", ast->name);
+              "generic size mismatch for {}", ast->getName());
     for (int i = 0; i < funcGenerics.size(); i++) {
       if ((s = funcGenerics[i].type->unify(t->funcGenerics[i].type.get(), us)) == -1)
         return -1;
@@ -147,9 +147,9 @@ std::string FuncType::debugString(char mode) const {
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
 
-  auto fnname = ast->name;
+  auto fnname = ast->getName();
   if (mode == 0) {
-    fnname = cache->rev(ast->name);
+    fnname = cache->rev(ast->getName());
   }
   if (mode && index)
     fnname += fmt::format("/{}", index);
@@ -171,7 +171,7 @@ std::string FuncType::realizedName() const {
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
-                     ast->name, index ? fmt::format("/{}", index) : "",
+                     ast->getName(), index ? fmt::format("/{}", index) : "",
                      s.empty() ? "" : fmt::format("[{}]", s));
 }
 

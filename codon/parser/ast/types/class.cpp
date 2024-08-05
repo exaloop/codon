@@ -146,14 +146,14 @@ std::string ClassType::debugString(char mode) const {
     auto known = getPartialMask();
     auto func = getPartialFunc();
     for (; i < known.size(); i++)
-      if (func->ast->args[i].status == Param::Normal)
+      if ((*func->ast)[i].status == Param::Normal)
         as.emplace_back(
             known[i]
                 ? generics[1].type->getClass()->generics[gi++].type->debugString(mode)
                 : "...");
-    auto fnname = func->ast->name;
+    auto fnname = func->ast->getName();
     if (mode == 0) {
-      fnname = cache->rev(func->ast->name);
+      fnname = cache->rev(func->ast->getName());
     } else if (mode == 2) {
       fnname = func->debugString(mode);
     }

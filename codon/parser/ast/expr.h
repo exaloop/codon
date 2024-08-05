@@ -8,154 +8,25 @@
 #include <variant>
 #include <vector>
 
-#include "codon/cir/attribute.h"
-#include "codon/cir/base.h"
+#include "codon/parser/ast/attr.h"
+#include "codon/parser/ast/node.h"
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 #include "codon/util/serialize.h"
 
 namespace codon::ast {
 
-const int INDENT_SIZE = 2;
-
-struct ASTVisitor;
-
-struct Attr {
-  // Function attributes
-  const static std::string Module;
-  const static std::string ParentClass;
-  const static std::string Bindings;
-  // Toplevel attributes
-  const static std::string LLVM;
-  const static std::string Python;
-  const static std::string Atomic;
-  const static std::string Property;
-  const static std::string StaticMethod;
-  const static std::string Attribute;
-  const static std::string C;
-  // Internal attributes
-  const static std::string Internal;
-  const static std::string HiddenFromUser;
-  const static std::string ForceRealize;
-  const static std::string RealizeWithoutSelf; // not internal
-  // Compiler-generated attributes
-  const static std::string CVarArg;
-  const static std::string Method;
-  const static std::string Capture;
-  const static std::string HasSelf;
-  const static std::string IsGenerator;
-  // Class attributes
-  const static std::string Extend;
-  const static std::string Tuple;
-  const static std::string ClassDeduce;
-  const static std::string ClassNoTuple;
-  // Standard library attributes
-  const static std::string Test;
-  const static std::string Overload;
-  const static std::string Export;
-  // Expression-related attributes
-  const static std::string ClassMagic;
-  const static std::string ExprSequenceItem;
-  const static std::string ExprStarSequenceItem;
-  const static std::string ExprList;
-  const static std::string ExprSet;
-  const static std::string ExprDict;
-  const static std::string ExprPartial;
-  const static std::string ExprDominated;
-  const static std::string ExprStarArgument;
-  const static std::string ExprKwStarArgument;
-  const static std::string ExprOrderedCall;
-  const static std::string ExprExternVar;
-  const static std::string ExprDominatedUndefCheck;
-  const static std::string ExprDominatedUsed;
-};
-struct ASTNode : public ir::Node {
-  static const char NodeId;
-  using ir::Node::Node;
-
-  /// See LLVM documentation.
-  static const void *nodeId() { return &NodeId; }
-  const void *dynamicNodeId() const override { return &NodeId; }
-  /// See LLVM documentation.
-  virtual bool isConvertible(const void *other) const override {
-    return other == nodeId() || ir::Node::isConvertible(other);
-  }
-
-  Cache *cache;
-
-  ASTNode() = default;
-  ASTNode(const ASTNode &);
-  virtual ~ASTNode() = default;
-
-  /// Convert a node to an S-expression.
-  virtual std::string toString(int) const = 0;
-  virtual std::string toString() const { return toString(-1); }
-
-  /// Deep copy a node.
-  virtual ASTNode *clone(bool clean) const = 0;
-  ASTNode *clone() const { return clone(false); }
-
-  /// Accept an AST visitor.
-  virtual void accept(ASTVisitor &visitor) = 0;
-
-  /// Allow pretty-printing to C++ streams.
-  friend std::ostream &operator<<(std::ostream &out, const ASTNode &expr) {
-    return out << expr.toString();
-  }
-
-  void setAttribute(const std::string &key, std::unique_ptr<ir::Attribute> value) {
-    attributes[key] = std::move(value);
-  }
-  void setAttribute(const std::string &key, const std::string &value) {
-    attributes[key] = std::make_unique<ir::StringValueAttribute>(value);
-  }
-  void setAttribute(const std::string &key) {
-    attributes[key] = std::make_unique<ir::Attribute>();
-  }
-
-  inline decltype(auto) members() {
-    int a = 0;
-    return std::tie(a);
-  }
-};
-template <class... TA> void E(error::Error e, ASTNode *o, const TA &...args) {
-  E(e, o->getSrcInfo(), args...);
-}
-template <class... TA> void E(error::Error e, const ASTNode &o, const TA &...args) {
-  E(e, o.getSrcInfo(), args...);
-}
-using ir::cast;
-
-template <typename Derived, typename Parent> class AcceptorExtend : public Parent {
-public:
-  using Parent::Parent;
-
-  /// See LLVM documentation.
-  static const void *nodeId() { return &Derived::NodeId; }
-  const void *dynamicNodeId() const override { return &Derived::NodeId; }
-  /// See LLVM documentation.
-  virtual bool isConvertible(const void *other) const override {
-    return other == nodeId() || Parent::isConvertible(other);
-  }
-};
-} // namespace codon::ast
-
-template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<std::is_base_of<codon::ast::ASTNode, T>::value, char>>
-    : fmt::ostream_formatter {};
-
-namespace codon::ast {
-
-#define ACCEPT(X)                                                                      \
+#define ACCEPT(CLASS, VISITOR, ...)                                                    \
+  static const char NodeId;                                                            \
   using AcceptorExtend::clone;                                                         \
   using AcceptorExtend::accept;                                                        \
   ASTNode *clone(bool c) const override;                                               \
-  void accept(X &visitor) override;                                                    \
+  void accept(VISITOR &visitor) override;                                              \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
-  friend struct ReplacingCallbackASTVisitor
+  friend struct ReplacingCallbackASTVisitor;                                           \
+  SERIALIZE(CLASS, BASE(Expr), ##__VA_ARGS__)
 
 // Forward declarations
 struct Stmt;
@@ -166,60 +37,38 @@ struct Stmt;
  */
 struct Expr : public AcceptorExtend<Expr, ASTNode> {
   using base_type = Expr;
-  static const char NodeId;
 
-  // private:
+  Expr();
+  Expr(const Expr &);
+  Expr(const Expr &, bool);
+
+  /// Get a node type.
+  /// @return Type pointer or a nullptr if a type is not set.
+  types::TypePtr getType() const { return type; }
+  void setType(const types::TypePtr &t) { type = t; }
+  types::ClassTypePtr getClassType() const;
+  bool isDone() const { return done; }
+  void setDone() { done = true; }
+  Expr *getOrigExpr() const { return origExpr; }
+  void setOrigExpr(Expr *orig) { origExpr = orig; }
+  /// Validate a node. Throw ParseASTException if a node is not valid.
+  void validate() const;
+
+  static const char NodeId;
+  SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
+
+protected:
+  /// Add a type to S-expression string.
+  std::string wrapType(const std::string &sexpr) const;
+
+private:
   /// Type of the expression. nullptr by default.
   types::TypePtr type;
   /// Flag that indicates if all types in an expression are inferred (i.e. if a
   /// type-checking procedure was successful).
   bool done;
-
   /// Original (pre-transformation) expression
   Expr *origExpr;
-
-public:
-  Expr();
-  Expr(const Expr &);
-  Expr(const Expr &, bool);
-
-  /// Validate a node. Throw ParseASTException if a node is not valid.
-  void validate() const;
-  /// Get a node type.
-  /// @return Type pointer or a nullptr if a type is not set.
-  types::TypePtr getType() const;
-  types::ClassTypePtr getClassType() const;
-  /// Set a node type.
-  void setType(types::TypePtr type);
-
-  /// Allow pretty-printing to C++ streams.
-  friend std::ostream &operator<<(std::ostream &out, const Expr &expr) {
-    return out << expr.toString();
-  }
-
-  bool isDone() const { return done; }
-  void setDone() { done = true; }
-
-  SERIALIZE(Expr, BASE(ASTNode), done);
-
-protected:
-  /// Add a type to S-expression string.
-  std::string wrapType(const std::string &sexpr) const;
-};
-
-template <class T> struct Items {
-  Items(std::vector<T> items) : items(std::move(items)) {}
-  const T &operator[](int i) const { return items[i]; }
-  T &operator[](int i) { return items[i]; }
-  auto begin() { return items.begin(); }
-  auto end() { return items.end(); }
-  auto begin() const { return items.begin(); }
-  auto end() const { return items.end(); }
-  auto size() const { return items.size(); }
-  bool empty() const { return items.empty(); }
-
-protected:
-  std::vector<T> items;
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).
@@ -255,9 +104,7 @@ struct NoneExpr : public AcceptorExtend<NoneExpr, Expr> {
   NoneExpr();
   NoneExpr(const NoneExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(NoneExpr, BASE(Expr));
-  ACCEPT(ASTVisitor);
+  ACCEPT(NoneExpr, ASTVisitor);
 };
 
 /// Bool expression (value).
@@ -268,9 +115,7 @@ struct BoolExpr : public AcceptorExtend<BoolExpr, Expr> {
 
   bool getValue() const;
 
-  static const char NodeId;
-  SERIALIZE(BoolExpr, BASE(Expr), value);
-  ACCEPT(ASTVisitor);
+  ACCEPT(BoolExpr, ASTVisitor, value);
 
 private:
   bool value;
@@ -289,9 +134,7 @@ struct IntExpr : public AcceptorExtend<IntExpr, Expr> {
   int64_t getValue() const;
   std::pair<std::string, std::string> getRawData() const;
 
-  static const char NodeId;
-  SERIALIZE(IntExpr, BASE(Expr), value, suffix, intValue);
-  ACCEPT(ASTVisitor);
+  ACCEPT(IntExpr, ASTVisitor, value, suffix, intValue);
 
 private:
   /// Expression value is stored as a string that is parsed during typechecking.
@@ -315,9 +158,7 @@ struct FloatExpr : public AcceptorExtend<FloatExpr, Expr> {
   double getValue() const;
   std::pair<std::string, std::string> getRawData() const;
 
-  static const char NodeId;
-  SERIALIZE(FloatExpr, BASE(Expr), value, suffix, floatValue);
-  ACCEPT(ASTVisitor);
+  ACCEPT(FloatExpr, ASTVisitor, value, suffix, floatValue);
 
 private:
   /// Expression value is stored as a string that is parsed during typechecking.
@@ -351,9 +192,7 @@ struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
   std::string getValue() const;
   bool isSimple() const;
 
-  static const char NodeId;
-  SERIALIZE(StringExpr, BASE(Expr), strings);
-  ACCEPT(ASTVisitor);
+  ACCEPT(StringExpr, ASTVisitor, strings);
 
 private:
   std::vector<String> strings;
@@ -373,9 +212,7 @@ struct IdExpr : public AcceptorExtend<IdExpr, Expr> {
 
   std::string getValue() const { return value; }
 
-  static const char NodeId;
-  SERIALIZE(IdExpr, BASE(Expr), value);
-  ACCEPT(ASTVisitor);
+  ACCEPT(IdExpr, ASTVisitor, value);
 
 private:
   std::string value;
@@ -393,9 +230,7 @@ struct StarExpr : public AcceptorExtend<StarExpr, Expr> {
 
   Expr *getExpr() const { return expr; }
 
-  static const char NodeId;
-  SERIALIZE(StarExpr, BASE(Expr), expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(StarExpr, ASTVisitor, expr);
 
 private:
   Expr *expr;
@@ -409,9 +244,7 @@ struct KeywordStarExpr : public AcceptorExtend<KeywordStarExpr, Expr> {
 
   Expr *getExpr() const { return expr; }
 
-  static const char NodeId;
-  SERIALIZE(KeywordStarExpr, BASE(Expr), expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(KeywordStarExpr, ASTVisitor, expr);
 
 private:
   Expr *expr;
@@ -423,9 +256,7 @@ struct TupleExpr : public AcceptorExtend<TupleExpr, Expr>, Items<Expr *> {
   explicit TupleExpr(std::vector<Expr *> items = {});
   TupleExpr(const TupleExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(TupleExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(TupleExpr, ASTVisitor, items);
 };
 
 /// List expression ([items...]).
@@ -434,9 +265,7 @@ struct ListExpr : public AcceptorExtend<ListExpr, Expr>, Items<Expr *> {
   explicit ListExpr(std::vector<Expr *> items = {});
   ListExpr(const ListExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(ListExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(ListExpr, ASTVisitor, items);
 };
 
 /// Set expression ({items...}).
@@ -445,9 +274,7 @@ struct SetExpr : public AcceptorExtend<SetExpr, Expr>, Items<Expr *> {
   explicit SetExpr(std::vector<Expr *> items = {});
   SetExpr(const SetExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(SetExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(SetExpr, ASTVisitor, items);
 };
 
 /// Dictionary expression ({(key: value)...}).
@@ -457,9 +284,7 @@ struct DictExpr : public AcceptorExtend<DictExpr, Expr>, Items<Expr *> {
   explicit DictExpr(std::vector<Expr *> items = {});
   DictExpr(const DictExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(DictExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(DictExpr, ASTVisitor, items);
 };
 
 /// Generator or comprehension expression [(expr (loops...))].
@@ -485,9 +310,7 @@ struct GeneratorExpr : public AcceptorExtend<GeneratorExpr, Expr> {
   Stmt *getFinalSuite() const;
   Expr *getFinalExpr();
 
-  static const char NodeId;
-  SERIALIZE(GeneratorExpr, BASE(Expr), kind, loops);
-  ACCEPT(ASTVisitor);
+  ACCEPT(GeneratorExpr, ASTVisitor, kind, loops);
 
 private:
   GeneratorKind kind;
@@ -511,9 +334,7 @@ struct IfExpr : public AcceptorExtend<IfExpr, Expr> {
   Expr *getIf() const { return ifexpr; }
   Expr *getElse() const { return elsexpr; }
 
-  static const char NodeId;
-  SERIALIZE(IfExpr, BASE(Expr), cond, ifexpr, elsexpr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(IfExpr, ASTVisitor, cond, ifexpr, elsexpr);
 
 private:
   Expr *cond, *ifexpr, *elsexpr;
@@ -528,9 +349,7 @@ struct UnaryExpr : public AcceptorExtend<UnaryExpr, Expr> {
   std::string getOp() const { return op; }
   Expr *getExpr() const { return expr; }
 
-  static const char NodeId;
-  SERIALIZE(UnaryExpr, BASE(Expr), op, expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(UnaryExpr, ASTVisitor, op, expr);
 
 private:
   std::string op;
@@ -550,9 +369,7 @@ struct BinaryExpr : public AcceptorExtend<BinaryExpr, Expr> {
   Expr *getRhs() const { return rexpr; }
   bool isInPlace() const { return inPlace; }
 
-  static const char NodeId;
-  SERIALIZE(BinaryExpr, BASE(Expr), op, lexpr, rexpr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(BinaryExpr, ASTVisitor, op, lexpr, rexpr);
 
 private:
   std::string op;
@@ -568,9 +385,7 @@ struct ChainBinaryExpr : public AcceptorExtend<ChainBinaryExpr, Expr> {
   ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs = {});
   ChainBinaryExpr(const ChainBinaryExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(ChainBinaryExpr, BASE(Expr), exprs);
-  ACCEPT(ASTVisitor);
+  ACCEPT(ChainBinaryExpr, ASTVisitor, exprs);
 
 private:
   std::vector<std::pair<std::string, Expr *>> exprs;
@@ -591,9 +406,7 @@ struct PipeExpr : public AcceptorExtend<PipeExpr, Expr>, Items<Pipe> {
   explicit PipeExpr(std::vector<Pipe> items = {});
   PipeExpr(const PipeExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(PipeExpr, BASE(Expr), items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(PipeExpr, ASTVisitor, items);
 
 private:
   /// Output type of a "prefix" pipe ending at the index position.
@@ -612,9 +425,7 @@ struct IndexExpr : public AcceptorExtend<IndexExpr, Expr> {
   Expr *getExpr() const { return expr; }
   Expr *getIndex() const { return index; }
 
-  static const char NodeId;
-  SERIALIZE(IndexExpr, BASE(Expr), expr, index);
-  ACCEPT(ASTVisitor);
+  ACCEPT(IndexExpr, ASTVisitor, expr, index);
 
 private:
   Expr *expr, *index;
@@ -652,9 +463,7 @@ struct CallExpr : public AcceptorExtend<CallExpr, Expr>, Items<CallArg> {
   bool isOrdered() const { return ordered; }
   bool isPartial() const { return partial; }
 
-  static const char NodeId;
-  SERIALIZE(CallExpr, BASE(Expr), expr, items, ordered, partial);
-  ACCEPT(ASTVisitor);
+  ACCEPT(CallExpr, ASTVisitor, expr, items, ordered, partial);
 
 private:
   Expr *expr;
@@ -676,9 +485,7 @@ struct DotExpr : public AcceptorExtend<DotExpr, Expr> {
   Expr *getExpr() const { return expr; }
   std::string getMember() const { return member; }
 
-  static const char NodeId;
-  SERIALIZE(DotExpr, BASE(Expr), expr, member);
-  ACCEPT(ASTVisitor);
+  ACCEPT(DotExpr, ASTVisitor, expr, member);
 
 private:
   Expr *expr;
@@ -697,9 +504,7 @@ struct SliceExpr : public AcceptorExtend<SliceExpr, Expr> {
   Expr *getStop() const { return stop; }
   Expr *getStep() const { return step; }
 
-  static const char NodeId;
-  SERIALIZE(SliceExpr, BASE(Expr), start, stop, step);
-  ACCEPT(ASTVisitor);
+  ACCEPT(SliceExpr, ASTVisitor, start, stop, step);
 
 private:
   /// Any of these can be nullptr to account for partial slices.
@@ -718,9 +523,7 @@ struct EllipsisExpr : public AcceptorExtend<EllipsisExpr, Expr> {
 
   EllipsisType getMode() const { return mode; }
 
-  static const char NodeId;
-  SERIALIZE(EllipsisExpr, BASE(Expr), mode);
-  ACCEPT(ASTVisitor);
+  ACCEPT(EllipsisExpr, ASTVisitor, mode);
 
 private:
   EllipsisType mode;
@@ -739,9 +542,7 @@ struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr> {
   auto end() { return vars.end(); }
   auto size() const { return vars.size(); }
 
-  static const char NodeId;
-  SERIALIZE(LambdaExpr, BASE(Expr), vars, expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(LambdaExpr, ASTVisitor, vars, expr);
 
 private:
   std::vector<std::string> vars;
@@ -754,9 +555,7 @@ struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
   YieldExpr();
   YieldExpr(const YieldExpr &, bool);
 
-  static const char NodeId;
-  SERIALIZE(YieldExpr, BASE(Expr));
-  ACCEPT(ASTVisitor);
+  ACCEPT(YieldExpr, ASTVisitor);
 };
 
 /// Assignment (walrus) expression (var := expr).
@@ -768,9 +567,7 @@ struct AssignExpr : public AcceptorExtend<AssignExpr, Expr> {
   Expr *getVar() const { return var; }
   Expr *getExpr() const { return expr; }
 
-  static const char NodeId;
-  SERIALIZE(AssignExpr, BASE(Expr), var, expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(AssignExpr, ASTVisitor, var, expr);
 
 private:
   Expr *var, *expr;
@@ -786,9 +583,7 @@ struct RangeExpr : public AcceptorExtend<RangeExpr, Expr> {
   Expr *getStart() const { return start; }
   Expr *getStop() const { return stop; }
 
-  static const char NodeId;
-  SERIALIZE(RangeExpr, BASE(Expr), start, stop);
-  ACCEPT(ASTVisitor);
+  ACCEPT(RangeExpr, ASTVisitor, start, stop);
 
 private:
   Expr *start, *stop;
@@ -811,9 +606,7 @@ struct StmtExpr : public AcceptorExtend<StmtExpr, Expr> {
   auto end() { return stmts.end(); }
   auto size() const { return stmts.size(); }
 
-  static const char NodeId;
-  SERIALIZE(StmtExpr, BASE(Expr), expr);
-  ACCEPT(ASTVisitor);
+  ACCEPT(StmtExpr, ASTVisitor, expr);
 
 private:
   std::vector<Stmt *> stmts;
@@ -822,7 +615,7 @@ private:
 
 /// Static tuple indexing expression (expr[index]).
 /// @li (1, 2, 3)[2]
-struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr>, Items<Expr*> {
+struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr>, Items<Expr *> {
   InstantiateExpr(Expr *expr = nullptr, std::vector<Expr *> typeParams = {});
   /// Convenience constructor for a single type parameter.
   InstantiateExpr(Expr *expr, Expr *typeParam);
@@ -830,9 +623,7 @@ struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr>, Items<Exp
 
   Expr *getExpr() const { return expr; }
 
-  static const char NodeId;
-  SERIALIZE(InstantiateExpr, BASE(Expr), expr, items);
-  ACCEPT(ASTVisitor);
+  ACCEPT(InstantiateExpr, ASTVisitor, expr, items);
 
 private:
   Expr *expr;
@@ -867,8 +658,8 @@ struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
 
 namespace tser {
 using Archive = BinaryArchive;
-using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
 static void operator<<(codon::ast::Expr *t, Archive &a) {
+  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
   a.save(t != nullptr);
   if (t) {
     auto typ = t->dynamicNodeId();
@@ -878,6 +669,7 @@ static void operator<<(codon::ast::Expr *t, Archive &a) {
   }
 }
 static void operator>>(codon::ast::Expr *&t, Archive &a) {
+  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
   bool empty = a.load<bool>();
   if (!empty) {
     std::string key = a.load<std::string>();

@@ -14,23 +14,20 @@
 
 namespace codon::ast {
 
-#define ACCEPT(X)                                                                      \
-  using Stmt::toString;                                                                \
+#define ACCEPT(CLASS, VISITOR, ...)                                                    \
+  static const char NodeId;                                                            \
   using AcceptorExtend::clone;                                                         \
   using AcceptorExtend::accept;                                                        \
-  ASTNode *clone(bool) const override;                                                 \
-  void accept(X &visitor) override
+  ASTNode *clone(bool c) const override;                                               \
+  void accept(VISITOR &visitor) override;                                              \
+  std::string toString(int) const override;                                            \
+  friend class TypecheckVisitor;                                                       \
+  template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
+  friend struct ReplacingCallbackASTVisitor;                                           \
+  SERIALIZE(CLASS, BASE(Stmt), ##__VA_ARGS__)
 
 // Forward declarations
 struct ASTVisitor;
-struct AssignStmt;
-struct ClassStmt;
-struct ExprStmt;
-struct SuiteStmt;
-struct FunctionStmt;
-struct ForStmt;
-struct IfStmt;
-struct TryStmt;
 
 /**
  * A Seq AST statement.
@@ -38,102 +35,79 @@ struct TryStmt;
  */
 struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   using base_type = Stmt;
-  static const char NodeId;
 
-  /// Flag that indicates if all types in a statement are inferred (i.e. if a
-  /// type-checking procedure was successful).
-  bool done;
-
-public:
   Stmt();
   Stmt(const Stmt &s);
   Stmt(const Stmt &, bool);
   explicit Stmt(const codon::SrcInfo &s);
 
-  /// Validate a node. Throw ParseASTException if a node is not valid.
-  void validate() const;
-
-  /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual AssignStmt *getAssign() { return nullptr; }
-  virtual ClassStmt *getClass() { return nullptr; }
-  virtual ExprStmt *getExpr() { return nullptr; }
-  virtual SuiteStmt *getSuite() { return nullptr; }
-  virtual FunctionStmt *getFunction() { return nullptr; }
-  virtual TryStmt *getTry() { return nullptr; }
-  virtual ForStmt *getFor() { return nullptr; }
-
+  bool isDone() const { return done; }
+  void setDone() { done = true; }
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
   virtual Stmt *firstInBlock() { return this; }
+  /// Validate a node. Throw ParseASTException if a node is not valid.
+  void validate() const;
 
-  bool isDone() const { return done; }
-  void setDone() { done = true; }
+  static const char NodeId;
+  SERIALIZE(Stmt, BASE(ASTNode), done);
 
-  SERIALIZE(Stmt, BASE(ASTNode));
+private:
+  /// Flag that indicates if all types in a statement are inferred (i.e. if a
+  /// type-checking procedure was successful).
+  bool done;
 };
 
 /// Suite (block of statements) statement (stmt...).
 /// @li a = 5; foo(1)
-struct SuiteStmt : public AcceptorExtend<SuiteStmt, Stmt> {
-  static const char NodeId;
-  std::vector<Stmt *> stmts;
-
+struct SuiteStmt : public AcceptorExtend<SuiteStmt, Stmt>, Items<Stmt *> {
   explicit SuiteStmt(std::vector<Stmt *> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
-  SuiteStmt(Stmt *stmt, Ts... stmts) : stmts({stmt, stmts...}) {}
+  SuiteStmt(Stmt *stmt, Ts... stmts) : Items({stmt, stmts...}) {}
   SuiteStmt(const SuiteStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
-
-  SuiteStmt *getSuite() override { return this; }
   Stmt *firstInBlock() override {
-    return stmts.empty() ? nullptr : stmts[0]->firstInBlock();
+    return items.empty() ? nullptr : items[0]->firstInBlock();
   }
-  void shallow_flatten();
-  Stmt **lastInBlock();
+  void flatten();
+  void addStmt(Stmt *s);
+
   static SuiteStmt *wrap(Stmt *);
+
+  ACCEPT(SuiteStmt, ASTVisitor, items);
 };
 
 /// Break statement.
 /// @li break
 struct BreakStmt : public AcceptorExtend<BreakStmt, Stmt> {
-  static const char NodeId;
-
   BreakStmt() = default;
   BreakStmt(const BreakStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  ACCEPT(BreakStmt, ASTVisitor);
 };
 
 /// Continue statement.
 /// @li continue
 struct ContinueStmt : public AcceptorExtend<ContinueStmt, Stmt> {
-  static const char NodeId;
-
   ContinueStmt() = default;
   ContinueStmt(const ContinueStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  ACCEPT(ContinueStmt, ASTVisitor);
 };
 
 /// Expression statement (expr).
 /// @li 3 + foo()
 struct ExprStmt : public AcceptorExtend<ExprStmt, Stmt> {
-  static const char NodeId;
-
-  Expr *expr;
-
-  explicit ExprStmt(Expr *expr);
+  explicit ExprStmt(Expr *expr = nullptr);
   ExprStmt(const ExprStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
 
-  ExprStmt *getExpr() override { return this; }
+  ACCEPT(ExprStmt, ASTVisitor, expr);
+
+private:
+  Expr *expr;
 };
 
 /// Assignment statement (lhs: type = rhs).
@@ -141,30 +115,29 @@ struct ExprStmt : public AcceptorExtend<ExprStmt, Stmt> {
 /// @li a: Optional[int] = 5
 /// @li a, b, c = 5, *z
 struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
-  static const char NodeId;
-
   enum UpdateMode { Assign, Update, UpdateAtomic };
 
-  Expr *lhs, *rhs, *type;
-  Stmt *preamble = nullptr;
-
+  AssignStmt()
+      : lhs(nullptr), rhs(nullptr), type(nullptr), update(UpdateMode::Assign) {}
   AssignStmt(Expr *lhs, Expr *rhs, Expr *type = nullptr,
              UpdateMode update = UpdateMode::Assign);
   AssignStmt(const AssignStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getLhs() const { return lhs; }
+  Expr *getRhs() const { return rhs; }
+  Expr *getTypeExpr() const { return type; }
 
-  AssignStmt *getAssign() override { return this; }
-
-  bool isUpdate() const { return update != Assign; }
+  bool isAssignment() const { return update == Assign; }
+  bool isUpdate() const { return update == Update; }
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
-
   Stmt *unpack() const;
 
+  ACCEPT(AssignStmt, ASTVisitor, lhs, rhs, type, update);
+
 private:
+  Expr *lhs, *rhs, *type;
   UpdateMode update;
 };
 
@@ -172,80 +145,80 @@ private:
 /// @li del a
 /// @li del a[5]
 struct DelStmt : public AcceptorExtend<DelStmt, Stmt> {
-  static const char NodeId;
-
-  Expr *expr;
-
-  explicit DelStmt(Expr *expr);
+  explicit DelStmt(Expr *expr = nullptr);
   DelStmt(const DelStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(DelStmt, ASTVisitor, expr);
+
+private:
+  Expr *expr;
 };
 
 /// Print statement (print expr).
 /// @li print a, b
-struct PrintStmt : public AcceptorExtend<PrintStmt, Stmt> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-  /// True if there is a dangling comma after print: print a,
-  bool isInline;
-
-  explicit PrintStmt(std::vector<Expr *> items, bool isInline);
+struct PrintStmt : public AcceptorExtend<PrintStmt, Stmt>, Items<Expr *> {
+  explicit PrintStmt(std::vector<Expr *> items = {}, bool noNewline = false);
   PrintStmt(const PrintStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  bool hasNewline() const { return !noNewline; }
+
+  ACCEPT(PrintStmt, ASTVisitor, items, noNewline);
+
+private:
+  /// True if there is a dangling comma after print: print a,
+  bool noNewline;
 };
 
 /// Return statement (return expr).
 /// @li return
 /// @li return a
 struct ReturnStmt : public AcceptorExtend<ReturnStmt, Stmt> {
-  static const char NodeId;
-
-  /// nullptr if this is an empty return/yield statements.
-  Expr *expr;
-
   explicit ReturnStmt(Expr *expr = nullptr);
   ReturnStmt(const ReturnStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(ReturnStmt, ASTVisitor, expr);
+
+private:
+  /// nullptr if this is an empty return/yield statements.
+  Expr *expr;
 };
 
 /// Yield statement (yield expr).
 /// @li yield
 /// @li yield a
 struct YieldStmt : public AcceptorExtend<YieldStmt, Stmt> {
-  static const char NodeId;
-
-  /// nullptr if this is an empty return/yield statements.
-  Expr *expr;
-
   explicit YieldStmt(Expr *expr = nullptr);
   YieldStmt(const YieldStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(YieldStmt, ASTVisitor, expr);
+
+private:
+  /// nullptr if this is an empty return/yield statements.
+  Expr *expr;
 };
 
 /// Assert statement (assert expr).
 /// @li assert a
 /// @li assert a, "Message"
 struct AssertStmt : public AcceptorExtend<AssertStmt, Stmt> {
-  static const char NodeId;
+  explicit AssertStmt(Expr *expr = nullptr, Expr *message = nullptr);
+  AssertStmt(const AssertStmt &, bool);
 
+  Expr *getExpr() const { return expr; }
+  Expr *getMessage() const { return message; }
+
+  ACCEPT(AssertStmt, ASTVisitor, expr, message);
+
+private:
   Expr *expr;
   /// nullptr if there is no message.
   Expr *message;
-
-  explicit AssertStmt(Expr *expr, Expr *message = nullptr);
-  AssertStmt(const AssertStmt &, bool);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
 };
 
 /// While loop statement (while cond: suite; else: elseSuite).
@@ -253,21 +226,25 @@ struct AssertStmt : public AcceptorExtend<AssertStmt, Stmt> {
 /// @li while True: break
 ///          else: print
 struct WhileStmt : public AcceptorExtend<WhileStmt, Stmt> {
-  static const char NodeId;
+  WhileStmt() : cond(nullptr), suite(nullptr), elseSuite(nullptr), gotoVar() {}
+  WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite = nullptr);
+  WhileStmt(const WhileStmt &, bool);
 
+  Expr *getCond() const { return cond; }
+  SuiteStmt *getSuite() const { return suite; }
+  SuiteStmt *getElse() const { return elseSuite; }
+
+  ACCEPT(WhileStmt, ASTVisitor, cond, suite, elseSuite, gotoVar);
+
+private:
   Expr *cond;
   SuiteStmt *suite;
   /// nullptr if there is no else suite.
   SuiteStmt *elseSuite;
+
   /// Set if a while loop is used to emulate goto statement
   /// (as `while gotoVar: ...`).
-  std::string gotoVar = "";
-
-  WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite = nullptr);
-  WhileStmt(const WhileStmt &, bool);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  std::string gotoVar;
 };
 
 /// For loop statement (for var in iter: suite; else elseSuite).
@@ -275,8 +252,26 @@ struct WhileStmt : public AcceptorExtend<WhileStmt, Stmt> {
 /// @li for i in j: break
 ///          else: print
 struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
-  static const char NodeId;
+  ForStmt()
+      : var(nullptr), iter(nullptr), suite(nullptr), elseSuite(nullptr),
+        decorator(nullptr), ompArgs(), wrapped(false), flat(false) {}
+  ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite = nullptr,
+          Expr *decorator = nullptr, std::vector<CallArg> ompArgs = {});
+  ForStmt(const ForStmt &, bool);
 
+  Expr *getVar() const { return var; }
+  Expr *getIter() const { return iter; }
+  SuiteStmt *getSuite() const { return suite; }
+  SuiteStmt *getElse() const { return elseSuite; }
+  Expr *getDecorator() const { return decorator; }
+  void setDecorator(Expr *e) { decorator = e; }
+  bool isWrapped() const { return wrapped; }
+  bool isFlat() const { return flat; }
+
+  ACCEPT(ForStmt, ASTVisitor, var, iter, suite, elseSuite, decorator, ompArgs, wrapped,
+         flat);
+
+private:
   Expr *var;
   Expr *iter;
   SuiteStmt *suite;
@@ -289,14 +284,8 @@ struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
   /// True if there are no break/continue within the loop
   bool flat;
 
-  ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite = nullptr,
-          Expr *decorator = nullptr, std::vector<CallArg> ompArgs = {});
-  ForStmt(const ForStmt &, bool);
-
-  ForStmt *getFor() override { return this; }
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  friend class GeneratorExpr;
+  friend class ScopingVisitor;
 };
 
 /// If block statement (if cond: suite; (elif cond: suite)...).
@@ -307,42 +296,58 @@ struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
 ///          elif b: bar()
 ///          else: baz()
 struct IfStmt : public AcceptorExtend<IfStmt, Stmt> {
-  static const char NodeId;
+  IfStmt(Expr *cond = nullptr, Stmt *ifSuite = nullptr, Stmt *elseSuite = nullptr);
+  IfStmt(const IfStmt &, bool);
 
+  Expr *getCond() const { return cond; }
+  SuiteStmt *getIf() const { return ifSuite; }
+  SuiteStmt *getElse() const { return elseSuite; }
+
+  ACCEPT(IfStmt, ASTVisitor, cond, ifSuite, elseSuite);
+
+private:
   Expr *cond;
   /// elseSuite can be nullptr (if no else is found).
   SuiteStmt *ifSuite, *elseSuite;
 
-  IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite = nullptr);
-  IfStmt(const IfStmt &, bool);
+  friend class GeneratorExpr;
+};
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+struct MatchCase {
+  MatchCase(Expr *pattern = nullptr, Expr *guard = nullptr, Stmt *suite = nullptr);
+
+  Expr *getPattern() const { return pattern; }
+  Expr *getGuard() const { return guard; }
+  SuiteStmt *getSuite() const { return suite; }
+
+  MatchCase clone(bool) const;
+  SERIALIZE(MatchCase, pattern, guard, suite);
+
+private:
+  Expr *pattern;
+  Expr *guard;
+  SuiteStmt *suite;
+
+  friend class MatchStmt;
+  friend class TypecheckVisitor;
+  template <typename TE, typename TS> friend struct CallbackASTVisitor;
+  friend struct ReplacingCallbackASTVisitor;
 };
 
 /// Match statement (match what: (case pattern: case)...).
 /// @li match a:
 ///          case 1: print
 ///          case _: pass
-struct MatchStmt : public AcceptorExtend<MatchStmt, Stmt> {
-  static const char NodeId;
-
-  struct MatchCase {
-    Expr *pattern;
-    Expr *guard;
-    SuiteStmt *suite;
-
-    MatchCase(Expr *, Expr *, Stmt *);
-    MatchCase clone(bool) const;
-  };
-  Expr *what;
-  std::vector<MatchCase> cases;
-
-  MatchStmt(Expr *what, std::vector<MatchCase> cases);
+struct MatchStmt : public AcceptorExtend<MatchStmt, Stmt>, Items<MatchCase> {
+  MatchStmt(Expr *what = nullptr, std::vector<MatchCase> cases = {});
   MatchStmt(const MatchStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(MatchStmt, ASTVisitor, items, expr);
+
+private:
+  Expr *expr;
 };
 
 /// Import statement.
@@ -358,8 +363,23 @@ struct MatchStmt : public AcceptorExtend<MatchStmt, Stmt> {
 /// @li from python.numpy import array
 /// @li from python import numpy.array(int) -> int as na
 struct ImportStmt : public AcceptorExtend<ImportStmt, Stmt> {
-  static const char NodeId;
+  ImportStmt(Expr *from = nullptr, Expr *what = nullptr, std::vector<Param> args = {},
+             Expr *ret = nullptr, std::string as = "", size_t dots = 0,
+             bool isFunction = true);
+  ImportStmt(const ImportStmt &, bool);
 
+  Expr *getFrom() const { return from; }
+  Expr *getWhat() const { return what; }
+  std::string getAs() const { return as; }
+  size_t getDots() const { return dots; }
+  Expr *getReturnType() const { return ret; }
+  const std::vector<Param> &getArgs() const { return args; }
+  bool isCVar() const { return !isFunction; }
+  void validate() const;
+
+  ACCEPT(ImportStmt, ASTVisitor, from, what, as, dots, args, ret, isFunction);
+
+private:
   Expr *from, *what;
   std::string as;
   /// Number of dots in a relative import (e.g. dots is 3 for "from ...foo").
@@ -370,120 +390,121 @@ struct ImportStmt : public AcceptorExtend<ImportStmt, Stmt> {
   Expr *ret;
   /// Set if this is a function C import (not variable import)
   bool isFunction;
-
-  ImportStmt(Expr *from, Expr *what, std::vector<Param> args = {}, Expr *ret = nullptr,
-             std::string as = "", size_t dots = 0, bool isFunction = true);
-  ImportStmt(const ImportStmt &, bool);
-
-  std::string toString(int indent) const override;
-  void validate() const;
-  ACCEPT(ASTVisitor);
 };
 
-/// Try-catch statement (try: suite; (catch var (as exc): suite)...; finally: finally).
-/// @li: try: a
-///           catch e: pass
-///           catch e as Exc: pass
-///           catch: pass
-///           finally: print
-struct TryStmt : public AcceptorExtend<TryStmt, Stmt> {
-  static const char NodeId;
+struct ExceptStmt : public AcceptorExtend<ExceptStmt, Stmt> {
+  ExceptStmt(const std::string &var = "", Expr *exc = nullptr, Stmt *suite = nullptr);
+  ExceptStmt(const ExceptStmt &, bool);
 
-  struct Catch : public AcceptorExtend<Catch, Stmt> {
-    static const char NodeId;
+  std::string getVar() const { return var; }
+  Expr *getException() const { return exc; }
+  SuiteStmt *getSuite() const { return suite; }
 
-    /// empty string if a catch is unnamed.
-    std::string var;
-    /// nullptr if there is no explicit exception type.
-    Expr *exc;
-    SuiteStmt *suite;
+  ACCEPT(ExceptStmt, ASTVisitor, var, exc, suite);
 
-    Catch(const std::string &, Expr *, Stmt *);
-    Catch(const Catch &, bool);
-
-    std::string toString(int indent) const override;
-    ACCEPT(ASTVisitor);
-  };
-
+private:
+  /// empty string if an except is unnamed.
+  std::string var;
+  /// nullptr if there is no explicit exception type.
+  Expr *exc;
   SuiteStmt *suite;
-  std::vector<Catch *> catches;
-  /// nullptr if there is no finally block.
-  SuiteStmt *finally;
 
-  TryStmt(Stmt *suite, std::vector<Catch *> catches, Stmt *finally = nullptr);
+  friend class ScopingVisitor;
+};
+
+/// Try-except statement (try: suite; (except var (as exc): suite)...; finally:
+/// finally).
+/// @li: try: a
+///           except e: pass
+///           except e as Exc: pass
+///           except: pass
+///           finally: print
+struct TryStmt : public AcceptorExtend<TryStmt, Stmt>, Items<ExceptStmt *> {
+  TryStmt(Stmt *suite = nullptr, std::vector<ExceptStmt *> catches = {},
+          Stmt *finally = nullptr);
   TryStmt(const TryStmt &, bool);
 
-  TryStmt *getTry() override { return this; }
+  SuiteStmt *getSuite() const { return suite; }
+  SuiteStmt *getFinally() const { return finally; }
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  ACCEPT(TryStmt, ASTVisitor, items, suite, finally);
+
+private:
+  SuiteStmt *suite;
+  /// nullptr if there is no finally block.
+  SuiteStmt *finally;
 };
 
 /// Throw statement (raise expr).
 /// @li: raise a
 struct ThrowStmt : public AcceptorExtend<ThrowStmt, Stmt> {
-  static const char NodeId;
+  explicit ThrowStmt(Expr *expr = nullptr, bool transformed = false);
+  ThrowStmt(const ThrowStmt &, bool);
 
+  Expr *getExpr() const { return expr; }
+  bool isTransformed() const { return transformed; }
+
+  ACCEPT(ThrowStmt, ASTVisitor, expr, transformed);
+
+private:
   Expr *expr;
   // True if a statement was transformed during type-checking stage
   // (to avoid setting up ExcHeader multiple times).
   bool transformed;
-
-  explicit ThrowStmt(Expr *expr, bool transformed = false);
-  ThrowStmt(const ThrowStmt &, bool);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
 };
 
 /// Global variable statement (global var).
 /// @li: global a
 struct GlobalStmt : public AcceptorExtend<GlobalStmt, Stmt> {
-  static const char NodeId;
-
-  std::string var;
-  bool nonLocal;
-
-  explicit GlobalStmt(std::string var, bool nonLocal = false);
+  explicit GlobalStmt(std::string var = "", bool nonLocal = false);
   GlobalStmt(const GlobalStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  std::string getVar() const { return var; }
+  bool isNonLocal() const { return nonLocal; }
+
+  ACCEPT(GlobalStmt, ASTVisitor, var, nonLocal);
+
+private:
+  std::string var;
+  bool nonLocal;
 };
 
 /// Function statement (@(attributes...) def name[funcs...](args...) -> ret: suite).
 /// @li: @decorator
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
-struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt> {
-  static const char NodeId;
-
-  std::string name;
-  /// nullptr if return type is not specified.
-  Expr *ret;
-  std::vector<Param> args;
-  SuiteStmt *suite;
-  std::vector<Expr *> decorators;
-
-  FunctionStmt(std::string name, Expr *ret, std::vector<Param> args, Stmt *suite,
-               std::vector<Expr *> decorators = {});
+struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
+  FunctionStmt(std::string name = "", Expr *ret = nullptr, std::vector<Param> args = {},
+               Stmt *suite = nullptr, std::vector<Expr *> decorators = {});
   FunctionStmt(const FunctionStmt &, bool);
 
-  std::string toString(int indent) const override;
-  void validate() const;
-  ACCEPT(ASTVisitor);
+  std::string getName() const { return name; }
+  Expr *getReturn() const { return ret; }
+  SuiteStmt *getSuite() const { return suite; }
+  void setSuite(SuiteStmt *s) { suite = s; }
+  const std::vector<Expr *> &getDecorators() const { return decorators; }
+  void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.
   /// @li (T U (int 0))
   std::string signature() const;
-  void parseDecorators();
-
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
+  void validate() const;
+  void parseDecorators();
+  std::string getDocstr() const;
+  std::unordered_set<std::string> getNonInferrableGenerics() const;
 
-  FunctionStmt *getFunction() override { return this; }
-  std::string getDocstr();
-  std::unordered_set<std::string> getNonInferrableGenerics();
+  ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators);
+
+private:
+  std::string name;
+  /// nullptr if return type is not specified.
+  Expr *ret;
+  SuiteStmt *suite;
+  std::vector<Expr *> decorators;
+
+  friend class Cache;
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
@@ -491,81 +512,87 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt> {
 ///           class F[T]:
 ///              m: T
 ///              def __new__() -> F[T]: ...
-struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt> {
-  static const char NodeId;
-
-  std::string name;
-  std::vector<Param> args;
-  SuiteStmt *suite;
-  std::vector<Expr *> decorators;
-  std::vector<Expr *> baseClasses;
-  std::vector<Expr *> staticBaseClasses;
-
-  ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
+struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
+  ClassStmt(std::string name = "", std::vector<Param> args = {}, Stmt *suite = nullptr,
             std::vector<Expr *> decorators = {}, std::vector<Expr *> baseClasses = {},
             std::vector<Expr *> staticBaseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
-  std::string toString(int indent) const override;
-  void validate() const;
-  ACCEPT(ASTVisitor);
+  std::string getName() const { return name; }
+  SuiteStmt *getSuite() const { return suite; }
+  const std::vector<Expr *> &getDecorators() const { return decorators; }
+  void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
+  const std::vector<Expr *> &getBaseClasses() const { return baseClasses; }
+  const std::vector<Expr *> &getStaticBaseClasses() const { return staticBaseClasses; }
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
-
-  ClassStmt *getClass() override { return this; }
-
+  std::string getDocstr() const;
+  void validate() const;
   void parseDecorators();
+
   static bool isClassVar(const Param &p);
-  std::string getDocstr();
+
+  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses,
+         staticBaseClasses);
+
+private:
+  std::string name;
+  SuiteStmt *suite;
+  std::vector<Expr *> decorators;
+  std::vector<Expr *> baseClasses;
+  std::vector<Expr *> staticBaseClasses;
 };
 
 /// Yield-from statement (yield from expr).
 /// @li: yield from it
 struct YieldFromStmt : public AcceptorExtend<YieldFromStmt, Stmt> {
-  static const char NodeId;
-
-  Expr *expr;
-
-  explicit YieldFromStmt(Expr *expr);
+  explicit YieldFromStmt(Expr *expr = nullptr);
   YieldFromStmt(const YieldFromStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(YieldFromStmt, ASTVisitor, expr);
+
+private:
+  Expr *expr;
 };
 
 /// With statement (with (item as var)...: suite).
 /// @li: with foo(), bar() as b: pass
-struct WithStmt : public AcceptorExtend<WithStmt, Stmt> {
-  static const char NodeId;
-
-  std::vector<Expr *> items;
-  /// empty string if a corresponding item is unnamed
-  std::vector<std::string> vars;
-  SuiteStmt *suite;
-
-  WithStmt(std::vector<Expr *> items, std::vector<std::string> vars, Stmt *suite);
+struct WithStmt : public AcceptorExtend<WithStmt, Stmt>, Items<Expr *> {
+  WithStmt(std::vector<Expr *> items = {}, std::vector<std::string> vars = {},
+           Stmt *suite = nullptr);
   WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite);
   WithStmt(const WithStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  const std::vector<std::string> &getVars() const { return vars; }
+  SuiteStmt *getSuite() const { return suite; }
+
+  ACCEPT(WithStmt, ASTVisitor, items, vars, suite);
+
+private:
+  /// empty string if a corresponding item is unnamed
+  std::vector<std::string> vars;
+  SuiteStmt *suite;
 };
 
 /// Custom block statement (foo: ...).
 /// @li: pt_tree: pass
 struct CustomStmt : public AcceptorExtend<CustomStmt, Stmt> {
-  static const char NodeId;
+  CustomStmt(std::string keyword = "", Expr *expr = nullptr, Stmt *suite = nullptr);
+  CustomStmt(const CustomStmt &, bool);
 
+  std::string getKeyword() const { return keyword; }
+  Expr *getExpr() const { return expr; }
+  SuiteStmt *getSuite() const { return suite; }
+
+  ACCEPT(CustomStmt, ASTVisitor, keyword, expr, suite);
+
+private:
   std::string keyword;
   Expr *expr;
   SuiteStmt *suite;
-
-  CustomStmt(std::string keyword, Expr *expr, Stmt *suite);
-  CustomStmt(const CustomStmt &, bool);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
 };
 
 /// The following nodes are created during typechecking.
@@ -573,33 +600,58 @@ struct CustomStmt : public AcceptorExtend<CustomStmt, Stmt> {
 /// Member assignment statement (lhs.member = rhs).
 /// @li: a.x = b
 struct AssignMemberStmt : public AcceptorExtend<AssignMemberStmt, Stmt> {
-  static const char NodeId;
+  AssignMemberStmt(Expr *lhs = nullptr, std::string member = "", Expr *rhs = nullptr);
+  AssignMemberStmt(const AssignMemberStmt &, bool);
 
+  Expr *getLhs() const { return lhs; }
+  std::string getMember() const { return member; }
+  Expr *getRhs() const { return rhs; }
+
+  ACCEPT(AssignMemberStmt, ASTVisitor, lhs, member, rhs);
+
+private:
   Expr *lhs;
   std::string member;
   Expr *rhs;
-
-  AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs);
-  AssignMemberStmt(const AssignMemberStmt &, bool);
-
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
 };
 
 /// Comment statement (# comment).
 /// Currently used only for pretty-printing.
 struct CommentStmt : public AcceptorExtend<CommentStmt, Stmt> {
-  static const char NodeId;
-
-  std::string comment;
-
-  explicit CommentStmt(std::string comment);
+  explicit CommentStmt(std::string comment = "");
   CommentStmt(const CommentStmt &, bool);
 
-  std::string toString(int indent) const override;
-  ACCEPT(ASTVisitor);
+  std::string getComment() const { return comment; }
+
+  ACCEPT(CommentStmt, ASTVisitor, comment);
+
+private:
+  std::string comment;
 };
 
 #undef ACCEPT
 
 } // namespace codon::ast
+
+namespace tser {
+static void operator<<(codon::ast::Stmt *t, Archive &a) {
+  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
+  a.save(t != nullptr);
+  if (t) {
+    auto typ = t->dynamicNodeId();
+    auto key = S::_serializers[(void *)typ];
+    a.save(key);
+    S::save(key, t, a);
+  }
+}
+static void operator>>(codon::ast::Stmt *&t, Archive &a) {
+  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
+  bool empty = a.load<bool>();
+  if (!empty) {
+    std::string key = a.load<std::string>();
+    S::load(key, t, a);
+  } else {
+    t = nullptr;
+  }
+}
+} // namespace tser

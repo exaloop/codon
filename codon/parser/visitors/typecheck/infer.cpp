@@ -29,9 +29,8 @@ using namespace types;
 /// @param a Type (by reference)
 /// @param b Type
 /// @return a
-TypePtr TypecheckVisitor::unify(TypePtr &a, const TypePtr &b) {
-  if (!a)
-    return a = b;
+TypePtr TypecheckVisitor::unify(const TypePtr &a, const TypePtr &b) {
+  seqassert(a, "lhs is nullptr");
   seqassert(b, "rhs is nullptr");
   types::Type::Unification undo;
   if (a->unify(b.get(), &undo) >= 0) {
@@ -171,12 +170,12 @@ types::TypePtr TypecheckVisitor::realize(types::TypePtr typ) {
         e.locations.back() = getSrcInfo();
       } else {
         std::vector<std::string> args;
-        for (size_t i = 0, ai = 0, gi = 0; i < f->ast->args.size(); i++) {
-          auto an = f->ast->args[i].name;
+        for (size_t i = 0, ai = 0, gi = 0; i < f->ast->size(); i++) {
+          auto an = (*f->ast)[i].name;
           auto ns = trimStars(an);
           args.push_back(fmt::format("{}{}: {}", std::string(ns, '*'),
                                      ctx->cache->rev(an),
-                                     f->ast->args[i].status == Param::Generic
+                                     (*f->ast)[i].status == Param::Generic
                                          ? f->funcGenerics[gi++].type->prettyString()
                                          : f->getArgTypes()[ai++]->prettyString()));
         }
@@ -371,9 +370,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   auto pc = ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
   if (!pc || pc->value.empty())
     ctx->addFunc(ctx->cache->rev(ast->name), ast->name, ctx->find(ast->name)->type);
-  for (size_t i = 0, j = 0; hasAst && i < ast->args.size(); i++) {
-    if (ast->args[i].status == Param::Normal) {
-      std::string varName = ast->args[i].name;
+  for (size_t i = 0, j = 0; hasAst && i < ast->size(); i++) {
+    if ((*ast)[i].status == Param::Normal) {
+      std::string varName = (*ast)[i].name;
       trimStars(varName);
       auto v = ctx->addVar(ctx->cache->rev(varName), varName,
                            std::make_shared<LinkType>(type->getArgTypes()[j++]));
@@ -450,7 +449,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   // ctx->getBase()->suite ? ctx->getBase()->suite->toString(2) : "-");
 
   std::vector<Param> args;
-  for (auto &i : ast->args) {
+  for (auto &i : *ast) {
     std::string varName = i.name;
     trimStars(varName);
     args.emplace_back(varName, nullptr, nullptr, i.status);
@@ -462,7 +461,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
 
   auto newKey = type->realizedName();
   if (newKey != key) {
-    LOG("!! oldKey={}, newKey={}", key, newKey);
+    // LOG("!! oldKey={}, newKey={}", key, newKey);
   }
   if (!in(ctx->cache->pendingRealizations, make_pair(type->ast->name, newKey))) {
     if (!r->ir)
@@ -505,7 +504,7 @@ Stmt *TypecheckVisitor::prepareVTables() {
       if (!vtSz)
         continue;
       // __internal__.class_set_rtti_vtable(real.ID, size, real.type)
-      suite->stmts.push_back(N<ExprStmt>(
+      suite->addStmt(N<ExprStmt>(
           N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable"),
                       N<IntExpr>(real->id), N<IntExpr>(vtSz + 2), N<IdExpr>(r))));
       // LOG("[poly] {} -> {}", r, real->id);
@@ -519,7 +518,7 @@ Stmt *TypecheckVisitor::prepareVTables() {
               ids.push_back(N<IdExpr>(t->realizedName()));
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
             LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, fn);
-            suite->stmts.push_back(N<ExprStmt>(N<CallExpr>(
+            suite->addStmt(N<ExprStmt>(N<CallExpr>(
                 N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable_fn"),
                 N<IntExpr>(real->id), N<IntExpr>(vtSz + id),
                 N<CallExpr>(N<DotExpr>(
@@ -661,7 +660,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         std::vector<Param> fnArgs;
         fnArgs.emplace_back("self", N<IdExpr>(cp->realizedName()), nullptr);
         for (size_t i = 1; i < args.size(); i++)
-          fnArgs.emplace_back(ctx->cache->rev(fp->ast->args[i].name),
+          fnArgs.emplace_back(ctx->cache->rev((*fp->ast)[i].name),
                               N<IdExpr>(args[i]->realizedName()), nullptr);
         std::vector<Expr *> callArgs;
         callArgs.emplace_back(
@@ -669,7 +668,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
                         N<IdExpr>("self"), N<IdExpr>(cp->realizedName()),
                         N<IdExpr>(real->type->realizedName())));
         for (size_t i = 1; i < args.size(); i++)
-          callArgs.emplace_back(N<IdExpr>(ctx->cache->rev(fp->ast->args[i].name)));
+          callArgs.emplace_back(N<IdExpr>(ctx->cache->rev((*fp->ast)[i].name)));
         auto thunkAst = N<FunctionStmt>(thunkName, nullptr, fnArgs,
                                         N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
                                             N<IdExpr>(m->ast->name), callArgs))));
@@ -850,18 +849,18 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   // Mark this realization as pending (i.e., realized but not translated)
   ctx->cache->pendingRealizations.insert({r->type->ast->name, r->type->realizedName()});
 
-  seqassert(!r->type || r->ast->args.size() == r->type->getArgTypes().size() +
-                                                   r->type->funcGenerics.size(),
+  seqassert(!r->type || r->ast->size() == r->type->getArgTypes().size() +
+                                              r->type->funcGenerics.size(),
             "type/AST argument mismatch");
 
   // Populate the IR node
   std::vector<std::string> names;
   std::vector<codon::ir::types::Type *> types;
-  for (size_t i = 0, j = 0; i < r->ast->args.size(); i++) {
-    if (r->ast->args[i].status == Param::Normal) {
+  for (size_t i = 0, j = 0; i < r->ast->size(); i++) {
+    if ((*r->ast)[i].status == Param::Normal) {
       if (!r->type->getArgTypes()[j]->getFunc()) {
         types.push_back(makeIRType(r->type->getArgTypes()[j]->getClass().get()));
-        names.push_back(ctx->cache->reverseIdentifierLookup[r->ast->args[i].name]);
+        names.push_back(ctx->cache->reverseIdentifierLookup[(*r->ast)[i].name]);
       }
       j++;
     }
@@ -902,7 +901,7 @@ FunctionStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     seqassert(type->getArgTypes()[1]->is(TYPE_TUPLE), "bad function base: {}",
               type->getArgTypes()[1]->debugString(2));
     auto as = type->getArgTypes()[1]->getClass()->generics.size();
-    auto ag = ast->args[1].name;
+    auto ag = (*ast)[1].name;
     trimStars(ag);
     for (int i = 0; i < as; i++) {
       ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
@@ -924,7 +923,7 @@ FunctionStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
 
     Stmt *suite = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "new_union"),
-        N<IdExpr>(type->ast->args[0].name), N<IdExpr>(unionType->realizedName())));
+        N<IdExpr>(type->ast->begin()->name), N<IdExpr>(unionType->realizedName())));
     ast->suite = SuiteStmt::wrap(suite);
   } else if (startswith(ast->name, "__internal__.get_union_tag:0")) {
     //   return __internal__.union_get_data(union, T0)
@@ -933,7 +932,7 @@ FunctionStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     auto unionTypes = unionType->getRealizationTypes();
     if (tag < 0 || tag >= unionTypes.size())
       E(Error::CUSTOM, getSrcInfo(), "bad union tag");
-    auto selfVar = ast->args[0].name;
+    auto selfVar = ast->begin()->name;
     auto suite = N<SuiteStmt>(N<ReturnStmt>(
         N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"), N<IdExpr>(selfVar),
                     N<IdExpr>(unionTypes[tag]->realizedName()))));

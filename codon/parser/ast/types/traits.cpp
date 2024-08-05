@@ -45,7 +45,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
 
       auto knownArgTypes = pt->generics[1].type->getClass();
       for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
-        if (func->ast->args[i].status == Param::Generic) {
+        if ((*func->ast)[i].status == Param::Generic) {
           j++;
         } else if (known[i]) {
           if (func->getArgTypes()[i - j]->unify(knownArgTypes->generics[k].type.get(),
@@ -65,11 +65,11 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (trAst) {
       star = trAst->getStarArgs();
       kwStar = trAst->getKwStarArgs();
-      if (kwStar < trAst->args.size() && star >= trInArgs->generics.size())
+      if (kwStar < trAst->size() && star >= trInArgs->generics.size())
         star -= 1;
       size_t preStar = 0;
-      for (size_t fi = 0; fi < trAst->args.size(); fi++) {
-        if (fi != kwStar && !known[fi] && trAst->args[fi].status == Param::Normal) {
+      for (size_t fi = 0; fi < trAst->size(); fi++) {
+        if (fi != kwStar && !known[fi] && (*trAst)[fi].status == Param::Normal) {
           total++;
           if (fi < star)
             preStar++;
@@ -88,7 +88,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     }
     size_t i = 0;
     for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
-      if (!known[fi] && trAst->args[fi].status == Param::Normal) {
+      if (!known[fi] && (*trAst)[fi].status == Param::Normal) {
         if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
             -1)
           return -1;

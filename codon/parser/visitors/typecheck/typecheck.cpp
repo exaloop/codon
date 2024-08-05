@@ -45,8 +45,8 @@ Stmt *TypecheckVisitor::apply(
 
   // Prepare the code
   auto tv = TypecheckVisitor(ctx, preamble);
-  Stmt *suite = tv.N<SuiteStmt>();
-  auto &stmts = suite->getSuite()->stmts;
+  SuiteStmt *suite = tv.N<SuiteStmt>();
+  auto &stmts = suite->items;
   stmts.push_back(tv.N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
                                   std::vector<Expr *>{tv.N<IdExpr>(Attr::Internal)}));
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
@@ -68,15 +68,14 @@ Stmt *TypecheckVisitor::apply(
   }
 
   suite = tv.N<SuiteStmt>();
-  suite->getSuite()->stmts.push_back(tv.N<SuiteStmt>(*preamble));
+  suite->items.push_back(tv.N<SuiteStmt>(*preamble));
 
   // Add dominated assignment declarations
-  suite->getSuite()->stmts.insert(suite->getSuite()->stmts.end(),
-                                  ctx->scope.back().stmts.begin(),
-                                  ctx->scope.back().stmts.end());
-  suite->getSuite()->stmts.push_back(n);
+  suite->items.insert(suite->items.end(), ctx->scope.back().stmts.begin(),
+                      ctx->scope.back().stmts.end());
+  suite->items.push_back(n);
 
-  if (n->getSuite())
+  if (cast<SuiteStmt>(n))
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())
@@ -155,7 +154,7 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
   }
 
   auto suite = ctx->cache->N<SuiteStmt>(*preamble);
-  suite->stmts.push_back(n);
+  suite->addStmt(n);
   return suite;
 }
 
@@ -181,11 +180,11 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   // auto k = typeid(*expr).name();
   // Cache::CTimer t(ctx->cache, k);
 
-  if (!expr->type)
-    unify(expr->type, ctx->getUnbound());
+  if (!expr->getType())
+    expr->setType(ctx->getUnbound());
 
-  auto typ = expr->type;
-  if (!expr->done) {
+  auto typ = expr->getType();
+  if (!expr->isDone()) {
     TypecheckVisitor v(ctx, preamble, prependStmts);
     v.setSrcInfo(expr->getSrcInfo());
     ctx->pushSrcInfo(expr->getSrcInfo());
@@ -197,27 +196,16 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
         if (!v.resultExpr->hasAttribute(*it))
           v.resultExpr->setAttribute(*it, attr->clone());
       }
-      v.resultExpr->origExpr = expr;
+      v.resultExpr->setOrigExpr(expr);
       expr = v.resultExpr;
     }
-    if (!allowTypes && expr && expr->type->is("type"))
+    if (!allowTypes && expr && expr->getType()->is("type"))
       E(Error::UNEXPECTED_TYPE, expr, "type");
-    if (!expr->type)
-      unify(expr->type, ctx->getUnbound());
-    // if (auto s = typ->isStaticType()) { // realize replaced T with int/str
-    //   if (!(s == StaticValue::INT && expr->getInt()) &&
-    //       !(s == StaticValue::STRING && expr->getString())) {
-    //     unify(typ, expr->type);
-    //   }
-    // } else {
-    unify(typ, expr->type);
-    // if (!allowStatics) {
-    //   if (auto u = expr->type->getStatic())
-    //     expr->type = ctx->getType(StaticType::getTypeName(u));
-    // }
-    if (expr->done) {
+    if (!expr->getType())
+      expr->setType(ctx->getUnbound());
+    unify(typ, expr->getType());
+    if (expr->isDone())
       ctx->changedNodes++;
-    }
   }
   realize(typ);
   if (expr)
@@ -242,15 +230,15 @@ Expr *TypecheckVisitor::transformType(Expr *expr, bool allowTypeOf) {
   expr = transform(expr);
   ctx->allowTypeOf = oldTypeOf;
   if (expr) {
-    if (expr->type->isStaticType()) {
+    if (expr->getType()->isStaticType()) {
       ;
-    } else if (expr->type->is("type")) {
+    } else if (expr->getType()->is("type")) {
       expr->setType(ctx->instantiate(expr->getType()));
-    } else if (expr->type->getUnbound() &&
-               !expr->type->getUnbound()->genericName.empty()) {
+    } else if (expr->getType()->getUnbound() &&
+               !expr->getType()->getUnbound()->genericName.empty()) {
       // generic!
       expr->setType(ctx->instantiate(expr->getType()));
-    } else if (expr->type->getUnbound() && expr->type->getUnbound()->trait) {
+    } else if (expr->getType()->getUnbound() && expr->getType()->getUnbound()->trait) {
       // generic (is type)!
       expr->setType(ctx->instantiate(expr->getType()));
     } else {
@@ -266,7 +254,7 @@ void TypecheckVisitor::defaultVisit(Expr *e) {
 
 /// Transform a statement node.
 Stmt *TypecheckVisitor::transform(Stmt *stmt) {
-  if (!stmt || stmt->done)
+  if (!stmt || stmt->isDone())
     return stmt;
 
   // auto k = typeid(*stmt).name();
@@ -287,17 +275,16 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
       v.prependStmts->push_back(stmt);
     bool done = true;
     for (auto &s : *(v.prependStmts))
-      done &= s->done;
+      done &= s->isDone();
     stmt = N<SuiteStmt>(*v.prependStmts);
-    stmt->done = done;
+    if (done)
+      stmt->setDone();
   }
-  if (stmt->done)
+  if (stmt->isDone())
     ctx->changedNodes++;
   if (!stmt->toString(-1).empty())
     LOG_TYPECHECK("< [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
                   ctx->getBase()->iteration, stmt->toString(-1));
-  // LOG("[stmt] {}: {} {}", getSrcInfo(), split(stmt->toString(1), '\n').front(),
-  // stmt->isDone() ? "[done]" : "");
   return stmt;
 }
 
@@ -315,7 +302,7 @@ void TypecheckVisitor::visit(StmtExpr *expr) {
     done &= s->isDone();
   }
   expr->expr = transform(expr->expr);
-  unify(expr->type, expr->expr->type);
+  unify(expr->getType(), expr->expr->getType());
   if (done && expr->expr->isDone())
     expr->setDone();
 }
@@ -336,25 +323,25 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
     stmt->eraseAttribute(Attr::Bindings);
   }
   if (!prepend.empty())
-    stmt->stmts.insert(stmt->stmts.begin(), prepend.begin(), prepend.end());
-  for (auto &s : stmt->stmts) {
+    stmt->items.insert(stmt->items.begin(), prepend.begin(), prepend.end());
+  for (auto *s : *stmt) {
     if (ctx->returnEarly) {
       // If returnEarly is set (e.g., in the function) ignore the rest
       break;
     }
     if ((s = transform(s))) {
-      if (!s->getSuite()) {
+      if (!cast<SuiteStmt>(s)) {
         done &= s->isDone();
         stmts.push_back(s);
       } else {
-        for (auto &ss : s->getSuite()->stmts) {
+        for (auto *ss : *cast<SuiteStmt>(s)) {
           done &= ss->isDone();
           stmts.push_back(ss);
         }
       }
     }
   }
-  stmt->stmts = stmts;
+  stmt->items = stmts;
   if (done)
     stmt->setDone();
 }
@@ -449,19 +436,18 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
       fn.get(), args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
         for (int si = 0, gi = 0, pi = 0; si < slots.size(); si++) {
-          if (fn->ast->args[si].status == Param::Generic) {
+          if ((*fn->ast)[si].status == Param::Generic) {
             if (slots[si].empty()) {
               // is this "real" type?
-              if (in(niGenerics, fn->ast->args[si].name) &&
-                  !fn->ast->args[si].defaultValue)
+              if (in(niGenerics, (*fn->ast)[si].name) && !(*fn->ast)[si].defaultValue)
                 return -1;
               reordered.emplace_back(nullptr, 0);
             } else {
               seqassert(gi < fn->funcGenerics.size(), "bad fn");
               if (!fn->funcGenerics[gi].type->isStaticType() &&
-                  !args[slots[si][0]].value->type->is("type"))
+                  !args[slots[si][0]].value->getType()->is("type"))
                 return -1;
-              reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
+              reordered.emplace_back(args[slots[si][0]].value->getType(), slots[si][0]);
             }
             gi++;
           } else if (si == s || si == k || slots[si].size() != 1) {
@@ -474,7 +460,7 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
               reordered.emplace_back(nullptr, 0);
             }
           } else {
-            reordered.emplace_back(args[slots[si][0]].value->type, slots[si][0]);
+            reordered.emplace_back(args[slots[si][0]].value->getType(), slots[si][0]);
           }
         }
         return 0;
@@ -483,41 +469,36 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
       part && part->getPartial() ? part->getPartialMask() : std::vector<char>{});
   int ai = 0, mai = 0, gi = 0, real_gi = 0;
   for (; score != -1 && ai < reordered.size(); ai++) {
-    auto expectTyp = fn->ast->args[ai].status == Param::Normal
+    auto expectTyp = (*fn->ast)[ai].status == Param::Normal
                          ? fn->getArgTypes()[mai++]
                          : fn->funcGenerics[gi++].type;
     auto [argType, argTypeIdx] = reordered[ai];
     if (!argType)
       continue;
-    real_gi += fn->ast->args[ai].status != Param::Normal;
-    if (fn->ast->args[ai].status != Param::Normal) {
+    real_gi += (*fn->ast)[ai].status != Param::Normal;
+    if ((*fn->ast)[ai].status != Param::Normal) {
       // Check if this is a good generic!
       if (expectTyp && expectTyp->isStaticType()) {
-        if (!args[argTypeIdx].value->type->isStaticType()) {
+        if (!args[argTypeIdx].value->getType()->isStaticType()) {
           score = -1;
           break;
         } else {
-          argType = args[argTypeIdx].value->type;
+          argType = args[argTypeIdx].value->getType();
         }
       } else {
         /// TODO: check if these are real types or if traits are satisfied
         continue;
       }
     }
-    // else if (auto c = argType->isStaticType()) {
-    //   auto n = c == 1 ? "int" : "str";
-    //   argType = ctx->getType(n);
-    //   LOG("-> {} {} => {}", fn->debugString(2), argType, argType);
-    // }
     ctx->addBlock();
     Expr *dummy = N<IdExpr>("#");
-    dummy->type = argType;
+    dummy->setType(argType);
     dummy->setDone();
-    ctx->addVar("#", "#", std::make_shared<types::LinkType>(dummy->type));
+    ctx->addVar("#", "#", std::make_shared<types::LinkType>(dummy->getType()));
     try {
       wrapExpr(&dummy, expectTyp, fn);
       types::Type::Unification undo;
-      if (dummy->type->unify(expectTyp.get(), &undo) >= 0) {
+      if (dummy->getType()->unify(expectTyp.get(), &undo) >= 0) {
         undo.undo();
       } else {
         // LOG("[call] {:a}: {:c} + {:c} failed", fn, dummy->type, expectTyp);
@@ -579,8 +560,8 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
 
   auto doTypeWrap =
       !callee || !callee->ast->hasAttribute("std.internal.attributes.no_type_wrap.0:0");
-  if (callee && (*expr)->type->is("type")) {
-    auto c = ctx->getType((*expr)->type)->getClass();
+  if (callee && (*expr)->getType()->is("type")) {
+    auto c = ctx->getType((*expr)->getType())->getClass();
     if (!c)
       return false;
     if (doTypeWrap) {
@@ -596,8 +577,9 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
-  if ((*expr)->type->getStatic() && (!expectedType || !expectedType->isStaticType())) {
-    (*expr)->type = (*expr)->type->getStatic()->getNonStaticType();
+  if ((*expr)->getType()->getStatic() &&
+      (!expectedType || !expectedType->isStaticType())) {
+    (*expr)->setType((*expr)->getType()->getStatic()->getNonStaticType());
     exprClass = (*expr)->getType()->getClass();
     // return true;
   }
@@ -627,14 +609,14 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
     texpr->setType(expectedType);
     (*expr) = transform(
         N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>((*expr), "p")));
-  } else if (callee && exprClass && (*expr)->type->getFunc() &&
+  } else if (callee && exprClass && (*expr)->getType()->getFunc() &&
              !(expectedClass && expectedClass->name == "Function")) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
     seqassert(cast<IdExpr>(*expr) || (cast<StmtExpr>(*expr) &&
                                       cast<IdExpr>(cast<StmtExpr>(*expr)->getExpr())),
               "bad partial function: {}", *(*expr));
-    auto p = partializeFunction((*expr)->type->getFunc());
+    auto p = partializeFunction((*expr)->getType()->getFunc());
     if (auto se = cast<StmtExpr>(*expr)) {
       *expr = transform(N<StmtExpr>(se->stmts, p));
     } else {
@@ -643,11 +625,11 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
   } else if (expectedClass && expectedClass->name == "Function" && exprClass &&
              exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
     *expr = transform(N<IdExpr>(exprClass->getPartial()->getPartialFunc()->ast->name));
-  } else if (allowUnwrap && exprClass && (*expr)->type->getUnion() && expectedClass &&
-             !expectedClass->getUnion()) {
+  } else if (allowUnwrap && exprClass && (*expr)->getType()->getUnion() &&
+             expectedClass && !expectedClass->getUnion()) {
     // Extract union types via __internal__.get_union
     if (auto t = realize(expectedClass)) {
-      auto e = realize((*expr)->type);
+      auto e = realize((*expr)->getType());
       if (!e)
         return false;
       bool ok = false;
@@ -686,7 +668,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
         if (!isId(*expr, "")) {
           *expr = castToSuperClass((*expr), expectedClass, true);
         } else { // Just checking can this be done
-          (*expr)->type = expectedClass;
+          (*expr)->setType(expectedClass);
         }
         break;
       }
@@ -698,7 +680,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, const TypePtr &expectedType,
 /// Cast derived class to a base class.
 Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassTypePtr superTyp,
                                          bool isVirtual) {
-  ClassTypePtr typ = expr->type->getClass();
+  ClassTypePtr typ = expr->getClassType();
   for (auto &field : getClassFields(typ.get())) {
     for (auto &parentField : getClassFields(superTyp.get()))
       if (field.name == parentField.name) {
@@ -717,15 +699,15 @@ Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassTypePtr superTyp,
 std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
 TypecheckVisitor::unpackTupleTypes(Expr *expr) {
   auto ret = std::make_shared<std::vector<std::pair<std::string, types::TypePtr>>>();
-  if (auto tup = cast<TupleExpr>(expr->origExpr)) {
+  if (auto tup = cast<TupleExpr>(expr->getOrigExpr())) {
     for (auto &a : *tup) {
       a = transform(a);
       if (!a->getType()->getClass())
         return nullptr;
       ret->emplace_back("", a->getType());
     }
-  } else if (auto kw = cast<CallExpr>(expr->origExpr)) {
-    auto val = ctx->getType(kw->type)->getClass();
+  } else if (auto kw = cast<CallExpr>(expr->getOrigExpr())) {
+    auto val = ctx->getType(kw->getType())->getClass();
     if (!val || val->name != "NamedTuple" || !val->generics[1].type->getClass() ||
         !val->generics[0].type->canRealize())
       return nullptr;
@@ -749,10 +731,10 @@ std::vector<std::pair<std::string, Expr *>>
 TypecheckVisitor::extractNamedTuple(Expr *expr) {
   std::vector<std::pair<std::string, Expr *>> ret;
 
-  seqassert(expr->type->is("NamedTuple") &&
-                expr->type->getClass()->generics[0].type->canRealize(),
+  seqassert(expr->getType()->is("NamedTuple") &&
+                expr->getClassType()->generics[0].type->canRealize(),
             "bad named tuple: {}", *expr);
-  auto id = expr->type->getClass()->generics[0].type->getIntStatic()->value;
+  auto id = expr->getClassType()->generics[0].type->getIntStatic()->value;
   seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
   auto names = ctx->cache->generatedTupleNames[id];
   for (size_t i = 0; i < names.size(); i++) {
@@ -762,7 +744,7 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 }
 
 types::TypePtr TypecheckVisitor::getType(Expr *e) {
-  auto t = e->type;
+  auto t = e->getType();
   if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == "type")
     return t;
   if (auto i = cast<InstantiateExpr>(e))
@@ -793,7 +775,7 @@ TypecheckVisitor::getClassFieldTypes(const types::ClassTypePtr &cls) {
   for (auto &field : getClassFields(cls.get())) {
     auto ftyp = ctx->instantiate(field.type, cls);
     if (!ftyp->canRealize() && field.typeExpr) {
-      auto t = ctx->getType(transform(clean_clone(field.typeExpr))->type);
+      auto t = ctx->getType(transform(clean_clone(field.typeExpr))->getType());
       unify(ftyp, t);
     }
     result.push_back(ftyp);

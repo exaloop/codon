@@ -33,9 +33,10 @@ class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
 
 private:
   template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
-    std::string s = t->type ? fmt::format("{}{}{}", typeStart,
-                                          anchor(t->type->realizedName()), typeEnd)
-                            : "";
+    std::string s = t->getType()
+                        ? fmt::format("{}{}{}", typeStart,
+                                      anchor(t->getType()->realizedName()), typeEnd)
+                        : "";
     return fmt::format("{}{}{}{}{}{}", exprStart, nodeStart, fmt::format(args...),
                        nodeEnd, s, exprEnd);
   }

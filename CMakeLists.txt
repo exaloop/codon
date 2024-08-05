@@ -141,9 +141,11 @@ set(CODON_HPPFILES
   codon/dsl/dsl.h
   codon/dsl/plugins.h
   codon/parser/ast.h
+  codon/parser/ast/node.h
   codon/parser/ast/expr.h
   codon/parser/ast/stmt.h
   codon/parser/ast/types.h
+  codon/parser/ast/attr.h
   codon/parser/ast/types/type.h
   codon/parser/ast/types/link.h
   codon/parser/ast/types/class.h
@@ -233,6 +235,7 @@ set(CODON_CPPFILES
   codon/compiler/memory_manager.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
+  codon/parser/ast/attr.cpp
   codon/parser/ast/stmt.cpp
   codon/parser/ast/types/type.cpp
   codon/parser/ast/types/link.cpp

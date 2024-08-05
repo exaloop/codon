@@ -54,12 +54,12 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
   ctx->blockLevel--;
 
-  std::vector<TryStmt::Catch *> catches;
+  std::vector<ExceptStmt *> catches;
   auto pyVar = ctx->cache->getTemporaryVar("pyexc");
   auto pyCatchStmt = N<WhileStmt>(N<BoolExpr>(true), N<SuiteStmt>());
 
   auto done = stmt->suite->isDone();
-  for (auto &c : stmt->catches) {
+  for (auto &c : *stmt) {
     TypeContext::Item val = nullptr;
     if (!c->var.empty()) {
       if (!c->hasAttribute(Attr::ExprDominated) &&
@@ -91,7 +91,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
           N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
                                 N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
                     N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr));
-      pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
+      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->suite);
     } else if (c->exc && getType(c->exc)->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
       if (!c->var.empty()) {
@@ -99,7 +99,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(c->var), N<IdExpr>(pyVar)), c->suite);
       }
       c->suite = N<SuiteStmt>(c->suite, N<BreakStmt>());
-      pyCatchStmt->suite->getSuite()->stmts.push_back(c->suite);
+      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->suite);
     } else {
       // Handle all other exceptions
       c->exc = transformType(c->exc);
@@ -112,11 +112,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       catches.push_back(c);
     }
   }
-  if (!pyCatchStmt->suite->getSuite()->stmts.empty()) {
+  if (!cast<SuiteStmt>(pyCatchStmt->getSuite())->empty()) {
     // Process PyError catches
     auto exc = N<IdExpr>("std.internal.python.PyError.0");
-    pyCatchStmt->suite->getSuite()->stmts.push_back(N<ThrowStmt>(nullptr));
-    auto c = N<TryStmt::Catch>(pyVar, transformType(exc), pyCatchStmt);
+    cast<SuiteStmt>(pyCatchStmt->getSuite())->items.push_back(N<ThrowStmt>(nullptr));
+    auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
 
     auto val = ctx->addVar(pyVar, pyVar, getType(c->exc));
     ctx->blockLevel++;
@@ -125,7 +125,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
     catches.push_back(c);
   }
-  stmt->catches = catches;
+  stmt->items = catches;
   if (stmt->finally) {
     ctx->blockLevel++;
     stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
@@ -187,7 +187,7 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
     content = std::vector<Stmt *>{
         as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->suite),
-                   std::vector<TryStmt::Catch *>{},
+                   std::vector<ExceptStmt *>{},
                    N<SuiteStmt>(N<ExprStmt>(
                        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};
   }

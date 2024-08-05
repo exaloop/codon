@@ -22,10 +22,10 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     if (auto star = cast<StarExpr>(expr->items[ai])) {
       // Case: unpack star expressions (e.g., `*arg` -> `arg.item1, arg.item2, ...`)
       star->expr = transform(star->getExpr());
-      auto typ = star->getExpr()->type->getClass();
+      auto typ = star->getExpr()->getClassType();
       while (typ && typ->is(TYPE_OPTIONAL)) {
         star->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->getExpr()));
-        typ = star->getExpr()->type->getClass();
+        typ = star->getExpr()->getClassType();
       }
       if (!typ)
         return; // continue later when the type becomes known
@@ -44,7 +44,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
     }
   generateTuple(expr->items.size());
   resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), clone(expr->items)));
-  unify(expr->type, resultExpr->type);
+  unify(expr->getType(), resultExpr->getType());
 }
 
 /// Transform a list `[a1, ..., aN]` to the corresponding statement expression.
@@ -87,7 +87,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   bool canOptimize =
       expr->kind == GeneratorExpr::ListGenerator && expr->loopCount() == 1;
   if (canOptimize) {
-    auto iter = transform(clone(expr->getFinalSuite()->getFor()->iter));
+    auto iter = transform(clone(cast<ForStmt>(expr->getFinalSuite())->iter));
     auto ce = cast<CallExpr>(iter);
     IdExpr *id = nullptr;
     if (ce && (id = cast<IdExpr>(ce->getExpr()))) {
@@ -108,17 +108,17 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 
     if (canOptimize) {
       auto optimizeVar = ctx->cache->getTemporaryVar("i");
-      auto origIter = expr->getFinalSuite()->getFor()->iter;
+      auto origIter = cast<ForStmt>(expr->getFinalSuite())->getIter();
 
       auto optStmt = clone(noOptStmt);
-      optStmt->getSuite()->stmts[1]->getFor()->iter = N<IdExpr>(optimizeVar);
+      cast<ForStmt>((*cast<SuiteStmt>(optStmt))[1])->iter = N<IdExpr>(optimizeVar);
       optStmt = N<SuiteStmt>(
           N<AssignStmt>(N<IdExpr>(optimizeVar), clone(origIter)),
           N<AssignStmt>(
               clone(var),
               N<CallExpr>(N<IdExpr>("List"),
                           N<CallExpr>(N<DotExpr>(N<IdExpr>(optimizeVar), "__len__")))),
-          optStmt->getSuite()->stmts[1]);
+          (*cast<SuiteStmt>(optStmt))[1]);
       resultExpr = N<IfExpr>(
           N<CallExpr>(N<IdExpr>("hasattr"), clone(origIter), N<StringExpr>("__len__")),
           N<StmtExpr>(optStmt, clone(var)), N<StmtExpr>(noOptStmt, var));
@@ -148,28 +148,26 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     // ctx->popBlock();
   } else if (expr->kind == GeneratorExpr::TupleGenerator) {
     seqassert(expr->loopCount() == 1, "invalid tuple generator");
-    unify(expr->type, ctx->getUnbound());
-    auto gen = transform(expr->getFinalSuite()->getFor()->iter);
-    if (!gen->type->canRealize())
+    auto gen = transform(cast<ForStmt>(expr->getFinalSuite())->iter);
+    if (!gen->getType()->canRealize())
       return; // Wait until the iterator can be realized
 
     auto block = N<SuiteStmt>();
     // `tuple = tuple_generator`
     auto tupleVar = ctx->cache->getTemporaryVar("tuple");
-    block->stmts.push_back(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
+    block->addStmt(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
-    auto forStmt = clone(expr->getFinalSuite()->getFor());
+    auto forStmt = clone(cast<ForStmt>(expr->getFinalSuite()));
     seqassert(cast<IdExpr>(forStmt->var), "tuple() not simplified");
     auto finalExpr = expr->getFinalExpr();
     auto suiteVec =
         cast<StmtExpr>(finalExpr) ? cast<StmtExpr>(finalExpr)->stmts[0] : nullptr;
-    auto oldSuite = suiteVec ? clone(suiteVec) : nullptr;
     auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
-        expr->getFinalSuite()->getFor()->var, &forStmt->suite,
-        expr->getFinalSuite()->getFor()->iter,
+        cast<ForStmt>(expr->getFinalSuite())->var, &forStmt->suite,
+        cast<ForStmt>(expr->getFinalSuite())->iter,
         [&](Stmt *wrap) { return N<StmtExpr>(clone(wrap), clone(finalExpr)); }, true);
     if (!ok)
-      E(Error::CALL_BAD_ITER, gen, gen->type->prettyString());
+      E(Error::CALL_BAD_ITER, gen, gen->getType()->prettyString());
     if (delay)
       return;
 
@@ -177,7 +175,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     for (auto &i : staticItems)
       tupleItems.push_back(cast<Expr>(i));
     if (preamble)
-      block->stmts.push_back(preamble);
+      block->addStmt(preamble);
     // ctx->addBlock();
     resultExpr = transform(N<StmtExpr>(block, N<TupleExpr>(tupleItems)));
     // ctx->popBlock();
@@ -186,9 +184,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     expr->loops =
         transform(expr->getFinalSuite()); // assume: internal data will be changed
     // ctx->popBlock();
-    unify(expr->type, ctx->instantiateGeneric(ctx->getType("Generator"),
-                                              {expr->getFinalExpr()->type}));
-    if (realize(expr->type))
+    unify(expr->getType(), ctx->instantiateGeneric(ctx->getType("Generator"),
+                                              {expr->getFinalExpr()->getType()}));
+    if (realize(expr->getType()))
       expr->setDone();
   }
 }
@@ -253,16 +251,16 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     if (!isDict && cast<StarExpr>(i)) {
       auto star = cast<StarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "__iter__")));
-      if (star->getExpr()->type->is("Generator"))
-        typ = star->getExpr()->type->getClass()->generics[0].type->getClass();
+      if (star->getExpr()->getType()->is("Generator"))
+        typ = star->getExpr()->getClassType()->generics[0].type->getClass();
     } else if (isDict && cast<KeywordStarExpr>(i)) {
       auto star = cast<KeywordStarExpr>(i);
       star->expr = transform(N<CallExpr>(N<DotExpr>(star->getExpr(), "items")));
-      if (star->getExpr()->type->is("Generator"))
-        typ = star->getExpr()->type->getClass()->generics[0].type->getClass();
+      if (star->getExpr()->getType()->is("Generator"))
+        typ = star->getExpr()->getClassType()->generics[0].type->getClass();
     } else {
       i = transform(i);
-      typ = i->type->getClass();
+      typ = i->getClassType();
     }
     if (!typ) {
       done = false;

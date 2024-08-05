@@ -70,7 +70,7 @@ public:
   virtual void visit(MatchStmt *);
   virtual void visit(ImportStmt *);
   virtual void visit(TryStmt *);
-  virtual void visit(TryStmt::Catch *);
+  virtual void visit(ExceptStmt *);
   virtual void visit(GlobalStmt *);
   virtual void visit(ThrowStmt *);
   virtual void visit(FunctionStmt *);
@@ -223,7 +223,7 @@ public:
     transform(expr->expr);
   }
   void visit(SuiteStmt *stmt) override {
-    for (auto &s : stmt->stmts)
+    for (auto &s : stmt->items)
       transform(s);
   }
   void visit(BreakStmt *stmt) override {}
@@ -269,8 +269,8 @@ public:
     transform(stmt->elseSuite);
   }
   void visit(MatchStmt *stmt) override {
-    transform(stmt->what);
-    for (auto &m : stmt->cases) {
+    transform(stmt->expr);
+    for (auto &m : stmt->items) {
       transform(m.pattern);
       transform(m.guard);
       transform(m.suite);
@@ -287,11 +287,11 @@ public:
   }
   void visit(TryStmt *stmt) override {
     transform(stmt->suite);
-    for (auto &a : stmt->catches)
+    for (auto &a : stmt->items)
       transform(a);
     transform(stmt->finally);
   }
-  void visit(TryStmt::Catch *stmt) override {
+  void visit(ExceptStmt *stmt) override {
     transform(stmt->exc);
     transform(stmt->suite);
   }
@@ -299,7 +299,7 @@ public:
   void visit(ThrowStmt *stmt) override { transform(stmt->expr); }
   void visit(FunctionStmt *stmt) override {
     transform(stmt->ret);
-    for (auto &a : stmt->args) {
+    for (auto &a : stmt->items) {
       transform(a.type);
       transform(a.defaultValue);
     }
@@ -308,7 +308,7 @@ public:
       transform(d);
   }
   void visit(ClassStmt *stmt) override {
-    for (auto &a : stmt->args) {
+    for (auto &a : stmt->items) {
       transform(a.type);
       transform(a.defaultValue);
     }
@@ -415,7 +415,7 @@ public:
     expr->expr = transform(expr->expr);
   }
   void visit(SuiteStmt *stmt) override {
-    for (auto &s : stmt->stmts)
+    for (auto &s : stmt->items)
       s = transform(s);
   }
   void visit(ExprStmt *stmt) override { stmt->expr = transform(stmt->expr); }
@@ -459,8 +459,8 @@ public:
     stmt->elseSuite = SuiteStmt::wrap(transform(stmt->elseSuite));
   }
   void visit(MatchStmt *stmt) override {
-    stmt->what = transform(stmt->what);
-    for (auto &m : stmt->cases) {
+    stmt->expr = transform(stmt->expr);
+    for (auto &m : stmt->items) {
       m.pattern = transform(m.pattern);
       m.guard = transform(m.guard);
       m.suite = SuiteStmt::wrap(transform(m.suite));
@@ -477,11 +477,11 @@ public:
   }
   void visit(TryStmt *stmt) override {
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
-    for (auto &a : stmt->catches)
-      a = (TryStmt::Catch *)transform(a);
+    for (auto &a : stmt->items)
+      a = (ExceptStmt *)transform(a);
     stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
   }
-  void visit(TryStmt::Catch *stmt) override {
+  void visit(ExceptStmt *stmt) override {
     stmt->exc = transform(stmt->exc);
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
   }
@@ -489,7 +489,7 @@ public:
   void visit(ThrowStmt *stmt) override { stmt->expr = transform(stmt->expr); }
   void visit(FunctionStmt *stmt) override {
     stmt->ret = transform(stmt->ret);
-    for (auto &a : stmt->args) {
+    for (auto &a : stmt->items) {
       a.type = transform(a.type);
       a.defaultValue = transform(a.defaultValue);
     }
@@ -498,7 +498,7 @@ public:
       d = transform(d);
   }
   void visit(ClassStmt *stmt) override {
-    for (auto &a : stmt->args) {
+    for (auto &a : stmt->items) {
       a.type = transform(a.type);
       a.defaultValue = transform(a.defaultValue);
     }

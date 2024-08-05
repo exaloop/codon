@@ -243,11 +243,7 @@ private:
 
 public:
   /* Type inference (infer.cpp) */
-  types::TypePtr unify(types::TypePtr &a, const types::TypePtr &b);
-  types::TypePtr unify(types::TypePtr &&a, const types::TypePtr &b) {
-    auto x = a;
-    return unify(x, b);
-  }
+  types::TypePtr unify(const types::TypePtr &a, const types::TypePtr &b);
   types::TypePtr realize(types::TypePtr);
 
 private:

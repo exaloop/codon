@@ -25,7 +25,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
   // Generate/find class' canonical name (unique ID) and AST
   std::string canonicalName;
-  std::vector<Param> &argsToParse = stmt->args;
+  std::vector<Param> &argsToParse = stmt->items;
 
   // classItem will be added later when the scope is different
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
@@ -74,7 +74,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (astIter == ctx->cache->classes.end()) {
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     } else {
-      argsToParse = astIter->second.ast->args;
+      argsToParse = astIter->second.ast->items;
     }
   }
 
@@ -324,14 +324,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Add class methods
     for (const auto &sp : getClassMethods(stmt->suite))
-      if (sp && sp->getFunction()) {
+      if (auto fp = cast<FunctionStmt>(sp)) {
         if (sp != autoDeducedInit.second) {
-          auto &ds = sp->getFunction()->decorators;
+          auto &ds = fp->decorators;
           for (auto &dc : ds) {
             if (auto d = cast<DotExpr>(dc)) {
-              if (d->member == "setter" and isId(d->expr, sp->getFunction()->name) &&
-                  sp->getFunction()->args.size() == 2) {
-                sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
+              if (d->member == "setter" and isId(d->expr, fp->name) &&
+                  fp->size() == 2) {
+                fp->name = format(".set_{}", fp->name);
                 dc = nullptr;
                 break;
               }
@@ -345,7 +345,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Store their references and re-add them to the context after popping
     addLater.reserve(clsStmts.size() + 1);
     for (auto &c : clsStmts)
-      addLater.push_back(ctx->find(c->getClass()->name));
+      addLater.push_back(ctx->find(cast<ClassStmt>(c)->getName()));
     if (stmt->hasAttribute(Attr::Tuple))
       addLater.push_back(ctx->forceFind(name));
 
@@ -443,7 +443,7 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
     cls = transformType(cls);
-    if (!cls->type->getClass())
+    if (!cls->getClassType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
     auto clsTyp = getType(cls)->getClass();
@@ -480,7 +480,7 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
     auto ast = ctx->cache->getClass(clsTyp)->ast;
     ctx->addBlock();
     addClassGenerics(clsTyp);
-    for (auto &a : ast->args) {
+    for (auto &a : *ast) {
       if (a.status == Param::Normal && !ClassStmt::isClassVar(a)) {
         auto name = a.name;
         int i = 0;
@@ -533,8 +533,7 @@ std::pair<Stmt *, FunctionStmt *>
 TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
   std::pair<Stmt *, FunctionStmt *> init{nullptr, nullptr};
   for (const auto &sp : getClassMethods(stmt->suite))
-    if (sp && sp->getFunction()) {
-      auto f = sp->getFunction();
+    if (auto f = cast<FunctionStmt>(sp)) {
       // todo)) do this
       // if (f->name == "__init__" && !f->args.empty() && f->args[0].name == "self") {
       //   // Set up deducedMembers that will be populated during AssignStmt evaluation
@@ -569,13 +568,13 @@ std::vector<Stmt *> TypecheckVisitor::getClassMethods(Stmt *s) {
   std::vector<Stmt *> v;
   if (!s)
     return v;
-  if (auto sp = s->getSuite()) {
-    for (const auto &ss : sp->stmts)
-      for (const auto &u : getClassMethods(ss))
+  if (auto sp = cast<SuiteStmt>(s)) {
+    for (auto *ss : *sp)
+      for (auto *u : getClassMethods(ss))
         v.push_back(u);
-  } else if (s->getExpr() && cast<StringExpr>(s->getExpr()->expr)) {
+  } else if (cast<ExprStmt>(s) && cast<StringExpr>(cast<ExprStmt>(s)->expr)) {
     /// Those are doc-strings, ignore them.
-  } else if (!s->getFunction() && !s->getClass()) {
+  } else if (!cast<FunctionStmt>(s) && !cast<ClassStmt>(s)) {
     E(Error::CLASS_BAD_ATTR, s);
   } else {
     v.push_back(s);
@@ -589,20 +588,20 @@ void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
                                               std::vector<Stmt *> &varStmts,
                                               std::vector<Stmt *> &fnStmts) {
   for (const auto &sp : getClassMethods(stmt->suite))
-    if (sp && sp->getClass()) {
-      auto origName = sp->getClass()->name;
+    if (auto cp = cast<ClassStmt>(sp)) {
+      auto origName = cp->name;
       // If class B is nested within A, it's name is always A.B, never B itself.
       // Ensure that parent class name is appended
       auto parentName = stmt->name;
-      sp->getClass()->name = fmt::format("{}.{}", parentName, origName);
-      auto tsp = transform(sp);
+      cp->name = fmt::format("{}.{}", parentName, origName);
+      auto tsp = transform(cp);
       std::string name;
-      if (tsp->getSuite()) {
-        for (auto &s : tsp->getSuite()->stmts)
-          if (auto c = s->getClass()) {
+      if (auto tss = cast<SuiteStmt>(tsp)) {
+        for (auto &s : *tss)
+          if (auto c = cast<ClassStmt>(s)) {
             clsStmts.push_back(s);
             name = c->name;
-          } else if (auto a = s->getAssign()) {
+          } else if (auto a = cast<AssignStmt>(s)) {
             varStmts.push_back(s);
           } else {
             fnStmts.push_back(s);

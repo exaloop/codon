@@ -30,13 +30,13 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
-  bool mustUpdate = stmt->isUpdate();
+  bool mustUpdate = stmt->isUpdate() || stmt->isAtomicUpdate();
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
   if (stmt->rhs && cast<BinaryExpr>(stmt->rhs) &&
       cast<BinaryExpr>(stmt->rhs)->isInPlace()) {
     // Update case: a += b
-    seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString());
+    seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString(0));
     mustUpdate = true;
   }
   resultStmt = transformAssignment(stmt, mustUpdate);
@@ -64,7 +64,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     // Assign `a` to `type(a)()` to mark it for deletion
     auto tA = N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)));
     resultStmt = N<AssignStmt>(transform(stmt->expr), transform(tA));
-    resultStmt->getAssign()->setUpdate();
+    cast<AssignStmt>(resultStmt)->setUpdate();
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->getValue());
@@ -150,21 +150,21 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
   assign->lhs->cloneAttributesFrom(stmt->lhs);
 
-  if (!stmt->lhs->type)
-    assign->lhs->type = ctx->getUnbound(assign->lhs->getSrcInfo());
+  if (!stmt->lhs->getType())
+    assign->lhs->setType(ctx->getUnbound(assign->lhs->getSrcInfo()));
   else
-    assign->lhs->type = stmt->lhs->type;
+    assign->lhs->setType(stmt->lhs->getType());
   if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
-    assign->lhs->type->getLink()->defaultType = ctx->getType("NoneType");
-    ctx->getBase()->pendingDefaults.insert(assign->lhs->type);
+    assign->lhs->getType()->getLink()->defaultType = ctx->getType("NoneType");
+    ctx->getBase()->pendingDefaults.insert(assign->lhs->getType());
   }
   if (stmt->type) {
-    unify(assign->lhs->type,
+    unify(assign->lhs->getType(),
           ctx->instantiate(stmt->type->getSrcInfo(), getType(stmt->type)));
   }
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
-                                        assign->lhs->type, ctx->getScope());
+                                        assign->lhs->getType(), ctx->getScope());
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);
   ctx->addAlwaysVisible(val);
@@ -172,20 +172,21 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   if (assign->rhs) { // not a declaration!
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
     if (wrapExpr(&assign->rhs, assign->lhs->getType()))
-      unify(assign->lhs->type, assign->rhs->type);
+      unify(assign->lhs->getType(), assign->rhs->getType());
     // auto type = assign->lhs->getType();
 
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
     if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
-      assign->lhs->type = assign->rhs->type = val->type;
+      assign->lhs->setType(val->type);
+      assign->rhs->setType(val->type);
       // LOG("->gene: {} / {} / {}", val->type, assign->toString(),
       // val->type->canRealize()); realize(assign->lhs->type);
     }
   }
 
-  if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->type)) {
+  if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->getType())) {
     assign->setDone();
   } else if (assign->rhs && !val->isVar() && !val->type->hasUnbounds()) {
     // TODO: this is?!
@@ -222,8 +223,8 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   stmt->rhs = transform(stmt->rhs);
   // Case: wrap expressions if needed (e.g. floats or optionals)
   if (wrapExpr(&stmt->rhs, stmt->lhs->getType()))
-    unify(stmt->rhs->type, stmt->lhs->type);
-  if (stmt->rhs->done && realize(stmt->lhs->type))
+    unify(stmt->rhs->getType(), stmt->lhs->getType());
+  if (stmt->rhs->isDone() && realize(stmt->lhs->getType()))
     stmt->setDone();
   return nullptr;
 }
@@ -272,13 +273,13 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     if (!ftyp->canRealize() && member->typeExpr) {
       ctx->addBlock();
       addClassGenerics(lhsClass);
-      auto t = ctx->getType(transform(clean_clone(member->typeExpr))->type);
+      auto t = ctx->getType(transform(clean_clone(member->typeExpr))->getType());
       ctx->popBlock();
       unify(ftyp, t);
     }
     if (!wrapExpr(&stmt->rhs, ftyp))
       return;
-    unify(stmt->rhs->type, ftyp);
+    unify(stmt->rhs->getType(), ftyp);
     if (stmt->rhs->isDone())
       stmt->setDone();
   }
@@ -302,16 +303,18 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     bin->lexpr = transform(bin->getLhs());
     bin->rexpr = transform(bin->getRhs());
 
-    if (bin->getLhs()->type->getClass() && bin->getRhs()->type->getClass()) {
+    if (!stmt->rhs->getType())
+      stmt->rhs->setType(ctx->getUnbound());
+    if (bin->getLhs()->getClassType() && bin->getRhs()->getClassType()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
-        unify(stmt->rhs->type, transformed->type);
+        unify(stmt->rhs->getType(), transformed->getType());
         return {true, transformed};
       } else if (!stmt->isAtomicUpdate()) {
         // If atomic, call normal magic and then use __atomic_xchg__ below
         return {false, nullptr};
       }
     } else { // Not yet completed
-      unify(stmt->lhs->type, unify(stmt->rhs->type, ctx->getUnbound()));
+      unify(stmt->lhs->getType(), unify(stmt->rhs->getType(), ctx->getUnbound()));
       return {true, nullptr};
     }
   }

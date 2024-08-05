@@ -134,17 +134,17 @@ std::shared_ptr<int> DocContext::find(const std::string &s) const {
 }
 
 std::string getDocstr(Stmt *s) {
-  if (auto se = s->getExpr())
-    if (auto e = cast<StringExpr>(se->expr))
+  if (auto se = cast<ExprStmt>(s))
+    if (auto e = cast<StringExpr>(se->getExpr()))
       return e->getValue();
   return "";
 }
 
 std::vector<Stmt *> DocVisitor::flatten(Stmt *stmt, std::string *docstr, bool deep) {
   std::vector<Stmt *> stmts;
-  if (auto s = stmt->getSuite()) {
-    for (int i = 0; i < (deep ? s->stmts.size() : 1); i++) {
-      for (auto &x : flatten(std::move(s->stmts[i]), i ? nullptr : docstr, deep))
+  if (auto s = cast<SuiteStmt>(stmt)) {
+    for (int i = 0; i < (deep ? s->size() : 1); i++) {
+      for (auto &x : flatten((*s)[i], i ? nullptr : docstr, deep))
         stmts.push_back(std::move(x));
     }
   } else {
@@ -236,20 +236,20 @@ bool isValidName(const std::string &s) {
 
 void DocVisitor::visit(FunctionStmt *stmt) {
   int id = ctx->shared->itemID++;
-  ctx->add(stmt->name, std::make_shared<int>(id));
+  ctx->add(stmt->getName(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"kind", "function"}, {"name", stmt->name}});
+      {"kind", "function"}, {"name", stmt->getName()}});
   j->set("pos", jsonify(stmt->getSrcInfo()));
 
   std::vector<std::shared_ptr<json>> args;
   std::vector<std::string> generics;
-  for (auto &a : stmt->args)
+  for (auto &a : *stmt)
     if (a.status != Param::Normal) {
       ctx->add(a.name, std::make_shared<int>(0));
       generics.push_back(a.name);
       a.status = Param::Generic;
     }
-  for (auto &a : stmt->args)
+  for (auto &a : *stmt)
     if (a.status != Param::Normal) {
       auto j = std::make_shared<json>();
       j->set("name", a.name);
@@ -262,16 +262,16 @@ void DocVisitor::visit(FunctionStmt *stmt) {
     }
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
-  for (auto &d : stmt->decorators)
+  for (auto &d : stmt->getDecorators())
     if (auto e = cast<IdExpr>(d)) {
       j->set("attrs", std::make_shared<json>(e->getValue(), ""));
       isLLVM |= (e->getValue() == "llvm");
     }
-  if (stmt->ret)
-    j->set("return", transform(stmt->ret));
+  if (stmt->getReturn())
+    j->set("return", transform(stmt->getReturn()));
   j->set("args", std::make_shared<json>(args));
   std::string docstr;
-  flatten(std::move(stmt->suite), &docstr);
+  flatten(stmt->getSuite(), &docstr);
   for (auto &g : generics)
     ctx->remove(g);
   if (!docstr.empty() && !isLLVM)
@@ -283,35 +283,34 @@ void DocVisitor::visit(FunctionStmt *stmt) {
 void DocVisitor::visit(ClassStmt *stmt) {
   std::vector<std::string> generics;
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"name", stmt->name},
+      {"name", stmt->getName()},
       {"kind", "class"},
       {"type", stmt->isRecord() ? "type" : "class"}});
   int id = ctx->shared->itemID++;
 
   bool isExtend = false;
-  for (auto &d : stmt->decorators)
+  for (auto &d : stmt->getDecorators())
     if (auto e = cast<IdExpr>(d))
       isExtend |= (e->getValue() == "extend");
 
   if (isExtend) {
     j->set("type", "extension");
-    auto i = ctx->find(stmt->name);
+    auto i = ctx->find(stmt->getName());
     j->set("parent", std::to_string(*i));
     generics = ctx->shared->generics[*i];
   } else {
-    ctx->add(stmt->name, std::make_shared<int>(id));
+    ctx->add(stmt->getName(), std::make_shared<int>(id));
   }
 
   std::vector<std::shared_ptr<json>> args;
-  for (auto &a : stmt->args)
+  for (const auto &a : *stmt)
     if (a.status != Param::Normal) {
-      a.status = Param::Generic;
       generics.push_back(a.name);
     }
   ctx->shared->generics[id] = generics;
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
-  for (auto &a : stmt->args)
+  for (const auto &a : *stmt)
     if (a.status != Param::Normal) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
@@ -325,13 +324,13 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::string docstr;
   std::vector<std::string> members;
-  for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
+  for (auto &f : flatten(stmt->getSuite(), &docstr)) {
     if (auto ff = cast<FunctionStmt>(f)) {
       auto i = transform(f);
       if (i != "")
         members.push_back(i);
-      if (isValidName(ff->name))
-        ctx->remove(ff->name);
+      if (isValidName(ff->getName()))
+        ctx->remove(ff->getName());
     }
   }
   for (auto &g : generics)
@@ -349,27 +348,27 @@ std::shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
 }
 
 void DocVisitor::visit(ImportStmt *stmt) {
-  if (isId(stmt->from, "C") || isId(stmt->from, "python")) {
+  if (isId(stmt->getFrom(), "C") || isId(stmt->getFrom(), "python")) {
     int id = ctx->shared->itemID++;
     std::string name, lib;
-    if (auto i = cast<IdExpr>(stmt->what))
+    if (auto i = cast<IdExpr>(stmt->getWhat()))
       name = i->getValue();
-    else if (auto d = cast<DotExpr>(stmt->what))
+    else if (auto d = cast<DotExpr>(stmt->getWhat()))
       name = d->getMember(), lib = FormatVisitor::apply(d->getExpr());
     else
       seqassert(false, "invalid C import statement");
     ctx->add(name, std::make_shared<int>(id));
-    name = stmt->as.empty() ? name : stmt->as;
+    name = stmt->getAs().empty() ? name : stmt->getAs();
 
     auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
         {"name", name},
         {"kind", "function"},
-        {"extern", cast<IdExpr>(stmt->from)->getValue()}});
+        {"extern", cast<IdExpr>(stmt->getFrom())->getValue()}});
     j->set("pos", jsonify(stmt->getSrcInfo()));
     std::vector<std::shared_ptr<json>> args;
-    if (stmt->ret)
-      j->set("return", transform(stmt->ret));
-    for (auto &a : stmt->args) {
+    if (stmt->getReturnType())
+      j->set("return", transform(stmt->getReturnType()));
+    for (const auto &a : stmt->getArgs()) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       ja->set("type", transform(a.type));
@@ -383,21 +382,21 @@ void DocVisitor::visit(ImportStmt *stmt) {
   }
 
   std::vector<std::string> dirs; // Path components
-  Expr *e = stmt->from;
+  Expr *e = stmt->getFrom();
   while (auto d = cast<DotExpr>(e)) {
     dirs.push_back(d->getMember());
     e = d->getExpr();
   }
   auto ee = cast<IdExpr>(e);
-  if (!ee || !stmt->args.empty() || stmt->ret ||
-      (stmt->what && !cast<IdExpr>(stmt->what)))
+  if (!ee || !stmt->getArgs().empty() || stmt->getReturnType() ||
+      (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
     error("invalid import statement");
   // We have an empty stmt->from in "from .. import".
   if (!ee->getValue().empty())
     dirs.push_back(ee->getValue());
   // Handle dots (e.g. .. in from ..m import x).
-  seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
-  for (int i = 0; i < stmt->dots - 1; i++)
+  seqassert(stmt->getDots() >= 0, "negative dots in ImportStmt");
+  for (int i = 0; i < stmt->getDots() - 1; i++)
     dirs.emplace_back("..");
   std::string path;
   for (int i = int(dirs.size()) - 1; i >= 0; i--)
@@ -418,22 +417,22 @@ void DocVisitor::visit(ImportStmt *stmt) {
     ictx = it->second;
   }
 
-  if (!stmt->what) {
+  if (!stmt->getWhat()) {
     // TODO: implement this corner case
-  } else if (isId(stmt->what, "*")) {
+  } else if (isId(stmt->getWhat(), "*")) {
     for (auto &i : *ictx)
       ctx->add(i.first, i.second.front());
   } else {
-    auto i = cast<IdExpr>(stmt->what);
+    auto i = cast<IdExpr>(stmt->getWhat());
     if (auto c = ictx->find(i->getValue()))
-      ctx->add(stmt->as.empty() ? i->getValue() : stmt->as, c);
+      ctx->add(stmt->getAs().empty() ? i->getValue() : stmt->getAs(), c);
     else
       error(stmt, "symbol '{}' not found in {}", i->getValue(), file->path);
   }
 }
 
 void DocVisitor::visit(AssignStmt *stmt) {
-  auto e = cast<IdExpr>(stmt->lhs);
+  auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     return;
   int id = ctx->shared->itemID++;

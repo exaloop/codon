@@ -14,60 +14,13 @@
 
 #define ACCEPT_IMPL(T, X)                                                              \
   ASTNode *T::clone(bool c) const { return cache->N<T>(*this, c); }                    \
-  void T::accept(X &visitor) { visitor.visit(this); }
+  void T::accept(X &visitor) { visitor.visit(this); }                                  \
+  const char T::NodeId = 0;
 
 using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
-
-const std::string Attr::Module = "module";
-const std::string Attr::ParentClass = "parentClass";
-const std::string Attr::Bindings = "bindings";
-
-const std::string Attr::LLVM = "llvm";
-const std::string Attr::Python = "python";
-const std::string Attr::Atomic = "atomic";
-const std::string Attr::Property = "property";
-const std::string Attr::StaticMethod = "staticmethod";
-const std::string Attr::Attribute = "__attribute__";
-const std::string Attr::C = "C";
-
-const std::string Attr::Internal = "__internal__";
-const std::string Attr::HiddenFromUser = "__hidden__";
-const std::string Attr::ForceRealize = "__force__";
-const std::string Attr::RealizeWithoutSelf =
-    "std.internal.attributes.realize_without_self.0:0";
-
-const std::string Attr::CVarArg = ".__vararg__";
-const std::string Attr::Method = ".__method__";
-const std::string Attr::Capture = ".__capture__";
-const std::string Attr::HasSelf = ".__hasself__";
-const std::string Attr::IsGenerator = ".__generator__";
-
-const std::string Attr::Extend = "extend";
-const std::string Attr::Tuple = "tuple";
-const std::string Attr::ClassDeduce = "deduce";
-const std::string Attr::ClassNoTuple = "__notuple__";
-
-const std::string Attr::Test = "std.internal.attributes.test.0:0";
-const std::string Attr::Overload = "overload:0";
-const std::string Attr::Export = "std.internal.attributes.export.0:0";
-
-const std::string Attr::ClassMagic = "classMagic";
-const std::string Attr::ExprSequenceItem = "exprSequenceItem";
-const std::string Attr::ExprStarSequenceItem = "exprStarSequenceItem";
-const std::string Attr::ExprList = "exprList";
-const std::string Attr::ExprSet = "exprSet";
-const std::string Attr::ExprDict = "exprDict";
-const std::string Attr::ExprPartial = "exprPartial";
-const std::string Attr::ExprDominated = "exprDominated";
-const std::string Attr::ExprStarArgument = "exprStarArgument";
-const std::string Attr::ExprKwStarArgument = "exprKwStarArgument";
-const std::string Attr::ExprOrderedCall = "exprOrderedCall";
-const std::string Attr::ExprExternVar = "exprExternVar";
-const std::string Attr::ExprDominatedUndefCheck = "exprDominatedUndefCheck";
-const std::string Attr::ExprDominatedUsed = "exprDominatedUsed";
 
 ASTNode::ASTNode(const ASTNode &node) : Node(node), cache(node.cache) {}
 
@@ -81,11 +34,9 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   }
 }
 void Expr::validate() const {}
-types::TypePtr Expr::getType() const { return type; }
 types::ClassTypePtr Expr::getClassType() const {
   return type ? type->getClass() : nullptr;
 }
-void Expr::setType(types::TypePtr t) { this->type = std::move(t); }
 std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
@@ -278,7 +229,7 @@ IdExpr::IdExpr(std::string value) : AcceptorExtend(), value(std::move(value)) {}
 IdExpr::IdExpr(const IdExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), value(expr.value) {}
 std::string IdExpr::toString(int) const {
-  return !type ? format("'{}", value) : wrapType(format("'{}", value));
+  return !getType() ? format("'{}", value) : wrapType(format("'{}", value));
 }
 
 StarExpr::StarExpr(Expr *expr) : AcceptorExtend(), expr(expr) {}
@@ -336,7 +287,7 @@ GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
                              Expr *expr, std::vector<Stmt *> loops)
     : AcceptorExtend(), kind(kind) {
   this->cache = cache;
-  seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
+  seqassert(!loops.empty() && cast<ForStmt>(loops[0]), "bad generator constructor");
   loops.push_back(cache->N<SuiteStmt>(cache->N<ExprStmt>(expr)));
   formCompleteStmt(loops);
 }
@@ -344,7 +295,7 @@ GeneratorExpr::GeneratorExpr(Cache *cache, Expr *key, Expr *expr,
                              std::vector<Stmt *> loops)
     : AcceptorExtend(), kind(GeneratorExpr::DictGenerator) {
   this->cache = cache;
-  seqassert(!loops.empty() && loops[0]->getFor(), "bad generator constructor");
+  seqassert(!loops.empty() && cast<ForStmt>(loops[0]), "bad generator constructor");
   Expr *t = cache->N<TupleExpr>(std::vector<Expr *>{key, expr});
   loops.push_back(cache->N<SuiteStmt>(cache->N<ExprStmt>(t)));
   formCompleteStmt(loops);
@@ -366,23 +317,23 @@ std::string GeneratorExpr::toString(int indent) const {
 }
 Expr *GeneratorExpr::getFinalExpr() {
   auto s = *(getFinalStmt());
-  if (s->getExpr())
-    return s->getExpr()->expr;
+  if (cast<ExprStmt>(s))
+    return cast<ExprStmt>(s)->getExpr();
   return nullptr;
 }
 int GeneratorExpr::loopCount() const {
   int cnt = 0;
   for (Stmt *i = loops;;) {
-    if (auto sf = i->getFor()) {
-      i = sf->suite;
+    if (auto sf = cast<ForStmt>(i)) {
+      i = sf->getSuite();
       cnt++;
     } else if (auto si = cast<IfStmt>(i)) {
-      i = si->ifSuite;
+      i = si->getIf();
       cnt++;
-    } else if (auto ss = i->getSuite()) {
-      if (ss->stmts.empty())
+    } else if (auto ss = cast<SuiteStmt>(i)) {
+      if (ss->empty())
         break;
-      i = ss->stmts.back();
+      i = ss->back();
     } else
       break;
   }
@@ -400,9 +351,9 @@ Stmt **GeneratorExpr::getFinalStmt() {
     else if (auto si = cast<IfStmt>(*i))
       i = (Stmt **)&si->ifSuite;
     else if (auto ss = cast<SuiteStmt>(*i)) {
-      if (ss->stmts.empty())
+      if (ss->empty())
         return i;
-      i = &(ss->stmts.back());
+      i = &(ss->back());
     } else
       return i;
   }
@@ -674,35 +625,6 @@ char getStaticGeneric(Expr *e) {
 
 const char ASTNode::NodeId = 0;
 const char Expr::NodeId = 0;
-const char NoneExpr::NodeId = 0;
-const char BoolExpr::NodeId = 0;
-const char IntExpr::NodeId = 0;
-const char FloatExpr::NodeId = 0;
-const char StringExpr::NodeId = 0;
-const char IdExpr::NodeId = 0;
-const char StarExpr::NodeId = 0;
-const char KeywordStarExpr::NodeId = 0;
-const char TupleExpr::NodeId = 0;
-const char ListExpr::NodeId = 0;
-const char SetExpr::NodeId = 0;
-const char DictExpr::NodeId = 0;
-const char GeneratorExpr::NodeId = 0;
-const char IfExpr::NodeId = 0;
-const char UnaryExpr::NodeId = 0;
-const char BinaryExpr::NodeId = 0;
-const char ChainBinaryExpr::NodeId = 0;
-const char PipeExpr::NodeId = 0;
-const char IndexExpr::NodeId = 0;
-const char CallExpr::NodeId = 0;
-const char DotExpr::NodeId = 0;
-const char SliceExpr::NodeId = 0;
-const char EllipsisExpr::NodeId = 0;
-const char LambdaExpr::NodeId = 0;
-const char YieldExpr::NodeId = 0;
-const char AssignExpr::NodeId = 0;
-const char RangeExpr::NodeId = 0;
-const char StmtExpr::NodeId = 0;
-const char InstantiateExpr::NodeId = 0;
 ACCEPT_IMPL(NoneExpr, ASTVisitor);
 ACCEPT_IMPL(BoolExpr, ASTVisitor);
 ACCEPT_IMPL(IntExpr, ASTVisitor);

@@ -32,11 +32,11 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   } else if (tt && tt->type->getFunc() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Func, bases[0]);
     seqassertn(
-        in(cache->functions, tt->type->getFunc()->ast->name) &&
-            in(cache->functions[tt->type->getFunc()->ast->name].realizations, name),
+        in(cache->functions, tt->type->getFunc()->ast->getName()) &&
+            in(cache->functions[tt->type->getFunc()->ast->getName()].realizations, name),
         "cannot find type realization {}", name);
     ret->handle.func =
-        cache->functions[tt->type->getFunc()->ast->name].realizations[name]->ir;
+        cache->functions[tt->type->getFunc()->ast->getName()].realizations[name]->ir;
   }
   return ret;
 }

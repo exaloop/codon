@@ -15,15 +15,15 @@ using namespace types;
 /// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(Expr *cond, TT ready, TF notReady) {
-  seqassertn(cond->type->isStaticType(), "not a static condition");
-  if (cond->type->canRealize()) {
+  seqassertn(cond->getType()->isStaticType(), "not a static condition");
+  if (cond->getType()->canRealize()) {
     bool isTrue = false;
-    if (cond->type->getStrStatic())
-      isTrue = !cond->type->getStrStatic()->value.empty();
-    else if (cond->type->getIntStatic())
-      isTrue = cond->type->getIntStatic()->value;
-    else if (cond->type->getBoolStatic())
-      isTrue = cond->type->getBoolStatic()->value;
+    if (cond->getType()->getStrStatic())
+      isTrue = !cond->getType()->getStrStatic()->value.empty();
+    else if (cond->getType()->getIntStatic())
+      isTrue = cond->getType()->getIntStatic()->value;
+    else if (cond->getType()->getBoolStatic())
+      isTrue = cond->getType()->getBoolStatic()->value;
     return ready(isTrue);
   } else {
     return notReady();
@@ -42,7 +42,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   // C++ call order is not defined; make sure to transform the conditional first
   expr->cond = transform(expr->getCond());
   // Static if evaluation
-  if (expr->getCond()->type->isStaticType()) {
+  if (expr->getCond()->getType()->isStaticType()) {
     resultExpr = evaluateStaticCondition(
         expr->getCond(),
         [&](bool isTrue) {
@@ -51,7 +51,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         },
         [&]() -> Expr * { return nullptr; });
     if (resultExpr)
-      unify(expr->type, resultExpr->getType());
+      unify(expr->getType(), resultExpr->getType());
     else
       expr->getType()->getUnbound()->isStatic = 1; // TODO: determine later!
     return;
@@ -61,18 +61,19 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   expr->elsexpr = transform(expr->getElse());
 
   // Add __bool__ wrapper
-  while (expr->getCond()->type->getClass() && !expr->getCond()->type->is("bool"))
+  while (expr->getCond()->getClassType() && !expr->getCond()->getType()->is("bool"))
     expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->getCond(), "__bool__")));
   // Add wrappers and unify both sides
-  if (expr->getIf()->type->getStatic())
-    expr->getIf()->type = expr->getIf()->type->getStatic()->getNonStaticType();
-  if (expr->getElse()->type->getStatic())
-    expr->getElse()->type = expr->getElse()->type->getStatic()->getNonStaticType();
+  if (expr->getIf()->getType()->getStatic())
+    expr->getIf()->setType(expr->getIf()->getType()->getStatic()->getNonStaticType());
+  if (expr->getElse()->getType()->getStatic())
+    expr->getElse()->setType(
+        expr->getElse()->getType()->getStatic()->getNonStaticType());
   wrapExpr(&expr->elsexpr, expr->getIf()->getType(), nullptr, /*allowUnwrap*/ false);
   wrapExpr(&expr->ifexpr, expr->getElse()->getType(), nullptr, /*allowUnwrap*/ false);
 
-  unify(expr->type, expr->getIf()->getType());
-  unify(expr->type, expr->getElse()->getType());
+  unify(expr->getType(), expr->getIf()->getType());
+  unify(expr->getType(), expr->getElse()->getType());
   if (expr->getCond()->isDone() && expr->getIf()->isDone() && expr->getElse()->isDone())
     expr->setDone();
 }
@@ -84,7 +85,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   stmt->cond = transform(stmt->cond);
 
   // Static if evaluation
-  if (stmt->cond->type->isStaticType()) {
+  if (stmt->cond->getType()->isStaticType()) {
     resultStmt = evaluateStaticCondition(
         stmt->cond,
         [&](bool isTrue) {
@@ -96,7 +97,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
     return;
   }
 
-  while (stmt->cond->type->getClass() && !stmt->cond->type->is("bool"))
+  while (stmt->cond->getClassType() && !stmt->cond->getType()->is("bool"))
     stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->cond, "__bool__")));
   ctx->blockLevel++;
   stmt->ifSuite = SuiteStmt::wrap(transform(stmt->ifSuite));
@@ -126,15 +127,15 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 void TypecheckVisitor::visit(MatchStmt *stmt) {
   auto var = ctx->cache->getTemporaryVar("match");
   auto result = N<SuiteStmt>();
-  result->stmts.push_back(transform(N<AssignStmt>(N<IdExpr>(var), clone(stmt->what))));
-  for (auto &c : stmt->cases) {
+  result->addStmt(transform(N<AssignStmt>(N<IdExpr>(var), clone(stmt->getExpr()))));
+  for (auto &c : *stmt) {
     Stmt *suite = N<SuiteStmt>(clone(c.suite), N<BreakStmt>());
     if (c.guard)
       suite = N<IfStmt>(clone(c.guard), suite);
-    result->stmts.push_back(transformPattern(N<IdExpr>(var), clone(c.pattern), suite));
+    result->addStmt(transformPattern(N<IdExpr>(var), clone(c.pattern), suite));
   }
   // Make sure to break even if there is no case _ to prevent infinite loop
-  result->stmts.push_back(N<BreakStmt>());
+  result->addStmt(N<BreakStmt>());
   resultStmt = transform(N<WhileStmt>(N<BoolExpr>(true), result));
 }
 

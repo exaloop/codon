@@ -58,13 +58,13 @@ tlist(c, e) <- e (_ c _ e)* (_ <c>)?
 
 statements <- ((_ EOL)* statement)+ {
   auto s = asts(Suite, LOC, VS.transform<Stmt*>());
-  cast<SuiteStmt>(s)->shallow_flatten();
+  cast<SuiteStmt>(s)->flatten();
   return s;
 }
 statement <- SAMEDENT compound_stmt / SAMEDENT simple_stmt
 simple_stmt <- tlist(';', small_stmt) _ EOL {
   auto s = asts(Suite, LOC, VS.transform<Stmt*>());
-  cast<SuiteStmt>(s)->shallow_flatten();
+  cast<SuiteStmt>(s)->flatten();
   return s;
 }
 small_stmt <-
@@ -227,22 +227,12 @@ compound_stmt <-
 if_stmt <- ('if' SPACE named_expression _ ':' _ suite)
            (SAMEDENT 'elif' SPACE named_expression _ ':' _ suite)*
            (SAMEDENT 'else' _ ':' _ suite)? {
-  Stmt *stmt = asts(If, LOC, nullptr, nullptr);
-  IfStmt *p = (IfStmt*)stmt;
-  for (int i = 0; i < VS.size(); i += 2) {
-    if (i == VS.size() - 1) {
-      p->elseSuite = SuiteStmt::wrap(ac_stmt(VS[i]));
-    } else {
-      if (i) {
-        auto els = asts(If, LOC, nullptr, nullptr);
-        p->elseSuite = SuiteStmt::wrap(els);
-        p = (IfStmt*)els;
-      }
-      p->cond = ac_expr(VS[i]);
-      p->ifSuite = SuiteStmt::wrap(ac_stmt(VS[i + 1]));
-    }
+  Stmt *lastElse = VS.size() % 2 == 0 ? nullptr : SuiteStmt::wrap(ac_stmt(VS.back()));
+  for (size_t i = VS.size() - bool(lastElse); i-- > 0; ) {
+    lastElse = asts(If, LOC, ac_expr(VS[i - 1]), SuiteStmt::wrap(ac_stmt(VS[i])), SuiteStmt::wrap(lastElse));
+    i--;
   }
-  return stmt;
+  return lastElse;
 }
 while_stmt <- ('while' SPACE named_expression _ ':' _ suite)
               (SAMEDENT 'else' (SPACE 'not' SPACE 'break')*  _ ':' _ suite)?  {
@@ -253,7 +243,7 @@ while_stmt <- ('while' SPACE named_expression _ ':' _ suite)
 for <- decorator? for_stmt {
   if (VS.size() > 1) {
     auto s = (ForStmt*)(ac_stmt(V1));
-    s->decorator = ac_expr(V0);
+    s->setDecorator(ac_expr(V0));
     return (Stmt*)s;
   }
   return ac_stmt(V0);
@@ -284,13 +274,13 @@ try_stmt <-
     (SAMEDENT 'finally' _ ':' _ suite)? {
     return asts(Try, LOC,
       ac_stmt(V0),
-      ac<SemVals>(V1).transform<TryStmt::Catch*>(),
+      ac<SemVals>(V1).transform<ExceptStmt*>(),
       VS.size() > 2 ? ac_stmt(V2): nullptr
     );
   }
   / ('try' _ ':' _ suite) (SAMEDENT 'finally' _ ':' _ suite)? {
     return asts(Try, LOC,
-      ac_stmt(V0), vector<TryStmt::Catch*>{},
+      ac_stmt(V0), vector<ExceptStmt*>{},
       VS.size() > 1 ? ac_stmt(V1): nullptr
     );
   }
@@ -298,24 +288,24 @@ excepts <- (SAMEDENT except_block)+ { return VS; }
 except_block <-
   / 'except' SPACE expression (SPACE 'as' SPACE NAME)? _ ':' _ suite {
     if (VS.size() == 3)
-      return setSI<TryStmt::Catch>(CTX.cache->N<TryStmt::Catch>(ac<string>(V1), ac_expr(V0), ac_stmt(V2)), LOC);
+      return setSI<ExceptStmt>(CTX.cache->N<ExceptStmt>(ac<string>(V1), ac_expr(V0), ac_stmt(V2)), LOC);
     else
-      return setSI<TryStmt::Catch>(CTX.cache->N<TryStmt::Catch>("", ac_expr(V0), ac_stmt(V1)), LOC);
+      return setSI<ExceptStmt>(CTX.cache->N<ExceptStmt>("", ac_expr(V0), ac_stmt(V1)), LOC);
   }
-  / 'except' _ ':' _ suite { return setSI<TryStmt::Catch>(CTX.cache->N<TryStmt::Catch>("", nullptr, ac_stmt(V0)), LOC); }
+  / 'except' _ ':' _ suite { return setSI<ExceptStmt>(CTX.cache->N<ExceptStmt>("", nullptr, ac_stmt(V0)), LOC); }
 function <-
   / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = (FunctionStmt*)(ac_stmt(V1));
-    fn->decorators = ac<vector<Expr*>>(V0);
-    fn->suite = SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2))));
+    fn->setDecorators(ac<vector<Expr*>>(V0));
+    fn->setSuite(SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2)))));
     fn->parseDecorators();
     return (Stmt*)fn;
   }
   / decorators? function_def _ suite {
     auto fn = (FunctionStmt*)(ac_stmt(VS.size() > 2 ? V1 : V0));
     if (VS.size() > 2)
-      fn->decorators = ac<vector<Expr*>>(V0);
-    fn->suite = SuiteStmt::wrap(ac_stmt(VS.size() > 2 ? V2 : V1));
+      fn->setDecorators(ac<vector<Expr*>>(V0));
+    fn->setSuite(SuiteStmt::wrap(ac_stmt(VS.size() > 2 ? V2 : V1)));
     fn->parseDecorators();
     return (Stmt*)fn;
   }
@@ -382,8 +372,8 @@ extern_decorators <-
 class <- decorators? class_def {
   if (VS.size() == 2) {
     auto fn = ac_stmt(V1);
-    ((ClassStmt*)fn)->decorators = ac<vector<Expr*>>(V0);
-    ((ClassStmt*)fn)->parseDecorators();
+    cast<ClassStmt>(fn)->setDecorators(ac<vector<Expr*>>(V0));
+    cast<ClassStmt>(fn)->parseDecorators();
     return fn;
   }
   return ac_stmt(V0);
@@ -404,15 +394,15 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
   auto suite = (SuiteStmt*)(asts(Suite, LOC));
   auto s = cast<SuiteStmt>(ac_stmt(VS.size() == 3 ? V2 : V1));
   seqassertn(s, "not a suite");
-  for (auto &i: s->stmts) {
+  for (auto *i: *s) {
     if (auto a = cast<AssignStmt>(i))
-      if (auto ei = cast<IdExpr>(a->lhs)) {
-        args.push_back(Param(a->getSrcInfo(), ei->getValue(), a->type, a->rhs));
+      if (auto ei = cast<IdExpr>(a->getLhs())) {
+        args.push_back(Param(a->getSrcInfo(), ei->getValue(), a->getTypeExpr(), a->getRhs()));
         continue;
       }
-    suite->stmts.push_back(i);
+    suite->addStmt(i);
   }
-  suite->shallow_flatten();
+  suite->flatten();
   for (auto &p: generics)
     args.push_back(p);
   return asts(Class, LOC,
@@ -421,14 +411,14 @@ class_def <- 'class' SPACE NAME _ class_args? _ ':' _ suite {
 }
 match_stmt <- 'match' SPACE expression _ ':' (_ EOL)+
               &INDENT (SAMEDENT case)+ (_ EOL)* &DEDENT {
-  return asts(Match, LOC, ac_expr(V0), VS.transform<MatchStmt::MatchCase>(1));
+  return asts(Match, LOC, ac_expr(V0), VS.transform<MatchCase>(1));
 }
 case <-
   / 'case' SPACE expression SPACE 'if' SPACE pipe _ ':' _ suite {
-    return MatchStmt::MatchCase{ac_expr(V0), ac_expr(V1), ac_stmt(V2)};
+    return MatchCase{ac_expr(V0), ac_expr(V1), ac_stmt(V2)};
   }
   / 'case' SPACE expression _ ':' _ suite {
-    return MatchStmt::MatchCase{ac_expr(V0), nullptr, ac_stmt(V1)};
+    return MatchCase{ac_expr(V0), nullptr, ac_stmt(V1)};
   }
 custom_stmt <-
   / NAME SPACE expression _ ':' _ suite {

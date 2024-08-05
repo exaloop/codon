@@ -22,21 +22,11 @@ using namespace types;
 /// `Ptr[byte]`).
 void TypecheckVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->value);
-  // if (!val && ctx->getBase()->pyCaptures) {
-  //   ctx->getBase()->pyCaptures->insert(expr->value);
-  //   resultExpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(expr->value));
-  //   return;
-  // } else
-  // if (ctx->isOuter(val) && !ctx->isCanonicalName(expr->value))
-  //   ctx->getBase()->captures.insert(expr->value);
   if (!val) {
-    // ctx->dump();
-    // LOG("=================================================================");
-    // ctx->cache->typeCtx->dump();
     E(Error::ID_NOT_FOUND, expr, expr->value);
   }
   auto o = in(ctx->cache->overloads, val->canonicalName);
-  if (expr->type->getUnbound() && o && o->size() > 1) {
+  if (expr->getType()->getUnbound() && o && o->size() > 1) {
     // LOG("dispatch: {}", val->canonicalName);
     val = ctx->forceFind(getDispatch(val->canonicalName)->ast->name);
   }
@@ -50,17 +40,17 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   expr->value = val->canonicalName;
 
   // Set up type
-  unify(expr->type, ctx->instantiate(val->type));
+  unify(expr->getType(), ctx->instantiate(val->type));
 
   // Realize a type or a function if possible and replace the identifier with the fully
   // typed identifier (e.g., `foo` -> `foo[int]`)
-  if (realize(expr->type)) {
-    if (auto s = expr->type->getStatic()) {
+  if (realize(expr->getType())) {
+    if (auto s = expr->getType()->getStatic()) {
       resultExpr = transform(s->getStaticExpr());
       return;
     }
     if (!val->isVar())
-      expr->value = expr->type->realizedName();
+      expr->value = expr->getType()->realizedName();
     expr->setDone();
   }
 
@@ -329,6 +319,10 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) {
   // First flatten the imports:
   // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
+
+  if (!expr->getType())
+    expr->setType(ctx->getUnbound());
+
   std::vector<std::string> chain;
   Expr *root = expr;
   for (; cast<DotExpr>(root); root = cast<DotExpr>(root)->expr)
@@ -362,7 +356,7 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
       if (auto id = cast<IdExpr>(nexpr))
         if (endswith(id->getValue(), ":dispatch"))
           if (auto bestMethod = getBestOverload(id, args)) {
-            auto t = id->type;
+            auto t = id->getType();
             nexpr = N<IdExpr>(bestMethod->ast->name);
             nexpr->setType(ctx->instantiate(bestMethod));
           }
@@ -384,29 +378,31 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
 
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
-  if (ctx->getType(expr->expr->type)->getFunc() && expr->member == "__name__") {
-    return transform(N<StringExpr>(ctx->getType(expr->expr->type)->prettyString()));
+  if (ctx->getType(expr->expr->getType())->getFunc() && expr->member == "__name__") {
+    return transform(
+        N<StringExpr>(ctx->getType(expr->expr->getType())->prettyString()));
   }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
   if (expr->member == "__llvm_name__") {
-    if (realize(expr->expr->type))
-      return transform(N<StringExpr>(expr->expr->type->realizedName()));
+    if (realize(expr->expr->getType()))
+      return transform(N<StringExpr>(expr->expr->getType()->realizedName()));
     return nullptr;
   }
   // Special case: cls.__name__
-  if (expr->expr->type->is("type") && expr->member == "__name__") {
-    if (realize(expr->expr->type))
-      return transform(N<StringExpr>(ctx->getType(expr->expr->type)->prettyString()));
+  if (expr->expr->getType()->is("type") && expr->member == "__name__") {
+    if (realize(expr->expr->getType()))
+      return transform(
+          N<StringExpr>(ctx->getType(expr->expr->getType())->prettyString()));
     return nullptr;
   }
   // Special case: expr.__is_static__
   if (expr->member == "__is_static__") {
     if (expr->expr->isDone())
-      return transform(N<BoolExpr>(bool(expr->expr->type->getStatic())));
+      return transform(N<BoolExpr>(bool(expr->expr->getType()->getStatic())));
     return nullptr;
   }
   // Special case: cls.__id__
-  if (expr->expr->type->is("type") && expr->member == "__id__") {
+  if (expr->expr->getType()->is("type") && expr->member == "__id__") {
     if (auto c = realize(getType(expr->expr))) {
       return transform(N<IntExpr>(ctx->cache->getClass(c->getClass())
                                       ->realizations[c->getClass()->realizedName()]
@@ -428,19 +424,19 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
   auto bestMethod = getBestOverload(expr, args);
 
   if (args) {
-    unify(expr->type, ctx->instantiate(bestMethod, typ));
+    unify(expr->getType(), ctx->instantiate(bestMethod, typ));
 
     // A function is deemed virtual if it is marked as such and
     // if a base class has a RTTI
     auto cls = ctx->cache->getClass(typ);
     bool isVirtual = in(cls->virtuals, expr->member);
     isVirtual &= cls->rtti;
-    isVirtual &= !expr->expr->type->is("type");
+    isVirtual &= !expr->expr->getType()->is("type");
     if (isVirtual && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
         !bestMethod->ast->hasAttribute(Attr::Property)) {
       // Special case: route the call through a vtable
-      if (realize(expr->type)) {
-        auto fn = expr->type->getFunc();
+      if (realize(expr->getType())) {
+        auto fn = expr->getType()->getFunc();
         auto vid = getRealizationID(typ.get(), fn.get());
 
         // Function[Tuple[TArg1, TArg2, ...], TRet]
@@ -465,10 +461,10 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
   }
 
   // Check if a method is a static or an instance method and transform accordingly
-  if (expr->expr->type->is("type") || args) {
+  if (expr->expr->getType()->is("type") || args) {
     // Static access: `cls.method`
     Expr *e = N<IdExpr>(bestMethod->ast->name);
-    unify(e->type, unify(expr->type, ctx->instantiate(bestMethod, typ)));
+    e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));
     return transform(e); // Realize if needed
   } else {
     // Instance access: `obj.method`
@@ -481,7 +477,7 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
     if (!bestMethod->ast->hasAttribute(Attr::Property))
       methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
     auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
-    unify(expr->type, e->type);
+    unify(expr->getType(), e->getType());
     return e;
   }
 }
@@ -493,23 +489,22 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
 ///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
-Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
-                                       std::vector<CallArg> *args) {
+Expr *TypecheckVisitor::getClassMember(DotExpr *expr, std::vector<CallArg> *args) {
   auto typ = getType(expr->expr)->getClass();
   seqassert(typ, "not a class");
 
   // Case: object member access (`obj.member`)
-  if (!expr->expr->type->is("type")) {
+  if (!expr->expr->getType()->is("type")) {
     if (auto member = ctx->findMember(typ, expr->member)) {
-      unify(expr->type, ctx->instantiate(member->type, typ));
-      if (!expr->type->canRealize() && member->typeExpr) {
+      unify(expr->getType(), ctx->instantiate(member->type, typ));
+      if (!expr->getType()->canRealize() && member->typeExpr) {
         ctx->addBlock();
         addClassGenerics(typ);
-        auto t = ctx->getType(transform(clean_clone(member->typeExpr))->type);
+        auto t = ctx->getType(transform(clean_clone(member->typeExpr))->getType());
         ctx->popBlock();
-        unify(expr->type, t);
+        unify(expr->getType(), t);
       }
-      if (expr->expr->isDone() && realize(expr->type))
+      if (expr->expr->isDone() && realize(expr->getType()))
         expr->setDone();
       return nullptr;
     }
@@ -523,8 +518,8 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
 
   // Case: special members
   if (auto mtyp = findSpecialMember(expr->member)) {
-    unify(expr->type, mtyp);
-    if (expr->expr->isDone() && realize(expr->type))
+    unify(expr->getType(), mtyp);
+    if (expr->expr->isDone() && realize(expr->getType()))
       expr->setDone();
     return nullptr;
   }
@@ -538,12 +533,13 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
     }
   if (generic) {
     if (generic->isStatic) {
-      unify(expr->type, generic->type);
-      if (realize(expr->type))
+      unify(expr->getType(), generic->type);
+      if (realize(expr->getType()))
         return transform(generic->type->getStatic()->getStaticExpr());
     } else {
-      unify(expr->type, ctx->instantiateGeneric(ctx->getType("type"), {generic->type}));
-      if (realize(expr->type))
+      unify(expr->getType(),
+            ctx->instantiateGeneric(ctx->getType("type"), {generic->type}));
+      if (realize(expr->getType()))
         return transform(N<IdExpr>(generic->type->realizedName()));
     }
     return nullptr;
@@ -569,10 +565,10 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr,
   if (typ->getUnion()) {
     if (!typ->canRealize())
       return nullptr; // delay!
-    return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
-        std::vector<CallArg>{{"union", expr->expr},
-                                   {"member", N<StringExpr>(expr->member)}}));
+    return transform(
+        N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
+                    std::vector<CallArg>{{"union", expr->expr},
+                                         {"member", N<StringExpr>(expr->member)}}));
   }
 
   // For debugging purposes:
@@ -598,8 +594,7 @@ TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
 /// @param methods List of available methods.
 /// @param args    (optional) list of class method arguments used to select the best
 ///                overload if the member is optional. nullptr if not available.
-FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
-                                              std::vector<CallArg> *args) {
+FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr, std::vector<CallArg> *args) {
   // Prepare the list of method arguments if possible
   std::unique_ptr<std::vector<CallArg>> methodArgs;
 
@@ -614,7 +609,8 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
     }
 
     // Case: arguments explicitly provided (by CallExpr)
-    if (addSelf && cast<DotExpr>(expr) && !cast<DotExpr>(expr)->expr->type->is("type")) {
+    if (addSelf && cast<DotExpr>(expr) &&
+        !cast<DotExpr>(expr)->expr->getType()->is("type")) {
       // Add `self` as the first argument
       args->insert(args->begin(), {"", cast<DotExpr>(expr)->expr});
     }
@@ -623,13 +619,14 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
       methodArgs->push_back(a);
   } else {
     // Partially deduced type thus far
-    auto typeSoFar = expr->type ? getType(expr)->getClass() : nullptr;
+    auto typeSoFar = expr->getType() ? getType(expr)->getClass() : nullptr;
     if (typeSoFar && typeSoFar->getFunc()) {
       // Case: arguments available from the previous type checking round
       methodArgs = std::make_unique<std::vector<CallArg>>();
-      if (cast<DotExpr>(expr) && !cast<DotExpr>(expr)->expr->type->is("type")) { // Add `self`
+      if (cast<DotExpr>(expr) &&
+          !cast<DotExpr>(expr)->expr->getType()->is("type")) { // Add `self`
         auto n = N<NoneExpr>();
-        n->setType(cast<DotExpr>(expr)->expr->type);
+        n->setType(cast<DotExpr>(expr)->expr->getType());
         methodArgs->push_back({"", n});
       }
       for (auto &a : typeSoFar->getFunc()->getArgTypes()) {
@@ -666,7 +663,7 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
       return m[0];
     } else if (m.size() > 1) {
       for (auto &a : *methodArgs) {
-        if (auto u = a.value->type->getUnbound()) {
+        if (auto u = a.value->getType()->getUnbound()) {
           goDispatch = true;
         }
       }
@@ -694,9 +691,9 @@ FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr,
   if (methodArgs) {
     std::vector<std::string> a;
     for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("{}", t.value->type->getStatic()
-                                           ? t.value->type->getClass()->name
-                                           : t.value->type->prettyString()));
+      a.emplace_back(fmt::format("{}", t.value->getType()->getStatic()
+                                           ? t.value->getClassType()->name
+                                           : t.value->getType()->prettyString()));
     argsNice = fmt::format("({})", fmt::join(a, ", "));
   }
 

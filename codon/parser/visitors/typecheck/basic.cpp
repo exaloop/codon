@@ -47,7 +47,7 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 
 void TypecheckVisitor::visit(StringExpr *expr) {
   if (expr->isSimple()) {
-    unify(expr->type,
+    unify(expr->getType(),
           std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
     expr->setDone();
   } else {

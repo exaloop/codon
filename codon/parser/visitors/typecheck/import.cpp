@@ -353,10 +353,11 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // `import_[I]_done = False` (set to True upon successful import)
     auto a = N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
                            N<BoolExpr>(false));
-    a->lhs->type = a->rhs->type = ctx->getType("bool");
+    a->lhs->setType(ctx->getType("bool"));
+    a->rhs->setType(ctx->getType("bool"));
     a->setDone();
     preamble->push_back(a);
-    auto i = ctx->addVar(importDoneVar, importDoneVar, a->lhs->type);
+    auto i = ctx->addVar(importDoneVar, importDoneVar, a->lhs->getType());
     i->baseName = "";
     i->scope = {0};
     ctx->addAlwaysVisible(i);

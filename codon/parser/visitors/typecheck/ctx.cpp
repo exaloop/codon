@@ -265,7 +265,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
         // seqassert(h, "bad function {}: cannot locate {}", ft->name, c);
         key[c] = h ? h->canonicalName : "";
       }
-      auto &cm = cache->functions[ft->ast->name].captureMappings;
+      auto &cm = cache->functions[ft->ast->getName()].captureMappings;
       size_t idx = 0;
       for (; idx < cm.size(); idx++)
         if (cm[idx] == key)
@@ -374,23 +374,23 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
 
   // 0. Find *args and **kwargs
   // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
-  bool partial = !args.empty() && cast<EllipsisExpr>(args.back().value) &&
-                 cast<EllipsisExpr>(args.back().value)->getMode() != EllipsisExpr::PIPE &&
-                 args.back().name.empty();
+  bool partial =
+      !args.empty() && cast<EllipsisExpr>(args.back().value) &&
+      cast<EllipsisExpr>(args.back().value)->getMode() != EllipsisExpr::PIPE &&
+      args.back().name.empty();
 
   int starArgIndex = -1, kwstarArgIndex = -1;
-  for (int i = 0; i < func->ast->args.size(); i++) {
-    if (startswith(func->ast->args[i].name, "**"))
+  for (int i = 0; i < func->ast->size(); i++) {
+    if (startswith((*func->ast)[i].name, "**"))
       kwstarArgIndex = i, score -= 2;
-    else if (startswith(func->ast->args[i].name, "*"))
+    else if (startswith((*func->ast)[i].name, "*"))
       starArgIndex = i, score -= 2;
   }
 
   // 1. Assign positional arguments to slots
   // Each slot contains a list of arg's indices
-  std::vector<std::vector<int>> slots(func->ast->args.size());
-  seqassert(known.empty() || func->ast->args.size() == known.size(),
-            "bad 'known' string");
+  std::vector<std::vector<int>> slots(func->ast->size());
+  seqassert(known.empty() || func->ast->size() == known.size(), "bad 'known' string");
   std::vector<int> extra;
   std::map<std::string, int> namedArgs,
       extraNamedArgs; // keep the map--- we need it sorted!
@@ -418,9 +418,9 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 2. Assign named arguments to slots
   if (!namedArgs.empty()) {
     std::map<std::string, int> slotNames;
-    for (int i = 0; i < func->ast->args.size(); i++)
+    for (int i = 0; i < func->ast->size(); i++)
       if (known.empty() || !known[i]) {
-        slotNames[cache->reverseIdentifierLookup[func->ast->args[i].name]] = i;
+        slotNames[cache->reverseIdentifierLookup[(*func->ast)[i].name]] = i;
       }
     for (auto &n : namedArgs) {
       if (!in(slotNames, n.first))
@@ -436,8 +436,8 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_MANY, cache->rev(func->ast->name),
-                        func->ast->args.size(), args.size() - partial));
+                   Emsg(Error::CALL_ARGS_MANY, cache->rev(func->ast->getName()),
+                        func->ast->size(), args.size() - partial));
 
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
@@ -447,21 +447,21 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
     return onError(Error::CALL_ARGS_INVALID,
                    args[extraNamedArgs.begin()->second].value->getSrcInfo(),
                    Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
-                        cache->rev(func->ast->name)));
+                        cache->rev(func->ast->getName())));
   if (kwstarArgIndex != -1)
     for (auto &e : extraNamedArgs)
       slots[kwstarArgIndex].push_back(e.second);
 
   // 5. Fill in the default arguments
-  for (auto i = 0; i < func->ast->args.size(); i++)
+  for (auto i = 0; i < func->ast->size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if (func->ast->args[i].status == Param::Normal &&
-          (func->ast->args[i].defaultValue || (!known.empty() && known[i])))
+      if ((*func->ast)[i].status == Param::Normal &&
+          ((*func->ast)[i].defaultValue || (!known.empty() && known[i])))
         score -= 2;
-      else if (!partial && func->ast->args[i].status == Param::Normal)
+      else if (!partial && (*func->ast)[i].status == Param::Normal)
         return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
-                       Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->name),
-                            cache->reverseIdentifierLookup[func->ast->args[i].name]));
+                       Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->getName()),
+                            cache->reverseIdentifierLookup[(*func->ast)[i].name]));
     }
   auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
   return s != -1 ? score + s : -1;

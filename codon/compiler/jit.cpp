@@ -8,9 +8,9 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-#include "codon/parser/visitors/scoping/scoping.h"
 
 namespace codon {
 namespace jit {
@@ -97,12 +97,14 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   try {
     ast::Stmt *node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
                                      /*startLine=*/line);
-    auto *e = node->getSuite() ? node->getSuite()->lastInBlock() : &node;
+    ast::Stmt **e = &node;
+    while (auto se = ast::cast<ast::SuiteStmt>(*e))
+      e = &se->back();
     if (e)
-      if (auto ex = const_cast<ast::ExprStmt *>((*e)->getExpr())) {
-        *e = cache->N<ast::ExprStmt>(
-            cache->N<ast::CallExpr>(cache->N<ast::IdExpr>("_jit_display"),
-                                    clone(ex->expr), cache->N<ast::StringExpr>(mode)));
+      if (auto ex = ast::cast<ast::ExprStmt>(*e)) {
+        *e = cache->N<ast::ExprStmt>(cache->N<ast::CallExpr>(
+            cache->N<ast::IdExpr>("_jit_display"), clone(ex->getExpr()),
+            cache->N<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
     ast::ScopingVisitor::apply(sctx->cache, node);
@@ -112,8 +114,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
       throw exc::ParserException();
     auto typechecked = cache->N<ast::SuiteStmt>();
     for (auto &s : *preamble)
-      typechecked->stmts.push_back(s);
-    typechecked->stmts.push_back(node);
+      typechecked->addStmt(s);
+    typechecked->addStmt(node);
     // TODO: unroll on errors...
 
     // add newly realized functions
