@@ -15,6 +15,7 @@ PyImport_ImportModule = Function[[cobj], cobj](cobj())
 PyRun_SimpleString = Function[[cobj], NoneType](cobj())
 PyEval_GetGlobals = Function[[], cobj](cobj())
 PyEval_GetBuiltins = Function[[], cobj](cobj())
+PyOS_setsig = Function[[i32, cobj], cobj](cobj())
 
 # conversions
 PyLong_AsLong = Function[[cobj], int](cobj())
@@ -204,6 +205,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PyRun_SimpleString
     global PyEval_GetGlobals
     global PyEval_GetBuiltins
+    global PyOS_setsig
     global PyLong_AsLong
     global PyLong_FromLong
     global PyFloat_AsDouble
@@ -336,6 +338,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyRun_SimpleString = dlsym(py_handle, "PyRun_SimpleString")
     PyEval_GetGlobals = dlsym(py_handle, "PyEval_GetGlobals")
     PyEval_GetBuiltins = dlsym(py_handle, "PyEval_GetBuiltins")
+    PyOS_setsig = dlsym(py_handle, "PyOS_setsig")
     PyLong_AsLong = dlsym(py_handle, "PyLong_AsLong")
     PyLong_FromLong = dlsym(py_handle, "PyLong_FromLong")
     PyFloat_AsDouble = dlsym(py_handle, "PyFloat_AsDouble")
@@ -469,6 +472,7 @@ def init_handles_static():
     from C import PyRun_SimpleString(cobj) as _PyRun_SimpleString
     from C import PyEval_GetGlobals() -> cobj as _PyEval_GetGlobals
     from C import PyEval_GetBuiltins() -> cobj as _PyEval_GetBuiltins
+    from C import PyOS_setsig(i32, cobj) -> cobj as _PyOS_setsig
     from C import PyLong_AsLong(cobj) -> int as _PyLong_AsLong
     from C import PyLong_FromLong(int) -> cobj as _PyLong_FromLong
     from C import PyFloat_AsDouble(cobj) -> float as _PyFloat_AsDouble
@@ -601,6 +605,7 @@ def init_handles_static():
     global PyRun_SimpleString
     global PyEval_GetGlobals
     global PyEval_GetBuiltins
+    global PyOS_setsig
     global PyLong_AsLong
     global PyLong_FromLong
     global PyFloat_AsDouble
@@ -733,6 +738,7 @@ def init_handles_static():
     PyRun_SimpleString = _PyRun_SimpleString
     PyEval_GetGlobals = _PyEval_GetGlobals
     PyEval_GetBuiltins = _PyEval_GetBuiltins
+    PyOS_setsig = _PyOS_setsig
     PyLong_AsLong = _PyLong_AsLong
     PyLong_FromLong = _PyLong_FromLong
     PyFloat_AsDouble = _PyFloat_AsDouble
@@ -895,6 +901,7 @@ def setup_python(python_loaded: bool):
     if not python_loaded:
         Py_Initialize()
 
+    PyOS_setsig(i32(2), cobj())  # disable CPython's SIGINT handler
     _PY_INITIALIZED = True
 
 def ensure_initialized(python_loaded: bool = False):
