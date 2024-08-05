@@ -18,6 +18,7 @@ Upgraded to LLVM 17 (from 15).
 - Updates to several existing functions, such as adding `key` and
   `default` arguments to `min()` and `max()`.
 - Slice arguments can now be of any type, not just `int`.
+- Added `input()` function.
 
 ## Other improvements
 

@@ -18,3 +18,6 @@ gcc "$testdir/test.c" -L"$arg" -Wl,-rpath,"$arg" -lcodon_export_test -o "$arg/te
 
 # exit code test
 $codon run "$testdir/exit.codon" || if [[ $? -ne 42 ]]; then exit 4; fi
+
+# input test
+[ "$($codon run "$testdir/input.codon" < "$testdir/input.txt")" == "input: aa bb,,cc,X" ] || exit 5

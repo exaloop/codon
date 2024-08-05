@@ -34,6 +34,28 @@ def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = Fa
     if flush:
         _C.fflush(fp)
 
+def input(prompt: str = ""):
+    stdout = _C.seq_stdout()
+    stderr = _C.seq_stderr()
+    stdin = _C.seq_stdin()
+    _C.fflush(stderr)
+    _C.fflush(stdout)
+    print(prompt, end="")
+    buf = cobj()
+    n = 0
+    s = _C.getline(__ptr__(buf), __ptr__(n), stdin)
+    if s > 0:
+        if buf[s - 1] == byte(10):
+            s -= 1  # skip trailing '\n'
+        if s != 0 and buf[s - 1] == byte(13):
+            s -= 1  # skip trailing '\r'
+        ans = str(buf, s).__ptrcopy__()
+        _C.free(buf)
+        return ans
+    else:
+        _C.free(buf)
+        raise EOFError("EOF when reading a line")
+
 @extend
 class __internal__:
     def print(*args):
