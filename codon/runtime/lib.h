@@ -17,6 +17,8 @@
 #define SEQ_FLAG_CAPTURE_OUTPUT (1 << 1) // capture writes to stdout/stderr
 #define SEQ_FLAG_STANDALONE (1 << 2)     // compiled as a standalone object/binary
 
+#define SEQ_EXCEPTION_CLASS 0x6f626a0073657100
+
 #define SEQ_FUNC extern "C"
 
 typedef int64_t seq_int_t;
@@ -74,7 +76,6 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
                                              _Unwind_Exception *exceptionObject,
                                              _Unwind_Context *context);
 SEQ_FUNC int64_t seq_exc_offset();
-SEQ_FUNC uint64_t seq_exc_class();
 
 SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error);
 SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error);

@@ -2941,8 +2941,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
           0));
 
   // check for foreign exceptions
-  B->CreateCondBr(B->CreateICmpEQ(unwindExceptionClass, B->getInt64(seq_exc_class())),
-                  tc.exceptionRouteBlock, externalExcBlock);
+  B->CreateCondBr(
+      B->CreateICmpEQ(unwindExceptionClass, B->getInt64(SEQ_EXCEPTION_CLASS)),
+      tc.exceptionRouteBlock, externalExcBlock);
 
   // external exception (currently assumed to be unreachable)
   B->SetInsertPoint(externalExcBlock);

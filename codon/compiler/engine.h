@@ -13,46 +13,22 @@ namespace jit {
 
 class Engine {
 private:
-  std::unique_ptr<llvm::orc::ExecutionSession> sess;
-  std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu;
-
-  llvm::DataLayout layout;
-  llvm::orc::MangleAndInterner mangle;
-
-  llvm::orc::RTDyldObjectLinkingLayer objectLayer;
-  llvm::orc::IRCompileLayer compileLayer;
-  llvm::orc::IRTransformLayer optimizeLayer;
-  llvm::orc::CompileOnDemandLayer codLayer;
-
-  llvm::orc::JITDylib &mainJD;
-
-  std::unique_ptr<DebugListener> dbListener;
-
-  static void handleLazyCallThroughError();
-
-  static llvm::Expected<llvm::orc::ThreadSafeModule>
-  optimizeModule(llvm::orc::ThreadSafeModule module,
-                 const llvm::orc::MaterializationResponsibility &R);
+  std::unique_ptr<llvm::orc::LLJIT> jit;
+  DebugPlugin *debug;
 
 public:
-  Engine(std::unique_ptr<llvm::orc::ExecutionSession> sess,
-         std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu,
-         llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout);
+  Engine();
 
-  ~Engine();
+  const llvm::DataLayout &getDataLayout() const { return jit->getDataLayout(); }
 
-  static llvm::Expected<std::unique_ptr<Engine>> create();
+  llvm::orc::JITDylib &getMainJITDylib() { return jit->getMainJITDylib(); }
 
-  const llvm::DataLayout &getDataLayout() const { return layout; }
-
-  llvm::orc::JITDylib &getMainJITDylib() { return mainJD; }
-
-  DebugListener *getDebugListener() const { return dbListener.get(); }
+  DebugPlugin *getDebugListener() const { return debug; }
 
   llvm::Error addModule(llvm::orc::ThreadSafeModule module,
                         llvm::orc::ResourceTrackerSP rt = nullptr);
 
-  llvm::Expected<llvm::orc::ExecutorSymbolDef> lookup(llvm::StringRef name);
+  llvm::Expected<llvm::orc::ExecutorAddr> lookup(llvm::StringRef name);
 };
 
 } // namespace jit

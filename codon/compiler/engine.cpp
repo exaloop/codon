@@ -8,86 +8,62 @@
 namespace codon {
 namespace jit {
 
-void Engine::handleLazyCallThroughError() {
-  llvm::errs() << "LazyCallThrough error: Could not find function body";
-  exit(1);
-}
+Engine::Engine() : jit(), debug(nullptr) {
+  auto eb = llvm::EngineBuilder();
+  eb.setMArch(llvm::codegen::getMArch());
+  eb.setMCPU(llvm::codegen::getCPUStr());
+  eb.setMAttrs(llvm::codegen::getFeatureList());
 
-llvm::Expected<llvm::orc::ThreadSafeModule>
-Engine::optimizeModule(llvm::orc::ThreadSafeModule module,
-                       const llvm::orc::MaterializationResponsibility &R) {
-  module.withModuleDo([](llvm::Module &module) {
-    ir::optimize(&module, /*debug=*/false, /*jit=*/true);
-  });
-  return std::move(module);
-}
+  auto target = eb.selectTarget();
+  auto layout = target->createDataLayout();
+  auto epc = llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create(
+      std::make_shared<llvm::orc::SymbolStringPool>()));
 
-Engine::Engine(std::unique_ptr<llvm::orc::ExecutionSession> sess,
-               std::unique_ptr<llvm::orc::EPCIndirectionUtils> epciu,
-               llvm::orc::JITTargetMachineBuilder jtmb, llvm::DataLayout layout)
-    : sess(std::move(sess)), epciu(std::move(epciu)), layout(std::move(layout)),
-      mangle(*this->sess, this->layout),
-      objectLayer(*this->sess,
-                  []() { return std::make_unique<BoehmGCMemoryManager>(); }),
-      compileLayer(*this->sess, objectLayer,
-                   std::make_unique<llvm::orc::ConcurrentIRCompiler>(std::move(jtmb))),
-      optimizeLayer(*this->sess, compileLayer, optimizeModule),
-      codLayer(*this->sess, optimizeLayer, this->epciu->getLazyCallThroughManager(),
-               [this] { return this->epciu->createIndirectStubsManager(); }),
-      mainJD(this->sess->createBareJITDylib("<main>")),
-      dbListener(std::make_unique<DebugListener>()) {
-  mainJD.addGenerator(
+  llvm::orc::LLJITBuilder builder;
+  builder.setDataLayout(layout);
+  builder.setObjectLinkingLayerCreator(
+      [&](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
+          -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+        auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+            es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
+        L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
+            es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
+        L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
+            es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
+        auto dbPlugin = std::make_unique<DebugPlugin>();
+        this->debug = dbPlugin.get();
+        L->addPlugin(std::move(dbPlugin));
+        L->setAutoClaimResponsibilityForObjectSymbols(true);
+        return L;
+      });
+  builder.setJITTargetMachineBuilder(
+      llvm::orc::JITTargetMachineBuilder(target->getTargetTriple()));
+  jit = llvm::cantFail(builder.create());
+
+  jit->getMainJITDylib().addGenerator(
       llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           layout.getGlobalPrefix())));
-  objectLayer.setAutoClaimResponsibilityForObjectSymbols(true);
-  objectLayer.registerJITEventListener(*dbListener);
-}
 
-Engine::~Engine() {
-  if (auto err = sess->endSession())
-    sess->reportError(std::move(err));
-  if (auto err = epciu->cleanup())
-    sess->reportError(std::move(err));
-}
-
-llvm::Expected<std::unique_ptr<Engine>> Engine::create() {
-  auto epc = llvm::orc::SelfExecutorProcessControl::Create();
-  if (!epc)
-    return epc.takeError();
-
-  auto sess = std::make_unique<llvm::orc::ExecutionSession>(std::move(*epc));
-
-  auto epciu = llvm::orc::EPCIndirectionUtils::Create(*sess);
-  if (!epciu)
-    return epciu.takeError();
-
-  (*epciu)->createLazyCallThroughManager(
-      *sess, llvm::orc::ExecutorAddr::fromPtr(&handleLazyCallThroughError));
-
-  if (auto err = llvm::orc::setUpInProcessLCTMReentryViaEPCIU(**epciu))
-    return std::move(err);
-
-  llvm::orc::JITTargetMachineBuilder jtmb(
-      sess->getExecutorProcessControl().getTargetTriple());
-
-  auto layout = jtmb.getDefaultDataLayoutForTarget();
-  if (!layout)
-    return layout.takeError();
-
-  return std::make_unique<Engine>(std::move(sess), std::move(*epciu), std::move(jtmb),
-                                  std::move(*layout));
+  jit->getIRTransformLayer().setTransform(
+      [&](llvm::orc::ThreadSafeModule module,
+          const llvm::orc::MaterializationResponsibility &R) {
+        module.withModuleDo([](llvm::Module &module) {
+          ir::optimize(&module, /*debug=*/false, /*jit=*/true);
+        });
+        return std::move(module);
+      });
 }
 
 llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,
                               llvm::orc::ResourceTrackerSP rt) {
   if (!rt)
-    rt = mainJD.getDefaultResourceTracker();
+    rt = jit->getMainJITDylib().getDefaultResourceTracker();
 
-  return optimizeLayer.add(rt, std::move(module));
+  return jit->addIRModule(rt, std::move(module));
 }
 
-llvm::Expected<llvm::orc::ExecutorSymbolDef> Engine::lookup(llvm::StringRef name) {
-  return sess->lookup({&mainJD}, mangle(name.str()));
+llvm::Expected<llvm::orc::ExecutorAddr> Engine::lookup(llvm::StringRef name) {
+  return jit->lookup(name);
 }
 
 } // namespace jit
