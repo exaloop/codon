@@ -243,8 +243,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       // Case: setters
       auto setters = ctx->findMethod(lhsClass.get(), format(".set_{}", stmt->member));
       if (!setters.empty()) {
-        resultStmt = transform(N<ExprStmt>(
-            N<CallExpr>(N<IdExpr>(setters[0]->ast->name), stmt->lhs, stmt->rhs)));
+        resultStmt = transform(N<ExprStmt>(N<CallExpr>(
+            N<IdExpr>(setters.front()->ast->getName()), stmt->lhs, stmt->rhs)));
         return;
       }
       // Case: class variables

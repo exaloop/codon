@@ -56,65 +56,74 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
-  // Special case!
-  if (expr->getType()->getUnbound() && cast<IdExpr>(expr->expr)) {
-    auto callExpr = cast<IdExpr>(transform(clean_clone(expr->expr)));
-    if (callExpr && callExpr->getValue() == "std.collections.namedtuple.0") {
-      resultExpr = transformNamedTuple(expr);
-      return;
-    } else if (callExpr && callExpr->getValue() == "std.functools.partial.0:0") {
-      resultExpr = transformFunctoolsPartial(expr);
-      return;
-    } else if (callExpr && callExpr->getValue() == "tuple" && expr->size() == 1 &&
-               cast<GeneratorExpr>(expr->begin()->value)) {
-      resultExpr = transformTupleGenerator(expr);
-      return;
-    }
-  }
-
-  // Transform and expand arguments. Return early if it cannot be done yet
-  ctx->addBlock();
-  if (expr->expr->getType())
-    if (auto f = expr->expr->getType()->getFunc())
-      addFunctionGenerics(f.get());
-  auto a = transformCallArgs(expr->items);
-
-  ctx->popBlock();
-  if (!a)
-    return;
+  auto orig = expr->toString(0);
 
   // Check if this call is partial call
   PartialCallData part{
       !expr->items.empty() && cast<EllipsisExpr>(expr->items.back().value) &&
       cast<EllipsisExpr>(expr->items.back().value)->mode == EllipsisExpr::PARTIAL};
-  // Transform the callee
-  if (!part.isPartial) {
-    // Intercept method calls (e.g. `obj.method`) for faster compilation (because it
-    // avoids partial calls). This intercept passes the call arguments to
-    // @c transformDot to select the best overload as well
-    if (auto dot = cast<DotExpr>(expr->expr)) {
-      // Pick the best method overload
-      if (auto edt = transformDot(dot, &expr->items))
-        expr->expr = edt;
-    } else if (auto id = cast<IdExpr>(expr->expr)) {
-      expr->expr = transform(expr->expr);
-      id = cast<IdExpr>(expr->expr);
-      // Pick the best function overload
-      if (endswith(id->getValue(), ":dispatch")) {
-        if (auto bestMethod = getBestOverload(id, &expr->items)) {
-          auto t = id->getType();
-          expr->expr = N<IdExpr>(bestMethod->ast->name);
-          expr->expr->setType(ctx->instantiate(bestMethod));
-        }
-      }
-    }
-  }
-  expr->expr = transform(expr->expr);
+
+  expr->expr = transform(expr->getExpr());
+  if (expr->getExpr()->getType()->getUnbound())
+    return; // delay
+
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   if ((resultExpr = newExpr))
     return;
   if (!calleeFn)
     return;
+
+  // ctx->addBlock();
+  // if (expr->getExpr()->getType())
+  //   if (auto f = expr->getExpr()->getType()->getFunc())
+  //     addFunctionGenerics(f.get());
+  auto a = transformCallArgs(expr->items);
+  // ctx->popBlock();
+  if (!a)
+    return;
+
+  // Early dispatch modifier
+  if (endswith(calleeFn->ast->getName(), ":dispatch")) {
+    // LOG("-> {}", calleeFn->debugString(2));
+    std::vector<FuncTypePtr> m;
+    if (auto id = cast<IdExpr>(expr->getExpr())) {
+      // Case: function overloads (IdExpr)
+      std::vector<types::FuncTypePtr> methods;
+      auto key = id->getValue();
+      if (endswith(key, ":dispatch"))
+        key = key.substr(0, key.size() - 9);
+      for (auto &m : ctx->cache->overloads[key])
+        if (!endswith(m, ":dispatch"))
+          methods.push_back(ctx->cache->functions[m].type);
+      std::reverse(methods.begin(), methods.end());
+      m = findMatchingMethods(calleeFn->funcParent ? calleeFn->funcParent->getClass()
+                                                   : nullptr,
+                              methods, expr->items);
+    }
+    bool doDispatch = m.size() == 0;
+    if (m.size() > 1) {
+      for (auto &a : *expr) {
+        if (auto u = a.value->getType()->getUnbound())
+          doDispatch = true;
+      }
+    }
+    if (!doDispatch) {
+      calleeFn = ctx->instantiate(m.front(), calleeFn->funcParent
+                                                 ? calleeFn->funcParent->getClass()
+                                                 : nullptr)
+                     ->getFunc();
+      auto e = N<IdExpr>(calleeFn->ast->getName());
+      e->setType(calleeFn);
+      if (cast<IdExpr>(expr->getExpr())) {
+        expr->expr = e;
+      } else {
+        expr->expr = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e);
+      }
+      expr->getExpr()->setType(calleeFn);
+    } else {
+      LOG("-> {}", expr->toString(0));
+    }
+  }
 
   // Handle named and default arguments
   if ((resultExpr = callReorderArguments(calleeFn, expr, part)))
@@ -163,12 +172,48 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     }
     call->setAttribute(Attr::ExprPartial);
     resultExpr = transform(call);
+
+    // LOG("{}: {} --------> {}", getSrcInfo(), orig, resultExpr->toString(0));
   } else {
     // Case: normal function call
     unify(expr->getType(), calleeFn->getRetType());
     if (done)
       expr->setDone();
   }
+
+  // unify(expr->getType(), ctx->instantiate(bestMethod, typ));
+  // A function is deemed virtual if it is marked as such and
+  // if a base class has a RTTI
+  // auto cls = ctx->cache->getClass(typ);
+  // bool isVirtual = in(cls->virtuals, expr->member);
+  // isVirtual &= cls->rtti;
+  // isVirtual &= !expr->expr->getType()->is("type");
+  // if (isVirtual && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+  //     !bestMethod->ast->hasAttribute(Attr::Property)) {
+  //   // Special case: route the call through a vtable
+  //   if (realize(expr->getType())) {
+  //     auto fn = expr->getType()->getFunc();
+  //     auto vid = getRealizationID(typ.get(), fn.get());
+
+  //     // Function[Tuple[TArg1, TArg2, ...], TRet]
+  //     std::vector<Expr *> ids;
+  //     for (auto &t : fn->getArgTypes())
+  //       ids.push_back(N<IdExpr>(t->realizedName()));
+  //     auto fnType = N<InstantiateExpr>(
+  //         N<IdExpr>("Function"),
+  //         std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
+  //                             N<IdExpr>(fn->getRetType()->realizedName())});
+  //     // Function[Tuple[TArg1, TArg2, ...],TRet](
+  //     //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
+  //     // )
+  //     auto e = N<CallExpr>(
+  //         fnType, N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
+  //                                                     "class_get_rtti_vtable"),
+  //                                          expr->expr),
+  //                              N<IntExpr>(vid)));
+  //     return transform(e);
+  //   }
+  // }
 }
 
 /// Transform call arguments. Expand *args and **kwargs to the list of @c CallArg
@@ -257,30 +302,30 @@ bool TypecheckVisitor::transformCallArgs(std::vector<CallArg> &args) {
 ///         (when needed; otherwise nullptr).
 std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
                                                              PartialCallData &part) {
-  auto callee = expr->expr->getClassType();
+  auto callee = expr->getExpr()->getClassType();
   if (!callee) {
     // Case: unknown callee, wait until it becomes known
     return {nullptr, nullptr};
   }
 
-  if (expr->expr->getType()->is("type")) {
-    auto typ = expr->expr->getClassType();
-    if (!isId(expr->expr, "type"))
+  if (expr->getExpr()->getType()->is("type")) {
+    auto typ = expr->getExpr()->getClassType();
+    if (!isId(expr->getExpr(), "type"))
       typ = typ->generics[0].type->getClass();
     if (!typ)
       return {nullptr, nullptr};
     auto clsName = typ->name;
     if (typ->isRecord()) {
       // Case: tuple constructor. Transform to: `T.__new__(args)`
-      return {nullptr,
-              transform(N<CallExpr>(N<DotExpr>(expr->expr, "__new__"), expr->items))};
+      return {nullptr, transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"),
+                                             expr->items))};
     }
 
     // Case: reference type constructor. Transform to
     // `ctr = T.__new__(); v.__init__(args)`
     Expr *var = N<IdExpr>(ctx->cache->getTemporaryVar("ctr"));
     auto newInit =
-        N<AssignStmt>(clone(var), N<CallExpr>(N<DotExpr>(expr->expr, "__new__")));
+        N<AssignStmt>(clone(var), N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__")));
     auto e = N<StmtExpr>(N<SuiteStmt>(newInit), clone(var));
     auto init =
         N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__init__"), expr->items));
@@ -288,20 +333,21 @@ std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
     return {nullptr, transform(e)};
   }
 
-  auto calleeFn = callee->getFunc();
   if (auto partType = callee->getPartial()) {
     auto mask = partType->getPartialMask();
     auto func = ctx->instantiate(partType->getPartialFunc()->generalize(0))->getFunc();
 
-    // Case: calling partial object `p`. Transform roughly to
-    // `part = callee; partial_fn(*part.args, args...)`
-    Expr *var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("partcall"));
-    expr->expr = transform(
-        N<StmtExpr>(N<AssignStmt>(clone(var), expr->expr), N<IdExpr>(func->ast->name)));
+    if (!partType->isPartialEmpty()) {
+      // Case: calling partial object `p`. Transform roughly to
+      // `part = callee; partial_fn(*part.args, args...)`
+      Expr *var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("partcall"));
+      expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()),
+                                         N<IdExpr>(func->ast->name)));
+    }
 
     // Ensure that we got a function
-    calleeFn = expr->expr->getType()->getFunc();
-    seqassert(calleeFn, "not a function: {}", expr->expr->getType());
+    auto calleeFn = expr->getExpr()->getType()->getFunc();
+    seqassert(calleeFn, "not a function: {}", expr->getExpr()->getType());
 
     // Unify partial generics with types known thus far
     auto knownArgTypes = partType->generics[1].type->getClass();
@@ -316,12 +362,13 @@ std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
       }
     part.known = mask;
     return {calleeFn, nullptr};
-  } else if (!calleeFn) {
+  } else if (!callee->getFunc()) {
     // Case: callee is not a function. Try __call__ method instead
-    return {nullptr,
-            transform(N<CallExpr>(N<DotExpr>(expr->expr, "__call__"), expr->items))};
+    return {nullptr, transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__call__"),
+                                           expr->items))};
+  } else {
+    return {callee->getFunc(), nullptr};
   }
-  return {calleeFn, nullptr};
 }
 
 /// Reorder the call arguments to match the signature order. Ensure that every @c
@@ -668,6 +715,22 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   } else {
     return transformInternalStaticFn(expr);
   }
+
+  // Special case!
+  // if (expr->getType()->getUnbound() && cast<IdExpr>(expr->expr)) {
+  //   auto callExpr = cast<IdExpr>(transform(clean_clone(expr->expr)));
+  //   if (callExpr && callExpr->getValue() == "std.collections.namedtuple.0") {
+  //     resultExpr = transformNamedTuple(expr);
+  //     return;
+  //   } else if (callExpr && callExpr->getValue() == "std.functools.partial.0:0") {
+  //     resultExpr = transformFunctoolsPartial(expr);
+  //     return;
+  //   } else if (callExpr && callExpr->getValue() == "tuple" && expr->size() == 1 &&
+  //              cast<GeneratorExpr>(expr->begin()->value)) {
+  //     resultExpr = transformTupleGenerator(expr);
+  //     return;
+  //   }
+  // }
 }
 
 /// Transform `tuple(i for i in tup)` into a GeneratorExpr that will be handled during

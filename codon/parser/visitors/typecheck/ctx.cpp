@@ -30,7 +30,9 @@ TypeContext::TypeContext(Cache *cache, std::string filename)
     : Context<TypecheckItem>(std::move(filename)), cache(cache) {
   bases.emplace_back();
   scope.emplace_back(0);
-  pushSrcInfo(cache->generateSrcInfo()); // Always have srcInfo() around
+  auto e = cache->N<NoneExpr>();
+  e->setSrcInfo(cache->generateSrcInfo());
+  pushNode(e); // Always have srcInfo() around
 }
 
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
@@ -272,10 +274,6 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
           break;
       if (idx == cm.size())
         cm.push_back(key);
-      // if (idx)
-      //   LOG("--> {}: realize {}: {} / {}", getSrcInfo(), ft->debugString(2), idx,
-      //   key);
-      ft->index = idx;
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {

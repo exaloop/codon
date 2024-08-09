@@ -183,13 +183,12 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   if (!expr->getType())
     expr->setType(ctx->getUnbound());
 
-  auto typ = expr->getType();
   if (!expr->isDone()) {
     TypecheckVisitor v(ctx, preamble, prependStmts);
     v.setSrcInfo(expr->getSrcInfo());
-    ctx->pushSrcInfo(expr->getSrcInfo());
+    ctx->pushNode(expr);
     expr->accept(v);
-    ctx->popSrcInfo();
+    ctx->popNode();
     if (v.resultExpr) {
       for (auto it = expr->attributes_begin(); it != expr->attributes_end(); ++it) {
         const auto *attr = expr->getAttribute(*it);
@@ -197,20 +196,23 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
           v.resultExpr->setAttribute(*it, attr->clone());
       }
       v.resultExpr->setOrigExpr(expr);
+      // unify(expr->getType(), v.resultExpr->getType());
       expr = v.resultExpr;
+      if (!expr->getType())
+        expr->setType(ctx->getUnbound());
     }
     if (!allowTypes && expr && expr->getType()->is("type"))
       E(Error::UNEXPECTED_TYPE, expr, "type");
-    if (!expr->getType())
-      expr->setType(ctx->getUnbound());
-    unify(typ, expr->getType());
+    // unify(typ, expr->getType());
     if (expr->isDone())
       ctx->changedNodes++;
   }
-  realize(typ);
-  if (expr)
+  if (expr) {
+    if (auto p = realize(expr->getType()))
+      unify(expr->getType(), p);
     LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), *(expr),
                   expr->isDone() ? "[done]" : "");
+  }
   return expr;
 }
 
@@ -265,9 +267,9 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   if (!stmt->toString(-1).empty())
     LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
                   ctx->getBase()->iteration, stmt->toString(-1));
-  ctx->pushSrcInfo(stmt->getSrcInfo());
+  ctx->pushNode(stmt);
   stmt->accept(v);
-  ctx->popSrcInfo();
+  ctx->popNode();
   if (v.resultStmt)
     stmt = v.resultStmt;
   if (!v.prependStmts->empty()) {

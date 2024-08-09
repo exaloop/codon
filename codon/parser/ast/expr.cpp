@@ -45,6 +45,13 @@ std::string Expr::wrapType(const std::string &sexpr) const {
                   type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "");
   return s;
 }
+Expr *Expr::operator<<(const types::TypePtr &t) {
+  seqassert(type, "lhs is nullptr");
+  if ((*type) << t) {
+    E(Error::TYPE_UNIFY, getSrcInfo(), type->prettyString(), t->prettyString());
+  }
+  return this;
+}
 
 Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
     : name(std::move(name)), type(type), defaultValue(defaultValue) {

@@ -31,16 +31,13 @@ using namespace types;
 /// @return a
 TypePtr TypecheckVisitor::unify(const TypePtr &a, const TypePtr &b) {
   seqassert(a, "lhs is nullptr");
-  seqassert(b, "rhs is nullptr");
-  types::Type::Unification undo;
-  if (a->unify(b.get(), &undo) >= 0) {
-    return a;
-  } else {
-    undo.undo();
+  if (!((*a) << b)) {
+    types::Type::Unification undo;
+    a->unify(b.get(), &undo);
+    E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
+    return nullptr;
   }
-  a->unify(b.get(), &undo);
-  E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
-  return nullptr;
+  return a;
 }
 
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.

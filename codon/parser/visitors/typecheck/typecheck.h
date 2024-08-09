@@ -82,10 +82,9 @@ private: // Node typechecking rules
   bool checkCapture(const TypeContext::Item &);
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
-  Expr *transformDot(DotExpr *, std::vector<CallArg> * = nullptr);
-  Expr *getClassMember(DotExpr *, std::vector<CallArg> *);
+  Expr *getClassMember(DotExpr *);
   types::TypePtr findSpecialMember(const std::string &);
-  types::FuncTypePtr getBestOverload(Expr *, std::vector<CallArg> *);
+  types::FuncTypePtr getBestOverload(Expr *);
   types::FuncTypePtr getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */

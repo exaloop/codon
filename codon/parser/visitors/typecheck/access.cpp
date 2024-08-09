@@ -27,7 +27,6 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
   auto o = in(ctx->cache->overloads, val->canonicalName);
   if (expr->getType()->getUnbound() && o && o->size() > 1) {
-    // LOG("dispatch: {}", val->canonicalName);
     val = ctx->forceFind(getDispatch(val->canonicalName)->ast->name);
   }
 
@@ -72,8 +71,144 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 ///   `a.B.c`      -> canonical name of `c` in class `a.B`
 ///   `python.foo` -> internal.python._get_identifier("foo")
 /// Other cases are handled during the type checking.
-/// See @c transformDot for details.
-void TypecheckVisitor::visit(DotExpr *expr) { resultExpr = transformDot(expr); }
+/// Transform a dot expression. Select the best method overload if possible.
+/// @example
+///   `obj.__class__`   -> `type(obj)`
+///   `cls.__name__`    -> `"class"` (same for functions)
+///   `obj.method`      -> `cls.method(obj, ...)` or
+///                        `cls.method(obj)` if method has `@property` attribute
+///   @c getClassMember examples:
+///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
+///   `optional.member` -> `unwrap(optional).member`
+///   `pyobj.member`    -> `pyobj._getattr("member")`
+/// @return nullptr if no transformation was made
+/// See @c getClassMember and @c getBestOverload
+
+void TypecheckVisitor::visit(DotExpr *expr) {
+  // First flatten the imports:
+  // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
+
+  CallExpr *parentCall = cast<CallExpr>(ctx->getParentNode());
+
+  std::vector<std::string> chain;
+  Expr *root = expr;
+  for (; cast<DotExpr>(root); root = cast<DotExpr>(root)->getExpr())
+    chain.push_back(cast<DotExpr>(root)->getMember());
+
+  Expr *nexpr = expr;
+  if (auto id = cast<IdExpr>(root)) {
+    // Case: a.bar.baz
+    chain.push_back(id->getValue());
+    std::reverse(chain.begin(), chain.end());
+    auto [pos, val] = getImport(chain);
+    if (!val) {
+      seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
+      ctx->getBase()->pyCaptures->insert(chain[0]);
+      nexpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
+    } else if (val->getModule() == "std.python") {
+      nexpr = transform(N<CallExpr>(
+          N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
+          N<StringExpr>(chain[pos++])));
+    } else if (val->getModule() == ctx->getModule() && pos == 1) {
+      nexpr = transform(N<IdExpr>(chain[0]), true);
+    } else {
+      nexpr = N<IdExpr>(val->canonicalName);
+    }
+    while (pos < chain.size())
+      nexpr = N<DotExpr>(nexpr, chain[pos++]);
+  }
+  if (!cast<DotExpr>(nexpr)) {
+    resultExpr = transform(nexpr);
+    return;
+  } else {
+    expr->expr = cast<DotExpr>(nexpr)->getExpr();
+    expr->member = cast<DotExpr>(nexpr)->getMember();
+  }
+
+  // Special case: obj.__class__
+  if (expr->getMember() == "__class__") {
+    /// TODO: prevent cls.__class__ and type(cls)
+    resultExpr = transform(N<CallExpr>(N<IdExpr>("type"), expr->getExpr()));
+    return;
+  }
+  expr->expr = transform(expr->getExpr());
+
+  // Special case: fn.__name__
+  // Should go before cls.__name__ to allow printing generic functions
+  if (ctx->getType(expr->getExpr()->getType())->getFunc() &&
+      expr->getMember() == "__name__") {
+    resultExpr = transform(
+        N<StringExpr>(ctx->getType(expr->getExpr()->getType())->prettyString()));
+    return;
+  }
+  // Special case: fn.__llvm_name__ or obj.__llvm_name__
+  if (expr->getMember() == "__llvm_name__") {
+    if (realize(expr->getExpr()->getType()))
+      resultExpr = transform(N<StringExpr>(expr->getExpr()->getType()->realizedName()));
+    return;
+  }
+  // Special case: cls.__name__
+  if (expr->getExpr()->getType()->is("type") && expr->getMember() == "__name__") {
+    if (realize(expr->getExpr()->getType()))
+      resultExpr = transform(
+          N<StringExpr>(ctx->getType(expr->getExpr()->getType())->prettyString()));
+    return;
+  }
+  // Special case: expr.__is_static__
+  if (expr->getMember() == "__is_static__") {
+    if (expr->getExpr()->isDone())
+      resultExpr =
+          transform(N<BoolExpr>(bool(expr->getExpr()->getType()->getStatic())));
+    return;
+  }
+  // Special case: cls.__id__
+  if (expr->getExpr()->getType()->is("type") && expr->getMember() == "__id__") {
+    if (auto c = realize(getType(expr->getExpr())))
+      resultExpr =
+          transform(N<IntExpr>(ctx->cache->getClass(c->getClass())
+                                   ->realizations[c->getClass()->realizedName()]
+                                   ->id));
+    return;
+  }
+
+  // Ensure that the type is known (otherwise wait until it becomes known)
+  auto typ = getType(expr->getExpr()) ? getType(expr->getExpr())->getClass() : nullptr;
+  if (!typ)
+    return;
+
+  // Check if this is a method or member access
+  auto methods = ctx->findMethod(typ.get(), expr->getMember());
+  if (methods.empty()) {
+    resultExpr = getClassMember(expr);
+  } else {
+    auto bestMethod =
+        methods.size() > 1
+            ? getDispatch(
+                  ctx->cache->functions[methods.front()->ast->getName()].rootName)
+            : methods.front();
+    Expr *e = N<IdExpr>(bestMethod->ast->getName());
+    e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));;
+    if (expr->getExpr()->getType()->is("type")) {
+      // Static access: `cls.method`
+    } else if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+               !bestMethod->ast->hasAttribute(Attr::Property)) {
+      // Instance access: `obj.method`
+      parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
+    } else {
+      // Instance access: `obj.method`
+      // Transform y.method to a partial call `type(obj).method(args, ...)`
+      std::vector<Expr *> methodArgs;
+      // Do not add self if a method is marked with @staticmethod
+      if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
+        methodArgs.push_back(expr->getExpr());
+      // If a method is marked with @property, just call it directly
+      if (!bestMethod->ast->hasAttribute(Attr::Property))
+        methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+      e = N<CallExpr>(e, methodArgs);
+    }
+    resultExpr = transform(e);
+  }
+}
 
 /// Access identifiers from outside of the current function/class scope.
 /// Either use them as-is (globals), capture them if allowed (nonlocals),
@@ -124,32 +259,6 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
   // Check if a real variable (not a static) is defined outside the current scope
   if (crossCaptureBoundary)
     E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), ctx->cache->rev(val->canonicalName));
-
-  // Case: a nonlocal variable that has not been marked with `nonlocal` statement
-  //       and capturing is enabled
-  // auto captures = ctx->getBase()->captures;
-  // if (captures && !in(*captures, val->canonicalName)) {
-  //   // Captures are transformed to function arguments; generate new name for that
-  //   // argument
-  //   Expr * typ = nullptr;
-  //   if (val->isType())
-  //     typ = N<IdExpr>("type");
-  //   if (auto st = val->isStatic())
-  //     typ = N<IndexExpr>(N<IdExpr>("Static"),
-  //                        N<IdExpr>(st == StaticValue::INT ? "int" : "str"));
-  //   auto [newName, _] = (*captures)[val->canonicalName] = {
-  //       ctx->generateCanonicalName(val->canonicalName), typ};
-  //   ctx->cache->reverseIdentifierLookup[newName] = newName;
-  //   // Add newly generated argument to the context
-  //   std::shared_ptr<TypecheckItem> newVal = nullptr;
-  //   if (val->isType())
-  //     newVal = ctx->addType(ctx->cache->rev(val->canonicalName), newName, val->type);
-  //   else
-  //     newVal = ctx->addVar(ctx->cache->rev(val->canonicalName), newName, val->type);
-  //   newVal->baseName = ctx->getBaseName();
-  //   newVal->canShadow = false; // todo)) needed here? remove noshadow on fn
-  //   boundaries? newVal->scope = ctx->getBase()->scope; return true;
-  // }
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled
@@ -291,8 +400,10 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
 
   auto baseType = getFuncTypeBase(2);
   auto typ = std::make_shared<FuncType>(baseType, ast, 0);
+  typ->funcParent = ctx->cache->functions[overloads[0]].type->funcParent;
   typ = std::static_pointer_cast<FuncType>(typ->generalize(ctx->typecheckLevel - 1));
   ctx->addFunc(name, name, typ);
+  // LOG("-[D]-> {} / {}", typ->debugString(2), typ->funcParent->debugString(2));
 
   overloads.insert(overloads.begin(), name);
   ctx->cache->functions[name].ast = ast;
@@ -302,186 +413,6 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   return typ;
 }
 
-/// Transform a dot expression. Select the best method overload if possible.
-/// @param args (optional) list of class method arguments used to select the best
-///             overload. nullptr if not available.
-/// @example
-///   `obj.__class__`   -> `type(obj)`
-///   `cls.__name__`    -> `"class"` (same for functions)
-///   `obj.method`      -> `cls.method(obj, ...)` or
-///                        `cls.method(obj)` if method has `@property` attribute
-///   @c getClassMember examples:
-///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
-///   `optional.member` -> `unwrap(optional).member`
-///   `pyobj.member`    -> `pyobj._getattr("member")`
-/// @return nullptr if no transformation was made
-/// See @c getClassMember and @c getBestOverload
-Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) {
-  // First flatten the imports:
-  // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
-
-  if (!expr->getType())
-    expr->setType(ctx->getUnbound());
-
-  std::vector<std::string> chain;
-  Expr *root = expr;
-  for (; cast<DotExpr>(root); root = cast<DotExpr>(root)->expr)
-    chain.push_back(cast<DotExpr>(root)->member);
-
-  Expr *nexpr = expr;
-  if (auto id = cast<IdExpr>(root)) {
-    // Case: a.bar.baz
-    chain.push_back(id->getValue());
-    std::reverse(chain.begin(), chain.end());
-    auto [pos, val] = getImport(chain);
-    if (!val) {
-      seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
-      ctx->getBase()->pyCaptures->insert(chain[0]);
-      nexpr = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
-    } else if (val->getModule() == "std.python") {
-      nexpr = transform(N<CallExpr>(
-          N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
-          N<StringExpr>(chain[pos++])));
-    } else if (val->getModule() == ctx->getModule() && pos == 1) {
-      nexpr = transform(N<IdExpr>(chain[0]), true);
-    } else {
-      nexpr = N<IdExpr>(val->canonicalName);
-    }
-    while (pos < chain.size())
-      nexpr = N<DotExpr>(nexpr, chain[pos++]);
-  }
-  if (!cast<DotExpr>(nexpr)) {
-    if (args) {
-      nexpr = transform(nexpr);
-      if (auto id = cast<IdExpr>(nexpr))
-        if (endswith(id->getValue(), ":dispatch"))
-          if (auto bestMethod = getBestOverload(id, args)) {
-            auto t = id->getType();
-            nexpr = N<IdExpr>(bestMethod->ast->name);
-            nexpr->setType(ctx->instantiate(bestMethod));
-          }
-      return nexpr;
-    } else {
-      return transform(nexpr);
-    }
-  } else {
-    expr->expr = cast<DotExpr>(nexpr)->expr;
-    expr->member = cast<DotExpr>(nexpr)->member;
-  }
-
-  // Special case: obj.__class__
-  if (expr->member == "__class__") {
-    /// TODO: prevent cls.__class__ and type(cls)
-    return N<CallExpr>(N<IdExpr>("type"), expr->expr);
-  }
-  expr->expr = transform(expr->expr);
-
-  // Special case: fn.__name__
-  // Should go before cls.__name__ to allow printing generic functions
-  if (ctx->getType(expr->expr->getType())->getFunc() && expr->member == "__name__") {
-    return transform(
-        N<StringExpr>(ctx->getType(expr->expr->getType())->prettyString()));
-  }
-  // Special case: fn.__llvm_name__ or obj.__llvm_name__
-  if (expr->member == "__llvm_name__") {
-    if (realize(expr->expr->getType()))
-      return transform(N<StringExpr>(expr->expr->getType()->realizedName()));
-    return nullptr;
-  }
-  // Special case: cls.__name__
-  if (expr->expr->getType()->is("type") && expr->member == "__name__") {
-    if (realize(expr->expr->getType()))
-      return transform(
-          N<StringExpr>(ctx->getType(expr->expr->getType())->prettyString()));
-    return nullptr;
-  }
-  // Special case: expr.__is_static__
-  if (expr->member == "__is_static__") {
-    if (expr->expr->isDone())
-      return transform(N<BoolExpr>(bool(expr->expr->getType()->getStatic())));
-    return nullptr;
-  }
-  // Special case: cls.__id__
-  if (expr->expr->getType()->is("type") && expr->member == "__id__") {
-    if (auto c = realize(getType(expr->expr))) {
-      return transform(N<IntExpr>(ctx->cache->getClass(c->getClass())
-                                      ->realizations[c->getClass()->realizedName()]
-                                      ->id));
-    }
-    return nullptr;
-  }
-
-  // Ensure that the type is known (otherwise wait until it becomes known)
-  if (!getType(expr->expr))
-    return nullptr;
-  auto typ = getType(expr->expr)->getClass();
-  if (!typ)
-    return nullptr;
-
-  // Check if this is a method or member access
-  if (ctx->findMethod(typ.get(), expr->member).empty())
-    return getClassMember(expr, args);
-  auto bestMethod = getBestOverload(expr, args);
-
-  if (args) {
-    unify(expr->getType(), ctx->instantiate(bestMethod, typ));
-
-    // A function is deemed virtual if it is marked as such and
-    // if a base class has a RTTI
-    auto cls = ctx->cache->getClass(typ);
-    bool isVirtual = in(cls->virtuals, expr->member);
-    isVirtual &= cls->rtti;
-    isVirtual &= !expr->expr->getType()->is("type");
-    if (isVirtual && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-        !bestMethod->ast->hasAttribute(Attr::Property)) {
-      // Special case: route the call through a vtable
-      if (realize(expr->getType())) {
-        auto fn = expr->getType()->getFunc();
-        auto vid = getRealizationID(typ.get(), fn.get());
-
-        // Function[Tuple[TArg1, TArg2, ...], TRet]
-        std::vector<Expr *> ids;
-        for (auto &t : fn->getArgTypes())
-          ids.push_back(N<IdExpr>(t->realizedName()));
-        auto fnType = N<InstantiateExpr>(
-            N<IdExpr>("Function"),
-            std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-                                N<IdExpr>(fn->getRetType()->realizedName())});
-        // Function[Tuple[TArg1, TArg2, ...],TRet](
-        //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
-        // )
-        auto e = N<CallExpr>(
-            fnType, N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
-                                                        "class_get_rtti_vtable"),
-                                             expr->expr),
-                                 N<IntExpr>(vid)));
-        return transform(e);
-      }
-    }
-  }
-
-  // Check if a method is a static or an instance method and transform accordingly
-  if (expr->expr->getType()->is("type") || args) {
-    // Static access: `cls.method`
-    Expr *e = N<IdExpr>(bestMethod->ast->name);
-    e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));
-    return transform(e); // Realize if needed
-  } else {
-    // Instance access: `obj.method`
-    // Transform y.method to a partial call `type(obj).method(args, ...)`
-    std::vector<Expr *> methodArgs;
-    // Do not add self if a method is marked with @staticmethod
-    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
-      methodArgs.push_back(expr->expr);
-    // If a method is marked with @property, just call it directly
-    if (!bestMethod->ast->hasAttribute(Attr::Property))
-      methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-    auto e = transform(N<CallExpr>(N<IdExpr>(bestMethod->ast->name), methodArgs));
-    unify(expr->getType(), e->getType());
-    return e;
-  }
-}
-
 /// Select the requested class member.
 /// @param args (optional) list of class method arguments used to select the best
 ///             overload if the member is optional. nullptr if not available.
@@ -489,7 +420,7 @@ Expr *TypecheckVisitor::transformDot(DotExpr *expr, std::vector<CallArg> *args) 
 ///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
-Expr *TypecheckVisitor::getClassMember(DotExpr *expr, std::vector<CallArg> *args) {
+Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   auto typ = getType(expr->expr)->getClass();
   seqassert(typ, "not a class");
 
@@ -547,11 +478,8 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr, std::vector<CallArg> *args
 
   // Case: transform `optional.member` to `unwrap(optional).member`
   if (typ->is(TYPE_OPTIONAL)) {
-    auto dot = N<DotExpr>(transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr)),
-                          expr->member);
-    dot->setType(ctx->getUnbound()); // as dot is not transformed
-    if (auto d = transformDot(dot, args))
-      return d;
+    auto dot = transform(N<DotExpr>(
+        transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr)), expr->member));
     return dot;
   }
 
@@ -594,121 +522,107 @@ TypePtr TypecheckVisitor::findSpecialMember(const std::string &member) {
 /// @param methods List of available methods.
 /// @param args    (optional) list of class method arguments used to select the best
 ///                overload if the member is optional. nullptr if not available.
-FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr, std::vector<CallArg> *args) {
-  // Prepare the list of method arguments if possible
-  std::unique_ptr<std::vector<CallArg>> methodArgs;
+// FuncTypePtr TypecheckVisitor::getBestOverload(Expr *expr, std::vector<CallArg> *args)
+// {
+//   // Prepare the list of method arguments if possible
+//   std::unique_ptr<std::vector<CallArg>> methodArgs;
 
-  if (args) {
-    // Case: method overloads (DotExpr)
-    bool addSelf = true;
-    if (auto dot = cast<DotExpr>(expr)) {
-      auto cls = getType(dot->expr)->getClass();
-      auto methods = ctx->findMethod(cls.get(), dot->member, false);
-      if (!methods.empty() && methods.front()->ast->hasAttribute(Attr::StaticMethod))
-        addSelf = false;
-    }
+//   if (args) {
+//     methodArgs = std::make_unique<std::vector<CallArg>>();
+//     for (auto &a : *args)
+//       methodArgs->push_back(a);
+//   }
+//   // else {
+//   //   // Partially deduced type thus far
+//   //   auto typeSoFar = expr->getType() ? getType(expr)->getClass() : nullptr;
+//   //   if (typeSoFar && typeSoFar->getFunc()) {
+//   //     // Case: arguments available from the previous type checking round
+//   //     methodArgs = std::make_unique<std::vector<CallArg>>();
+//   //     if (cast<DotExpr>(expr) &&
+//   //         !cast<DotExpr>(expr)->expr->getType()->is("type")) { // Add `self`
+//   //       auto n = N<NoneExpr>();
+//   //       n->setType(cast<DotExpr>(expr)->expr->getType());
+//   //       methodArgs->push_back({"", n});
+//   //     }
+//   //     for (auto &a : typeSoFar->getFunc()->getArgTypes()) {
+//   //       auto n = N<NoneExpr>();
+//   //       n->setType(a);
+//   //       methodArgs->push_back({"", n});
+//   //     }
+//   //   }
+//   // }
 
-    // Case: arguments explicitly provided (by CallExpr)
-    if (addSelf && cast<DotExpr>(expr) &&
-        !cast<DotExpr>(expr)->expr->getType()->is("type")) {
-      // Add `self` as the first argument
-      args->insert(args->begin(), {"", cast<DotExpr>(expr)->expr});
-    }
-    methodArgs = std::make_unique<std::vector<CallArg>>();
-    for (auto &a : *args)
-      methodArgs->push_back(a);
-  } else {
-    // Partially deduced type thus far
-    auto typeSoFar = expr->getType() ? getType(expr)->getClass() : nullptr;
-    if (typeSoFar && typeSoFar->getFunc()) {
-      // Case: arguments available from the previous type checking round
-      methodArgs = std::make_unique<std::vector<CallArg>>();
-      if (cast<DotExpr>(expr) &&
-          !cast<DotExpr>(expr)->expr->getType()->is("type")) { // Add `self`
-        auto n = N<NoneExpr>();
-        n->setType(cast<DotExpr>(expr)->expr->getType());
-        methodArgs->push_back({"", n});
-      }
-      for (auto &a : typeSoFar->getFunc()->getArgTypes()) {
-        auto n = N<NoneExpr>();
-        n->setType(a);
-        methodArgs->push_back({"", n});
-      }
-    }
-  }
+//   std::vector<FuncTypePtr> m;
+//   // Use the provided arguments to select the best method
+//   if (auto dot = cast<DotExpr>(expr)) {
+//     // Case: method overloads (DotExpr)
+//     auto methods =
+//         ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
+//     if (methodArgs)
+//     m = findMatchingMethods(getType(dot->expr)->getClass(), methods, *methodArgs);
+//   } else if (auto id = cast<IdExpr>(expr)) {
+//     // Case: function overloads (IdExpr)
+//     std::vector<types::FuncTypePtr> methods;
+//     auto key = id->getValue();
+//     if (endswith(key, ":dispatch"))
+//       key = key.substr(0, key.size() - 9);
+//     for (auto &m : ctx->cache->overloads[key])
+//       if (!endswith(m, ":dispatch"))
+//         methods.push_back(ctx->cache->functions[m].type);
+//     std::reverse(methods.begin(), methods.end());
+//     m = findMatchingMethods(nullptr, methods, *methodArgs);
+//   }
 
-  bool goDispatch = methodArgs == nullptr;
-  if (!goDispatch) {
-    std::vector<FuncTypePtr> m;
-    // Use the provided arguments to select the best method
-    if (auto dot = cast<DotExpr>(expr)) {
-      // Case: method overloads (DotExpr)
-      auto methods =
-          ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
-      m = findMatchingMethods(getType(dot->expr)->getClass(), methods, *methodArgs);
-    } else if (auto id = cast<IdExpr>(expr)) {
-      // Case: function overloads (IdExpr)
-      std::vector<types::FuncTypePtr> methods;
-      auto key = id->getValue();
-      if (endswith(key, ":dispatch"))
-        key = key.substr(0, key.size() - 9);
-      for (auto &m : ctx->cache->overloads[key])
-        if (!endswith(m, ":dispatch"))
-          methods.push_back(ctx->cache->functions[m].type);
-      std::reverse(methods.begin(), methods.end());
-      m = findMatchingMethods(nullptr, methods, *methodArgs);
-    }
+//   bool goDispatch = false;
+//   if (m.size() == 1) {
+//     return m[0];
+//   } else if (m.size() > 1) {
+//     for (auto &a : *methodArgs) {
+//       if (auto u = a.value->getType()->getUnbound()) {
+//         goDispatch = true;
+//       }
+//     }
+//     if (!goDispatch)
+//       return m[0];
+//   }
 
-    if (m.size() == 1) {
-      return m[0];
-    } else if (m.size() > 1) {
-      for (auto &a : *methodArgs) {
-        if (auto u = a.value->getType()->getUnbound()) {
-          goDispatch = true;
-        }
-      }
-      if (!goDispatch)
-        return m[0];
-    }
-  }
+//   if (goDispatch) {
+//     // If overload is ambiguous, route through a dispatch function
+//     std::string name;
+//     if (auto dot = cast<DotExpr>(expr)) {
+//       auto methods =
+//           ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
+//       seqassert(!methods.empty(), "unknown method");
+//       name = ctx->cache->functions[methods.back()->ast->name].rootName;
+//     } else {
+//       name = cast<IdExpr>(expr)->getValue();
+//     }
+//     auto t = getDispatch(name);
+//   }
 
-  if (goDispatch) {
-    // If overload is ambiguous, route through a dispatch function
-    std::string name;
-    if (auto dot = cast<DotExpr>(expr)) {
-      auto methods =
-          ctx->findMethod(getType(dot->expr)->getClass().get(), dot->member, false);
-      seqassert(!methods.empty(), "unknown method");
-      name = ctx->cache->functions[methods.back()->ast->name].rootName;
-    } else {
-      name = cast<IdExpr>(expr)->getValue();
-    }
-    return getDispatch(name);
-  }
+//   // Print a nice error message
+//   std::string argsNice;
+//   if (methodArgs) {
+//     std::vector<std::string> a;
+//     for (auto &t : *methodArgs)
+//       a.emplace_back(fmt::format("{}", t.value->getType()->getStatic()
+//                                            ? t.value->getClassType()->name
+//                                            : t.value->getType()->prettyString()));
+//     argsNice = fmt::format("({})", fmt::join(a, ", "));
+//   }
 
-  // Print a nice error message
-  std::string argsNice;
-  if (methodArgs) {
-    std::vector<std::string> a;
-    for (auto &t : *methodArgs)
-      a.emplace_back(fmt::format("{}", t.value->getType()->getStatic()
-                                           ? t.value->getClassType()->name
-                                           : t.value->getType()->prettyString()));
-    argsNice = fmt::format("({})", fmt::join(a, ", "));
-  }
+//   if (auto dot = cast<DotExpr>(expr)) {
+//     // Debug:
+//     // *args = std::vector<CallArg>(args->begin()+1, args->end());
+//     getBestOverload(expr, args);
+//     E(Error::DOT_NO_ATTR_ARGS, expr, getType(dot->expr)->prettyString(), dot->member,
+//       argsNice);
+//   } else {
+//     E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(cast<IdExpr>(expr)->getValue()),
+//       argsNice);
+//   }
 
-  if (auto dot = cast<DotExpr>(expr)) {
-    // Debug:
-    // *args = std::vector<CallArg>(args->begin()+1, args->end());
-    // getBestOverload(expr, args);
-    E(Error::DOT_NO_ATTR_ARGS, expr, getType(dot->expr)->prettyString(), dot->member,
-      argsNice);
-  } else {
-    E(Error::FN_NO_ATTR_ARGS, expr, ctx->cache->rev(cast<IdExpr>(expr)->getValue()),
-      argsNice);
-  }
-
-  return nullptr;
-}
+//   return nullptr;
+// }
 
 } // namespace codon::ast

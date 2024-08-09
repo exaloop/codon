@@ -118,6 +118,8 @@ public:
   virtual bool is(const std::string &s);
   char isStaticType();
 
+  Type *operator<<(const std::shared_ptr<Type> &t);
+
 protected:
   Cache *cache;
   explicit Type(const std::shared_ptr<Type> &);

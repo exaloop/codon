@@ -57,6 +57,8 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   static const char NodeId;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
 
+  Expr *operator<<(const types::TypePtr &t);
+
 protected:
   /// Add a type to S-expression string.
   std::string wrapType(const std::string &sexpr) const;

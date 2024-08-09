@@ -56,4 +56,16 @@ char Type::isStaticType() {
   return 0;
 }
 
+Type *Type::operator<<(const TypePtr &t) {
+  seqassert(t, "rhs is nullptr");
+  types::Type::Unification undo;
+  if (unify(t.get(), &undo) >= 0) {
+    return this;
+  } else {
+    undo.undo();
+    return nullptr;
+  }
+}
+
+
 } // namespace codon::ast::types

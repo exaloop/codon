@@ -43,7 +43,7 @@ private:
   /// The absolute path of the current module.
   std::string filename;
   /// SrcInfo stack used for obtaining source information of the current expression.
-  std::vector<SrcInfo> srcInfos;
+  std::vector<ASTNode *> nodeStack;
 
 public:
   explicit Context(std::string filename) : filename(std::move(filename)) {
@@ -120,9 +120,14 @@ protected:
 
 public:
   /* SrcInfo helpers */
-  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
-  void popSrcInfo() { srcInfos.pop_back(); }
-  SrcInfo getSrcInfo() const { return srcInfos.back(); }
+  void pushNode(ASTNode *n) { nodeStack.emplace_back(n); }
+  void popNode() { nodeStack.pop_back(); }
+  ASTNode *getLastNode() const { return nodeStack.back(); }
+  ASTNode *getParentNode() const {
+    assert(nodeStack.size() > 1);
+    return nodeStack[nodeStack.size() - 2];
+  }
+  SrcInfo getSrcInfo() const { return nodeStack.back()->getSrcInfo(); }
 };
 
 } // namespace codon::ast
