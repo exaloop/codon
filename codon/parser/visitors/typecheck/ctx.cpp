@@ -274,6 +274,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
           break;
       if (idx == cm.size())
         cm.push_back(key);
+      ft->index = idx;
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {

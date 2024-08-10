@@ -709,7 +709,7 @@ TypecheckVisitor::unpackTupleTypes(Expr *expr) {
       ret->emplace_back("", a->getType());
     }
   } else if (auto kw = cast<CallExpr>(expr->getOrigExpr())) {
-    auto val = ctx->getType(kw->getType())->getClass();
+    auto val = ctx->getType(expr->getType())->getClass();
     if (!val || val->name != "NamedTuple" || !val->generics[1].type->getClass() ||
         !val->generics[0].type->canRealize())
       return nullptr;

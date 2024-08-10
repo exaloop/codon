@@ -63,3 +63,7 @@ def no_argument_wrap():
 @__attribute__
 def no_type_wrap():
     pass
+
+@__attribute__
+def no_arg_reorder():
+    pass

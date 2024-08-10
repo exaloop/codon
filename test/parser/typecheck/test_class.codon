@@ -321,7 +321,7 @@ class defdict(Static[Dict[str,float]]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
-z[1.1] #! 'defdict' object has no method '__getitem__' with arguments (defdict, float)
+z[1.1] #! 'float' does not match expected type 'str'
 
 #%% inherit_tuple,barebones
 class Foo:

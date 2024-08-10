@@ -227,7 +227,7 @@ class Foo:
         print('foo')
     def method(self, a):
         print(a)
-Foo().clsmethod() #! 'Foo' object has no method 'clsmethod' with arguments (Foo)
+Foo().clsmethod() #! clsmethod() takes 0 arguments (1 given)
 
 #%% nested_class_error,barebones
 class X:
@@ -249,7 +249,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print(A.B.C[bool].foo(W=str, ...).__class__.__name__) #: foo[bool,bool,bool,str,str]
+print(A.B.C[bool].foo(W=str, ...).__fn_name__) #: foo[str;bool,bool,bool,str]
 print(A.B.C.foo(1,1,1,True)) #: (1, 1, 1, True)
 print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
 print(A.B.C.foo('x', 'x', 'x', 'x')) #: ('x', 'x', 'x', 'x')
@@ -268,7 +268,7 @@ class A[T]:
             def foo[W](t: V, u: V, v: V, w: W):
                 return (t, u, v, w)
 
-print A.B.C[str].foo(1,1,1,True) #! 'A.B.C[str]' object has no method 'foo' with arguments (int, int, int, bool)
+print A.B.C[str].foo(1,1,1,True) #! 'int' does not match expected type 'str'
 
 #%% nested_deep_class_error_2_NOPY,barebones
 class A[T]:
@@ -382,7 +382,7 @@ class X[T]:
         return (x+x, y+y)
 y = X[X[int]]()
 print y.__class__.__name__ #: X[X[int]]
-print X[float].foo(U=int, ...).__class__.__name__ #: foo[X[float],float,int,int]
+print X[float].foo(U=int, ...).__fn_name__ #: foo[int;X[float],float,int]
 print X[int]().foo(1, 's') #: (2, 'ss')
 
 #%% class_partial_access_NOPY,barebones

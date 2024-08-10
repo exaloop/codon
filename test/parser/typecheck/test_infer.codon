@@ -339,7 +339,7 @@ print f(1.1, 1, int).__class__.__name__ #! 'float' does not match expected type 
 
 #%% fn_realization,barebones
 def ff[T](x: T, y: tuple[T]):
-      print ff(T=str,...).__class__.__name__ #: ff[str,Tuple[str],str]
+      print ff(T=str,...).__fn_name__ #: ff[str;str,Tuple[str]]
       return x
 x = ff(1, (1,))
 print x, x.__class__.__name__ #: 1 int
@@ -349,7 +349,7 @@ def fg[T](x:T):
     def g[T](y):
         z = T()
         return z
-    print fg(T=str,...).__class__.__name__  #: fg[str,str]
+    print fg(T=str,...).__fn_name__  #: fg[str;str]
     print g(1, T).__class__.__name__ #: int
 fg(1)
 print fg(1).__class__.__name__ #: NoneType
@@ -503,8 +503,8 @@ a, b = tee(it)
 def foo[T,U](x: type, y, z: Static[int] = 10):
     print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
-print foo(T=int,U=str,...).__class__.__name__ #: foo[T1,x,z,int,str]
-print foo(T=int,U=str,z=5,x=bool,...).__class__.__name__ #: foo[T1,bool,5,int,str]
+print foo(T=int,U=str,...).__fn_name__ #: foo[x,10,int,str;T1]
+print foo(T=int,U=str,z=5,x=bool,...).__fn_name__ #: foo[bool,5,int,str;T1]
 print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 

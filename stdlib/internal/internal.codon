@@ -228,6 +228,7 @@ class __internal__:
                     return __internal__.union_get_data(union, T).__str__()
             elif hasattr(T, '__repr__'):
                 if __internal__.union_get_tag(union) == tag:
+                    print('>', T.__class__.__name__, 'repr')
                     return __internal__.union_get_data(union, T).__repr__()
         return ''
 

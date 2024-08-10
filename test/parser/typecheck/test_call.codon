@@ -33,11 +33,11 @@ seq_print(1, name=**x) #! syntax error, unexpected '*'
 #%% call_collections
 from collections import namedtuple as nt
 
-ee = nt('Foo', ['x', 'y'])
+ee = nt('Foo', ('x', 'y'))
 f = ee(1, 2)
 print f #: (x: 1, y: 2)
 
-ee = nt('FooX', [('x', str), 'y'])
+ee = nt('FooX', (('x', str), 'y'))
 fd = ee('s', 2)
 print fd #: (x: 's', y: 2)
 

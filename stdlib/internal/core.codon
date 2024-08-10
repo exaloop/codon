@@ -308,9 +308,6 @@ def getattr(obj, attr: Static[str]):
 def setattr(obj, attr: Static[str], what):
     pass
 
-def tuple(iterable):
-    pass
-
 def super():
     pass
 
@@ -384,3 +381,7 @@ class Partial:
 
     def __call__(self, *args, **kwargs):
         return self(*args, **kwargs)
+
+    @property
+    def __fn_name__(self):
+        return F.T.__name__

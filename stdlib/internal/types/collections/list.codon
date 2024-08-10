@@ -268,7 +268,9 @@ class List:
         else:
             buf = _strbuf()
             buf.append("[")
-            buf.append(self._get(0).__repr__())
+            p = self._get(0).__repr__()
+            print('yo hoo --')
+            buf.append(p)
             for i in range(1, n):
                 buf.append(", ")
                 buf.append(self._get(i).__repr__())

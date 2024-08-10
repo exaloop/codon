@@ -145,7 +145,7 @@ std::string FuncType::debugString(char mode) const {
   for (auto &a : getArgTypes())
     as.push_back(a->debugString(mode));
   std::string a = join(as, ",");
-  s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
+  s = s.empty() ? a : join(std::vector<std::string>{s, a}, ";");
 
   auto fnname = ast->getName();
   if (mode == 0) {

@@ -266,7 +266,7 @@ print f.foo() #: F
 class Foo:
     def foo(self):
         return 'F'
-Foo.foo(1) #! 'Foo' object has no method 'foo' with arguments (int)
+Foo.foo(1) #! 'int' does not match expected type 'Foo'
 
 #%% function_nested,barebones
 def foo(v):

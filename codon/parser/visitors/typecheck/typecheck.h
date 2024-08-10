@@ -136,12 +136,11 @@ private: // Node typechecking rules
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
-  bool transformCallArgs(std::vector<CallArg> &);
+  bool transformCallArgs(CallExpr *);
   std::pair<types::FuncTypePtr, Expr *> getCalleeFn(CallExpr *, PartialCallData &);
   Expr *callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
   bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallArg> &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  Expr *transformTupleGenerator(CallExpr *);
   Expr *transformNamedTuple(CallExpr *);
   Expr *transformFunctoolsPartial(CallExpr *);
   Expr *transformSuperF(CallExpr *);
@@ -161,7 +160,7 @@ private: // Node typechecking rules
   Expr *transformHasRttiFn(CallExpr *);
   std::pair<bool, Expr *> transformInternalStaticFn(CallExpr *);
   std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &);
-  void addFunctionGenerics(const types::FuncType *t);
+  void addFunctionGenerics(const types::FuncType *t, bool = false);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
