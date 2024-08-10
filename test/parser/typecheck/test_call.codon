@@ -17,7 +17,7 @@ a[0] = a[1] = 5
 print a[0], a[1] #: 5 5
 
 #%% call_array_error,barebones
-a = __array__[int](2, 3) #! '__array__[int]' object has no method '__new__' with arguments (int, int)
+a = __array__[int](2, 3) #! __new__() takes 1 arguments (2 given)
 
 #%% call_err_1,barebones
 seq_print(1, name="56", 2) #! positional argument follows keyword argument
@@ -779,7 +779,7 @@ class M[T]:
 class X(M[int]):
     pass
 l = [M[float](1.1), X(2)]
-#! 'List[M[float]]' object has no method 'append' with arguments (List[M[float]], X)
+#! 'X' does not match expected type 'M[float]'
 
 #%% polymorphism_2
 class Expr:

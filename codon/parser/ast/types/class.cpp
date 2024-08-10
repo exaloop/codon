@@ -142,15 +142,15 @@ std::shared_ptr<ClassType> ClassType::getHeterogenousTuple() {
 std::string ClassType::debugString(char mode) const {
   if (name == "Partial" && generics[3].type->getClass()) {
     std::vector<std::string> as;
-    int i = 0, gi = 0;
     auto known = getPartialMask();
     auto func = getPartialFunc();
-    for (; i < known.size(); i++)
+    for (int i = 0, gi = 0; i < known.size(); i++) {
       if ((*func->ast)[i].status == Param::Normal)
         as.emplace_back(
             known[i]
                 ? generics[1].type->getClass()->generics[gi++].type->debugString(mode)
                 : "...");
+    }
     auto fnname = func->ast->getName();
     if (mode == 0) {
       fnname = cache->rev(func->ast->getName());
@@ -228,7 +228,7 @@ bool ClassType::isPartialEmpty() const {
   auto a = generics[1].type->getClass();
   auto ka = generics[2].type->getClass();
   return a->generics.size() == 1 && a->generics[0].type->getClass()->generics.empty() &&
-         ka->generics[0].type->getClass()->generics.empty();
+         ka->generics[1].type->getClass()->generics.empty();
 }
 
 } // namespace codon::ast::types

@@ -59,11 +59,11 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   auto orig = expr->toString(0);
 
   // Check if this call is partial call
-  PartialCallData part{
-      !expr->items.empty() && cast<EllipsisExpr>(expr->items.back().value) &&
-      cast<EllipsisExpr>(expr->items.back().value)->mode == EllipsisExpr::PARTIAL};
+  PartialCallData part;
 
+  expr->setAttribute("CallExpr");
   expr->expr = transform(expr->getExpr());
+  expr->eraseAttribute("CallExpr");
   if (expr->getExpr()->getType()->getUnbound())
     return; // delay
 
@@ -81,6 +81,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // ctx->popBlock();
   if (!a)
     return;
+  part.isPartial =
+      !expr->empty() && cast<EllipsisExpr>(expr->back().value) &&
+      cast<EllipsisExpr>(expr->back().value)->mode == EllipsisExpr::PARTIAL;
 
   // Early dispatch modifier
   if (endswith(calleeFn->ast->getName(), ":dispatch")) {
@@ -121,7 +124,19 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       }
       expr->getExpr()->setType(calleeFn);
     } else {
-      LOG("-> {}", expr->toString(0));
+      // LOG("-> {}", expr->toString(0));
+    }
+  }
+
+  bool isVirtual = false;
+  if (auto dot = cast<DotExpr>(expr->getExpr()->getOrigExpr())) {
+    if (auto baseTyp = dot->getExpr()->getClassType()) {
+      auto cls = ctx->cache->getClass(baseTyp);
+      isVirtual = bool(in(cls->virtuals, dot->getMember())) && cls->rtti &&
+                  !expr->expr->getType()->is("type") &&
+                  !endswith(calleeFn->ast->getName(), ":dispatch") &&
+                  !calleeFn->ast->hasAttribute(Attr::StaticMethod) &&
+                  !calleeFn->ast->hasAttribute(Attr::Property);
     }
   }
 
@@ -174,46 +189,37 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     resultExpr = transform(call);
 
     // LOG("{}: {} --------> {}", getSrcInfo(), orig, resultExpr->toString(0));
+  } else if (isVirtual) {
+    if (!realize(calleeFn))
+      return;
+    auto vid = getRealizationID(calleeFn->funcParent->getClass().get(), calleeFn.get());
+
+    // Function[Tuple[TArg1, TArg2, ...], TRet]
+    std::vector<Expr *> ids;
+    for (auto &t : calleeFn->getArgTypes())
+      ids.push_back(N<IdExpr>(t->realizedName()));
+    auto fnType = N<InstantiateExpr>(
+        N<IdExpr>("Function"),
+        std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
+                            N<IdExpr>(calleeFn->getRetType()->realizedName())});
+    // Function[Tuple[TArg1, TArg2, ...],TRet](
+    //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
+    // )
+    auto e = N<CallExpr>(fnType,
+                         N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
+                                                             "class_get_rtti_vtable"),
+                                                  expr->front().value),
+                                      N<IntExpr>(vid)));
+    std::vector<CallArg> args;
+    for (auto &a : *expr)
+      args.emplace_back(a.value);
+    resultExpr = transform(N<CallExpr>(e, args));
   } else {
     // Case: normal function call
     unify(expr->getType(), calleeFn->getRetType());
     if (done)
       expr->setDone();
   }
-
-  // unify(expr->getType(), ctx->instantiate(bestMethod, typ));
-  // A function is deemed virtual if it is marked as such and
-  // if a base class has a RTTI
-  // auto cls = ctx->cache->getClass(typ);
-  // bool isVirtual = in(cls->virtuals, expr->member);
-  // isVirtual &= cls->rtti;
-  // isVirtual &= !expr->expr->getType()->is("type");
-  // if (isVirtual && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-  //     !bestMethod->ast->hasAttribute(Attr::Property)) {
-  //   // Special case: route the call through a vtable
-  //   if (realize(expr->getType())) {
-  //     auto fn = expr->getType()->getFunc();
-  //     auto vid = getRealizationID(typ.get(), fn.get());
-
-  //     // Function[Tuple[TArg1, TArg2, ...], TRet]
-  //     std::vector<Expr *> ids;
-  //     for (auto &t : fn->getArgTypes())
-  //       ids.push_back(N<IdExpr>(t->realizedName()));
-  //     auto fnType = N<InstantiateExpr>(
-  //         N<IdExpr>("Function"),
-  //         std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-  //                             N<IdExpr>(fn->getRetType()->realizedName())});
-  //     // Function[Tuple[TArg1, TArg2, ...],TRet](
-  //     //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
-  //     // )
-  //     auto e = N<CallExpr>(
-  //         fnType, N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
-  //                                                     "class_get_rtti_vtable"),
-  //                                          expr->expr),
-  //                              N<IntExpr>(vid)));
-  //     return transform(e);
-  //   }
-  // }
 }
 
 /// Transform call arguments. Expand *args and **kwargs to the list of @c CallArg
@@ -335,32 +341,35 @@ std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
 
   if (auto partType = callee->getPartial()) {
     auto mask = partType->getPartialMask();
-    auto func = ctx->instantiate(partType->getPartialFunc()->generalize(0))->getFunc();
+    auto calleeFn =
+        ctx->instantiate(partType->getPartialFunc()->generalize(0))->getFunc();
 
-    if (!partType->isPartialEmpty()) {
+    if (!partType->isPartialEmpty() ||
+        std::any_of(mask.begin(), mask.end(), [](char c) { return c; })) {
       // Case: calling partial object `p`. Transform roughly to
       // `part = callee; partial_fn(*part.args, args...)`
       Expr *var = N<IdExpr>(part.var = ctx->cache->getTemporaryVar("partcall"));
       expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()),
-                                         N<IdExpr>(func->ast->name)));
+                                         N<IdExpr>(calleeFn->ast->name)));
+      part.known = mask;
+      // LOG("{}: got partial {} / {} / {}", getSrcInfo(), partType->debugString(2), calleeFn->debugString(2), mask);
+    } else {
+      expr->expr = transform(N<IdExpr>(calleeFn->ast->name));
     }
+    seqassert(expr->getExpr()->getType()->getFunc(), "not a function: {}",
+              expr->getExpr()->getType());
+    unify(expr->getExpr()->getType()->getFunc(), calleeFn);
 
-    // Ensure that we got a function
-    auto calleeFn = expr->getExpr()->getType()->getFunc();
-    seqassert(calleeFn, "not a function: {}", expr->getExpr()->getType());
 
     // Unify partial generics with types known thus far
     auto knownArgTypes = partType->generics[1].type->getClass();
     for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
-      if ((*func->ast)[i].status == Param::Generic) {
-        unify(calleeFn->funcGenerics[j].type,
-              ctx->instantiate(func->funcGenerics[j].type));
+      if ((*calleeFn->ast)[i].status == Param::Generic) {
         j++;
       } else if (mask[i]) {
         unify(calleeFn->getArgTypes()[i - j], knownArgTypes->generics[k].type);
         k++;
       }
-    part.known = mask;
     return {calleeFn, nullptr};
   } else if (!callee->getFunc()) {
     // Case: callee is not a function. Try __call__ method instead
@@ -545,21 +554,23 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
   }
 
   // Special case: function instantiation (e.g., `foo(T=int)`)
-  auto cnt = 0;
-  for (auto &t : typeArgs)
-    if (t)
-      cnt++;
-  if (part.isPartial && cnt && cnt == expr->size()) {
-    // transform again because it might have been changed
-    expr->expr = transform(expr->expr);
-    unify(expr->getType(), expr->expr->getType());
-    // Return the callee with the corrected type and do not go further
-    return expr->expr;
-  }
+  // auto cnt = 0;
+  // for (auto &t : typeArgs)
+  //   if (t)
+  //     cnt++;
+  // if (part.isPartial && cnt && cnt == expr->size()) {
+  //   // transform again because it might have been changed
+  //   expr->expr = transform(expr->expr);
+  //   unify(expr->getType(), expr->expr->getType());
+  //   // Return the callee with the corrected type and do not go further
+  //   return expr->expr;
+  // }
 
   expr->items = args;
   expr->setAttribute(Attr::ExprOrderedCall);
   part.known = newMask;
+  // if (partial)
+    // LOG("{}: {} / {}", getSrcInfo(), calleeFn->debugString(2), part.known);
   return nullptr;
 }
 
@@ -1198,6 +1209,7 @@ Expr *TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
     return nullptr;
   auto c = ctx->cache->getClass(t);
   seqassert(c, "bad class {}", t->name);
+  // LOG(" :: {} / {}", t->debugString(2), c->hasRTTI());
   return transform(N<BoolExpr>(c->hasRTTI()));
 }
 

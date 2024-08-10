@@ -89,6 +89,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // transform Dot(Dot(a, b), c...) to {a, b, c, ...}
 
   CallExpr *parentCall = cast<CallExpr>(ctx->getParentNode());
+  if (parentCall && !parentCall->hasAttribute("CallExpr"))
+    parentCall = nullptr;
 
   std::vector<std::string> chain;
   Expr *root = expr;
@@ -194,6 +196,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
                !bestMethod->ast->hasAttribute(Attr::Property)) {
       // Instance access: `obj.method`
       parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
+      // LOG("|-> adding dot: {} // {} ####### {}", expr->toString(0), e->getType()->debugString(2), parentCall->toString(2));
     } else {
       // Instance access: `obj.method`
       // Transform y.method to a partial call `type(obj).method(args, ...)`

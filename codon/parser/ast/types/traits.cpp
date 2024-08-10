@@ -65,6 +65,12 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (trAst) {
       star = trAst->getStarArgs();
       kwStar = trAst->getKwStarArgs();
+      for (size_t fi = 0; fi < trAst->size(); fi++) {
+        if (fi < star && (*trAst)[fi].status != Param::Normal)
+          star--;
+        if (fi < kwStar && (*trAst)[fi].status != Param::Normal)
+          kwStar--;
+      }
       if (kwStar < trAst->size() && star >= trInArgs->generics.size())
         star -= 1;
       size_t preStar = 0;
