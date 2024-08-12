@@ -868,3 +868,9 @@ a = 1.0
 b = 2.0
 c = fox(a, b)
 print(math.log(c) / 2) #: 0
+
+#%% repeated_lambda,barebones
+def acc(i, func=lambda a, b: a + b):
+    return i + func(i, i)
+print acc(1)  #: 3
+print acc('i')  #: iii

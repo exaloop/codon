@@ -27,10 +27,11 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
     params.emplace_back(s);
   auto f =
       N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(N<ReturnStmt>(expr->expr)));
+  transform(f);
   if (auto a = expr->getAttribute(Attr::Bindings))
     f->setAttribute(Attr::Bindings, a->clone());
   resultExpr =
-      transform(N<StmtExpr>(f, N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>())));
+      transform(N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
 }
 
 /// Unify the function return type with `Generator[?]`.

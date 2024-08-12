@@ -376,6 +376,9 @@ class Partial:
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1
 
+    # def __new__(M: Static[str], F: type) -> Partial[M, Tuple[Tuple], NamedTuple[0,Tuple], F]:
+    #     return Partial.__new__((), NamedTuple[0,Tuple](), M=M, F=F)
+
     def __repr__(self):
         return __magic__.repr_partial(self)
 
@@ -385,3 +388,7 @@ class Partial:
     @property
     def __fn_name__(self):
         return F.T.__name__
+
+    def __raw__(self):
+        # TODO: better error message
+        return F.T.__raw__()

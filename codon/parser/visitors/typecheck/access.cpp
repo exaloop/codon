@@ -424,7 +424,7 @@ types::FuncTypePtr TypecheckVisitor::getDispatch(const std::string &fn) {
   ctx->cache->functions[name].ast = ast;
   ctx->cache->functions[name].type = typ;
   ast->setDone();
-  prependStmts->push_back(ast);
+  // prependStmts->push_back(ast);
   return typ;
 }
 

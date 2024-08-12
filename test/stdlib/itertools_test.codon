@@ -540,9 +540,6 @@ def test_accumulate_from_cpython():
     assert list(accumulate(List[int](), initial=100)) == [100]
 
 
-test_accumulate_from_cpython()
-
-
 @test
 def test_chain_from_cpython():
     assert list(chain("abc", "def")) == list("abcdef")
@@ -551,18 +548,12 @@ def test_chain_from_cpython():
     assert list(take(4, chain("abc", "def"))) == list("abcd")
 
 
-test_chain_from_cpython()
-
-
 @test
 def test_chain_from_iterable_from_cpython():
     assert list(chain.from_iterable(["abc", "def"])) == list("abcdef")
     assert list(chain.from_iterable(["abc"])) == list("abc")
     assert list(chain.from_iterable([""])) == []
     assert take(4, chain.from_iterable(["abc", "def"])) == list("abcd")
-
-
-test_chain_from_iterable_from_cpython()
 
 
 @test
@@ -645,7 +636,6 @@ def test_combinations_from_cpython():
                     e for e in values if e in c
                 ]  # comb is a subsequence of the input iterable
 
-test_combinations_from_cpython()  # takes long time to typecheck
 
 
 @test
@@ -741,9 +731,6 @@ def test_combinations_with_replacement_from_cpython():
                 ]  # comb is a subsequence of the input iterable
 
 
-test_combinations_with_replacement_from_cpython()
-
-
 @test
 def test_permutations_from_cpython():
     f = lambda x: x  # hack to get non-static argument
@@ -811,9 +798,6 @@ def test_permutations_from_cpython():
 
             if r == n:
                 assert result == list(permutations(values, r))
-
-
-test_permutations_from_cpython()
 
 
 @extend
@@ -952,9 +936,6 @@ def test_combinatorics_from_cpython():
             assert comb == sorted(set(cwr) & set(perm))  # comb: both a cwr and a perm
 
 
-test_combinatorics_from_cpython()  # TODO: takes FOREVER to typecheck
-
-
 @test
 def test_compress_from_cpython():
     assert list(compress(data="ABCDEF", selectors=[1, 0, 1, 0, 1, 1])) == list("ACEF")
@@ -969,9 +950,6 @@ def test_compress_from_cpython():
     assert list(compress(data, selectors)) == [1, 3, 5] * n
 
 
-test_compress_from_cpython()
-
-
 @test
 def test_count_from_cpython():
     assert lzip("abc", count()) == [("a", 0), ("b", 1), ("c", 2)]
@@ -980,9 +958,6 @@ def test_count_from_cpython():
     assert take(2, zip("abc", count(-1))) == [("a", -1), ("b", 0)]
     assert take(2, zip("abc", count(-3))) == [("a", -3), ("b", -2)]
     assert take(3, count(3.25)) == [3.25, 4.25, 5.25]
-
-
-test_count_from_cpython()
 
 
 @test
@@ -996,17 +971,11 @@ def test_count_with_stride_from_cpython():
     assert take(3, count(2.0, 1.25)) == [2.0, 3.25, 4.5]
 
 
-test_count_with_stride_from_cpython()
-
-
 @test
 def test_cycle_from_cpython():
     assert take(10, cycle("abc")) == list("abcabcabca")
     assert list(cycle("")) == []
     assert list(islice(cycle(gen3()), 10)) == [0, 1, 2, 0, 1, 2, 0, 1, 2, 0]
-
-
-test_cycle_from_cpython()
 
 
 @test
@@ -1075,9 +1044,6 @@ def test_groupby_from_cpython():
             assert r == [(5, "a"), (2, "r"), (2, "b")]
 
 
-test_groupby_from_cpython()
-
-
 @test
 def test_filter_from_cpython():
     assert list(filter(isEven, range(6))) == [0, 2, 4]
@@ -1086,18 +1052,12 @@ def test_filter_from_cpython():
     assert take(4, filter(isEven, count())) == [0, 2, 4, 6]
 
 
-test_filter_from_cpython()
-
-
 @test
 def test_filterfalse_from_cpython():
     assert list(filterfalse(isEven, range(6))) == [1, 3, 5]
     # assert list(filter(None, [0,1,0,2,0])) == [0,0,0]  # TODO
     assert list(filterfalse(lambda x: bool(x), [0, 1, 0, 2, 0])) == [0, 0, 0]
     assert take(4, filterfalse(isEven, count())) == [1, 3, 5, 7]
-
-
-test_filterfalse_from_cpython()
 
 
 @test
@@ -1110,9 +1070,6 @@ def test_zip_from_cpython():
     assert list(zip("abcdef")) == lzip("abcdef")
     assert list(zip()) == lzip()
     assert [pair for pair in zip("abc", "def")] == lzip("abc", "def")
-
-
-test_zip_from_cpython()
 
 
 @test
@@ -1140,9 +1097,6 @@ def test_ziplongest_from_cpython():
         str(list(zip_longest(range(6), "abc")))
         == "[(0, 'a'), (1, 'b'), (2, 'c'), (3, None), (4, None), (5, None)]"
     )
-
-
-test_ziplongest_from_cpython()
 
 
 @test
@@ -1175,9 +1129,6 @@ def test_product_from_cpython():
     )
 
 
-test_product_from_cpython()
-
-
 @test
 def test_repeat_from_cpython():
     assert list(repeat(object="a", times=3)) == ["a", "a", "a"]
@@ -1186,9 +1137,6 @@ def test_repeat_from_cpython():
     assert take(3, repeat("a")) == ["a", "a", "a"]
     assert list(repeat("a", 0)) == []
     assert list(repeat("a", -3)) == []
-
-
-test_repeat_from_cpython()
 
 
 @test
@@ -1201,9 +1149,6 @@ def test_map_from_cpython():
     assert list(map(tupleize, List[int]())) == []
 
 
-test_map_from_cpython()
-
-
 @test
 def test_starmap_from_cpython():
     power = lambda a, b: a ** b
@@ -1211,9 +1156,6 @@ def test_starmap_from_cpython():
     assert take(3, starmap(power, zip(count(), count(1)))) == [0 ** 1, 1 ** 2, 2 ** 3]
     # assert list(starmap(tupleize, List[int]())) == []  # TODO
     assert list(starmap(power, [(4, 5)])) == [4 ** 5]
-
-
-test_starmap_from_cpython()
 
 
 @test
@@ -1243,9 +1185,6 @@ def test_islice_from_cpython():
     assert list(islice(range(10), 1, None, 2)) == list(range(1, 10, 2))
 
 
-test_islice_from_cpython()
-
-
 @test
 def test_takewhile_from_cpython():
     data = [1, 3, 5, 20, 2, 4, 6, 8]
@@ -1255,17 +1194,11 @@ def test_takewhile_from_cpython():
     assert list(t) == [1, 1, 1]
 
 
-test_takewhile_from_cpython()
-
-
 @test
 def test_dropwhile_from_cpython():
     data = [1, 3, 5, 20, 2, 4, 6, 8]
     assert list(dropwhile(underten, data)) == [20, 2, 4, 6, 8]
     assert list(dropwhile(underten, List[int]())) == []
-
-
-test_dropwhile_from_cpython()
 
 
 @test
@@ -1315,5 +1248,27 @@ def test_tee_from_cpython():
     assert list(a) == list(range(100, 2000))
     assert list(c) == list(range(2, 2000))
 
-
+test_accumulate_from_cpython()
+test_chain_from_cpython()
+test_chain_from_iterable_from_cpython()
+test_combinations_from_cpython()  # takes long time to typecheck
+test_combinations_with_replacement_from_cpython()
+test_permutations_from_cpython()
+test_combinatorics_from_cpython()  # TODO: takes FOREVER to typecheck
+test_compress_from_cpython()
+test_count_from_cpython()
+test_count_with_stride_from_cpython()
+test_cycle_from_cpython()
+test_groupby_from_cpython()
+test_filter_from_cpython()
+test_filterfalse_from_cpython()
+test_zip_from_cpython()
+test_ziplongest_from_cpython()
+test_product_from_cpython()
+test_repeat_from_cpython()
+test_map_from_cpython()
+test_starmap_from_cpython()
+test_islice_from_cpython()
+test_takewhile_from_cpython()
+test_dropwhile_from_cpython()
 test_tee_from_cpython()
