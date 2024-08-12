@@ -66,9 +66,12 @@ class __internal__:
         __vtables__ = Ptr[Ptr[cobj]](p)
         __internal__.class_populate_vtables()
 
-    # def print(a):
-    #     from C import seq_print(str)
-    #     seq_print(a.__repr__())
+    def _print(a):
+        from C import seq_print(str)
+        if hasattr(a, '__repr__'):
+            seq_print(a.__repr__())
+        else:
+            seq_print(a.__str__())
 
     def class_populate_vtables() -> None:
         """
@@ -228,7 +231,6 @@ class __internal__:
                     return __internal__.union_get_data(union, T).__str__()
             elif hasattr(T, '__repr__'):
                 if __internal__.union_get_tag(union) == tag:
-                    print('>', T.__class__.__name__, 'repr')
                     return __internal__.union_get_data(union, T).__repr__()
         return ''
 

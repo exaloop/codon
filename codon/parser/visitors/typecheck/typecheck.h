@@ -269,7 +269,8 @@ private:
   std::vector<types::FuncTypePtr>
   findMatchingMethods(const types::ClassTypePtr &typ,
                       const std::vector<types::FuncTypePtr> &methods,
-                      const std::vector<CallArg> &args);
+                      const std::vector<CallArg> &args,
+                      const types::ClassTypePtr &part = nullptr);
   Expr *castToSuperClass(Expr *expr, types::ClassTypePtr superTyp, bool = false);
   Stmt *prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);

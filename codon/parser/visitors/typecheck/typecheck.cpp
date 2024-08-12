@@ -522,7 +522,8 @@ int TypecheckVisitor::canCall(const types::FuncTypePtr &fn,
 std::vector<types::FuncTypePtr>
 TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
                                       const std::vector<types::FuncTypePtr> &methods,
-                                      const std::vector<CallArg> &args) {
+                                      const std::vector<CallArg> &args,
+                                      const types::ClassTypePtr &part) {
   // Pick the last method that accepts the given arguments.
   std::vector<types::FuncTypePtr> results;
   for (const auto &mi : methods) {
@@ -530,7 +531,7 @@ TypecheckVisitor::findMatchingMethods(const types::ClassTypePtr &typ,
       continue; // avoid overloads that have not been seen yet
 
     auto method = ctx->instantiate(mi, typ)->getFunc();
-    int score = canCall(method, args);
+    int score = canCall(method, args, part);
     if (score != -1) {
       results.push_back(mi);
     }

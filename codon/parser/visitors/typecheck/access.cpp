@@ -179,37 +179,49 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     return;
 
   // Check if this is a method or member access
-  auto methods = ctx->findMethod(typ.get(), expr->getMember());
-  if (methods.empty()) {
-    resultExpr = getClassMember(expr);
-  } else {
-    auto bestMethod =
-        methods.size() > 1
-            ? getDispatch(
-                  ctx->cache->functions[methods.front()->ast->getName()].rootName)
-            : methods.front();
-    Expr *e = N<IdExpr>(bestMethod->ast->getName());
-    e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));;
-    if (expr->getExpr()->getType()->is("type")) {
-      // Static access: `cls.method`
-    } else if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-               !bestMethod->ast->hasAttribute(Attr::Property)) {
-      // Instance access: `obj.method`
-      parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
-      // LOG("|-> adding dot: {} // {} ####### {}", expr->toString(0), e->getType()->debugString(2), parentCall->toString(2));
-    } else {
-      // Instance access: `obj.method`
-      // Transform y.method to a partial call `type(obj).method(args, ...)`
-      std::vector<Expr *> methodArgs;
-      // Do not add self if a method is marked with @staticmethod
-      if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
-        methodArgs.push_back(expr->getExpr());
-      // If a method is marked with @property, just call it directly
-      if (!bestMethod->ast->hasAttribute(Attr::Property))
-        methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-      e = N<CallExpr>(e, methodArgs);
+  while (true) {
+    auto methods = ctx->findMethod(typ.get(), expr->getMember());
+    if (methods.empty())
+      resultExpr = getClassMember(expr);
+    auto oldExpr = expr->getExpr();
+    if (!resultExpr && expr->getExpr() != oldExpr) {
+      typ = getType(expr->getExpr()) ? getType(expr->getExpr())->getClass() : nullptr;
+      if (!typ)
+        return;
+      continue;
     }
-    resultExpr = transform(e);
+
+    if (!methods.empty()) {
+      auto bestMethod =
+          methods.size() > 1
+              ? getDispatch(
+                    ctx->cache->functions[methods.front()->ast->getName()].rootName)
+              : methods.front();
+      Expr *e = N<IdExpr>(bestMethod->ast->getName());
+      e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));
+      if (expr->getExpr()->getType()->is("type")) {
+        // Static access: `cls.method`
+      } else if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+                 !bestMethod->ast->hasAttribute(Attr::Property)) {
+        // Instance access: `obj.method`
+        parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
+        // LOG("|-> adding dot: {} // {} ####### {}", expr->toString(0),
+        // e->getType()->debugString(2), parentCall->toString(2));
+      } else {
+        // Instance access: `obj.method`
+        // Transform y.method to a partial call `type(obj).method(args, ...)`
+        std::vector<Expr *> methodArgs;
+        // Do not add self if a method is marked with @staticmethod
+        if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
+          methodArgs.push_back(expr->getExpr());
+        // If a method is marked with @property, just call it directly
+        if (!bestMethod->ast->hasAttribute(Attr::Property))
+          methodArgs.push_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+        e = N<CallExpr>(e, methodArgs);
+      }
+      resultExpr = transform(e);
+    }
+    break;
   }
 }
 
@@ -481,9 +493,8 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
 
   // Case: transform `optional.member` to `unwrap(optional).member`
   if (typ->is(TYPE_OPTIONAL)) {
-    auto dot = transform(N<DotExpr>(
-        transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr)), expr->member));
-    return dot;
+    expr->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->expr));
+    return nullptr;
   }
 
   // Case: transform `pyobj.member` to `pyobj._getattr("member")`

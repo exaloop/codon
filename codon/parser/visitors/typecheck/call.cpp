@@ -57,6 +57,10 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
   auto orig = expr->toString(0);
+  if (expr->getExpr() && cast<IdExpr>(expr->getExpr()) &&
+      cast<IdExpr>(expr->getExpr())->getValue() == "tuple" && expr->size() == 1) {
+    expr->setAttribute("TupleFn");
+  }
 
   // Check if this call is partial call
   PartialCallData part;
@@ -68,20 +72,23 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     return; // delay
 
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
-  if ((resultExpr = newExpr))
-    return;
-  if (!calleeFn)
-    return;
-
   // Transform `tuple(i for i in tup)` into a GeneratorExpr that will be handled during
   // the type checking.
-  if (calleeFn->ast->getName() == "Tuple.__new__:dispatch" && expr->size() == 1 &&
-      cast<GeneratorExpr>(expr->begin()->value)) {
-    auto g = cast<GeneratorExpr>(expr->begin()->value);
-    if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
-      E(Error::CALL_TUPLE_COMPREHENSION, expr->begin()->value);
-    g->kind = GeneratorExpr::TupleGenerator;
-    resultExpr = transform(g);
+  if (!calleeFn && expr->hasAttribute("TupleFn")) {
+    if (cast<GeneratorExpr>(expr->begin()->value)) {
+      auto g = cast<GeneratorExpr>(expr->begin()->value);
+      if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
+        E(Error::CALL_TUPLE_COMPREHENSION, expr->begin()->value);
+      g->kind = GeneratorExpr::TupleGenerator;
+      resultExpr = transform(g);
+      return;
+    } else {
+      resultExpr = transformTupleFn(expr);
+      return;
+    }
+  } else if ((resultExpr = newExpr)) {
+    return;
+  } else if (!calleeFn) {
     return;
   }
 
@@ -97,7 +104,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
   // Early dispatch modifier
   if (endswith(calleeFn->ast->getName(), ":dispatch")) {
-    std::vector<FuncTypePtr> m;
+    std::unique_ptr<std::vector<FuncTypePtr>> m = nullptr;
     if (auto id = cast<IdExpr>(expr->getExpr())) {
       // Case: function overloads (IdExpr)
       std::vector<types::FuncTypePtr> methods;
@@ -108,21 +115,21 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         if (!endswith(m, ":dispatch"))
           methods.push_back(ctx->cache->functions[m].type);
       std::reverse(methods.begin(), methods.end());
-      m = findMatchingMethods(calleeFn->funcParent ? calleeFn->funcParent->getClass()
-                                                   : nullptr,
-                              methods, expr->items);
+      m = std::make_unique<std::vector<FuncTypePtr>>(findMatchingMethods(
+          calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr, methods,
+          expr->items, expr->getExpr()->getType()->getPartial()));
     }
-    bool doDispatch = m.size() == 0;
-    if (m.size() > 1) {
+    bool doDispatch = !m || m->size() == 0;
+    if (m && m->size() > 1) {
       for (auto &a : *expr) {
         if (auto u = a.value->getType()->getUnbound())
           doDispatch = true;
       }
     }
     if (!doDispatch) {
-      calleeFn = ctx->instantiate(m.front(), calleeFn->funcParent
-                                                 ? calleeFn->funcParent->getClass()
-                                                 : nullptr)
+      calleeFn = ctx->instantiate(m->front(), calleeFn->funcParent
+                                                  ? calleeFn->funcParent->getClass()
+                                                  : nullptr)
                      ->getFunc();
       auto e = N<IdExpr>(calleeFn->ast->getName());
       e->setType(calleeFn);
@@ -132,7 +139,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         expr->expr = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e);
       }
       expr->getExpr()->setType(calleeFn);
-    } else if (m.size() == 0) {
+    } else if (m && m->empty()) {
       std::vector<std::string> a;
       for (auto &t : *expr)
         a.emplace_back(fmt::format("{}", t.value->getType()->getStatic()
@@ -342,6 +349,11 @@ std::pair<FuncTypePtr, Expr *> TypecheckVisitor::getCalleeFn(CallExpr *expr,
       return {nullptr, nullptr};
     auto clsName = typ->name;
     if (typ->isRecord()) {
+      if (expr->hasAttribute("TupleFn")) {
+        if (getType(expr->getExpr())->is("Tuple"))
+          return {nullptr, nullptr};
+        expr->eraseAttribute("TupleFn");
+      }
       // Case: tuple constructor. Transform to: `T.__new__(args)`
       return {nullptr, transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"),
                                              expr->items))};
@@ -715,7 +727,6 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   if (!ei)
     return {false, nullptr};
   auto val = ei->getValue();
-  // LOG(".. {}", val);
   if (val == "superf") {
     return {true, transformSuperF(expr)};
   } else if (val == "super:0") {
@@ -738,8 +749,6 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformTypeFn(expr)};
   } else if (val == "compile_error") {
     return {true, transformCompileError(expr)};
-  } else if (val == "tuple") {
-    return {true, transformTupleFn(expr)};
   } else if (val == "__realized__") {
     return {true, transformRealizedFn(expr)};
   } else if (val == "std.internal.static.static_print.0") {
@@ -765,20 +774,23 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   // Ensure that namedtuple call is valid
   auto name =
       expr->expr->getType()->getFunc()->funcGenerics[0].type->getStrStatic()->value;
+  if (expr->size() != 1)
+    E(Error::CALL_NAMEDTUPLE, expr);
 
   // Construct the class statement
   std::vector<Param> generics, params;
-  int ti = 1;
-  for (auto *i : *(cast<ListExpr>((*expr)[1].value))) {
+  auto orig = cast<TupleExpr>(expr->front().value->getOrigExpr());
+  size_t ti = 1;
+  for (auto *i: *orig) {
     if (auto s = cast<StringExpr>(i)) {
       generics.emplace_back(format("T{}", ti), N<IdExpr>("type"), nullptr, true);
       params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
       continue;
     }
-    auto t = cast<TupleExpr>(i);
-    if (t && t->items.size() == 2 && cast<StringExpr>((*t)[0])) {
-      params.emplace_back(cast<StringExpr>((*t)[0])->getValue(), transformType((*t)[1]),
-                          nullptr);
+    auto t = cast<TupleExpr>(i->getOrigExpr());
+    if (t && t->size() == 2 && cast<StringExpr>((*t)[0])) {
+      params.emplace_back(cast<StringExpr>((*t)[0])->getValue(),
+                          transformType((*t)[1]), nullptr);
       continue;
     }
     E(Error::CALL_NAMEDTUPLE, i);
@@ -1121,14 +1133,10 @@ Expr *TypecheckVisitor::transformCompileError(CallExpr *expr) {
   return nullptr;
 }
 
-/// Convert a class to a tuple or handle a tuple generator.
+/// Convert a class to a tuple.
 Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
-  if (expr->size() == 0)
-    return transform(N<TupleExpr>());
-
-  for (auto &e : *expr)
-    e.value = transform(e.value);
-
+  for (auto &a : *expr)
+    a.value = transform(a.value);
   auto cls = ctx->getType(expr->begin()->value->getType())->getClass();
   if (!cls)
     return nullptr;
