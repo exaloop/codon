@@ -190,3 +190,12 @@ test_float(float32)
 #test_float(float16)
 #test_float(bfloat16)
 #test_float(float128)
+
+@test
+def test_float_out_of_range_parse():
+    x = 5e-324
+    assert Ptr[int](__ptr__(x).as_byte())[0] == 1
+    assert 1e-10000 == 0.0
+    assert 1e10000 == float('inf')
+
+test_float_out_of_range_parse()
