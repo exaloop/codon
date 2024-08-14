@@ -988,6 +988,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   void handle(VarValue *v) override {
     auto *M = v->getModule();
     auto *func = util::getFunc(v);
+
     if (func && func->getUnmangledName() == "_routine_stub") {
       std::vector<bool> reduceArgs;
       unsigned sharedsNext = 0;
@@ -1044,9 +1045,11 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
       // add task reduction inputs
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
-      auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
+      auto *taskRedInputType =
+          M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray.0", {}, ompModule);
+      auto *irArrayType =
+          M->getOrRealizeType("TaskReductionInputArray.0", {}, ompModule);
       seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);

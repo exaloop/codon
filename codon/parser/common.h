@@ -130,6 +130,8 @@ template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
   std::transform(std::begin(c), std::end(c), std::inserter(ret, std::end(ret)), f);
   return ret;
 }
+/// @return True if an item is found in an string m.
+bool in(const std::string &m, const std::string &item);
 
 /// AST utilities
 

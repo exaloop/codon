@@ -874,3 +874,13 @@ def acc(i, func=lambda a, b: a + b):
     return i + func(i, i)
 print acc(1)  #: 3
 print acc('i')  #: iii
+
+x = 1
+def const(value):
+    return lambda: (value, x)
+print const(5)() #: (5, 1)
+print const('s')() #: ('s', 1)
+x = 's'
+print const(5)() #: (5, 's')
+print const('s')() #: ('s', 's')
+

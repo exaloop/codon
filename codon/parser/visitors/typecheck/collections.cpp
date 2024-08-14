@@ -39,8 +39,6 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
       // Remove the star
       expr->items.erase(expr->items.begin() + ai);
       ai--;
-    } else {
-      expr->items[ai] = transform(expr->items[ai]);
     }
   generateTuple(expr->items.size());
   resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TUPLE), clone(expr->items)));

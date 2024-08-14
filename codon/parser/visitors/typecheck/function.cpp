@@ -25,13 +25,16 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
   params.reserve(expr->vars.size());
   for (auto &s : expr->vars)
     params.emplace_back(s);
-  auto f =
+  Stmt *f =
       N<FunctionStmt>(name, nullptr, params, N<SuiteStmt>(N<ReturnStmt>(expr->expr)));
-  transform(f);
+  ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(f));
+  f = transform(f);
   if (auto a = expr->getAttribute(Attr::Bindings))
     f->setAttribute(Attr::Bindings, a->clone());
+  prependStmts->push_back(f);
   resultExpr =
-      transform(N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
+  // transform(N<IdExpr>(name));
+  transform(N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
 }
 
 /// Unify the function return type with `Generator[?]`.

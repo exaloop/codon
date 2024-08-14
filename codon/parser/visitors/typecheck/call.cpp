@@ -22,7 +22,7 @@ void TypecheckVisitor::visit(PrintStmt *stmt) {
   std::vector<CallArg> args;
   args.reserve(stmt->items.size());
   for (auto &i : stmt->items)
-    args.emplace_back("", transform(i));
+    args.emplace_back("", i);
   if (!stmt->hasNewline())
     args.emplace_back("end", N<StringExpr>(" "));
   resultStmt = transform(N<ExprStmt>(N<CallExpr>(N<IdExpr>("print"), args)));
@@ -61,6 +61,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       cast<IdExpr>(expr->getExpr())->getValue() == "tuple" && expr->size() == 1) {
     expr->setAttribute("TupleFn");
   }
+
+  if (in(expr->toString(-1), "dixpatch"))
+      log(expr->toString(-1));
 
   // Check if this call is partial call
   PartialCallData part;
@@ -122,8 +125,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     bool doDispatch = !m || m->size() == 0;
     if (m && m->size() > 1) {
       for (auto &a : *expr) {
-        if (auto u = a.value->getType()->getUnbound())
-          doDispatch = true;
+        if (auto u = a.value->getType()->getUnbound()) {
+          return; // wait until it becomes known
+        }
       }
     }
     if (!doDispatch) {
@@ -589,6 +593,10 @@ Expr *TypecheckVisitor::callReorderArguments(FuncTypePtr calleeFn, CallExpr *exp
   }
 
   // Special case: function instantiation (e.g., `foo(T=int)`)
+  // access_codon_debug_260_nested_deep_class_NOPY
+  // access_codon_debug_387_class_fn_access_NOPY
+  // infer_codon_debug_364_fn_realization
+  // infer_codon_debug_540_new_syntax
   // auto cnt = 0;
   // for (auto &t : typeArgs)
   //   if (t)
@@ -787,7 +795,7 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
       params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
       continue;
     }
-    auto t = cast<TupleExpr>(i->getOrigExpr());
+    auto t = cast<TupleExpr>(i);
     if (t && t->size() == 2 && cast<StringExpr>((*t)[0])) {
       params.emplace_back(cast<StringExpr>((*t)[0])->getValue(),
                           transformType((*t)[1]), nullptr);

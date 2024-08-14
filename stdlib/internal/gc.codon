@@ -105,7 +105,7 @@ def register_finalizer(p):
         def f(x: cobj, data: cobj, T: type):
             Ptr[T](__ptr__(x).as_byte())[0].__del__()
 
-        seq_register_finalizer(p.__raw__(), f(T=type(p), ...).__raw__())
+        seq_register_finalizer(p.__raw__(), f(T=type(p), ...).F.T.__raw__())
 
 def construct_ref[T](args) -> T:
     p = T.__new__()

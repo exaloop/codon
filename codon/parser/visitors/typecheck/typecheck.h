@@ -266,11 +266,9 @@ private:
                  const std::vector<std::pair<std::string, types::TypePtr>> &args);
   int canCall(const types::FuncTypePtr &, const std::vector<CallArg> &,
               const types::ClassTypePtr & = nullptr);
-  std::vector<types::FuncTypePtr>
-  findMatchingMethods(const types::ClassTypePtr &typ,
-                      const std::vector<types::FuncTypePtr> &methods,
-                      const std::vector<CallArg> &args,
-                      const types::ClassTypePtr &part = nullptr);
+  std::vector<types::FuncTypePtr> findMatchingMethods(
+      const types::ClassTypePtr &typ, const std::vector<types::FuncTypePtr> &methods,
+      const std::vector<CallArg> &args, const types::ClassTypePtr &part = nullptr);
   Expr *castToSuperClass(Expr *expr, types::ClassTypePtr superTyp, bool = false);
   Stmt *prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
@@ -308,6 +306,13 @@ public:
   template <typename Tn, typename... Ts> Tn *NC(Ts &&...args) {
     Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
     return t;
+  }
+
+private:
+  template <typename... Ts> void log(const std::string &prefix, Ts &&...args) {
+    fmt::print(codon::getLogger().log, "[{}] [{}${}]: " + prefix + "\n",
+               ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
+               std::forward<Ts>(args)...);
   }
 };
 

@@ -113,6 +113,10 @@ int findStar(const std::string &s) {
   }
   return i;
 }
+bool in(const std::string &m, const std::string &item) {
+  auto f = m.find(item);
+  return f != std::string::npos;
+}
 size_t startswith(const std::string &str, const std::string &prefix) {
   return (str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix)
              ? prefix.size()

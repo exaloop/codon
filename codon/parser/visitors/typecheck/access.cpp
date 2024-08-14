@@ -198,14 +198,16 @@ void TypecheckVisitor::visit(DotExpr *expr) {
                     ctx->cache->functions[methods.front()->ast->getName()].rootName)
               : methods.front();
       Expr *e = N<IdExpr>(bestMethod->ast->getName());
-      e->setType(unify(expr->getType(), ctx->instantiate(bestMethod, typ)));
+      e->setType(ctx->instantiate(bestMethod, typ));
       if (expr->getExpr()->getType()->is("type")) {
         // Static access: `cls.method`
+        unify(expr->getType(), e->getType());
       } else if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
                  !bestMethod->ast->hasAttribute(Attr::Property)) {
         // Instance access: `obj.method`
         parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
-        // LOG("|-> adding dot: {} // {} ####### {}", expr->toString(0),
+        unify(expr->getType(), e->getType());
+        // log("|-> adding dot: {} // {} ####### {}", expr->toString(0),
         // e->getType()->debugString(2), parentCall->toString(2));
       } else {
         // Instance access: `obj.method`
