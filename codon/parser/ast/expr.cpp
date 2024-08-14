@@ -10,6 +10,10 @@
 #include "codon/parser/cache.h"
 #include "codon/parser/visitors/visitor.h"
 
+#define FASTFLOAT_ALLOWS_LEADING_PLUS
+#define FASTFLOAT_SKIP_WHITE_SPACE
+#include "fast_float/fast_float.h"
+
 #define ACCEPT_IMPL(T, X)                                                              \
   ExprPtr T::clone() const { return std::make_shared<T>(*this); }                      \
   void T::accept(X &visitor) { visitor.visit(this); }
@@ -146,11 +150,12 @@ FloatExpr::FloatExpr(double floatValue)
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
     : Expr(), value(value), suffix(std::move(suffix)) {
-  try {
-    floatValue = std::make_unique<double>(std::stod(value));
-  } catch (std::out_of_range &) {
+  double result;
+  auto r = fast_float::from_chars(value.data(), value.data() + value.size(), result);
+  if (r.ec == std::errc() || r.ec == std::errc::result_out_of_range)
+    floatValue = std::make_unique<double>(result);
+  else
     floatValue = nullptr;
-  }
 }
 FloatExpr::FloatExpr(const FloatExpr &expr)
     : Expr(expr), value(expr.value), suffix(expr.suffix) {
