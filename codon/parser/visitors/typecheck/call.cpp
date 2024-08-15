@@ -62,9 +62,6 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     expr->setAttribute("TupleFn");
   }
 
-  if (in(expr->toString(-1), "dixpatch"))
-      log(expr->toString(-1));
-
   // Check if this call is partial call
   PartialCallData part;
 
@@ -122,12 +119,17 @@ void TypecheckVisitor::visit(CallExpr *expr) {
           calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr, methods,
           expr->items, expr->getExpr()->getType()->getPartial()));
     }
-    bool doDispatch = !m || m->size() == 0;
-    if (m && m->size() > 1) {
+    // partials have dangling ellipsis that messes up with the unbound check below
+    bool doDispatch = !m || m->size() == 0 || part.isPartial;
+    if (!doDispatch && m && m->size() > 1) {
+      auto unbounds = 0;
       for (auto &a : *expr) {
-        if (auto u = a.value->getType()->getUnbound()) {
-          return; // wait until it becomes known
+        if (a.value->getType()->getUnbound()) {
+          return; // typecheck this later once we know the argument
         }
+      }
+      if (unbounds) {
+        return;
       }
     }
     if (!doDispatch) {
@@ -789,7 +791,7 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   std::vector<Param> generics, params;
   auto orig = cast<TupleExpr>(expr->front().value->getOrigExpr());
   size_t ti = 1;
-  for (auto *i: *orig) {
+  for (auto *i : *orig) {
     if (auto s = cast<StringExpr>(i)) {
       generics.emplace_back(format("T{}", ti), N<IdExpr>("type"), nullptr, true);
       params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
@@ -797,8 +799,8 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
     }
     auto t = cast<TupleExpr>(i);
     if (t && t->size() == 2 && cast<StringExpr>((*t)[0])) {
-      params.emplace_back(cast<StringExpr>((*t)[0])->getValue(),
-                          transformType((*t)[1]), nullptr);
+      params.emplace_back(cast<StringExpr>((*t)[0])->getValue(), transformType((*t)[1]),
+                          nullptr);
       continue;
     }
     E(Error::CALL_NAMEDTUPLE, i);

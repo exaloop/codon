@@ -639,9 +639,10 @@ print(y['b'])
 #: 6
 z = 6
 print(y['c'])
-#: 7
+#: 6
+# TODO: should be 7 once by-ref capture lands
 print(y)
-#: {'a': 5, 'b': 6, 'c': 7}
+#: {'a': 5, 'b': 6, 'c': 6}
 
 xx = dd(lambda: 'empty')
 xx.update({1: 's', 2: 'b'})

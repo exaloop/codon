@@ -336,19 +336,18 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
 ///   Instantiate(foo, [bar]) -> Id("foo[bar]")
 void TypecheckVisitor::visit(InstantiateExpr *expr) {
   expr->expr = transformType(expr->expr);
-  // std::shared_ptr<types::StaticType> repeats = nullptr;
-  // if (expr->typeExpr->isId(TYPE_TUPLE) && !expr->typeParams.empty()) {
-  //   transform(expr->typeParams[0]);
-  //   if (expr->typeParams[0]->staticValue.type == StaticValue::INT) {
-  //     repeats = Type::makeStatic(ctx->cache, expr->typeParams[0]);
-  //   }
-  // }
 
   TypePtr typ = nullptr;
   bool hasRepeats = false;
   size_t typeParamsSize = expr->size() - hasRepeats;
   if (getType(expr->expr)->is(TYPE_TUPLE)) {
-    typ = ctx->instantiate(generateTuple(typeParamsSize));
+    // if (expr->size() > 1) {
+    //   expr->items[0] = transform(expr->front(), true);
+    //   if (expr->front()->getType()->isStaticType()) {
+    //     hasRepeats = true;
+    //   }
+    // }
+    typ = ctx->instantiate(generateTuple(typeParamsSize - hasRepeats));
   } else {
     typ = ctx->instantiate(expr->expr->getSrcInfo(), getType(expr->expr));
   }
