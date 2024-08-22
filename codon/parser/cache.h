@@ -80,6 +80,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     std::vector<std::string> content;
     /// Relative module name (e.g., `foo.bar`)
     std::string moduleName;
+    /// Set if loaded at toplevel
+    bool loadedAtToplevel = true;
   };
 
   /// Absolute path of seqc executable (if available).

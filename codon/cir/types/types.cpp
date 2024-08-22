@@ -39,9 +39,17 @@ std::vector<Generic> Type::doGetGenerics() const {
       ret.emplace_back(
           getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
     else {
-      seqassertn(g.type->getStatic()->expr->staticValue.type == ast::StaticValue::INT,
-                 "IR only supports int statics [{}]", g.type->getSrcInfo());
-      ret.emplace_back(g.type->getStatic()->expr->staticValue.getInt());
+      switch (g.type->getStatic()->expr->staticValue.type) {
+      case ast::StaticValue::INT:
+        ret.emplace_back(g.type->getStatic()->expr->staticValue.getInt());
+        break;
+      case ast::StaticValue::STRING:
+        ret.emplace_back(g.type->getStatic()->expr->staticValue.getString());
+        break;
+      default:
+        seqassertn(false, "IR only supports int or str statics [{}]",
+                   g.type->getSrcInfo());
+      }
     }
   }
 

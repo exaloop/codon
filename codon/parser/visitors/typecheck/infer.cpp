@@ -373,7 +373,7 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.
-        // LOG("{}", ast->suite->toString(2));
+        LOG_REALIZE("[error] {}", ast->suite->toString(2));
         error("cannot typecheck the program");
       }
       return nullptr; // inference must be delayed

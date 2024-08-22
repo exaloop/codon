@@ -47,38 +47,32 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   }
 
   // If the file has not been seen before, load it into cache
-  if (ctx->cache->imports.find(file->path) == ctx->cache->imports.end())
+  bool handled = true;
+  if (ctx->cache->imports.find(file->path) == ctx->cache->imports.end()) {
     resultStmt = transformNewImport(*file);
+    if (!resultStmt)
+      handled = false; // we need an import
+  }
 
   const auto &import = ctx->cache->imports[file->path];
   std::string importVar = import.importVar;
-  std::string importDoneVar = importVar + "_done";
+  if (!import.loadedAtToplevel)
+    handled = false;
 
   // Construct `if _import_done.__invert__(): (_import(); _import_done = True)`.
   // Do not do this during the standard library loading (we assume that standard library
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
-  if (!ctx->isStdlibLoading && !importVar.empty()) {
-    auto u = N<AssignStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true));
-    u->setUpdate();
-    resultStmt =
-        N<IfStmt>(N<CallExpr>(N<DotExpr>(importDoneVar, "__invert__")),
-                  N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar))), u));
+  if (!handled) {
+    resultStmt = N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar + ":0")));
+    LOG_TYPECHECK("[import] loading {}", importVar);
   }
 
   // Import requested identifiers from the import's scope to the current scope
   if (!stmt->what) {
     // Case: import foo
     auto name = stmt->as.empty() ? path : stmt->as;
-    auto var = importVar + "_var";
-    // Construct `import_var = Import([module], [path])` (for printing imports etc.)
-    resultStmt = N<SuiteStmt>(
-        resultStmt, transform(N<AssignStmt>(N<IdExpr>(var),
-                                            N<CallExpr>(N<IdExpr>("Import"),
-                                                        N<StringExpr>(file->module),
-                                                        N<StringExpr>(file->path)),
-                                            N<IdExpr>("Import"))));
-    ctx->addVar(name, var, stmt->getSrcInfo())->importPath = file->path;
+    ctx->addVar(name, importVar, stmt->getSrcInfo())->importPath = file->path;
   } else if (stmt->what->isId("*")) {
     // Case: from foo import *
     seqassert(stmt->as.empty(), "renamed star-import");
@@ -314,14 +308,29 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
   auto import = ctx->cache->imports.insert({file.path, {file.path, ictx}}).first;
+  import->second.loadedAtToplevel =
+      ctx->cache->imports[ctx->moduleName.path].loadedAtToplevel &&
+      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.blocks.size() == 1));
+  auto importVar = import->second.importVar =
+      ctx->cache->getTemporaryVar(format("import_{}", file.module));
   import->second.moduleName = file.module;
+  LOG_TYPECHECK("[import] initializing {} ({})", importVar,
+                import->second.loadedAtToplevel);
 
   // __name__ = [import name]
-  StmtPtr n =
-      N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
-  if (ictx->moduleName.module == "internal.core") {
+  StmtPtr n = nullptr;
+  if (ictx->moduleName.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = nullptr;
+    n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
+    preamble->push_back(N<AssignStmt>(
+        N<IdExpr>(importVar),
+        N<CallExpr>(N<IdExpr>("Import.__new__"), N<StringExpr>(file.module),
+                    N<StringExpr>(file.path), N<BoolExpr>(false)),
+        N<IdExpr>("Import")));
+    auto var = ctx->addAlwaysVisible(
+        std::make_shared<SimplifyItem>(SimplifyItem::Var, ctx->getBaseName(), importVar,
+                                       ctx->getModule(), std::vector<int>{0}));
+    ctx->cache->addGlobal(importVar);
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
   n = SimplifyVisitor(ictx, preamble).transform(n);
@@ -335,20 +344,15 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
     // statements are executed before the user-provided code.
     return N<SuiteStmt>(comment, n);
   } else {
-    // Generate import identifier
-    std::string importVar = import->second.importVar =
-        ctx->cache->getTemporaryVar(format("import_{}", file.module));
-    std::string importDoneVar;
-
-    // `import_[I]_done = False` (set to True upon successful import)
-    preamble->push_back(N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
-                                      N<BoolExpr>(false)));
-    ctx->cache->addGlobal(importDoneVar);
-
     // Wrap all imported top-level statements into a function.
-    // Make sure to register the global variables and set their assignments as updates.
-    // Note: signatures/classes/functions are not wrapped
+    // Make sure to register the global variables and set their assignments as
+    // updates. Note: signatures/classes/functions are not wrapped
     std::vector<StmtPtr> stmts;
+    stmts.push_back(
+        N<IfStmt>(N<DotExpr>(N<IdExpr>(importVar), "loaded"), N<ReturnStmt>()));
+    stmts.push_back(N<ExprStmt>(
+        N<CallExpr>(N<IdExpr>("Import._set_loaded"),
+                    N<CallExpr>(N<IdExpr>("__ptr__"), N<IdExpr>(importVar)))));
     auto processToplevelStmt = [&](const StmtPtr &s) {
       // Process toplevel statement
       if (auto a = s->getAssign()) {

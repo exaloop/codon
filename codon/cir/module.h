@@ -49,6 +49,7 @@ public:
   static const std::string POS_MAGIC_NAME;
   static const std::string NEG_MAGIC_NAME;
   static const std::string INVERT_MAGIC_NAME;
+  static const std::string ABS_MAGIC_NAME;
 
   static const std::string ADD_MAGIC_NAME;
   static const std::string SUB_MAGIC_NAME;
@@ -97,6 +98,7 @@ public:
   static const std::string BOOL_MAGIC_NAME;
   static const std::string STR_MAGIC_NAME;
   static const std::string REPR_MAGIC_NAME;
+  static const std::string CALL_MAGIC_NAME;
 
   static const std::string GETITEM_MAGIC_NAME;
   static const std::string SETITEM_MAGIC_NAME;

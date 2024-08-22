@@ -693,15 +693,6 @@ class __magic__:
     def str(slf) -> str:
         return slf.__repr__()
 
-@dataclass(init=True)
-@tuple
-class Import:
-    name: str
-    file: str
-
-    def __repr__(self) -> str:
-        return f"<module '{self.name}' from '{self.file}'>"
-
 @extend
 class Function:
     @pure

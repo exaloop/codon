@@ -41,4 +41,6 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
   fi
 
   "${INSTALLDIR}/bin/llvm-config" --cmakedir
+  cd ${INSTALLDIR}
+  rm -rf ${SRCDIR}
 fi
