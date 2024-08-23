@@ -1415,7 +1415,7 @@ int LLVMVisitor::getTypeIdx(types::Type *catchType) {
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
-  if (trycatch.empty()) {
+  if (trycatch.empty() || DisableExceptions) {
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
@@ -2877,7 +2877,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if uncaught
   B->SetInsertPoint(unwindResumeBlock);
-  B->CreateResume(B->CreateLoad(padType, tc.catchStore));
+  if (DisableExceptions) {
+    B->CreateUnreachable();
+  } else {
+    B->CreateResume(B->CreateLoad(padType, tc.catchStore));
+  }
 
   // make sure we delegate to parent try-catch if necessary
   std::vector<types::Type *> catchTypesFull(tc.catchTypes);
@@ -2915,8 +2919,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
-  llvm::LandingPadInst *caughtResult = B->CreateLandingPad(padType, catches.size());
-  caughtResult->setCleanup(true);
+  llvm::LandingPadInst *caughtResult = nullptr;
+  if (!DisableExceptions) {
+    caughtResult = B->CreateLandingPad(padType, catches.size());
+    caughtResult->setCleanup(true);
+  }
   std::vector<llvm::Value *> typeIndices;
 
   for (auto *catchType : catchTypesFull) {
@@ -2925,11 +2932,15 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
         "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
     llvm::GlobalVariable *tidx = getTypeIdxVar(catchType);
     typeIndices.push_back(tidx);
-    caughtResult->addClause(tidx);
+    if (caughtResult)
+      caughtResult->addClause(tidx);
   }
 
-  llvm::Value *unwindException = B->CreateExtractValue(caughtResult, 0);
-  B->CreateStore(caughtResult, tc.catchStore);
+  llvm::Value *caughtResultOrUndef = caughtResult
+                                         ? llvm::cast<llvm::Value>(caughtResult)
+                                         : llvm::UndefValue::get(padType);
+  auto *unwindException = B->CreateExtractValue(caughtResultOrUndef, 0);
+  B->CreateStore(caughtResultOrUndef, tc.catchStore);
   B->CreateStore(excStateThrown, tc.excFlag);
   llvm::Value *depthMax = B->getInt64(trycatch.size());
   B->CreateStore(depthMax, tc.delegateDepth);
