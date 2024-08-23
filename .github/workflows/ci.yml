@@ -18,33 +18,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check
-        if: contains(github.ref, 'tags/v')
-        id: check
-        run: echo "::set-output name=MAKE_RELEASE::true"
-
       - name: Create Release
+        if: contains(github.ref, 'tags/v')
         id: create_release
-        if: steps.check.outputs.MAKE_RELEASE
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Output Release URL File
-        if: steps.check.outputs.MAKE_RELEASE
-        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
-
-      - name: Save Release URL File for Publish
-        if: steps.check.outputs.MAKE_RELEASE
-        uses: actions/upload-artifact@v4
-        with:
-          name: release_url
-          path: release_url.txt
+        uses: ncipollo/release-action@v1
 
   manylinux:
     runs-on: ubuntu-latest
@@ -63,30 +40,13 @@ jobs:
       - name: Main
         uses: ./.github/actions/build-manylinux
 
-      - name: Load Release URL File
-        if: contains(github.ref, 'tags/v')
-        uses: actions/download-artifact@v4
-        with:
-          name: release_url
-
-      - name: Get Release URL
-        id: get_release_url
-        if: contains(github.ref, 'tags/v')
-        run: |
-          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
-          value=`cat release_url/release_url.txt`
-          echo ::set-output name=upload_url::$value
-        env:
-          TAG_REF_NAME: ${{ github.ref }}
-          REPOSITORY_NAME: ${{ github.repository }}
-
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v')
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          upload_url: ${{ needs.release.steps.create_release.outputs.upload_url }}
           asset_path: ./codon-linux-x86_64.tar.gz
           asset_name: codon-linux-x86_64.tar.gz
           asset_content_type: application/gzip
@@ -190,26 +150,8 @@ jobs:
         run: |
           cp -rf codon-deploy/python/dist .
           rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
-          if [ -e build/libunwind.${LIBEXT} ]; then cp build/libunwind.${LIBEXT} codon-deploy/lib/codon/; fi
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
-
-      - name: Load Release URL File
-        if: contains(github.ref, 'tags/v')
-        uses: actions/download-artifact@v4
-        with:
-          name: release_url
-
-      - name: Get Release URL
-        id: get_release_url
-        if: contains(github.ref, 'tags/v')
-        run: |
-          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
-          value=`cat release_url/release_url.txt`
-          echo ::set-output name=upload_url::$value
-        env:
-          TAG_REF_NAME: ${{ github.ref }}
-          REPOSITORY_NAME: ${{ github.repository }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v') && startsWith(matrix.os, 'macos')
@@ -217,7 +159,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          upload_url: ${{ needs.release.steps.create_release.outputs.upload_url }}
           asset_path: ./codon-darwin-x86_64.tar.gz
           asset_name: codon-darwin-x86_64.tar.gz
           asset_content_type: application/gzip
@@ -236,14 +178,6 @@ jobs:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
 
-      # - name: Publish on TestPyPI
-      #   if: github.ref == 'refs/heads/develop' && startsWith(matrix.os, 'ubuntu')
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     repository-url: https://test.pypi.org/legacy/
-      #     skip-existing: true
-
       - name: Publish Package
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
         uses: pypa/gh-action-pypi-publish@release/v1
-
