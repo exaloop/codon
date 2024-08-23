@@ -274,3 +274,21 @@ def statictuple(*args):
 
 def __has_rtti__(T: type):
     pass
+
+@dataclass(init=False)
+@tuple
+class Import:
+    loaded: bool
+    name: Static[str]
+    file: Static[str]
+
+    def __new__(name: Static[str],
+                file: Static[str],
+                loaded: bool) -> Import[name, file]:
+        return (loaded,)
+
+    def _set_loaded(i: Ptr[Import]):
+        Ptr[bool](i.as_byte())[0] = True
+
+    def __repr__(self) -> str:
+        return f"<module '{self.name}' from '{self.file}'>"

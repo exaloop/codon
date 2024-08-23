@@ -26,6 +26,7 @@ StmtPtr TypecheckVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   auto so = clone(stmts);
   auto s = v.inferTypes(so, true);
   if (!s) {
+    LOG_REALIZE("[error] {}", so->toString(2));
     v.error("cannot typecheck the program");
   }
   if (s->getSuite())
