@@ -30,7 +30,7 @@ jobs:
     name: Codon CI (manylinux)
     needs: create_release
     permissions:
-      content: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +71,7 @@ jobs:
     name: Codon CI
     needs: create_release
     permissions:
-      content: write
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
