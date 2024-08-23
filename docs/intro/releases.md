@@ -27,6 +27,13 @@ Upgraded to LLVM 17 (from 15).
 - Several improvements to dynamic polymorphism to match CPython more
   closely.
 
+## New compiler options
+
+- `-disable-exceptions` will disable exceptions, potentially eliding
+  various runtime checks (e.g. bounds checks for lists). This flag
+  should only be used if you know that no exceptions will be raised
+  in the given program.
+
 # v0.16
 
 ## Python extensions
